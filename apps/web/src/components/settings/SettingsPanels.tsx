@@ -2297,7 +2297,7 @@ export function GeneralSettingsPanel() {
           description="New worktree branches use this prefix. Use up to 64 lowercase letters, digits, hyphens, or underscores, starting with a letter, digit, or underscore."
           status={
             worktreeBranchPrefixInvalid ? (
-              <span id="worktree-branch-prefix-error" role="alert">
+              <span className="text-destructive" id="worktree-branch-prefix-error" role="alert">
                 Start with a letter, digit, or underscore, then use letters, digits, hyphens, or
                 underscores.
               </span>
