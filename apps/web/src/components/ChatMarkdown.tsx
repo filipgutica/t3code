@@ -226,7 +226,7 @@ const RESPONSE_COMMENT_BLOCK_SELECTOR = "[data-response-comment-block]";
 const RESPONSE_COMMENT_HIGHLIGHT_INSET = 4;
 const RESPONSE_COMMENT_BLOCK_CLASS_NAME = "group/response-comment relative";
 const RESPONSE_COMMENT_WRAPPER_CLASS_NAME =
-  "group/response-comment relative [&:first-child>*:not([data-response-comment-ui])]:mt-0! [&:last-child>*:not([data-response-comment-ui])]:mb-0!";
+  "group/response-comment relative [.chat-markdown>&:first-child>*:not([data-response-comment-ui])]:mt-0! [.chat-markdown>&:last-child>*:not([data-response-comment-ui])]:mb-0!";
 const ResponseCommentContext = createContext<ResponseCommentContextValue | null>(null);
 
 function responseCommentRange(node: PositionedMarkdownNode | undefined) {
@@ -408,7 +408,7 @@ function ResponseCommentControl({ range }: { range: ResponseCommentBlockRange | 
       data-response-comment-ui
       data-response-comment-trigger
       aria-label={`Comment on response lines ${responseCommentRangeLabel(range)}`}
-      className="absolute top-0 left-[calc(-1.75rem-var(--list-gutter,0px))] z-10 text-muted-foreground opacity-0 transition-opacity group-hover/response-comment:opacity-100 data-[response-comment-dragging]:pointer-events-none data-[response-comment-dragging]:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 sm:left-[calc(-1.5rem-var(--list-gutter,0px))] [div[role=note]_&]:hidden [blockquote_&]:hidden [li_li_&]:hidden"
+      className="absolute top-0 left-[calc(-1.75rem-var(--list-gutter,0px))] z-10 text-muted-foreground opacity-0 transition-opacity group-hover/response-comment:opacity-100 pointer-coarse:after:right-0 pointer-coarse:after:left-auto data-[response-comment-dragging]:pointer-events-none data-[response-comment-dragging]:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 sm:left-[calc(-1.5rem-var(--list-gutter,0px))] [div[role=note]_&]:hidden [blockquote_&]:hidden [li_li_&]:hidden"
       onClick={(event) => {
         if (event.detail === 0) context.onOpen(range);
       }}
