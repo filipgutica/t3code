@@ -2705,7 +2705,7 @@ function ChatMarkdown({
         return (
           <div
             {...responseCommentBlockProps(range)}
-            className="group/response-comment relative [&:first-child>*:first-child]:mt-0 [&:last-child>*:last-child]:mb-0"
+            className="group/response-comment relative [&:first-child>*:not([data-response-comment-ui])]:mt-0! [&:last-child>*:not([data-response-comment-ui])]:mb-0!"
           >
             {commentControl(range)}
             <MarkdownTable {...props} />
@@ -2744,7 +2744,7 @@ function ChatMarkdown({
         return (
           <div
             {...responseCommentBlockProps(range)}
-            className="group/response-comment relative [&:first-child>*:first-child]:mt-0 [&:last-child>*:last-child]:mb-0"
+            className="group/response-comment relative [&:first-child>*:not([data-response-comment-ui])]:mt-0! [&:last-child>*:not([data-response-comment-ui])]:mb-0!"
           >
             {commentControl(range)}
             {content}
