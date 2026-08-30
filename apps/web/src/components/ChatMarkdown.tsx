@@ -203,6 +203,14 @@ export interface ResponseCommentSubmission extends ResponseCommentSelection {
   readonly comment: string;
 }
 
+interface ResponseCommentSelectionSnapshot {
+  readonly context: string;
+  readonly anchorNode: Node | null;
+  readonly anchorOffset: number;
+  readonly focusNode: Node | null;
+  readonly focusOffset: number;
+}
+
 type PositionedMarkdownNode = ExtraProps["node"];
 
 const RESPONSE_COMMENT_BLOCK_SELECTOR = "[data-response-comment-block]";
@@ -227,13 +235,13 @@ function responseCommentRangeLabel(range: ResponseCommentBlockRange | ResponseCo
 
 export function resolveResponseCommentSelection(input: {
   context: string;
-  initialContext: string;
+  unchanged: boolean;
   anchorBlock: ResponseCommentBlockRange | null;
   focusBlock: ResponseCommentBlockRange | null;
 }): ResponseCommentSelection | null {
   if (
     input.context.trim().length === 0 ||
-    input.context === input.initialContext ||
+    input.unchanged ||
     !input.anchorBlock ||
     !input.focusBlock
   ) {
@@ -245,6 +253,31 @@ export function resolveResponseCommentSelection(input: {
     placementOffset: Math.max(input.anchorBlock.endOffset, input.focusBlock.endOffset),
     context: input.context,
   };
+}
+
+function responseCommentSelectionSnapshot(
+  selection: Selection | null,
+): ResponseCommentSelectionSnapshot {
+  return {
+    context: selection?.toString() ?? "",
+    anchorNode: selection?.anchorNode ?? null,
+    anchorOffset: selection?.anchorOffset ?? 0,
+    focusNode: selection?.focusNode ?? null,
+    focusOffset: selection?.focusOffset ?? 0,
+  };
+}
+
+function responseCommentSelectionIsUnchanged(
+  selection: Selection,
+  snapshot: ResponseCommentSelectionSnapshot,
+) {
+  return (
+    selection.toString() === snapshot.context &&
+    selection.anchorNode === snapshot.anchorNode &&
+    selection.anchorOffset === snapshot.anchorOffset &&
+    selection.focusNode === snapshot.focusNode &&
+    selection.focusOffset === snapshot.focusOffset
+  );
 }
 
 function responseCommentRangeFromSelectionNode(
@@ -2010,7 +2043,7 @@ function ChatMarkdown({
     null,
   );
   const suppressResponseClickUntilRef = useRef(0);
-  const responseSelectionAtPointerDownRef = useRef<string | null>(null);
+  const responseSelectionAtPointerDownRef = useRef<ResponseCommentSelectionSnapshot | null>(null);
   const openResponseComment = useCallback(
     (range: ResponseCommentBlockRange) => {
       setResponseCommentDraft({
@@ -2032,16 +2065,16 @@ function ChatMarkdown({
     [onResponseComment, responseCommentDraft],
   );
   function handleResponseCommentPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
-    const initialContext = responseSelectionAtPointerDownRef.current;
+    const initialSelection = responseSelectionAtPointerDownRef.current;
     responseSelectionAtPointerDownRef.current = null;
-    if (!onResponseComment || responseCommentDraft || initialContext === null) return;
+    if (!onResponseComment || responseCommentDraft || initialSelection === null) return;
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest("[data-response-comment-ui]")) return;
     const selection = window.getSelection();
     if (!selection) return;
     const resolved = resolveResponseCommentSelection({
       context: selection.toString(),
-      initialContext,
+      unchanged: responseCommentSelectionIsUnchanged(selection, initialSelection),
       anchorBlock: responseCommentRangeFromSelectionNode(selection.anchorNode, event.currentTarget),
       focusBlock: responseCommentRangeFromSelectionNode(selection.focusNode, event.currentTarget),
     });
@@ -2059,7 +2092,7 @@ function ChatMarkdown({
   }
   function handleResponseCommentPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     responseSelectionAtPointerDownRef.current =
-      event.button === 0 ? (window.getSelection()?.toString() ?? "") : null;
+      event.button === 0 ? responseCommentSelectionSnapshot(window.getSelection()) : null;
   }
   const environmentId = threadRef?.environmentId ?? explicitEnvironmentId ?? null;
   const remoteOpen = useRemoteOpenResolution(environmentId);

@@ -43,7 +43,7 @@ describe("ChatMarkdown response comments", () => {
 
     const input = {
       context: "exact displayed selection",
-      initialContext: "",
+      unchanged: false,
       anchorBlock: first,
       focusBlock: second,
     };
@@ -60,9 +60,23 @@ describe("ChatMarkdown response comments", () => {
       resolveResponseCommentSelection({
         ...input,
         context: "stale selection",
-        initialContext: "stale selection",
+        unchanged: true,
       }),
     ).toBeNull();
+
+    expect(
+      resolveResponseCommentSelection({
+        ...input,
+        context: "exact displayed selection",
+        anchorBlock: second,
+        focusBlock: second,
+      }),
+    ).toEqual({
+      startLine: 4,
+      endLine: 5,
+      placementOffset: 35,
+      context: "exact displayed selection",
+    });
   });
 });
 
