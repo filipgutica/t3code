@@ -2491,7 +2491,7 @@ function ChatMarkdown({
     const commentRange = (node: PositionedMarkdownNode | undefined) =>
       onResponseComment ? responseCommentRange(node) : null;
     const commentableClassName = (range: ResponseCommentBlockRange | null, className?: string) =>
-      cn(className, range && RESPONSE_COMMENT_BLOCK_CLASS_NAME);
+      range ? cn(className, RESPONSE_COMMENT_BLOCK_CLASS_NAME) : className;
     const commentBlock = (range: ResponseCommentBlockRange | null, content: ReactNode) =>
       range ? (
         <div {...responseCommentBlockProps(range)} className={RESPONSE_COMMENT_WRAPPER_CLASS_NAME}>
