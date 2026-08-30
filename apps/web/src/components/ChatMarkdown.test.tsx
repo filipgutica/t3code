@@ -44,6 +44,7 @@ describe("ChatMarkdown response comments", () => {
 
     expect(markup).toContain("data-response-comment-trigger");
     expect(markup).toContain("data-[response-comment-dragging]:opacity-100");
+    expect(markup).toContain("data-[response-comment-dragging]:inline-flex!");
     expect(markup).toContain("data-[response-comment-selection-visible]:before:opacity-100");
     expect(markup).toContain('aria-label="Comment on response lines L1"');
   });
@@ -64,6 +65,19 @@ describe("ChatMarkdown response comments", () => {
       context: "[example](https://example.com)",
     });
     expect(resolveResponseCommentSelection({ ...input, focusBlock: null })).toBeNull();
+  });
+
+  it("places downward and upward selections at the last selected block", () => {
+    const upper = { startLine: 1, endLine: 1, startOffset: 0, endOffset: 5 };
+    const lower = { startLine: 3, endLine: 3, startOffset: 7, endOffset: 12 };
+    const input = { context: "upper\n\nlower" };
+
+    expect(
+      resolveResponseCommentSelection({ ...input, anchorBlock: upper, focusBlock: lower }),
+    ).toMatchObject({ placementStartOffset: 7, placementOffset: 12 });
+    expect(
+      resolveResponseCommentSelection({ ...input, anchorBlock: lower, focusBlock: upper }),
+    ).toMatchObject({ placementStartOffset: 7, placementOffset: 12 });
   });
 });
 
