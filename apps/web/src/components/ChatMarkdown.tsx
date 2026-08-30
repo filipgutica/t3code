@@ -285,6 +285,22 @@ function responseCommentRangeFromSelectionNode(
   return { startLine, endLine, startOffset, endOffset };
 }
 
+export function outermostResponseCommentBlockFromSelectionNode(
+  node: Node | null,
+  root: HTMLElement,
+) {
+  const element = node instanceof Element ? node : node?.parentElement;
+  let block = element?.closest<HTMLElement>(RESPONSE_COMMENT_BLOCK_SELECTOR) ?? null;
+  for (
+    let outer = block?.parentElement?.closest<HTMLElement>(RESPONSE_COMMENT_BLOCK_SELECTOR);
+    outer && root.contains(outer);
+    outer = outer.parentElement?.closest<HTMLElement>(RESPONSE_COMMENT_BLOCK_SELECTOR)
+  ) {
+    block = outer;
+  }
+  return block && root.contains(block) ? block : null;
+}
+
 export function resolveResponseCommentDragFocusBlock(input: {
   anchorBlock: ResponseCommentBlockRange;
   focusBlock: ResponseCommentBlockRange | null;
@@ -2171,9 +2187,13 @@ function ChatMarkdown({
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.preventDefault();
     const focusElement = document.elementFromPoint(event.clientX, event.clientY);
+    const focusBlockElement = outermostResponseCommentBlockFromSelectionNode(
+      focusElement,
+      event.currentTarget,
+    );
     const focusBlock = resolveResponseCommentDragFocusBlock({
       anchorBlock: drag.anchorBlock,
-      focusBlock: responseCommentRangeFromSelectionNode(focusElement, event.currentTarget),
+      focusBlock: responseCommentRangeFromSelectionNode(focusBlockElement, event.currentTarget),
     });
     const selection = resolveResponseCommentSelection({
       context: text,
@@ -2186,7 +2206,7 @@ function ChatMarkdown({
       selection.placementStartOffset === drag.anchorBlock.startOffset &&
       selection.placementOffset === drag.anchorBlock.endOffset
         ? drag.anchorElement
-        : (focusElement?.closest<HTMLElement>(RESPONSE_COMMENT_BLOCK_SELECTOR) ?? null);
+        : focusBlockElement;
     updateResponseCommentDragPosition(drag, placementBlock);
     updateResponseCommentSelectedBlocks(event.currentTarget, selection);
   }

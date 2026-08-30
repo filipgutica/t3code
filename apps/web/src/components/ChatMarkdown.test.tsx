@@ -32,6 +32,7 @@ import ChatMarkdown, {
   canUseMarkdownFileShellActions,
   hasMarkdownFilePrimaryAction,
   orderedListGutterStyle,
+  outermostResponseCommentBlockFromSelectionNode,
   resolveResponseCommentDragFocusBlock,
   resolveResponseCommentSelection,
   shouldUseMarkdownFileBrowserPrimaryAction,
@@ -107,6 +108,50 @@ describe("ChatMarkdown response comments", () => {
     expect(
       resolveResponseCommentDragFocusBlock({ anchorBlock: quote, focusBlock: null }),
     ).toBeNull();
+  });
+
+  it("resolves nested drag targets to the outermost comment block within the root", () => {
+    class FakeElement {
+      constructor(
+        readonly parentElement: FakeElement | null,
+        readonly isCommentBlock = false,
+      ) {}
+
+      closest(): FakeElement | null {
+        return this.isCommentBlock ? this : (this.parentElement?.closest() ?? null);
+      }
+
+      contains(candidate: FakeElement): boolean {
+        return (
+          candidate === this ||
+          (candidate.parentElement ? this.contains(candidate.parentElement) : false)
+        );
+      }
+    }
+
+    vi.stubGlobal("Element", FakeElement);
+    const root = new FakeElement(null);
+    const outerBlock = new FakeElement(root, true);
+    const container = new FakeElement(outerBlock);
+    const innerBlock = new FakeElement(container, true);
+    const outsideBlock = new FakeElement(null, true);
+
+    try {
+      expect(
+        outermostResponseCommentBlockFromSelectionNode(
+          innerBlock as unknown as Node,
+          root as unknown as HTMLElement,
+        ),
+      ).toBe(outerBlock);
+      expect(
+        outermostResponseCommentBlockFromSelectionNode(
+          outsideBlock as unknown as Node,
+          root as unknown as HTMLElement,
+        ),
+      ).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("places downward and upward selections at the last selected block", () => {
