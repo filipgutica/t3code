@@ -297,7 +297,7 @@ function ResponseCommentControl({
       size="icon-xs"
       data-response-comment-ui
       aria-label={`Comment on response lines ${responseCommentRangeLabel(range)}`}
-      className="absolute top-0 left-[calc(-1.75rem-var(--list-gutter,0px))] z-10 text-muted-foreground opacity-0 transition-opacity group-hover/response-comment:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 sm:left-[calc(-1.5rem-var(--list-gutter,0px))]"
+      className="absolute top-0 left-[calc(-1.75rem-var(--list-gutter,0px))] z-10 text-muted-foreground opacity-0 transition-opacity group-hover/response-comment:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 sm:left-[calc(-1.5rem-var(--list-gutter,0px))] [div[role=note]_&]:hidden [blockquote_&]:hidden [li_li_&]:hidden"
       onPointerDown={(event) => event.stopPropagation()}
       onClick={() => onOpen(range)}
     >
