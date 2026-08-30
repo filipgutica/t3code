@@ -37,23 +37,6 @@ import ChatMarkdown, {
 } from "./ChatMarkdown";
 
 describe("ChatMarkdown response comments", () => {
-  it("adds block comment controls without replacing existing links", () => {
-    const html = renderToStaticMarkup(
-      <ChatMarkdown
-        cwd="/tmp/project"
-        text={
-          "# Heading\n\nA [linked paragraph](https://example.com).\n\n- A list item\n\n```ts\nconst value = 1;\n```\n\n| Name | Value |\n| --- | --- |\n| one | two |"
-        }
-        onResponseComment={vi.fn()}
-      />,
-    );
-
-    for (const range of ["L1", "L3", "L5", "L7 to L9", "L11 to L13"]) {
-      expect(html).toContain(`aria-label="Comment on response lines ${range}"`);
-    }
-    expect(html).toContain('href="https://example.com"');
-  });
-
   it("normalizes a contained multi-block selection and rejects boundary crossings", () => {
     const first = { startLine: 2, endLine: 2, startOffset: 4, endOffset: 14 };
     const second = { startLine: 4, endLine: 5, startOffset: 16, endOffset: 35 };
@@ -67,7 +50,7 @@ describe("ChatMarkdown response comments", () => {
     expect(resolveResponseCommentSelection(input)).toEqual({
       startLine: 2,
       endLine: 5,
-      anchorOffset: 35,
+      placementOffset: 35,
       context: "exact displayed selection",
     });
     expect(

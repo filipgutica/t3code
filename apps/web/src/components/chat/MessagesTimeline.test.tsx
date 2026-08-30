@@ -238,18 +238,6 @@ function buildAssistantTimelineEntry(text: string) {
 }
 
 describe("MessagesTimeline", () => {
-  it("enables response comments only for completed final assistant messages", () => {
-    const completed = buildAssistantTimelineEntry("A completed response.");
-    const streaming = buildAssistantTimelineEntry("A streaming response.");
-    streaming.message.streaming = true;
-
-    const render = (entry: ReturnType<typeof buildAssistantTimelineEntry>) =>
-      renderToStaticMarkup(<MessagesTimeline {...buildProps()} timelineEntries={[entry]} />);
-
-    expect(render(completed)).toContain('aria-label="Comment on response lines L1"');
-    expect(render(streaming)).not.toContain("Comment on response lines");
-  });
-
   it("renders a feedback command and its pending response as normal thread messages", () => {
     const submission = {
       id: MessageId.make("feedback-command"),

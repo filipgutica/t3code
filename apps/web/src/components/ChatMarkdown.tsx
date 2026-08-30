@@ -195,7 +195,7 @@ interface ResponseCommentBlockRange {
 export interface ResponseCommentSelection {
   readonly startLine: number;
   readonly endLine: number;
-  readonly anchorOffset: number;
+  readonly placementOffset: number;
   readonly context: string;
 }
 
@@ -242,7 +242,7 @@ export function resolveResponseCommentSelection(input: {
   return {
     startLine: Math.min(input.anchorBlock.startLine, input.focusBlock.startLine),
     endLine: Math.max(input.anchorBlock.endLine, input.focusBlock.endLine),
-    anchorOffset: Math.max(input.anchorBlock.endOffset, input.focusBlock.endOffset),
+    placementOffset: Math.max(input.anchorBlock.endOffset, input.focusBlock.endOffset),
     context: input.context,
   };
 }
@@ -307,7 +307,7 @@ function ResponseCommentDraftForm({
   onCancel: () => void;
   onComment: (comment: string) => void;
 }) {
-  if (!draft || !range || draft.anchorOffset !== range.endOffset) return null;
+  if (!draft || !range || draft.placementOffset !== range.endOffset) return null;
   return (
     <div data-response-comment-ui className="my-2 rounded-md border border-border/50 bg-muted/20">
       <DiffCommentAnnotation
@@ -2016,7 +2016,7 @@ function ChatMarkdown({
       setResponseCommentDraft({
         startLine: range.startLine,
         endLine: range.endLine,
-        anchorOffset: range.endOffset,
+        placementOffset: range.endOffset,
         context: text.slice(range.startOffset, range.endOffset).trimEnd(),
       });
     },
