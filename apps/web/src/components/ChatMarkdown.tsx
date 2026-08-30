@@ -198,6 +198,7 @@ export interface ResponseCommentSelection {
   readonly placementStartOffset: number;
   readonly placementOffset: number;
   readonly context: string;
+  readonly autoFocus?: true;
 }
 
 export interface ResponseCommentSubmission extends ResponseCommentSelection {
@@ -234,23 +235,17 @@ export function resolveResponseCommentSelection(input: {
   anchorBlock: ResponseCommentBlockRange | null;
   focusBlock: ResponseCommentBlockRange | null;
 }): ResponseCommentSelection | null {
-  if (
-    input.context.trim().length === 0 ||
-    input.unchanged ||
-    !input.anchorBlock ||
-    !input.focusBlock
-  ) {
-    return null;
-  }
+  const { anchorBlock, focusBlock } = input;
+  if (!input.context.trim() || input.unchanged || !anchorBlock || !focusBlock) return null;
   const placementBlock =
-    input.anchorBlock.endOffset > input.focusBlock.endOffset ||
-    (input.anchorBlock.endOffset === input.focusBlock.endOffset &&
-      input.anchorBlock.startOffset >= input.focusBlock.startOffset)
-      ? input.anchorBlock
-      : input.focusBlock;
+    anchorBlock.endOffset > focusBlock.endOffset ||
+    (anchorBlock.endOffset === focusBlock.endOffset &&
+      anchorBlock.startOffset >= focusBlock.startOffset)
+      ? anchorBlock
+      : focusBlock;
   return {
-    startLine: Math.min(input.anchorBlock.startLine, input.focusBlock.startLine),
-    endLine: Math.max(input.anchorBlock.endLine, input.focusBlock.endLine),
+    startLine: Math.min(anchorBlock.startLine, focusBlock.startLine),
+    endLine: Math.max(anchorBlock.endLine, focusBlock.endLine),
     placementStartOffset: placementBlock.startOffset,
     placementOffset: placementBlock.endOffset,
     context: input.context,
@@ -327,6 +322,7 @@ function ResponseCommentDraftForm({
         rangeLabel={responseCommentRangeLabel(draft)}
         text=""
         placeholder="Comment on this response…"
+        autoFocus={draft.autoFocus === true}
         onCancel={onCancel}
         onComment={onComment}
       />
@@ -2031,6 +2027,7 @@ function ChatMarkdown({
         placementStartOffset: range.startOffset,
         placementOffset: range.endOffset,
         context: text.slice(range.startOffset, range.endOffset).trimEnd(),
+        autoFocus: true,
       });
     },
     [text],
