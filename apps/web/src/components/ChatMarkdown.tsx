@@ -2556,24 +2556,26 @@ function ChatMarkdown({
       h6({ node, children, ...props }) {
         return commentHeading("h6", node, children, props);
       },
-      blockquote({ node: _node, children, ...props }) {
+      blockquote({ node, children, ...props }) {
+        const range = commentRange(node);
         const alert =
           GITHUB_ALERT_PRESENTATIONS[
             String((props as Record<string, unknown>)["data-alert"] ?? "")
           ];
         if (!alert) {
-          return <blockquote {...props}>{children}</blockquote>;
+          return commentBlock(range, <blockquote {...props}>{children}</blockquote>);
         }
         // Not a <blockquote>: the stylesheet mutes those, and an alert's body is ordinary
         // text under a colored title — which is how the host renders it.
-        return (
+        return commentBlock(
+          range,
           <div role="note" className={cn("my-1 border-l-2 pl-3", alert.borderClassName)}>
             <p className={cn("flex items-center gap-1.5 font-medium", alert.titleClassName)}>
               <alert.Icon aria-hidden className="size-3.5 shrink-0" />
               {alert.label}
             </p>
             {children}
-          </div>
+          </div>,
         );
       },
       ol({ node, start, style, ...props }) {
