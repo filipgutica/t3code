@@ -41,7 +41,7 @@ describe("ChatMarkdown response comments", () => {
     const first = { startLine: 2, endLine: 5, startOffset: 4, endOffset: 35 };
     const second = { startLine: 4, endLine: 5, startOffset: 16, endOffset: 35 };
     const input = {
-      context: "exact displayed selection",
+      context: "xxxx[example](https://example.com) end",
       unchanged: false,
       anchorBlock: first,
       focusBlock: second,
@@ -51,7 +51,7 @@ describe("ChatMarkdown response comments", () => {
       endLine: 5,
       placementStartOffset: 16,
       placementOffset: 35,
-      context: "exact displayed selection",
+      context: "[example](https://example.com)",
     });
     expect(resolveResponseCommentSelection({ ...input, focusBlock: null })).toBeNull();
     expect(resolveResponseCommentSelection({ ...input, unchanged: true })).toBeNull();

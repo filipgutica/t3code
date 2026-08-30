@@ -217,7 +217,7 @@ type PositionedMarkdownNode = ExtraProps["node"];
 
 const RESPONSE_COMMENT_BLOCK_SELECTOR = "[data-response-comment-block]";
 const RESPONSE_COMMENT_WRAPPER_CLASS_NAME =
-  "group/response-comment relative [&:first-child>*:not([data-response-comment-ui])]:mt-0! [&:last-child>*:not([data-response-comment-ui])]:mb-0!";
+  "group/response-comment relative data-[response-comment-selected]:bg-primary/[0.045] data-[response-comment-selected]:[&_.chat-markdown-codeblock]:bg-primary/[0.045]! [&:first-child>*:not([data-response-comment-ui])]:mt-0! [&:last-child>*:not([data-response-comment-ui])]:mb-0!";
 const ResponseCommentContext = createContext<ResponseCommentContextValue | null>(null);
 
 function responseCommentRange(node: PositionedMarkdownNode | undefined) {
@@ -245,7 +245,8 @@ export function resolveResponseCommentSelection(input: {
   focusBlock: ResponseCommentBlockRange | null;
 }): ResponseCommentSelection | null {
   const { anchorBlock, focusBlock } = input;
-  if (!input.context.trim() || input.unchanged || !anchorBlock || !focusBlock) return null;
+  if (input.unchanged || !anchorBlock || !focusBlock) return null;
+  const contextStartOffset = Math.min(anchorBlock.startOffset, focusBlock.startOffset);
   const placementBlock =
     anchorBlock.endOffset > focusBlock.endOffset ||
     (anchorBlock.endOffset === focusBlock.endOffset &&
@@ -257,7 +258,7 @@ export function resolveResponseCommentSelection(input: {
     endLine: Math.max(anchorBlock.endLine, focusBlock.endLine),
     placementStartOffset: placementBlock.startOffset,
     placementOffset: placementBlock.endOffset,
-    context: input.context,
+    context: input.context.slice(contextStartOffset, placementBlock.endOffset).trimEnd(),
   };
 }
 
@@ -2002,6 +2003,7 @@ function ChatMarkdown({
   );
   const suppressResponseClickUntilRef = useRef(0);
   const responseSelectionAtPointerDownRef = useRef<Range | null | undefined>(undefined);
+  const responseCommentRootRef = useRef<HTMLDivElement>(null);
   const openResponseComment = useCallback(
     (range: ResponseCommentBlockRange) => {
       setResponseCommentDraft({
@@ -2033,6 +2035,24 @@ function ChatMarkdown({
     }),
     [cancelResponseComment, openResponseComment, responseCommentDraft, submitResponseComment],
   );
+  useEffect(() => {
+    const root = responseCommentRootRef.current;
+    if (!root || !responseCommentDraft) return;
+    for (const block of root.querySelectorAll<HTMLElement>(RESPONSE_COMMENT_BLOCK_SELECTOR)) {
+      const range = responseCommentRangeFromSelectionNode(block, root);
+      block.toggleAttribute(
+        "data-response-comment-selected",
+        range !== null &&
+          range.startLine >= responseCommentDraft.startLine &&
+          range.endLine <= responseCommentDraft.endLine,
+      );
+    }
+    return () => {
+      for (const block of root.querySelectorAll<HTMLElement>("[data-response-comment-selected]")) {
+        block.removeAttribute("data-response-comment-selected");
+      }
+    };
+  }, [responseCommentDraft, text]);
   function handleResponseCommentPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
     const initialRange = responseSelectionAtPointerDownRef.current;
     responseSelectionAtPointerDownRef.current = undefined;
@@ -2042,12 +2062,13 @@ function ChatMarkdown({
     const selection = window.getSelection();
     if (!selection) return;
     const resolved = resolveResponseCommentSelection({
-      context: selection.toString(),
+      context: text,
       unchanged:
-        initialRange !== null &&
-        selection.rangeCount > 0 &&
-        selection.getRangeAt(0).compareBoundaryPoints(Range.START_TO_START, initialRange) === 0 &&
-        selection.getRangeAt(0).compareBoundaryPoints(Range.END_TO_END, initialRange) === 0,
+        !selection.toString().trim() ||
+        (initialRange !== null &&
+          selection.rangeCount > 0 &&
+          selection.getRangeAt(0).compareBoundaryPoints(Range.START_TO_START, initialRange) === 0 &&
+          selection.getRangeAt(0).compareBoundaryPoints(Range.END_TO_END, initialRange) === 0),
       anchorBlock: responseCommentRangeFromSelectionNode(selection.anchorNode, event.currentTarget),
       focusBlock: responseCommentRangeFromSelectionNode(selection.focusNode, event.currentTarget),
     });
@@ -2374,7 +2395,7 @@ function ChatMarkdown({
       <ResponseCommentDraftForm range={range} />
     );
     const commentableClassName = (range: ResponseCommentBlockRange | null, className?: string) =>
-      cn(className, range && "group/response-comment relative");
+      cn(className, range && RESPONSE_COMMENT_WRAPPER_CLASS_NAME);
     const commentHeading = (
       as: "h1" | "h2" | "h3" | "h4" | "h5" | "h6",
       node: PositionedMarkdownNode | undefined,
@@ -2777,6 +2798,7 @@ function ChatMarkdown({
   // complete source token instead of dropping it from the rendered message.
   return (
     <div
+      ref={responseCommentRootRef}
       className={cn(
         "chat-markdown w-full min-w-0 text-sm leading-relaxed text-foreground/80 [overflow-wrap:anywhere] [word-break:break-word]",
         className,
