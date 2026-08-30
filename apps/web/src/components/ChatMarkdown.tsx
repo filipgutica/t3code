@@ -47,6 +47,7 @@ import { AsyncResult } from "effect/unstable/reactivity";
 import React, {
   Children,
   Suspense,
+  createContext,
   type CSSProperties,
   type ClipboardEvent as ReactClipboardEvent,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -205,11 +206,19 @@ export interface ResponseCommentSubmission extends ResponseCommentSelection {
   readonly comment: string;
 }
 
+interface ResponseCommentContextValue {
+  readonly draft: ResponseCommentSelection | null;
+  readonly onOpen: (range: ResponseCommentBlockRange) => void;
+  readonly onCancel: () => void;
+  readonly onComment: (comment: string) => void;
+}
+
 type PositionedMarkdownNode = ExtraProps["node"];
 
 const RESPONSE_COMMENT_BLOCK_SELECTOR = "[data-response-comment-block]";
 const RESPONSE_COMMENT_WRAPPER_CLASS_NAME =
   "group/response-comment relative [&:first-child>*:not([data-response-comment-ui])]:mt-0! [&:last-child>*:not([data-response-comment-ui])]:mb-0!";
+const ResponseCommentContext = createContext<ResponseCommentContextValue | null>(null);
 
 function responseCommentRange(node: PositionedMarkdownNode | undefined) {
   const startOffset = node?.position?.start.offset;
@@ -277,14 +286,9 @@ function responseCommentBlockProps(range: ResponseCommentBlockRange | null) {
   };
 }
 
-function ResponseCommentControl({
-  range,
-  onOpen,
-}: {
-  range: ResponseCommentBlockRange | null;
-  onOpen: (range: ResponseCommentBlockRange) => void;
-}) {
-  if (!range) return null;
+function ResponseCommentControl({ range }: { range: ResponseCommentBlockRange | null }) {
+  const context = use(ResponseCommentContext);
+  if (!range || !context || context.draft) return null;
   return (
     <Button
       type="button"
@@ -294,24 +298,16 @@ function ResponseCommentControl({
       aria-label={`Comment on response lines ${responseCommentRangeLabel(range)}`}
       className="absolute top-0 left-[calc(-1.75rem-var(--list-gutter,0px))] z-10 text-muted-foreground opacity-0 transition-opacity group-hover/response-comment:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 sm:left-[calc(-1.5rem-var(--list-gutter,0px))] [div[role=note]_&]:hidden [blockquote_&]:hidden [li_li_&]:hidden"
       onPointerDown={(event) => event.stopPropagation()}
-      onClick={() => onOpen(range)}
+      onClick={() => context.onOpen(range)}
     >
       <PlusIcon className="size-3.5" />
     </Button>
   );
 }
 
-function ResponseCommentDraftForm({
-  draft,
-  range,
-  onCancel,
-  onComment,
-}: {
-  draft: ResponseCommentSelection | null;
-  range: ResponseCommentBlockRange | null;
-  onCancel: () => void;
-  onComment: (comment: string) => void;
-}) {
+function ResponseCommentDraftForm({ range }: { range: ResponseCommentBlockRange | null }) {
+  const context = use(ResponseCommentContext);
+  const draft = context?.draft;
   if (!draft || !range) return null;
   if (draft.placementStartOffset !== range.startOffset || draft.placementOffset !== range.endOffset)
     return null;
@@ -323,8 +319,8 @@ function ResponseCommentDraftForm({
         text=""
         placeholder="Comment on this response…"
         autoFocus={draft.autoFocus === true}
-        onCancel={onCancel}
-        onComment={onComment}
+        onCancel={context.onCancel}
+        onComment={context.onComment}
       />
     </div>
   );
@@ -333,20 +329,12 @@ function ResponseCommentDraftForm({
 function ResponseCommentHeading({
   as: Heading,
   range,
-  draft,
-  onOpen,
-  onCancel,
-  onComment,
   children,
   className,
   ...props
 }: React.HTMLAttributes<HTMLHeadingElement> & {
   as: "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
   range: ResponseCommentBlockRange | null;
-  draft: ResponseCommentSelection | null;
-  onOpen: (range: ResponseCommentBlockRange) => void;
-  onCancel: () => void;
-  onComment: (comment: string) => void;
 }) {
   const heading = (
     <Heading {...props} className={className}>
@@ -356,14 +344,9 @@ function ResponseCommentHeading({
   if (!range) return heading;
   return (
     <div {...responseCommentBlockProps(range)} className={RESPONSE_COMMENT_WRAPPER_CLASS_NAME}>
-      <ResponseCommentControl range={range} onOpen={onOpen} />
+      <ResponseCommentControl range={range} />
       {heading}
-      <ResponseCommentDraftForm
-        draft={draft}
-        range={range}
-        onCancel={onCancel}
-        onComment={onComment}
-      />
+      <ResponseCommentDraftForm range={range} />
     </div>
   );
 }
@@ -2041,6 +2024,15 @@ function ChatMarkdown({
     },
     [onResponseComment, responseCommentDraft],
   );
+  const responseCommentContext = useMemo(
+    () => ({
+      draft: responseCommentDraft,
+      onOpen: openResponseComment,
+      onCancel: cancelResponseComment,
+      onComment: submitResponseComment,
+    }),
+    [cancelResponseComment, openResponseComment, responseCommentDraft, submitResponseComment],
+  );
   function handleResponseCommentPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
     const initialRange = responseSelectionAtPointerDownRef.current;
     responseSelectionAtPointerDownRef.current = undefined;
@@ -2376,15 +2368,10 @@ function ChatMarkdown({
     const commentRange = (node: PositionedMarkdownNode | undefined) =>
       onResponseComment ? responseCommentRange(node) : null;
     const commentControl = (range: ResponseCommentBlockRange | null) => (
-      <ResponseCommentControl range={range} onOpen={openResponseComment} />
+      <ResponseCommentControl range={range} />
     );
     const commentDraft = (range: ResponseCommentBlockRange | null) => (
-      <ResponseCommentDraftForm
-        draft={responseCommentDraft}
-        range={range}
-        onCancel={cancelResponseComment}
-        onComment={submitResponseComment}
-      />
+      <ResponseCommentDraftForm range={range} />
     );
     const commentableClassName = (range: ResponseCommentBlockRange | null, className?: string) =>
       cn(className, range && "group/response-comment relative");
@@ -2394,15 +2381,7 @@ function ChatMarkdown({
       children: ReactNode,
       props: React.HTMLAttributes<HTMLHeadingElement>,
     ) => (
-      <ResponseCommentHeading
-        {...props}
-        as={as}
-        range={commentRange(node)}
-        draft={responseCommentDraft}
-        onOpen={openResponseComment}
-        onCancel={cancelResponseComment}
-        onComment={submitResponseComment}
-      >
+      <ResponseCommentHeading {...props} as={as} range={commentRange(node)}>
         {children}
       </ResponseCommentHeading>
     );
@@ -2764,7 +2743,6 @@ function ChatMarkdown({
       },
     };
   }, [
-    cancelResponseComment,
     canUseShellActions,
     cwd,
     diffThemeName,
@@ -2777,7 +2755,6 @@ function ChatMarkdown({
     onUseArtifactTemplate,
     onImageExpand,
     onResponseComment,
-    openResponseComment,
     openFileInPanel,
     openInPreferredEditor,
     openChangeRequestLink,
@@ -2789,11 +2766,9 @@ function ChatMarkdown({
     revealMarkdownFileInFileManager,
     revealInFileManagerLabel,
     skills,
-    submitResponseComment,
     text,
     threadRef,
     updateThreadPullRequestLink,
-    responseCommentDraft,
   ]);
   /* eslint-enable react/no-unstable-nested-components */
 
@@ -2811,17 +2786,19 @@ function ChatMarkdown({
       onPointerUp={handleResponseCommentPointerUp}
       onClickCapture={handleResponseCommentClickCapture}
     >
-      <ReactMarkdown
-        remarkPlugins={
-          lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS
-        }
-        rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
-        skipHtml={false}
-        components={markdownComponents}
-        urlTransform={markdownUrlTransform}
-      >
-        {text}
-      </ReactMarkdown>
+      <ResponseCommentContext value={responseCommentContext}>
+        <ReactMarkdown
+          remarkPlugins={
+            lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS
+          }
+          rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
+          skipHtml={false}
+          components={markdownComponents}
+          urlTransform={markdownUrlTransform}
+        >
+          {text}
+        </ReactMarkdown>
+      </ResponseCommentContext>
     </div>
   );
 }
