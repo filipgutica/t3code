@@ -1274,7 +1274,12 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
 
   return (
     <>
-      <div className="relative min-w-0 px-1 py-0.5">
+      <div
+        className={cn(
+          "relative min-w-0 py-0.5 pr-1",
+          ctx.threadRef !== null ? "pl-8 sm:pl-7" : "pl-1",
+        )}
+      >
         <ChatMarkdown
           text={messageText}
           cwd={ctx.markdownCwd}

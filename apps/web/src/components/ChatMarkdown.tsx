@@ -287,7 +287,7 @@ function ResponseCommentControl({
       size="icon-xs"
       data-response-comment-ui
       aria-label={`Comment on response lines ${responseCommentRangeLabel(range)}`}
-      className="absolute top-0 -left-6 z-10 text-muted-foreground opacity-0 transition-opacity group-hover/response-comment:opacity-100 focus-visible:opacity-100 max-sm:-left-5 max-sm:opacity-100"
+      className="absolute top-0 left-[calc(-1.75rem-var(--list-gutter,0px))] z-10 text-muted-foreground opacity-0 transition-opacity group-hover/response-comment:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 sm:left-[calc(-1.5rem-var(--list-gutter,0px))]"
       onPointerDown={(event) => event.stopPropagation()}
       onClick={() => onOpen(range)}
     >
@@ -2794,7 +2794,6 @@ function ChatMarkdown({
     <div
       className={cn(
         "chat-markdown w-full min-w-0 text-sm leading-relaxed text-foreground/80 [overflow-wrap:anywhere] [word-break:break-word]",
-        onResponseComment && "pl-6",
         className,
       )}
       onCopy={handleCopy}
