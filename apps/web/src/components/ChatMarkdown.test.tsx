@@ -37,12 +37,22 @@ import ChatMarkdown, {
 } from "./ChatMarkdown";
 
 describe("ChatMarkdown response comments", () => {
+  it("marks comment controls as block-selection drag triggers", () => {
+    const markup = renderToStaticMarkup(
+      <ChatMarkdown cwd="/tmp/project" text="Commentable response." onResponseComment={vi.fn()} />,
+    );
+
+    expect(markup).toContain("data-response-comment-trigger");
+    expect(markup).toContain("data-[response-comment-dragging]:opacity-100");
+    expect(markup).toContain("data-[response-comment-selection-visible]:before:opacity-100");
+    expect(markup).toContain('aria-label="Comment on response lines L1"');
+  });
+
   it("normalizes a contained multi-block selection and rejects boundary crossings", () => {
     const first = { startLine: 2, endLine: 5, startOffset: 4, endOffset: 35 };
     const second = { startLine: 4, endLine: 5, startOffset: 16, endOffset: 35 };
     const input = {
       context: "xxxx[example](https://example.com) end",
-      unchanged: false,
       anchorBlock: first,
       focusBlock: second,
     };
@@ -54,7 +64,6 @@ describe("ChatMarkdown response comments", () => {
       context: "[example](https://example.com)",
     });
     expect(resolveResponseCommentSelection({ ...input, focusBlock: null })).toBeNull();
-    expect(resolveResponseCommentSelection({ ...input, unchanged: true })).toBeNull();
   });
 });
 

@@ -331,6 +331,26 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("px-1 text-sm leading-relaxed text-muted-foreground");
   });
 
+  it("allows comments on every completed assistant message segment", () => {
+    const first = buildAssistantTimelineEntry("First segment.");
+    const second = buildAssistantTimelineEntry("Final segment.");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          first,
+          {
+            ...second,
+            id: "entry-2",
+            message: { ...second.message, id: MessageId.make("message-2") },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup.match(/aria-label="Comment on response lines L1"/g)).toHaveLength(2);
+  });
+
   it("uses the larger leading inset only when the top fade is enabled", () => {
     const timelineEntries = [buildUserTimelineEntry("Hello")];
 
