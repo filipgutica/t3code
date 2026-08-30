@@ -14,6 +14,7 @@ const SANITIZED_HTML_SELECTOR = [
   "script",
   "style",
   "svg",
+  "[data-response-comment-ui]",
   '[aria-hidden="true"]',
   ...SKIPPED_CLASS_NAMES.map((className) => `.${className}`),
 ].join(", ");
@@ -24,6 +25,7 @@ export interface MarkdownClipboardPayload {
 }
 
 function isSkippedElement(element: Element): boolean {
+  if (element.hasAttribute("data-response-comment-ui")) return true;
   if (SKIPPED_TAGS.has(element.tagName) || element.localName === "svg") return true;
   if (element.getAttribute("aria-hidden") === "true") return true;
   return SKIPPED_CLASS_NAMES.some((className) => element.classList.contains(className));

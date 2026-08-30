@@ -76,6 +76,13 @@ describe("serializeRenderedMarkdownFragment", () => {
     expect(serializeRenderedMarkdownFragment(asNode(container))).toBe("run `git status` first");
   });
 
+  it("skips response comment UI", () => {
+    const draft = new FakeElement("DIV", [], { "data-response-comment-ui": "" });
+    expect(serializeRenderedMarkdownFragment(asNode(new FakeElement("DIV").append(draft)))).toBe(
+      "",
+    );
+  });
+
   it("keeps a highlighted block code selection plain when its pre wrapper is outside the range", () => {
     const code = new FakeElement("CODE").append(
       shikiCodeLine("git show-ref --verify refs/remotes/origin/opt/deploy/dev"),
