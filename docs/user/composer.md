@@ -29,6 +29,13 @@ On mobile, the model picker shows each OpenCode model's upstream provider, such 
 GitHub Copilot, or OpenCode Zen, beneath its name. Search by that provider name to narrow the list
 when starting a thread or changing an existing thread's model.
 
+## Comment on a response
+
+On web and desktop, hover over a block in a completed agent response and select **Comment** (`+`),
+or drag to select response text. Add your comment in the form below the context. It appears above
+the composer and is sent with your next message, not as a separate reply thread. You can remove it
+before sending. Links, code actions, task checkboxes, and other response controls remain available.
+
 ## Prompt stash
 
 Use the default shortcut, `Cmd+S` on macOS or `Ctrl+S` on Windows and Linux, to stash the current

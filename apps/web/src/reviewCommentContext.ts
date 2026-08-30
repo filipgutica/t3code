@@ -261,6 +261,30 @@ export function buildFileReviewComment(input: {
   };
 }
 
+export function buildResponseReviewComment(input: {
+  id: string;
+  messageId: string;
+  startLine: number;
+  endLine: number;
+  text: string;
+  context: string;
+}): ReviewCommentContext {
+  const startLine = Math.max(1, Math.min(input.startLine, input.endLine));
+  const endLine = Math.max(startLine, Math.max(input.startLine, input.endLine));
+  return {
+    id: input.id,
+    sectionId: `response:${input.messageId}`,
+    sectionTitle: "Agent response",
+    filePath: "Agent response",
+    startIndex: startLine - 1,
+    endIndex: endLine - 1,
+    rangeLabel: startLine === endLine ? `L${startLine}` : `L${startLine} to L${endLine}`,
+    text: input.text.trim(),
+    diff: input.context,
+    fenceLanguage: "md",
+  };
+}
+
 export function inferReviewCommentFenceLanguage(filePath: string): string {
   const normalizedPath = filePath.replaceAll("\\", "/");
   const fileName = normalizedPath.slice(normalizedPath.lastIndexOf("/") + 1).toLowerCase();

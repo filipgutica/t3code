@@ -55,7 +55,7 @@ import {
   resolveDiffThemeName,
   resolveFileDiffPath,
 } from "../../lib/diffRendering";
-import ChatMarkdown from "../ChatMarkdown";
+import ChatMarkdown, { type ResponseCommentSubmission } from "../ChatMarkdown";
 import {
   BotIcon,
   CheckIcon,
@@ -120,7 +120,8 @@ import {
   extractTrailingPreviewAnnotation,
   type ParsedPreviewAnnotation,
 } from "~/lib/previewAnnotation";
-import { cn } from "~/lib/utils";
+import { cn, randomUUID } from "~/lib/utils";
+import { useComposerDraftStore } from "../../composerDraftStore";
 import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
@@ -134,6 +135,7 @@ import { SkillInlineText } from "./SkillInlineText";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import {
   buildReviewCommentRenderablePatch,
+  buildResponseReviewComment,
   formatReviewCommentFence,
   parseReviewCommentMessageSegments,
   type ReviewCommentContext,
@@ -1249,6 +1251,26 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
+  const addReviewComment = useComposerDraftStore((state) => state.addReviewComment);
+  const handleResponseComment = useCallback(
+    (submission: ResponseCommentSubmission) => {
+      if (!ctx.threadRef) return;
+      addReviewComment(
+        ctx.threadRef,
+        buildResponseReviewComment({
+          id: `response-comment-${randomUUID()}`,
+          messageId: row.message.id,
+          startLine: submission.startLine,
+          endLine: submission.endLine,
+          text: submission.comment,
+          context: submission.context,
+        }),
+      );
+    },
+    [addReviewComment, ctx.threadRef, row.message.id],
+  );
+  const canCommentOnResponse =
+    row.showAssistantMeta && !row.message.streaming && ctx.threadRef !== null;
 
   return (
     <>
@@ -1262,6 +1284,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           skills={ctx.skills}
           onUseArtifactTemplate={ctx.onUseArtifactTemplate}
           onImageExpand={ctx.onImageExpand}
+          onResponseComment={canCommentOnResponse ? handleResponseComment : undefined}
         />
         <AssistantChangedFilesSection
           turnSummary={row.assistantTurnDiffSummary}
@@ -2139,6 +2162,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
 function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentContext }) {
   const ctx = use(TimelineRowCtx);
   const fenceLanguage = comment.fenceLanguage ?? "diff";
+  const workspaceRoot = comment.sectionId.startsWith("response:") ? undefined : ctx.workspaceRoot;
   const renderablePatch = getRenderablePatch(
     buildReviewCommentRenderablePatch(comment),
     `review-comment:${comment.id}`,
@@ -2148,7 +2172,7 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
     <div className="space-y-2 rounded-lg border border-border/70 bg-background/70 p-3">
       <div className="space-y-1">
         <div className="text-message-foreground text-xs font-medium">
-          {formatWorkspaceRelativePath(comment.filePath, ctx.workspaceRoot)}
+          {formatWorkspaceRelativePath(comment.filePath, workspaceRoot)}
         </div>
         <div className="text-secondary-label text-[11px]">
           {comment.sectionTitle} · {comment.rangeLabel}

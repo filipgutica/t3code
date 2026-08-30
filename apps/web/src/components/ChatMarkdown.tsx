@@ -15,6 +15,7 @@ import {
   MessageSquareWarningIcon,
   Minimize2Icon,
   OctagonAlertIcon,
+  PlusIcon,
   PresentationIcon,
   SparklesIcon,
   TriangleAlertIcon,
@@ -50,6 +51,7 @@ import React, {
   type ClipboardEvent as ReactClipboardEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   isValidElement,
   use,
   useCallback,
@@ -60,7 +62,7 @@ import React, {
   useState,
   type ReactNode,
 } from "react";
-import type { Components, Options as ReactMarkdownOptions } from "react-markdown";
+import type { Components, ExtraProps, Options as ReactMarkdownOptions } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import { defaultUrlTransform } from "react-markdown";
 import rehypeRaw from "rehype-raw";
@@ -139,6 +141,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { projectEnvironment } from "../state/projects";
 import { threadEnvironment } from "../state/threads";
+import { DiffCommentAnnotation } from "./diffs/DiffCommentAnnotation";
 import {
   claimWorkspaceBasenameLookup,
   needsWorkspaceBasenameLookup,
@@ -179,6 +182,182 @@ interface ChatMarkdownProps {
   onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
   imageBaseDir?: string | undefined;
   onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
+  onResponseComment?: ((input: ResponseCommentSubmission) => void) | undefined;
+}
+
+interface ResponseCommentBlockRange {
+  readonly startLine: number;
+  readonly endLine: number;
+  readonly startOffset: number;
+  readonly endOffset: number;
+}
+
+export interface ResponseCommentSelection {
+  readonly startLine: number;
+  readonly endLine: number;
+  readonly anchorOffset: number;
+  readonly context: string;
+}
+
+export interface ResponseCommentSubmission extends ResponseCommentSelection {
+  readonly comment: string;
+}
+
+type PositionedMarkdownNode = ExtraProps["node"];
+
+const RESPONSE_COMMENT_BLOCK_SELECTOR = "[data-response-comment-block]";
+
+function responseCommentRange(node: PositionedMarkdownNode | undefined) {
+  const startOffset = node?.position?.start.offset;
+  const endOffset = node?.position?.end.offset;
+  if (!node?.position || startOffset === undefined || endOffset === undefined) return null;
+  return {
+    startLine: node.position.start.line,
+    endLine: node.position.end.line,
+    startOffset,
+    endOffset,
+  } satisfies ResponseCommentBlockRange;
+}
+
+function responseCommentRangeLabel(range: ResponseCommentBlockRange | ResponseCommentSelection) {
+  return range.startLine === range.endLine
+    ? `L${range.startLine}`
+    : `L${range.startLine} to L${range.endLine}`;
+}
+
+export function resolveResponseCommentSelection(input: {
+  context: string;
+  initialContext: string;
+  anchorBlock: ResponseCommentBlockRange | null;
+  focusBlock: ResponseCommentBlockRange | null;
+}): ResponseCommentSelection | null {
+  if (
+    input.context.trim().length === 0 ||
+    input.context === input.initialContext ||
+    !input.anchorBlock ||
+    !input.focusBlock
+  ) {
+    return null;
+  }
+  return {
+    startLine: Math.min(input.anchorBlock.startLine, input.focusBlock.startLine),
+    endLine: Math.max(input.anchorBlock.endLine, input.focusBlock.endLine),
+    anchorOffset: Math.max(input.anchorBlock.endOffset, input.focusBlock.endOffset),
+    context: input.context,
+  };
+}
+
+function responseCommentRangeFromSelectionNode(
+  node: Node | null,
+  root: HTMLElement,
+): ResponseCommentBlockRange | null {
+  const element = node instanceof Element ? node : node?.parentElement;
+  const block = element?.closest<HTMLElement>(RESPONSE_COMMENT_BLOCK_SELECTOR);
+  if (!block || !root.contains(block)) return null;
+  const startLine = Number(block.dataset.responseCommentStartLine);
+  const endLine = Number(block.dataset.responseCommentEndLine);
+  const startOffset = Number(block.dataset.responseCommentStartOffset);
+  const endOffset = Number(block.dataset.responseCommentEndOffset);
+  if (![startLine, endLine, startOffset, endOffset].every(Number.isSafeInteger)) return null;
+  return { startLine, endLine, startOffset, endOffset };
+}
+
+function responseCommentBlockProps(range: ResponseCommentBlockRange | null) {
+  return {
+    "data-response-comment-block": range ? true : undefined,
+    "data-response-comment-start-line": range?.startLine,
+    "data-response-comment-end-line": range?.endLine,
+    "data-response-comment-start-offset": range?.startOffset,
+    "data-response-comment-end-offset": range?.endOffset,
+  };
+}
+
+function ResponseCommentControl({
+  range,
+  onOpen,
+}: {
+  range: ResponseCommentBlockRange | null;
+  onOpen: (range: ResponseCommentBlockRange) => void;
+}) {
+  if (!range) return null;
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      data-response-comment-ui
+      aria-label={`Comment on response lines ${responseCommentRangeLabel(range)}`}
+      className="absolute top-0 -left-6 z-10 text-muted-foreground opacity-0 transition-opacity group-hover/response-comment:opacity-100 focus-visible:opacity-100 max-sm:-left-5 max-sm:opacity-100"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={() => onOpen(range)}
+    >
+      <PlusIcon className="size-3.5" />
+    </Button>
+  );
+}
+
+function ResponseCommentDraftForm({
+  draft,
+  range,
+  onCancel,
+  onComment,
+}: {
+  draft: ResponseCommentSelection | null;
+  range: ResponseCommentBlockRange | null;
+  onCancel: () => void;
+  onComment: (comment: string) => void;
+}) {
+  if (!draft || !range || draft.anchorOffset !== range.endOffset) return null;
+  return (
+    <div data-response-comment-ui className="my-2 rounded-md border border-border/50 bg-muted/20">
+      <DiffCommentAnnotation
+        kind="draft"
+        rangeLabel={responseCommentRangeLabel(draft)}
+        text=""
+        placeholder="Comment on this response…"
+        onCancel={onCancel}
+        onComment={onComment}
+      />
+    </div>
+  );
+}
+
+function ResponseCommentHeading({
+  as: Heading,
+  range,
+  draft,
+  onOpen,
+  onCancel,
+  onComment,
+  children,
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLHeadingElement> & {
+  as: "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+  range: ResponseCommentBlockRange | null;
+  draft: ResponseCommentSelection | null;
+  onOpen: (range: ResponseCommentBlockRange) => void;
+  onCancel: () => void;
+  onComment: (comment: string) => void;
+}) {
+  return (
+    <>
+      <Heading
+        {...props}
+        {...responseCommentBlockProps(range)}
+        className={cn(className, range && "group/response-comment relative")}
+      >
+        <ResponseCommentControl range={range} onOpen={onOpen} />
+        {children}
+      </Heading>
+      <ResponseCommentDraftForm
+        draft={draft}
+        range={range}
+        onCancel={onCancel}
+        onComment={onComment}
+      />
+    </>
+  );
 }
 
 export function canUseMarkdownFileShellActions(
@@ -1812,6 +1991,7 @@ function ChatMarkdown({
   onUseArtifactTemplate,
   imageBaseDir,
   onImageExpand,
+  onResponseComment,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
@@ -1826,6 +2006,61 @@ function ChatMarkdown({
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const [responseCommentDraft, setResponseCommentDraft] = useState<ResponseCommentSelection | null>(
+    null,
+  );
+  const suppressResponseClickUntilRef = useRef(0);
+  const responseSelectionAtPointerDownRef = useRef<string | null>(null);
+  const openResponseComment = useCallback(
+    (range: ResponseCommentBlockRange) => {
+      setResponseCommentDraft({
+        startLine: range.startLine,
+        endLine: range.endLine,
+        anchorOffset: range.endOffset,
+        context: text.slice(range.startOffset, range.endOffset).trimEnd(),
+      });
+    },
+    [text],
+  );
+  const cancelResponseComment = useCallback(() => setResponseCommentDraft(null), []);
+  const submitResponseComment = useCallback(
+    (comment: string) => {
+      if (!responseCommentDraft || !onResponseComment) return;
+      onResponseComment({ ...responseCommentDraft, comment });
+      setResponseCommentDraft(null);
+    },
+    [onResponseComment, responseCommentDraft],
+  );
+  function handleResponseCommentPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    const initialContext = responseSelectionAtPointerDownRef.current;
+    responseSelectionAtPointerDownRef.current = null;
+    if (!onResponseComment || responseCommentDraft || initialContext === null) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("[data-response-comment-ui]")) return;
+    const selection = window.getSelection();
+    if (!selection) return;
+    const resolved = resolveResponseCommentSelection({
+      context: selection.toString(),
+      initialContext,
+      anchorBlock: responseCommentRangeFromSelectionNode(selection.anchorNode, event.currentTarget),
+      focusBlock: responseCommentRangeFromSelectionNode(selection.focusNode, event.currentTarget),
+    });
+    if (!resolved) return;
+    suppressResponseClickUntilRef.current = Date.now() + 250;
+    setResponseCommentDraft(resolved);
+  }
+  function handleResponseCommentClickCapture(event: ReactMouseEvent<HTMLDivElement>) {
+    if (Date.now() > suppressResponseClickUntilRef.current) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("[data-response-comment-ui]")) return;
+    suppressResponseClickUntilRef.current = 0;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  function handleResponseCommentPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    responseSelectionAtPointerDownRef.current =
+      event.button === 0 ? (window.getSelection()?.toString() ?? "") : null;
+  }
   const environmentId = threadRef?.environmentId ?? explicitEnvironmentId ?? null;
   const remoteOpen = useRemoteOpenResolution(environmentId);
   const canUseShellActions = canUseMarkdownFileShellActions(
@@ -2119,6 +2354,40 @@ function ChatMarkdown({
       );
     };
 
+    const commentRange = (node: PositionedMarkdownNode | undefined) =>
+      onResponseComment ? responseCommentRange(node) : null;
+    const commentControl = (range: ResponseCommentBlockRange | null) => (
+      <ResponseCommentControl range={range} onOpen={openResponseComment} />
+    );
+    const commentDraft = (range: ResponseCommentBlockRange | null) => (
+      <ResponseCommentDraftForm
+        draft={responseCommentDraft}
+        range={range}
+        onCancel={cancelResponseComment}
+        onComment={submitResponseComment}
+      />
+    );
+    const commentableClassName = (range: ResponseCommentBlockRange | null, className?: string) =>
+      cn(className, range && "group/response-comment relative");
+    const commentHeading = (
+      as: "h1" | "h2" | "h3" | "h4" | "h5" | "h6",
+      node: PositionedMarkdownNode | undefined,
+      children: ReactNode,
+      props: React.HTMLAttributes<HTMLHeadingElement>,
+    ) => (
+      <ResponseCommentHeading
+        {...props}
+        as={as}
+        range={commentRange(node)}
+        draft={responseCommentDraft}
+        onOpen={openResponseComment}
+        onCancel={cancelResponseComment}
+        onComment={submitResponseComment}
+      >
+        {children}
+      </ResponseCommentHeading>
+    );
+
     return {
       div({ node, children, ...props }) {
         const artifactTemplate = artifactTemplateFromHastProperties(node?.properties);
@@ -2129,8 +2398,39 @@ function ChatMarkdown({
         }
         return <div {...props}>{children}</div>;
       },
-      p({ node: _node, children, ...props }) {
-        return <p {...props}>{renderSkillInlineMarkdownChildren(children, skills)}</p>;
+      p({ node, children, className, ...props }) {
+        const range = commentRange(node);
+        return (
+          <>
+            <p
+              {...props}
+              {...responseCommentBlockProps(range)}
+              className={commentableClassName(range, className)}
+            >
+              {commentControl(range)}
+              {renderSkillInlineMarkdownChildren(children, skills)}
+            </p>
+            {commentDraft(range)}
+          </>
+        );
+      },
+      h1({ node, children, ...props }) {
+        return commentHeading("h1", node, children, props);
+      },
+      h2({ node, children, ...props }) {
+        return commentHeading("h2", node, children, props);
+      },
+      h3({ node, children, ...props }) {
+        return commentHeading("h3", node, children, props);
+      },
+      h4({ node, children, ...props }) {
+        return commentHeading("h4", node, children, props);
+      },
+      h5({ node, children, ...props }) {
+        return commentHeading("h5", node, children, props);
+      },
+      h6({ node, children, ...props }) {
+        return commentHeading("h6", node, children, props);
       },
       blockquote({ node: _node, children, ...props }) {
         const alert =
@@ -2161,13 +2461,24 @@ function ChatMarkdown({
           <ol {...props} start={start} style={gutterStyle ? { ...style, ...gutterStyle } : style} />
         );
       },
-      li({ node, children, ...props }) {
+      li({ node, children, className, ...props }) {
         const listItemStart = node?.position?.start.offset;
         const markerOffset =
           typeof listItemStart === "number" ? findTaskListMarkerOffset(text, listItemStart) : null;
+        const hasParagraphChild = node?.children.some(
+          (child) => child.type === "element" && child.tagName === "p",
+        );
+        const range = hasParagraphChild ? null : commentRange(node);
         return (
-          <li {...props} data-task-marker-offset={markerOffset ?? undefined}>
+          <li
+            {...props}
+            {...responseCommentBlockProps(range)}
+            className={commentableClassName(range, className)}
+            data-task-marker-offset={markerOffset ?? undefined}
+          >
+            {commentControl(range)}
             {renderSkillInlineMarkdownChildren(children, skills)}
+            {commentDraft(range)}
           </li>
         );
       },
@@ -2379,25 +2690,30 @@ function ChatMarkdown({
         }
         return <ChatMarkdownImageFallback alt={altText} copyMarkdown={copyMarkdown} />;
       },
-      table({ node: _node, ...props }) {
-        return <MarkdownTable {...props} />;
+      table({ node, ...props }) {
+        const range = commentRange(node);
+        if (!range) return <MarkdownTable {...props} />;
+        return (
+          <div
+            {...responseCommentBlockProps(range)}
+            className="group/response-comment relative [&:first-child>*:first-child]:mt-0 [&:last-child>*:last-child]:mb-0"
+          >
+            {commentControl(range)}
+            <MarkdownTable {...props} />
+            {commentDraft(range)}
+          </div>
+        );
       },
       details({ node: _node, children, open: detailsOpen }) {
         return <MarkdownDetails open={detailsOpen}>{children}</MarkdownDetails>;
       },
       pre({ node, children, ...props }) {
         const codeBlock = extractCodeBlock(children);
-        if (!codeBlock) {
-          return <pre {...props}>{children}</pre>;
-        }
-
-        const language = extractFenceLanguage(codeBlock.className);
-        const fenceTitle = extractFenceTitle(extractPreCodeMeta(node));
-        return (
+        const content = codeBlock ? (
           <MarkdownCodeBlock
             code={codeBlock.code}
-            language={language}
-            fenceTitle={fenceTitle}
+            language={extractFenceLanguage(codeBlock.className)}
+            fenceTitle={extractFenceTitle(extractPreCodeMeta(node))}
             theme={resolvedTheme}
           >
             <RenderErrorBoundary fallback={<pre {...props}>{children}</pre>}>
@@ -2411,10 +2727,25 @@ function ChatMarkdown({
               </Suspense>
             </RenderErrorBoundary>
           </MarkdownCodeBlock>
+        ) : (
+          <pre {...props}>{children}</pre>
+        );
+        const range = commentRange(node);
+        if (!range) return content;
+        return (
+          <div
+            {...responseCommentBlockProps(range)}
+            className="group/response-comment relative [&:first-child>*:first-child]:mt-0 [&:last-child>*:last-child]:mb-0"
+          >
+            {commentControl(range)}
+            {content}
+            {commentDraft(range)}
+          </div>
         );
       },
     };
   }, [
+    cancelResponseComment,
     canUseShellActions,
     cwd,
     diffThemeName,
@@ -2426,6 +2757,8 @@ function ChatMarkdown({
     onTaskListChange,
     onUseArtifactTemplate,
     onImageExpand,
+    onResponseComment,
+    openResponseComment,
     openFileInPanel,
     openInPreferredEditor,
     openChangeRequestLink,
@@ -2437,9 +2770,11 @@ function ChatMarkdown({
     revealMarkdownFileInFileManager,
     revealInFileManagerLabel,
     skills,
+    submitResponseComment,
     text,
     threadRef,
     updateThreadPullRequestLink,
+    responseCommentDraft,
   ]);
   /* eslint-enable react/no-unstable-nested-components */
 
@@ -2450,9 +2785,13 @@ function ChatMarkdown({
     <div
       className={cn(
         "chat-markdown w-full min-w-0 text-sm leading-relaxed text-foreground/80 [overflow-wrap:anywhere] [word-break:break-word]",
+        onResponseComment && "pl-6",
         className,
       )}
       onCopy={handleCopy}
+      onPointerDown={handleResponseCommentPointerDown}
+      onPointerUp={handleResponseCommentPointerUp}
+      onClickCapture={handleResponseCommentClickCapture}
     >
       <ReactMarkdown
         remarkPlugins={

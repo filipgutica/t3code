@@ -5,6 +5,7 @@ import {
   appendReviewCommentsToPrompt,
   buildDiffReviewComment,
   buildFileReviewComment,
+  buildResponseReviewComment,
   buildReviewCommentRenderablePatch,
   formatReviewCommentContext,
   inferReviewCommentFenceLanguage,
@@ -110,6 +111,32 @@ describe("review comment context parsing", () => {
       }),
     );
     expect(prompt).toContain("```ts\ntwo\nthree\n```");
+  });
+
+  it("formats agent response comments with the existing review-comment contract", () => {
+    const comment = buildResponseReviewComment({
+      id: "response-comment-1",
+      messageId: "assistant-message-1",
+      startLine: 4,
+      endLine: 6,
+      text: "Make this recommendation concrete.",
+      context: "### Recommendation\n\nReuse the current composer.",
+    });
+    expect(parseReviewCommentMessageSegments(formatReviewCommentContext(comment))[0]).toEqual(
+      expect.objectContaining({
+        kind: "review-comment",
+        comment: expect.objectContaining({
+          sectionId: "response:assistant-message-1",
+          sectionTitle: "Agent response",
+          filePath: "Agent response",
+          startIndex: 3,
+          endIndex: 5,
+          rangeLabel: "L4 to L6",
+          diff: "### Recommendation\n\nReuse the current composer.",
+          fenceLanguage: "md",
+        }),
+      }),
+    );
   });
 
   it("formats mixed diff-side selections with the mobile review-comment contract", () => {
