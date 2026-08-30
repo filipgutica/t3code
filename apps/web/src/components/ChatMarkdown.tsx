@@ -193,13 +193,12 @@ interface ResponseCommentBlockRange {
   readonly endOffset: number;
 }
 
-export interface ResponseCommentSelection {
+interface ResponseCommentSelection {
   readonly startLine: number;
   readonly endLine: number;
   readonly placementStartOffset: number;
   readonly placementOffset: number;
   readonly context: string;
-  readonly autoFocus?: true;
 }
 
 export interface ResponseCommentSubmission extends ResponseCommentSelection {
@@ -326,12 +325,11 @@ function updateResponseCommentSelectedBlocks(
       range !== null &&
       range.startLine >= selection.startLine &&
       range.endLine <= selection.endLine;
-    block.toggleAttribute("data-response-comment-selected", selected);
     if (selected) selectedBlocks.push(block);
   }
   if (selectedBlocks.length === 0) {
     root.removeAttribute("data-response-comment-selection-visible");
-    return;
+    return selectedBlocks;
   }
   const rootRect = root.getBoundingClientRect();
   const rects = selectedBlocks.map((block) => {
@@ -374,6 +372,7 @@ function updateResponseCommentSelectedBlocks(
     `${bottom - top + RESPONSE_COMMENT_HIGHLIGHT_INSET * 2}px`,
   );
   root.toggleAttribute("data-response-comment-selection-visible", true);
+  return selectedBlocks;
 }
 
 function responseCommentBlockProps(range: ResponseCommentBlockRange | null) {
@@ -426,35 +425,9 @@ function ResponseCommentDraftForm({ range }: { range: ResponseCommentBlockRange 
         rangeLabel={responseCommentRangeLabel(draft)}
         text=""
         placeholder="Comment on this response…"
-        autoFocus={draft.autoFocus === true}
         onCancel={context.onCancel}
         onComment={context.onComment}
       />
-    </div>
-  );
-}
-
-function ResponseCommentHeading({
-  as: Heading,
-  range,
-  children,
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLHeadingElement> & {
-  as: "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
-  range: ResponseCommentBlockRange | null;
-}) {
-  const heading = (
-    <Heading {...props} className={className}>
-      {children}
-    </Heading>
-  );
-  if (!range) return heading;
-  return (
-    <div {...responseCommentBlockProps(range)} className={RESPONSE_COMMENT_WRAPPER_CLASS_NAME}>
-      <ResponseCommentControl range={range} />
-      {heading}
-      <ResponseCommentDraftForm range={range} />
     </div>
   );
 }
@@ -2111,16 +2084,10 @@ function ChatMarkdown({
   const responseCommentDragRef = useRef<ResponseCommentDrag | null>(null);
   const responseCommentRootRef = useRef<HTMLDivElement>(null);
   const openResponseComment = useCallback(
-    (range: ResponseCommentBlockRange) => {
-      setResponseCommentDraft({
-        startLine: range.startLine,
-        endLine: range.endLine,
-        placementStartOffset: range.startOffset,
-        placementOffset: range.endOffset,
-        context: text.slice(range.startOffset, range.endOffset).trimEnd(),
-        autoFocus: true,
-      });
-    },
+    (range: ResponseCommentBlockRange) =>
+      setResponseCommentDraft(
+        resolveResponseCommentSelection({ context: text, anchorBlock: range, focusBlock: range }),
+      ),
     [text],
   );
   const cancelResponseComment = useCallback(() => setResponseCommentDraft(null), []);
@@ -2145,10 +2112,10 @@ function ChatMarkdown({
     const root = responseCommentRootRef.current;
     if (!root || !responseCommentDraft) return;
     const updateHighlight = () => updateResponseCommentSelectedBlocks(root, responseCommentDraft);
-    updateHighlight();
+    const selectedBlocks = updateHighlight();
     const observer = new ResizeObserver(updateHighlight);
     observer.observe(root);
-    for (const block of root.querySelectorAll<HTMLElement>("[data-response-comment-selected]")) {
+    for (const block of selectedBlocks) {
       observer.observe(block);
     }
     return () => {
@@ -2218,7 +2185,7 @@ function ChatMarkdown({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    setResponseCommentDraft({ ...drag.selection, autoFocus: true });
+    setResponseCommentDraft(drag.selection);
   }
   function handleResponseCommentPointerCancel(event: ReactPointerEvent<HTMLDivElement>) {
     const drag = responseCommentDragRef.current;
@@ -2523,24 +2490,27 @@ function ChatMarkdown({
 
     const commentRange = (node: PositionedMarkdownNode | undefined) =>
       onResponseComment ? responseCommentRange(node) : null;
-    const commentControl = (range: ResponseCommentBlockRange | null) => (
-      <ResponseCommentControl range={range} />
-    );
-    const commentDraft = (range: ResponseCommentBlockRange | null) => (
-      <ResponseCommentDraftForm range={range} />
-    );
     const commentableClassName = (range: ResponseCommentBlockRange | null, className?: string) =>
       cn(className, range && RESPONSE_COMMENT_BLOCK_CLASS_NAME);
+    const commentBlock = (range: ResponseCommentBlockRange | null, content: ReactNode) =>
+      range ? (
+        <div {...responseCommentBlockProps(range)} className={RESPONSE_COMMENT_WRAPPER_CLASS_NAME}>
+          <ResponseCommentControl range={range} />
+          {content}
+          <ResponseCommentDraftForm range={range} />
+        </div>
+      ) : (
+        content
+      );
     const commentHeading = (
       as: "h1" | "h2" | "h3" | "h4" | "h5" | "h6",
       node: PositionedMarkdownNode | undefined,
       children: ReactNode,
       props: React.HTMLAttributes<HTMLHeadingElement>,
-    ) => (
-      <ResponseCommentHeading {...props} as={as} range={commentRange(node)}>
-        {children}
-      </ResponseCommentHeading>
-    );
+    ) => {
+      const Heading = as;
+      return commentBlock(commentRange(node), <Heading {...props}>{children}</Heading>);
+    };
 
     return {
       div({ node, children, ...props }) {
@@ -2561,10 +2531,10 @@ function ChatMarkdown({
               {...responseCommentBlockProps(range)}
               className={commentableClassName(range, className)}
             >
-              {commentControl(range)}
+              <ResponseCommentControl range={range} />
               {renderSkillInlineMarkdownChildren(children, skills)}
             </p>
-            {commentDraft(range)}
+            <ResponseCommentDraftForm range={range} />
           </>
         );
       },
@@ -2630,9 +2600,9 @@ function ChatMarkdown({
             className={commentableClassName(range, className)}
             data-task-marker-offset={markerOffset ?? undefined}
           >
-            {commentControl(range)}
+            <ResponseCommentControl range={range} />
             {renderSkillInlineMarkdownChildren(children, skills)}
-            {commentDraft(range)}
+            <ResponseCommentDraftForm range={range} />
           </li>
         );
       },
@@ -2845,18 +2815,7 @@ function ChatMarkdown({
         return <ChatMarkdownImageFallback alt={altText} copyMarkdown={copyMarkdown} />;
       },
       table({ node, ...props }) {
-        const range = commentRange(node);
-        if (!range) return <MarkdownTable {...props} />;
-        return (
-          <div
-            {...responseCommentBlockProps(range)}
-            className={RESPONSE_COMMENT_WRAPPER_CLASS_NAME}
-          >
-            {commentControl(range)}
-            <MarkdownTable {...props} />
-            {commentDraft(range)}
-          </div>
-        );
+        return commentBlock(commentRange(node), <MarkdownTable {...props} />);
       },
       details({ node: _node, children, open: detailsOpen }) {
         return <MarkdownDetails open={detailsOpen}>{children}</MarkdownDetails>;
@@ -2884,18 +2843,7 @@ function ChatMarkdown({
         ) : (
           <pre {...props}>{children}</pre>
         );
-        const range = commentRange(node);
-        if (!range) return content;
-        return (
-          <div
-            {...responseCommentBlockProps(range)}
-            className={RESPONSE_COMMENT_WRAPPER_CLASS_NAME}
-          >
-            {commentControl(range)}
-            {content}
-            {commentDraft(range)}
-          </div>
-        );
+        return commentBlock(commentRange(node), content);
       },
     };
   }, [

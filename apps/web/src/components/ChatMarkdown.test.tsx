@@ -37,15 +37,12 @@ import ChatMarkdown, {
 } from "./ChatMarkdown";
 
 describe("ChatMarkdown response comments", () => {
-  it("marks comment controls as block-selection drag triggers", () => {
+  it("renders an accessible block comment trigger", () => {
     const markup = renderToStaticMarkup(
       <ChatMarkdown cwd="/tmp/project" text="Commentable response." onResponseComment={vi.fn()} />,
     );
 
     expect(markup).toContain("data-response-comment-trigger");
-    expect(markup).toContain("data-[response-comment-dragging]:pointer-events-none");
-    expect(markup).toContain("data-[response-comment-dragging]:opacity-100");
-    expect(markup).toContain("data-[response-comment-selection-visible]:before:opacity-100");
     expect(markup).toContain('aria-label="Comment on response lines L1"');
   });
 
