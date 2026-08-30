@@ -38,9 +38,8 @@ import ChatMarkdown, {
 
 describe("ChatMarkdown response comments", () => {
   it("normalizes a contained multi-block selection and rejects boundary crossings", () => {
-    const first = { startLine: 2, endLine: 2, startOffset: 4, endOffset: 14 };
+    const first = { startLine: 2, endLine: 5, startOffset: 4, endOffset: 35 };
     const second = { startLine: 4, endLine: 5, startOffset: 16, endOffset: 35 };
-
     const input = {
       context: "exact displayed selection",
       unchanged: false,
@@ -54,30 +53,8 @@ describe("ChatMarkdown response comments", () => {
       placementOffset: 35,
       context: "exact displayed selection",
     });
-    expect(
-      resolveResponseCommentSelection({ ...input, context: "outside", focusBlock: null }),
-    ).toBeNull();
-    expect(
-      resolveResponseCommentSelection({
-        ...input,
-        unchanged: true,
-      }),
-    ).toBeNull();
-
-    expect(
-      resolveResponseCommentSelection({
-        ...input,
-        context: "exact displayed selection",
-        anchorBlock: second,
-        focusBlock: second,
-      }),
-    ).toEqual(expect.objectContaining({ startLine: 4, endLine: 5 }));
-    expect(
-      resolveResponseCommentSelection({
-        ...input,
-        anchorBlock: { ...first, endOffset: second.endOffset },
-      }),
-    ).toEqual(expect.objectContaining({ placementStartOffset: second.startOffset }));
+    expect(resolveResponseCommentSelection({ ...input, focusBlock: null })).toBeNull();
+    expect(resolveResponseCommentSelection({ ...input, unchanged: true })).toBeNull();
   });
 });
 

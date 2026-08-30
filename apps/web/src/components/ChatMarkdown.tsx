@@ -317,14 +317,9 @@ function ResponseCommentDraftForm({
   onCancel: () => void;
   onComment: (comment: string) => void;
 }) {
-  if (
-    !draft ||
-    !range ||
-    draft.placementStartOffset !== range.startOffset ||
-    draft.placementOffset !== range.endOffset
-  ) {
+  if (!draft || !range) return null;
+  if (draft.placementStartOffset !== range.startOffset || draft.placementOffset !== range.endOffset)
     return null;
-  }
   return (
     <div data-response-comment-ui className="my-2 rounded-md border border-border/50 bg-muted/20">
       <DiffCommentAnnotation
@@ -357,18 +352,16 @@ function ResponseCommentHeading({
   onCancel: () => void;
   onComment: (comment: string) => void;
 }) {
-  if (!range)
-    return (
-      <Heading {...props} className={className}>
-        {children}
-      </Heading>
-    );
+  const heading = (
+    <Heading {...props} className={className}>
+      {children}
+    </Heading>
+  );
+  if (!range) return heading;
   return (
     <div {...responseCommentBlockProps(range)} className={RESPONSE_COMMENT_WRAPPER_CLASS_NAME}>
       <ResponseCommentControl range={range} onOpen={onOpen} />
-      <Heading {...props} className={className}>
-        {children}
-      </Heading>
+      {heading}
       <ResponseCommentDraftForm
         draft={draft}
         range={range}
