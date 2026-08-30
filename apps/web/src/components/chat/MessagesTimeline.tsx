@@ -2180,7 +2180,9 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
           {formatWorkspaceRelativePath(comment.filePath, workspaceRoot)}
         </div>
         <div className="text-secondary-label text-[11px]">
-          {comment.sectionTitle} · {comment.rangeLabel}
+          {comment.sectionTitle === comment.filePath
+            ? comment.rangeLabel
+            : `${comment.sectionTitle} · ${comment.rangeLabel}`}
         </div>
       </div>
       {comment.text.length > 0 && (
