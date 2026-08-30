@@ -32,6 +32,7 @@ import ChatMarkdown, {
   canUseMarkdownFileShellActions,
   hasMarkdownFilePrimaryAction,
   orderedListGutterStyle,
+  resolveResponseCommentDragFocusBlock,
   resolveResponseCommentSelection,
   shouldUseMarkdownFileBrowserPrimaryAction,
 } from "./ChatMarkdown";
@@ -90,6 +91,22 @@ describe("ChatMarkdown response comments", () => {
       context: "[example](https://example.com)",
     });
     expect(resolveResponseCommentSelection({ ...input, focusBlock: null })).toBeNull();
+  });
+
+  it("keeps an outer block as the drag focus while the pointer crosses nested content", () => {
+    const quote = { startLine: 1, endLine: 2, startOffset: 0, endOffset: 18 };
+    const paragraph = { startLine: 1, endLine: 2, startOffset: 2, endOffset: 18 };
+    const nextBlock = { startLine: 4, endLine: 4, startOffset: 20, endOffset: 30 };
+
+    expect(
+      resolveResponseCommentDragFocusBlock({ anchorBlock: quote, focusBlock: paragraph }),
+    ).toBe(quote);
+    expect(
+      resolveResponseCommentDragFocusBlock({ anchorBlock: quote, focusBlock: nextBlock }),
+    ).toBe(nextBlock);
+    expect(
+      resolveResponseCommentDragFocusBlock({ anchorBlock: quote, focusBlock: null }),
+    ).toBeNull();
   });
 
   it("places downward and upward selections at the last selected block", () => {

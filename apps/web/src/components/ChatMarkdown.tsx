@@ -285,6 +285,18 @@ function responseCommentRangeFromSelectionNode(
   return { startLine, endLine, startOffset, endOffset };
 }
 
+export function resolveResponseCommentDragFocusBlock(input: {
+  anchorBlock: ResponseCommentBlockRange;
+  focusBlock: ResponseCommentBlockRange | null;
+}) {
+  const { anchorBlock, focusBlock } = input;
+  if (!focusBlock) return null;
+  const remainsInsideAnchor =
+    focusBlock.startOffset >= anchorBlock.startOffset &&
+    focusBlock.endOffset <= anchorBlock.endOffset;
+  return remainsInsideAnchor ? anchorBlock : focusBlock;
+}
+
 function responseCommentAnchorFromTrigger(trigger: HTMLElement, root: HTMLElement) {
   const element = trigger.closest<HTMLElement>(RESPONSE_COMMENT_BLOCK_SELECTOR);
   const range = responseCommentRangeFromSelectionNode(element, root);
@@ -2159,7 +2171,10 @@ function ChatMarkdown({
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.preventDefault();
     const focusElement = document.elementFromPoint(event.clientX, event.clientY);
-    const focusBlock = responseCommentRangeFromSelectionNode(focusElement, event.currentTarget);
+    const focusBlock = resolveResponseCommentDragFocusBlock({
+      anchorBlock: drag.anchorBlock,
+      focusBlock: responseCommentRangeFromSelectionNode(focusElement, event.currentTarget),
+    });
     const selection = resolveResponseCommentSelection({
       context: text,
       anchorBlock: drag.anchorBlock,
