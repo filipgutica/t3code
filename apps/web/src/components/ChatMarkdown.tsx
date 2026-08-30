@@ -447,7 +447,7 @@ function ResponseCommentDraftForm({ range }: { range: ResponseCommentBlockRange 
   if (draft.placementStartOffset !== range.startOffset || draft.placementOffset !== range.endOffset)
     return null;
   return (
-    <div data-response-comment-ui className="my-2 rounded-md border border-border/50 bg-muted/20">
+    <div data-response-comment-ui className="my-2! rounded-md border border-border/50 bg-muted/20">
       <DiffCommentAnnotation
         kind="draft"
         rangeLabel={responseCommentRangeLabel(draft)}
