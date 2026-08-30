@@ -49,6 +49,19 @@ describe("ChatMarkdown response comments", () => {
     expect(markup).toContain('aria-label="Comment on response lines L1"');
   });
 
+  it("keeps wrapper-only margin compensation off commentable list items", () => {
+    const markup = renderToStaticMarkup(
+      <ChatMarkdown
+        cwd="/tmp/project"
+        text={"- Parent\n  - Child\n- Second\n  - Child"}
+        onResponseComment={vi.fn()}
+      />,
+    );
+
+    expect(markup).toMatch(/<li[^>]*class="group\/response-comment relative"/);
+    expect(markup).not.toMatch(/<li[^>]*\[&amp;:first-child/);
+  });
+
   it("normalizes a contained multi-block selection and rejects boundary crossings", () => {
     const first = { startLine: 2, endLine: 5, startOffset: 4, endOffset: 35 };
     const second = { startLine: 4, endLine: 5, startOffset: 16, endOffset: 35 };

@@ -225,6 +225,7 @@ type PositionedMarkdownNode = ExtraProps["node"];
 
 const RESPONSE_COMMENT_BLOCK_SELECTOR = "[data-response-comment-block]";
 const RESPONSE_COMMENT_HIGHLIGHT_INSET = 4;
+const RESPONSE_COMMENT_BLOCK_CLASS_NAME = "group/response-comment relative";
 const RESPONSE_COMMENT_WRAPPER_CLASS_NAME =
   "group/response-comment relative [&:first-child>*:not([data-response-comment-ui])]:mt-0! [&:last-child>*:not([data-response-comment-ui])]:mb-0!";
 const ResponseCommentContext = createContext<ResponseCommentContextValue | null>(null);
@@ -327,7 +328,22 @@ function updateResponseCommentSelectedBlocks(
     return;
   }
   const rootRect = root.getBoundingClientRect();
-  const rects = selectedBlocks.map((block) => block.getBoundingClientRect());
+  const rects = selectedBlocks.map((block) => {
+    const rect = block.getBoundingClientRect();
+    const draft = block.querySelector<HTMLElement>(
+      "[data-response-comment-ui]:not([data-response-comment-trigger])",
+    );
+    if (!draft) return rect;
+    return {
+      top: rect.top,
+      left: rect.left,
+      right: rect.right,
+      bottom: Math.max(
+        rect.top,
+        Math.min(rect.bottom, draft.getBoundingClientRect().top - RESPONSE_COMMENT_HIGHLIGHT_INSET),
+      ),
+    };
+  });
   const top = Math.max(0, Math.min(...rects.map((rect) => rect.top)) - rootRect.top);
   const left = Math.max(0, Math.min(...rects.map((rect) => rect.left)) - rootRect.left);
   const right = Math.min(
@@ -2508,7 +2524,7 @@ function ChatMarkdown({
       <ResponseCommentDraftForm range={range} />
     );
     const commentableClassName = (range: ResponseCommentBlockRange | null, className?: string) =>
-      cn(className, range && RESPONSE_COMMENT_WRAPPER_CLASS_NAME);
+      cn(className, range && RESPONSE_COMMENT_BLOCK_CLASS_NAME);
     const commentHeading = (
       as: "h1" | "h2" | "h3" | "h4" | "h5" | "h6",
       node: PositionedMarkdownNode | undefined,
