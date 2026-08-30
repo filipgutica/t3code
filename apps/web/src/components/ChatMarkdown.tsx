@@ -195,6 +195,7 @@ interface ResponseCommentBlockRange {
 export interface ResponseCommentSelection {
   readonly startLine: number;
   readonly endLine: number;
+  readonly placementStartOffset: number;
   readonly placementOffset: number;
   readonly context: string;
 }
@@ -206,6 +207,8 @@ export interface ResponseCommentSubmission extends ResponseCommentSelection {
 type PositionedMarkdownNode = ExtraProps["node"];
 
 const RESPONSE_COMMENT_BLOCK_SELECTOR = "[data-response-comment-block]";
+const RESPONSE_COMMENT_WRAPPER_CLASS_NAME =
+  "group/response-comment relative [&:first-child>*:not([data-response-comment-ui])]:mt-0! [&:last-child>*:not([data-response-comment-ui])]:mb-0!";
 
 function responseCommentRange(node: PositionedMarkdownNode | undefined) {
   const startOffset = node?.position?.start.offset;
@@ -239,10 +242,17 @@ export function resolveResponseCommentSelection(input: {
   ) {
     return null;
   }
+  const placementBlock =
+    input.anchorBlock.endOffset > input.focusBlock.endOffset ||
+    (input.anchorBlock.endOffset === input.focusBlock.endOffset &&
+      input.anchorBlock.startOffset >= input.focusBlock.startOffset)
+      ? input.anchorBlock
+      : input.focusBlock;
   return {
     startLine: Math.min(input.anchorBlock.startLine, input.focusBlock.startLine),
     endLine: Math.max(input.anchorBlock.endLine, input.focusBlock.endLine),
-    placementOffset: Math.max(input.anchorBlock.endOffset, input.focusBlock.endOffset),
+    placementStartOffset: placementBlock.startOffset,
+    placementOffset: placementBlock.endOffset,
     context: input.context,
   };
 }
@@ -307,7 +317,14 @@ function ResponseCommentDraftForm({
   onCancel: () => void;
   onComment: (comment: string) => void;
 }) {
-  if (!draft || !range || draft.placementOffset !== range.endOffset) return null;
+  if (
+    !draft ||
+    !range ||
+    draft.placementStartOffset !== range.startOffset ||
+    draft.placementOffset !== range.endOffset
+  ) {
+    return null;
+  }
   return (
     <div data-response-comment-ui className="my-2 rounded-md border border-border/50 bg-muted/20">
       <DiffCommentAnnotation
@@ -340,14 +357,16 @@ function ResponseCommentHeading({
   onCancel: () => void;
   onComment: (comment: string) => void;
 }) {
+  if (!range)
+    return (
+      <Heading {...props} className={className}>
+        {children}
+      </Heading>
+    );
   return (
-    <>
-      <Heading
-        {...props}
-        {...responseCommentBlockProps(range)}
-        className={cn(className, range && "group/response-comment relative")}
-      >
-        <ResponseCommentControl range={range} onOpen={onOpen} />
+    <div {...responseCommentBlockProps(range)} className={RESPONSE_COMMENT_WRAPPER_CLASS_NAME}>
+      <ResponseCommentControl range={range} onOpen={onOpen} />
+      <Heading {...props} className={className}>
         {children}
       </Heading>
       <ResponseCommentDraftForm
@@ -356,7 +375,7 @@ function ResponseCommentHeading({
         onCancel={onCancel}
         onComment={onComment}
       />
-    </>
+    </div>
   );
 }
 
@@ -2016,6 +2035,7 @@ function ChatMarkdown({
       setResponseCommentDraft({
         startLine: range.startLine,
         endLine: range.endLine,
+        placementStartOffset: range.startOffset,
         placementOffset: range.endOffset,
         context: text.slice(range.startOffset, range.endOffset).trimEnd(),
       });
@@ -2705,7 +2725,7 @@ function ChatMarkdown({
         return (
           <div
             {...responseCommentBlockProps(range)}
-            className="group/response-comment relative [&:first-child>*:not([data-response-comment-ui])]:mt-0! [&:last-child>*:not([data-response-comment-ui])]:mb-0!"
+            className={RESPONSE_COMMENT_WRAPPER_CLASS_NAME}
           >
             {commentControl(range)}
             <MarkdownTable {...props} />
@@ -2744,7 +2764,7 @@ function ChatMarkdown({
         return (
           <div
             {...responseCommentBlockProps(range)}
-            className="group/response-comment relative [&:first-child>*:not([data-response-comment-ui])]:mt-0! [&:last-child>*:not([data-response-comment-ui])]:mb-0!"
+            className={RESPONSE_COMMENT_WRAPPER_CLASS_NAME}
           >
             {commentControl(range)}
             {content}

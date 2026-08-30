@@ -50,6 +50,7 @@ describe("ChatMarkdown response comments", () => {
     expect(resolveResponseCommentSelection(input)).toEqual({
       startLine: 2,
       endLine: 5,
+      placementStartOffset: 16,
       placementOffset: 35,
       context: "exact displayed selection",
     });
@@ -71,6 +72,12 @@ describe("ChatMarkdown response comments", () => {
         focusBlock: second,
       }),
     ).toEqual(expect.objectContaining({ startLine: 4, endLine: 5 }));
+    expect(
+      resolveResponseCommentSelection({
+        ...input,
+        anchorBlock: { ...first, endOffset: second.endOffset },
+      }),
+    ).toEqual(expect.objectContaining({ placementStartOffset: second.startOffset }));
   });
 });
 
