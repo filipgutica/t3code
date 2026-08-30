@@ -216,8 +216,8 @@ interface ResponseCommentContextValue {
 interface ResponseCommentDrag {
   readonly pointerId: number;
   readonly anchorBlock: ResponseCommentBlockRange;
+  readonly anchorElement: HTMLElement;
   readonly anchorTrigger: HTMLElement;
-  activeTrigger: HTMLElement;
   selection: ResponseCommentSelection;
 }
 
@@ -286,14 +286,20 @@ function responseCommentRangeFromSelectionNode(
   return { startLine, endLine, startOffset, endOffset };
 }
 
-function updateResponseCommentDragTrigger(
+function responseCommentAnchorFromTrigger(trigger: HTMLElement, root: HTMLElement) {
+  const element = trigger.closest<HTMLElement>(RESPONSE_COMMENT_BLOCK_SELECTOR);
+  const range = responseCommentRangeFromSelectionNode(element, root);
+  return element && range ? { element, range } : null;
+}
+
+function updateResponseCommentDragPosition(
   drag: ResponseCommentDrag,
-  placementTrigger: HTMLElement | null,
+  placementBlock: HTMLElement | null,
 ) {
-  if (!placementTrigger || placementTrigger === drag.activeTrigger) return;
-  drag.activeTrigger.removeAttribute("data-response-comment-dragging");
-  placementTrigger.toggleAttribute("data-response-comment-dragging", true);
-  drag.activeTrigger = placementTrigger;
+  if (!placementBlock) return;
+  const offset =
+    placementBlock.getBoundingClientRect().top - drag.anchorElement.getBoundingClientRect().top;
+  drag.anchorTrigger.style.translate = offset === 0 ? "" : `0 ${offset}px`;
 }
 
 function responseCommentSelectionMatches(
@@ -391,7 +397,7 @@ function ResponseCommentControl({ range }: { range: ResponseCommentBlockRange | 
       data-response-comment-ui
       data-response-comment-trigger
       aria-label={`Comment on response lines ${responseCommentRangeLabel(range)}`}
-      className="absolute top-0 left-[calc(-1.75rem-var(--list-gutter,0px))] z-10 text-muted-foreground opacity-0 transition-opacity group-hover/response-comment:opacity-100 data-[response-comment-dragging]:inline-flex! data-[response-comment-dragging]:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 sm:left-[calc(-1.5rem-var(--list-gutter,0px))] [div[role=note]_&]:hidden [blockquote_&]:hidden [li_li_&]:hidden"
+      className="absolute top-0 left-[calc(-1.75rem-var(--list-gutter,0px))] z-10 text-muted-foreground opacity-0 transition-opacity group-hover/response-comment:opacity-100 data-[response-comment-dragging]:pointer-events-none data-[response-comment-dragging]:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 sm:left-[calc(-1.5rem-var(--list-gutter,0px))] [div[role=note]_&]:hidden [blockquote_&]:hidden [li_li_&]:hidden"
       onClick={(event) => {
         if (event.detail === 0) context.onOpen(range);
       }}
@@ -2161,12 +2167,12 @@ function ChatMarkdown({
     const target = event.target instanceof Element ? event.target : null;
     const trigger = target?.closest<HTMLElement>("[data-response-comment-trigger]");
     if (!trigger) return;
-    const anchorBlock = responseCommentRangeFromSelectionNode(target, event.currentTarget);
-    if (!anchorBlock) return;
+    const anchor = responseCommentAnchorFromTrigger(trigger, event.currentTarget);
+    if (!anchor) return;
     const selection = resolveResponseCommentSelection({
       context: text,
-      anchorBlock,
-      focusBlock: anchorBlock,
+      anchorBlock: anchor.range,
+      focusBlock: anchor.range,
     });
     if (!selection) return;
     event.preventDefault();
@@ -2174,9 +2180,9 @@ function ChatMarkdown({
     trigger.toggleAttribute("data-response-comment-dragging", true);
     responseCommentDragRef.current = {
       pointerId: event.pointerId,
-      anchorBlock,
+      anchorBlock: anchor.range,
+      anchorElement: anchor.element,
       anchorTrigger: trigger,
-      activeTrigger: trigger,
       selection,
     };
     updateResponseCommentSelectedBlocks(event.currentTarget, selection);
@@ -2194,14 +2200,12 @@ function ChatMarkdown({
     });
     if (!selection || responseCommentSelectionMatches(selection, drag.selection)) return;
     drag.selection = selection;
-    const placementTrigger =
+    const placementBlock =
       selection.placementStartOffset === drag.anchorBlock.startOffset &&
       selection.placementOffset === drag.anchorBlock.endOffset
-        ? drag.anchorTrigger
-        : (focusElement
-            ?.closest<HTMLElement>(RESPONSE_COMMENT_BLOCK_SELECTOR)
-            ?.querySelector<HTMLElement>("[data-response-comment-trigger]") ?? null);
-    updateResponseCommentDragTrigger(drag, placementTrigger);
+        ? drag.anchorElement
+        : (focusElement?.closest<HTMLElement>(RESPONSE_COMMENT_BLOCK_SELECTOR) ?? null);
+    updateResponseCommentDragPosition(drag, placementBlock);
     updateResponseCommentSelectedBlocks(event.currentTarget, selection);
   }
   function handleResponseCommentPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
@@ -2209,7 +2213,8 @@ function ChatMarkdown({
     const drag = responseCommentDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     responseCommentDragRef.current = null;
-    drag.activeTrigger.removeAttribute("data-response-comment-dragging");
+    drag.anchorTrigger.removeAttribute("data-response-comment-dragging");
+    drag.anchorTrigger.style.removeProperty("translate");
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -2219,7 +2224,8 @@ function ChatMarkdown({
     const drag = responseCommentDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     responseCommentDragRef.current = null;
-    drag.activeTrigger.removeAttribute("data-response-comment-dragging");
+    drag.anchorTrigger.removeAttribute("data-response-comment-dragging");
+    drag.anchorTrigger.style.removeProperty("translate");
     updateResponseCommentSelectedBlocks(event.currentTarget, null);
   }
   const environmentId = threadRef?.environmentId ?? explicitEnvironmentId ?? null;

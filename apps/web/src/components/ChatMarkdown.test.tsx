@@ -43,8 +43,8 @@ describe("ChatMarkdown response comments", () => {
     );
 
     expect(markup).toContain("data-response-comment-trigger");
+    expect(markup).toContain("data-[response-comment-dragging]:pointer-events-none");
     expect(markup).toContain("data-[response-comment-dragging]:opacity-100");
-    expect(markup).toContain("data-[response-comment-dragging]:inline-flex!");
     expect(markup).toContain("data-[response-comment-selection-visible]:before:opacity-100");
     expect(markup).toContain('aria-label="Comment on response lines L1"');
   });
