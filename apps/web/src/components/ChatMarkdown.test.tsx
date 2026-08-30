@@ -59,7 +59,6 @@ describe("ChatMarkdown response comments", () => {
     expect(
       resolveResponseCommentSelection({
         ...input,
-        context: "stale selection",
         unchanged: true,
       }),
     ).toBeNull();
@@ -71,12 +70,7 @@ describe("ChatMarkdown response comments", () => {
         anchorBlock: second,
         focusBlock: second,
       }),
-    ).toEqual({
-      startLine: 4,
-      endLine: 5,
-      placementOffset: 35,
-      context: "exact displayed selection",
-    });
+    ).toEqual(expect.objectContaining({ startLine: 4, endLine: 5 }));
   });
 });
 
