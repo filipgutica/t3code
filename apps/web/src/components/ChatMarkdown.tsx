@@ -207,6 +207,7 @@ export interface ResponseCommentSubmission extends ResponseCommentSelection {
 
 interface ResponseCommentContextValue {
   readonly draft: ResponseCommentSelection | null;
+  readonly draftText: { current: string };
   readonly onOpen: (range: ResponseCommentBlockRange) => void;
   readonly onCancel: () => void;
   readonly onComment: (comment: string) => void;
@@ -416,15 +417,24 @@ function ResponseCommentControl({ range }: { range: ResponseCommentBlockRange | 
 function ResponseCommentDraftForm({ range }: { range: ResponseCommentBlockRange | null }) {
   const context = use(ResponseCommentContext);
   const draft = context?.draft;
+  const [localDraft, setLocalDraft] = useState(() => ({
+    draft,
+    text: context?.draftText.current ?? "",
+  }));
   if (!draft || !range) return null;
   if (draft.placementStartOffset !== range.startOffset || draft.placementOffset !== range.endOffset)
     return null;
+  const text = localDraft.draft === draft ? localDraft.text : context.draftText.current;
   return (
     <div data-response-comment-ui className="my-2! rounded-md border border-border/50 bg-muted/20">
       <DiffCommentAnnotation
         kind="draft"
         rangeLabel={responseCommentRangeLabel(draft)}
-        text=""
+        text={text}
+        onTextChange={(nextText) => {
+          context.draftText.current = nextText;
+          setLocalDraft({ draft, text: nextText });
+        }}
         placeholder="Comment on this response…"
         onCancel={context.onCancel}
         onComment={context.onComment}
@@ -2082,20 +2092,27 @@ function ChatMarkdown({
   const [responseCommentDraft, setResponseCommentDraft] = useState<ResponseCommentSelection | null>(
     null,
   );
+  const responseCommentDraftTextRef = useRef("");
   const responseCommentDragRef = useRef<ResponseCommentDrag | null>(null);
   const responseCommentRootRef = useRef<HTMLDivElement>(null);
   const openResponseComment = useCallback(
-    (range: ResponseCommentBlockRange) =>
+    (range: ResponseCommentBlockRange) => {
+      responseCommentDraftTextRef.current = "";
       setResponseCommentDraft(
         resolveResponseCommentSelection({ context: text, anchorBlock: range, focusBlock: range }),
-      ),
+      );
+    },
     [text],
   );
-  const cancelResponseComment = useCallback(() => setResponseCommentDraft(null), []);
+  const cancelResponseComment = useCallback(() => {
+    responseCommentDraftTextRef.current = "";
+    setResponseCommentDraft(null);
+  }, []);
   const submitResponseComment = useCallback(
     (comment: string) => {
       if (!responseCommentDraft || !onResponseComment) return;
       onResponseComment({ ...responseCommentDraft, comment });
+      responseCommentDraftTextRef.current = "";
       setResponseCommentDraft(null);
     },
     [onResponseComment, responseCommentDraft],
@@ -2103,6 +2120,7 @@ function ChatMarkdown({
   const responseCommentContext = useMemo(
     () => ({
       draft: responseCommentDraft,
+      draftText: responseCommentDraftTextRef,
       onOpen: openResponseComment,
       onCancel: cancelResponseComment,
       onComment: submitResponseComment,
