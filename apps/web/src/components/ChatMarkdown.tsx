@@ -228,6 +228,7 @@ const RESPONSE_COMMENT_BLOCK_CLASS_NAME = "group/response-comment relative";
 const RESPONSE_COMMENT_WRAPPER_CLASS_NAME =
   "group/response-comment relative [.chat-markdown>&:first-child>*:not([data-response-comment-ui])]:mt-0! [.chat-markdown>&:last-child>*:not([data-response-comment-ui])]:mb-0!";
 const ResponseCommentContext = createContext<ResponseCommentContextValue | null>(null);
+const ResponseCommentNestingContext = createContext(0);
 
 function responseCommentRange(node: PositionedMarkdownNode | undefined) {
   const startOffset = node?.position?.start.offset;
@@ -283,34 +284,6 @@ function responseCommentRangeFromSelectionNode(
   const endOffset = Number(block.dataset.responseCommentEndOffset);
   if (![startLine, endLine, startOffset, endOffset].every(Number.isSafeInteger)) return null;
   return { startLine, endLine, startOffset, endOffset };
-}
-
-export function outermostResponseCommentBlockFromSelectionNode(
-  node: Node | null,
-  root: HTMLElement,
-) {
-  const element = node instanceof Element ? node : node?.parentElement;
-  let block = element?.closest<HTMLElement>(RESPONSE_COMMENT_BLOCK_SELECTOR) ?? null;
-  for (
-    let outer = block?.parentElement?.closest<HTMLElement>(RESPONSE_COMMENT_BLOCK_SELECTOR);
-    outer && root.contains(outer);
-    outer = outer.parentElement?.closest<HTMLElement>(RESPONSE_COMMENT_BLOCK_SELECTOR)
-  ) {
-    block = outer;
-  }
-  return block && root.contains(block) ? block : null;
-}
-
-export function resolveResponseCommentDragFocusBlock(input: {
-  anchorBlock: ResponseCommentBlockRange;
-  focusBlock: ResponseCommentBlockRange | null;
-}) {
-  const { anchorBlock, focusBlock } = input;
-  if (!focusBlock) return null;
-  const remainsInsideAnchor =
-    focusBlock.startOffset >= anchorBlock.startOffset &&
-    focusBlock.endOffset <= anchorBlock.endOffset;
-  return remainsInsideAnchor ? anchorBlock : focusBlock;
 }
 
 function responseCommentAnchorFromTrigger(trigger: HTMLElement, root: HTMLElement) {
@@ -424,7 +397,7 @@ function ResponseCommentControl({ range }: { range: ResponseCommentBlockRange | 
       data-response-comment-ui
       data-response-comment-trigger
       aria-label={`Comment on response lines ${responseCommentRangeLabel(range)}`}
-      className="absolute top-0 left-[calc(-1.75rem-var(--list-gutter,0px))] z-10 text-muted-foreground opacity-0 transition-opacity group-hover/response-comment:opacity-100 pointer-coarse:after:right-0 pointer-coarse:after:left-auto data-[response-comment-dragging]:pointer-events-none data-[response-comment-dragging]:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 sm:left-[calc(-1.5rem-var(--list-gutter,0px))] [div[role=note]_&]:hidden [blockquote_&]:hidden [li_li_&]:hidden"
+      className="absolute top-0 left-[calc(-1.75rem-var(--list-gutter,0px))] z-10 text-muted-foreground opacity-0 transition-opacity group-hover/response-comment:opacity-100 pointer-coarse:after:right-0 pointer-coarse:after:left-auto data-[response-comment-dragging]:pointer-events-none data-[response-comment-dragging]:opacity-100 focus-visible:opacity-100 max-sm:opacity-100 sm:left-[calc(-1.5rem-var(--list-gutter,0px))]"
       onClick={(event) => {
         if (event.detail === 0) context.onOpen(range);
       }}
@@ -2187,14 +2160,12 @@ function ChatMarkdown({
     if (!drag || drag.pointerId !== event.pointerId) return;
     event.preventDefault();
     const focusElement = document.elementFromPoint(event.clientX, event.clientY);
-    const focusBlockElement = outermostResponseCommentBlockFromSelectionNode(
-      focusElement,
+    const focusBlockElement =
+      focusElement?.closest<HTMLElement>(RESPONSE_COMMENT_BLOCK_SELECTOR) ?? null;
+    const focusBlock = responseCommentRangeFromSelectionNode(
+      focusBlockElement,
       event.currentTarget,
     );
-    const focusBlock = resolveResponseCommentDragFocusBlock({
-      anchorBlock: drag.anchorBlock,
-      focusBlock: responseCommentRangeFromSelectionNode(focusBlockElement, event.currentTarget),
-    });
     const selection = resolveResponseCommentSelection({
       context: text,
       anchorBlock: drag.anchorBlock,
@@ -2523,8 +2494,10 @@ function ChatMarkdown({
       );
     };
 
-    const commentRange = (node: PositionedMarkdownNode | undefined) =>
-      onResponseComment ? responseCommentRange(node) : null;
+    const commentRange = (node: PositionedMarkdownNode | undefined, nestingDepth: number) =>
+      onResponseComment && nestingDepth === 0 ? responseCommentRange(node) : null;
+    const nestedBlockRange = (node: PositionedMarkdownNode | undefined, nestingDepth: number) =>
+      onResponseComment && nestingDepth < 2 ? responseCommentRange(node) : null;
     const commentableClassName = (range: ResponseCommentBlockRange | null, className?: string) =>
       range ? cn(className, RESPONSE_COMMENT_BLOCK_CLASS_NAME) : className;
     const commentBlock = (range: ResponseCommentBlockRange | null, content: ReactNode) =>
@@ -2537,15 +2510,19 @@ function ChatMarkdown({
       ) : (
         content
       );
-    const commentHeading = (
-      as: "h1" | "h2" | "h3" | "h4" | "h5" | "h6",
-      node: PositionedMarkdownNode | undefined,
-      children: ReactNode,
-      props: React.HTMLAttributes<HTMLHeadingElement>,
-    ) => {
-      const Heading = as;
-      return commentBlock(commentRange(node), <Heading {...props}>{children}</Heading>);
-    };
+    const CommentHeading = ({
+      as: Heading,
+      node,
+      children,
+      ...props
+    }: React.HTMLAttributes<HTMLHeadingElement> & {
+      as: "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+      node?: PositionedMarkdownNode;
+    }) =>
+      commentBlock(
+        commentRange(node, use(ResponseCommentNestingContext)),
+        <Heading {...props}>{children}</Heading>,
+      );
 
     return {
       div({ node, children, ...props }) {
@@ -2558,7 +2535,7 @@ function ChatMarkdown({
         return <div {...props}>{children}</div>;
       },
       p({ node, children, className, ...props }) {
-        const range = commentRange(node);
+        const range = commentRange(node, use(ResponseCommentNestingContext));
         return (
           <>
             <p
@@ -2574,31 +2551,58 @@ function ChatMarkdown({
         );
       },
       h1({ node, children, ...props }) {
-        return commentHeading("h1", node, children, props);
+        return (
+          <CommentHeading as="h1" node={node} {...props}>
+            {children}
+          </CommentHeading>
+        );
       },
       h2({ node, children, ...props }) {
-        return commentHeading("h2", node, children, props);
+        return (
+          <CommentHeading as="h2" node={node} {...props}>
+            {children}
+          </CommentHeading>
+        );
       },
       h3({ node, children, ...props }) {
-        return commentHeading("h3", node, children, props);
+        return (
+          <CommentHeading as="h3" node={node} {...props}>
+            {children}
+          </CommentHeading>
+        );
       },
       h4({ node, children, ...props }) {
-        return commentHeading("h4", node, children, props);
+        return (
+          <CommentHeading as="h4" node={node} {...props}>
+            {children}
+          </CommentHeading>
+        );
       },
       h5({ node, children, ...props }) {
-        return commentHeading("h5", node, children, props);
+        return (
+          <CommentHeading as="h5" node={node} {...props}>
+            {children}
+          </CommentHeading>
+        );
       },
       h6({ node, children, ...props }) {
-        return commentHeading("h6", node, children, props);
+        return (
+          <CommentHeading as="h6" node={node} {...props}>
+            {children}
+          </CommentHeading>
+        );
       },
       blockquote({ node, children, ...props }) {
-        const range = commentRange(node);
+        const range = nestedBlockRange(node, use(ResponseCommentNestingContext));
+        const body = (
+          <ResponseCommentNestingContext value={2}>{children}</ResponseCommentNestingContext>
+        );
         const alert =
           GITHUB_ALERT_PRESENTATIONS[
             String((props as Record<string, unknown>)["data-alert"] ?? "")
           ];
         if (!alert) {
-          return commentBlock(range, <blockquote {...props}>{children}</blockquote>);
+          return commentBlock(range, <blockquote {...props}>{body}</blockquote>);
         }
         // Not a <blockquote>: the stylesheet mutes those, and an alert's body is ordinary
         // text under a colored title — which is how the host renders it.
@@ -2609,7 +2613,7 @@ function ChatMarkdown({
               <alert.Icon aria-hidden className="size-3.5 shrink-0" />
               {alert.label}
             </p>
-            {children}
+            {body}
           </div>,
         );
       },
@@ -2623,13 +2627,11 @@ function ChatMarkdown({
         );
       },
       li({ node, children, className, ...props }) {
+        const nestingDepth = use(ResponseCommentNestingContext);
         const listItemStart = node?.position?.start.offset;
         const markerOffset =
           typeof listItemStart === "number" ? findTaskListMarkerOffset(text, listItemStart) : null;
-        const hasParagraphChild = node?.children.some(
-          (child) => child.type === "element" && child.tagName === "p",
-        );
-        const range = hasParagraphChild ? null : commentRange(node);
+        const range = commentRange(node, nestingDepth);
         return (
           <li
             {...props}
@@ -2638,7 +2640,9 @@ function ChatMarkdown({
             data-task-marker-offset={markerOffset ?? undefined}
           >
             <ResponseCommentControl range={range} />
-            {renderSkillInlineMarkdownChildren(children, skills)}
+            <ResponseCommentNestingContext value={nestingDepth + 1}>
+              {renderSkillInlineMarkdownChildren(children, skills)}
+            </ResponseCommentNestingContext>
             <ResponseCommentDraftForm range={range} />
           </li>
         );
@@ -2852,7 +2856,10 @@ function ChatMarkdown({
         return <ChatMarkdownImageFallback alt={altText} copyMarkdown={copyMarkdown} />;
       },
       table({ node, ...props }) {
-        return commentBlock(commentRange(node), <MarkdownTable {...props} />);
+        return commentBlock(
+          nestedBlockRange(node, use(ResponseCommentNestingContext)),
+          <MarkdownTable {...props} />,
+        );
       },
       details({ node: _node, children, open: detailsOpen }) {
         return <MarkdownDetails open={detailsOpen}>{children}</MarkdownDetails>;
@@ -2880,7 +2887,7 @@ function ChatMarkdown({
         ) : (
           <pre {...props}>{children}</pre>
         );
-        return commentBlock(commentRange(node), content);
+        return commentBlock(nestedBlockRange(node, use(ResponseCommentNestingContext)), content);
       },
     };
   }, [

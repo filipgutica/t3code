@@ -32,8 +32,6 @@ import ChatMarkdown, {
   canUseMarkdownFileShellActions,
   hasMarkdownFilePrimaryAction,
   orderedListGutterStyle,
-  outermostResponseCommentBlockFromSelectionNode,
-  resolveResponseCommentDragFocusBlock,
   resolveResponseCommentSelection,
   shouldUseMarkdownFileBrowserPrimaryAction,
 } from "./ChatMarkdown";
@@ -61,6 +59,7 @@ describe("ChatMarkdown response comments", () => {
     expect(markup.slice(0, blockStart)).toContain(
       `aria-label="Comment on response lines ${rangeLabel}"`,
     );
+    expect(markup.match(/data-response-comment-trigger/g)).toHaveLength(1);
   });
 
   it("keeps wrapper-only margin compensation off commentable list items", () => {
@@ -74,6 +73,32 @@ describe("ChatMarkdown response comments", () => {
 
     expect(markup).toMatch(/<li[^>]*class="group\/response-comment relative"/);
     expect(markup).not.toMatch(/<li[^>]*\[&amp;:first-child/);
+  });
+
+  it("exposes only the visible comment target in a loose nested list", () => {
+    const markup = renderToStaticMarkup(
+      <ChatMarkdown
+        cwd="/tmp/project"
+        text={"- Step one\n\n  - Detail a"}
+        onResponseComment={vi.fn()}
+      />,
+    );
+
+    expect(markup.match(/data-response-comment-trigger/g)).toHaveLength(1);
+    expect(markup).toContain('aria-label="Comment on response lines L1 to L3"');
+  });
+
+  it("keeps a nested code block as its own visible comment target", () => {
+    const markup = renderToStaticMarkup(
+      <ChatMarkdown
+        cwd="/tmp/project"
+        text={"- Parent\n  ```ts\n  code\n  ```"}
+        onResponseComment={vi.fn()}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Comment on response lines L1 to L4"');
+    expect(markup).toContain('aria-label="Comment on response lines L2 to L4"');
   });
 
   it("normalizes a contained multi-block selection and rejects boundary crossings", () => {
@@ -92,66 +117,6 @@ describe("ChatMarkdown response comments", () => {
       context: "[example](https://example.com)",
     });
     expect(resolveResponseCommentSelection({ ...input, focusBlock: null })).toBeNull();
-  });
-
-  it("keeps an outer block as the drag focus while the pointer crosses nested content", () => {
-    const quote = { startLine: 1, endLine: 2, startOffset: 0, endOffset: 18 };
-    const paragraph = { startLine: 1, endLine: 2, startOffset: 2, endOffset: 18 };
-    const nextBlock = { startLine: 4, endLine: 4, startOffset: 20, endOffset: 30 };
-
-    expect(
-      resolveResponseCommentDragFocusBlock({ anchorBlock: quote, focusBlock: paragraph }),
-    ).toBe(quote);
-    expect(
-      resolveResponseCommentDragFocusBlock({ anchorBlock: quote, focusBlock: nextBlock }),
-    ).toBe(nextBlock);
-    expect(
-      resolveResponseCommentDragFocusBlock({ anchorBlock: quote, focusBlock: null }),
-    ).toBeNull();
-  });
-
-  it("resolves nested drag targets to the outermost comment block within the root", () => {
-    class FakeElement {
-      constructor(
-        readonly parentElement: FakeElement | null,
-        readonly isCommentBlock = false,
-      ) {}
-
-      closest(): FakeElement | null {
-        return this.isCommentBlock ? this : (this.parentElement?.closest() ?? null);
-      }
-
-      contains(candidate: FakeElement): boolean {
-        return (
-          candidate === this ||
-          (candidate.parentElement ? this.contains(candidate.parentElement) : false)
-        );
-      }
-    }
-
-    vi.stubGlobal("Element", FakeElement);
-    const root = new FakeElement(null);
-    const outerBlock = new FakeElement(root, true);
-    const container = new FakeElement(outerBlock);
-    const innerBlock = new FakeElement(container, true);
-    const outsideBlock = new FakeElement(null, true);
-
-    try {
-      expect(
-        outermostResponseCommentBlockFromSelectionNode(
-          innerBlock as unknown as Node,
-          root as unknown as HTMLElement,
-        ),
-      ).toBe(outerBlock);
-      expect(
-        outermostResponseCommentBlockFromSelectionNode(
-          outsideBlock as unknown as Node,
-          root as unknown as HTMLElement,
-        ),
-      ).toBeNull();
-    } finally {
-      vi.unstubAllGlobals();
-    }
   });
 
   it("places downward and upward selections at the last selected block", () => {
