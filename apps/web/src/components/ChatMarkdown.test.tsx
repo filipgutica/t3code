@@ -49,6 +49,11 @@ describe("ChatMarkdown response comments", () => {
   it.each([
     { text: "> Quoted response.", blockMarker: "<blockquote", rangeLabel: "L1" },
     { text: "> [!NOTE]\n> Alert response.", blockMarker: 'role="note"', rangeLabel: "L1 to L2" },
+    {
+      text: "<details>\n<summary>More</summary>\n\nHidden response.\n</details>",
+      blockMarker: 'data-markdown-details=""',
+      rangeLabel: "L1 to L5",
+    },
   ])("renders an outer comment trigger for $blockMarker", ({ text, blockMarker, rangeLabel }) => {
     const markup = renderToStaticMarkup(
       <ChatMarkdown cwd="/tmp/project" text={text} onResponseComment={vi.fn()} />,

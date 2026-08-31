@@ -952,7 +952,7 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain('data-markdown-details=""');
-    expect(markup).toContain("More");
+    expect(markup).toMatch(/data-markdown-details-summary=""[^>]*>.*<span>More<\/span><\/button>/);
     expect(markup).not.toContain("&lt;details&gt;");
   });
 

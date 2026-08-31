@@ -1005,7 +1005,7 @@ function MarkdownDetails({
       </CollapsibleTrigger>
       <CollapsiblePanel>
         <div className="pb-3 ps-6 text-foreground/80" data-markdown-details-content="">
-          {content}
+          <ResponseCommentNestingContext value={2}>{content}</ResponseCommentNestingContext>
         </div>
       </CollapsiblePanel>
     </Collapsible>
@@ -2861,8 +2861,12 @@ function ChatMarkdown({
           <MarkdownTable {...props} />,
         );
       },
-      details({ node: _node, children, open: detailsOpen }) {
-        return <MarkdownDetails open={detailsOpen}>{children}</MarkdownDetails>;
+      details({ node, children, open: detailsOpen }) {
+        const range = nestedBlockRange(node, use(ResponseCommentNestingContext));
+        return commentBlock(
+          range,
+          <MarkdownDetails open={detailsOpen}>{children}</MarkdownDetails>,
+        );
       },
       pre({ node, children, ...props }) {
         const codeBlock = extractCodeBlock(children);
