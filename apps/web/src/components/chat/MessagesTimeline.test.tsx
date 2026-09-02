@@ -290,9 +290,10 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Worked for 8.0s");
   });
 
-  it("allows comments on every completed assistant message segment", () => {
+  it("allows comments only on completed assistant segments with source text", () => {
     const first = buildAssistantTimelineEntry("First segment.");
     const second = buildAssistantTimelineEntry("Final segment.");
+    const empty = buildAssistantTimelineEntry("");
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -302,6 +303,11 @@ describe("MessagesTimeline", () => {
             ...second,
             id: "entry-2",
             message: { ...second.message, id: MessageId.make("message-2") },
+          },
+          {
+            ...empty,
+            id: "entry-3",
+            message: { ...empty.message, id: MessageId.make("message-3") },
           },
         ]}
       />,

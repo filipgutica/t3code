@@ -1380,7 +1380,8 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
     },
     [addReviewComment, ctx.threadRef, row.message.id],
   );
-  const canCommentOnResponse = !row.message.streaming && ctx.threadRef !== null;
+  const canCommentOnResponse =
+    !row.message.streaming && ctx.threadRef !== null && row.message.text.length > 0;
 
   return (
     <>
