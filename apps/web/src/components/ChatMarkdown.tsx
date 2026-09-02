@@ -957,7 +957,7 @@ function MarkdownTable({ children, ...props }: React.ComponentProps<"table">) {
     >
       <ScrollArea chainVerticalScroll scrollFade className="w-full max-w-full rounded-none">
         <table ref={tableRef} {...props}>
-          {children}
+          <ResponseCommentNestingContext value={2}>{children}</ResponseCommentNestingContext>
         </table>
       </ScrollArea>
       <div className="mt-0.5 flex items-center justify-between select-none">
@@ -1042,7 +1042,9 @@ function MarkdownDetails({
           className="size-4 shrink-0 text-muted-foreground transition-transform"
           aria-hidden
         />
-        <span>{summary}</span>
+        <span>
+          <ResponseCommentNestingContext value={2}>{summary}</ResponseCommentNestingContext>
+        </span>
       </CollapsibleTrigger>
       <CollapsiblePanel>
         <div className="pb-3 ps-6 text-foreground/80" data-markdown-details-content="">
