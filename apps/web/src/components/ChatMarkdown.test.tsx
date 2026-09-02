@@ -32,11 +32,35 @@ import ChatMarkdown, {
   canUseMarkdownFileShellActions,
   hasMarkdownFilePrimaryAction,
   orderedListGutterStyle,
+  resolveActiveResponseCommentDraft,
   resolveResponseCommentSelection,
   shouldUseMarkdownFileBrowserPrimaryAction,
 } from "./ChatMarkdown";
 
 describe("ChatMarkdown response comments", () => {
+  it("invalidates a draft when its response text changes", () => {
+    const selection = {
+      startLine: 1,
+      endLine: 1,
+      placementStartOffset: 0,
+      placementOffset: 15,
+      context: "First response.",
+    };
+
+    expect(
+      resolveActiveResponseCommentDraft(
+        { selection, sourceText: "First response." },
+        selection.context,
+      ),
+    ).toBe(selection);
+    expect(
+      resolveActiveResponseCommentDraft(
+        { selection, sourceText: "First response." },
+        "Updated response text.",
+      ),
+    ).toBeNull();
+  });
+
   it("renders an accessible block comment trigger", () => {
     const markup = renderToStaticMarkup(
       <ChatMarkdown cwd="/tmp/project" text="Commentable response." onResponseComment={vi.fn()} />,

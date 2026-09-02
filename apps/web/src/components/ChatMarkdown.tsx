@@ -217,6 +217,11 @@ interface ResponseCommentSelection {
   readonly context: string;
 }
 
+interface ResponseCommentDraft {
+  readonly selection: ResponseCommentSelection;
+  readonly sourceText: string;
+}
+
 export interface ResponseCommentSubmission extends ResponseCommentSelection {
   readonly comment: string;
 }
@@ -286,6 +291,13 @@ export function resolveResponseCommentSelection(input: {
     placementOffset: placementBlock.endOffset,
     context: input.context.slice(contextStartOffset, placementBlock.endOffset).trimEnd(),
   };
+}
+
+export function resolveActiveResponseCommentDraft(
+  draft: ResponseCommentDraft | null,
+  text: string,
+): ResponseCommentSelection | null {
+  return draft?.sourceText === text ? draft.selection : null;
 }
 
 function responseCommentRangeFromSelectionNode(
@@ -2279,31 +2291,34 @@ function ChatMarkdown({
   const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
-  const [responseCommentDraft, setResponseCommentDraft] = useState<ResponseCommentSelection | null>(
-    null,
-  );
+  const [responseCommentDraftState, setResponseCommentDraftState] =
+    useState<ResponseCommentDraft | null>(null);
+  const responseCommentDraft = resolveActiveResponseCommentDraft(responseCommentDraftState, text);
   const responseCommentDraftTextRef = useRef("");
   const responseCommentDragRef = useRef<ResponseCommentDrag | null>(null);
   const responseCommentRootRef = useRef<HTMLDivElement>(null);
   const openResponseComment = useCallback(
     (range: ResponseCommentBlockRange) => {
       responseCommentDraftTextRef.current = "";
-      setResponseCommentDraft(
-        resolveResponseCommentSelection({ context: text, anchorBlock: range, focusBlock: range }),
-      );
+      const selection = resolveResponseCommentSelection({
+        context: text,
+        anchorBlock: range,
+        focusBlock: range,
+      });
+      setResponseCommentDraftState(selection ? { selection, sourceText: text } : null);
     },
     [text],
   );
   const cancelResponseComment = useCallback(() => {
     responseCommentDraftTextRef.current = "";
-    setResponseCommentDraft(null);
+    setResponseCommentDraftState(null);
   }, []);
   const submitResponseComment = useCallback(
     (comment: string) => {
       if (!responseCommentDraft || !onResponseComment) return;
       onResponseComment({ ...responseCommentDraft, comment });
       responseCommentDraftTextRef.current = "";
-      setResponseCommentDraft(null);
+      setResponseCommentDraftState(null);
     },
     [onResponseComment, responseCommentDraft],
   );
@@ -2318,6 +2333,11 @@ function ChatMarkdown({
     [cancelResponseComment, openResponseComment, responseCommentDraft, submitResponseComment],
   );
   useEffect(() => {
+    if (!responseCommentDraftState || responseCommentDraftState.sourceText === text) return;
+    responseCommentDraftTextRef.current = "";
+    setResponseCommentDraftState(null);
+  }, [responseCommentDraftState, text]);
+  useEffect(() => {
     const root = responseCommentRootRef.current;
     if (!root || !responseCommentDraft) return;
     const updateHighlight = () => updateResponseCommentSelectedBlocks(root, responseCommentDraft);
@@ -2331,7 +2351,7 @@ function ChatMarkdown({
       observer.disconnect();
       updateResponseCommentSelectedBlocks(root, null);
     };
-  }, [responseCommentDraft, text]);
+  }, [responseCommentDraft]);
   function handleResponseCommentPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (
       event.button !== 0 ||
@@ -2399,7 +2419,7 @@ function ChatMarkdown({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    setResponseCommentDraft(drag.selection);
+    setResponseCommentDraftState({ selection: drag.selection, sourceText: text });
   }
   function handleResponseCommentPointerCancel(event: ReactPointerEvent<HTMLDivElement>) {
     const drag = responseCommentDragRef.current;
