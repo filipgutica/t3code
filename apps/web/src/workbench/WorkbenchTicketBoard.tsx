@@ -10,13 +10,14 @@ import type {
 import {
   ArrowRightIcon,
   BotIcon,
+  ChevronDownIcon,
   CircleAlertIcon,
   FolderGit2Icon,
   LayoutDashboardIcon,
   LinkIcon,
   PlusIcon,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useRef, useState, type UIEvent } from "react";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -28,9 +29,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "../components/ui/empty";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
 import type { Project } from "../types";
 import {
+  getWorkbenchTicketStatusMoves,
   getWorkbenchThreadPresentation,
+  isWorkbenchTicketStatus,
   ticketsByStatus,
   WORKBENCH_TICKET_STATUSES,
   WORKBENCH_TICKET_STATUS_LABELS,
@@ -52,6 +56,7 @@ export function WorkbenchTicketBoard({
   existingThreadIds,
   pending,
   onSelect,
+  onMove,
   onOpenThread,
   onCreateTicket,
 }: {
@@ -63,19 +68,72 @@ export function WorkbenchTicketBoard({
   readonly existingThreadIds: ReadonlySet<ThreadId>;
   readonly pending: boolean;
   readonly onSelect: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
+  readonly onMove: (ticket: WorkbenchTicket, status: WorkbenchTicketStatus) => void;
   readonly onOpenThread: (ticket: WorkbenchTicket) => void;
   readonly onCreateTicket: () => void;
 }) {
   const groupedTickets = useMemo(() => ticketsByStatus(tickets), [tickets]);
+  const [visibleStatus, setVisibleStatus] = useState<WorkbenchTicketStatus>("todo");
+  const boardScrollRef = useRef<HTMLDivElement>(null);
+
+  const scrollToStatus = (status: WorkbenchTicketStatus) => {
+    setVisibleStatus(status);
+    boardScrollRef.current
+      ?.querySelector<HTMLElement>(`[data-workbench-status="${status}"]`)
+      ?.scrollIntoView({ block: "nearest", inline: "start" });
+  };
+
+  const trackVisibleStatus = (event: UIEvent<HTMLDivElement>) => {
+    const viewport = event.currentTarget;
+    let nearestStatus = visibleStatus;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    for (const column of viewport.querySelectorAll<HTMLElement>("[data-workbench-status]")) {
+      const distance = Math.abs(column.offsetLeft - viewport.scrollLeft);
+      const status = column.dataset.workbenchStatus;
+      if (distance < nearestDistance && status && isWorkbenchTicketStatus(status)) {
+        nearestDistance = distance;
+        nearestStatus = status;
+      }
+    }
+    if (nearestStatus !== visibleStatus) setVisibleStatus(nearestStatus);
+  };
 
   return (
-    <section aria-label="Ticket board" className="relative min-h-0 flex-1 overflow-hidden">
-      <div className="h-full overflow-x-auto overflow-y-hidden p-3 sm:p-4">
+    <section
+      aria-label="Ticket board"
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+    >
+      <nav
+        aria-label="Board columns"
+        className="flex shrink-0 gap-1 overflow-x-auto border-b border-border/60 px-3 py-2 md:hidden"
+      >
+        {WORKBENCH_TICKET_STATUSES.map((status) => (
+          <Button
+            key={status}
+            aria-current={visibleStatus === status ? "true" : undefined}
+            className="shrink-0"
+            onClick={() => scrollToStatus(status)}
+            size="xs"
+            variant={visibleStatus === status ? "secondary" : "ghost"}
+          >
+            {WORKBENCH_TICKET_STATUS_LABELS[status]}
+            <span className="text-muted-foreground tabular-nums">
+              {groupedTickets[status].length}
+            </span>
+          </Button>
+        ))}
+      </nav>
+      <div
+        ref={boardScrollRef}
+        className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-3 sm:p-4"
+        onScroll={trackVisibleStatus}
+      >
         <div className="flex h-full min-w-max snap-x snap-mandatory gap-3 md:grid md:min-w-[52rem] md:grid-cols-4 md:snap-none">
           {WORKBENCH_TICKET_STATUSES.map((status) => (
             <section
               key={status}
               aria-labelledby={`workbench-column-${status}`}
+              data-workbench-status={status}
               className="flex h-full min-h-0 w-[calc(100vw-2rem)] max-w-[22rem] shrink-0 snap-start flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/35 md:w-auto md:max-w-none"
             >
               <header className="flex shrink-0 items-center justify-between border-b border-border/60 px-3 py-2.5">
@@ -146,16 +204,38 @@ export function WorkbenchTicketBoard({
                           </div>
                         </div>
                       </button>
-                      <Button
-                        className="mt-3 w-full"
-                        disabled={pending}
-                        onClick={() => onOpenThread(ticket)}
-                        size="xs"
-                        variant={thread.state === "unassigned" ? "default" : "outline"}
-                      >
-                        {thread.actionLabel}
-                        <ArrowRightIcon />
-                      </Button>
+                      <div className="mt-3 flex gap-2">
+                        <Menu>
+                          <MenuTrigger
+                            aria-label={`Move ${ticket.title} to another status`}
+                            render={<Button disabled={pending} size="xs" variant="outline" />}
+                          >
+                            Move
+                            <ChevronDownIcon />
+                          </MenuTrigger>
+                          <MenuPopup align="start" className="min-w-44">
+                            {getWorkbenchTicketStatusMoves(ticket.status).map((nextStatus) => (
+                              <MenuItem key={nextStatus} onClick={() => onMove(ticket, nextStatus)}>
+                                <span
+                                  aria-hidden
+                                  className={`size-2 rounded-full ${STATUS_DOT_CLASS[nextStatus]}`}
+                                />
+                                {WORKBENCH_TICKET_STATUS_LABELS[nextStatus]}
+                              </MenuItem>
+                            ))}
+                          </MenuPopup>
+                        </Menu>
+                        <Button
+                          className="min-w-0 flex-1"
+                          disabled={pending}
+                          onClick={() => onOpenThread(ticket)}
+                          size="xs"
+                          variant={thread.state === "unassigned" ? "default" : "outline"}
+                        >
+                          {thread.actionLabel}
+                          <ArrowRightIcon />
+                        </Button>
+                      </div>
                     </article>
                   );
                 })}
@@ -169,7 +249,7 @@ export function WorkbenchTicketBoard({
       </div>
 
       {tickets.length === 0 ? (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/45 p-6 backdrop-blur-[1px]">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/45 p-6 backdrop-blur-[1px]">
           <div className="w-full max-w-sm rounded-xl border border-border bg-background shadow-lg/10">
             <Empty className="min-h-72">
               <EmptyHeader>

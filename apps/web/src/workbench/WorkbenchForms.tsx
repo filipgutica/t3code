@@ -1,6 +1,13 @@
 import { ProjectId, type WorkbenchAssignment, type WorkbenchTicket } from "@t3tools/contracts";
-import { BotIcon, CircleAlertIcon, FolderGit2Icon, LinkIcon, PlusIcon } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import {
+  BotIcon,
+  CircleAlertIcon,
+  FolderGit2Icon,
+  LinkIcon,
+  PencilIcon,
+  PlusIcon,
+} from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -35,9 +42,11 @@ import { Textarea } from "../components/ui/textarea";
 import type { Project } from "../types";
 import {
   getWorkbenchThreadPresentation,
+  isWorkbenchTicketStatus,
   WORKBENCH_TICKET_STATUSES,
   WORKBENCH_TICKET_STATUS_LABELS,
 } from "./workbench.logic";
+import { useWorkbenchDraftStore } from "./workbenchDraftStore";
 
 export function WorkbenchWorkspaceDialog({
   open,
@@ -303,17 +312,47 @@ export function WorkbenchTicketDetail({
   readonly pending: boolean;
   readonly error: string | null;
   readonly onOpenChange: (open: boolean) => void;
-  readonly onSave: (ticket: WorkbenchTicket, title: string, markdown: string) => void;
+  readonly onSave: (ticket: WorkbenchTicket, title: string, markdown: string) => Promise<boolean>;
   readonly onUpdate: (
     ticket: WorkbenchTicket,
-    patch: Partial<Pick<WorkbenchTicket, "status" | "blocked">>,
+    patch: Partial<Pick<WorkbenchTicket, "title" | "markdown" | "status" | "blocked">>,
   ) => void;
   readonly onOpenThread: (ticket: WorkbenchTicket) => void;
 }) {
-  const [title, setTitle] = useState(ticket.title);
-  const [markdown, setMarkdown] = useState(ticket.markdown);
+  const draft = useWorkbenchDraftStore((state) => state.drafts.get(ticket.id));
+  const setDraft = useWorkbenchDraftStore((state) => state.setDraft);
+  const markDraftSaved = useWorkbenchDraftStore((state) => state.markDraftSaved);
+  const clearDraft = useWorkbenchDraftStore((state) => state.clearDraft);
   const thread = getWorkbenchThreadPresentation(assignment !== undefined, threadExists);
-  const dirty = title !== ticket.title || markdown !== ticket.markdown;
+  const editing = draft?.mode === "editing";
+  const displayedTitle = draft?.title ?? ticket.title;
+  const displayedMarkdown = draft?.markdown ?? ticket.markdown;
+  const actionableTicket =
+    draft?.mode === "saved"
+      ? { ...ticket, title: displayedTitle, markdown: displayedMarkdown }
+      : ticket;
+  const dirty = editing && (draft.title !== ticket.title || draft.markdown !== ticket.markdown);
+
+  useEffect(() => {
+    if (
+      draft?.mode === "saved" &&
+      draft.title === ticket.title &&
+      draft.markdown === ticket.markdown
+    ) {
+      clearDraft(ticket.id);
+    }
+  }, [clearDraft, draft, ticket.id, ticket.markdown, ticket.title]);
+
+  const cancelEditing = () => {
+    clearDraft(ticket.id);
+  };
+  const startEditing = () => {
+    setDraft(ticket.id, {
+      title: displayedTitle,
+      markdown: displayedMarkdown,
+      mode: "editing",
+    });
+  };
 
   return (
     <Sheet open onOpenChange={onOpenChange}>
@@ -322,11 +361,16 @@ export function WorkbenchTicketDetail({
           className="flex min-h-0 flex-1 flex-col"
           onSubmit={(event) => {
             event.preventDefault();
-            const normalizedTitle = title.trim();
-            const normalizedMarkdown = markdown.trim();
-            setTitle(normalizedTitle);
-            setMarkdown(normalizedMarkdown);
-            onSave(ticket, normalizedTitle, normalizedMarkdown);
+            if (!editing) return;
+            const normalizedTitle = draft.title.trim();
+            const normalizedMarkdown = draft.markdown.trim();
+            void (async () => {
+              if (!(await onSave(ticket, normalizedTitle, normalizedMarkdown))) return;
+              markDraftSaved(ticket.id, {
+                title: normalizedTitle,
+                markdown: normalizedMarkdown,
+              });
+            })();
           }}
         >
           <SheetHeader className="border-b border-border pr-14">
@@ -338,34 +382,70 @@ export function WorkbenchTicketDetail({
                 </Badge>
               ) : null}
             </div>
-            <SheetTitle className="leading-tight">{title.trim() || ticket.title}</SheetTitle>
-            <SheetDescription>Ticket details and delivery context</SheetDescription>
+            <SheetTitle className="leading-tight">
+              {displayedTitle.trim() || ticket.title}
+            </SheetTitle>
+            <SheetDescription>Ticket delivery workspace</SheetDescription>
           </SheetHeader>
 
           <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
             {error ? <WorkbenchInlineError message={error} /> : null}
             <section className="space-y-3" aria-labelledby="ticket-details-heading">
-              <h3 id="ticket-details-heading" className="text-sm font-semibold">
-                Overview
-              </h3>
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-workbench-ticket-title">Title</Label>
-                <Input
-                  id="edit-workbench-ticket-title"
-                  value={title}
-                  onChange={(event) => setTitle(event.currentTarget.value)}
-                />
+              <div className="flex items-center justify-between gap-3">
+                <h3 id="ticket-details-heading" className="text-sm font-semibold">
+                  Overview
+                </h3>
+                {!editing ? (
+                  <Button
+                    disabled={pending}
+                    onClick={startEditing}
+                    size="xs"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <PencilIcon /> Edit
+                  </Button>
+                ) : null}
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-workbench-ticket-context">Context</Label>
-                <Textarea
-                  id="edit-workbench-ticket-context"
-                  className="min-h-52"
-                  placeholder="Goal, constraints, and acceptance criteria…"
-                  value={markdown}
-                  onChange={(event) => setMarkdown(event.currentTarget.value)}
-                />
-              </div>
+              {editing ? (
+                <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-workbench-ticket-title">Title</Label>
+                    <Input
+                      id="edit-workbench-ticket-title"
+                      autoFocus
+                      value={draft.title}
+                      onChange={(event) => {
+                        setDraft(ticket.id, { ...draft, title: event.currentTarget.value });
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-workbench-ticket-context">Context</Label>
+                    <Textarea
+                      id="edit-workbench-ticket-context"
+                      className="min-h-52"
+                      placeholder="Goal, constraints, and acceptance criteria…"
+                      value={draft.markdown}
+                      onChange={(event) => {
+                        setDraft(ticket.id, { ...draft, markdown: event.currentTarget.value });
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-border bg-muted/20 p-4">
+                  <p
+                    className={`whitespace-pre-wrap text-sm leading-relaxed ${
+                      displayedMarkdown.trim().length > 0
+                        ? "text-foreground"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {displayedMarkdown.trim() || "No context added yet."}
+                  </p>
+                </div>
+              )}
             </section>
 
             <section className="space-y-3" aria-labelledby="ticket-delivery-heading">
@@ -406,15 +486,11 @@ export function WorkbenchTicketDetail({
                 <div className="space-y-1.5">
                   <Label>Status</Label>
                   <Select
+                    disabled={pending}
                     value={ticket.status}
                     onValueChange={(value) => {
-                      if (
-                        value === "todo" ||
-                        value === "in_progress" ||
-                        value === "ready_for_review" ||
-                        value === "done"
-                      ) {
-                        onUpdate(ticket, { status: value });
+                      if (isWorkbenchTicketStatus(value)) {
+                        onUpdate(actionableTicket, { status: value });
                       }
                     }}
                   >
@@ -436,7 +512,9 @@ export function WorkbenchTicketDetail({
                     <Checkbox
                       checked={ticket.blocked}
                       disabled={pending}
-                      onCheckedChange={(checked) => onUpdate(ticket, { blocked: checked === true })}
+                      onCheckedChange={(checked) =>
+                        onUpdate(actionableTicket, { blocked: checked === true })
+                      }
                     />
                     Blocked
                   </label>
@@ -446,30 +524,28 @@ export function WorkbenchTicketDetail({
           </div>
 
           <SheetFooter>
-            <Button
-              disabled={pending || !dirty || title.trim().length === 0}
-              type="submit"
-              variant="outline"
-            >
-              Save Ticket
-            </Button>
-            <Button
-              aria-describedby={dirty ? "workbench-thread-action-help" : undefined}
-              disabled={pending || dirty}
-              onClick={() => onOpenThread(ticket)}
-              type="button"
-            >
-              {thread.actionLabel}
-              {thread.state === "linked" ? <LinkIcon /> : <BotIcon />}
-            </Button>
-            {dirty ? (
-              <p
-                id="workbench-thread-action-help"
-                className="basis-full text-right text-xs text-muted-foreground"
+            {editing ? (
+              <>
+                <Button disabled={pending} onClick={cancelEditing} type="button" variant="outline">
+                  Cancel
+                </Button>
+                <Button
+                  disabled={pending || !dirty || draft.title.trim().length === 0}
+                  type="submit"
+                >
+                  Save Ticket
+                </Button>
+              </>
+            ) : (
+              <Button
+                disabled={pending}
+                onClick={() => onOpenThread(actionableTicket)}
+                type="button"
               >
-                Save changes before starting or opening the Agent Thread.
-              </p>
-            ) : null}
+                {thread.actionLabel}
+                {thread.state === "linked" ? <LinkIcon /> : <BotIcon />}
+              </Button>
+            )}
           </SheetFooter>
         </form>
       </SheetPopup>

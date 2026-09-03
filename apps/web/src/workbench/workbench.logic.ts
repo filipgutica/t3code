@@ -14,6 +14,16 @@ export const WORKBENCH_TICKET_STATUS_LABELS: Record<WorkbenchTicketStatus, strin
   done: "Done",
 };
 
+export function isWorkbenchTicketStatus(value: unknown): value is WorkbenchTicketStatus {
+  return WORKBENCH_TICKET_STATUSES.some((status) => status === value);
+}
+
+export function getWorkbenchTicketStatusMoves(
+  currentStatus: WorkbenchTicketStatus,
+): ReadonlyArray<WorkbenchTicketStatus> {
+  return WORKBENCH_TICKET_STATUSES.filter((status) => status !== currentStatus);
+}
+
 export function getWorkbenchThreadPresentation(hasAssignment: boolean, threadExists: boolean) {
   if (!hasAssignment) {
     return {

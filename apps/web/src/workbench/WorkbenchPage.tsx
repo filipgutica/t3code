@@ -48,6 +48,7 @@ import {
   WorkbenchWorkspaceDialog,
 } from "./WorkbenchForms";
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
+import { useWorkbenchDraftStore } from "./workbenchDraftStore";
 
 interface WorkbenchPageProps {
   readonly createWorkspace: boolean;
@@ -120,6 +121,8 @@ export function WorkbenchPage({
   });
   const createTicket = useAtomCommand(workbenchEnvironment.createTicket, { reportFailure: false });
   const updateTicket = useAtomCommand(workbenchEnvironment.updateTicket, { reportFailure: false });
+  const ticketDrafts = useWorkbenchDraftStore((state) => state.drafts);
+  const clearTicketDraft = useWorkbenchDraftStore((state) => state.clearDraft);
   const projects = useMemo(
     () => allProjects.filter((project) => project.environmentId === environmentId),
     [allProjects, environmentId],
@@ -141,6 +144,16 @@ export function WorkbenchPage({
   const [awaitingTicketId, setAwaitingTicketId] = useState<WorkbenchTicketId | null>(null);
 
   const snapshot = query.data;
+  useEffect(() => {
+    for (const [ticketId, draft] of ticketDrafts) {
+      if (draft.mode !== "saved") continue;
+      const projectedTicket = snapshot?.tickets.find((ticket) => ticket.id === ticketId);
+      if (projectedTicket?.title === draft.title && projectedTicket.markdown === draft.markdown) {
+        clearTicketDraft(ticketId);
+      }
+    }
+  }, [clearTicketDraft, snapshot?.tickets, ticketDrafts]);
+
   const awaitingSelectedProject =
     awaitingProjectId !== null &&
     awaitingProjectId === selectedProjectId &&
@@ -252,40 +265,49 @@ export function WorkbenchPage({
     return true;
   };
 
-  const updateTicketFields = (
+  const updateTicketFields = async (
     ticket: WorkbenchTicket,
     patch: Partial<Pick<WorkbenchTicket, "title" | "markdown" | "status" | "blocked">>,
   ) => {
-    if (environmentId === null) return;
-    void (async () => {
-      setPendingAction(`update:${ticket.id}`);
-      setError(null);
-      const result = await updateTicket({
-        environmentId,
-        input: {
-          id: ticket.id,
-          title: patch.title ?? ticket.title,
-          markdown: patch.markdown ?? ticket.markdown,
-          status: patch.status ?? ticket.status,
-          blocked: patch.blocked ?? ticket.blocked,
-          updatedAt: new Date().toISOString(),
-        },
-      });
-      setPendingAction(null);
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        setError(failureMessage(result));
-      }
-    })();
+    if (environmentId === null) return false;
+    setPendingAction(`update:${ticket.id}`);
+    setError(null);
+    const result = await updateTicket({
+      environmentId,
+      input: {
+        id: ticket.id,
+        title: patch.title ?? ticket.title,
+        markdown: patch.markdown ?? ticket.markdown,
+        status: patch.status ?? ticket.status,
+        blocked: patch.blocked ?? ticket.blocked,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    setPendingAction(null);
+    if (result._tag === "Failure") {
+      if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
+      return false;
+    }
+    return true;
   };
 
   const changeTicket = (
     ticket: WorkbenchTicket,
-    patch: Partial<Pick<WorkbenchTicket, "status" | "blocked">>,
-  ) => updateTicketFields(ticket, patch);
+    patch: Partial<Pick<WorkbenchTicket, "title" | "markdown" | "status" | "blocked">>,
+  ) => {
+    void updateTicketFields(ticket, patch);
+  };
+
+  const ticketForBoardAction = (ticket: WorkbenchTicket) => {
+    const draft = ticketDrafts.get(ticket.id);
+    return draft?.mode === "saved"
+      ? { ...ticket, title: draft.title, markdown: draft.markdown }
+      : ticket;
+  };
 
   const saveTicketContent = (ticket: WorkbenchTicket, title: string, markdown: string) => {
-    if (title.trim().length === 0) return;
-    updateTicketFields(ticket, { title: title.trim(), markdown: markdown.trim() });
+    if (title.trim().length === 0) return Promise.resolve(false);
+    return updateTicketFields(ticket, { title: title.trim(), markdown: markdown.trim() });
   };
 
   const linkedT3Projects = selectedProject
@@ -492,7 +514,8 @@ export function WorkbenchPage({
                 setSelectedTicketId(ticketId);
                 void updateRouteSelection(projectId, ticketId);
               }}
-              onOpenThread={openTicketThread}
+              onMove={(ticket, status) => changeTicket(ticketForBoardAction(ticket), { status })}
+              onOpenThread={(ticket) => openTicketThread(ticketForBoardAction(ticket))}
               onCreateTicket={openTicketDialog}
             />
           </div>

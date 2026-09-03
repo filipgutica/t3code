@@ -3,6 +3,8 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   buildTicketThreadPrompt,
   getWorkbenchThreadPresentation,
+  getWorkbenchTicketStatusMoves,
+  isWorkbenchTicketStatus,
   ticketsByStatus,
   WORKBENCH_TICKET_STATUS_LABELS,
 } from "./workbench.logic";
@@ -48,6 +50,20 @@ describe("Workbench ticket helpers", () => {
       ready_for_review: "Ready for Review",
       done: "Done",
     });
+  });
+
+  it("offers every other Board column as a direct Ticket destination", () => {
+    expect(getWorkbenchTicketStatusMoves("in_progress")).toEqual([
+      "todo",
+      "ready_for_review",
+      "done",
+    ]);
+  });
+
+  it("recognizes only supported Board statuses", () => {
+    expect(isWorkbenchTicketStatus("ready_for_review")).toBe(true);
+    expect(isWorkbenchTicketStatus("blocked")).toBe(false);
+    expect(isWorkbenchTicketStatus(null)).toBe(false);
   });
 
   it("presents the next action for each supported Thread state", () => {
