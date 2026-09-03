@@ -198,6 +198,18 @@ import {
   ResourceTelemetrySnapshot,
 } from "./resourceTelemetry.ts";
 import { UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
+import {
+  WorkbenchAssignment,
+  WorkbenchCreateAssignmentInput,
+  WorkbenchCreateProjectInput,
+  WorkbenchCreateTicketInput,
+  WorkbenchOperationError,
+  WorkbenchProject,
+  WorkbenchReplaceAssignmentInput,
+  WorkbenchSnapshot,
+  WorkbenchTicket,
+  WorkbenchUpdateTicketInput,
+} from "./workbench.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
   SourceControlCloneRepositoryInput,
@@ -297,6 +309,14 @@ export const WS_METHODS = {
   serverReportHostPowerState: "server.reportHostPowerState",
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
   serverGetUsageSummary: "server.getUsageSummary",
+
+  // Workbench project-management methods
+  workbenchGetSnapshot: "workbench.getSnapshot",
+  workbenchCreateProject: "workbench.projects.create",
+  workbenchCreateTicket: "workbench.tickets.create",
+  workbenchUpdateTicket: "workbench.tickets.update",
+  workbenchCreateAssignment: "workbench.assignments.create",
+  workbenchReplaceAssignment: "workbench.assignments.replace",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -502,6 +522,44 @@ export const WsServerGetBackgroundPolicyRpc = Rpc.make(WS_METHODS.serverGetBackg
   payload: Schema.Struct({}),
   success: BackgroundPolicySnapshot,
   error: EnvironmentAuthorizationError,
+});
+
+const WorkbenchRpcError = Schema.Union([WorkbenchOperationError, EnvironmentAuthorizationError]);
+
+export const WsWorkbenchGetSnapshotRpc = Rpc.make(WS_METHODS.workbenchGetSnapshot, {
+  payload: Schema.Struct({}),
+  success: WorkbenchSnapshot,
+  error: WorkbenchRpcError,
+});
+
+export const WsWorkbenchCreateProjectRpc = Rpc.make(WS_METHODS.workbenchCreateProject, {
+  payload: WorkbenchCreateProjectInput,
+  success: WorkbenchProject,
+  error: WorkbenchRpcError,
+});
+
+export const WsWorkbenchCreateTicketRpc = Rpc.make(WS_METHODS.workbenchCreateTicket, {
+  payload: WorkbenchCreateTicketInput,
+  success: WorkbenchTicket,
+  error: WorkbenchRpcError,
+});
+
+export const WsWorkbenchUpdateTicketRpc = Rpc.make(WS_METHODS.workbenchUpdateTicket, {
+  payload: WorkbenchUpdateTicketInput,
+  success: WorkbenchTicket,
+  error: WorkbenchRpcError,
+});
+
+export const WsWorkbenchCreateAssignmentRpc = Rpc.make(WS_METHODS.workbenchCreateAssignment, {
+  payload: WorkbenchCreateAssignmentInput,
+  success: WorkbenchAssignment,
+  error: WorkbenchRpcError,
+});
+
+export const WsWorkbenchReplaceAssignmentRpc = Rpc.make(WS_METHODS.workbenchReplaceAssignment, {
+  payload: WorkbenchReplaceAssignmentInput,
+  success: WorkbenchAssignment,
+  error: WorkbenchRpcError,
 });
 
 const PullRequestRpcError = Schema.Union([
@@ -1084,6 +1142,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,
   WsServerGetBackgroundPolicyRpc,
+  WsWorkbenchGetSnapshotRpc,
+  WsWorkbenchCreateProjectRpc,
+  WsWorkbenchCreateTicketRpc,
+  WsWorkbenchUpdateTicketRpc,
+  WsWorkbenchCreateAssignmentRpc,
+  WsWorkbenchReplaceAssignmentRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,

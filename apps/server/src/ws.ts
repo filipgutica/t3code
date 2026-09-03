@@ -124,6 +124,7 @@ import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as WorkbenchStore from "./workbench/WorkbenchStore.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
@@ -458,6 +459,7 @@ const makeWsRpcLayer = (
   clientOrigin: OrchestrationClientOrigin,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
+  workbench: WorkbenchStore.WorkbenchStore["Service"],
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -1262,6 +1264,34 @@ const makeWsRpcLayer = (
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
       return WsRpcGroup.of({
+        [WS_METHODS.workbenchGetSnapshot]: (_input) =>
+          observeRpcEffect(WS_METHODS.workbenchGetSnapshot, workbench.getSnapshot, {
+            "rpc.aggregate": "workbench",
+          }),
+        [WS_METHODS.workbenchCreateProject]: (input) =>
+          observeRpcEffect(WS_METHODS.workbenchCreateProject, workbench.createProject(input), {
+            "rpc.aggregate": "workbench",
+          }),
+        [WS_METHODS.workbenchCreateTicket]: (input) =>
+          observeRpcEffect(WS_METHODS.workbenchCreateTicket, workbench.createTicket(input), {
+            "rpc.aggregate": "workbench",
+          }),
+        [WS_METHODS.workbenchUpdateTicket]: (input) =>
+          observeRpcEffect(WS_METHODS.workbenchUpdateTicket, workbench.updateTicket(input), {
+            "rpc.aggregate": "workbench",
+          }),
+        [WS_METHODS.workbenchCreateAssignment]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workbenchCreateAssignment,
+            workbench.createAssignment(input),
+            { "rpc.aggregate": "workbench" },
+          ),
+        [WS_METHODS.workbenchReplaceAssignment]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workbenchReplaceAssignment,
+            workbench.replaceAssignment(input),
+            { "rpc.aggregate": "workbench" },
+          ),
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,
@@ -2615,6 +2645,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
         ),
     });
     const pullRequests = yield* PullRequestService.PullRequestService;
+    const workbench = yield* WorkbenchStore.WorkbenchStore;
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -2647,6 +2678,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               clientOrigin,
               clientAnalyticsProps,
               previewAutomationBroker,
+              workbench,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(ProviderMaintenanceRunner.layer),
