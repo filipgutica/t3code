@@ -1,3 +1,4 @@
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type {
   ProjectId,
   ThreadId,
@@ -10,11 +11,10 @@ import type {
 import {
   ArrowRightIcon,
   BotIcon,
-  ChevronDownIcon,
   CircleAlertIcon,
   FolderGit2Icon,
   LayoutDashboardIcon,
-  LinkIcon,
+  MoreHorizontalIcon,
   PlusIcon,
 } from "lucide-react";
 import { useMemo, useRef, useState, type UIEvent } from "react";
@@ -30,6 +30,7 @@ import {
   EmptyTitle,
 } from "../components/ui/empty";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
+import { resolveThreadStatusPill } from "../components/Sidebar.logic";
 import type { Project } from "../types";
 import {
   getWorkbenchTicketStatusMoves,
@@ -53,8 +54,9 @@ export function WorkbenchTicketBoard({
   selectedTicketId,
   repositoriesById,
   assignmentsByTicket,
-  existingThreadIds,
+  threadsById,
   pending,
+  pendingAction,
   onSelect,
   onMove,
   onOpenThread,
@@ -65,8 +67,9 @@ export function WorkbenchTicketBoard({
   readonly selectedTicketId: WorkbenchTicketId | null;
   readonly repositoriesById: ReadonlyMap<ProjectId, Project>;
   readonly assignmentsByTicket: ReadonlyMap<WorkbenchTicketId, WorkbenchAssignment>;
-  readonly existingThreadIds: ReadonlySet<ThreadId>;
+  readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   readonly pending: boolean;
+  readonly pendingAction: string | null;
   readonly onSelect: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
   readonly onMove: (ticket: WorkbenchTicket, status: WorkbenchTicketStatus) => void;
   readonly onOpenThread: (ticket: WorkbenchTicket) => void;
@@ -150,13 +153,19 @@ export function WorkbenchTicketBoard({
               <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5">
                 {groupedTickets[status].map((ticket) => {
                   const assignment = assignmentsByTicket.get(ticket.id);
-                  const threadExists = assignment
-                    ? existingThreadIds.has(assignment.threadId)
-                    : false;
+                  const nativeThread = assignment
+                    ? threadsById.get(assignment.threadId)
+                    : undefined;
+                  const nativeStatus = nativeThread
+                    ? resolveThreadStatusPill({ thread: nativeThread })
+                    : null;
+                  const nativeThreadFailed = nativeThread?.session?.status === "error";
                   const thread = getWorkbenchThreadPresentation(
                     assignment !== undefined,
-                    threadExists,
+                    nativeThread !== undefined,
+                    nativeStatus?.label ?? (nativeThreadFailed ? "Failed" : null),
                   );
+                  const threadActionPending = pendingAction === `start:${ticket.id}`;
                   const repository = repositoriesById.get(ticket.primaryT3ProjectId);
                   return (
                     <article
@@ -167,25 +176,47 @@ export function WorkbenchTicketBoard({
                           : "border-border"
                       }`}
                     >
+                      <div className="flex items-start gap-2">
+                        <button
+                          className="min-w-0 flex-1 text-left outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+                          type="button"
+                          onClick={() => onSelect(projectId, ticket.id)}
+                        >
+                          <h3 className="text-sm font-medium leading-snug">{ticket.title}</h3>
+                        </button>
+                        <Menu>
+                          <MenuTrigger
+                            aria-label={`Move ${ticket.title} to another status`}
+                            render={
+                              <Button
+                                className="-mr-1 -mt-1 shrink-0"
+                                disabled={pending}
+                                size="icon-xs"
+                                variant="ghost"
+                              />
+                            }
+                          >
+                            <MoreHorizontalIcon />
+                          </MenuTrigger>
+                          <MenuPopup align="end" className="min-w-44">
+                            {getWorkbenchTicketStatusMoves(ticket.status).map((nextStatus) => (
+                              <MenuItem key={nextStatus} onClick={() => onMove(ticket, nextStatus)}>
+                                <span
+                                  aria-hidden
+                                  className={`size-2 rounded-full ${STATUS_DOT_CLASS[nextStatus]}`}
+                                />
+                                Move to {WORKBENCH_TICKET_STATUS_LABELS[nextStatus]}
+                              </MenuItem>
+                            ))}
+                          </MenuPopup>
+                        </Menu>
+                      </div>
                       <button
-                        className="block w-full text-left outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+                        className="mt-3 block w-full text-left outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
                         type="button"
                         onClick={() => onSelect(projectId, ticket.id)}
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <h3 className="text-sm font-medium leading-snug">{ticket.title}</h3>
-                          {ticket.blocked ? (
-                            <Badge variant="warning">
-                              <CircleAlertIcon /> Blocked
-                            </Badge>
-                          ) : null}
-                        </div>
-                        {ticket.markdown ? (
-                          <p className="mt-1.5 line-clamp-2 whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
-                            {ticket.markdown}
-                          </p>
-                        ) : null}
-                        <div className="mt-3 space-y-1.5 text-xs text-muted-foreground">
+                        <div className="space-y-1.5 text-xs text-muted-foreground">
                           <div className="flex min-w-0 items-center gap-1.5">
                             <FolderGit2Icon className="size-3.5 shrink-0" />
                             <span className="truncate">
@@ -194,45 +225,46 @@ export function WorkbenchTicketBoard({
                           </div>
                           <div className="flex items-center gap-1.5">
                             {thread.state === "linked" ? (
-                              <LinkIcon className="size-3.5 text-success-foreground" />
+                              <span
+                                aria-hidden
+                                className={`size-2 rounded-full ${
+                                  nativeStatus?.dotClass ??
+                                  (nativeThreadFailed ? "bg-destructive" : "bg-muted-foreground/60")
+                                }`}
+                              />
                             ) : thread.state === "missing" ? (
                               <CircleAlertIcon className="size-3.5 text-warning-foreground" />
                             ) : (
                               <BotIcon className="size-3.5" />
                             )}
-                            <span>{thread.stateLabel}</span>
+                            <span
+                              className={
+                                nativeStatus?.colorClass ??
+                                (nativeThreadFailed ? "text-destructive" : undefined)
+                              }
+                            >
+                              {thread.stateLabel}
+                            </span>
+                            {assignment ? (
+                              <span className="text-muted-foreground/60">· Assigned</span>
+                            ) : null}
                           </div>
                         </div>
                       </button>
-                      <div className="mt-3 flex gap-2">
-                        <Menu>
-                          <MenuTrigger
-                            aria-label={`Move ${ticket.title} to another status`}
-                            render={<Button disabled={pending} size="xs" variant="outline" />}
-                          >
-                            Move
-                            <ChevronDownIcon />
-                          </MenuTrigger>
-                          <MenuPopup align="start" className="min-w-44">
-                            {getWorkbenchTicketStatusMoves(ticket.status).map((nextStatus) => (
-                              <MenuItem key={nextStatus} onClick={() => onMove(ticket, nextStatus)}>
-                                <span
-                                  aria-hidden
-                                  className={`size-2 rounded-full ${STATUS_DOT_CLASS[nextStatus]}`}
-                                />
-                                {WORKBENCH_TICKET_STATUS_LABELS[nextStatus]}
-                              </MenuItem>
-                            ))}
-                          </MenuPopup>
-                        </Menu>
+                      {ticket.blocked ? (
+                        <Badge className="mt-3" variant="warning">
+                          <CircleAlertIcon /> Blocked
+                        </Badge>
+                      ) : null}
+                      <div className="mt-3">
                         <Button
-                          className="min-w-0 flex-1"
+                          className="w-full"
                           disabled={pending}
                           onClick={() => onOpenThread(ticket)}
                           size="xs"
                           variant={thread.state === "unassigned" ? "default" : "outline"}
                         >
-                          {thread.actionLabel}
+                          {threadActionPending ? thread.pendingActionLabel : thread.actionLabel}
                           <ArrowRightIcon />
                         </Button>
                       </div>

@@ -1,6 +1,6 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeftIcon } from "lucide-react";
+import { BlocksIcon, CircleAlertIcon, TicketIcon } from "lucide-react";
 
 import {
   WorkspaceBreadcrumbItem,
@@ -8,6 +8,7 @@ import {
 } from "../components/WorkspaceBreadcrumb";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
+import { WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
 
 export function WorkbenchThreadBreadcrumb({
   environmentId,
@@ -28,16 +29,44 @@ export function WorkbenchThreadBreadcrumb({
 
   return (
     <>
-      <WorkspaceBreadcrumbItem className="shrink-0">
+      <WorkspaceBreadcrumbItem className="hidden shrink-0 lg:flex">
         <Link
-          aria-label={`Back to Workbench ticket ${ticket.title}`}
-          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-          search={{ projectId: project.id, ticketId: ticket.id }}
+          aria-label={`Back to Workspace ${project.title} Board`}
+          className="inline-flex h-7 max-w-48 items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-2 text-xs font-medium text-foreground transition-colors hover:bg-primary/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          search={{ projectId: project.id }}
+          title={`${project.title} Board`}
           to="/workbench"
         >
-          <ArrowLeftIcon className="size-3.5 shrink-0" />
-          <span className="hidden sm:inline">Back to</span>
-          <span>Workbench</span>
+          <BlocksIcon className="size-3.5 shrink-0 text-primary" />
+          <span className="hidden xl:inline">Agent Workbench</span>
+          <span aria-hidden className="hidden text-muted-foreground/60 2xl:inline">
+            ·
+          </span>
+          <span className="hidden truncate text-muted-foreground 2xl:inline">{project.title}</span>
+          <span className="xl:hidden">Workbench</span>
+        </Link>
+      </WorkspaceBreadcrumbItem>
+      <WorkspaceBreadcrumbSeparator className="hidden lg:flex" />
+      <WorkspaceBreadcrumbItem className="min-w-0 shrink">
+        <Link
+          aria-label={`Back to Ticket ${ticket.title} in Workspace ${project.title}`}
+          className="inline-flex h-7 min-w-0 max-w-64 items-center gap-1.5 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          search={{ projectId: project.id, ticketId: ticket.id }}
+          title={`${project.title} · ${WORKBENCH_TICKET_STATUS_LABELS[ticket.status]}`}
+          to="/workbench"
+        >
+          <BlocksIcon className="size-3.5 shrink-0 text-primary lg:hidden" />
+          <TicketIcon className="hidden size-3.5 shrink-0 lg:block" />
+          <span className="truncate">{ticket.title}</span>
+          <span className="hidden shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground xl:inline">
+            {WORKBENCH_TICKET_STATUS_LABELS[ticket.status]}
+          </span>
+          {ticket.blocked ? (
+            <CircleAlertIcon
+              aria-label="Blocked"
+              className="size-3.5 shrink-0 text-warning-foreground"
+            />
+          ) : null}
         </Link>
       </WorkspaceBreadcrumbItem>
       <WorkspaceBreadcrumbSeparator />

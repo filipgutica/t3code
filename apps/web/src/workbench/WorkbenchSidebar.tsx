@@ -1,5 +1,6 @@
-import { WorkbenchProjectId } from "@t3tools/contracts";
+import { type EnvironmentId, WorkbenchProjectId, WorkbenchTicketId } from "@t3tools/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import {
   AlertCircleIcon,
   BlocksIcon,
@@ -24,10 +25,32 @@ import { usePrimaryEnvironmentId } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
 
-export function WorkbenchSidebar() {
-  const environmentId = usePrimaryEnvironmentId();
-  const navigate = useNavigate({ from: "/workbench" });
-  const search = useSearch({ from: "/workbench" });
+const isWorkbenchProjectId = Schema.is(WorkbenchProjectId);
+const isWorkbenchTicketId = Schema.is(WorkbenchTicketId);
+
+export function WorkbenchSidebar({
+  context,
+}: {
+  readonly context?:
+    | {
+        readonly environmentId: EnvironmentId;
+        readonly workspaceId: WorkbenchProjectId;
+        readonly ticketId: WorkbenchTicketId;
+      }
+    | undefined;
+}) {
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const environmentId = context?.environmentId ?? primaryEnvironmentId;
+  const navigate = useNavigate();
+  const search = useSearch({
+    strict: false,
+    select: (value) => ({
+      projectId: isWorkbenchProjectId(value.projectId) ? value.projectId : undefined,
+      ticketId: isWorkbenchTicketId(value.ticketId) ? value.ticketId : undefined,
+    }),
+  });
+  const selectedWorkspaceId = context?.workspaceId ?? search.projectId;
+  const selectedTicketId = context?.ticketId ?? search.ticketId;
   const { isMobile, setOpenMobile } = useSidebar();
   const query = useEnvironmentQuery(
     environmentId === null ? null : workbenchEnvironment.snapshot({ environmentId, input: {} }),
@@ -54,8 +77,8 @@ export function WorkbenchSidebar() {
     void navigate({
       to: "/workbench",
       search: {
-        ...(search.projectId ? { projectId: search.projectId } : {}),
-        ...(search.ticketId ? { ticketId: search.ticketId } : {}),
+        ...(selectedWorkspaceId ? { projectId: selectedWorkspaceId } : {}),
+        ...(selectedTicketId ? { ticketId: selectedTicketId } : {}),
         create: "workspace",
       },
       replace: true,
@@ -107,8 +130,8 @@ export function WorkbenchSidebar() {
               {(snapshot?.projects ?? []).map((workspace) => (
                 <SidebarMenuItem key={workspace.id}>
                   <SidebarMenuButton
-                    aria-current={workspace.id === search.projectId ? "page" : undefined}
-                    isActive={workspace.id === search.projectId}
+                    aria-current={workspace.id === selectedWorkspaceId ? "page" : undefined}
+                    isActive={workspace.id === selectedWorkspaceId}
                     onClick={() => selectWorkspace(workspace.id)}
                   >
                     <LayoutDashboardIcon />

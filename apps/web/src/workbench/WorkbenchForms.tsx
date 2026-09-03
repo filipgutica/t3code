@@ -1,9 +1,11 @@
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { ProjectId, type WorkbenchAssignment, type WorkbenchTicket } from "@t3tools/contracts";
 import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
   BotIcon,
   CircleAlertIcon,
   FolderGit2Icon,
-  LinkIcon,
   PencilIcon,
   PlusIcon,
 } from "lucide-react";
@@ -11,6 +13,7 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
+import { resolveThreadStatusPill } from "../components/Sidebar.logic";
 import { Checkbox } from "../components/ui/checkbox";
 import {
   Dialog,
@@ -30,14 +33,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import {
-  Sheet,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetPopup,
-  SheetTitle,
-} from "../components/ui/sheet";
 import { Textarea } from "../components/ui/textarea";
 import type { Project } from "../types";
 import {
@@ -294,24 +289,28 @@ export function WorkbenchTicketDialog({
 }
 
 export function WorkbenchTicketDetail({
+  workspaceTitle,
   ticket,
   repository,
   assignment,
-  threadExists,
+  nativeThread,
   pending,
+  threadActionPending,
   error,
-  onOpenChange,
+  onBack,
   onSave,
   onUpdate,
   onOpenThread,
 }: {
+  readonly workspaceTitle: string;
   readonly ticket: WorkbenchTicket;
   readonly repository: Project | undefined;
   readonly assignment: WorkbenchAssignment | undefined;
-  readonly threadExists: boolean;
+  readonly nativeThread: EnvironmentThreadShell | undefined;
   readonly pending: boolean;
+  readonly threadActionPending: boolean;
   readonly error: string | null;
-  readonly onOpenChange: (open: boolean) => void;
+  readonly onBack: () => void;
   readonly onSave: (ticket: WorkbenchTicket, title: string, markdown: string) => Promise<boolean>;
   readonly onUpdate: (
     ticket: WorkbenchTicket,
@@ -323,7 +322,13 @@ export function WorkbenchTicketDetail({
   const setDraft = useWorkbenchDraftStore((state) => state.setDraft);
   const markDraftSaved = useWorkbenchDraftStore((state) => state.markDraftSaved);
   const clearDraft = useWorkbenchDraftStore((state) => state.clearDraft);
-  const thread = getWorkbenchThreadPresentation(assignment !== undefined, threadExists);
+  const nativeStatus = nativeThread ? resolveThreadStatusPill({ thread: nativeThread }) : null;
+  const nativeThreadFailed = nativeThread?.session?.status === "error";
+  const thread = getWorkbenchThreadPresentation(
+    assignment !== undefined,
+    nativeThread !== undefined,
+    nativeStatus?.label ?? (nativeThreadFailed ? "Failed" : null),
+  );
   const editing = draft?.mode === "editing";
   const displayedTitle = draft?.title ?? ticket.title;
   const displayedMarkdown = draft?.markdown ?? ticket.markdown;
@@ -354,27 +359,23 @@ export function WorkbenchTicketDetail({
     });
   };
 
+  const agentTitle =
+    nativeThread?.title ?? (assignment ? "Thread unavailable" : "No Agent assigned");
+
   return (
-    <Sheet open onOpenChange={onOpenChange}>
-      <SheetPopup className="max-w-xl max-sm:w-full max-sm:max-w-none">
-        <form
-          className="flex min-h-0 flex-1 flex-col"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!editing) return;
-            const normalizedTitle = draft.title.trim();
-            const normalizedMarkdown = draft.markdown.trim();
-            void (async () => {
-              if (!(await onSave(ticket, normalizedTitle, normalizedMarkdown))) return;
-              markDraftSaved(ticket.id, {
-                title: normalizedTitle,
-                markdown: normalizedMarkdown,
-              });
-            })();
-          }}
-        >
-          <SheetHeader className="border-b border-border pr-14">
-            <div className="flex flex-wrap items-center gap-2">
+    <article className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <header className="shrink-0 border-b border-border px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-6xl items-start gap-3">
+          <Button aria-label="Back to Board" onClick={onBack} size="sm" variant="ghost">
+            <ArrowLeftIcon />
+            <span className="hidden sm:inline">Board</span>
+          </Button>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-muted-foreground">{workspaceTitle} · Ticket</p>
+            <h1 className="mt-1 text-balance font-heading text-xl font-semibold leading-tight sm:text-2xl">
+              {displayedTitle.trim() || ticket.title}
+            </h1>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <Badge variant="outline">{WORKBENCH_TICKET_STATUS_LABELS[ticket.status]}</Badge>
               {ticket.blocked ? (
                 <Badge variant="warning">
@@ -382,33 +383,51 @@ export function WorkbenchTicketDetail({
                 </Badge>
               ) : null}
             </div>
-            <SheetTitle className="leading-tight">
-              {displayedTitle.trim() || ticket.title}
-            </SheetTitle>
-            <SheetDescription>Ticket delivery workspace</SheetDescription>
-          </SheetHeader>
+          </div>
+        </div>
+      </header>
 
-          <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6">
+      <form
+        className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!editing) return;
+          const normalizedTitle = draft.title.trim();
+          const normalizedMarkdown = draft.markdown.trim();
+          void (async () => {
+            if (!(await onSave(ticket, normalizedTitle, normalizedMarkdown))) return;
+            markDraftSaved(ticket.id, {
+              title: normalizedTitle,
+              markdown: normalizedMarkdown,
+            });
+          })();
+        }}
+      >
+        <div className="mx-auto grid max-w-6xl items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="space-y-4">
             {error ? <WorkbenchInlineError message={error} /> : null}
-            <section className="space-y-3" aria-labelledby="ticket-details-heading">
-              <div className="flex items-center justify-between gap-3">
-                <h3 id="ticket-details-heading" className="text-sm font-semibold">
-                  Overview
-                </h3>
+            <section className="overflow-hidden rounded-xl border border-border bg-card">
+              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                <div>
+                  <h2 className="text-sm font-semibold">Description</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Intent, constraints, and acceptance criteria for this work.
+                  </p>
+                </div>
                 {!editing ? (
                   <Button
                     disabled={pending}
                     onClick={startEditing}
                     size="xs"
                     type="button"
-                    variant="ghost"
+                    variant="outline"
                   >
                     <PencilIcon /> Edit
                   </Button>
                 ) : null}
               </div>
               {editing ? (
-                <div className="space-y-4 rounded-lg border border-border bg-muted/20 p-4">
+                <div className="space-y-4 p-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="edit-workbench-ticket-title">Title</Label>
                     <Input
@@ -421,10 +440,10 @@ export function WorkbenchTicketDetail({
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="edit-workbench-ticket-context">Context</Label>
+                    <Label htmlFor="edit-workbench-ticket-context">Description</Label>
                     <Textarea
                       id="edit-workbench-ticket-context"
-                      className="min-h-52"
+                      className="min-h-72"
                       placeholder="Goal, constraints, and acceptance criteria…"
                       value={draft.markdown}
                       onChange={(event) => {
@@ -432,27 +451,90 @@ export function WorkbenchTicketDetail({
                       }}
                     />
                   </div>
+                  <div className="flex justify-end gap-2 border-t border-border pt-4">
+                    <Button
+                      disabled={pending}
+                      onClick={cancelEditing}
+                      type="button"
+                      variant="outline"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      disabled={pending || !dirty || draft.title.trim().length === 0}
+                      type="submit"
+                    >
+                      Save Ticket
+                    </Button>
+                  </div>
                 </div>
               ) : (
-                <div className="rounded-lg border border-border bg-muted/20 p-4">
-                  <p
-                    className={`whitespace-pre-wrap text-sm leading-relaxed ${
-                      displayedMarkdown.trim().length > 0
-                        ? "text-foreground"
-                        : "text-muted-foreground"
-                    }`}
-                  >
-                    {displayedMarkdown.trim() || "No context added yet."}
-                  </p>
-                </div>
+                <p
+                  className={`min-h-40 whitespace-pre-wrap p-4 text-sm leading-relaxed ${
+                    displayedMarkdown.trim().length > 0
+                      ? "text-foreground"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {displayedMarkdown.trim() || "No description added yet."}
+                </p>
               )}
             </section>
+          </div>
 
-            <section className="space-y-3" aria-labelledby="ticket-delivery-heading">
-              <h3 id="ticket-delivery-heading" className="text-sm font-semibold">
-                Delivery
-              </h3>
-              <div className="grid gap-3 rounded-lg border border-border bg-muted/20 p-4">
+          <aside className="space-y-4">
+            <section className="overflow-hidden rounded-xl border border-border bg-card">
+              <div className="border-b border-border px-4 py-3">
+                <h2 className="text-sm font-semibold">Attached Agent</h2>
+                <p className="text-xs text-muted-foreground">
+                  Select the Agent to continue in its native T3 Thread.
+                </p>
+              </div>
+              <button
+                aria-label={`${
+                  threadActionPending ? thread.pendingActionLabel : thread.actionLabel
+                } for ${displayedTitle}`}
+                className="group flex w-full min-w-0 items-center gap-3 p-4 text-left outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-50"
+                disabled={pending}
+                onClick={() => onOpenThread(actionableTicket)}
+                type="button"
+              >
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+                  {thread.state === "missing" ? (
+                    <CircleAlertIcon className="size-4 text-warning-foreground" />
+                  ) : (
+                    <BotIcon className="size-4 text-muted-foreground" />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">{agentTitle}</span>
+                  <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    {nativeThread ? (
+                      <span
+                        aria-hidden
+                        className={`size-2 shrink-0 rounded-full ${
+                          nativeStatus?.dotClass ??
+                          (nativeThreadFailed ? "bg-destructive" : "bg-muted-foreground/60")
+                        }`}
+                      />
+                    ) : null}
+                    {assignment ? `Assigned · ${thread.stateLabel}` : "Start a native T3 Thread"}
+                  </span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground group-hover:text-foreground">
+                  <span className="hidden sm:inline">
+                    {threadActionPending ? thread.pendingActionLabel : thread.actionLabel}
+                  </span>
+                  <ArrowRightIcon className="size-3.5" />
+                </span>
+              </button>
+            </section>
+
+            <section className="overflow-hidden rounded-xl border border-border bg-card">
+              <div className="border-b border-border px-4 py-3">
+                <h2 className="text-sm font-semibold">Ticket fields</h2>
+              </div>
+              <div className="space-y-4 p-4">
                 <div className="flex min-w-0 items-start gap-3">
                   <FolderGit2Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                   <div className="min-w-0">
@@ -467,23 +549,7 @@ export function WorkbenchTicketDetail({
                     ) : null}
                   </div>
                 </div>
-                <div className="flex min-w-0 items-start gap-3 border-t border-border pt-3">
-                  {thread.state === "linked" ? (
-                    <LinkIcon className="mt-0.5 size-4 shrink-0 text-success-foreground" />
-                  ) : thread.state === "missing" ? (
-                    <CircleAlertIcon className="mt-0.5 size-4 shrink-0 text-warning-foreground" />
-                  ) : (
-                    <BotIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                  )}
-                  <div>
-                    <p className="text-xs text-muted-foreground">Agent Thread</p>
-                    <p className="text-sm font-medium">{thread.stateLabel}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 border-t border-border pt-4">
                   <Label>Status</Label>
                   <Select
                     disabled={pending}
@@ -521,35 +587,10 @@ export function WorkbenchTicketDetail({
                 </div>
               </div>
             </section>
-          </div>
-
-          <SheetFooter>
-            {editing ? (
-              <>
-                <Button disabled={pending} onClick={cancelEditing} type="button" variant="outline">
-                  Cancel
-                </Button>
-                <Button
-                  disabled={pending || !dirty || draft.title.trim().length === 0}
-                  type="submit"
-                >
-                  Save Ticket
-                </Button>
-              </>
-            ) : (
-              <Button
-                disabled={pending}
-                onClick={() => onOpenThread(actionableTicket)}
-                type="button"
-              >
-                {thread.actionLabel}
-                {thread.state === "linked" ? <LinkIcon /> : <BotIcon />}
-              </Button>
-            )}
-          </SheetFooter>
-        </form>
-      </SheetPopup>
-    </Sheet>
+          </aside>
+        </div>
+      </form>
+    </article>
   );
 }
 

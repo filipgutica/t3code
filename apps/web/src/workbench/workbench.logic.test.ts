@@ -1,7 +1,15 @@
 import { describe, expect, it } from "@effect/vitest";
+import {
+  ProjectId,
+  ThreadId,
+  WorkbenchAssignmentId,
+  WorkbenchProjectId,
+  WorkbenchTicketId,
+} from "@t3tools/contracts";
 
 import {
   buildTicketThreadPrompt,
+  getWorkbenchContextForThread,
   getWorkbenchThreadPresentation,
   getWorkbenchTicketStatusMoves,
   isWorkbenchTicketStatus,
@@ -69,18 +77,71 @@ describe("Workbench ticket helpers", () => {
   it("presents the next action for each supported Thread state", () => {
     expect(getWorkbenchThreadPresentation(false, false)).toEqual({
       actionLabel: "Start work",
+      pendingActionLabel: "Creating Thread…",
       stateLabel: "Unassigned",
       state: "unassigned",
     });
     expect(getWorkbenchThreadPresentation(true, true)).toEqual({
       actionLabel: "Open Thread",
-      stateLabel: "Thread linked",
+      pendingActionLabel: "Opening Thread…",
+      stateLabel: "Ready",
+      state: "linked",
+    });
+    expect(getWorkbenchThreadPresentation(true, true, "Pending Approval")).toEqual({
+      actionLabel: "Open Thread",
+      pendingActionLabel: "Opening Thread…",
+      stateLabel: "Pending Approval",
       state: "linked",
     });
     expect(getWorkbenchThreadPresentation(true, false)).toEqual({
       actionLabel: "Start replacement",
+      pendingActionLabel: "Creating Thread…",
       stateLabel: "Thread unavailable",
       state: "missing",
     });
+  });
+
+  it("resolves the Workspace and Ticket that own a native Thread", () => {
+    const workspaceId = WorkbenchProjectId.make("workspace-one");
+    const repositoryId = ProjectId.make("repository-one");
+    const ticketId = WorkbenchTicketId.make("ticket-one");
+    const threadId = ThreadId.make("thread-one");
+    const workspace = {
+      id: workspaceId,
+      title: "Agent Workbench",
+      linkedProjectIds: [repositoryId],
+      createdAt: "2026-09-03T00:00:00.000Z",
+      updatedAt: "2026-09-03T00:00:00.000Z",
+    } as const;
+    const ticket = {
+      id: ticketId,
+      projectId: workspaceId,
+      title: "Keep Ticket context visible",
+      markdown: "",
+      primaryT3ProjectId: repositoryId,
+      status: "in_progress",
+      blocked: false,
+      createdAt: "2026-09-03T00:00:00.000Z",
+      updatedAt: "2026-09-03T00:00:00.000Z",
+    } as const;
+    const assignment = {
+      id: WorkbenchAssignmentId.make("assignment-one"),
+      ticketId,
+      threadId,
+      createdAt: "2026-09-03T00:00:00.000Z",
+    } as const;
+
+    expect(
+      getWorkbenchContextForThread(
+        { projects: [workspace], tickets: [ticket], assignments: [assignment] },
+        threadId,
+      ),
+    ).toEqual({ assignment, ticket, workspace });
+    expect(
+      getWorkbenchContextForThread(
+        { projects: [workspace], tickets: [ticket], assignments: [assignment] },
+        ThreadId.make("another-thread"),
+      ),
+    ).toBeNull();
   });
 });

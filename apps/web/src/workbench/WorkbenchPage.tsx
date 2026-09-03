@@ -35,7 +35,7 @@ import { Skeleton } from "../components/ui/skeleton";
 import { isElectron } from "../env";
 import { randomUUID } from "../lib/utils";
 import { usePrimaryEnvironmentId } from "../state/environments";
-import { useProjects, useThreadRefs } from "../state/entities";
+import { useProjects, useThreadShells } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { primaryServerProvidersAtom } from "../state/server";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -110,7 +110,7 @@ export function WorkbenchPage({
 }: WorkbenchPageProps) {
   const environmentId = usePrimaryEnvironmentId();
   const allProjects = useProjects();
-  const threadRefs = useThreadRefs();
+  const allThreadShells = useThreadShells();
   const providers = useAtomValue(primaryServerProvidersAtom);
   const navigate = useNavigate({ from: "/workbench" });
   const query = useEnvironmentQuery(
@@ -176,13 +176,16 @@ export function WorkbenchPage({
       new Map(snapshot?.assignments.map((assignment) => [assignment.ticketId, assignment]) ?? []),
     [snapshot?.assignments],
   );
-  const existingThreadIds = useMemo(
+  const threadsById = useMemo(
     () =>
-      new Set(
-        threadRefs.filter((ref) => ref.environmentId === environmentId).map((ref) => ref.threadId),
+      new Map(
+        allThreadShells
+          .filter((thread) => thread.environmentId === environmentId)
+          .map((thread) => [thread.id, thread]),
       ),
-    [environmentId, threadRefs],
+    [allThreadShells, environmentId],
   );
+  const existingThreadIds = useMemo(() => new Set(threadsById.keys()), [threadsById]);
   const openTicketThread = useStartWorkbenchTicket({
     environmentId,
     projects,
@@ -316,9 +319,9 @@ export function WorkbenchPage({
   const selectedAssignment = selectedTicket
     ? assignmentsByTicket.get(selectedTicket.id)
     : undefined;
-  const selectedThreadExists = selectedAssignment
-    ? existingThreadIds.has(selectedAssignment.threadId)
-    : false;
+  const selectedThread = selectedAssignment
+    ? threadsById.get(selectedAssignment.threadId)
+    : undefined;
   const pending = pendingAction !== null;
 
   useEffect(() => {
@@ -448,77 +451,103 @@ export function WorkbenchPage({
         </div>
       ) : (
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <WorkspacePageHeader
-            electron={isElectron}
-            className="h-auto min-h-20 items-start border-b border-border py-3"
-          >
-            <div className="flex min-w-0 items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 items-center gap-2">
-                  <h2 className="truncate font-heading text-xl font-semibold">
-                    {selectedProject.title}
-                  </h2>
-                  <Badge variant="secondary">{projectTickets.length} tickets</Badge>
-                </div>
-                <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1.5 font-medium">
-                    <FolderGit2Icon className="size-3.5" /> Repositories
-                  </span>
-                  {linkedT3Projects.map((project) => (
-                    <span key={project.id} className="max-w-60 truncate">
-                      {project.title}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              <Button aria-label="New Ticket" onClick={openTicketDialog} size="sm">
-                <PlusIcon />
-                <span className="hidden sm:inline">New Ticket</span>
-              </Button>
-            </div>
-          </WorkspacePageHeader>
-
-          {query.error || error ? (
-            <div className="mx-3 mt-3 flex shrink-0 items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive-foreground sm:mx-4">
-              <AlertCircleIcon className="size-4 shrink-0" />
-              <span className="min-w-0 flex-1">{error ?? query.error}</span>
-              {query.error ? (
-                <Button onClick={query.refresh} size="xs" variant="outline">
-                  <RefreshCwIcon /> Retry
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-4 text-sm sm:px-5">
-              <LayoutDashboardIcon className="size-4 text-muted-foreground" />
-              <span className="font-semibold">Board</span>
-              {projectTickets.some((ticket) => ticket.blocked) ? (
-                <Badge className="ml-1" variant="warning">
-                  <AlertCircleIcon />
-                  {projectTickets.filter((ticket) => ticket.blocked).length} blocked
-                </Badge>
-              ) : null}
-            </div>
-            <WorkbenchTicketBoard
-              projectId={selectedProject.id}
-              tickets={projectTickets}
-              selectedTicketId={selectedTicket?.id ?? null}
-              repositoriesById={repositoriesById}
-              assignmentsByTicket={assignmentsByTicket}
-              existingThreadIds={existingThreadIds}
+          {selectedTicket ? (
+            <WorkbenchTicketDetail
+              key={selectedTicket.id}
+              workspaceTitle={selectedProject.title}
+              ticket={selectedTicket}
+              repository={repositoriesById.get(selectedTicket.primaryT3ProjectId)}
+              assignment={selectedAssignment}
+              nativeThread={selectedThread}
               pending={pending}
-              onSelect={(projectId, ticketId) => {
-                setAwaitingTicketId(null);
-                setSelectedTicketId(ticketId);
-                void updateRouteSelection(projectId, ticketId);
+              threadActionPending={pendingAction === `start:${selectedTicket.id}`}
+              error={error ?? query.error}
+              onBack={() => {
+                setError(null);
+                closeTicket();
               }}
-              onMove={(ticket, status) => changeTicket(ticketForBoardAction(ticket), { status })}
-              onOpenThread={(ticket) => openTicketThread(ticketForBoardAction(ticket))}
-              onCreateTicket={openTicketDialog}
+              onSave={saveTicketContent}
+              onUpdate={changeTicket}
+              onOpenThread={openTicketThread}
             />
-          </div>
+          ) : (
+            <>
+              <WorkspacePageHeader
+                electron={isElectron}
+                className="h-auto min-h-20 items-start border-b border-border py-3"
+              >
+                <div className="flex min-w-0 items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <h2 className="truncate font-heading text-xl font-semibold">
+                        {selectedProject.title}
+                      </h2>
+                      <Badge variant="secondary">{projectTickets.length} tickets</Badge>
+                    </div>
+                    <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1.5 font-medium">
+                        <FolderGit2Icon className="size-3.5" /> Repositories
+                      </span>
+                      {linkedT3Projects.map((project) => (
+                        <span key={project.id} className="max-w-60 truncate">
+                          {project.title}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <Button aria-label="New Ticket" onClick={openTicketDialog} size="sm">
+                    <PlusIcon />
+                    <span className="hidden sm:inline">New Ticket</span>
+                  </Button>
+                </div>
+              </WorkspacePageHeader>
+
+              {query.error || error ? (
+                <div className="mx-3 mt-3 flex shrink-0 items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive-foreground sm:mx-4">
+                  <AlertCircleIcon className="size-4 shrink-0" />
+                  <span className="min-w-0 flex-1">{error ?? query.error}</span>
+                  {query.error ? (
+                    <Button onClick={query.refresh} size="xs" variant="outline">
+                      <RefreshCwIcon /> Retry
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-4 text-sm sm:px-5">
+                  <LayoutDashboardIcon className="size-4 text-muted-foreground" />
+                  <span className="font-semibold">Board</span>
+                  {projectTickets.some((ticket) => ticket.blocked) ? (
+                    <Badge className="ml-1" variant="warning">
+                      <AlertCircleIcon />
+                      {projectTickets.filter((ticket) => ticket.blocked).length} blocked
+                    </Badge>
+                  ) : null}
+                </div>
+                <WorkbenchTicketBoard
+                  projectId={selectedProject.id}
+                  tickets={projectTickets}
+                  selectedTicketId={null}
+                  repositoriesById={repositoriesById}
+                  assignmentsByTicket={assignmentsByTicket}
+                  threadsById={threadsById}
+                  pending={pending}
+                  pendingAction={pendingAction}
+                  onSelect={(projectId, ticketId) => {
+                    setAwaitingTicketId(null);
+                    setSelectedTicketId(ticketId);
+                    void updateRouteSelection(projectId, ticketId);
+                  }}
+                  onMove={(ticket, status) =>
+                    changeTicket(ticketForBoardAction(ticket), { status })
+                  }
+                  onOpenThread={(ticket) => openTicketThread(ticketForBoardAction(ticket))}
+                  onCreateTicket={openTicketDialog}
+                />
+              </div>
+            </>
+          )}
         </main>
       )}
 
@@ -538,26 +567,6 @@ export function WorkbenchPage({
           error={error ?? query.error}
           onOpenChange={handleTicketDialogOpenChange}
           onCreate={submitTicket}
-        />
-      ) : null}
-      {selectedTicket ? (
-        <WorkbenchTicketDetail
-          key={selectedTicket.id}
-          ticket={selectedTicket}
-          repository={repositoriesById.get(selectedTicket.primaryT3ProjectId)}
-          assignment={selectedAssignment}
-          threadExists={selectedThreadExists}
-          pending={pending}
-          error={error ?? query.error}
-          onOpenChange={(open) => {
-            if (!open) {
-              setError(null);
-              closeTicket();
-            }
-          }}
-          onSave={saveTicketContent}
-          onUpdate={changeTicket}
-          onOpenThread={openTicketThread}
         />
       ) : null}
     </div>

@@ -1,4 +1,9 @@
-import type { WorkbenchTicket, WorkbenchTicketStatus } from "@t3tools/contracts";
+import type {
+  ThreadId,
+  WorkbenchSnapshot,
+  WorkbenchTicket,
+  WorkbenchTicketStatus,
+} from "@t3tools/contracts";
 
 export const WORKBENCH_TICKET_STATUSES = [
   "todo",
@@ -24,10 +29,15 @@ export function getWorkbenchTicketStatusMoves(
   return WORKBENCH_TICKET_STATUSES.filter((status) => status !== currentStatus);
 }
 
-export function getWorkbenchThreadPresentation(hasAssignment: boolean, threadExists: boolean) {
+export function getWorkbenchThreadPresentation(
+  hasAssignment: boolean,
+  threadExists: boolean,
+  nativeStateLabel?: string | null,
+) {
   if (!hasAssignment) {
     return {
       actionLabel: "Start work",
+      pendingActionLabel: "Creating Thread…",
       stateLabel: "Unassigned",
       state: "unassigned",
     } as const;
@@ -35,15 +45,30 @@ export function getWorkbenchThreadPresentation(hasAssignment: boolean, threadExi
   if (threadExists) {
     return {
       actionLabel: "Open Thread",
-      stateLabel: "Thread linked",
+      pendingActionLabel: "Opening Thread…",
+      stateLabel: nativeStateLabel ?? "Ready",
       state: "linked",
     } as const;
   }
   return {
     actionLabel: "Start replacement",
+    pendingActionLabel: "Creating Thread…",
     stateLabel: "Thread unavailable",
     state: "missing",
   } as const;
+}
+
+export function getWorkbenchContextForThread(
+  snapshot: WorkbenchSnapshot | null,
+  threadId: ThreadId,
+) {
+  if (!snapshot) return null;
+  const assignment = snapshot.assignments.find((candidate) => candidate.threadId === threadId);
+  if (!assignment) return null;
+  const ticket = snapshot.tickets.find((candidate) => candidate.id === assignment.ticketId);
+  if (!ticket) return null;
+  const workspace = snapshot.projects.find((candidate) => candidate.id === ticket.projectId);
+  return workspace ? { assignment, ticket, workspace } : null;
 }
 
 export function buildTicketThreadPrompt(

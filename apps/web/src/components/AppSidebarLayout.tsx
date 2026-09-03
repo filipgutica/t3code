@@ -9,7 +9,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 
 import { isElectron } from "../env";
 import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
@@ -26,6 +26,10 @@ import {
   useSidebarStageBackdropVariant,
 } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
+import { useEnvironmentQuery } from "../state/query";
+import { resolveThreadRouteRef } from "../threadRoutes";
+import { workbenchEnvironment } from "../workbench/state";
+import { getWorkbenchContextForThread } from "../workbench/workbench.logic";
 import {
   resolveInitialThreadSidebarWidth,
   resolveThreadSidebarMaximumWidth,
@@ -159,6 +163,27 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   // Settings routes show the settings nav in place of whichever thread
   // sidebar is active.
   const pathname = useLocation({ select: (location) => location.pathname });
+  const routeThreadRef = useParams({
+    strict: false,
+    select: (params) => resolveThreadRouteRef(params),
+  });
+  const workbenchSnapshot = useEnvironmentQuery(
+    routeThreadRef === null
+      ? null
+      : workbenchEnvironment.snapshot({ environmentId: routeThreadRef.environmentId, input: {} }),
+  ).data;
+  const workbenchThreadContext =
+    routeThreadRef === null
+      ? null
+      : getWorkbenchContextForThread(workbenchSnapshot, routeThreadRef.threadId);
+  const workbenchSidebarContext =
+    routeThreadRef && workbenchThreadContext
+      ? {
+          environmentId: routeThreadRef.environmentId,
+          workspaceId: workbenchThreadContext.workspace.id,
+          ticketId: workbenchThreadContext.ticket.id,
+        }
+      : undefined;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const isOnWorkbench = pathname === "/workbench";
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
@@ -257,11 +282,11 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
               <SettingsSidebarNav pathname={pathname} />
             </Suspense>
           </>
-        ) : isOnWorkbench ? (
+        ) : isOnWorkbench || workbenchSidebarContext ? (
           <>
             <SidebarChromeHeader isElectron={isElectron} />
             <Suspense fallback={null}>
-              <WorkbenchSidebar />
+              <WorkbenchSidebar context={workbenchSidebarContext} />
             </Suspense>
           </>
         ) : legacySidebarEnabled ? (
