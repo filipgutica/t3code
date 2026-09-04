@@ -1,5 +1,6 @@
 import {
   WorkbenchJiraOperationError,
+  type WorkbenchJiraBinding,
   type WorkbenchJiraSyncBindingInput,
   type WorkbenchJiraSyncResult,
 } from "@t3tools/contracts";
@@ -11,6 +12,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { JiraApi } from "./JiraApi.ts";
 import { reconcileJiraIssueLinks, type JiraIssueImport } from "./JiraReconciliation.ts";
@@ -27,6 +29,10 @@ const repositoryError = (_cause: WorkbenchJiraRepositoryError) =>
   syncError("persistence_failed", "Jira synchronization state could not be saved or loaded.");
 
 export interface JiraSyncServiceShape {
+  readonly withBindingPermit: <A, E, R>(
+    bindingId: string,
+    effect: Effect.Effect<A, E, R>,
+  ) => Effect.Effect<A, E, R>;
   readonly syncBinding: (
     input: WorkbenchJiraSyncBindingInput,
   ) => Effect.Effect<WorkbenchJiraSyncResult, WorkbenchJiraOperationError>;
@@ -41,6 +47,7 @@ export const make = Effect.gen(function* () {
   const api = yield* JiraApi;
   const importer = yield* JiraTicketImporter;
   const repository = yield* WorkbenchJiraRepository;
+  const sql = yield* SqlClient.SqlClient;
   const bindingLocks = yield* Ref.make<ReadonlyMap<string, Semaphore.Semaphore>>(new Map());
 
   const getBindingLock = Effect.fn("JiraSyncService.getBindingLock")(function* (bindingId: string) {
@@ -57,11 +64,11 @@ export const make = Effect.gen(function* () {
     });
   });
 
+  const withBindingPermit: JiraSyncServiceShape["withBindingPermit"] = (bindingId, effect) =>
+    getBindingLock(bindingId).pipe(Effect.flatMap((lock) => lock.withPermit(effect)));
+
   const syncBinding: JiraSyncServiceShape["syncBinding"] = (input) =>
-    Effect.gen(function* () {
-      const lock = yield* getBindingLock(input.bindingId);
-      return yield* lock.withPermit(syncBindingUnlocked(input));
-    });
+    withBindingPermit(input.bindingId, syncBindingUnlocked(input));
 
   const syncBindingUnlocked = Effect.fn("JiraSyncService.syncBindingUnlocked")(function* (
     input: WorkbenchJiraSyncBindingInput,
@@ -87,7 +94,10 @@ export const make = Effect.gen(function* () {
       sprintId: binding.sprintId,
     });
 
-    const incoming: Array<JiraIssueImport> = [];
+    const imports = [] as Array<{
+      readonly issue: (typeof issues)[number];
+      readonly mappedStatus: WorkbenchJiraBinding["statusMappings"][number]["workbenchStatus"];
+    }>;
     for (const issue of issues) {
       const mappedStatus = binding.statusMappings.find(
         (mapping) => mapping.jiraStatusId === issue.status.id,
@@ -98,32 +108,73 @@ export const make = Effect.gen(function* () {
           `Jira status ${issue.status.name} is not mapped to a Workbench column.`,
         );
       }
-      const ticketId = yield* importer.upsertJiraProjection({
-        binding,
-        existingTicketId: existingByIssueId.get(issue.issueId)?.ticketId ?? null,
-        issue,
-        mappedStatus,
-      });
-      incoming.push({ ticketId, issue });
+      imports.push({ issue, mappedStatus });
     }
 
     const syncedAt = DateTime.formatIso(DateTime.makeUnsafe(yield* clock.currentTimeMillis));
-    const result = reconcileJiraIssueLinks({
-      bindingId: binding.id,
-      existing,
-      incoming,
-      syncedAt,
-    });
-    yield* repository
-      .replaceIssueLinks(binding.id, result.links)
-      .pipe(Effect.mapError(repositoryError));
-    yield* repository
-      .upsertBinding({ ...binding, lastSyncedAt: syncedAt, updatedAt: syncedAt })
-      .pipe(Effect.mapError(repositoryError));
-    return result;
+    return yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const latestBinding = yield* repository
+            .getBinding(binding.id)
+            .pipe(Effect.mapError(repositoryError));
+          if (Option.isNone(latestBinding) || latestBinding.value.updatedAt !== binding.updatedAt) {
+            return yield* syncError(
+              "invalid_binding",
+              "The Jira sprint binding changed during synchronization. Refresh it again.",
+            );
+          }
+
+          const incoming: Array<JiraIssueImport> = [];
+          for (const entry of imports) {
+            const ticketId = yield* importer.upsertJiraProjection({
+              binding,
+              existingTicketId: existingByIssueId.get(entry.issue.issueId)?.ticketId ?? null,
+              issue: entry.issue,
+              mappedStatus: entry.mappedStatus,
+            });
+            incoming.push({ ticketId, issue: entry.issue });
+          }
+
+          const result = reconcileJiraIssueLinks({
+            bindingId: binding.id,
+            existing,
+            incoming,
+            syncedAt,
+          });
+          yield* repository
+            .replaceIssueLinks(binding.id, result.links)
+            .pipe(Effect.mapError(repositoryError));
+
+          const metadataUpdated = yield* repository
+            .updateBindingSyncMetadata({
+              id: binding.id,
+              expectedUpdatedAt: binding.updatedAt,
+              syncedAt,
+            })
+            .pipe(Effect.mapError(repositoryError));
+          if (!metadataUpdated) {
+            return yield* syncError(
+              "invalid_binding",
+              "The Jira sprint binding changed during synchronization. Refresh it again.",
+            );
+          }
+          return result;
+        }),
+      )
+      .pipe(
+        Effect.catchTag("SqlError", () =>
+          Effect.fail(
+            syncError(
+              "persistence_failed",
+              "Jira synchronization state could not be saved or loaded.",
+            ),
+          ),
+        ),
+      );
   });
 
-  return JiraSyncService.of({ syncBinding });
+  return JiraSyncService.of({ syncBinding, withBindingPermit });
 });
 
 export const layer = Layer.effect(JiraSyncService, make);

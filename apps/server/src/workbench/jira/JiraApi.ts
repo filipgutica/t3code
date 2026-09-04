@@ -124,6 +124,19 @@ const apiError = (
   message: string,
 ) => new WorkbenchJiraOperationError({ code, message });
 
+const httpStatusErrorMessage = (status: number): string => {
+  switch (status) {
+    case 401:
+      return "Jira rejected authorization (HTTP 401). Reconnect Jira to authorize access again.";
+    case 403:
+      return "Jira denied access (HTTP 403). Check Jira project permissions and OAuth scopes, then reconnect Jira if the scopes changed.";
+    case 429:
+      return "Jira is rate-limiting requests (HTTP 429). Wait a moment and try again.";
+    default:
+      return `Jira returned HTTP ${status}.`;
+  }
+};
+
 const repositoryError = (_cause: WorkbenchJiraRepositoryError) =>
   apiError("request_failed", "Jira connection metadata could not be loaded.");
 
@@ -195,7 +208,7 @@ export const make = Effect.gen(function* () {
                 apiError("response_invalid", "Jira returned an unexpected response."),
               ),
             )
-          : Effect.fail(apiError("request_failed", `Jira returned HTTP ${response.status}.`)),
+          : Effect.fail(apiError("request_failed", httpStatusErrorMessage(response.status))),
       ),
     );
   };
@@ -345,7 +358,7 @@ export const make = Effect.gen(function* () {
       for (let pageNumber = 0; pageNumber < 100; pageNumber += 1) {
         const page = yield* executeJson({
           ...context,
-          path: `/rest/agile/1.0/board/${input.boardId}/sprint/${input.sprintId}/issue`,
+          path: `/rest/software/1.0/board/${input.boardId}/sprint/${input.sprintId}/issue`,
           urlParams: {
             jql: "assignee = currentUser()",
             fields: "summary,issuetype,status,updated,flagged,epic,parent",

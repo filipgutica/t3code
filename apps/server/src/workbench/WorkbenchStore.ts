@@ -376,6 +376,14 @@ const makeWorkbenchStore = Effect.gen(function* () {
       LIMIT 1
     `,
   });
+  const isJiraManagedTicket = Effect.fn("WorkbenchStore.isJiraManagedTicket")(function* (
+    ticketId: WorkbenchTicketId,
+  ) {
+    return (
+      (ticketId.startsWith("jira:") && ticketId.includes(":issue:")) ||
+      Option.isSome(yield* findJiraIssueLinkByTicket({ ticketId }))
+    );
+  });
   const listTicketWorkspaceRepositoriesByTicket = SqlSchema.findAll({
     Request: FindTicketInput,
     Result: WorkbenchTicketWorkspaceRepositoryRow,
@@ -493,6 +501,24 @@ const makeWorkbenchStore = Effect.gen(function* () {
         AND superseded_at IS NULL
     `,
   });
+  const findActiveLiveAssignmentByTicket = SqlSchema.findOneOption({
+    Request: Schema.Struct({ ticketId: WorkbenchTicketId }),
+    Result: WorkbenchAssignment,
+    execute: ({ ticketId }) => sql`
+      SELECT
+        assignment.assignment_id AS "id",
+        assignment.ticket_id AS "ticketId",
+        assignment.thread_id AS "threadId",
+        assignment.created_at AS "createdAt",
+        assignment.superseded_at AS "supersededAt"
+      FROM workbench_assignments AS assignment
+      INNER JOIN projection_threads AS thread
+        ON thread.thread_id = assignment.thread_id
+       AND thread.deleted_at IS NULL
+      WHERE assignment.ticket_id = ${ticketId}
+        AND assignment.superseded_at IS NULL
+    `,
+  });
   const findAnyAssignmentByTicket = SqlSchema.findOneOption({
     Request: FindTicketInput,
     Result: Schema.Struct({ id: WorkbenchAssignment.fields.id }),
@@ -582,73 +608,81 @@ const makeWorkbenchStore = Effect.gen(function* () {
   );
 
   const getSnapshot = Effect.fn("WorkbenchStore.getSnapshot")(function* () {
-    const [
-      projectRows,
-      linkRows,
-      epicRows,
-      ticketRows,
-      ticketRepositoryRows,
-      assignments,
-      ticketWorkspaceRows,
-      ticketWorkspaceRepositoryRows,
-    ] = yield* Effect.all([
-      listProjectRows(),
-      listProjectLinkRows(),
-      listEpicRows(),
-      listTicketRows(),
-      listTicketRepositoryRows(),
-      listAssignmentRows(),
-      listTicketWorkspaceRows(),
-      listTicketWorkspaceRepositoryRows(),
-    ]);
-    const linksByProject = new Map<
-      string,
-      Array<(typeof WorkbenchProjectLinkRow.Type)["linkedProjectId"]>
-    >();
-    for (const link of linkRows) {
-      const links = linksByProject.get(link.projectId) ?? [];
-      links.push(link.linkedProjectId);
-      linksByProject.set(link.projectId, links);
-    }
-    const repositoriesByTicket = new Map<string, Array<ProjectId>>();
-    for (const repository of ticketRepositoryRows) {
-      const repositories = repositoriesByTicket.get(repository.ticketId) ?? [];
-      repositories.push(repository.repositoryProjectId);
-      repositoriesByTicket.set(repository.ticketId, repositories);
-    }
-    const workspaceRepositoriesByTicket = new Map<
-      string,
-      Array<typeof WorkbenchTicketWorkspaceRepositoryRow.Type>
-    >();
-    for (const repository of ticketWorkspaceRepositoryRows) {
-      const repositories = workspaceRepositoriesByTicket.get(repository.ticketId) ?? [];
-      repositories.push(repository);
-      workspaceRepositoriesByTicket.set(repository.ticketId, repositories);
-    }
-    return WorkbenchSnapshot.make({
-      projects: projectRows.map((project) => ({
-        ...project,
-        linkedProjectIds: linksByProject.get(project.id) ?? [],
-      })),
-      epics: epicRows,
-      tickets: ticketRows.map((ticket) => ({
-        ...ticket,
-        repositoryProjectIds: repositoriesByTicket.get(ticket.id) ?? [ticket.primaryT3ProjectId],
-        blocked: ticket.blocked === 1,
-      })),
-      assignments,
-      ticketWorkspaces: ticketWorkspaceRows.map((workspace) =>
-        hydrateTicketWorkspace({
-          workspace,
-          repositories: workspaceRepositoriesByTicket.get(workspace.ticketId) ?? [],
-        }),
-      ),
-    });
+    return yield* sql.withTransaction(
+      Effect.gen(function* () {
+        const [
+          projectRows,
+          linkRows,
+          epicRows,
+          ticketRows,
+          ticketRepositoryRows,
+          assignments,
+          ticketWorkspaceRows,
+          ticketWorkspaceRepositoryRows,
+        ] = yield* Effect.all([
+          listProjectRows(),
+          listProjectLinkRows(),
+          listEpicRows(),
+          listTicketRows(),
+          listTicketRepositoryRows(),
+          listAssignmentRows(),
+          listTicketWorkspaceRows(),
+          listTicketWorkspaceRepositoryRows(),
+        ]);
+        const linksByProject = new Map<
+          string,
+          Array<(typeof WorkbenchProjectLinkRow.Type)["linkedProjectId"]>
+        >();
+        for (const link of linkRows) {
+          const links = linksByProject.get(link.projectId) ?? [];
+          links.push(link.linkedProjectId);
+          linksByProject.set(link.projectId, links);
+        }
+        const repositoriesByTicket = new Map<string, Array<ProjectId>>();
+        for (const repository of ticketRepositoryRows) {
+          const repositories = repositoriesByTicket.get(repository.ticketId) ?? [];
+          repositories.push(repository.repositoryProjectId);
+          repositoriesByTicket.set(repository.ticketId, repositories);
+        }
+        const workspaceRepositoriesByTicket = new Map<
+          string,
+          Array<typeof WorkbenchTicketWorkspaceRepositoryRow.Type>
+        >();
+        for (const repository of ticketWorkspaceRepositoryRows) {
+          const repositories = workspaceRepositoriesByTicket.get(repository.ticketId) ?? [];
+          repositories.push(repository);
+          workspaceRepositoriesByTicket.set(repository.ticketId, repositories);
+        }
+        return WorkbenchSnapshot.make({
+          projects: projectRows.map((project) => ({
+            ...project,
+            linkedProjectIds: linksByProject.get(project.id) ?? [],
+          })),
+          epics: epicRows,
+          tickets: ticketRows.map((ticket) => ({
+            ...ticket,
+            repositoryProjectIds: repositoriesByTicket.get(ticket.id) ?? [
+              ticket.primaryT3ProjectId,
+            ],
+            blocked: ticket.blocked === 1,
+          })),
+          assignments,
+          ticketWorkspaces: ticketWorkspaceRows.map((workspace) =>
+            hydrateTicketWorkspace({
+              workspace,
+              repositories: workspaceRepositoriesByTicket.get(workspace.ticketId) ?? [],
+            }),
+          ),
+        });
+      }),
+    );
   }, Effect.mapError(persistenceError));
 
   const getTicketWorkspace: WorkbenchStoreShape["getTicketWorkspace"] = Effect.fn(
     "WorkbenchStore.getTicketWorkspace",
-  )((ticketId) => loadTicketWorkspace(ticketId).pipe(Effect.mapError(persistenceError)));
+  )((ticketId) =>
+    sql.withTransaction(loadTicketWorkspace(ticketId)).pipe(Effect.mapError(persistenceError)),
+  );
 
   const claimTicketWorkspace: WorkbenchStoreShape["claimTicketWorkspace"] = Effect.fn(
     "WorkbenchStore.claimTicketWorkspace",
@@ -955,7 +989,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "The Ticket Workspace is still being prepared.",
             });
           }
-          const assignment = yield* findActiveAssignmentByTicket({ ticketId: input.ticketId });
+          const assignment = yield* findActiveLiveAssignmentByTicket({ ticketId: input.ticketId });
           if (Option.isSome(assignment)) {
             return yield* new WorkbenchOperationError({
               code: "ticket_workspace_in_use",
@@ -1097,15 +1131,25 @@ const makeWorkbenchStore = Effect.gen(function* () {
       }
       yield* sql`
       UPDATE workbench_epics
-      SET title = ${input.title}, markdown = ${input.markdown}, updated_at = ${input.updatedAt}
+      SET
+        title = CASE
+          WHEN EXISTS (
+            SELECT 1
+            FROM workbench_jira_bindings AS jira_binding
+            WHERE jira_binding.workbench_project_id = workbench_epics.workbench_project_id
+              AND instr(
+                workbench_epics.epic_id,
+                'jira:' || jira_binding.binding_id || ':epic:'
+              ) = 1
+          ) THEN title
+          ELSE ${input.title}
+        END,
+        markdown = ${input.markdown},
+        updated_at = ${input.updatedAt}
       WHERE epic_id = ${input.id}
     `.pipe(Effect.mapError(persistenceError));
-      return WorkbenchEpic.make({
-        ...current.value,
-        title: input.title,
-        markdown: input.markdown,
-        updatedAt: input.updatedAt,
-      });
+      const updated = yield* findEpic({ epicId: input.id }).pipe(Effect.mapError(persistenceError));
+      return Option.getOrThrow(updated);
     },
   );
 
@@ -1295,9 +1339,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           const currentRepositories = yield* listTicketRepositoryRowsByTicket({
             ticketId: input.id,
           });
-          const jiraManaged =
-            (input.id.startsWith("jira:") && input.id.includes(":issue:")) ||
-            Option.isSome(yield* findJiraIssueLinkByTicket({ ticketId: input.id }));
+          const jiraManaged = yield* isJiraManagedTicket(input.id);
           const title = jiraManaged ? current.value.title : input.title;
           const kind = jiraManaged ? current.value.kind : (input.kind ?? current.value.kind);
           const status = jiraManaged ? current.value.status : input.status;
@@ -1470,7 +1512,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             INSERT INTO workbench_assignments (assignment_id, ticket_id, thread_id, created_at)
             VALUES (${input.id}, ${input.ticketId}, ${input.threadId}, ${input.createdAt})
           `;
-          if (ticket.status === "todo") {
+          if (ticket.status === "todo" && !(yield* isJiraManagedTicket(input.ticketId))) {
             yield* sql`
               UPDATE workbench_tickets
               SET status = 'in_progress', updated_at = ${input.createdAt}

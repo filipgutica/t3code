@@ -77,6 +77,19 @@ export function getWorkbenchTicketStatusMoves(
   return WORKBENCH_TICKET_STATUSES.filter((status) => status !== currentStatus);
 }
 
+export function getWorkbenchEpicProgress(tickets: ReadonlyArray<Pick<WorkbenchTicket, "status">>) {
+  const total = tickets.length;
+  const completed = tickets.reduce(
+    (count, ticket) => count + (ticket.status === "done" ? 1 : 0),
+    0,
+  );
+  return {
+    completed,
+    percent: total === 0 ? 0 : Math.round((completed / total) * 100),
+    total,
+  };
+}
+
 export function getWorkbenchThreadPresentation(
   hasAssignment: boolean,
   threadExists: boolean,
@@ -257,10 +270,7 @@ export function groupWorkbenchTicketsByEpic<
     ticketsByEpicId.set(ticket.epicId, epicTickets);
   }
 
-  const lanes = epics.flatMap((epic) => {
-    const epicTickets = ticketsByEpicId.get(epic.id);
-    return epicTickets && epicTickets.length > 0 ? [{ epic, tickets: epicTickets }] : [];
-  });
+  const lanes = epics.map((epic) => ({ epic, tickets: ticketsByEpicId.get(epic.id) ?? [] }));
   return unassignedTickets.length > 0
     ? [...lanes, { epic: null, tickets: unassignedTickets }]
     : lanes;

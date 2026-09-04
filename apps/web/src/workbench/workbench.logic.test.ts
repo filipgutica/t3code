@@ -12,6 +12,7 @@ import {
   buildTicketThreadPrompt,
   getActiveAssignmentsByTicket,
   getAssignmentsForTicket,
+  getWorkbenchEpicProgress,
   getWorkbenchContextForThread,
   groupWorkbenchTicketsByEpic,
   getWorkbenchTicketRepositoryProjectIds,
@@ -29,9 +30,22 @@ import {
 } from "./workbench.logic";
 
 describe("Workbench ticket helpers", () => {
+  it("derives Epic progress from its child Tickets", () => {
+    expect(
+      getWorkbenchEpicProgress([
+        { status: "done" },
+        { status: "in_progress" },
+        { status: "done" },
+        { status: "todo" },
+      ]),
+    ).toEqual({ completed: 2, percent: 50, total: 4 });
+    expect(getWorkbenchEpicProgress([])).toEqual({ completed: 0, percent: 0, total: 0 });
+  });
+
   it("groups Ticket swimlanes by Epic with unassigned Tickets last", () => {
     const firstEpic = { id: WorkbenchEpicId.make("epic-one"), title: "First Epic" };
     const secondEpic = { id: WorkbenchEpicId.make("epic-two"), title: "Second Epic" };
+    const emptyEpic = { id: WorkbenchEpicId.make("epic-empty"), title: "Empty Epic" };
     const firstTicket = { id: "ticket-one", epicId: firstEpic.id };
     const secondTicket = { id: "ticket-two", epicId: secondEpic.id };
     const unassignedTicket = { id: "ticket-three", epicId: null };
@@ -39,11 +53,12 @@ describe("Workbench ticket helpers", () => {
     expect(
       groupWorkbenchTicketsByEpic(
         [unassignedTicket, secondTicket, firstTicket],
-        [firstEpic, secondEpic],
+        [firstEpic, secondEpic, emptyEpic],
       ),
     ).toEqual([
       { epic: firstEpic, tickets: [firstTicket] },
       { epic: secondEpic, tickets: [secondTicket] },
+      { epic: emptyEpic, tickets: [] },
       { epic: null, tickets: [unassignedTicket] },
     ]);
   });

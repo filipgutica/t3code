@@ -19,6 +19,8 @@ import {
   CircleAlertIcon,
   ExternalLinkIcon,
   FolderGit2Icon,
+  Layers3Icon,
+  ListChecksIcon,
   PencilIcon,
   PlusIcon,
 } from "lucide-react";
@@ -51,6 +53,7 @@ import { Textarea } from "../components/ui/textarea";
 import type { Project } from "../types";
 import {
   getWorkbenchThreadPresentation,
+  getWorkbenchEpicProgress,
   getWorkbenchTicketRepositoryProjectIds,
   isWorkbenchTicketStatus,
   isWorkbenchThreadArchived,
@@ -65,6 +68,298 @@ import {
 import { useWorkbenchDraftStore } from "./workbenchDraftStore";
 
 const NO_EPIC_VALUE = "__workbench_no_epic__";
+
+export function WorkbenchEpicDetail({
+  workspaceTitle,
+  epic,
+  jiraManagedTitle,
+  tickets,
+  repositoriesById,
+  assignmentsByTicket,
+  jiraIssueLinksByTicketId,
+  pending,
+  error,
+  onBack,
+  onSave,
+  onOpenTicket,
+  onCreateTicket,
+}: {
+  readonly workspaceTitle: string;
+  readonly epic: WorkbenchEpic;
+  readonly jiraManagedTitle: boolean;
+  readonly tickets: ReadonlyArray<WorkbenchTicket>;
+  readonly repositoriesById: ReadonlyMap<Project["id"], Project>;
+  readonly assignmentsByTicket: ReadonlyMap<WorkbenchTicket["id"], WorkbenchAssignment>;
+  readonly jiraIssueLinksByTicketId: ReadonlyMap<WorkbenchTicket["id"], WorkbenchJiraIssueLink>;
+  readonly pending: boolean;
+  readonly error: string | null;
+  readonly onBack: () => void;
+  readonly onSave: (epic: WorkbenchEpic, title: string, markdown: string) => Promise<boolean>;
+  readonly onOpenTicket: (ticket: WorkbenchTicket) => void;
+  readonly onCreateTicket: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState("");
+  const [markdown, setMarkdown] = useState("");
+  const progress = getWorkbenchEpicProgress(tickets);
+  const blockedCount = tickets.filter((ticket) => ticket.blocked).length;
+
+  const cancelEditing = () => {
+    setEditing(false);
+  };
+  const startEditing = () => {
+    setTitle(epic.title);
+    setMarkdown(epic.markdown);
+    setEditing(true);
+  };
+
+  return (
+    <article className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <header className="shrink-0 border-b border-border px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-start gap-3">
+          <Button aria-label="Back to Board" onClick={onBack} size="sm" variant="ghost">
+            <ArrowLeftIcon />
+            <span className="hidden sm:inline">Board</span>
+          </Button>
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Layers3Icon className="size-3.5" /> {workspaceTitle} · Epic
+            </p>
+            <h1 className="mt-1 text-balance font-heading text-xl font-semibold leading-tight sm:text-2xl">
+              {epic.title}
+            </h1>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Badge variant="secondary">Epic</Badge>
+              <Badge variant="outline">
+                {progress.completed} of {progress.total} done
+              </Badge>
+              {blockedCount > 0 ? (
+                <Badge variant="warning">
+                  <CircleAlertIcon /> {blockedCount} blocked
+                </Badge>
+              ) : null}
+              {epic.archivedAt ? <Badge variant="outline">Archived</Badge> : null}
+            </div>
+          </div>
+          <Button disabled={pending || epic.archivedAt !== null} onClick={onCreateTicket} size="sm">
+            <PlusIcon /> New Ticket
+          </Button>
+        </div>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+        <div className="mx-auto grid max-w-6xl items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="space-y-4">
+            {error ? <WorkbenchInlineError message={error} /> : null}
+            <section className="overflow-hidden rounded-xl border border-border bg-card">
+              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                <div>
+                  <h2 className="text-sm font-semibold">Description</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Outcome and scope shared by the child Tickets.
+                  </p>
+                </div>
+                {!editing ? (
+                  <Button
+                    disabled={pending || epic.archivedAt !== null}
+                    onClick={startEditing}
+                    size="xs"
+                    type="button"
+                    variant="outline"
+                  >
+                    <PencilIcon /> Edit
+                  </Button>
+                ) : null}
+              </div>
+              {editing ? (
+                <form
+                  className="space-y-4 p-4"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const normalizedTitle = jiraManagedTitle ? epic.title : title.trim();
+                    if (normalizedTitle.length === 0) return;
+                    void (async () => {
+                      if (!(await onSave(epic, normalizedTitle, markdown.trim()))) return;
+                      setEditing(false);
+                    })();
+                  }}
+                >
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label htmlFor="edit-workbench-epic-title">Title</Label>
+                      {jiraManagedTitle ? (
+                        <Badge size="sm" variant="outline">
+                          Managed by Jira
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <Input
+                      id="edit-workbench-epic-title"
+                      autoFocus={!jiraManagedTitle}
+                      disabled={jiraManagedTitle}
+                      value={title}
+                      onChange={(event) => setTitle(event.currentTarget.value)}
+                    />
+                    {jiraManagedTitle ? (
+                      <p className="text-xs text-muted-foreground">
+                        Jira keeps the Epic title in sync. The local description remains editable.
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-workbench-epic-description">Description</Label>
+                    <Textarea
+                      id="edit-workbench-epic-description"
+                      autoFocus={jiraManagedTitle}
+                      className="min-h-48"
+                      placeholder="Context, scope, and intended outcome…"
+                      value={markdown}
+                      onChange={(event) => setMarkdown(event.currentTarget.value)}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 border-t border-border pt-4">
+                    <Button
+                      disabled={pending}
+                      onClick={cancelEditing}
+                      type="button"
+                      variant="outline"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      disabled={
+                        pending ||
+                        (!jiraManagedTitle && title.trim().length === 0) ||
+                        ((jiraManagedTitle || title.trim() === epic.title) &&
+                          markdown.trim() === epic.markdown)
+                      }
+                      type="submit"
+                    >
+                      Save Epic
+                    </Button>
+                  </div>
+                </form>
+              ) : (
+                <p
+                  className={`min-h-32 whitespace-pre-wrap p-4 text-sm leading-relaxed ${
+                    epic.markdown.trim().length > 0 ? "text-foreground" : "text-muted-foreground"
+                  }`}
+                >
+                  {epic.markdown.trim() || "No description added yet."}
+                </p>
+              )}
+            </section>
+
+            <section className="overflow-hidden rounded-xl border border-border bg-card">
+              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                <div>
+                  <h2 className="text-sm font-semibold">Child Tickets</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Stories and bugs that deliver this Epic.
+                  </p>
+                </div>
+                <Button
+                  disabled={pending || epic.archivedAt !== null}
+                  onClick={onCreateTicket}
+                  size="xs"
+                  type="button"
+                  variant="outline"
+                >
+                  <PlusIcon /> Add Ticket
+                </Button>
+              </div>
+              <div className="px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    aria-label={`${progress.percent}% of Epic Tickets complete`}
+                    aria-valuemax={100}
+                    aria-valuemin={0}
+                    aria-valuenow={progress.percent}
+                    className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted"
+                    role="progressbar"
+                  >
+                    <div
+                      className="h-full rounded-full bg-primary transition-[width]"
+                      style={{ width: `${progress.percent}%` }}
+                    />
+                  </div>
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {progress.percent}%
+                  </span>
+                </div>
+              </div>
+              {tickets.length > 0 ? (
+                <div className="divide-y divide-border border-t border-border">
+                  {tickets.map((ticket) => {
+                    const repository = repositoriesById.get(ticket.primaryT3ProjectId);
+                    const assignment = assignmentsByTicket.get(ticket.id);
+                    const jiraIssueLink = jiraIssueLinksByTicketId.get(ticket.id);
+                    return (
+                      <button
+                        key={ticket.id}
+                        className="grid w-full gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/45 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                        onClick={() => onOpenTicket(ticket)}
+                        type="button"
+                      >
+                        <span className="min-w-0">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <Badge size="sm" variant="secondary">
+                              {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
+                            </Badge>
+                            <span className="truncate text-sm font-medium">{ticket.title}</span>
+                          </span>
+                          <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                            {jiraIssueLink ? <span>{jiraIssueLink.issue.key}</span> : null}
+                            <span>{repository?.title ?? "Repository unavailable"}</span>
+                            <span>{assignment ? "Agent assigned" : "Unassigned"}</span>
+                          </span>
+                        </span>
+                        <span className="flex items-center gap-2">
+                          {ticket.blocked ? (
+                            <Badge size="sm" variant="warning">
+                              Blocked
+                            </Badge>
+                          ) : null}
+                          <Badge size="sm" variant="outline">
+                            {WORKBENCH_TICKET_STATUS_LABELS[ticket.status]}
+                          </Badge>
+                          <ArrowRightIcon className="size-3.5 text-muted-foreground" />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="border-t border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                  No child Tickets yet. Add the first Story or Bug for this Epic.
+                </div>
+              )}
+            </section>
+          </div>
+
+          <aside className="space-y-4">
+            <section className="overflow-hidden rounded-xl border border-border bg-card">
+              <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+                <ListChecksIcon className="size-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold">Details</h2>
+              </div>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-4 p-4 text-sm">
+                <dt className="text-muted-foreground">Type</dt>
+                <dd className="text-right font-medium">Epic</dd>
+                <dt className="text-muted-foreground">Progress</dt>
+                <dd className="text-right font-medium">{progress.percent}% done</dd>
+                <dt className="text-muted-foreground">Child Tickets</dt>
+                <dd className="text-right font-medium">{progress.total}</dd>
+                <dt className="text-muted-foreground">Blocked</dt>
+                <dd className="text-right font-medium">{blockedCount}</dd>
+              </dl>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </article>
+  );
+}
 
 export function WorkbenchWorkspaceDialog({
   open,
@@ -274,6 +569,7 @@ export function WorkbenchTicketDialog({
   open,
   linkedProjects,
   epics,
+  initialEpicId,
   pending,
   error,
   onOpenChange,
@@ -282,6 +578,7 @@ export function WorkbenchTicketDialog({
   readonly open: boolean;
   readonly linkedProjects: ReadonlyArray<Project>;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
+  readonly initialEpicId: WorkbenchEpicId | null;
   readonly pending: boolean;
   readonly error: string | null;
   readonly onOpenChange: (open: boolean) => void;
@@ -296,7 +593,7 @@ export function WorkbenchTicketDialog({
 }) {
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<WorkbenchTicketKind>("story");
-  const [epicId, setEpicId] = useState<WorkbenchEpicId | null>(null);
+  const [epicId, setEpicId] = useState<WorkbenchEpicId | null>(initialEpicId);
   const [markdown, setMarkdown] = useState(() => getWorkbenchTicketTemplate("story"));
   const [repositoryProjectIds, setRepositoryProjectIds] = useState<ReadonlyArray<ProjectId>>([]);
   const [primaryProjectId, setPrimaryProjectId] = useState<ProjectId | null>(null);
@@ -304,7 +601,7 @@ export function WorkbenchTicketDialog({
     if (!nextOpen) {
       setTitle("");
       setKind("story");
-      setEpicId(null);
+      setEpicId(initialEpicId);
       setMarkdown(getWorkbenchTicketTemplate("story"));
       setRepositoryProjectIds([]);
       setPrimaryProjectId(null);
@@ -542,6 +839,7 @@ export function WorkbenchTicketDetail({
   onBack,
   onSave,
   onUpdate,
+  onOpenEpic,
   onOpenThread,
   onOpenAssignedThread,
 }: {
@@ -579,6 +877,7 @@ export function WorkbenchTicketDetail({
       >
     >,
   ) => void;
+  readonly onOpenEpic: (epicId: WorkbenchEpicId) => void;
   readonly onOpenThread: (ticket: WorkbenchTicket) => void;
   readonly onOpenAssignedThread: (threadId: ThreadId) => void;
 }) {
@@ -648,11 +947,12 @@ export function WorkbenchTicketDetail({
     id,
     repository: linkedProjects.find((project) => project.id === id),
   }));
+  const linkedEpicId = ticket.epicId;
 
   return (
     <article className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <header className="shrink-0 border-b border-border px-4 py-4 sm:px-6">
-        <div className="mx-auto flex max-w-6xl items-start gap-3">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-start gap-3">
           <Button aria-label="Back to Board" onClick={onBack} size="sm" variant="ghost">
             <ArrowLeftIcon />
             <span className="hidden sm:inline">Board</span>
@@ -685,6 +985,18 @@ export function WorkbenchTicketDetail({
               ) : null}
             </div>
           </div>
+          <Button
+            aria-label={`${
+              threadActionPending ? thread.pendingActionLabel : thread.actionLabel
+            } for ${displayedTitle}`}
+            disabled={pending}
+            onClick={() => onOpenThread(actionableTicket)}
+            size="sm"
+            type="button"
+          >
+            <BotIcon />
+            {threadActionPending ? thread.pendingActionLabel : thread.actionLabel}
+          </Button>
         </div>
       </header>
 
@@ -798,9 +1110,9 @@ export function WorkbenchTicketDetail({
           <aside className="space-y-4">
             <section className="overflow-hidden rounded-xl border border-border bg-card">
               <div className="border-b border-border px-4 py-3">
-                <h2 className="text-sm font-semibold">Attached Agent</h2>
+                <h2 className="text-sm font-semibold">Agent Thread</h2>
                 <p className="text-xs text-muted-foreground">
-                  Select the Agent to continue in its native T3 Thread.
+                  Continue this work in its native T3 conversation.
                 </p>
               </div>
               <button
@@ -885,7 +1197,7 @@ export function WorkbenchTicketDetail({
 
             <section className="overflow-hidden rounded-xl border border-border bg-card">
               <div className="border-b border-border px-4 py-3">
-                <h2 className="text-sm font-semibold">Ticket fields</h2>
+                <h2 className="text-sm font-semibold">Details</h2>
                 {jiraFieldsManaged ? (
                   <p className="mt-1 text-xs text-muted-foreground">
                     Jira manages type, Epic, blocked state, and Board status.
@@ -915,7 +1227,19 @@ export function WorkbenchTicketDetail({
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Epic</Label>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label>Epic</Label>
+                    {linkedEpicId ? (
+                      <Button
+                        onClick={() => onOpenEpic(linkedEpicId)}
+                        size="xs"
+                        type="button"
+                        variant="ghost"
+                      >
+                        View Epic <ArrowRightIcon />
+                      </Button>
+                    ) : null}
+                  </div>
                   <Select
                     disabled={pending || jiraFieldsManaged}
                     value={ticket.epicId ?? NO_EPIC_VALUE}

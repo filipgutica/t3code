@@ -252,6 +252,14 @@ export function WorkbenchJiraDialog({
             </div>
           ) : null}
 
+          {connections.length > 0 && step !== "site" ? (
+            <div className="mb-4 flex justify-end">
+              <Button disabled={pending} onClick={() => void onBeginAuth()} variant="outline">
+                <ExternalLinkIcon /> Reconnect Jira
+              </Button>
+            </div>
+          ) : null}
+
           {step === "existing" && existingBinding ? (
             <div className="space-y-4">
               <div className="rounded-xl border border-border bg-muted/25 p-4">
@@ -334,7 +342,7 @@ export function WorkbenchJiraDialog({
               <div className="flex flex-wrap justify-end gap-2">
                 <Button disabled={pending} onClick={() => void onBeginAuth()} variant="outline">
                   <ExternalLinkIcon />{" "}
-                  {connections.length > 0 ? "Connect another site" : "Connect Atlassian"}
+                  {connections.length > 0 ? "Connect or reconnect Jira" : "Connect Atlassian"}
                 </Button>
                 {effectiveConnectionId ? (
                   <Button disabled={pending} onClick={() => void loadProjects()}>

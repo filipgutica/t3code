@@ -73,6 +73,7 @@ export function WorkbenchTicketBoard({
   pending,
   pendingAction,
   onSelect,
+  onSelectEpic,
   onMove,
   onOpenThread,
   onCreateTicket,
@@ -93,6 +94,7 @@ export function WorkbenchTicketBoard({
   readonly pending: boolean;
   readonly pendingAction: string | null;
   readonly onSelect: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
+  readonly onSelectEpic: (projectId: WorkbenchProjectId, epicId: WorkbenchEpic["id"]) => void;
   readonly onMove: (ticket: WorkbenchTicket, status: WorkbenchTicketStatus) => void;
   readonly onOpenThread: (ticket: WorkbenchTicket) => void;
   readonly onCreateTicket: () => void;
@@ -186,9 +188,17 @@ export function WorkbenchTicketBoard({
                 {groupMode === "epic" ? (
                   <header className="flex items-center gap-2 border-b border-border/60 px-3 py-2.5">
                     <Layers3Icon className="size-3.5 text-muted-foreground" />
-                    <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">
-                      {swimlane.epic?.title ?? "No Epic"}
-                    </h2>
+                    {swimlane.epic ? (
+                      <button
+                        className="min-w-0 flex-1 truncate text-left text-sm font-semibold outline-none hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+                        onClick={() => onSelectEpic(projectId, swimlane.epic!.id)}
+                        type="button"
+                      >
+                        {swimlane.epic.title}
+                      </button>
+                    ) : (
+                      <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">No Epic</h2>
+                    )}
                     <Badge size="sm" variant="secondary">
                       {swimlane.tickets.length}
                     </Badge>
@@ -416,7 +426,7 @@ export function WorkbenchTicketBoard({
         </div>
       </div>
 
-      {tickets.length === 0 ? (
+      {tickets.length === 0 && !(groupMode === "epic" && epics.length > 0) ? (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/45 p-6 backdrop-blur-[1px]">
           <div className="w-full max-w-sm rounded-xl border border-border bg-background shadow-lg/10">
             <Empty className="min-h-72">

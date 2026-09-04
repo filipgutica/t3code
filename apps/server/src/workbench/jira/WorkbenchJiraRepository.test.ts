@@ -116,14 +116,79 @@ describe("WorkbenchJiraRepository SQL", () => {
       yield* repository.upsertBinding(binding);
       yield* repository.replaceIssueLinks(bindingId, [issueLink]);
 
+      expect(
+        yield* repository.updateBindingSyncMetadata({
+          id: bindingId,
+          expectedUpdatedAt: "2026-09-03T11:59:59.000Z",
+          syncedAt: "2026-09-03T13:00:00.000Z",
+        }),
+      ).toBe(false);
+      expect(
+        yield* repository.updateBindingSyncMetadata({
+          id: bindingId,
+          expectedUpdatedAt: createdAt,
+          syncedAt: "2026-09-03T13:00:00.000Z",
+        }),
+      ).toBe(true);
+
+      const syncedBinding = {
+        ...binding,
+        lastSyncedAt: "2026-09-03T13:00:00.000Z",
+        updatedAt: "2026-09-03T13:00:00.000Z",
+      };
+
       expect(yield* repository.listConnections()).toEqual([connection]);
       expect(Option.getOrThrow(yield* repository.getConnection(connectionId))).toEqual(connection);
       expect(Option.getOrThrow(yield* repository.getCredentialId(connectionId))).toBe(
         "oauth-grant-1",
       );
-      expect(yield* repository.listBindings()).toEqual([binding]);
-      expect(Option.getOrThrow(yield* repository.getBinding(bindingId))).toEqual(binding);
+      expect(yield* repository.listBindings()).toEqual([syncedBinding]);
+      expect(Option.getOrThrow(yield* repository.getBinding(bindingId))).toEqual(syncedBinding);
       expect(yield* repository.listIssueLinks(bindingId)).toEqual([issueLink]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect("rolls back every connection when a batch upsert fails", () =>
+    Effect.gen(function* () {
+      const repository = yield* WorkbenchJiraRepository;
+      const createdAt = "2026-09-03T12:00:00.000Z";
+      const existing: WorkbenchJiraConnection = {
+        id: WorkbenchJiraConnectionId.make("connection-existing"),
+        cloudId: "cloud-existing",
+        siteName: "Existing Jira",
+        siteUrl: "https://existing.atlassian.net",
+        avatarUrl: null,
+        scopes: ["read:project:jira"],
+        createdAt,
+        updatedAt: createdAt,
+      };
+      const firstBatchConnection: WorkbenchJiraConnection = {
+        ...existing,
+        id: WorkbenchJiraConnectionId.make("connection-first-batch"),
+        cloudId: "cloud-first-batch",
+        siteName: "First batch site",
+        siteUrl: "https://first-batch.atlassian.net",
+      };
+      const conflictingBatchConnection: WorkbenchJiraConnection = {
+        ...existing,
+        id: WorkbenchJiraConnectionId.make("connection-conflicting-batch"),
+        siteName: "Conflicting batch site",
+      };
+
+      yield* repository.upsertConnection(existing, "credential-existing");
+      const error = yield* Effect.flip(
+        repository.upsertConnections(
+          [firstBatchConnection, conflictingBatchConnection],
+          "credential-new",
+        ),
+      );
+
+      expect(error._tag).toBe("WorkbenchJiraRepositoryError");
+      expect(yield* repository.listConnections()).toEqual([existing]);
+      expect(yield* repository.getCredentialId(firstBatchConnection.id)).toEqual(Option.none());
+      expect(Option.getOrThrow(yield* repository.getCredentialId(existing.id))).toBe(
+        "credential-existing",
+      );
     }).pipe(Effect.provide(TestLayer)),
   );
 });

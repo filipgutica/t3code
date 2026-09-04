@@ -749,7 +749,7 @@ describe("WorkbenchStore", () => {
     );
   });
 
-  it.effect("preserves Jira-owned fields when updating local Ticket execution context", () =>
+  it.effect("preserves Jira-owned fields when updating local execution context", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const store = yield* WorkbenchStore;
@@ -757,6 +757,7 @@ describe("WorkbenchStore", () => {
       const secondProjectId = ProjectId.make("jira-local-project-2");
       const projectId = WorkbenchProjectId.make("jira-local-workspace");
       const ticketId = WorkbenchTicketId.make("jira-local-ticket");
+      const epicId = WorkbenchEpicId.make("jira:binding-1:epic:10002");
       const createdAt = "2026-09-03T12:00:00.000Z";
       yield* sql`
         INSERT INTO projection_projects (
@@ -779,6 +780,13 @@ describe("WorkbenchStore", () => {
         markdown: "Original instructions",
         primaryT3ProjectId: firstProjectId,
         repositoryProjectIds: [firstProjectId],
+        createdAt,
+      });
+      yield* store.createEpic({
+        id: epicId,
+        projectId,
+        title: "Jira Epic summary",
+        markdown: "Original Epic description",
         createdAt,
       });
       yield* sql`
@@ -819,10 +827,15 @@ describe("WorkbenchStore", () => {
         blocked: true,
         updatedAt: "2026-09-03T13:00:00.000Z",
       });
+      yield* store.updateEpic({
+        id: epicId,
+        title: "Stale browser Epic title",
+        markdown: "Updated local Epic description",
+        updatedAt: "2026-09-03T13:00:00.000Z",
+      });
 
-      const ticket = (yield* store.getSnapshot).tickets.find(
-        (candidate) => candidate.id === ticketId,
-      );
+      const snapshot = yield* store.getSnapshot;
+      const ticket = snapshot.tickets.find((candidate) => candidate.id === ticketId);
       expect(ticket).toMatchObject({
         title: "Jira summary",
         kind: "story",
@@ -832,6 +845,68 @@ describe("WorkbenchStore", () => {
         status: "todo",
         blocked: false,
       });
+      expect(snapshot.epics.find((candidate) => candidate.id === epicId)).toMatchObject({
+        title: "Jira Epic summary",
+        markdown: "Updated local Epic description",
+      });
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect("keeps Jira-owned Board status unchanged when work is assigned", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* WorkbenchStore;
+      const repositoryId = ProjectId.make("jira-assignment-repository");
+      const workspaceId = WorkbenchProjectId.make("jira-assignment-workspace");
+      const ticketId = WorkbenchTicketId.make("jira:binding-assignment:issue:10001");
+      const threadId = ThreadId.make("jira-assignment-thread");
+      const createdAt = "2026-09-03T12:00:00.000Z";
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+        ) VALUES (
+          ${repositoryId}, 'Repository', '/repos/jira-assignment', '[]',
+          ${createdAt}, ${createdAt}, NULL
+        )
+      `;
+      yield* store.createProject({
+        id: workspaceId,
+        title: "Jira Workspace",
+        linkedProjectIds: [repositoryId],
+        createdAt,
+      });
+      yield* store.createTicket({
+        id: ticketId,
+        projectId: workspaceId,
+        title: "Jira Todo",
+        kind: "story",
+        markdown: "",
+        primaryT3ProjectId: repositoryId,
+        repositoryProjectIds: [repositoryId],
+        createdAt,
+      });
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id, project_id, title, model_selection_json, runtime_mode,
+          interaction_mode, pending_approval_count, pending_user_input_count,
+          has_actionable_proposed_plan, created_at, updated_at, deleted_at
+        ) VALUES (
+          ${threadId}, ${repositoryId}, 'Jira Todo',
+          '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default',
+          0, 0, 0, ${createdAt}, ${createdAt}, NULL
+        )
+      `;
+
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("jira-assignment"),
+        ticketId,
+        threadId,
+        createdAt,
+      });
+
+      const snapshot = yield* store.getSnapshot;
+      expect(snapshot.tickets.find((ticket) => ticket.id === ticketId)?.status).toBe("todo");
     }).pipe(Effect.provide(TestLayer)),
   );
 

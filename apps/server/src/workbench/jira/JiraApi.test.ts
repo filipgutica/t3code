@@ -29,9 +29,11 @@ const repository = WorkbenchJiraRepository.of({
   listConnections: () => Effect.succeed([connection]),
   getCredentialId: () => Effect.succeed(Option.some("credential-1")),
   upsertConnection: () => Effect.void,
+  upsertConnections: () => Effect.void,
   getBinding: () => Effect.succeed(Option.none()),
   listBindings: () => Effect.succeed([]),
   upsertBinding: () => Effect.void,
+  updateBindingSyncMetadata: () => Effect.succeed(true),
   listIssueLinks: () => Effect.succeed([]),
   replaceIssueLinks: () => Effect.void,
 } satisfies WorkbenchJiraRepositoryShape);
@@ -43,6 +45,36 @@ const auth = JiraAuthService.of({
 });
 
 describe("JiraApi", () => {
+  it.effect("explains how to recover from Jira authorization and access failures", () =>
+    Effect.gen(function* () {
+      const statuses = [401, 403, 429];
+      const execute = (request: HttpClientRequest.HttpClientRequest) => {
+        const status = statuses.shift();
+        if (status === undefined) return Effect.die("unexpected request");
+        return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({}, { status })));
+      };
+      const service = yield* JiraApi.make.pipe(
+        Effect.provideService(WorkbenchJiraRepository, repository),
+        Effect.provideService(JiraAuthService, auth),
+        Effect.provideService(HttpClient.HttpClient, HttpClient.make(execute)),
+      );
+
+      const unauthorized = yield* Effect.flip(service.listProjects({ connectionId }));
+      const forbidden = yield* Effect.flip(service.listProjects({ connectionId }));
+      const rateLimited = yield* Effect.flip(service.listProjects({ connectionId }));
+
+      assert.strictEqual(unauthorized.code, "request_failed");
+      assert.isTrue(unauthorized.message.includes("401"));
+      assert.isTrue(unauthorized.message.includes("Reconnect Jira"));
+      assert.isTrue(forbidden.message.includes("403"));
+      assert.isTrue(forbidden.message.includes("permissions"));
+      assert.isTrue(forbidden.message.includes("scopes"));
+      assert.isTrue(rateLimited.message.includes("429"));
+      assert.isTrue(rateLimited.message.includes("Wait"));
+      assert.isTrue(rateLimited.message.includes("try again"));
+    }),
+  );
+
   it.effect("normalizes board configuration and assigned sprint issues", () =>
     Effect.gen(function* () {
       const requests: Array<HttpClientRequest.HttpClientRequest> = [];
@@ -131,6 +163,9 @@ describe("JiraApi", () => {
       assert.strictEqual(issues[0]?.epic?.key, "WB-EPIC");
       assert.isTrue(issues[0]?.flagged ?? false);
       assert.strictEqual(issues[1]?.rank, 1);
+      assert.isTrue(
+        requests[1]?.url.includes("/rest/software/1.0/board/42/sprint/7/issue") ?? false,
+      );
       assert.deepStrictEqual(requests[1]?.urlParams.params[0], ["jql", "assignee = currentUser()"]);
       assert.strictEqual(requests[1]?.headers.authorization, "Bearer access-token");
       assert.deepStrictEqual(requests[2]?.urlParams.params.at(-1), ["nextPageToken", "page-2"]);

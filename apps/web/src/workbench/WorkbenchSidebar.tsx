@@ -1,4 +1,9 @@
-import { type EnvironmentId, WorkbenchProjectId, WorkbenchTicketId } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  WorkbenchEpicId,
+  WorkbenchProjectId,
+  WorkbenchTicketId,
+} from "@t3tools/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
@@ -27,6 +32,7 @@ import { workbenchEnvironment } from "./state";
 
 const isWorkbenchProjectId = Schema.is(WorkbenchProjectId);
 const isWorkbenchTicketId = Schema.is(WorkbenchTicketId);
+const isWorkbenchEpicId = Schema.is(WorkbenchEpicId);
 
 export function WorkbenchSidebar({
   context,
@@ -47,10 +53,12 @@ export function WorkbenchSidebar({
     select: (value) => ({
       projectId: isWorkbenchProjectId(value.projectId) ? value.projectId : undefined,
       ticketId: isWorkbenchTicketId(value.ticketId) ? value.ticketId : undefined,
+      epicId: isWorkbenchEpicId(value.epicId) ? value.epicId : undefined,
     }),
   });
   const selectedWorkspaceId = context?.workspaceId ?? search.projectId;
   const selectedTicketId = context?.ticketId ?? search.ticketId;
+  const selectedEpicId = context ? undefined : search.epicId;
   const { isMobile, setOpenMobile } = useSidebar();
   const query = useEnvironmentQuery(
     environmentId === null ? null : workbenchEnvironment.snapshot({ environmentId, input: {} }),
@@ -79,6 +87,7 @@ export function WorkbenchSidebar({
       search: {
         ...(selectedWorkspaceId ? { projectId: selectedWorkspaceId } : {}),
         ...(selectedTicketId ? { ticketId: selectedTicketId } : {}),
+        ...(selectedEpicId ? { epicId: selectedEpicId } : {}),
         create: "workspace",
       },
       replace: true,

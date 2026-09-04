@@ -64,6 +64,30 @@ export function reconcileWorkbenchJiraStatusMappings({
   }));
 }
 
+export const resolveWorkbenchJiraOAuthCallback = ({
+  code,
+  state,
+  error,
+}: {
+  readonly code?: string | undefined;
+  readonly state?: string | undefined;
+  readonly error?: string | undefined;
+}): { code: string; state: string } | { error: string } | null => {
+  if (!code && !state && !error) return null;
+  if (error) {
+    return {
+      error:
+        error === "access_denied"
+          ? "Jira authorization was cancelled or denied. Connect again when you are ready to grant access."
+          : "Atlassian could not authorize Jira. Try connecting again.",
+    };
+  }
+  if (!code || !state) {
+    return { error: "Jira returned an incomplete authorization response. Try connecting again." };
+  }
+  return { code, state };
+};
+
 export function resolveWorkbenchTicketUpdateFields({
   ticket,
   patch,

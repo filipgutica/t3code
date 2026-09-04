@@ -8,12 +8,34 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   orderWorkbenchTicketLanesByJiraRank,
+  resolveWorkbenchJiraOAuthCallback,
   reconcileWorkbenchJiraStatusMappings,
   resolveWorkbenchTicketUpdateFields,
   suggestWorkbenchJiraStatusMappings,
 } from "./workbenchJira.logic";
 
 describe("Workbench Jira helpers", () => {
+  it("classifies denied and incomplete OAuth callbacks before code exchange", () => {
+    expect(resolveWorkbenchJiraOAuthCallback({})).toBeNull();
+    expect(resolveWorkbenchJiraOAuthCallback({ error: "access_denied", state: "request" })).toEqual(
+      {
+        error:
+          "Jira authorization was cancelled or denied. Connect again when you are ready to grant access.",
+      },
+    );
+    expect(resolveWorkbenchJiraOAuthCallback({ code: "code" })).toEqual({
+      error: "Jira returned an incomplete authorization response. Try connecting again.",
+    });
+    expect(
+      resolveWorkbenchJiraOAuthCallback({ error: "server_error", code: "code", state: "request" }),
+    ).toEqual({
+      error: "Atlassian could not authorize Jira. Try connecting again.",
+    });
+    expect(resolveWorkbenchJiraOAuthCallback({ code: "code", state: "request" })).toEqual({
+      code: "code",
+      state: "request",
+    });
+  });
   it("suggests four-column mappings while preserving every Jira status id", () => {
     expect(
       suggestWorkbenchJiraStatusMappings({

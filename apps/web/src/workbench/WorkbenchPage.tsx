@@ -6,6 +6,7 @@ import {
 import {
   ProjectId,
   type ThreadId,
+  type WorkbenchEpic,
   WorkbenchEpicId,
   type WorkbenchJiraBinding,
   WorkbenchJiraBindingId,
@@ -68,6 +69,7 @@ import {
 import {
   WorkbenchTicketDetail,
   WorkbenchTicketDialog,
+  WorkbenchEpicDetail,
   WorkbenchEpicDialog,
   WorkbenchWorkspaceDialog,
 } from "./WorkbenchForms";
@@ -78,14 +80,19 @@ import {
   type WorkbenchJiraCreateDraft,
   type WorkbenchJiraUpdateDraft,
 } from "./WorkbenchJiraDialog";
-import { resolveWorkbenchTicketUpdateFields } from "./workbenchJira.logic";
+import {
+  resolveWorkbenchJiraOAuthCallback,
+  resolveWorkbenchTicketUpdateFields,
+} from "./workbenchJira.logic";
 
 interface WorkbenchPageProps {
   readonly createWorkspace: boolean;
   readonly initialProjectId: WorkbenchProjectId | undefined;
   readonly initialTicketId: WorkbenchTicketId | undefined;
+  readonly initialEpicId: WorkbenchEpicId | undefined;
   readonly jiraOAuthCode: string | undefined;
   readonly jiraOAuthState: string | undefined;
+  readonly jiraOAuthError: string | undefined;
 }
 
 const JIRA_OAUTH_WORKSPACE_STORAGE_KEY = "t3code:workbench:jira-oauth-workspace";
@@ -144,8 +151,10 @@ export function WorkbenchPage({
   createWorkspace,
   initialProjectId,
   initialTicketId,
+  initialEpicId,
   jiraOAuthCode,
   jiraOAuthState,
+  jiraOAuthError,
 }: WorkbenchPageProps) {
   const environmentId = usePrimaryEnvironmentId();
   const allProjects = useProjects();
@@ -166,6 +175,7 @@ export function WorkbenchPage({
     reportFailure: false,
   });
   const createEpic = useAtomCommand(workbenchEnvironment.createEpic, { reportFailure: false });
+  const updateEpic = useAtomCommand(workbenchEnvironment.updateEpic, { reportFailure: false });
   const createTicket = useAtomCommand(workbenchEnvironment.createTicket, { reportFailure: false });
   const updateTicket = useAtomCommand(workbenchEnvironment.updateTicket, { reportFailure: false });
   const jiraBeginAuth = useAtomCommand(workbenchEnvironment.jiraBeginAuth, {
@@ -222,7 +232,11 @@ export function WorkbenchPage({
   const [selectedTicketId, setSelectedTicketId] = useState<WorkbenchTicketId | null>(
     initialTicketId ?? null,
   );
+  const [selectedEpicId, setSelectedEpicId] = useState<WorkbenchEpicId | null>(
+    initialEpicId ?? null,
+  );
   const [ticketDialogOpen, setTicketDialogOpen] = useState(false);
+  const [ticketDialogEpicId, setTicketDialogEpicId] = useState<WorkbenchEpicId | null>(null);
   const [epicDialogOpen, setEpicDialogOpen] = useState(false);
   const [jiraDialogOpen, setJiraDialogOpen] = useState(false);
   const [boardGroupMode, setBoardGroupMode] = useState<"none" | "epic">("none");
@@ -232,6 +246,7 @@ export function WorkbenchPage({
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [awaitingProjectId, setAwaitingProjectId] = useState<WorkbenchProjectId | null>(null);
   const [awaitingTicketId, setAwaitingTicketId] = useState<WorkbenchTicketId | null>(null);
+  const [awaitingEpicId, setAwaitingEpicId] = useState<WorkbenchEpicId | null>(null);
   const handledJiraOAuthCallbackRef = useRef<string | null>(null);
 
   const snapshot = query.data;
@@ -256,6 +271,15 @@ export function WorkbenchPage({
     : (snapshot?.projects.find((project) => project.id === selectedProjectId) ??
       snapshot?.projects[0] ??
       null);
+  const awaitingSelectedEpic =
+    awaitingEpicId !== null &&
+    awaitingEpicId === selectedEpicId &&
+    !snapshot?.epics.some((epic) => epic.id === selectedEpicId);
+  const selectedEpic = awaitingSelectedEpic
+    ? null
+    : (snapshot?.epics.find(
+        (epic) => epic.id === selectedEpicId && epic.projectId === selectedProject?.id,
+      ) ?? null);
   const jiraIssueLinksByTicketId = useMemo(
     () => new Map((jiraSnapshot?.issueLinks ?? []).map((link) => [link.ticketId, link])),
     [jiraSnapshot?.issueLinks],
@@ -266,10 +290,7 @@ export function WorkbenchPage({
   );
   const selectedTicket =
     snapshot?.tickets.find(
-      (ticket) =>
-        ticket.id === selectedTicketId &&
-        ticket.projectId === selectedProject?.id &&
-        isTicketVisible(ticket.id),
+      (ticket) => ticket.id === selectedTicketId && ticket.projectId === selectedProject?.id,
     ) ?? null;
   const projectTickets = useMemo(
     () =>
@@ -277,6 +298,10 @@ export function WorkbenchPage({
         (ticket) => ticket.projectId === selectedProject?.id && isTicketVisible(ticket.id),
       ) ?? [],
     [isTicketVisible, selectedProject?.id, snapshot?.tickets],
+  );
+  const selectedEpicTickets = useMemo(
+    () => projectTickets.filter((ticket) => ticket.epicId === selectedEpic?.id),
+    [projectTickets, selectedEpic?.id],
   );
   const assignmentsByTicket = useMemo(
     () => getActiveAssignmentsByTicket(snapshot?.assignments ?? []),
@@ -383,9 +408,19 @@ export function WorkbenchPage({
     });
   };
 
-  const closeTicket = () => {
+  const updateEpicRouteSelection = (projectId: WorkbenchProjectId, epicId: WorkbenchEpicId) => {
+    return navigate({
+      to: "/workbench",
+      search: { projectId, epicId },
+      replace: true,
+    });
+  };
+
+  const closeWorkItem = () => {
     setAwaitingTicketId(null);
+    setAwaitingEpicId(null);
     setSelectedTicketId(null);
+    setSelectedEpicId(null);
     if (selectedProject) void updateRouteSelection(selectedProject.id);
   };
 
@@ -410,6 +445,8 @@ export function WorkbenchPage({
     }
     setAwaitingProjectId(id);
     setSelectedProjectId(id);
+    setSelectedTicketId(null);
+    setSelectedEpicId(null);
     await updateRouteSelection(id);
     return true;
   };
@@ -452,7 +489,9 @@ export function WorkbenchPage({
       return false;
     }
     setAwaitingTicketId(id);
+    setAwaitingEpicId(null);
     setSelectedTicketId(id);
+    setSelectedEpicId(null);
     await updateRouteSelection(selectedProject.id, id);
     return true;
   };
@@ -486,6 +525,27 @@ export function WorkbenchPage({
       input: {
         id: ticket.id,
         ...fields,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    setPendingAction(null);
+    if (result._tag === "Failure") {
+      if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
+      return false;
+    }
+    return true;
+  };
+
+  const saveEpicContent = async (epic: WorkbenchEpic, title: string, markdown: string) => {
+    if (environmentId === null || title.trim().length === 0) return false;
+    setPendingAction(`update-epic:${epic.id}`);
+    setError(null);
+    const result = await updateEpic({
+      environmentId,
+      input: {
+        id: epic.id,
+        title: title.trim(),
+        markdown: markdown.trim(),
         updatedAt: new Date().toISOString(),
       },
     });
@@ -536,10 +596,11 @@ export function WorkbenchPage({
     if (environmentId === null || selectedProject === null) return false;
     setPendingAction("create-epic");
     setError(null);
+    const id = WorkbenchEpicId.make(randomUUID());
     const result = await createEpic({
       environmentId,
       input: {
-        id: WorkbenchEpicId.make(randomUUID()),
+        id,
         projectId: selectedProject.id,
         title,
         markdown,
@@ -551,6 +612,11 @@ export function WorkbenchPage({
       if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
       return false;
     }
+    setAwaitingEpicId(id);
+    setAwaitingTicketId(null);
+    setSelectedEpicId(id);
+    setSelectedTicketId(null);
+    await updateEpicRouteSelection(selectedProject.id, id);
     return true;
   };
 
@@ -741,7 +807,7 @@ export function WorkbenchPage({
     ? getAssignmentsForTicket(snapshot?.assignments ?? [], selectedTicket.id)
     : [];
   const pending = pendingAction !== null;
-  const boardIsOpen = selectedTicket === null;
+  const boardIsOpen = selectedTicket === null && selectedEpic === null;
 
   useEffect(() => {
     if (!jiraBinding?.active || !boardIsOpen) return;
@@ -767,10 +833,15 @@ export function WorkbenchPage({
   };
 
   useEffect(() => {
-    if (!jiraOAuthCode && !jiraOAuthState) return;
+    const callback = resolveWorkbenchJiraOAuthCallback({
+      code: jiraOAuthCode,
+      state: jiraOAuthState,
+      error: jiraOAuthError,
+    });
+    if (callback === null) return;
     if (environmentId === null) return;
     if (snapshotProjects === null) return;
-    const callbackKey = `${jiraOAuthCode ?? ""}:${jiraOAuthState ?? ""}`;
+    const callbackKey = `${jiraOAuthCode ?? ""}:${jiraOAuthState ?? ""}:${jiraOAuthError ?? ""}`;
     if (handledJiraOAuthCallbackRef.current === callbackKey) return;
     handledJiraOAuthCallbackRef.current = callbackKey;
 
@@ -778,14 +849,14 @@ export function WorkbenchPage({
       setJiraPendingAction("complete-auth");
       setJiraError(null);
       let succeeded = false;
-      if (!jiraOAuthCode || !jiraOAuthState) {
-        setJiraError("Jira returned an incomplete authorization response. Try connecting again.");
+      if ("error" in callback) {
+        setJiraError(callback.error);
       } else {
         const result = await jiraCompleteAuth({
           environmentId,
           input: {
-            code: jiraOAuthCode,
-            state: jiraOAuthState,
+            code: callback.code,
+            state: callback.state,
             redirectUri: jiraOAuthRedirectUri(),
           },
         });
@@ -807,21 +878,34 @@ export function WorkbenchPage({
           ...(callbackProject?.id || previous.projectId
             ? { projectId: callbackProject?.id ?? previous.projectId }
             : {}),
-          ...(previous.ticketId ? { ticketId: previous.ticketId } : {}),
+          ...(previous.ticketId
+            ? { ticketId: previous.ticketId }
+            : previous.epicId
+              ? { epicId: previous.epicId }
+              : {}),
           ...(previous.create ? { create: previous.create } : {}),
         }),
         replace: true,
       });
-      if (succeeded) setJiraDialogOpen(true);
+      if (succeeded || callbackProject) setJiraDialogOpen(true);
     })();
-  }, [environmentId, jiraCompleteAuth, jiraOAuthCode, jiraOAuthState, navigate, snapshotProjects]);
+  }, [
+    environmentId,
+    jiraCompleteAuth,
+    jiraOAuthCode,
+    jiraOAuthError,
+    jiraOAuthState,
+    navigate,
+    snapshotProjects,
+  ]);
 
   useEffect(() => {
     // Route search is an external selection source and can change through browser history.
     // oxlint-disable-next-line react/set-state-in-effect
     setSelectedProjectId(initialProjectId ?? null);
     setSelectedTicketId(initialTicketId ?? null);
-  }, [initialProjectId, initialTicketId]);
+    setSelectedEpicId(initialEpicId ?? null);
+  }, [initialEpicId, initialProjectId, initialTicketId]);
 
   useEffect(() => {
     if (snapshot === null) return;
@@ -837,23 +921,40 @@ export function WorkbenchPage({
       !snapshot.tickets.some((ticket) => ticket.id === awaitingTicketId)
     )
       return;
+    if (
+      awaitingEpicId !== null &&
+      awaitingEpicId === selectedEpicId &&
+      !snapshot.epics.some((epic) => epic.id === awaitingEpicId)
+    )
+      return;
     if (selectedProject === null || pendingAction === "create-project") return;
     const ticketId = selectedTicket?.id ?? null;
-    if (selectedProject.id === selectedProjectId && ticketId === selectedTicketId) return;
+    const epicId = ticketId === null ? (selectedEpic?.id ?? null) : null;
+    if (
+      selectedProject.id === selectedProjectId &&
+      ticketId === selectedTicketId &&
+      epicId === selectedEpicId
+    )
+      return;
     void navigate({
       to: "/workbench",
       search: ticketId
         ? { projectId: selectedProject.id, ticketId }
-        : { projectId: selectedProject.id },
+        : epicId
+          ? { projectId: selectedProject.id, epicId }
+          : { projectId: selectedProject.id },
       replace: true,
     });
   }, [
     navigate,
     awaitingProjectId,
+    awaitingEpicId,
     awaitingTicketId,
     pendingAction,
     selectedProject,
     selectedProjectId,
+    selectedEpic,
+    selectedEpicId,
     selectedTicket,
     selectedTicketId,
     snapshot,
@@ -869,8 +970,9 @@ export function WorkbenchPage({
       replace: true,
     });
   };
-  const openTicketDialog = () => {
+  const openTicketDialog = (epicId: WorkbenchEpicId | null = null) => {
     setError(null);
+    setTicketDialogEpicId(epicId);
     setTicketDialogOpen(true);
   };
   const openEpicDialog = () => {
@@ -891,7 +993,11 @@ export function WorkbenchPage({
       to: "/workbench",
       search: (previous: WorkbenchSearch): WorkbenchSearch => ({
         ...(previous.projectId ? { projectId: previous.projectId } : {}),
-        ...(previous.ticketId ? { ticketId: previous.ticketId } : {}),
+        ...(previous.ticketId
+          ? { ticketId: previous.ticketId }
+          : previous.epicId
+            ? { epicId: previous.epicId }
+            : {}),
       }),
       replace: true,
     });
@@ -991,12 +1097,47 @@ export function WorkbenchPage({
               error={error ?? query.error ?? archivedThreadsError}
               onBack={() => {
                 setError(null);
-                closeTicket();
+                closeWorkItem();
               }}
               onSave={saveTicketContent}
               onUpdate={changeTicket}
+              onOpenEpic={(epicId) => {
+                setAwaitingTicketId(null);
+                setAwaitingEpicId(null);
+                setSelectedTicketId(null);
+                setSelectedEpicId(epicId);
+                void updateEpicRouteSelection(selectedProject.id, epicId);
+              }}
               onOpenThread={openTicketThread}
               onOpenAssignedThread={openAssignedThread}
+            />
+          ) : selectedEpic ? (
+            <WorkbenchEpicDetail
+              key={selectedEpic.id}
+              workspaceTitle={selectedProject.title}
+              epic={selectedEpic}
+              jiraManagedTitle={
+                jiraBinding !== null && selectedEpic.id.startsWith(`jira:${jiraBinding.id}:epic:`)
+              }
+              tickets={selectedEpicTickets}
+              repositoriesById={repositoriesById}
+              assignmentsByTicket={assignmentsByTicket}
+              jiraIssueLinksByTicketId={jiraIssueLinksByTicketId}
+              pending={pending}
+              error={error ?? query.error}
+              onBack={() => {
+                setError(null);
+                closeWorkItem();
+              }}
+              onSave={saveEpicContent}
+              onOpenTicket={(ticket) => {
+                setAwaitingTicketId(null);
+                setAwaitingEpicId(null);
+                setSelectedEpicId(null);
+                setSelectedTicketId(ticket.id);
+                void updateRouteSelection(selectedProject.id, ticket.id);
+              }}
+              onCreateTicket={() => openTicketDialog(selectedEpic.id)}
             />
           ) : (
             <>
@@ -1004,7 +1145,7 @@ export function WorkbenchPage({
                 electron={isElectron}
                 className="h-auto min-h-20 items-start border-b border-border py-3"
               >
-                <div className="flex min-w-0 items-start justify-between gap-3">
+                <div className="flex w-full min-w-0 items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-2">
                       <h2 className="truncate font-heading text-xl font-semibold">
@@ -1085,7 +1226,7 @@ export function WorkbenchPage({
                       <Layers3Icon />
                       <span className="hidden sm:inline">New Epic</span>
                     </Button>
-                    <Button aria-label="New Ticket" onClick={openTicketDialog} size="sm">
+                    <Button aria-label="New Ticket" onClick={() => openTicketDialog()} size="sm">
                       <PlusIcon />
                       <span className="hidden sm:inline">New Ticket</span>
                     </Button>
@@ -1160,15 +1301,24 @@ export function WorkbenchPage({
                   pendingAction={pendingAction}
                   onSelect={(projectId, ticketId) => {
                     setAwaitingTicketId(null);
+                    setAwaitingEpicId(null);
+                    setSelectedEpicId(null);
                     setSelectedTicketId(ticketId);
                     void updateRouteSelection(projectId, ticketId);
+                  }}
+                  onSelectEpic={(projectId, epicId) => {
+                    setAwaitingTicketId(null);
+                    setAwaitingEpicId(null);
+                    setSelectedTicketId(null);
+                    setSelectedEpicId(epicId);
+                    void updateEpicRouteSelection(projectId, epicId);
                   }}
                   onMove={(ticket, status) => {
                     if (jiraManagedTicketIds.has(ticket.id)) return;
                     changeTicket(ticketForBoardAction(ticket), { status });
                   }}
                   onOpenThread={(ticket) => openTicketThread(ticketForBoardAction(ticket))}
-                  onCreateTicket={openTicketDialog}
+                  onCreateTicket={() => openTicketDialog()}
                 />
               </div>
             </>
@@ -1215,9 +1365,11 @@ export function WorkbenchPage({
       ) : null}
       {selectedProject ? (
         <WorkbenchTicketDialog
+          key={`${selectedProject.id}:${ticketDialogEpicId ?? "no-epic"}`}
           open={ticketDialogOpen}
           linkedProjects={linkedT3Projects}
           epics={activeProjectEpics}
+          initialEpicId={ticketDialogEpicId}
           pending={pending}
           error={error ?? query.error}
           onOpenChange={handleTicketDialogOpenChange}

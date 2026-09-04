@@ -36,6 +36,10 @@ export interface WorkbenchJiraRepositoryShape {
     connection: WorkbenchJiraConnection,
     credentialId: string,
   ) => Effect.Effect<void, WorkbenchJiraRepositoryError>;
+  readonly upsertConnections: (
+    connections: ReadonlyArray<WorkbenchJiraConnection>,
+    credentialId: string,
+  ) => Effect.Effect<void, WorkbenchJiraRepositoryError>;
   readonly getBinding: (
     id: WorkbenchJiraBindingId,
   ) => Effect.Effect<Option.Option<WorkbenchJiraBinding>, WorkbenchJiraRepositoryError>;
@@ -46,6 +50,11 @@ export interface WorkbenchJiraRepositoryShape {
   readonly upsertBinding: (
     binding: WorkbenchJiraBinding,
   ) => Effect.Effect<void, WorkbenchJiraRepositoryError>;
+  readonly updateBindingSyncMetadata: (input: {
+    readonly id: WorkbenchJiraBindingId;
+    readonly expectedUpdatedAt: string;
+    readonly syncedAt: string;
+  }) => Effect.Effect<boolean, WorkbenchJiraRepositoryError>;
   readonly listIssueLinks: (
     bindingId: WorkbenchJiraBindingId,
   ) => Effect.Effect<ReadonlyArray<WorkbenchJiraIssueLink>, WorkbenchJiraRepositoryError>;
@@ -109,6 +118,20 @@ export const layerMemory = Layer.effect(
           connections: new Map(current.connections).set(connection.id, connection),
           credentialIds: new Map(current.credentialIds).set(connection.id, credentialId),
         })),
+      upsertConnections: (connections, credentialId) =>
+        Ref.update(state, (current) => {
+          const nextConnections = new Map(current.connections);
+          const nextCredentialIds = new Map(current.credentialIds);
+          for (const connection of connections) {
+            nextConnections.set(connection.id, connection);
+            nextCredentialIds.set(connection.id, credentialId);
+          }
+          return {
+            ...current,
+            connections: nextConnections,
+            credentialIds: nextCredentialIds,
+          };
+        }),
       getBinding: (id) =>
         Ref.get(state).pipe(
           Effect.map((current) => Option.fromNullishOr(current.bindings.get(id))),
@@ -120,6 +143,24 @@ export const layerMemory = Layer.effect(
           ...current,
           bindings: new Map(current.bindings).set(binding.id, binding),
         })),
+      updateBindingSyncMetadata: (input) =>
+        Ref.modify(state, (current) => {
+          const binding = current.bindings.get(input.id);
+          if (binding === undefined || binding.updatedAt !== input.expectedUpdatedAt) {
+            return [false, current] as const;
+          }
+          return [
+            true,
+            {
+              ...current,
+              bindings: new Map(current.bindings).set(input.id, {
+                ...binding,
+                lastSyncedAt: input.syncedAt,
+                updatedAt: input.syncedAt,
+              }),
+            },
+          ] as const;
+        }),
       listIssueLinks: (bindingId) =>
         Ref.get(state).pipe(Effect.map((current) => current.issueLinks.get(bindingId) ?? [])),
       replaceIssueLinks: (bindingId, links) =>
@@ -312,6 +353,34 @@ export const layerSql = Layer.effect(
     const protect = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
       effect.pipe(Effect.mapError(repositoryFailure));
 
+    const saveConnection = Effect.fn("WorkbenchJiraRepository.saveConnection")(function* (
+      connection: WorkbenchJiraConnection,
+      credentialId: string,
+    ) {
+      const scopesJson = yield* encodeJson(
+        WorkbenchJiraConnection.fields.scopes,
+        connection.scopes,
+      );
+      yield* sql`
+        INSERT INTO workbench_jira_connections (
+          connection_id, cloud_id, credential_id, site_name, site_url, avatar_url,
+          scopes_json, created_at, updated_at
+        ) VALUES (
+          ${connection.id}, ${connection.cloudId}, ${credentialId}, ${connection.siteName},
+          ${connection.siteUrl}, ${connection.avatarUrl}, ${scopesJson},
+          ${connection.createdAt}, ${connection.updatedAt}
+        )
+        ON CONFLICT(connection_id) DO UPDATE SET
+          cloud_id = excluded.cloud_id,
+          credential_id = excluded.credential_id,
+          site_name = excluded.site_name,
+          site_url = excluded.site_url,
+          avatar_url = excluded.avatar_url,
+          scopes_json = excluded.scopes_json,
+          updated_at = excluded.updated_at
+      `;
+    });
+
     return WorkbenchJiraRepository.of({
       listConnections: () => protect(loadConnections()),
       findConnectionByCloudId: (cloudId) =>
@@ -342,31 +411,15 @@ export const layerSql = Layer.effect(
           `.pipe(Effect.map((rows) => Option.fromNullishOr(rows[0]?.credentialId))),
         ),
       upsertConnection: (connection, credentialId) =>
+        protect(saveConnection(connection, credentialId)),
+      upsertConnections: (connections, credentialId) =>
         protect(
-          Effect.gen(function* () {
-            const scopesJson = yield* encodeJson(
-              WorkbenchJiraConnection.fields.scopes,
-              connection.scopes,
-            );
-            yield* sql`
-              INSERT INTO workbench_jira_connections (
-                connection_id, cloud_id, credential_id, site_name, site_url, avatar_url,
-                scopes_json, created_at, updated_at
-              ) VALUES (
-                ${connection.id}, ${connection.cloudId}, ${credentialId}, ${connection.siteName},
-                ${connection.siteUrl}, ${connection.avatarUrl}, ${scopesJson},
-                ${connection.createdAt}, ${connection.updatedAt}
-              )
-              ON CONFLICT(connection_id) DO UPDATE SET
-                cloud_id = excluded.cloud_id,
-                credential_id = excluded.credential_id,
-                site_name = excluded.site_name,
-                site_url = excluded.site_url,
-                avatar_url = excluded.avatar_url,
-                scopes_json = excluded.scopes_json,
-                updated_at = excluded.updated_at
-            `;
-          }),
+          sql.withTransaction(
+            Effect.forEach(connections, (connection) => saveConnection(connection, credentialId), {
+              concurrency: 1,
+              discard: true,
+            }),
+          ),
         ),
       listBindings: () => protect(loadBindings()),
       getBinding: (id) =>
@@ -420,6 +473,15 @@ export const layerSql = Layer.effect(
               updated_at = excluded.updated_at
             `;
           }),
+        ),
+      updateBindingSyncMetadata: (input) =>
+        protect(
+          sql<{ readonly id: string }>`
+            UPDATE workbench_jira_bindings
+            SET last_synced_at = ${input.syncedAt}, updated_at = ${input.syncedAt}
+            WHERE binding_id = ${input.id} AND updated_at = ${input.expectedUpdatedAt}
+            RETURNING binding_id AS id
+          `.pipe(Effect.map((rows) => rows.length === 1)),
         ),
       listIssueLinks: (bindingId) => protect(loadIssueLinks(bindingId)),
       replaceIssueLinks: (bindingId, links) =>

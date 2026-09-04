@@ -13,6 +13,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { WorkbenchStore } from "../WorkbenchStore.ts";
 import { JiraApi, layer as jiraApiLayer, type JiraApiShape } from "./JiraApi.ts";
@@ -72,15 +73,35 @@ export const make = Effect.gen(function* () {
   const sync = yield* JiraSyncService;
   const repository = yield* WorkbenchJiraRepository;
   const workbench = yield* WorkbenchStore;
+  const sql = yield* SqlClient.SqlClient;
 
-  const getSnapshot = Effect.gen(function* () {
-    const connections = yield* repository.listConnections().pipe(Effect.mapError(repositoryError));
-    const bindings = yield* repository.listBindings().pipe(Effect.mapError(repositoryError));
-    const issueLinks = yield* Effect.forEach(bindings, (binding) =>
-      repository.listIssueLinks(binding.id).pipe(Effect.mapError(repositoryError)),
+  const getSnapshot = sql
+    .withTransaction(
+      Effect.gen(function* () {
+        const connections = yield* repository
+          .listConnections()
+          .pipe(Effect.mapError(repositoryError));
+        const bindings = yield* repository.listBindings().pipe(Effect.mapError(repositoryError));
+        const issueLinks = yield* Effect.forEach(bindings, (binding) =>
+          repository.listIssueLinks(binding.id).pipe(Effect.mapError(repositoryError)),
+        );
+        return {
+          connections,
+          bindings,
+          issueLinks: issueLinks.flat(),
+        } satisfies WorkbenchJiraSnapshot;
+      }),
+    )
+    .pipe(
+      Effect.catchTag("SqlError", () =>
+        Effect.fail(
+          new WorkbenchJiraOperationError({
+            code: "persistence_failed",
+            message: "Jira connection state could not be saved or loaded.",
+          }),
+        ),
+      ),
     );
-    return { connections, bindings, issueLinks: issueLinks.flat() } satisfies WorkbenchJiraSnapshot;
-  });
 
   const validateBinding = Effect.fn("WorkbenchJiraService.validateBinding")(function* (input: {
     readonly projectId: WorkbenchJiraBinding["projectId"];
@@ -146,25 +167,28 @@ export const make = Effect.gen(function* () {
     });
 
   const updateBinding: WorkbenchJiraServiceShape["updateBinding"] = (input) =>
-    Effect.gen(function* () {
-      const existing = yield* repository
-        .getBinding(input.id)
-        .pipe(Effect.mapError(repositoryError));
-      if (Option.isNone(existing)) {
-        return yield* new WorkbenchJiraOperationError({
-          code: "binding_not_found",
-          message: "The Jira sprint binding was not found.",
+    sync.withBindingPermit(
+      input.id,
+      Effect.gen(function* () {
+        const existing = yield* repository
+          .getBinding(input.id)
+          .pipe(Effect.mapError(repositoryError));
+        if (Option.isNone(existing)) {
+          return yield* new WorkbenchJiraOperationError({
+            code: "binding_not_found",
+            message: "The Jira sprint binding was not found.",
+          });
+        }
+        yield* validateBinding({
+          ...input,
+          projectId: existing.value.projectId,
+          connectionId: existing.value.connectionId,
         });
-      }
-      yield* validateBinding({
-        ...input,
-        projectId: existing.value.projectId,
-        connectionId: existing.value.connectionId,
-      });
-      const binding = { ...existing.value, ...input } satisfies WorkbenchJiraBinding;
-      yield* repository.upsertBinding(binding).pipe(Effect.mapError(repositoryError));
-      return binding;
-    });
+        const binding = { ...existing.value, ...input } satisfies WorkbenchJiraBinding;
+        yield* repository.upsertBinding(binding).pipe(Effect.mapError(repositoryError));
+        return binding;
+      }),
+    );
 
   const syncActiveBindings = repository.listBindings().pipe(
     Effect.mapError(repositoryError),

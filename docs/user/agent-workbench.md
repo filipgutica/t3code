@@ -14,7 +14,7 @@ Open **Agent Workbench** from the sidebar. Use **Add Workspace** in the Workspac
 
 **Start work** prepares one Git worktree for every repository attached to the Ticket, creates the T3 Thread in the primary repository worktree, records its Assignment to the Ticket, sends the accepted ticket context as the first turn, and opens the Thread. The Ticket workspace shows the shared branch and each prepared repository path. Additional repository worktrees can be opened in your preferred editor, while the native Thread remains rooted in the primary repository.
 
-If that Thread is archived, the ticket offers **Restore Thread** and returns it to T3's active Thread list before opening it. If the Thread was deleted, **Start replacement** creates a new native Thread and Assignment while keeping the previous Assignment in the ticket's history. Archived historical Threads can be restored from that history.
+If that Thread is archived, the ticket offers **Restore Thread** and returns it to T3's active Thread list before opening it. If the Thread was deleted, **Start replacement** creates a new native Thread and Assignment while keeping the previous Assignment in the ticket's history. If native Thread cleanup also removed its worktree, replacement work safely prepares a fresh Ticket Workspace first. Archived historical Threads can be restored from that history.
 
 An assigned Thread stays inside the Agent Workbench frame: the Workspaces sidebar remains visible, the header keeps the Workspace and Ticket context, and separate links return to the Board or exact Ticket. The Ticket workspace keeps its active Thread and earlier Thread history together. Each Workbench database belongs to one connected T3 environment; records are not combined across remote environments in this first slice.
 
@@ -28,6 +28,6 @@ A Workspace can mirror the current user's assigned Tickets from one Jira sprint.
 
 Jira owns a mirrored Ticket's summary, type, Epic, blocked flag, sprint membership, rank, and Board status, including while the mirror is paused. Workbench owns its instructions, repository scope, Ticket Workspace, Assignments, and native T3 Threads. Jira Tickets that leave the selected sprint are removed from the active Board without being deleted from Workbench history. This first integration is pull-only and does not write changes back to Jira.
 
-The Jira OAuth app must be configured by the environment operator before **Connect Jira** can authorize a site.
+The Jira OAuth app must be configured by the environment operator before **Connect Jira** can authorize a site. Authorization happens on Atlassian's website. If access expires or is revoked, open the mirror settings and choose **Reconnect Jira**. Reconnect with the same Jira site to retain its existing mirror and Ticket history. Cancelling authorization leaves the existing mirror unchanged.
 
 This experiment does not include general Artifacts, mobile UI, multi-environment boards, Jira writeback, or automatic ticket status changes based on Agent activity.

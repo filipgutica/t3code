@@ -6,13 +6,13 @@ import {
   type ProjectId,
   type WorkbenchPrepareTicketWorkspaceInput,
   type WorkbenchReleaseTicketWorkspaceInput,
-  type WorkbenchSnapshot,
   type WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -73,6 +73,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
   const git = yield* GitWorkflowService.GitWorkflowService;
   const projections = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const config = yield* ServerConfig.ServerConfig;
+  const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const clock = yield* Clock.Clock;
   const workspaceLocks = yield* Ref.make<ReadonlyMap<string, Semaphore.Semaphore>>(new Map());
@@ -92,23 +93,17 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     });
   });
 
-  const hasActiveAssignment = (
-    snapshot: WorkbenchSnapshot,
-    ticketId: WorkbenchPrepareTicketWorkspaceInput["ticketId"],
-  ) =>
-    snapshot.assignments.some(
-      (assignment) => assignment.ticketId === ticketId && assignment.supersededAt === null,
-    );
-
-  const worktreeExists = Effect.fn("TicketWorkspaceService.worktreeExists")(function* ({
+  const worktreeIsRegistered = Effect.fn("TicketWorkspaceService.worktreeIsRegistered")(function* ({
+    branchName,
     sourcePath,
     worktreePath,
   }: {
+    readonly branchName: string;
     readonly sourcePath: string;
     readonly worktreePath: string;
   }) {
     const refs = yield* git
-      .listRefs({ cwd: sourcePath, limit: 200 })
+      .listRefs({ cwd: sourcePath, query: branchName, limit: 200 })
       .pipe(
         Effect.mapError((cause) =>
           preparationError(`Could not inspect a Ticket Workspace repository: ${cause.detail}`),
@@ -118,6 +113,82 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     return refs.refs.some(
       (ref) => ref.worktreePath !== null && path.resolve(ref.worktreePath) === expectedPath,
     );
+  });
+
+  const worktreePathExists = Effect.fn("TicketWorkspaceService.worktreePathExists")(function* (
+    worktreePath: string,
+  ) {
+    return yield* fileSystem
+      .exists(path.resolve(worktreePath))
+      .pipe(
+        Effect.mapError(() =>
+          preparationError("Could not inspect a Ticket Workspace repository path."),
+        ),
+      );
+  });
+
+  const worktreeExists = Effect.fn("TicketWorkspaceService.worktreeExists")(function* ({
+    branchName,
+    sourcePath,
+    worktreePath,
+  }: {
+    readonly branchName: string;
+    readonly sourcePath: string;
+    readonly worktreePath: string;
+  }) {
+    if (!(yield* worktreePathExists(worktreePath))) return false;
+    return yield* worktreeIsRegistered({ branchName, sourcePath, worktreePath });
+  });
+
+  const cleanupWorktree = Effect.fn("TicketWorkspaceService.cleanupWorktree")(function* ({
+    repository,
+    force,
+    operation,
+  }: {
+    readonly repository: WorkbenchTicketWorkspace["repositories"][number];
+    readonly force: boolean;
+    readonly operation: "recover" | "release";
+  }) {
+    if (!(yield* worktreePathExists(repository.worktreePath))) {
+      yield* git
+        .removeWorktree({
+          cwd: repository.sourcePath,
+          path: repository.worktreePath,
+          force,
+        })
+        .pipe(
+          Effect.mapError((cause) =>
+            preparationError(
+              `Could not ${operation} repository ${repository.projectId}: ${cause.detail}`,
+            ),
+          ),
+        );
+      return;
+    }
+    if (
+      !(yield* worktreeIsRegistered({
+        branchName: repository.branchName,
+        sourcePath: repository.sourcePath,
+        worktreePath: repository.worktreePath,
+      }))
+    ) {
+      return yield* preparationError(
+        `Could not ${operation} repository ${repository.projectId}: its worktree path exists but is no longer registered.`,
+      );
+    }
+    yield* git
+      .removeWorktree({
+        cwd: repository.sourcePath,
+        path: repository.worktreePath,
+        force,
+      })
+      .pipe(
+        Effect.mapError((cause) =>
+          preparationError(
+            `Could not ${operation} repository ${repository.projectId}: ${cause.detail}`,
+          ),
+        ),
+      );
   });
 
   const recoverInterruptedPreparation = Effect.fn(
@@ -131,26 +202,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
   }) {
     for (const repository of workspace.repositories) {
       if (repository.status === "released") continue;
-      if (
-        yield* worktreeExists({
-          sourcePath: repository.sourcePath,
-          worktreePath: repository.worktreePath,
-        })
-      ) {
-        yield* git
-          .removeWorktree({
-            cwd: repository.sourcePath,
-            path: repository.worktreePath,
-            force: true,
-          })
-          .pipe(
-            Effect.mapError((cause) =>
-              preparationError(
-                `Could not recover repository ${repository.projectId}: ${cause.detail}`,
-              ),
-            ),
-          );
-      }
+      yield* cleanupWorktree({ repository, force: true, operation: "recover" });
       yield* store.releaseTicketWorkspaceRepository({
         ticketId: workspace.ticketId,
         attemptId: workspace.attemptId,
@@ -165,13 +217,65 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     });
   });
 
+  const releaseClaimedWorkspace = Effect.fn("TicketWorkspaceService.releaseClaimedWorkspace")(
+    function* ({
+      workspace,
+      releasedAt,
+    }: {
+      readonly workspace: WorkbenchTicketWorkspace;
+      readonly releasedAt: string;
+    }) {
+      for (const repository of workspace.repositories) {
+        if (repository.status !== "ready") continue;
+        yield* cleanupWorktree({ repository, force: false, operation: "release" });
+        yield* store.releaseTicketWorkspaceRepository({
+          ticketId: workspace.ticketId,
+          attemptId: workspace.attemptId,
+          projectId: repository.projectId,
+          releasedAt,
+        });
+      }
+      return yield* store.completeTicketWorkspaceRelease({
+        ticketId: workspace.ticketId,
+        attemptId: workspace.attemptId,
+        completedAt: releasedAt,
+      });
+    },
+  );
+
   const prepareUnlocked: TicketWorkspaceServiceShape["prepare"] = Effect.fn(
     "TicketWorkspaceService.prepareUnlocked",
   )(function* (input) {
     const nowMillis = yield* clock.currentTimeMillis;
     const operationAt = DateTime.formatIso(DateTime.makeUnsafe(nowMillis));
     const existing = yield* store.getTicketWorkspace(input.ticketId);
-    if (Option.isSome(existing) && existing.value.status === "ready") return existing.value;
+    if (Option.isSome(existing) && existing.value.status === "ready") {
+      let intact = true;
+      for (const repository of existing.value.repositories) {
+        if (
+          repository.status !== "ready" ||
+          !(yield* worktreeExists({
+            branchName: repository.branchName,
+            sourcePath: repository.sourcePath,
+            worktreePath: repository.worktreePath,
+          }))
+        ) {
+          intact = false;
+          break;
+        }
+      }
+      if (intact) return existing.value;
+
+      const releasing = yield* store.claimTicketWorkspaceRelease({
+        ticketId: existing.value.ticketId,
+        attemptId: existing.value.attemptId,
+        claimedAt: operationAt,
+      });
+      yield* releaseClaimedWorkspace({ workspace: releasing, releasedAt: operationAt });
+    }
+    if (Option.isSome(existing) && existing.value.status === "releasing") {
+      yield* releaseClaimedWorkspace({ workspace: existing.value, releasedAt: operationAt });
+    }
 
     const snapshot = yield* store.getSnapshot;
     const ticket = snapshot.tickets.find((candidate) => candidate.id === input.ticketId);
@@ -189,11 +293,23 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
           message: "The Ticket Workspace is already being prepared.",
         });
       }
-      if (hasActiveAssignment(snapshot, input.ticketId)) {
-        return yield* new WorkbenchOperationError({
-          code: "ticket_workspace_in_use",
-          message: "The interrupted Ticket Workspace is still used by an active Agent Thread.",
-        });
+      const activeAssignment = snapshot.assignments.find(
+        (assignment) => assignment.ticketId === input.ticketId && assignment.supersededAt === null,
+      );
+      if (activeAssignment) {
+        const thread = yield* projections
+          .getThreadShellById(activeAssignment.threadId)
+          .pipe(
+            Effect.mapError(() =>
+              preparationError("The assigned Agent Thread could not be loaded."),
+            ),
+          );
+        if (Option.isSome(thread)) {
+          return yield* new WorkbenchOperationError({
+            code: "ticket_workspace_in_use",
+            message: "The interrupted Ticket Workspace is still used by an active Agent Thread.",
+          });
+        }
       }
       yield* recoverInterruptedPreparation({
         workspace: existing.value,
@@ -415,40 +531,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       attemptId: existing.value.attemptId,
       claimedAt: operationAt,
     });
-    for (const repository of releasing.repositories) {
-      if (repository.status !== "ready") continue;
-      if (
-        yield* worktreeExists({
-          sourcePath: repository.sourcePath,
-          worktreePath: repository.worktreePath,
-        })
-      ) {
-        yield* git
-          .removeWorktree({
-            cwd: repository.sourcePath,
-            path: repository.worktreePath,
-            force: false,
-          })
-          .pipe(
-            Effect.mapError((cause) =>
-              preparationError(
-                `Could not release repository ${repository.projectId}: ${cause.detail}`,
-              ),
-            ),
-          );
-      }
-      yield* store.releaseTicketWorkspaceRepository({
-        ticketId: existing.value.ticketId,
-        attemptId: existing.value.attemptId,
-        projectId: repository.projectId,
-        releasedAt: operationAt,
-      });
-    }
-    return yield* store.completeTicketWorkspaceRelease({
-      ticketId: releasing.ticketId,
-      attemptId: releasing.attemptId,
-      completedAt: operationAt,
-    });
+    return yield* releaseClaimedWorkspace({ workspace: releasing, releasedAt: operationAt });
   });
 
   const prepare: TicketWorkspaceServiceShape["prepare"] = (input) =>
