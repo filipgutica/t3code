@@ -180,6 +180,22 @@ export function getWorkbenchTicketRepositoryProjectIds(
     : [ticket.primaryT3ProjectId];
 }
 
+export function resolveWorkbenchRepositoryOpenCwd({
+  repositoryId,
+  primaryProjectId,
+  repositoryWorkspaceRoot,
+  activeThreadWorktreePath,
+}: {
+  readonly repositoryId: ProjectId;
+  readonly primaryProjectId: ProjectId;
+  readonly repositoryWorkspaceRoot: string;
+  readonly activeThreadWorktreePath: string | null | undefined;
+}): string {
+  return repositoryId === primaryProjectId
+    ? (activeThreadWorktreePath ?? repositoryWorkspaceRoot)
+    : repositoryWorkspaceRoot;
+}
+
 export function isWorkbenchThreadArchived(
   threadId: ThreadId,
   liveThreads: ReadonlyMap<ThreadId, unknown>,

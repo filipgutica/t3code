@@ -19,6 +19,7 @@ import {
   isWorkbenchTicketKind,
   isWorkbenchTicketStatus,
   isWorkbenchThreadArchived,
+  resolveWorkbenchRepositoryOpenCwd,
   resolveWorkbenchTicketThreadTarget,
   ticketsByStatus,
   WORKBENCH_TICKET_KIND_LABELS,
@@ -26,6 +27,36 @@ import {
 } from "./workbench.logic";
 
 describe("Workbench ticket helpers", () => {
+  it("opens only the primary repository at the active Thread worktree", () => {
+    const primaryProjectId = ProjectId.make("repository-one");
+    const secondaryProjectId = ProjectId.make("repository-two");
+
+    expect(
+      resolveWorkbenchRepositoryOpenCwd({
+        repositoryId: primaryProjectId,
+        primaryProjectId,
+        repositoryWorkspaceRoot: "/repos/t3code",
+        activeThreadWorktreePath: "/repos/t3code/.t3/worktrees/ticket-one",
+      }),
+    ).toBe("/repos/t3code/.t3/worktrees/ticket-one");
+    expect(
+      resolveWorkbenchRepositoryOpenCwd({
+        repositoryId: secondaryProjectId,
+        primaryProjectId,
+        repositoryWorkspaceRoot: "/repos/agent-workbench",
+        activeThreadWorktreePath: "/repos/t3code/.t3/worktrees/ticket-one",
+      }),
+    ).toBe("/repos/agent-workbench");
+    expect(
+      resolveWorkbenchRepositoryOpenCwd({
+        repositoryId: primaryProjectId,
+        primaryProjectId,
+        repositoryWorkspaceRoot: "/repos/t3code",
+        activeThreadWorktreePath: null,
+      }),
+    ).toBe("/repos/t3code");
+  });
+
   it("builds a stable handoff prompt with the ticket title and Markdown", () => {
     expect(
       buildTicketThreadPrompt(

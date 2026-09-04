@@ -23,6 +23,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
+import { OpenInPicker } from "../components/chat/OpenInPicker";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import {
@@ -40,7 +41,11 @@ import { randomUUID } from "../lib/utils";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
-import { primaryServerProvidersAtom } from "../state/server";
+import {
+  primaryServerAvailableEditorsAtom,
+  primaryServerKeybindingsAtom,
+  primaryServerProvidersAtom,
+} from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import type { WorkbenchSearch } from "../routes/workbench";
@@ -123,6 +128,8 @@ export function WorkbenchPage({
   const allProjects = useProjects();
   const allThreadShells = useThreadShells();
   const providers = useAtomValue(primaryServerProvidersAtom);
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
   const navigate = useNavigate({ from: "/workbench" });
   const query = useEnvironmentQuery(
     environmentId === null ? null : workbenchEnvironment.snapshot({ environmentId, input: {} }),
@@ -582,6 +589,8 @@ export function WorkbenchPage({
               workspaceTitle={selectedProject.title}
               ticket={selectedTicket}
               linkedProjects={linkedT3Projects}
+              keybindings={keybindings}
+              availableEditors={availableEditors}
               assignments={selectedAssignments}
               threadsById={threadsById}
               archivedThreadsById={archivedThreadsById}
@@ -622,8 +631,19 @@ export function WorkbenchPage({
                         <FolderGit2Icon className="size-3.5" /> Repositories
                       </span>
                       {linkedT3Projects.map((project) => (
-                        <span key={project.id} className="max-w-60 truncate">
-                          {project.title}
+                        <span
+                          key={project.id}
+                          className="flex min-w-0 max-w-72 items-center gap-1.5"
+                        >
+                          <span className="truncate">{project.title}</span>
+                          <OpenInPicker
+                            environmentId={project.environmentId}
+                            keybindings={keybindings}
+                            availableEditors={availableEditors}
+                            openInCwd={project.workspaceRoot}
+                            compact
+                            enableShortcut={false}
+                          />
                         </span>
                       ))}
                     </div>

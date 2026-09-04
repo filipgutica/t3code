@@ -1,6 +1,8 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import {
+  type EditorId,
   ProjectId,
+  type ResolvedKeybindingsConfig,
   type ThreadId,
   type WorkbenchAssignment,
   type WorkbenchTicket,
@@ -18,6 +20,7 @@ import {
 import { useEffect, useState, type FormEvent } from "react";
 
 import { Badge } from "../components/ui/badge";
+import { OpenInPicker } from "../components/chat/OpenInPicker";
 import { Button } from "../components/ui/button";
 import { resolveThreadStatusPill } from "../components/Sidebar.logic";
 import { Checkbox } from "../components/ui/checkbox";
@@ -46,6 +49,7 @@ import {
   getWorkbenchTicketRepositoryProjectIds,
   isWorkbenchTicketStatus,
   isWorkbenchThreadArchived,
+  resolveWorkbenchRepositoryOpenCwd,
   WORKBENCH_TICKET_STATUSES,
   WORKBENCH_TICKET_KINDS,
   WORKBENCH_TICKET_KIND_LABELS,
@@ -396,6 +400,8 @@ export function WorkbenchTicketDetail({
   workspaceTitle,
   ticket,
   linkedProjects,
+  keybindings,
+  availableEditors,
   assignments,
   threadsById,
   archivedThreadsById,
@@ -412,6 +418,8 @@ export function WorkbenchTicketDetail({
   readonly workspaceTitle: string;
   readonly ticket: WorkbenchTicket;
   readonly linkedProjects: ReadonlyArray<Project>;
+  readonly keybindings: ResolvedKeybindingsConfig;
+  readonly availableEditors: ReadonlyArray<EditorId>;
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
   readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   readonly archivedThreadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
@@ -739,18 +747,47 @@ export function WorkbenchTicketDetail({
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-muted-foreground">Repository scope</p>
                     <div className="mt-1.5 space-y-1">
-                      {repositories.map(({ id, repository }) => (
-                        <div key={id} className="flex min-w-0 items-center gap-1.5 text-sm">
-                          <span className="truncate font-medium">
-                            {repository?.title ?? "Repository unavailable"}
-                          </span>
-                          {id === ticket.primaryT3ProjectId ? (
-                            <Badge size="sm" variant="outline">
-                              Primary
-                            </Badge>
-                          ) : null}
-                        </div>
-                      ))}
+                      {repositories.map(({ id, repository }) => {
+                        const openInCwd = repository
+                          ? resolveWorkbenchRepositoryOpenCwd({
+                              repositoryId: id,
+                              primaryProjectId: ticket.primaryT3ProjectId,
+                              repositoryWorkspaceRoot: repository.workspaceRoot,
+                              activeThreadWorktreePath: nativeThread?.worktreePath,
+                            })
+                          : null;
+                        return (
+                          <div key={id} className="flex min-w-0 items-center gap-2 text-sm">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex min-w-0 items-center gap-1.5">
+                                <span className="truncate font-medium">
+                                  {repository?.title ?? "Repository unavailable"}
+                                </span>
+                                {id === ticket.primaryT3ProjectId ? (
+                                  <Badge size="sm" variant="outline">
+                                    Primary
+                                  </Badge>
+                                ) : null}
+                              </div>
+                              {openInCwd ? (
+                                <p className="truncate text-xs text-muted-foreground">
+                                  {openInCwd}
+                                </p>
+                              ) : null}
+                            </div>
+                            {repository ? (
+                              <OpenInPicker
+                                environmentId={repository.environmentId}
+                                keybindings={keybindings}
+                                availableEditors={availableEditors}
+                                openInCwd={openInCwd}
+                                compact
+                                enableShortcut={false}
+                              />
+                            ) : null}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
