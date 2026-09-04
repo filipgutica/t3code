@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
@@ -20,6 +21,9 @@ export type WorkbenchTicketId = typeof WorkbenchTicketId.Type;
 export const WorkbenchAssignmentId = makeWorkbenchId("WorkbenchAssignmentId");
 export type WorkbenchAssignmentId = typeof WorkbenchAssignmentId.Type;
 
+export const WorkbenchTicketKind = Schema.Literals(["story", "bug"]);
+export type WorkbenchTicketKind = typeof WorkbenchTicketKind.Type;
+
 export const WorkbenchTicketStatus = Schema.Literals([
   "todo",
   "in_progress",
@@ -41,8 +45,12 @@ export const WorkbenchTicket = Schema.Struct({
   id: WorkbenchTicketId,
   projectId: WorkbenchProjectId,
   title: TrimmedNonEmptyString.check(Schema.isMaxLength(240)),
+  kind: WorkbenchTicketKind.pipe(Schema.withDecodingDefault(Effect.succeed("story" as const))),
   markdown: TrimmedString.check(Schema.isMaxLength(120_000)),
   primaryT3ProjectId: ProjectId,
+  repositoryProjectIds: Schema.Array(ProjectId).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   status: WorkbenchTicketStatus,
   blocked: Schema.Boolean,
   createdAt: IsoDateTime,
@@ -55,6 +63,7 @@ export const WorkbenchAssignment = Schema.Struct({
   ticketId: WorkbenchTicketId,
   threadId: ThreadId,
   createdAt: IsoDateTime,
+  supersededAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
 });
 export type WorkbenchAssignment = typeof WorkbenchAssignment.Type;
 
@@ -77,8 +86,10 @@ export const WorkbenchCreateTicketInput = Schema.Struct({
   id: WorkbenchTicketId,
   projectId: WorkbenchProjectId,
   title: WorkbenchTicket.fields.title,
+  kind: WorkbenchTicketKind.pipe(Schema.withDecodingDefault(Effect.succeed("story" as const))),
   markdown: WorkbenchTicket.fields.markdown,
   primaryT3ProjectId: ProjectId,
+  repositoryProjectIds: Schema.optionalKey(Schema.Array(ProjectId).check(Schema.isMinLength(1))),
   createdAt: IsoDateTime,
 });
 export type WorkbenchCreateTicketInput = typeof WorkbenchCreateTicketInput.Type;
@@ -86,7 +97,10 @@ export type WorkbenchCreateTicketInput = typeof WorkbenchCreateTicketInput.Type;
 export const WorkbenchUpdateTicketInput = Schema.Struct({
   id: WorkbenchTicketId,
   title: WorkbenchTicket.fields.title,
+  kind: Schema.optionalKey(WorkbenchTicketKind),
   markdown: WorkbenchTicket.fields.markdown,
+  primaryT3ProjectId: Schema.optionalKey(ProjectId),
+  repositoryProjectIds: Schema.optionalKey(Schema.Array(ProjectId).check(Schema.isMinLength(1))),
   status: WorkbenchTicketStatus,
   blocked: Schema.Boolean,
   updatedAt: IsoDateTime,
@@ -102,6 +116,7 @@ export const WorkbenchCreateAssignmentInput = Schema.Struct({
 export type WorkbenchCreateAssignmentInput = typeof WorkbenchCreateAssignmentInput.Type;
 
 export const WorkbenchReplaceAssignmentInput = Schema.Struct({
+  id: Schema.optionalKey(WorkbenchAssignmentId),
   ticketId: WorkbenchTicketId,
   previousThreadId: ThreadId,
   threadId: ThreadId,
@@ -114,6 +129,9 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "ticket_not_found",
   "linked_project_not_found",
   "primary_project_not_linked",
+  "repository_not_linked",
+  "primary_repository_not_selected",
+  "ticket_repository_scope_locked",
   "thread_not_found",
   "thread_project_mismatch",
   "assignment_not_found",

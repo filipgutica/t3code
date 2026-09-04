@@ -5,7 +5,7 @@ The fork is an upstream-first T3 Code product with an isolated Workbench overlay
 ## Ownership
 
 - T3 Code owns Projects, Threads, provider sessions, workspaces, Git, terminals, diffs, checkpoints, permissions, and updates.
-- Workbench owns Workbench Workspaces, Tickets, statuses, blocked state, and Assignments.
+- Workbench owns Workbench Workspaces, Ticket types and repository scope, statuses, blocked state, and Assignment history.
 - Workbench records reference native `ProjectId` and `ThreadId` values. They do not duplicate T3 records.
 - Workbench storage is per server environment. Cross-environment Workspace boards are intentionally deferred.
 
@@ -21,8 +21,13 @@ The small upstream integration surface is:
 - `apps/web/src/components/chat/ChatHeader.tsx`;
 - the generated `apps/web/src/routeTree.gen.ts`.
 
-When Start work runs, native Thread creation must succeed before the Assignment is inserted. If Assignment persistence fails, the UI asks T3 to delete the newly created orphan Thread. The server also rejects Assignments whose Thread is missing, deleted, or belongs to the wrong T3 Project.
-Each Ticket has at most one Assignment. If its assigned Thread is archived or deleted, Start replacement creates a new native Thread and atomically repoints the Assignment after checking that no other client changed it.
+Each Ticket stores a non-empty ordered set of native T3 Project references and one primary Project. The primary Project must belong to the parent Workbench Workspace and must also appear in the Ticket repository set. Existing Tickets migrate to `story` and retain their previous primary Project as their initial repository scope.
+
+For rolling web/server updates, newly added snapshot fields decode with compatibility defaults. Older create/update payloads default a new Ticket to `story`, derive its repository scope from the primary Project, preserve omitted scope fields during updates, and may omit a replacement Assignment ID for the server to generate. A newer client connected to an older server degrades to a Story Ticket with its primary Project as the visible repository scope until both sides are updated.
+
+When Start work runs, native Thread creation must succeed before the Assignment is inserted. If Assignment persistence fails, the UI asks T3 to delete the newly created orphan Thread. Once the Assignment exists, its Thread is durable history: a failed first turn does not delete either record. The server also rejects Assignments whose Thread is missing, deleted, or does not belong to the Ticket's primary T3 Project.
+
+Each Ticket has at most one active Assignment. An archived active Thread is restored through T3's native unarchive command before navigation. If the active Thread was deleted, Start replacement atomically supersedes that Assignment and inserts a new one after checking that no other client changed it. Superseded Assignments and their native Thread IDs remain available for Ticket history and backlinks; archived historical Threads can also be restored from the Ticket.
 
 ## Branch and remotes
 

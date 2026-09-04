@@ -9,32 +9,105 @@ import {
 
 import {
   buildTicketThreadPrompt,
+  getActiveAssignmentsByTicket,
+  getAssignmentsForTicket,
   getWorkbenchContextForThread,
+  getWorkbenchTicketRepositoryProjectIds,
+  getWorkbenchTicketTemplate,
   getWorkbenchThreadPresentation,
   getWorkbenchTicketStatusMoves,
+  isWorkbenchTicketKind,
   isWorkbenchTicketStatus,
+  isWorkbenchThreadArchived,
+  resolveWorkbenchTicketThreadTarget,
   ticketsByStatus,
+  WORKBENCH_TICKET_KIND_LABELS,
   WORKBENCH_TICKET_STATUS_LABELS,
 } from "./workbench.logic";
 
 describe("Workbench ticket helpers", () => {
   it("builds a stable handoff prompt with the ticket title and Markdown", () => {
     expect(
-      buildTicketThreadPrompt({
-        title: "Add project navigation",
-        markdown: "## Goal\n\nLink a ticket to its T3 Thread.",
-      }),
+      buildTicketThreadPrompt(
+        {
+          title: "Add project navigation",
+          markdown: "## Goal\n\nLink a ticket to its T3 Thread.",
+          kind: "story",
+          primaryT3ProjectId: ProjectId.make("repository-one"),
+          repositoryProjectIds: [
+            ProjectId.make("repository-one"),
+            ProjectId.make("repository-two"),
+          ],
+        },
+        [
+          {
+            id: ProjectId.make("repository-one"),
+            title: "T3 Code",
+            workspaceRoot: "/repos/t3code",
+          },
+          {
+            id: ProjectId.make("repository-two"),
+            title: "Agent Workbench",
+            workspaceRoot: "/repos/agent-workbench",
+          },
+        ],
+      ),
     ).toBe(
       [
-        "Work on this Agent Workbench ticket.",
+        "Work on this Agent Workbench Story ticket.",
         "",
         "# Add project navigation",
+        "",
+        "## Repository scope",
+        "",
+        "- T3 Code (primary) — /repos/t3code",
+        "- Agent Workbench — /repos/agent-workbench",
         "",
         "## Goal",
         "",
         "Link a ticket to its T3 Thread.",
       ].join("\n"),
     );
+  });
+
+  it("falls back to the primary Repository for snapshots decoded without a scope", () => {
+    const primaryT3ProjectId = ProjectId.make("repository-one");
+
+    expect(
+      getWorkbenchTicketRepositoryProjectIds({
+        primaryT3ProjectId,
+        repositoryProjectIds: [],
+      }),
+    ).toEqual([primaryT3ProjectId]);
+  });
+
+  it("prefers a live Thread when live and archived snapshots transiently overlap", () => {
+    const threadId = ThreadId.make("thread-one");
+
+    expect(
+      isWorkbenchThreadArchived(
+        threadId,
+        new Map([[threadId, { state: "live" }]]),
+        new Map([[threadId, { state: "archived" }]]),
+      ),
+    ).toBe(false);
+    expect(isWorkbenchThreadArchived(threadId, new Map(), new Map([[threadId, {}]]))).toBe(true);
+  });
+
+  it("provides stable product-owned templates for each Ticket kind", () => {
+    expect(WORKBENCH_TICKET_KIND_LABELS).toEqual({ story: "Story", bug: "Bug" });
+    expect(getWorkbenchTicketTemplate("story")).toContain("## Goal");
+    expect(getWorkbenchTicketTemplate("story")).toContain("## Work");
+    expect(getWorkbenchTicketTemplate("story")).toContain("## Non-goals");
+    expect(getWorkbenchTicketTemplate("story")).toContain("## Testing");
+    expect(getWorkbenchTicketTemplate("bug")).toContain("## Observed behavior");
+    expect(getWorkbenchTicketTemplate("bug")).toContain("## Environment");
+    expect(getWorkbenchTicketTemplate("bug")).toContain("## Root-cause evidence");
+    expect(getWorkbenchTicketTemplate("bug")).toContain("## Proposed fix");
+    expect(getWorkbenchTicketTemplate("bug")).toContain("## Testing");
+    expect(isWorkbenchTicketKind("story")).toBe(true);
+    expect(isWorkbenchTicketKind("bug")).toBe(true);
+    expect(isWorkbenchTicketKind("task")).toBe(false);
   });
 
   it("keeps blocked tickets in their workflow status", () => {
@@ -93,6 +166,12 @@ describe("Workbench ticket helpers", () => {
       stateLabel: "Pending Approval",
       state: "linked",
     });
+    expect(getWorkbenchThreadPresentation(true, false, null, true)).toEqual({
+      actionLabel: "Restore Thread",
+      pendingActionLabel: "Restoring Thread…",
+      stateLabel: "Archived",
+      state: "archived",
+    });
     expect(getWorkbenchThreadPresentation(true, false)).toEqual({
       actionLabel: "Start replacement",
       pendingActionLabel: "Creating Thread…",
@@ -118,7 +197,9 @@ describe("Workbench ticket helpers", () => {
       projectId: workspaceId,
       title: "Keep Ticket context visible",
       markdown: "",
+      kind: "story",
       primaryT3ProjectId: repositoryId,
+      repositoryProjectIds: [repositoryId],
       status: "in_progress",
       blocked: false,
       createdAt: "2026-09-03T00:00:00.000Z",
@@ -129,6 +210,7 @@ describe("Workbench ticket helpers", () => {
       ticketId,
       threadId,
       createdAt: "2026-09-03T00:00:00.000Z",
+      supersededAt: "2026-09-03T01:00:00.000Z",
     } as const;
 
     expect(
@@ -143,5 +225,39 @@ describe("Workbench ticket helpers", () => {
         ThreadId.make("another-thread"),
       ),
     ).toBeNull();
+  });
+
+  it("separates the active Assignment from a Ticket's historical Assignments", () => {
+    const ticketId = WorkbenchTicketId.make("ticket-one");
+    const historical = {
+      id: WorkbenchAssignmentId.make("assignment-one"),
+      ticketId,
+      threadId: ThreadId.make("thread-one"),
+      createdAt: "2026-09-03T00:00:00.000Z",
+      supersededAt: "2026-09-03T01:00:00.000Z",
+    } as const;
+    const active = {
+      id: WorkbenchAssignmentId.make("assignment-two"),
+      ticketId,
+      threadId: ThreadId.make("thread-two"),
+      createdAt: "2026-09-03T01:00:00.000Z",
+      supersededAt: null,
+    } as const;
+
+    expect(getActiveAssignmentsByTicket([historical, active]).get(ticketId)).toEqual(active);
+    expect(getAssignmentsForTicket([historical, active], ticketId)).toEqual([active, historical]);
+  });
+
+  it("opens an existing active Thread even when its primary Repository is unavailable", () => {
+    const threadId = ThreadId.make("thread-one");
+
+    expect(
+      resolveWorkbenchTicketThreadTarget(
+        { primaryT3ProjectId: ProjectId.make("missing-repository") },
+        [],
+        { threadId },
+        new Set([threadId]),
+      ),
+    ).toEqual({ state: "open", threadId });
   });
 });

@@ -35,8 +35,11 @@ import type { Project } from "../types";
 import {
   getWorkbenchTicketStatusMoves,
   getWorkbenchThreadPresentation,
+  getWorkbenchTicketRepositoryProjectIds,
   isWorkbenchTicketStatus,
+  isWorkbenchThreadArchived,
   ticketsByStatus,
+  WORKBENCH_TICKET_KIND_LABELS,
   WORKBENCH_TICKET_STATUSES,
   WORKBENCH_TICKET_STATUS_LABELS,
 } from "./workbench.logic";
@@ -55,6 +58,8 @@ export function WorkbenchTicketBoard({
   repositoriesById,
   assignmentsByTicket,
   threadsById,
+  archivedThreadsById,
+  threadLookupReady,
   pending,
   pendingAction,
   onSelect,
@@ -68,6 +73,8 @@ export function WorkbenchTicketBoard({
   readonly repositoriesById: ReadonlyMap<ProjectId, Project>;
   readonly assignmentsByTicket: ReadonlyMap<WorkbenchTicketId, WorkbenchAssignment>;
   readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
+  readonly archivedThreadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
+  readonly threadLookupReady: boolean;
   readonly pending: boolean;
   readonly pendingAction: string | null;
   readonly onSelect: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
@@ -156,6 +163,11 @@ export function WorkbenchTicketBoard({
                   const nativeThread = assignment
                     ? threadsById.get(assignment.threadId)
                     : undefined;
+                  const archivedThread =
+                    assignment &&
+                    isWorkbenchThreadArchived(assignment.threadId, threadsById, archivedThreadsById)
+                      ? archivedThreadsById.get(assignment.threadId)
+                      : undefined;
                   const nativeStatus = nativeThread
                     ? resolveThreadStatusPill({ thread: nativeThread })
                     : null;
@@ -164,9 +176,16 @@ export function WorkbenchTicketBoard({
                     assignment !== undefined,
                     nativeThread !== undefined,
                     nativeStatus?.label ?? (nativeThreadFailed ? "Failed" : null),
+                    archivedThread !== undefined,
+                    threadLookupReady,
                   );
-                  const threadActionPending = pendingAction === `start:${ticket.id}`;
+                  const threadActionPending =
+                    pendingAction === `start:${ticket.id}` ||
+                    (assignment !== undefined &&
+                      pendingAction === `restore:${assignment.threadId}`);
                   const repository = repositoriesById.get(ticket.primaryT3ProjectId);
+                  const additionalRepositoryCount =
+                    getWorkbenchTicketRepositoryProjectIds(ticket).length - 1;
                   return (
                     <article
                       key={ticket.id}
@@ -217,11 +236,24 @@ export function WorkbenchTicketBoard({
                         onClick={() => onSelect(projectId, ticket.id)}
                       >
                         <div className="space-y-1.5 text-xs text-muted-foreground">
+                          <div className="flex items-center gap-1.5">
+                            <Badge size="sm" variant="secondary">
+                              {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
+                            </Badge>
+                            {ticket.blocked ? (
+                              <Badge size="sm" variant="warning">
+                                <CircleAlertIcon /> Blocked
+                              </Badge>
+                            ) : null}
+                          </div>
                           <div className="flex min-w-0 items-center gap-1.5">
                             <FolderGit2Icon className="size-3.5 shrink-0" />
                             <span className="truncate">
                               {repository?.title ?? "Repository unavailable"}
                             </span>
+                            {additionalRepositoryCount > 0 ? (
+                              <span className="shrink-0">+{additionalRepositoryCount}</span>
+                            ) : null}
                           </div>
                           <div className="flex items-center gap-1.5">
                             {thread.state === "linked" ? (
@@ -251,11 +283,6 @@ export function WorkbenchTicketBoard({
                           </div>
                         </div>
                       </button>
-                      {ticket.blocked ? (
-                        <Badge className="mt-3" variant="warning">
-                          <CircleAlertIcon /> Blocked
-                        </Badge>
-                      ) : null}
                       <div className="mt-3">
                         <Button
                           className="w-full"

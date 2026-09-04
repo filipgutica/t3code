@@ -8,7 +8,7 @@ import {
 } from "../components/WorkspaceBreadcrumb";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
-import { WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
+import { getWorkbenchContextForThread, WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
 
 export function WorkbenchThreadBreadcrumb({
   environmentId,
@@ -18,14 +18,9 @@ export function WorkbenchThreadBreadcrumb({
   readonly threadId: ThreadId;
 }) {
   const { data } = useEnvironmentQuery(workbenchEnvironment.snapshot({ environmentId, input: {} }));
-  const assignment = data?.assignments.find((candidate) => candidate.threadId === threadId);
-  const ticket = assignment
-    ? data?.tickets.find((candidate) => candidate.id === assignment.ticketId)
-    : undefined;
-  const project = ticket
-    ? data?.projects.find((candidate) => candidate.id === ticket.projectId)
-    : undefined;
-  if (!ticket || !project) return null;
+  const context = getWorkbenchContextForThread(data ?? null, threadId);
+  if (!context) return null;
+  const { ticket, workspace: project } = context;
 
   return (
     <>

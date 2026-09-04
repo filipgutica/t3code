@@ -4,16 +4,26 @@ import * as Schema from "effect/Schema";
 
 import {
   WorkbenchAssignment,
+  WorkbenchCreateTicketInput,
   WorkbenchProject,
+  WorkbenchReplaceAssignmentInput,
   WorkbenchSnapshot,
   WorkbenchTicket,
+  WorkbenchTicketKind,
   WorkbenchTicketStatus,
+  WorkbenchUpdateTicketInput,
 } from "./workbench.ts";
 import { WS_METHODS, WsRpcGroup } from "./rpc.ts";
 
 const decodeWorkbenchSnapshot = Schema.decodeUnknownEffect(WorkbenchSnapshot);
 const decodeWorkbenchProject = Schema.decodeUnknownEffect(WorkbenchProject);
 const decodeWorkbenchTicketStatus = Schema.decodeUnknownEffect(WorkbenchTicketStatus);
+const decodeWorkbenchTicketKind = Schema.decodeUnknownEffect(WorkbenchTicketKind);
+const decodeWorkbenchCreateTicketInput = Schema.decodeUnknownEffect(WorkbenchCreateTicketInput);
+const decodeWorkbenchUpdateTicketInput = Schema.decodeUnknownEffect(WorkbenchUpdateTicketInput);
+const decodeWorkbenchReplaceAssignmentInput = Schema.decodeUnknownEffect(
+  WorkbenchReplaceAssignmentInput,
+);
 const isWorkbenchProject = Schema.is(WorkbenchProject);
 const isWorkbenchTicket = Schema.is(WorkbenchTicket);
 const isWorkbenchAssignment = Schema.is(WorkbenchAssignment);
@@ -36,8 +46,10 @@ describe("Workbench contracts", () => {
             id: "ticket-1",
             projectId: "workbench-project-1",
             title: "Create the first Ticket flow",
+            kind: "story",
             markdown: "Keep the native T3 Thread experience.",
             primaryT3ProjectId: "t3-project-1",
+            repositoryProjectIds: ["t3-project-1", "t3-project-2"],
             status: "in_progress",
             blocked: false,
             createdAt: "2026-09-03T12:01:00.000Z",
@@ -50,13 +62,19 @@ describe("Workbench contracts", () => {
             ticketId: "ticket-1",
             threadId: "thread-1",
             createdAt: "2026-09-03T12:02:00.000Z",
+            supersededAt: null,
           },
         ],
       });
 
       expect(snapshot.projects[0]?.linkedProjectIds).toEqual(["t3-project-1"]);
-      expect(snapshot.tickets[0]?.status).toBe("in_progress");
+      expect(snapshot.tickets[0]).toMatchObject({
+        kind: "story",
+        repositoryProjectIds: ["t3-project-1", "t3-project-2"],
+        status: "in_progress",
+      });
       expect(snapshot.assignments[0]?.threadId).toBe("thread-1");
+      expect(snapshot.assignments[0]?.supersededAt).toBeNull();
     }),
   );
 
@@ -84,6 +102,80 @@ describe("Workbench contracts", () => {
     }),
   );
 
+  it.effect("accepts only Story and Bug Ticket kinds", () =>
+    Effect.gen(function* () {
+      expect(yield* decodeWorkbenchTicketKind("story")).toBe("story");
+      expect(yield* decodeWorkbenchTicketKind("bug")).toBe("bug");
+      expect((yield* Effect.exit(decodeWorkbenchTicketKind("task")))._tag).toBe("Failure");
+    }),
+  );
+
+  it.effect("decodes pre-type and pre-history Workbench payloads", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* decodeWorkbenchSnapshot({
+        projects: [],
+        tickets: [
+          {
+            id: "ticket-1",
+            projectId: "workbench-project-1",
+            title: "Legacy Ticket",
+            markdown: "Legacy body",
+            primaryT3ProjectId: "t3-project-1",
+            status: "todo",
+            blocked: false,
+            createdAt: "2026-09-03T12:00:00.000Z",
+            updatedAt: "2026-09-03T12:00:00.000Z",
+          },
+        ],
+        assignments: [
+          {
+            id: "assignment-1",
+            ticketId: "ticket-1",
+            threadId: "thread-1",
+            createdAt: "2026-09-03T12:00:00.000Z",
+          },
+        ],
+      });
+
+      expect(snapshot.tickets[0]).toMatchObject({ kind: "story", repositoryProjectIds: [] });
+      expect(snapshot.assignments[0]?.supersededAt).toBeNull();
+    }),
+  );
+
+  it.effect("accepts mutation inputs from an older Workbench client", () =>
+    Effect.gen(function* () {
+      const createInput = yield* decodeWorkbenchCreateTicketInput({
+        id: "ticket-1",
+        projectId: "workbench-project-1",
+        title: "Legacy Ticket",
+        markdown: "Legacy body",
+        primaryT3ProjectId: "t3-project-1",
+        createdAt: "2026-09-03T12:00:00.000Z",
+      });
+      const updateInput = yield* decodeWorkbenchUpdateTicketInput({
+        id: "ticket-1",
+        title: "Legacy Ticket",
+        markdown: "Updated legacy body",
+        status: "in_progress",
+        blocked: false,
+        updatedAt: "2026-09-03T12:01:00.000Z",
+      });
+      const replaceInput = yield* decodeWorkbenchReplaceAssignmentInput({
+        ticketId: "ticket-1",
+        previousThreadId: "thread-1",
+        threadId: "thread-2",
+        replacedAt: "2026-09-03T12:02:00.000Z",
+      });
+
+      expect(createInput).toMatchObject({ kind: "story" });
+      expect(createInput.repositoryProjectIds).toBeUndefined();
+      expect(updateInput.kind).toBeUndefined();
+      expect(updateInput.primaryT3ProjectId).toBeUndefined();
+      expect(updateInput.repositoryProjectIds).toBeUndefined();
+      expect(replaceInput.id).toBeUndefined();
+    }),
+  );
+
   it("keeps the core records independently decodable", () => {
     expect(
       isWorkbenchProject({
@@ -99,8 +191,10 @@ describe("Workbench contracts", () => {
         id: "ticket-1",
         projectId: "project-1",
         title: "Ticket",
+        kind: "bug",
         markdown: "Body",
         primaryT3ProjectId: "t3-project-1",
+        repositoryProjectIds: ["t3-project-1"],
         status: "todo",
         blocked: false,
         createdAt: "2026-09-03T12:00:00.000Z",
@@ -113,6 +207,7 @@ describe("Workbench contracts", () => {
         ticketId: "ticket-1",
         threadId: "thread-1",
         createdAt: "2026-09-03T12:00:00.000Z",
+        supersededAt: null,
       }),
     ).toBe(true);
   });

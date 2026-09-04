@@ -5,9 +5,11 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   ProjectId,
+  type ThreadId,
   WorkbenchProjectId,
   WorkbenchTicketId,
   type WorkbenchTicket,
+  type WorkbenchTicketKind,
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -18,7 +20,7 @@ import {
   PlusIcon,
   RefreshCwIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { Badge } from "../components/ui/badge";
@@ -33,15 +35,24 @@ import {
 } from "../components/ui/empty";
 import { Skeleton } from "../components/ui/skeleton";
 import { isElectron } from "../env";
+import { useArchivedThreadSnapshots } from "../lib/archivedThreadsState";
 import { randomUUID } from "../lib/utils";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { primaryServerProvidersAtom } from "../state/server";
+import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import type { WorkbenchSearch } from "../routes/workbench";
+import { openWorkbenchAssignedThread as openAssignedThreadWithRestore } from "./openWorkbenchAssignedThread";
 import { workbenchEnvironment } from "./state";
 import { useStartWorkbenchTicket } from "./useStartWorkbenchTicket";
+import {
+  getActiveAssignmentsByTicket,
+  getAssignmentsForTicket,
+  getWorkbenchTicketRepositoryProjectIds,
+  isWorkbenchThreadArchived,
+} from "./workbench.logic";
 import {
   WorkbenchTicketDetail,
   WorkbenchTicketDialog,
@@ -121,6 +132,7 @@ export function WorkbenchPage({
   });
   const createTicket = useAtomCommand(workbenchEnvironment.createTicket, { reportFailure: false });
   const updateTicket = useAtomCommand(workbenchEnvironment.updateTicket, { reportFailure: false });
+  const unarchiveThread = useAtomCommand(threadEnvironment.unarchive, { reportFailure: false });
   const ticketDrafts = useWorkbenchDraftStore((state) => state.drafts);
   const clearTicketDraft = useWorkbenchDraftStore((state) => state.clearDraft);
   const projects = useMemo(
@@ -131,6 +143,16 @@ export function WorkbenchPage({
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
   );
+  const archivedEnvironmentIds = useMemo(
+    () => (environmentId === null ? [] : [environmentId]),
+    [environmentId],
+  );
+  const {
+    snapshots: archivedSnapshots,
+    error: archivedThreadsError,
+    isLoading: archivedThreadsLoading,
+    refresh: refreshArchivedThreads,
+  } = useArchivedThreadSnapshots(archivedEnvironmentIds);
   const [selectedProjectId, setSelectedProjectId] = useState<WorkbenchProjectId | null>(
     initialProjectId ?? null,
   );
@@ -172,8 +194,7 @@ export function WorkbenchPage({
     [selectedProject?.id, snapshot?.tickets],
   );
   const assignmentsByTicket = useMemo(
-    () =>
-      new Map(snapshot?.assignments.map((assignment) => [assignment.ticketId, assignment]) ?? []),
+    () => getActiveAssignmentsByTicket(snapshot?.assignments ?? []),
     [snapshot?.assignments],
   );
   const threadsById = useMemo(
@@ -185,13 +206,86 @@ export function WorkbenchPage({
       ),
     [allThreadShells, environmentId],
   );
-  const existingThreadIds = useMemo(() => new Set(threadsById.keys()), [threadsById]);
+  const archivedThreadsById = useMemo(
+    () =>
+      new Map(
+        archivedSnapshots.flatMap(({ environmentId: archivedEnvironmentId, snapshot }) =>
+          snapshot.threads.map((thread) => [
+            thread.id,
+            { ...thread, environmentId: archivedEnvironmentId },
+          ]),
+        ),
+      ),
+    [archivedSnapshots],
+  );
+  const existingThreadIds = useMemo(
+    () => new Set([...threadsById.keys(), ...archivedThreadsById.keys()]),
+    [archivedThreadsById, threadsById],
+  );
+  const threadLookupReady = !archivedThreadsLoading && archivedThreadsError === null;
+  const openAssignedThread = useCallback(
+    async (threadId: ThreadId) => {
+      if (environmentId === null) return;
+      const archived = isWorkbenchThreadArchived(threadId, threadsById, archivedThreadsById);
+      if (archived) {
+        setPendingAction(`restore:${threadId}`);
+        setError(null);
+      }
+      let result: Awaited<ReturnType<typeof openAssignedThreadWithRestore>>;
+      try {
+        result = await openAssignedThreadWithRestore(
+          { environmentId, threadId, archived },
+          {
+            unarchive: unarchiveThread,
+            refreshArchived: refreshArchivedThreads,
+            navigate: () =>
+              navigate({
+                to: "/$environmentId/$threadId",
+                params: { environmentId, threadId },
+              }),
+          },
+        );
+      } catch (cause) {
+        setError(
+          cause instanceof Error && cause.message.trim().length > 0
+            ? cause.message
+            : "Workbench could not open the assigned Thread.",
+        );
+        return;
+      } finally {
+        if (archived) setPendingAction(null);
+      }
+      if (result.state === "restore-failed" && !isAtomCommandInterrupted(result.failure)) {
+        refreshArchivedThreads();
+        setError(failureMessage(result.failure));
+        return;
+      }
+      if (result.state === "navigation-failed") {
+        setError(
+          result.cause instanceof Error && result.cause.message.trim().length > 0
+            ? result.cause.message
+            : "The Thread is ready, but Workbench could not open it.",
+        );
+      }
+    },
+    [
+      archivedThreadsById,
+      environmentId,
+      navigate,
+      refreshArchivedThreads,
+      threadsById,
+      unarchiveThread,
+    ],
+  );
   const openTicketThread = useStartWorkbenchTicket({
     environmentId,
     projects,
     providers,
     assignmentsByTicket,
     existingThreadIds,
+    threadLookupReady,
+    onRefreshThreadLookup: refreshArchivedThreads,
+    onOpenAssignedThread: openAssignedThread,
     onPendingChange: setPendingAction,
     onError: setError,
   });
@@ -235,7 +329,13 @@ export function WorkbenchPage({
     return true;
   };
 
-  const submitTicket = async (title: string, markdown: string, primaryProjectId: ProjectId) => {
+  const submitTicket = async (
+    title: string,
+    markdown: string,
+    kind: WorkbenchTicketKind,
+    repositoryProjectIds: ReadonlyArray<ProjectId>,
+    primaryProjectId: ProjectId,
+  ) => {
     if (environmentId === null || selectedProject === null) return false;
     setPendingAction("create-ticket");
     setError(null);
@@ -253,6 +353,8 @@ export function WorkbenchPage({
         projectId: selectedProject.id,
         title,
         markdown,
+        kind,
+        repositoryProjectIds,
         primaryT3ProjectId: primaryProject.id,
         createdAt: new Date().toISOString(),
       },
@@ -270,7 +372,18 @@ export function WorkbenchPage({
 
   const updateTicketFields = async (
     ticket: WorkbenchTicket,
-    patch: Partial<Pick<WorkbenchTicket, "title" | "markdown" | "status" | "blocked">>,
+    patch: Partial<
+      Pick<
+        WorkbenchTicket,
+        | "title"
+        | "markdown"
+        | "kind"
+        | "repositoryProjectIds"
+        | "primaryT3ProjectId"
+        | "status"
+        | "blocked"
+      >
+    >,
   ) => {
     if (environmentId === null) return false;
     setPendingAction(`update:${ticket.id}`);
@@ -281,6 +394,10 @@ export function WorkbenchPage({
         id: ticket.id,
         title: patch.title ?? ticket.title,
         markdown: patch.markdown ?? ticket.markdown,
+        kind: patch.kind ?? ticket.kind,
+        repositoryProjectIds:
+          patch.repositoryProjectIds ?? getWorkbenchTicketRepositoryProjectIds(ticket),
+        primaryT3ProjectId: patch.primaryT3ProjectId ?? ticket.primaryT3ProjectId,
         status: patch.status ?? ticket.status,
         blocked: patch.blocked ?? ticket.blocked,
         updatedAt: new Date().toISOString(),
@@ -296,7 +413,18 @@ export function WorkbenchPage({
 
   const changeTicket = (
     ticket: WorkbenchTicket,
-    patch: Partial<Pick<WorkbenchTicket, "title" | "markdown" | "status" | "blocked">>,
+    patch: Partial<
+      Pick<
+        WorkbenchTicket,
+        | "title"
+        | "markdown"
+        | "kind"
+        | "repositoryProjectIds"
+        | "primaryT3ProjectId"
+        | "status"
+        | "blocked"
+      >
+    >,
   ) => {
     void updateTicketFields(ticket, patch);
   };
@@ -316,12 +444,9 @@ export function WorkbenchPage({
   const linkedT3Projects = selectedProject
     ? projects.filter((project) => selectedProject.linkedProjectIds.includes(project.id))
     : [];
-  const selectedAssignment = selectedTicket
-    ? assignmentsByTicket.get(selectedTicket.id)
-    : undefined;
-  const selectedThread = selectedAssignment
-    ? threadsById.get(selectedAssignment.threadId)
-    : undefined;
+  const selectedAssignments = selectedTicket
+    ? getAssignmentsForTicket(snapshot?.assignments ?? [], selectedTicket.id)
+    : [];
   const pending = pendingAction !== null;
 
   useEffect(() => {
@@ -456,12 +581,19 @@ export function WorkbenchPage({
               key={selectedTicket.id}
               workspaceTitle={selectedProject.title}
               ticket={selectedTicket}
-              repository={repositoriesById.get(selectedTicket.primaryT3ProjectId)}
-              assignment={selectedAssignment}
-              nativeThread={selectedThread}
+              linkedProjects={linkedT3Projects}
+              assignments={selectedAssignments}
+              threadsById={threadsById}
+              archivedThreadsById={archivedThreadsById}
+              threadLookupReady={threadLookupReady}
               pending={pending}
-              threadActionPending={pendingAction === `start:${selectedTicket.id}`}
-              error={error ?? query.error}
+              threadActionPending={
+                pendingAction === `start:${selectedTicket.id}` ||
+                (assignmentsByTicket.get(selectedTicket.id) !== undefined &&
+                  pendingAction ===
+                    `restore:${assignmentsByTicket.get(selectedTicket.id)?.threadId}`)
+              }
+              error={error ?? query.error ?? archivedThreadsError}
               onBack={() => {
                 setError(null);
                 closeTicket();
@@ -469,6 +601,7 @@ export function WorkbenchPage({
               onSave={saveTicketContent}
               onUpdate={changeTicket}
               onOpenThread={openTicketThread}
+              onOpenAssignedThread={openAssignedThread}
             />
           ) : (
             <>
@@ -502,12 +635,18 @@ export function WorkbenchPage({
                 </div>
               </WorkspacePageHeader>
 
-              {query.error || error ? (
+              {query.error || error || archivedThreadsError ? (
                 <div className="mx-3 mt-3 flex shrink-0 items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive-foreground sm:mx-4">
                   <AlertCircleIcon className="size-4 shrink-0" />
-                  <span className="min-w-0 flex-1">{error ?? query.error}</span>
+                  <span className="min-w-0 flex-1">
+                    {error ?? query.error ?? archivedThreadsError}
+                  </span>
                   {query.error ? (
                     <Button onClick={query.refresh} size="xs" variant="outline">
+                      <RefreshCwIcon /> Retry
+                    </Button>
+                  ) : archivedThreadsError ? (
+                    <Button onClick={refreshArchivedThreads} size="xs" variant="outline">
                       <RefreshCwIcon /> Retry
                     </Button>
                   ) : null}
@@ -532,6 +671,8 @@ export function WorkbenchPage({
                   repositoriesById={repositoriesById}
                   assignmentsByTicket={assignmentsByTicket}
                   threadsById={threadsById}
+                  archivedThreadsById={archivedThreadsById}
+                  threadLookupReady={threadLookupReady}
                   pending={pending}
                   pendingAction={pendingAction}
                   onSelect={(projectId, ticketId) => {

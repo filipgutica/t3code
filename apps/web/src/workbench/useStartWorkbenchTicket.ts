@@ -5,7 +5,6 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import {
-  DEFAULT_RUNTIME_MODE,
   WorkbenchAssignmentId,
   type EnvironmentId,
   type ServerProvider,
@@ -14,17 +13,15 @@ import {
   type WorkbenchTicket,
   type WorkbenchTicketId,
 } from "@t3tools/contracts";
-import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
 
 import { useComposerDraftStore } from "../composerDraftStore";
-import { newThreadId, randomUUID } from "../lib/utils";
+import { newMessageId, newThreadId, randomUUID } from "../lib/utils";
 import { resolveDefaultProviderModelSelection } from "../providerInstances";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
-import { DEFAULT_INTERACTION_MODE } from "../types";
+import { coordinateWorkbenchTicketStart } from "./startWorkbenchTicket";
 import { workbenchEnvironment } from "./state";
-import { buildTicketThreadPrompt } from "./workbench.logic";
 
 const commandFailureMessage = (failure: {
   readonly cause: Parameters<typeof squashAtomCommandFailure>[0]["cause"];
@@ -41,6 +38,9 @@ export function useStartWorkbenchTicket({
   providers,
   assignmentsByTicket,
   existingThreadIds,
+  threadLookupReady,
+  onRefreshThreadLookup,
+  onOpenAssignedThread,
   onPendingChange,
   onError,
 }: {
@@ -49,10 +49,12 @@ export function useStartWorkbenchTicket({
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly assignmentsByTicket: ReadonlyMap<WorkbenchTicketId, WorkbenchAssignment>;
   readonly existingThreadIds: ReadonlySet<ThreadId>;
+  readonly threadLookupReady: boolean;
+  readonly onRefreshThreadLookup: () => void;
+  readonly onOpenAssignedThread: (threadId: ThreadId) => Promise<void>;
   readonly onPendingChange: (action: string | null) => void;
   readonly onError: (message: string | null) => void;
 }) {
-  const navigate = useNavigate();
   const createAssignment = useAtomCommand(workbenchEnvironment.createAssignment, {
     reportFailure: false,
   });
@@ -61,6 +63,7 @@ export function useStartWorkbenchTicket({
   });
   const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
+  const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
 
   return useCallback(
     (ticket: WorkbenchTicket) => {
@@ -68,99 +71,84 @@ export function useStartWorkbenchTicket({
       void (async () => {
         onPendingChange(`start:${ticket.id}`);
         onError(null);
-        const project = projects.find((candidate) => candidate.id === ticket.primaryT3ProjectId);
-        if (!project) {
+        let result: Awaited<ReturnType<typeof coordinateWorkbenchTicketStart>>;
+        try {
+          result = await coordinateWorkbenchTicketStart(
+            {
+              environmentId,
+              ticket,
+              projects,
+              assignment: assignmentsByTicket.get(ticket.id),
+              existingThreadIds,
+              threadLookupReady,
+            },
+            {
+              createThread,
+              createAssignment,
+              replaceAssignment,
+              deleteThread,
+              startTurn: startThreadTurn,
+              openThread: onOpenAssignedThread,
+              setRetryDraft: (threadId, prompt) =>
+                useComposerDraftStore
+                  .getState()
+                  .setPrompt(scopeThreadRef(environmentId, threadId), prompt),
+              resolveModelSelection: (project) =>
+                resolveDefaultProviderModelSelection(providers, project.defaultModelSelection),
+              makeThreadId: newThreadId,
+              makeAssignmentId: () => WorkbenchAssignmentId.make(randomUUID()),
+              makeMessageId: newMessageId,
+              now: () => new Date().toISOString(),
+            },
+          );
+        } catch (cause) {
+          onError(
+            cause instanceof Error && cause.message.trim().length > 0
+              ? cause.message
+              : "The Workbench request failed unexpectedly.",
+          );
+          return;
+        } finally {
           onPendingChange(null);
+        }
+
+        if (result.state === "project-unavailable") {
           onError("The ticket's T3 Project is no longer available.");
           return;
         }
-        const existing = assignmentsByTicket.get(ticket.id);
-        if (existing && existingThreadIds.has(existing.threadId)) {
-          onPendingChange(null);
-          await navigate({
-            to: "/$environmentId/$threadId",
-            params: { environmentId, threadId: existing.threadId },
-          });
-          return;
-        }
-
-        const threadId = newThreadId();
-        const modelSelection = resolveDefaultProviderModelSelection(
-          providers,
-          project.defaultModelSelection,
-        );
-        if (modelSelection === null) {
-          onPendingChange(null);
+        if (result.state === "provider-unavailable") {
           onError("Configure an available Agent provider before starting this ticket.");
           return;
         }
-        const createdAt = new Date().toISOString();
-        const threadResult = await createThread({
-          environmentId,
-          input: {
-            threadId,
-            projectId: project.id,
-            title: ticket.title,
-            modelSelection,
-            runtimeMode: DEFAULT_RUNTIME_MODE,
-            interactionMode: DEFAULT_INTERACTION_MODE,
-            branch: null,
-            worktreePath: null,
-            createdAt,
-          },
-        });
-        if (threadResult._tag === "Failure") {
-          onPendingChange(null);
-          if (!isAtomCommandInterrupted(threadResult)) {
-            onError(commandFailureMessage(threadResult));
-          }
+        if (result.state === "thread-status-unavailable") {
+          onError(null);
+          onRefreshThreadLookup();
           return;
         }
-        const assignmentResult = existing
-          ? await replaceAssignment({
-              environmentId,
-              input: {
-                ticketId: ticket.id,
-                previousThreadId: existing.threadId,
-                threadId,
-                replacedAt: createdAt,
-              },
-            })
-          : await createAssignment({
-              environmentId,
-              input: {
-                id: WorkbenchAssignmentId.make(randomUUID()),
-                ticketId: ticket.id,
-                threadId,
-                createdAt,
-              },
-            });
-        if (assignmentResult._tag === "Failure") {
-          const cleanupResult = await deleteThread({
-            environmentId,
-            input: { threadId },
-          });
-          if (cleanupResult._tag === "Failure" && !isAtomCommandInterrupted(cleanupResult)) {
-            console.warn(
-              "Failed to clean up a Workbench Thread after Assignment creation failed.",
-              squashAtomCommandFailure(cleanupResult),
-            );
-          }
-          onPendingChange(null);
-          if (!isAtomCommandInterrupted(assignmentResult)) {
-            onError(commandFailureMessage(assignmentResult));
-          }
+        if (result.state === "navigation-failed") {
+          onError(
+            result.cause instanceof Error && result.cause.message.trim().length > 0
+              ? result.cause.message
+              : "The Thread is ready, but Workbench could not open it.",
+          );
           return;
         }
+        if (result.state !== "failed") return;
 
-        useComposerDraftStore
-          .getState()
-          .setPrompt(scopeThreadRef(environmentId, threadId), buildTicketThreadPrompt(ticket));
-        onPendingChange(null);
-        await navigate({
-          to: "/$environmentId/$threadId",
-          params: { environmentId, threadId },
-        });
+        if (result.cleanupFailure && !isAtomCommandInterrupted(result.cleanupFailure)) {
+          console.warn(
+            "Failed to clean up a Workbench Thread after Assignment creation failed.",
+            squashAtomCommandFailure(result.cleanupFailure),
+          );
+        }
+        if (isAtomCommandInterrupted(result.failure)) return;
+        if (result.stage === "turn") {
+          onError(
+            `The Thread remains attached with its Ticket prompt ready to retry, but its first turn could not start. ${commandFailureMessage(result.failure)}`,
+          );
+          return;
+        }
+        onError(commandFailureMessage(result.failure));
       })();
     },
     [
@@ -170,12 +158,15 @@ export function useStartWorkbenchTicket({
       deleteThread,
       environmentId,
       existingThreadIds,
-      navigate,
       onError,
+      onOpenAssignedThread,
       onPendingChange,
+      onRefreshThreadLookup,
       projects,
       providers,
       replaceAssignment,
+      startThreadTurn,
+      threadLookupReady,
     ],
   );
 }
