@@ -15,6 +15,12 @@ const snapshot = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
   staleTimeMs: 5_000,
 });
 
+const jiraSnapshot = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
+  label: "environment-data:workbench:jira:snapshot",
+  tag: WS_METHODS.workbenchJiraGetSnapshot,
+  staleTimeMs: 5_000,
+});
+
 const scheduler = createAtomCommandScheduler();
 const serialPerEnvironment = {
   mode: "serial",
@@ -34,14 +40,101 @@ const refreshSnapshot = (
     ),
   );
 
+const refreshJiraSnapshot = (
+  { environmentId }: { readonly environmentId: EnvironmentId },
+  registry: AtomRegistry.AtomRegistry,
+) =>
+  Effect.sync(() =>
+    registry.refresh(
+      jiraSnapshot({
+        environmentId,
+        input: {},
+      }),
+    ),
+  );
+
+const refreshWorkbenchAndJiraSnapshots = (
+  input: { readonly environmentId: EnvironmentId },
+  registry: AtomRegistry.AtomRegistry,
+) =>
+  Effect.all([refreshSnapshot(input, registry), refreshJiraSnapshot(input, registry)], {
+    discard: true,
+  });
+
 export const workbenchEnvironment = {
   snapshot,
+  jiraSnapshot,
   createProject: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:create-project",
     tag: WS_METHODS.workbenchCreateProject,
     scheduler,
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,
+  }),
+  createEpic: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:create-epic",
+    tag: WS_METHODS.workbenchCreateEpic,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshSnapshot,
+  }),
+  jiraBeginAuth: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:jira:begin-auth",
+    tag: WS_METHODS.workbenchJiraBeginAuth,
+    scheduler,
+    concurrency: serialPerEnvironment,
+  }),
+  jiraCompleteAuth: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:jira:complete-auth",
+    tag: WS_METHODS.workbenchJiraCompleteAuth,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshJiraSnapshot,
+  }),
+  jiraListProjects: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:jira:list-projects",
+    tag: WS_METHODS.workbenchJiraListProjects,
+    scheduler,
+    concurrency: serialPerEnvironment,
+  }),
+  jiraListBoards: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:jira:list-boards",
+    tag: WS_METHODS.workbenchJiraListBoards,
+    scheduler,
+    concurrency: serialPerEnvironment,
+  }),
+  jiraListSprints: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:jira:list-sprints",
+    tag: WS_METHODS.workbenchJiraListSprints,
+    scheduler,
+    concurrency: serialPerEnvironment,
+  }),
+  jiraGetBoardConfiguration: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:jira:get-board-configuration",
+    tag: WS_METHODS.workbenchJiraGetBoardConfiguration,
+    scheduler,
+    concurrency: serialPerEnvironment,
+  }),
+  jiraCreateBinding: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:jira:create-binding",
+    tag: WS_METHODS.workbenchJiraCreateBinding,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshJiraSnapshot,
+  }),
+  jiraUpdateBinding: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:jira:update-binding",
+    tag: WS_METHODS.workbenchJiraUpdateBinding,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshJiraSnapshot,
+  }),
+  jiraSyncBinding: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:jira:sync-binding",
+    tag: WS_METHODS.workbenchJiraSyncBinding,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshWorkbenchAndJiraSnapshots,
   }),
   createTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:create-ticket",
@@ -67,6 +160,20 @@ export const workbenchEnvironment = {
   replaceAssignment: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:replace-assignment",
     tag: WS_METHODS.workbenchReplaceAssignment,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshSnapshot,
+  }),
+  prepareTicketWorkspace: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:prepare-ticket-workspace",
+    tag: WS_METHODS.workbenchPrepareTicketWorkspace,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshSnapshot,
+  }),
+  releaseTicketWorkspace: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:release-ticket-workspace",
+    tag: WS_METHODS.workbenchReleaseTicketWorkspace,
     scheduler,
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,

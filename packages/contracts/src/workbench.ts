@@ -18,8 +18,16 @@ export type WorkbenchProjectId = typeof WorkbenchProjectId.Type;
 export const WorkbenchTicketId = makeWorkbenchId("WorkbenchTicketId");
 export type WorkbenchTicketId = typeof WorkbenchTicketId.Type;
 
+export const WorkbenchEpicId = makeWorkbenchId("WorkbenchEpicId");
+export type WorkbenchEpicId = typeof WorkbenchEpicId.Type;
+
 export const WorkbenchAssignmentId = makeWorkbenchId("WorkbenchAssignmentId");
 export type WorkbenchAssignmentId = typeof WorkbenchAssignmentId.Type;
+
+export const WorkbenchTicketWorkspaceAttemptId = makeWorkbenchId(
+  "WorkbenchTicketWorkspaceAttemptId",
+);
+export type WorkbenchTicketWorkspaceAttemptId = typeof WorkbenchTicketWorkspaceAttemptId.Type;
 
 export const WorkbenchTicketKind = Schema.Literals(["story", "bug"]);
 export type WorkbenchTicketKind = typeof WorkbenchTicketKind.Type;
@@ -32,6 +40,24 @@ export const WorkbenchTicketStatus = Schema.Literals([
 ]);
 export type WorkbenchTicketStatus = typeof WorkbenchTicketStatus.Type;
 
+export const WorkbenchTicketWorkspaceStatus = Schema.Literals([
+  "preparing",
+  "ready",
+  "releasing",
+  "failed",
+  "released",
+]);
+export type WorkbenchTicketWorkspaceStatus = typeof WorkbenchTicketWorkspaceStatus.Type;
+
+export const WorkbenchTicketWorkspaceRepositoryStatus = Schema.Literals([
+  "pending",
+  "ready",
+  "failed",
+  "released",
+]);
+export type WorkbenchTicketWorkspaceRepositoryStatus =
+  typeof WorkbenchTicketWorkspaceRepositoryStatus.Type;
+
 export const WorkbenchProject = Schema.Struct({
   id: WorkbenchProjectId,
   title: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
@@ -41,9 +67,21 @@ export const WorkbenchProject = Schema.Struct({
 });
 export type WorkbenchProject = typeof WorkbenchProject.Type;
 
+export const WorkbenchEpic = Schema.Struct({
+  id: WorkbenchEpicId,
+  projectId: WorkbenchProjectId,
+  title: TrimmedNonEmptyString.check(Schema.isMaxLength(240)),
+  markdown: TrimmedString.check(Schema.isMaxLength(120_000)),
+  archivedAt: Schema.NullOr(IsoDateTime),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+export type WorkbenchEpic = typeof WorkbenchEpic.Type;
+
 export const WorkbenchTicket = Schema.Struct({
   id: WorkbenchTicketId,
   projectId: WorkbenchProjectId,
+  epicId: Schema.NullOr(WorkbenchEpicId).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   title: TrimmedNonEmptyString.check(Schema.isMaxLength(240)),
   kind: WorkbenchTicketKind.pipe(Schema.withDecodingDefault(Effect.succeed("story" as const))),
   markdown: TrimmedString.check(Schema.isMaxLength(120_000)),
@@ -67,10 +105,41 @@ export const WorkbenchAssignment = Schema.Struct({
 });
 export type WorkbenchAssignment = typeof WorkbenchAssignment.Type;
 
+const WorkbenchTicketWorkspaceErrorMessage = TrimmedNonEmptyString.check(Schema.isMaxLength(4_000));
+
+export const WorkbenchTicketWorkspaceRepository = Schema.Struct({
+  projectId: ProjectId,
+  isPrimary: Schema.Boolean,
+  sourcePath: TrimmedNonEmptyString,
+  worktreePath: TrimmedNonEmptyString,
+  branchName: TrimmedNonEmptyString.check(Schema.isMaxLength(240)),
+  status: WorkbenchTicketWorkspaceRepositoryStatus,
+  errorMessage: Schema.NullOr(WorkbenchTicketWorkspaceErrorMessage),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+export type WorkbenchTicketWorkspaceRepository = typeof WorkbenchTicketWorkspaceRepository.Type;
+
+export const WorkbenchTicketWorkspace = Schema.Struct({
+  ticketId: WorkbenchTicketId,
+  attemptId: WorkbenchTicketWorkspaceAttemptId,
+  status: WorkbenchTicketWorkspaceStatus,
+  branchName: TrimmedNonEmptyString.check(Schema.isMaxLength(240)),
+  errorMessage: Schema.NullOr(WorkbenchTicketWorkspaceErrorMessage),
+  repositories: Schema.Array(WorkbenchTicketWorkspaceRepository).check(Schema.isMinLength(1)),
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+export type WorkbenchTicketWorkspace = typeof WorkbenchTicketWorkspace.Type;
+
 export const WorkbenchSnapshot = Schema.Struct({
   projects: Schema.Array(WorkbenchProject),
+  epics: Schema.Array(WorkbenchEpic).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   tickets: Schema.Array(WorkbenchTicket),
   assignments: Schema.Array(WorkbenchAssignment),
+  ticketWorkspaces: Schema.Array(WorkbenchTicketWorkspace).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
 });
 export type WorkbenchSnapshot = typeof WorkbenchSnapshot.Type;
 
@@ -82,9 +151,33 @@ export const WorkbenchCreateProjectInput = Schema.Struct({
 });
 export type WorkbenchCreateProjectInput = typeof WorkbenchCreateProjectInput.Type;
 
+export const WorkbenchCreateEpicInput = Schema.Struct({
+  id: WorkbenchEpicId,
+  projectId: WorkbenchProjectId,
+  title: WorkbenchEpic.fields.title,
+  markdown: WorkbenchEpic.fields.markdown,
+  createdAt: IsoDateTime,
+});
+export type WorkbenchCreateEpicInput = typeof WorkbenchCreateEpicInput.Type;
+
+export const WorkbenchUpdateEpicInput = Schema.Struct({
+  id: WorkbenchEpicId,
+  title: WorkbenchEpic.fields.title,
+  markdown: WorkbenchEpic.fields.markdown,
+  updatedAt: IsoDateTime,
+});
+export type WorkbenchUpdateEpicInput = typeof WorkbenchUpdateEpicInput.Type;
+
+export const WorkbenchArchiveEpicInput = Schema.Struct({
+  id: WorkbenchEpicId,
+  archivedAt: IsoDateTime,
+});
+export type WorkbenchArchiveEpicInput = typeof WorkbenchArchiveEpicInput.Type;
+
 export const WorkbenchCreateTicketInput = Schema.Struct({
   id: WorkbenchTicketId,
   projectId: WorkbenchProjectId,
+  epicId: Schema.optionalKey(Schema.NullOr(WorkbenchEpicId)),
   title: WorkbenchTicket.fields.title,
   kind: WorkbenchTicketKind.pipe(Schema.withDecodingDefault(Effect.succeed("story" as const))),
   markdown: WorkbenchTicket.fields.markdown,
@@ -96,6 +189,7 @@ export type WorkbenchCreateTicketInput = typeof WorkbenchCreateTicketInput.Type;
 
 export const WorkbenchUpdateTicketInput = Schema.Struct({
   id: WorkbenchTicketId,
+  epicId: Schema.optionalKey(Schema.NullOr(WorkbenchEpicId)),
   title: WorkbenchTicket.fields.title,
   kind: Schema.optionalKey(WorkbenchTicketKind),
   markdown: WorkbenchTicket.fields.markdown,
@@ -124,8 +218,23 @@ export const WorkbenchReplaceAssignmentInput = Schema.Struct({
 });
 export type WorkbenchReplaceAssignmentInput = typeof WorkbenchReplaceAssignmentInput.Type;
 
+export const WorkbenchPrepareTicketWorkspaceInput = Schema.Struct({
+  ticketId: WorkbenchTicketId,
+  requestedAt: IsoDateTime,
+});
+export type WorkbenchPrepareTicketWorkspaceInput = typeof WorkbenchPrepareTicketWorkspaceInput.Type;
+
+export const WorkbenchReleaseTicketWorkspaceInput = Schema.Struct({
+  ticketId: WorkbenchTicketId,
+  releasedAt: IsoDateTime,
+});
+export type WorkbenchReleaseTicketWorkspaceInput = typeof WorkbenchReleaseTicketWorkspaceInput.Type;
+
 export const WorkbenchOperationErrorCode = Schema.Literals([
   "project_not_found",
+  "epic_not_found",
+  "epic_project_mismatch",
+  "epic_archived",
   "ticket_not_found",
   "linked_project_not_found",
   "primary_project_not_linked",
@@ -137,6 +246,13 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "assignment_not_found",
   "assignment_already_exists",
   "assignment_changed",
+  "ticket_workspace_not_found",
+  "ticket_workspace_preparation_in_progress",
+  "ticket_workspace_already_ready",
+  "ticket_workspace_preparation_changed",
+  "ticket_workspace_repository_not_found",
+  "ticket_workspace_preparation_failed",
+  "ticket_workspace_in_use",
   "persistence_failed",
 ]);
 export type WorkbenchOperationErrorCode = typeof WorkbenchOperationErrorCode.Type;

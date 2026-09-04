@@ -14,6 +14,8 @@ export interface WorkbenchSearch {
   readonly projectId?: WorkbenchProjectId;
   readonly ticketId?: WorkbenchTicketId;
   readonly create?: "workspace";
+  readonly code?: string;
+  readonly state?: string;
 }
 
 function WorkbenchRoute() {
@@ -24,6 +26,8 @@ function WorkbenchRoute() {
         createWorkspace={search.create === "workspace"}
         initialProjectId={search.projectId}
         initialTicketId={search.ticketId}
+        jiraOAuthCode={search.code}
+        jiraOAuthState={search.state}
       />
     </SidebarInset>
   );
@@ -42,6 +46,8 @@ export const Route = createFileRoute("/workbench")({
     ...(isWorkbenchProjectId(raw.projectId) ? { projectId: raw.projectId } : {}),
     ...(isWorkbenchTicketId(raw.ticketId) ? { ticketId: raw.ticketId } : {}),
     ...(raw.create === "workspace" ? { create: "workspace" as const } : {}),
+    ...(typeof raw.code === "string" && raw.code.trim().length > 0 ? { code: raw.code } : {}),
+    ...(typeof raw.state === "string" && raw.state.trim().length > 0 ? { state: raw.state } : {}),
   }),
   component: WorkbenchRoute,
 });

@@ -74,6 +74,8 @@ import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as WorkbenchStore from "./workbench/WorkbenchStore.ts";
+import * as TicketWorkspaceService from "./workbench/TicketWorkspaceService.ts";
+import * as WorkbenchJiraService from "./workbench/jira/WorkbenchJiraService.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
@@ -499,6 +501,8 @@ export const makeRoutesLayer = Layer.mergeAll(
   ),
   McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
 ).pipe(
+  Layer.provide(WorkbenchJiraService.layerLive.pipe(Layer.provide(SqlitePersistenceLayerLive))),
+  Layer.provide(TicketWorkspaceService.TicketWorkspaceServiceLive),
   Layer.provide(WorkbenchStore.WorkbenchStoreLive.pipe(Layer.provide(SqlitePersistenceLayerLive))),
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.

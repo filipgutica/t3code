@@ -7,9 +7,11 @@ import {
   WorkbenchAssignmentId,
   WorkbenchProjectId,
   WorkbenchTicketId,
+  WorkbenchTicketWorkspaceAttemptId,
   type ModelSelection,
   type WorkbenchAssignment,
   type WorkbenchTicket,
+  type WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import * as Cause from "effect/Cause";
@@ -37,6 +39,7 @@ const project = {
 const ticket = {
   id: WorkbenchTicketId.make("ticket-one"),
   projectId: WorkbenchProjectId.make("workspace-one"),
+  epicId: null,
   title: "Streamline Ticket Threads",
   kind: "story",
   markdown: "## Goal\n\nStart the first turn.",
@@ -50,9 +53,38 @@ const ticket = {
 
 const success = AsyncResult.success(undefined);
 const failure = AsyncResult.failure(Cause.fail("failed"));
+const workspaceFailure = AsyncResult.failure<WorkbenchTicketWorkspace, string>(
+  Cause.fail("failed"),
+);
+const preparedWorkspace = {
+  ticketId: ticket.id,
+  attemptId: WorkbenchTicketWorkspaceAttemptId.make("attempt-one"),
+  status: "ready",
+  branchName: "workbench/ticket-one",
+  errorMessage: null,
+  repositories: [
+    {
+      projectId,
+      isPrimary: true,
+      sourcePath: "/repos/t3code",
+      worktreePath: "/worktrees/ticket-one/t3code",
+      branchName: "workbench/ticket-one",
+      status: "ready",
+      errorMessage: null,
+      createdAt,
+      updatedAt: createdAt,
+    },
+  ],
+  createdAt,
+  updatedAt: createdAt,
+} as WorkbenchTicketWorkspace;
 
 function makeDependencies(events: string[]) {
   return {
+    prepareTicketWorkspace: async () => {
+      events.push("prepare-workspace");
+      return AsyncResult.success(preparedWorkspace);
+    },
     createThread: async () => {
       events.push("create-thread");
       return success;
@@ -101,10 +133,28 @@ function startInput(assignment?: WorkbenchAssignment) {
 describe("coordinateWorkbenchTicketStart", () => {
   it("creates the Thread and Assignment, starts the first turn, then opens it", async () => {
     const events: string[] = [];
-    const result = await coordinateWorkbenchTicketStart(startInput(), makeDependencies(events));
+    let createdThreadInput: unknown;
+    const result = await coordinateWorkbenchTicketStart(startInput(), {
+      ...makeDependencies(events),
+      createThread: async (input) => {
+        events.push("create-thread");
+        createdThreadInput = input.input;
+        return success;
+      },
+    });
 
     expect(result).toEqual({ state: "started", threadId });
-    expect(events).toEqual(["create-thread", "create-assignment", "start-turn", "open-thread"]);
+    expect(createdThreadInput).toMatchObject({
+      branch: "workbench/ticket-one",
+      worktreePath: "/worktrees/ticket-one/t3code",
+    });
+    expect(events).toEqual([
+      "prepare-workspace",
+      "create-thread",
+      "create-assignment",
+      "start-turn",
+      "open-thread",
+    ]);
   });
 
   it("cleans up the new Thread when Assignment creation fails", async () => {
@@ -120,7 +170,12 @@ describe("coordinateWorkbenchTicketStart", () => {
     const result = await coordinateWorkbenchTicketStart(startInput(), dependencies);
 
     expect(result).toMatchObject({ state: "failed", stage: "assignment" });
-    expect(events).toEqual(["create-thread", "create-assignment", "delete-thread"]);
+    expect(events).toEqual([
+      "prepare-workspace",
+      "create-thread",
+      "create-assignment",
+      "delete-thread",
+    ]);
   });
 
   it("preserves the Thread and Assignment with a retry draft when the first turn fails", async () => {
@@ -136,7 +191,13 @@ describe("coordinateWorkbenchTicketStart", () => {
     const result = await coordinateWorkbenchTicketStart(startInput(), dependencies);
 
     expect(result).toMatchObject({ state: "failed", stage: "turn" });
-    expect(events).toEqual(["create-thread", "create-assignment", "start-turn", "set-retry-draft"]);
+    expect(events).toEqual([
+      "prepare-workspace",
+      "create-thread",
+      "create-assignment",
+      "start-turn",
+      "set-retry-draft",
+    ]);
   });
 
   it("preserves the prior Assignment by using replacement", async () => {
@@ -155,7 +216,13 @@ describe("coordinateWorkbenchTicketStart", () => {
     );
 
     expect(result).toEqual({ state: "started", threadId });
-    expect(events).toEqual(["create-thread", "replace-assignment", "start-turn", "open-thread"]);
+    expect(events).toEqual([
+      "prepare-workspace",
+      "create-thread",
+      "replace-assignment",
+      "start-turn",
+      "open-thread",
+    ]);
   });
 
   it("opens an existing active Thread without starting another", async () => {
@@ -194,6 +261,28 @@ describe("coordinateWorkbenchTicketStart", () => {
     const result = await coordinateWorkbenchTicketStart(startInput(), dependencies);
 
     expect(result).toMatchObject({ state: "navigation-failed" });
-    expect(events).toEqual(["create-thread", "create-assignment", "start-turn", "open-thread"]);
+    expect(events).toEqual([
+      "prepare-workspace",
+      "create-thread",
+      "create-assignment",
+      "start-turn",
+      "open-thread",
+    ]);
+  });
+
+  it("does not create a Thread when repository preparation fails", async () => {
+    const events: string[] = [];
+    const dependencies = {
+      ...makeDependencies(events),
+      prepareTicketWorkspace: async () => {
+        events.push("prepare-workspace");
+        return workspaceFailure;
+      },
+    };
+
+    const result = await coordinateWorkbenchTicketStart(startInput(), dependencies);
+
+    expect(result).toMatchObject({ state: "failed", stage: "workspace" });
+    expect(events).toEqual(["prepare-workspace"]);
   });
 });

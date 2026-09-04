@@ -35,9 +35,24 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
     )
   `;
   yield* sql`
+    CREATE TABLE IF NOT EXISTS workbench_epics (
+      epic_id TEXT PRIMARY KEY,
+      workbench_project_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      markdown TEXT NOT NULL,
+      archived_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (workbench_project_id)
+        REFERENCES workbench_projects(project_id)
+        ON DELETE CASCADE
+    )
+  `;
+  yield* sql`
     CREATE TABLE IF NOT EXISTS workbench_tickets (
       ticket_id TEXT PRIMARY KEY,
       workbench_project_id TEXT NOT NULL,
+      epic_id TEXT,
       title TEXT NOT NULL,
       kind TEXT NOT NULL DEFAULT 'story',
       markdown TEXT NOT NULL,
@@ -48,7 +63,10 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
       updated_at TEXT NOT NULL,
       FOREIGN KEY (workbench_project_id)
         REFERENCES workbench_projects(project_id)
-        ON DELETE CASCADE
+        ON DELETE CASCADE,
+      FOREIGN KEY (epic_id)
+        REFERENCES workbench_epics(epic_id)
+        ON DELETE SET NULL
     )
   `;
   yield* sql`
@@ -74,6 +92,96 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
         ON DELETE CASCADE
     )
   `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS workbench_ticket_workspaces (
+      ticket_id TEXT PRIMARY KEY,
+      attempt_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      branch_name TEXT NOT NULL,
+      error_message TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (ticket_id)
+        REFERENCES workbench_tickets(ticket_id)
+        ON DELETE CASCADE
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS workbench_ticket_workspace_repositories (
+      ticket_id TEXT NOT NULL,
+      t3_project_id TEXT NOT NULL,
+      is_primary INTEGER NOT NULL,
+      source_path TEXT NOT NULL,
+      worktree_path TEXT NOT NULL,
+      branch_name TEXT NOT NULL,
+      status TEXT NOT NULL,
+      error_message TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (ticket_id, t3_project_id),
+      FOREIGN KEY (ticket_id)
+        REFERENCES workbench_ticket_workspaces(ticket_id)
+        ON DELETE CASCADE
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS workbench_jira_connections (
+      connection_id TEXT PRIMARY KEY,
+      cloud_id TEXT NOT NULL UNIQUE,
+      credential_id TEXT NOT NULL,
+      site_name TEXT NOT NULL,
+      site_url TEXT NOT NULL,
+      avatar_url TEXT,
+      scopes_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS workbench_jira_bindings (
+      binding_id TEXT PRIMARY KEY,
+      workbench_project_id TEXT NOT NULL UNIQUE,
+      connection_id TEXT NOT NULL,
+      jira_project_id TEXT NOT NULL,
+      jira_project_key TEXT NOT NULL,
+      jira_project_name TEXT NOT NULL,
+      board_id INTEGER NOT NULL,
+      board_name TEXT NOT NULL,
+      sprint_id INTEGER NOT NULL,
+      sprint_name TEXT NOT NULL,
+      default_primary_t3_project_id TEXT NOT NULL,
+      default_repository_project_ids_json TEXT NOT NULL,
+      status_mappings_json TEXT NOT NULL,
+      active INTEGER NOT NULL,
+      last_synced_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (workbench_project_id)
+        REFERENCES workbench_projects(project_id)
+        ON DELETE CASCADE,
+      FOREIGN KEY (connection_id)
+        REFERENCES workbench_jira_connections(connection_id)
+        ON DELETE CASCADE
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS workbench_jira_issue_links (
+      binding_id TEXT NOT NULL,
+      jira_issue_id TEXT NOT NULL,
+      ticket_id TEXT NOT NULL,
+      issue_json TEXT NOT NULL,
+      active INTEGER NOT NULL,
+      linked_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL,
+      PRIMARY KEY (binding_id, jira_issue_id),
+      FOREIGN KEY (binding_id)
+        REFERENCES workbench_jira_bindings(binding_id)
+        ON DELETE CASCADE,
+      FOREIGN KEY (ticket_id)
+        REFERENCES workbench_tickets(ticket_id)
+        ON DELETE CASCADE
+    )
+  `;
 
   const ticketColumns = yield* sql<{ readonly name: string }>`
     PRAGMA table_info(workbench_tickets)
@@ -82,6 +190,12 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
     yield* sql`
       ALTER TABLE workbench_tickets
       ADD COLUMN kind TEXT NOT NULL DEFAULT 'story'
+    `;
+  }
+  if (!ticketColumns.some((column) => column.name === "epic_id")) {
+    yield* sql`
+      ALTER TABLE workbench_tickets
+      ADD COLUMN epic_id TEXT REFERENCES workbench_epics(epic_id) ON DELETE SET NULL
     `;
   }
 
@@ -134,6 +248,10 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
     FROM workbench_tickets
   `;
   yield* sql`
+    CREATE INDEX IF NOT EXISTS idx_workbench_epics_project_archived
+    ON workbench_epics(workbench_project_id, archived_at, created_at)
+  `;
+  yield* sql`
     CREATE INDEX IF NOT EXISTS idx_workbench_tickets_project_status
     ON workbench_tickets(workbench_project_id, status, created_at)
   `;
@@ -143,7 +261,16 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
     WHERE superseded_at IS NULL
   `;
   yield* sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_workbench_ticket_workspace_primary
+    ON workbench_ticket_workspace_repositories(ticket_id)
+    WHERE is_primary = 1
+  `;
+  yield* sql`
+    CREATE INDEX IF NOT EXISTS idx_workbench_jira_issue_links_ticket
+    ON workbench_jira_issue_links(ticket_id, active)
+  `;
+  yield* sql`
     INSERT OR IGNORE INTO workbench_schema_migrations (version)
-    VALUES (1), (2)
+    VALUES (1), (2), (3), (4), (5)
   `;
 });

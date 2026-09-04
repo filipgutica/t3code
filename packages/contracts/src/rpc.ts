@@ -200,16 +200,44 @@ import {
 import { UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
 import {
   WorkbenchAssignment,
+  WorkbenchArchiveEpicInput,
   WorkbenchCreateAssignmentInput,
+  WorkbenchCreateEpicInput,
   WorkbenchCreateProjectInput,
   WorkbenchCreateTicketInput,
   WorkbenchOperationError,
+  WorkbenchEpic,
   WorkbenchProject,
+  WorkbenchPrepareTicketWorkspaceInput,
+  WorkbenchReleaseTicketWorkspaceInput,
   WorkbenchReplaceAssignmentInput,
   WorkbenchSnapshot,
   WorkbenchTicket,
+  WorkbenchTicketWorkspace,
+  WorkbenchUpdateEpicInput,
   WorkbenchUpdateTicketInput,
 } from "./workbench.ts";
+import {
+  WorkbenchJiraBeginAuthInput,
+  WorkbenchJiraBeginAuthResult,
+  WorkbenchJiraBinding,
+  WorkbenchJiraCompleteAuthInput,
+  WorkbenchJiraCompleteAuthResult,
+  WorkbenchJiraCreateBindingInput,
+  WorkbenchJiraGetBoardConfigurationInput,
+  WorkbenchJiraBoard,
+  WorkbenchJiraBoardConfiguration,
+  WorkbenchJiraListBoardsInput,
+  WorkbenchJiraListProjectsInput,
+  WorkbenchJiraListSprintsInput,
+  WorkbenchJiraOperationError,
+  WorkbenchJiraProject,
+  WorkbenchJiraSnapshot,
+  WorkbenchJiraSprint,
+  WorkbenchJiraSyncBindingInput,
+  WorkbenchJiraSyncResult,
+  WorkbenchJiraUpdateBindingInput,
+} from "./workbenchJira.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
   SourceControlCloneRepositoryInput,
@@ -313,10 +341,25 @@ export const WS_METHODS = {
   // Workbench project-management methods
   workbenchGetSnapshot: "workbench.getSnapshot",
   workbenchCreateProject: "workbench.projects.create",
+  workbenchCreateEpic: "workbench.epics.create",
+  workbenchUpdateEpic: "workbench.epics.update",
+  workbenchArchiveEpic: "workbench.epics.archive",
   workbenchCreateTicket: "workbench.tickets.create",
   workbenchUpdateTicket: "workbench.tickets.update",
   workbenchCreateAssignment: "workbench.assignments.create",
   workbenchReplaceAssignment: "workbench.assignments.replace",
+  workbenchPrepareTicketWorkspace: "workbench.ticketWorkspaces.prepare",
+  workbenchReleaseTicketWorkspace: "workbench.ticketWorkspaces.release",
+  workbenchJiraGetSnapshot: "workbench.jira.getSnapshot",
+  workbenchJiraBeginAuth: "workbench.jira.auth.begin",
+  workbenchJiraCompleteAuth: "workbench.jira.auth.complete",
+  workbenchJiraListProjects: "workbench.jira.projects.list",
+  workbenchJiraListBoards: "workbench.jira.boards.list",
+  workbenchJiraListSprints: "workbench.jira.sprints.list",
+  workbenchJiraGetBoardConfiguration: "workbench.jira.boards.getConfiguration",
+  workbenchJiraCreateBinding: "workbench.jira.bindings.create",
+  workbenchJiraUpdateBinding: "workbench.jira.bindings.update",
+  workbenchJiraSyncBinding: "workbench.jira.bindings.sync",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -538,6 +581,24 @@ export const WsWorkbenchCreateProjectRpc = Rpc.make(WS_METHODS.workbenchCreatePr
   error: WorkbenchRpcError,
 });
 
+export const WsWorkbenchCreateEpicRpc = Rpc.make(WS_METHODS.workbenchCreateEpic, {
+  payload: WorkbenchCreateEpicInput,
+  success: WorkbenchEpic,
+  error: WorkbenchRpcError,
+});
+
+export const WsWorkbenchUpdateEpicRpc = Rpc.make(WS_METHODS.workbenchUpdateEpic, {
+  payload: WorkbenchUpdateEpicInput,
+  success: WorkbenchEpic,
+  error: WorkbenchRpcError,
+});
+
+export const WsWorkbenchArchiveEpicRpc = Rpc.make(WS_METHODS.workbenchArchiveEpic, {
+  payload: WorkbenchArchiveEpicInput,
+  success: WorkbenchEpic,
+  error: WorkbenchRpcError,
+});
+
 export const WsWorkbenchCreateTicketRpc = Rpc.make(WS_METHODS.workbenchCreateTicket, {
   payload: WorkbenchCreateTicketInput,
   success: WorkbenchTicket,
@@ -560,6 +621,92 @@ export const WsWorkbenchReplaceAssignmentRpc = Rpc.make(WS_METHODS.workbenchRepl
   payload: WorkbenchReplaceAssignmentInput,
   success: WorkbenchAssignment,
   error: WorkbenchRpcError,
+});
+
+export const WsWorkbenchPrepareTicketWorkspaceRpc = Rpc.make(
+  WS_METHODS.workbenchPrepareTicketWorkspace,
+  {
+    payload: WorkbenchPrepareTicketWorkspaceInput,
+    success: WorkbenchTicketWorkspace,
+    error: WorkbenchRpcError,
+  },
+);
+
+export const WsWorkbenchReleaseTicketWorkspaceRpc = Rpc.make(
+  WS_METHODS.workbenchReleaseTicketWorkspace,
+  {
+    payload: WorkbenchReleaseTicketWorkspaceInput,
+    success: WorkbenchTicketWorkspace,
+    error: WorkbenchRpcError,
+  },
+);
+
+const WorkbenchJiraRpcError = Schema.Union([
+  WorkbenchJiraOperationError,
+  EnvironmentAuthorizationError,
+]);
+
+export const WsWorkbenchJiraGetSnapshotRpc = Rpc.make(WS_METHODS.workbenchJiraGetSnapshot, {
+  payload: Schema.Struct({}),
+  success: WorkbenchJiraSnapshot,
+  error: WorkbenchJiraRpcError,
+});
+
+export const WsWorkbenchJiraBeginAuthRpc = Rpc.make(WS_METHODS.workbenchJiraBeginAuth, {
+  payload: WorkbenchJiraBeginAuthInput,
+  success: WorkbenchJiraBeginAuthResult,
+  error: WorkbenchJiraRpcError,
+});
+
+export const WsWorkbenchJiraCompleteAuthRpc = Rpc.make(WS_METHODS.workbenchJiraCompleteAuth, {
+  payload: WorkbenchJiraCompleteAuthInput,
+  success: WorkbenchJiraCompleteAuthResult,
+  error: WorkbenchJiraRpcError,
+});
+
+export const WsWorkbenchJiraListProjectsRpc = Rpc.make(WS_METHODS.workbenchJiraListProjects, {
+  payload: WorkbenchJiraListProjectsInput,
+  success: Schema.Array(WorkbenchJiraProject),
+  error: WorkbenchJiraRpcError,
+});
+
+export const WsWorkbenchJiraListBoardsRpc = Rpc.make(WS_METHODS.workbenchJiraListBoards, {
+  payload: WorkbenchJiraListBoardsInput,
+  success: Schema.Array(WorkbenchJiraBoard),
+  error: WorkbenchJiraRpcError,
+});
+
+export const WsWorkbenchJiraListSprintsRpc = Rpc.make(WS_METHODS.workbenchJiraListSprints, {
+  payload: WorkbenchJiraListSprintsInput,
+  success: Schema.Array(WorkbenchJiraSprint),
+  error: WorkbenchJiraRpcError,
+});
+
+export const WsWorkbenchJiraGetBoardConfigurationRpc = Rpc.make(
+  WS_METHODS.workbenchJiraGetBoardConfiguration,
+  {
+    payload: WorkbenchJiraGetBoardConfigurationInput,
+    success: WorkbenchJiraBoardConfiguration,
+    error: WorkbenchJiraRpcError,
+  },
+);
+
+export const WsWorkbenchJiraCreateBindingRpc = Rpc.make(WS_METHODS.workbenchJiraCreateBinding, {
+  payload: WorkbenchJiraCreateBindingInput,
+  success: WorkbenchJiraBinding,
+  error: WorkbenchJiraRpcError,
+});
+
+export const WsWorkbenchJiraUpdateBindingRpc = Rpc.make(WS_METHODS.workbenchJiraUpdateBinding, {
+  payload: WorkbenchJiraUpdateBindingInput,
+  success: WorkbenchJiraBinding,
+  error: WorkbenchJiraRpcError,
+});
+
+export const WsWorkbenchJiraSyncBindingRpc = Rpc.make(WS_METHODS.workbenchJiraSyncBinding, {
+  payload: WorkbenchJiraSyncBindingInput,
+  success: WorkbenchJiraSyncResult,
+  error: WorkbenchJiraRpcError,
 });
 
 const PullRequestRpcError = Schema.Union([
@@ -1144,10 +1291,25 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetBackgroundPolicyRpc,
   WsWorkbenchGetSnapshotRpc,
   WsWorkbenchCreateProjectRpc,
+  WsWorkbenchCreateEpicRpc,
+  WsWorkbenchUpdateEpicRpc,
+  WsWorkbenchArchiveEpicRpc,
   WsWorkbenchCreateTicketRpc,
   WsWorkbenchUpdateTicketRpc,
   WsWorkbenchCreateAssignmentRpc,
   WsWorkbenchReplaceAssignmentRpc,
+  WsWorkbenchPrepareTicketWorkspaceRpc,
+  WsWorkbenchReleaseTicketWorkspaceRpc,
+  WsWorkbenchJiraGetSnapshotRpc,
+  WsWorkbenchJiraBeginAuthRpc,
+  WsWorkbenchJiraCompleteAuthRpc,
+  WsWorkbenchJiraListProjectsRpc,
+  WsWorkbenchJiraListBoardsRpc,
+  WsWorkbenchJiraListSprintsRpc,
+  WsWorkbenchJiraGetBoardConfigurationRpc,
+  WsWorkbenchJiraCreateBindingRpc,
+  WsWorkbenchJiraUpdateBindingRpc,
+  WsWorkbenchJiraSyncBindingRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,

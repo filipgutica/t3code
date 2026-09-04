@@ -4,18 +4,22 @@ import * as Schema from "effect/Schema";
 
 import {
   WorkbenchAssignment,
+  WorkbenchCreateEpicInput,
   WorkbenchCreateTicketInput,
+  WorkbenchEpic,
   WorkbenchProject,
   WorkbenchReplaceAssignmentInput,
   WorkbenchSnapshot,
   WorkbenchTicket,
   WorkbenchTicketKind,
+  WorkbenchTicketWorkspace,
   WorkbenchTicketStatus,
   WorkbenchUpdateTicketInput,
 } from "./workbench.ts";
 import { WS_METHODS, WsRpcGroup } from "./rpc.ts";
 
 const decodeWorkbenchSnapshot = Schema.decodeUnknownEffect(WorkbenchSnapshot);
+const decodeWorkbenchCreateEpicInput = Schema.decodeUnknownEffect(WorkbenchCreateEpicInput);
 const decodeWorkbenchProject = Schema.decodeUnknownEffect(WorkbenchProject);
 const decodeWorkbenchTicketStatus = Schema.decodeUnknownEffect(WorkbenchTicketStatus);
 const decodeWorkbenchTicketKind = Schema.decodeUnknownEffect(WorkbenchTicketKind);
@@ -25,8 +29,10 @@ const decodeWorkbenchReplaceAssignmentInput = Schema.decodeUnknownEffect(
   WorkbenchReplaceAssignmentInput,
 );
 const isWorkbenchProject = Schema.is(WorkbenchProject);
+const isWorkbenchEpic = Schema.is(WorkbenchEpic);
 const isWorkbenchTicket = Schema.is(WorkbenchTicket);
 const isWorkbenchAssignment = Schema.is(WorkbenchAssignment);
+const isWorkbenchTicketWorkspace = Schema.is(WorkbenchTicketWorkspace);
 
 describe("Workbench contracts", () => {
   it.effect("decodes the persisted Project, Ticket, and Assignment snapshot", () =>
@@ -41,11 +47,23 @@ describe("Workbench contracts", () => {
             updatedAt: "2026-09-03T12:00:00.000Z",
           },
         ],
+        epics: [
+          {
+            id: "epic-1",
+            projectId: "workbench-project-1",
+            title: "Native planning",
+            markdown: "Keep planning connected to execution.",
+            archivedAt: null,
+            createdAt: "2026-09-03T12:00:30.000Z",
+            updatedAt: "2026-09-03T12:00:30.000Z",
+          },
+        ],
         tickets: [
           {
             id: "ticket-1",
             projectId: "workbench-project-1",
             title: "Create the first Ticket flow",
+            epicId: "epic-1",
             kind: "story",
             markdown: "Keep the native T3 Thread experience.",
             primaryT3ProjectId: "t3-project-1",
@@ -65,16 +83,47 @@ describe("Workbench contracts", () => {
             supersededAt: null,
           },
         ],
+        ticketWorkspaces: [
+          {
+            ticketId: "ticket-1",
+            attemptId: "attempt-1",
+            status: "ready",
+            branchName: "workbench/ticket-1-a1b2c3d4",
+            errorMessage: null,
+            repositories: [
+              {
+                projectId: "t3-project-1",
+                isPrimary: true,
+                sourcePath: "/repos/t3-project-1",
+                worktreePath: "/worktrees/ticket-1/t3-project-1",
+                branchName: "workbench/ticket-1-a1b2c3d4",
+                status: "ready",
+                errorMessage: null,
+                createdAt: "2026-09-03T12:01:30.000Z",
+                updatedAt: "2026-09-03T12:01:31.000Z",
+              },
+            ],
+            createdAt: "2026-09-03T12:01:30.000Z",
+            updatedAt: "2026-09-03T12:01:31.000Z",
+          },
+        ],
       });
 
       expect(snapshot.projects[0]?.linkedProjectIds).toEqual(["t3-project-1"]);
+      expect(snapshot.epics[0]).toMatchObject({ id: "epic-1", archivedAt: null });
       expect(snapshot.tickets[0]).toMatchObject({
+        epicId: "epic-1",
         kind: "story",
         repositoryProjectIds: ["t3-project-1", "t3-project-2"],
         status: "in_progress",
       });
       expect(snapshot.assignments[0]?.threadId).toBe("thread-1");
       expect(snapshot.assignments[0]?.supersededAt).toBeNull();
+      expect(snapshot.ticketWorkspaces[0]).toMatchObject({
+        ticketId: "ticket-1",
+        status: "ready",
+        repositories: [expect.objectContaining({ projectId: "t3-project-1", isPrimary: true })],
+      });
     }),
   );
 
@@ -138,7 +187,10 @@ describe("Workbench contracts", () => {
       });
 
       expect(snapshot.tickets[0]).toMatchObject({ kind: "story", repositoryProjectIds: [] });
+      expect(snapshot.epics).toEqual([]);
+      expect(snapshot.tickets[0]?.epicId).toBeNull();
       expect(snapshot.assignments[0]?.supersededAt).toBeNull();
+      expect(snapshot.ticketWorkspaces).toEqual([]);
     }),
   );
 
@@ -166,13 +218,22 @@ describe("Workbench contracts", () => {
         threadId: "thread-2",
         replacedAt: "2026-09-03T12:02:00.000Z",
       });
+      const epicInput = yield* decodeWorkbenchCreateEpicInput({
+        id: "epic-1",
+        projectId: "workbench-project-1",
+        title: "Native planning",
+        markdown: "",
+        createdAt: "2026-09-03T12:00:00.000Z",
+      });
 
       expect(createInput).toMatchObject({ kind: "story" });
+      expect(createInput.epicId).toBeUndefined();
       expect(createInput.repositoryProjectIds).toBeUndefined();
       expect(updateInput.kind).toBeUndefined();
       expect(updateInput.primaryT3ProjectId).toBeUndefined();
       expect(updateInput.repositoryProjectIds).toBeUndefined();
       expect(replaceInput.id).toBeUndefined();
+      expect(epicInput.title).toBe("Native planning");
     }),
   );
 
@@ -187,10 +248,22 @@ describe("Workbench contracts", () => {
       }),
     ).toBe(true);
     expect(
+      isWorkbenchEpic({
+        id: "epic-1",
+        projectId: "project-1",
+        title: "Epic",
+        markdown: "Body",
+        archivedAt: null,
+        createdAt: "2026-09-03T12:00:00.000Z",
+        updatedAt: "2026-09-03T12:00:00.000Z",
+      }),
+    ).toBe(true);
+    expect(
       isWorkbenchTicket({
         id: "ticket-1",
         projectId: "project-1",
         title: "Ticket",
+        epicId: null,
         kind: "bug",
         markdown: "Body",
         primaryT3ProjectId: "t3-project-1",
@@ -208,6 +281,30 @@ describe("Workbench contracts", () => {
         threadId: "thread-1",
         createdAt: "2026-09-03T12:00:00.000Z",
         supersededAt: null,
+      }),
+    ).toBe(true);
+    expect(
+      isWorkbenchTicketWorkspace({
+        ticketId: "ticket-1",
+        attemptId: "attempt-1",
+        status: "preparing",
+        branchName: "workbench/ticket-1-a1b2c3d4",
+        errorMessage: null,
+        repositories: [
+          {
+            projectId: "t3-project-1",
+            isPrimary: true,
+            sourcePath: "/repos/t3-project-1",
+            worktreePath: "/worktrees/ticket-1/t3-project-1",
+            branchName: "workbench/ticket-1-a1b2c3d4",
+            status: "pending",
+            errorMessage: null,
+            createdAt: "2026-09-03T12:00:00.000Z",
+            updatedAt: "2026-09-03T12:00:00.000Z",
+          },
+        ],
+        createdAt: "2026-09-03T12:00:00.000Z",
+        updatedAt: "2026-09-03T12:00:00.000Z",
       }),
     ).toBe(true);
   });

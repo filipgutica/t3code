@@ -61,6 +61,9 @@ export function useStartWorkbenchTicket({
   const replaceAssignment = useAtomCommand(workbenchEnvironment.replaceAssignment, {
     reportFailure: false,
   });
+  const prepareTicketWorkspace = useAtomCommand(workbenchEnvironment.prepareTicketWorkspace, {
+    reportFailure: false,
+  });
   const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
@@ -83,6 +86,7 @@ export function useStartWorkbenchTicket({
               threadLookupReady,
             },
             {
+              prepareTicketWorkspace,
               createThread,
               createAssignment,
               replaceAssignment,
@@ -148,6 +152,12 @@ export function useStartWorkbenchTicket({
           );
           return;
         }
+        if (result.stage === "workspace") {
+          onError(
+            `The Ticket repositories could not be prepared. ${commandFailureMessage(result.failure)}`,
+          );
+          return;
+        }
         onError(commandFailureMessage(result.failure));
       })();
     },
@@ -162,6 +172,7 @@ export function useStartWorkbenchTicket({
       onOpenAssignedThread,
       onPendingChange,
       onRefreshThreadLookup,
+      prepareTicketWorkspace,
       projects,
       providers,
       replaceAssignment,

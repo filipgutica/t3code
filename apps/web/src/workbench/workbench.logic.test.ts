@@ -3,6 +3,7 @@ import {
   ProjectId,
   ThreadId,
   WorkbenchAssignmentId,
+  WorkbenchEpicId,
   WorkbenchProjectId,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
@@ -12,6 +13,7 @@ import {
   getActiveAssignmentsByTicket,
   getAssignmentsForTicket,
   getWorkbenchContextForThread,
+  groupWorkbenchTicketsByEpic,
   getWorkbenchTicketRepositoryProjectIds,
   getWorkbenchTicketTemplate,
   getWorkbenchThreadPresentation,
@@ -27,6 +29,25 @@ import {
 } from "./workbench.logic";
 
 describe("Workbench ticket helpers", () => {
+  it("groups Ticket swimlanes by Epic with unassigned Tickets last", () => {
+    const firstEpic = { id: WorkbenchEpicId.make("epic-one"), title: "First Epic" };
+    const secondEpic = { id: WorkbenchEpicId.make("epic-two"), title: "Second Epic" };
+    const firstTicket = { id: "ticket-one", epicId: firstEpic.id };
+    const secondTicket = { id: "ticket-two", epicId: secondEpic.id };
+    const unassignedTicket = { id: "ticket-three", epicId: null };
+
+    expect(
+      groupWorkbenchTicketsByEpic(
+        [unassignedTicket, secondTicket, firstTicket],
+        [firstEpic, secondEpic],
+      ),
+    ).toEqual([
+      { epic: firstEpic, tickets: [firstTicket] },
+      { epic: secondEpic, tickets: [secondTicket] },
+      { epic: null, tickets: [unassignedTicket] },
+    ]);
+  });
+
   it("opens only the primary repository at the active Thread worktree", () => {
     const primaryProjectId = ProjectId.make("repository-one");
     const secondaryProjectId = ProjectId.make("repository-two");
@@ -226,6 +247,7 @@ describe("Workbench ticket helpers", () => {
     const ticket = {
       id: ticketId,
       projectId: workspaceId,
+      epicId: null,
       title: "Keep Ticket context visible",
       markdown: "",
       kind: "story",
@@ -246,13 +268,25 @@ describe("Workbench ticket helpers", () => {
 
     expect(
       getWorkbenchContextForThread(
-        { projects: [workspace], tickets: [ticket], assignments: [assignment] },
+        {
+          projects: [workspace],
+          epics: [],
+          tickets: [ticket],
+          ticketWorkspaces: [],
+          assignments: [assignment],
+        },
         threadId,
       ),
     ).toEqual({ assignment, ticket, workspace });
     expect(
       getWorkbenchContextForThread(
-        { projects: [workspace], tickets: [ticket], assignments: [assignment] },
+        {
+          projects: [workspace],
+          epics: [],
+          tickets: [ticket],
+          ticketWorkspaces: [],
+          assignments: [assignment],
+        },
         ThreadId.make("another-thread"),
       ),
     ).toBeNull();

@@ -14,7 +14,9 @@ import type {
   WorkbenchAssignmentId,
   WorkbenchCreateAssignmentInput,
   WorkbenchReplaceAssignmentInput,
+  WorkbenchPrepareTicketWorkspaceInput,
   WorkbenchTicket,
+  WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
 import { DEFAULT_RUNTIME_MODE } from "@t3tools/contracts";
 
@@ -22,6 +24,7 @@ import { DEFAULT_INTERACTION_MODE } from "../types";
 import { buildTicketThreadPrompt, resolveWorkbenchTicketThreadTarget } from "./workbench.logic";
 
 type CommandResult = AtomCommandResult<unknown, unknown>;
+type PrepareWorkspaceResult = AtomCommandResult<WorkbenchTicketWorkspace, unknown>;
 
 type EnvironmentCommandInput<Input> = {
   readonly environmentId: EnvironmentId;
@@ -38,6 +41,9 @@ interface StartWorkbenchTicketInput {
 }
 
 interface StartWorkbenchTicketDependencies {
+  readonly prepareTicketWorkspace: (
+    input: EnvironmentCommandInput<WorkbenchPrepareTicketWorkspaceInput>,
+  ) => Promise<PrepareWorkspaceResult>;
   readonly createThread: (
     input: EnvironmentCommandInput<CreateThreadInput>,
   ) => Promise<CommandResult>;
@@ -71,7 +77,7 @@ export type StartWorkbenchTicketResult =
   | { readonly state: "thread-status-unavailable" }
   | {
       readonly state: "failed";
-      readonly stage: "thread" | "assignment" | "turn";
+      readonly stage: "workspace" | "thread" | "assignment" | "turn";
       readonly failure: Extract<CommandResult, { readonly _tag: "Failure" }>;
       readonly cleanupFailure?: Extract<CommandResult, { readonly _tag: "Failure" }>;
     };
@@ -107,6 +113,19 @@ export async function coordinateWorkbenchTicketStart(
   const threadId = dependencies.makeThreadId();
   const assignmentId = dependencies.makeAssignmentId();
   const createdAt = dependencies.now();
+  const workspaceResult = await dependencies.prepareTicketWorkspace({
+    environmentId: input.environmentId,
+    input: { ticketId: input.ticket.id, requestedAt: createdAt },
+  });
+  if (workspaceResult._tag === "Failure") {
+    return { state: "failed", stage: "workspace", failure: workspaceResult };
+  }
+  const primaryWorkspace = workspaceResult.value.repositories.find(
+    (repository) => repository.isPrimary && repository.status === "ready",
+  );
+  if (!primaryWorkspace) {
+    throw new Error("The prepared Ticket Workspace has no ready primary repository.");
+  }
   const threadResult = await dependencies.createThread({
     environmentId: input.environmentId,
     input: {
@@ -116,8 +135,8 @@ export async function coordinateWorkbenchTicketStart(
       modelSelection,
       runtimeMode: DEFAULT_RUNTIME_MODE,
       interactionMode: DEFAULT_INTERACTION_MODE,
-      branch: null,
-      worktreePath: null,
+      branch: primaryWorkspace.branchName,
+      worktreePath: primaryWorkspace.worktreePath,
       createdAt,
     },
   });
@@ -158,7 +177,18 @@ export async function coordinateWorkbenchTicketStart(
     };
   }
 
-  const prompt = buildTicketThreadPrompt(input.ticket, input.projects);
+  const preparedPaths = new Map(
+    workspaceResult.value.repositories
+      .filter((repository) => repository.status === "ready")
+      .map((repository) => [repository.projectId, repository.worktreePath]),
+  );
+  const prompt = buildTicketThreadPrompt(
+    input.ticket,
+    input.projects.map((repository) => ({
+      ...repository,
+      workspaceRoot: preparedPaths.get(repository.id) ?? repository.workspaceRoot,
+    })),
+  );
   const turnResult = await dependencies.startTurn({
     environmentId: input.environmentId,
     input: {

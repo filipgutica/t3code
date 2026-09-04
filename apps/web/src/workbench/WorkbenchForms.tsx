@@ -5,14 +5,19 @@ import {
   type ResolvedKeybindingsConfig,
   type ThreadId,
   type WorkbenchAssignment,
+  type WorkbenchEpic,
+  WorkbenchEpicId,
+  type WorkbenchJiraIssueLink,
   type WorkbenchTicket,
   type WorkbenchTicketKind,
+  type WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
   BotIcon,
   CircleAlertIcon,
+  ExternalLinkIcon,
   FolderGit2Icon,
   PencilIcon,
   PlusIcon,
@@ -58,6 +63,8 @@ import {
   isWorkbenchTicketKind,
 } from "./workbench.logic";
 import { useWorkbenchDraftStore } from "./workbenchDraftStore";
+
+const NO_EPIC_VALUE = "__workbench_no_epic__";
 
 export function WorkbenchWorkspaceDialog({
   open,
@@ -181,9 +188,92 @@ export function WorkbenchWorkspaceDialog({
   );
 }
 
+export function WorkbenchEpicDialog({
+  open,
+  pending,
+  error,
+  onOpenChange,
+  onCreate,
+}: {
+  readonly open: boolean;
+  readonly pending: boolean;
+  readonly error: string | null;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly onCreate: (title: string, markdown: string) => Promise<boolean>;
+}) {
+  const [title, setTitle] = useState("");
+  const [markdown, setMarkdown] = useState("");
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setTitle("");
+      setMarkdown("");
+    }
+    onOpenChange(nextOpen);
+  };
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (title.trim().length === 0) return;
+    void (async () => {
+      if (!(await onCreate(title.trim(), markdown.trim()))) return;
+      handleOpenChange(false);
+    })();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogPopup>
+        <DialogHeader>
+          <DialogTitle>Create Epic</DialogTitle>
+          <DialogDescription>
+            Group related Tickets across the Board without changing their delivery status.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogPanel>
+          <form id="create-workbench-epic" className="space-y-5" onSubmit={submit}>
+            {error ? <WorkbenchInlineError message={error} /> : null}
+            <div className="space-y-1.5">
+              <Label htmlFor="workbench-epic-title">Epic title</Label>
+              <Input
+                id="workbench-epic-title"
+                autoFocus
+                placeholder="What outcome does this Epic deliver?"
+                value={title}
+                onChange={(event) => setTitle(event.currentTarget.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="workbench-epic-description">Description</Label>
+              <Textarea
+                id="workbench-epic-description"
+                className="min-h-32"
+                placeholder="Context, scope, and intended outcome…"
+                value={markdown}
+                onChange={(event) => setMarkdown(event.currentTarget.value)}
+              />
+            </div>
+          </form>
+        </DialogPanel>
+        <DialogFooter>
+          <Button onClick={() => handleOpenChange(false)} variant="outline">
+            Cancel
+          </Button>
+          <Button
+            form="create-workbench-epic"
+            disabled={pending || title.trim().length === 0}
+            type="submit"
+          >
+            <PlusIcon /> Create Epic
+          </Button>
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
+  );
+}
+
 export function WorkbenchTicketDialog({
   open,
   linkedProjects,
+  epics,
   pending,
   error,
   onOpenChange,
@@ -191,6 +281,7 @@ export function WorkbenchTicketDialog({
 }: {
   readonly open: boolean;
   readonly linkedProjects: ReadonlyArray<Project>;
+  readonly epics: ReadonlyArray<WorkbenchEpic>;
   readonly pending: boolean;
   readonly error: string | null;
   readonly onOpenChange: (open: boolean) => void;
@@ -198,12 +289,14 @@ export function WorkbenchTicketDialog({
     title: string,
     markdown: string,
     kind: WorkbenchTicketKind,
+    epicId: WorkbenchEpicId | null,
     repositoryProjectIds: ReadonlyArray<ProjectId>,
     primaryProjectId: ProjectId,
   ) => Promise<boolean>;
 }) {
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<WorkbenchTicketKind>("story");
+  const [epicId, setEpicId] = useState<WorkbenchEpicId | null>(null);
   const [markdown, setMarkdown] = useState(() => getWorkbenchTicketTemplate("story"));
   const [repositoryProjectIds, setRepositoryProjectIds] = useState<ReadonlyArray<ProjectId>>([]);
   const [primaryProjectId, setPrimaryProjectId] = useState<ProjectId | null>(null);
@@ -211,6 +304,7 @@ export function WorkbenchTicketDialog({
     if (!nextOpen) {
       setTitle("");
       setKind("story");
+      setEpicId(null);
       setMarkdown(getWorkbenchTicketTemplate("story"));
       setRepositoryProjectIds([]);
       setPrimaryProjectId(null);
@@ -232,7 +326,16 @@ export function WorkbenchTicketDialog({
     event.preventDefault();
     if (title.trim().length === 0 || selectedProjectId === null) return;
     void (async () => {
-      if (!(await onCreate(title, markdown, kind, selectedRepositoryProjectIds, selectedProjectId)))
+      if (
+        !(await onCreate(
+          title,
+          markdown,
+          kind,
+          epicId,
+          selectedRepositoryProjectIds,
+          selectedProjectId,
+        ))
+      )
         return;
       handleOpenChange(false);
     })();
@@ -286,6 +389,29 @@ export function WorkbenchTicketDialog({
                 value={title}
                 onChange={(event) => setTitle(event.currentTarget.value)}
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Epic</Label>
+              <Select
+                value={epicId ?? NO_EPIC_VALUE}
+                onValueChange={(value) =>
+                  setEpicId(!value || value === NO_EPIC_VALUE ? null : WorkbenchEpicId.make(value))
+                }
+              >
+                <SelectTrigger aria-label="Epic">
+                  <SelectValue>
+                    {epics.find((epic) => epic.id === epicId)?.title ?? "No Epic"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup>
+                  <SelectItem value={NO_EPIC_VALUE}>No Epic</SelectItem>
+                  {epics.map((epic) => (
+                    <SelectItem key={epic.id} value={epic.id}>
+                      {epic.title}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="workbench-ticket-context">Description</Label>
@@ -399,7 +525,11 @@ export function WorkbenchTicketDialog({
 export function WorkbenchTicketDetail({
   workspaceTitle,
   ticket,
+  ticketWorkspace,
   linkedProjects,
+  epics,
+  jiraIssueLink,
+  jiraFieldsManaged,
   keybindings,
   availableEditors,
   assignments,
@@ -417,7 +547,11 @@ export function WorkbenchTicketDetail({
 }: {
   readonly workspaceTitle: string;
   readonly ticket: WorkbenchTicket;
+  readonly ticketWorkspace: WorkbenchTicketWorkspace | undefined;
   readonly linkedProjects: ReadonlyArray<Project>;
+  readonly epics: ReadonlyArray<WorkbenchEpic>;
+  readonly jiraIssueLink: WorkbenchJiraIssueLink | null;
+  readonly jiraFieldsManaged: boolean;
   readonly keybindings: ResolvedKeybindingsConfig;
   readonly availableEditors: ReadonlyArray<EditorId>;
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
@@ -437,6 +571,7 @@ export function WorkbenchTicketDetail({
         | "title"
         | "markdown"
         | "kind"
+        | "epicId"
         | "repositoryProjectIds"
         | "primaryT3ProjectId"
         | "status"
@@ -453,7 +588,12 @@ export function WorkbenchTicketDetail({
   const clearDraft = useWorkbenchDraftStore((state) => state.clearDraft);
   const assignment = assignments.find((candidate) => candidate.supersededAt === null);
   const historicalAssignments = assignments.filter((candidate) => candidate.supersededAt !== null);
-  const repositoryScopeLocked = assignments.length > 0;
+  const repositoryScopeLocked =
+    assignments.length > 0 ||
+    ticketWorkspace?.status === "preparing" ||
+    ticketWorkspace?.status === "ready" ||
+    ticketWorkspace?.status === "releasing" ||
+    ticketWorkspace?.repositories.some((repository) => repository.status === "ready") === true;
   const selectedRepositoryProjectIds = getWorkbenchTicketRepositoryProjectIds(ticket);
   const nativeThread = assignment ? threadsById.get(assignment.threadId) : undefined;
   const archivedThread =
@@ -471,13 +611,15 @@ export function WorkbenchTicketDetail({
     threadLookupReady,
   );
   const editing = draft?.mode === "editing";
-  const displayedTitle = draft?.title ?? ticket.title;
+  const displayedTitle = jiraFieldsManaged ? ticket.title : (draft?.title ?? ticket.title);
   const displayedMarkdown = draft?.markdown ?? ticket.markdown;
   const actionableTicket =
     draft?.mode === "saved"
       ? { ...ticket, title: displayedTitle, markdown: displayedMarkdown }
       : ticket;
-  const dirty = editing && (draft.title !== ticket.title || draft.markdown !== ticket.markdown);
+  const dirty =
+    editing &&
+    ((!jiraFieldsManaged && draft.title !== ticket.title) || draft.markdown !== ticket.markdown);
 
   useEffect(() => {
     if (
@@ -528,6 +670,19 @@ export function WorkbenchTicketDetail({
                   <CircleAlertIcon /> Blocked
                 </Badge>
               ) : null}
+              {jiraIssueLink ? (
+                <Button
+                  render={
+                    <a href={jiraIssueLink.issue.url} rel="noopener noreferrer" target="_blank" />
+                  }
+                  size="xs"
+                  title={`Open ${jiraIssueLink.issue.key} in Jira (${jiraIssueLink.issue.status.name})`}
+                  variant="outline"
+                >
+                  {jiraIssueLink.issue.key} · {jiraIssueLink.issue.issueType.name}
+                  <ExternalLinkIcon />
+                </Button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -538,7 +693,7 @@ export function WorkbenchTicketDetail({
         onSubmit={(event) => {
           event.preventDefault();
           if (!editing) return;
-          const normalizedTitle = draft.title.trim();
+          const normalizedTitle = jiraFieldsManaged ? ticket.title : draft.title.trim();
           const normalizedMarkdown = draft.markdown.trim();
           void (async () => {
             if (!(await onSave(ticket, normalizedTitle, normalizedMarkdown))) return;
@@ -555,9 +710,13 @@ export function WorkbenchTicketDetail({
             <section className="overflow-hidden rounded-xl border border-border bg-card">
               <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
                 <div>
-                  <h2 className="text-sm font-semibold">Description</h2>
+                  <h2 className="text-sm font-semibold">
+                    {jiraFieldsManaged ? "Agent instructions" : "Description"}
+                  </h2>
                   <p className="text-xs text-muted-foreground">
-                    Intent, constraints, and acceptance criteria for this work.
+                    {jiraFieldsManaged
+                      ? "Local execution context kept with this Jira Ticket."
+                      : "Intent, constraints, and acceptance criteria for this work."}
                   </p>
                 </div>
                 {!editing ? (
@@ -578,15 +737,21 @@ export function WorkbenchTicketDetail({
                     <Label htmlFor="edit-workbench-ticket-title">Title</Label>
                     <Input
                       id="edit-workbench-ticket-title"
-                      autoFocus
-                      value={draft.title}
+                      autoFocus={!jiraFieldsManaged}
+                      disabled={jiraFieldsManaged}
+                      value={jiraFieldsManaged ? ticket.title : draft.title}
                       onChange={(event) => {
                         setDraft(ticket.id, { ...draft, title: event.currentTarget.value });
                       }}
                     />
+                    {jiraFieldsManaged ? (
+                      <p className="text-xs text-muted-foreground">Summary is managed by Jira.</p>
+                    ) : null}
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="edit-workbench-ticket-context">Description</Label>
+                    <Label htmlFor="edit-workbench-ticket-context">
+                      {jiraFieldsManaged ? "Agent instructions" : "Description"}
+                    </Label>
                     <Textarea
                       id="edit-workbench-ticket-context"
                       className="min-h-72"
@@ -607,7 +772,9 @@ export function WorkbenchTicketDetail({
                       Cancel
                     </Button>
                     <Button
-                      disabled={pending || !dirty || draft.title.trim().length === 0}
+                      disabled={
+                        pending || !dirty || (!jiraFieldsManaged && draft.title.trim().length === 0)
+                      }
                       type="submit"
                     >
                       Save Ticket
@@ -719,12 +886,17 @@ export function WorkbenchTicketDetail({
             <section className="overflow-hidden rounded-xl border border-border bg-card">
               <div className="border-b border-border px-4 py-3">
                 <h2 className="text-sm font-semibold">Ticket fields</h2>
+                {jiraFieldsManaged ? (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Jira manages type, Epic, blocked state, and Board status.
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-4 p-4">
                 <div className="space-y-1.5">
                   <Label>Ticket type</Label>
                   <Select
-                    disabled={pending}
+                    disabled={pending || jiraFieldsManaged}
                     value={ticket.kind}
                     onValueChange={(value) => {
                       if (isWorkbenchTicketKind(value)) onUpdate(actionableTicket, { kind: value });
@@ -742,20 +914,57 @@ export function WorkbenchTicketDetail({
                     </SelectPopup>
                   </Select>
                 </div>
+                <div className="space-y-1.5">
+                  <Label>Epic</Label>
+                  <Select
+                    disabled={pending || jiraFieldsManaged}
+                    value={ticket.epicId ?? NO_EPIC_VALUE}
+                    onValueChange={(value) =>
+                      onUpdate(actionableTicket, {
+                        epicId:
+                          !value || value === NO_EPIC_VALUE ? null : WorkbenchEpicId.make(value),
+                      })
+                    }
+                  >
+                    <SelectTrigger aria-label="Epic">
+                      <SelectValue>
+                        {epics.find((epic) => epic.id === ticket.epicId)?.title ?? "No Epic"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup>
+                      <SelectItem value={NO_EPIC_VALUE}>No Epic</SelectItem>
+                      {epics.map((epic) => (
+                        <SelectItem
+                          key={epic.id}
+                          disabled={epic.archivedAt !== null}
+                          value={epic.id}
+                        >
+                          {epic.title}
+                          {epic.archivedAt !== null ? " (Archived)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                </div>
                 <div className="flex min-w-0 items-start gap-3">
                   <FolderGit2Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-muted-foreground">Repository scope</p>
                     <div className="mt-1.5 space-y-1">
                       {repositories.map(({ id, repository }) => {
-                        const openInCwd = repository
-                          ? resolveWorkbenchRepositoryOpenCwd({
-                              repositoryId: id,
-                              primaryProjectId: ticket.primaryT3ProjectId,
-                              repositoryWorkspaceRoot: repository.workspaceRoot,
-                              activeThreadWorktreePath: nativeThread?.worktreePath,
-                            })
-                          : null;
+                        const preparedRepository = ticketWorkspace?.repositories.find(
+                          (candidate) => candidate.projectId === id && candidate.status === "ready",
+                        );
+                        const openInCwd =
+                          preparedRepository?.worktreePath ??
+                          (repository
+                            ? resolveWorkbenchRepositoryOpenCwd({
+                                repositoryId: id,
+                                primaryProjectId: ticket.primaryT3ProjectId,
+                                repositoryWorkspaceRoot: repository.workspaceRoot,
+                                activeThreadWorktreePath: nativeThread?.worktreePath,
+                              })
+                            : null);
                         return (
                           <div key={id} className="flex min-w-0 items-center gap-2 text-sm">
                             <div className="min-w-0 flex-1">
@@ -789,6 +998,25 @@ export function WorkbenchTicketDetail({
                         );
                       })}
                     </div>
+                    {ticketWorkspace ? (
+                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                        <Badge
+                          size="sm"
+                          variant={ticketWorkspace.status === "failed" ? "warning" : "outline"}
+                        >
+                          {ticketWorkspace.status === "ready"
+                            ? "Workspace ready"
+                            : ticketWorkspace.status === "preparing"
+                              ? "Preparing workspace"
+                              : ticketWorkspace.status === "releasing"
+                                ? "Releasing workspace"
+                                : ticketWorkspace.status === "released"
+                                  ? "Workspace released"
+                                  : "Workspace failed"}
+                        </Badge>
+                        <span className="truncate">{ticketWorkspace.branchName}</span>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
                 <fieldset className="space-y-2 border-t border-border pt-4">
@@ -866,7 +1094,7 @@ export function WorkbenchTicketDetail({
                 <div className="space-y-1.5 border-t border-border pt-4">
                   <Label>Status</Label>
                   <Select
-                    disabled={pending}
+                    disabled={pending || jiraFieldsManaged}
                     value={ticket.status}
                     onValueChange={(value) => {
                       if (isWorkbenchTicketStatus(value)) {
@@ -885,13 +1113,18 @@ export function WorkbenchTicketDetail({
                       ))}
                     </SelectPopup>
                   </Select>
+                  {jiraFieldsManaged ? (
+                    <p className="text-xs text-muted-foreground">
+                      Status is managed by Jira for this mirrored Ticket.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="space-y-1.5">
                   <Label>Delivery state</Label>
                   <label className="flex min-h-9 cursor-pointer items-center gap-2 rounded-lg border border-input bg-background px-3 text-sm">
                     <Checkbox
                       checked={ticket.blocked}
-                      disabled={pending}
+                      disabled={pending || jiraFieldsManaged}
                       onCheckedChange={(checked) =>
                         onUpdate(actionableTicket, { blocked: checked === true })
                       }

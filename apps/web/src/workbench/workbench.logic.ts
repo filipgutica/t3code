@@ -2,6 +2,7 @@ import type {
   ProjectId,
   ThreadId,
   WorkbenchAssignment,
+  WorkbenchEpic,
   WorkbenchSnapshot,
   WorkbenchTicket,
   WorkbenchTicketId,
@@ -233,6 +234,36 @@ export function buildTicketThreadPrompt(
     ...repositoryLines,
     ...(body.length > 0 ? ["", body] : []),
   ].join("\n");
+}
+
+export function groupWorkbenchTicketsByEpic<
+  Ticket extends Pick<WorkbenchTicket, "epicId">,
+  Epic extends Pick<WorkbenchEpic, "id">,
+>(
+  tickets: ReadonlyArray<Ticket>,
+  epics: ReadonlyArray<Epic>,
+): ReadonlyArray<{ readonly epic: Epic | null; readonly tickets: ReadonlyArray<Ticket> }> {
+  const epicsById = new Map(epics.map((epic) => [epic.id, epic]));
+  const ticketsByEpicId = new Map<string, Array<Ticket>>();
+  const unassignedTickets: Array<Ticket> = [];
+
+  for (const ticket of tickets) {
+    if (ticket.epicId === null || !epicsById.has(ticket.epicId)) {
+      unassignedTickets.push(ticket);
+      continue;
+    }
+    const epicTickets = ticketsByEpicId.get(ticket.epicId) ?? [];
+    epicTickets.push(ticket);
+    ticketsByEpicId.set(ticket.epicId, epicTickets);
+  }
+
+  const lanes = epics.flatMap((epic) => {
+    const epicTickets = ticketsByEpicId.get(epic.id);
+    return epicTickets && epicTickets.length > 0 ? [{ epic, tickets: epicTickets }] : [];
+  });
+  return unassignedTickets.length > 0
+    ? [...lanes, { epic: null, tickets: unassignedTickets }]
+    : lanes;
 }
 
 export function ticketsByStatus<Ticket extends Pick<WorkbenchTicket, "status">>(

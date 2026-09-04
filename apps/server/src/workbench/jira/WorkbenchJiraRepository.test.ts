@@ -1,0 +1,129 @@
+import {
+  ProjectId,
+  WorkbenchJiraBindingId,
+  WorkbenchJiraConnectionId,
+  WorkbenchProjectId,
+  WorkbenchTicketId,
+  type WorkbenchJiraBinding,
+  type WorkbenchJiraConnection,
+  type WorkbenchJiraIssueLink,
+} from "@t3tools/contracts";
+import { describe, expect, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+
+import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
+import { layerSql, WorkbenchJiraRepository } from "./WorkbenchJiraRepository.ts";
+
+const TestLayer = Layer.merge(WorkbenchStoreLive, layerSql).pipe(
+  Layer.provideMerge(SqlitePersistenceMemory),
+);
+
+describe("WorkbenchJiraRepository SQL", () => {
+  it.effect("round-trips connections, bindings, credentials, and issue links", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const workbench = yield* WorkbenchStore;
+      const repository = yield* WorkbenchJiraRepository;
+      const nativeProjectId = ProjectId.make("native-project-1");
+      const projectId = WorkbenchProjectId.make("workspace-1");
+      const ticketId = WorkbenchTicketId.make("ticket-1");
+      const connectionId = WorkbenchJiraConnectionId.make("connection-1");
+      const bindingId = WorkbenchJiraBindingId.make("binding-1");
+      const createdAt = "2026-09-03T12:00:00.000Z";
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+        ) VALUES (
+          ${nativeProjectId}, 'T3 Code', '/repos/t3code', '[]',
+          ${createdAt}, ${createdAt}, NULL
+        )
+      `;
+      yield* workbench.createProject({
+        id: projectId,
+        title: "Jira Workspace",
+        linkedProjectIds: [nativeProjectId],
+        createdAt,
+      });
+      yield* workbench.createTicket({
+        id: ticketId,
+        projectId,
+        title: "Imported issue",
+        kind: "story",
+        markdown: "Preserved instructions",
+        primaryT3ProjectId: nativeProjectId,
+        repositoryProjectIds: [nativeProjectId],
+        createdAt,
+      });
+
+      const connection: WorkbenchJiraConnection = {
+        id: connectionId,
+        cloudId: "cloud-1",
+        siteName: "Example Jira",
+        siteUrl: "https://example.atlassian.net",
+        avatarUrl: "https://example.atlassian.net/avatar.png",
+        scopes: ["read:project:jira", "read:sprint:jira-software"],
+        createdAt,
+        updatedAt: createdAt,
+      };
+      const binding: WorkbenchJiraBinding = {
+        id: bindingId,
+        projectId,
+        connectionId,
+        jiraProjectId: "10000",
+        jiraProjectKey: "WB",
+        jiraProjectName: "Workbench",
+        boardId: 42,
+        boardName: "Workbench Board",
+        sprintId: 7,
+        sprintName: "Sprint 7",
+        defaultPrimaryT3ProjectId: nativeProjectId,
+        defaultRepositoryProjectIds: [nativeProjectId],
+        statusMappings: [
+          { jiraStatusId: "1", workbenchStatus: "todo" },
+          { jiraStatusId: "2", workbenchStatus: "in_progress" },
+        ],
+        active: true,
+        lastSyncedAt: null,
+        createdAt,
+        updatedAt: createdAt,
+      };
+      const issueLink: WorkbenchJiraIssueLink = {
+        bindingId,
+        ticketId,
+        issue: {
+          issueId: "10001",
+          key: "WB-1",
+          url: "https://example.atlassian.net/browse/WB-1",
+          summary: "Imported issue",
+          issueType: { id: "10001", name: "Story" },
+          status: { id: "2", name: "In Progress" },
+          epic: null,
+          flagged: false,
+          rank: 0,
+          remoteUpdatedAt: createdAt,
+        },
+        active: true,
+        linkedAt: createdAt,
+        lastSeenAt: createdAt,
+      };
+
+      yield* repository.upsertConnection(connection, "oauth-grant-1");
+      yield* repository.upsertBinding(binding);
+      yield* repository.replaceIssueLinks(bindingId, [issueLink]);
+
+      expect(yield* repository.listConnections()).toEqual([connection]);
+      expect(Option.getOrThrow(yield* repository.getConnection(connectionId))).toEqual(connection);
+      expect(Option.getOrThrow(yield* repository.getCredentialId(connectionId))).toBe(
+        "oauth-grant-1",
+      );
+      expect(yield* repository.listBindings()).toEqual([binding]);
+      expect(Option.getOrThrow(yield* repository.getBinding(bindingId))).toEqual(binding);
+      expect(yield* repository.listIssueLinks(bindingId)).toEqual([issueLink]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+});
