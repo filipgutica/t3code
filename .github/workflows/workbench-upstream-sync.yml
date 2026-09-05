@@ -21,7 +21,7 @@ jobs:
       product_sha: ${{ steps.pending.outputs.product_sha }}
       upstream_sha: ${{ steps.pending.outputs.upstream_sha }}
     env:
-      PRODUCT_BRANCH: workbench/main
+      PRODUCT_BRANCH: ${{ github.event.repository.default_branch }}
     steps:
       - name: Checkout product branch
         uses: actions/checkout@v6
@@ -45,6 +45,12 @@ jobs:
           else
             echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Setup Node for merge preview
+        if: steps.pending.outputs.needed == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
 
       - name: Preview merge
         if: steps.pending.outputs.needed == 'true'
@@ -87,7 +93,7 @@ jobs:
       contents: write
       pull-requests: write
     env:
-      PRODUCT_BRANCH: workbench/main
+      PRODUCT_BRANCH: ${{ github.event.repository.default_branch }}
       SYNC_BRANCH: automation/workbench-upstream-sync
       GH_TOKEN: ${{ github.token }}
       PRODUCT_SHA: ${{ needs.verify.outputs.product_sha }}

@@ -541,6 +541,16 @@ const makeWorkbenchStore = Effect.gen(function* () {
         AND superseded_at IS NULL
     `,
   });
+  const findAssignmentByThread = SqlSchema.findOneOption({
+    Request: Schema.Struct({ threadId: ThreadId }),
+    Result: WorkbenchAssignment,
+    execute: ({ threadId }) => sql`
+      SELECT assignment_id AS "id", ticket_id AS "ticketId", thread_id AS "threadId",
+        created_at AS "createdAt", superseded_at AS "supersededAt"
+      FROM workbench_assignments
+      WHERE thread_id = ${threadId}
+    `,
+  });
   const findActiveLiveAssignmentByTicket = SqlSchema.findOneOption({
     Request: Schema.Struct({ ticketId: WorkbenchTicketId }),
     Result: WorkbenchAssignment,
@@ -1740,14 +1750,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
             SET updated_at = updated_at
             WHERE ticket_id = ${input.ticketId}
           `;
-          const existingAssignment = yield* findActiveAssignmentByTicketAndThread({
-            ticketId: input.ticketId,
-            threadId: input.threadId,
-          });
+          const existingAssignment = yield* findAssignmentByThread({ threadId: input.threadId });
           if (Option.isSome(existingAssignment)) {
             return yield* new WorkbenchOperationError({
               code: "assignment_already_exists",
-              message: "The Workbench Ticket already has this Agent Thread assigned.",
+              message: "This native T3 Thread already belongs to a Workbench Ticket.",
             });
           }
           const ticketWorkspace = yield* findTicketWorkspaceRow({ ticketId: input.ticketId });
@@ -1819,14 +1826,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "The Workbench Assignment does not exist.",
             });
           }
-          const existingReplacement = yield* findActiveAssignmentByTicketAndThread({
-            ticketId: input.ticketId,
-            threadId: input.threadId,
-          });
+          const existingReplacement = yield* findAssignmentByThread({ threadId: input.threadId });
           if (Option.isSome(existingReplacement)) {
             return yield* new WorkbenchOperationError({
               code: "assignment_already_exists",
-              message: "The Workbench Ticket already has this Agent Thread assigned.",
+              message: "This native T3 Thread already belongs to a Workbench Ticket.",
             });
           }
           yield* requireAssignableThread({ ticketId: input.ticketId, threadId: input.threadId });

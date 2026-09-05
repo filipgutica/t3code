@@ -1236,8 +1236,8 @@ export function WorkbenchTicketDetail({
 
           <aside className="min-w-0 space-y-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
             <section
-              className={`flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card max-h-[min(70vh,42rem)] lg:max-h-none ${
-                threadPanelCollapsed ? "lg:flex-none" : "lg:flex-1"
+              className={`flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card max-h-[min(70vh,42rem)] lg:flex-[0_1_auto] ${
+                threadPanelCollapsed || detailsPanelCollapsed ? "lg:max-h-full" : "lg:max-h-[50%]"
               }`}
             >
               <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
@@ -1284,7 +1284,7 @@ export function WorkbenchTicketDetail({
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium">{agentTitle}</span>
-                          <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+                          <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                             {nativeThread ? (
                               <span
                                 aria-hidden
@@ -1295,20 +1295,18 @@ export function WorkbenchTicketDetail({
                               />
                             ) : null}
                             <span>
-                              {assignment
-                                ? `Assigned · ${thread.stateLabel}`
-                                : "Start a native T3 Thread"}
+                              {assignment ? thread.stateLabel : "Start a native T3 Thread"}
                             </span>
-                            {displayedThread?.modelSelection ? (
-                              <span className="truncate">
-                                {displayedThread.modelSelection.instanceId} ·{" "}
-                                {displayedThread.modelSelection.model}
-                              </span>
-                            ) : null}
                           </span>
+                          {displayedThread?.modelSelection ? (
+                            <span className="mt-1 block break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                              {displayedThread.modelSelection.instanceId} ·{" "}
+                              {displayedThread.modelSelection.model}
+                            </span>
+                          ) : null}
                         </span>
                         <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground group-hover:text-foreground">
-                          <span className="hidden sm:inline">
+                          <span className="sr-only">
                             {threadActionPending ? thread.pendingActionLabel : thread.actionLabel}
                           </span>
                           <ArrowRightIcon className="size-3.5" />
@@ -1389,7 +1387,7 @@ export function WorkbenchTicketDetail({
                                     <span className="block truncate font-medium">
                                       {displayedActiveThread?.title ?? "Thread unavailable"}
                                     </span>
-                                    <span className="block truncate text-xs text-muted-foreground">
+                                    <span className="block break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
                                       {activeThreadModel ?? activeThreadState}
                                     </span>
                                     {activeAgentState ? (

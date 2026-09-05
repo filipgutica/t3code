@@ -8,6 +8,7 @@ import {
   DialogDescription,
   DialogFooter,
   DialogHeader,
+  DialogPanel,
   DialogPopup,
   DialogTitle,
 } from "../components/ui/dialog";
@@ -42,11 +43,12 @@ export function WorkbenchAttachThreadDialog({
         <DialogHeader>
           <DialogTitle>Attach existing Thread</DialogTitle>
           <DialogDescription>
-            Choose an unassigned Thread from this Ticket’s primary repository. Its conversation and
-            workspace stay unchanged; no prompt is sent.
+            Choose a non-archived Thread from this Ticket’s primary repository in this environment.
+            Threads already linked to a Ticket, including past assignments, cannot be attached. No
+            prompt is sent.
           </DialogDescription>
         </DialogHeader>
-        <div className="min-w-0 space-y-3">
+        <DialogPanel className="min-w-0 space-y-3">
           <Input
             aria-label="Find a Thread"
             placeholder="Find a Thread…"
@@ -66,7 +68,11 @@ export function WorkbenchAttachThreadDialog({
               </Button>
             ))}
             {matching.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No eligible Threads found.</p>
+              <p className="py-3 text-sm text-muted-foreground">
+                {threads.length === 0
+                  ? "No available Threads in this Ticket’s primary repository. Create a new Thread instead."
+                  : "No Threads match your search."}
+              </p>
             ) : null}
           </div>
           {error ? (
@@ -74,7 +80,7 @@ export function WorkbenchAttachThreadDialog({
               {error}
             </p>
           ) : null}
-        </div>
+        </DialogPanel>
         <DialogFooter>
           <Button variant="outline" disabled={pending} onClick={onClose}>
             Cancel

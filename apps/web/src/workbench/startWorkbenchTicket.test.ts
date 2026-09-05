@@ -178,7 +178,7 @@ describe("coordinateWorkbenchTicketStart", () => {
     let startedTurnInput: unknown;
     const selectedModel: ModelSelection = { ...modelSelection, model: "gpt-5.4-mini" };
     const result = await coordinateWorkbenchTicketStart(
-      startInput(),
+      { ...startInput(), threadLookupReady: false },
       {
         ...makeDependencies(events),
         createThread: async (input) => {

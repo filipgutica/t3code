@@ -170,7 +170,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     select: (params) => resolveThreadRouteRef(params),
   });
   const workbenchSnapshot = useEnvironmentQuery(
-    routeThreadRef === null
+    routeThreadRef === null || search.workbench !== true
       ? null
       : workbenchEnvironment.snapshot({ environmentId: routeThreadRef.environmentId, input: {} }),
   ).data;

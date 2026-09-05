@@ -600,11 +600,42 @@ describe("WorkbenchStore", () => {
         }),
       );
 
+      const otherTicketId = WorkbenchTicketId.make("other-ticket");
+      yield* store.createTicket({
+        id: otherTicketId,
+        projectId,
+        title: "Another Ticket",
+        markdown: "",
+        kind: "story",
+        primaryT3ProjectId: secondaryProjectId,
+        createdAt,
+      });
+      for (const threadId of ["thread-1", "thread-2"]) {
+        const ownershipError = yield* Effect.flip(
+          store.createAssignment({
+            id: WorkbenchAssignmentId.make(`other-${threadId}`),
+            ticketId: otherTicketId,
+            threadId: ThreadId.make(threadId),
+            createdAt,
+          }),
+        );
+        expect(ownershipError.code).toBe("assignment_already_exists");
+      }
+      const historicalReplacementError = yield* Effect.flip(
+        store.replaceAssignment({
+          ticketId,
+          previousThreadId: ThreadId.make("thread-2"),
+          threadId: ThreadId.make("thread-1"),
+          replacedAt: "2026-09-03T12:06:00.000Z",
+        }),
+      );
+      expect(historicalReplacementError.code).toBe("assignment_already_exists");
+
       const snapshot = yield* store.getSnapshot;
 
       expect(snapshot.projects).toHaveLength(1);
       expect(snapshot.projects[0]?.linkedProjectIds).toEqual([linkedProjectId, secondaryProjectId]);
-      expect(snapshot.tickets[0]).toMatchObject({
+      expect(snapshot.tickets.find((ticket) => ticket.id === ticketId)).toMatchObject({
         id: ticketId,
         kind: "bug",
         primaryT3ProjectId: secondaryProjectId,

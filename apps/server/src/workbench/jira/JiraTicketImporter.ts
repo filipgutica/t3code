@@ -40,6 +40,26 @@ export class JiraTicketImporter extends Context.Service<
 const importError = (message: string) =>
   new WorkbenchJiraOperationError({ code: "persistence_failed", message });
 
+const WORKBENCH_TITLE_MAX_LENGTH = 240;
+const WORKBENCH_MARKDOWN_MAX_LENGTH = 120_000;
+
+const normalizeJiraTitle = (title: string) => {
+  const normalized = title.trim();
+  if (normalized.length <= WORKBENCH_TITLE_MAX_LENGTH) {
+    return normalized;
+  }
+  const lastIncluded = normalized.charCodeAt(WORKBENCH_TITLE_MAX_LENGTH - 1);
+  const firstExcluded = normalized.charCodeAt(WORKBENCH_TITLE_MAX_LENGTH);
+  const endsWithHighSurrogate = lastIncluded >= 0xd800 && lastIncluded <= 0xdbff;
+  const continuesWithLowSurrogate = firstExcluded >= 0xdc00 && firstExcluded <= 0xdfff;
+  return normalized.slice(
+    0,
+    endsWithHighSurrogate && continuesWithLowSurrogate
+      ? WORKBENCH_TITLE_MAX_LENGTH - 1
+      : WORKBENCH_TITLE_MAX_LENGTH,
+  );
+};
+
 const jiraTicketId = (bindingId: string, issueId: string) =>
   WorkbenchTicketId.make(`jira:${bindingId}:issue:${issueId}`);
 
@@ -103,11 +123,19 @@ export const layer = Layer.effect(
     return JiraTicketImporter.of({
       upsertJiraProjection: (input) =>
         Effect.gen(function* () {
+          const description = input.issue.description ?? "";
+          if (description.length > WORKBENCH_MARKDOWN_MAX_LENGTH) {
+            return yield* importError(
+              `Jira issue ${input.issue.key} description exceeds Workbench's ${WORKBENCH_MARKDOWN_MAX_LENGTH} character limit. Shorten it in Jira, then sync again.`,
+            );
+          }
+          const title = normalizeJiraTitle(input.issue.summary);
           let snapshot = yield* workbench.getSnapshot.pipe(
             Effect.mapError(() => importError("Workbench data could not be loaded for Jira sync.")),
           );
           let epicId: WorkbenchEpicId | null = null;
           if (input.issue.epic !== null) {
+            const epicTitle = normalizeJiraTitle(input.issue.epic.summary);
             const proposedEpicId = jiraEpicId(input.binding.id, input.issue.epic.id);
             const existingEpic = snapshot.epics.find((epic) => epic.id === proposedEpicId);
             if (existingEpic === undefined) {
@@ -115,7 +143,7 @@ export const layer = Layer.effect(
                 .createEpic({
                   id: proposedEpicId,
                   projectId: input.binding.projectId,
-                  title: input.issue.epic.summary,
+                  title: epicTitle,
                   markdown: "",
                   createdAt: input.issue.remoteUpdatedAt ?? input.binding.updatedAt,
                 })
@@ -123,10 +151,10 @@ export const layer = Layer.effect(
               epicId = proposedEpicId;
             } else if (existingEpic.archivedAt === null) {
               epicId = proposedEpicId;
-              if (existingEpic.title !== input.issue.epic.summary) {
+              if (existingEpic.title !== epicTitle) {
                 yield* updateJiraOwnedEpicFields({
                   epicId: existingEpic.id,
-                  title: input.issue.epic.summary,
+                  title: epicTitle,
                   updatedAt: input.issue.remoteUpdatedAt ?? input.binding.updatedAt,
                 }).pipe(Effect.mapError(() => importError("A Jira Epic could not be updated.")));
               }
@@ -149,9 +177,9 @@ export const layer = Layer.effect(
                 id: ticketId,
                 projectId: input.binding.projectId,
                 epicId,
-                title: input.issue.summary,
+                title,
                 kind,
-                markdown: input.issue.description ?? "",
+                markdown: description,
                 primaryT3ProjectId: input.binding.defaultPrimaryT3ProjectId,
                 repositoryProjectIds: input.binding.defaultRepositoryProjectIds,
                 createdAt: updatedAt,
@@ -165,11 +193,11 @@ export const layer = Layer.effect(
             yield* updateJiraOwnedTicketFields({
               ticketId: existingTicket.id,
               epicId,
-              title: input.issue.summary,
+              title,
               kind,
               status: input.mappedStatus,
               blocked: input.issue.flagged,
-              markdown: input.issue.description ?? null,
+              markdown: input.issue.description === undefined ? null : description,
               updatedAt,
             }).pipe(
               Effect.mapError(() =>
@@ -193,7 +221,7 @@ export const layer = Layer.effect(
                 kind: created.kind,
                 status: input.mappedStatus,
                 blocked: input.issue.flagged,
-                markdown: input.issue.description ?? null,
+                markdown: input.issue.description === undefined ? null : description,
                 updatedAt,
               }).pipe(
                 Effect.mapError(() =>

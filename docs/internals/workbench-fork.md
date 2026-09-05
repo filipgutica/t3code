@@ -39,11 +39,11 @@ Each Ticket can have several active Assignments; each native Thread belongs to o
 
 ## Jira sprint mirrors
 
-The Jira integration is an adapter under `apps/server/src/workbench/jira`. It uses Atlassian OAuth 2.0 authorization code grants and stores refresh credentials through T3's secret store. Configure the server with `T3_WORKBENCH_JIRA_CLIENT_ID` and `T3_WORKBENCH_JIRA_CLIENT_SECRET`; the browser callback returns to `/workbench`.
+The Jira integration is an adapter under `apps/server/src/workbench/jira`. It uses Atlassian OAuth 2.0 authorization code grants and stores refresh credentials through T3's secret store. Configure the server with `T3_WORKBENCH_JIRA_CLIENT_ID` and `T3_WORKBENCH_JIRA_CLIENT_SECRET`. The callback URL depends on the client surface.
 
-Create the OAuth app in the [Atlassian developer console](https://developer.atlassian.com/console/myapps/), enable the scopes listed in `JiraOAuthClient.ts`, and register the exact client origin plus `/workbench` as its callback URL (for example, `http://localhost:5733/workbench` for this checkout's local web environment). Restart the server after configuring its credentials. The client secret belongs only on the server. Atlassian requires an exact callback match; see its [OAuth setup documentation](https://developer.atlassian.com/cloud/jira/software/oauth-2-3lo-apps/).
+Create the OAuth app in the [Atlassian developer console](https://developer.atlassian.com/console/myapps/), enable the scopes listed in `JiraOAuthClient.ts`, and register the exact callback URL. Web uses its browser origin plus `/workbench`, such as `http://localhost:5733/workbench`. Desktop uses its server origin plus `/oauth/workbench/jira/callback`, such as `http://127.0.0.1:13773/oauth/workbench/jira/callback`. Read the current port from the running environment; these ports are examples. Restart the server after configuring its credentials. The client secret belongs only on the server. Atlassian requires an exact callback match; see its [OAuth setup documentation](https://developer.atlassian.com/cloud/jira/software/oauth-2-3lo-apps/).
 
-The current authorization return path requires the same paired browser session. Desktop opens Atlassian in an external browser, whose session and storage are separate; desktop authorization and arbitrary remote origins still need a server callback and return handoff before they can be considered supported. Local web authorization also remains subject to live validation with a configured OAuth app.
+Web authorization returns to `/workbench` in the same paired browser session. Desktop opens Atlassian in an external browser and returns to the server at `/oauth/workbench/jira/callback`; register that exact server origin and path, including its port. The callback completes authorization on the server and asks the user to return to the desktop app. The desktop client refreshes connection state while authorization is pending. Both launch modes need the OAuth client ID and secret in the server process environment.
 
 Authorization state is consumed before exchanging the code. If exchange or persistence fails afterward, start a new connection attempt rather than retrying the callback. Reconnecting the same site preserves its connection ID and existing bindings.
 
@@ -53,20 +53,20 @@ Jira owns imported summary, description, issue type, Epic, flagged state, sprint
 
 ## Branch and remotes
 
-Keep a long-lived `workbench/main` product branch in `filipgutica/t3code`. In this clone, `origin` points to `filipgutica/t3code` and `upstream` points to `pingdotgg/t3code`. Set the fork's default branch to `workbench/main` so scheduled workflows are loaded from the product branch.
+The fork's `main` branch is the long-lived Workbench product branch in `filipgutica/t3code`. In this clone, `origin` points to `filipgutica/t3code` and `upstream` points to `pingdotgg/t3code`. Scheduled workflows use the fork's default branch as the product branch.
 
 Before merging upstream locally:
 
 ```sh
 git fetch upstream main
-node scripts/workbench-upstream-sync.ts --product workbench/main --upstream upstream/main
+node scripts/workbench-upstream-sync.ts --product main --upstream upstream/main
 ```
 
 The command is read-only. It reports ahead/behind counts, files changed by both sides since their merge base, and whether Git can synthesize a clean merge tree.
 
-`.github/workflows/workbench-upstream-sync.yml` runs the same preview every day. When upstream moved, a read-only job merges `upstream/main`, runs the focused Workbench suite, builds the desktop app, and runs its smoke test. Only then does a separate write-capable job recreate that exact verified merge and open or update one PR against `workbench/main`. A conflict or failed check leaves the product branch untouched.
+`.github/workflows/workbench-upstream-sync.yml` runs the same preview every day. When upstream moved, a read-only job merges `upstream/main`, runs the focused Workbench suite, builds the desktop app, and runs its smoke test. Only then does a separate write-capable job recreate that exact verified merge and open or update one PR against the fork's default branch. A conflict or failed check leaves the product branch untouched.
 
-Release the fork from `workbench/main` using a separate fork-owned distribution channel. Do not point Workbench builds at T3 Code's upstream updater: upstream releases do not contain the overlay.
+Release the fork from `main` using a separate fork-owned distribution channel. Do not point Workbench builds at T3 Code's upstream updater: upstream releases do not contain the overlay.
 
 ## Sync acceptance
 
@@ -90,4 +90,4 @@ Bindings can map Jira states to the canonical progress values or mirror Jira boa
 
 Jira bindings store `selectedSprints` as the sprint selection. Older bindings fall back to `sprintId` and `sprintName`; those fields remain the first selected sprint for compatibility. Sync reads assigned issues for every selected board sprint, deduplicates by Jira issue ID, and commits selection metadata, projections, and issue links in one transaction. The Jira project used to discover the board does not filter its imported issues.
 
-The primary Board action prefers the newest available Thread; Ticket detail lists all active Threads and retains unavailable and historical links. New Thread creation carries an explicit provider instance, model, and options. Additional Threads open without a prompt or initial turn. Workbench uses native Thread deletion with worktree preservation because the Ticket Workspace owns the shared repository worktrees.
+The primary Board action prefers live Threads, then archived Threads, then missing Threads, choosing the newest Assignment within each group; Ticket detail lists all active Threads and retains unavailable and historical links. New Thread creation carries an explicit provider instance, model, and options. Additional Threads open without a prompt or initial turn. Workbench uses native Thread deletion with worktree preservation because the Ticket Workspace owns the shared repository worktrees.

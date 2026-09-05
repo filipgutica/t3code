@@ -540,6 +540,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       ticketId: existing.value.ticketId,
       attemptId: existing.value.attemptId,
       claimedAt: operationAt,
+      requireActiveTicket: true,
     });
     return yield* releaseClaimedWorkspace({ workspace: releasing, releasedAt: operationAt });
   });

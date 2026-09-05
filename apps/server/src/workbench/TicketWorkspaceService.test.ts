@@ -494,6 +494,26 @@ describe("TicketWorkspaceService", () => {
     }).pipe(Effect.provide(makeTestLayer({ events, failProjectId: secondaryProjectId })));
   });
 
+  it.effect("preserves an archived Ticket's ready worktrees on a stale release request", () => {
+    const events: Array<string> = [];
+    return Effect.gen(function* () {
+      yield* seedTicket;
+      yield* seedReadyTicketWorkspace;
+      const store = yield* WorkbenchStore;
+      yield* store.archiveTicket({
+        ticketId,
+        archivedAt: createdAt,
+        updatedAt: createdAt,
+      });
+      const service = yield* TicketWorkspaceService;
+      const error = yield* Effect.flip(service.release({ ticketId, releasedAt: createdAt }));
+      expect(error.code).toBe("ticket_archived");
+      expect(events).toEqual([]);
+      const workspace = yield* store.getTicketWorkspace(ticketId);
+      expect(Option.getOrThrow(workspace).status).toBe("ready");
+    }).pipe(Effect.provide(makeTestLayer({ events })));
+  });
+
   it.effect("releases every prepared repository before marking the Workspace released", () => {
     const events: Array<string> = [];
     return Effect.gen(function* () {

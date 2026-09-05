@@ -449,7 +449,7 @@ export function WorkbenchPage({
   const requestTicketThread = (ticket: WorkbenchTicket) => {
     if (pendingAction !== null) return;
     const assignment = assignmentsByTicket.get(ticket.id);
-    if (!threadLookupReady || (assignment && existingThreadIds.has(assignment.threadId))) {
+    if (assignment && (!threadLookupReady || existingThreadIds.has(assignment.threadId))) {
       openTicketThread(ticket);
       return;
     }
