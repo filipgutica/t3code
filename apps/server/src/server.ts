@@ -76,6 +76,7 @@ import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as WorkbenchStore from "./workbench/WorkbenchStore.ts";
 import * as TicketWorkspaceService from "./workbench/TicketWorkspaceService.ts";
 import * as WorkbenchJiraService from "./workbench/jira/WorkbenchJiraService.ts";
+import { workbenchJiraOAuthRouteLayer } from "./workbench/jira/http.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
@@ -494,6 +495,7 @@ export const makeRoutesLayer = Layer.mergeAll(
       Layer.provide(environmentAuthenticatedAuthLayer),
     ),
     otlpTracesProxyRouteLayer,
+    workbenchJiraOAuthRouteLayer,
     assetRouteLayer,
     attachmentUploadRouteLayer,
     staticAndDevRouteLayer,

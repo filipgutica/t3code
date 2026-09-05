@@ -280,7 +280,10 @@ export function useThreadActions() {
   );
 
   const deleteThread = useCallback(
-    async (target: ScopedThreadRef, opts: { deletedThreadKeys?: ReadonlySet<string> } = {}) => {
+    async (
+      target: ScopedThreadRef,
+      opts: { deletedThreadKeys?: ReadonlySet<string>; preserveWorktree?: boolean } = {},
+    ) => {
       const resolved = resolveThreadTarget(target);
       if (!resolved) {
         // Thread not in main store (e.g. archived thread) — dispatch delete directly.
@@ -322,7 +325,8 @@ export function useThreadActions() {
       const displayWorktreePath = orphanedWorktreePath
         ? formatWorktreePathForDisplay(orphanedWorktreePath)
         : null;
-      const canDeleteWorktree = orphanedWorktreePath !== null && threadProject !== null;
+      const canDeleteWorktree =
+        !opts.preserveWorktree && orphanedWorktreePath !== null && threadProject !== null;
       const localApi = readLocalApi();
       let shouldDeleteWorktree = false;
       if (canDeleteWorktree && localApi) {
@@ -685,7 +689,7 @@ export function useThreadActions() {
   );
 
   const confirmAndDeleteThread = useCallback(
-    async (target: ScopedThreadRef) => {
+    async (target: ScopedThreadRef, options: { preserveWorktree?: boolean } = {}) => {
       const localApi = readLocalApi();
       const resolved = resolveThreadTarget(target);
 
@@ -708,7 +712,7 @@ export function useThreadActions() {
         }
       }
 
-      return deleteThread(target);
+      return deleteThread(target, options);
     },
     [confirmThreadDelete, deleteThread, resolveThreadTarget],
   );

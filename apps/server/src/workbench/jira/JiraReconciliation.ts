@@ -12,9 +12,8 @@ export interface JiraIssueImport {
 }
 
 /**
- * Reconciles only Jira-owned link state. Local Ticket instructions, repository
- * scope, Assignments, and Thread history are intentionally absent and cannot be
- * overwritten by synchronization.
+ * Reconciles only Jira-owned link state. Repository scope, Assignments, and
+ * Thread history are intentionally absent and cannot be overwritten by synchronization.
  */
 export function reconcileJiraIssueLinks(input: {
   readonly bindingId: WorkbenchJiraBindingId;

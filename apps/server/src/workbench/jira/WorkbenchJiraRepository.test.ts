@@ -87,8 +87,17 @@ describe("WorkbenchJiraRepository SQL", () => {
           { jiraStatusId: "1", workbenchStatus: "todo" },
           { jiraStatusId: "2", workbenchStatus: "in_progress" },
         ],
+        selectedSprints: [{ id: 7, name: "Sprint 7" }],
+        followActiveSprint: true,
+        observedActiveSprintIds: [7],
+        boardMode: "mirror_jira",
+        boardColumns: [
+          { name: "To Do", statusIds: ["1"], done: false },
+          { name: "Done", statusIds: ["2"], done: true },
+        ],
         active: true,
         lastSyncedAt: null,
+        lastSyncError: "A previous sync failed.",
         createdAt,
         updatedAt: createdAt,
       };
@@ -128,12 +137,21 @@ describe("WorkbenchJiraRepository SQL", () => {
           id: bindingId,
           expectedUpdatedAt: createdAt,
           syncedAt: "2026-09-03T13:00:00.000Z",
+          selectedSprints: [
+            { id: 7, name: "Sprint 7" },
+            { id: 17, name: "Sprint 17" },
+          ],
         }),
       ).toBe(true);
 
       const syncedBinding = {
         ...binding,
+        selectedSprints: [
+          { id: 7, name: "Sprint 7" },
+          { id: 17, name: "Sprint 17" },
+        ],
         lastSyncedAt: "2026-09-03T13:00:00.000Z",
+        lastSyncError: null,
         updatedAt: "2026-09-03T13:00:00.000Z",
       };
 
@@ -145,6 +163,22 @@ describe("WorkbenchJiraRepository SQL", () => {
       expect(yield* repository.listBindings()).toEqual([syncedBinding]);
       expect(Option.getOrThrow(yield* repository.getBinding(bindingId))).toEqual(syncedBinding);
       expect(yield* repository.listIssueLinks(bindingId)).toEqual([issueLink]);
+
+      expect(
+        yield* repository.updateBindingSyncError({
+          id: bindingId,
+          expectedUpdatedAt: syncedBinding.updatedAt,
+          updatedAt: "2026-09-03T14:00:00.000Z",
+          message: "The active Jira sprint is ambiguous.",
+          observedActiveSprintIds: [7, 8, 9],
+        }),
+      ).toBe(true);
+      expect(Option.getOrThrow(yield* repository.getBinding(bindingId))).toEqual({
+        ...syncedBinding,
+        observedActiveSprintIds: [7, 8, 9],
+        lastSyncError: "The active Jira sprint is ambiguous.",
+        updatedAt: "2026-09-03T14:00:00.000Z",
+      });
     }).pipe(Effect.provide(TestLayer)),
   );
 

@@ -307,6 +307,25 @@ const makeTestLayer = ({
 };
 
 describe("TicketWorkspaceService", () => {
+  it.effect("rejects preparation for an archived Ticket before inspecting repositories", () => {
+    const events: Array<string> = [];
+    return Effect.gen(function* () {
+      yield* seedTicket;
+      const store = yield* WorkbenchStore;
+      yield* store.archiveTicket({
+        ticketId,
+        archivedAt: "2026-09-03T12:01:00.000Z",
+        updatedAt: "2026-09-03T12:01:00.000Z",
+      });
+      const service = yield* TicketWorkspaceService;
+
+      const error = yield* Effect.flip(service.prepare({ ticketId, requestedAt: createdAt }));
+
+      expect(error.code).toBe("ticket_archived");
+      expect(events).toEqual([]);
+    }).pipe(Effect.provide(makeTestLayer({ events })));
+  });
+
   it.effect("reuses a ready Workspace while every recorded worktree still exists", () => {
     const events: Array<string> = [];
     return Effect.gen(function* () {
@@ -626,13 +645,32 @@ describe("TicketWorkspaceService", () => {
     );
   });
 
-  it.effect("does not recover an interrupted preparation used by a live assigned Thread", () => {
+  it.effect("does not recover an interrupted preparation used by any live assigned Thread", () => {
     const events: Array<string> = [];
+    const secondThreadId = ThreadId.make("thread-live-second");
     const primaryWorktreePath = "/worktrees/interrupted-primary";
     return Effect.gen(function* () {
       yield* seedTicket;
       const store = yield* WorkbenchStore;
       yield* seedActiveAssignment;
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id, project_id, title, model_selection_json, runtime_mode,
+          interaction_mode, pending_approval_count, pending_user_input_count,
+          has_actionable_proposed_plan, created_at, updated_at, deleted_at
+        ) VALUES (
+          ${secondThreadId}, ${primaryProjectId}, 'Second active work',
+          '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default',
+          0, 0, 0, ${createdAt}, ${createdAt}, NULL
+        )
+      `;
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("assignment-live-second"),
+        ticketId,
+        threadId: secondThreadId,
+        createdAt,
+      });
       yield* store.claimTicketWorkspace({
         ticketId,
         attemptId: WorkbenchTicketWorkspaceAttemptId.make("interrupted-attempt"),
@@ -665,7 +703,7 @@ describe("TicketWorkspaceService", () => {
       Effect.provide(
         makeTestLayer({
           events,
-          liveThreadIds: new Set([activeThreadId]),
+          liveThreadIds: new Set([secondThreadId]),
           initialWorktrees: [{ sourcePath: "/repos/primary", worktreePath: primaryWorktreePath }],
         }),
       ),

@@ -71,6 +71,13 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,
   }),
+  updateProject: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:update-project",
+    tag: WS_METHODS.workbenchUpdateProject,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshSnapshot,
+  }),
   createEpic: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:create-epic",
     tag: WS_METHODS.workbenchCreateEpic,
@@ -143,6 +150,13 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
     onSuccess: refreshWorkbenchAndJiraSnapshots,
   }),
+  jiraUpdateTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:jira:update-ticket",
+    tag: WS_METHODS.workbenchJiraUpdateTicket,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshWorkbenchAndJiraSnapshots,
+  }),
   createTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:create-ticket",
     tag: WS_METHODS.workbenchCreateTicket,
@@ -153,6 +167,20 @@ export const workbenchEnvironment = {
   updateTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:update-ticket",
     tag: WS_METHODS.workbenchUpdateTicket,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshSnapshot,
+  }),
+  archiveTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:archive-ticket",
+    tag: WS_METHODS.workbenchArchiveTicket,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshSnapshot,
+  }),
+  deleteTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:delete-ticket",
+    tag: WS_METHODS.workbenchDeleteTicket,
     scheduler,
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,

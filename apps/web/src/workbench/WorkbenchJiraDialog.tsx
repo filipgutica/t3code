@@ -35,6 +35,7 @@ import {
 import type { Project } from "../types";
 import { WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
 import {
+  getWorkbenchJiraBindingSprints,
   reconcileWorkbenchJiraStatusMappings,
   suggestWorkbenchJiraStatusMappings,
 } from "./workbenchJira.logic";
@@ -45,18 +46,22 @@ export interface WorkbenchJiraCreateDraft {
   readonly connectionId: WorkbenchJiraConnectionId;
   readonly jiraProject: WorkbenchJiraProject;
   readonly board: WorkbenchJiraBoard;
-  readonly sprint: WorkbenchJiraSprint;
+  readonly sprints: ReadonlyArray<WorkbenchJiraSprint>;
   readonly defaultPrimaryT3ProjectId: ProjectId;
   readonly defaultRepositoryProjectIds: ReadonlyArray<ProjectId>;
   readonly statusMappings: ReadonlyArray<WorkbenchJiraStatusMapping>;
+  readonly followActiveSprint: boolean;
+  readonly boardMode: "mapped" | "mirror_jira";
 }
 
 export interface WorkbenchJiraUpdateDraft {
   readonly binding: WorkbenchJiraBinding;
-  readonly sprint: WorkbenchJiraSprint;
+  readonly sprints: ReadonlyArray<WorkbenchJiraSprint>;
   readonly defaultPrimaryT3ProjectId: ProjectId;
   readonly defaultRepositoryProjectIds: ReadonlyArray<ProjectId>;
   readonly statusMappings: ReadonlyArray<WorkbenchJiraStatusMapping>;
+  readonly followActiveSprint: boolean;
+  readonly boardMode: "mapped" | "mirror_jira";
 }
 
 const formatLastSynced = (value: string | null) =>
@@ -115,7 +120,17 @@ export function WorkbenchJiraDialog({
   const [boards, setBoards] = useState<ReadonlyArray<WorkbenchJiraBoard>>([]);
   const [boardId, setBoardId] = useState<number | null>(null);
   const [sprints, setSprints] = useState<ReadonlyArray<WorkbenchJiraSprint>>([]);
-  const [sprintId, setSprintId] = useState<number | null>(existingBinding?.sprintId ?? null);
+  const [followActiveSprint, setFollowActiveSprint] = useState(
+    existingBinding?.followActiveSprint ?? true,
+  );
+  const [boardMode, setBoardMode] = useState<"mapped" | "mirror_jira">(
+    existingBinding?.boardMode ?? "mapped",
+  );
+  const [sprintIds, setSprintIds] = useState<ReadonlyArray<number>>(
+    existingBinding
+      ? getWorkbenchJiraBindingSprints(existingBinding).map((sprint) => sprint.id)
+      : [],
+  );
   const [configuration, setConfiguration] = useState<WorkbenchJiraBoardConfiguration | null>(null);
   const [statusMappings, setStatusMappings] = useState<ReadonlyArray<WorkbenchJiraStatusMapping>>(
     existingBinding?.statusMappings ?? [],
@@ -131,7 +146,10 @@ export function WorkbenchJiraDialog({
   const effectiveConnectionId = connectionId ?? connections[0]?.id ?? null;
   const selectedProject = projects.find((project) => project.id === jiraProjectId) ?? null;
   const selectedBoard = boards.find((board) => board.id === boardId) ?? null;
-  const selectedSprint = sprints.find((sprint) => sprint.id === sprintId) ?? null;
+  const selectableSprints = sprints.filter(
+    (sprint) => !followActiveSprint || sprint.state === "active",
+  );
+  const selectedSprints = selectableSprints.filter((sprint) => sprintIds.includes(sprint.id));
   const selectedRepositoryProjectIds = repositoryProjectIds.filter((id) =>
     linkedProjects.some((project) => project.id === id),
   );
@@ -164,24 +182,29 @@ export function WorkbenchJiraDialog({
     targetConnectionId,
     targetBoardId,
     existingMappings,
-    targetSprintId,
+    targetSprintIds,
   }: {
     readonly targetConnectionId: WorkbenchJiraConnectionId;
     readonly targetBoardId: number;
     readonly existingMappings?: ReadonlyArray<WorkbenchJiraStatusMapping>;
-    readonly targetSprintId?: number;
+    readonly targetSprintIds?: ReadonlyArray<number>;
   }) => {
     const nextSprints = await onListSprints(targetConnectionId, targetBoardId);
     if (nextSprints === null) return;
     const nextConfiguration = await onGetBoardConfiguration(targetConnectionId, targetBoardId);
     if (nextSprints === null || nextConfiguration === null) return;
+    const selectableSprints = followActiveSprint
+      ? nextSprints.filter((sprint) => sprint.state === "active")
+      : nextSprints;
     setSprints(nextSprints);
-    setSprintId(
-      nextSprints.some((sprint) => sprint.id === targetSprintId)
-        ? (targetSprintId ?? null)
-        : (nextSprints.find((sprint) => sprint.state === "active")?.id ??
-            nextSprints[0]?.id ??
-            null),
+    setSprintIds(
+      targetSprintIds !== undefined
+        ? selectableSprints
+            .filter((sprint) => targetSprintIds.includes(sprint.id))
+            .map((sprint) => sprint.id)
+        : selectableSprints.length === 1
+          ? [selectableSprints[0]!.id]
+          : [],
     );
     setConfiguration(nextConfiguration);
     setStatusMappings(
@@ -204,7 +227,7 @@ export function WorkbenchJiraDialog({
 
   const save = async () => {
     if (
-      selectedSprint === null ||
+      selectedSprints.length === 0 ||
       selectedPrimaryProjectId === null ||
       selectedRepositoryProjectIds.length === 0 ||
       statusMappings.length !== jiraStatusCount
@@ -213,20 +236,24 @@ export function WorkbenchJiraDialog({
     const saved = existingBinding
       ? await onUpdate({
           binding: existingBinding,
-          sprint: selectedSprint,
+          sprints: selectedSprints,
           defaultPrimaryT3ProjectId: selectedPrimaryProjectId,
           defaultRepositoryProjectIds: selectedRepositoryProjectIds,
           statusMappings,
+          followActiveSprint,
+          boardMode,
         })
       : effectiveConnectionId && selectedProject && selectedBoard
         ? await onCreate({
             connectionId: effectiveConnectionId,
             jiraProject: selectedProject,
             board: selectedBoard,
-            sprint: selectedSprint,
+            sprints: selectedSprints,
             defaultPrimaryT3ProjectId: selectedPrimaryProjectId,
             defaultRepositoryProjectIds: selectedRepositoryProjectIds,
             statusMappings,
+            followActiveSprint,
+            boardMode,
           })
         : false;
     if (saved) onOpenChange(false);
@@ -238,8 +265,8 @@ export function WorkbenchJiraDialog({
         <DialogHeader>
           <DialogTitle>{existingBinding ? "Jira sprint mirror" : "Connect Jira"}</DialogTitle>
           <DialogDescription>
-            Mirror assigned Tickets from one Jira sprint. Jira owns their summary, Epic, and Board
-            status; Workbench owns repositories and Agent Threads.
+            Mirror your assigned Tickets from selected Jira board sprints. Descriptions and progress
+            sync both ways; repositories and Agent Threads stay in Workbench.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="max-h-[70vh] overflow-y-auto">
@@ -274,12 +301,23 @@ export function WorkbenchJiraDialog({
                   </Badge>
                 </div>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  {existingBinding.boardName} · {existingBinding.sprintName}
+                  {existingBinding.boardName} ·{" "}
+                  {getWorkbenchJiraBindingSprints(existingBinding)
+                    .map((sprint) => sprint.name)
+                    .join(" · ")}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {formatLastSynced(existingBinding.lastSyncedAt)}
+                  {existingBinding.followActiveSprint
+                    ? " · Following selected sprints"
+                    : " · Pinned sprints"}
                 </p>
               </div>
+              {existingBinding.lastSyncError ? (
+                <p role="status" className="text-sm text-warning-foreground">
+                  {existingBinding.lastSyncError}
+                </p>
+              ) : null}
               <div className="flex flex-wrap justify-end gap-2">
                 <Button onClick={() => onOpenChange(false)} variant="outline">
                   Close
@@ -298,11 +336,13 @@ export function WorkbenchJiraDialog({
                       targetConnectionId: existingBinding.connectionId,
                       targetBoardId: existingBinding.boardId,
                       existingMappings: existingBinding.statusMappings,
-                      targetSprintId: existingBinding.sprintId,
+                      targetSprintIds: getWorkbenchJiraBindingSprints(existingBinding).map(
+                        (sprint) => sprint.id,
+                      ),
                     })
                   }
                 >
-                  Edit sprint and mappings
+                  Edit sprints and mappings
                 </Button>
               </div>
             </div>
@@ -336,7 +376,7 @@ export function WorkbenchJiraDialog({
                 </div>
               ) : (
                 <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                  Authorize an Atlassian site before choosing a Jira project and sprint.
+                  Authorize an Atlassian site before choosing a Jira board and its sprints.
                 </p>
               )}
               <div className="flex flex-wrap justify-end gap-2">
@@ -441,29 +481,87 @@ export function WorkbenchJiraDialog({
 
           {step === "configure" && configuration ? (
             <div className="space-y-5">
-              <div className="space-y-1.5">
-                <Label>Sprint</Label>
-                <Select
-                  value={sprintId?.toString() ?? null}
-                  onValueChange={(value) => setSprintId(value ? Number(value) : null)}
-                >
-                  <SelectTrigger aria-label="Jira sprint">
-                    <SelectValue>{selectedSprint?.name ?? "Choose a sprint"}</SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup>
-                    {sprints.map((sprint) => (
-                      <SelectItem key={sprint.id} value={String(sprint.id)}>
-                        {sprint.name} · {sprint.state}
-                      </SelectItem>
-                    ))}
-                  </SelectPopup>
-                </Select>
-                {sprints.length === 0 ? (
+              <label className="flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={followActiveSprint}
+                  onCheckedChange={(checked) => {
+                    const follow = checked === true;
+                    setFollowActiveSprint(follow);
+                    if (follow) {
+                      setSprintIds((current) =>
+                        current.filter((id) =>
+                          sprints.some((sprint) => sprint.id === id && sprint.state === "active"),
+                        ),
+                      );
+                    }
+                  }}
+                />
+                Follow selected sprints automatically
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Checks every five minutes while the server is running. Keeps the current board
+                between sprints; asks you to choose when replacement sprints are ambiguous.
+              </p>
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-medium">
+                  {followActiveSprint ? "Current active sprints" : "Pinned sprints"}
+                </legend>
+                <p className="text-xs text-muted-foreground">
+                  Choose one, some, or all. Only your assigned issues from the selected sprints are
+                  mirrored, including issues from different Jira projects.
+                </p>
+                {selectableSprints.length > 0 ? (
+                  <div className="rounded-lg border border-border/60 p-3">
+                    <label className="flex items-center gap-2 border-b border-border/60 pb-2 text-sm font-medium">
+                      <Checkbox
+                        checked={selectedSprints.length === selectableSprints.length}
+                        indeterminate={
+                          selectedSprints.length > 0 &&
+                          selectedSprints.length < selectableSprints.length
+                        }
+                        onCheckedChange={(checked) =>
+                          setSprintIds(checked ? selectableSprints.map((sprint) => sprint.id) : [])
+                        }
+                      />
+                      Select all
+                      <span className="ml-auto text-xs font-normal text-muted-foreground">
+                        {selectedSprints.length} selected
+                      </span>
+                    </label>
+                    <div className="max-h-48 space-y-2 overflow-y-auto pt-2">
+                      {selectableSprints.map((sprint) => (
+                        <label key={sprint.id} className="flex items-start gap-2 text-sm">
+                          <Checkbox
+                            checked={sprintIds.includes(sprint.id)}
+                            onCheckedChange={(checked) =>
+                              setSprintIds((current) =>
+                                checked
+                                  ? [...current.filter((id) => id !== sprint.id), sprint.id]
+                                  : current.filter((id) => id !== sprint.id),
+                              )
+                            }
+                          />
+                          <span className="min-w-0 break-words">
+                            {sprint.name}{" "}
+                            <span className="text-muted-foreground">· {sprint.state}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
                   <p className="text-xs text-warning-foreground">
-                    This Board has no available sprints and cannot be mirrored.
+                    {followActiveSprint
+                      ? "This Board has no active sprint. Start one in Jira, or turn off automatic following to select a future sprint."
+                      : "This Board has no active or future sprints to select."}
+                  </p>
+                )}
+                {selectableSprints.length > 0 && selectedSprints.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Select at least one sprint to continue.
                   </p>
                 ) : null}
-              </div>
+              </fieldset>
 
               <fieldset className="space-y-2">
                 <legend className="text-sm font-medium">Default repository scope</legend>
@@ -523,61 +621,71 @@ export function WorkbenchJiraDialog({
               </fieldset>
 
               <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">Board status mapping</legend>
+                <legend className="text-sm font-medium">Ticket columns</legend>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={boardMode === "mirror_jira"}
+                    onCheckedChange={(checked) =>
+                      setBoardMode(checked === true ? "mirror_jira" : "mapped")
+                    }
+                  />
+                  Mirror Jira states
+                </label>
                 <p className="text-xs text-muted-foreground">
-                  Confirm where each Jira status appears in Workbench.
+                  {boardMode === "mirror_jira"
+                    ? "Use Jira board column names and order. Agent activity stays a separate badge."
+                    : "Map Jira states to Todo, In Progress, or Done. Agent activity does not change Ticket status."}
                 </p>
-                <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
-                  {configuration.columns.flatMap((column) =>
-                    column.statusIds.map((statusId) => {
-                      const mapping = statusMappings.find(
-                        (candidate) => candidate.jiraStatusId === statusId,
-                      );
-                      return (
-                        <div
-                          key={statusId}
-                          className="grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-center"
-                        >
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{column.name}</p>
-                            <p className="truncate text-xs text-muted-foreground">
-                              Jira status {statusId}
-                            </p>
-                          </div>
-                          <Select
-                            value={mapping?.workbenchStatus ?? null}
-                            onValueChange={(value) => {
-                              if (
-                                value === "todo" ||
-                                value === "in_progress" ||
-                                value === "ready_for_review" ||
-                                value === "done"
-                              )
-                                updateStatusMapping(statusId, value);
-                            }}
+                {boardMode === "mapped" ? (
+                  <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+                    {configuration.columns.flatMap((column) =>
+                      column.statusIds.map((statusId) => {
+                        const mapping = statusMappings.find(
+                          (candidate) => candidate.jiraStatusId === statusId,
+                        );
+                        return (
+                          <div
+                            key={statusId}
+                            className="grid gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_12rem] sm:items-center"
                           >
-                            <SelectTrigger aria-label={`Map Jira status ${statusId}`}>
-                              <SelectValue>
-                                {mapping
-                                  ? WORKBENCH_TICKET_STATUS_LABELS[mapping.workbenchStatus]
-                                  : "Choose status"}
-                              </SelectValue>
-                            </SelectTrigger>
-                            <SelectPopup>
-                              {(["todo", "in_progress", "ready_for_review", "done"] as const).map(
-                                (status) => (
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-medium">{column.name}</p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                Jira status {statusId}
+                              </p>
+                            </div>
+                            <Select
+                              value={mapping?.workbenchStatus ?? null}
+                              onValueChange={(value) => {
+                                if (value === "todo" || value === "in_progress" || value === "done")
+                                  updateStatusMapping(statusId, value);
+                              }}
+                            >
+                              <SelectTrigger aria-label={`Map Jira status ${statusId}`}>
+                                <SelectValue>
+                                  {mapping
+                                    ? WORKBENCH_TICKET_STATUS_LABELS[mapping.workbenchStatus]
+                                    : "Choose status"}
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectPopup>
+                                {(["todo", "in_progress", "done"] as const).map((status) => (
                                   <SelectItem key={status} value={status}>
                                     {WORKBENCH_TICKET_STATUS_LABELS[status]}
                                   </SelectItem>
-                                ),
-                              )}
-                            </SelectPopup>
-                          </Select>
-                        </div>
-                      );
-                    }),
-                  )}
-                </div>
+                                ))}
+                              </SelectPopup>
+                            </Select>
+                          </div>
+                        );
+                      }),
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm">
+                    {configuration.columns.map((column) => column.name).join(" → ")}
+                  </p>
+                )}
               </fieldset>
 
               <div className="flex justify-between gap-2">
@@ -590,7 +698,7 @@ export function WorkbenchJiraDialog({
                 <Button
                   disabled={
                     pending ||
-                    !selectedSprint ||
+                    selectedSprints.length === 0 ||
                     !selectedPrimaryProjectId ||
                     selectedRepositoryProjectIds.length === 0 ||
                     statusMappings.length !== jiraStatusCount

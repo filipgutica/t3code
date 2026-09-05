@@ -3,10 +3,13 @@ import {
   type WorkbenchJiraBeginAuthInput,
   type WorkbenchJiraBeginAuthResult,
   type WorkbenchJiraBinding,
+  type WorkbenchJiraBoardMode,
   type WorkbenchJiraCompleteAuthInput,
   type WorkbenchJiraCompleteAuthResult,
   type WorkbenchJiraCreateBindingInput,
   type WorkbenchJiraSnapshot,
+  type WorkbenchJiraSelectedSprint,
+  type WorkbenchJiraSprint,
   type WorkbenchJiraUpdateBindingInput,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -23,9 +26,15 @@ import { layer as jiraOAuthClientLayer } from "./JiraOAuthClient.ts";
 import {
   JiraSyncService,
   layer as jiraSyncLayer,
+  mirrorStatusMappings,
   type JiraSyncServiceShape,
 } from "./JiraSyncService.ts";
 import { layer as jiraTicketImporterLayer } from "./JiraTicketImporter.ts";
+import {
+  JiraTicketWriteService,
+  layer as jiraTicketWriteServiceLayer,
+  type JiraTicketWriteServiceShape,
+} from "./JiraTicketWriteService.ts";
 import {
   WorkbenchJiraRepository,
   layerSql as workbenchJiraRepositoryLayer,
@@ -40,6 +49,25 @@ const repositoryError = (_cause: WorkbenchJiraRepositoryError) =>
     code: "persistence_failed",
     message: "Jira connection state could not be saved or loaded.",
   });
+
+const legacySelectedSprints = (binding: Pick<WorkbenchJiraBinding, "sprintId" | "sprintName">) =>
+  [
+    { id: binding.sprintId, name: binding.sprintName },
+  ] satisfies ReadonlyArray<WorkbenchJiraSelectedSprint>;
+
+const selectedSprintsForBinding = (
+  binding: Pick<WorkbenchJiraBinding, "sprintId" | "sprintName" | "selectedSprints">,
+) =>
+  binding.selectedSprints.length > 0 ? binding.selectedSprints : legacySelectedSprints(binding);
+
+const sameSelectedSprints = (
+  left: ReadonlyArray<WorkbenchJiraSelectedSprint>,
+  right: ReadonlyArray<WorkbenchJiraSelectedSprint>,
+) =>
+  left.length === right.length &&
+  left.every(
+    (sprint, index) => sprint.id === right[index]?.id && sprint.name === right[index]?.name,
+  );
 
 interface WorkbenchJiraServiceShape {
   readonly getSnapshot: Effect.Effect<WorkbenchJiraSnapshot, WorkbenchJiraOperationError>;
@@ -60,6 +88,7 @@ interface WorkbenchJiraServiceShape {
     input: WorkbenchJiraUpdateBindingInput,
   ) => Effect.Effect<WorkbenchJiraBinding, WorkbenchJiraOperationError>;
   readonly syncBinding: JiraSyncServiceShape["syncBinding"];
+  readonly updateTicket: JiraTicketWriteServiceShape["updateTicket"];
 }
 
 export class WorkbenchJiraService extends Context.Service<
@@ -73,6 +102,7 @@ export const make = Effect.gen(function* () {
   const sync = yield* JiraSyncService;
   const repository = yield* WorkbenchJiraRepository;
   const workbench = yield* WorkbenchStore;
+  const ticketWriter = yield* JiraTicketWriteService;
   const sql = yield* SqlClient.SqlClient;
 
   const getSnapshot = sql
@@ -109,12 +139,21 @@ export const make = Effect.gen(function* () {
     readonly defaultPrimaryT3ProjectId: WorkbenchJiraBinding["defaultPrimaryT3ProjectId"];
     readonly defaultRepositoryProjectIds: WorkbenchJiraBinding["defaultRepositoryProjectIds"];
     readonly statusMappings: WorkbenchJiraBinding["statusMappings"];
+    readonly sprintId: WorkbenchJiraBinding["sprintId"];
+    readonly boardId: WorkbenchJiraBinding["boardId"];
+    readonly selectedSprints: ReadonlyArray<WorkbenchJiraSelectedSprint>;
+    readonly followActiveSprint: boolean;
+    readonly boardMode: WorkbenchJiraBoardMode;
+    readonly verifyRemote: boolean;
   }) {
-    const connection = yield* repository
-      .getConnection(input.connectionId)
-      .pipe(Effect.mapError(repositoryError));
-    if (Option.isNone(connection)) {
-      return yield* operationError("The selected Jira site is no longer connected.");
+    let activeSprints: ReadonlyArray<WorkbenchJiraSprint> = [];
+    if (input.verifyRemote) {
+      const connection = yield* repository
+        .getConnection(input.connectionId)
+        .pipe(Effect.mapError(repositoryError));
+      if (Option.isNone(connection)) {
+        return yield* operationError("The selected Jira site is no longer connected.");
+      }
     }
     const snapshot = yield* workbench.getSnapshot.pipe(
       Effect.mapError(() =>
@@ -139,27 +178,105 @@ export const make = Effect.gen(function* () {
       );
     }
     if (input.statusMappings.length === 0) {
-      return yield* operationError("Map at least one Jira status to a Workbench column.");
+      if (input.boardMode === "mapped") {
+        return yield* operationError("Map at least one Jira status to a Workbench column.");
+      }
     }
-    const statusIds = input.statusMappings.map((mapping) => mapping.jiraStatusId);
-    if (new Set(statusIds).size !== statusIds.length) {
-      return yield* operationError("Each Jira status can be mapped only once.");
+    if (input.selectedSprints.length === 0) {
+      return yield* operationError("Select at least one Jira sprint.");
     }
+    if (
+      new Set(input.selectedSprints.map((sprint) => sprint.id)).size !==
+      input.selectedSprints.length
+    ) {
+      return yield* operationError("Each Jira sprint can be selected only once.");
+    }
+    if (input.boardMode === "mapped") {
+      const statusIds = input.statusMappings.map((mapping) => mapping.jiraStatusId);
+      if (new Set(statusIds).size !== statusIds.length) {
+        return yield* operationError("Each Jira status can be mapped only once.");
+      }
+    }
+    if (input.verifyRemote) {
+      const sprints = yield* api.listSprints({
+        connectionId: input.connectionId,
+        boardId: input.boardId,
+      });
+      activeSprints = input.followActiveSprint
+        ? sprints.filter((sprint) => sprint.state === "active")
+        : [];
+      const selectedRemoteSprints = input.selectedSprints.map((selectedSprint) =>
+        sprints.find((sprint) => sprint.id === selectedSprint.id),
+      );
+      if (selectedRemoteSprints.some((sprint) => sprint === undefined)) {
+        return yield* operationError("Select Jira sprints from the selected board.");
+      }
+      if (
+        input.followActiveSprint &&
+        selectedRemoteSprints.some((sprint) => sprint?.state !== "active")
+      ) {
+        return yield* operationError(
+          "Select only currently active Jira sprints, or turn off automatic sprint following.",
+        );
+      }
+      return {
+        activeSprints,
+        selectedSprints: selectedRemoteSprints.map((sprint) => ({
+          id: sprint!.id,
+          name: sprint!.name,
+        })),
+      };
+    }
+    return { activeSprints, selectedSprints: input.selectedSprints };
   });
 
   const createBinding: WorkbenchJiraServiceShape["createBinding"] = (input) =>
     Effect.gen(function* () {
-      yield* validateBinding(input);
+      if (input.selectedSprints !== undefined && input.selectedSprints.length === 0) {
+        return yield* operationError("Select at least one Jira sprint.");
+      }
+      const selectedSprints =
+        input.selectedSprints ??
+        legacySelectedSprints({ sprintId: input.sprintId, sprintName: input.sprintName });
+      const representativeSprint = selectedSprints[0]!;
+      const normalizedInput = {
+        ...input,
+        sprintId: representativeSprint.id,
+        sprintName: representativeSprint.name,
+        selectedSprints,
+      };
+      const followActiveSprint = input.followActiveSprint ?? true;
+      const boardMode = input.boardMode ?? "mapped";
+      const validation = yield* validateBinding({
+        ...normalizedInput,
+        followActiveSprint,
+        boardMode,
+        verifyRemote: true,
+      });
       const existingBindings = yield* repository
         .listBindings()
         .pipe(Effect.mapError(repositoryError));
       if (existingBindings.some((binding) => binding.projectId === input.projectId)) {
         return yield* operationError("This Workbench Workspace already has a Jira binding.");
       }
+      const configuration = yield* api.getBoardConfiguration({
+        connectionId: input.connectionId,
+        boardId: input.boardId,
+      });
       const binding = {
-        ...input,
+        ...normalizedInput,
+        sprintId: validation.selectedSprints[0]!.id,
+        sprintName: validation.selectedSprints[0]!.name,
+        followActiveSprint,
+        selectedSprints: validation.selectedSprints,
+        observedActiveSprintIds: validation.activeSprints.map((sprint) => sprint.id),
+        boardMode,
+        boardColumns: configuration.columns,
+        statusMappings:
+          boardMode === "mirror_jira" ? mirrorStatusMappings(configuration) : input.statusMappings,
         active: true,
         lastSyncedAt: null,
+        lastSyncError: null,
         updatedAt: input.createdAt,
       } satisfies WorkbenchJiraBinding;
       yield* repository.upsertBinding(binding).pipe(Effect.mapError(repositoryError));
@@ -179,12 +296,63 @@ export const make = Effect.gen(function* () {
             message: "The Jira sprint binding was not found.",
           });
         }
-        yield* validateBinding({
+        if (input.selectedSprints !== undefined && input.selectedSprints.length === 0) {
+          return yield* operationError("Select at least one Jira sprint.");
+        }
+        const selectedSprints =
+          input.selectedSprints ??
+          (input.sprintId !== existing.value.sprintId
+            ? [{ id: input.sprintId, name: input.sprintName }]
+            : selectedSprintsForBinding(existing.value));
+        const requestedRepresentativeSprint = selectedSprints[0]!;
+        const followActiveSprint = input.followActiveSprint ?? existing.value.followActiveSprint;
+        const boardMode = input.boardMode ?? existing.value.boardMode;
+        const verifyRemote =
+          requestedRepresentativeSprint.id !== existing.value.sprintId ||
+          !sameSelectedSprints(selectedSprints, selectedSprintsForBinding(existing.value)) ||
+          (input.followActiveSprint !== undefined &&
+            input.followActiveSprint !== existing.value.followActiveSprint) ||
+          (input.boardMode !== undefined && input.boardMode !== existing.value.boardMode);
+        const validation = yield* validateBinding({
           ...input,
           projectId: existing.value.projectId,
           connectionId: existing.value.connectionId,
+          boardId: existing.value.boardId,
+          followActiveSprint,
+          selectedSprints,
+          boardMode,
+          verifyRemote,
         });
-        const binding = { ...existing.value, ...input } satisfies WorkbenchJiraBinding;
+        const configuration = verifyRemote
+          ? yield* api.getBoardConfiguration({
+              connectionId: existing.value.connectionId,
+              boardId: existing.value.boardId,
+            })
+          : null;
+        const canonicalSelectedSprints = validation.selectedSprints;
+        const representativeSprint = canonicalSelectedSprints[0]!;
+        const binding = {
+          ...existing.value,
+          ...input,
+          sprintId: representativeSprint.id,
+          sprintName: representativeSprint.name,
+          followActiveSprint,
+          selectedSprints: canonicalSelectedSprints,
+          observedActiveSprintIds: followActiveSprint
+            ? verifyRemote
+              ? validation.activeSprints.map((sprint) => sprint.id)
+              : existing.value.observedActiveSprintIds
+            : existing.value.observedActiveSprintIds,
+          boardMode,
+          boardColumns: configuration?.columns ?? existing.value.boardColumns,
+          statusMappings:
+            boardMode === "mirror_jira"
+              ? configuration === null
+                ? existing.value.statusMappings
+                : mirrorStatusMappings(configuration)
+              : input.statusMappings,
+          lastSyncError: null,
+        } satisfies WorkbenchJiraBinding;
         yield* repository.upsertBinding(binding).pipe(Effect.mapError(repositoryError));
         return binding;
       }),
@@ -227,6 +395,7 @@ export const make = Effect.gen(function* () {
     createBinding,
     updateBinding,
     syncBinding: sync.syncBinding,
+    updateTicket: ticketWriter.updateTicket,
   });
 });
 
@@ -249,10 +418,19 @@ const syncLayer = jiraSyncLayer.pipe(
   Layer.provideMerge(workbenchJiraRepositoryLayer),
 );
 
+const ticketWriteLayer = jiraTicketWriteServiceLayer.pipe(
+  Layer.provide(apiLayer),
+  Layer.provide(jiraTicketImporterLayer),
+  Layer.provideMerge(syncLayer),
+  Layer.provideMerge(authLayer),
+  Layer.provideMerge(workbenchJiraRepositoryLayer),
+);
+
 export const layerLive = layer.pipe(
   Layer.provideMerge(authLayer),
   Layer.provideMerge(apiLayer),
   Layer.provideMerge(syncLayer),
   Layer.provideMerge(jiraTicketImporterLayer),
+  Layer.provideMerge(ticketWriteLayer),
   Layer.provideMerge(workbenchJiraRepositoryLayer),
 );

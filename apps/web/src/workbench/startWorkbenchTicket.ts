@@ -40,6 +40,19 @@ interface StartWorkbenchTicketInput {
   readonly threadLookupReady: boolean;
 }
 
+/**
+ * Controls how a Ticket start is coordinated. A normal start opens an
+ * existing active Thread when one is assigned, then creates a prompted
+ * replacement when its native Thread is missing. Additional Threads are
+ * deliberately blank so the user can choose what that Thread should do.
+ */
+export interface StartWorkbenchTicketOptions {
+  readonly mode?: "additional" | "replace";
+  readonly modelSelection?: ModelSelection;
+  readonly previousThreadId?: ThreadId;
+  readonly sendInitialPrompt?: boolean;
+}
+
 interface StartWorkbenchTicketDependencies {
   readonly prepareTicketWorkspace: (
     input: EnvironmentCommandInput<WorkbenchPrepareTicketWorkspaceInput>,
@@ -85,29 +98,35 @@ export type StartWorkbenchTicketResult =
 export async function coordinateWorkbenchTicketStart(
   input: StartWorkbenchTicketInput,
   dependencies: StartWorkbenchTicketDependencies,
+  options: StartWorkbenchTicketOptions = {},
 ): Promise<StartWorkbenchTicketResult> {
-  const target = resolveWorkbenchTicketThreadTarget(
-    input.ticket,
-    input.projects,
-    input.assignment,
-    input.existingThreadIds,
-    input.threadLookupReady,
-  );
-  if (target.state === "open") {
-    try {
-      await dependencies.openThread(target.threadId);
-    } catch (cause) {
-      return { state: "navigation-failed", cause };
+  if (options.mode === undefined) {
+    const target = resolveWorkbenchTicketThreadTarget(
+      input.ticket,
+      input.projects,
+      input.assignment,
+      input.existingThreadIds,
+      input.threadLookupReady,
+    );
+    if (target.state === "open") {
+      try {
+        await dependencies.openThread(target.threadId);
+      } catch (cause) {
+        return { state: "navigation-failed", cause };
+      }
+      return { state: "opened", threadId: target.threadId };
     }
-    return { state: "opened", threadId: target.threadId };
-  }
-  if (target.state === "project-unavailable") return { state: "project-unavailable" };
-  if (target.state === "thread-status-unavailable") {
-    return { state: "thread-status-unavailable" };
+    if (target.state === "project-unavailable") return { state: "project-unavailable" };
+    if (target.state === "thread-status-unavailable") {
+      return { state: "thread-status-unavailable" };
+    }
   }
 
-  const { project } = target;
-  const modelSelection = dependencies.resolveModelSelection(project);
+  const project = input.projects.find(
+    (candidate) => candidate.id === input.ticket.primaryT3ProjectId,
+  );
+  if (!project) return { state: "project-unavailable" };
+  const modelSelection = options.modelSelection ?? dependencies.resolveModelSelection(project);
   if (modelSelection === null) return { state: "provider-unavailable" };
 
   const threadId = dependencies.makeThreadId();
@@ -144,26 +163,28 @@ export async function coordinateWorkbenchTicketStart(
     return { state: "failed", stage: "thread", failure: threadResult };
   }
 
-  const assignmentResult = input.assignment
-    ? await dependencies.replaceAssignment({
-        environmentId: input.environmentId,
-        input: {
-          id: assignmentId,
-          ticketId: input.ticket.id,
-          previousThreadId: input.assignment.threadId,
-          threadId,
-          replacedAt: createdAt,
-        },
-      })
-    : await dependencies.createAssignment({
-        environmentId: input.environmentId,
-        input: {
-          id: assignmentId,
-          ticketId: input.ticket.id,
-          threadId,
-          createdAt,
-        },
-      });
+  const previousThreadId = options.previousThreadId ?? input.assignment?.threadId;
+  const assignmentResult =
+    options.mode !== "additional" && previousThreadId
+      ? await dependencies.replaceAssignment({
+          environmentId: input.environmentId,
+          input: {
+            id: assignmentId,
+            ticketId: input.ticket.id,
+            previousThreadId,
+            threadId,
+            replacedAt: createdAt,
+          },
+        })
+      : await dependencies.createAssignment({
+          environmentId: input.environmentId,
+          input: {
+            id: assignmentId,
+            ticketId: input.ticket.id,
+            threadId,
+            createdAt,
+          },
+        });
   if (assignmentResult._tag === "Failure") {
     const cleanupResult = await dependencies.deleteThread({
       environmentId: input.environmentId,
@@ -175,6 +196,15 @@ export async function coordinateWorkbenchTicketStart(
       failure: assignmentResult,
       ...(cleanupResult._tag === "Failure" ? { cleanupFailure: cleanupResult } : {}),
     };
+  }
+
+  if (options.mode === "additional" || options.sendInitialPrompt === false) {
+    try {
+      await dependencies.openThread(threadId);
+    } catch (cause) {
+      return { state: "navigation-failed", cause };
+    }
+    return { state: "opened", threadId };
   }
 
   const preparedPaths = new Map(

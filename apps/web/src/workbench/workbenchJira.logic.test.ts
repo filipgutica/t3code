@@ -8,13 +8,51 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   orderWorkbenchTicketLanesByJiraRank,
+  getWorkbenchBoardColumns,
+  getWorkbenchJiraBindingSprints,
   resolveWorkbenchJiraOAuthCallback,
+  resolveWorkbenchJiraRedirectUri,
   reconcileWorkbenchJiraStatusMappings,
   resolveWorkbenchTicketUpdateFields,
   suggestWorkbenchJiraStatusMappings,
 } from "./workbenchJira.logic";
 
 describe("Workbench Jira helpers", () => {
+  it("retains all selected sprints while supporting existing single-sprint bindings", () => {
+    const legacy = { sprintId: 136, sprintName: "Data Application Sprint 136" };
+    expect(getWorkbenchJiraBindingSprints(legacy)).toEqual([{ id: 136, name: legacy.sprintName }]);
+    expect(getWorkbenchJiraBindingSprints({ ...legacy, selectedSprints: [] })).toEqual([
+      { id: 136, name: legacy.sprintName },
+    ]);
+    const selectedSprints = [
+      { id: 136, name: legacy.sprintName },
+      { id: 17, name: "Data Pipeline Sprint 17" },
+    ];
+    expect(getWorkbenchJiraBindingSprints({ ...legacy, selectedSprints })).toEqual(selectedSprints);
+  });
+  it("uses an HTTP server callback for desktop and retains the browser return route", () => {
+    expect(
+      resolveWorkbenchJiraRedirectUri({
+        desktop: true,
+        browserOrigin: "t3code-dev://app",
+        serverHttpUrl: "http://127.0.0.1:13773/",
+      }),
+    ).toBe("http://127.0.0.1:13773/oauth/workbench/jira/callback");
+    expect(
+      resolveWorkbenchJiraRedirectUri({
+        desktop: false,
+        browserOrigin: "http://localhost:5733",
+        serverHttpUrl: "http://127.0.0.1:13773/",
+      }),
+    ).toBe("http://localhost:5733/workbench");
+    expect(
+      resolveWorkbenchJiraRedirectUri({
+        desktop: true,
+        browserOrigin: "t3code://app",
+        serverHttpUrl: "https://environment.example/",
+      }),
+    ).toBe("https://environment.example/oauth/workbench/jira/callback");
+  });
   it("classifies denied and incomplete OAuth callbacks before code exchange", () => {
     expect(resolveWorkbenchJiraOAuthCallback({})).toBeNull();
     expect(resolveWorkbenchJiraOAuthCallback({ error: "access_denied", state: "request" })).toEqual(
@@ -36,7 +74,7 @@ describe("Workbench Jira helpers", () => {
       state: "request",
     });
   });
-  it("suggests four-column mappings while preserving every Jira status id", () => {
+  it("suggests three-state mappings while preserving every Jira status id", () => {
     expect(
       suggestWorkbenchJiraStatusMappings({
         boardId: 42,
@@ -54,7 +92,7 @@ describe("Workbench Jira helpers", () => {
       { jiraStatusId: "1", workbenchStatus: "todo" },
       { jiraStatusId: "2", workbenchStatus: "in_progress" },
       { jiraStatusId: "3", workbenchStatus: "in_progress" },
-      { jiraStatusId: "4", workbenchStatus: "ready_for_review" },
+      { jiraStatusId: "4", workbenchStatus: "in_progress" },
       { jiraStatusId: "5", workbenchStatus: "done" },
     ]);
   });
@@ -83,7 +121,7 @@ describe("Workbench Jira helpers", () => {
     ).toEqual([
       { jiraStatusId: "todo", workbenchStatus: "todo" },
       { jiraStatusId: "doing", workbenchStatus: "in_progress" },
-      { jiraStatusId: "review", workbenchStatus: "ready_for_review" },
+      { jiraStatusId: "review", workbenchStatus: "in_progress" },
       { jiraStatusId: "done", workbenchStatus: "done" },
     ]);
   });
@@ -99,7 +137,6 @@ describe("Workbench Jira helpers", () => {
       {
         todo: [jiraLater, localFirst, jiraEarlier, localSecond],
         in_progress: [],
-        ready_for_review: [],
         done: [jiraDone],
       },
       new Map([
@@ -113,7 +150,6 @@ describe("Workbench Jira helpers", () => {
     expect(result).toEqual({
       todo: [jiraEarlier, localFirst, jiraLater, localSecond],
       in_progress: [],
-      ready_for_review: [],
       done: [jiraDone],
     });
   });
@@ -161,5 +197,69 @@ describe("Workbench Jira helpers", () => {
       status: "todo",
       blocked: false,
     });
+  });
+});
+
+describe("Mirrored Jira columns", () => {
+  it("prefers the explicit To Do column for local tickets while keeping Jira placement exact", () => {
+    const local = { id: WorkbenchTicketId.make("local"), status: "todo" as const };
+    const linked = { id: WorkbenchTicketId.make("linked"), status: "todo" as const };
+    const columns = getWorkbenchBoardColumns({
+      tickets: [local, linked],
+      mirrorColumns: [
+        { name: "Backlog", statusIds: ["backlog"], done: false },
+        { name: "To Do", statusIds: ["todo"], done: false },
+      ],
+      issueLinks: new Map([[linked.id, { issue: { status: { id: "backlog" } } }]]),
+    });
+    expect(columns.map((column) => column.tickets.map((ticket) => ticket.id))).toEqual([
+      [linked.id],
+      [local.id],
+    ]);
+  });
+
+  it("recognizes a Todo column after an earlier Jira blocker column", () => {
+    expect(
+      suggestWorkbenchJiraStatusMappings({
+        boardId: 42,
+        name: "Parallel",
+        type: "scrum",
+        rankFieldId: null,
+        columns: [
+          { name: "blocked", statusIds: ["blocked"], done: false },
+          { name: "To Do", statusIds: ["todo"], done: false },
+          { name: "Done", statusIds: ["done"], done: true },
+        ],
+      }).find((mapping) => mapping.jiraStatusId === "todo")?.workbenchStatus,
+    ).toBe("todo");
+  });
+
+  it("keeps Jira review in its own column while retaining three-state progress and local Tickets", () => {
+    const review = { id: WorkbenchTicketId.make("review"), status: "in_progress" as const };
+    const local = { id: WorkbenchTicketId.make("local"), status: "todo" as const };
+    const done = { id: WorkbenchTicketId.make("done"), status: "done" as const };
+    const columns = getWorkbenchBoardColumns({
+      tickets: [review, local, done],
+      mirrorColumns: [
+        { name: "Doing", statusIds: ["doing"], done: false },
+        { name: "Review", statusIds: ["review"], done: false },
+      ],
+      issueLinks: new Map([[review.id, { issue: { status: { id: "review" } } }]]),
+    });
+    expect(
+      columns.map(({ title, tickets }) => ({ title, ids: tickets.map((ticket) => ticket.id) })),
+    ).toEqual([
+      { title: "Doing", ids: ["local"] },
+      { title: "Review", ids: ["review"] },
+      { title: "Done", ids: ["done"] },
+    ]);
+    expect(review.status).toBe("in_progress");
+    expect(
+      getWorkbenchBoardColumns({
+        tickets: [review, local, done],
+        mirrorColumns: null,
+        issueLinks: new Map(),
+      }).map((column) => column.title),
+    ).toEqual(["Todo", "In Progress", "Done"]);
   });
 });

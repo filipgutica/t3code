@@ -4,8 +4,10 @@ import * as Schema from "effect/Schema";
 
 import {
   WorkbenchAssignment,
+  WorkbenchArchiveTicketInput,
   WorkbenchCreateEpicInput,
   WorkbenchCreateTicketInput,
+  WorkbenchDeleteTicketInput,
   WorkbenchEpic,
   WorkbenchProject,
   WorkbenchReplaceAssignmentInput,
@@ -14,6 +16,7 @@ import {
   WorkbenchTicketKind,
   WorkbenchTicketWorkspace,
   WorkbenchTicketStatus,
+  WorkbenchUpdateProjectInput,
   WorkbenchUpdateTicketInput,
 } from "./workbench.ts";
 import { WS_METHODS, WsRpcGroup } from "./rpc.ts";
@@ -24,6 +27,9 @@ const decodeWorkbenchProject = Schema.decodeUnknownEffect(WorkbenchProject);
 const decodeWorkbenchTicketStatus = Schema.decodeUnknownEffect(WorkbenchTicketStatus);
 const decodeWorkbenchTicketKind = Schema.decodeUnknownEffect(WorkbenchTicketKind);
 const decodeWorkbenchCreateTicketInput = Schema.decodeUnknownEffect(WorkbenchCreateTicketInput);
+const decodeWorkbenchArchiveTicketInput = Schema.decodeUnknownEffect(WorkbenchArchiveTicketInput);
+const decodeWorkbenchDeleteTicketInput = Schema.decodeUnknownEffect(WorkbenchDeleteTicketInput);
+const decodeWorkbenchUpdateProjectInput = Schema.decodeUnknownEffect(WorkbenchUpdateProjectInput);
 const decodeWorkbenchUpdateTicketInput = Schema.decodeUnknownEffect(WorkbenchUpdateTicketInput);
 const decodeWorkbenchReplaceAssignmentInput = Schema.decodeUnknownEffect(
   WorkbenchReplaceAssignmentInput,
@@ -145,9 +151,14 @@ describe("Workbench contracts", () => {
 
   it.effect("rejects unknown Ticket statuses", () =>
     Effect.gen(function* () {
+      expect(yield* decodeWorkbenchTicketStatus("todo")).toBe("todo");
+      expect(yield* decodeWorkbenchTicketStatus("in_progress")).toBe("in_progress");
+      expect(yield* decodeWorkbenchTicketStatus("done")).toBe("done");
       const result = yield* Effect.exit(decodeWorkbenchTicketStatus("reviewing"));
+      const legacyResult = yield* Effect.exit(decodeWorkbenchTicketStatus("ready_for_review"));
 
       expect(result._tag).toBe("Failure");
+      expect(legacyResult._tag).toBe("Failure");
     }),
   );
 
@@ -189,6 +200,7 @@ describe("Workbench contracts", () => {
       expect(snapshot.tickets[0]).toMatchObject({ kind: "story", repositoryProjectIds: [] });
       expect(snapshot.epics).toEqual([]);
       expect(snapshot.tickets[0]?.epicId).toBeNull();
+      expect(snapshot.tickets[0]?.archivedAt).toBeUndefined();
       expect(snapshot.assignments[0]?.supersededAt).toBeNull();
       expect(snapshot.ticketWorkspaces).toEqual([]);
     }),
@@ -225,6 +237,15 @@ describe("Workbench contracts", () => {
         markdown: "",
         createdAt: "2026-09-03T12:00:00.000Z",
       });
+      const archiveInput = yield* decodeWorkbenchArchiveTicketInput({
+        ticketId: "ticket-1",
+        archivedAt: null,
+        updatedAt: "2026-09-03T12:03:00.000Z",
+      });
+      const deleteInput = yield* decodeWorkbenchDeleteTicketInput({
+        ticketId: "ticket-1",
+        deletedAt: "2026-09-03T12:04:00.000Z",
+      });
 
       expect(createInput).toMatchObject({ kind: "story" });
       expect(createInput.epicId).toBeUndefined();
@@ -234,6 +255,35 @@ describe("Workbench contracts", () => {
       expect(updateInput.repositoryProjectIds).toBeUndefined();
       expect(replaceInput.id).toBeUndefined();
       expect(epicInput.title).toBe("Native planning");
+      expect(archiveInput.archivedAt).toBeNull();
+      expect(deleteInput.deletedAt).toBe("2026-09-03T12:04:00.000Z");
+    }),
+  );
+
+  it.effect("decodes additive Workspace updates and rejects an empty link set", () =>
+    Effect.gen(function* () {
+      const updateInput = yield* decodeWorkbenchUpdateProjectInput({
+        id: "workbench-project-1",
+        title: "Renamed Workspace",
+        linkedProjectIds: ["t3-project-2"],
+        updatedAt: "2026-09-03T12:03:00.000Z",
+      });
+      const invalid = yield* Effect.exit(
+        decodeWorkbenchUpdateProjectInput({
+          id: "workbench-project-1",
+          title: "Renamed Workspace",
+          linkedProjectIds: [],
+          updatedAt: "2026-09-03T12:03:00.000Z",
+        }),
+      );
+
+      expect(updateInput).toEqual({
+        id: "workbench-project-1",
+        title: "Renamed Workspace",
+        linkedProjectIds: ["t3-project-2"],
+        updatedAt: "2026-09-03T12:03:00.000Z",
+      });
+      expect(invalid._tag).toBe("Failure");
     }),
   );
 
@@ -314,8 +364,11 @@ describe("Workbench contracts", () => {
       expect.arrayContaining([
         WS_METHODS.workbenchGetSnapshot,
         WS_METHODS.workbenchCreateProject,
+        WS_METHODS.workbenchUpdateProject,
         WS_METHODS.workbenchCreateTicket,
         WS_METHODS.workbenchUpdateTicket,
+        WS_METHODS.workbenchArchiveTicket,
+        WS_METHODS.workbenchDeleteTicket,
         WS_METHODS.workbenchCreateAssignment,
         WS_METHODS.workbenchReplaceAssignment,
       ]),

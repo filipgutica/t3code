@@ -21,6 +21,109 @@ import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
 const TestLayer = WorkbenchStoreLive.pipe(Layer.provideMerge(SqlitePersistenceMemory));
 
 describe("WorkbenchStore", () => {
+  it.effect("renames a Workspace and adds repositories without removing existing links", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* WorkbenchStore;
+      const existingProjectId = ProjectId.make("workspace-update-existing");
+      const addedProjectId = ProjectId.make("workspace-update-added");
+      const missingProjectId = ProjectId.make("workspace-update-missing");
+      const workspaceId = WorkbenchProjectId.make("workspace-update");
+      const createdAt = "2026-09-05T12:00:00.000Z";
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+        ) VALUES
+          (${existingProjectId}, 'Existing', '/repos/existing', '[]', ${createdAt}, ${createdAt}, NULL),
+          (${addedProjectId}, 'Added', '/repos/added', '[]', ${createdAt}, ${createdAt}, NULL)
+      `;
+      yield* store.createProject({
+        id: workspaceId,
+        title: "Original Workspace",
+        linkedProjectIds: [existingProjectId],
+        createdAt,
+      });
+
+      const firstUpdate = yield* store.updateProject({
+        id: workspaceId,
+        title: "Renamed Workspace",
+        linkedProjectIds: [existingProjectId, addedProjectId, addedProjectId],
+        updatedAt: "2026-09-05T12:01:00.000Z",
+      });
+      const linksAfterFirstUpdate = yield* sql<{
+        readonly linkedProjectId: string;
+        readonly position: number;
+      }>`
+        SELECT t3_project_id AS "linkedProjectId", position
+        FROM workbench_project_links
+        WHERE workbench_project_id = ${workspaceId}
+        ORDER BY position ASC
+      `;
+
+      // A deleted native Project may remain linked to a Workspace. Renaming it
+      // must not require revalidating that existing link.
+      yield* sql`
+        UPDATE projection_projects SET deleted_at = '2026-09-05T12:02:00.000Z'
+        WHERE project_id = ${addedProjectId}
+      `;
+      const secondUpdate = yield* store.updateProject({
+        id: workspaceId,
+        title: "Renamed Again",
+        linkedProjectIds: [existingProjectId],
+        updatedAt: "2026-09-05T12:03:00.000Z",
+      });
+      const linksAfterSecondUpdate = yield* sql<{
+        readonly linkedProjectId: string;
+        readonly position: number;
+      }>`
+        SELECT t3_project_id AS "linkedProjectId", position
+        FROM workbench_project_links
+        WHERE workbench_project_id = ${workspaceId}
+        ORDER BY position ASC
+      `;
+
+      const failedUpdate = yield* Effect.flip(
+        store.updateProject({
+          id: workspaceId,
+          title: "Should Roll Back",
+          linkedProjectIds: [missingProjectId],
+          updatedAt: "2026-09-05T12:04:00.000Z",
+        }),
+      );
+      const missingWorkspace = yield* Effect.flip(
+        store.updateProject({
+          id: WorkbenchProjectId.make("workspace-update-missing-workspace"),
+          title: "Missing Workspace",
+          linkedProjectIds: [existingProjectId],
+          updatedAt: "2026-09-05T12:05:00.000Z",
+        }),
+      );
+      const afterFailedUpdate = yield* store.getSnapshot;
+
+      expect(firstUpdate).toMatchObject({
+        id: workspaceId,
+        title: "Renamed Workspace",
+        linkedProjectIds: [existingProjectId, addedProjectId],
+      });
+      expect(secondUpdate).toMatchObject({
+        id: workspaceId,
+        title: "Renamed Again",
+        linkedProjectIds: [existingProjectId, addedProjectId],
+      });
+      expect(linksAfterSecondUpdate).toEqual(linksAfterFirstUpdate);
+      expect(failedUpdate.code).toBe("linked_project_not_found");
+      expect(missingWorkspace.code).toBe("project_not_found");
+      expect(afterFailedUpdate.projects).toEqual([
+        expect.objectContaining({
+          id: workspaceId,
+          title: "Renamed Again",
+          linkedProjectIds: [existingProjectId, addedProjectId],
+        }),
+      ]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.effect("persists a fenced multi-repository Ticket Workspace lifecycle", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -276,7 +379,7 @@ describe("WorkbenchStore", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
-  it.effect("persists a Workspace, Ticket, and Assignment around a native T3 Thread", () =>
+  it.effect("preserves multiple active Assignments and their replacement history", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const store = yield* WorkbenchStore;
@@ -438,18 +541,53 @@ describe("WorkbenchStore", () => {
           NULL
         )
       `;
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("assignment-2"),
+        ticketId,
+        threadId: ThreadId.make("thread-2"),
+        createdAt: "2026-09-03T12:03:00.000Z",
+      });
       const duplicateError = yield* Effect.flip(
         store.createAssignment({
-          id: WorkbenchAssignmentId.make("assignment-2"),
+          id: WorkbenchAssignmentId.make("assignment-duplicate"),
           ticketId,
           threadId: ThreadId.make("thread-2"),
-          createdAt: "2026-09-03T12:03:00.000Z",
+          createdAt: "2026-09-03T12:03:30.000Z",
         }),
       );
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id,
+          project_id,
+          title,
+          model_selection_json,
+          runtime_mode,
+          interaction_mode,
+          pending_approval_count,
+          pending_user_input_count,
+          has_actionable_proposed_plan,
+          created_at,
+          updated_at,
+          deleted_at
+        ) VALUES (
+          'thread-3',
+          ${secondaryProjectId},
+          'Replacement Thread',
+          '{"provider":"codex","model":"gpt-5-codex"}',
+          'full-access',
+          'default',
+          0,
+          0,
+          0,
+          ${createdAt},
+          ${createdAt},
+          NULL
+        )
+      `;
       yield* store.replaceAssignment({
         ticketId,
         previousThreadId: ThreadId.make("thread-1"),
-        threadId: ThreadId.make("thread-2"),
+        threadId: ThreadId.make("thread-3"),
         replacedAt: "2026-09-03T12:04:00.000Z",
       });
       const staleReplacementError = yield* Effect.flip(
@@ -457,7 +595,7 @@ describe("WorkbenchStore", () => {
           id: WorkbenchAssignmentId.make("assignment-stale"),
           ticketId,
           previousThreadId: ThreadId.make("thread-1"),
-          threadId: ThreadId.make("thread-2"),
+          threadId: ThreadId.make("thread-3"),
           replacedAt: "2026-09-03T12:05:00.000Z",
         }),
       );
@@ -484,8 +622,13 @@ describe("WorkbenchStore", () => {
         threadId: "thread-2",
         supersededAt: null,
       });
-      expect(snapshot.assignments[1]?.id).toBeTruthy();
-      expect(snapshot.assignments).toHaveLength(2);
+      expect(snapshot.assignments[2]).toMatchObject({
+        ticketId,
+        threadId: "thread-3",
+        supersededAt: null,
+      });
+      expect(snapshot.assignments[2]?.id).toBeTruthy();
+      expect(snapshot.assignments).toHaveLength(3);
       expect(duplicateError.code).toBe("assignment_already_exists");
       expect(lockedScopeError.code).toBe("ticket_repository_scope_locked");
       expect(staleReplacementError.code).toBe("assignment_changed");
@@ -839,7 +982,7 @@ describe("WorkbenchStore", () => {
       expect(ticket).toMatchObject({
         title: "Jira summary",
         kind: "story",
-        markdown: "Updated local instructions",
+        markdown: "Original instructions",
         primaryT3ProjectId: secondProjectId,
         repositoryProjectIds: [secondProjectId, firstProjectId],
         status: "todo",
@@ -1013,6 +1156,202 @@ describe("WorkbenchStore", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
+  it.effect("archives and deletes local Tickets without touching Jira or native work", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* WorkbenchStore;
+      const projectId = ProjectId.make("ticket-lifecycle-project");
+      const workbenchProjectId = WorkbenchProjectId.make("ticket-lifecycle-workspace");
+      const localTicketId = WorkbenchTicketId.make("ticket-lifecycle-local");
+      const jiraTicketId = WorkbenchTicketId.make("jira:binding-lifecycle:issue:MA-123");
+      const createdAt = "2026-09-05T12:00:00.000Z";
+      const archivedAt = "2026-09-05T12:01:00.000Z";
+      const restoredAt = "2026-09-05T12:02:00.000Z";
+      const deletedAt = "2026-09-05T12:03:00.000Z";
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+        ) VALUES (
+          ${projectId}, 'Lifecycle project', '/repos/lifecycle', '[]', ${createdAt}, ${createdAt}, NULL
+        )
+      `;
+      yield* store.createProject({
+        id: workbenchProjectId,
+        title: "Lifecycle workspace",
+        linkedProjectIds: [projectId],
+        createdAt,
+      });
+      yield* store.createTicket({
+        id: localTicketId,
+        projectId: workbenchProjectId,
+        title: "Local lifecycle Ticket",
+        kind: "story",
+        markdown: "Keep this local.",
+        primaryT3ProjectId: projectId,
+        createdAt,
+      });
+      yield* store.createTicket({
+        id: jiraTicketId,
+        projectId: workbenchProjectId,
+        title: "Mirrored Jira Ticket",
+        kind: "bug",
+        markdown: "Jira owns this.",
+        primaryT3ProjectId: projectId,
+        createdAt,
+      });
+
+      const archived = yield* store.archiveTicket({
+        ticketId: localTicketId,
+        archivedAt,
+        updatedAt: archivedAt,
+      });
+      expect(archived).toMatchObject({ id: localTicketId, archivedAt, updatedAt: archivedAt });
+      expect((yield* store.getSnapshot).tickets).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: localTicketId, archivedAt })]),
+      );
+      const archivedUpdateError = yield* Effect.flip(
+        store.updateTicket({
+          id: localTicketId,
+          title: "Cannot edit an archived Ticket",
+          markdown: "",
+          status: "todo",
+          blocked: false,
+          updatedAt: archivedAt,
+        }),
+      );
+      expect(archivedUpdateError.code).toBe("ticket_archived");
+
+      const restored = yield* store.archiveTicket({
+        ticketId: localTicketId,
+        archivedAt: null,
+        updatedAt: restoredAt,
+      });
+      expect(restored).toMatchObject({
+        id: localTicketId,
+        archivedAt: null,
+        updatedAt: restoredAt,
+      });
+
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id, project_id, title, model_selection_json, runtime_mode,
+          interaction_mode, pending_approval_count, pending_user_input_count,
+          has_actionable_proposed_plan, created_at, updated_at, deleted_at
+        ) VALUES (
+          'ticket-lifecycle-thread', ${projectId}, 'Lifecycle thread', '{}',
+          'full-access', 'default', 0, 0, 0, ${createdAt}, ${createdAt}, NULL
+        )
+      `;
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("ticket-lifecycle-assignment"),
+        ticketId: localTicketId,
+        threadId: ThreadId.make("ticket-lifecycle-thread"),
+        createdAt,
+      });
+      yield* sql`
+        INSERT INTO workbench_ticket_workspaces (
+          ticket_id, attempt_id, status, branch_name, error_message, created_at, updated_at
+        ) VALUES (
+          ${localTicketId}, 'ticket-lifecycle-attempt', 'ready',
+          'workbench/ticket-lifecycle-local', NULL, ${createdAt}, ${createdAt}
+        )
+      `;
+      yield* sql`
+        INSERT INTO workbench_ticket_workspace_repositories (
+          ticket_id, t3_project_id, is_primary, source_path, worktree_path,
+          branch_name, status, error_message, created_at, updated_at
+        ) VALUES (
+          ${localTicketId}, ${projectId}, 1, '/repos/lifecycle',
+          '/worktrees/ticket-lifecycle-local', 'workbench/ticket-lifecycle-local',
+          'ready', NULL, ${createdAt}, ${createdAt}
+        )
+      `;
+
+      yield* sql`
+        UPDATE workbench_ticket_workspaces
+        SET status = 'preparing'
+        WHERE ticket_id = ${localTicketId}
+      `;
+      const inUseArchiveError = yield* Effect.flip(
+        store.archiveTicket({ ticketId: localTicketId, archivedAt, updatedAt: archivedAt }),
+      );
+      expect(inUseArchiveError.code).toBe("ticket_workspace_in_use");
+      yield* sql`
+        UPDATE workbench_ticket_workspaces
+        SET status = 'ready'
+        WHERE ticket_id = ${localTicketId}
+      `;
+      yield* store.archiveTicket({ ticketId: localTicketId, archivedAt, updatedAt: archivedAt });
+      const guardedReleaseError = yield* Effect.flip(
+        store.claimTicketWorkspaceRelease({
+          ticketId: localTicketId,
+          attemptId: WorkbenchTicketWorkspaceAttemptId.make("ticket-lifecycle-attempt"),
+          claimedAt: archivedAt,
+          requireActiveTicket: true,
+        }),
+      );
+      expect(guardedReleaseError.code).toBe("ticket_archived");
+      yield* store.archiveTicket({
+        ticketId: localTicketId,
+        archivedAt: null,
+        updatedAt: restoredAt,
+      });
+      yield* store.deleteTicket({ ticketId: localTicketId, deletedAt });
+
+      const afterDelete = yield* store.getSnapshot;
+      expect(afterDelete.tickets).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: localTicketId })]),
+      );
+      expect(afterDelete.tickets).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: jiraTicketId })]),
+      );
+      expect(afterDelete.assignments).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ ticketId: localTicketId })]),
+      );
+      expect(afterDelete.ticketWorkspaces).toEqual(
+        expect.arrayContaining([expect.objectContaining({ ticketId: localTicketId })]),
+      );
+      const nativeRows = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count
+        FROM projection_threads
+        WHERE thread_id = 'ticket-lifecycle-thread'
+      `;
+      const worktreeRows = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count
+        FROM workbench_ticket_workspace_repositories
+        WHERE ticket_id = ${localTicketId}
+      `;
+      expect(nativeRows[0]?.count).toBe(1);
+      expect(worktreeRows[0]?.count).toBe(1);
+
+      const jiraArchiveError = yield* Effect.flip(
+        store.archiveTicket({ ticketId: jiraTicketId, archivedAt, updatedAt: archivedAt }),
+      );
+      const jiraDeleteError = yield* Effect.flip(
+        store.deleteTicket({ ticketId: jiraTicketId, deletedAt }),
+      );
+      expect(jiraArchiveError.code).toBe("jira_managed_ticket");
+      expect(jiraDeleteError.code).toBe("jira_managed_ticket");
+
+      const missingArchiveError = yield* Effect.flip(
+        store.archiveTicket({
+          ticketId: WorkbenchTicketId.make("ticket-lifecycle-missing"),
+          archivedAt,
+          updatedAt: archivedAt,
+        }),
+      );
+      const missingDeleteError = yield* Effect.flip(
+        store.deleteTicket({
+          ticketId: WorkbenchTicketId.make("ticket-lifecycle-missing"),
+          deletedAt,
+        }),
+      );
+      expect(missingArchiveError.code).toBe("ticket_not_found");
+      expect(missingDeleteError.code).toBe("ticket_not_found");
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.effect("migrates existing Tickets and Assignments without losing their links", () => {
     const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-workbench-v1-"));
     const dbPath = NodePath.join(tempDir, "orchestration.sqlite");
@@ -1067,6 +1406,40 @@ describe("WorkbenchStore", () => {
           )
         `;
         yield* sql`
+          CREATE TABLE workbench_jira_connections (
+            connection_id TEXT PRIMARY KEY,
+            cloud_id TEXT NOT NULL UNIQUE,
+            credential_id TEXT NOT NULL,
+            site_name TEXT NOT NULL,
+            site_url TEXT NOT NULL,
+            avatar_url TEXT,
+            scopes_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          )
+        `;
+        yield* sql`
+          CREATE TABLE workbench_jira_bindings (
+            binding_id TEXT PRIMARY KEY,
+            workbench_project_id TEXT NOT NULL,
+            connection_id TEXT NOT NULL,
+            jira_project_id TEXT NOT NULL,
+            jira_project_key TEXT NOT NULL,
+            jira_project_name TEXT NOT NULL,
+            board_id INTEGER NOT NULL,
+            board_name TEXT NOT NULL,
+            sprint_id INTEGER NOT NULL,
+            sprint_name TEXT NOT NULL,
+            default_primary_t3_project_id TEXT NOT NULL,
+            default_repository_project_ids_json TEXT NOT NULL,
+            status_mappings_json TEXT NOT NULL,
+            active INTEGER NOT NULL,
+            last_synced_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          )
+        `;
+        yield* sql`
           INSERT INTO workbench_projects
           VALUES ('workspace-v1', 'Legacy Workspace', ${createdAt}, ${createdAt})
         `;
@@ -1082,7 +1455,7 @@ describe("WorkbenchStore", () => {
             'Legacy Ticket',
             'Existing description',
             'repository-v1',
-            'in_progress',
+            'ready_for_review',
             0,
             ${createdAt},
             ${createdAt}
@@ -1091,6 +1464,29 @@ describe("WorkbenchStore", () => {
         yield* sql`
           INSERT INTO workbench_assignments
           VALUES ('assignment-v1', 'ticket-v1', 'thread-v1', ${createdAt})
+        `;
+        yield* sql`
+          INSERT INTO workbench_jira_connections (
+            connection_id, cloud_id, credential_id, site_name, site_url, avatar_url,
+            scopes_json, created_at, updated_at
+          ) VALUES (
+            'connection-v1', 'cloud-v1', 'credential-v1', 'Legacy Jira',
+            'https://legacy.atlassian.net', NULL, '[]', ${createdAt}, ${createdAt}
+          )
+        `;
+        yield* sql`
+          INSERT INTO workbench_jira_bindings (
+            binding_id, workbench_project_id, connection_id, jira_project_id, jira_project_key,
+            jira_project_name, board_id, board_name, sprint_id, sprint_name,
+            default_primary_t3_project_id, default_repository_project_ids_json,
+            status_mappings_json, active, last_synced_at, created_at, updated_at
+          ) VALUES (
+            'binding-v1', 'workspace-v1', 'connection-v1', '10000', 'LEGACY',
+            'Legacy Jira', 42, 'Legacy Board', 7, 'Legacy Sprint', 'repository-v1',
+            '["repository-v1"]',
+            '[{"jiraStatusId":"review","workbenchStatus":"ready_for_review"},{"jiraStatusId":"todo","workbenchStatus":"todo"}]',
+            1, NULL, ${createdAt}, ${createdAt}
+          )
         `;
         yield* sql`
           INSERT INTO workbench_schema_migrations (version)
@@ -1110,6 +1506,7 @@ describe("WorkbenchStore", () => {
           kind: "story",
           primaryT3ProjectId: "repository-v1",
           repositoryProjectIds: ["repository-v1"],
+          status: "in_progress",
         }),
       ]);
       expect(snapshot.assignments).toEqual([
@@ -1121,6 +1518,68 @@ describe("WorkbenchStore", () => {
         }),
       ]);
       expect(snapshot.epics).toEqual([]);
+
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const migratedTicket = yield* sql<{ readonly status: string }>`
+          SELECT status
+          FROM workbench_tickets
+          WHERE ticket_id = 'ticket-v1'
+        `;
+        expect(migratedTicket).toEqual([{ status: "in_progress" }]);
+        const migratedMapping = yield* sql<{ readonly statusMappingsJson: string }>`
+          SELECT status_mappings_json AS "statusMappingsJson"
+          FROM workbench_jira_bindings
+          WHERE binding_id = 'binding-v1'
+        `;
+        expect(migratedMapping).toEqual([
+          {
+            statusMappingsJson:
+              '[{"jiraStatusId":"review","workbenchStatus":"in_progress"},{"jiraStatusId":"todo","workbenchStatus":"todo"}]',
+          },
+        ]);
+        const migratedBinding = yield* sql<{
+          readonly followActiveSprint: number;
+          readonly selectedSprintsJson: string;
+          readonly observedActiveSprintIdsJson: string;
+          readonly boardMode: string;
+          readonly boardColumnsJson: string;
+          readonly lastSyncError: string | null;
+        }>`
+          SELECT
+            follow_active_sprint AS "followActiveSprint",
+            selected_sprints_json AS "selectedSprintsJson",
+            observed_active_sprint_ids_json AS "observedActiveSprintIdsJson",
+            board_mode AS "boardMode",
+            board_columns_json AS "boardColumnsJson",
+            last_sync_error AS "lastSyncError"
+          FROM workbench_jira_bindings
+          WHERE binding_id = 'binding-v1'
+        `;
+        expect(migratedBinding).toEqual([
+          {
+            followActiveSprint: 1,
+            selectedSprintsJson: "[]",
+            observedActiveSprintIdsJson: "[]",
+            boardMode: "mapped",
+            boardColumnsJson: "[]",
+            lastSyncError: null,
+          },
+        ]);
+        const migration = yield* sql<{ readonly version: number }>`
+          SELECT version
+          FROM workbench_schema_migrations
+          WHERE version IN (6, 7, 8, 9, 10)
+          ORDER BY version ASC
+        `;
+        expect(migration).toEqual([
+          { version: 6 },
+          { version: 7 },
+          { version: 8 },
+          { version: 9 },
+          { version: 10 },
+        ]);
+      }).pipe(Effect.provide(persistence));
     }).pipe(
       Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
     );

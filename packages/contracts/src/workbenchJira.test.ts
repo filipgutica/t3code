@@ -13,6 +13,37 @@ const decodeIssueLink = Schema.decodeUnknownEffect(WorkbenchJiraIssueLink);
 const decodeCompleteAuthResult = Schema.decodeUnknownEffect(WorkbenchJiraCompleteAuthResult);
 
 describe("Workbench Jira contracts", () => {
+  it.effect("decodes legacy bindings with safe synchronization defaults", () =>
+    Effect.gen(function* () {
+      const binding = yield* decodeBinding({
+        id: "binding-legacy",
+        projectId: "workspace-1",
+        connectionId: "connection-1",
+        jiraProjectId: "10000",
+        jiraProjectKey: "WB",
+        jiraProjectName: "Workbench",
+        boardId: 42,
+        boardName: "Workbench sprint board",
+        sprintId: 7,
+        sprintName: "Sprint 7",
+        defaultPrimaryT3ProjectId: "t3-project-1",
+        defaultRepositoryProjectIds: ["t3-project-1"],
+        statusMappings: [{ jiraStatusId: "3", workbenchStatus: "in_progress" }],
+        active: true,
+        lastSyncedAt: null,
+        createdAt: "2026-09-03T12:00:00.000Z",
+        updatedAt: "2026-09-03T12:00:00.000Z",
+      });
+
+      assert.isTrue(binding.followActiveSprint);
+      assert.deepStrictEqual(binding.selectedSprints, []);
+      assert.deepStrictEqual(binding.observedActiveSprintIds, []);
+      assert.strictEqual(binding.boardMode, "mapped");
+      assert.deepStrictEqual(binding.boardColumns, []);
+      assert.isNull(binding.lastSyncError);
+    }),
+  );
+
   it.effect("decodes a Jira binding and synchronized issue link", () =>
     Effect.gen(function* () {
       const binding = yield* decodeBinding({
@@ -29,8 +60,17 @@ describe("Workbench Jira contracts", () => {
         defaultPrimaryT3ProjectId: "t3-project-1",
         defaultRepositoryProjectIds: ["t3-project-1", "t3-project-2"],
         statusMappings: [{ jiraStatusId: "3", workbenchStatus: "in_progress" }],
+        followActiveSprint: true,
+        selectedSprints: [
+          { id: 7, name: "Sprint 7" },
+          { id: 17, name: "Sprint 17" },
+        ],
+        observedActiveSprintIds: [7],
+        boardMode: "mapped",
+        boardColumns: [],
         active: true,
         lastSyncedAt: null,
+        lastSyncError: null,
         createdAt: "2026-09-03T12:00:00.000Z",
         updatedAt: "2026-09-03T12:00:00.000Z",
       });
@@ -56,6 +96,10 @@ describe("Workbench Jira contracts", () => {
 
       assert.strictEqual(link.issue.key, "WB-1");
       assert.strictEqual(binding.statusMappings[0]?.workbenchStatus, "in_progress");
+      assert.deepStrictEqual(
+        binding.selectedSprints.map((sprint) => sprint.id),
+        [7, 17],
+      );
     }),
   );
 

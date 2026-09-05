@@ -5,6 +5,8 @@ export interface WorkbenchTicketDraft {
   readonly title: string;
   readonly markdown: string;
   readonly mode: "editing" | "saved";
+  /** Remote Jira version captured when editing began; protects against stale overwrites. */
+  readonly jiraRemoteUpdatedAt?: string | null;
 }
 
 interface WorkbenchDraftStore {
@@ -26,7 +28,7 @@ export const useWorkbenchDraftStore = create<WorkbenchDraftStore>()((set) => ({
       const draft = state.drafts.get(ticketId);
       if (!draft) return state;
       return {
-        drafts: new Map(state.drafts).set(ticketId, { ...content, mode: "saved" }),
+        drafts: new Map(state.drafts).set(ticketId, { ...draft, ...content, mode: "saved" }),
       };
     }),
   clearDraft: (ticketId) =>

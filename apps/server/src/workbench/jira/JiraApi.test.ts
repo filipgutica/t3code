@@ -34,6 +34,7 @@ const repository = WorkbenchJiraRepository.of({
   listBindings: () => Effect.succeed([]),
   upsertBinding: () => Effect.void,
   updateBindingSyncMetadata: () => Effect.succeed(true),
+  updateBindingSyncError: () => Effect.succeed(true),
   listIssueLinks: () => Effect.succeed([]),
   replaceIssueLinks: () => Effect.void,
 } satisfies WorkbenchJiraRepositoryShape);
@@ -45,6 +46,60 @@ const auth = JiraAuthService.of({
 });
 
 describe("JiraApi", () => {
+  it.effect("imports descriptions and normalizes numeric and string Epic IDs", () =>
+    Effect.gen(function* () {
+      for (const epicId of [10000, "10000"]) {
+        const service = yield* JiraApi.make.pipe(
+          Effect.provideService(WorkbenchJiraRepository, repository),
+          Effect.provideService(JiraAuthService, auth),
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make((request) =>
+              Effect.succeed(
+                HttpClientResponse.fromWeb(
+                  request,
+                  Response.json({
+                    isLast: true,
+                    issues: [
+                      {
+                        id: "10001",
+                        key: "WB-1",
+                        fields: {
+                          summary: "Assigned issue",
+                          description: "Jira description with acceptance criteria.",
+                          issuetype: { id: "1", name: "Story" },
+                          status: { id: "2", name: "In Progress" },
+                          epic: {
+                            id: epicId,
+                            key: "WB-EPIC",
+                            name: "Integration",
+                            summary: "Jira integration",
+                          },
+                        },
+                      },
+                    ],
+                  }),
+                ),
+              ),
+            ),
+          ),
+        );
+        const issues = yield* service.listAssignedSprintIssues({
+          connectionId,
+          boardId: 42,
+          sprintId: 7,
+        });
+        assert.strictEqual(issues.length, 1);
+        assert.strictEqual(issues[0]?.description, "Jira description with acceptance criteria.");
+        assert.deepStrictEqual(issues[0]?.epic, {
+          id: "10000",
+          key: "WB-EPIC",
+          summary: "Jira integration",
+        });
+      }
+    }),
+  );
+
   it.effect("explains how to recover from Jira authorization and access failures", () =>
     Effect.gen(function* () {
       const statuses = [401, 403, 429];
@@ -163,6 +218,13 @@ describe("JiraApi", () => {
       assert.strictEqual(issues[0]?.epic?.key, "WB-EPIC");
       assert.isTrue(issues[0]?.flagged ?? false);
       assert.strictEqual(issues[1]?.rank, 1);
+      assert.strictEqual(issues[1]?.description, "");
+      assert.isTrue(
+        requests[1]?.urlParams.params
+          .find(([key]) => key === "fields")?.[1]
+          .split(",")
+          .includes("description") ?? false,
+      );
       assert.isTrue(
         requests[1]?.url.includes("/rest/software/1.0/board/42/sprint/7/issue") ?? false,
       );

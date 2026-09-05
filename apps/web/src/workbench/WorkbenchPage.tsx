@@ -1,10 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import {
   ProjectId,
+  WorkbenchAssignmentId,
+  type ModelSelection,
   type ThreadId,
   type WorkbenchEpic,
   WorkbenchEpicId,
@@ -26,6 +29,7 @@ import {
   LinkIcon,
   LayoutDashboardIcon,
   PlusIcon,
+  Settings2Icon,
   RefreshCwIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -45,6 +49,9 @@ import {
 import { Skeleton } from "../components/ui/skeleton";
 import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
 import { isElectron } from "../env";
+import { resolvePrimaryEnvironmentHttpUrl } from "../environments/primary";
+import { readLocalApi } from "../localApi";
+import { useThreadActions } from "../hooks/useThreadActions";
 import { useArchivedThreadSnapshots } from "../lib/archivedThreadsState";
 import { randomUUID } from "../lib/utils";
 import { usePrimaryEnvironmentId } from "../state/environments";
@@ -74,6 +81,8 @@ import {
   WorkbenchWorkspaceDialog,
 } from "./WorkbenchForms";
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
+import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
+import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
 import { useWorkbenchDraftStore } from "./workbenchDraftStore";
 import {
   WorkbenchJiraDialog,
@@ -81,7 +90,9 @@ import {
   type WorkbenchJiraUpdateDraft,
 } from "./WorkbenchJiraDialog";
 import {
+  getWorkbenchJiraBindingSprints,
   resolveWorkbenchJiraOAuthCallback,
+  resolveWorkbenchJiraRedirectUri,
   resolveWorkbenchTicketUpdateFields,
 } from "./workbenchJira.logic";
 
@@ -96,9 +107,14 @@ interface WorkbenchPageProps {
 }
 
 const JIRA_OAUTH_WORKSPACE_STORAGE_KEY = "t3code:workbench:jira-oauth-workspace";
-const JIRA_BOARD_REFRESH_INTERVAL_MS = 15_000;
+const JIRA_REFRESH_INTERVAL_MS = 15_000;
 
-const jiraOAuthRedirectUri = () => new URL("/workbench", window.location.origin).toString();
+const jiraOAuthRedirectUri = () =>
+  resolveWorkbenchJiraRedirectUri({
+    desktop: isElectron,
+    browserOrigin: window.location.origin,
+    serverHttpUrl: resolvePrimaryEnvironmentHttpUrl("/"),
+  });
 
 const failureMessage = (failure: {
   readonly cause: Parameters<typeof squashAtomCommandFailure>[0]["cause"];
@@ -119,7 +135,7 @@ function WorkbenchLoading() {
         <Skeleton className="h-6 w-52" />
         <Skeleton className="h-5 w-72 max-w-full" />
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-4 gap-3 p-4">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }, (_, index) => (
           <Skeleton key={index} className="h-full min-h-72 rounded-xl" />
         ))}
@@ -174,10 +190,22 @@ export function WorkbenchPage({
   const createProject = useAtomCommand(workbenchEnvironment.createProject, {
     reportFailure: false,
   });
+  const updateProject = useAtomCommand(workbenchEnvironment.updateProject, {
+    reportFailure: false,
+  });
   const createEpic = useAtomCommand(workbenchEnvironment.createEpic, { reportFailure: false });
   const updateEpic = useAtomCommand(workbenchEnvironment.updateEpic, { reportFailure: false });
   const createTicket = useAtomCommand(workbenchEnvironment.createTicket, { reportFailure: false });
   const updateTicket = useAtomCommand(workbenchEnvironment.updateTicket, { reportFailure: false });
+  const updateJiraTicket = useAtomCommand(workbenchEnvironment.jiraUpdateTicket, {
+    reportFailure: false,
+  });
+  const archiveTicket = useAtomCommand(workbenchEnvironment.archiveTicket, {
+    reportFailure: false,
+  });
+  const deleteTicket = useAtomCommand(workbenchEnvironment.deleteTicket, {
+    reportFailure: false,
+  });
   const jiraBeginAuth = useAtomCommand(workbenchEnvironment.jiraBeginAuth, {
     reportFailure: false,
   });
@@ -206,6 +234,10 @@ export function WorkbenchPage({
     reportFailure: false,
   });
   const unarchiveThread = useAtomCommand(threadEnvironment.unarchive, { reportFailure: false });
+  const attachAssignment = useAtomCommand(workbenchEnvironment.createAssignment, {
+    reportFailure: false,
+  });
+  const { confirmAndDeleteThread } = useThreadActions();
   const ticketDrafts = useWorkbenchDraftStore((state) => state.drafts);
   const clearTicketDraft = useWorkbenchDraftStore((state) => state.clearDraft);
   const projects = useMemo(
@@ -235,6 +267,7 @@ export function WorkbenchPage({
   const [selectedEpicId, setSelectedEpicId] = useState<WorkbenchEpicId | null>(
     initialEpicId ?? null,
   );
+  const [editWorkspaceOpen, setEditWorkspaceOpen] = useState(false);
   const [ticketDialogOpen, setTicketDialogOpen] = useState(false);
   const [ticketDialogEpicId, setTicketDialogEpicId] = useState<WorkbenchEpicId | null>(null);
   const [epicDialogOpen, setEpicDialogOpen] = useState(false);
@@ -244,6 +277,12 @@ export function WorkbenchPage({
   const [jiraError, setJiraError] = useState<string | null>(null);
   const [jiraPendingAction, setJiraPendingAction] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [startThreadRequest, setStartThreadRequest] = useState<{
+    ticket: WorkbenchTicket;
+    mode?: "additional" | "replace";
+    previousThreadId?: ThreadId;
+  } | null>(null);
+  const [attachThreadTicket, setAttachThreadTicket] = useState<WorkbenchTicket | null>(null);
   const [awaitingProjectId, setAwaitingProjectId] = useState<WorkbenchProjectId | null>(null);
   const [awaitingTicketId, setAwaitingTicketId] = useState<WorkbenchTicketId | null>(null);
   const [awaitingEpicId, setAwaitingEpicId] = useState<WorkbenchEpicId | null>(null);
@@ -285,7 +324,8 @@ export function WorkbenchPage({
     [jiraSnapshot?.issueLinks],
   );
   const isTicketVisible = useCallback(
-    (ticketId: WorkbenchTicketId) => jiraIssueLinksByTicketId.get(ticketId)?.active !== false,
+    (ticket: WorkbenchTicket) =>
+      ticket.archivedAt == null && jiraIssueLinksByTicketId.get(ticket.id)?.active !== false,
     [jiraIssueLinksByTicketId],
   );
   const selectedTicket =
@@ -295,17 +335,13 @@ export function WorkbenchPage({
   const projectTickets = useMemo(
     () =>
       snapshot?.tickets.filter(
-        (ticket) => ticket.projectId === selectedProject?.id && isTicketVisible(ticket.id),
+        (ticket) => ticket.projectId === selectedProject?.id && isTicketVisible(ticket),
       ) ?? [],
     [isTicketVisible, selectedProject?.id, snapshot?.tickets],
   );
   const selectedEpicTickets = useMemo(
     () => projectTickets.filter((ticket) => ticket.epicId === selectedEpic?.id),
     [projectTickets, selectedEpic?.id],
-  );
-  const assignmentsByTicket = useMemo(
-    () => getActiveAssignmentsByTicket(snapshot?.assignments ?? []),
-    [snapshot?.assignments],
   );
   const threadsById = useMemo(
     () =>
@@ -332,6 +368,15 @@ export function WorkbenchPage({
     () => new Set([...threadsById.keys(), ...archivedThreadsById.keys()]),
     [archivedThreadsById, threadsById],
   );
+  const assignmentsByTicket = useMemo(
+    () =>
+      getActiveAssignmentsByTicket(
+        snapshot?.assignments ?? [],
+        new Set(threadsById.keys()),
+        new Set(archivedThreadsById.keys()),
+      ),
+    [archivedThreadsById, snapshot?.assignments, threadsById],
+  );
   const threadLookupReady = !archivedThreadsLoading && archivedThreadsError === null;
   const openAssignedThread = useCallback(
     async (threadId: ThreadId) => {
@@ -352,6 +397,7 @@ export function WorkbenchPage({
               navigate({
                 to: "/$environmentId/$threadId",
                 params: { environmentId, threadId },
+                search: { workbench: true },
               }),
           },
         );
@@ -399,6 +445,103 @@ export function WorkbenchPage({
     onPendingChange: setPendingAction,
     onError: setError,
   });
+
+  const requestTicketThread = (ticket: WorkbenchTicket) => {
+    if (pendingAction !== null) return;
+    const assignment = assignmentsByTicket.get(ticket.id);
+    if (!threadLookupReady || (assignment && existingThreadIds.has(assignment.threadId))) {
+      openTicketThread(ticket);
+      return;
+    }
+    setError(null);
+    setStartThreadRequest({ ticket });
+  };
+
+  const requestNewThread = (ticket: WorkbenchTicket) => {
+    if (pendingAction !== null || !threadLookupReady) return;
+    const hasExistingThread = (snapshot?.assignments ?? []).some(
+      (assignment) =>
+        assignment.ticketId === ticket.id &&
+        assignment.supersededAt === null &&
+        existingThreadIds.has(assignment.threadId),
+    );
+    setError(null);
+    setStartThreadRequest({
+      ticket,
+      ...(hasExistingThread ? { mode: "additional" as const } : {}),
+    });
+  };
+
+  const deleteAssignedThread = async (threadId: ThreadId) => {
+    if (environmentId === null || pendingAction !== null) return;
+    setPendingAction(`delete-thread:${threadId}`);
+    setError(null);
+    try {
+      const result = await confirmAndDeleteThread(scopeThreadRef(environmentId, threadId), {
+        preserveWorktree: true,
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        setError(failureMessage(result));
+      }
+    } finally {
+      setPendingAction(null);
+      refreshArchivedThreads();
+      refreshWorkbenchSnapshot();
+    }
+  };
+
+  const attachExistingThread = async (threadId: ThreadId) => {
+    if (environmentId === null || attachThreadTicket === null || pendingAction !== null) return;
+    setPendingAction(`attach-thread:${attachThreadTicket.id}`);
+    setError(null);
+    const result = await attachAssignment({
+      environmentId,
+      input: {
+        id: WorkbenchAssignmentId.make(randomUUID()),
+        ticketId: attachThreadTicket.id,
+        threadId,
+        createdAt: new Date().toISOString(),
+      },
+    });
+    setPendingAction(null);
+    if (result._tag === "Failure") {
+      if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
+      return;
+    }
+    setAttachThreadTicket(null);
+    await openAssignedThread(threadId);
+  };
+
+  const startSelectedThread = (modelSelection: ModelSelection) => {
+    if (startThreadRequest === null || pendingAction !== null) return;
+    const ticket = snapshot?.tickets.find(
+      (candidate) => candidate.id === startThreadRequest.ticket.id,
+    );
+    if (!ticket || ticket.archivedAt != null) {
+      setError("This Ticket is no longer available for a new Thread.");
+      setStartThreadRequest(null);
+      return;
+    }
+    const request = startThreadRequest;
+    const hasOtherThread = (snapshot?.assignments ?? []).some(
+      (assignment) =>
+        assignment.ticketId === ticket.id &&
+        assignment.supersededAt === null &&
+        assignment.threadId !== request.previousThreadId &&
+        existingThreadIds.has(assignment.threadId),
+    );
+    setStartThreadRequest(null);
+    openTicketThread(ticketForBoardAction(ticket), {
+      modelSelection,
+      ...(request.mode === "replace"
+        ? { mode: "replace" as const }
+        : hasOtherThread
+          ? { mode: "additional" as const }
+          : {}),
+      sendInitialPrompt: !hasOtherThread,
+      ...(request.previousThreadId ? { previousThreadId: request.previousThreadId } : {}),
+    });
+  };
 
   const updateRouteSelection = (projectId: WorkbenchProjectId, ticketId?: WorkbenchTicketId) => {
     return navigate({
@@ -448,6 +591,27 @@ export function WorkbenchPage({
     setSelectedTicketId(null);
     setSelectedEpicId(null);
     await updateRouteSelection(id);
+    return true;
+  };
+
+  const saveWorkspace = async (title: string, linkedProjectIds: ReadonlyArray<ProjectId>) => {
+    if (environmentId === null || !selectedProject) return false;
+    setPendingAction("update-project");
+    setError(null);
+    const result = await updateProject({
+      environmentId,
+      input: {
+        id: selectedProject.id,
+        title,
+        linkedProjectIds,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    setPendingAction(null);
+    if (result._tag === "Failure") {
+      if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
+      return false;
+    }
     return true;
   };
 
@@ -512,7 +676,41 @@ export function WorkbenchPage({
       >
     >,
   ) => {
-    if (environmentId === null) return false;
+    if (environmentId === null || pendingAction !== null) return false;
+    const jiraFieldsChanged = patch.markdown !== undefined || patch.status !== undefined;
+    if (jiraFieldsChanged && !jiraOwnershipKnown) {
+      setError("Jira ownership is still loading. Try again in a moment.");
+      return false;
+    }
+    const jiraIssueLink = jiraIssueLinksByTicketId.get(ticket.id);
+    if (jiraIssueLink !== undefined && jiraFieldsChanged) {
+      const draft = ticketDrafts.get(ticket.id);
+      if (patch.status !== undefined && patch.markdown === undefined && draft?.mode === "editing") {
+        setError("Save or cancel this Ticket's description edits before changing its status.");
+        return false;
+      }
+      const expectedRemoteUpdatedAt =
+        patch.markdown !== undefined && draft?.mode === "editing"
+          ? (draft.jiraRemoteUpdatedAt ?? null)
+          : jiraIssueLink.issue.remoteUpdatedAt;
+      setPendingAction(`jira-update:${ticket.id}`);
+      setError(null);
+      const result = await updateJiraTicket({
+        environmentId,
+        input: {
+          ticketId: ticket.id,
+          ...(patch.markdown !== undefined ? { markdown: patch.markdown } : {}),
+          ...(patch.status !== undefined ? { status: patch.status } : {}),
+          expectedRemoteUpdatedAt,
+        },
+      });
+      setPendingAction(null);
+      if (result._tag === "Failure") {
+        if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
+        return false;
+      }
+      return true;
+    }
     const fields = resolveWorkbenchTicketUpdateFields({
       ticket,
       patch,
@@ -576,6 +774,61 @@ export function WorkbenchPage({
     void updateTicketFields(ticket, patch);
   };
 
+  const setTicketArchived = async (ticket: WorkbenchTicket, archivedAt: string | null) => {
+    if (
+      environmentId === null ||
+      !jiraOwnershipKnown ||
+      jiraManagedTicketIds.has(ticket.id) ||
+      pendingAction !== null
+    )
+      return false;
+    setPendingAction(`archive:${ticket.id}`);
+    setError(null);
+    const result = await archiveTicket({
+      environmentId,
+      input: {
+        ticketId: ticket.id,
+        archivedAt,
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    setPendingAction(null);
+    if (result._tag === "Failure") {
+      if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
+      return false;
+    }
+    clearTicketDraft(ticket.id);
+    if (archivedAt !== null) closeWorkItem();
+    return true;
+  };
+
+  const removeTicket = async (ticket: WorkbenchTicket) => {
+    if (
+      environmentId === null ||
+      !jiraOwnershipKnown ||
+      jiraManagedTicketIds.has(ticket.id) ||
+      pendingAction !== null
+    )
+      return false;
+    setPendingAction(`delete:${ticket.id}`);
+    setError(null);
+    const result = await deleteTicket({
+      environmentId,
+      input: {
+        ticketId: ticket.id,
+        deletedAt: new Date().toISOString(),
+      },
+    });
+    setPendingAction(null);
+    if (result._tag === "Failure") {
+      if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
+      return false;
+    }
+    clearTicketDraft(ticket.id);
+    closeWorkItem();
+    return true;
+  };
+
   const ticketForBoardAction = (ticket: WorkbenchTicket) => {
     const draft = ticketDrafts.get(ticket.id);
     return draft?.mode === "saved"
@@ -631,6 +884,16 @@ export function WorkbenchPage({
     setJiraPendingAction(null);
     if (result._tag === "Failure") {
       if (!isAtomCommandInterrupted(result)) setJiraError(failureMessage(result));
+      return;
+    }
+    if (isElectron) {
+      try {
+        const api = readLocalApi();
+        if (!api) throw new Error("The desktop browser launcher is unavailable.");
+        await api.shell.openExternal(result.value.authorizationUrl);
+      } catch (error) {
+        setJiraError(error instanceof Error ? error.message : "Could not open Jira authorization.");
+      }
       return;
     }
     if (selectedProject) {
@@ -707,7 +970,8 @@ export function WorkbenchPage({
   };
 
   const createJiraBindingForWorkspace = async (draft: WorkbenchJiraCreateDraft) => {
-    if (environmentId === null || selectedProject === null) return false;
+    const firstSprint = draft.sprints[0];
+    if (environmentId === null || selectedProject === null || !firstSprint) return false;
     setJiraPendingAction("create-binding");
     setJiraError(null);
     const result = await jiraCreateBinding({
@@ -721,11 +985,14 @@ export function WorkbenchPage({
         jiraProjectName: draft.jiraProject.name,
         boardId: draft.board.id,
         boardName: draft.board.name,
-        sprintId: draft.sprint.id,
-        sprintName: draft.sprint.name,
+        sprintId: firstSprint.id,
+        sprintName: firstSprint.name,
+        selectedSprints: draft.sprints.map(({ id, name }) => ({ id, name })),
         defaultPrimaryT3ProjectId: draft.defaultPrimaryT3ProjectId,
         defaultRepositoryProjectIds: draft.defaultRepositoryProjectIds,
         statusMappings: draft.statusMappings,
+        followActiveSprint: draft.followActiveSprint,
+        boardMode: draft.boardMode,
         createdAt: new Date().toISOString(),
       },
     });
@@ -738,18 +1005,22 @@ export function WorkbenchPage({
   };
 
   const updateJiraBindingForWorkspace = async (draft: WorkbenchJiraUpdateDraft) => {
-    if (environmentId === null) return false;
+    const firstSprint = draft.sprints[0];
+    if (environmentId === null || !firstSprint) return false;
     setJiraPendingAction("update-binding");
     setJiraError(null);
     const result = await jiraUpdateBinding({
       environmentId,
       input: {
         id: draft.binding.id,
-        sprintId: draft.sprint.id,
-        sprintName: draft.sprint.name,
+        sprintId: firstSprint.id,
+        sprintName: firstSprint.name,
+        selectedSprints: draft.sprints.map(({ id, name }) => ({ id, name })),
         defaultPrimaryT3ProjectId: draft.defaultPrimaryT3ProjectId,
         defaultRepositoryProjectIds: draft.defaultRepositoryProjectIds,
         statusMappings: draft.statusMappings,
+        followActiveSprint: draft.followActiveSprint,
+        boardMode: draft.boardMode,
         active: draft.binding.active,
         updatedAt: new Date().toISOString(),
       },
@@ -772,9 +1043,12 @@ export function WorkbenchPage({
         id: binding.id,
         sprintId: binding.sprintId,
         sprintName: binding.sprintName,
+        selectedSprints: getWorkbenchJiraBindingSprints(binding),
         defaultPrimaryT3ProjectId: binding.defaultPrimaryT3ProjectId,
         defaultRepositoryProjectIds: binding.defaultRepositoryProjectIds,
         statusMappings: binding.statusMappings,
+        followActiveSprint: binding.followActiveSprint,
+        boardMode: binding.boardMode,
         active,
         updatedAt: new Date().toISOString(),
       },
@@ -803,20 +1077,32 @@ export function WorkbenchPage({
   const jiraManagedTicketIds = new Set(
     (jiraSnapshot?.issueLinks ?? []).map((link) => link.ticketId),
   );
+  const jiraOwnershipKnown = jiraSnapshot !== null && !jiraQuery.isPending;
   const selectedAssignments = selectedTicket
     ? getAssignmentsForTicket(snapshot?.assignments ?? [], selectedTicket.id)
     : [];
   const pending = pendingAction !== null;
-  const boardIsOpen = selectedTicket === null && selectedEpic === null;
 
   useEffect(() => {
-    if (!jiraBinding?.active || !boardIsOpen) return;
-    const intervalId = window.setInterval(() => {
+    if (!isElectron || !jiraDialogOpen) return;
+    const refresh = () => refreshJiraSnapshot();
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  }, [jiraDialogOpen, refreshJiraSnapshot]);
+
+  useEffect(() => {
+    if (!jiraBinding?.active) return;
+    const refresh = () => {
       refreshWorkbenchSnapshot();
       refreshJiraSnapshot();
-    }, JIRA_BOARD_REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(intervalId);
-  }, [boardIsOpen, jiraBinding?.active, refreshJiraSnapshot, refreshWorkbenchSnapshot]);
+    };
+    const intervalId = window.setInterval(refresh, JIRA_REFRESH_INTERVAL_MS);
+    window.addEventListener("focus", refresh);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [jiraBinding?.active, refreshJiraSnapshot, refreshWorkbenchSnapshot]);
 
   const syncJiraBinding = async (binding: WorkbenchJiraBinding) => {
     if (environmentId === null) return;
@@ -1081,6 +1367,9 @@ export function WorkbenchPage({
               epics={projectEpics}
               jiraIssueLink={jiraIssueLinksByTicketId.get(selectedTicket.id) ?? null}
               jiraFieldsManaged={jiraManagedTicketIds.has(selectedTicket.id)}
+              lifecycleActionsEnabled={
+                jiraOwnershipKnown && !jiraManagedTicketIds.has(selectedTicket.id)
+              }
               keybindings={keybindings}
               availableEditors={availableEditors}
               assignments={selectedAssignments}
@@ -1108,8 +1397,22 @@ export function WorkbenchPage({
                 setSelectedEpicId(epicId);
                 void updateEpicRouteSelection(selectedProject.id, epicId);
               }}
-              onOpenThread={openTicketThread}
+              onOpenThread={requestTicketThread}
               onOpenAssignedThread={openAssignedThread}
+              onNewThread={requestNewThread}
+              onAttachThread={(ticket) => {
+                setError(null);
+                setAttachThreadTicket(ticket);
+              }}
+              onDeleteThread={(threadId) => {
+                void deleteAssignedThread(threadId);
+              }}
+              onReplaceThread={(ticket, previousThreadId) => {
+                setError(null);
+                setStartThreadRequest({ ticket, mode: "replace", previousThreadId });
+              }}
+              onArchive={setTicketArchived}
+              onDelete={removeTicket}
             />
           ) : selectedEpic ? (
             <WorkbenchEpicDetail
@@ -1145,8 +1448,8 @@ export function WorkbenchPage({
                 electron={isElectron}
                 className="h-auto min-h-20 items-start border-b border-border py-3"
               >
-                <div className="flex w-full min-w-0 items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
+                <div className="flex w-full min-w-0 flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="min-w-0 xl:flex-1">
                     <div className="flex min-w-0 items-center gap-2">
                       <h2 className="truncate font-heading text-xl font-semibold">
                         {selectedProject.title}
@@ -1175,32 +1478,48 @@ export function WorkbenchPage({
                       ))}
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex w-full min-w-0 flex-wrap justify-start gap-2 xl:w-auto xl:shrink-0 xl:justify-end">
+                    <Button
+                      aria-label="Edit Workspace"
+                      title="Edit Workspace"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setError(null);
+                        setEditWorkspaceOpen(true);
+                      }}
+                    >
+                      <Settings2Icon />
+                    </Button>
                     {jiraBinding ? (
                       <>
                         <Button
                           aria-label="Configure Jira sprint mirror"
                           onClick={openJiraDialog}
                           size="sm"
-                          title={`${jiraBinding.jiraProjectKey} · ${jiraBinding.sprintName}`}
+                          title={`${jiraBinding.boardName} · ${getWorkbenchJiraBindingSprints(
+                            jiraBinding,
+                          )
+                            .map((sprint) => sprint.name)
+                            .join(" · ")}`}
                           variant="outline"
                         >
                           <LinkIcon />
                           <span className="hidden max-w-40 truncate md:inline">
-                            {jiraBinding.jiraProjectKey} · {jiraBinding.sprintName}
+                            {getWorkbenchJiraBindingSprints(jiraBinding).length > 1
+                              ? `${getWorkbenchJiraBindingSprints(jiraBinding).length} sprints`
+                              : jiraBinding.sprintName}
                           </span>
                           <Badge size="sm" variant={jiraBinding.active ? "secondary" : "outline"}>
                             {jiraBinding.active ? "Jira" : "Jira paused"}
                           </Badge>
                         </Button>
                         <Button
-                          aria-label="Sync Jira sprint"
+                          aria-label="Sync Jira"
                           disabled={jiraPendingAction !== null || !jiraBinding.active}
                           onClick={() => void syncJiraBinding(jiraBinding)}
                           size="icon-sm"
-                          title={
-                            jiraBinding.active ? "Sync Jira sprint" : "Jira mirror is inactive"
-                          }
+                          title={jiraBinding.active ? "Sync Jira" : "Jira mirror is inactive"}
                           variant="outline"
                         >
                           <RefreshCwIcon />
@@ -1256,10 +1575,17 @@ export function WorkbenchPage({
                 <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-4 text-sm sm:px-5">
                   <LayoutDashboardIcon className="size-4 text-muted-foreground" />
                   <span className="font-semibold">Board</span>
-                  {projectTickets.some((ticket) => ticket.blocked) ? (
+                  {projectTickets.some(
+                    (ticket) => jiraIssueLinksByTicketId.get(ticket.id)?.issue.flagged,
+                  ) ? (
                     <Badge className="ml-1" variant="warning">
                       <AlertCircleIcon />
-                      {projectTickets.filter((ticket) => ticket.blocked).length} blocked
+                      {
+                        projectTickets.filter(
+                          (ticket) => jiraIssueLinksByTicketId.get(ticket.id)?.issue.flagged,
+                        ).length
+                      }{" "}
+                      Jira flagged
                     </Badge>
                   ) : null}
                   {projectEpics.length > 0 ? (
@@ -1283,17 +1609,29 @@ export function WorkbenchPage({
                     </div>
                   ) : null}
                 </div>
+                {jiraBinding?.lastSyncError ? (
+                  <p
+                    role="status"
+                    className="border-b border-border px-4 py-2 text-sm text-warning-foreground"
+                  >
+                    {jiraBinding.lastSyncError}
+                  </p>
+                ) : null}
                 <WorkbenchTicketBoard
+                  key={`${selectedProject.id}:${jiraBinding?.boardMode ?? "mapped"}`}
+                  mirrorColumns={
+                    jiraBinding?.boardMode === "mirror_jira" ? jiraBinding.boardColumns : null
+                  }
                   projectId={selectedProject.id}
                   tickets={projectTickets}
                   epics={projectEpics}
                   groupMode={effectiveBoardGroupMode}
                   jiraIssueLinksByTicketId={jiraIssueLinksByTicketId}
                   activeJiraTicketIds={activeJiraTicketIds}
-                  jiraManagedTicketIds={jiraManagedTicketIds}
                   selectedTicketId={null}
                   repositoriesById={repositoriesById}
                   assignmentsByTicket={assignmentsByTicket}
+                  assignments={snapshot?.assignments ?? []}
                   threadsById={threadsById}
                   archivedThreadsById={archivedThreadsById}
                   threadLookupReady={threadLookupReady}
@@ -1314,10 +1652,9 @@ export function WorkbenchPage({
                     void updateEpicRouteSelection(projectId, epicId);
                   }}
                   onMove={(ticket, status) => {
-                    if (jiraManagedTicketIds.has(ticket.id)) return;
                     changeTicket(ticketForBoardAction(ticket), { status });
                   }}
-                  onOpenThread={(ticket) => openTicketThread(ticketForBoardAction(ticket))}
+                  onOpenThread={(ticket) => requestTicketThread(ticketForBoardAction(ticket))}
                   onCreateTicket={() => openTicketDialog()}
                 />
               </div>
@@ -1326,15 +1663,29 @@ export function WorkbenchPage({
         </main>
       )}
 
-      <WorkbenchWorkspaceDialog
-        open={createWorkspace}
-        projects={projects}
-        pending={pending}
-        error={error ?? query.error}
-        onOpenChange={handleWorkspaceDialogOpenChange}
-        onCreate={submitProject}
-      />
-      {selectedProject ? (
+      {createWorkspace ? (
+        <WorkbenchWorkspaceDialog
+          open={createWorkspace}
+          projects={projects}
+          pending={pending}
+          error={error ?? query.error}
+          onOpenChange={handleWorkspaceDialogOpenChange}
+          onSave={submitProject}
+        />
+      ) : null}
+      {editWorkspaceOpen && selectedProject ? (
+        <WorkbenchWorkspaceDialog
+          key={selectedProject.id}
+          open
+          projects={projects}
+          initialWorkspace={selectedProject}
+          pending={pending}
+          error={error ?? query.error}
+          onOpenChange={setEditWorkspaceOpen}
+          onSave={saveWorkspace}
+        />
+      ) : null}
+      {selectedProject && jiraDialogOpen ? (
         <WorkbenchJiraDialog
           key={`${selectedProject.id}:${jiraBinding?.id ?? "new-jira-binding"}`}
           open={jiraDialogOpen}
@@ -1352,6 +1703,38 @@ export function WorkbenchPage({
           onCreate={createJiraBindingForWorkspace}
           onUpdate={updateJiraBindingForWorkspace}
           onSetActive={setJiraBindingActive}
+        />
+      ) : null}
+      {startThreadRequest && environmentId ? (
+        <WorkbenchStartThreadDialog
+          open
+          environmentId={environmentId}
+          providers={providers}
+          defaultModelSelection={
+            repositoriesById.get(startThreadRequest.ticket.primaryT3ProjectId)
+              ?.defaultModelSelection ?? null
+          }
+          pending={pending}
+          additional={startThreadRequest.mode === "additional"}
+          onOpenChange={(open) => {
+            if (!open) setStartThreadRequest(null);
+          }}
+          onStart={startSelectedThread}
+        />
+      ) : null}
+      {attachThreadTicket ? (
+        <WorkbenchAttachThreadDialog
+          threads={[...threadsById.values()].filter(
+            (thread) =>
+              thread.projectId === attachThreadTicket.primaryT3ProjectId &&
+              !(snapshot?.assignments ?? []).some(
+                (assignment) => assignment.threadId === thread.id,
+              ),
+          )}
+          pending={pending}
+          error={error}
+          onClose={() => setAttachThreadTicket(null)}
+          onAttach={attachExistingThread}
         />
       ) : null}
       {selectedProject ? (

@@ -32,12 +32,7 @@ export type WorkbenchTicketWorkspaceAttemptId = typeof WorkbenchTicketWorkspaceA
 export const WorkbenchTicketKind = Schema.Literals(["story", "bug"]);
 export type WorkbenchTicketKind = typeof WorkbenchTicketKind.Type;
 
-export const WorkbenchTicketStatus = Schema.Literals([
-  "todo",
-  "in_progress",
-  "ready_for_review",
-  "done",
-]);
+export const WorkbenchTicketStatus = Schema.Literals(["todo", "in_progress", "done"]);
 export type WorkbenchTicketStatus = typeof WorkbenchTicketStatus.Type;
 
 export const WorkbenchTicketWorkspaceStatus = Schema.Literals([
@@ -91,6 +86,9 @@ export const WorkbenchTicket = Schema.Struct({
   ),
   status: WorkbenchTicketStatus,
   blocked: Schema.Boolean,
+  // Optional for compatibility with snapshots produced before Ticket
+  // archiving was introduced. New snapshots always include null or a time.
+  archivedAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -151,6 +149,16 @@ export const WorkbenchCreateProjectInput = Schema.Struct({
 });
 export type WorkbenchCreateProjectInput = typeof WorkbenchCreateProjectInput.Type;
 
+export const WorkbenchUpdateProjectInput = Schema.Struct({
+  id: WorkbenchProjectId,
+  title: WorkbenchProject.fields.title,
+  // The server treats this as an additive set. Existing links remain intact;
+  // callers may send either the new IDs or the full selected list.
+  linkedProjectIds: WorkbenchProject.fields.linkedProjectIds,
+  updatedAt: IsoDateTime,
+});
+export type WorkbenchUpdateProjectInput = typeof WorkbenchUpdateProjectInput.Type;
+
 export const WorkbenchCreateEpicInput = Schema.Struct({
   id: WorkbenchEpicId,
   projectId: WorkbenchProjectId,
@@ -201,6 +209,19 @@ export const WorkbenchUpdateTicketInput = Schema.Struct({
 });
 export type WorkbenchUpdateTicketInput = typeof WorkbenchUpdateTicketInput.Type;
 
+export const WorkbenchArchiveTicketInput = Schema.Struct({
+  ticketId: WorkbenchTicketId,
+  archivedAt: Schema.NullOr(IsoDateTime),
+  updatedAt: IsoDateTime,
+});
+export type WorkbenchArchiveTicketInput = typeof WorkbenchArchiveTicketInput.Type;
+
+export const WorkbenchDeleteTicketInput = Schema.Struct({
+  ticketId: WorkbenchTicketId,
+  deletedAt: IsoDateTime,
+});
+export type WorkbenchDeleteTicketInput = typeof WorkbenchDeleteTicketInput.Type;
+
 export const WorkbenchCreateAssignmentInput = Schema.Struct({
   id: WorkbenchAssignmentId,
   ticketId: WorkbenchTicketId,
@@ -236,6 +257,8 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "epic_project_mismatch",
   "epic_archived",
   "ticket_not_found",
+  "ticket_archived",
+  "jira_managed_ticket",
   "linked_project_not_found",
   "primary_project_not_linked",
   "repository_not_linked",

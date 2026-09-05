@@ -54,6 +54,7 @@ const repositoryHarness = () => {
     listBindings: () => Effect.succeed([]),
     upsertBinding: () => Effect.void,
     updateBindingSyncMetadata: () => Effect.succeed(true),
+    updateBindingSyncError: () => Effect.succeed(true),
     listIssueLinks: () => Effect.succeed([]),
     replaceIssueLinks: () => Effect.void,
   } satisfies WorkbenchJiraRepositoryShape);

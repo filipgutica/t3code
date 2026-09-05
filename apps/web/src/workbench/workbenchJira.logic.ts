@@ -1,10 +1,35 @@
 import type {
   WorkbenchJiraBoardConfiguration,
+  WorkbenchJiraBoardColumn,
   WorkbenchJiraStatusMapping,
   WorkbenchTicket,
   WorkbenchTicketId,
   WorkbenchTicketStatus,
 } from "@t3tools/contracts";
+
+import { WORKBENCH_TICKET_STATUSES, WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
+
+export const getWorkbenchJiraBindingSprints = (binding: {
+  readonly sprintId: number;
+  readonly sprintName: string;
+  readonly selectedSprints?: ReadonlyArray<{ readonly id: number; readonly name: string }>;
+}) =>
+  binding.selectedSprints?.length
+    ? binding.selectedSprints
+    : [{ id: binding.sprintId, name: binding.sprintName }];
+
+export const resolveWorkbenchJiraRedirectUri = ({
+  desktop,
+  browserOrigin,
+  serverHttpUrl,
+}: {
+  readonly desktop: boolean;
+  readonly browserOrigin: string;
+  readonly serverHttpUrl: string;
+}) =>
+  desktop
+    ? new URL("/oauth/workbench/jira/callback", serverHttpUrl).toString()
+    : new URL("/workbench", browserOrigin).toString();
 
 type WorkbenchTicketUpdateFields = Pick<
   WorkbenchTicket,
@@ -20,16 +45,16 @@ type WorkbenchTicketUpdateFields = Pick<
 
 const suggestedWorkbenchStatus = ({
   columnIndex,
-  columnCount,
+  name,
   done,
 }: {
   readonly columnIndex: number;
-  readonly columnCount: number;
+  readonly name: string;
   readonly done: boolean;
 }): WorkbenchTicketStatus => {
   if (done) return "done";
+  if (/^to[ _-]?do$/i.test(name.trim())) return "todo";
   if (columnIndex === 0) return "todo";
-  if (columnCount >= 4 && columnIndex === columnCount - 2) return "ready_for_review";
   return "in_progress";
 };
 
@@ -41,7 +66,7 @@ export function suggestWorkbenchJiraStatusMappings(
       jiraStatusId,
       workbenchStatus: suggestedWorkbenchStatus({
         columnIndex,
-        columnCount: configuration.columns.length,
+        name: column.name,
         done: column.done,
       }),
     })),
@@ -162,7 +187,62 @@ export function orderWorkbenchTicketLanesByJiraRank<
   return {
     todo: orderLane("todo"),
     in_progress: orderLane("in_progress"),
-    ready_for_review: orderLane("ready_for_review"),
     done: orderLane("done"),
   };
+}
+
+export function getWorkbenchBoardColumns<Ticket extends Pick<WorkbenchTicket, "id" | "status">>({
+  tickets,
+  mirrorColumns,
+  issueLinks,
+}: {
+  readonly tickets: ReadonlyArray<Ticket>;
+  readonly mirrorColumns: ReadonlyArray<WorkbenchJiraBoardColumn> | null;
+  readonly issueLinks: ReadonlyMap<
+    WorkbenchTicketId,
+    { readonly issue: { readonly status: { readonly id: string } } }
+  >;
+}): Array<{ id: string; title: string; status: WorkbenchTicketStatus; tickets: Array<Ticket> }> {
+  const columns = mirrorColumns?.length
+    ? mirrorColumns.map((column, index) => ({
+        id: `jira-${index}`,
+        title: column.name,
+        status: suggestedWorkbenchStatus({
+          columnIndex: index,
+          name: column.name,
+          done: column.done,
+        }),
+        tickets: [] as Array<Ticket>,
+      }))
+    : WORKBENCH_TICKET_STATUSES.map((status) => ({
+        id: status,
+        title: WORKBENCH_TICKET_STATUS_LABELS[status],
+        status,
+        tickets: [] as Array<Ticket>,
+      }));
+  for (const ticket of tickets) {
+    const link = issueLinks.get(ticket.id);
+    const jiraIndex =
+      link && mirrorColumns?.length
+        ? mirrorColumns.findIndex((column) => column.statusIds.includes(link.issue.status.id))
+        : -1;
+    let column = jiraIndex >= 0 ? columns[jiraIndex] : undefined;
+    if (!column && ticket.status === "todo") {
+      column = columns.find(
+        (candidate) => candidate.status === "todo" && /^to[ _-]?do$/iu.test(candidate.title.trim()),
+      );
+    }
+    if (!column) column = columns.find((candidate) => candidate.status === ticket.status);
+    if (!column) {
+      column = {
+        id: ticket.status,
+        title: WORKBENCH_TICKET_STATUS_LABELS[ticket.status],
+        status: ticket.status,
+        tickets: [],
+      };
+      columns.push(column);
+    }
+    column.tickets.push(ticket);
+  }
+  return columns;
 }

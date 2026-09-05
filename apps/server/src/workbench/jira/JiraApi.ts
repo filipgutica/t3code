@@ -85,7 +85,7 @@ const RawBoardConfiguration = Schema.Struct({
 });
 
 const RawIssueReference = Schema.Struct({
-  id: Schema.String,
+  id: Schema.Union([Schema.String, Schema.Number]),
   key: Schema.String,
   name: Schema.optionalKey(Schema.String),
   summary: Schema.optionalKey(Schema.String),
@@ -105,6 +105,7 @@ const RawIssue = Schema.Struct({
   key: Schema.String,
   fields: Schema.Struct({
     summary: Schema.String,
+    description: Schema.optionalKey(Schema.NullOr(Schema.String)),
     issuetype: Schema.Struct({ id: Schema.String, name: Schema.String }),
     status: Schema.Struct({ id: Schema.String, name: Schema.String }),
     updated: Schema.optionalKey(Schema.String),
@@ -205,7 +206,10 @@ export const make = Effect.gen(function* () {
         response.status >= 200 && response.status < 300
           ? HttpClientResponse.schemaBodyJson(input.schema)(response).pipe(
               Effect.mapError(() =>
-                apiError("response_invalid", "Jira returned an unexpected response."),
+                apiError(
+                  "response_invalid",
+                  `Jira returned an unexpected response for ${input.path}.`,
+                ),
               ),
             )
           : Effect.fail(apiError("request_failed", httpStatusErrorMessage(response.status))),
@@ -361,7 +365,7 @@ export const make = Effect.gen(function* () {
           path: `/rest/software/1.0/board/${input.boardId}/sprint/${input.sprintId}/issue`,
           urlParams: {
             jql: "assignee = currentUser()",
-            fields: "summary,issuetype,status,updated,flagged,epic,parent",
+            fields: "summary,description,issuetype,status,updated,flagged,epic,parent",
             maxResults: "100",
             ...(nextPageToken === undefined ? {} : { nextPageToken }),
           },
@@ -385,7 +389,7 @@ export const make = Effect.gen(function* () {
         const epic =
           directEpic !== null && directEpic !== undefined
             ? {
-                id: directEpic.id,
+                id: String(directEpic.id),
                 key: directEpic.key,
                 summary: directEpic.summary ?? directEpic.name ?? directEpic.key,
               }
@@ -401,6 +405,7 @@ export const make = Effect.gen(function* () {
           key: issue.key,
           url: `${siteUrl}/browse/${encodeURIComponent(issue.key)}`,
           summary: issue.fields.summary,
+          description: issue.fields.description ?? "",
           issueType: issue.fields.issuetype,
           status: issue.fields.status,
           epic,

@@ -15,6 +15,7 @@ const ATLASSIAN_ACCESSIBLE_RESOURCES_URL =
 export const JIRA_OAUTH_SCOPES = [
   "read:project:jira",
   "read:jira-work",
+  "write:jira-work",
   "read:board-scope:jira-software",
   "read:board-scope.admin:jira-software",
   "read:sprint:jira-software",

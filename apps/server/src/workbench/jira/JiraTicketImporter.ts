@@ -23,8 +23,8 @@ export interface JiraTicketImportInput {
 export interface JiraTicketImporterShape {
   /**
    * Creates or updates the local Ticket projection for Jira-owned fields only:
-   * title, remote type, mapped status, and Epic link. An implementation must
-   * preserve instructions, repository scope, Assignments, and Thread history.
+   * title, description, remote type, mapped status, and Epic link. An implementation must
+   * preserve repository scope, Assignments, and Thread history.
    */
   readonly upsertJiraProjection: (
     input: JiraTicketImportInput,
@@ -78,6 +78,7 @@ export const layer = Layer.effect(
         readonly kind: "story" | "bug";
         readonly status: WorkbenchTicketStatus;
         readonly blocked: boolean;
+        readonly markdown: string | null;
         readonly updatedAt: string;
       }) {
         const updated = yield* sql<{ readonly ticketId: string }>`
@@ -88,6 +89,7 @@ export const layer = Layer.effect(
           kind = ${input.kind},
           status = ${input.status},
           blocked = ${input.blocked ? 1 : 0},
+          markdown = COALESCE(${input.markdown}, markdown),
           updated_at = MAX(updated_at, ${input.updatedAt})
         WHERE ticket_id = ${input.ticketId}
         RETURNING ticket_id AS "ticketId"
@@ -149,7 +151,7 @@ export const layer = Layer.effect(
                 epicId,
                 title: input.issue.summary,
                 kind,
-                markdown: "",
+                markdown: input.issue.description ?? "",
                 primaryT3ProjectId: input.binding.defaultPrimaryT3ProjectId,
                 repositoryProjectIds: input.binding.defaultRepositoryProjectIds,
                 createdAt: updatedAt,
@@ -167,6 +169,7 @@ export const layer = Layer.effect(
               kind,
               status: input.mappedStatus,
               blocked: input.issue.flagged,
+              markdown: input.issue.description ?? null,
               updatedAt,
             }).pipe(
               Effect.mapError(() =>
@@ -190,6 +193,7 @@ export const layer = Layer.effect(
                 kind: created.kind,
                 status: input.mappedStatus,
                 blocked: input.issue.flagged,
+                markdown: input.issue.description ?? null,
                 updatedAt,
               }).pipe(
                 Effect.mapError(() =>

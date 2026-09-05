@@ -56,14 +56,12 @@ export function isWorkbenchTicketKind(value: unknown): value is WorkbenchTicketK
 export const WORKBENCH_TICKET_STATUSES = [
   "todo",
   "in_progress",
-  "ready_for_review",
   "done",
 ] as const satisfies ReadonlyArray<WorkbenchTicketStatus>;
 
 export const WORKBENCH_TICKET_STATUS_LABELS: Record<WorkbenchTicketStatus, string> = {
   todo: "Todo",
   in_progress: "In Progress",
-  ready_for_review: "Ready for Review",
   done: "Done",
 };
 
@@ -125,7 +123,7 @@ export function getWorkbenchThreadPresentation(
     return {
       actionLabel: "Open Thread",
       pendingActionLabel: "Opening Thread…",
-      stateLabel: nativeStateLabel ?? "Ready",
+      stateLabel: nativeStateLabel ?? "Idle",
       state: "linked",
     } as const;
   }
@@ -152,10 +150,31 @@ export function getWorkbenchContextForThread(
 
 export function getActiveAssignmentsByTicket(
   assignments: ReadonlyArray<WorkbenchAssignment>,
+  liveThreadIds?: ReadonlySet<ThreadId>,
+  archivedThreadIds?: ReadonlySet<ThreadId>,
 ): ReadonlyMap<WorkbenchTicketId, WorkbenchAssignment> {
   const activeAssignments = new Map<WorkbenchTicketId, WorkbenchAssignment>();
-  for (const assignment of assignments) {
-    if (assignment.supersededAt === null) activeAssignments.set(assignment.ticketId, assignment);
+  for (const assignment of assignments.toSorted(
+    (left, right) =>
+      right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
+  )) {
+    if (assignment.supersededAt !== null) continue;
+    const current = activeAssignments.get(assignment.ticketId);
+    const assignmentAvailability = liveThreadIds?.has(assignment.threadId)
+      ? 2
+      : archivedThreadIds?.has(assignment.threadId)
+        ? 1
+        : 0;
+    const currentAvailability = current
+      ? liveThreadIds?.has(current.threadId)
+        ? 2
+        : archivedThreadIds?.has(current.threadId)
+          ? 1
+          : 0
+      : -1;
+    if (!current || assignmentAvailability > currentAvailability) {
+      activeAssignments.set(assignment.ticketId, assignment);
+    }
   }
   return activeAssignments;
 }
@@ -282,9 +301,55 @@ export function ticketsByStatus<Ticket extends Pick<WorkbenchTicket, "status">>(
   const grouped: Record<WorkbenchTicketStatus, Array<Ticket>> = {
     todo: [],
     in_progress: [],
-    ready_for_review: [],
     done: [],
   };
   for (const ticket of tickets) grouped[ticket.status].push(ticket);
   return grouped;
+}
+
+/** Normalize native Thread presentation without maintaining another agent lifecycle. */
+export function getWorkbenchAgentPresentation({
+  nativeLabel,
+  sessionStatus,
+  turnState,
+}: {
+  readonly nativeLabel: string | null | undefined;
+  readonly sessionStatus: string | null | undefined;
+  readonly turnState: string | null | undefined;
+}) {
+  const needsInput = {
+    label: "Blocked / needs input",
+    dotClass: "bg-warning",
+    colorClass: "text-warning-foreground",
+  } as const;
+  if (
+    nativeLabel === "Pending Approval" ||
+    nativeLabel === "Awaiting Input" ||
+    nativeLabel === "Plan Ready"
+  )
+    return needsInput;
+  if (nativeLabel === "Working" || nativeLabel === "Connecting" || nativeLabel === "Monitoring") {
+    return { label: "Working", dotClass: "bg-info", colorClass: "text-info-foreground" } as const;
+  }
+  if (sessionStatus === "error" || turnState === "error" || turnState === "interrupted")
+    return needsInput;
+  if (turnState === "completed")
+    return {
+      label: "Ready for review",
+      dotClass: "bg-success",
+      colorClass: "text-success-foreground",
+    } as const;
+  return null;
+}
+
+export function getWorkbenchTicketAgentPresentation(
+  threads: ReadonlyArray<Parameters<typeof getWorkbenchAgentPresentation>[0]>,
+) {
+  const states = threads.map(getWorkbenchAgentPresentation);
+  return (
+    states.find((state) => state?.label === "Blocked / needs input") ??
+    states.find((state) => state?.label === "Working") ??
+    states.find((state) => state?.label === "Ready for review") ??
+    null
+  );
 }

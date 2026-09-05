@@ -1,5 +1,6 @@
 import {
   type EnvironmentId,
+  type ThreadId,
   WorkbenchEpicId,
   WorkbenchProjectId,
   WorkbenchTicketId,
@@ -8,6 +9,8 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
   AlertCircleIcon,
+  ArchiveIcon,
+  ArrowLeftIcon,
   BlocksIcon,
   LayoutDashboardIcon,
   PlusIcon,
@@ -40,6 +43,7 @@ export function WorkbenchSidebar({
   readonly context?:
     | {
         readonly environmentId: EnvironmentId;
+        readonly threadId: ThreadId;
         readonly workspaceId: WorkbenchProjectId;
         readonly ticketId: WorkbenchTicketId;
       }
@@ -67,10 +71,18 @@ export function WorkbenchSidebar({
   const ticketCountsByWorkspace = useMemo(() => {
     const counts = new Map<WorkbenchProjectId, number>();
     for (const ticket of snapshot?.tickets ?? []) {
+      if (ticket.archivedAt != null) continue;
       counts.set(ticket.projectId, (counts.get(ticket.projectId) ?? 0) + 1);
     }
     return counts;
   }, [snapshot?.tickets]);
+  const archivedTickets = useMemo(
+    () =>
+      (snapshot?.tickets ?? []).filter(
+        (ticket) => ticket.projectId === selectedWorkspaceId && ticket.archivedAt != null,
+      ),
+    [selectedWorkspaceId, snapshot?.tickets],
+  );
 
   const selectWorkspace = (projectId: WorkbenchProjectId) => {
     if (isMobile) setOpenMobile(false);
@@ -79,6 +91,16 @@ export function WorkbenchSidebar({
       search: { projectId },
       replace: true,
     });
+  };
+  const leaveWorkbench = () => {
+    if (isMobile) setOpenMobile(false);
+    void (context
+      ? navigate({
+          to: "/$environmentId/$threadId",
+          params: { environmentId: context.environmentId, threadId: context.threadId },
+          search: {},
+        })
+      : navigate({ to: "/", search: {} }));
   };
   const addWorkspace = () => {
     if (isMobile) setOpenMobile(false);
@@ -98,6 +120,14 @@ export function WorkbenchSidebar({
     <>
       <SidebarContent className="overflow-x-hidden">
         <SidebarGroup className="gap-2 p-[var(--sidebar-content-inset)]">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton onClick={leaveWorkbench}>
+                <ArrowLeftIcon />
+                <span>Back to Threads</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
           <div className="flex h-8 items-center gap-2 px-2 text-xs font-semibold uppercase tracking-wide text-sidebar-muted-foreground">
             <BlocksIcon className="size-3.5" />
             <span>Workspaces</span>
@@ -135,23 +165,63 @@ export function WorkbenchSidebar({
               No Workspaces yet. Use Add Workspace above.
             </p>
           ) : (
-            <SidebarMenu aria-label="Workbench Workspaces" className="ps-px">
-              {(snapshot?.projects ?? []).map((workspace) => (
-                <SidebarMenuItem key={workspace.id}>
-                  <SidebarMenuButton
-                    aria-current={workspace.id === selectedWorkspaceId ? "page" : undefined}
-                    isActive={workspace.id === selectedWorkspaceId}
-                    onClick={() => selectWorkspace(workspace.id)}
-                  >
-                    <LayoutDashboardIcon />
-                    <span className="min-w-0 flex-1 truncate">{workspace.title}</span>
+            <div className="space-y-4">
+              <SidebarMenu aria-label="Workbench Workspaces" className="ps-px">
+                {(snapshot?.projects ?? []).map((workspace) => (
+                  <SidebarMenuItem key={workspace.id}>
+                    <SidebarMenuButton
+                      aria-current={workspace.id === selectedWorkspaceId ? "page" : undefined}
+                      isActive={workspace.id === selectedWorkspaceId}
+                      onClick={() => selectWorkspace(workspace.id)}
+                    >
+                      <LayoutDashboardIcon />
+                      <span className="min-w-0 flex-1 truncate">{workspace.title}</span>
+                      <span className="text-xs tabular-nums text-sidebar-muted-foreground">
+                        {ticketCountsByWorkspace.get(workspace.id) ?? 0}
+                      </span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+              {selectedWorkspaceId ? (
+                <section aria-label="Archived Tickets" className="space-y-2">
+                  <div className="flex items-center justify-between gap-2 px-2">
+                    <h2 className="text-xs font-semibold uppercase tracking-wide text-sidebar-muted-foreground">
+                      Archived Tickets
+                    </h2>
                     <span className="text-xs tabular-nums text-sidebar-muted-foreground">
-                      {ticketCountsByWorkspace.get(workspace.id) ?? 0}
+                      {archivedTickets.length}
                     </span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
+                  </div>
+                  {archivedTickets.length > 0 ? (
+                    <SidebarMenu className="ps-px">
+                      {archivedTickets.map((ticket) => (
+                        <SidebarMenuItem key={ticket.id}>
+                          <SidebarMenuButton
+                            isActive={ticket.id === selectedTicketId}
+                            onClick={() => {
+                              if (isMobile) setOpenMobile(false);
+                              void navigate({
+                                to: "/workbench",
+                                search: { projectId: ticket.projectId, ticketId: ticket.id },
+                                replace: true,
+                              });
+                            }}
+                          >
+                            <ArchiveIcon />
+                            <span className="min-w-0 flex-1 truncate">{ticket.title}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                    </SidebarMenu>
+                  ) : (
+                    <p className="px-2 text-xs text-sidebar-muted-foreground">
+                      No archived Tickets.
+                    </p>
+                  )}
+                </section>
+              ) : null}
+            </div>
           )}
         </SidebarGroup>
       </SidebarContent>

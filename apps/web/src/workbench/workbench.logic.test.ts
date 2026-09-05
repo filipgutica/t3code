@@ -11,6 +11,7 @@ import {
 import {
   buildTicketThreadPrompt,
   getActiveAssignmentsByTicket,
+  getWorkbenchTicketAgentPresentation,
   getAssignmentsForTicket,
   getWorkbenchEpicProgress,
   getWorkbenchContextForThread,
@@ -18,6 +19,7 @@ import {
   getWorkbenchTicketRepositoryProjectIds,
   getWorkbenchTicketTemplate,
   getWorkbenchThreadPresentation,
+  getWorkbenchAgentPresentation,
   getWorkbenchTicketStatusMoves,
   isWorkbenchTicketKind,
   isWorkbenchTicketStatus,
@@ -187,7 +189,6 @@ describe("Workbench ticket helpers", () => {
 
     expect(grouped.todo).toEqual([tickets[0]]);
     expect(grouped.in_progress).toEqual([tickets[1]]);
-    expect(grouped.ready_for_review).toEqual([]);
     expect(grouped.done).toEqual([]);
   });
 
@@ -195,21 +196,16 @@ describe("Workbench ticket helpers", () => {
     expect(WORKBENCH_TICKET_STATUS_LABELS).toEqual({
       todo: "Todo",
       in_progress: "In Progress",
-      ready_for_review: "Ready for Review",
       done: "Done",
     });
   });
 
   it("offers every other Board column as a direct Ticket destination", () => {
-    expect(getWorkbenchTicketStatusMoves("in_progress")).toEqual([
-      "todo",
-      "ready_for_review",
-      "done",
-    ]);
+    expect(getWorkbenchTicketStatusMoves("in_progress")).toEqual(["todo", "done"]);
   });
 
   it("recognizes only supported Board statuses", () => {
-    expect(isWorkbenchTicketStatus("ready_for_review")).toBe(true);
+    expect(isWorkbenchTicketStatus("ready_for_review")).toBe(false);
     expect(isWorkbenchTicketStatus("blocked")).toBe(false);
     expect(isWorkbenchTicketStatus(null)).toBe(false);
   });
@@ -224,7 +220,7 @@ describe("Workbench ticket helpers", () => {
     expect(getWorkbenchThreadPresentation(true, true)).toEqual({
       actionLabel: "Open Thread",
       pendingActionLabel: "Opening Thread…",
-      stateLabel: "Ready",
+      stateLabel: "Idle",
       state: "linked",
     });
     expect(getWorkbenchThreadPresentation(true, true, "Pending Approval")).toEqual({
@@ -307,6 +303,22 @@ describe("Workbench ticket helpers", () => {
     ).toBeNull();
   });
 
+  it("surfaces a sibling Thread needing input before another Thread's activity", () => {
+    const working = { nativeLabel: "Working", sessionStatus: "running", turnState: "running" };
+    const blocked = {
+      nativeLabel: "Awaiting Input",
+      sessionStatus: "ready",
+      turnState: "completed",
+    };
+    expect(getWorkbenchTicketAgentPresentation([working, blocked])?.label).toBe(
+      "Blocked / needs input",
+    );
+    expect(getWorkbenchTicketAgentPresentation([blocked, working])?.label).toBe(
+      "Blocked / needs input",
+    );
+    expect(getWorkbenchTicketAgentPresentation([working])?.label).toBe("Working");
+  });
+
   it("separates the active Assignment from a Ticket's historical Assignments", () => {
     const ticketId = WorkbenchTicketId.make("ticket-one");
     const historical = {
@@ -328,6 +340,65 @@ describe("Workbench ticket helpers", () => {
     expect(getAssignmentsForTicket([historical, active], ticketId)).toEqual([active, historical]);
   });
 
+  it("chooses the newest available active Thread independent of assignment order", () => {
+    const ticketId = WorkbenchTicketId.make("ticket-one");
+    const older = {
+      id: WorkbenchAssignmentId.make("older"),
+      ticketId,
+      threadId: ThreadId.make("existing"),
+      createdAt: "2026-09-03T00:00:00.000Z",
+      supersededAt: null,
+    };
+    const newer = {
+      ...older,
+      id: WorkbenchAssignmentId.make("newer"),
+      threadId: ThreadId.make("deleted"),
+      createdAt: "2026-09-04T00:00:00.000Z",
+    };
+    expect(getActiveAssignmentsByTicket([newer, older]).get(ticketId)).toEqual(newer);
+    expect(
+      getActiveAssignmentsByTicket([older, newer], new Set([older.threadId])).get(ticketId),
+    ).toEqual(older);
+  });
+
+  it("prefers live Threads over archived and missing active assignments", () => {
+    const ticketId = WorkbenchTicketId.make("ticket-one");
+    const live = {
+      id: WorkbenchAssignmentId.make("live-assignment"),
+      ticketId,
+      threadId: ThreadId.make("live-thread"),
+      createdAt: "2026-09-03T00:00:00.000Z",
+      supersededAt: null,
+    } as const;
+    const archived = {
+      ...live,
+      id: WorkbenchAssignmentId.make("archived-assignment"),
+      threadId: ThreadId.make("archived-thread"),
+      createdAt: "2026-09-04T00:00:00.000Z",
+    };
+    const missing = {
+      ...live,
+      id: WorkbenchAssignmentId.make("missing-assignment"),
+      threadId: ThreadId.make("missing-thread"),
+      createdAt: "2026-09-05T00:00:00.000Z",
+    };
+
+    expect(
+      getActiveAssignmentsByTicket(
+        [missing, archived, live],
+        new Set([live.threadId]),
+        new Set([archived.threadId]),
+      ).get(ticketId),
+    ).toEqual(live);
+    expect(
+      getActiveAssignmentsByTicket(
+        [missing, archived, live],
+        new Set(),
+        new Set([archived.threadId]),
+      ).get(ticketId),
+    ).toEqual(archived);
+  });
+
   it("opens an existing active Thread even when its primary Repository is unavailable", () => {
     const threadId = ThreadId.make("thread-one");
 
@@ -339,5 +410,32 @@ describe("Workbench ticket helpers", () => {
         new Set([threadId]),
       ),
     ).toEqual({ state: "open", threadId });
+  });
+});
+
+describe("Workbench agent activity", () => {
+  const idle = { nativeLabel: null, sessionStatus: null, turnState: null };
+  it("normalizes native activity independently of Ticket progress", () => {
+    expect(getWorkbenchAgentPresentation(idle)).toBeNull();
+    for (const nativeLabel of ["Working", "Connecting", "Monitoring"]) {
+      expect(
+        getWorkbenchAgentPresentation({ ...idle, nativeLabel, turnState: "completed" })?.label,
+      ).toBe("Working");
+    }
+    for (const nativeLabel of ["Pending Approval", "Awaiting Input", "Plan Ready"]) {
+      expect(
+        getWorkbenchAgentPresentation({ ...idle, nativeLabel, sessionStatus: "running" })?.label,
+      ).toBe("Blocked / needs input");
+    }
+    expect(getWorkbenchAgentPresentation({ ...idle, turnState: "completed" })?.label).toBe(
+      "Ready for review",
+    );
+    expect(getWorkbenchAgentPresentation({ ...idle, turnState: "interrupted" })?.label).toBe(
+      "Blocked / needs input",
+    );
+    expect(
+      getWorkbenchAgentPresentation({ ...idle, sessionStatus: "error", turnState: "completed" })
+        ?.label,
+    ).toBe("Blocked / needs input");
   });
 });

@@ -1,6 +1,6 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
-import { BlocksIcon, CircleAlertIcon, TicketIcon } from "lucide-react";
+import { BlocksIcon, TicketIcon } from "lucide-react";
 
 import {
   WorkspaceBreadcrumbItem,
@@ -56,12 +56,6 @@ export function WorkbenchThreadBreadcrumb({
           <span className="hidden shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground xl:inline">
             {WORKBENCH_TICKET_STATUS_LABELS[ticket.status]}
           </span>
-          {ticket.blocked ? (
-            <CircleAlertIcon
-              aria-label="Blocked"
-              className="size-3.5 shrink-0 text-warning-foreground"
-            />
-          ) : null}
         </Link>
       </WorkspaceBreadcrumbItem>
       <WorkspaceBreadcrumbSeparator />

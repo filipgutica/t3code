@@ -1,3 +1,4 @@
+import { parseWorkbenchThreadSearch } from "../workbench/workbenchNavigation";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
@@ -94,4 +95,5 @@ function ChatThreadRouteView() {
 
 export const Route = createFileRoute("/_chat/$environmentId/$threadId")({
   component: ChatThreadRouteView,
+  validateSearch: parseWorkbenchThreadSearch,
 });

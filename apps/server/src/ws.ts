@@ -1276,6 +1276,10 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.workbenchCreateProject, workbench.createProject(input), {
             "rpc.aggregate": "workbench",
           }),
+        [WS_METHODS.workbenchUpdateProject]: (input) =>
+          observeRpcEffect(WS_METHODS.workbenchUpdateProject, workbench.updateProject(input), {
+            "rpc.aggregate": "workbench",
+          }),
         [WS_METHODS.workbenchCreateEpic]: (input) =>
           observeRpcEffect(WS_METHODS.workbenchCreateEpic, workbench.createEpic(input), {
             "rpc.aggregate": "workbench",
@@ -1294,6 +1298,14 @@ const makeWsRpcLayer = (
           }),
         [WS_METHODS.workbenchUpdateTicket]: (input) =>
           observeRpcEffect(WS_METHODS.workbenchUpdateTicket, workbench.updateTicket(input), {
+            "rpc.aggregate": "workbench",
+          }),
+        [WS_METHODS.workbenchArchiveTicket]: (input) =>
+          observeRpcEffect(WS_METHODS.workbenchArchiveTicket, workbench.archiveTicket(input), {
+            "rpc.aggregate": "workbench",
+          }),
+        [WS_METHODS.workbenchDeleteTicket]: (input) =>
+          observeRpcEffect(WS_METHODS.workbenchDeleteTicket, workbench.deleteTicket(input), {
             "rpc.aggregate": "workbench",
           }),
         [WS_METHODS.workbenchCreateAssignment]: (input) =>
@@ -1370,6 +1382,12 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.workbenchJiraSyncBinding, workbenchJira.syncBinding(input), {
             "rpc.aggregate": "workbench",
           }),
+        [WS_METHODS.workbenchJiraUpdateTicket]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workbenchJiraUpdateTicket,
+            workbenchJira.updateTicket(input),
+            { "rpc.aggregate": "workbench" },
+          ),
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,

@@ -20,7 +20,10 @@ import { newMessageId, newThreadId, randomUUID } from "../lib/utils";
 import { resolveDefaultProviderModelSelection } from "../providerInstances";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
-import { coordinateWorkbenchTicketStart } from "./startWorkbenchTicket";
+import {
+  coordinateWorkbenchTicketStart,
+  type StartWorkbenchTicketOptions,
+} from "./startWorkbenchTicket";
 import { workbenchEnvironment } from "./state";
 
 const commandFailureMessage = (failure: {
@@ -69,7 +72,7 @@ export function useStartWorkbenchTicket({
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
 
   return useCallback(
-    (ticket: WorkbenchTicket) => {
+    (ticket: WorkbenchTicket, options?: StartWorkbenchTicketOptions) => {
       if (environmentId === null) return;
       void (async () => {
         onPendingChange(`start:${ticket.id}`);
@@ -104,6 +107,7 @@ export function useStartWorkbenchTicket({
               makeMessageId: newMessageId,
               now: () => new Date().toISOString(),
             },
+            options,
           );
         } catch (cause) {
           onError(

@@ -9,7 +9,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
+import { useLocation, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 
 import { isElectron } from "../env";
 import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
@@ -29,6 +29,7 @@ import { useProjects } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { resolveThreadRouteRef } from "../threadRoutes";
 import { workbenchEnvironment } from "../workbench/state";
+import { shouldShowWorkbenchSidebar } from "../workbench/workbenchNavigation";
 import { getWorkbenchContextForThread } from "../workbench/workbench.logic";
 import {
   resolveInitialThreadSidebarWidth,
@@ -163,6 +164,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   // Settings routes show the settings nav in place of whichever thread
   // sidebar is active.
   const pathname = useLocation({ select: (location) => location.pathname });
+  const search = useSearch({ strict: false });
   const routeThreadRef = useParams({
     strict: false,
     select: (params) => resolveThreadRouteRef(params),
@@ -180,12 +182,17 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     routeThreadRef && workbenchThreadContext
       ? {
           environmentId: routeThreadRef.environmentId,
+          threadId: routeThreadRef.threadId,
           workspaceId: workbenchThreadContext.workspace.id,
           ticketId: workbenchThreadContext.ticket.id,
         }
       : undefined;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
-  const isOnWorkbench = pathname === "/workbench";
+  const isOnWorkbench = shouldShowWorkbenchSidebar({
+    pathname,
+    search,
+    hasTicketContext: workbenchSidebarContext !== undefined,
+  });
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // Subscribed rather than read once: the clamp must track live window size,
@@ -282,7 +289,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
               <SettingsSidebarNav pathname={pathname} />
             </Suspense>
           </>
-        ) : isOnWorkbench || workbenchSidebarContext ? (
+        ) : isOnWorkbench ? (
           <>
             <SidebarChromeHeader isElectron={isElectron} />
             <Suspense fallback={null}>

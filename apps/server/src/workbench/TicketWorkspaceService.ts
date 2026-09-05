@@ -248,6 +248,23 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
   )(function* (input) {
     const nowMillis = yield* clock.currentTimeMillis;
     const operationAt = DateTime.formatIso(DateTime.makeUnsafe(nowMillis));
+    // Check lifecycle state before inspecting or releasing an existing
+    // Workspace. Archiving must not allow this flow to clean up a retained
+    // worktree, and deletion must not start a new preparation.
+    const snapshot = yield* store.getSnapshot;
+    const ticket = snapshot.tickets.find((candidate) => candidate.id === input.ticketId);
+    if (!ticket) {
+      return yield* new WorkbenchOperationError({
+        code: "ticket_not_found",
+        message: "The Workbench Ticket does not exist.",
+      });
+    }
+    if (ticket.archivedAt !== undefined && ticket.archivedAt !== null) {
+      return yield* new WorkbenchOperationError({
+        code: "ticket_archived",
+        message: "Archived Workbench Tickets cannot receive a Workspace.",
+      });
+    }
     const existing = yield* store.getTicketWorkspace(input.ticketId);
     if (Option.isSome(existing) && existing.value.status === "ready") {
       let intact = true;
@@ -270,6 +287,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         ticketId: existing.value.ticketId,
         attemptId: existing.value.attemptId,
         claimedAt: operationAt,
+        requireActiveTicket: true,
       });
       yield* releaseClaimedWorkspace({ workspace: releasing, releasedAt: operationAt });
     }
@@ -277,14 +295,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       yield* releaseClaimedWorkspace({ workspace: existing.value, releasedAt: operationAt });
     }
 
-    const snapshot = yield* store.getSnapshot;
-    const ticket = snapshot.tickets.find((candidate) => candidate.id === input.ticketId);
-    if (!ticket) {
-      return yield* new WorkbenchOperationError({
-        code: "ticket_not_found",
-        message: "The Workbench Ticket does not exist.",
-      });
-    }
     if (Option.isSome(existing) && existing.value.status === "preparing") {
       const preparationAge = nowMillis - Date.parse(existing.value.updatedAt);
       if (!Number.isFinite(preparationAge) || preparationAge < interruptedPreparationThresholdMs) {
@@ -293,10 +303,10 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
           message: "The Ticket Workspace is already being prepared.",
         });
       }
-      const activeAssignment = snapshot.assignments.find(
+      const activeAssignments = snapshot.assignments.filter(
         (assignment) => assignment.ticketId === input.ticketId && assignment.supersededAt === null,
       );
-      if (activeAssignment) {
+      for (const activeAssignment of activeAssignments) {
         const thread = yield* projections
           .getThreadShellById(activeAssignment.threadId)
           .pipe(

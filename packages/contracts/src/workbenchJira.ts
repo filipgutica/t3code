@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
@@ -89,11 +90,20 @@ export const WorkbenchJiraBoardConfiguration = Schema.Struct({
 });
 export type WorkbenchJiraBoardConfiguration = typeof WorkbenchJiraBoardConfiguration.Type;
 
+export const WorkbenchJiraBoardMode = Schema.Literals(["mapped", "mirror_jira"]);
+export type WorkbenchJiraBoardMode = typeof WorkbenchJiraBoardMode.Type;
+
 export const WorkbenchJiraStatusMapping = Schema.Struct({
   jiraStatusId: TrimmedNonEmptyString,
   workbenchStatus: WorkbenchTicketStatus,
 });
 export type WorkbenchJiraStatusMapping = typeof WorkbenchJiraStatusMapping.Type;
+
+export const WorkbenchJiraSelectedSprint = Schema.Struct({
+  id: PositiveInt,
+  name: TrimmedNonEmptyString,
+});
+export type WorkbenchJiraSelectedSprint = typeof WorkbenchJiraSelectedSprint.Type;
 
 export const WorkbenchJiraBinding = Schema.Struct({
   id: WorkbenchJiraBindingId,
@@ -109,8 +119,24 @@ export const WorkbenchJiraBinding = Schema.Struct({
   defaultPrimaryT3ProjectId: ProjectId,
   defaultRepositoryProjectIds: Schema.Array(ProjectId).check(Schema.isMinLength(1)),
   statusMappings: Schema.Array(WorkbenchJiraStatusMapping),
+  followActiveSprint: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  selectedSprints: Schema.Array(WorkbenchJiraSelectedSprint).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  observedActiveSprintIds: Schema.Array(PositiveInt).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  boardMode: WorkbenchJiraBoardMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("mapped" as const)),
+  ),
+  boardColumns: Schema.Array(WorkbenchJiraBoardColumn).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
   active: Schema.Boolean,
   lastSyncedAt: Schema.NullOr(IsoDateTime),
+  lastSyncError: Schema.NullOr(TrimmedString).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -130,6 +156,9 @@ export const WorkbenchJiraCreateBindingInput = Schema.Struct({
   defaultPrimaryT3ProjectId: ProjectId,
   defaultRepositoryProjectIds: Schema.Array(ProjectId).check(Schema.isMinLength(1)),
   statusMappings: Schema.Array(WorkbenchJiraStatusMapping),
+  followActiveSprint: Schema.optionalKey(Schema.Boolean),
+  selectedSprints: Schema.optionalKey(Schema.Array(WorkbenchJiraSelectedSprint)),
+  boardMode: Schema.optionalKey(WorkbenchJiraBoardMode),
   createdAt: IsoDateTime,
 });
 export type WorkbenchJiraCreateBindingInput = typeof WorkbenchJiraCreateBindingInput.Type;
@@ -141,6 +170,9 @@ export const WorkbenchJiraUpdateBindingInput = Schema.Struct({
   defaultPrimaryT3ProjectId: ProjectId,
   defaultRepositoryProjectIds: Schema.Array(ProjectId).check(Schema.isMinLength(1)),
   statusMappings: Schema.Array(WorkbenchJiraStatusMapping),
+  followActiveSprint: Schema.optionalKey(Schema.Boolean),
+  selectedSprints: Schema.optionalKey(Schema.Array(WorkbenchJiraSelectedSprint)),
+  boardMode: Schema.optionalKey(WorkbenchJiraBoardMode),
   active: Schema.Boolean,
   updatedAt: IsoDateTime,
 });
@@ -171,6 +203,7 @@ export const WorkbenchJiraIssueSnapshot = Schema.Struct({
   key: TrimmedNonEmptyString,
   url: TrimmedNonEmptyString,
   summary: TrimmedNonEmptyString,
+  description: Schema.optionalKey(Schema.String),
   issueType: WorkbenchJiraIssueType,
   status: WorkbenchJiraIssueStatus,
   epic: Schema.NullOr(WorkbenchJiraEpicReference),
@@ -181,8 +214,8 @@ export const WorkbenchJiraIssueSnapshot = Schema.Struct({
 export type WorkbenchJiraIssueSnapshot = typeof WorkbenchJiraIssueSnapshot.Type;
 
 /**
- * The link contains only Jira-owned synchronization state. Ticket instructions,
- * repository scope, Assignments, and Threads remain in their existing owners.
+ * The link contains Jira synchronization state, including the shared description.
+ * Repository scope, Assignments, and native Threads remain locally owned.
  */
 export const WorkbenchJiraIssueLink = Schema.Struct({
   bindingId: WorkbenchJiraBindingId,
@@ -193,6 +226,14 @@ export const WorkbenchJiraIssueLink = Schema.Struct({
   lastSeenAt: IsoDateTime,
 });
 export type WorkbenchJiraIssueLink = typeof WorkbenchJiraIssueLink.Type;
+
+export const WorkbenchJiraUpdateTicketInput = Schema.Struct({
+  ticketId: WorkbenchTicketId,
+  markdown: Schema.optionalKey(TrimmedString.check(Schema.isMaxLength(120_000))),
+  status: Schema.optionalKey(WorkbenchTicketStatus),
+  expectedRemoteUpdatedAt: Schema.NullOr(IsoDateTime),
+});
+export type WorkbenchJiraUpdateTicketInput = typeof WorkbenchJiraUpdateTicketInput.Type;
 
 export const WorkbenchJiraBeginAuthInput = Schema.Struct({
   redirectUri: TrimmedNonEmptyString,
