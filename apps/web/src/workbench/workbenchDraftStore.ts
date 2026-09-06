@@ -1,41 +1,127 @@
-import type { WorkbenchTicketId } from "@t3tools/contracts";
+import type { EnvironmentId, WorkbenchTicket, WorkbenchTicketId } from "@t3tools/contracts";
 import { create } from "zustand";
 
 export interface WorkbenchTicketDraft {
   readonly title: string;
   readonly markdown: string;
   readonly mode: "editing" | "saved";
+  /** Ticket revision captured when editing began. */
+  readonly revision?: number;
   /** Remote Jira version captured when editing began; protects against stale overwrites. */
   readonly jiraRemoteUpdatedAt?: string | null;
+  readonly savedVersion?: WorkbenchTicketSavedVersion;
 }
 
+export type WorkbenchTicketSavedVersion =
+  | { readonly revision: number }
+  | { readonly jiraRemoteUpdatedAt: string | null };
+
+type DraftContent = Pick<
+  WorkbenchTicketDraft,
+  "title" | "markdown" | "revision" | "jiraRemoteUpdatedAt"
+>;
+
+export const isWorkbenchDraftProjected = ({
+  draft,
+  ticket,
+  jiraRemoteUpdatedAt,
+}: {
+  readonly draft: WorkbenchTicketDraft | undefined;
+  readonly ticket: Pick<WorkbenchTicket, "title" | "markdown" | "revision"> | undefined;
+  readonly jiraRemoteUpdatedAt?: string | null | undefined;
+}): boolean => {
+  if (draft?.mode !== "saved" || ticket === undefined) return false;
+  if (draft.savedVersion && "revision" in draft.savedVersion) {
+    return ticket.revision >= draft.savedVersion.revision;
+  }
+  if (draft.savedVersion?.jiraRemoteUpdatedAt != null) {
+    return (
+      jiraRemoteUpdatedAt != null &&
+      Date.parse(jiraRemoteUpdatedAt) >= Date.parse(draft.savedVersion.jiraRemoteUpdatedAt)
+    );
+  }
+  return ticket.title === draft.title && ticket.markdown === draft.markdown;
+};
+
 interface WorkbenchDraftStore {
-  readonly drafts: ReadonlyMap<WorkbenchTicketId, WorkbenchTicketDraft>;
-  readonly setDraft: (ticketId: WorkbenchTicketId, draft: WorkbenchTicketDraft) => void;
-  readonly markDraftSaved: (
+  readonly drafts: ReadonlyMap<EnvironmentId, ReadonlyMap<WorkbenchTicketId, WorkbenchTicketDraft>>;
+  readonly setDraft: (
+    environmentId: EnvironmentId,
     ticketId: WorkbenchTicketId,
-    content: Pick<WorkbenchTicketDraft, "title" | "markdown">,
+    draft: WorkbenchTicketDraft,
   ) => void;
-  readonly clearDraft: (ticketId: WorkbenchTicketId) => void;
+  readonly markDraftSaved: (
+    environmentId: EnvironmentId,
+    ticketId: WorkbenchTicketId,
+    content: DraftContent,
+    submittedContent: DraftContent,
+  ) => void;
+  readonly clearDraft: (environmentId: EnvironmentId, ticketId: WorkbenchTicketId) => void;
 }
 
 export const useWorkbenchDraftStore = create<WorkbenchDraftStore>()((set) => ({
   drafts: new Map(),
-  setDraft: (ticketId, draft) =>
-    set((state) => ({ drafts: new Map(state.drafts).set(ticketId, draft) })),
-  markDraftSaved: (ticketId, content) =>
+  setDraft: (environmentId, ticketId, draft) =>
     set((state) => {
-      const draft = state.drafts.get(ticketId);
+      const drafts = new Map(state.drafts);
+      drafts.set(environmentId, new Map(drafts.get(environmentId) ?? []).set(ticketId, draft));
+      return { drafts };
+    }),
+  markDraftSaved: (environmentId, ticketId, content, submittedContent) =>
+    set((state) => {
+      const environmentDrafts = state.drafts.get(environmentId);
+      const draft = environmentDrafts?.get(ticketId);
       if (!draft) return state;
+      if (
+        draft.revision !== submittedContent.revision ||
+        draft.jiraRemoteUpdatedAt !== submittedContent.jiraRemoteUpdatedAt
+      )
+        return state;
+      const version = {
+        ...(content.revision !== undefined ? { revision: content.revision } : {}),
+        ...(content.jiraRemoteUpdatedAt !== undefined
+          ? { jiraRemoteUpdatedAt: content.jiraRemoteUpdatedAt }
+          : {}),
+      };
+      const savedVersion: WorkbenchTicketSavedVersion | undefined =
+        content.jiraRemoteUpdatedAt !== undefined
+          ? { jiraRemoteUpdatedAt: content.jiraRemoteUpdatedAt }
+          : content.revision !== undefined
+            ? { revision: content.revision }
+            : undefined;
+      // Newer typing remains editable, but its next save must use the version
+      // returned by this successful write rather than its previous base.
+      const unchanged =
+        draft.title === submittedContent.title && draft.markdown === submittedContent.markdown;
+      const drafts = new Map(state.drafts);
+      drafts.set(
+        environmentId,
+        new Map(environmentDrafts).set(ticketId, {
+          ...draft,
+          ...version,
+          ...(unchanged
+            ? {
+                title: content.title,
+                markdown: content.markdown,
+                mode: "saved" as const,
+                ...(savedVersion ? { savedVersion } : {}),
+              }
+            : {}),
+        }),
+      );
       return {
-        drafts: new Map(state.drafts).set(ticketId, { ...draft, ...content, mode: "saved" }),
+        drafts,
       };
     }),
-  clearDraft: (ticketId) =>
+  clearDraft: (environmentId, ticketId) =>
     set((state) => {
-      if (!state.drafts.has(ticketId)) return state;
+      const environmentDrafts = state.drafts.get(environmentId);
+      if (!environmentDrafts?.has(ticketId)) return state;
       const drafts = new Map(state.drafts);
-      drafts.delete(ticketId);
+      const nextEnvironmentDrafts = new Map(environmentDrafts);
+      nextEnvironmentDrafts.delete(ticketId);
+      if (nextEnvironmentDrafts.size === 0) drafts.delete(environmentId);
+      else drafts.set(environmentId, nextEnvironmentDrafts);
       return { drafts };
     }),
 }));

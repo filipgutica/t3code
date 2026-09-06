@@ -1,5 +1,5 @@
 import {
-  type EnvironmentId,
+  EnvironmentId,
   type ThreadId,
   WorkbenchEpicId,
   WorkbenchProjectId,
@@ -33,6 +33,7 @@ import { usePrimaryEnvironmentId } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
 
+const isEnvironmentId = Schema.is(EnvironmentId);
 const isWorkbenchProjectId = Schema.is(WorkbenchProjectId);
 const isWorkbenchTicketId = Schema.is(WorkbenchTicketId);
 const isWorkbenchEpicId = Schema.is(WorkbenchEpicId);
@@ -50,11 +51,11 @@ export function WorkbenchSidebar({
     | undefined;
 }) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const environmentId = context?.environmentId ?? primaryEnvironmentId;
   const navigate = useNavigate();
   const search = useSearch({
     strict: false,
     select: (value) => ({
+      environmentId: isEnvironmentId(value.environmentId) ? value.environmentId : undefined,
       projectId: isWorkbenchProjectId(value.projectId) ? value.projectId : undefined,
       ticketId: isWorkbenchTicketId(value.ticketId) ? value.ticketId : undefined,
       epicId: isWorkbenchEpicId(value.epicId) ? value.epicId : undefined,
@@ -63,6 +64,8 @@ export function WorkbenchSidebar({
   const selectedWorkspaceId = context?.workspaceId ?? search.projectId;
   const selectedTicketId = context?.ticketId ?? search.ticketId;
   const selectedEpicId = context ? undefined : search.epicId;
+  const selectedEnvironmentId = context?.environmentId ?? search.environmentId;
+  const environmentId = selectedEnvironmentId ?? primaryEnvironmentId;
   const { isMobile, setOpenMobile } = useSidebar();
   const query = useEnvironmentQuery(
     environmentId === null ? null : workbenchEnvironment.snapshot({ environmentId, input: {} }),
@@ -88,7 +91,10 @@ export function WorkbenchSidebar({
     if (isMobile) setOpenMobile(false);
     void navigate({
       to: "/workbench",
-      search: { projectId },
+      search: {
+        ...(environmentId ? { environmentId } : {}),
+        projectId,
+      },
       replace: true,
     });
   };
@@ -107,6 +113,7 @@ export function WorkbenchSidebar({
     void navigate({
       to: "/workbench",
       search: {
+        ...(environmentId ? { environmentId } : {}),
         ...(selectedWorkspaceId ? { projectId: selectedWorkspaceId } : {}),
         ...(selectedTicketId ? { ticketId: selectedTicketId } : {}),
         ...(selectedEpicId ? { epicId: selectedEpicId } : {}),
@@ -203,7 +210,11 @@ export function WorkbenchSidebar({
                               if (isMobile) setOpenMobile(false);
                               void navigate({
                                 to: "/workbench",
-                                search: { projectId: ticket.projectId, ticketId: ticket.id },
+                                search: {
+                                  ...(environmentId ? { environmentId } : {}),
+                                  projectId: ticket.projectId,
+                                  ticketId: ticket.id,
+                                },
                                 replace: true,
                               });
                             }}

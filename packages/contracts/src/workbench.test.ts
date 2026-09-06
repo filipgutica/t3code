@@ -17,6 +17,7 @@ import {
   WorkbenchTicketWorkspace,
   WorkbenchTicketStatus,
   WorkbenchUpdateProjectInput,
+  WorkbenchUpdateJiraTicketFieldsInput,
   WorkbenchUpdateTicketInput,
 } from "./workbench.ts";
 import { WS_METHODS, WsRpcGroup } from "./rpc.ts";
@@ -30,6 +31,9 @@ const decodeWorkbenchCreateTicketInput = Schema.decodeUnknownEffect(WorkbenchCre
 const decodeWorkbenchArchiveTicketInput = Schema.decodeUnknownEffect(WorkbenchArchiveTicketInput);
 const decodeWorkbenchDeleteTicketInput = Schema.decodeUnknownEffect(WorkbenchDeleteTicketInput);
 const decodeWorkbenchUpdateProjectInput = Schema.decodeUnknownEffect(WorkbenchUpdateProjectInput);
+const decodeWorkbenchUpdateJiraTicketFieldsInput = Schema.decodeUnknownEffect(
+  WorkbenchUpdateJiraTicketFieldsInput,
+);
 const decodeWorkbenchUpdateTicketInput = Schema.decodeUnknownEffect(WorkbenchUpdateTicketInput);
 const decodeWorkbenchReplaceAssignmentInput = Schema.decodeUnknownEffect(
   WorkbenchReplaceAssignmentInput,
@@ -125,6 +129,7 @@ describe("Workbench contracts", () => {
       });
       expect(snapshot.assignments[0]?.threadId).toBe("thread-1");
       expect(snapshot.assignments[0]?.supersededAt).toBeNull();
+      expect(snapshot.reservedThreadIds).toEqual([]);
       expect(snapshot.ticketWorkspaces[0]).toMatchObject({
         ticketId: "ticket-1",
         status: "ready",
@@ -206,7 +211,7 @@ describe("Workbench contracts", () => {
     }),
   );
 
-  it.effect("accepts mutation inputs from an older Workbench client", () =>
+  it.effect("requires a Ticket revision for mutation inputs", () =>
     Effect.gen(function* () {
       const createInput = yield* decodeWorkbenchCreateTicketInput({
         id: "ticket-1",
@@ -218,11 +223,28 @@ describe("Workbench contracts", () => {
       });
       const updateInput = yield* decodeWorkbenchUpdateTicketInput({
         id: "ticket-1",
+        expectedRevision: 0,
         title: "Legacy Ticket",
         markdown: "Updated legacy body",
         status: "in_progress",
         blocked: false,
         updatedAt: "2026-09-03T12:01:00.000Z",
+      });
+      const statusOnlyUpdateInput = yield* decodeWorkbenchUpdateTicketInput({
+        id: "ticket-1",
+        expectedRevision: 0,
+        status: "in_progress",
+        updatedAt: "2026-09-03T12:01:30.000Z",
+      });
+      const jiraUpdateInput = yield* decodeWorkbenchUpdateJiraTicketFieldsInput({
+        id: "ticket-1",
+        expectedRevision: 0,
+        epicId: null,
+        title: "Jira Ticket",
+        kind: "bug",
+        status: "in_progress",
+        blocked: true,
+        updatedAt: "2026-09-03T12:02:00.000Z",
       });
       const replaceInput = yield* decodeWorkbenchReplaceAssignmentInput({
         ticketId: "ticket-1",
@@ -240,10 +262,12 @@ describe("Workbench contracts", () => {
       const archiveInput = yield* decodeWorkbenchArchiveTicketInput({
         ticketId: "ticket-1",
         archivedAt: null,
+        expectedRevision: 0,
         updatedAt: "2026-09-03T12:03:00.000Z",
       });
       const deleteInput = yield* decodeWorkbenchDeleteTicketInput({
         ticketId: "ticket-1",
+        expectedRevision: 0,
         deletedAt: "2026-09-03T12:04:00.000Z",
       });
 
@@ -251,12 +275,31 @@ describe("Workbench contracts", () => {
       expect(createInput.epicId).toBeUndefined();
       expect(createInput.repositoryProjectIds).toBeUndefined();
       expect(updateInput.kind).toBeUndefined();
+      expect(statusOnlyUpdateInput).toEqual({
+        id: "ticket-1",
+        expectedRevision: 0,
+        status: "in_progress",
+        updatedAt: "2026-09-03T12:01:30.000Z",
+      });
+      expect(jiraUpdateInput.markdown).toBeUndefined();
       expect(updateInput.primaryT3ProjectId).toBeUndefined();
       expect(updateInput.repositoryProjectIds).toBeUndefined();
       expect(replaceInput.id).toBeUndefined();
       expect(epicInput.title).toBe("Native planning");
       expect(archiveInput.archivedAt).toBeNull();
       expect(deleteInput.deletedAt).toBe("2026-09-03T12:04:00.000Z");
+      expect(
+        (yield* Effect.exit(
+          decodeWorkbenchUpdateTicketInput({
+            id: "ticket-1",
+            title: "Legacy Ticket",
+            markdown: "Updated legacy body",
+            status: "in_progress",
+            blocked: false,
+            updatedAt: "2026-09-03T12:01:00.000Z",
+          }),
+        ))._tag,
+      ).toBe("Failure");
     }),
   );
 
@@ -320,6 +363,7 @@ describe("Workbench contracts", () => {
         repositoryProjectIds: ["t3-project-1"],
         status: "todo",
         blocked: false,
+        revision: 0,
         createdAt: "2026-09-03T12:00:00.000Z",
         updatedAt: "2026-09-03T12:00:00.000Z",
       }),

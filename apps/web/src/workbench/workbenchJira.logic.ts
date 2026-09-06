@@ -2,12 +2,25 @@ import type {
   WorkbenchJiraBoardConfiguration,
   WorkbenchJiraBoardColumn,
   WorkbenchJiraStatusMapping,
+  WorkbenchJiraIssueSnapshot,
   WorkbenchTicket,
   WorkbenchTicketId,
   WorkbenchTicketStatus,
 } from "@t3tools/contracts";
 
 import { WORKBENCH_TICKET_STATUSES, WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
+
+// Jira text and the version used to edit it must come from the same snapshot.
+export const resolveWorkbenchTicketContent = ({
+  ticket,
+  jiraIssue,
+}: {
+  readonly ticket: Pick<WorkbenchTicket, "title" | "markdown">;
+  readonly jiraIssue: Pick<WorkbenchJiraIssueSnapshot, "summary" | "description"> | undefined;
+}) => ({
+  title: jiraIssue?.summary ?? ticket.title,
+  markdown: jiraIssue?.description ?? ticket.markdown,
+});
 
 export const getWorkbenchJiraBindingSprints = (binding: {
   readonly sprintId: number;
@@ -114,31 +127,21 @@ export const resolveWorkbenchJiraOAuthCallback = ({
 };
 
 export function resolveWorkbenchTicketUpdateFields({
-  ticket,
   patch,
   jiraFieldsManaged,
 }: {
-  readonly ticket: WorkbenchTicket;
   readonly patch: Partial<WorkbenchTicketUpdateFields>;
   readonly jiraFieldsManaged: boolean;
-}): WorkbenchTicketUpdateFields {
+}): Partial<WorkbenchTicketUpdateFields> {
+  if (!jiraFieldsManaged) return patch;
   return {
-    title: jiraFieldsManaged ? ticket.title : (patch.title ?? ticket.title),
-    markdown: patch.markdown ?? ticket.markdown,
-    kind: jiraFieldsManaged ? ticket.kind : (patch.kind ?? ticket.kind),
-    epicId: jiraFieldsManaged
-      ? ticket.epicId
-      : patch.epicId === undefined
-        ? ticket.epicId
-        : patch.epicId,
-    repositoryProjectIds:
-      patch.repositoryProjectIds ??
-      (ticket.repositoryProjectIds.length > 0
-        ? ticket.repositoryProjectIds
-        : [ticket.primaryT3ProjectId]),
-    primaryT3ProjectId: patch.primaryT3ProjectId ?? ticket.primaryT3ProjectId,
-    status: jiraFieldsManaged ? ticket.status : (patch.status ?? ticket.status),
-    blocked: jiraFieldsManaged ? ticket.blocked : (patch.blocked ?? ticket.blocked),
+    ...(patch.markdown !== undefined ? { markdown: patch.markdown } : {}),
+    ...(patch.repositoryProjectIds !== undefined
+      ? { repositoryProjectIds: patch.repositoryProjectIds }
+      : {}),
+    ...(patch.primaryT3ProjectId !== undefined
+      ? { primaryT3ProjectId: patch.primaryT3ProjectId }
+      : {}),
   };
 }
 

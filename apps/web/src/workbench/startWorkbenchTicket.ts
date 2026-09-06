@@ -48,6 +48,8 @@ interface StartWorkbenchTicketInput {
  */
 export interface StartWorkbenchTicketOptions {
   readonly mode?: "additional" | "replace";
+  /** Assignment selected by the caller's rendered action. */
+  readonly assignment?: WorkbenchAssignment;
   readonly modelSelection?: ModelSelection;
   readonly previousThreadId?: ThreadId;
   readonly sendInitialPrompt?: boolean;
