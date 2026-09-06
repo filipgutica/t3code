@@ -5,6 +5,7 @@ import {
   IsoDateTime,
   ProjectId,
   ThreadId,
+  NonNegativeInt,
   TrimmedNonEmptyString,
   TrimmedString,
 } from "./baseSchemas.ts";
@@ -86,6 +87,7 @@ export const WorkbenchTicket = Schema.Struct({
   ),
   status: WorkbenchTicketStatus,
   blocked: Schema.Boolean,
+  revision: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
   // Optional for compatibility with snapshots produced before Ticket
   // archiving was introduced. New snapshots always include null or a time.
   archivedAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
@@ -135,6 +137,9 @@ export const WorkbenchSnapshot = Schema.Struct({
   epics: Schema.Array(WorkbenchEpic).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   tickets: Schema.Array(WorkbenchTicket),
   assignments: Schema.Array(WorkbenchAssignment),
+  // Deleted Tickets stay out of the visible projection, but their native
+  // Thread IDs remain reserved so those Threads cannot be reassigned.
+  reservedThreadIds: Schema.Array(ThreadId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   ticketWorkspaces: Schema.Array(WorkbenchTicketWorkspace).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -197,27 +202,44 @@ export type WorkbenchCreateTicketInput = typeof WorkbenchCreateTicketInput.Type;
 
 export const WorkbenchUpdateTicketInput = Schema.Struct({
   id: WorkbenchTicketId,
+  expectedRevision: NonNegativeInt,
   epicId: Schema.optionalKey(Schema.NullOr(WorkbenchEpicId)),
-  title: WorkbenchTicket.fields.title,
+  title: Schema.optionalKey(WorkbenchTicket.fields.title),
   kind: Schema.optionalKey(WorkbenchTicketKind),
-  markdown: WorkbenchTicket.fields.markdown,
+  markdown: Schema.optionalKey(WorkbenchTicket.fields.markdown),
   primaryT3ProjectId: Schema.optionalKey(ProjectId),
   repositoryProjectIds: Schema.optionalKey(Schema.Array(ProjectId).check(Schema.isMinLength(1))),
-  status: WorkbenchTicketStatus,
-  blocked: Schema.Boolean,
+  status: Schema.optionalKey(WorkbenchTicketStatus),
+  blocked: Schema.optionalKey(Schema.Boolean),
   updatedAt: IsoDateTime,
 });
 export type WorkbenchUpdateTicketInput = typeof WorkbenchUpdateTicketInput.Type;
 
+/** Updates only fields owned by a Jira projection after an optimistic revision check. */
+export const WorkbenchUpdateJiraTicketFieldsInput = Schema.Struct({
+  id: WorkbenchTicketId,
+  expectedRevision: NonNegativeInt,
+  epicId: Schema.optionalKey(Schema.NullOr(WorkbenchEpicId)),
+  title: Schema.optionalKey(WorkbenchTicket.fields.title),
+  kind: Schema.optionalKey(WorkbenchTicketKind),
+  status: Schema.optionalKey(WorkbenchTicketStatus),
+  blocked: Schema.optionalKey(Schema.Boolean),
+  markdown: Schema.optionalKey(WorkbenchTicket.fields.markdown),
+  updatedAt: WorkbenchTicket.fields.updatedAt,
+});
+export type WorkbenchUpdateJiraTicketFieldsInput = typeof WorkbenchUpdateJiraTicketFieldsInput.Type;
+
 export const WorkbenchArchiveTicketInput = Schema.Struct({
   ticketId: WorkbenchTicketId,
   archivedAt: Schema.NullOr(IsoDateTime),
+  expectedRevision: NonNegativeInt,
   updatedAt: IsoDateTime,
 });
 export type WorkbenchArchiveTicketInput = typeof WorkbenchArchiveTicketInput.Type;
 
 export const WorkbenchDeleteTicketInput = Schema.Struct({
   ticketId: WorkbenchTicketId,
+  expectedRevision: NonNegativeInt,
   deletedAt: IsoDateTime,
 });
 export type WorkbenchDeleteTicketInput = typeof WorkbenchDeleteTicketInput.Type;
@@ -257,6 +279,7 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "epic_project_mismatch",
   "epic_archived",
   "ticket_not_found",
+  "ticket_changed",
   "ticket_archived",
   "jira_managed_ticket",
   "linked_project_not_found",

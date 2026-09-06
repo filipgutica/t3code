@@ -13,6 +13,7 @@ import {
   WorkbenchTicketWorkspaceAttemptId,
   WorkbenchTicketWorkspaceRepository,
   IsoDateTime,
+  type WorkbenchUpdateJiraTicketFieldsInput,
   ThreadId,
   ProjectId,
   type WorkbenchArchiveTicketInput,
@@ -98,6 +99,7 @@ const WorkbenchTicketRow = Schema.Struct({
   primaryT3ProjectId: ProjectId,
   status: WorkbenchTicket.fields.status,
   blocked: Schema.Number,
+  revision: Schema.Number,
   archivedAt: Schema.NullOr(IsoDateTime),
   createdAt: WorkbenchTicket.fields.createdAt,
   updatedAt: WorkbenchTicket.fields.updatedAt,
@@ -175,6 +177,9 @@ interface WorkbenchStoreShape {
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
   readonly updateTicket: (
     input: WorkbenchUpdateTicketInput,
+  ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
+  readonly updateJiraTicketFields: (
+    input: WorkbenchUpdateJiraTicketFieldsInput,
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
   readonly archiveTicket: (
     input: WorkbenchArchiveTicketInput,
@@ -285,6 +290,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         primary_t3_project_id AS "primaryT3ProjectId",
         status,
         blocked,
+        revision,
         archived_at AS "archivedAt",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
@@ -335,6 +341,18 @@ const makeWorkbenchStore = Effect.gen(function* () {
         WHERE deleted_at IS NULL
       )
       ORDER BY created_at ASC, assignment_id ASC
+    `,
+  });
+  const listReservedThreadIds = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: Schema.Struct({ id: ThreadId }),
+    execute: () => sql`
+      SELECT DISTINCT assignment.thread_id AS "id"
+      FROM workbench_assignments AS assignment
+      INNER JOIN workbench_tickets AS ticket
+        ON ticket.ticket_id = assignment.ticket_id
+      WHERE ticket.deleted_at IS NOT NULL
+      ORDER BY assignment.thread_id ASC
     `,
   });
   const listTicketWorkspaceRows = SqlSchema.findAll({
@@ -476,6 +494,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         primary_t3_project_id AS "primaryT3ProjectId",
         status,
         blocked,
+        revision,
         archived_at AS "archivedAt",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
@@ -667,6 +686,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           ticketRows,
           ticketRepositoryRows,
           assignments,
+          reservedThreadRows,
           ticketWorkspaceRows,
           ticketWorkspaceRepositoryRows,
         ] = yield* Effect.all([
@@ -676,6 +696,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           listTicketRows(),
           listTicketRepositoryRows(),
           listAssignmentRows(),
+          listReservedThreadIds(),
           listTicketWorkspaceRows(),
           listTicketWorkspaceRepositoryRows(),
         ]);
@@ -717,6 +738,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             blocked: ticket.blocked === 1,
           })),
           assignments,
+          reservedThreadIds: reservedThreadRows.map((row) => row.id),
           ticketWorkspaces: ticketWorkspaceRows.map((workspace) =>
             hydrateTicketWorkspace({
               workspace,
@@ -1418,6 +1440,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               primary_t3_project_id,
               status,
               blocked,
+              revision,
               created_at,
               updated_at
             ) VALUES (
@@ -1429,6 +1452,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               ${input.markdown},
               ${input.primaryT3ProjectId},
               'todo',
+              0,
               0,
               ${input.createdAt},
               ${input.createdAt}
@@ -1453,6 +1477,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       repositoryProjectIds,
       status: "todo",
       blocked: false,
+      revision: 0,
       archivedAt: null,
       updatedAt: input.createdAt,
     });
@@ -1478,6 +1503,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "The Workbench Ticket does not exist.",
             });
           }
+          if (current.value.revision !== input.expectedRevision) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_changed",
+              message: "The Workbench Ticket changed before it could be updated.",
+            });
+          }
           if (current.value.archivedAt !== null) {
             return yield* new WorkbenchOperationError({
               code: "ticket_archived",
@@ -1488,11 +1519,17 @@ const makeWorkbenchStore = Effect.gen(function* () {
             ticketId: input.id,
           });
           const jiraManaged = yield* isJiraManagedTicket(input.id);
-          const title = jiraManaged ? current.value.title : input.title;
+          const title = jiraManaged ? current.value.title : (input.title ?? current.value.title);
           const kind = jiraManaged ? current.value.kind : (input.kind ?? current.value.kind);
-          const markdown = jiraManaged ? current.value.markdown : input.markdown;
-          const status = jiraManaged ? current.value.status : input.status;
-          const blocked = jiraManaged ? current.value.blocked === 1 : input.blocked;
+          const markdown = jiraManaged
+            ? current.value.markdown
+            : (input.markdown ?? current.value.markdown);
+          const status = jiraManaged
+            ? current.value.status
+            : (input.status ?? current.value.status);
+          const blocked = jiraManaged
+            ? current.value.blocked === 1
+            : (input.blocked ?? current.value.blocked === 1);
           const epicId = yield* validateTicketEpic({
             projectId: current.value.projectId,
             epicId: jiraManaged
@@ -1555,8 +1592,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
               primary_t3_project_id = ${primaryT3ProjectId},
               status = ${status},
               blocked = ${blocked ? 1 : 0},
+              revision = revision + 1,
               updated_at = ${input.updatedAt}
             WHERE ticket_id = ${input.id}
+              AND revision = ${input.expectedRevision}
           `;
           if (repositoryScopeChanged) {
             yield* sql`
@@ -1583,8 +1622,111 @@ const makeWorkbenchStore = Effect.gen(function* () {
             repositoryProjectIds,
             status,
             blocked,
+            revision: current.value.revision + 1,
             archivedAt: current.value.archivedAt,
             updatedAt: input.updatedAt,
+          });
+        }),
+      )
+      .pipe(Effect.mapError(workbenchStoreError));
+  });
+
+  const updateJiraTicketFields: WorkbenchStoreShape["updateJiraTicketFields"] = Effect.fn(
+    "WorkbenchStore.updateJiraTicketFields",
+  )(function* (input) {
+    return yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          // Serialize this projection update with local Ticket edits before
+          // checking the optimistic revision.
+          yield* sql`
+            UPDATE workbench_tickets
+            SET updated_at = updated_at
+            WHERE ticket_id = ${input.id}
+              AND deleted_at IS NULL
+          `;
+          const current = yield* findTicket({ id: input.id });
+          if (Option.isNone(current)) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_not_found",
+              message: "The Workbench Ticket does not exist.",
+            });
+          }
+          if (current.value.revision !== input.expectedRevision) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_changed",
+              message: "The Workbench Ticket changed before Jira could update it.",
+            });
+          }
+          if (current.value.archivedAt !== null) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_archived",
+              message: "Archived Workbench Tickets cannot be updated from Jira.",
+            });
+          }
+
+          const repositories = yield* listTicketRepositoryRowsByTicket({ ticketId: input.id });
+          const epicId = input.epicId === undefined ? current.value.epicId : input.epicId;
+          const title = input.title === undefined ? current.value.title : input.title;
+          const kind = input.kind === undefined ? current.value.kind : input.kind;
+          const status = input.status === undefined ? current.value.status : input.status;
+          const blocked = input.blocked === undefined ? current.value.blocked === 1 : input.blocked;
+          const markdown = input.markdown === undefined ? current.value.markdown : input.markdown;
+          const changed =
+            epicId !== current.value.epicId ||
+            title !== current.value.title ||
+            kind !== current.value.kind ||
+            status !== current.value.status ||
+            blocked !== (current.value.blocked === 1) ||
+            markdown !== current.value.markdown;
+          if (!changed) {
+            return WorkbenchTicket.make({
+              ...current.value,
+              repositoryProjectIds:
+                repositories.length > 0
+                  ? repositories.map((repository) => repository.repositoryProjectId)
+                  : [current.value.primaryT3ProjectId],
+              blocked,
+            });
+          }
+
+          const updated = yield* sql<{ readonly id: string; readonly updatedAt: string }>`
+            UPDATE workbench_tickets
+            SET
+              epic_id = ${epicId},
+              title = ${title},
+              kind = ${kind},
+              status = ${status},
+              blocked = ${blocked ? 1 : 0},
+              markdown = ${markdown},
+              revision = revision + 1,
+              updated_at = MAX(updated_at, ${input.updatedAt})
+            WHERE ticket_id = ${input.id}
+              AND deleted_at IS NULL
+              AND revision = ${input.expectedRevision}
+            RETURNING ticket_id AS id, updated_at AS "updatedAt"
+          `;
+          const persisted = updated[0];
+          if (persisted === undefined) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_changed",
+              message: "The Workbench Ticket changed before Jira could update it.",
+            });
+          }
+          return WorkbenchTicket.make({
+            ...current.value,
+            epicId,
+            title,
+            kind,
+            status,
+            blocked,
+            markdown,
+            revision: current.value.revision + 1,
+            repositoryProjectIds:
+              repositories.length > 0
+                ? repositories.map((repository) => repository.repositoryProjectId)
+                : [current.value.primaryT3ProjectId],
+            updatedAt: persisted.updatedAt,
           });
         }),
       )
@@ -1612,6 +1754,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "The Workbench Ticket does not exist.",
             });
           }
+          if (current.value.revision !== input.expectedRevision) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_changed",
+              message: "The Workbench Ticket changed before its lifecycle state could be updated.",
+            });
+          }
           if (yield* isJiraManagedTicket(input.ticketId)) {
             return yield* new WorkbenchOperationError({
               code: "jira_managed_ticket",
@@ -1630,9 +1778,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
           }
           yield* sql`
             UPDATE workbench_tickets
-            SET archived_at = ${input.archivedAt}, updated_at = ${input.updatedAt}
+            SET archived_at = ${input.archivedAt},
+                revision = revision + 1,
+                updated_at = ${input.updatedAt}
             WHERE ticket_id = ${input.ticketId}
               AND deleted_at IS NULL
+              AND revision = ${input.expectedRevision}
           `;
           const repositories = yield* listTicketRepositoryRowsByTicket({
             ticketId: input.ticketId,
@@ -1645,6 +1796,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
                 : [current.value.primaryT3ProjectId],
             blocked: current.value.blocked === 1,
             archivedAt: input.archivedAt,
+            revision: current.value.revision + 1,
             updatedAt: input.updatedAt,
           });
         }),
@@ -1673,6 +1825,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "The Workbench Ticket does not exist.",
             });
           }
+          if (current.value.revision !== input.expectedRevision) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_changed",
+              message: "The Workbench Ticket changed before it could be deleted.",
+            });
+          }
           if (yield* isJiraManagedTicket(input.ticketId)) {
             return yield* new WorkbenchOperationError({
               code: "jira_managed_ticket",
@@ -1691,9 +1849,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
           }
           yield* sql`
             UPDATE workbench_tickets
-            SET deleted_at = ${input.deletedAt}, updated_at = ${input.deletedAt}
+            SET deleted_at = ${input.deletedAt},
+                revision = revision + 1,
+                updated_at = ${input.deletedAt}
             WHERE ticket_id = ${input.ticketId}
               AND deleted_at IS NULL
+              AND revision = ${input.expectedRevision}
           `;
           return undefined;
         }),
@@ -1779,7 +1940,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           if (ticket.status === "todo" && !(yield* isJiraManagedTicket(input.ticketId))) {
             yield* sql`
               UPDATE workbench_tickets
-              SET status = 'in_progress', updated_at = ${input.createdAt}
+              SET status = 'in_progress', revision = revision + 1, updated_at = ${input.createdAt}
               WHERE ticket_id = ${input.ticketId}
             `;
           }
@@ -1807,6 +1968,30 @@ const makeWorkbenchStore = Effect.gen(function* () {
             SET updated_at = updated_at
             WHERE ticket_id = ${input.ticketId}
           `;
+          const ticket = yield* findTicket({ id: input.ticketId });
+          if (Option.isNone(ticket)) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_not_found",
+              message: "The Workbench Ticket does not exist.",
+            });
+          }
+          if (ticket.value.archivedAt !== null) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_archived",
+              message: "Archived Workbench Tickets cannot replace an Agent Thread.",
+            });
+          }
+          const ticketWorkspace = yield* loadTicketWorkspace(input.ticketId);
+          if (
+            Option.isSome(ticketWorkspace) &&
+            (ticketWorkspace.value.status === "preparing" ||
+              ticketWorkspace.value.status === "releasing")
+          ) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_workspace_in_use",
+              message: "The Ticket Workspace is changing and cannot replace an Agent Thread.",
+            });
+          }
           const assignment = yield* findActiveAssignmentByTicketAndThread({
             ticketId: input.ticketId,
             threadId: input.previousThreadId,
@@ -1871,6 +2056,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     archiveEpic,
     createTicket,
     updateTicket,
+    updateJiraTicketFields,
     archiveTicket,
     deleteTicket,
     createAssignment,

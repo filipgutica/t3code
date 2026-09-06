@@ -25,14 +25,27 @@ import {
 } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
 
-function firstAvailableSelection(
+export function resolveWorkbenchStartThreadSelection(
   entries: ReadonlyArray<ProviderInstanceEntry>,
+  preferred: ModelSelection | null | undefined,
 ): ModelSelection | null {
+  if (preferred) {
+    const preferredEntry = entries.find((entry) => entry.instanceId === preferred.instanceId);
+    // Keep a project's exact model selection, including custom models that are
+    // supplied by settings rather than the provider snapshot. If its instance
+    // disappeared or is disabled, let the user choose from a live instance.
+    if (preferredEntry && isProviderInstancePickerReady(preferredEntry)) return preferred;
+  }
+
   const entry = entries.find(
     (candidate) =>
-      isProviderInstancePickerReady(candidate) && candidate.models[0]?.slug !== undefined,
+      isProviderInstancePickerReady(candidate) &&
+      candidate.models.some((model) => model.slug.length > 0),
   );
-  const model = entry?.models[0]?.slug;
+  const model =
+    entry?.models.find((candidate) => candidate.isDefault && !candidate.isCustom)?.slug ??
+    entry?.models.find((candidate) => !candidate.isCustom)?.slug ??
+    entry?.models[0]?.slug;
   return entry && model ? createModelSelection(entry.instanceId, model) : null;
 }
 
@@ -76,13 +89,19 @@ export function WorkbenchStartThreadDialog({
       ),
     [providers, settings],
   );
-  const [selection, setSelection] = useState<ModelSelection | null>(
-    () => defaultModelSelection ?? firstAvailableSelection(instanceEntries),
+  const defaultSelection = useMemo(
+    () => resolveWorkbenchStartThreadSelection(instanceEntries, defaultModelSelection),
+    [defaultModelSelection, instanceEntries],
   );
+  const [selection, setSelection] = useState<ModelSelection | null>(() => defaultSelection);
   const resetSelection = () => {
-    setSelection(defaultModelSelection ?? firstAvailableSelection(instanceEntries));
+    setSelection(defaultSelection);
   };
-  const resolvedSelection = selection ?? (open ? firstAvailableSelection(instanceEntries) : null);
+  const selectedEntry = selection
+    ? instanceEntries.find((entry) => entry.instanceId === selection.instanceId)
+    : undefined;
+  const resolvedSelection =
+    selectedEntry && isProviderInstancePickerReady(selectedEntry) ? selection : defaultSelection;
 
   const modelOptionsByInstance = useMemo(
     () =>

@@ -314,6 +314,7 @@ describe("TicketWorkspaceService", () => {
       const store = yield* WorkbenchStore;
       yield* store.archiveTicket({
         ticketId,
+        expectedRevision: 0,
         archivedAt: "2026-09-03T12:01:00.000Z",
         updatedAt: "2026-09-03T12:01:00.000Z",
       });
@@ -502,6 +503,7 @@ describe("TicketWorkspaceService", () => {
       const store = yield* WorkbenchStore;
       yield* store.archiveTicket({
         ticketId,
+        expectedRevision: 0,
         archivedAt: createdAt,
         updatedAt: createdAt,
       });

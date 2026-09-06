@@ -1,4 +1,9 @@
-import { WorkbenchEpicId, WorkbenchProjectId, WorkbenchTicketId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  WorkbenchEpicId,
+  WorkbenchProjectId,
+  WorkbenchTicketId,
+} from "@t3tools/contracts";
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
@@ -8,10 +13,12 @@ import { WorkbenchPage } from "../workbench/WorkbenchPage";
 const isWorkbenchProjectId = Schema.is(WorkbenchProjectId);
 const isWorkbenchTicketId = Schema.is(WorkbenchTicketId);
 const isWorkbenchEpicId = Schema.is(WorkbenchEpicId);
+const isEnvironmentId = Schema.is(EnvironmentId);
 
 // Exported because TanStack's generated route declaration names this type.
 // fallow-ignore-next-line unused-type
 export interface WorkbenchSearch {
+  readonly environmentId?: EnvironmentId;
   readonly projectId?: WorkbenchProjectId;
   readonly ticketId?: WorkbenchTicketId;
   readonly epicId?: WorkbenchEpicId;
@@ -26,6 +33,7 @@ function WorkbenchRoute() {
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground isolate">
       <WorkbenchPage
+        initialEnvironmentId={search.environmentId}
         createWorkspace={search.create === "workspace"}
         initialProjectId={search.projectId}
         initialTicketId={search.ticketId}
@@ -50,6 +58,7 @@ export const Route = createFileRoute("/workbench")({
   validateSearch: (raw: Record<string, unknown>): WorkbenchSearch => {
     const ticketId = isWorkbenchTicketId(raw.ticketId) ? raw.ticketId : undefined;
     return {
+      ...(isEnvironmentId(raw.environmentId) ? { environmentId: raw.environmentId } : {}),
       ...(isWorkbenchProjectId(raw.projectId) ? { projectId: raw.projectId } : {}),
       ...(ticketId ? { ticketId } : isWorkbenchEpicId(raw.epicId) ? { epicId: raw.epicId } : {}),
       ...(raw.create === "workspace" ? { create: "workspace" as const } : {}),

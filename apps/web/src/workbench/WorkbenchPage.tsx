@@ -5,7 +5,9 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import {
+  EnvironmentId,
   ProjectId,
+  type WorkbenchAssignment,
   WorkbenchAssignmentId,
   type ModelSelection,
   type ThreadId,
@@ -20,7 +22,9 @@ import {
   type WorkbenchTicket,
   type WorkbenchTicketKind,
 } from "@t3tools/contracts";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { useNavigate } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
 import {
   AlertCircleIcon,
   BlocksIcon,
@@ -49,25 +53,22 @@ import {
 import { Skeleton } from "../components/ui/skeleton";
 import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
 import { isElectron } from "../env";
-import { resolvePrimaryEnvironmentHttpUrl } from "../environments/primary";
 import { readLocalApi } from "../localApi";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useArchivedThreadSnapshots } from "../lib/archivedThreadsState";
 import { randomUUID } from "../lib/utils";
-import { usePrimaryEnvironmentId } from "../state/environments";
+import { useEnvironmentHttpBaseUrl, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
-import {
-  primaryServerAvailableEditorsAtom,
-  primaryServerKeybindingsAtom,
-  primaryServerProvidersAtom,
-} from "../state/server";
+import { serverEnvironment } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import type { WorkbenchSearch } from "../routes/workbench";
 import { openWorkbenchAssignedThread as openAssignedThreadWithRestore } from "./openWorkbenchAssignedThread";
 import { workbenchEnvironment } from "./state";
 import { useStartWorkbenchTicket } from "./useStartWorkbenchTicket";
+import { subscribeToWorkbenchRefresh } from "./workbenchRefresh";
+import { withWorkbenchEnvironmentSearch } from "./workbenchNavigation";
 import {
   getActiveAssignmentsByTicket,
   getAssignmentsForTicket,
@@ -83,7 +84,12 @@ import {
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
-import { useWorkbenchDraftStore } from "./workbenchDraftStore";
+import {
+  isWorkbenchDraftProjected,
+  useWorkbenchDraftStore,
+  type WorkbenchTicketDraft,
+  type WorkbenchTicketSavedVersion,
+} from "./workbenchDraftStore";
 import {
   WorkbenchJiraDialog,
   type WorkbenchJiraCreateDraft,
@@ -93,10 +99,12 @@ import {
   getWorkbenchJiraBindingSprints,
   resolveWorkbenchJiraOAuthCallback,
   resolveWorkbenchJiraRedirectUri,
+  resolveWorkbenchTicketContent,
   resolveWorkbenchTicketUpdateFields,
 } from "./workbenchJira.logic";
 
 interface WorkbenchPageProps {
+  readonly initialEnvironmentId: EnvironmentId | undefined;
   readonly createWorkspace: boolean;
   readonly initialProjectId: WorkbenchProjectId | undefined;
   readonly initialTicketId: WorkbenchTicketId | undefined;
@@ -107,13 +115,25 @@ interface WorkbenchPageProps {
 }
 
 const JIRA_OAUTH_WORKSPACE_STORAGE_KEY = "t3code:workbench:jira-oauth-workspace";
+const JIRA_OAUTH_ENVIRONMENT_STORAGE_KEY = "t3code:workbench:jira-oauth-environment";
 const JIRA_REFRESH_INTERVAL_MS = 15_000;
+const EMPTY_TICKET_DRAFTS = new Map<WorkbenchTicketId, WorkbenchTicketDraft>();
+const isEnvironmentId = Schema.is(EnvironmentId);
 
-const jiraOAuthRedirectUri = () =>
+const readPendingJiraEnvironmentId = (): EnvironmentId | null => {
+  try {
+    const value = sessionStorage.getItem(JIRA_OAUTH_ENVIRONMENT_STORAGE_KEY);
+    return value !== null && isEnvironmentId(value) ? value : null;
+  } catch {
+    return null;
+  }
+};
+
+const jiraOAuthRedirectUri = ({ serverHttpUrl }: { readonly serverHttpUrl: string }) =>
   resolveWorkbenchJiraRedirectUri({
     desktop: isElectron,
     browserOrigin: window.location.origin,
-    serverHttpUrl: resolvePrimaryEnvironmentHttpUrl("/"),
+    serverHttpUrl,
   });
 
 const failureMessage = (failure: {
@@ -164,6 +184,7 @@ function WorkbenchRefreshError({ message, onRetry }: { message: string; onRetry:
 }
 
 export function WorkbenchPage({
+  initialEnvironmentId,
   createWorkspace,
   initialProjectId,
   initialTicketId,
@@ -172,12 +193,29 @@ export function WorkbenchPage({
   jiraOAuthState,
   jiraOAuthError,
 }: WorkbenchPageProps) {
-  const environmentId = usePrimaryEnvironmentId();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const hasJiraOAuthCallback =
+    jiraOAuthCode !== undefined || jiraOAuthState !== undefined || jiraOAuthError !== undefined;
+  const environmentId =
+    initialEnvironmentId ??
+    (hasJiraOAuthCallback ? readPendingJiraEnvironmentId() : null) ??
+    primaryEnvironmentId;
+  const environmentHttpBaseUrl = useEnvironmentHttpBaseUrl(environmentId);
+  const resolveJiraOAuthRedirectUri = useCallback(() => {
+    if (isElectron && environmentHttpBaseUrl === null) return null;
+    return jiraOAuthRedirectUri({
+      // Web callbacks use the browser origin. Desktop requires the selected
+      // environment's server URL; never redirect a secondary environment to
+      // the primary server by fallback.
+      serverHttpUrl: environmentHttpBaseUrl ?? window.location.origin,
+    });
+  }, [environmentHttpBaseUrl]);
   const allProjects = useProjects();
   const allThreadShells = useThreadShells();
-  const providers = useAtomValue(primaryServerProvidersAtom);
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
+  const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const providers = serverConfig?.providers ?? [];
+  const keybindings = serverConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
+  const availableEditors = serverConfig?.availableEditors ?? [];
   const navigate = useNavigate({ from: "/workbench" });
   const query = useEnvironmentQuery(
     environmentId === null ? null : workbenchEnvironment.snapshot({ environmentId, input: {} }),
@@ -238,7 +276,11 @@ export function WorkbenchPage({
     reportFailure: false,
   });
   const { confirmAndDeleteThread } = useThreadActions();
-  const ticketDrafts = useWorkbenchDraftStore((state) => state.drafts);
+  const ticketDrafts = useWorkbenchDraftStore((state) =>
+    environmentId === null
+      ? EMPTY_TICKET_DRAFTS
+      : (state.drafts.get(environmentId) ?? EMPTY_TICKET_DRAFTS),
+  );
   const clearTicketDraft = useWorkbenchDraftStore((state) => state.clearDraft);
   const projects = useMemo(
     () => allProjects.filter((project) => project.environmentId === environmentId),
@@ -279,6 +321,7 @@ export function WorkbenchPage({
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [startThreadRequest, setStartThreadRequest] = useState<{
     ticket: WorkbenchTicket;
+    assignment?: WorkbenchAssignment;
     mode?: "additional" | "replace";
     previousThreadId?: ThreadId;
   } | null>(null);
@@ -295,11 +338,18 @@ export function WorkbenchPage({
     for (const [ticketId, draft] of ticketDrafts) {
       if (draft.mode !== "saved") continue;
       const projectedTicket = snapshot?.tickets.find((ticket) => ticket.id === ticketId);
-      if (projectedTicket?.title === draft.title && projectedTicket.markdown === draft.markdown) {
-        clearTicketDraft(ticketId);
+      if (
+        isWorkbenchDraftProjected({
+          draft,
+          ticket: projectedTicket,
+          jiraRemoteUpdatedAt: jiraSnapshot?.issueLinks.find((link) => link.ticketId === ticketId)
+            ?.issue.remoteUpdatedAt,
+        })
+      ) {
+        if (environmentId !== null) clearTicketDraft(environmentId, ticketId);
       }
     }
-  }, [clearTicketDraft, snapshot?.tickets, ticketDrafts]);
+  }, [clearTicketDraft, environmentId, jiraSnapshot?.issueLinks, snapshot?.tickets, ticketDrafts]);
 
   const awaitingSelectedProject =
     awaitingProjectId !== null &&
@@ -367,6 +417,10 @@ export function WorkbenchPage({
   const existingThreadIds = useMemo(
     () => new Set([...threadsById.keys(), ...archivedThreadsById.keys()]),
     [archivedThreadsById, threadsById],
+  );
+  const reservedThreadIds = useMemo(
+    () => new Set(snapshot?.reservedThreadIds ?? []),
+    [snapshot?.reservedThreadIds],
   );
   const assignmentsByTicket = useMemo(
     () =>
@@ -446,15 +500,23 @@ export function WorkbenchPage({
     onError: setError,
   });
 
-  const requestTicketThread = (ticket: WorkbenchTicket) => {
+  const requestTicketThread = (ticket: WorkbenchTicket, threadId?: ThreadId) => {
     if (pendingAction !== null) return;
-    const assignment = assignmentsByTicket.get(ticket.id);
+    const assignment =
+      threadId === undefined
+        ? assignmentsByTicket.get(ticket.id)
+        : snapshot?.assignments.find(
+            (candidate) =>
+              candidate.ticketId === ticket.id &&
+              candidate.threadId === threadId &&
+              candidate.supersededAt === null,
+          );
     if (assignment && (!threadLookupReady || existingThreadIds.has(assignment.threadId))) {
-      openTicketThread(ticket);
+      openTicketThread(ticket, { assignment });
       return;
     }
     setError(null);
-    setStartThreadRequest({ ticket });
+    setStartThreadRequest({ ticket, ...(assignment ? { assignment } : {}) });
   };
 
   const requestNewThread = (ticket: WorkbenchTicket) => {
@@ -532,6 +594,7 @@ export function WorkbenchPage({
     );
     setStartThreadRequest(null);
     openTicketThread(ticketForBoardAction(ticket), {
+      ...(request.assignment ? { assignment: request.assignment } : {}),
       modelSelection,
       ...(request.mode === "replace"
         ? { mode: "replace" as const }
@@ -546,7 +609,10 @@ export function WorkbenchPage({
   const updateRouteSelection = (projectId: WorkbenchProjectId, ticketId?: WorkbenchTicketId) => {
     return navigate({
       to: "/workbench",
-      search: ticketId === undefined ? { projectId } : { projectId, ticketId },
+      search: withWorkbenchEnvironmentSearch(
+        environmentId,
+        ticketId === undefined ? { projectId } : { projectId, ticketId },
+      ),
       replace: true,
     });
   };
@@ -554,7 +620,7 @@ export function WorkbenchPage({
   const updateEpicRouteSelection = (projectId: WorkbenchProjectId, epicId: WorkbenchEpicId) => {
     return navigate({
       to: "/workbench",
-      search: { projectId, epicId },
+      search: withWorkbenchEnvironmentSearch(environmentId, { projectId, epicId }),
       replace: true,
     });
   };
@@ -675,7 +741,7 @@ export function WorkbenchPage({
         | "blocked"
       >
     >,
-  ) => {
+  ): Promise<WorkbenchTicketSavedVersion | false> => {
     if (environmentId === null || pendingAction !== null) return false;
     const jiraFieldsChanged = patch.markdown !== undefined || patch.status !== undefined;
     if (jiraFieldsChanged && !jiraOwnershipKnown) {
@@ -709,19 +775,24 @@ export function WorkbenchPage({
         if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
         return false;
       }
-      return true;
+      return { jiraRemoteUpdatedAt: result.value.remoteUpdatedAt };
     }
     const fields = resolveWorkbenchTicketUpdateFields({
-      ticket,
       patch,
       jiraFieldsManaged: jiraManagedTicketIds.has(ticket.id),
     });
     setPendingAction(`update:${ticket.id}`);
     setError(null);
+    const draft = ticketDrafts.get(ticket.id);
+    const expectedRevision =
+      (patch.title !== undefined || patch.markdown !== undefined) && draft?.mode === "editing"
+        ? (draft.revision ?? ticket.revision)
+        : ticket.revision;
     const result = await updateTicket({
       environmentId,
       input: {
         id: ticket.id,
+        expectedRevision,
         ...fields,
         updatedAt: new Date().toISOString(),
       },
@@ -731,7 +802,7 @@ export function WorkbenchPage({
       if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
       return false;
     }
-    return true;
+    return { revision: result.value.revision };
   };
 
   const saveEpicContent = async (epic: WorkbenchEpic, title: string, markdown: string) => {
@@ -789,6 +860,7 @@ export function WorkbenchPage({
       input: {
         ticketId: ticket.id,
         archivedAt,
+        expectedRevision: ticket.revision,
         updatedAt: new Date().toISOString(),
       },
     });
@@ -797,7 +869,7 @@ export function WorkbenchPage({
       if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
       return false;
     }
-    clearTicketDraft(ticket.id);
+    clearTicketDraft(environmentId, ticket.id);
     if (archivedAt !== null) closeWorkItem();
     return true;
   };
@@ -816,6 +888,7 @@ export function WorkbenchPage({
       environmentId,
       input: {
         ticketId: ticket.id,
+        expectedRevision: ticket.revision,
         deletedAt: new Date().toISOString(),
       },
     });
@@ -824,24 +897,36 @@ export function WorkbenchPage({
       if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
       return false;
     }
-    clearTicketDraft(ticket.id);
+    clearTicketDraft(environmentId, ticket.id);
     closeWorkItem();
     return true;
   };
 
   const ticketForBoardAction = (ticket: WorkbenchTicket) => {
     const draft = ticketDrafts.get(ticket.id);
-    return draft?.mode === "saved"
+    const projectedTicket = {
+      ...ticket,
+      ...resolveWorkbenchTicketContent({
+        ticket,
+        jiraIssue: jiraIssueLinksByTicketId.get(ticket.id)?.issue,
+      }),
+    };
+    return draft?.mode === "saved" &&
+      !isWorkbenchDraftProjected({
+        draft,
+        ticket: projectedTicket,
+        jiraRemoteUpdatedAt: jiraIssueLinksByTicketId.get(ticket.id)?.issue.remoteUpdatedAt,
+      })
       ? {
-          ...ticket,
-          title: jiraManagedTicketIds.has(ticket.id) ? ticket.title : draft.title,
+          ...projectedTicket,
+          title: jiraManagedTicketIds.has(ticket.id) ? projectedTicket.title : draft.title,
           markdown: draft.markdown,
         }
-      : ticket;
+      : projectedTicket;
   };
 
   const saveTicketContent = (ticket: WorkbenchTicket, title: string, markdown: string) => {
-    if (title.trim().length === 0) return Promise.resolve(false);
+    if (title.trim().length === 0) return Promise.resolve(false as const);
     return updateTicketFields(ticket, { title: title.trim(), markdown: markdown.trim() });
   };
 
@@ -875,11 +960,16 @@ export function WorkbenchPage({
 
   const beginJiraAuthFlow = async () => {
     if (environmentId === null) return;
+    const redirectUri = resolveJiraOAuthRedirectUri();
+    if (redirectUri === null) {
+      setJiraError("The selected environment URL is unavailable. Reconnect it and try again.");
+      return;
+    }
     setJiraPendingAction("authorize");
     setJiraError(null);
     const result = await jiraBeginAuth({
       environmentId,
-      input: { redirectUri: jiraOAuthRedirectUri() },
+      input: { redirectUri },
     });
     setJiraPendingAction(null);
     if (result._tag === "Failure") {
@@ -898,6 +988,9 @@ export function WorkbenchPage({
     }
     if (selectedProject) {
       sessionStorage.setItem(JIRA_OAUTH_WORKSPACE_STORAGE_KEY, selectedProject.id);
+    }
+    if (environmentId !== null) {
+      sessionStorage.setItem(JIRA_OAUTH_ENVIRONMENT_STORAGE_KEY, environmentId);
     }
     window.location.assign(result.value.authorizationUrl);
   };
@@ -1091,18 +1184,23 @@ export function WorkbenchPage({
   }, [jiraDialogOpen, refreshJiraSnapshot]);
 
   useEffect(() => {
+    const refresh = () => refreshWorkbenchSnapshot();
+    return subscribeToWorkbenchRefresh({
+      target: window,
+      refresh,
+      intervalMs: JIRA_REFRESH_INTERVAL_MS,
+    });
+  }, [refreshWorkbenchSnapshot]);
+
+  useEffect(() => {
     if (!jiraBinding?.active) return;
-    const refresh = () => {
-      refreshWorkbenchSnapshot();
-      refreshJiraSnapshot();
-    };
-    const intervalId = window.setInterval(refresh, JIRA_REFRESH_INTERVAL_MS);
-    window.addEventListener("focus", refresh);
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener("focus", refresh);
-    };
-  }, [jiraBinding?.active, refreshJiraSnapshot, refreshWorkbenchSnapshot]);
+    const refresh = () => refreshJiraSnapshot();
+    return subscribeToWorkbenchRefresh({
+      target: window,
+      refresh,
+      intervalMs: JIRA_REFRESH_INTERVAL_MS,
+    });
+  }, [jiraBinding?.active, refreshJiraSnapshot]);
 
   const syncJiraBinding = async (binding: WorkbenchJiraBinding) => {
     if (environmentId === null) return;
@@ -1138,29 +1236,39 @@ export function WorkbenchPage({
       if ("error" in callback) {
         setJiraError(callback.error);
       } else {
-        const result = await jiraCompleteAuth({
-          environmentId,
-          input: {
-            code: callback.code,
-            state: callback.state,
-            redirectUri: jiraOAuthRedirectUri(),
-          },
-        });
-        if (result._tag === "Failure") {
-          if (!isAtomCommandInterrupted(result)) setJiraError(failureMessage(result));
+        const redirectUri = resolveJiraOAuthRedirectUri();
+        if (redirectUri === null) {
+          setJiraError("The selected environment URL is unavailable. Reconnect it and try again.");
         } else {
-          succeeded = true;
+          const result = await jiraCompleteAuth({
+            environmentId,
+            input: {
+              code: callback.code,
+              state: callback.state,
+              redirectUri,
+            },
+          });
+          if (result._tag === "Failure") {
+            if (!isAtomCommandInterrupted(result)) setJiraError(failureMessage(result));
+          } else {
+            succeeded = true;
+          }
         }
       }
       setJiraPendingAction(null);
 
       const storedProjectId = sessionStorage.getItem(JIRA_OAUTH_WORKSPACE_STORAGE_KEY);
+      const storedEnvironmentId = readPendingJiraEnvironmentId();
       sessionStorage.removeItem(JIRA_OAUTH_WORKSPACE_STORAGE_KEY);
+      sessionStorage.removeItem(JIRA_OAUTH_ENVIRONMENT_STORAGE_KEY);
       const callbackProject = snapshotProjects.find((project) => project.id === storedProjectId);
       if (callbackProject) setSelectedProjectId(callbackProject.id);
       await navigate({
         to: "/workbench",
         search: (previous: WorkbenchSearch): WorkbenchSearch => ({
+          ...((environmentId ?? storedEnvironmentId ?? previous.environmentId)
+            ? { environmentId: environmentId ?? storedEnvironmentId ?? previous.environmentId }
+            : {}),
           ...(callbackProject?.id || previous.projectId
             ? { projectId: callbackProject?.id ?? previous.projectId }
             : {}),
@@ -1182,6 +1290,7 @@ export function WorkbenchPage({
     jiraOAuthError,
     jiraOAuthState,
     navigate,
+    resolveJiraOAuthRedirectUri,
     snapshotProjects,
   ]);
 
@@ -1224,15 +1333,19 @@ export function WorkbenchPage({
       return;
     void navigate({
       to: "/workbench",
-      search: ticketId
-        ? { projectId: selectedProject.id, ticketId }
-        : epicId
-          ? { projectId: selectedProject.id, epicId }
-          : { projectId: selectedProject.id },
+      search: withWorkbenchEnvironmentSearch(
+        environmentId,
+        ticketId
+          ? { projectId: selectedProject.id, ticketId }
+          : epicId
+            ? { projectId: selectedProject.id, epicId }
+            : { projectId: selectedProject.id },
+      ),
       replace: true,
     });
   }, [
     navigate,
+    environmentId,
     awaitingProjectId,
     awaitingEpicId,
     awaitingTicketId,
@@ -1250,9 +1363,12 @@ export function WorkbenchPage({
     setError(null);
     void navigate({
       to: "/workbench",
-      search: selectedProject
-        ? { projectId: selectedProject.id, create: "workspace" }
-        : { create: "workspace" },
+      search: withWorkbenchEnvironmentSearch(
+        environmentId,
+        selectedProject
+          ? { projectId: selectedProject.id, create: "workspace" as const }
+          : { create: "workspace" as const },
+      ),
       replace: true,
     });
   };
@@ -1278,6 +1394,7 @@ export function WorkbenchPage({
     void navigate({
       to: "/workbench",
       search: (previous: WorkbenchSearch): WorkbenchSearch => ({
+        ...(environmentId ? { environmentId } : {}),
         ...(previous.projectId ? { projectId: previous.projectId } : {}),
         ...(previous.ticketId
           ? { ticketId: previous.ticketId }
@@ -1358,6 +1475,7 @@ export function WorkbenchPage({
           {selectedTicket ? (
             <WorkbenchTicketDetail
               key={selectedTicket.id}
+              environmentId={environmentId}
               workspaceTitle={selectedProject.title}
               ticket={selectedTicket}
               ticketWorkspace={snapshot?.ticketWorkspaces.find(
@@ -1654,7 +1772,9 @@ export function WorkbenchPage({
                   onMove={(ticket, status) => {
                     changeTicket(ticketForBoardAction(ticket), { status });
                   }}
-                  onOpenThread={(ticket) => requestTicketThread(ticketForBoardAction(ticket))}
+                  onOpenThread={(ticket, threadId) =>
+                    requestTicketThread(ticketForBoardAction(ticket), threadId)
+                  }
                   onCreateTicket={() => openTicketDialog()}
                 />
               </div>
@@ -1727,6 +1847,7 @@ export function WorkbenchPage({
           threads={[...threadsById.values()].filter(
             (thread) =>
               thread.projectId === attachThreadTicket.primaryT3ProjectId &&
+              !reservedThreadIds.has(thread.id) &&
               !(snapshot?.assignments ?? []).some(
                 (assignment) => assignment.threadId === thread.id,
               ),

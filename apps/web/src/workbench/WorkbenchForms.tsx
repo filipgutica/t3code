@@ -1,5 +1,6 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import {
+  EnvironmentId,
   type EditorId,
   ProjectId,
   type ResolvedKeybindingsConfig,
@@ -71,6 +72,7 @@ import {
   getWorkbenchThreadPresentation,
   getWorkbenchAgentPresentation,
   getWorkbenchEpicProgress,
+  getActiveAssignmentsByTicket,
   getWorkbenchTicketRepositoryProjectIds,
   isWorkbenchTicketStatus,
   isWorkbenchThreadArchived,
@@ -82,9 +84,14 @@ import {
   getWorkbenchTicketTemplate,
   isWorkbenchTicketKind,
 } from "./workbench.logic";
-import { useWorkbenchDraftStore } from "./workbenchDraftStore";
+import {
+  isWorkbenchDraftProjected,
+  useWorkbenchDraftStore,
+  type WorkbenchTicketSavedVersion,
+} from "./workbenchDraftStore";
 import { WorkbenchDescription } from "./WorkbenchDescription";
 import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
+import { resolveWorkbenchTicketContent } from "./workbenchJira.logic";
 
 const NO_EPIC_VALUE = "__workbench_no_epic__";
 
@@ -881,6 +888,7 @@ export function WorkbenchTicketDialog({
 }
 
 export function WorkbenchTicketDetail({
+  environmentId,
   workspaceTitle,
   ticket,
   ticketWorkspace,
@@ -911,6 +919,7 @@ export function WorkbenchTicketDetail({
   onDelete,
   lifecycleActionsEnabled,
 }: {
+  readonly environmentId: EnvironmentId;
   readonly workspaceTitle: string;
   readonly ticket: WorkbenchTicket;
   readonly ticketWorkspace: WorkbenchTicketWorkspace | undefined;
@@ -928,7 +937,11 @@ export function WorkbenchTicketDetail({
   readonly threadActionPending: boolean;
   readonly error: string | null;
   readonly onBack: () => void;
-  readonly onSave: (ticket: WorkbenchTicket, title: string, markdown: string) => Promise<boolean>;
+  readonly onSave: (
+    ticket: WorkbenchTicket,
+    title: string,
+    markdown: string,
+  ) => Promise<WorkbenchTicketSavedVersion | false>;
   readonly onUpdate: (
     ticket: WorkbenchTicket,
     patch: Partial<
@@ -946,7 +959,7 @@ export function WorkbenchTicketDetail({
     >,
   ) => void;
   readonly onOpenEpic: (epicId: WorkbenchEpicId) => void;
-  readonly onOpenThread: (ticket: WorkbenchTicket) => void;
+  readonly onOpenThread: (ticket: WorkbenchTicket, threadId?: ThreadId) => void;
   readonly onOpenAssignedThread: (threadId: ThreadId) => void;
   readonly onNewThread: (ticket: WorkbenchTicket) => void;
   readonly onAttachThread: (ticket: WorkbenchTicket) => void;
@@ -956,7 +969,15 @@ export function WorkbenchTicketDetail({
   readonly onDelete: (ticket: WorkbenchTicket) => Promise<boolean>;
   readonly lifecycleActionsEnabled: boolean;
 }) {
-  const draft = useWorkbenchDraftStore((state) => state.drafts.get(ticket.id));
+  const storedDraft = useWorkbenchDraftStore((state) =>
+    state.drafts.get(environmentId)?.get(ticket.id),
+  );
+  const draftProjected = isWorkbenchDraftProjected({
+    draft: storedDraft,
+    ticket,
+    jiraRemoteUpdatedAt: jiraIssueLink?.issue.remoteUpdatedAt,
+  });
+  const draft = draftProjected ? undefined : storedDraft;
   const setDraft = useWorkbenchDraftStore((state) => state.setDraft);
   const markDraftSaved = useWorkbenchDraftStore((state) => state.markDraftSaved);
   const clearDraft = useWorkbenchDraftStore((state) => state.clearDraft);
@@ -964,11 +985,14 @@ export function WorkbenchTicketDetail({
   const [threadPanelCollapsed, setThreadPanelCollapsed] = useState(false);
   const [detailsPanelCollapsed, setDetailsPanelCollapsed] = useState(false);
   const activeAssignments = assignments.filter((candidate) => candidate.supersededAt === null);
-  const assignment =
-    activeAssignments.find(
-      (candidate) =>
-        threadsById.has(candidate.threadId) || archivedThreadsById.has(candidate.threadId),
-    ) ?? activeAssignments[0];
+  // Keep the primary assignment selection identical to the Workbench page's
+  // callback map. Otherwise the detail view can show one active Thread while
+  // its Open action resolves another assignment for the same Ticket.
+  const assignment = getActiveAssignmentsByTicket(
+    assignments,
+    new Set(threadsById.keys()),
+    new Set(archivedThreadsById.keys()),
+  ).get(ticket.id);
   const historicalAssignments = assignments.filter((candidate) => candidate.supersededAt !== null);
   const repositoryScopeLocked =
     assignments.length > 0 ||
@@ -1000,34 +1024,38 @@ export function WorkbenchTicketDetail({
   );
   const isArchived = ticket.archivedAt != null;
   const editing = !isArchived && draft?.mode === "editing";
-  const displayedTitle = jiraFieldsManaged ? ticket.title : (draft?.title ?? ticket.title);
-  const displayedMarkdown = draft?.markdown ?? ticket.markdown;
+  const projectedContent = resolveWorkbenchTicketContent({
+    ticket,
+    jiraIssue: jiraFieldsManaged ? jiraIssueLink?.issue : undefined,
+  });
+  const displayedTitle = jiraFieldsManaged
+    ? projectedContent.title
+    : (draft?.title ?? projectedContent.title);
+  const displayedMarkdown = draft?.markdown ?? projectedContent.markdown;
   const actionableTicket =
     draft?.mode === "saved"
       ? { ...ticket, title: displayedTitle, markdown: displayedMarkdown }
-      : ticket;
+      : { ...ticket, ...projectedContent };
   const dirty =
     editing &&
-    ((!jiraFieldsManaged && draft.title !== ticket.title) || draft.markdown !== ticket.markdown);
+    ((!jiraFieldsManaged && draft.title !== projectedContent.title) ||
+      draft.markdown !== projectedContent.markdown);
 
   useEffect(() => {
-    if (
-      draft?.mode === "saved" &&
-      draft.title === ticket.title &&
-      draft.markdown === ticket.markdown
-    ) {
-      clearDraft(ticket.id);
+    if (draftProjected) {
+      clearDraft(environmentId, ticket.id);
     }
-  }, [clearDraft, draft, ticket.id, ticket.markdown, ticket.title]);
+  }, [clearDraft, draftProjected, environmentId, ticket.id]);
 
   const cancelEditing = () => {
-    clearDraft(ticket.id);
+    clearDraft(environmentId, ticket.id);
   };
   const startEditing = () => {
-    setDraft(ticket.id, {
+    setDraft(environmentId, ticket.id, {
       title: displayedTitle,
       markdown: displayedMarkdown,
       mode: "editing",
+      revision: ticket.revision,
       jiraRemoteUpdatedAt: jiraIssueLink?.issue.remoteUpdatedAt ?? null,
     });
   };
@@ -1120,7 +1148,7 @@ export function WorkbenchTicketDetail({
                     onReplaceThread(ticket, assignment.threadId);
                     return;
                   }
-                  onOpenThread(actionableTicket);
+                  onOpenThread(actionableTicket, assignment?.threadId);
                 }}
                 size="sm"
                 type="button"
@@ -1140,14 +1168,22 @@ export function WorkbenchTicketDetail({
         onSubmit={(event) => {
           event.preventDefault();
           if (!editing) return;
-          const normalizedTitle = jiraFieldsManaged ? ticket.title : draft.title.trim();
+          const normalizedTitle = jiraFieldsManaged ? projectedContent.title : draft.title.trim();
           const normalizedMarkdown = draft.markdown.trim();
+          const submittedContent = draft;
           void (async () => {
-            if (!(await onSave(ticket, normalizedTitle, normalizedMarkdown))) return;
-            markDraftSaved(ticket.id, {
-              title: normalizedTitle,
-              markdown: normalizedMarkdown,
-            });
+            const savedVersion = await onSave(ticket, normalizedTitle, normalizedMarkdown);
+            if (savedVersion === false) return;
+            markDraftSaved(
+              environmentId,
+              ticket.id,
+              {
+                title: normalizedTitle,
+                markdown: normalizedMarkdown,
+                ...savedVersion,
+              },
+              submittedContent,
+            );
           })();
         }}
       >
@@ -1185,9 +1221,12 @@ export function WorkbenchTicketDetail({
                         id="edit-workbench-ticket-title"
                         autoFocus={!jiraFieldsManaged}
                         disabled={jiraFieldsManaged}
-                        value={jiraFieldsManaged ? ticket.title : draft.title}
+                        value={jiraFieldsManaged ? projectedContent.title : draft.title}
                         onChange={(event) => {
-                          setDraft(ticket.id, { ...draft, title: event.currentTarget.value });
+                          setDraft(environmentId, ticket.id, {
+                            ...draft,
+                            title: event.currentTarget.value,
+                          });
                         }}
                       />
                       {jiraFieldsManaged ? (
@@ -1202,7 +1241,10 @@ export function WorkbenchTicketDetail({
                         placeholder="Goal, constraints, and acceptance criteria…"
                         value={draft.markdown}
                         onChange={(event) => {
-                          setDraft(ticket.id, { ...draft, markdown: event.currentTarget.value });
+                          setDraft(environmentId, ticket.id, {
+                            ...draft,
+                            markdown: event.currentTarget.value,
+                          });
                         }}
                       />
                     </div>
@@ -1272,7 +1314,7 @@ export function WorkbenchTicketDetail({
                         } for ${displayedTitle}`}
                         className="group flex min-w-0 flex-1 items-center gap-3 py-2 text-left outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                         disabled={pending}
-                        onClick={() => onOpenThread(actionableTicket)}
+                        onClick={() => onOpenThread(actionableTicket, assignment?.threadId)}
                         type="button"
                       >
                         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">

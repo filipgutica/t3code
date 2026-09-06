@@ -100,7 +100,7 @@ export function WorkbenchTicketBoard({
   readonly onSelect: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
   readonly onSelectEpic: (projectId: WorkbenchProjectId, epicId: WorkbenchEpic["id"]) => void;
   readonly onMove: (ticket: WorkbenchTicket, status: WorkbenchTicketStatus) => void;
-  readonly onOpenThread: (ticket: WorkbenchTicket) => void;
+  readonly onOpenThread: (ticket: WorkbenchTicket, threadId?: ThreadId) => void;
   readonly onCreateTicket: () => void;
 }) {
   const agentStatesByTicket = useMemo(() => {
@@ -472,7 +472,7 @@ export function WorkbenchTicketBoard({
                                   <Button
                                     className="w-full"
                                     disabled={pending}
-                                    onClick={() => onOpenThread(ticket)}
+                                    onClick={() => onOpenThread(ticket, assignment?.threadId)}
                                     size="xs"
                                     variant={thread.state === "unassigned" ? "default" : "outline"}
                                   >

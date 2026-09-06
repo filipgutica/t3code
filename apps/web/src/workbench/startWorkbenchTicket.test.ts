@@ -48,6 +48,7 @@ const ticket = {
   repositoryProjectIds: [projectId],
   status: "todo",
   blocked: false,
+  revision: 0,
   createdAt,
   updatedAt: createdAt,
 } as const satisfies WorkbenchTicket;

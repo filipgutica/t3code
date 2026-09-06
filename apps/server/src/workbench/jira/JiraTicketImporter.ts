@@ -2,6 +2,7 @@ import {
   WorkbenchEpicId,
   WorkbenchJiraOperationError,
   WorkbenchTicketId,
+  type WorkbenchUpdateJiraTicketFieldsInput,
   type WorkbenchJiraBinding,
   type WorkbenchJiraIssueSnapshot,
   type WorkbenchTicketStatus,
@@ -91,32 +92,8 @@ export const layer = Layer.effect(
     );
 
     const updateJiraOwnedTicketFields = Effect.fn("JiraTicketImporter.updateJiraOwnedTicketFields")(
-      function* (input: {
-        readonly ticketId: WorkbenchTicketId;
-        readonly epicId: WorkbenchEpicId | null;
-        readonly title: string;
-        readonly kind: "story" | "bug";
-        readonly status: WorkbenchTicketStatus;
-        readonly blocked: boolean;
-        readonly markdown: string | null;
-        readonly updatedAt: string;
-      }) {
-        const updated = yield* sql<{ readonly ticketId: string }>`
-        UPDATE workbench_tickets
-        SET
-          epic_id = ${input.epicId},
-          title = ${input.title},
-          kind = ${input.kind},
-          status = ${input.status},
-          blocked = ${input.blocked ? 1 : 0},
-          markdown = COALESCE(${input.markdown}, markdown),
-          updated_at = MAX(updated_at, ${input.updatedAt})
-        WHERE ticket_id = ${input.ticketId}
-        RETURNING ticket_id AS "ticketId"
-      `;
-        if (updated.length === 0) {
-          return yield* importError("The Jira Ticket no longer exists.");
-        }
+      function* (input: WorkbenchUpdateJiraTicketFieldsInput) {
+        return yield* workbench.updateJiraTicketFields(input);
       },
     );
 
@@ -190,20 +167,30 @@ export const layer = Layer.effect(
                 ),
               );
           } else {
-            yield* updateJiraOwnedTicketFields({
-              ticketId: existingTicket.id,
-              epicId,
-              title,
-              kind,
-              status: input.mappedStatus,
-              blocked: input.issue.flagged,
-              markdown: input.issue.description === undefined ? null : description,
+            const patch: WorkbenchUpdateJiraTicketFieldsInput = {
+              id: existingTicket.id,
+              expectedRevision: existingTicket.revision,
               updatedAt,
-            }).pipe(
-              Effect.mapError(() =>
-                importError(`Jira issue ${input.issue.key} could not be updated.`),
-              ),
-            );
+              ...(existingTicket.epicId === epicId ? {} : { epicId }),
+              ...(existingTicket.title === title ? {} : { title }),
+              ...(existingTicket.kind === kind ? {} : { kind }),
+              ...(existingTicket.status === input.mappedStatus
+                ? {}
+                : { status: input.mappedStatus }),
+              ...(existingTicket.blocked === input.issue.flagged
+                ? {}
+                : { blocked: input.issue.flagged }),
+              ...(input.issue.description === undefined || existingTicket.markdown === description
+                ? {}
+                : { markdown: description }),
+            };
+            if (Object.keys(patch).length > 3) {
+              yield* updateJiraOwnedTicketFields(patch).pipe(
+                Effect.mapError(() =>
+                  importError(`Jira issue ${input.issue.key} could not be updated.`),
+                ),
+              );
+            }
           }
           if (
             existingTicket === undefined &&
@@ -215,13 +202,10 @@ export const layer = Layer.effect(
             const created = refreshed.tickets.find((ticket) => ticket.id === ticketId);
             if (created) {
               yield* updateJiraOwnedTicketFields({
-                ticketId: created.id,
-                epicId: created.epicId,
-                title: created.title,
-                kind: created.kind,
+                id: created.id,
+                expectedRevision: created.revision,
                 status: input.mappedStatus,
                 blocked: input.issue.flagged,
-                markdown: input.issue.description === undefined ? null : description,
                 updatedAt,
               }).pipe(
                 Effect.mapError(() =>

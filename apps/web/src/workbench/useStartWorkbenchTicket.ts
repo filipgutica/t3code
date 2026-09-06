@@ -84,7 +84,7 @@ export function useStartWorkbenchTicket({
               environmentId,
               ticket,
               projects,
-              assignment: assignmentsByTicket.get(ticket.id),
+              assignment: options?.assignment ?? assignmentsByTicket.get(ticket.id),
               existingThreadIds,
               threadLookupReady,
             },

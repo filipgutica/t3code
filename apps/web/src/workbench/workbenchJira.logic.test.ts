@@ -1,9 +1,4 @@
-import {
-  ProjectId,
-  WorkbenchEpicId,
-  WorkbenchProjectId,
-  WorkbenchTicketId,
-} from "@t3tools/contracts";
+import { ProjectId, WorkbenchTicketId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import {
@@ -12,12 +7,32 @@ import {
   getWorkbenchJiraBindingSprints,
   resolveWorkbenchJiraOAuthCallback,
   resolveWorkbenchJiraRedirectUri,
+  resolveWorkbenchTicketContent,
   reconcileWorkbenchJiraStatusMappings,
   resolveWorkbenchTicketUpdateFields,
   suggestWorkbenchJiraStatusMappings,
 } from "./workbenchJira.logic";
 
 describe("Workbench Jira helpers", () => {
+  it("sends a local status patch without adding stale content fields", () => {
+    expect(
+      resolveWorkbenchTicketUpdateFields({ patch: { status: "done" }, jiraFieldsManaged: false }),
+    ).toEqual({ status: "done" });
+  });
+  it("uses Jira text from the versioned issue snapshot when the Ticket query is older", () => {
+    expect(
+      resolveWorkbenchTicketContent({
+        ticket: { title: "Old title", markdown: "Old text" },
+        jiraIssue: { summary: "Current title", description: "Current text" },
+      }),
+    ).toEqual({ title: "Current title", markdown: "Current text" });
+    expect(
+      resolveWorkbenchTicketContent({
+        ticket: { title: "Local title", markdown: "Local text" },
+        jiraIssue: undefined,
+      }),
+    ).toEqual({ title: "Local title", markdown: "Local text" });
+  });
   it("retains all selected sprints while supporting existing single-sprint bindings", () => {
     const legacy = { sprintId: 136, sprintName: "Data Application Sprint 136" };
     expect(getWorkbenchJiraBindingSprints(legacy)).toEqual([{ id: 136, name: legacy.sprintName }]);
@@ -155,26 +170,10 @@ describe("Workbench Jira helpers", () => {
   });
 
   it("preserves Jira-owned fields while applying local instructions and repository changes", () => {
-    const originalRepositoryId = ProjectId.make("original-repository");
     const nextRepositoryId = ProjectId.make("next-repository");
-    const ticket = {
-      id: WorkbenchTicketId.make("ticket-one"),
-      projectId: WorkbenchProjectId.make("workspace-one"),
-      epicId: WorkbenchEpicId.make("epic-one"),
-      title: "Jira summary",
-      kind: "story" as const,
-      markdown: "Original instructions",
-      primaryT3ProjectId: originalRepositoryId,
-      repositoryProjectIds: [originalRepositoryId],
-      status: "todo" as const,
-      blocked: false,
-      createdAt: "2026-09-03T00:00:00.000Z",
-      updatedAt: "2026-09-03T00:00:00.000Z",
-    };
 
     expect(
       resolveWorkbenchTicketUpdateFields({
-        ticket,
         jiraFieldsManaged: true,
         patch: {
           title: "Local summary",
@@ -188,14 +187,9 @@ describe("Workbench Jira helpers", () => {
         },
       }),
     ).toEqual({
-      title: "Jira summary",
-      kind: "story",
-      epicId: WorkbenchEpicId.make("epic-one"),
       markdown: "Updated agent instructions",
       primaryT3ProjectId: nextRepositoryId,
       repositoryProjectIds: [nextRepositoryId],
-      status: "todo",
-      blocked: false,
     });
   });
 });

@@ -82,6 +82,7 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
       primary_t3_project_id TEXT NOT NULL,
       status TEXT NOT NULL,
       blocked INTEGER NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 0,
       archived_at TEXT,
       deleted_at TEXT,
       created_at TEXT NOT NULL,
@@ -435,6 +436,32 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
       yield* sql`
         INSERT OR IGNORE INTO workbench_schema_migrations (version)
         VALUES (10)
+      `;
+    }),
+  );
+
+  yield* sql.withTransaction(
+    Effect.gen(function* () {
+      const migration = yield* sql<{ readonly version: number }>`
+        SELECT version
+        FROM workbench_schema_migrations
+        WHERE version = 11
+        LIMIT 1
+      `;
+      if (migration.length > 0) return;
+
+      const ticketColumns = yield* sql<{ readonly name: string }>`
+        PRAGMA table_info(workbench_tickets)
+      `;
+      if (!ticketColumns.some((column) => column.name === "revision")) {
+        yield* sql`
+          ALTER TABLE workbench_tickets
+          ADD COLUMN revision INTEGER NOT NULL DEFAULT 0
+        `;
+      }
+      yield* sql`
+        INSERT OR IGNORE INTO workbench_schema_migrations (version)
+        VALUES (11)
       `;
     }),
   );
