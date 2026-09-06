@@ -1,5 +1,6 @@
 import {
   ArrowLeftIcon,
+  BlocksIcon,
   ChartNoAxesColumnIcon,
   GitPullRequestIcon,
   SettingsIcon,
@@ -143,7 +144,9 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             ? "usage"
             : location.pathname === "/pull-requests"
               ? "pull-requests"
-              : null,
+              : location.pathname === "/workbench"
+                ? "workbench"
+                : null,
   });
   const { environments } = useEnvironments();
   // The page reads every connected server, so one of them offering pull requests is enough for
@@ -166,6 +169,10 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const handleSettingsClick = useCallback(() => {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
+  }, [closeMobileSidebar, navigate]);
+  const handleWorkbenchClick = useCallback(() => {
+    closeMobileSidebar();
+    void navigate({ to: "/workbench", search: {} });
   }, [closeMobileSidebar, navigate]);
 
   const handleUsageClick = useCallback(() => {
@@ -199,6 +206,11 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             icon={<SettingsIcon />}
             label="Settings"
             onClick={handleSettingsClick}
+          />
+          <SidebarUtilityItem
+            icon={<BlocksIcon />}
+            label="Agent Workbench"
+            onClick={handleWorkbenchClick}
           />
           {pullRequestsSupported ? (
             <SidebarUtilityItem

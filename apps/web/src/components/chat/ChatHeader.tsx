@@ -45,6 +45,7 @@ import {
   WorkspaceBreadcrumbSeparator,
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
+import { WorkbenchThreadBreadcrumb } from "~/workbench/WorkbenchThreadBreadcrumb";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -307,6 +308,10 @@ export const ChatHeader = memo(function ChatHeader({
         ariaLabel="Thread breadcrumb"
         className="flex-1 overflow-clip [overflow-clip-margin:2px]"
       >
+        <WorkbenchThreadBreadcrumb
+          environmentId={activeThreadEnvironmentId}
+          threadId={activeThreadId}
+        />
         {/* The project always leads the header: knowing which project a
             thread lives in is priority zero, and the thread title alone
             doesn't answer it. */}

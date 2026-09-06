@@ -135,6 +135,8 @@ Full glossary with file links: `docs/internals/glossary.md`
 
 ## Where code lives
 
+Keep the fork's Workbench product-management code in `apps/server/src/workbench`, `apps/web/src/workbench`, and the Workbench contract modules. Keep changes to upstream-owned files limited to thin integration points so regular T3 Code updates remain practical. Native T3 Threads remain the conversation experience; reference native records rather than duplicating them. See `docs/internals/workbench-fork.md` for ownership and sync verification.
+
 - `apps/server` - WebSocket, orchestration, providers, checkpointing. Effect-heavy: read `.repos/effect-smol/LLMS.md` before writing Effect code.
 - `apps/web` - React/Vite UI. `apps/desktop` wraps it, `apps/mobile` is React Native, `apps/marketing` is the site.
 - `packages/contracts` - Effect/Schema contracts plus small derived helpers. No heavy runtime logic.

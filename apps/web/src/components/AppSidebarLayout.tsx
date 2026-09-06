@@ -9,7 +9,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useLocation, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 
 import { isElectron } from "../env";
 import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
@@ -26,6 +26,11 @@ import {
   useSidebarStageBackdropVariant,
 } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
+import { useEnvironmentQuery } from "../state/query";
+import { resolveThreadRouteRef } from "../threadRoutes";
+import { workbenchEnvironment } from "../workbench/state";
+import { shouldShowWorkbenchSidebar } from "../workbench/workbenchNavigation";
+import { getWorkbenchContextForThread } from "../workbench/workbench.logic";
 import {
   resolveInitialThreadSidebarWidth,
   resolveThreadSidebarMaximumWidth,
@@ -45,11 +50,16 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
 
-// The settings nav (and the Clerk profile surfaces behind it) only renders on
-// settings routes; lazy-loading it keeps that subtree out of the startup chunk.
+// Route-specific navigation only renders on its owning surface; lazy-loading
+// keeps those subtrees out of the startup chunk.
 const SettingsSidebarNav = lazy(() =>
   import("./settings/SettingsSidebarNav").then((module) => ({
     default: module.SettingsSidebarNav,
+  })),
+);
+const WorkbenchSidebar = lazy(() =>
+  import("../workbench/WorkbenchSidebar").then((module) => ({
+    default: module.WorkbenchSidebar,
   })),
 );
 
@@ -154,7 +164,35 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
   // Settings routes show the settings nav in place of whichever thread
   // sidebar is active.
   const pathname = useLocation({ select: (location) => location.pathname });
+  const search = useSearch({ strict: false });
+  const routeThreadRef = useParams({
+    strict: false,
+    select: (params) => resolveThreadRouteRef(params),
+  });
+  const workbenchSnapshot = useEnvironmentQuery(
+    routeThreadRef === null || search.workbench !== true
+      ? null
+      : workbenchEnvironment.snapshot({ environmentId: routeThreadRef.environmentId, input: {} }),
+  ).data;
+  const workbenchThreadContext =
+    routeThreadRef === null
+      ? null
+      : getWorkbenchContextForThread(workbenchSnapshot, routeThreadRef.threadId);
+  const workbenchSidebarContext =
+    routeThreadRef && workbenchThreadContext
+      ? {
+          environmentId: routeThreadRef.environmentId,
+          threadId: routeThreadRef.threadId,
+          workspaceId: workbenchThreadContext.workspace.id,
+          ticketId: workbenchThreadContext.ticket.id,
+        }
+      : undefined;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
+  const isOnWorkbench = shouldShowWorkbenchSidebar({
+    pathname,
+    search,
+    hasTicketContext: workbenchSidebarContext !== undefined,
+  });
   const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // Subscribed rather than read once: the clamp must track live window size,
@@ -249,6 +287,13 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
             <SidebarChromeHeader isElectron={isElectron} />
             <Suspense fallback={null}>
               <SettingsSidebarNav pathname={pathname} />
+            </Suspense>
+          </>
+        ) : isOnWorkbench ? (
+          <>
+            <SidebarChromeHeader isElectron={isElectron} />
+            <Suspense fallback={null}>
+              <WorkbenchSidebar context={workbenchSidebarContext} />
             </Suspense>
           </>
         ) : legacySidebarEnabled ? (
