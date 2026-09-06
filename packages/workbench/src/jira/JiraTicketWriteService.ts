@@ -76,6 +76,42 @@ interface ManagedIssue {
   readonly link: WorkbenchJiraIssueLink;
 }
 
+const validateReadback = ({
+  input,
+  refreshed,
+  mappedStatus,
+}: {
+  readonly input: WorkbenchJiraUpdateTicketInput;
+  readonly refreshed: WorkbenchJiraIssueSnapshot;
+  readonly mappedStatus: WorkbenchTicketStatus | undefined;
+}) => {
+  if (mappedStatus === undefined) {
+    return Effect.fail(
+      operationError(
+        "status_unmapped",
+        `Jira returned status ${refreshed.status.name}, which is not mapped to a Workbench column.`,
+      ),
+    );
+  }
+  if (input.markdown !== undefined && (refreshed.description ?? "") !== input.markdown) {
+    return Effect.fail(
+      operationError(
+        "request_failed",
+        "Jira accepted the description update, but the refreshed issue still has different content. Refresh Jira before trying again.",
+      ),
+    );
+  }
+  if (input.status !== undefined && mappedStatus !== input.status) {
+    return Effect.fail(
+      operationError(
+        "request_failed",
+        `Jira accepted the status update, but the refreshed issue is still mapped to ${mappedStatus}. Refresh Jira before trying again.`,
+      ),
+    );
+  }
+  return Effect.succeed(mappedStatus);
+};
+
 export interface JiraTicketWriteServiceShape {
   readonly updateTicket: (
     input: WorkbenchJiraUpdateTicketInput,
@@ -313,6 +349,41 @@ export const make = Effect.gen(function* () {
         ),
       );
 
+  const selectTransition = (input: {
+    readonly transitions: ReadonlyArray<{
+      readonly id: string;
+      readonly to: { readonly id: string };
+    }>;
+    readonly statusMappings: WorkbenchJiraBinding["statusMappings"];
+    readonly targetStatus: WorkbenchTicketStatus | undefined;
+    readonly currentStatusName: string;
+  }) => {
+    const candidates = input.transitions.filter((transition) =>
+      input.statusMappings.some(
+        (mapping) =>
+          mapping.jiraStatusId === transition.to.id &&
+          mapping.workbenchStatus === input.targetStatus,
+      ),
+    );
+    if (candidates.length === 0) {
+      return Effect.fail(
+        operationError(
+          "invalid_binding",
+          `Jira does not offer a transition from ${input.currentStatusName} to the Workbench ${input.targetStatus} state. Update the Jira workflow or status mapping first.`,
+        ),
+      );
+    }
+    if (candidates.length > 1) {
+      return Effect.fail(
+        operationError(
+          "invalid_binding",
+          `Jira offers multiple transitions to the Workbench ${input.targetStatus} state. Choose the transition in Jira or adjust the status mapping so Workbench does not guess.`,
+        ),
+      );
+    }
+    return Effect.succeed(candidates[0]!);
+  };
+
   const updateTicket: JiraTicketWriteServiceShape["updateTicket"] = (input) =>
     Effect.gen(function* () {
       const hasMarkdown = input.markdown !== undefined;
@@ -381,27 +452,14 @@ export const make = Effect.gen(function* () {
               accessToken: credentials.accessToken,
               cloudId: credentials.connection.cloudId,
             });
-            const candidates = transitions.filter((transition) =>
-              managed.binding.statusMappings.some(
-                (mapping) =>
-                  mapping.jiraStatusId === transition.to.id &&
-                  mapping.workbenchStatus === input.status,
-              ),
-            );
-            if (candidates.length === 0) {
-              return yield* operationError(
-                "invalid_binding",
-                `Jira does not offer a transition from ${current.status.name} to the Workbench ${input.status} state. Update the Jira workflow or status mapping first.`,
-              );
-            }
-            if (candidates.length > 1) {
-              return yield* operationError(
-                "invalid_binding",
-                `Jira offers multiple transitions to the Workbench ${input.status} state. Choose the transition in Jira or adjust the status mapping so Workbench does not guess.`,
-              );
-            }
+            const candidate = yield* selectTransition({
+              transitions,
+              statusMappings: managed.binding.statusMappings,
+              targetStatus: input.status,
+              currentStatusName: current.status.name,
+            });
             transition = {
-              id: candidates[0]!.id,
+              id: candidate.id,
               accessToken: credentials.accessToken,
               cloudId: credentials.connection.cloudId,
             };
@@ -436,29 +494,12 @@ export const make = Effect.gen(function* () {
           const mappedStatus = managed.binding.statusMappings.find(
             (mapping) => mapping.jiraStatusId === refreshed.status.id,
           )?.workbenchStatus;
-          if (mappedStatus === undefined) {
-            return yield* operationError(
-              "status_unmapped",
-              `Jira returned status ${refreshed.status.name}, which is not mapped to a Workbench column.`,
-            );
-          }
-          if (input.markdown !== undefined && (refreshed.description ?? "") !== input.markdown) {
-            return yield* operationError(
-              "request_failed",
-              "Jira accepted the description update, but the refreshed issue still has different content. Refresh Jira before trying again.",
-            );
-          }
-          if (input.status !== undefined && mappedStatus !== input.status) {
-            return yield* operationError(
-              "request_failed",
-              `Jira accepted the status update, but the refreshed issue is still mapped to ${mappedStatus}. Refresh Jira before trying again.`,
-            );
-          }
+          const validatedStatus = yield* validateReadback({ input, refreshed, mappedStatus });
           const syncedAt = DateTime.formatIso(DateTime.makeUnsafe(yield* clock.currentTimeMillis));
           yield* persistProjection({
             managed,
             issue: refreshed,
-            mappedStatus,
+            mappedStatus: validatedStatus,
             syncedAt,
           });
           return refreshed;

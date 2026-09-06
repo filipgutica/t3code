@@ -1535,6 +1535,29 @@ const makeWorkbenchStore = Effect.gen(function* () {
     });
   });
 
+  const resolveTicketUpdateFields = ({
+    input,
+    current,
+    jiraManaged,
+  }: {
+    readonly input: WorkbenchUpdateTicketInput;
+    readonly current: typeof WorkbenchTicketRow.Type;
+    readonly jiraManaged: boolean;
+  }) => {
+    let epicId = current.epicId;
+    if (!jiraManaged && input.epicId !== undefined) {
+      epicId = input.epicId;
+    }
+    return {
+      epicId,
+      title: jiraManaged ? current.title : (input.title ?? current.title),
+      kind: jiraManaged ? current.kind : (input.kind ?? current.kind),
+      markdown: jiraManaged ? current.markdown : (input.markdown ?? current.markdown),
+      status: jiraManaged ? current.status : (input.status ?? current.status),
+      blocked: jiraManaged ? current.blocked === 1 : (input.blocked ?? current.blocked === 1),
+    };
+  };
+
   const updateTicket: WorkbenchStoreShape["updateTicket"] = Effect.fn(
     "WorkbenchStore.updateTicket",
   )(function* (input) {
@@ -1557,26 +1580,18 @@ const makeWorkbenchStore = Effect.gen(function* () {
             ticketId: input.id,
           });
           const jiraManaged = yield* isJiraManagedTicket(input.id);
-          const title = jiraManaged ? current.title : (input.title ?? current.title);
-          const kind = jiraManaged ? current.kind : (input.kind ?? current.kind);
-          const markdown = jiraManaged ? current.markdown : (input.markdown ?? current.markdown);
-          const status = jiraManaged ? current.status : (input.status ?? current.status);
-          const blocked = jiraManaged
-            ? current.blocked === 1
-            : (input.blocked ?? current.blocked === 1);
+          const {
+            epicId: requestedEpicId,
+            title,
+            kind,
+            markdown,
+            status,
+            blocked,
+          } = resolveTicketUpdateFields({ input, current, jiraManaged });
           const epicId = yield* validateTicketEpic({
             projectId: current.projectId,
-            epicId: jiraManaged
-              ? current.epicId
-              : input.epicId === undefined
-                ? current.epicId
-                : input.epicId,
-            allowArchived:
-              (jiraManaged
-                ? current.epicId
-                : input.epicId === undefined
-                  ? current.epicId
-                  : input.epicId) === current.epicId,
+            epicId: requestedEpicId,
+            allowArchived: requestedEpicId === current.epicId,
           });
           const currentRepositoryProjectIds = currentRepositories.map(
             (repository) => repository.repositoryProjectId,

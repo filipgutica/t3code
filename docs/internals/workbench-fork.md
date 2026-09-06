@@ -41,7 +41,7 @@ vp run workbench:quality
 
 The quality command runs package lint, Knip checks for unused files, dependencies, and exports, and Fallow dead-code analysis. The package also exposes `lint`, `knip`, and `fallow` scripts individually. Knip and Fallow run from the repository root with a Workbench workspace filter so they can resolve server consumers. Fallow checks entry-point exports; unused types are excluded to match the existing Knip policy for exported contract types.
 
-The ESLint-compatible `eslint/complexity` rule runs through Vite+ lint with a default maximum of 20. Three files retain explicit ceilings for existing functions: `TicketWorkspaceService.ts` allows 39, `WorkbenchStore.ts` allows 31, and `jira/JiraTicketWriteService.ts` allows 26. These limits apply to every function in each listed file. Lower the ceilings as those functions are simplified.
+Vite+ lint enforces the ESLint-compatible `eslint/complexity` rule with a maximum of 20 across Workbench source files, without file-specific exceptions.
 
 Fallow health and duplication reports are advisory:
 

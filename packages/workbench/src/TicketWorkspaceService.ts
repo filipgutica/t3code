@@ -6,6 +6,7 @@ import {
   type ProjectId,
   type WorkbenchPrepareTicketWorkspaceInput,
   type WorkbenchReleaseTicketWorkspaceInput,
+  type WorkbenchSnapshot,
   type WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
@@ -239,91 +240,88 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     },
   );
 
-  const prepareUnlocked: TicketWorkspaceServiceShape["prepare"] = Effect.fn(
-    "TicketWorkspaceService.prepareUnlocked",
-  )(function* (input) {
-    const nowMillis = yield* clock.currentTimeMillis;
-    const operationAt = DateTime.formatIso(DateTime.makeUnsafe(nowMillis));
-    // Check lifecycle state before inspecting or releasing an existing
-    // Workspace. Archiving must not allow this flow to clean up a retained
-    // worktree, and deletion must not start a new preparation.
-    const snapshot = yield* store.getSnapshot;
-    const ticket = snapshot.tickets.find((candidate) => candidate.id === input.ticketId);
-    if (!ticket) {
-      return yield* new WorkbenchOperationError({
-        code: "ticket_not_found",
-        message: "The Workbench Ticket does not exist.",
-      });
-    }
-    if (ticket.archivedAt !== undefined && ticket.archivedAt !== null) {
-      return yield* new WorkbenchOperationError({
-        code: "ticket_archived",
-        message: "Archived Workbench Tickets cannot receive a Workspace.",
-      });
-    }
-    const existing = yield* store.getTicketWorkspace(input.ticketId);
-    if (Option.isSome(existing) && existing.value.status === "ready") {
-      let intact = true;
-      for (const repository of existing.value.repositories) {
-        if (
-          repository.status !== "ready" ||
-          !(yield* worktreeExists({
-            branchName: repository.branchName,
-            sourcePath: repository.sourcePath,
-            worktreePath: repository.worktreePath,
-          }))
-        ) {
-          intact = false;
-          break;
+  const handleExistingWorkspace = Effect.fn("TicketWorkspaceService.handleExistingWorkspace")(
+    function* ({
+      existing,
+      snapshot,
+      nowMillis,
+      operationAt,
+    }: {
+      readonly existing: Option.Option<WorkbenchTicketWorkspace>;
+      readonly snapshot: WorkbenchSnapshot;
+      readonly nowMillis: number;
+      readonly operationAt: string;
+    }) {
+      if (Option.isNone(existing)) return Option.none<WorkbenchTicketWorkspace>();
+      const workspace = existing.value;
+      if (workspace.status === "ready") {
+        let intact = true;
+        for (const repository of workspace.repositories) {
+          if (
+            repository.status !== "ready" ||
+            !(yield* worktreeExists({
+              branchName: repository.branchName,
+              sourcePath: repository.sourcePath,
+              worktreePath: repository.worktreePath,
+            }))
+          ) {
+            intact = false;
+            break;
+          }
         }
-      }
-      if (intact) return existing.value;
-
-      const releasing = yield* store.claimTicketWorkspaceRelease({
-        ticketId: existing.value.ticketId,
-        attemptId: existing.value.attemptId,
-        claimedAt: operationAt,
-        requireActiveTicket: true,
-      });
-      yield* releaseClaimedWorkspace({ workspace: releasing, releasedAt: operationAt });
-    }
-    if (Option.isSome(existing) && existing.value.status === "releasing") {
-      yield* releaseClaimedWorkspace({ workspace: existing.value, releasedAt: operationAt });
-    }
-
-    if (Option.isSome(existing) && existing.value.status === "preparing") {
-      const preparationAge = nowMillis - Date.parse(existing.value.updatedAt);
-      if (!Number.isFinite(preparationAge) || preparationAge < interruptedPreparationThresholdMs) {
-        return yield* new WorkbenchOperationError({
-          code: "ticket_workspace_preparation_in_progress",
-          message: "The Ticket Workspace is already being prepared.",
+        if (intact) return Option.some(workspace);
+        const releasing = yield* store.claimTicketWorkspaceRelease({
+          ticketId: workspace.ticketId,
+          attemptId: workspace.attemptId,
+          claimedAt: operationAt,
+          requireActiveTicket: true,
         });
-      }
-      const activeAssignments = snapshot.assignments.filter(
-        (assignment) => assignment.ticketId === input.ticketId && assignment.supersededAt === null,
-      );
-      for (const activeAssignment of activeAssignments) {
-        const thread = yield* projections
-          .getThreadShellById(activeAssignment.threadId)
-          .pipe(
-            Effect.mapError(() =>
-              preparationError("The assigned Agent Thread could not be loaded."),
-            ),
-          );
-        if (Option.isSome(thread)) {
+        yield* releaseClaimedWorkspace({ workspace: releasing, releasedAt: operationAt });
+      } else if (workspace.status === "releasing") {
+        yield* releaseClaimedWorkspace({ workspace, releasedAt: operationAt });
+      } else if (workspace.status === "preparing") {
+        const preparationAge = nowMillis - Date.parse(workspace.updatedAt);
+        if (
+          !Number.isFinite(preparationAge) ||
+          preparationAge < interruptedPreparationThresholdMs
+        ) {
           return yield* new WorkbenchOperationError({
-            code: "ticket_workspace_in_use",
-            message: "The interrupted Ticket Workspace is still used by an active Agent Thread.",
+            code: "ticket_workspace_preparation_in_progress",
+            message: "The Ticket Workspace is already being prepared.",
           });
         }
+        const activeAssignments = snapshot.assignments.filter(
+          (assignment) =>
+            assignment.ticketId === workspace.ticketId && assignment.supersededAt === null,
+        );
+        for (const activeAssignment of activeAssignments) {
+          const thread = yield* projections
+            .getThreadShellById(activeAssignment.threadId)
+            .pipe(
+              Effect.mapError(() =>
+                preparationError("The assigned Agent Thread could not be loaded."),
+              ),
+            );
+          if (Option.isSome(thread)) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_workspace_in_use",
+              message: "The interrupted Ticket Workspace is still used by an active Agent Thread.",
+            });
+          }
+        }
+        yield* recoverInterruptedPreparation({ workspace, recoveredAt: operationAt });
       }
-      yield* recoverInterruptedPreparation({
-        workspace: existing.value,
-        recoveredAt: operationAt,
-      });
-    }
+      return Option.none<WorkbenchTicketWorkspace>();
+    },
+  );
 
-    const branchName = ticketWorkspaceBranchName(ticket.id);
+  const validateRepositories = Effect.fn("TicketWorkspaceService.validateRepositories")(function* ({
+    ticket,
+    branchName,
+  }: {
+    readonly ticket: WorkbenchSnapshot["tickets"][number];
+    readonly branchName: string;
+  }) {
     const validatedRepositories: Array<ValidatedRepository> = [];
     for (const projectId of ticket.repositoryProjectIds) {
       const project = yield* projections
@@ -383,6 +381,42 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         newRefName: existingBranch ? undefined : branchName,
       });
     }
+    return validatedRepositories;
+  });
+
+  const prepareUnlocked: TicketWorkspaceServiceShape["prepare"] = Effect.fn(
+    "TicketWorkspaceService.prepareUnlocked",
+  )(function* (input) {
+    const nowMillis = yield* clock.currentTimeMillis;
+    const operationAt = DateTime.formatIso(DateTime.makeUnsafe(nowMillis));
+    // Check lifecycle state before inspecting or releasing an existing
+    // Workspace. Archiving must not allow this flow to clean up a retained
+    // worktree, and deletion must not start a new preparation.
+    const snapshot = yield* store.getSnapshot;
+    const ticket = snapshot.tickets.find((candidate) => candidate.id === input.ticketId);
+    if (!ticket) {
+      return yield* new WorkbenchOperationError({
+        code: "ticket_not_found",
+        message: "The Workbench Ticket does not exist.",
+      });
+    }
+    if (ticket.archivedAt !== undefined && ticket.archivedAt !== null) {
+      return yield* new WorkbenchOperationError({
+        code: "ticket_archived",
+        message: "Archived Workbench Tickets cannot receive a Workspace.",
+      });
+    }
+    const existing = yield* store.getTicketWorkspace(input.ticketId);
+    const reusable = yield* handleExistingWorkspace({
+      existing,
+      snapshot,
+      nowMillis,
+      operationAt,
+    });
+    if (Option.isSome(reusable)) return reusable.value;
+
+    const branchName = ticketWorkspaceBranchName(ticket.id);
+    const validatedRepositories = yield* validateRepositories({ ticket, branchName });
 
     const attemptId = WorkbenchTicketWorkspaceAttemptId.make(NodeCrypto.randomUUID());
     yield* store.claimTicketWorkspace({
@@ -397,7 +431,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       })),
       claimedAt: operationAt,
     });
-
     const createdRepositories: Array<ValidatedRepository> = [];
     const failAndRollback = Effect.fn("TicketWorkspaceService.failAndRollback")(function* ({
       projectId,
