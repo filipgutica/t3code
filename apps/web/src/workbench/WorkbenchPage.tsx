@@ -3,6 +3,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
+  type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import {
   EnvironmentId,
@@ -143,6 +144,68 @@ const failureMessage = (failure: {
   return error instanceof Error && error.message.trim().length > 0
     ? error.message
     : "The Workbench request failed.";
+};
+
+const reportWorkbenchCommandFailure = <A, E>(
+  result: AtomCommandResult<A, E>,
+  setError: (message: string) => void,
+): result is Extract<AtomCommandResult<A, E>, { readonly _tag: "Failure" }> => {
+  if (result._tag !== "Failure") return false;
+  if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
+  return true;
+};
+
+const launchJiraAuthorization = async ({
+  authorizationUrl,
+  environmentId,
+  selectedProjectId,
+  setError,
+}: {
+  readonly authorizationUrl: string;
+  readonly environmentId: EnvironmentId;
+  readonly selectedProjectId: WorkbenchProjectId | null;
+  readonly setError: (message: string) => void;
+}) => {
+  if (isElectron) {
+    try {
+      const api = readLocalApi();
+      if (!api) throw new Error("The desktop browser launcher is unavailable.");
+      await api.shell.openExternal(authorizationUrl);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not open Jira authorization.");
+    }
+    return;
+  }
+  if (selectedProjectId !== null) {
+    sessionStorage.setItem(JIRA_OAUTH_WORKSPACE_STORAGE_KEY, selectedProjectId);
+  }
+  sessionStorage.setItem(JIRA_OAUTH_ENVIRONMENT_STORAGE_KEY, environmentId);
+  window.location.assign(authorizationUrl);
+};
+
+const resolveJiraOAuthReturnSearch = ({
+  previous,
+  environmentId,
+  storedEnvironmentId,
+  projectId,
+}: {
+  readonly previous: WorkbenchSearch;
+  readonly environmentId: EnvironmentId;
+  readonly storedEnvironmentId: EnvironmentId | null;
+  readonly projectId: WorkbenchProjectId | undefined;
+}): WorkbenchSearch => {
+  const nextEnvironmentId = environmentId ?? storedEnvironmentId ?? previous.environmentId;
+  const nextProjectId = projectId ?? previous.projectId;
+  return {
+    ...(nextEnvironmentId ? { environmentId: nextEnvironmentId } : {}),
+    ...(nextProjectId ? { projectId: nextProjectId } : {}),
+    ...(previous.ticketId
+      ? { ticketId: previous.ticketId }
+      : previous.epicId
+        ? { epicId: previous.epicId }
+        : {}),
+    ...(previous.create ? { create: previous.create } : {}),
+  };
 };
 
 function WorkbenchLoading() {
@@ -648,10 +711,7 @@ export function WorkbenchPage({
       },
     });
     setPendingAction(null);
-    if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
-      return false;
-    }
+    if (reportWorkbenchCommandFailure(result, setError)) return false;
     setAwaitingProjectId(id);
     setSelectedProjectId(id);
     setSelectedTicketId(null);
@@ -674,10 +734,7 @@ export function WorkbenchPage({
       },
     });
     setPendingAction(null);
-    if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
-      return false;
-    }
+    if (reportWorkbenchCommandFailure(result, setError)) return false;
     return true;
   };
 
@@ -714,10 +771,7 @@ export function WorkbenchPage({
       },
     });
     setPendingAction(null);
-    if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
-      return false;
-    }
+    if (reportWorkbenchCommandFailure(result, setError)) return false;
     setAwaitingTicketId(id);
     setAwaitingEpicId(null);
     setSelectedTicketId(id);
@@ -771,10 +825,7 @@ export function WorkbenchPage({
         },
       });
       setPendingAction(null);
-      if (result._tag === "Failure") {
-        if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
-        return false;
-      }
+      if (reportWorkbenchCommandFailure(result, setError)) return false;
       return { jiraRemoteUpdatedAt: result.value.remoteUpdatedAt };
     }
     const fields = resolveWorkbenchTicketUpdateFields({
@@ -798,10 +849,7 @@ export function WorkbenchPage({
       },
     });
     setPendingAction(null);
-    if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
-      return false;
-    }
+    if (reportWorkbenchCommandFailure(result, setError)) return false;
     return { revision: result.value.revision };
   };
 
@@ -819,10 +867,7 @@ export function WorkbenchPage({
       },
     });
     setPendingAction(null);
-    if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
-      return false;
-    }
+    if (reportWorkbenchCommandFailure(result, setError)) return false;
     return true;
   };
 
@@ -865,10 +910,7 @@ export function WorkbenchPage({
       },
     });
     setPendingAction(null);
-    if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
-      return false;
-    }
+    if (reportWorkbenchCommandFailure(result, setError)) return false;
     clearTicketDraft(environmentId, ticket.id);
     if (archivedAt !== null) closeWorkItem();
     return true;
@@ -893,10 +935,7 @@ export function WorkbenchPage({
       },
     });
     setPendingAction(null);
-    if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
-      return false;
-    }
+    if (reportWorkbenchCommandFailure(result, setError)) return false;
     clearTicketDraft(environmentId, ticket.id);
     closeWorkItem();
     return true;
@@ -946,10 +985,7 @@ export function WorkbenchPage({
       },
     });
     setPendingAction(null);
-    if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) setError(failureMessage(result));
-      return false;
-    }
+    if (reportWorkbenchCommandFailure(result, setError)) return false;
     setAwaitingEpicId(id);
     setAwaitingTicketId(null);
     setSelectedEpicId(id);
@@ -972,27 +1008,13 @@ export function WorkbenchPage({
       input: { redirectUri },
     });
     setJiraPendingAction(null);
-    if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) setJiraError(failureMessage(result));
-      return;
-    }
-    if (isElectron) {
-      try {
-        const api = readLocalApi();
-        if (!api) throw new Error("The desktop browser launcher is unavailable.");
-        await api.shell.openExternal(result.value.authorizationUrl);
-      } catch (error) {
-        setJiraError(error instanceof Error ? error.message : "Could not open Jira authorization.");
-      }
-      return;
-    }
-    if (selectedProject) {
-      sessionStorage.setItem(JIRA_OAUTH_WORKSPACE_STORAGE_KEY, selectedProject.id);
-    }
-    if (environmentId !== null) {
-      sessionStorage.setItem(JIRA_OAUTH_ENVIRONMENT_STORAGE_KEY, environmentId);
-    }
-    window.location.assign(result.value.authorizationUrl);
+    if (reportWorkbenchCommandFailure(result, setJiraError)) return;
+    await launchJiraAuthorization({
+      authorizationUrl: result.value.authorizationUrl,
+      environmentId,
+      selectedProjectId: selectedProject?.id ?? null,
+      setError: setJiraError,
+    });
   };
 
   const listJiraProjectsForConnection = async (connectionId: WorkbenchJiraConnectionId) => {
@@ -1229,33 +1251,35 @@ export function WorkbenchPage({
     if (handledJiraOAuthCallbackRef.current === callbackKey) return;
     handledJiraOAuthCallbackRef.current = callbackKey;
 
-    void (async () => {
+    const completeAuthorization = async () => {
       setJiraPendingAction("complete-auth");
       setJiraError(null);
-      let succeeded = false;
-      if ("error" in callback) {
-        setJiraError(callback.error);
-      } else {
+      try {
+        if ("error" in callback) {
+          setJiraError(callback.error);
+          return false;
+        }
         const redirectUri = resolveJiraOAuthRedirectUri();
         if (redirectUri === null) {
           setJiraError("The selected environment URL is unavailable. Reconnect it and try again.");
-        } else {
-          const result = await jiraCompleteAuth({
-            environmentId,
-            input: {
-              code: callback.code,
-              state: callback.state,
-              redirectUri,
-            },
-          });
-          if (result._tag === "Failure") {
-            if (!isAtomCommandInterrupted(result)) setJiraError(failureMessage(result));
-          } else {
-            succeeded = true;
-          }
+          return false;
         }
+        const result = await jiraCompleteAuth({
+          environmentId,
+          input: {
+            code: callback.code,
+            state: callback.state,
+            redirectUri,
+          },
+        });
+        return !reportWorkbenchCommandFailure(result, setJiraError);
+      } finally {
+        setJiraPendingAction(null);
       }
-      setJiraPendingAction(null);
+    };
+
+    void (async () => {
+      const succeeded = await completeAuthorization();
 
       const storedProjectId = sessionStorage.getItem(JIRA_OAUTH_WORKSPACE_STORAGE_KEY);
       const storedEnvironmentId = readPendingJiraEnvironmentId();
@@ -1265,20 +1289,13 @@ export function WorkbenchPage({
       if (callbackProject) setSelectedProjectId(callbackProject.id);
       await navigate({
         to: "/workbench",
-        search: (previous: WorkbenchSearch): WorkbenchSearch => ({
-          ...((environmentId ?? storedEnvironmentId ?? previous.environmentId)
-            ? { environmentId: environmentId ?? storedEnvironmentId ?? previous.environmentId }
-            : {}),
-          ...(callbackProject?.id || previous.projectId
-            ? { projectId: callbackProject?.id ?? previous.projectId }
-            : {}),
-          ...(previous.ticketId
-            ? { ticketId: previous.ticketId }
-            : previous.epicId
-              ? { epicId: previous.epicId }
-              : {}),
-          ...(previous.create ? { create: previous.create } : {}),
-        }),
+        search: (previous: WorkbenchSearch) =>
+          resolveJiraOAuthReturnSearch({
+            previous,
+            environmentId,
+            storedEnvironmentId,
+            projectId: callbackProject?.id,
+          }),
         replace: true,
       });
       if (succeeded || callbackProject) setJiraDialogOpen(true);

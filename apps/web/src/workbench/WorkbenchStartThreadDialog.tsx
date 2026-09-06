@@ -49,6 +49,93 @@ export function resolveWorkbenchStartThreadSelection(
   return entry && model ? createModelSelection(entry.instanceId, model) : null;
 }
 
+const useWorkbenchStartThreadSelection = ({
+  providers,
+  settings,
+  defaultModelSelection,
+}: {
+  readonly providers: ReadonlyArray<ServerProvider>;
+  readonly settings: Parameters<typeof getCustomModelOptionsByInstance>[0];
+  readonly defaultModelSelection: ModelSelection | null;
+}) => {
+  const instanceEntries = useMemo(
+    () =>
+      sortProviderInstanceEntries(
+        applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
+      ),
+    [providers, settings],
+  );
+  const defaultSelection = useMemo(
+    () => resolveWorkbenchStartThreadSelection(instanceEntries, defaultModelSelection),
+    [defaultModelSelection, instanceEntries],
+  );
+  const [selection, setSelection] = useState<ModelSelection | null>(() => defaultSelection);
+  const resetSelection = () => {
+    setSelection(defaultSelection);
+  };
+  const selectedEntry = selection
+    ? instanceEntries.find((entry) => entry.instanceId === selection.instanceId)
+    : undefined;
+  const resolvedSelection =
+    selectedEntry && isProviderInstancePickerReady(selectedEntry) ? selection : defaultSelection;
+  const modelOptionsByInstance = useMemo(
+    () =>
+      getCustomModelOptionsByInstance(
+        settings,
+        providers,
+        resolvedSelection?.instanceId,
+        resolvedSelection?.model,
+      ),
+    [providers, resolvedSelection?.instanceId, resolvedSelection?.model, settings],
+  );
+  const activeEntry = instanceEntries.find(
+    (entry) => entry.instanceId === resolvedSelection?.instanceId,
+  );
+  const selectedModelOption = resolvedSelection
+    ? (modelOptionsByInstance.get(resolvedSelection.instanceId) ?? []).find(
+        (option) => option.slug === resolvedSelection.model,
+      )
+    : undefined;
+  const selectionAvailable = Boolean(
+    resolvedSelection &&
+    activeEntry &&
+    isProviderInstancePickerReady(activeEntry) &&
+    selectedModelOption &&
+    selectedModelOption.isUnavailable !== true,
+  );
+
+  const handleInstanceModelChange = (instanceId: ProviderInstanceId, model: string) => {
+    setSelection((current) =>
+      createModelSelection(
+        instanceId,
+        model,
+        current?.instanceId === instanceId && current.model === model ? current.options : undefined,
+      ),
+    );
+  };
+  const handleModelOptionsChange = (options: ModelSelection["options"]) => {
+    if (resolvedSelection === null) return;
+    setSelection((current) =>
+      createModelSelection(
+        current?.instanceId ?? resolvedSelection.instanceId,
+        current?.model ?? resolvedSelection.model,
+        options,
+      ),
+    );
+  };
+
+  return {
+    instanceEntries,
+    resolvedSelection,
+    activeEntry,
+    modelOptionsByInstance,
+    selectionAvailable,
+    resetSelection,
+    handleInstanceModelChange,
+    handleModelOptionsChange,
+  };
+};
+
 export function WorkbenchStartThreadDialog({
   open,
   onOpenChange,
@@ -82,61 +169,16 @@ export function WorkbenchStartThreadDialog({
     (additional
       ? "Choose the provider and model for another native T3 conversation."
       : "Choose the provider and model for this native T3 conversation.");
-  const instanceEntries = useMemo(
-    () =>
-      sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
-      ),
-    [providers, settings],
-  );
-  const defaultSelection = useMemo(
-    () => resolveWorkbenchStartThreadSelection(instanceEntries, defaultModelSelection),
-    [defaultModelSelection, instanceEntries],
-  );
-  const [selection, setSelection] = useState<ModelSelection | null>(() => defaultSelection);
-  const resetSelection = () => {
-    setSelection(defaultSelection);
-  };
-  const selectedEntry = selection
-    ? instanceEntries.find((entry) => entry.instanceId === selection.instanceId)
-    : undefined;
-  const resolvedSelection =
-    selectedEntry && isProviderInstancePickerReady(selectedEntry) ? selection : defaultSelection;
-
-  const modelOptionsByInstance = useMemo(
-    () =>
-      getCustomModelOptionsByInstance(
-        settings,
-        providers,
-        resolvedSelection?.instanceId,
-        resolvedSelection?.model,
-      ),
-    [providers, resolvedSelection?.instanceId, resolvedSelection?.model, settings],
-  );
-  const activeEntry = instanceEntries.find(
-    (entry) => entry.instanceId === resolvedSelection?.instanceId,
-  );
-  const selectedModelOption = resolvedSelection
-    ? (modelOptionsByInstance.get(resolvedSelection.instanceId) ?? []).find(
-        (option) => option.slug === resolvedSelection.model,
-      )
-    : undefined;
-  const selectionAvailable =
-    resolvedSelection !== null &&
-    activeEntry !== undefined &&
-    isProviderInstancePickerReady(activeEntry) &&
-    selectedModelOption !== undefined &&
-    selectedModelOption.isUnavailable !== true;
-
-  const handleInstanceModelChange = (instanceId: ProviderInstanceId, model: string) => {
-    setSelection((current) =>
-      createModelSelection(
-        instanceId,
-        model,
-        current?.instanceId === instanceId && current.model === model ? current.options : undefined,
-      ),
-    );
-  };
+  const {
+    instanceEntries,
+    resolvedSelection,
+    activeEntry,
+    modelOptionsByInstance,
+    selectionAvailable,
+    resetSelection,
+    handleInstanceModelChange,
+    handleModelOptionsChange,
+  } = useWorkbenchStartThreadSelection({ providers, settings, defaultModelSelection });
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -189,15 +231,7 @@ export function WorkbenchStartThreadDialog({
                     allowPromptInjectedEffort={false}
                     planModeEnabled={settings.planModeEnabled}
                     triggerVariant="outline"
-                    onModelOptionsChange={(options) => {
-                      setSelection((current) =>
-                        createModelSelection(
-                          current?.instanceId ?? resolvedSelection.instanceId,
-                          current?.model ?? resolvedSelection.model,
-                          options,
-                        ),
-                      );
-                    }}
+                    onModelOptionsChange={handleModelOptionsChange}
                   />
                 </div>
                 {!selectionAvailable ? (

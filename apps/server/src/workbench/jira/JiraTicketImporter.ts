@@ -6,6 +6,7 @@ import {
   type WorkbenchJiraBinding,
   type WorkbenchJiraIssueSnapshot,
   type WorkbenchTicketStatus,
+  type WorkbenchTicket,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -66,6 +67,53 @@ const jiraTicketId = (bindingId: string, issueId: string) =>
 
 const jiraEpicId = (bindingId: string, epicId: string) =>
   WorkbenchEpicId.make(`jira:${bindingId}:epic:${epicId}`);
+
+const makeJiraTicketFieldPatch = ({
+  ticket,
+  epicId,
+  title,
+  kind,
+  status,
+  blocked,
+  description,
+  updatedAt,
+}: {
+  readonly ticket: Pick<
+    WorkbenchTicket,
+    "id" | "revision" | "epicId" | "title" | "kind" | "status" | "blocked" | "markdown"
+  >;
+  readonly epicId: WorkbenchEpicId | null;
+  readonly title: WorkbenchTicket["title"];
+  readonly kind: WorkbenchTicket["kind"];
+  readonly status: WorkbenchTicketStatus;
+  readonly blocked: boolean;
+  readonly description: string | undefined;
+  readonly updatedAt: WorkbenchUpdateJiraTicketFieldsInput["updatedAt"];
+}): WorkbenchUpdateJiraTicketFieldsInput | undefined => {
+  const changes: {
+    epicId?: WorkbenchEpicId | null;
+    title?: WorkbenchTicket["title"];
+    kind?: WorkbenchTicket["kind"];
+    status?: WorkbenchTicketStatus;
+    blocked?: boolean;
+    markdown?: WorkbenchTicket["markdown"];
+  } = {};
+  if (ticket.epicId !== epicId) changes.epicId = epicId;
+  if (ticket.title !== title) changes.title = title;
+  if (ticket.kind !== kind) changes.kind = kind;
+  if (ticket.status !== status) changes.status = status;
+  if (ticket.blocked !== blocked) changes.blocked = blocked;
+  if (description !== undefined && ticket.markdown !== description) {
+    changes.markdown = description;
+  }
+  if (Object.keys(changes).length === 0) return undefined;
+  return {
+    id: ticket.id,
+    expectedRevision: ticket.revision,
+    updatedAt,
+    ...changes,
+  };
+};
 
 export const layer = Layer.effect(
   JiraTicketImporter,
@@ -167,24 +215,17 @@ export const layer = Layer.effect(
                 ),
               );
           } else {
-            const patch: WorkbenchUpdateJiraTicketFieldsInput = {
-              id: existingTicket.id,
-              expectedRevision: existingTicket.revision,
+            const patch = makeJiraTicketFieldPatch({
+              ticket: existingTicket,
+              epicId,
+              title,
+              kind,
+              status: input.mappedStatus,
+              blocked: input.issue.flagged,
+              description: input.issue.description,
               updatedAt,
-              ...(existingTicket.epicId === epicId ? {} : { epicId }),
-              ...(existingTicket.title === title ? {} : { title }),
-              ...(existingTicket.kind === kind ? {} : { kind }),
-              ...(existingTicket.status === input.mappedStatus
-                ? {}
-                : { status: input.mappedStatus }),
-              ...(existingTicket.blocked === input.issue.flagged
-                ? {}
-                : { blocked: input.issue.flagged }),
-              ...(input.issue.description === undefined || existingTicket.markdown === description
-                ? {}
-                : { markdown: description }),
-            };
-            if (Object.keys(patch).length > 3) {
+            });
+            if (patch !== undefined) {
               yield* updateJiraOwnedTicketFields(patch).pipe(
                 Effect.mapError(() =>
                   importError(`Jira issue ${input.issue.key} could not be updated.`),

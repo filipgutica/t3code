@@ -21,6 +21,56 @@ type DraftContent = Pick<
   "title" | "markdown" | "revision" | "jiraRemoteUpdatedAt"
 >;
 
+const draftMatchesSubmittedVersion = (
+  draft: WorkbenchTicketDraft,
+  submittedContent: DraftContent,
+): boolean =>
+  draft.revision === submittedContent.revision &&
+  draft.jiraRemoteUpdatedAt === submittedContent.jiraRemoteUpdatedAt;
+
+const getDraftVersion = (
+  content: DraftContent,
+): Pick<WorkbenchTicketDraft, "revision" | "jiraRemoteUpdatedAt"> => ({
+  ...(content.revision !== undefined ? { revision: content.revision } : {}),
+  ...(content.jiraRemoteUpdatedAt !== undefined
+    ? { jiraRemoteUpdatedAt: content.jiraRemoteUpdatedAt }
+    : {}),
+});
+
+const getSavedVersion = (content: DraftContent): WorkbenchTicketSavedVersion | undefined =>
+  content.jiraRemoteUpdatedAt !== undefined
+    ? { jiraRemoteUpdatedAt: content.jiraRemoteUpdatedAt }
+    : content.revision !== undefined
+      ? { revision: content.revision }
+      : undefined;
+
+const mergeSavedDraft = ({
+  draft,
+  content,
+  submittedContent,
+}: {
+  readonly draft: WorkbenchTicketDraft;
+  readonly content: DraftContent;
+  readonly submittedContent: DraftContent;
+}): WorkbenchTicketDraft => {
+  const version = getDraftVersion(content);
+  const unchanged =
+    draft.title === submittedContent.title && draft.markdown === submittedContent.markdown;
+  const savedVersion = getSavedVersion(content);
+  return {
+    ...draft,
+    ...version,
+    ...(unchanged
+      ? {
+          title: content.title,
+          markdown: content.markdown,
+          mode: "saved" as const,
+          ...(savedVersion ? { savedVersion } : {}),
+        }
+      : {}),
+  };
+};
+
 export const isWorkbenchDraftProjected = ({
   draft,
   ticket,
@@ -72,42 +122,16 @@ export const useWorkbenchDraftStore = create<WorkbenchDraftStore>()((set) => ({
       const environmentDrafts = state.drafts.get(environmentId);
       const draft = environmentDrafts?.get(ticketId);
       if (!draft) return state;
-      if (
-        draft.revision !== submittedContent.revision ||
-        draft.jiraRemoteUpdatedAt !== submittedContent.jiraRemoteUpdatedAt
-      )
-        return state;
-      const version = {
-        ...(content.revision !== undefined ? { revision: content.revision } : {}),
-        ...(content.jiraRemoteUpdatedAt !== undefined
-          ? { jiraRemoteUpdatedAt: content.jiraRemoteUpdatedAt }
-          : {}),
-      };
-      const savedVersion: WorkbenchTicketSavedVersion | undefined =
-        content.jiraRemoteUpdatedAt !== undefined
-          ? { jiraRemoteUpdatedAt: content.jiraRemoteUpdatedAt }
-          : content.revision !== undefined
-            ? { revision: content.revision }
-            : undefined;
-      // Newer typing remains editable, but its next save must use the version
-      // returned by this successful write rather than its previous base.
-      const unchanged =
-        draft.title === submittedContent.title && draft.markdown === submittedContent.markdown;
+      if (!draftMatchesSubmittedVersion(draft, submittedContent)) return state;
       const drafts = new Map(state.drafts);
       drafts.set(
         environmentId,
-        new Map(environmentDrafts).set(ticketId, {
-          ...draft,
-          ...version,
-          ...(unchanged
-            ? {
-                title: content.title,
-                markdown: content.markdown,
-                mode: "saved" as const,
-                ...(savedVersion ? { savedVersion } : {}),
-              }
-            : {}),
-        }),
+        new Map(environmentDrafts).set(
+          ticketId,
+          // Newer typing remains editable, but its next save must use the version
+          // returned by this successful write rather than its previous base.
+          mergeSavedDraft({ draft, content, submittedContent }),
+        ),
       );
       return {
         drafts,
