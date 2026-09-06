@@ -16,7 +16,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
-import { layerSql, WorkbenchJiraRepository } from "./WorkbenchJiraRepository.ts";
+import { layerSql, WorkbenchJiraRepository } from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 
 const TestLayer = Layer.merge(WorkbenchStoreLive, layerSql).pipe(
   Layer.provideMerge(SqlitePersistenceMemory),

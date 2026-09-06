@@ -127,6 +127,24 @@ export default defineConfig({
     },
     overrides: [
       {
+        files: ["packages/workbench/src/**"],
+        rules: { "eslint/complexity": ["error", { max: 20 }] },
+      },
+      // Existing extraction debt: keep each file's current ceiling instead of
+      // raising the package default. Lower these limits when the functions shrink.
+      {
+        files: ["packages/workbench/src/TicketWorkspaceService.ts"],
+        rules: { "eslint/complexity": ["error", { max: 39 }] },
+      },
+      {
+        files: ["packages/workbench/src/WorkbenchStore.ts"],
+        rules: { "eslint/complexity": ["error", { max: 31 }] },
+      },
+      {
+        files: ["packages/workbench/src/jira/JiraTicketWriteService.ts"],
+        rules: { "eslint/complexity": ["error", { max: 26 }] },
+      },
+      {
         // The one place that reads the host platform to seed the injected references.
         files: ["packages/shared/src/hostProcess.ts"],
         rules: { "t3code/no-global-process-runtime": "off" },

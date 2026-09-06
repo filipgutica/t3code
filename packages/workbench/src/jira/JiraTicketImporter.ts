@@ -37,7 +37,7 @@ export interface JiraTicketImporterShape {
 export class JiraTicketImporter extends Context.Service<
   JiraTicketImporter,
   JiraTicketImporterShape
->()("t3/workbench/jira/JiraTicketImporter") {}
+>()("@t3tools/workbench/jira/JiraTicketImporter") {}
 
 const importError = (message: string) =>
   new WorkbenchJiraOperationError({ code: "persistence_failed", message });

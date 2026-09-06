@@ -77,6 +77,9 @@ jobs:
       - name: Verify Workbench overlay
         if: steps.pending.outputs.needed == 'true'
         run: |
+          vp run --filter @t3tools/workbench typecheck
+          vp run --filter @t3tools/workbench test
+          vp run --filter @t3tools/workbench quality
           vp test run packages/contracts/src/workbench.test.ts apps/server/src/workbench/WorkbenchStore.test.ts apps/server/src/auth/RpcAuthorization.test.ts apps/web/src/workbench/workbench.logic.test.ts
           vp run --filter @t3tools/contracts typecheck
           vp run --filter t3 typecheck

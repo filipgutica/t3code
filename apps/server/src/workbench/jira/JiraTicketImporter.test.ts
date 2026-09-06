@@ -18,7 +18,10 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
-import { JiraTicketImporter, layer as jiraTicketImporterLayer } from "./JiraTicketImporter.ts";
+import {
+  JiraTicketImporter,
+  layer as jiraTicketImporterLayer,
+} from "@t3tools/workbench/jira/JiraTicketImporter";
 
 const TestLayer = jiraTicketImporterLayer.pipe(
   Layer.provideMerge(WorkbenchStoreLive),

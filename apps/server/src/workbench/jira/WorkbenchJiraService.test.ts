@@ -17,16 +17,16 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
-import { JiraApi } from "./JiraApi.ts";
-import { JiraAuthService } from "./JiraAuthService.ts";
-import { JiraSyncService } from "./JiraSyncService.ts";
-import { JiraTicketWriteService } from "./JiraTicketWriteService.ts";
+import { JiraApi } from "@t3tools/workbench/jira/JiraApi";
+import { JiraAuthService } from "@t3tools/workbench/jira/JiraAuthService";
+import { JiraSyncService } from "@t3tools/workbench/jira/JiraSyncService";
+import { JiraTicketWriteService } from "@t3tools/workbench/jira/JiraTicketWriteService";
 import {
   WorkbenchJiraRepository,
   WorkbenchJiraRepositoryError,
   type WorkbenchJiraRepositoryShape,
-} from "./WorkbenchJiraRepository.ts";
-import * as WorkbenchJiraService from "./WorkbenchJiraService.ts";
+} from "@t3tools/workbench/jira/WorkbenchJiraRepository";
+import * as WorkbenchJiraService from "@t3tools/workbench/jira/WorkbenchJiraService";
 
 const TestLayer = WorkbenchStoreLive.pipe(Layer.provideMerge(SqlitePersistenceMemory));
 const ticketWriter = JiraTicketWriteService.of({

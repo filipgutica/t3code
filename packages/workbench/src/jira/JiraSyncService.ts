@@ -74,7 +74,7 @@ export interface JiraSyncServiceShape {
 }
 
 export class JiraSyncService extends Context.Service<JiraSyncService, JiraSyncServiceShape>()(
-  "t3/workbench/jira/JiraSyncService",
+  "@t3tools/workbench/jira/JiraSyncService",
 ) {}
 
 export const make = Effect.gen(function* () {

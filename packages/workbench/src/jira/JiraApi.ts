@@ -166,7 +166,7 @@ export interface JiraApiShape {
 }
 
 export class JiraApi extends Context.Service<JiraApi, JiraApiShape>()(
-  "t3/workbench/jira/JiraApi",
+  "@t3tools/workbench/jira/JiraApi",
 ) {}
 
 export const make = Effect.gen(function* () {

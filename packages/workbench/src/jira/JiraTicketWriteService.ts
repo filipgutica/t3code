@@ -85,7 +85,7 @@ export interface JiraTicketWriteServiceShape {
 export class JiraTicketWriteService extends Context.Service<
   JiraTicketWriteService,
   JiraTicketWriteServiceShape
->()("t3/workbench/jira/JiraTicketWriteService") {}
+>()("@t3tools/workbench/jira/JiraTicketWriteService") {}
 
 export const make = Effect.gen(function* () {
   const api = yield* JiraApi;

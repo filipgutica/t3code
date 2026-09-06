@@ -1,0 +1,90 @@
+{
+  "name": "@t3tools/workbench",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./WorkbenchStore": {
+      "types": "./src/WorkbenchStore.ts",
+      "import": "./src/WorkbenchStore.ts"
+    },
+    "./WorkbenchNativeAccess": {
+      "types": "./src/WorkbenchNativeAccess.ts",
+      "import": "./src/WorkbenchNativeAccess.ts"
+    },
+    "./TicketWorkspaceService": {
+      "types": "./src/TicketWorkspaceService.ts",
+      "import": "./src/TicketWorkspaceService.ts"
+    },
+    "./TicketWorkspaceHost": {
+      "types": "./src/TicketWorkspaceHost.ts",
+      "import": "./src/TicketWorkspaceHost.ts"
+    },
+    "./jira/JiraApi": {
+      "types": "./src/jira/JiraApi.ts",
+      "import": "./src/jira/JiraApi.ts"
+    },
+    "./jira/JiraAuthService": {
+      "types": "./src/jira/JiraAuthService.ts",
+      "import": "./src/jira/JiraAuthService.ts"
+    },
+    "./jira/JiraCredentialStore": {
+      "types": "./src/jira/JiraCredentialStore.ts",
+      "import": "./src/jira/JiraCredentialStore.ts"
+    },
+    "./jira/JiraOAuthClient": {
+      "types": "./src/jira/JiraOAuthClient.ts",
+      "import": "./src/jira/JiraOAuthClient.ts"
+    },
+    "./jira/JiraReconciliation": {
+      "types": "./src/jira/JiraReconciliation.ts",
+      "import": "./src/jira/JiraReconciliation.ts"
+    },
+    "./jira/JiraSyncService": {
+      "types": "./src/jira/JiraSyncService.ts",
+      "import": "./src/jira/JiraSyncService.ts"
+    },
+    "./jira/JiraTicketImporter": {
+      "types": "./src/jira/JiraTicketImporter.ts",
+      "import": "./src/jira/JiraTicketImporter.ts"
+    },
+    "./jira/JiraTicketWriteService": {
+      "types": "./src/jira/JiraTicketWriteService.ts",
+      "import": "./src/jira/JiraTicketWriteService.ts"
+    },
+    "./jira/WorkbenchJiraRepository": {
+      "types": "./src/jira/WorkbenchJiraRepository.ts",
+      "import": "./src/jira/WorkbenchJiraRepository.ts"
+    },
+    "./jira/WorkbenchJiraService": {
+      "types": "./src/jira/WorkbenchJiraService.ts",
+      "import": "./src/jira/WorkbenchJiraService.ts"
+    },
+    "./jira/JiraConfig": {
+      "types": "./src/jira/JiraConfig.ts",
+      "import": "./src/jira/JiraConfig.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsgo --noEmit && node check-boundary.mjs",
+    "test": "vp test run",
+    "check:boundary": "node check-boundary.mjs",
+    "lint": "vp run -w workbench:lint",
+    "knip": "vp run -w workbench:knip",
+    "fallow": "vp run -w workbench:fallow",
+    "fallow:health": "vp run -w workbench:fallow:health",
+    "fallow:dupes": "vp run -w workbench:fallow:dupes",
+    "quality": "vp run lint && vp run knip && vp run fallow"
+  },
+  "dependencies": {
+    "@t3tools/contracts": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/platform-node": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@t3tools/shared": "workspace:*",
+    "@types/node": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

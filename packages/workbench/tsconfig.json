@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "allowJs": true,
+    // Resolve the host web alias so the boundary check rejects it, including in JS helpers.
+    "paths": {
+      "~/*": ["../../apps/web/src/*"]
+    }
+  },
+  "include": ["src", "check-boundary.mjs", "vite.config.ts"]
+}

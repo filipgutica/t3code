@@ -1,25 +1,21 @@
 import { WorkbenchJiraOperationError } from "@t3tools/contracts";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
+import {
+  JiraCredentialStore,
+  JiraOAuthCredential,
+  PendingJiraAuthorization,
+} from "@t3tools/workbench/jira/JiraCredentialStore";
 
-export const JiraOAuthCredential = Schema.Struct({
-  accessToken: Schema.String,
-  refreshToken: Schema.NullOr(Schema.String),
-  scope: Schema.String,
-  expiresAtEpochMs: Schema.Number,
-});
-export type JiraOAuthCredential = typeof JiraOAuthCredential.Type;
-
-const PendingJiraAuthorization = Schema.Struct({
-  redirectUri: Schema.String,
-  expiresAtEpochMs: Schema.Number,
-});
-export type PendingJiraAuthorization = typeof PendingJiraAuthorization.Type;
+export {
+  JiraCredentialStore,
+  JiraOAuthCredential,
+  PendingJiraAuthorization,
+} from "@t3tools/workbench/jira/JiraCredentialStore";
 
 const credentialCodec = Schema.fromJsonString(JiraOAuthCredential);
 const pendingAuthorizationCodec = Schema.fromJsonString(PendingJiraAuthorization);
@@ -36,34 +32,6 @@ const authorizationSecretName = (state: string) => `workbench-jira-oauth-state-$
 
 const persistenceError = (message: string) =>
   new WorkbenchJiraOperationError({ code: "persistence_failed", message });
-
-export interface JiraCredentialStoreShape {
-  readonly getCredential: (
-    credentialId: string,
-  ) => Effect.Effect<Option.Option<JiraOAuthCredential>, WorkbenchJiraOperationError>;
-  readonly setCredential: (
-    credentialId: string,
-    credential: JiraOAuthCredential,
-  ) => Effect.Effect<void, WorkbenchJiraOperationError>;
-  readonly removeCredential: (
-    credentialId: string,
-  ) => Effect.Effect<void, WorkbenchJiraOperationError>;
-  readonly getPendingAuthorization: (
-    state: string,
-  ) => Effect.Effect<Option.Option<PendingJiraAuthorization>, WorkbenchJiraOperationError>;
-  readonly setPendingAuthorization: (
-    state: string,
-    pending: PendingJiraAuthorization,
-  ) => Effect.Effect<void, WorkbenchJiraOperationError>;
-  readonly removePendingAuthorization: (
-    state: string,
-  ) => Effect.Effect<void, WorkbenchJiraOperationError>;
-}
-
-export class JiraCredentialStore extends Context.Service<
-  JiraCredentialStore,
-  JiraCredentialStoreShape
->()("t3/workbench/jira/JiraCredentialStore") {}
 
 export const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;

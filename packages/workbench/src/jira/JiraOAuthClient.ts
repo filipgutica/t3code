@@ -61,7 +61,7 @@ export interface JiraOAuthClientShape {
 }
 
 export class JiraOAuthClient extends Context.Service<JiraOAuthClient, JiraOAuthClientShape>()(
-  "t3/workbench/jira/JiraOAuthClient",
+  "@t3tools/workbench/jira/JiraOAuthClient",
 ) {}
 
 export function buildJiraAuthorizationUrl(input: {
@@ -83,7 +83,7 @@ export function buildJiraAuthorizationUrl(input: {
 const requestError = (code: "oauth_exchange_failed" | "authorization_failed", message: string) =>
   new WorkbenchJiraOperationError({ code, message });
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
 
   const execute = <S extends Schema.Top>(input: {
