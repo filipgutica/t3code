@@ -266,6 +266,7 @@ describe("Workbench ticket helpers", () => {
       repositoryProjectIds: [repositoryId],
       status: "in_progress",
       blocked: false,
+      revision: 0,
       createdAt: "2026-09-03T00:00:00.000Z",
       updatedAt: "2026-09-03T00:00:00.000Z",
     } as const;
@@ -285,6 +286,7 @@ describe("Workbench ticket helpers", () => {
           tickets: [ticket],
           ticketWorkspaces: [],
           assignments: [assignment],
+          reservedThreadIds: [],
         },
         threadId,
       ),
@@ -297,6 +299,7 @@ describe("Workbench ticket helpers", () => {
           tickets: [ticket],
           ticketWorkspaces: [],
           assignments: [assignment],
+          reservedThreadIds: [],
         },
         ThreadId.make("another-thread"),
       ),

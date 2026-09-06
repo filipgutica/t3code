@@ -128,6 +128,13 @@ describe("JiraTicketImporter", () => {
         mappedStatus: "in_progress" as const,
       };
       const importedTicketId = yield* importer.upsertJiraProjection(importInput);
+      const revisionAfterFirstImport = (yield* workbench.getSnapshot).tickets.find(
+        (ticket) => ticket.id === ticketId,
+      )?.revision;
+      yield* importer.upsertJiraProjection(importInput);
+      const revisionAfterSecondImport = (yield* workbench.getSnapshot).tickets.find(
+        (ticket) => ticket.id === ticketId,
+      )?.revision;
       const newTicketId = yield* importer.upsertJiraProjection({
         ...importInput,
         existingTicketId: null,
@@ -140,6 +147,7 @@ describe("JiraTicketImporter", () => {
       const epic = snapshot.epics.find((candidate) => candidate.id === "jira:binding-1:epic:10003");
 
       expect(importedTicketId).toBe(ticketId);
+      expect(revisionAfterSecondImport).toBe(revisionAfterFirstImport);
       expect(snapshot.tickets.find((candidate) => candidate.id === newTicketId)?.markdown).toBe(
         "Shared Jira description used by the Agent.",
       );
@@ -158,21 +166,19 @@ describe("JiraTicketImporter", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
-  it.effect(
-    "preserves concurrent delivery edits when a legacy Jira snapshot has no description",
-    () =>
-      Effect.gen(function* () {
-        const sql = yield* SqlClient.SqlClient;
-        const workbench = yield* WorkbenchStore;
-        const importer = yield* JiraTicketImporter;
-        const firstProjectId = ProjectId.make("native-project-1");
-        const secondProjectId = ProjectId.make("native-project-2");
-        const projectId = WorkbenchProjectId.make("workspace-1");
-        const ticketId = WorkbenchTicketId.make("ticket-1");
-        const epicId = WorkbenchEpicId.make("jira:binding-1:epic:10003");
-        const createdAt = "2026-09-03T12:00:00.000Z";
+  it.effect("rejects a stale Jira field patch after a local Ticket revision changes", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const workbench = yield* WorkbenchStore;
+      const importer = yield* JiraTicketImporter;
+      const firstProjectId = ProjectId.make("native-project-1");
+      const secondProjectId = ProjectId.make("native-project-2");
+      const projectId = WorkbenchProjectId.make("workspace-1");
+      const ticketId = WorkbenchTicketId.make("ticket-1");
+      const epicId = WorkbenchEpicId.make("jira:binding-1:epic:10003");
+      const createdAt = "2026-09-03T12:00:00.000Z";
 
-        yield* sql`
+      yield* sql`
         INSERT INTO projection_projects (
           project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
         ) VALUES
@@ -185,111 +191,141 @@ describe("JiraTicketImporter", () => {
             ${createdAt}, ${createdAt}, NULL
           )
       `;
-        yield* workbench.createProject({
-          id: projectId,
-          title: "Jira Workspace",
-          linkedProjectIds: [firstProjectId, secondProjectId],
-          createdAt,
-        });
-        yield* workbench.createTicket({
+      yield* workbench.createProject({
+        id: projectId,
+        title: "Jira Workspace",
+        linkedProjectIds: [firstProjectId, secondProjectId],
+        createdAt,
+      });
+      yield* workbench.createTicket({
+        id: ticketId,
+        projectId,
+        title: "Original title",
+        kind: "story",
+        markdown: "Original instructions",
+        primaryT3ProjectId: firstProjectId,
+        repositoryProjectIds: [firstProjectId],
+        createdAt,
+      });
+      yield* workbench.createEpic({
+        id: epicId,
+        projectId,
+        title: "Original Jira Epic title",
+        markdown: "Original Epic instructions",
+        createdAt,
+      });
+
+      const binding: WorkbenchJiraBinding = {
+        id: WorkbenchJiraBindingId.make("binding-1"),
+        projectId,
+        connectionId: WorkbenchJiraConnectionId.make("connection-1"),
+        jiraProjectId: "10000",
+        jiraProjectKey: "WB",
+        jiraProjectName: "Workbench",
+        boardId: 42,
+        boardName: "Workbench Board",
+        sprintId: 7,
+        sprintName: "Sprint 7",
+        defaultPrimaryT3ProjectId: firstProjectId,
+        defaultRepositoryProjectIds: [firstProjectId],
+        statusMappings: [{ jiraStatusId: "2", workbenchStatus: "in_progress" }],
+        selectedSprints: [{ id: 7, name: "Sprint 7" }],
+        followActiveSprint: false,
+        observedActiveSprintIds: [],
+        boardMode: "mapped",
+        boardColumns: [],
+        active: true,
+        lastSyncedAt: null,
+        lastSyncError: null,
+        createdAt,
+        updatedAt: createdAt,
+      };
+
+      const expectedRevision = (yield* workbench.getSnapshot).tickets.find(
+        (ticket) => ticket.id === ticketId,
+      )?.revision;
+      if (expectedRevision === undefined) {
+        return yield* Effect.die("Ticket revision was not loaded");
+      }
+      const statusOnly = yield* workbench.updateJiraTicketFields({
+        id: ticketId,
+        expectedRevision,
+        status: "in_progress",
+        updatedAt: "2026-09-03T13:00:00.000Z",
+      });
+      expect(statusOnly).toMatchObject({
+        title: "Original title",
+        markdown: "Original instructions",
+        status: "in_progress",
+      });
+      yield* workbench.updateTicket({
+        id: ticketId,
+        expectedRevision: statusOnly.revision,
+        epicId: null,
+        title: "Concurrent local title",
+        kind: "story",
+        markdown: "Concurrent local instructions",
+        primaryT3ProjectId: secondProjectId,
+        repositoryProjectIds: [secondProjectId, firstProjectId],
+        status: "todo",
+        blocked: false,
+        updatedAt: "2026-09-03T14:00:00.000Z",
+      });
+      const stalePatch = yield* Effect.flip(
+        workbench.updateJiraTicketFields({
           id: ticketId,
-          projectId,
-          title: "Original title",
-          kind: "story",
-          markdown: "Original instructions",
-          primaryT3ProjectId: firstProjectId,
-          repositoryProjectIds: [firstProjectId],
-          createdAt,
-        });
-        yield* workbench.createEpic({
-          id: epicId,
-          projectId,
-          title: "Original Jira Epic title",
-          markdown: "Original Epic instructions",
-          createdAt,
-        });
+          expectedRevision,
+          title: "Jira-owned title",
+          kind: "bug",
+          status: "in_progress",
+          blocked: true,
+          updatedAt: "2026-09-03T13:00:00.000Z",
+        }),
+      );
+      const importedAfterLocalEdit = yield* importer.upsertJiraProjection({
+        binding,
+        existingTicketId: ticketId,
+        issue: {
+          issueId: "10001",
+          key: "WB-1",
+          url: "https://example.atlassian.net/browse/WB-1",
+          summary: "Jira-owned title",
+          issueType: { id: "10002", name: "Bug" },
+          status: { id: "2", name: "In Progress" },
+          epic: null,
+          flagged: true,
+          rank: 0,
+          remoteUpdatedAt: "2026-09-03T13:00:00.000Z",
+        },
+        mappedStatus: "in_progress",
+      });
+      yield* workbench.updateEpic({
+        id: epicId,
+        title: "Concurrent local Epic title",
+        markdown: "Concurrent local Epic instructions",
+        updatedAt: "2026-09-03T14:00:00.000Z",
+      });
 
-        const binding: WorkbenchJiraBinding = {
-          id: WorkbenchJiraBindingId.make("binding-1"),
-          projectId,
-          connectionId: WorkbenchJiraConnectionId.make("connection-1"),
-          jiraProjectId: "10000",
-          jiraProjectKey: "WB",
-          jiraProjectName: "Workbench",
-          boardId: 42,
-          boardName: "Workbench Board",
-          sprintId: 7,
-          sprintName: "Sprint 7",
-          defaultPrimaryT3ProjectId: firstProjectId,
-          defaultRepositoryProjectIds: [firstProjectId],
-          statusMappings: [{ jiraStatusId: "2", workbenchStatus: "in_progress" }],
-          selectedSprints: [{ id: 7, name: "Sprint 7" }],
-          followActiveSprint: false,
-          observedActiveSprintIds: [],
-          boardMode: "mapped",
-          boardColumns: [],
-          active: true,
-          lastSyncedAt: null,
-          lastSyncError: null,
-          createdAt,
-          updatedAt: createdAt,
-        };
-
-        yield* Effect.all(
-          [
-            importer.upsertJiraProjection({
-              binding,
-              existingTicketId: ticketId,
-              issue: {
-                issueId: "10001",
-                key: "WB-1",
-                url: "https://example.atlassian.net/browse/WB-1",
-                summary: "Jira-owned title",
-                issueType: { id: "10002", name: "Bug" },
-                status: { id: "2", name: "In Progress" },
-                epic: { id: "10003", key: "WB-EPIC", summary: "Jira-owned Epic title" },
-                flagged: true,
-                rank: 0,
-                remoteUpdatedAt: "2026-09-03T13:00:00.000Z",
-              },
-              mappedStatus: "in_progress",
-            }),
-            workbench.updateTicket({
-              id: ticketId,
-              epicId: null,
-              title: "Concurrent local title",
-              kind: "story",
-              markdown: "Concurrent local instructions",
-              primaryT3ProjectId: secondProjectId,
-              repositoryProjectIds: [secondProjectId, firstProjectId],
-              status: "todo",
-              blocked: false,
-              updatedAt: "2026-09-03T14:00:00.000Z",
-            }),
-            workbench.updateEpic({
-              id: epicId,
-              title: "Concurrent local Epic title",
-              markdown: "Concurrent local Epic instructions",
-              updatedAt: "2026-09-03T14:00:00.000Z",
-            }),
-          ],
-          { concurrency: "unbounded" },
-        );
-
-        const snapshot = yield* workbench.getSnapshot;
-        const ticket = snapshot.tickets.find((candidate) => candidate.id === ticketId);
-        const epic = snapshot.epics.find((candidate) => candidate.id === epicId);
-        expect(ticket).toMatchObject({
-          markdown: "Concurrent local instructions",
-          primaryT3ProjectId: secondProjectId,
-          repositoryProjectIds: [secondProjectId, firstProjectId],
-          updatedAt: "2026-09-03T14:00:00.000Z",
-        });
-        expect(epic).toMatchObject({
-          markdown: "Concurrent local Epic instructions",
-          updatedAt: "2026-09-03T14:00:00.000Z",
-        });
-      }).pipe(Effect.provide(TestLayer)),
+      const snapshot = yield* workbench.getSnapshot;
+      const ticket = snapshot.tickets.find((candidate) => candidate.id === ticketId);
+      const epic = snapshot.epics.find((candidate) => candidate.id === epicId);
+      expect(ticket).toMatchObject({
+        title: "Jira-owned title",
+        kind: "bug",
+        markdown: "Concurrent local instructions",
+        status: "in_progress",
+        blocked: true,
+        primaryT3ProjectId: secondProjectId,
+        repositoryProjectIds: [secondProjectId, firstProjectId],
+        updatedAt: "2026-09-03T14:00:00.000Z",
+      });
+      expect(importedAfterLocalEdit).toBe(ticketId);
+      expect(stalePatch.code).toBe("ticket_changed");
+      expect(epic).toMatchObject({
+        markdown: "Concurrent local Epic instructions",
+        updatedAt: "2026-09-03T14:00:00.000Z",
+      });
+    }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("bounds Jira issue and Epic titles on create and refresh", () =>

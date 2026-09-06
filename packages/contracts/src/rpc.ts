@@ -692,138 +692,132 @@ const WsServerGetBackgroundPolicyRpc = Rpc.make(WS_METHODS.serverGetBackgroundPo
 
 const WorkbenchRpcError = Schema.Union([WorkbenchOperationError, EnvironmentAuthorizationError]);
 
-export const WsWorkbenchGetSnapshotRpc = Rpc.make(WS_METHODS.workbenchGetSnapshot, {
+const WsWorkbenchGetSnapshotRpc = Rpc.make(WS_METHODS.workbenchGetSnapshot, {
   payload: Schema.Struct({}),
   success: WorkbenchSnapshot,
   error: WorkbenchRpcError,
 });
 
-export const WsWorkbenchCreateProjectRpc = Rpc.make(WS_METHODS.workbenchCreateProject, {
+const WsWorkbenchCreateProjectRpc = Rpc.make(WS_METHODS.workbenchCreateProject, {
   payload: WorkbenchCreateProjectInput,
   success: WorkbenchProject,
   error: WorkbenchRpcError,
 });
 
-export const WsWorkbenchUpdateProjectRpc = Rpc.make(WS_METHODS.workbenchUpdateProject, {
+const WsWorkbenchUpdateProjectRpc = Rpc.make(WS_METHODS.workbenchUpdateProject, {
   payload: WorkbenchUpdateProjectInput,
   success: WorkbenchProject,
   error: WorkbenchRpcError,
 });
 
-export const WsWorkbenchCreateEpicRpc = Rpc.make(WS_METHODS.workbenchCreateEpic, {
+const WsWorkbenchCreateEpicRpc = Rpc.make(WS_METHODS.workbenchCreateEpic, {
   payload: WorkbenchCreateEpicInput,
   success: WorkbenchEpic,
   error: WorkbenchRpcError,
 });
 
-export const WsWorkbenchUpdateEpicRpc = Rpc.make(WS_METHODS.workbenchUpdateEpic, {
+const WsWorkbenchUpdateEpicRpc = Rpc.make(WS_METHODS.workbenchUpdateEpic, {
   payload: WorkbenchUpdateEpicInput,
   success: WorkbenchEpic,
   error: WorkbenchRpcError,
 });
 
-export const WsWorkbenchArchiveEpicRpc = Rpc.make(WS_METHODS.workbenchArchiveEpic, {
+const WsWorkbenchArchiveEpicRpc = Rpc.make(WS_METHODS.workbenchArchiveEpic, {
   payload: WorkbenchArchiveEpicInput,
   success: WorkbenchEpic,
   error: WorkbenchRpcError,
 });
 
-export const WsWorkbenchCreateTicketRpc = Rpc.make(WS_METHODS.workbenchCreateTicket, {
+const WsWorkbenchCreateTicketRpc = Rpc.make(WS_METHODS.workbenchCreateTicket, {
   payload: WorkbenchCreateTicketInput,
   success: WorkbenchTicket,
   error: WorkbenchRpcError,
 });
 
-export const WsWorkbenchUpdateTicketRpc = Rpc.make(WS_METHODS.workbenchUpdateTicket, {
+const WsWorkbenchUpdateTicketRpc = Rpc.make(WS_METHODS.workbenchUpdateTicket, {
   payload: WorkbenchUpdateTicketInput,
   success: WorkbenchTicket,
   error: WorkbenchRpcError,
 });
 
-export const WsWorkbenchArchiveTicketRpc = Rpc.make(WS_METHODS.workbenchArchiveTicket, {
+const WsWorkbenchArchiveTicketRpc = Rpc.make(WS_METHODS.workbenchArchiveTicket, {
   payload: WorkbenchArchiveTicketInput,
   success: WorkbenchTicket,
   error: WorkbenchRpcError,
 });
 
-export const WsWorkbenchDeleteTicketRpc = Rpc.make(WS_METHODS.workbenchDeleteTicket, {
+const WsWorkbenchDeleteTicketRpc = Rpc.make(WS_METHODS.workbenchDeleteTicket, {
   payload: WorkbenchDeleteTicketInput,
   success: Schema.Void,
   error: WorkbenchRpcError,
 });
 
-export const WsWorkbenchCreateAssignmentRpc = Rpc.make(WS_METHODS.workbenchCreateAssignment, {
+const WsWorkbenchCreateAssignmentRpc = Rpc.make(WS_METHODS.workbenchCreateAssignment, {
   payload: WorkbenchCreateAssignmentInput,
   success: WorkbenchAssignment,
   error: WorkbenchRpcError,
 });
 
-export const WsWorkbenchReplaceAssignmentRpc = Rpc.make(WS_METHODS.workbenchReplaceAssignment, {
+const WsWorkbenchReplaceAssignmentRpc = Rpc.make(WS_METHODS.workbenchReplaceAssignment, {
   payload: WorkbenchReplaceAssignmentInput,
   success: WorkbenchAssignment,
   error: WorkbenchRpcError,
 });
 
-export const WsWorkbenchPrepareTicketWorkspaceRpc = Rpc.make(
-  WS_METHODS.workbenchPrepareTicketWorkspace,
-  {
-    payload: WorkbenchPrepareTicketWorkspaceInput,
-    success: WorkbenchTicketWorkspace,
-    error: WorkbenchRpcError,
-  },
-);
+const WsWorkbenchPrepareTicketWorkspaceRpc = Rpc.make(WS_METHODS.workbenchPrepareTicketWorkspace, {
+  payload: WorkbenchPrepareTicketWorkspaceInput,
+  success: WorkbenchTicketWorkspace,
+  error: WorkbenchRpcError,
+});
 
-export const WsWorkbenchReleaseTicketWorkspaceRpc = Rpc.make(
-  WS_METHODS.workbenchReleaseTicketWorkspace,
-  {
-    payload: WorkbenchReleaseTicketWorkspaceInput,
-    success: WorkbenchTicketWorkspace,
-    error: WorkbenchRpcError,
-  },
-);
+const WsWorkbenchReleaseTicketWorkspaceRpc = Rpc.make(WS_METHODS.workbenchReleaseTicketWorkspace, {
+  payload: WorkbenchReleaseTicketWorkspaceInput,
+  success: WorkbenchTicketWorkspace,
+  error: WorkbenchRpcError,
+});
 
 const WorkbenchJiraRpcError = Schema.Union([
   WorkbenchJiraOperationError,
   EnvironmentAuthorizationError,
 ]);
 
-export const WsWorkbenchJiraGetSnapshotRpc = Rpc.make(WS_METHODS.workbenchJiraGetSnapshot, {
+const WsWorkbenchJiraGetSnapshotRpc = Rpc.make(WS_METHODS.workbenchJiraGetSnapshot, {
   payload: Schema.Struct({}),
   success: WorkbenchJiraSnapshot,
   error: WorkbenchJiraRpcError,
 });
 
-export const WsWorkbenchJiraBeginAuthRpc = Rpc.make(WS_METHODS.workbenchJiraBeginAuth, {
+const WsWorkbenchJiraBeginAuthRpc = Rpc.make(WS_METHODS.workbenchJiraBeginAuth, {
   payload: WorkbenchJiraBeginAuthInput,
   success: WorkbenchJiraBeginAuthResult,
   error: WorkbenchJiraRpcError,
 });
 
-export const WsWorkbenchJiraCompleteAuthRpc = Rpc.make(WS_METHODS.workbenchJiraCompleteAuth, {
+const WsWorkbenchJiraCompleteAuthRpc = Rpc.make(WS_METHODS.workbenchJiraCompleteAuth, {
   payload: WorkbenchJiraCompleteAuthInput,
   success: WorkbenchJiraCompleteAuthResult,
   error: WorkbenchJiraRpcError,
 });
 
-export const WsWorkbenchJiraListProjectsRpc = Rpc.make(WS_METHODS.workbenchJiraListProjects, {
+const WsWorkbenchJiraListProjectsRpc = Rpc.make(WS_METHODS.workbenchJiraListProjects, {
   payload: WorkbenchJiraListProjectsInput,
   success: Schema.Array(WorkbenchJiraProject),
   error: WorkbenchJiraRpcError,
 });
 
-export const WsWorkbenchJiraListBoardsRpc = Rpc.make(WS_METHODS.workbenchJiraListBoards, {
+const WsWorkbenchJiraListBoardsRpc = Rpc.make(WS_METHODS.workbenchJiraListBoards, {
   payload: WorkbenchJiraListBoardsInput,
   success: Schema.Array(WorkbenchJiraBoard),
   error: WorkbenchJiraRpcError,
 });
 
-export const WsWorkbenchJiraListSprintsRpc = Rpc.make(WS_METHODS.workbenchJiraListSprints, {
+const WsWorkbenchJiraListSprintsRpc = Rpc.make(WS_METHODS.workbenchJiraListSprints, {
   payload: WorkbenchJiraListSprintsInput,
   success: Schema.Array(WorkbenchJiraSprint),
   error: WorkbenchJiraRpcError,
 });
 
-export const WsWorkbenchJiraGetBoardConfigurationRpc = Rpc.make(
+const WsWorkbenchJiraGetBoardConfigurationRpc = Rpc.make(
   WS_METHODS.workbenchJiraGetBoardConfiguration,
   {
     payload: WorkbenchJiraGetBoardConfigurationInput,
@@ -832,25 +826,25 @@ export const WsWorkbenchJiraGetBoardConfigurationRpc = Rpc.make(
   },
 );
 
-export const WsWorkbenchJiraCreateBindingRpc = Rpc.make(WS_METHODS.workbenchJiraCreateBinding, {
+const WsWorkbenchJiraCreateBindingRpc = Rpc.make(WS_METHODS.workbenchJiraCreateBinding, {
   payload: WorkbenchJiraCreateBindingInput,
   success: WorkbenchJiraBinding,
   error: WorkbenchJiraRpcError,
 });
 
-export const WsWorkbenchJiraUpdateBindingRpc = Rpc.make(WS_METHODS.workbenchJiraUpdateBinding, {
+const WsWorkbenchJiraUpdateBindingRpc = Rpc.make(WS_METHODS.workbenchJiraUpdateBinding, {
   payload: WorkbenchJiraUpdateBindingInput,
   success: WorkbenchJiraBinding,
   error: WorkbenchJiraRpcError,
 });
 
-export const WsWorkbenchJiraSyncBindingRpc = Rpc.make(WS_METHODS.workbenchJiraSyncBinding, {
+const WsWorkbenchJiraSyncBindingRpc = Rpc.make(WS_METHODS.workbenchJiraSyncBinding, {
   payload: WorkbenchJiraSyncBindingInput,
   success: WorkbenchJiraSyncResult,
   error: WorkbenchJiraRpcError,
 });
 
-export const WsWorkbenchJiraUpdateTicketRpc = Rpc.make(WS_METHODS.workbenchJiraUpdateTicket, {
+const WsWorkbenchJiraUpdateTicketRpc = Rpc.make(WS_METHODS.workbenchJiraUpdateTicket, {
   payload: WorkbenchJiraUpdateTicketInput,
   success: WorkbenchJiraIssueSnapshot,
   error: WorkbenchJiraRpcError,

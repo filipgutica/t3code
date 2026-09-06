@@ -21,6 +21,200 @@ import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
 const TestLayer = WorkbenchStoreLive.pipe(Layer.provideMerge(SqlitePersistenceMemory));
 
 describe("WorkbenchStore", () => {
+  it.effect("applies optional Ticket patches with a revision check", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* WorkbenchStore;
+      const projectId = ProjectId.make("t3-project-ticket-patch");
+      const workspaceId = WorkbenchProjectId.make("workbench-project-ticket-patch");
+      const ticketId = WorkbenchTicketId.make("ticket-patch");
+      const createdAt = "2026-09-05T12:00:00.000Z";
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+        ) VALUES (
+          ${projectId}, 'T3 Code', '/repos/ticket-patch', '[]', ${createdAt}, ${createdAt}, NULL
+        )
+      `;
+      yield* store.createProject({
+        id: workspaceId,
+        title: "Ticket Patch Workspace",
+        linkedProjectIds: [projectId],
+        createdAt,
+      });
+      yield* store.createTicket({
+        id: ticketId,
+        projectId: workspaceId,
+        title: "Original title",
+        kind: "story",
+        markdown: "Original description",
+        primaryT3ProjectId: projectId,
+        createdAt,
+      });
+
+      const contentSave = yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: 0,
+        markdown: "Current description",
+        updatedAt: "2026-09-05T12:01:00.000Z",
+      });
+      const staleFullUpdate = yield* Effect.flip(
+        store.updateTicket({
+          id: ticketId,
+          expectedRevision: 0,
+          title: "Stale title",
+          markdown: "Stale description",
+          status: "in_progress",
+          blocked: true,
+          updatedAt: "2026-09-05T12:02:00.000Z",
+        }),
+      );
+      const afterStale = yield* store.getSnapshot;
+      const statusOnly = yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: 1,
+        status: "in_progress",
+        updatedAt: "2026-09-05T12:03:00.000Z",
+      });
+
+      expect(contentSave).toMatchObject({
+        title: "Original title",
+        markdown: "Current description",
+        revision: 1,
+      });
+      expect(staleFullUpdate.code).toBe("ticket_changed");
+      expect(afterStale.tickets).toEqual([
+        expect.objectContaining({
+          id: ticketId,
+          markdown: "Current description",
+          status: "todo",
+          revision: 1,
+        }),
+      ]);
+      expect(statusOnly).toMatchObject({
+        title: "Original title",
+        markdown: "Current description",
+        status: "in_progress",
+        blocked: false,
+        revision: 2,
+      });
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect("does not replace an Assignment while its Ticket Workspace is changing", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* WorkbenchStore;
+      const projectId = ProjectId.make("t3-project-assignment-guard");
+      const workspaceId = WorkbenchProjectId.make("workbench-project-assignment-guard");
+      const ticketId = WorkbenchTicketId.make("ticket-assignment-guard");
+      const createdAt = "2026-09-05T12:00:00.000Z";
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+        ) VALUES (
+          ${projectId}, 'T3 Code', '/repos/assignment-guard', '[]', ${createdAt}, ${createdAt}, NULL
+        )
+      `;
+      yield* store.createProject({
+        id: workspaceId,
+        title: "Assignment Guard Workspace",
+        linkedProjectIds: [projectId],
+        createdAt,
+      });
+      yield* store.createTicket({
+        id: ticketId,
+        projectId: workspaceId,
+        title: "Assignment guard",
+        kind: "story",
+        markdown: "",
+        primaryT3ProjectId: projectId,
+        createdAt,
+      });
+      for (const threadId of ["guard-thread-1", "guard-thread-2", "guard-thread-3"]) {
+        yield* sql`
+          INSERT INTO projection_threads (
+            thread_id, project_id, title, model_selection_json, runtime_mode,
+            interaction_mode, pending_approval_count, pending_user_input_count,
+            has_actionable_proposed_plan, created_at, updated_at, deleted_at
+          ) VALUES (
+            ${threadId}, ${projectId}, ${threadId}, '{}', 'full-access',
+            'default', 0, 0, 0, ${createdAt}, ${createdAt}, NULL
+          )
+        `;
+      }
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("guard-assignment-1"),
+        ticketId,
+        threadId: ThreadId.make("guard-thread-1"),
+        createdAt,
+      });
+      yield* sql`
+        INSERT INTO workbench_ticket_workspaces (
+          ticket_id, attempt_id, status, branch_name, error_message, created_at, updated_at
+        ) VALUES (
+          ${ticketId}, 'guard-attempt', 'preparing', 'guard-branch', NULL, ${createdAt}, ${createdAt}
+        )
+      `;
+      yield* sql`
+        INSERT INTO workbench_ticket_workspace_repositories (
+          ticket_id, t3_project_id, is_primary, source_path, worktree_path,
+          branch_name, status, error_message, created_at, updated_at
+        ) VALUES (
+          ${ticketId}, ${projectId}, 1, '/repos/assignment-guard',
+          '/worktrees/assignment-guard', 'guard-branch', 'pending', NULL,
+          ${createdAt}, ${createdAt}
+        )
+      `;
+
+      const preparingError = yield* Effect.flip(
+        store.replaceAssignment({
+          ticketId,
+          previousThreadId: ThreadId.make("guard-thread-1"),
+          threadId: ThreadId.make("guard-thread-2"),
+          replacedAt: "2026-09-05T12:01:00.000Z",
+        }),
+      );
+      const afterPreparing = yield* sql<{
+        readonly threadId: string;
+        readonly supersededAt: string | null;
+      }>`
+        SELECT thread_id AS "threadId", superseded_at AS "supersededAt"
+        FROM workbench_assignments
+        WHERE ticket_id = ${ticketId}
+      `;
+
+      yield* sql`
+        UPDATE workbench_ticket_workspaces
+        SET status = 'releasing', updated_at = '2026-09-05T12:02:00.000Z'
+        WHERE ticket_id = ${ticketId}
+      `;
+      const releasingError = yield* Effect.flip(
+        store.replaceAssignment({
+          ticketId,
+          previousThreadId: ThreadId.make("guard-thread-1"),
+          threadId: ThreadId.make("guard-thread-3"),
+          replacedAt: "2026-09-05T12:03:00.000Z",
+        }),
+      );
+      const afterReleasing = yield* sql<{
+        readonly threadId: string;
+        readonly supersededAt: string | null;
+      }>`
+        SELECT thread_id AS "threadId", superseded_at AS "supersededAt"
+        FROM workbench_assignments
+        WHERE ticket_id = ${ticketId}
+      `;
+
+      expect(preparingError.code).toBe("ticket_workspace_in_use");
+      expect(releasingError.code).toBe("ticket_workspace_in_use");
+      expect(afterPreparing).toEqual([{ threadId: "guard-thread-1", supersededAt: null }]);
+      expect(afterReleasing).toEqual([{ threadId: "guard-thread-1", supersededAt: null }]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.effect("renames a Workspace and adds repositories without removing existing links", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -204,6 +398,7 @@ describe("WorkbenchStore", () => {
       const lockedScope = yield* Effect.flip(
         store.updateTicket({
           id: ticketId,
+          expectedRevision: 0,
           title: "Prepare all repositories",
           markdown: "",
           primaryT3ProjectId: primaryProjectId,
@@ -331,6 +526,7 @@ describe("WorkbenchStore", () => {
       });
       const archivedEpicTicket = yield* store.updateTicket({
         id: WorkbenchTicketId.make("ticket-with-epic"),
+        expectedRevision: 0,
         title: "Create Epic swimlanes",
         markdown: "Existing Tickets remain editable after their Epic is archived.",
         status: "todo",
@@ -339,6 +535,7 @@ describe("WorkbenchStore", () => {
       });
       const unlinkedTicket = yield* store.updateTicket({
         id: WorkbenchTicketId.make("ticket-with-epic"),
+        expectedRevision: 1,
         epicId: null,
         title: "Create Epic swimlanes",
         markdown: "Existing Tickets can be removed from an archived Epic.",
@@ -446,6 +643,7 @@ describe("WorkbenchStore", () => {
       });
       yield* store.updateTicket({
         id: ticketId,
+        expectedRevision: 0,
         title: "Create the first Ticket flow",
         kind: "bug",
         markdown: "Keep the native T3 Thread experience.",
@@ -492,6 +690,7 @@ describe("WorkbenchStore", () => {
       });
       yield* store.updateTicket({
         id: ticketId,
+        expectedRevision: 2,
         title: "Create the first Ticket flow",
         markdown: "Keep the native T3 Thread experience.",
         status: "in_progress",
@@ -501,6 +700,7 @@ describe("WorkbenchStore", () => {
       const lockedScopeError = yield* Effect.flip(
         store.updateTicket({
           id: ticketId,
+          expectedRevision: 3,
           title: "Create the first Ticket flow",
           kind: "bug",
           markdown: "Keep the native T3 Thread experience.",
@@ -723,6 +923,7 @@ describe("WorkbenchStore", () => {
           store
             .updateTicket({
               id: ticketId,
+              expectedRevision: 0,
               title: "Keep Assignment repository context stable",
               kind: "story",
               markdown: "",
@@ -992,6 +1193,7 @@ describe("WorkbenchStore", () => {
 
       yield* store.updateTicket({
         id: ticketId,
+        expectedRevision: 0,
         title: "Stale browser title",
         kind: "bug",
         markdown: "Updated local instructions",
@@ -1234,6 +1436,7 @@ describe("WorkbenchStore", () => {
 
       const archived = yield* store.archiveTicket({
         ticketId: localTicketId,
+        expectedRevision: 0,
         archivedAt,
         updatedAt: archivedAt,
       });
@@ -1244,6 +1447,7 @@ describe("WorkbenchStore", () => {
       const archivedUpdateError = yield* Effect.flip(
         store.updateTicket({
           id: localTicketId,
+          expectedRevision: 1,
           title: "Cannot edit an archived Ticket",
           markdown: "",
           status: "todo",
@@ -1255,6 +1459,7 @@ describe("WorkbenchStore", () => {
 
       const restored = yield* store.archiveTicket({
         ticketId: localTicketId,
+        expectedRevision: 1,
         archivedAt: null,
         updatedAt: restoredAt,
       });
@@ -1305,7 +1510,12 @@ describe("WorkbenchStore", () => {
         WHERE ticket_id = ${localTicketId}
       `;
       const inUseArchiveError = yield* Effect.flip(
-        store.archiveTicket({ ticketId: localTicketId, archivedAt, updatedAt: archivedAt }),
+        store.archiveTicket({
+          ticketId: localTicketId,
+          expectedRevision: 3,
+          archivedAt,
+          updatedAt: archivedAt,
+        }),
       );
       expect(inUseArchiveError.code).toBe("ticket_workspace_in_use");
       yield* sql`
@@ -1313,7 +1523,21 @@ describe("WorkbenchStore", () => {
         SET status = 'ready'
         WHERE ticket_id = ${localTicketId}
       `;
-      yield* store.archiveTicket({ ticketId: localTicketId, archivedAt, updatedAt: archivedAt });
+      yield* store.archiveTicket({
+        ticketId: localTicketId,
+        expectedRevision: 3,
+        archivedAt,
+        updatedAt: archivedAt,
+      });
+      const archivedReplacementError = yield* Effect.flip(
+        store.replaceAssignment({
+          ticketId: localTicketId,
+          previousThreadId: ThreadId.make("ticket-lifecycle-thread"),
+          threadId: ThreadId.make("replacement-after-archive"),
+          replacedAt: archivedAt,
+        }),
+      );
+      expect(archivedReplacementError.code).toBe("ticket_archived");
       const guardedReleaseError = yield* Effect.flip(
         store.claimTicketWorkspaceRelease({
           ticketId: localTicketId,
@@ -1325,10 +1549,11 @@ describe("WorkbenchStore", () => {
       expect(guardedReleaseError.code).toBe("ticket_archived");
       yield* store.archiveTicket({
         ticketId: localTicketId,
+        expectedRevision: 4,
         archivedAt: null,
         updatedAt: restoredAt,
       });
-      yield* store.deleteTicket({ ticketId: localTicketId, deletedAt });
+      yield* store.deleteTicket({ ticketId: localTicketId, expectedRevision: 5, deletedAt });
 
       const afterDelete = yield* store.getSnapshot;
       expect(afterDelete.tickets).not.toEqual(
@@ -1340,6 +1565,7 @@ describe("WorkbenchStore", () => {
       expect(afterDelete.assignments).not.toEqual(
         expect.arrayContaining([expect.objectContaining({ ticketId: localTicketId })]),
       );
+      expect(afterDelete.reservedThreadIds).toContain("ticket-lifecycle-thread");
       expect(afterDelete.ticketWorkspaces).toEqual(
         expect.arrayContaining([expect.objectContaining({ ticketId: localTicketId })]),
       );
@@ -1357,10 +1583,15 @@ describe("WorkbenchStore", () => {
       expect(worktreeRows[0]?.count).toBe(1);
 
       const jiraArchiveError = yield* Effect.flip(
-        store.archiveTicket({ ticketId: jiraTicketId, archivedAt, updatedAt: archivedAt }),
+        store.archiveTicket({
+          ticketId: jiraTicketId,
+          expectedRevision: 0,
+          archivedAt,
+          updatedAt: archivedAt,
+        }),
       );
       const jiraDeleteError = yield* Effect.flip(
-        store.deleteTicket({ ticketId: jiraTicketId, deletedAt }),
+        store.deleteTicket({ ticketId: jiraTicketId, expectedRevision: 0, deletedAt }),
       );
       expect(jiraArchiveError.code).toBe("jira_managed_ticket");
       expect(jiraDeleteError.code).toBe("jira_managed_ticket");
@@ -1368,6 +1599,7 @@ describe("WorkbenchStore", () => {
       const missingArchiveError = yield* Effect.flip(
         store.archiveTicket({
           ticketId: WorkbenchTicketId.make("ticket-lifecycle-missing"),
+          expectedRevision: 0,
           archivedAt,
           updatedAt: archivedAt,
         }),
@@ -1375,6 +1607,7 @@ describe("WorkbenchStore", () => {
       const missingDeleteError = yield* Effect.flip(
         store.deleteTicket({
           ticketId: WorkbenchTicketId.make("ticket-lifecycle-missing"),
+          expectedRevision: 0,
           deletedAt,
         }),
       );
@@ -1558,6 +1791,12 @@ describe("WorkbenchStore", () => {
           WHERE ticket_id = 'ticket-v1'
         `;
         expect(migratedTicket).toEqual([{ status: "in_progress" }]);
+        const migratedRevision = yield* sql<{ readonly revision: number }>`
+          SELECT revision
+          FROM workbench_tickets
+          WHERE ticket_id = 'ticket-v1'
+        `;
+        expect(migratedRevision).toEqual([{ revision: 0 }]);
         const migratedMapping = yield* sql<{ readonly statusMappingsJson: string }>`
           SELECT status_mappings_json AS "statusMappingsJson"
           FROM workbench_jira_bindings
@@ -1600,7 +1839,7 @@ describe("WorkbenchStore", () => {
         const migration = yield* sql<{ readonly version: number }>`
           SELECT version
           FROM workbench_schema_migrations
-          WHERE version IN (6, 7, 8, 9, 10)
+          WHERE version IN (6, 7, 8, 9, 10, 11)
           ORDER BY version ASC
         `;
         expect(migration).toEqual([
@@ -1609,6 +1848,7 @@ describe("WorkbenchStore", () => {
           { version: 8 },
           { version: 9 },
           { version: 10 },
+          { version: 11 },
         ]);
       }).pipe(Effect.provide(persistence));
     }).pipe(
