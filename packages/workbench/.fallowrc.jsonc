@@ -1,0 +1,7 @@
+{
+  "cache": { "dir": "packages/workbench/.fallow" },
+  "rules": {
+    // Match Knip: exported service/contract types remain part of the package API.
+    "unused-types": "off",
+  },
+}

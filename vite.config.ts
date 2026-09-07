@@ -127,6 +127,10 @@ export default defineConfig({
     },
     overrides: [
       {
+        files: ["packages/workbench/src/**"],
+        rules: { "eslint/complexity": ["error", { max: 20 }] },
+      },
+      {
         // The one place that reads the host platform to seed the injected references.
         files: ["packages/shared/src/hostProcess.ts"],
         rules: { "t3code/no-global-process-runtime": "off" },

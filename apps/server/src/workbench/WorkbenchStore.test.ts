@@ -3,6 +3,7 @@ import {
   ThreadId,
   WorkbenchAssignmentId,
   WorkbenchEpicId,
+  WorkbenchOperationError,
   WorkbenchProjectId,
   WorkbenchTicketId,
   WorkbenchTicketWorkspaceAttemptId,
@@ -1386,6 +1387,192 @@ describe("WorkbenchStore", () => {
         ok: false,
         code: "ticket_workspace_in_use",
       });
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect("uses the caller transaction for native reads and Workbench rollback", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* WorkbenchStore;
+      const projectId = ProjectId.make("outer-transaction-project");
+      const threadId = ThreadId.make("outer-transaction-thread");
+      const workspaceId = WorkbenchProjectId.make("outer-transaction-workspace");
+      const ticketId = WorkbenchTicketId.make("outer-transaction-ticket");
+      const createdAt = "2026-09-03T12:00:00.000Z";
+
+      const error = yield* Effect.flip(
+        sql.withTransaction(
+          Effect.gen(function* () {
+            // These native rows are deliberately uncommitted when the adapter
+            // validates the Workbench project and assignment.
+            yield* sql`
+              INSERT INTO projection_projects (
+                project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+              ) VALUES (
+                ${projectId}, 'Repository', '/repos/outer-transaction', '[]',
+                ${createdAt}, ${createdAt}, NULL
+              )
+            `;
+            yield* sql`
+              INSERT INTO projection_threads (
+                thread_id, project_id, title, model_selection_json, runtime_mode,
+                interaction_mode, pending_approval_count, pending_user_input_count,
+                has_actionable_proposed_plan, created_at, updated_at, deleted_at
+              ) VALUES (
+                ${threadId}, ${projectId}, 'Outer transaction', '{}', 'full-access',
+                'default', 0, 0, 0, ${createdAt}, ${createdAt}, NULL
+              )
+            `;
+            yield* store.createProject({
+              id: workspaceId,
+              title: "Outer Transaction Workspace",
+              linkedProjectIds: [projectId],
+              createdAt,
+            });
+            yield* store.createTicket({
+              id: ticketId,
+              projectId: workspaceId,
+              title: "Outer transaction ticket",
+              kind: "story",
+              markdown: "",
+              primaryT3ProjectId: projectId,
+              createdAt,
+            });
+            yield* store.createAssignment({
+              id: WorkbenchAssignmentId.make("outer-transaction-assignment"),
+              ticketId,
+              threadId,
+              createdAt,
+            });
+            return yield* new WorkbenchOperationError({
+              code: "persistence_failed",
+              message: "Intentional outer transaction rollback.",
+            });
+          }),
+        ),
+      );
+      const nativeProjects = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count
+        FROM projection_projects
+        WHERE project_id = ${projectId}
+      `;
+      const nativeThreads = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count
+        FROM projection_threads
+        WHERE thread_id = ${threadId}
+      `;
+      const workbenchProjects = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count
+        FROM workbench_projects
+        WHERE project_id = ${workspaceId}
+      `;
+      const workbenchTickets = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count
+        FROM workbench_tickets
+        WHERE ticket_id = ${ticketId}
+      `;
+      const workbenchAssignments = yield* sql<{ readonly count: number }>`
+        SELECT COUNT(*) AS count
+        FROM workbench_assignments
+        WHERE ticket_id = ${ticketId}
+      `;
+
+      expect(error).toMatchObject({
+        _tag: "WorkbenchOperationError",
+        code: "persistence_failed",
+      });
+      expect([
+        nativeProjects[0]?.count,
+        nativeThreads[0]?.count,
+        workbenchProjects[0]?.count,
+        workbenchTickets[0]?.count,
+        workbenchAssignments[0]?.count,
+      ]).toEqual([0, 0, 0, 0, 0]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect("checks every active Assignment when the first native Thread was deleted", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* WorkbenchStore;
+      const projectId = ProjectId.make("release-live-assignment-project");
+      const workspaceId = WorkbenchProjectId.make("release-live-assignment-workspace");
+      const ticketId = WorkbenchTicketId.make("release-live-assignment-ticket");
+      const attemptId = WorkbenchTicketWorkspaceAttemptId.make("release-live-assignment-attempt");
+      const createdAt = "2026-09-03T12:00:00.000Z";
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+        ) VALUES (
+          ${projectId}, 'Repository', '/repos/release-live', '[]', ${createdAt}, ${createdAt}, NULL
+        )
+      `;
+      yield* store.createProject({
+        id: workspaceId,
+        title: "Workspace",
+        linkedProjectIds: [projectId],
+        createdAt,
+      });
+      yield* store.createTicket({
+        id: ticketId,
+        projectId: workspaceId,
+        title: "Release live assignment",
+        kind: "story",
+        markdown: "",
+        primaryT3ProjectId: projectId,
+        createdAt,
+      });
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id, project_id, title, model_selection_json, runtime_mode,
+          interaction_mode, pending_approval_count, pending_user_input_count,
+          has_actionable_proposed_plan, created_at, updated_at, deleted_at
+        ) VALUES
+          ('deleted-assignment-thread', ${projectId}, 'Deleted', '{}', 'full-access',
+            'default', 0, 0, 0, ${createdAt}, ${createdAt}, ${createdAt}),
+          ('live-assignment-thread', ${projectId}, 'Live', '{}', 'full-access',
+            'default', 0, 0, 0, ${createdAt}, ${createdAt}, NULL)
+      `;
+      yield* sql`
+        INSERT INTO workbench_assignments (
+          assignment_id, ticket_id, thread_id, created_at, superseded_at
+        ) VALUES
+          ('deleted-assignment', ${ticketId}, 'deleted-assignment-thread', ${createdAt}, NULL),
+          ('live-assignment', ${ticketId}, 'live-assignment-thread', '2026-09-03T12:00:01.000Z', NULL)
+      `;
+      yield* store.claimTicketWorkspace({
+        ticketId,
+        attemptId,
+        branchName: "workbench/release-live",
+        repositories: [
+          {
+            projectId,
+            isPrimary: true,
+            sourcePath: "/repos/release-live",
+            worktreePath: "/worktrees/release-live",
+          },
+        ],
+        claimedAt: createdAt,
+      });
+      yield* store.markTicketWorkspaceRepositoryReady({
+        ticketId,
+        attemptId,
+        projectId,
+        worktreePath: "/worktrees/release-live",
+        branchName: "workbench/release-live",
+        updatedAt: createdAt,
+      });
+      yield* store.completeTicketWorkspace({ ticketId, attemptId, completedAt: createdAt });
+
+      const error = yield* Effect.flip(
+        store.claimTicketWorkspaceRelease({
+          ticketId,
+          attemptId,
+          claimedAt: "2026-09-03T12:01:00.000Z",
+        }),
+      );
+      expect(error.code).toBe("ticket_workspace_in_use");
     }).pipe(Effect.provide(TestLayer)),
   );
 

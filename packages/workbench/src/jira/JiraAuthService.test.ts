@@ -5,7 +5,6 @@ import {
   WorkbenchJiraOperationError,
   type WorkbenchJiraConnection,
 } from "@t3tools/contracts";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -19,6 +18,16 @@ import {
   type PendingJiraAuthorization,
 } from "./JiraCredentialStore.ts";
 import { JiraOAuthClient, JIRA_OAUTH_SCOPES } from "./JiraOAuthClient.ts";
+import { JiraConfig } from "./JiraConfig.ts";
+
+const jiraConfig = (environment: NodeJS.ProcessEnv) =>
+  JiraConfig.of({
+    get: Effect.sync(() => {
+      const clientId = environment.T3_WORKBENCH_JIRA_CLIENT_ID?.trim() ?? "";
+      const clientSecret = environment.T3_WORKBENCH_JIRA_CLIENT_SECRET?.trim() ?? "";
+      return clientId.length > 0 && clientSecret.length > 0 ? { clientId, clientSecret } : null;
+    }),
+  });
 import {
   WorkbenchJiraRepository,
   WorkbenchJiraRepositoryError,
@@ -102,7 +111,7 @@ describe("JiraAuthService", () => {
           Effect.provideService(WorkbenchJiraRepository, repository.service),
           Effect.provideService(JiraCredentialStore, credentialStore.service),
           Effect.provideService(JiraOAuthClient, oauth),
-          Effect.provideService(HostProcessEnvironment, {}),
+          Effect.provideService(JiraConfig, jiraConfig({})),
         );
 
         const error = yield* service
@@ -143,10 +152,13 @@ describe("JiraAuthService", () => {
           Effect.provideService(WorkbenchJiraRepository, repository.service),
           Effect.provideService(JiraCredentialStore, credentialStore.service),
           Effect.provideService(JiraOAuthClient, oauth),
-          Effect.provideService(HostProcessEnvironment, {
-            T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
-            T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
-          }),
+          Effect.provideService(
+            JiraConfig,
+            jiraConfig({
+              T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
+              T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
+            }),
+          ),
         );
 
         const started = yield* service.begin({ redirectUri: "http://localhost/oauth/jira" });
@@ -220,10 +232,13 @@ describe("JiraAuthService", () => {
           Effect.provideService(WorkbenchJiraRepository, repository.service),
           Effect.provideService(JiraCredentialStore, credentialStore.service),
           Effect.provideService(JiraOAuthClient, oauth),
-          Effect.provideService(HostProcessEnvironment, {
-            T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
-            T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
-          }),
+          Effect.provideService(
+            JiraConfig,
+            jiraConfig({
+              T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
+              T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
+            }),
+          ),
         );
 
         assert.strictEqual(yield* service.getAccessToken(connectionId), "fresh-access");
@@ -273,10 +288,13 @@ describe("JiraAuthService", () => {
           Effect.provideService(WorkbenchJiraRepository, repository.service),
           Effect.provideService(JiraCredentialStore, credentialStore.service),
           Effect.provideService(JiraOAuthClient, oauth),
-          Effect.provideService(HostProcessEnvironment, {
-            T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
-            T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
-          }),
+          Effect.provideService(
+            JiraConfig,
+            jiraConfig({
+              T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
+              T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
+            }),
+          ),
         );
 
         const error = yield* service.getAccessToken(connectionId).pipe(Effect.flip);
@@ -340,10 +358,13 @@ describe("JiraAuthService", () => {
           Effect.provideService(WorkbenchJiraRepository, repository.service),
           Effect.provideService(JiraCredentialStore, credentialStore.service),
           Effect.provideService(JiraOAuthClient, oauth),
-          Effect.provideService(HostProcessEnvironment, {
-            T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
-            T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
-          }),
+          Effect.provideService(
+            JiraConfig,
+            jiraConfig({
+              T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
+              T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
+            }),
+          ),
         );
 
         const first = yield* service.getAccessToken(firstConnectionId).pipe(Effect.forkChild);
@@ -413,10 +434,13 @@ describe("JiraAuthService", () => {
           Effect.provideService(WorkbenchJiraRepository, repository.service),
           Effect.provideService(JiraCredentialStore, credentialStore.service),
           Effect.provideService(JiraOAuthClient, oauth),
-          Effect.provideService(HostProcessEnvironment, {
-            T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
-            T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
-          }),
+          Effect.provideService(
+            JiraConfig,
+            jiraConfig({
+              T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
+              T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
+            }),
+          ),
         );
 
         yield* service.complete({
@@ -485,10 +509,13 @@ describe("JiraAuthService", () => {
           Effect.provideService(WorkbenchJiraRepository, failingRepository),
           Effect.provideService(JiraCredentialStore, credentialStore.service),
           Effect.provideService(JiraOAuthClient, oauth),
-          Effect.provideService(HostProcessEnvironment, {
-            T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
-            T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
-          }),
+          Effect.provideService(
+            JiraConfig,
+            jiraConfig({
+              T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
+              T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
+            }),
+          ),
         );
 
         const error = yield* service
@@ -548,10 +575,13 @@ describe("JiraAuthService", () => {
           Effect.provideService(WorkbenchJiraRepository, repository.service),
           Effect.provideService(JiraCredentialStore, credentialStore.service),
           Effect.provideService(JiraOAuthClient, oauth),
-          Effect.provideService(HostProcessEnvironment, {
-            T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
-            T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
-          }),
+          Effect.provideService(
+            JiraConfig,
+            jiraConfig({
+              T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
+              T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
+            }),
+          ),
         );
         const complete = service.complete({
           code: "authorization-code",
@@ -653,10 +683,13 @@ describe("JiraAuthService", () => {
           Effect.provideService(WorkbenchJiraRepository, repository.service),
           Effect.provideService(JiraCredentialStore, signalingCredentialStore),
           Effect.provideService(JiraOAuthClient, oauth),
-          Effect.provideService(HostProcessEnvironment, {
-            T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
-            T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
-          }),
+          Effect.provideService(
+            JiraConfig,
+            jiraConfig({
+              T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
+              T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
+            }),
+          ),
         );
 
         const refresh = yield* service.getAccessToken(connectionId).pipe(Effect.forkChild);
@@ -728,10 +761,13 @@ describe("JiraAuthService", () => {
           Effect.provideService(WorkbenchJiraRepository, repository.service),
           Effect.provideService(JiraCredentialStore, failingCleanupStore),
           Effect.provideService(JiraOAuthClient, oauth),
-          Effect.provideService(HostProcessEnvironment, {
-            T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
-            T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
-          }),
+          Effect.provideService(
+            JiraConfig,
+            jiraConfig({
+              T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
+              T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
+            }),
+          ),
         );
 
         const error = yield* service

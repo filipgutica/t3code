@@ -1,0 +1,109 @@
+name: Workbench quality
+
+on:
+  pull_request:
+    paths:
+      - packages/workbench/**
+      - apps/server/src/workbench/**
+      - packages/contracts/**
+      - packages/shared/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - tsconfig.base.json
+      - vite.config.ts
+      - knip.jsonc
+      - scripts/knip-schemas.ts
+      - .github/workflows/workbench-quality.yml
+  push:
+    branches:
+      - main
+    paths:
+      - packages/workbench/**
+      - apps/server/src/workbench/**
+      - packages/contracts/**
+      - packages/shared/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - tsconfig.base.json
+      - vite.config.ts
+      - knip.jsonc
+      - scripts/knip-schemas.ts
+      - .github/workflows/workbench-quality.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workbench-quality-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  quality:
+    name: Workbench quality gates
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Typecheck Workbench
+        run: vp run --filter @t3tools/workbench typecheck
+
+      - name: Test Workbench
+        run: vp run --filter @t3tools/workbench test
+
+      - name: Run Workbench quality checks
+        run: vp run --filter @t3tools/workbench quality
+
+  reports:
+    name: Workbench advisory reports
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Generate Fallow health report
+        if: always()
+        run: vp run --filter @t3tools/workbench fallow:health --output-file "$RUNNER_TEMP/workbench-health.json"
+
+      - name: Generate Fallow duplicate report
+        if: always()
+        run: vp run --filter @t3tools/workbench fallow:dupes --output-file "$RUNNER_TEMP/workbench-dupes.json"
+
+      - name: Upload Workbench advisory reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: workbench-quality-reports-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/workbench-health.json
+            ${{ runner.temp }}/workbench-dupes.json
+          if-no-files-found: warn

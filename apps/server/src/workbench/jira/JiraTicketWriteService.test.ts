@@ -17,15 +17,15 @@ import * as Ref from "effect/Ref";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
-import { JiraApi } from "./JiraApi.ts";
-import { JiraAuthService } from "./JiraAuthService.ts";
-import { JiraSyncService } from "./JiraSyncService.ts";
-import { JiraTicketImporter } from "./JiraTicketImporter.ts";
-import * as JiraTicketWriteService from "./JiraTicketWriteService.ts";
+import { JiraApi } from "@t3tools/workbench/jira/JiraApi";
+import { JiraAuthService } from "@t3tools/workbench/jira/JiraAuthService";
+import { JiraSyncService } from "@t3tools/workbench/jira/JiraSyncService";
+import { JiraTicketImporter } from "@t3tools/workbench/jira/JiraTicketImporter";
+import * as JiraTicketWriteService from "@t3tools/workbench/jira/JiraTicketWriteService";
 import {
   WorkbenchJiraRepository,
   type WorkbenchJiraRepositoryShape,
-} from "./WorkbenchJiraRepository.ts";
+} from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 
 const connectionId = WorkbenchJiraConnectionId.make("connection-1");
 const bindingId = WorkbenchJiraBindingId.make("binding-1");

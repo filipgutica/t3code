@@ -9,7 +9,6 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
@@ -85,135 +84,7 @@ export interface WorkbenchJiraRepositoryShape {
 export class WorkbenchJiraRepository extends Context.Service<
   WorkbenchJiraRepository,
   WorkbenchJiraRepositoryShape
->()("t3/workbench/jira/WorkbenchJiraRepository") {}
-
-interface MemoryState {
-  readonly connections: ReadonlyMap<WorkbenchJiraConnectionId, WorkbenchJiraConnection>;
-  readonly credentialIds: ReadonlyMap<WorkbenchJiraConnectionId, string>;
-  readonly bindings: ReadonlyMap<WorkbenchJiraBindingId, WorkbenchJiraBinding>;
-  readonly issueLinks: ReadonlyMap<WorkbenchJiraBindingId, ReadonlyArray<WorkbenchJiraIssueLink>>;
-}
-
-/** Test and integration-preview repository. Production must provide SQL-backed storage. */
-export const layerMemory = Layer.effect(
-  WorkbenchJiraRepository,
-  Effect.gen(function* () {
-    const state = yield* Ref.make<MemoryState>({
-      connections: new Map(),
-      credentialIds: new Map(),
-      bindings: new Map(),
-      issueLinks: new Map(),
-    });
-
-    return WorkbenchJiraRepository.of({
-      findConnectionByCloudId: (cloudId) =>
-        Ref.get(state).pipe(
-          Effect.map((current) =>
-            Option.fromNullishOr(
-              Array.from(current.connections.values()).find(
-                (connection) => connection.cloudId === cloudId,
-              ),
-            ),
-          ),
-        ),
-      getConnection: (id) =>
-        Ref.get(state).pipe(
-          Effect.map((current) => Option.fromNullishOr(current.connections.get(id))),
-        ),
-      listConnections: () =>
-        Ref.get(state).pipe(Effect.map((current) => Array.from(current.connections.values()))),
-      getCredentialId: (connectionId) =>
-        Ref.get(state).pipe(
-          Effect.map((current) => Option.fromNullishOr(current.credentialIds.get(connectionId))),
-        ),
-      upsertConnection: (connection, credentialId) =>
-        Ref.update(state, (current) => ({
-          ...current,
-          connections: new Map(current.connections).set(connection.id, connection),
-          credentialIds: new Map(current.credentialIds).set(connection.id, credentialId),
-        })),
-      upsertConnections: (connections, credentialId) =>
-        Ref.update(state, (current) => {
-          const nextConnections = new Map(current.connections);
-          const nextCredentialIds = new Map(current.credentialIds);
-          for (const connection of connections) {
-            nextConnections.set(connection.id, connection);
-            nextCredentialIds.set(connection.id, credentialId);
-          }
-          return {
-            ...current,
-            connections: nextConnections,
-            credentialIds: nextCredentialIds,
-          };
-        }),
-      getBinding: (id) =>
-        Ref.get(state).pipe(
-          Effect.map((current) => Option.fromNullishOr(current.bindings.get(id))),
-        ),
-      listBindings: () =>
-        Ref.get(state).pipe(Effect.map((current) => Array.from(current.bindings.values()))),
-      upsertBinding: (binding) =>
-        Ref.update(state, (current) => ({
-          ...current,
-          bindings: new Map(current.bindings).set(binding.id, binding),
-        })),
-      updateBindingSyncMetadata: (input) =>
-        Ref.modify(state, (current) => {
-          const binding = current.bindings.get(input.id);
-          if (binding === undefined || binding.updatedAt !== input.expectedUpdatedAt) {
-            return [false, current] as const;
-          }
-          return [
-            true,
-            {
-              ...current,
-              bindings: new Map(current.bindings).set(input.id, {
-                ...binding,
-                sprintId: input.sprintId ?? binding.sprintId,
-                sprintName: input.sprintName ?? binding.sprintName,
-                selectedSprints: input.selectedSprints ?? binding.selectedSprints,
-                statusMappings: input.statusMappings ?? binding.statusMappings,
-                boardColumns: input.boardColumns ?? binding.boardColumns,
-                observedActiveSprintIds:
-                  input.observedActiveSprintIds ?? binding.observedActiveSprintIds,
-                lastSyncedAt: input.syncedAt,
-                lastSyncError: null,
-                updatedAt: input.syncedAt,
-              }),
-            },
-          ] as const;
-        }),
-      updateBindingSyncError: (input) =>
-        Ref.modify(state, (current) => {
-          const binding = current.bindings.get(input.id);
-          if (binding === undefined || binding.updatedAt !== input.expectedUpdatedAt) {
-            return [false, current] as const;
-          }
-          return [
-            true,
-            {
-              ...current,
-              bindings: new Map(current.bindings).set(input.id, {
-                ...binding,
-                selectedSprints: input.selectedSprints ?? binding.selectedSprints,
-                observedActiveSprintIds:
-                  input.observedActiveSprintIds ?? binding.observedActiveSprintIds,
-                lastSyncError: input.message,
-                updatedAt: input.updatedAt,
-              }),
-            },
-          ] as const;
-        }),
-      listIssueLinks: (bindingId) =>
-        Ref.get(state).pipe(Effect.map((current) => current.issueLinks.get(bindingId) ?? [])),
-      replaceIssueLinks: (bindingId, links) =>
-        Ref.update(state, (current) => ({
-          ...current,
-          issueLinks: new Map(current.issueLinks).set(bindingId, links),
-        })),
-    });
-  }),
-);
+>()("@t3tools/workbench/jira/WorkbenchJiraRepository") {}
 
 const ConnectionRow = Schema.Struct({
   id: WorkbenchJiraConnection.fields.id,

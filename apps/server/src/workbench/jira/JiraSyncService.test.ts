@@ -19,13 +19,16 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
-import { JiraApi } from "./JiraApi.ts";
-import * as JiraSyncService from "./JiraSyncService.ts";
-import { JiraTicketImporter, layer as jiraTicketImporterLayer } from "./JiraTicketImporter.ts";
+import { JiraApi } from "@t3tools/workbench/jira/JiraApi";
+import * as JiraSyncService from "@t3tools/workbench/jira/JiraSyncService";
+import {
+  JiraTicketImporter,
+  layer as jiraTicketImporterLayer,
+} from "@t3tools/workbench/jira/JiraTicketImporter";
 import {
   WorkbenchJiraRepository,
   type WorkbenchJiraRepositoryShape,
-} from "./WorkbenchJiraRepository.ts";
+} from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 
 const bindingId = WorkbenchJiraBindingId.make("binding-1");
 const existingTicketId = WorkbenchTicketId.make("ticket-1");

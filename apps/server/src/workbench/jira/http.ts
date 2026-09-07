@@ -3,7 +3,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
-import { WorkbenchJiraService } from "./WorkbenchJiraService.ts";
+import { WorkbenchJiraService } from "@t3tools/workbench/jira/WorkbenchJiraService";
 
 const CALLBACK_PATH = "/oauth/workbench/jira/callback";
 const CALLBACK_HEADERS = {

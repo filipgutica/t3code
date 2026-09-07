@@ -7,7 +7,6 @@ import {
   type WorkbenchJiraCompleteAuthResult,
   type WorkbenchJiraConnection,
 } from "@t3tools/contracts";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -20,6 +19,7 @@ import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 
 import { JiraCredentialStore } from "./JiraCredentialStore.ts";
+import { JiraConfig } from "./JiraConfig.ts";
 import { buildJiraAuthorizationUrl, JiraOAuthClient } from "./JiraOAuthClient.ts";
 import {
   WorkbenchJiraRepository,
@@ -50,11 +50,11 @@ export interface JiraAuthServiceShape {
 }
 
 export class JiraAuthService extends Context.Service<JiraAuthService, JiraAuthServiceShape>()(
-  "t3/workbench/jira/JiraAuthService",
+  "@t3tools/workbench/jira/JiraAuthService",
 ) {}
 
 export const make = Effect.gen(function* () {
-  const environment = yield* HostProcessEnvironment;
+  const configService = yield* JiraConfig;
   const clock = yield* Clock.Clock;
   const crypto = yield* Crypto.Crypto;
   const credentials = yield* JiraCredentialStore;
@@ -98,11 +98,7 @@ export const make = Effect.gen(function* () {
       yield* credentials.removeCredential(credentialId);
     });
 
-  const readConfig = Effect.sync(() => {
-    const clientId = environment.T3_WORKBENCH_JIRA_CLIENT_ID?.trim() ?? "";
-    const clientSecret = environment.T3_WORKBENCH_JIRA_CLIENT_SECRET?.trim() ?? "";
-    return clientId.length > 0 && clientSecret.length > 0 ? { clientId, clientSecret } : null;
-  }).pipe(
+  const readConfig = configService.get.pipe(
     Effect.flatMap((config) =>
       config === null
         ? Effect.fail(

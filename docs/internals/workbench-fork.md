@@ -11,7 +11,11 @@ The fork is an upstream-first T3 Code product with an isolated Workbench overlay
 
 The product UI calls the planning container a **Workbench Workspace** so it is distinct from a native T3 Project. Existing `WorkbenchProject` contract names, RPC methods, database tables, and stored IDs remain unchanged for compatibility.
 
-Workbench-specific code lives under `apps/server/src/workbench`, `apps/web/src/workbench`, and the Workbench contract modules in `packages/contracts/src`. Its schema initializer and `workbench_schema_migrations` ledger are fork-owned and do not consume numbers from T3's migration ledger.
+Workbench core, persistence, schema initialization, workspace lifecycle rules, and Jira logic live in the private `packages/workbench` package. Server adapters and composition stay in `apps/server/src/workbench`; React UI stays in `apps/web/src/workbench`, and wire schemas stay in `packages/contracts/src`. The schema initializer and `workbench_schema_migrations` ledger remain fork-owned and do not consume numbers from T3's migration ledger.
+
+The package must not depend on either application, including through test helpers. Its typecheck checks the compiler's resolved source graph and the reachable workspace dependency graph. Server adapters supply native Project/Thread reads, Git operations, configuration, and credential storage through typed Effect services. Native persistence reads must use the same SQL client and caller transaction as Workbench writes. Do not replace these reads with a separate runtime, connection, or preloaded snapshot: writer-lock ordering and ownership checks depend on that transaction.
+
+The package shares the server process, database, and release. Native migration integration tests stay in the server; independent package tests use package-owned fixtures.
 
 The small upstream integration surface is:
 
@@ -24,6 +28,31 @@ The small upstream integration surface is:
 Each Ticket stores a non-empty ordered set of native T3 Project references and one primary Project. The primary Project must belong to the parent Workbench Workspace and must also appear in the Ticket repository set. Existing Tickets migrate to `story` and retain their previous primary Project as their initial repository scope.
 
 Epics are Workspace-owned planning records. A Ticket can reference at most one Epic in the same Workspace. Archived Epics remain visible on existing Tickets but cannot receive new Tickets. Board grouping is a UI projection over the same Ticket status columns; it does not introduce a separate workflow state.
+
+## Package quality checks
+
+Run the isolated workspace checks from the repository root:
+
+```sh
+vp run --filter @t3tools/workbench typecheck
+vp run --filter @t3tools/workbench test
+vp run workbench:quality
+```
+
+The quality command runs package lint, Knip checks for unused files, dependencies, and exports, and Fallow dead-code analysis. The package also exposes `lint`, `knip`, and `fallow` scripts individually. Knip and Fallow run from the repository root with a Workbench workspace filter so they can resolve server consumers. Fallow checks entry-point exports; unused types are excluded to match the existing Knip policy for exported contract types.
+
+Vite+ lint enforces the ESLint-compatible `eslint/complexity` rule with a maximum of 20 across Workbench source files, without file-specific exceptions.
+
+Fallow health and duplication reports are advisory:
+
+```sh
+vp run --filter @t3tools/workbench fallow:health --output-file /tmp/workbench-health.json
+vp run --filter @t3tools/workbench fallow:dupes --output-file /tmp/workbench-dupes.json
+```
+
+Health uses report-only mode and duplication has no failure threshold. Tool execution errors still fail. Reports focus on Workbench, but duplicate groups can include matching code outside the package. Some aggregate statistics describe the repository graph and must not be presented as package-only metrics. The workspace omits Fallow's optional TypeScript companion because these scripts use native analysis only; this also preserves the existing tools' TypeScript peer resolution.
+
+`.github/workflows/workbench-quality.yml` runs typecheck, package tests, and quality gates for relevant pull requests and pushes to `main`, or manually. A separate job uploads both advisory reports even when a quality gate fails. The upstream-sync workflow also runs the package gates before verifying the application overlay.
 
 ## Ticket Workspaces
 
@@ -39,7 +68,7 @@ Each Ticket can have several active Assignments; each native Thread belongs to o
 
 ## Jira sprint mirrors
 
-The Jira integration is an adapter under `apps/server/src/workbench/jira`. It uses Atlassian OAuth 2.0 authorization code grants and stores refresh credentials through T3's secret store. Configure the server with `T3_WORKBENCH_JIRA_CLIENT_ID` and `T3_WORKBENCH_JIRA_CLIENT_SECRET`. The callback URL depends on the client surface.
+Jira domain and synchronization logic live under `packages/workbench/src/jira`; HTTP, configuration, credential storage, and composition adapters stay under `apps/server/src/workbench/jira`. It uses Atlassian OAuth 2.0 authorization code grants and stores refresh credentials through T3's secret store. Configure the server with `T3_WORKBENCH_JIRA_CLIENT_ID` and `T3_WORKBENCH_JIRA_CLIENT_SECRET`. The callback URL depends on the client surface.
 
 Create the OAuth app in the [Atlassian developer console](https://developer.atlassian.com/console/myapps/), enable the scopes listed in `JiraOAuthClient.ts`, and register the exact callback URL. Web uses its browser origin plus `/workbench`, such as `http://localhost:5733/workbench`. Desktop uses its server origin plus `/oauth/workbench/jira/callback`, such as `http://127.0.0.1:13773/oauth/workbench/jira/callback`. Read the current port from the running environment; these ports are examples. Restart the server after configuring its credentials. The client secret belongs only on the server. Atlassian requires an exact callback match; see its [OAuth setup documentation](https://developer.atlassian.com/cloud/jira/software/oauth-2-3lo-apps/).
 
