@@ -15,11 +15,13 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildTicketSummaryPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
   sanitizeCommitSubject,
   sanitizePrTitle,
+  sanitizeTicketSummary,
   sanitizeThreadTitle,
 } from "./TextGenerationUtils.ts";
 import {
@@ -54,7 +56,8 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "generateTicketSummary";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -259,10 +262,32 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
+  const generateTicketSummary: TextGeneration.TextGeneration["Service"]["generateTicketSummary"] =
+    Effect.fn("CursorTextGeneration.generateTicketSummary")(function* (input) {
+      const { prompt, outputSchema } = buildTicketSummaryPrompt(input);
+      const generated = yield* runCursorJson({
+        operation: "generateTicketSummary",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      const summary = sanitizeTicketSummary(generated.summary);
+      if (!summary) {
+        return yield* new TextGenerationError({
+          operation: "generateTicketSummary",
+          detail: "Cursor Agent returned an empty ticket summary.",
+        });
+      }
+      return { summary };
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateTicketSummary,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

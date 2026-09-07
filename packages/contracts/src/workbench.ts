@@ -36,6 +36,18 @@ export type WorkbenchTicketKind = typeof WorkbenchTicketKind.Type;
 export const WorkbenchTicketStatus = Schema.Literals(["todo", "in_progress", "done"]);
 export type WorkbenchTicketStatus = typeof WorkbenchTicketStatus.Type;
 
+export const WorkbenchTicketGeneratedSummaryStatus = Schema.Literals(["pending", "ready", "error"]);
+export type WorkbenchTicketGeneratedSummaryStatus =
+  typeof WorkbenchTicketGeneratedSummaryStatus.Type;
+
+export const WorkbenchTicketGeneratedSummary = Schema.Struct({
+  text: Schema.NullOr(TrimmedString.check(Schema.isMaxLength(500))),
+  status: WorkbenchTicketGeneratedSummaryStatus,
+  stale: Schema.Boolean,
+  error: Schema.NullOr(TrimmedString.check(Schema.isMaxLength(4_000))),
+});
+export type WorkbenchTicketGeneratedSummary = typeof WorkbenchTicketGeneratedSummary.Type;
+
 export const WorkbenchTicketWorkspaceStatus = Schema.Literals([
   "preparing",
   "ready",
@@ -88,6 +100,9 @@ export const WorkbenchTicket = Schema.Struct({
   status: WorkbenchTicketStatus,
   blocked: Schema.Boolean,
   revision: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+  // Optional for compatibility with snapshots produced before generated
+  // ticket summaries were introduced. New snapshots always include it.
+  generatedSummary: Schema.optionalKey(WorkbenchTicketGeneratedSummary),
   // Optional for compatibility with snapshots produced before Ticket
   // archiving was introduced. New snapshots always include null or a time.
   archivedAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
@@ -244,6 +259,12 @@ export const WorkbenchDeleteTicketInput = Schema.Struct({
 });
 export type WorkbenchDeleteTicketInput = typeof WorkbenchDeleteTicketInput.Type;
 
+export const WorkbenchRegenerateTicketSummaryInput = Schema.Struct({
+  ticketId: WorkbenchTicketId,
+});
+export type WorkbenchRegenerateTicketSummaryInput =
+  typeof WorkbenchRegenerateTicketSummaryInput.Type;
+
 export const WorkbenchCreateAssignmentInput = Schema.Struct({
   id: WorkbenchAssignmentId,
   ticketId: WorkbenchTicketId,
@@ -281,6 +302,7 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "ticket_not_found",
   "ticket_changed",
   "ticket_archived",
+  "ticket_summary_generation_failed",
   "jira_managed_ticket",
   "linked_project_not_found",
   "primary_project_not_linked",

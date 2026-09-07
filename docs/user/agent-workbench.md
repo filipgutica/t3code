@@ -25,6 +25,8 @@ A Thread opened from a Workbench Ticket stays inside the Agent Workbench frame: 
 
 The Board fits the available width without horizontal scrolling. Ticket titles and previews truncate on cards; open a Ticket to read the full content. Descriptions render formatting when viewed and show their raw source when edited. On desktop, the description and collapsible detail panels scroll internally, with Save and Cancel kept visible. Narrow screens stack the panels.
 
+Tickets have a separate **Generated summary** for Board previews and a quick overview above the full description. Summaries use **Settings → General → Text generation model**. Workbench generates them automatically and refreshes them when the saved title or description changes. Choose **Regenerate summary** from the Ticket menu or summary section to try again. Save unsaved edits before regenerating. If generation fails, Workbench keeps the previous summary and offers a retry. Summaries do not change Jira fields or replace the full description sent to the Agent.
+
 Unsaved Ticket edits remain available if you close the Ticket or switch Workspaces during the current Workbench session. A save keeps any further text you enter while it is pending. Reopen the Ticket to continue editing, or use **Cancel** to discard the draft. Open Boards refresh automatically and when the app regains focus, including Workspaces without Jira.
 
 Agent activity is shown separately from Ticket progress: **Blocked / needs input**, **Working**, or **Ready for review**. These labels come from the native Thread and never move a Ticket between columns. Jira flags are shown separately as **Jira flagged**. Existing Tickets in the former Ready for Review column move to In Progress.

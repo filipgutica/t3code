@@ -115,6 +115,19 @@ const makeJiraTicketFieldPatch = ({
   };
 };
 
+const recheckPendingTicketSummary = ({
+  workbench,
+  ticketId,
+  ticket,
+}: {
+  readonly workbench: WorkbenchStore["Service"];
+  readonly ticketId: WorkbenchTicketId;
+  readonly ticket: WorkbenchTicket | undefined;
+}) =>
+  ticket?.generatedSummary?.status === "pending"
+    ? workbench.recheckTicketSummary(ticketId)
+    : Effect.void;
+
 export const layer = Layer.effect(
   JiraTicketImporter,
   Effect.gen(function* () {
@@ -255,6 +268,7 @@ export const layer = Layer.effect(
               );
             }
           }
+          yield* recheckPendingTicketSummary({ workbench, ticketId, ticket: existingTicket });
           return ticketId;
         }),
     });

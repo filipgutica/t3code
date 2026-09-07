@@ -2,6 +2,8 @@ import { TextGenerationError } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 const isTextGenerationError = Schema.is(TextGenerationError);
+export const MAX_TICKET_SUMMARY_CHARS = 500;
+export const MAX_TICKET_SUMMARY_WORDS = 45;
 
 /** Convert an Effect Schema to a flat JSON Schema object, inlining `$defs` when present. */
 export function toJsonSchemaObject(schema: Schema.Top): unknown {
@@ -61,6 +63,28 @@ export function sanitizeThreadTitle(raw: string): string {
   }
 
   return `${normalized.slice(0, 47).trimEnd()}...`;
+}
+
+/** Normalize a generated ticket summary to plain, single-line text. */
+export function sanitizeTicketSummary(raw: string): string {
+  const normalized = raw
+    .trim()
+    .replace(/^```[^\n]*\n?/i, "")
+    .replace(/\n?```$/i, "")
+    .replace(/^#{1,6}[ \t]+[^\n]*\n?/, "")
+    .replace(/\bhttps?:\/\/\S+|\bwww\.\S+/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const characterBounded =
+    normalized.length <= MAX_TICKET_SUMMARY_CHARS
+      ? normalized
+      : `${normalized.slice(0, MAX_TICKET_SUMMARY_CHARS - 3).trimEnd()}...`;
+  const words = characterBounded.split(/\s+/g).filter((word) => word.length > 0);
+  if (words.length <= MAX_TICKET_SUMMARY_WORDS) {
+    return characterBounded;
+  }
+  return `${words.slice(0, MAX_TICKET_SUMMARY_WORDS - 1).join(" ")}...`;
 }
 
 /** CLI name to human-readable label, e.g. "codex" → "Codex CLI (`codex`)" */

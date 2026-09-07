@@ -335,6 +335,32 @@ it.layer(NodeServices.layer)("AntigravityTextGeneration", (it) => {
       }).pipe(Effect.scoped),
   );
 
+  it.effect("generates a bounded ticket summary without using the project workspace", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makeFixture({
+        outputs: [
+          '{"summary":"Improve request validation for selected analytics fields. Return a clear error before querying the provider when unsupported combinations are supplied."}',
+        ],
+      });
+
+      const result = yield* fixture.textGeneration.generateTicketSummary({
+        cwd: fixture.projectDirectory,
+        title: "Validate analytics fields",
+        description: "Reject unsupported metric and dimension combinations before provider calls.",
+        modelSelection,
+      });
+
+      expect(result.summary).toContain("Improve request validation");
+      expect(result.summary.length).toBeLessThanOrEqual(500);
+      expect(fixture.state.workspaces).not.toContain(fixture.projectDirectory);
+      expect(fixture.state.prompts[0]?.prompt[0]).toMatchObject({
+        type: "text",
+        text: expect.stringContaining("Ticket title (untrusted data):"),
+      });
+      yield* fixture.assertCleaned;
+    }).pipe(Effect.scoped),
+  );
+
   it.effect.each(["tool_call", "tool_call_update"] as const)(
     "aborts on %s even without a permission request",
     (sessionUpdate) =>

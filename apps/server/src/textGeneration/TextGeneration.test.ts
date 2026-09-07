@@ -21,6 +21,8 @@ const makeStubTextGeneration = (
     generatePrContent: () => Effect.die("generatePrContent stub not configured for this test"),
     generateBranchName: () => Effect.die("generateBranchName stub not configured for this test"),
     generateThreadTitle: () => Effect.die("generateThreadTitle stub not configured for this test"),
+    generateTicketSummary: () =>
+      Effect.die("generateTicketSummary stub not configured for this test"),
     ...overrides,
   });
 
@@ -116,6 +118,38 @@ describe("makeTextGenerationFromRegistry", () => {
         expect(result.failure.operation).toBe("generateBranchName");
         expect(result.failure.detail).toContain("missing_instance");
       }
+    }),
+  );
+
+  it.effect("delegates ticket summaries to the selected provider instance", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("codex_personal");
+      const calls: Array<{ title: string; description: string }> = [];
+      const instance = makeStubInstance(
+        instanceId,
+        makeStubTextGeneration({
+          generateTicketSummary: (input) => {
+            calls.push({ title: input.title, description: input.description });
+            return Effect.succeed({ summary: "A concise ticket summary." });
+          },
+        }),
+      );
+      const tg = TextGeneration.makeTextGenerationFromRegistry(makeStubRegistry([instance]));
+
+      const result = yield* tg.generateTicketSummary({
+        cwd: process.cwd(),
+        title: "Validate request fields",
+        description: "Reject unsupported field combinations before provider calls.",
+        modelSelection: createModelSelection(instanceId, "gpt-5"),
+      });
+
+      expect(result).toEqual({ summary: "A concise ticket summary." });
+      expect(calls).toEqual([
+        {
+          title: "Validate request fields",
+          description: "Reject unsupported field combinations before provider calls.",
+        },
+      ]);
     }),
   );
 });

@@ -132,6 +132,30 @@ it.layer(GrokTextGenerationTestLayer)("GrokTextGeneration", (it) => {
     ),
   );
 
+  it.effect("generates and bounds ticket summaries through Grok ACP", () =>
+    withFakeAcpGrok(
+      {
+        T3_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
+          summary:
+            "Improve request validation for selected analytics fields. Return a clear error before querying the provider when unsupported combinations are supplied.",
+        }),
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateTicketSummary({
+            cwd: process.cwd(),
+            title: "Validate analytics fields",
+            description:
+              "Reject unsupported metric and dimension combinations before provider calls.",
+            modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-build"),
+          });
+
+          expect(generated.summary).toContain("Improve request validation");
+          expect(generated.summary.length).toBeLessThanOrEqual(500);
+        }),
+    ),
+  );
+
   it.effect("surfaces ACP request failures as text generation errors", () =>
     withFakeAcpGrok(
       {

@@ -5,6 +5,7 @@ import type {
   WorkbenchEpic,
   WorkbenchSnapshot,
   WorkbenchTicket,
+  WorkbenchTicketGeneratedSummary,
   WorkbenchTicketId,
   WorkbenchTicketKind,
   WorkbenchTicketStatus,
@@ -64,6 +65,40 @@ export const WORKBENCH_TICKET_STATUS_LABELS: Record<WorkbenchTicketStatus, strin
   in_progress: "In Progress",
   done: "Done",
 };
+
+export function getWorkbenchTicketSummaryPresentation(
+  summary: WorkbenchTicketGeneratedSummary | undefined,
+) {
+  const text = summary?.text?.trim() ?? "";
+  const hasText = text.length > 0;
+  if (hasText) {
+    return {
+      text,
+      hasText: true,
+      statusLabel:
+        summary?.status === "pending"
+          ? "Generating summary…"
+          : summary?.stale
+            ? "Outdated summary"
+            : summary?.status === "error"
+              ? "Summary generation failed"
+              : null,
+      error: summary?.error?.trim() || null,
+    } as const;
+  }
+  return {
+    text: summary?.status === "pending" ? "Generating summary…" : "Summary unavailable",
+    hasText: false,
+    statusLabel: null,
+    error: summary?.error?.trim() || null,
+  } as const;
+}
+
+export function getWorkbenchTicketSummaryActionLabel(
+  summary: WorkbenchTicketGeneratedSummary | undefined,
+): string {
+  return summary?.text?.trim() ? "Regenerate summary" : "Generate summary";
+}
 
 export function isWorkbenchTicketStatus(value: unknown): value is WorkbenchTicketStatus {
   return WORKBENCH_TICKET_STATUSES.some((status) => status === value);

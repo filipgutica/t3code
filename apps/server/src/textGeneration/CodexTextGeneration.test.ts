@@ -233,7 +233,10 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
           body: "",
         }),
         launchArgs: "--enable settings-feature",
-        environment: { T3CODE_CODEX_LAUNCH_ARGS: " --strict-config --listen off " },
+        environment: {
+          PATH: process.env.PATH,
+          T3CODE_CODEX_LAUNCH_ARGS: " --strict-config --listen off ",
+        },
         requireArg: "--strict-config",
         forbidArg: "settings-feature",
       },
@@ -361,6 +364,50 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
 
           expect(generated.title).toBe("Investigate websocket reconnect regressions aft...");
         }),
+    ),
+  );
+
+  it.effect("generates bounded ticket summaries from title and description", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({
+          summary: `## Summary\n${"The ticket asks for a concise factual summary. ".repeat(20)}https://example.com/details`,
+        }),
+        stdinMustContain: "Ticket title (untrusted data):",
+        forbidArg: "--ignore-user-config",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateTicketSummary({
+            cwd: process.cwd(),
+            title: "Validate request fields",
+            description: "Reject unsupported field combinations before provider calls.",
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          });
+
+          expect(generated.summary.length).toBeLessThanOrEqual(500);
+          expect(generated.summary).not.toContain("https://");
+          expect(generated.summary).not.toContain("##");
+        }),
+    ),
+  );
+
+  it.effect("rejects an empty ticket summary", () =>
+    withFakeCodexEnv({ output: JSON.stringify({ summary: "   " }) }, (textGeneration) =>
+      Effect.gen(function* () {
+        const error = yield* Effect.flip(
+          textGeneration.generateTicketSummary({
+            cwd: process.cwd(),
+            title: "Validate request fields",
+            description: "Reject unsupported field combinations.",
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          }),
+        );
+
+        expect(error).toBeInstanceOf(TextGenerationError);
+        expect(error.operation).toBe("generateTicketSummary");
+        expect(error.detail).toContain("empty ticket summary");
+      }),
     ),
   );
 

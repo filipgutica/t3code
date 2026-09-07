@@ -18,12 +18,14 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildTicketSummaryPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
   sanitizeCommitSubject,
   sanitizePrTitle,
+  sanitizeTicketSummary,
   sanitizeThreadTitle,
 } from "./TextGenerationUtils.ts";
 import * as OpenCodeRuntime from "../provider/opencodeRuntime.ts";
@@ -34,6 +36,7 @@ const OpenCodeTextGenerationOperation = Schema.Literals([
   "generatePrContent",
   "generateBranchName",
   "generateThreadTitle",
+  "generateTicketSummary",
 ]);
 
 type OpenCodeTextGenerationOperation = typeof OpenCodeTextGenerationOperation.Type;
@@ -451,10 +454,33 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
       };
     });
 
+  const generateTicketSummary: TextGeneration.TextGeneration["Service"]["generateTicketSummary"] =
+    Effect.fn("OpenCodeTextGeneration.generateTicketSummary")(function* (input) {
+      const { prompt, outputSchema } = buildTicketSummaryPrompt(input);
+      const generated = yield* runOpenCodeJson({
+        operation: "generateTicketSummary",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+        attachments: [],
+      });
+
+      const summary = sanitizeTicketSummary(generated.summary);
+      if (!summary) {
+        return yield* new TextGenerationError({
+          operation: "generateTicketSummary",
+          detail: "OpenCode returned an empty ticket summary.",
+        });
+      }
+      return { summary };
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateTicketSummary,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

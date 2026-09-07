@@ -225,6 +225,7 @@ import {
   WorkbenchCreateProjectInput,
   WorkbenchCreateTicketInput,
   WorkbenchDeleteTicketInput,
+  WorkbenchRegenerateTicketSummaryInput,
   WorkbenchOperationError,
   WorkbenchEpic,
   WorkbenchProject,
@@ -389,6 +390,7 @@ export const WS_METHODS = {
   workbenchArchiveEpic: "workbench.epics.archive",
   workbenchCreateTicket: "workbench.tickets.create",
   workbenchUpdateTicket: "workbench.tickets.update",
+  workbenchRegenerateTicketSummary: "workbench.tickets.regenerateSummary",
   workbenchArchiveTicket: "workbench.tickets.archive",
   workbenchDeleteTicket: "workbench.tickets.delete",
   workbenchCreateAssignment: "workbench.assignments.create",
@@ -739,6 +741,15 @@ const WsWorkbenchUpdateTicketRpc = Rpc.make(WS_METHODS.workbenchUpdateTicket, {
   success: WorkbenchTicket,
   error: WorkbenchRpcError,
 });
+
+const WsWorkbenchRegenerateTicketSummaryRpc = Rpc.make(
+  WS_METHODS.workbenchRegenerateTicketSummary,
+  {
+    payload: WorkbenchRegenerateTicketSummaryInput,
+    success: WorkbenchTicket,
+    error: WorkbenchRpcError,
+  },
+);
 
 const WsWorkbenchArchiveTicketRpc = Rpc.make(WS_METHODS.workbenchArchiveTicket, {
   payload: WorkbenchArchiveTicketInput,
@@ -1455,6 +1466,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkbenchArchiveEpicRpc,
   WsWorkbenchCreateTicketRpc,
   WsWorkbenchUpdateTicketRpc,
+  WsWorkbenchRegenerateTicketSummaryRpc,
   WsWorkbenchArchiveTicketRpc,
   WsWorkbenchDeleteTicketRpc,
   WsWorkbenchCreateAssignmentRpc,

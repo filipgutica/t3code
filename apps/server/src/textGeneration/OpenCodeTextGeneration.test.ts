@@ -507,6 +507,35 @@ it.layer(OpenCodeTextGenerationTestLayer)("OpenCodeTextGeneration", (it) => {
     ),
   );
 
+  it.effect("generates a bounded ticket summary without attaching files", () =>
+    withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (textGeneration) =>
+      Effect.gen(function* () {
+        runtimeMock.state.promptResult = {
+          data: {
+            parts: [
+              {
+                type: "text",
+                text: '{"summary":"Improve request validation for selected analytics fields. Return a clear error before querying the provider when unsupported combinations are supplied."}',
+              },
+            ],
+          },
+        };
+
+        const result = yield* textGeneration.generateTicketSummary({
+          cwd: process.cwd(),
+          title: "Validate analytics fields",
+          description:
+            "Reject unsupported metric and dimension combinations before provider calls.",
+          modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+        });
+
+        expect(result.summary).toContain("Improve request validation");
+        expect(runtimeMock.state.promptParts[0]).toHaveLength(1);
+        expect(runtimeMock.state.promptParts[0]?.[0]).toMatchObject({ type: "text" });
+      }),
+    ),
+  );
+
   it.effect("surfaces the upstream OpenCode structured-output error message", () =>
     withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (textGeneration) =>
       Effect.gen(function* () {

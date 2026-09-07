@@ -23,12 +23,14 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildTicketSummaryPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
   normalizeCliError,
   sanitizeCommitSubject,
   sanitizePrTitle,
+  sanitizeTicketSummary,
   sanitizeThreadTitle,
   toJsonSchemaObject,
 } from "./TextGenerationUtils.ts";
@@ -93,7 +95,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle",
+      | "generateThreadTitle"
+      | "generateTicketSummary",
     value: unknown,
     detail: string,
   ): Effect.Effect<string, TextGenerationError> =>
@@ -123,7 +126,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "generateTicketSummary";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -190,6 +194,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           resolveClaudeCatalogApiModelId(catalog, resolvedModelSelection),
           ...(cliEffort ? ["--effort", cliEffort] : []),
           ...(settingsJson ? ["--settings", settingsJson] : []),
+          ...(operation === "generateTicketSummary" ? ["--tools", "", "--strict-mcp-config"] : []),
           "--dangerously-skip-permissions",
         ],
         { env: claudeEnvironment },
@@ -380,10 +385,32 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       };
     });
 
+  const generateTicketSummary: TextGeneration.TextGeneration["Service"]["generateTicketSummary"] =
+    Effect.fn("ClaudeTextGeneration.generateTicketSummary")(function* (input) {
+      const { prompt, outputSchema } = buildTicketSummaryPrompt(input);
+      const generated = yield* runClaudeJson({
+        operation: "generateTicketSummary",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+
+      const summary = sanitizeTicketSummary(generated.summary);
+      if (!summary) {
+        return yield* new TextGenerationError({
+          operation: "generateTicketSummary",
+          detail: "Claude returned an empty ticket summary.",
+        });
+      }
+      return { summary };
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateTicketSummary,
   } satisfies TextGeneration.TextGeneration["Service"];
 });
