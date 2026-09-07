@@ -22,6 +22,12 @@ See the [mobile README](../../apps/mobile/README.md) for native builds and Metro
 Flags go directly after the task name, for example `vp run dev --home-dir /tmp/t3code-dev`.
 Add `--browser` to open a browser automatically.
 
+### Optional Workbench Jira credentials
+
+Follow the [local Jira setup instructions](../../README.md#set-up-jira-for-local-development)
+for OAuth permissions, callback URLs, credentials, and automatic 1Password setup across worktrees.
+Development starts without Jira credentials or 1Password.
+
 ### State and ports
 
 Linked worktrees default to their own `.t3/userdata`, even when `T3CODE_HOME` is set.
