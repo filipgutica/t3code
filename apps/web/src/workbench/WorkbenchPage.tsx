@@ -64,7 +64,7 @@ import { useEnvironmentQuery } from "../state/query";
 import { serverEnvironment } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
-import type { WorkbenchSearch } from "../routes/workbench";
+import type { WorkbenchSearch } from "./workbenchSearch";
 import { openWorkbenchAssignedThread as openAssignedThreadWithRestore } from "./openWorkbenchAssignedThread";
 import { workbenchEnvironment } from "./state";
 import { useStartWorkbenchTicket } from "./useStartWorkbenchTicket";
@@ -196,10 +196,10 @@ const resolveJiraOAuthReturnSearch = ({
   readonly projectId: WorkbenchProjectId | undefined;
 }): WorkbenchSearch => {
   const nextEnvironmentId = environmentId ?? storedEnvironmentId ?? previous.environmentId;
-  const nextProjectId = projectId ?? previous.projectId;
+  const nextProjectId = projectId ?? previous.workbenchProjectId;
   return {
     ...(nextEnvironmentId ? { environmentId: nextEnvironmentId } : {}),
-    ...(nextProjectId ? { projectId: nextProjectId } : {}),
+    ...(nextProjectId ? { workbenchProjectId: nextProjectId } : {}),
     ...(previous.ticketId
       ? { ticketId: previous.ticketId }
       : previous.epicId
@@ -680,7 +680,9 @@ export function WorkbenchPage({
       to: "/workbench",
       search: withWorkbenchEnvironmentSearch(
         environmentId,
-        ticketId === undefined ? { projectId } : { projectId, ticketId },
+        ticketId === undefined
+          ? { workbenchProjectId: projectId }
+          : { workbenchProjectId: projectId, ticketId },
       ),
       replace: true,
     });
@@ -689,7 +691,10 @@ export function WorkbenchPage({
   const updateEpicRouteSelection = (projectId: WorkbenchProjectId, epicId: WorkbenchEpicId) => {
     return navigate({
       to: "/workbench",
-      search: withWorkbenchEnvironmentSearch(environmentId, { projectId, epicId }),
+      search: withWorkbenchEnvironmentSearch(environmentId, {
+        workbenchProjectId: projectId,
+        epicId,
+      }),
       replace: true,
     });
   };
@@ -1422,10 +1427,10 @@ export function WorkbenchPage({
       search: withWorkbenchEnvironmentSearch(
         environmentId,
         ticketId
-          ? { projectId: selectedProject.id, ticketId }
+          ? { workbenchProjectId: selectedProject.id, ticketId }
           : epicId
-            ? { projectId: selectedProject.id, epicId }
-            : { projectId: selectedProject.id },
+            ? { workbenchProjectId: selectedProject.id, epicId }
+            : { workbenchProjectId: selectedProject.id },
       ),
       replace: true,
     });
@@ -1452,7 +1457,7 @@ export function WorkbenchPage({
       search: withWorkbenchEnvironmentSearch(
         environmentId,
         selectedProject
-          ? { projectId: selectedProject.id, create: "workspace" as const }
+          ? { workbenchProjectId: selectedProject.id, create: "workspace" as const }
           : { create: "workspace" as const },
       ),
       replace: true,
@@ -1481,7 +1486,7 @@ export function WorkbenchPage({
       to: "/workbench",
       search: (previous: WorkbenchSearch): WorkbenchSearch => ({
         ...(environmentId ? { environmentId } : {}),
-        ...(previous.projectId ? { projectId: previous.projectId } : {}),
+        ...(previous.workbenchProjectId ? { workbenchProjectId: previous.workbenchProjectId } : {}),
         ...(previous.ticketId
           ? { ticketId: previous.ticketId }
           : previous.epicId

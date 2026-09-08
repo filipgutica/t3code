@@ -144,6 +144,7 @@ import * as WorkbenchStore from "./workbench/WorkbenchStore.ts";
 import * as TicketWorkspaceService from "./workbench/TicketWorkspaceService.ts";
 import * as TicketSummaryService from "./workbench/TicketSummaryService.ts";
 import * as WorkbenchJiraService from "./workbench/jira/WorkbenchJiraService.ts";
+import { makeWorkbenchRpcHandlers } from "./workbench/workbenchRpcHandlers.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
@@ -673,6 +674,13 @@ const makeWsRpcLayer = (
           authorizeEffect(requiredScopeForRpcMethod(method), effect),
           traceAttributes,
         );
+      const workbenchRpcHandlers = makeWorkbenchRpcHandlers({
+        observeRpcEffect,
+        workbench,
+        ticketWorkspaces,
+        workbenchJira,
+        ticketSummaries,
+      });
       const toDispatchCommandError = (cause: unknown, fallbackMessage: string) =>
         isOrchestrationDispatchCommandError(cause)
           ? cause
@@ -1304,140 +1312,7 @@ const makeWsRpcLayer = (
           .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
 
       return WsRpcGroup.of({
-        [WS_METHODS.workbenchGetSnapshot]: (_input) =>
-          observeRpcEffect(WS_METHODS.workbenchGetSnapshot, workbench.getSnapshot, {
-            "rpc.aggregate": "workbench",
-          }),
-        [WS_METHODS.workbenchCreateProject]: (input) =>
-          observeRpcEffect(WS_METHODS.workbenchCreateProject, workbench.createProject(input), {
-            "rpc.aggregate": "workbench",
-          }),
-        [WS_METHODS.workbenchUpdateProject]: (input) =>
-          observeRpcEffect(WS_METHODS.workbenchUpdateProject, workbench.updateProject(input), {
-            "rpc.aggregate": "workbench",
-          }),
-        [WS_METHODS.workbenchCreateEpic]: (input) =>
-          observeRpcEffect(WS_METHODS.workbenchCreateEpic, workbench.createEpic(input), {
-            "rpc.aggregate": "workbench",
-          }),
-        [WS_METHODS.workbenchUpdateEpic]: (input) =>
-          observeRpcEffect(WS_METHODS.workbenchUpdateEpic, workbench.updateEpic(input), {
-            "rpc.aggregate": "workbench",
-          }),
-        [WS_METHODS.workbenchArchiveEpic]: (input) =>
-          observeRpcEffect(WS_METHODS.workbenchArchiveEpic, workbench.archiveEpic(input), {
-            "rpc.aggregate": "workbench",
-          }),
-        [WS_METHODS.workbenchCreateTicket]: (input) =>
-          observeRpcEffect(WS_METHODS.workbenchCreateTicket, workbench.createTicket(input), {
-            "rpc.aggregate": "workbench",
-          }),
-        [WS_METHODS.workbenchUpdateTicket]: (input) =>
-          observeRpcEffect(WS_METHODS.workbenchUpdateTicket, workbench.updateTicket(input), {
-            "rpc.aggregate": "workbench",
-          }),
-        [WS_METHODS.workbenchRegenerateTicketSummary]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.workbenchRegenerateTicketSummary,
-            ticketSummaries.regenerate(input),
-            {
-              "rpc.aggregate": "workbench",
-            },
-          ),
-        [WS_METHODS.workbenchArchiveTicket]: (input) =>
-          observeRpcEffect(WS_METHODS.workbenchArchiveTicket, workbench.archiveTicket(input), {
-            "rpc.aggregate": "workbench",
-          }),
-        [WS_METHODS.workbenchDeleteTicket]: (input) =>
-          observeRpcEffect(WS_METHODS.workbenchDeleteTicket, workbench.deleteTicket(input), {
-            "rpc.aggregate": "workbench",
-          }),
-        [WS_METHODS.workbenchCreateAssignment]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.workbenchCreateAssignment,
-            workbench.createAssignment(input),
-            { "rpc.aggregate": "workbench" },
-          ),
-        [WS_METHODS.workbenchReplaceAssignment]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.workbenchReplaceAssignment,
-            workbench.replaceAssignment(input),
-            { "rpc.aggregate": "workbench" },
-          ),
-        [WS_METHODS.workbenchPrepareTicketWorkspace]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.workbenchPrepareTicketWorkspace,
-            ticketWorkspaces.prepare(input),
-            { "rpc.aggregate": "workbench" },
-          ),
-        [WS_METHODS.workbenchReleaseTicketWorkspace]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.workbenchReleaseTicketWorkspace,
-            ticketWorkspaces.release(input),
-            { "rpc.aggregate": "workbench" },
-          ),
-        [WS_METHODS.workbenchJiraGetSnapshot]: (_input) =>
-          observeRpcEffect(WS_METHODS.workbenchJiraGetSnapshot, workbenchJira.getSnapshot, {
-            "rpc.aggregate": "workbench",
-          }),
-        [WS_METHODS.workbenchJiraBeginAuth]: (input) =>
-          observeRpcEffect(WS_METHODS.workbenchJiraBeginAuth, workbenchJira.beginAuth(input), {
-            "rpc.aggregate": "workbench",
-          }),
-        [WS_METHODS.workbenchJiraCompleteAuth]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.workbenchJiraCompleteAuth,
-            workbenchJira.completeAuth(input),
-            { "rpc.aggregate": "workbench" },
-          ),
-        [WS_METHODS.workbenchJiraListProjects]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.workbenchJiraListProjects,
-            workbenchJira.listProjects(input),
-            { "rpc.aggregate": "workbench" },
-          ),
-        [WS_METHODS.workbenchJiraListBoards]: (input) =>
-          observeRpcEffect(WS_METHODS.workbenchJiraListBoards, workbenchJira.listBoards(input), {
-            "rpc.aggregate": "workbench",
-          }),
-        [WS_METHODS.workbenchJiraListSprints]: (input) =>
-          observeRpcEffect(WS_METHODS.workbenchJiraListSprints, workbenchJira.listSprints(input), {
-            "rpc.aggregate": "workbench",
-          }),
-        [WS_METHODS.workbenchJiraGetBoardConfiguration]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.workbenchJiraGetBoardConfiguration,
-            workbenchJira.getBoardConfiguration(input),
-            { "rpc.aggregate": "workbench" },
-          ),
-        [WS_METHODS.workbenchJiraCreateBinding]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.workbenchJiraCreateBinding,
-            workbenchJira.createBinding(input),
-            { "rpc.aggregate": "workbench" },
-          ),
-        [WS_METHODS.workbenchJiraUpdateBinding]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.workbenchJiraUpdateBinding,
-            workbenchJira.updateBinding(input),
-            { "rpc.aggregate": "workbench" },
-          ),
-        [WS_METHODS.workbenchJiraSyncBinding]: (input) =>
-          observeRpcEffect(WS_METHODS.workbenchJiraSyncBinding, workbenchJira.syncBinding(input), {
-            "rpc.aggregate": "workbench",
-          }),
-        [WS_METHODS.workbenchJiraUpdateTicket]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.workbenchJiraUpdateTicket,
-            workbenchJira.updateTicket(input),
-            { "rpc.aggregate": "workbench" },
-          ),
-        [WS_METHODS.workbenchJiraGetTicketTransitions]: (input) =>
-          observeRpcEffect(
-            WS_METHODS.workbenchJiraGetTicketTransitions,
-            workbenchJira.getTicketTransitions(input),
-            { "rpc.aggregate": "workbench" },
-          ),
+        ...workbenchRpcHandlers,
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,

@@ -83,11 +83,10 @@ import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolve
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
-import * as WorkbenchStore from "./workbench/WorkbenchStore.ts";
-import * as TicketWorkspaceService from "./workbench/TicketWorkspaceService.ts";
-import * as TicketSummaryService from "./workbench/TicketSummaryService.ts";
-import * as TicketExecutionReactor from "./workbench/TicketExecutionReactor.ts";
-import * as WorkbenchJiraService from "./workbench/jira/WorkbenchJiraService.ts";
+import {
+  TicketExecutionReactorLayerLive,
+  WorkbenchServicesLayerLive,
+} from "./workbench/serverLayer.ts";
 import { workbenchJiraOAuthRouteLayer } from "./workbench/jira/http.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
@@ -279,14 +278,6 @@ const PlatformServicesLive = Layer.unwrap(
   }),
 );
 
-const WorkbenchStoreLayerLive = WorkbenchStore.WorkbenchStoreLive.pipe(
-  Layer.provide(SqlitePersistenceLayerLive),
-);
-const WorkbenchJiraLayerLive = WorkbenchJiraService.layerLive.pipe(
-  Layer.provide(SqlitePersistenceLayerLive),
-  Layer.provide(WorkbenchStoreLayerLive),
-);
-
 const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(OrchestrationReactorLive),
   Layer.provideMerge(ProviderRuntimeIngestionLive),
@@ -294,12 +285,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(ThreadDeletionReactorLive),
   Layer.provideMerge(ThreadSettlementReactor.layer),
-  Layer.provideMerge(
-    TicketExecutionReactor.layer.pipe(
-      Layer.provide(WorkbenchJiraLayerLive),
-      Layer.provide(WorkbenchStoreLayerLive),
-    ),
-  ),
+  Layer.provideMerge(TicketExecutionReactorLayerLive),
   Layer.provideMerge(ThreadPullRequestReactor.layer),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(RuntimeReceiptBusLive),
@@ -575,10 +561,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   ),
   McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
 ).pipe(
-  Layer.provide(WorkbenchJiraLayerLive),
-  Layer.provide(TicketWorkspaceService.TicketWorkspaceServiceLive),
-  Layer.provide(TicketSummaryService.TicketSummaryServiceLive),
-  Layer.provide(WorkbenchStoreLayerLive),
+  Layer.provide(WorkbenchServicesLayerLive),
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
   Layer.provide(PullRequestServiceLive),

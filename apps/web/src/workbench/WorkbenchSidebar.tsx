@@ -56,12 +56,14 @@ export function WorkbenchSidebar({
     strict: false,
     select: (value) => ({
       environmentId: isEnvironmentId(value.environmentId) ? value.environmentId : undefined,
-      projectId: isWorkbenchProjectId(value.projectId) ? value.projectId : undefined,
+      workbenchProjectId: isWorkbenchProjectId(value.workbenchProjectId)
+        ? value.workbenchProjectId
+        : undefined,
       ticketId: isWorkbenchTicketId(value.ticketId) ? value.ticketId : undefined,
       epicId: isWorkbenchEpicId(value.epicId) ? value.epicId : undefined,
     }),
   });
-  const selectedWorkspaceId = context?.workspaceId ?? search.projectId;
+  const selectedWorkspaceId = context?.workspaceId ?? search.workbenchProjectId;
   const selectedTicketId = context?.ticketId ?? search.ticketId;
   const selectedEpicId = context ? undefined : search.epicId;
   const selectedEnvironmentId = context?.environmentId ?? search.environmentId;
@@ -93,7 +95,7 @@ export function WorkbenchSidebar({
       to: "/workbench",
       search: {
         ...(environmentId ? { environmentId } : {}),
-        projectId,
+        workbenchProjectId: projectId,
       },
       replace: true,
     });
@@ -114,7 +116,7 @@ export function WorkbenchSidebar({
       to: "/workbench",
       search: {
         ...(environmentId ? { environmentId } : {}),
-        ...(selectedWorkspaceId ? { projectId: selectedWorkspaceId } : {}),
+        ...(selectedWorkspaceId ? { workbenchProjectId: selectedWorkspaceId } : {}),
         ...(selectedTicketId ? { ticketId: selectedTicketId } : {}),
         ...(selectedEpicId ? { epicId: selectedEpicId } : {}),
         create: "workspace",
@@ -212,7 +214,7 @@ export function WorkbenchSidebar({
                                 to: "/workbench",
                                 search: {
                                   ...(environmentId ? { environmentId } : {}),
-                                  projectId: ticket.projectId,
+                                  workbenchProjectId: ticket.projectId,
                                   ticketId: ticket.id,
                                 },
                                 replace: true,
