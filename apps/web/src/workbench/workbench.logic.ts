@@ -10,6 +10,7 @@ import type {
   WorkbenchTicketKind,
   WorkbenchTicketStatus,
 } from "@t3tools/contracts";
+import type { ReviewCommentContext } from "../reviewCommentContext";
 
 export const WORKBENCH_TICKET_KINDS = [
   "story",
@@ -132,7 +133,7 @@ export function getWorkbenchThreadPresentation(
 ) {
   if (!hasAssignment) {
     return {
-      actionLabel: "Start work",
+      actionLabel: "Create Thread",
       pendingActionLabel: "Creating Thread…",
       stateLabel: "Unassigned",
       state: "unassigned",
@@ -163,7 +164,7 @@ export function getWorkbenchThreadPresentation(
     } as const;
   }
   return {
-    actionLabel: "Start replacement",
+    actionLabel: "Create replacement thread",
     pendingActionLabel: "Creating Thread…",
     stateLabel: "Thread unavailable",
     state: "missing",
@@ -272,7 +273,11 @@ export function isWorkbenchThreadArchived(
   return !liveThreads.has(threadId) && archivedThreads.has(threadId);
 }
 
-export function buildTicketThreadPrompt(
+function neutralizeTicketContextTags(value: string): string {
+  return value.replace(/<(?=\/?review_comment\b)/giu, "&lt;");
+}
+
+export function buildTicketThreadContext(
   ticket: Pick<
     WorkbenchTicket,
     "title" | "markdown" | "kind" | "repositoryProjectIds" | "primaryT3ProjectId"
@@ -292,15 +297,41 @@ export function buildTicketThreadPrompt(
     return `- ${title}${repositoryId === ticket.primaryT3ProjectId ? " (primary)" : ""} — ${workspaceRoot}`;
   });
   return [
-    `Work on this Agent Workbench ${WORKBENCH_TICKET_KIND_LABELS[ticket.kind]} ticket.`,
-    "",
     `# ${ticket.title}`,
+    "",
+    `Ticket type: ${WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}`,
     "",
     "## Repository scope",
     "",
     ...repositoryLines,
     ...(body.length > 0 ? ["", body] : []),
   ].join("\n");
+}
+
+export function buildTicketReviewComment(
+  ticket: Pick<
+    WorkbenchTicket,
+    "id" | "title" | "markdown" | "kind" | "repositoryProjectIds" | "primaryT3ProjectId"
+  >,
+  repositories: ReadonlyArray<{
+    readonly id: ProjectId;
+    readonly title: string;
+    readonly workspaceRoot: string;
+  }>,
+): ReviewCommentContext {
+  const context = buildTicketThreadContext(ticket, repositories);
+  return {
+    id: `workbench-ticket:${ticket.id}`,
+    sectionId: `workbench-ticket:${ticket.id}`,
+    sectionTitle: "Agent Workbench ticket",
+    filePath: ticket.title,
+    startIndex: 0,
+    endIndex: Math.max(0, context.split("\n").length - 1),
+    rangeLabel: "Ticket context",
+    text: ticket.title,
+    diff: neutralizeTicketContextTags(context),
+    fenceLanguage: "markdown",
+  };
 }
 
 export function groupWorkbenchTicketsByEpic<

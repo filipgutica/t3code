@@ -398,6 +398,7 @@ import {
   resolveBackgroundDraftWorkspaceOptions,
   resolveComposerInteractionMode,
   resolveComposerProviderSelection,
+  resolveComposerTitleSeed,
   resolveDraftHeroState,
   resolveProactiveTurnDiffAction,
   resolveThreadMetadataUpdateForNextTurn,
@@ -6871,20 +6872,20 @@ export default function ChatView(props: ChatViewProps) {
         firstComposerImageName = firstComposerImage.name;
       }
     }
-    let titleSeed = assistantCitationsToPlainText(trimmed);
-    if (!titleSeed) {
-      if (firstComposerImageName) {
-        titleSeed = `Image: ${firstComposerImageName}`;
-      } else if (composerFilesSnapshot[0]) {
-        titleSeed = `File: ${composerFilesSnapshot[0].name}`;
-      } else if (composerTerminalContextsSnapshot.length > 0) {
-        titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
-      } else if (composerElementContextsSnapshot.length > 0) {
-        titleSeed = formatElementContextLabel(composerElementContextsSnapshot[0]!);
-      } else {
-        titleSeed = "New thread";
-      }
-    }
+    const titleSeed = resolveComposerTitleSeed({
+      text: assistantCitationsToPlainText(trimmed),
+      imageName: firstComposerImageName,
+      fileName: composerFilesSnapshot[0]?.name ?? null,
+      terminalContextLabel:
+        composerTerminalContextsSnapshot.length > 0
+          ? formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!)
+          : null,
+      elementContextLabel:
+        composerElementContextsSnapshot.length > 0
+          ? formatElementContextLabel(composerElementContextsSnapshot[0]!)
+          : null,
+      reviewComment: composerReviewCommentsSnapshot[0] ?? null,
+    });
     const title = truncate(titleSeed);
     const threadCreateModelSelection = createModelSelection(
       ctxSelectedModelSelection.instanceId,

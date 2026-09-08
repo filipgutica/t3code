@@ -51,6 +51,7 @@ import type { ComposerSubmissionIntent } from "../composer-logic";
 import type { TimelineEntry } from "../session-logic";
 import type { DesktopPreviewOverlay } from "../previewStateStore";
 import type { RightPanelSurface } from "../rightPanelStore";
+import type { ReviewCommentContext } from "../reviewCommentContext";
 import {
   NO_PROVIDER_MODEL_SELECTION,
   resolveSelectableProviderInstanceEntry,
@@ -147,6 +148,33 @@ export function codexArtifactTemplatePromptToAppend(
   return appendCodexArtifactTemplateUsePrompt(currentDraft, template) === currentDraft
     ? null
     : codexArtifactTemplateUsePrompt(template);
+}
+
+export function resolveComposerTitleSeed({
+  text,
+  imageName,
+  fileName,
+  terminalContextLabel,
+  elementContextLabel,
+  reviewComment,
+}: {
+  readonly text: string;
+  readonly imageName: string | null;
+  readonly fileName: string | null;
+  readonly terminalContextLabel: string | null;
+  readonly elementContextLabel: string | null;
+  readonly reviewComment: Pick<ReviewCommentContext, "text" | "filePath" | "sectionTitle"> | null;
+}): string {
+  const trimmedText = text.trim();
+  if (trimmedText) return trimmedText;
+  if (imageName) return `Image: ${imageName}`;
+  if (fileName) return `File: ${fileName}`;
+  if (terminalContextLabel) return terminalContextLabel;
+  if (elementContextLabel) return elementContextLabel;
+  if (reviewComment) {
+    return reviewComment.text.trim() || reviewComment.filePath.trim() || reviewComment.sectionTitle;
+  }
+  return "New thread";
 }
 
 export function shouldDockDraftHeroForSubmission(input: {

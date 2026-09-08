@@ -41,6 +41,7 @@ import {
   resolveBackgroundDraftWorkspaceOptions,
   resolveComposerInteractionMode,
   resolveComposerProviderSelection,
+  resolveComposerTitleSeed,
   resolveDraftPromotionNavigationTarget,
   resolveProactiveTurnDiffAction,
   resolveThreadMetadataUpdateForNextTurn,
@@ -59,6 +60,42 @@ import {
   shouldWriteThreadErrorToCurrentServerThread,
   toolGroupConsumesUpwardNavigation,
 } from "./ChatView.logic";
+
+describe("composer title seed", () => {
+  it("uses a comment title when the first message has only comment context", () => {
+    expect(
+      resolveComposerTitleSeed({
+        text: "",
+        imageName: null,
+        fileName: null,
+        terminalContextLabel: null,
+        elementContextLabel: null,
+        reviewComment: {
+          text: "Streamline ticket threads",
+          filePath: "ticket-one",
+          sectionTitle: "Agent Workbench ticket",
+        },
+      }),
+    ).toBe("Streamline ticket threads");
+  });
+
+  it("keeps the typed message ahead of an attached comment title", () => {
+    expect(
+      resolveComposerTitleSeed({
+        text: "Please implement this",
+        imageName: null,
+        fileName: null,
+        terminalContextLabel: null,
+        elementContextLabel: null,
+        reviewComment: {
+          text: "Ticket title",
+          filePath: "ticket-one",
+          sectionTitle: "Agent Workbench ticket",
+        },
+      }),
+    ).toBe("Please implement this");
+  });
+});
 
 describe("agent browser close confirmation", () => {
   const surfaces = [

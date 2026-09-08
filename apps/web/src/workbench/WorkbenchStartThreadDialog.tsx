@@ -147,7 +147,7 @@ export function WorkbenchStartThreadDialog({
   additional = false,
   title: customTitle,
   description: customDescription,
-  startLabel = "Start Thread",
+  startLabel = "Create Thread",
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -163,12 +163,10 @@ export function WorkbenchStartThreadDialog({
 }) {
   const settings = useEnvironmentSettings(environmentId);
   const dialogTitle =
-    customTitle ?? (additional ? "Start Additional Agent Thread" : "Start Agent Thread");
+    customTitle ?? (additional ? "Create Additional Agent Thread" : "Create Agent Thread");
   const dialogDescription =
     customDescription ??
-    (additional
-      ? "Choose the provider and model for another native T3 conversation."
-      : "Choose the provider and model for this native T3 conversation.");
+    "Choose the provider and model. The new Thread opens with ticket context attached; add an optional message and send it when you’re ready.";
   const {
     instanceEntries,
     resolvedSelection,

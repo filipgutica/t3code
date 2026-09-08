@@ -1,13 +1,9 @@
-import type {
-  CreateThreadInput,
-  DeleteThreadInput,
-  StartThreadTurnInput,
-} from "@t3tools/client-runtime/operations";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { CreateThreadInput, DeleteThreadInput } from "@t3tools/client-runtime/operations";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import type {
   EnvironmentId,
-  MessageId,
   ModelSelection,
   ThreadId,
   WorkbenchAssignment,
@@ -20,8 +16,10 @@ import type {
 } from "@t3tools/contracts";
 import { DEFAULT_RUNTIME_MODE } from "@t3tools/contracts";
 
+import type { ComposerThreadTarget } from "../composerDraftStore";
+import type { ReviewCommentContext } from "../reviewCommentContext";
 import { DEFAULT_INTERACTION_MODE } from "../types";
-import { buildTicketThreadPrompt, resolveWorkbenchTicketThreadTarget } from "./workbench.logic";
+import { buildTicketReviewComment, resolveWorkbenchTicketThreadTarget } from "./workbench.logic";
 
 type CommandResult = AtomCommandResult<unknown, unknown>;
 type PrepareWorkspaceResult = AtomCommandResult<WorkbenchTicketWorkspace, unknown>;
@@ -42,9 +40,9 @@ interface StartWorkbenchTicketInput {
 
 /**
  * Controls how a Ticket start is coordinated. A normal start opens an
- * existing active Thread when one is assigned, then creates a prompted
- * replacement when its native Thread is missing. Additional Threads are
- * deliberately blank so the user can choose what that Thread should do.
+ * existing active Thread when one is assigned, then creates a replacement
+ * when its native Thread is missing. Every new Thread opens with its Ticket
+ * context attached and waits for the user to send the first turn.
  */
 export interface StartWorkbenchTicketOptions {
   readonly mode?: "additional" | "replace";
@@ -52,7 +50,6 @@ export interface StartWorkbenchTicketOptions {
   readonly assignment?: WorkbenchAssignment;
   readonly modelSelection?: ModelSelection;
   readonly previousThreadId?: ThreadId;
-  readonly sendInitialPrompt?: boolean;
 }
 
 interface StartWorkbenchTicketDependencies {
@@ -71,28 +68,26 @@ interface StartWorkbenchTicketDependencies {
   readonly deleteThread: (
     input: EnvironmentCommandInput<DeleteThreadInput>,
   ) => Promise<CommandResult>;
-  readonly startTurn: (
-    input: EnvironmentCommandInput<StartThreadTurnInput>,
-  ) => Promise<CommandResult>;
+  readonly addReviewComment: (
+    threadRef: ComposerThreadTarget,
+    comment: ReviewCommentContext,
+  ) => void;
   readonly openThread: (threadId: ThreadId) => Promise<void>;
-  readonly setRetryDraft: (threadId: ThreadId, prompt: string) => void;
   readonly resolveModelSelection: (project: EnvironmentProject) => ModelSelection | null;
   readonly makeThreadId: () => ThreadId;
   readonly makeAssignmentId: () => WorkbenchAssignmentId;
-  readonly makeMessageId: () => MessageId;
   readonly now: () => string;
 }
 
 export type StartWorkbenchTicketResult =
   | { readonly state: "opened"; readonly threadId: ThreadId }
-  | { readonly state: "started"; readonly threadId: ThreadId }
   | { readonly state: "navigation-failed"; readonly cause: unknown }
   | { readonly state: "project-unavailable" }
   | { readonly state: "provider-unavailable" }
   | { readonly state: "thread-status-unavailable" }
   | {
       readonly state: "failed";
-      readonly stage: "workspace" | "thread" | "assignment" | "turn";
+      readonly stage: "workspace" | "thread" | "assignment";
       readonly failure: Extract<CommandResult, { readonly _tag: "Failure" }>;
       readonly cleanupFailure?: Extract<CommandResult, { readonly _tag: "Failure" }>;
     };
@@ -200,53 +195,24 @@ export async function coordinateWorkbenchTicketStart(
     };
   }
 
-  if (options.mode === "additional" || options.sendInitialPrompt === false) {
-    try {
-      await dependencies.openThread(threadId);
-    } catch (cause) {
-      return { state: "navigation-failed", cause };
-    }
-    return { state: "opened", threadId };
-  }
-
   const preparedPaths = new Map(
     workspaceResult.value.repositories
       .filter((repository) => repository.status === "ready")
       .map((repository) => [repository.projectId, repository.worktreePath]),
   );
-  const prompt = buildTicketThreadPrompt(
+  const ticketContext = buildTicketReviewComment(
     input.ticket,
     input.projects.map((repository) => ({
       ...repository,
       workspaceRoot: preparedPaths.get(repository.id) ?? repository.workspaceRoot,
     })),
   );
-  const turnResult = await dependencies.startTurn({
-    environmentId: input.environmentId,
-    input: {
-      threadId,
-      message: {
-        messageId: dependencies.makeMessageId(),
-        role: "user",
-        text: prompt,
-        attachments: [],
-      },
-      modelSelection,
-      titleSeed: input.ticket.title,
-      runtimeMode: DEFAULT_RUNTIME_MODE,
-      interactionMode: DEFAULT_INTERACTION_MODE,
-      createdAt,
-    },
-  });
-  if (turnResult._tag === "Failure") {
-    dependencies.setRetryDraft(threadId, prompt);
-    return { state: "failed", stage: "turn", failure: turnResult };
-  }
+  dependencies.addReviewComment(scopeThreadRef(input.environmentId, threadId), ticketContext);
 
   try {
     await dependencies.openThread(threadId);
   } catch (cause) {
     return { state: "navigation-failed", cause };
   }
-  return { state: "started", threadId };
+  return { state: "opened", threadId };
 }

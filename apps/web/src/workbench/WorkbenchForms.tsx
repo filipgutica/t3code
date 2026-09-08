@@ -1391,7 +1391,7 @@ export function WorkbenchTicketDetail({
                               />
                             ) : null}
                             <span>
-                              {assignment ? thread.stateLabel : "Start a native T3 Thread"}
+                              {assignment ? thread.stateLabel : "Create a native T3 Thread"}
                             </span>
                           </span>
                           {displayedThread?.modelSelection ? (

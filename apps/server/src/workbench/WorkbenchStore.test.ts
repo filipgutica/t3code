@@ -689,9 +689,14 @@ describe("WorkbenchStore", () => {
         threadId: ThreadId.make("thread-1"),
         createdAt: "2026-09-03T12:02:00.000Z",
       });
+      const afterAssignment = yield* store.getSnapshot;
+      expect(afterAssignment.tickets.find((ticket) => ticket.id === ticketId)).toMatchObject({
+        status: "todo",
+        revision: 1,
+      });
       yield* store.updateTicket({
         id: ticketId,
-        expectedRevision: 2,
+        expectedRevision: 1,
         title: "Create the first Ticket flow",
         markdown: "Keep the native T3 Thread experience.",
         status: "in_progress",
@@ -701,7 +706,7 @@ describe("WorkbenchStore", () => {
       const lockedScopeError = yield* Effect.flip(
         store.updateTicket({
           id: ticketId,
-          expectedRevision: 3,
+          expectedRevision: 2,
           title: "Create the first Ticket flow",
           kind: "bug",
           markdown: "Keep the native T3 Thread experience.",
@@ -1699,7 +1704,7 @@ describe("WorkbenchStore", () => {
       const inUseArchiveError = yield* Effect.flip(
         store.archiveTicket({
           ticketId: localTicketId,
-          expectedRevision: 3,
+          expectedRevision: 2,
           archivedAt,
           updatedAt: archivedAt,
         }),
@@ -1712,7 +1717,7 @@ describe("WorkbenchStore", () => {
       `;
       yield* store.archiveTicket({
         ticketId: localTicketId,
-        expectedRevision: 3,
+        expectedRevision: 2,
         archivedAt,
         updatedAt: archivedAt,
       });
@@ -1736,11 +1741,11 @@ describe("WorkbenchStore", () => {
       expect(guardedReleaseError.code).toBe("ticket_archived");
       yield* store.archiveTicket({
         ticketId: localTicketId,
-        expectedRevision: 4,
+        expectedRevision: 3,
         archivedAt: null,
         updatedAt: restoredAt,
       });
-      yield* store.deleteTicket({ ticketId: localTicketId, expectedRevision: 5, deletedAt });
+      yield* store.deleteTicket({ ticketId: localTicketId, expectedRevision: 4, deletedAt });
 
       const afterDelete = yield* store.getSnapshot;
       expect(afterDelete.tickets).not.toEqual(

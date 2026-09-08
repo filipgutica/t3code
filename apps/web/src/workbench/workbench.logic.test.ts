@@ -7,9 +7,14 @@ import {
   WorkbenchProjectId,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
+import {
+  formatReviewCommentContext,
+  parseReviewCommentMessageSegments,
+} from "../reviewCommentContext";
 
 import {
-  buildTicketThreadPrompt,
+  buildTicketReviewComment,
+  buildTicketThreadContext,
   getActiveAssignmentsByTicket,
   getWorkbenchTicketAgentPresentation,
   getAssignmentsForTicket,
@@ -170,9 +175,9 @@ describe("Workbench ticket helpers", () => {
     ).toBe("/repos/t3code");
   });
 
-  it("builds a stable handoff prompt with the ticket title and Markdown", () => {
+  it("builds stable ticket context with the title, repository paths, and Markdown", () => {
     expect(
-      buildTicketThreadPrompt(
+      buildTicketThreadContext(
         {
           title: "Add project navigation",
           markdown: "## Goal\n\nLink a ticket to its T3 Thread.",
@@ -198,9 +203,9 @@ describe("Workbench ticket helpers", () => {
       ),
     ).toBe(
       [
-        "Work on this Agent Workbench Story ticket.",
-        "",
         "# Add project navigation",
+        "",
+        "Ticket type: Story",
         "",
         "## Repository scope",
         "",
@@ -211,6 +216,62 @@ describe("Workbench ticket helpers", () => {
         "",
         "Link a ticket to its T3 Thread.",
       ].join("\n"),
+    );
+  });
+
+  it("represents ticket context as a removable composer comment attachment", () => {
+    const comment = buildTicketReviewComment(
+      {
+        id: WorkbenchTicketId.make("ticket-one"),
+        title: "Add project navigation",
+        markdown: "## Goal\n\nLink a ticket to its T3 Thread.",
+        kind: "story",
+        primaryT3ProjectId: ProjectId.make("repository-one"),
+        repositoryProjectIds: [ProjectId.make("repository-one"), ProjectId.make("repository-two")],
+      },
+      [
+        {
+          id: ProjectId.make("repository-one"),
+          title: "T3 Code",
+          workspaceRoot: "/worktrees/ticket-one/t3code",
+        },
+        {
+          id: ProjectId.make("repository-two"),
+          title: "Agent Workbench",
+          workspaceRoot: "/worktrees/ticket-one/agent-workbench",
+        },
+      ],
+    );
+
+    expect(comment).toMatchObject({
+      id: "workbench-ticket:ticket-one",
+      sectionTitle: "Agent Workbench ticket",
+      filePath: "Add project navigation",
+      rangeLabel: "Ticket context",
+      text: "Add project navigation",
+      fenceLanguage: "markdown",
+    });
+    expect(comment.diff).toContain("/worktrees/ticket-one/t3code");
+    expect(comment.diff).toContain("Link a ticket to its T3 Thread.");
+  });
+
+  it("keeps a review-comment terminator in a ticket description inside the attachment", () => {
+    const comment = buildTicketReviewComment(
+      {
+        id: WorkbenchTicketId.make("ticket-one"),
+        title: "Keep ticket context intact",
+        markdown: "Description with </review_comment> followed by more context.",
+        kind: "bug",
+        primaryT3ProjectId: ProjectId.make("repository-one"),
+        repositoryProjectIds: [ProjectId.make("repository-one")],
+      },
+      [],
+    );
+
+    const [segment] = parseReviewCommentMessageSegments(formatReviewCommentContext(comment));
+    expect(segment?.kind).toBe("review-comment");
+    expect(segment?.kind === "review-comment" ? segment.comment.diff : "").toContain(
+      "&lt;/review_comment> followed by more context.",
     );
   });
 
@@ -287,7 +348,7 @@ describe("Workbench ticket helpers", () => {
 
   it("presents the next action for each supported Thread state", () => {
     expect(getWorkbenchThreadPresentation(false, false)).toEqual({
-      actionLabel: "Start work",
+      actionLabel: "Create Thread",
       pendingActionLabel: "Creating Thread…",
       stateLabel: "Unassigned",
       state: "unassigned",
@@ -311,7 +372,7 @@ describe("Workbench ticket helpers", () => {
       state: "archived",
     });
     expect(getWorkbenchThreadPresentation(true, false)).toEqual({
-      actionLabel: "Start replacement",
+      actionLabel: "Create replacement thread",
       pendingActionLabel: "Creating Thread…",
       stateLabel: "Thread unavailable",
       state: "missing",

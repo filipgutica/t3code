@@ -2394,7 +2394,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "The Ticket Workspace is changing and cannot receive an Assignment.",
             });
           }
-          const ticket = yield* requireAssignableThread({
+          yield* requireAssignableThread({
             ticketId: input.ticketId,
             threadId: input.threadId,
           });
@@ -2402,13 +2402,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
             INSERT INTO workbench_assignments (assignment_id, ticket_id, thread_id, created_at)
             VALUES (${input.id}, ${input.ticketId}, ${input.threadId}, ${input.createdAt})
           `;
-          if (ticket.status === "todo" && !(yield* isJiraManagedTicket(input.ticketId))) {
-            yield* sql`
-              UPDATE workbench_tickets
-              SET status = 'in_progress', revision = revision + 1, updated_at = ${input.createdAt}
-              WHERE ticket_id = ${input.ticketId}
-            `;
-          }
           return WorkbenchAssignment.make({ ...input, supersededAt: null });
         }),
       )

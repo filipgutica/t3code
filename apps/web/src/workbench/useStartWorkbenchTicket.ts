@@ -1,4 +1,3 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   isAtomCommandInterrupted,
@@ -16,7 +15,7 @@ import {
 import { useCallback } from "react";
 
 import { useComposerDraftStore } from "../composerDraftStore";
-import { newMessageId, newThreadId, randomUUID } from "../lib/utils";
+import { newThreadId, randomUUID } from "../lib/utils";
 import { resolveDefaultProviderModelSelection } from "../providerInstances";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -69,7 +68,6 @@ export function useStartWorkbenchTicket({
   });
   const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
-  const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
 
   return useCallback(
     (ticket: WorkbenchTicket, options?: StartWorkbenchTicketOptions) => {
@@ -94,17 +92,13 @@ export function useStartWorkbenchTicket({
               createAssignment,
               replaceAssignment,
               deleteThread,
-              startTurn: startThreadTurn,
+              addReviewComment: (threadRef, comment) =>
+                useComposerDraftStore.getState().addReviewComment(threadRef, comment),
               openThread: onOpenAssignedThread,
-              setRetryDraft: (threadId, prompt) =>
-                useComposerDraftStore
-                  .getState()
-                  .setPrompt(scopeThreadRef(environmentId, threadId), prompt),
               resolveModelSelection: (project) =>
                 resolveDefaultProviderModelSelection(providers, project.defaultModelSelection),
               makeThreadId: newThreadId,
               makeAssignmentId: () => WorkbenchAssignmentId.make(randomUUID()),
-              makeMessageId: newMessageId,
               now: () => new Date().toISOString(),
             },
             options,
@@ -150,12 +144,6 @@ export function useStartWorkbenchTicket({
           );
         }
         if (isAtomCommandInterrupted(result.failure)) return;
-        if (result.stage === "turn") {
-          onError(
-            `The Thread remains attached with its Ticket prompt ready to retry, but its first turn could not start. ${commandFailureMessage(result.failure)}`,
-          );
-          return;
-        }
         if (result.stage === "workspace") {
           onError(
             `The Ticket repositories could not be prepared. ${commandFailureMessage(result.failure)}`,
@@ -180,7 +168,6 @@ export function useStartWorkbenchTicket({
       projects,
       providers,
       replaceAssignment,
-      startThreadTurn,
       threadLookupReady,
     ],
   );
