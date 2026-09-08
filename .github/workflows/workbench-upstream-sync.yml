@@ -28,7 +28,9 @@ jobs:
         with:
           ref: ${{ env.PRODUCT_BRANCH }}
           fetch-depth: 0
-          persist-credentials: false
+          # Eager auth cleanup fails on vendored gitlinks without .gitmodules entries.
+          # Keep the read-only token until post-job cleanup on this disposable runner.
+          persist-credentials: true
 
       - name: Fetch T3 Code upstream
         run: |
