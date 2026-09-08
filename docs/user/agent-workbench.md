@@ -37,7 +37,9 @@ Tickets have a separate **Generated summary** for Board previews and a quick ove
 
 Unsaved Ticket edits remain available if you close the Ticket or switch Workspaces during the current Workbench session. A save keeps any further text you enter while it is pending. Reopen the Ticket to continue editing, or use **Cancel** to discard the draft. Open Boards refresh automatically and when the app regains focus, including Workspaces without Jira.
 
-Agent activity is shown separately from Ticket progress: **Waiting for input**, **Working**, or **Ready for review**. These labels come from the native Thread and never move a Ticket between columns. Jira flags are shown separately as **Jira flagged**. Existing Tickets in the former Ready for Review column move to In Progress.
+When a linked Thread starts executing a turn, a **To Do** Ticket moves to **In Progress**. Creating or opening a Thread does not change progress. For Jira Tickets, Workbench applies an available Jira transition and confirms the result before updating the Board. If the transition fails, the Thread continues and its work log shows a warning.
+
+Agent activity is shown separately from Ticket progress: **Waiting for input**, **Working**, or **Ready for review**. A completed turn does not mark the Ticket Done; change its progress when the work is accepted. Jira flags are shown separately as **Jira flagged**. Existing Tickets in the former Ready for Review column move to In Progress.
 
 ## Jira sprint mirrors
 
@@ -55,4 +57,4 @@ Mirrored Tickets share their description and progress with Jira. The Ticket desc
 
 The Jira OAuth app must be configured by the environment operator before **Connect Jira** can authorize a site. Authorization happens on Atlassian's website. If access expires, is revoked, or was granted before issue editing was enabled, open the mirror settings and choose **Reconnect Jira** to grant issue write access. Reconnect with the same Jira site to retain its existing mirror and Ticket history. Cancelling authorization leaves the existing mirror unchanged.
 
-This experiment does not include general Artifacts, mobile UI, multi-environment boards, or automatic ticket status changes based on Agent activity.
+This experiment does not include general Artifacts, mobile UI, or multi-environment boards.

@@ -32,6 +32,7 @@ const TestLayer = WorkbenchStoreLive.pipe(Layer.provideMerge(SqlitePersistenceMe
 const ticketWriter = JiraTicketWriteService.of({
   getTicketTransitions: () => Effect.die("unexpected Jira transition lookup"),
   updateTicket: () => Effect.die("unexpected Jira Ticket write"),
+  startTicketExecution: () => Effect.die("unexpected Jira execution"),
 });
 
 describe("WorkbenchJiraService", () => {
