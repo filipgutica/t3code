@@ -667,7 +667,6 @@ export function WorkbenchPage({
         : hasOtherThread
           ? { mode: "additional" as const }
           : {}),
-      sendInitialPrompt: !hasOtherThread,
       ...(request.previousThreadId ? { previousThreadId: request.previousThreadId } : {}),
     });
   };

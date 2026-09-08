@@ -76,6 +76,7 @@ import {
   getWorkbenchTicketRepositoryProjectIds,
   getWorkbenchTicketSummaryActionLabel,
   getWorkbenchTicketSummaryPresentation,
+  getVisibleWorkbenchAssignments,
   isWorkbenchTicketStatus,
   isWorkbenchThreadArchived,
   resolveWorkbenchRepositoryOpenCwd,
@@ -988,16 +989,26 @@ export function WorkbenchTicketDetail({
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const [threadPanelCollapsed, setThreadPanelCollapsed] = useState(false);
   const [detailsPanelCollapsed, setDetailsPanelCollapsed] = useState(false);
-  const activeAssignments = assignments.filter((candidate) => candidate.supersededAt === null);
-  // Keep the primary assignment selection identical to the Workbench page's
-  // callback map. Otherwise the detail view can show one active Thread while
-  // its Open action resolves another assignment for the same Ticket.
-  const assignment = getActiveAssignmentsByTicket(
+  const visibleAssignments = getVisibleWorkbenchAssignments(
     assignments,
     new Set(threadsById.keys()),
     new Set(archivedThreadsById.keys()),
+    threadLookupReady,
+  );
+  const activeAssignments = visibleAssignments.filter(
+    (candidate) => candidate.supersededAt === null,
+  );
+  // Match the Workbench page's callback map for available assignments. Missing
+  // assignments stay in that map so a Create Thread action can replace stale
+  // persisted state even after the detail view hides the unavailable row.
+  const assignment = getActiveAssignmentsByTicket(
+    visibleAssignments,
+    new Set(threadsById.keys()),
+    new Set(archivedThreadsById.keys()),
   ).get(ticket.id);
-  const historicalAssignments = assignments.filter((candidate) => candidate.supersededAt !== null);
+  const historicalAssignments = visibleAssignments.filter(
+    (candidate) => candidate.supersededAt !== null,
+  );
   const repositoryScopeLocked =
     assignments.length > 0 ||
     ticketWorkspace?.status === "preparing" ||
@@ -1391,7 +1402,7 @@ export function WorkbenchTicketDetail({
                               />
                             ) : null}
                             <span>
-                              {assignment ? thread.stateLabel : "Start a native T3 Thread"}
+                              {assignment ? thread.stateLabel : "Create a native T3 Thread"}
                             </span>
                           </span>
                           {displayedThread?.modelSelection ? (

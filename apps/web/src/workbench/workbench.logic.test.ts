@@ -7,9 +7,14 @@ import {
   WorkbenchProjectId,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
+import {
+  formatReviewCommentContext,
+  parseReviewCommentMessageSegments,
+} from "../reviewCommentContext";
 
 import {
-  buildTicketThreadPrompt,
+  buildTicketReviewComment,
+  buildTicketThreadContext,
   getActiveAssignmentsByTicket,
   getWorkbenchTicketAgentPresentation,
   getAssignmentsForTicket,
@@ -23,6 +28,7 @@ import {
   getWorkbenchThreadPresentation,
   getWorkbenchAgentPresentation,
   getWorkbenchTicketStatusMoves,
+  getVisibleWorkbenchAssignments,
   isWorkbenchTicketKind,
   isWorkbenchTicketStatus,
   isWorkbenchThreadArchived,
@@ -170,9 +176,9 @@ describe("Workbench ticket helpers", () => {
     ).toBe("/repos/t3code");
   });
 
-  it("builds a stable handoff prompt with the ticket title and Markdown", () => {
+  it("builds stable ticket context with the title, repository paths, and Markdown", () => {
     expect(
-      buildTicketThreadPrompt(
+      buildTicketThreadContext(
         {
           title: "Add project navigation",
           markdown: "## Goal\n\nLink a ticket to its T3 Thread.",
@@ -198,9 +204,9 @@ describe("Workbench ticket helpers", () => {
       ),
     ).toBe(
       [
-        "Work on this Agent Workbench Story ticket.",
-        "",
         "# Add project navigation",
+        "",
+        "Ticket type: Story",
         "",
         "## Repository scope",
         "",
@@ -211,6 +217,62 @@ describe("Workbench ticket helpers", () => {
         "",
         "Link a ticket to its T3 Thread.",
       ].join("\n"),
+    );
+  });
+
+  it("represents ticket context as a removable composer comment attachment", () => {
+    const comment = buildTicketReviewComment(
+      {
+        id: WorkbenchTicketId.make("ticket-one"),
+        title: "Add project navigation",
+        markdown: "## Goal\n\nLink a ticket to its T3 Thread.",
+        kind: "story",
+        primaryT3ProjectId: ProjectId.make("repository-one"),
+        repositoryProjectIds: [ProjectId.make("repository-one"), ProjectId.make("repository-two")],
+      },
+      [
+        {
+          id: ProjectId.make("repository-one"),
+          title: "T3 Code",
+          workspaceRoot: "/worktrees/ticket-one/t3code",
+        },
+        {
+          id: ProjectId.make("repository-two"),
+          title: "Agent Workbench",
+          workspaceRoot: "/worktrees/ticket-one/agent-workbench",
+        },
+      ],
+    );
+
+    expect(comment).toMatchObject({
+      id: "workbench-ticket:ticket-one",
+      sectionTitle: "Agent Workbench ticket",
+      filePath: "Add project navigation",
+      rangeLabel: "Ticket context",
+      text: "Add project navigation",
+      fenceLanguage: "markdown",
+    });
+    expect(comment.diff).toContain("/worktrees/ticket-one/t3code");
+    expect(comment.diff).toContain("Link a ticket to its T3 Thread.");
+  });
+
+  it("keeps a review-comment terminator in a ticket description inside the attachment", () => {
+    const comment = buildTicketReviewComment(
+      {
+        id: WorkbenchTicketId.make("ticket-one"),
+        title: "Keep ticket context intact",
+        markdown: "Description with </review_comment> followed by more context.",
+        kind: "bug",
+        primaryT3ProjectId: ProjectId.make("repository-one"),
+        repositoryProjectIds: [ProjectId.make("repository-one")],
+      },
+      [],
+    );
+
+    const [segment] = parseReviewCommentMessageSegments(formatReviewCommentContext(comment));
+    expect(segment?.kind).toBe("review-comment");
+    expect(segment?.kind === "review-comment" ? segment.comment.diff : "").toContain(
+      "&lt;/review_comment> followed by more context.",
     );
   });
 
@@ -287,7 +349,7 @@ describe("Workbench ticket helpers", () => {
 
   it("presents the next action for each supported Thread state", () => {
     expect(getWorkbenchThreadPresentation(false, false)).toEqual({
-      actionLabel: "Start work",
+      actionLabel: "Create Thread",
       pendingActionLabel: "Creating Thread…",
       stateLabel: "Unassigned",
       state: "unassigned",
@@ -311,7 +373,7 @@ describe("Workbench ticket helpers", () => {
       state: "archived",
     });
     expect(getWorkbenchThreadPresentation(true, false)).toEqual({
-      actionLabel: "Start replacement",
+      actionLabel: "Create replacement thread",
       pendingActionLabel: "Creating Thread…",
       stateLabel: "Thread unavailable",
       state: "missing",
@@ -475,6 +537,41 @@ describe("Workbench ticket helpers", () => {
         new Set([archived.threadId]),
       ).get(ticketId),
     ).toEqual(archived);
+  });
+
+  it("hides assignments whose native Threads are missing after lookup completes", () => {
+    const ticketId = WorkbenchTicketId.make("ticket-one");
+    const missing = {
+      id: WorkbenchAssignmentId.make("missing-assignment"),
+      ticketId,
+      threadId: ThreadId.make("missing-thread"),
+      createdAt: "2026-09-05T00:00:00.000Z",
+      supersededAt: null,
+    } as const;
+    const archived = {
+      ...missing,
+      id: WorkbenchAssignmentId.make("archived-assignment"),
+      threadId: ThreadId.make("archived-thread"),
+      createdAt: "2026-09-04T00:00:00.000Z",
+    } as const;
+    const historicalMissing = {
+      ...missing,
+      id: WorkbenchAssignmentId.make("historical-missing-assignment"),
+      supersededAt: "2026-09-06T00:00:00.000Z",
+    } as const;
+
+    expect(
+      getVisibleWorkbenchAssignments(
+        [missing, archived, historicalMissing],
+        new Set(),
+        new Set([archived.threadId]),
+        true,
+      ),
+    ).toEqual([archived]);
+    expect(getVisibleWorkbenchAssignments([missing], new Set(), new Set(), true)).toEqual([]);
+    expect(getVisibleWorkbenchAssignments([missing], new Set(), new Set(), false)).toEqual([
+      missing,
+    ]);
   });
 
   it("opens an existing active Thread even when its primary Repository is unavailable", () => {

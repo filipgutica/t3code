@@ -1,7 +1,6 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   EnvironmentId,
-  MessageId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -17,6 +16,8 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 import * as Cause from "effect/Cause";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
+import type { ReviewCommentContext } from "../reviewCommentContext";
+import { resolveThreadRouteRenderState } from "../threadRoutes";
 
 import { coordinateWorkbenchTicketStart } from "./startWorkbenchTicket";
 
@@ -24,7 +25,6 @@ const environmentId = EnvironmentId.make("environment-one");
 const projectId = ProjectId.make("repository-one");
 const threadId = ThreadId.make("thread-new");
 const assignmentId = WorkbenchAssignmentId.make("assignment-new");
-const messageId = MessageId.make("message-new");
 const createdAt = "2026-09-03T12:00:00.000Z";
 const modelSelection: ModelSelection = {
   instanceId: ProviderInstanceId.make("codex"),
@@ -81,7 +81,7 @@ const preparedWorkspace = {
   updatedAt: createdAt,
 } as WorkbenchTicketWorkspace;
 
-function makeDependencies(events: string[]) {
+function makeDependencies(events: string[], comments: ReviewCommentContext[] = []) {
   return {
     prepareTicketWorkspace: async () => {
       events.push("prepare-workspace");
@@ -103,20 +103,17 @@ function makeDependencies(events: string[]) {
       events.push("delete-thread");
       return success;
     },
-    startTurn: async () => {
-      events.push("start-turn");
-      return success;
+    addReviewComment: (_threadRef: unknown, comment: ReviewCommentContext) => {
+      events.push("add-review-comment");
+      comments.push(comment);
     },
+    waitForThread: async () => {},
     openThread: async () => {
       events.push("open-thread");
-    },
-    setRetryDraft: () => {
-      events.push("set-retry-draft");
     },
     resolveModelSelection: () => modelSelection,
     makeThreadId: () => threadId,
     makeAssignmentId: () => assignmentId,
-    makeMessageId: () => messageId,
     now: () => createdAt,
   };
 }
@@ -133,7 +130,54 @@ function startInput(assignment?: WorkbenchAssignment) {
 }
 
 describe("coordinateWorkbenchTicketStart", () => {
-  it("replaces the requested missing link without opening its live sibling or sending a prompt", async () => {
+  it("keeps ticket context on the intended route while the new thread reaches the client", async () => {
+    const events: string[] = [];
+    const comments: ReviewCommentContext[] = [];
+    let resolveShellReady = () => {};
+    let resolveWaitingForShell = () => {};
+    const shellReady = new Promise<void>((resolve) => {
+      resolveShellReady = resolve;
+    });
+    const waitingForShell = new Promise<void>((resolve) => {
+      resolveWaitingForShell = resolve;
+    });
+    let shellExists = false;
+    let openedRouteState: ReturnType<typeof resolveThreadRouteRenderState> | undefined;
+    const dependencies = {
+      ...makeDependencies(events, comments),
+      waitForThread: async () => {
+        resolveWaitingForShell();
+        await shellReady;
+      },
+      openThread: async () => {
+        openedRouteState = resolveThreadRouteRenderState({
+          bootstrapComplete: true,
+          serverThreadShellExists: shellExists,
+          serverThreadDetailExists: false,
+          serverThreadDetailDeleted: false,
+          draftThreadExists: false,
+        });
+      },
+    };
+    const start = coordinateWorkbenchTicketStart(startInput(), dependencies);
+    try {
+      expect(
+        await Promise.race([
+          start.then(() => "opened-before-shell"),
+          waitingForShell.then(() => "waiting-for-shell"),
+        ]),
+      ).toBe("waiting-for-shell");
+      expect(openedRouteState).toBeUndefined();
+      expect(comments[0]?.rangeLabel).toBe("Ticket context");
+    } finally {
+      shellExists = true;
+      resolveShellReady();
+      await start;
+    }
+    expect(openedRouteState).toBe("loading");
+  });
+
+  it("replaces the requested missing link with ticket context without sending a prompt", async () => {
     const events: string[] = [];
     const liveThreadId = ThreadId.make("live-sibling");
     const missingThreadId = ThreadId.make("missing-target");
@@ -161,7 +205,6 @@ describe("coordinateWorkbenchTicketStart", () => {
       {
         mode: "replace",
         previousThreadId: missingThreadId,
-        sendInitialPrompt: false,
         modelSelection,
       },
     );
@@ -170,44 +213,47 @@ describe("coordinateWorkbenchTicketStart", () => {
       "prepare-workspace",
       "create-thread",
       "replace-assignment",
+      "add-review-comment",
       "open-thread",
     ]);
   });
-  it("creates the Thread and Assignment, starts the first turn, then opens it", async () => {
+  it("creates the Thread and Assignment, attaches ticket context, then opens it", async () => {
     const events: string[] = [];
     let createdThreadInput: unknown;
-    let startedTurnInput: unknown;
+    const comments: ReviewCommentContext[] = [];
     const selectedModel: ModelSelection = { ...modelSelection, model: "gpt-5.4-mini" };
     const result = await coordinateWorkbenchTicketStart(
       { ...startInput(), threadLookupReady: false },
       {
-        ...makeDependencies(events),
+        ...makeDependencies(events, comments),
         createThread: async (input) => {
           events.push("create-thread");
           createdThreadInput = input.input;
-          return success;
-        },
-        startTurn: async (input) => {
-          events.push("start-turn");
-          startedTurnInput = input.input;
           return success;
         },
       },
       { modelSelection: selectedModel },
     );
 
-    expect(result).toEqual({ state: "started", threadId });
+    expect(result).toEqual({ state: "opened", threadId });
     expect(createdThreadInput).toMatchObject({
       branch: "workbench/ticket-one",
       worktreePath: "/worktrees/ticket-one/t3code",
       modelSelection: selectedModel,
     });
-    expect(startedTurnInput).toMatchObject({ modelSelection: selectedModel });
+    expect(comments).toHaveLength(1);
+    expect(comments[0]).toMatchObject({
+      filePath: ticket.title,
+      rangeLabel: "Ticket context",
+      text: ticket.title,
+    });
+    expect(comments[0]?.diff).toContain("/worktrees/ticket-one/t3code");
+    expect(comments[0]?.diff).toContain(ticket.markdown);
     expect(events).toEqual([
       "prepare-workspace",
       "create-thread",
       "create-assignment",
-      "start-turn",
+      "add-review-comment",
       "open-thread",
     ]);
   });
@@ -233,28 +279,6 @@ describe("coordinateWorkbenchTicketStart", () => {
     ]);
   });
 
-  it("preserves the Thread and Assignment with a retry draft when the first turn fails", async () => {
-    const events: string[] = [];
-    const dependencies = {
-      ...makeDependencies(events),
-      startTurn: async () => {
-        events.push("start-turn");
-        return failure;
-      },
-    };
-
-    const result = await coordinateWorkbenchTicketStart(startInput(), dependencies);
-
-    expect(result).toMatchObject({ state: "failed", stage: "turn" });
-    expect(events).toEqual([
-      "prepare-workspace",
-      "create-thread",
-      "create-assignment",
-      "start-turn",
-      "set-retry-draft",
-    ]);
-  });
-
   it("preserves the prior Assignment by using replacement", async () => {
     const events: string[] = [];
     const assignment = {
@@ -270,12 +294,12 @@ describe("coordinateWorkbenchTicketStart", () => {
       makeDependencies(events),
     );
 
-    expect(result).toEqual({ state: "started", threadId });
+    expect(result).toEqual({ state: "opened", threadId });
     expect(events).toEqual([
       "prepare-workspace",
       "create-thread",
       "replace-assignment",
-      "start-turn",
+      "add-review-comment",
       "open-thread",
     ]);
   });
@@ -303,7 +327,7 @@ describe("coordinateWorkbenchTicketStart", () => {
     expect(events).toEqual(["open-thread"]);
   });
 
-  it("creates an additional blank Thread without replacing the active Assignment or starting a turn", async () => {
+  it("creates an additional Thread with ticket context without replacing the active Assignment", async () => {
     const events: string[] = [];
     let createdThreadInput: unknown;
     let createdAssignmentInput: unknown;
@@ -343,6 +367,7 @@ describe("coordinateWorkbenchTicketStart", () => {
       "prepare-workspace",
       "create-thread",
       "create-assignment",
+      "add-review-comment",
       "open-thread",
     ]);
   });
@@ -364,7 +389,7 @@ describe("coordinateWorkbenchTicketStart", () => {
       "prepare-workspace",
       "create-thread",
       "create-assignment",
-      "start-turn",
+      "add-review-comment",
       "open-thread",
     ]);
   });
