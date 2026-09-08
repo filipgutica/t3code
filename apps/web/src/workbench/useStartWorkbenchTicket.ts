@@ -1,3 +1,4 @@
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   isAtomCommandInterrupted,
@@ -24,6 +25,7 @@ import {
   type StartWorkbenchTicketOptions,
 } from "./startWorkbenchTicket";
 import { workbenchEnvironment } from "./state";
+import { waitForWorkbenchThread } from "./waitForWorkbenchThread";
 
 const commandFailureMessage = (failure: {
   readonly cause: Parameters<typeof squashAtomCommandFailure>[0]["cause"];
@@ -94,6 +96,8 @@ export function useStartWorkbenchTicket({
               deleteThread,
               addReviewComment: (threadRef, comment) =>
                 useComposerDraftStore.getState().addReviewComment(threadRef, comment),
+              waitForThread: (threadId) =>
+                waitForWorkbenchThread(scopeThreadRef(environmentId, threadId)),
               openThread: onOpenAssignedThread,
               resolveModelSelection: (project) =>
                 resolveDefaultProviderModelSelection(providers, project.defaultModelSelection),

@@ -215,6 +215,19 @@ export function getActiveAssignmentsByTicket(
   return activeAssignments;
 }
 
+export function getVisibleWorkbenchAssignments(
+  assignments: ReadonlyArray<WorkbenchAssignment>,
+  liveThreadIds: ReadonlySet<ThreadId>,
+  archivedThreadIds: ReadonlySet<ThreadId>,
+  threadLookupReady: boolean,
+): ReadonlyArray<WorkbenchAssignment> {
+  if (!threadLookupReady) return assignments;
+  return assignments.filter(
+    (assignment) =>
+      liveThreadIds.has(assignment.threadId) || archivedThreadIds.has(assignment.threadId),
+  );
+}
+
 export function getAssignmentsForTicket(
   assignments: ReadonlyArray<WorkbenchAssignment>,
   ticketId: WorkbenchTicketId,

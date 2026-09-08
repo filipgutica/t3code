@@ -17,6 +17,7 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Cause from "effect/Cause";
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import type { ReviewCommentContext } from "../reviewCommentContext";
+import { resolveThreadRouteRenderState } from "../threadRoutes";
 
 import { coordinateWorkbenchTicketStart } from "./startWorkbenchTicket";
 
@@ -106,6 +107,7 @@ function makeDependencies(events: string[], comments: ReviewCommentContext[] = [
       events.push("add-review-comment");
       comments.push(comment);
     },
+    waitForThread: async () => {},
     openThread: async () => {
       events.push("open-thread");
     },
@@ -128,6 +130,53 @@ function startInput(assignment?: WorkbenchAssignment) {
 }
 
 describe("coordinateWorkbenchTicketStart", () => {
+  it("keeps ticket context on the intended route while the new thread reaches the client", async () => {
+    const events: string[] = [];
+    const comments: ReviewCommentContext[] = [];
+    let resolveShellReady = () => {};
+    let resolveWaitingForShell = () => {};
+    const shellReady = new Promise<void>((resolve) => {
+      resolveShellReady = resolve;
+    });
+    const waitingForShell = new Promise<void>((resolve) => {
+      resolveWaitingForShell = resolve;
+    });
+    let shellExists = false;
+    let openedRouteState: ReturnType<typeof resolveThreadRouteRenderState> | undefined;
+    const dependencies = {
+      ...makeDependencies(events, comments),
+      waitForThread: async () => {
+        resolveWaitingForShell();
+        await shellReady;
+      },
+      openThread: async () => {
+        openedRouteState = resolveThreadRouteRenderState({
+          bootstrapComplete: true,
+          serverThreadShellExists: shellExists,
+          serverThreadDetailExists: false,
+          serverThreadDetailDeleted: false,
+          draftThreadExists: false,
+        });
+      },
+    };
+    const start = coordinateWorkbenchTicketStart(startInput(), dependencies);
+    try {
+      expect(
+        await Promise.race([
+          start.then(() => "opened-before-shell"),
+          waitingForShell.then(() => "waiting-for-shell"),
+        ]),
+      ).toBe("waiting-for-shell");
+      expect(openedRouteState).toBeUndefined();
+      expect(comments[0]?.rangeLabel).toBe("Ticket context");
+    } finally {
+      shellExists = true;
+      resolveShellReady();
+      await start;
+    }
+    expect(openedRouteState).toBe("loading");
+  });
+
   it("replaces the requested missing link with ticket context without sending a prompt", async () => {
     const events: string[] = [];
     const liveThreadId = ThreadId.make("live-sibling");

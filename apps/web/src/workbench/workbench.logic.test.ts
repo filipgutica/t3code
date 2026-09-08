@@ -28,6 +28,7 @@ import {
   getWorkbenchThreadPresentation,
   getWorkbenchAgentPresentation,
   getWorkbenchTicketStatusMoves,
+  getVisibleWorkbenchAssignments,
   isWorkbenchTicketKind,
   isWorkbenchTicketStatus,
   isWorkbenchThreadArchived,
@@ -536,6 +537,41 @@ describe("Workbench ticket helpers", () => {
         new Set([archived.threadId]),
       ).get(ticketId),
     ).toEqual(archived);
+  });
+
+  it("hides assignments whose native Threads are missing after lookup completes", () => {
+    const ticketId = WorkbenchTicketId.make("ticket-one");
+    const missing = {
+      id: WorkbenchAssignmentId.make("missing-assignment"),
+      ticketId,
+      threadId: ThreadId.make("missing-thread"),
+      createdAt: "2026-09-05T00:00:00.000Z",
+      supersededAt: null,
+    } as const;
+    const archived = {
+      ...missing,
+      id: WorkbenchAssignmentId.make("archived-assignment"),
+      threadId: ThreadId.make("archived-thread"),
+      createdAt: "2026-09-04T00:00:00.000Z",
+    } as const;
+    const historicalMissing = {
+      ...missing,
+      id: WorkbenchAssignmentId.make("historical-missing-assignment"),
+      supersededAt: "2026-09-06T00:00:00.000Z",
+    } as const;
+
+    expect(
+      getVisibleWorkbenchAssignments(
+        [missing, archived, historicalMissing],
+        new Set(),
+        new Set([archived.threadId]),
+        true,
+      ),
+    ).toEqual([archived]);
+    expect(getVisibleWorkbenchAssignments([missing], new Set(), new Set(), true)).toEqual([]);
+    expect(getVisibleWorkbenchAssignments([missing], new Set(), new Set(), false)).toEqual([
+      missing,
+    ]);
   });
 
   it("opens an existing active Thread even when its primary Repository is unavailable", () => {
