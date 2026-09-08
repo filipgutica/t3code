@@ -351,7 +351,7 @@ describe("Workbench ticket helpers", () => {
     expect(getWorkbenchThreadPresentation(false, false)).toEqual({
       actionLabel: "Create Thread",
       pendingActionLabel: "Creating Thread…",
-      stateLabel: "Unassigned",
+      stateLabel: "No Thread",
       state: "unassigned",
     });
     expect(getWorkbenchThreadPresentation(true, true)).toEqual({
@@ -367,15 +367,15 @@ describe("Workbench ticket helpers", () => {
       state: "linked",
     });
     expect(getWorkbenchThreadPresentation(true, false, null, true)).toEqual({
-      actionLabel: "Restore Thread",
-      pendingActionLabel: "Restoring Thread…",
-      stateLabel: "Archived",
+      actionLabel: "Open Thread",
+      pendingActionLabel: "Opening Thread…",
+      stateLabel: "Idle",
       state: "archived",
     });
     expect(getWorkbenchThreadPresentation(true, false)).toEqual({
-      actionLabel: "Create replacement thread",
+      actionLabel: "Create Thread",
       pendingActionLabel: "Creating Thread…",
-      stateLabel: "Thread unavailable",
+      stateLabel: "No Thread",
       state: "missing",
     });
   });
@@ -451,10 +451,10 @@ describe("Workbench ticket helpers", () => {
       turnState: "completed",
     };
     expect(getWorkbenchTicketAgentPresentation([working, blocked])?.label).toBe(
-      "Blocked / needs input",
+      "Waiting for input",
     );
     expect(getWorkbenchTicketAgentPresentation([blocked, working])?.label).toBe(
-      "Blocked / needs input",
+      "Waiting for input",
     );
     expect(getWorkbenchTicketAgentPresentation([working])?.label).toBe("Working");
   });
@@ -600,17 +600,17 @@ describe("Workbench agent activity", () => {
     for (const nativeLabel of ["Pending Approval", "Awaiting Input", "Plan Ready"]) {
       expect(
         getWorkbenchAgentPresentation({ ...idle, nativeLabel, sessionStatus: "running" })?.label,
-      ).toBe("Blocked / needs input");
+      ).toBe("Waiting for input");
     }
     expect(getWorkbenchAgentPresentation({ ...idle, turnState: "completed" })?.label).toBe(
       "Ready for review",
     );
     expect(getWorkbenchAgentPresentation({ ...idle, turnState: "interrupted" })?.label).toBe(
-      "Blocked / needs input",
+      "Waiting for input",
     );
     expect(
       getWorkbenchAgentPresentation({ ...idle, sessionStatus: "error", turnState: "completed" })
         ?.label,
-    ).toBe("Blocked / needs input");
+    ).toBe("Waiting for input");
   });
 });

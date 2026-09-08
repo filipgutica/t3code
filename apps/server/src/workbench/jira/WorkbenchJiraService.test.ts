@@ -30,6 +30,7 @@ import * as WorkbenchJiraService from "@t3tools/workbench/jira/WorkbenchJiraServ
 
 const TestLayer = WorkbenchStoreLive.pipe(Layer.provideMerge(SqlitePersistenceMemory));
 const ticketWriter = JiraTicketWriteService.of({
+  getTicketTransitions: () => Effect.die("unexpected Jira transition lookup"),
   updateTicket: () => Effect.die("unexpected Jira Ticket write"),
 });
 

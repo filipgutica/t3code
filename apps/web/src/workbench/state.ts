@@ -157,6 +157,10 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
     onSuccess: refreshWorkbenchAndJiraSnapshots,
   }),
+  jiraGetTicketTransitions: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:jira:get-ticket-transitions",
+    tag: WS_METHODS.workbenchJiraGetTicketTransitions,
+  }),
   createTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:create-ticket",
     tag: WS_METHODS.workbenchCreateTicket,

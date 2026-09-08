@@ -82,6 +82,7 @@ interface WorkbenchJiraServiceShape {
     input: WorkbenchJiraUpdateBindingInput,
   ) => Effect.Effect<WorkbenchJiraBinding, WorkbenchJiraOperationError>;
   readonly syncBinding: JiraSyncServiceShape["syncBinding"];
+  readonly getTicketTransitions: JiraTicketWriteServiceShape["getTicketTransitions"];
   readonly updateTicket: JiraTicketWriteServiceShape["updateTicket"];
 }
 
@@ -389,6 +390,7 @@ export const make = Effect.gen(function* () {
     createBinding,
     updateBinding,
     syncBinding: sync.syncBinding,
+    getTicketTransitions: ticketWriter.getTicketTransitions,
     updateTicket: ticketWriter.updateTicket,
   });
 });

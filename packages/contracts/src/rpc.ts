@@ -250,6 +250,8 @@ import {
   WorkbenchJiraBoard,
   WorkbenchJiraBoardConfiguration,
   WorkbenchJiraIssueSnapshot,
+  WorkbenchJiraGetTicketTransitionsInput,
+  WorkbenchJiraGetTicketTransitionsResult,
   WorkbenchJiraListBoardsInput,
   WorkbenchJiraListProjectsInput,
   WorkbenchJiraListSprintsInput,
@@ -408,6 +410,7 @@ export const WS_METHODS = {
   workbenchJiraUpdateBinding: "workbench.jira.bindings.update",
   workbenchJiraSyncBinding: "workbench.jira.bindings.sync",
   workbenchJiraUpdateTicket: "workbench.jira.tickets.update",
+  workbenchJiraGetTicketTransitions: "workbench.jira.tickets.transitions",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -860,6 +863,15 @@ const WsWorkbenchJiraUpdateTicketRpc = Rpc.make(WS_METHODS.workbenchJiraUpdateTi
   success: WorkbenchJiraIssueSnapshot,
   error: WorkbenchJiraRpcError,
 });
+
+const WsWorkbenchJiraGetTicketTransitionsRpc = Rpc.make(
+  WS_METHODS.workbenchJiraGetTicketTransitions,
+  {
+    payload: WorkbenchJiraGetTicketTransitionsInput,
+    success: WorkbenchJiraGetTicketTransitionsResult,
+    error: WorkbenchJiraRpcError,
+  },
+);
 
 const PullRequestRpcError = Schema.Union([
   PullRequestUnavailableError,
@@ -1484,6 +1496,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkbenchJiraUpdateBindingRpc,
   WsWorkbenchJiraSyncBindingRpc,
   WsWorkbenchJiraUpdateTicketRpc,
+  WsWorkbenchJiraGetTicketTransitionsRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
   WsPullRequestsListRpc,

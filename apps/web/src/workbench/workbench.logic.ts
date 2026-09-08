@@ -135,15 +135,15 @@ export function getWorkbenchThreadPresentation(
     return {
       actionLabel: "Create Thread",
       pendingActionLabel: "Creating Thread…",
-      stateLabel: "Unassigned",
+      stateLabel: "No Thread",
       state: "unassigned",
     } as const;
   }
   if (archived) {
     return {
-      actionLabel: "Restore Thread",
-      pendingActionLabel: "Restoring Thread…",
-      stateLabel: "Archived",
+      actionLabel: "Open Thread",
+      pendingActionLabel: "Opening Thread…",
+      stateLabel: "Idle",
       state: "archived",
     } as const;
   }
@@ -151,7 +151,7 @@ export function getWorkbenchThreadPresentation(
     return {
       actionLabel: "Check Thread",
       pendingActionLabel: "Checking Thread…",
-      stateLabel: "Checking archived Threads",
+      stateLabel: "Checking Threads…",
       state: "checking",
     } as const;
   }
@@ -164,9 +164,9 @@ export function getWorkbenchThreadPresentation(
     } as const;
   }
   return {
-    actionLabel: "Create replacement thread",
+    actionLabel: "Create Thread",
     pendingActionLabel: "Creating Thread…",
-    stateLabel: "Thread unavailable",
+    stateLabel: "No Thread",
     state: "missing",
   } as const;
 }
@@ -397,7 +397,7 @@ export function getWorkbenchAgentPresentation({
   readonly turnState: string | null | undefined;
 }) {
   const needsInput = {
-    label: "Blocked / needs input",
+    label: "Waiting for input",
     dotClass: "bg-warning",
     colorClass: "text-warning-foreground",
   } as const;
@@ -426,7 +426,7 @@ export function getWorkbenchTicketAgentPresentation(
 ) {
   const states = threads.map(getWorkbenchAgentPresentation);
   return (
-    states.find((state) => state?.label === "Blocked / needs input") ??
+    states.find((state) => state?.label === "Waiting for input") ??
     states.find((state) => state?.label === "Working") ??
     states.find((state) => state?.label === "Ready for review") ??
     null

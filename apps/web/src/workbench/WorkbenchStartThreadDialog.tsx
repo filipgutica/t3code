@@ -263,7 +263,7 @@ export function WorkbenchStartThreadDialog({
                 <div className="space-y-1.5">
                   <p className="text-sm font-medium">Provider and model</p>
                   <p className="text-xs text-muted-foreground">
-                    This choice is saved on the native Thread when it starts.
+                    This choice is saved on the Thread when it starts.
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">

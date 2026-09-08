@@ -1431,6 +1431,12 @@ const makeWsRpcLayer = (
             workbenchJira.updateTicket(input),
             { "rpc.aggregate": "workbench" },
           ),
+        [WS_METHODS.workbenchJiraGetTicketTransitions]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workbenchJiraGetTicketTransitions,
+            workbenchJira.getTicketTransitions(input),
+            { "rpc.aggregate": "workbench" },
+          ),
         [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
           observeRpcEffect(
             ORCHESTRATION_WS_METHODS.dispatchCommand,

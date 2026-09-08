@@ -6,6 +6,7 @@ import {
   WorkbenchJiraBinding,
   WorkbenchJiraCompleteAuthResult,
   WorkbenchJiraIssueLink,
+  WorkbenchJiraUpdateTicketInput,
 } from "./workbenchJira.ts";
 
 const decodeBinding = Schema.decodeUnknownEffect(WorkbenchJiraBinding);
@@ -13,6 +14,23 @@ const decodeIssueLink = Schema.decodeUnknownEffect(WorkbenchJiraIssueLink);
 const decodeCompleteAuthResult = Schema.decodeUnknownEffect(WorkbenchJiraCompleteAuthResult);
 
 describe("Workbench Jira contracts", () => {
+  it.effect("accepts legacy status writes and exact Jira transition writes", () =>
+    Effect.gen(function* () {
+      const decodeUpdate = Schema.decodeUnknownEffect(WorkbenchJiraUpdateTicketInput);
+      const identity = {
+        ticketId: "ticket-1",
+        expectedRemoteUpdatedAt: "2026-09-08T06:00:00.000Z",
+      };
+      const legacy = yield* decodeUpdate({ ...identity, status: "in_progress" });
+      const transition = yield* decodeUpdate({ ...identity, transitionId: "42" });
+      assert.strictEqual(legacy.status, "in_progress");
+      assert.strictEqual(transition.transitionId, "42");
+      assert.isUndefined(transition.status);
+      const invalid = yield* Effect.result(decodeUpdate({ ...identity, transitionId: "" }));
+      assert.strictEqual(invalid._tag, "Failure");
+    }),
+  );
+
   it.effect("decodes legacy bindings with safe synchronization defaults", () =>
     Effect.gen(function* () {
       const binding = yield* decodeBinding({

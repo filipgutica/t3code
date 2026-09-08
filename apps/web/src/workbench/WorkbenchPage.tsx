@@ -83,6 +83,7 @@ import {
   WorkbenchWorkspaceDialog,
 } from "./WorkbenchForms";
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
+import type { WorkbenchJiraTransitionSelection } from "./WorkbenchTicketStatusMenu";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
 import {
@@ -807,13 +808,13 @@ export function WorkbenchPage({
       setError("Jira ownership is still loading. Try again in a moment.");
       return false;
     }
+    const draft = ticketDrafts.get(ticket.id);
+    if (patch.status !== undefined && draft?.mode === "editing") {
+      setError("Save or cancel this Ticket's edits before changing its status.");
+      return false;
+    }
     const jiraIssueLink = jiraIssueLinksByTicketId.get(ticket.id);
     if (jiraIssueLink !== undefined && jiraFieldsChanged) {
-      const draft = ticketDrafts.get(ticket.id);
-      if (patch.status !== undefined && patch.markdown === undefined && draft?.mode === "editing") {
-        setError("Save or cancel this Ticket's description edits before changing its status.");
-        return false;
-      }
       const expectedRemoteUpdatedAt =
         patch.markdown !== undefined && draft?.mode === "editing"
           ? (draft.jiraRemoteUpdatedAt ?? null)
@@ -839,7 +840,6 @@ export function WorkbenchPage({
     });
     setPendingAction(`update:${ticket.id}`);
     setError(null);
-    const draft = ticketDrafts.get(ticket.id);
     const expectedRevision =
       (patch.title !== undefined || patch.markdown !== undefined) && draft?.mode === "editing"
         ? (draft.revision ?? ticket.revision)
@@ -874,6 +874,30 @@ export function WorkbenchPage({
     setPendingAction(null);
     if (reportWorkbenchCommandFailure(result, setError)) return false;
     return true;
+  };
+
+  const changeJiraTransition = async ({
+    ticket,
+    transitionId,
+    expectedRemoteUpdatedAt,
+  }: WorkbenchJiraTransitionSelection) => {
+    if (environmentId === null || pendingAction !== null) return;
+    if (!jiraOwnershipKnown || !jiraIssueLinksByTicketId.has(ticket.id)) {
+      setError("Jira ownership changed. Refresh the Ticket and try again.");
+      return;
+    }
+    if (ticketDrafts.get(ticket.id)?.mode === "editing") {
+      setError("Save or cancel this Ticket's description edits before changing its status.");
+      return;
+    }
+    setPendingAction(`jira-update:${ticket.id}`);
+    setError(null);
+    const result = await updateJiraTicket({
+      environmentId,
+      input: { ticketId: ticket.id, transitionId, expectedRemoteUpdatedAt },
+    });
+    setPendingAction(null);
+    reportWorkbenchCommandFailure(result, setError);
   };
 
   const changeTicket = (
@@ -1573,6 +1597,9 @@ export function WorkbenchPage({
                 void regenerateSummary(ticket);
               }}
               onUpdate={changeTicket}
+              onJiraTransition={(selection) => {
+                void changeJiraTransition(selection);
+              }}
               onOpenEpic={(epicId) => {
                 setAwaitingTicketId(null);
                 setAwaitingEpicId(null);
@@ -1802,6 +1829,10 @@ export function WorkbenchPage({
                   </p>
                 ) : null}
                 <WorkbenchTicketBoard
+                  environmentId={environmentId}
+                  onJiraTransition={(selection) => {
+                    void changeJiraTransition(selection);
+                  }}
                   key={`${selectedProject.id}:${jiraBinding?.boardMode ?? "mapped"}`}
                   mirrorColumns={
                     jiraBinding?.boardMode === "mirror_jira" ? jiraBinding.boardColumns : null

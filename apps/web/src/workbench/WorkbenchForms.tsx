@@ -31,6 +31,10 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
+import {
+  WorkbenchTicketStatusMenu,
+  type WorkbenchJiraTransitionSelection,
+} from "./WorkbenchTicketStatusMenu";
 
 import { resolveThreadStatusPill } from "../components/Sidebar.logic";
 
@@ -77,10 +81,8 @@ import {
   getWorkbenchTicketSummaryActionLabel,
   getWorkbenchTicketSummaryPresentation,
   getVisibleWorkbenchAssignments,
-  isWorkbenchTicketStatus,
   isWorkbenchThreadArchived,
   resolveWorkbenchRepositoryOpenCwd,
-  WORKBENCH_TICKET_STATUSES,
   WORKBENCH_TICKET_KINDS,
   WORKBENCH_TICKET_KIND_LABELS,
   WORKBENCH_TICKET_STATUS_LABELS,
@@ -917,6 +919,7 @@ export function WorkbenchTicketDetail({
   onSave,
   onRegenerateSummary,
   onUpdate,
+  onJiraTransition,
   onOpenEpic,
   onOpenThread,
   onOpenAssignedThread,
@@ -969,6 +972,7 @@ export function WorkbenchTicketDetail({
       >
     >,
   ) => void;
+  readonly onJiraTransition: (selection: WorkbenchJiraTransitionSelection) => void;
   readonly onOpenEpic: (epicId: WorkbenchEpicId) => void;
   readonly onOpenThread: (ticket: WorkbenchTicket, threadId?: ThreadId) => void;
   readonly onOpenAssignedThread: (threadId: ThreadId) => void;
@@ -997,6 +1001,7 @@ export function WorkbenchTicketDetail({
   const [resetConfirmationOpen, setResetConfirmationOpen] = useState(false);
   const [threadPanelCollapsed, setThreadPanelCollapsed] = useState(false);
   const [detailsPanelCollapsed, setDetailsPanelCollapsed] = useState(false);
+  const [repositoryScopePanelCollapsed, setRepositoryScopePanelCollapsed] = useState(false);
   const visibleAssignments = getVisibleWorkbenchAssignments(
     assignments,
     new Set(threadsById.keys()),
@@ -1087,7 +1092,7 @@ export function WorkbenchTicketDetail({
   };
 
   const agentTitle =
-    displayedThread?.title ?? (assignment ? "Thread unavailable" : "No Agent assigned");
+    displayedThread?.title ?? (assignment && !threadLookupReady ? "Checking Thread…" : "No Thread");
   const repositories = selectedRepositoryProjectIds.map((id) => {
     const repository = linkedProjects.find((project) => project.id === id);
     const preparedRepository = ticketWorkspace?.repositories.find(
@@ -1154,9 +1159,24 @@ export function WorkbenchTicketDetail({
                 </Button>
               ) : null}
               {isArchived ? <Badge variant="outline">Archived</Badge> : null}
-              <Badge variant="outline">
-                {jiraIssueLink?.issue.status.name ?? WORKBENCH_TICKET_STATUS_LABELS[ticket.status]}
-              </Badge>
+              <WorkbenchTicketStatusMenu
+                key={`${environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
+                environmentId={environmentId}
+                ticket={actionableTicket}
+                jiraIssueLink={jiraIssueLink}
+                disabled={pending || isArchived || editing}
+                onStatusChange={(status) => onUpdate(actionableTicket, { status })}
+                onJiraTransition={onJiraTransition}
+                trigger={
+                  <Button size="xs" variant="outline" className="max-w-48">
+                    <span className="truncate">
+                      {jiraIssueLink?.issue.status.name ??
+                        WORKBENCH_TICKET_STATUS_LABELS[ticket.status]}
+                    </span>
+                    <ChevronDownIcon />
+                  </Button>
+                }
+              />
               {jiraIssueLink?.issue.flagged ? (
                 <Badge variant="warning">
                   <CircleAlertIcon /> Jira flagged
@@ -1246,9 +1266,9 @@ export function WorkbenchTicketDetail({
             {error ? <WorkbenchInlineError message={error} /> : null}
             <section
               aria-labelledby="workbench-ticket-generated-summary"
-              className="rounded-xl border border-border bg-card"
+              className="rounded-xl border border-border/60 bg-card/40"
             >
-              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+              <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
                 <div className="min-w-0">
                   <h2 id="workbench-ticket-generated-summary" className="text-sm font-semibold">
                     Generated summary
@@ -1292,8 +1312,8 @@ export function WorkbenchTicketDetail({
                 ) : null}
               </div>
             </section>
-            <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card max-h-[min(70vh,42rem)] lg:max-h-none lg:flex-1">
-              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+            <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 max-h-[min(70vh,42rem)] lg:max-h-none lg:flex-1">
+              <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
                 <div>
                   <h2 className="text-sm font-semibold">Description</h2>
                   <p className="text-xs text-muted-foreground">
@@ -1378,17 +1398,13 @@ export function WorkbenchTicketDetail({
             </section>
           </div>
 
-          <aside className="min-w-0 space-y-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
-            <section
-              className={`flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card max-h-[min(70vh,42rem)] lg:flex-[0_1_auto] ${
-                threadPanelCollapsed || detailsPanelCollapsed ? "lg:max-h-full" : "lg:max-h-[50%]"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+          <aside className="min-w-0 space-y-4 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
+            <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
+              <div className="flex items-start justify-between gap-3 border-b border-border/50 px-4 py-3">
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold">Agent Threads</h2>
                   <p className="text-xs text-muted-foreground">
-                    Continue this work in its native T3 conversation.
+                    Create or open a Thread to work on this Ticket.
                   </p>
                 </div>
                 <Button
@@ -1407,9 +1423,9 @@ export function WorkbenchTicketDetail({
                 </Button>
               </div>
               {!threadPanelCollapsed ? (
-                <div id="workbench-ticket-agent-threads" className="min-h-0 overflow-y-auto">
+                <div id="workbench-ticket-agent-threads" className="min-h-0">
                   {canOpenThread ? (
-                    <div className="flex min-w-0 items-center gap-2 border-b border-border/60 px-4 py-2">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-border/60 px-4 py-2">
                       <button
                         aria-label={`${
                           threadActionPending ? thread.pendingActionLabel : thread.actionLabel
@@ -1420,11 +1436,7 @@ export function WorkbenchTicketDetail({
                         type="button"
                       >
                         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                          {thread.state === "missing" ? (
-                            <CircleAlertIcon className="size-4 text-warning-foreground" />
-                          ) : (
-                            <BotIcon className="size-4 text-muted-foreground" />
-                          )}
+                          <BotIcon className="size-4 text-muted-foreground" />
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium">{agentTitle}</span>
@@ -1438,23 +1450,13 @@ export function WorkbenchTicketDetail({
                                 }`}
                               />
                             ) : null}
-                            <span>
-                              {assignment ? thread.stateLabel : "Create a native T3 Thread"}
-                            </span>
+                            <span>{assignment ? thread.stateLabel : "Create a Thread"}</span>
                           </span>
                           {displayedThread?.modelSelection ? (
                             <span className="mt-1 block break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
                               {displayedThread.modelSelection.instanceId} ·{" "}
                               {displayedThread.modelSelection.model}
                             </span>
-                          ) : null}
-                          {displayedThread ? (
-                            <WorkbenchThreadCheckoutDetails
-                              environmentId={environmentId}
-                              thread={displayedThread}
-                              projects={linkedProjects}
-                              workspace={ticketWorkspace}
-                            />
                           ) : null}
                         </span>
                         <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground group-hover:text-foreground">
@@ -1466,7 +1468,7 @@ export function WorkbenchTicketDetail({
                       </button>
                       {assignment && displayedThread ? (
                         <Button
-                          aria-label={`Delete native Thread ${displayedThread.title}`}
+                          aria-label={`Delete Thread ${displayedThread.title}`}
                           disabled={pending || isArchived}
                           onClick={() => onDeleteThread(assignment.threadId)}
                           size="icon-xs"
@@ -1476,10 +1478,20 @@ export function WorkbenchTicketDetail({
                           <Trash2Icon />
                         </Button>
                       ) : null}
+                      {displayedThread ? (
+                        <div className="min-w-0 basis-full">
+                          <WorkbenchThreadCheckoutDetails
+                            environmentId={environmentId}
+                            thread={displayedThread}
+                            projects={linkedProjects}
+                            workspace={ticketWorkspace}
+                          />
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
                     <p className="p-4 text-sm text-muted-foreground">
-                      This archived Ticket has no native Thread.
+                      This archived Ticket has no Thread.
                     </p>
                   )}
                   {activeAssignments.length > 1 ? (
@@ -1508,53 +1520,40 @@ export function WorkbenchTicketDetail({
                                   turnState: liveThread.latestTurn?.state,
                                 })
                               : null;
-                            const activeThreadState = liveThread
+                            const activeThreadState = displayedActiveThread
                               ? "Open"
-                              : archivedActiveThread
-                                ? "Restore"
-                                : threadLookupReady
-                                  ? "Missing"
-                                  : "Checking…";
+                              : threadLookupReady
+                                ? "No Thread"
+                                : "Checking…";
                             const activeThreadModel = displayedActiveThread?.modelSelection
                               ? `${displayedActiveThread.modelSelection.instanceId} · ${displayedActiveThread.modelSelection.model}`
                               : null;
                             return (
                               <div
                                 key={activeAssignment.id}
-                                className="flex min-w-0 items-center gap-2 rounded-md px-2 py-2 hover:bg-muted"
+                                className="flex min-w-0 flex-wrap items-center gap-2 rounded-md px-2 py-2 hover:bg-muted"
                               >
                                 <button
-                                  aria-label={`${activeThreadState} ${displayedActiveThread?.title ?? "Thread unavailable"}`}
+                                  aria-label={`${activeThreadState} ${displayedActiveThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…")}`}
                                   className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
                                   disabled={pending || displayedActiveThread === undefined}
                                   onClick={() => onOpenAssignedThread(activeAssignment.threadId)}
                                   type="button"
                                 >
-                                  {displayedActiveThread ? (
-                                    <BotIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                                  ) : (
-                                    <CircleAlertIcon className="size-3.5 shrink-0 text-warning-foreground" />
-                                  )}
+                                  <BotIcon className="size-3.5 shrink-0 text-muted-foreground" />
                                   <span className="min-w-0 flex-1">
                                     <span className="block truncate font-medium">
-                                      {displayedActiveThread?.title ?? "Thread unavailable"}
+                                      {displayedActiveThread?.title ??
+                                        (threadLookupReady ? "No Thread" : "Checking Thread…")}
                                     </span>
                                     <span className="block break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
                                       {activeThreadModel ?? activeThreadState}
                                     </span>
                                     {displayedActiveThread ? (
-                                      <WorkbenchThreadCheckoutDetails
-                                        environmentId={environmentId}
-                                        thread={displayedActiveThread}
-                                        projects={linkedProjects}
-                                        workspace={ticketWorkspace}
-                                      />
-                                    ) : null}
-                                    {activeAgentState ? (
                                       <span
-                                        className={`block text-xs ${activeAgentState.colorClass}`}
+                                        className={`block text-xs ${activeAgentState?.colorClass ?? "text-muted-foreground"}`}
                                       >
-                                        {activeAgentState.label}
+                                        {activeAgentState?.label ?? "Idle"}
                                       </span>
                                     ) : null}
                                   </span>
@@ -1564,7 +1563,7 @@ export function WorkbenchTicketDetail({
                                 </button>
                                 {displayedActiveThread ? (
                                   <Button
-                                    aria-label={`Delete native Thread ${displayedActiveThread.title}`}
+                                    aria-label={`Delete Thread ${displayedActiveThread.title}`}
                                     disabled={pending || isArchived}
                                     onClick={() => onDeleteThread(activeAssignment.threadId)}
                                     size="icon-xs"
@@ -1575,7 +1574,7 @@ export function WorkbenchTicketDetail({
                                   </Button>
                                 ) : threadLookupReady ? (
                                   <Button
-                                    aria-label={`Replace missing native Thread for ${ticket.title}`}
+                                    aria-label={`Create Thread for ${ticket.title}`}
                                     disabled={pending || isArchived}
                                     onClick={() =>
                                       onReplaceThread(ticket, activeAssignment.threadId)
@@ -1584,8 +1583,18 @@ export function WorkbenchTicketDetail({
                                     type="button"
                                     variant="ghost"
                                   >
-                                    Replace
+                                    Create Thread
                                   </Button>
+                                ) : null}
+                                {displayedActiveThread ? (
+                                  <div className="min-w-0 basis-full">
+                                    <WorkbenchThreadCheckoutDetails
+                                      environmentId={environmentId}
+                                      thread={displayedActiveThread}
+                                      projects={linkedProjects}
+                                      workspace={ticketWorkspace}
+                                    />
+                                  </div>
                                 ) : null}
                               </div>
                             );
@@ -1643,19 +1652,16 @@ export function WorkbenchTicketDetail({
                               >
                                 <BotIcon className="size-3.5 shrink-0 text-muted-foreground" />
                                 <span className="min-w-0 flex-1 truncate">
-                                  {displayedHistoricalThread?.title ?? "Thread unavailable"}
+                                  {displayedHistoricalThread?.title ??
+                                    (threadLookupReady ? "No Thread" : "Checking Thread…")}
                                 </span>
                                 <span className="text-xs text-muted-foreground">
-                                  {historicalArchivedThread
-                                    ? "Restore"
-                                    : historicalThread
-                                      ? "Open"
-                                      : "Unavailable"}
+                                  {displayedHistoricalThread ? "Open" : "Checking…"}
                                 </span>
                               </button>
                               {displayedHistoricalThread ? (
                                 <Button
-                                  aria-label={`Delete native Thread ${displayedHistoricalThread.title}`}
+                                  aria-label={`Delete Thread ${displayedHistoricalThread.title}`}
                                   disabled={pending || isArchived}
                                   onClick={() => onDeleteThread(historicalAssignment.threadId)}
                                   size="icon-xs"
@@ -1675,17 +1681,13 @@ export function WorkbenchTicketDetail({
               ) : null}
             </section>
 
-            <section
-              className={`flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card max-h-[min(70vh,42rem)] lg:max-h-none ${
-                detailsPanelCollapsed ? "lg:flex-none" : "lg:flex-1"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
+            <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
+              <div className="flex items-start justify-between gap-3 border-b border-border/50 px-4 py-3">
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold">Details</h2>
                   {jiraFieldsManaged ? (
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Jira manages type, Epic, flagged state, and Board status.
+                      Type and Epic are managed by Jira.
                     </p>
                   ) : null}
                 </div>
@@ -1707,7 +1709,7 @@ export function WorkbenchTicketDetail({
                 </Button>
               </div>
               {!detailsPanelCollapsed ? (
-                <div id="workbench-ticket-details" className="min-h-0 overflow-y-auto">
+                <div id="workbench-ticket-details" className="min-h-0">
                   <div className="space-y-4 p-4">
                     <div className="space-y-1.5">
                       <Label>Ticket type</Label>
@@ -1777,197 +1779,206 @@ export function WorkbenchTicketDetail({
                         </SelectPopup>
                       </Select>
                     </div>
-                    <div className="flex min-w-0 items-start gap-3">
-                      <FolderGit2Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs text-muted-foreground">Repository scope</p>
-                        <div className="mt-1.5 space-y-1">
-                          {repositories.map(({ id, repository, openInCwd }) => {
-                            return (
-                              <div key={id} className="flex min-w-0 items-center gap-2 text-sm">
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex min-w-0 items-center gap-1.5">
-                                    <span className="truncate font-medium">
-                                      {repository?.title ?? "Repository unavailable"}
-                                    </span>
-                                    {id === ticket.primaryT3ProjectId ? (
-                                      <Badge size="sm" variant="outline">
-                                        Primary
-                                      </Badge>
-                                    ) : null}
-                                  </div>
-                                  {openInCwd ? (
-                                    <WorkbenchCheckoutDetails
-                                      environmentId={environmentId}
-                                      cwd={openInCwd}
-                                    />
+                  </div>
+                </div>
+              ) : null}
+            </section>
+
+            <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
+              <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
+                <h2 className="text-sm font-semibold">Repository scope</h2>
+                <Button
+                  aria-controls="workbench-ticket-repositories"
+                  aria-expanded={!repositoryScopePanelCollapsed}
+                  aria-label={
+                    repositoryScopePanelCollapsed
+                      ? "Expand Repository scope"
+                      : "Collapse Repository scope"
+                  }
+                  onClick={() => setRepositoryScopePanelCollapsed((collapsed) => !collapsed)}
+                  size="icon-xs"
+                  type="button"
+                  variant="ghost"
+                >
+                  <ChevronDownIcon className={repositoryScopePanelCollapsed ? "" : "rotate-180"} />
+                </Button>
+              </div>
+              {!repositoryScopePanelCollapsed ? (
+                <div id="workbench-ticket-repositories" className="space-y-4 p-4">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="space-y-1">
+                        {repositories.map(({ id, repository, openInCwd }) => {
+                          return (
+                            <div
+                              key={id}
+                              className="flex min-w-0 flex-wrap items-center gap-2 py-1.5 text-sm"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                  <FolderGit2Icon
+                                    aria-hidden
+                                    className="size-4 shrink-0 text-muted-foreground"
+                                  />
+                                  <span className="truncate font-medium">
+                                    {repository?.title ?? "Repository unavailable"}
+                                  </span>
+                                  {id === ticket.primaryT3ProjectId ? (
+                                    <Badge size="sm" variant="outline">
+                                      Primary
+                                    </Badge>
                                   ) : null}
                                 </div>
-                                {repository && !isArchived ? (
-                                  <OpenInPicker
-                                    environmentId={repository.environmentId}
-                                    keybindings={keybindings}
-                                    availableEditors={availableEditors}
-                                    openInCwd={openInCwd}
-                                    compact
-                                    enableShortcut={false}
-                                  />
-                                ) : null}
                               </div>
-                            );
-                          })}
-                        </div>
-                        {ticketWorkspace ? (
-                          <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                            <Badge
-                              size="sm"
-                              variant={ticketWorkspace.status === "failed" ? "warning" : "outline"}
-                            >
-                              {ticketWorkspace.status === "ready"
-                                ? workspaceHasSelectedRepositories
-                                  ? "Workspace prepared"
-                                  : "Workspace updates pending"
-                                : ticketWorkspace.status === "preparing"
-                                  ? "Preparing workspace"
-                                  : ticketWorkspace.status === "releasing"
-                                    ? "Releasing workspace"
-                                    : ticketWorkspace.status === "released"
-                                      ? "Workspace reset"
-                                      : "Workspace failed"}
-                            </Badge>
-                          </div>
-                        ) : null}
-                        {ticketWorkspace?.status === "ready" ? (
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            Threads in the same worktree share files and branch changes. Use a
-                            separate native worktree for independent work.
-                          </p>
-                        ) : null}
-                        {ticketWorkspace && ticketWorkspace.status !== "released" ? (
-                          <Button
-                            className="mt-2"
-                            disabled={pending || isArchived}
-                            onClick={() => setResetConfirmationOpen(true)}
-                            size="sm"
-                            variant="outline"
-                          >
-                            <RotateCcwIcon /> Reset ticket workspace
-                          </Button>
-                        ) : null}
+                              {repository && !isArchived ? (
+                                <OpenInPicker
+                                  environmentId={repository.environmentId}
+                                  keybindings={keybindings}
+                                  availableEditors={availableEditors}
+                                  openInCwd={openInCwd}
+                                  compact
+                                  enableShortcut={false}
+                                />
+                              ) : null}
+                              {openInCwd ? (
+                                <div className="min-w-0 basis-full">
+                                  <WorkbenchCheckoutDetails
+                                    environmentId={environmentId}
+                                    cwd={openInCwd}
+                                  />
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
                       </div>
-                    </div>
-                    <fieldset className="space-y-2 border-t border-border pt-4">
-                      <legend className="text-xs font-medium text-muted-foreground">
-                        Edit repository scope
-                      </legend>
-                      {repositoryScopeLocked ? (
-                        <p className="text-xs text-muted-foreground">
-                          Wait for workspace preparation or release to finish before changing
-                          repositories.
+                      {ticketWorkspace ? (
+                        <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                          <Badge
+                            size="sm"
+                            variant={ticketWorkspace.status === "failed" ? "warning" : "outline"}
+                          >
+                            {ticketWorkspace.status === "ready"
+                              ? workspaceHasSelectedRepositories
+                                ? "Workspace prepared"
+                                : "Workspace updates pending"
+                              : ticketWorkspace.status === "preparing"
+                                ? "Preparing workspace"
+                                : ticketWorkspace.status === "releasing"
+                                  ? "Releasing workspace"
+                                  : ticketWorkspace.status === "released"
+                                    ? "No active workspace"
+                                    : "Workspace failed"}
+                          </Badge>
+                        </div>
+                      ) : null}
+                      {ticketWorkspace?.status === "ready" ? (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Threads in the same worktree share files and branch changes. Use a
+                          separate native worktree for independent work.
                         </p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground">
-                          Repository changes apply when you create another Thread. Existing Threads
-                          and worktrees stay in place.
-                        </p>
-                      )}
-                      {linkedProjects.map((repository) => {
-                        const checked = selectedRepositoryProjectIds.includes(repository.id);
-                        return (
-                          <label key={repository.id} className="flex items-center gap-2 text-sm">
-                            <Checkbox
-                              checked={checked}
-                              disabled={
-                                pending ||
-                                isArchived ||
-                                repositoryScopeLocked ||
-                                (checked && selectedRepositoryProjectIds.length === 1)
-                              }
-                              onCheckedChange={(nextChecked) => {
-                                const nextRepositoryProjectIds = nextChecked
-                                  ? [...selectedRepositoryProjectIds, repository.id]
-                                  : selectedRepositoryProjectIds.filter(
-                                      (id) => id !== repository.id,
-                                    );
-                                const primaryT3ProjectId = nextRepositoryProjectIds.includes(
-                                  ticket.primaryT3ProjectId,
-                                )
-                                  ? ticket.primaryT3ProjectId
-                                  : nextRepositoryProjectIds[0];
-                                if (primaryT3ProjectId === undefined) return;
-                                onUpdate(actionableTicket, {
-                                  repositoryProjectIds: nextRepositoryProjectIds,
-                                  primaryT3ProjectId,
-                                });
-                              }}
-                            />
-                            <span className="min-w-0 flex-1 truncate">{repository.title}</span>
-                          </label>
-                        );
-                      })}
-                      <Select
-                        disabled={pending || isArchived || repositoryScopeLocked}
-                        value={ticket.primaryT3ProjectId}
-                        onValueChange={(value) => {
-                          if (value) {
-                            onUpdate(actionableTicket, {
-                              primaryT3ProjectId: ProjectId.make(value),
-                            });
-                          }
-                        }}
-                      >
-                        <SelectTrigger aria-label="Primary repository">
-                          <SelectValue>
-                            {linkedProjects.find(
-                              (repository) => repository.id === ticket.primaryT3ProjectId,
-                            )?.title ?? "Select primary repository"}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectPopup>
-                          {linkedProjects
-                            .filter((repository) =>
-                              selectedRepositoryProjectIds.includes(repository.id),
-                            )
-                            .map((repository) => (
-                              <SelectItem key={repository.id} value={repository.id}>
-                                {repository.title}
-                              </SelectItem>
-                            ))}
-                        </SelectPopup>
-                      </Select>
-                    </fieldset>
-                    <div className="space-y-1.5 border-t border-border pt-4">
-                      <Label>Status</Label>
-                      <Select
-                        disabled={pending || isArchived}
-                        value={ticket.status}
-                        onValueChange={(value) => {
-                          if (isWorkbenchTicketStatus(value)) {
-                            onUpdate(actionableTicket, { status: value });
-                          }
-                        }}
-                      >
-                        <SelectTrigger aria-label="Ticket status">
-                          <SelectValue>
-                            {jiraIssueLink?.issue.status.name ??
-                              WORKBENCH_TICKET_STATUS_LABELS[ticket.status]}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectPopup>
-                          {WORKBENCH_TICKET_STATUSES.map((status) => (
-                            <SelectItem key={status} value={status}>
-                              {WORKBENCH_TICKET_STATUS_LABELS[status]}
-                            </SelectItem>
-                          ))}
-                        </SelectPopup>
-                      </Select>
-                      {jiraFieldsManaged ? (
-                        <p className="text-xs text-muted-foreground">
-                          Status changes are sent to Jira for this mirrored Ticket.
-                        </p>
+                      ) : null}
+                      {ticketWorkspace && ticketWorkspace.status !== "released" ? (
+                        <Button
+                          className="mt-2"
+                          disabled={pending || isArchived}
+                          onClick={() => setResetConfirmationOpen(true)}
+                          size="sm"
+                          variant="outline"
+                        >
+                          <RotateCcwIcon /> Reset ticket workspace
+                        </Button>
                       ) : null}
                     </div>
                   </div>
+                  <fieldset className="space-y-2 border-t border-border pt-4">
+                    <legend className="text-xs font-medium text-muted-foreground">
+                      Edit repository scope
+                    </legend>
+                    {repositoryScopeLocked ? (
+                      <p className="text-xs text-muted-foreground">
+                        Wait for workspace preparation or release to finish before changing
+                        repositories.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Choose repositories for new Threads. Existing Threads stay unchanged.
+                      </p>
+                    )}
+                    {linkedProjects.map((repository) => {
+                      const checked = selectedRepositoryProjectIds.includes(repository.id);
+                      return (
+                        <label key={repository.id} className="flex items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={checked}
+                            disabled={
+                              pending ||
+                              isArchived ||
+                              repositoryScopeLocked ||
+                              (checked && selectedRepositoryProjectIds.length === 1)
+                            }
+                            onCheckedChange={(nextChecked) => {
+                              const nextRepositoryProjectIds = nextChecked
+                                ? [...selectedRepositoryProjectIds, repository.id]
+                                : selectedRepositoryProjectIds.filter((id) => id !== repository.id);
+                              const primaryT3ProjectId = nextRepositoryProjectIds.includes(
+                                ticket.primaryT3ProjectId,
+                              )
+                                ? ticket.primaryT3ProjectId
+                                : nextRepositoryProjectIds[0];
+                              if (primaryT3ProjectId === undefined) return;
+                              onUpdate(actionableTicket, {
+                                repositoryProjectIds: nextRepositoryProjectIds,
+                                primaryT3ProjectId,
+                              });
+                            }}
+                          />
+                          <span className="min-w-0 flex-1 truncate">{repository.title}</span>
+                        </label>
+                      );
+                    })}
+                    <Label htmlFor={`primary-repository-${ticket.id}`}>Primary repository</Label>
+                    <p
+                      id={`primary-repository-description-${ticket.id}`}
+                      className="text-xs text-muted-foreground"
+                    >
+                      Where new Threads start.
+                    </p>
+                    <Select
+                      disabled={pending || isArchived || repositoryScopeLocked}
+                      value={ticket.primaryT3ProjectId}
+                      onValueChange={(value) => {
+                        if (value) {
+                          onUpdate(actionableTicket, {
+                            primaryT3ProjectId: ProjectId.make(value),
+                          });
+                        }
+                      }}
+                    >
+                      <SelectTrigger
+                        id={`primary-repository-${ticket.id}`}
+                        aria-label="Primary repository"
+                        aria-describedby={`primary-repository-description-${ticket.id}`}
+                      >
+                        <SelectValue>
+                          {linkedProjects.find(
+                            (repository) => repository.id === ticket.primaryT3ProjectId,
+                          )?.title ?? "Select primary repository"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectPopup>
+                        {linkedProjects
+                          .filter((repository) =>
+                            selectedRepositoryProjectIds.includes(repository.id),
+                          )
+                          .map((repository) => (
+                            <SelectItem key={repository.id} value={repository.id}>
+                              {repository.title}
+                            </SelectItem>
+                          ))}
+                      </SelectPopup>
+                    </Select>
+                  </fieldset>
                 </div>
               ) : null}
             </section>
@@ -1979,8 +1990,8 @@ export function WorkbenchTicketDetail({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete “{displayedTitle}”?</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes the local Ticket from Workbench. Its native T3 Threads and prepared
-              worktrees are kept.
+              This removes the local Ticket from Workbench. Its Threads and prepared worktrees are
+              kept.
             </AlertDialogDescription>
             {error ? <WorkbenchInlineError message={error} /> : null}
           </AlertDialogHeader>
