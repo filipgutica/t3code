@@ -1,11 +1,14 @@
 import type {
   GitCommandError,
+  GitManagerServiceError,
   ProjectId,
   ThreadId,
   VcsCreateWorktreeInput,
   VcsCreateWorktreeResult,
   VcsListRefsInput,
   VcsListRefsResult,
+  VcsStatusInput,
+  VcsStatusLocalResult,
   VcsRemoveWorktreeInput,
   WorkbenchOperationError,
 } from "@t3tools/contracts";
@@ -28,6 +31,10 @@ export class TicketWorkspaceHost extends Context.Service<
       readonly removeWorktree: (
         input: VcsRemoveWorktreeInput,
       ) => Effect.Effect<void, GitCommandError>;
+      readonly localStatus: (
+        input: VcsStatusInput,
+      ) => Effect.Effect<VcsStatusLocalResult, GitManagerServiceError>;
+      readonly invalidateLocalStatus: (cwd: string) => Effect.Effect<void, never>;
     };
     readonly projections: {
       readonly getProjectShellById: (
@@ -36,9 +43,13 @@ export class TicketWorkspaceHost extends Context.Service<
         Option.Option<{ readonly title: string; readonly workspaceRoot: string }>,
         WorkbenchOperationError
       >;
-      readonly getThreadShellById: (
-        threadId: ThreadId,
-      ) => Effect.Effect<Option.Option<{ readonly id: ThreadId }>, WorkbenchOperationError>;
+      readonly getThreadShellById: (threadId: ThreadId) => Effect.Effect<
+        Option.Option<{
+          readonly id: ThreadId;
+          readonly worktreePath: string | null;
+        }>,
+        WorkbenchOperationError
+      >;
     };
   }
 >()("@t3tools/workbench/TicketWorkspaceHost") {}

@@ -10,6 +10,7 @@ import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSna
 
 export {
   TicketWorkspaceService,
+  ticketWorkspaceDirectoryName,
   ticketWorkspaceBranchName,
 } from "@t3tools/workbench/TicketWorkspaceService";
 
@@ -25,6 +26,8 @@ const hostLayer = Layer.effect(
         listRefs: git.listRefs,
         createWorktree: git.createWorktree,
         removeWorktree: git.removeWorktree,
+        localStatus: git.localStatus,
+        invalidateLocalStatus: git.invalidateLocalStatus,
       },
       projections: {
         getProjectShellById: (id) =>

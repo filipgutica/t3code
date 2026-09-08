@@ -310,6 +310,9 @@ export function WorkbenchPage({
   const deleteTicket = useAtomCommand(workbenchEnvironment.deleteTicket, {
     reportFailure: false,
   });
+  const releaseTicketWorkspace = useAtomCommand(workbenchEnvironment.releaseTicketWorkspace, {
+    reportFailure: false,
+  });
   const jiraBeginAuth = useAtomCommand(workbenchEnvironment.jiraBeginAuth, {
     reportFailure: false,
   });
@@ -941,6 +944,18 @@ export function WorkbenchPage({
     clearTicketDraft(environmentId, ticket.id);
     closeWorkItem();
     return true;
+  };
+
+  const resetTicketWorkspace = async (ticket: WorkbenchTicket) => {
+    if (environmentId === null || pendingAction !== null) return false;
+    setPendingAction(`reset-workspace:${ticket.id}`);
+    setError(null);
+    const result = await releaseTicketWorkspace({
+      environmentId,
+      input: { ticketId: ticket.id, releasedAt: new Date().toISOString() },
+    });
+    setPendingAction(null);
+    return !reportWorkbenchCommandFailure(result, setError);
   };
 
   const ticketForBoardAction = (ticket: WorkbenchTicket) => {
@@ -1581,6 +1596,7 @@ export function WorkbenchPage({
               }}
               onArchive={setTicketArchived}
               onDelete={removeTicket}
+              onResetWorkspace={resetTicketWorkspace}
             />
           ) : selectedEpic ? (
             <WorkbenchEpicDetail
