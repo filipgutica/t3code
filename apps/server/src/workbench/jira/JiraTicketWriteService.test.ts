@@ -100,6 +100,7 @@ const makeHarness = (options?: {
     readonly to: { readonly id: string; readonly name: string };
   }>;
   readonly failDescriptionWrite?: boolean;
+  readonly failStatusWrite?: boolean;
   readonly failImport?: boolean;
   readonly missingIssue?: boolean;
   readonly missingRemoteUpdatedAt?: boolean;
@@ -221,6 +222,11 @@ const makeHarness = (options?: {
           HttpClientResponse.fromWeb(request, new Response(null, { status: 403 })),
         );
       }
+      if (options?.failStatusWrite && request.method === "POST") {
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(request, new Response(null, { status: 403 })),
+        );
+      }
       if (request.method === "PUT") {
         const body =
           request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
@@ -333,6 +339,118 @@ describe("JiraTicketWriteService", () => {
         assert.strictEqual(imported[0]?.mappedStatus, "todo");
         assert.strictEqual(imported[1]?.mappedStatus, "in_progress");
         assert.strictEqual(links[0]?.issue.description, "Updated description");
+      }),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("starts execution by transitioning a fresh Jira todo and storing its readback", () =>
+    runWithHarness((harness) =>
+      Effect.gen(function* () {
+        const started = yield* harness.service.startTicketExecution({ ticketId });
+        const imported = yield* Ref.get(harness.imported);
+
+        assert.strictEqual(started.status.id, "2");
+        assert.deepStrictEqual(
+          harness.requests.map((request) => request.method),
+          ["GET", "POST"],
+        );
+        assert.strictEqual(imported.length, 1);
+        assert.strictEqual(imported[0]?.mappedStatus, "in_progress");
+      }),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("keeps a Jira issue already further along without applying a transition", () =>
+    runWithHarness(
+      (harness) =>
+        Effect.gen(function* () {
+          const current = yield* harness.service.startTicketExecution({ ticketId });
+          const imported = yield* Ref.get(harness.imported);
+
+          assert.strictEqual(current.status.id, "3");
+          assert.deepStrictEqual(harness.requests, []);
+          assert.strictEqual(imported[0]?.mappedStatus, "done");
+        }),
+      {
+        initialStatus: { id: "3", name: "Done" },
+        additionalStatusMappings: [{ jiraStatusId: "3", workbenchStatus: "done" }],
+      },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("does not guess when automatic Jira start has ambiguous transitions", () =>
+    runWithHarness(
+      (harness) =>
+        Effect.gen(function* () {
+          const error = yield* Effect.flip(harness.service.startTicketExecution({ ticketId }));
+          const imported = yield* Ref.get(harness.imported);
+
+          assert.strictEqual(error.code, "invalid_binding");
+          assert.isTrue(error.message.includes("multiple transitions"));
+          assert.deepStrictEqual(
+            harness.requests.map((request) => request.method),
+            ["GET"],
+          );
+          assert.strictEqual(imported.length, 0);
+        }),
+      {
+        transitions: [
+          { id: "21", name: "Start work", to: { id: "2", name: "In Progress" } },
+          { id: "22", name: "Resume work", to: { id: "2", name: "In Progress" } },
+        ],
+      },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("does not persist a local status when Jira rejects the automatic transition", () =>
+    runWithHarness(
+      (harness) =>
+        Effect.gen(function* () {
+          const error = yield* Effect.flip(harness.service.startTicketExecution({ ticketId }));
+          const imported = yield* Ref.get(harness.imported);
+
+          assert.strictEqual(error.code, "request_failed");
+          assert.isTrue(error.message.includes("403"));
+          assert.deepStrictEqual(
+            harness.requests.map((request) => request.method),
+            ["GET", "POST"],
+          );
+          assert.strictEqual(imported.length, 0);
+        }),
+      { failStatusWrite: true },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("requires the automatic Jira status readback before persisting", () =>
+    runWithHarness(
+      (harness) =>
+        Effect.gen(function* () {
+          const error = yield* Effect.flip(harness.service.startTicketExecution({ ticketId }));
+          const imported = yield* Ref.get(harness.imported);
+
+          assert.strictEqual(error.code, "request_failed");
+          assert.isTrue(error.message.includes("still at Jira status"));
+          assert.deepStrictEqual(
+            harness.requests.map((request) => request.method),
+            ["GET", "POST"],
+          );
+          assert.strictEqual(imported.length, 0);
+        }),
+      { preserveStatusOnPost: true },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("does not apply Jira's start transition again after a successful start", () =>
+    runWithHarness((harness) =>
+      Effect.gen(function* () {
+        yield* harness.service.startTicketExecution({ ticketId });
+        yield* harness.service.startTicketExecution({ ticketId });
+
+        assert.strictEqual(
+          harness.requests.filter((request) => request.method === "POST").length,
+          1,
+        );
+        assert.strictEqual((yield* Ref.get(harness.imported)).length, 2);
       }),
     ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
   );

@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./TicketExecutionService": {
+      "types": "./src/TicketExecutionService.ts",
+      "import": "./src/TicketExecutionService.ts"
+    },
     "./TicketSummaryService": {
       "types": "./src/TicketSummaryService.ts",
       "import": "./src/TicketSummaryService.ts"

@@ -278,6 +278,16 @@ export interface WorkbenchCompleteTicketWorkspaceInput {
   readonly completedAt: string;
 }
 
+export interface WorkbenchStartTicketExecutionInput {
+  readonly ticketId: WorkbenchTicketId;
+  readonly startedAt: IsoDateTime;
+}
+
+export interface WorkbenchStartTicketExecutionResult {
+  readonly ticket: WorkbenchTicket;
+  readonly changed: boolean;
+}
+
 export interface WorkbenchTicketWorkspaceRepositoryState {
   readonly projectId: ProjectId;
   readonly attemptId: WorkbenchTicketWorkspaceAttemptId;
@@ -326,6 +336,10 @@ interface WorkbenchStoreShape {
   readonly updateTicket: (
     input: WorkbenchUpdateTicketInput,
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
+  /** Atomically advances a locally owned todo Ticket when its Thread starts executing. */
+  readonly startTicketExecution: (
+    input: WorkbenchStartTicketExecutionInput,
+  ) => Effect.Effect<WorkbenchStartTicketExecutionResult, WorkbenchOperationError>;
   readonly updateJiraTicketFields: (
     input: WorkbenchUpdateJiraTicketFieldsInput,
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
@@ -2230,6 +2244,84 @@ const makeWorkbenchStore = Effect.gen(function* () {
     return ticket;
   });
 
+  const startTicketExecution: WorkbenchStoreShape["startTicketExecution"] = Effect.fn(
+    "WorkbenchStore.startTicketExecution",
+  )(function* (input) {
+    const result = yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const current = yield* lockAndFindTicket({
+            ticketId: input.ticketId,
+            activeOnly: true,
+          });
+          if (Option.isNone(current)) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_not_found",
+              message: "The Workbench Ticket does not exist.",
+            });
+          }
+          if (current.value.archivedAt !== null) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_archived",
+              message: "Archived Workbench Tickets cannot start execution.",
+            });
+          }
+          if (yield* isJiraManagedTicket(input.ticketId)) {
+            return yield* new WorkbenchOperationError({
+              code: "jira_managed_ticket",
+              message: "Jira-managed Tickets must be transitioned through Jira.",
+            });
+          }
+          const repositories = yield* listTicketRepositoryRowsByTicket({
+            ticketId: input.ticketId,
+          });
+          const repositoryProjectIds =
+            repositories.length > 0
+              ? repositories.map((repository) => repository.repositoryProjectId)
+              : [current.value.primaryT3ProjectId];
+          if (current.value.status !== "todo") {
+            return {
+              ticket: ticketFromRow(current.value, repositoryProjectIds),
+              changed: false,
+            };
+          }
+          const updated = yield* sql<{ readonly updatedAt: string }>`
+            UPDATE workbench_tickets
+            SET
+              status = 'in_progress',
+              revision = revision + 1,
+              updated_at = MAX(updated_at, ${input.startedAt})
+            WHERE ticket_id = ${input.ticketId}
+              AND deleted_at IS NULL
+              AND status = 'todo'
+            RETURNING updated_at AS "updatedAt"
+          `;
+          const persisted = updated[0];
+          if (persisted === undefined) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_changed",
+              message: "The Workbench Ticket changed before execution could start.",
+            });
+          }
+          return {
+            ticket: ticketFromRow(
+              {
+                ...current.value,
+                status: "in_progress",
+                revision: current.value.revision + 1,
+                updatedAt: persisted.updatedAt,
+              },
+              repositoryProjectIds,
+            ),
+            changed: true,
+          };
+        }),
+      )
+      .pipe(Effect.mapError(workbenchStoreError));
+    if (result.changed) yield* publishTicketChange(result.ticket.id);
+    return result;
+  });
+
   const updateJiraTicketFields: WorkbenchStoreShape["updateJiraTicketFields"] = Effect.fn(
     "WorkbenchStore.updateJiraTicketFields",
   )(function* (input) {
@@ -2789,6 +2881,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     archiveEpic,
     createTicket,
     updateTicket,
+    startTicketExecution,
     updateJiraTicketFields,
     requestTicketSummary,
     completeTicketSummary,

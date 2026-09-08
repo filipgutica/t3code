@@ -76,6 +76,66 @@ const seedTicket = (input: {
   });
 
 describe("WorkbenchStore package boundary", () => {
+  it.effect("atomically starts todo execution and preserves further-along statuses", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const projectId = ProjectId.make("execution-project");
+      const workspaceId = WorkbenchProjectId.make("execution-workspace");
+      const todoTicketId = WorkbenchTicketId.make("execution-todo-ticket");
+      const doneTicketId = WorkbenchTicketId.make("execution-done-ticket");
+      const todo = yield* seedTicket({
+        store,
+        projectId,
+        workspaceId,
+        ticketId: todoTicketId,
+      });
+      const done = yield* store.createTicket({
+        id: doneTicketId,
+        projectId: workspaceId,
+        title: "Already done",
+        kind: "story",
+        markdown: "Keep the terminal status.",
+        primaryT3ProjectId: projectId,
+        createdAt: "2026-09-07T10:00:00.000Z",
+      });
+      yield* store.updateTicket({
+        id: done.id,
+        expectedRevision: done.revision,
+        status: "done",
+        updatedAt: "2026-09-07T10:01:00.000Z",
+      });
+
+      const started = yield* store.startTicketExecution({
+        ticketId: todoTicketId,
+        startedAt: "2026-09-07T10:02:00.000Z",
+      });
+      expect(started.changed).toBe(true);
+      expect(started.ticket.status).toBe("in_progress");
+      expect(started.ticket.revision).toBe(todo.revision + 1);
+
+      const repeated = yield* store.startTicketExecution({
+        ticketId: todoTicketId,
+        startedAt: "2026-09-07T10:03:00.000Z",
+      });
+      expect(repeated.changed).toBe(false);
+      expect(repeated.ticket.status).toBe("in_progress");
+      expect(repeated.ticket.revision).toBe(started.ticket.revision);
+
+      const preserved = yield* store.startTicketExecution({
+        ticketId: doneTicketId,
+        startedAt: "2026-09-07T10:04:00.000Z",
+      });
+      expect(preserved.changed).toBe(false);
+      expect(preserved.ticket.status).toBe("done");
+      expect(
+        (yield* store.getSnapshot).tickets.map((ticket) => [ticket.id, ticket.status]),
+      ).toEqual([
+        [doneTicketId, "done"],
+        [todoTicketId, "in_progress"],
+      ]);
+    }).pipe(Effect.provide(testLayer({ projects: new Set(["execution-project"]) }))),
+  );
+
   it.effect("initializes the Workbench schema and migration ledger", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

@@ -84,6 +84,7 @@ interface WorkbenchJiraServiceShape {
   readonly syncBinding: JiraSyncServiceShape["syncBinding"];
   readonly getTicketTransitions: JiraTicketWriteServiceShape["getTicketTransitions"];
   readonly updateTicket: JiraTicketWriteServiceShape["updateTicket"];
+  readonly startTicketExecution: JiraTicketWriteServiceShape["startTicketExecution"];
 }
 
 export class WorkbenchJiraService extends Context.Service<
@@ -392,6 +393,7 @@ export const make = Effect.gen(function* () {
     syncBinding: sync.syncBinding,
     getTicketTransitions: ticketWriter.getTicketTransitions,
     updateTicket: ticketWriter.updateTicket,
+    startTicketExecution: ticketWriter.startTicketExecution,
   });
 });
 

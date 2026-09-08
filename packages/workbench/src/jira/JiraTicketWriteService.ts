@@ -133,6 +133,10 @@ export interface JiraTicketWriteServiceShape {
   readonly updateTicket: (
     input: WorkbenchJiraUpdateTicketInput,
   ) => Effect.Effect<WorkbenchJiraIssueSnapshot, WorkbenchJiraOperationError>;
+  /** Starts execution only after a fresh Jira todo status is transitioned and read back. */
+  readonly startTicketExecution: (
+    input: WorkbenchJiraGetTicketTransitionsInput,
+  ) => Effect.Effect<WorkbenchJiraIssueSnapshot, WorkbenchJiraOperationError>;
 }
 
 export class JiraTicketWriteService extends Context.Service<
@@ -444,6 +448,7 @@ export const make = Effect.gen(function* () {
         accessToken: credentials.accessToken,
         cloudId: credentials.connection.cloudId,
         destinationStatusId: input.transitionId !== undefined ? candidate.to.id : undefined,
+        toStatusId: candidate.to.id,
       };
     });
 
@@ -606,7 +611,103 @@ export const make = Effect.gen(function* () {
       );
     });
 
-  return JiraTicketWriteService.of({ getTicketTransitions, updateTicket });
+  const startTicketExecution: JiraTicketWriteServiceShape["startTicketExecution"] = (input) =>
+    Effect.gen(function* () {
+      const initial = yield* findManagedIssue(input.ticketId);
+      return yield* sync.withBindingPermit(
+        initial.binding.id,
+        Effect.gen(function* () {
+          const managed = yield* findManagedIssue(input.ticketId);
+          if (
+            managed.binding.id !== initial.binding.id ||
+            managed.binding.updatedAt !== initial.binding.updatedAt ||
+            managed.link.issue.issueId !== initial.link.issue.issueId
+          ) {
+            return yield* operationError(
+              "invalid_binding",
+              "The Jira Ticket link changed while execution was starting. Refresh Jira before trying again.",
+            );
+          }
+          const current = yield* readAssignedIssue(managed);
+          const currentMappedStatus = managed.binding.statusMappings.find(
+            (mapping) => mapping.jiraStatusId === current.status.id,
+          )?.workbenchStatus;
+          if (currentMappedStatus === undefined) {
+            return yield* operationError(
+              "status_unmapped",
+              `Jira status ${current.status.name} is not mapped to a Workbench column.`,
+            );
+          }
+
+          // A sync or another execution may have already advanced this issue. Read it back into
+          // the local projection while preserving that further-along Jira-owned status.
+          if (currentMappedStatus !== "todo") {
+            const syncedAt = DateTime.formatIso(
+              DateTime.makeUnsafe(yield* clock.currentTimeMillis),
+            );
+            yield* persistProjection({
+              managed,
+              issue: current,
+              mappedStatus: currentMappedStatus,
+              syncedAt,
+            });
+            return current;
+          }
+          if (current.remoteUpdatedAt === null) {
+            return yield* operationError(
+              "invalid_binding",
+              "Jira did not provide a remote update timestamp. Refresh the Ticket before starting execution.",
+            );
+          }
+
+          const transition = yield* resolveTransition({
+            binding: managed.binding,
+            issueId: current.issueId,
+            currentStatusName: current.status.name,
+            status: "in_progress",
+            transitionId: undefined,
+          });
+          yield* applyTransition({
+            issueId: current.issueId,
+            accessToken: transition.accessToken,
+            cloudId: transition.cloudId,
+            transitionId: transition.id,
+          });
+
+          const refreshed = yield* readAssignedIssue(managed).pipe(
+            Effect.mapError((error) =>
+              operationError(
+                "request_failed",
+                `Jira accepted the status update, but Workbench could not read it back: ${error.message} Refresh Jira before trying again.`,
+              ),
+            ),
+          );
+          const mappedStatus = managed.binding.statusMappings.find(
+            (mapping) => mapping.jiraStatusId === refreshed.status.id,
+          )?.workbenchStatus;
+          const validatedStatus = yield* validateReadback({
+            input: {
+              ticketId: input.ticketId,
+              status: "in_progress",
+              expectedRemoteUpdatedAt: current.remoteUpdatedAt,
+            },
+            refreshed,
+            mappedStatus,
+            expectedStatusId: transition.toStatusId,
+          });
+          const syncedAt = DateTime.formatIso(DateTime.makeUnsafe(yield* clock.currentTimeMillis));
+          yield* persistProjection({
+            managed,
+            issue: refreshed,
+            mappedStatus: validatedStatus,
+            syncedAt,
+          });
+          return refreshed;
+        }),
+      );
+    });
+
+  return JiraTicketWriteService.of({ getTicketTransitions, updateTicket, startTicketExecution });
 });
 
 export const layer = Layer.effect(JiraTicketWriteService, make);
