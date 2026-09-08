@@ -303,26 +303,15 @@ export function useOpenChangeRequestLink(
         if (!resolvedThreadRef) {
           void navigate({
             to: "/pull-requests",
-            search: ({ projectId: previousProjectId, ...previous }) => {
-              const scopedProject = allProjects.find(
-                (candidate) => candidate.id === previousProjectId,
-              );
-              return {
-                ...previous,
-                ...(scopedProject ? { projectId: scopedProject.id } : {}),
-                involvement: previous.involvement ?? "all",
-                state:
-                  previous.state === "open" ||
-                  previous.state === "closed" ||
-                  previous.state === "merged"
-                    ? previous.state
-                    : ("all" as const),
-                repository: project.repositoryIdentity?.displayName ?? parsed.repository,
-                number: parsed.number,
-                selectedProjectId: project.id,
-                selectedEnvironmentId: project.environmentId,
-              };
-            },
+            search: (previous) => ({
+              ...previous,
+              involvement: previous.involvement ?? "all",
+              state: previous.state ?? "all",
+              repository: project.repositoryIdentity?.displayName ?? parsed.repository,
+              number: parsed.number,
+              selectedProjectId: project.id,
+              selectedEnvironmentId: project.environmentId,
+            }),
             replace: true,
           });
         }

@@ -20,7 +20,8 @@ import {
   WorkbenchUpdateJiraTicketFieldsInput,
   WorkbenchUpdateTicketInput,
 } from "./workbench.ts";
-import { WS_METHODS, WsRpcGroup } from "./rpc.ts";
+import { WORKBENCH_WS_METHODS } from "./workbenchRpc.ts";
+import { WsRpcGroup } from "./rpc.ts";
 
 const decodeWorkbenchSnapshot = Schema.decodeUnknownEffect(WorkbenchSnapshot);
 const decodeWorkbenchCreateEpicInput = Schema.decodeUnknownEffect(WorkbenchCreateEpicInput);
@@ -404,18 +405,8 @@ describe("Workbench contracts", () => {
   });
 
   it("registers every Workbench RPC in the shared group", () => {
-    expect([...WsRpcGroup.requests.keys()]).toEqual(
-      expect.arrayContaining([
-        WS_METHODS.workbenchGetSnapshot,
-        WS_METHODS.workbenchCreateProject,
-        WS_METHODS.workbenchUpdateProject,
-        WS_METHODS.workbenchCreateTicket,
-        WS_METHODS.workbenchUpdateTicket,
-        WS_METHODS.workbenchArchiveTicket,
-        WS_METHODS.workbenchDeleteTicket,
-        WS_METHODS.workbenchCreateAssignment,
-        WS_METHODS.workbenchReplaceAssignment,
-      ]),
-    );
+    expect(
+      new Set([...WsRpcGroup.requests.keys()].filter((method) => method.startsWith("workbench."))),
+    ).toEqual(new Set(Object.values(WORKBENCH_WS_METHODS)));
   });
 });

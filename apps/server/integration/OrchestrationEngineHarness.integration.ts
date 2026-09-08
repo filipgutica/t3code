@@ -67,7 +67,7 @@ import {
 } from "../src/orchestration/Services/OrchestrationEngine.ts";
 import { ThreadDeletionReactor } from "../src/orchestration/Services/ThreadDeletionReactor.ts";
 import * as ThreadSettlementReactor from "../src/orchestration/ThreadSettlementReactor.ts";
-import * as TicketExecutionReactor from "../src/workbench/TicketExecutionReactor.ts";
+import { noopTicketExecutionReactorLayer } from "../src/workbench/testUtils.ts";
 import * as ThreadPullRequestReactor from "../src/orchestration/ThreadPullRequestReactor.ts";
 import { OrchestrationReactor } from "../src/orchestration/Services/OrchestrationReactor.ts";
 import { ProjectionSnapshotQuery } from "../src/orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -384,13 +384,7 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(VcsProcess.layer),
     );
     const orchestrationReactorLayer = OrchestrationReactorLive.pipe(
-      Layer.provideMerge(
-        Layer.succeed(TicketExecutionReactor.TicketExecutionReactor, {
-          start: () => Effect.void,
-          drain: Effect.void,
-          drainThrough: () => Effect.void,
-        }),
-      ),
+      Layer.provideMerge(noopTicketExecutionReactorLayer),
       Layer.provideMerge(runtimeIngestionLayer),
       Layer.provideMerge(providerCommandReactorLayer),
       Layer.provideMerge(checkpointReactorLayer),
