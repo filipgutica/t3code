@@ -120,7 +120,7 @@ describe("WorkbenchStore package boundary", () => {
         const workspaceId = WorkbenchProjectId.make("summary-lifecycle-workspace");
         const ticketId = WorkbenchTicketId.make("summary-lifecycle-ticket");
         const created = yield* seedTicket({ store, projectId, workspaceId, ticketId });
-        expect(created.generatedSummary.stale).toBe(false);
+        expect(created.generatedSummary).toMatchObject({ stale: false });
         expect((yield* store.getSnapshot).tickets[0]?.generatedSummary).toEqual(
           created.generatedSummary,
         );
