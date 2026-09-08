@@ -1,9 +1,13 @@
 import { TextGenerationError } from "@t3tools/contracts";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 const isTextGenerationError = Schema.is(TextGenerationError);
-export const MAX_TICKET_SUMMARY_CHARS = 500;
-export const MAX_TICKET_SUMMARY_WORDS = 45;
+const decodeJsonThreadTitle = Schema.decodeOption(
+  Schema.fromJsonString(Schema.Struct({ title: Schema.String })),
+);
+const MAX_TICKET_SUMMARY_CHARS = 500;
+const MAX_TICKET_SUMMARY_WORDS = 45;
 
 /** Convert an Effect Schema to a flat JSON Schema object, inlining `$defs` when present. */
 export function toJsonSchemaObject(schema: Schema.Top): unknown {
@@ -46,7 +50,10 @@ export function sanitizePrTitle(raw: string): string {
 
 /** Normalise a raw thread title to a compact single-line sidebar-safe label. */
 export function sanitizeThreadTitle(raw: string): string {
-  const normalized = raw
+  // Unwrap a JSON-formatted title before truncation can cut off the closing brace.
+  const decoded = decodeJsonThreadTitle(raw);
+  const title = Option.isSome(decoded) ? decoded.value.title : raw;
+  const normalized = title
     .trim()
     .split(/\r?\n/g)[0]
     ?.trim()

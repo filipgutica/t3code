@@ -40,7 +40,7 @@ visit("@t3tools/workbench");
 // Ask the compiler for the actual resolved graph: relative, aliased and deep
 // imports (including tests) must all stay outside applications.
 const result = NodeChildProcess.spawnSync(
-  "tsgo",
+  "tsc",
   ["--project", "tsconfig.json", "--listFilesOnly"],
   {
     cwd: packageRoot,

@@ -33,7 +33,7 @@ const authorizationSecretName = (state: string) => `workbench-jira-oauth-state-$
 const persistenceError = (message: string) =>
   new WorkbenchJiraOperationError({ code: "persistence_failed", message });
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
 
   const read = <A>(
