@@ -224,6 +224,30 @@ it.layer(CursorTextGenerationTestLayer)("CursorTextGeneration", (it) => {
     ),
   );
 
+  it.effect("generates and bounds ticket summaries through Cursor ACP", () =>
+    withFakeAcpAgent(
+      {
+        T3_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
+          summary:
+            "Improve request validation for selected analytics fields. Return a clear error before querying the provider when unsupported combinations are supplied.",
+        }),
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateTicketSummary({
+            cwd: process.cwd(),
+            title: "Validate analytics fields",
+            description:
+              "Reject unsupported metric and dimension combinations before provider calls.",
+            modelSelection: createModelSelection(ProviderInstanceId.make("cursor"), "composer-2"),
+          });
+
+          expect(generated.summary).toContain("Improve request validation");
+          expect(generated.summary.length).toBeLessThanOrEqual(500);
+        }),
+    ),
+  );
+
   // Closing the runtime on Windows is taskkill /F, which never lets the mock
   // agent reach its exit handler, so there is no exit log to assert on.
   it.effect.skipIf(HostProcessPlatform.defaultValue() === "win32")(

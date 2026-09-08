@@ -8,6 +8,8 @@ import {
   WorkbenchProjectId,
   WorkbenchSnapshot,
   WorkbenchTicket,
+  WorkbenchTicketGeneratedSummary,
+  WorkbenchTicketGeneratedSummaryStatus,
   WorkbenchTicketId,
   WorkbenchTicketWorkspace,
   WorkbenchTicketWorkspaceAttemptId,
@@ -33,7 +35,9 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
@@ -95,10 +99,127 @@ const WorkbenchTicketRow = Schema.Struct({
   status: WorkbenchTicket.fields.status,
   blocked: Schema.Number,
   revision: Schema.Number,
+  generatedSummaryText: Schema.NullOr(Schema.String),
+  generatedSummaryStatus: WorkbenchTicketGeneratedSummaryStatus,
+  generatedSummaryStale: Schema.Number,
+  generatedSummaryError: Schema.NullOr(Schema.String),
+  generatedSummarySourceHash: Schema.NullOr(Schema.String),
+  generatedSummaryRequestId: Schema.NullOr(Schema.String),
   archivedAt: Schema.NullOr(IsoDateTime),
   createdAt: WorkbenchTicket.fields.createdAt,
   updatedAt: WorkbenchTicket.fields.updatedAt,
 });
+
+const generatedSummaryFromRow = (
+  row: Pick<
+    typeof WorkbenchTicketRow.Type,
+    | "generatedSummaryText"
+    | "generatedSummaryStatus"
+    | "generatedSummaryStale"
+    | "generatedSummaryError"
+  >,
+): WorkbenchTicketGeneratedSummary => ({
+  text: row.generatedSummaryText,
+  status: row.generatedSummaryStatus,
+  stale: row.generatedSummaryStale === 1,
+  error: row.generatedSummaryError,
+});
+
+type WorkbenchTicketSummaryRow = Pick<
+  typeof WorkbenchTicketRow.Type,
+  | "generatedSummaryText"
+  | "generatedSummaryStatus"
+  | "generatedSummaryStale"
+  | "generatedSummaryError"
+  | "generatedSummarySourceHash"
+  | "generatedSummaryRequestId"
+>;
+
+const summaryUpdate = ({
+  row,
+  contentChanged,
+}: {
+  readonly row: WorkbenchTicketSummaryRow;
+  readonly contentChanged: boolean;
+}) => {
+  if (!contentChanged) {
+    return {
+      generatedSummaryStatus: row.generatedSummaryStatus,
+      generatedSummaryStale: row.generatedSummaryStale,
+      generatedSummaryError: row.generatedSummaryError,
+      generatedSummarySourceHash: row.generatedSummarySourceHash,
+      generatedSummaryRequestId: row.generatedSummaryRequestId,
+      generatedSummary: generatedSummaryFromRow(row),
+    };
+  }
+  const stale = row.generatedSummaryText !== null;
+  return {
+    generatedSummaryStatus: "pending" as const,
+    generatedSummaryStale: stale ? 1 : 0,
+    generatedSummaryError: null,
+    generatedSummarySourceHash: null,
+    generatedSummaryRequestId: null,
+    generatedSummary: {
+      text: row.generatedSummaryText,
+      status: "pending" as const,
+      stale,
+      error: null,
+    },
+  };
+};
+
+const ticketFromRow = (
+  row: typeof WorkbenchTicketRow.Type,
+  repositoryProjectIds: ReadonlyArray<ProjectId>,
+): WorkbenchTicket =>
+  WorkbenchTicket.make({
+    id: row.id,
+    projectId: row.projectId,
+    epicId: row.epicId,
+    title: row.title,
+    kind: row.kind,
+    markdown: row.markdown,
+    primaryT3ProjectId: row.primaryT3ProjectId,
+    repositoryProjectIds,
+    status: row.status,
+    blocked: row.blocked === 1,
+    revision: row.revision,
+    generatedSummary: generatedSummaryFromRow(row),
+    archivedAt: row.archivedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  });
+
+const ticketSummarySourceHash = (title: string, markdown: string): string =>
+  NodeCrypto.createHash("sha256")
+    .update(JSON.stringify([title, markdown]))
+    .digest("hex");
+
+const normalizeSummaryText = (text: string): string =>
+  Array.from(text.trim()).slice(0, 500).join("");
+const normalizeSummaryError = (error: string): string =>
+  Array.from(error.trim()).slice(0, 4_000).join("");
+
+export interface WorkbenchTicketChange {
+  readonly ticketId: WorkbenchTicketId;
+}
+
+export interface WorkbenchRequestTicketSummaryInput {
+  readonly ticketId: WorkbenchTicketId;
+  readonly requestId: string;
+}
+
+export interface WorkbenchCompleteTicketSummaryInput {
+  readonly ticketId: WorkbenchTicketId;
+  readonly requestId: string;
+  readonly summary: string;
+}
+
+export interface WorkbenchFailTicketSummaryInput {
+  readonly ticketId: WorkbenchTicketId;
+  readonly requestId: string;
+  readonly error: string;
+}
 
 export interface WorkbenchClaimTicketWorkspaceInput {
   readonly ticketId: WorkbenchTicketId;
@@ -152,6 +273,15 @@ export interface WorkbenchClaimTicketWorkspaceReleaseInput {
 
 interface WorkbenchStoreShape {
   readonly getSnapshot: Effect.Effect<WorkbenchSnapshot, WorkbenchOperationError>;
+  readonly listTicketsNeedingSummary: Effect.Effect<
+    ReadonlyArray<WorkbenchTicket>,
+    WorkbenchOperationError
+  >;
+  readonly getTicketSummaryCandidate: (
+    ticketId: WorkbenchTicketId,
+  ) => Effect.Effect<Option.Option<WorkbenchTicket>, WorkbenchOperationError>;
+  readonly recheckTicketSummary: (ticketId: WorkbenchTicketId) => Effect.Effect<void>;
+  readonly ticketChanges: Stream.Stream<WorkbenchTicketChange>;
   readonly createProject: (
     input: WorkbenchCreateProjectInput,
   ) => Effect.Effect<WorkbenchProject, WorkbenchOperationError>;
@@ -176,6 +306,15 @@ interface WorkbenchStoreShape {
   readonly updateJiraTicketFields: (
     input: WorkbenchUpdateJiraTicketFieldsInput,
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
+  readonly requestTicketSummary: (
+    input: WorkbenchRequestTicketSummaryInput,
+  ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
+  readonly completeTicketSummary: (
+    input: WorkbenchCompleteTicketSummaryInput,
+  ) => Effect.Effect<Option.Option<WorkbenchTicket>, WorkbenchOperationError>;
+  readonly failTicketSummary: (
+    input: WorkbenchFailTicketSummaryInput,
+  ) => Effect.Effect<Option.Option<WorkbenchTicket>, WorkbenchOperationError>;
   readonly archiveTicket: (
     input: WorkbenchArchiveTicketInput,
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
@@ -230,6 +369,12 @@ const workbenchStoreError = (cause: unknown) =>
 const makeWorkbenchStore = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const native = yield* WorkbenchNativeAccess;
+  const ticketChangesPubSub = yield* PubSub.unbounded<WorkbenchTicketChange>();
+  const ticketChanges = Stream.fromPubSub(ticketChangesPubSub);
+
+  const publishTicketChange = (ticketId: WorkbenchTicketId) =>
+    PubSub.publish(ticketChangesPubSub, { ticketId });
+  const recheckTicketSummary = (ticketId: WorkbenchTicketId) => publishTicketChange(ticketId);
 
   const listProjectRows = SqlSchema.findAll({
     Request: Schema.Void,
@@ -287,12 +432,43 @@ const makeWorkbenchStore = Effect.gen(function* () {
         status,
         blocked,
         revision,
+        generated_summary AS "generatedSummaryText",
+        generated_summary_status AS "generatedSummaryStatus",
+        generated_summary_stale AS "generatedSummaryStale",
+        generated_summary_error AS "generatedSummaryError",
+        generated_summary_source_hash AS "generatedSummarySourceHash",
+        generated_summary_request_id AS "generatedSummaryRequestId",
         archived_at AS "archivedAt",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM workbench_tickets
       WHERE deleted_at IS NULL
       ORDER BY created_at ASC, ticket_id ASC
+    `,
+  });
+  const listTicketSummaryCandidateIds = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: Schema.Struct({ ticketId: WorkbenchTicketId }),
+    execute: () => sql`
+      SELECT ticket.ticket_id AS "ticketId"
+      FROM workbench_tickets AS ticket
+      WHERE ticket.deleted_at IS NULL
+        AND ticket.archived_at IS NULL
+        AND ticket.generated_summary_status = 'pending'
+        AND (
+          NOT EXISTS (
+            SELECT 1
+            FROM workbench_jira_issue_links AS jira_link
+            WHERE jira_link.ticket_id = ticket.ticket_id
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM workbench_jira_issue_links AS jira_link
+            WHERE jira_link.ticket_id = ticket.ticket_id
+              AND jira_link.active = 1
+          )
+        )
+      ORDER BY ticket.created_at ASC, ticket.ticket_id ASC
     `,
   });
   const listTicketRepositoryRows = SqlSchema.findAll({
@@ -488,6 +664,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
         status,
         blocked,
         revision,
+        generated_summary AS "generatedSummaryText",
+        generated_summary_status AS "generatedSummaryStatus",
+        generated_summary_stale AS "generatedSummaryStale",
+        generated_summary_error AS "generatedSummaryError",
+        generated_summary_source_hash AS "generatedSummarySourceHash",
+        generated_summary_request_id AS "generatedSummaryRequestId",
         archived_at AS "archivedAt",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
@@ -496,6 +678,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
         AND deleted_at IS NULL
     `,
   });
+  const listJiraIssueLinkActivity = (ticketId: WorkbenchTicketId) => sql<{
+    readonly active: number;
+  }>`
+    SELECT active
+    FROM workbench_jira_issue_links
+    WHERE ticket_id = ${ticketId}
+  `;
   const lockAndFindTicket = Effect.fn("WorkbenchStore.lockAndFindTicket")(function* ({
     ticketId,
     activeOnly,
@@ -796,13 +985,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
             linkedProjectIds: linksByProject.get(project.id) ?? [],
           })),
           epics: epicRows,
-          tickets: ticketRows.map((ticket) => ({
-            ...ticket,
-            repositoryProjectIds: repositoriesByTicket.get(ticket.id) ?? [
-              ticket.primaryT3ProjectId,
-            ],
-            blocked: ticket.blocked === 1,
-          })),
+          tickets: ticketRows.map((ticket) =>
+            ticketFromRow(
+              ticket,
+              repositoriesByTicket.get(ticket.id) ?? [ticket.primaryT3ProjectId],
+            ),
+          ),
           assignments,
           reservedThreadIds: reservedThreadRows.map((row) => row.id),
           ticketWorkspaces: ticketWorkspaceRows.map((workspace) =>
@@ -815,6 +1003,48 @@ const makeWorkbenchStore = Effect.gen(function* () {
       }),
     );
   }, Effect.mapError(persistenceError));
+
+  const listTicketsNeedingSummary = Effect.fn("WorkbenchStore.listTicketsNeedingSummary")(
+    function* () {
+      const candidateRows = yield* listTicketSummaryCandidateIds().pipe(
+        Effect.mapError(persistenceError),
+      );
+      const candidateIds = new Set(candidateRows.map(({ ticketId }) => ticketId));
+      const snapshot = yield* getSnapshot();
+      return snapshot.tickets.filter((ticket) => candidateIds.has(ticket.id));
+    },
+  );
+
+  const getTicketSummaryCandidate = Effect.fn("WorkbenchStore.getTicketSummaryCandidate")(
+    (ticketId: WorkbenchTicketId) =>
+      sql
+        .withTransaction(
+          Effect.gen(function* () {
+            const ticket = yield* findTicket({ id: ticketId });
+            if (
+              Option.isNone(ticket) ||
+              ticket.value.archivedAt !== null ||
+              ticket.value.generatedSummaryStatus !== "pending"
+            ) {
+              return Option.none<WorkbenchTicket>();
+            }
+            const jiraLinks = yield* listJiraIssueLinkActivity(ticketId);
+            if (jiraLinks.length > 0 && !jiraLinks.some((link) => link.active === 1)) {
+              return Option.none<WorkbenchTicket>();
+            }
+            const repositories = yield* listTicketRepositoryRowsByTicket({ ticketId });
+            return Option.some(
+              ticketFromRow(
+                ticket.value,
+                repositories.length > 0
+                  ? repositories.map((repository) => repository.repositoryProjectId)
+                  : [ticket.value.primaryT3ProjectId],
+              ),
+            );
+          }),
+        )
+        .pipe(Effect.mapError(persistenceError)),
+  );
 
   const getTicketWorkspace: WorkbenchStoreShape["getTicketWorkspace"] = Effect.fn(
     "WorkbenchStore.getTicketWorkspace",
@@ -1493,6 +1723,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
               status,
               blocked,
               revision,
+              generated_summary,
+              generated_summary_status,
+              generated_summary_stale,
+              generated_summary_error,
+              generated_summary_source_hash,
+              generated_summary_request_id,
               created_at,
               updated_at
             ) VALUES (
@@ -1506,6 +1742,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
               'todo',
               0,
               0,
+              NULL,
+              'pending',
+              0,
+              NULL,
+              NULL,
+              NULL,
               ${input.createdAt},
               ${input.createdAt}
             )
@@ -1523,16 +1765,24 @@ const makeWorkbenchStore = Effect.gen(function* () {
       )
       .pipe(Effect.mapError(persistenceError));
 
-    return WorkbenchTicket.make({
+    const ticket = WorkbenchTicket.make({
       ...input,
       epicId,
       repositoryProjectIds,
       status: "todo",
       blocked: false,
       revision: 0,
+      generatedSummary: {
+        text: null,
+        status: "pending",
+        stale: false,
+        error: null,
+      },
       archivedAt: null,
       updatedAt: input.createdAt,
     });
+    yield* publishTicketChange(ticket.id);
+    return ticket;
   });
 
   const resolveTicketUpdateFields = ({
@@ -1561,7 +1811,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
   const updateTicket: WorkbenchStoreShape["updateTicket"] = Effect.fn(
     "WorkbenchStore.updateTicket",
   )(function* (input) {
-    return yield* sql
+    const { ticket, contentChanged } = yield* sql
       .withTransaction(
         Effect.gen(function* () {
           const current = yield* requireTicketRevision({
@@ -1631,6 +1881,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "Ticket repository scope cannot change after Agent work has started.",
             });
           }
+          const contentChanged = title !== current.title || markdown !== current.markdown;
+          const summary = summaryUpdate({ row: current, contentChanged });
           yield* sql`
             UPDATE workbench_tickets
             SET
@@ -1641,6 +1893,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
               primary_t3_project_id = ${primaryT3ProjectId},
               status = ${status},
               blocked = ${blocked ? 1 : 0},
+              generated_summary_status = ${summary.generatedSummaryStatus},
+              generated_summary_stale = ${summary.generatedSummaryStale},
+              generated_summary_error = ${summary.generatedSummaryError},
+              generated_summary_source_hash = ${summary.generatedSummarySourceHash},
+              generated_summary_request_id = ${summary.generatedSummaryRequestId},
               revision = revision + 1,
               updated_at = ${input.updatedAt}
             WHERE ticket_id = ${input.id}
@@ -1661,29 +1918,37 @@ const makeWorkbenchStore = Effect.gen(function* () {
               `;
             }
           }
-          return WorkbenchTicket.make({
-            ...current,
-            epicId,
-            title,
-            kind,
-            markdown,
-            primaryT3ProjectId,
-            repositoryProjectIds,
-            status,
-            blocked,
-            revision: current.revision + 1,
-            archivedAt: current.archivedAt,
-            updatedAt: input.updatedAt,
-          });
+          return {
+            ticket: WorkbenchTicket.make({
+              id: current.id,
+              projectId: current.projectId,
+              epicId,
+              title,
+              kind,
+              markdown,
+              primaryT3ProjectId,
+              repositoryProjectIds,
+              status,
+              blocked,
+              revision: current.revision + 1,
+              generatedSummary: summary.generatedSummary,
+              archivedAt: current.archivedAt,
+              createdAt: current.createdAt,
+              updatedAt: input.updatedAt,
+            }),
+            contentChanged,
+          };
         }),
       )
       .pipe(Effect.mapError(workbenchStoreError));
+    if (contentChanged) yield* publishTicketChange(ticket.id);
+    return ticket;
   });
 
   const updateJiraTicketFields: WorkbenchStoreShape["updateJiraTicketFields"] = Effect.fn(
     "WorkbenchStore.updateJiraTicketFields",
   )(function* (input) {
-    return yield* sql
+    const { ticket, contentChanged } = yield* sql
       .withTransaction(
         Effect.gen(function* () {
           const current = yield* requireTicketRevision({
@@ -1714,15 +1979,18 @@ const makeWorkbenchStore = Effect.gen(function* () {
             blocked !== (current.blocked === 1) ||
             markdown !== current.markdown;
           if (!changed) {
-            return WorkbenchTicket.make({
-              ...current,
-              repositoryProjectIds:
+            return {
+              ticket: ticketFromRow(
+                current,
                 repositories.length > 0
                   ? repositories.map((repository) => repository.repositoryProjectId)
                   : [current.primaryT3ProjectId],
-              blocked,
-            });
+              ),
+              contentChanged: false,
+            };
           }
+          const contentChanged = title !== current.title || markdown !== current.markdown;
+          const summary = summaryUpdate({ row: current, contentChanged });
 
           const updated = yield* sql<{ readonly id: string; readonly updatedAt: string }>`
             UPDATE workbench_tickets
@@ -1733,6 +2001,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
               status = ${status},
               blocked = ${blocked ? 1 : 0},
               markdown = ${markdown},
+              generated_summary_status = ${summary.generatedSummaryStatus},
+              generated_summary_stale = ${summary.generatedSummaryStale},
+              generated_summary_error = ${summary.generatedSummaryError},
+              generated_summary_source_hash = ${summary.generatedSummarySourceHash},
+              generated_summary_request_id = ${summary.generatedSummaryRequestId},
               revision = revision + 1,
               updated_at = MAX(updated_at, ${input.updatedAt})
             WHERE ticket_id = ${input.id}
@@ -1747,21 +2020,203 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "The Workbench Ticket changed before Jira could update it.",
             });
           }
-          return WorkbenchTicket.make({
-            ...current,
-            epicId,
-            title,
-            kind,
-            status,
-            blocked,
-            markdown,
-            revision: current.revision + 1,
-            repositoryProjectIds:
+          return {
+            ticket: WorkbenchTicket.make({
+              id: current.id,
+              projectId: current.projectId,
+              epicId,
+              title,
+              kind,
+              status,
+              blocked,
+              markdown,
+              primaryT3ProjectId: current.primaryT3ProjectId,
+              revision: current.revision + 1,
+              generatedSummary: summary.generatedSummary,
+              repositoryProjectIds:
+                repositories.length > 0
+                  ? repositories.map((repository) => repository.repositoryProjectId)
+                  : [current.primaryT3ProjectId],
+              createdAt: current.createdAt,
+              updatedAt: persisted.updatedAt,
+            }),
+            contentChanged,
+          };
+        }),
+      )
+      .pipe(Effect.mapError(workbenchStoreError));
+    if (contentChanged) yield* publishTicketChange(ticket.id);
+    return ticket;
+  });
+
+  const requestTicketSummary: WorkbenchStoreShape["requestTicketSummary"] = Effect.fn(
+    "WorkbenchStore.requestTicketSummary",
+  )(function* (input) {
+    return yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const current = yield* findTicket({ id: input.ticketId });
+          if (Option.isNone(current)) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_not_found",
+              message: "The Workbench Ticket does not exist.",
+            });
+          }
+          if (current.value.archivedAt !== null) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_archived",
+              message: "Archived Workbench Tickets cannot generate a summary.",
+            });
+          }
+          const jiraLinks = yield* listJiraIssueLinkActivity(input.ticketId);
+          if (jiraLinks.length > 0 && !jiraLinks.some((link) => link.active === 1)) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_summary_generation_failed",
+              message: "This Jira Ticket is no longer active and cannot generate a summary.",
+            });
+          }
+          const sourceHash = ticketSummarySourceHash(current.value.title, current.value.markdown);
+          yield* sql`
+            UPDATE workbench_tickets
+            SET
+              generated_summary_status = 'pending',
+              generated_summary_stale = ${current.value.generatedSummaryStale},
+              generated_summary_error = NULL,
+              generated_summary_source_hash = ${sourceHash},
+              generated_summary_request_id = ${input.requestId}
+            WHERE ticket_id = ${input.ticketId}
+              AND deleted_at IS NULL
+          `;
+          const repositories = yield* listTicketRepositoryRowsByTicket({
+            ticketId: input.ticketId,
+          });
+          return ticketFromRow(
+            {
+              ...current.value,
+              generatedSummaryStatus: "pending",
+              generatedSummaryStale: current.value.generatedSummaryStale,
+              generatedSummaryError: null,
+              generatedSummarySourceHash: sourceHash,
+              generatedSummaryRequestId: input.requestId,
+            },
+            repositories.length > 0
+              ? repositories.map((repository) => repository.repositoryProjectId)
+              : [current.value.primaryT3ProjectId],
+          );
+        }),
+      )
+      .pipe(Effect.mapError(workbenchStoreError));
+  });
+
+  const completeTicketSummary: WorkbenchStoreShape["completeTicketSummary"] = Effect.fn(
+    "WorkbenchStore.completeTicketSummary",
+  )(function* (input) {
+    return yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const current = yield* findTicket({ id: input.ticketId });
+          if (Option.isNone(current) || current.value.archivedAt !== null) {
+            return Option.none<WorkbenchTicket>();
+          }
+          const sourceHash = ticketSummarySourceHash(current.value.title, current.value.markdown);
+          if (
+            current.value.generatedSummaryRequestId !== input.requestId ||
+            current.value.generatedSummarySourceHash !== sourceHash
+          ) {
+            return Option.none<WorkbenchTicket>();
+          }
+          const summary = normalizeSummaryText(input.summary);
+          const updated = yield* sql<{ readonly ticketId: string }>`
+            UPDATE workbench_tickets
+            SET
+              generated_summary = ${summary},
+              generated_summary_status = 'ready',
+              generated_summary_stale = 0,
+              generated_summary_error = NULL,
+              generated_summary_request_id = NULL,
+              generated_summary_source_hash = ${sourceHash}
+            WHERE ticket_id = ${input.ticketId}
+              AND deleted_at IS NULL
+              AND generated_summary_request_id = ${input.requestId}
+              AND generated_summary_source_hash = ${sourceHash}
+            RETURNING ticket_id AS "ticketId"
+          `;
+          if (updated.length === 0) return Option.none<WorkbenchTicket>();
+          const repositories = yield* listTicketRepositoryRowsByTicket({
+            ticketId: input.ticketId,
+          });
+          return Option.some(
+            ticketFromRow(
+              {
+                ...current.value,
+                generatedSummaryText: summary,
+                generatedSummaryStatus: "ready",
+                generatedSummaryStale: 0,
+                generatedSummaryError: null,
+                generatedSummarySourceHash: sourceHash,
+                generatedSummaryRequestId: null,
+              },
               repositories.length > 0
                 ? repositories.map((repository) => repository.repositoryProjectId)
-                : [current.primaryT3ProjectId],
-            updatedAt: persisted.updatedAt,
+                : [current.value.primaryT3ProjectId],
+            ),
+          );
+        }),
+      )
+      .pipe(Effect.mapError(workbenchStoreError));
+  });
+
+  const failTicketSummary: WorkbenchStoreShape["failTicketSummary"] = Effect.fn(
+    "WorkbenchStore.failTicketSummary",
+  )(function* (input) {
+    return yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const current = yield* findTicket({ id: input.ticketId });
+          if (Option.isNone(current) || current.value.archivedAt !== null) {
+            return Option.none<WorkbenchTicket>();
+          }
+          const sourceHash = ticketSummarySourceHash(current.value.title, current.value.markdown);
+          if (
+            current.value.generatedSummaryRequestId !== input.requestId ||
+            current.value.generatedSummarySourceHash !== sourceHash
+          ) {
+            return Option.none<WorkbenchTicket>();
+          }
+          const error = normalizeSummaryError(input.error);
+          const updated = yield* sql<{ readonly ticketId: string }>`
+            UPDATE workbench_tickets
+            SET
+              generated_summary_status = 'error',
+              generated_summary_stale = ${current.value.generatedSummaryStale},
+              generated_summary_error = ${error},
+              generated_summary_request_id = NULL,
+              generated_summary_source_hash = ${sourceHash}
+            WHERE ticket_id = ${input.ticketId}
+              AND deleted_at IS NULL
+              AND generated_summary_request_id = ${input.requestId}
+              AND generated_summary_source_hash = ${sourceHash}
+            RETURNING ticket_id AS "ticketId"
+          `;
+          if (updated.length === 0) return Option.none<WorkbenchTicket>();
+          const repositories = yield* listTicketRepositoryRowsByTicket({
+            ticketId: input.ticketId,
           });
+          return Option.some(
+            ticketFromRow(
+              {
+                ...current.value,
+                generatedSummaryStatus: "error",
+                generatedSummaryStale: current.value.generatedSummaryStale,
+                generatedSummaryError: error,
+                generatedSummarySourceHash: sourceHash,
+                generatedSummaryRequestId: null,
+              },
+              repositories.length > 0
+                ? repositories.map((repository) => repository.repositoryProjectId)
+                : [current.value.primaryT3ProjectId],
+            ),
+          );
         }),
       )
       .pipe(Effect.mapError(workbenchStoreError));
@@ -1770,7 +2225,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
   const archiveTicket: WorkbenchStoreShape["archiveTicket"] = Effect.fn(
     "WorkbenchStore.archiveTicket",
   )(function* (input) {
-    return yield* sql
+    const { ticket, shouldPublishChange } = yield* sql
       .withTransaction(
         Effect.gen(function* () {
           const current = yield* requireTicketRevision({
@@ -1808,20 +2263,25 @@ const makeWorkbenchStore = Effect.gen(function* () {
           const repositories = yield* listTicketRepositoryRowsByTicket({
             ticketId: input.ticketId,
           });
-          return WorkbenchTicket.make({
-            ...current,
-            repositoryProjectIds:
+          return {
+            ticket: ticketFromRow(
+              {
+                ...current,
+                archivedAt: input.archivedAt,
+                revision: current.revision + 1,
+                updatedAt: input.updatedAt,
+              },
               repositories.length > 0
                 ? repositories.map((repository) => repository.repositoryProjectId)
                 : [current.primaryT3ProjectId],
-            blocked: current.blocked === 1,
-            archivedAt: input.archivedAt,
-            revision: current.revision + 1,
-            updatedAt: input.updatedAt,
-          });
+            ),
+            shouldPublishChange: input.archivedAt === null,
+          };
         }),
       )
       .pipe(Effect.mapError(workbenchStoreError));
+    if (shouldPublishChange) yield* publishTicketChange(ticket.id);
+    return ticket;
   });
 
   const deleteTicket: WorkbenchStoreShape["deleteTicket"] = Effect.fn(
@@ -2040,6 +2500,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
 
   return WorkbenchStore.of({
     getSnapshot: getSnapshot(),
+    listTicketsNeedingSummary: listTicketsNeedingSummary(),
+    getTicketSummaryCandidate,
+    recheckTicketSummary,
+    ticketChanges,
     createProject,
     updateProject,
     createEpic,
@@ -2048,6 +2512,9 @@ const makeWorkbenchStore = Effect.gen(function* () {
     createTicket,
     updateTicket,
     updateJiraTicketFields,
+    requestTicketSummary,
+    completeTicketSummary,
+    failTicketSummary,
     archiveTicket,
     deleteTicket,
     createAssignment,

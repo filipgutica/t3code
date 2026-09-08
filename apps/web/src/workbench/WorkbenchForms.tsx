@@ -74,6 +74,8 @@ import {
   getWorkbenchEpicProgress,
   getActiveAssignmentsByTicket,
   getWorkbenchTicketRepositoryProjectIds,
+  getWorkbenchTicketSummaryActionLabel,
+  getWorkbenchTicketSummaryPresentation,
   isWorkbenchTicketStatus,
   isWorkbenchThreadArchived,
   resolveWorkbenchRepositoryOpenCwd,
@@ -907,6 +909,7 @@ export function WorkbenchTicketDetail({
   error,
   onBack,
   onSave,
+  onRegenerateSummary,
   onUpdate,
   onOpenEpic,
   onOpenThread,
@@ -942,6 +945,7 @@ export function WorkbenchTicketDetail({
     title: string,
     markdown: string,
   ) => Promise<WorkbenchTicketSavedVersion | false>;
+  readonly onRegenerateSummary: (ticket: WorkbenchTicket) => void;
   readonly onUpdate: (
     ticket: WorkbenchTicket,
     patch: Partial<
@@ -1040,6 +1044,8 @@ export function WorkbenchTicketDetail({
     editing &&
     ((!jiraFieldsManaged && draft.title !== projectedContent.title) ||
       draft.markdown !== projectedContent.markdown);
+  const summary = getWorkbenchTicketSummaryPresentation(ticket.generatedSummary);
+  const hasUnsavedChanges = dirty;
 
   useEffect(() => {
     if (draftProjected) {
@@ -1190,6 +1196,54 @@ export function WorkbenchTicketDetail({
         <div className="mx-auto grid min-h-0 min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="min-w-0 space-y-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
             {error ? <WorkbenchInlineError message={error} /> : null}
+            <section
+              aria-labelledby="workbench-ticket-generated-summary"
+              className="rounded-xl border border-border bg-card"
+            >
+              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                <div className="min-w-0">
+                  <h2 id="workbench-ticket-generated-summary" className="text-sm font-semibold">
+                    Generated summary
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    A short overview of the saved Ticket.
+                  </p>
+                </div>
+                <Button
+                  aria-label={`${getWorkbenchTicketSummaryActionLabel(ticket.generatedSummary)} for ${displayedTitle}`}
+                  disabled={
+                    pending ||
+                    isArchived ||
+                    ticket.generatedSummary?.status === "pending" ||
+                    hasUnsavedChanges
+                  }
+                  onClick={() => onRegenerateSummary(ticket)}
+                  size="xs"
+                  type="button"
+                  variant="outline"
+                >
+                  {getWorkbenchTicketSummaryActionLabel(ticket.generatedSummary)}
+                </Button>
+              </div>
+              <div className="px-4 py-3">
+                <p className="text-sm leading-relaxed text-muted-foreground">{summary.text}</p>
+                {summary.statusLabel ? (
+                  <p className="mt-2 text-xs text-muted-foreground" role="status">
+                    {summary.statusLabel}
+                  </p>
+                ) : null}
+                {summary.error ? (
+                  <p className="mt-1 break-words text-xs text-warning-foreground" role="status">
+                    {summary.error}
+                  </p>
+                ) : null}
+                {hasUnsavedChanges ? (
+                  <p className="mt-2 text-xs text-warning-foreground" role="status">
+                    Save changes to update summary.
+                  </p>
+                ) : null}
+              </div>
+            </section>
             <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card max-h-[min(70vh,42rem)] lg:max-h-none lg:flex-1">
               <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
                 <div>

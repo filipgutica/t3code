@@ -171,6 +171,13 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,
   }),
+  regenerateTicketSummary: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:regenerate-ticket-summary",
+    tag: WS_METHODS.workbenchRegenerateTicketSummary,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshSnapshot,
+  }),
   archiveTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:archive-ticket",
     tag: WS_METHODS.workbenchArchiveTicket,

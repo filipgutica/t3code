@@ -83,6 +83,12 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
       status TEXT NOT NULL,
       blocked INTEGER NOT NULL,
       revision INTEGER NOT NULL DEFAULT 0,
+      generated_summary TEXT,
+      generated_summary_status TEXT NOT NULL DEFAULT 'pending',
+      generated_summary_stale INTEGER NOT NULL DEFAULT 0,
+      generated_summary_error TEXT,
+      generated_summary_source_hash TEXT,
+      generated_summary_request_id TEXT,
       archived_at TEXT,
       deleted_at TEXT,
       created_at TEXT NOT NULL,
@@ -460,8 +466,64 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
         `;
       }
       yield* sql`
+      INSERT OR IGNORE INTO workbench_schema_migrations (version)
+      VALUES (11)
+      `;
+    }),
+  );
+
+  yield* sql.withTransaction(
+    Effect.gen(function* () {
+      const migration = yield* sql<{ readonly version: number }>`
+        SELECT version
+        FROM workbench_schema_migrations
+        WHERE version = 12
+        LIMIT 1
+      `;
+      if (migration.length > 0) return;
+
+      const ticketColumns = yield* sql<{ readonly name: string }>`
+        PRAGMA table_info(workbench_tickets)
+      `;
+      if (!ticketColumns.some((column) => column.name === "generated_summary")) {
+        yield* sql`
+          ALTER TABLE workbench_tickets
+          ADD COLUMN generated_summary TEXT
+        `;
+      }
+      if (!ticketColumns.some((column) => column.name === "generated_summary_status")) {
+        yield* sql`
+          ALTER TABLE workbench_tickets
+          ADD COLUMN generated_summary_status TEXT NOT NULL DEFAULT 'pending'
+        `;
+      }
+      if (!ticketColumns.some((column) => column.name === "generated_summary_stale")) {
+        yield* sql`
+          ALTER TABLE workbench_tickets
+          ADD COLUMN generated_summary_stale INTEGER NOT NULL DEFAULT 0
+        `;
+      }
+      if (!ticketColumns.some((column) => column.name === "generated_summary_error")) {
+        yield* sql`
+          ALTER TABLE workbench_tickets
+          ADD COLUMN generated_summary_error TEXT
+        `;
+      }
+      if (!ticketColumns.some((column) => column.name === "generated_summary_source_hash")) {
+        yield* sql`
+          ALTER TABLE workbench_tickets
+          ADD COLUMN generated_summary_source_hash TEXT
+        `;
+      }
+      if (!ticketColumns.some((column) => column.name === "generated_summary_request_id")) {
+        yield* sql`
+          ALTER TABLE workbench_tickets
+          ADD COLUMN generated_summary_request_id TEXT
+        `;
+      }
+      yield* sql`
         INSERT OR IGNORE INTO workbench_schema_migrations (version)
-        VALUES (11)
+        VALUES (12)
       `;
     }),
   );
@@ -502,6 +564,6 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
   `;
   yield* sql`
     INSERT OR IGNORE INTO workbench_schema_migrations (version)
-    VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10)
+    VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12)
   `;
 });

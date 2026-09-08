@@ -298,6 +298,9 @@ export function WorkbenchPage({
   const updateEpic = useAtomCommand(workbenchEnvironment.updateEpic, { reportFailure: false });
   const createTicket = useAtomCommand(workbenchEnvironment.createTicket, { reportFailure: false });
   const updateTicket = useAtomCommand(workbenchEnvironment.updateTicket, { reportFailure: false });
+  const regenerateTicketSummary = useAtomCommand(workbenchEnvironment.regenerateTicketSummary, {
+    reportFailure: false,
+  });
   const updateJiraTicket = useAtomCommand(workbenchEnvironment.jiraUpdateTicket, {
     reportFailure: false,
   });
@@ -969,6 +972,34 @@ export function WorkbenchPage({
     return updateTicketFields(ticket, { title: title.trim(), markdown: markdown.trim() });
   };
 
+  const regenerateSummary = async (ticket: WorkbenchTicket) => {
+    if (environmentId === null || pendingAction !== null || ticket.archivedAt != null) return;
+    const draft = ticketDrafts.get(ticket.id);
+    const projectedTicket = {
+      ...ticket,
+      ...resolveWorkbenchTicketContent({
+        ticket,
+        jiraIssue: jiraIssueLinksByTicketId.get(ticket.id)?.issue,
+      }),
+    };
+    const hasUnsavedChanges =
+      draft?.mode === "editing" &&
+      (draft.markdown !== projectedTicket.markdown ||
+        (!jiraManagedTicketIds.has(ticket.id) && draft.title !== projectedTicket.title));
+    if (hasUnsavedChanges) {
+      setError("Save changes to update summary.");
+      return;
+    }
+    setPendingAction(`summary:${ticket.id}`);
+    setError(null);
+    const result = await regenerateTicketSummary({
+      environmentId,
+      input: { ticketId: ticket.id },
+    });
+    setPendingAction(null);
+    reportWorkbenchCommandFailure(result, setError);
+  };
+
   const submitEpic = async (title: string, markdown: string) => {
     if (environmentId === null || selectedProject === null) return false;
     setPendingAction("create-epic");
@@ -1524,6 +1555,9 @@ export function WorkbenchPage({
                 closeWorkItem();
               }}
               onSave={saveTicketContent}
+              onRegenerateSummary={(ticket) => {
+                void regenerateSummary(ticket);
+              }}
               onUpdate={changeTicket}
               onOpenEpic={(epicId) => {
                 setAwaitingTicketId(null);
@@ -1788,6 +1822,9 @@ export function WorkbenchPage({
                   }}
                   onMove={(ticket, status) => {
                     changeTicket(ticketForBoardAction(ticket), { status });
+                  }}
+                  onRegenerateSummary={(ticket) => {
+                    void regenerateSummary(ticket);
                   }}
                   onOpenThread={(ticket, threadId) =>
                     requestTicketThread(ticketForBoardAction(ticket), threadId)

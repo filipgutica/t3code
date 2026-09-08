@@ -4,6 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./TicketSummaryService": {
+      "types": "./src/TicketSummaryService.ts",
+      "import": "./src/TicketSummaryService.ts"
+    },
+    "./TicketSummaryHost": {
+      "types": "./src/TicketSummaryHost.ts",
+      "import": "./src/TicketSummaryHost.ts"
+    },
     "./WorkbenchStore": {
       "types": "./src/WorkbenchStore.ts",
       "import": "./src/WorkbenchStore.ts"

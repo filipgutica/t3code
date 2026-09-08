@@ -25,11 +25,13 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildTicketSummaryPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
   sanitizeCommitSubject,
   sanitizePrTitle,
+  sanitizeTicketSummary,
   sanitizeThreadTitle,
 } from "./TextGenerationUtils.ts";
 
@@ -401,10 +403,28 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
       return { title: sanitizeThreadTitle(generated.title) };
     });
 
+  const generateTicketSummary: TextGeneration.TextGeneration["Service"]["generateTicketSummary"] =
+    Effect.fn("AntigravityTextGeneration.generateTicketSummary")(function* (input) {
+      const generated = yield* runAntigravityJson({
+        operation: "generateTicketSummary",
+        ...buildTicketSummaryPrompt(input),
+        modelSelection: input.modelSelection,
+      });
+      const summary = sanitizeTicketSummary(generated.summary);
+      if (!summary) {
+        return yield* new TextGenerationError({
+          operation: "generateTicketSummary",
+          detail: "Antigravity returned an empty ticket summary.",
+        });
+      }
+      return { summary };
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateTicketSummary,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

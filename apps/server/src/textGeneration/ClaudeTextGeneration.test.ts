@@ -362,6 +362,36 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
     ),
   );
 
+  it.effect("disables tools and configured MCP servers for ticket summaries", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({
+          structured_output: {
+            summary:
+              "Improve request validation for the selected analytics metrics and dimensions. Return a clear API error before querying the provider when the request contains unsupported combinations.",
+          },
+        }),
+        argsMustContain: "--tools  --strict-mcp-config --dangerously-skip-permissions",
+        stdinMustContain: "Ticket title (untrusted data):",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateTicketSummary({
+            cwd: process.cwd(),
+            title: "Validate analytics dimensions",
+            description:
+              "Reject unsupported metric and dimension combinations before provider calls.",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("claudeAgent"),
+              model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+            },
+          });
+
+          expect(generated.summary).toContain("Improve request validation");
+        }),
+    ),
+  );
+
   it.effect("runs Claude text generation with the configured CLAUDE_CONFIG_DIR", () =>
     Effect.gen(function* () {
       const path = yield* Path.Path;

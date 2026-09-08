@@ -141,6 +141,7 @@ import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as WorkbenchStore from "./workbench/WorkbenchStore.ts";
 import * as TicketWorkspaceService from "./workbench/TicketWorkspaceService.ts";
+import * as TicketSummaryService from "./workbench/TicketSummaryService.ts";
 import * as WorkbenchJiraService from "./workbench/jira/WorkbenchJiraService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -476,6 +477,7 @@ const makeWsRpcLayer = (
   workbench: WorkbenchStore.WorkbenchStore["Service"],
   ticketWorkspaces: TicketWorkspaceService.TicketWorkspaceService["Service"],
   workbenchJira: WorkbenchJiraService.WorkbenchJiraService["Service"],
+  ticketSummaries: TicketSummaryService.TicketSummaryService["Service"],
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -1333,6 +1335,14 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.workbenchUpdateTicket, workbench.updateTicket(input), {
             "rpc.aggregate": "workbench",
           }),
+        [WS_METHODS.workbenchRegenerateTicketSummary]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.workbenchRegenerateTicketSummary,
+            ticketSummaries.regenerate(input),
+            {
+              "rpc.aggregate": "workbench",
+            },
+          ),
         [WS_METHODS.workbenchArchiveTicket]: (input) =>
           observeRpcEffect(WS_METHODS.workbenchArchiveTicket, workbench.archiveTicket(input), {
             "rpc.aggregate": "workbench",
@@ -3056,6 +3066,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
     const workbench = yield* WorkbenchStore.WorkbenchStore;
     const ticketWorkspaces = yield* TicketWorkspaceService.TicketWorkspaceService;
     const workbenchJira = yield* WorkbenchJiraService.WorkbenchJiraService;
+    const ticketSummaries = yield* TicketSummaryService.TicketSummaryService;
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -3091,6 +3102,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               workbench,
               ticketWorkspaces,
               workbenchJira,
+              ticketSummaries,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(AgentSessionScanner.layer),

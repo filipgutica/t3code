@@ -17,6 +17,8 @@ import {
   getWorkbenchContextForThread,
   groupWorkbenchTicketsByEpic,
   getWorkbenchTicketRepositoryProjectIds,
+  getWorkbenchTicketSummaryActionLabel,
+  getWorkbenchTicketSummaryPresentation,
   getWorkbenchTicketTemplate,
   getWorkbenchThreadPresentation,
   getWorkbenchAgentPresentation,
@@ -42,6 +44,79 @@ describe("Workbench ticket helpers", () => {
       ]),
     ).toEqual({ completed: 2, percent: 50, total: 4 });
     expect(getWorkbenchEpicProgress([])).toEqual({ completed: 0, percent: 0, total: 0 });
+  });
+
+  it("uses stored generated summaries without falling back to descriptions", () => {
+    expect(
+      getWorkbenchTicketSummaryPresentation({
+        text: "Keep the generated summary.",
+        status: "error",
+        stale: true,
+        error: "generation failed",
+      }),
+    ).toEqual({
+      text: "Keep the generated summary.",
+      hasText: true,
+      statusLabel: "Outdated summary",
+      error: "generation failed",
+    });
+    expect(
+      getWorkbenchTicketSummaryPresentation({
+        text: "The previous generated summary.",
+        status: "pending",
+        stale: true,
+        error: null,
+      }),
+    ).toEqual({
+      text: "The previous generated summary.",
+      hasText: true,
+      statusLabel: "Generating summary…",
+      error: null,
+    });
+    expect(
+      getWorkbenchTicketSummaryPresentation({
+        text: null,
+        status: "pending",
+        stale: false,
+        error: null,
+      }),
+    ).toEqual({
+      text: "Generating summary…",
+      hasText: false,
+      statusLabel: null,
+      error: null,
+    });
+    expect(getWorkbenchTicketSummaryPresentation(undefined)).toEqual({
+      text: "Summary unavailable",
+      hasText: false,
+      statusLabel: null,
+      error: null,
+    });
+    expect(
+      getWorkbenchTicketSummaryPresentation({
+        text: null,
+        status: "error",
+        stale: false,
+        error: "Select an available model.",
+      }).error,
+    ).toBe("Select an available model.");
+    expect(
+      getWorkbenchTicketSummaryPresentation({
+        text: "Still current.",
+        status: "error",
+        stale: false,
+        error: "Retry failed.",
+      }).statusLabel,
+    ).toBe("Summary generation failed");
+    expect(
+      getWorkbenchTicketSummaryActionLabel({
+        text: "Existing summary",
+        status: "ready",
+        stale: false,
+        error: null,
+      }),
+    ).toBe("Regenerate summary");
+    expect(getWorkbenchTicketSummaryActionLabel(undefined)).toBe("Generate summary");
   });
 
   it("groups Ticket swimlanes by Epic with unassigned Tickets last", () => {

@@ -44,6 +44,8 @@ import {
   getWorkbenchAgentPresentation,
   getWorkbenchTicketAgentPresentation,
   getWorkbenchTicketRepositoryProjectIds,
+  getWorkbenchTicketSummaryActionLabel,
+  getWorkbenchTicketSummaryPresentation,
   groupWorkbenchTicketsByEpic,
   isWorkbenchThreadArchived,
   WORKBENCH_TICKET_KIND_LABELS,
@@ -78,6 +80,7 @@ export function WorkbenchTicketBoard({
   onSelect,
   onSelectEpic,
   onMove,
+  onRegenerateSummary,
   onOpenThread,
   onCreateTicket,
 }: {
@@ -100,6 +103,7 @@ export function WorkbenchTicketBoard({
   readonly onSelect: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
   readonly onSelectEpic: (projectId: WorkbenchProjectId, epicId: WorkbenchEpic["id"]) => void;
   readonly onMove: (ticket: WorkbenchTicket, status: WorkbenchTicketStatus) => void;
+  readonly onRegenerateSummary: (ticket: WorkbenchTicket) => void;
   readonly onOpenThread: (ticket: WorkbenchTicket, threadId?: ThreadId) => void;
   readonly onCreateTicket: () => void;
 }) {
@@ -309,6 +313,9 @@ export function WorkbenchTicketBoard({
                               getWorkbenchTicketRepositoryProjectIds(ticket).length - 1;
                             const epic = ticket.epicId ? epicsById.get(ticket.epicId) : undefined;
                             const jiraIssueLink = jiraIssueLinksByTicketId.get(ticket.id);
+                            const summary = getWorkbenchTicketSummaryPresentation(
+                              ticket.generatedSummary,
+                            );
                             return (
                               <article
                                 key={ticket.id}
@@ -368,6 +375,18 @@ export function WorkbenchTicketBoard({
                                             </MenuItem>
                                           ),
                                         )}
+                                        <MenuItem
+                                          disabled={
+                                            pending ||
+                                            ticket.archivedAt != null ||
+                                            ticket.generatedSummary?.status === "pending"
+                                          }
+                                          onClick={() => onRegenerateSummary(ticket)}
+                                        >
+                                          {getWorkbenchTicketSummaryActionLabel(
+                                            ticket.generatedSummary,
+                                          )}
+                                        </MenuItem>
                                       </MenuPopup>
                                     </Menu>
                                   </div>
@@ -409,19 +428,27 @@ export function WorkbenchTicketBoard({
                                     <Tooltip>
                                       <TooltipTrigger
                                         render={
-                                          <p className="line-clamp-2 break-words text-xs text-muted-foreground" />
+                                          <p
+                                            aria-label={`Ticket summary: ${summary.text}`}
+                                            className="line-clamp-2 break-words text-xs text-muted-foreground outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+                                            tabIndex={0}
+                                          />
                                         }
                                       >
-                                        {jiraIssueLink?.issue.description?.trim() ||
-                                          ticket.markdown.trim() ||
-                                          "No summary added yet."}
+                                        {summary.text}
                                       </TooltipTrigger>
                                       <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
-                                        {jiraIssueLink?.issue.description?.trim() ||
-                                          ticket.markdown.trim() ||
-                                          "No summary added yet."}
+                                        {summary.text}
                                       </TooltipPopup>
                                     </Tooltip>
+                                    {summary.statusLabel ? (
+                                      <p
+                                        className="text-[11px] text-muted-foreground"
+                                        role="status"
+                                      >
+                                        {summary.statusLabel}
+                                      </p>
+                                    ) : null}
                                     <div className="flex min-w-0 items-center gap-1.5">
                                       <FolderGit2Icon className="size-3.5 shrink-0" />
                                       <span className="truncate">

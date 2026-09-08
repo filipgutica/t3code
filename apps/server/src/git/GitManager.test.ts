@@ -298,10 +298,12 @@ function createTextGeneration(
       Effect.succeed({
         title: "Update workflow",
       }),
+    generateTicketSummary: () => Effect.succeed({ summary: "Update the workflow." }),
     ...overrides,
   };
 
   return {
+    generateTicketSummary: (input) => implementation.generateTicketSummary(input),
     generateCommitMessage: (input) =>
       implementation.generateCommitMessage(input).pipe(
         Effect.mapError(
