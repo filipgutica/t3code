@@ -85,7 +85,7 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
       revision INTEGER NOT NULL DEFAULT 0,
       generated_summary TEXT,
       generated_summary_status TEXT NOT NULL DEFAULT 'pending',
-      generated_summary_stale INTEGER NOT NULL DEFAULT 1,
+      generated_summary_stale INTEGER NOT NULL DEFAULT 0,
       generated_summary_error TEXT,
       generated_summary_source_hash TEXT,
       generated_summary_request_id TEXT,
@@ -500,7 +500,7 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
       if (!ticketColumns.some((column) => column.name === "generated_summary_stale")) {
         yield* sql`
           ALTER TABLE workbench_tickets
-          ADD COLUMN generated_summary_stale INTEGER NOT NULL DEFAULT 1
+          ADD COLUMN generated_summary_stale INTEGER NOT NULL DEFAULT 0
         `;
       }
       if (!ticketColumns.some((column) => column.name === "generated_summary_error")) {

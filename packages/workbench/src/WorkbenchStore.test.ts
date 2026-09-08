@@ -119,7 +119,11 @@ describe("WorkbenchStore package boundary", () => {
         const projectId = ProjectId.make("summary-lifecycle-project");
         const workspaceId = WorkbenchProjectId.make("summary-lifecycle-workspace");
         const ticketId = WorkbenchTicketId.make("summary-lifecycle-ticket");
-        yield* seedTicket({ store, projectId, workspaceId, ticketId });
+        const created = yield* seedTicket({ store, projectId, workspaceId, ticketId });
+        expect(created.generatedSummary.stale).toBe(false);
+        expect((yield* store.getSnapshot).tickets[0]?.generatedSummary).toEqual(
+          created.generatedSummary,
+        );
 
         yield* store.requestTicketSummary({ ticketId, requestId: "summary-request-1" });
         const staleCompletion = yield* store.completeTicketSummary({
@@ -227,7 +231,7 @@ describe("WorkbenchStore package boundary", () => {
       expect((yield* store.getSnapshot).tickets[0]?.generatedSummary).toEqual({
         text: null,
         status: "pending",
-        stale: true,
+        stale: false,
         error: null,
       });
       const migratedColumns = yield* sql<{
@@ -252,7 +256,7 @@ describe("WorkbenchStore package boundary", () => {
         {
           generatedSummary: null,
           generatedSummaryStatus: "pending",
-          generatedSummaryStale: 1,
+          generatedSummaryStale: 0,
           generatedSummaryError: null,
           generatedSummarySourceHash: null,
           generatedSummaryRequestId: null,
