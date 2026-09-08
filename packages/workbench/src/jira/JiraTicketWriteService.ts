@@ -1,6 +1,8 @@
 import {
   WorkbenchJiraOperationError,
   type WorkbenchJiraBinding,
+  type WorkbenchJiraGetTicketTransitionsInput,
+  type WorkbenchJiraGetTicketTransitionsResult,
   type WorkbenchJiraIssueLink,
   type WorkbenchJiraIssueSnapshot,
   type WorkbenchJiraSelectedSprint,
@@ -52,6 +54,8 @@ const RawTransition = Schema.Struct({
 });
 const TransitionPage = Schema.Struct({ transitions: Schema.Array(RawTransition) });
 
+const UNMAPPED_TRANSITION_REASON = "This Jira status is not mapped to Workbench.";
+
 const issueWriteError = (message: string) => operationError("request_failed", message);
 
 const httpStatusErrorMessage = (status: number): string => {
@@ -80,10 +84,12 @@ const validateReadback = ({
   input,
   refreshed,
   mappedStatus,
+  expectedStatusId,
 }: {
   readonly input: WorkbenchJiraUpdateTicketInput;
   readonly refreshed: WorkbenchJiraIssueSnapshot;
   readonly mappedStatus: WorkbenchTicketStatus | undefined;
+  readonly expectedStatusId: string | undefined;
 }) => {
   if (mappedStatus === undefined) {
     return Effect.fail(
@@ -101,6 +107,14 @@ const validateReadback = ({
       ),
     );
   }
+  if (expectedStatusId !== undefined && refreshed.status.id !== expectedStatusId) {
+    return Effect.fail(
+      operationError(
+        "request_failed",
+        `Jira accepted the status update, but the refreshed issue is still at Jira status ${refreshed.status.name}. Refresh Jira before trying again.`,
+      ),
+    );
+  }
   if (input.status !== undefined && mappedStatus !== input.status) {
     return Effect.fail(
       operationError(
@@ -113,6 +127,9 @@ const validateReadback = ({
 };
 
 export interface JiraTicketWriteServiceShape {
+  readonly getTicketTransitions: (
+    input: WorkbenchJiraGetTicketTransitionsInput,
+  ) => Effect.Effect<WorkbenchJiraGetTicketTransitionsResult, WorkbenchJiraOperationError>;
   readonly updateTicket: (
     input: WorkbenchJiraUpdateTicketInput,
   ) => Effect.Effect<WorkbenchJiraIssueSnapshot, WorkbenchJiraOperationError>;
@@ -352,7 +369,7 @@ export const make = Effect.gen(function* () {
   const selectTransition = (input: {
     readonly transitions: ReadonlyArray<{
       readonly id: string;
-      readonly to: { readonly id: string };
+      readonly to: { readonly id: string; readonly name: string };
     }>;
     readonly statusMappings: WorkbenchJiraBinding["statusMappings"];
     readonly targetStatus: WorkbenchTicketStatus | undefined;
@@ -384,14 +401,100 @@ export const make = Effect.gen(function* () {
     return Effect.succeed(candidates[0]!);
   };
 
+  const resolveTransition = (input: {
+    readonly binding: WorkbenchJiraBinding;
+    readonly issueId: string;
+    readonly currentStatusName: string;
+    readonly status: WorkbenchTicketStatus | undefined;
+    readonly transitionId: string | undefined;
+  }) =>
+    Effect.gen(function* () {
+      const credentials = yield* getConnectionAndToken(input.binding);
+      const transitions = yield* getTransitions({
+        issueId: input.issueId,
+        accessToken: credentials.accessToken,
+        cloudId: credentials.connection.cloudId,
+      });
+      const candidate =
+        input.transitionId !== undefined
+          ? transitions.find((transition) => transition.id === input.transitionId)
+          : yield* selectTransition({
+              transitions,
+              statusMappings: input.binding.statusMappings,
+              targetStatus: input.status,
+              currentStatusName: input.currentStatusName,
+            });
+      if (candidate === undefined) {
+        return yield* operationError(
+          "invalid_binding",
+          "The selected Jira transition is no longer available. Refresh the Ticket and try again.",
+        );
+      }
+      const transitionStatusMapping = input.binding.statusMappings.find(
+        (mapping) => mapping.jiraStatusId === candidate.to.id,
+      );
+      if (transitionStatusMapping === undefined) {
+        return yield* operationError(
+          "status_unmapped",
+          `Jira status ${candidate.to.name} is not mapped to a Workbench column.`,
+        );
+      }
+      return {
+        id: candidate.id,
+        accessToken: credentials.accessToken,
+        cloudId: credentials.connection.cloudId,
+        destinationStatusId: input.transitionId !== undefined ? candidate.to.id : undefined,
+      };
+    });
+
+  const getTicketTransitions: JiraTicketWriteServiceShape["getTicketTransitions"] = (input) =>
+    Effect.gen(function* () {
+      const initial = yield* findManagedIssue(input.ticketId);
+      return yield* sync.withBindingPermit(
+        initial.binding.id,
+        Effect.gen(function* () {
+          const managed = yield* findManagedIssue(input.ticketId);
+          if (
+            managed.binding.id !== initial.binding.id ||
+            managed.binding.updatedAt !== initial.binding.updatedAt ||
+            managed.link.issue.issueId !== initial.link.issue.issueId
+          ) {
+            return yield* operationError(
+              "invalid_binding",
+              "The Jira Ticket link changed while transitions were loading. Refresh the Ticket and try again.",
+            );
+          }
+          const current = yield* readAssignedIssue(managed);
+          const credentials = yield* getConnectionAndToken(managed.binding);
+          const transitions = yield* getTransitions({
+            issueId: current.issueId,
+            accessToken: credentials.accessToken,
+            cloudId: credentials.connection.cloudId,
+          });
+          return {
+            transitions: transitions.map((transition) => ({
+              ...transition,
+              unavailableReason: managed.binding.statusMappings.some(
+                (mapping) => mapping.jiraStatusId === transition.to.id,
+              )
+                ? null
+                : UNMAPPED_TRANSITION_REASON,
+            })),
+            remoteUpdatedAt: current.remoteUpdatedAt,
+          };
+        }),
+      );
+    });
+
   const updateTicket: JiraTicketWriteServiceShape["updateTicket"] = (input) =>
     Effect.gen(function* () {
       const hasMarkdown = input.markdown !== undefined;
       const hasStatus = input.status !== undefined;
-      if (hasMarkdown === hasStatus) {
+      const hasTransition = input.transitionId !== undefined;
+      if ([hasMarkdown, hasStatus, hasTransition].filter(Boolean).length !== 1) {
         return yield* operationError(
           "invalid_binding",
-          "Update exactly one Jira Ticket field at a time: description or status.",
+          "Update exactly one Jira Ticket field at a time: description, status, or transition.",
         );
       }
       const initial = yield* findManagedIssue(input.ticketId);
@@ -443,26 +546,17 @@ export const make = Effect.gen(function* () {
                 readonly id: string;
                 readonly accessToken: string;
                 readonly cloudId: string;
+                readonly destinationStatusId: string | undefined;
               }
             | undefined;
-          if (statusChanged) {
-            const credentials = yield* getConnectionAndToken(managed.binding);
-            const transitions = yield* getTransitions({
+          if (statusChanged || hasTransition) {
+            transition = yield* resolveTransition({
+              binding: managed.binding,
               issueId: current.issueId,
-              accessToken: credentials.accessToken,
-              cloudId: credentials.connection.cloudId,
-            });
-            const candidate = yield* selectTransition({
-              transitions,
-              statusMappings: managed.binding.statusMappings,
-              targetStatus: input.status,
               currentStatusName: current.status.name,
+              status: input.status,
+              transitionId: input.transitionId,
             });
-            transition = {
-              id: candidate.id,
-              accessToken: credentials.accessToken,
-              cloudId: credentials.connection.cloudId,
-            };
           }
 
           if (descriptionChanged && input.markdown !== undefined) {
@@ -494,7 +588,12 @@ export const make = Effect.gen(function* () {
           const mappedStatus = managed.binding.statusMappings.find(
             (mapping) => mapping.jiraStatusId === refreshed.status.id,
           )?.workbenchStatus;
-          const validatedStatus = yield* validateReadback({ input, refreshed, mappedStatus });
+          const validatedStatus = yield* validateReadback({
+            input,
+            refreshed,
+            mappedStatus,
+            expectedStatusId: transition?.destinationStatusId,
+          });
           const syncedAt = DateTime.formatIso(DateTime.makeUnsafe(yield* clock.currentTimeMillis));
           yield* persistProjection({
             managed,
@@ -507,7 +606,7 @@ export const make = Effect.gen(function* () {
       );
     });
 
-  return JiraTicketWriteService.of({ updateTicket });
+  return JiraTicketWriteService.of({ getTicketTransitions, updateTicket });
 });
 
 export const layer = Layer.effect(JiraTicketWriteService, make);

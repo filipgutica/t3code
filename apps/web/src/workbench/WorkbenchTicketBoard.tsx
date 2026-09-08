@@ -1,5 +1,6 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type {
+  EnvironmentId,
   ProjectId,
   ThreadId,
   WorkbenchAssignment,
@@ -35,12 +36,16 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "../components/ui/empty";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
+import { MenuItem } from "../components/ui/menu";
+import {
+  WorkbenchTicketStatusMenu,
+  type WorkbenchJiraTransitionSelection,
+} from "./WorkbenchTicketStatusMenu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import type { Project } from "../types";
 import {
-  getWorkbenchTicketStatusMoves,
   getWorkbenchThreadPresentation,
+  getVisibleWorkbenchAssignments,
   getWorkbenchAgentPresentation,
   getWorkbenchTicketAgentPresentation,
   getWorkbenchTicketRepositoryProjectIds,
@@ -49,7 +54,6 @@ import {
   groupWorkbenchTicketsByEpic,
   isWorkbenchThreadArchived,
   WORKBENCH_TICKET_KIND_LABELS,
-  WORKBENCH_TICKET_STATUS_LABELS,
 } from "./workbench.logic";
 import { getWorkbenchBoardColumns, orderWorkbenchTicketsByJiraRank } from "./workbenchJira.logic";
 import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
@@ -61,6 +65,7 @@ const STATUS_DOT_CLASS: Record<WorkbenchTicketStatus, string> = {
 };
 
 export function WorkbenchTicketBoard({
+  environmentId,
   projectId,
   mirrorColumns,
   tickets,
@@ -80,10 +85,13 @@ export function WorkbenchTicketBoard({
   onSelect,
   onSelectEpic,
   onMove,
+  onJiraTransition,
   onRegenerateSummary,
   onOpenThread,
   onCreateTicket,
 }: {
+  readonly environmentId: EnvironmentId;
+  readonly onJiraTransition: (selection: WorkbenchJiraTransitionSelection) => void;
   readonly projectId: WorkbenchProjectId;
   readonly mirrorColumns: ReadonlyArray<WorkbenchJiraBoardColumn> | null;
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
@@ -133,13 +141,18 @@ export function WorkbenchTicketBoard({
   }, [assignments, threadsById]);
   const threadCounts = useMemo(() => {
     const counts = new Map<WorkbenchTicketId, number>();
-    for (const assignment of assignments) {
+    for (const assignment of getVisibleWorkbenchAssignments(
+      assignments,
+      new Set(threadsById.keys()),
+      new Set(archivedThreadsById.keys()),
+      true,
+    )) {
       if (assignment.supersededAt === null) {
         counts.set(assignment.ticketId, (counts.get(assignment.ticketId) ?? 0) + 1);
       }
     }
     return counts;
-  }, [assignments]);
+  }, [assignments, threadsById, archivedThreadsById]);
   const columns = useMemo(
     () =>
       getWorkbenchBoardColumns({ tickets, mirrorColumns, issueLinks: jiraIssueLinksByTicketId }),
@@ -319,10 +332,10 @@ export function WorkbenchTicketBoard({
                             return (
                               <article
                                 key={ticket.id}
-                                className={`w-full max-w-md min-w-0 rounded-lg border bg-card p-3 shadow-xs/5 transition-colors hover:border-foreground/20 ${
+                                className={`w-full max-w-md min-w-0 rounded-lg border bg-card/40 p-3 shadow-xs/5 transition-colors hover:border-foreground/20 ${
                                   selectedTicketId === ticket.id
                                     ? "border-primary/50 ring-2 ring-primary/15"
-                                    : "border-border"
+                                    : "border-border/60"
                                 }`}
                               >
                                 <div className="flex items-start gap-2">
@@ -345,50 +358,37 @@ export function WorkbenchTicketBoard({
                                     </Tooltip>
                                   </button>
                                   <div className="flex min-w-0 shrink-0 items-center gap-1">
-                                    <Menu>
-                                      <MenuTrigger
-                                        aria-label={`Move ${ticket.title} to another status`}
-                                        render={
-                                          <Button
-                                            className="-mr-1 -mt-1 shrink-0"
-                                            disabled={pending}
-                                            size="icon-xs"
-                                            variant="ghost"
-                                          />
-                                        }
-                                      >
-                                        <MoreHorizontalIcon />
-                                      </MenuTrigger>
-                                      <MenuPopup align="end" className="min-w-44">
-                                        {getWorkbenchTicketStatusMoves(ticket.status).map(
-                                          (nextStatus) => (
-                                            <MenuItem
-                                              key={nextStatus}
-                                              disabled={pending}
-                                              onClick={() => onMove(ticket, nextStatus)}
-                                            >
-                                              <span
-                                                aria-hidden
-                                                className={`size-2 rounded-full ${STATUS_DOT_CLASS[nextStatus]}`}
-                                              />
-                                              Move to {WORKBENCH_TICKET_STATUS_LABELS[nextStatus]}
-                                            </MenuItem>
-                                          ),
-                                        )}
-                                        <MenuItem
-                                          disabled={
-                                            pending ||
-                                            ticket.archivedAt != null ||
-                                            ticket.generatedSummary?.status === "pending"
-                                          }
-                                          onClick={() => onRegenerateSummary(ticket)}
+                                    <WorkbenchTicketStatusMenu
+                                      key={`${environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
+                                      environmentId={environmentId}
+                                      ticket={ticket}
+                                      jiraIssueLink={jiraIssueLink ?? null}
+                                      disabled={pending || ticket.archivedAt != null}
+                                      onStatusChange={(status) => onMove(ticket, status)}
+                                      onJiraTransition={onJiraTransition}
+                                      trigger={
+                                        <Button
+                                          className="-mr-1 -mt-1 shrink-0"
+                                          size="icon-xs"
+                                          variant="ghost"
                                         >
-                                          {getWorkbenchTicketSummaryActionLabel(
-                                            ticket.generatedSummary,
-                                          )}
-                                        </MenuItem>
-                                      </MenuPopup>
-                                    </Menu>
+                                          <MoreHorizontalIcon />
+                                        </Button>
+                                      }
+                                    >
+                                      <MenuItem
+                                        disabled={
+                                          pending ||
+                                          ticket.archivedAt != null ||
+                                          ticket.generatedSummary?.status === "pending"
+                                        }
+                                        onClick={() => onRegenerateSummary(ticket)}
+                                      >
+                                        {getWorkbenchTicketSummaryActionLabel(
+                                          ticket.generatedSummary,
+                                        )}
+                                      </MenuItem>
+                                    </WorkbenchTicketStatusMenu>
                                   </div>
                                 </div>
                                 <button
@@ -461,7 +461,7 @@ export function WorkbenchTicketBoard({
                                       ) : null}
                                     </div>
                                     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                      {thread.state === "linked" ? (
+                                      {thread.state === "linked" || thread.state === "archived" ? (
                                         <span
                                           aria-hidden
                                           className={`size-2 rounded-full ${
@@ -471,8 +471,6 @@ export function WorkbenchTicketBoard({
                                               : "bg-muted-foreground/60")
                                           }`}
                                         />
-                                      ) : thread.state === "missing" ? (
-                                        <CircleAlertIcon className="size-3.5 text-warning-foreground" />
                                       ) : (
                                         <BotIcon className="size-3.5" />
                                       )}
@@ -484,12 +482,9 @@ export function WorkbenchTicketBoard({
                                       >
                                         {thread.stateLabel}
                                       </span>
-                                      {assignment ? (
+                                      {(threadCounts.get(ticket.id) ?? 0) > 1 ? (
                                         <span className="text-muted-foreground/60">
-                                          ·{" "}
-                                          {(threadCounts.get(ticket.id) ?? 0) > 1
-                                            ? `${threadCounts.get(ticket.id)} Threads`
-                                            : "Assigned"}
+                                          · {threadCounts.get(ticket.id)} Threads
                                         </span>
                                       ) : null}
                                     </div>
@@ -501,7 +496,11 @@ export function WorkbenchTicketBoard({
                                     disabled={pending}
                                     onClick={() => onOpenThread(ticket, assignment?.threadId)}
                                     size="xs"
-                                    variant={thread.state === "unassigned" ? "default" : "outline"}
+                                    variant={
+                                      thread.state === "unassigned" || thread.state === "missing"
+                                        ? "default"
+                                        : "outline"
+                                    }
                                   >
                                     {threadActionPending
                                       ? thread.pendingActionLabel

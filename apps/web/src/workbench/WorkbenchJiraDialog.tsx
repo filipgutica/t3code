@@ -566,7 +566,8 @@ export function WorkbenchJiraDialog({
               <fieldset className="space-y-2">
                 <legend className="text-sm font-medium">Default repository scope</legend>
                 <p className="text-xs text-muted-foreground">
-                  New Jira Tickets use this scope until work starts.
+                  Imported Tickets start with these repositories. Adjust each Ticket's repository
+                  scope before creating its Thread. Importing does not create worktrees.
                 </p>
                 <div className="space-y-1 rounded-lg border border-border p-1">
                   {linkedProjects.map((project) => {

@@ -106,7 +106,7 @@ describe("WorkbenchStore package boundary", () => {
         "workbench_tickets",
       ]);
       expect(migrations.map(({ version }) => version)).toEqual([
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
       ]);
     }).pipe(Effect.provide(testLayer())),
   );
@@ -263,6 +263,53 @@ describe("WorkbenchStore package boundary", () => {
         },
       ]);
     }).pipe(Effect.provide(testLayer({ projects: new Set(["summary-migration-project"]) }))),
+  );
+
+  it.effect("backfills Ticket Workspace repository attempt ownership", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* WorkbenchStore;
+      const projectId = ProjectId.make("workspace-attempt-migration-project");
+      const workspaceId = WorkbenchProjectId.make("workspace-attempt-migration-workspace");
+      const ticketId = WorkbenchTicketId.make("workspace-attempt-migration-ticket");
+      const createdAt = "2026-09-07T10:00:00.000Z";
+      const attemptId = "workspace-attempt-migration-attempt";
+
+      yield* seedTicket({ store, projectId, workspaceId, ticketId, createdAt });
+      yield* sql`
+        INSERT INTO workbench_ticket_workspaces (
+          ticket_id, attempt_id, status, branch_name, error_message, created_at, updated_at
+        ) VALUES (
+          ${ticketId}, ${attemptId}, 'ready', 'workbench/migration', NULL,
+          ${createdAt}, ${createdAt}
+        )
+      `;
+      yield* sql`
+        INSERT INTO workbench_ticket_workspace_repositories (
+          ticket_id, t3_project_id, attempt_id, is_primary, source_path, worktree_path,
+          branch_name, status, error_message, created_at, updated_at
+        ) VALUES (
+          ${ticketId}, ${projectId}, NULL, 1, '/repos/migration', '/worktrees/migration',
+          'workbench/migration', 'ready', NULL, ${createdAt}, ${createdAt}
+        )
+      `;
+
+      yield* sql`DELETE FROM workbench_schema_migrations WHERE version = 13`;
+      yield* sql`ALTER TABLE workbench_ticket_workspace_repositories DROP COLUMN attempt_id`;
+      yield* ensureWorkbenchSchema;
+
+      const backfilled = yield* sql<{ readonly attemptId: string | null }>`
+        SELECT attempt_id AS "attemptId"
+        FROM workbench_ticket_workspace_repositories
+        WHERE ticket_id = ${ticketId}
+      `;
+      expect(backfilled).toEqual([{ attemptId }]);
+      expect(yield* store.getTicketWorkspaceRepositoryStates(ticketId)).toEqual([
+        { projectId, attemptId, status: "ready" },
+      ]);
+    }).pipe(
+      Effect.provide(testLayer({ projects: new Set(["workspace-attempt-migration-project"]) })),
+    ),
   );
 
   it.effect("rolls back a failed ticket update after acquiring the writer lock", () =>

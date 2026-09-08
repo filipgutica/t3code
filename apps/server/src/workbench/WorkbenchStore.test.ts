@@ -11,6 +11,7 @@ import {
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import {
@@ -433,7 +434,7 @@ describe("WorkbenchStore", () => {
       const snapshot = yield* store.getSnapshot;
 
       expect(concurrentClaim.code).toBe("ticket_workspace_preparation_in_progress");
-      expect(lockedScope.code).toBe("ticket_repository_scope_locked");
+      expect(lockedScope.code).toBe("ticket_workspace_in_use");
       expect(ready).toMatchObject({
         ticketId,
         attemptId,
@@ -577,6 +578,167 @@ describe("WorkbenchStore", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
+  it.effect("retains Workspace repositories when Ticket scope changes", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* WorkbenchStore;
+      const primaryProjectId = ProjectId.make("t3-project-scope-primary");
+      const secondaryProjectId = ProjectId.make("t3-project-scope-secondary");
+      const projectId = WorkbenchProjectId.make("workbench-project-scope");
+      const ticketId = WorkbenchTicketId.make("ticket-scope");
+      const createdAt = "2026-09-03T12:00:00.000Z";
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+        ) VALUES
+          (${primaryProjectId}, 'Primary', '/repos/scope-primary', '[]', ${createdAt}, ${createdAt}, NULL),
+          (${secondaryProjectId}, 'Secondary', '/repos/scope-secondary', '[]', ${createdAt}, ${createdAt}, NULL)
+      `;
+      yield* store.createProject({
+        id: projectId,
+        title: "Scope Workspace",
+        linkedProjectIds: [primaryProjectId, secondaryProjectId],
+        createdAt,
+      });
+      yield* store.createTicket({
+        id: ticketId,
+        projectId,
+        title: "Retain repository worktrees",
+        kind: "story",
+        markdown: "Existing worktrees remain available after scope edits.",
+        primaryT3ProjectId: primaryProjectId,
+        repositoryProjectIds: [primaryProjectId],
+        createdAt,
+      });
+      const initialAttemptId = WorkbenchTicketWorkspaceAttemptId.make("scope-attempt-initial");
+      yield* store.claimTicketWorkspace({
+        ticketId,
+        attemptId: initialAttemptId,
+        branchName: "workbench/ticket-scope",
+        repositories: [
+          {
+            projectId: primaryProjectId,
+            isPrimary: true,
+            sourcePath: "/repos/scope-primary",
+            worktreePath: "/worktrees/ticket-scope/primary",
+          },
+        ],
+        claimedAt: createdAt,
+      });
+      yield* store.markTicketWorkspaceRepositoryReady({
+        ticketId,
+        attemptId: initialAttemptId,
+        projectId: primaryProjectId,
+        worktreePath: "/worktrees/ticket-scope/primary",
+        branchName: "workbench/ticket-scope",
+        updatedAt: createdAt,
+      });
+      yield* store.completeTicketWorkspace({
+        ticketId,
+        attemptId: initialAttemptId,
+        completedAt: createdAt,
+      });
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id, project_id, title, model_selection_json, runtime_mode,
+          interaction_mode, pending_approval_count, pending_user_input_count,
+          has_actionable_proposed_plan, created_at, updated_at, deleted_at
+        ) VALUES (
+          'scope-thread', ${primaryProjectId}, 'Scope thread', '{}',
+          'full-access', 'default', 0, 0, 0, ${createdAt}, ${createdAt}, NULL
+        )
+      `;
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("scope-assignment"),
+        ticketId,
+        threadId: ThreadId.make("scope-thread"),
+        createdAt,
+      });
+
+      yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: 0,
+        primaryT3ProjectId: primaryProjectId,
+        repositoryProjectIds: [primaryProjectId, secondaryProjectId],
+        updatedAt: "2026-09-03T12:01:00.000Z",
+      });
+      const extensionAttemptId = WorkbenchTicketWorkspaceAttemptId.make("scope-attempt-extension");
+      yield* store.claimTicketWorkspace({
+        ticketId,
+        attemptId: extensionAttemptId,
+        branchName: "workbench/ticket-scope",
+        repositories: [
+          {
+            projectId: primaryProjectId,
+            isPrimary: true,
+            sourcePath: "/repos/scope-primary",
+            worktreePath: "/worktrees/ticket-scope/primary",
+          },
+          {
+            projectId: secondaryProjectId,
+            isPrimary: false,
+            sourcePath: "/repos/scope-secondary",
+            worktreePath: "/worktrees/ticket-scope/secondary",
+          },
+        ],
+        claimedAt: "2026-09-03T12:01:01.000Z",
+      });
+      yield* store.markTicketWorkspaceRepositoryReady({
+        ticketId,
+        attemptId: extensionAttemptId,
+        projectId: secondaryProjectId,
+        worktreePath: "/worktrees/ticket-scope/secondary",
+        branchName: "workbench/ticket-scope",
+        updatedAt: "2026-09-03T12:01:02.000Z",
+      });
+      yield* store.completeTicketWorkspace({
+        ticketId,
+        attemptId: extensionAttemptId,
+        completedAt: "2026-09-03T12:01:03.000Z",
+      });
+
+      const changed = yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: 1,
+        primaryT3ProjectId: secondaryProjectId,
+        repositoryProjectIds: [secondaryProjectId],
+        updatedAt: "2026-09-03T12:02:00.000Z",
+      });
+      const workspace = Option.getOrThrow(yield* store.getTicketWorkspace(ticketId));
+      const snapshot = yield* store.getSnapshot;
+
+      expect(changed).toMatchObject({
+        primaryT3ProjectId: secondaryProjectId,
+        repositoryProjectIds: [secondaryProjectId],
+        revision: 2,
+      });
+      expect(workspace.repositories).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            projectId: primaryProjectId,
+            isPrimary: false,
+            status: "ready",
+            worktreePath: "/worktrees/ticket-scope/primary",
+          }),
+          expect.objectContaining({
+            projectId: secondaryProjectId,
+            isPrimary: true,
+            status: "ready",
+            worktreePath: "/worktrees/ticket-scope/secondary",
+          }),
+        ]),
+      );
+      expect(snapshot.assignments).toEqual([
+        expect.objectContaining({
+          ticketId,
+          threadId: "scope-thread",
+          supersededAt: null,
+        }),
+      ]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.effect("preserves multiple active Assignments and their replacement history", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -703,21 +865,6 @@ describe("WorkbenchStore", () => {
         blocked: false,
         updatedAt: "2026-09-03T12:02:15.000Z",
       });
-      const lockedScopeError = yield* Effect.flip(
-        store.updateTicket({
-          id: ticketId,
-          expectedRevision: 2,
-          title: "Create the first Ticket flow",
-          kind: "bug",
-          markdown: "Keep the native T3 Thread experience.",
-          primaryT3ProjectId: linkedProjectId,
-          repositoryProjectIds: [linkedProjectId],
-          status: "in_progress",
-          blocked: false,
-          updatedAt: "2026-09-03T12:02:30.000Z",
-        }),
-      );
-
       yield* sql`
         INSERT INTO projection_threads (
           thread_id,
@@ -837,6 +984,19 @@ describe("WorkbenchStore", () => {
       );
       expect(historicalReplacementError.code).toBe("assignment_already_exists");
 
+      yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: 2,
+        title: "Create the first Ticket flow",
+        kind: "bug",
+        markdown: "Keep the native T3 Thread experience.",
+        primaryT3ProjectId: linkedProjectId,
+        repositoryProjectIds: [linkedProjectId],
+        status: "in_progress",
+        blocked: false,
+        updatedAt: "2026-09-03T12:02:30.000Z",
+      });
+
       const snapshot = yield* store.getSnapshot;
 
       expect(snapshot.projects).toHaveLength(1);
@@ -844,8 +1004,8 @@ describe("WorkbenchStore", () => {
       expect(snapshot.tickets.find((ticket) => ticket.id === ticketId)).toMatchObject({
         id: ticketId,
         kind: "bug",
-        primaryT3ProjectId: secondaryProjectId,
-        repositoryProjectIds: [secondaryProjectId, linkedProjectId],
+        primaryT3ProjectId: linkedProjectId,
+        repositoryProjectIds: [linkedProjectId],
         status: "in_progress",
         blocked: false,
       });
@@ -867,7 +1027,6 @@ describe("WorkbenchStore", () => {
       expect(snapshot.assignments[2]?.id).toBeTruthy();
       expect(snapshot.assignments).toHaveLength(3);
       expect(duplicateError.code).toBe("assignment_already_exists");
-      expect(lockedScopeError.code).toBe("ticket_repository_scope_locked");
       expect(staleReplacementError.code).toBe("assignment_changed");
     }).pipe(Effect.provide(TestLayer)),
   );

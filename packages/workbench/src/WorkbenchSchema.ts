@@ -142,6 +142,7 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
     CREATE TABLE IF NOT EXISTS workbench_ticket_workspace_repositories (
       ticket_id TEXT NOT NULL,
       t3_project_id TEXT NOT NULL,
+      attempt_id TEXT,
       is_primary INTEGER NOT NULL,
       source_path TEXT NOT NULL,
       worktree_path TEXT NOT NULL,
@@ -528,6 +529,42 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
     }),
   );
 
+  yield* sql.withTransaction(
+    Effect.gen(function* () {
+      const migration = yield* sql<{ readonly version: number }>`
+        SELECT version
+        FROM workbench_schema_migrations
+        WHERE version = 13
+        LIMIT 1
+      `;
+      if (migration.length > 0) return;
+
+      const workspaceRepositoryColumns = yield* sql<{ readonly name: string }>`
+        PRAGMA table_info(workbench_ticket_workspace_repositories)
+      `;
+      if (!workspaceRepositoryColumns.some((column) => column.name === "attempt_id")) {
+        yield* sql`
+          ALTER TABLE workbench_ticket_workspace_repositories
+          ADD COLUMN attempt_id TEXT
+        `;
+      }
+      yield* sql`
+        UPDATE workbench_ticket_workspace_repositories
+        SET attempt_id = (
+          SELECT attempt_id
+          FROM workbench_ticket_workspaces
+          WHERE workbench_ticket_workspaces.ticket_id =
+            workbench_ticket_workspace_repositories.ticket_id
+        )
+        WHERE attempt_id IS NULL
+      `;
+      yield* sql`
+        INSERT OR IGNORE INTO workbench_schema_migrations (version)
+        VALUES (13)
+      `;
+    }),
+  );
+
   yield* sql`
     INSERT OR IGNORE INTO workbench_ticket_repositories (
       ticket_id,
@@ -564,6 +601,6 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
   `;
   yield* sql`
     INSERT OR IGNORE INTO workbench_schema_migrations (version)
-    VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12)
+    VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13)
   `;
 });

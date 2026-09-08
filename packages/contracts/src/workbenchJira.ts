@@ -227,10 +227,32 @@ export const WorkbenchJiraIssueLink = Schema.Struct({
 });
 export type WorkbenchJiraIssueLink = typeof WorkbenchJiraIssueLink.Type;
 
+export const WorkbenchJiraTicketTransition = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  name: TrimmedNonEmptyString,
+  to: Schema.Struct({ id: TrimmedNonEmptyString, name: TrimmedNonEmptyString }),
+  unavailableReason: Schema.NullOr(Schema.String),
+});
+export type WorkbenchJiraTicketTransition = typeof WorkbenchJiraTicketTransition.Type;
+
+export const WorkbenchJiraGetTicketTransitionsInput = Schema.Struct({
+  ticketId: WorkbenchTicketId,
+});
+export type WorkbenchJiraGetTicketTransitionsInput =
+  typeof WorkbenchJiraGetTicketTransitionsInput.Type;
+
+export const WorkbenchJiraGetTicketTransitionsResult = Schema.Struct({
+  transitions: Schema.Array(WorkbenchJiraTicketTransition),
+  remoteUpdatedAt: Schema.NullOr(IsoDateTime),
+});
+export type WorkbenchJiraGetTicketTransitionsResult =
+  typeof WorkbenchJiraGetTicketTransitionsResult.Type;
+
 export const WorkbenchJiraUpdateTicketInput = Schema.Struct({
   ticketId: WorkbenchTicketId,
   markdown: Schema.optionalKey(TrimmedString.check(Schema.isMaxLength(120_000))),
   status: Schema.optionalKey(WorkbenchTicketStatus),
+  transitionId: Schema.optionalKey(TrimmedNonEmptyString),
   expectedRemoteUpdatedAt: Schema.NullOr(IsoDateTime),
 });
 export type WorkbenchJiraUpdateTicketInput = typeof WorkbenchJiraUpdateTicketInput.Type;

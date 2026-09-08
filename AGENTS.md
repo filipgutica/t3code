@@ -114,7 +114,7 @@ An empty database is a bad test. Seed your worktree's `.t3` with a copy of real 
 
 - Never make a PR unless the developer explicitly asks you to do so.
 - Conventional commit titles, plain language: `fix(web): new threads no longer spike CPU`.
-- Body: the problem in a sentence or two, then how you fixed it. End with the model and harness that did the work.
+- Body: lead with a one- or two-sentence summary of the problem and result. For non-trivial changes, use separate Summary, Changes, and Verification sections, with a Limits section when needed. Use short bullets for distinct changes or checks; group related changes under descriptive subheadings instead of long paragraphs. Keep simple PRs concise. End with the model and harness that did the work.
 - UI changes need before/after images. Motion or timing needs a short video.
 - Upload PR evidence to GitHub. Never commit PR-only screenshots or assets such as `.github/pr-assets/`.
 - One concern per PR. If the description says "also", split it.
