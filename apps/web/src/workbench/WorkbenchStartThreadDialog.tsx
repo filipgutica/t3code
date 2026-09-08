@@ -3,6 +3,7 @@ import { ProviderInstanceId } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { useMemo, useState, type FormEvent } from "react";
 
+import { useComposerDraftStore } from "../composerDraftStore";
 import { useEnvironmentSettings } from "../hooks/useSettings";
 import { getCustomModelOptionsByInstance } from "../modelSelection";
 import {
@@ -49,14 +50,59 @@ export function resolveWorkbenchStartThreadSelection(
   return entry && model ? createModelSelection(entry.instanceId, model) : null;
 }
 
+type WorkbenchModelOption = {
+  readonly slug: string;
+  readonly isUnavailable?: boolean | undefined;
+};
+
+export function isWorkbenchStartThreadSelectionAvailable(
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+  selection: ModelSelection | null | undefined,
+  modelOptionsByInstance?: ReadonlyMap<ProviderInstanceId, ReadonlyArray<WorkbenchModelOption>>,
+): boolean {
+  if (!selection || selection.model.length === 0) return false;
+  const entry = entries.find((candidate) => candidate.instanceId === selection.instanceId);
+  if (!entry || !isProviderInstancePickerReady(entry)) return false;
+  if (!modelOptionsByInstance) return true;
+  return (modelOptionsByInstance.get(selection.instanceId) ?? []).some(
+    (option) => option.slug === selection.model && option.isUnavailable !== true,
+  );
+}
+
+export function resolveWorkbenchStartThreadSelectionWithFallback({
+  entries,
+  explicitSelection,
+  projectSelection,
+  stickySelection,
+  modelOptionsByInstance,
+}: {
+  readonly entries: ReadonlyArray<ProviderInstanceEntry>;
+  readonly explicitSelection: ModelSelection | null | undefined;
+  readonly projectSelection: ModelSelection | null | undefined;
+  readonly stickySelection: ModelSelection | null | undefined;
+  readonly modelOptionsByInstance: ReadonlyMap<
+    ProviderInstanceId,
+    ReadonlyArray<WorkbenchModelOption>
+  >;
+}): ModelSelection | null {
+  for (const candidate of [explicitSelection, projectSelection, stickySelection]) {
+    if (isWorkbenchStartThreadSelectionAvailable(entries, candidate, modelOptionsByInstance)) {
+      return candidate ?? null;
+    }
+  }
+  return resolveWorkbenchStartThreadSelection(entries, null);
+}
+
 const useWorkbenchStartThreadSelection = ({
   providers,
   settings,
   defaultModelSelection,
+  stickyModelSelection,
 }: {
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly settings: Parameters<typeof getCustomModelOptionsByInstance>[0];
   readonly defaultModelSelection: ModelSelection | null;
+  readonly stickyModelSelection: ModelSelection | null;
 }) => {
   const instanceEntries = useMemo(
     () =>
@@ -65,19 +111,29 @@ const useWorkbenchStartThreadSelection = ({
       ),
     [providers, settings],
   );
-  const defaultSelection = useMemo(
-    () => resolveWorkbenchStartThreadSelection(instanceEntries, defaultModelSelection),
-    [defaultModelSelection, instanceEntries],
+  const availableModelOptionsByInstance = useMemo(
+    () => getCustomModelOptionsByInstance(settings, providers),
+    [providers, settings],
   );
-  const [selection, setSelection] = useState<ModelSelection | null>(() => defaultSelection);
-  const resetSelection = () => {
-    setSelection(defaultSelection);
-  };
-  const selectedEntry = selection
-    ? instanceEntries.find((entry) => entry.instanceId === selection.instanceId)
-    : undefined;
-  const resolvedSelection =
-    selectedEntry && isProviderInstancePickerReady(selectedEntry) ? selection : defaultSelection;
+  const [explicitSelection, setExplicitSelection] = useState<ModelSelection | null>(null);
+  const resolvedSelection = useMemo(
+    () =>
+      resolveWorkbenchStartThreadSelectionWithFallback({
+        entries: instanceEntries,
+        explicitSelection,
+        projectSelection: defaultModelSelection,
+        stickySelection: stickyModelSelection,
+        modelOptionsByInstance: availableModelOptionsByInstance,
+      }),
+    [
+      availableModelOptionsByInstance,
+      defaultModelSelection,
+      explicitSelection,
+      instanceEntries,
+      stickyModelSelection,
+    ],
+  );
+  const setStickyModelSelection = useComposerDraftStore((store) => store.setStickyModelSelection);
   const modelOptionsByInstance = useMemo(
     () =>
       getCustomModelOptionsByInstance(
@@ -91,37 +147,34 @@ const useWorkbenchStartThreadSelection = ({
   const activeEntry = instanceEntries.find(
     (entry) => entry.instanceId === resolvedSelection?.instanceId,
   );
-  const selectedModelOption = resolvedSelection
-    ? (modelOptionsByInstance.get(resolvedSelection.instanceId) ?? []).find(
-        (option) => option.slug === resolvedSelection.model,
-      )
-    : undefined;
-  const selectionAvailable = Boolean(
-    resolvedSelection &&
-    activeEntry &&
-    isProviderInstancePickerReady(activeEntry) &&
-    selectedModelOption &&
-    selectedModelOption.isUnavailable !== true,
+  const selectionAvailable = isWorkbenchStartThreadSelectionAvailable(
+    instanceEntries,
+    resolvedSelection,
+    modelOptionsByInstance,
   );
 
   const handleInstanceModelChange = (instanceId: ProviderInstanceId, model: string) => {
-    setSelection((current) =>
-      createModelSelection(
-        instanceId,
-        model,
-        current?.instanceId === instanceId && current.model === model ? current.options : undefined,
-      ),
+    const nextSelection = createModelSelection(
+      instanceId,
+      model,
+      resolvedSelection?.instanceId === instanceId && resolvedSelection.model === model
+        ? resolvedSelection.options
+        : undefined,
     );
+    setExplicitSelection(nextSelection);
+    // Match the native composer: picker changes update the sticky preference
+    // immediately, so canceling this dialog does not discard the last choice.
+    setStickyModelSelection(nextSelection);
   };
   const handleModelOptionsChange = (options: ModelSelection["options"]) => {
     if (resolvedSelection === null) return;
-    setSelection((current) =>
-      createModelSelection(
-        current?.instanceId ?? resolvedSelection.instanceId,
-        current?.model ?? resolvedSelection.model,
-        options,
-      ),
+    const nextSelection = createModelSelection(
+      resolvedSelection.instanceId,
+      resolvedSelection.model,
+      options,
     );
+    setExplicitSelection(nextSelection);
+    setStickyModelSelection(nextSelection);
   };
 
   return {
@@ -130,7 +183,6 @@ const useWorkbenchStartThreadSelection = ({
     activeEntry,
     modelOptionsByInstance,
     selectionAvailable,
-    resetSelection,
     handleInstanceModelChange,
     handleModelOptionsChange,
   };
@@ -162,6 +214,11 @@ export function WorkbenchStartThreadDialog({
   readonly startLabel?: string;
 }) {
   const settings = useEnvironmentSettings(environmentId);
+  const stickyModelSelection = useComposerDraftStore((store) =>
+    store.stickyActiveProvider === null
+      ? null
+      : (store.stickyModelSelectionByProvider[store.stickyActiveProvider] ?? null),
+  );
   const dialogTitle =
     customTitle ?? (additional ? "Create Additional Agent Thread" : "Create Agent Thread");
   const dialogDescription =
@@ -173,20 +230,22 @@ export function WorkbenchStartThreadDialog({
     activeEntry,
     modelOptionsByInstance,
     selectionAvailable,
-    resetSelection,
     handleInstanceModelChange,
     handleModelOptionsChange,
-  } = useWorkbenchStartThreadSelection({ providers, settings, defaultModelSelection });
+  } = useWorkbenchStartThreadSelection({
+    providers,
+    settings,
+    defaultModelSelection,
+    stickyModelSelection,
+  });
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (pending || !selectionAvailable || resolvedSelection === null) return;
     onStart(resolvedSelection);
-    resetSelection();
   };
 
   const handleOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen) resetSelection();
     onOpenChange(nextOpen);
   };
 

@@ -72,6 +72,7 @@ interface StartWorkbenchTicketDependencies {
     threadRef: ComposerThreadTarget,
     comment: ReviewCommentContext,
   ) => void;
+  readonly waitForThread: (threadId: ThreadId) => Promise<void>;
   readonly openThread: (threadId: ThreadId) => Promise<void>;
   readonly resolveModelSelection: (project: EnvironmentProject) => ModelSelection | null;
   readonly makeThreadId: () => ThreadId;
@@ -210,6 +211,7 @@ export async function coordinateWorkbenchTicketStart(
   dependencies.addReviewComment(scopeThreadRef(input.environmentId, threadId), ticketContext);
 
   try {
+    await dependencies.waitForThread(threadId);
     await dependencies.openThread(threadId);
   } catch (cause) {
     return { state: "navigation-failed", cause };

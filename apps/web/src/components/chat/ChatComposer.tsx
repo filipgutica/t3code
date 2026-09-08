@@ -149,8 +149,8 @@ import {
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
 import { type ElementContextDraft } from "../../lib/elementContext";
 import { ComposerPendingElementContexts } from "./ComposerPendingElementContexts";
-import { ComposerPendingReviewComments } from "./ComposerPendingReviewComments";
 import { ComposerPreviewAnnotationCards } from "./ComposerPreviewAnnotationCards";
+import { WorkbenchComposerPendingReviewComments } from "../../workbench/WorkbenchComposerPendingReviewComments";
 import {
   COMPOSER_FOOTER_COMPACT_BREAKPOINT_PX,
   COMPOSER_FOOTER_WIDE_ACTIONS_COMPACT_BREAKPOINT_PX,
@@ -5163,7 +5163,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 !isComposerApprovalState &&
                 pendingUserInputs.length === 0 &&
                 composerReviewComments.length > 0 && (
-                  <ComposerPendingReviewComments
+                  <WorkbenchComposerPendingReviewComments
                     comments={composerReviewComments}
                     onRemove={(commentId) =>
                       removeComposerDraftReviewComment(composerDraftTarget, commentId)
