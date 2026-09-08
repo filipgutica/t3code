@@ -14,11 +14,7 @@ import {
 } from "../serverSettings.ts";
 import { TextGeneration, layer as textGenerationLayer } from "../textGeneration/TextGeneration.ts";
 
-export {
-  TicketWorkspaceService,
-  ticketWorkspaceDirectoryName,
-  ticketWorkspaceBranchName,
-} from "@t3tools/workbench/TicketWorkspaceService";
+export { TicketWorkspaceService } from "@t3tools/workbench/TicketWorkspaceService";
 
 export const ticketWorkspaceHostLayer = Layer.effect(
   TicketWorkspaceHost,

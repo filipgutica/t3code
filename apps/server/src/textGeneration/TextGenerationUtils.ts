@@ -6,8 +6,8 @@ const isTextGenerationError = Schema.is(TextGenerationError);
 const decodeJsonThreadTitle = Schema.decodeOption(
   Schema.fromJsonString(Schema.Struct({ title: Schema.String })),
 );
-export const MAX_TICKET_SUMMARY_CHARS = 500;
-export const MAX_TICKET_SUMMARY_WORDS = 45;
+const MAX_TICKET_SUMMARY_CHARS = 500;
+const MAX_TICKET_SUMMARY_WORDS = 45;
 
 /** Convert an Effect Schema to a flat JSON Schema object, inlining `$defs` when present. */
 export function toJsonSchemaObject(schema: Schema.Top): unknown {
