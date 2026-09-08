@@ -325,7 +325,7 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
 ]);
 export type WorkbenchOperationErrorCode = typeof WorkbenchOperationErrorCode.Type;
 
-export class WorkbenchOperationError extends Schema.TaggedErrorClass<WorkbenchOperationError>()(
+export class WorkbenchOperationError extends Schema.TaggedError<WorkbenchOperationError>()(
   "WorkbenchOperationError",
   {
     code: WorkbenchOperationErrorCode,

@@ -353,7 +353,7 @@ export const WorkbenchJiraOperationErrorCode = Schema.Literals([
 ]);
 export type WorkbenchJiraOperationErrorCode = typeof WorkbenchJiraOperationErrorCode.Type;
 
-export class WorkbenchJiraOperationError extends Schema.TaggedErrorClass<WorkbenchJiraOperationError>()(
+export class WorkbenchJiraOperationError extends Schema.TaggedError<WorkbenchJiraOperationError>()(
   "WorkbenchJiraOperationError",
   {
     code: WorkbenchJiraOperationErrorCode,

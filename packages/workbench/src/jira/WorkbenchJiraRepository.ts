@@ -12,7 +12,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
-export class WorkbenchJiraRepositoryError extends Schema.TaggedErrorClass<WorkbenchJiraRepositoryError>()(
+export class WorkbenchJiraRepositoryError extends Schema.TaggedError<WorkbenchJiraRepositoryError>()(
   "WorkbenchJiraRepositoryError",
   { cause: Schema.Defect() },
 ) {}
