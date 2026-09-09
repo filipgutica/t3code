@@ -31,8 +31,8 @@ export function WorkbenchPullRequestLink({
   return (
     <span className="inline-flex min-w-0 max-w-full items-center gap-1">
       <a
-        aria-label={`Open pull request #${pullRequest.number} in T3 Code`}
-        className="inline-flex min-w-0 items-center gap-1.5 rounded-sm text-sm font-medium text-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={`Open pull request #${pullRequest.number}${pullRequest.title ? `: ${pullRequest.title}` : ""} in T3 Code`}
+        className="inline-flex min-w-0 max-w-full items-start gap-1.5 rounded-sm text-sm font-medium text-foreground outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
         href={pullRequest.url}
         onClick={openInWorkbench}
         rel="noopener noreferrer"
@@ -40,7 +40,9 @@ export function WorkbenchPullRequestLink({
       >
         <GitPullRequestIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="shrink-0">#{pullRequest.number}</span>
-        <span className="min-w-0 truncate text-muted-foreground">{label}</span>
+        <span className="min-w-0 break-words text-muted-foreground [overflow-wrap:anywhere]">
+          {label}
+        </span>
       </a>
       {pullRequest.state ? (
         <Badge size="sm" variant={pullRequest.state === "closed" ? "destructive" : "success"}>

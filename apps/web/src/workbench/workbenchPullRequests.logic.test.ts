@@ -3,8 +3,70 @@ import { ProjectId, ThreadId, type ThreadLinkedPullRequest } from "@t3tools/cont
 
 import {
   getWorkbenchTicketPullRequests,
+  mergeWorkbenchTicketPullRequests,
   type WorkbenchPullRequestThread,
 } from "./workbenchPullRequests.logic";
+
+describe("Jira search and Thread PR references", () => {
+  it("retains checkout PRs without a Jira match and deduplicates them with search results", () => {
+    const checkout = { ...pullRequest(1), title: "Local branch PR", state: "open" as const };
+    expect(
+      mergeWorkbenchTicketPullRequests({
+        threadPullRequests: [],
+        checkoutPullRequests: [checkout],
+        matches: [],
+      }),
+    ).toEqual([{ pullRequest: checkout, threadTitle: null, matchesTicket: false }]);
+    const match = { ...checkout, state: "merged" as const };
+    expect(
+      mergeWorkbenchTicketPullRequests({
+        threadPullRequests: [],
+        checkoutPullRequests: [checkout],
+        matches: [match],
+      }),
+    ).toEqual([{ pullRequest: match, threadTitle: null, matchesTicket: true }]);
+  });
+  it("includes merged matches from other branches and enriches duplicate Thread references", () => {
+    const reference = {
+      threadId: ThreadId.make("thread"),
+      threadTitle: "Ticket work",
+      pullRequest: pullRequest(3800, "Kong/public-ui-components"),
+    };
+    const matched = {
+      ...pullRequest(3800, "kong/public-ui-components"),
+      title: "Fix headers [MA-5439]",
+      state: "merged" as const,
+    };
+    expect(
+      mergeWorkbenchTicketPullRequests({
+        threadPullRequests: [reference],
+        matches: [matched, { ...pullRequest(13803, "Kong/konnect-ui-apps"), state: "merged" }],
+      }),
+    ).toEqual([
+      { pullRequest: matched, threadTitle: "Ticket work", matchesTicket: true },
+      {
+        pullRequest: { ...pullRequest(13803, "Kong/konnect-ui-apps"), state: "merged" },
+        threadTitle: null,
+        matchesTicket: true,
+      },
+    ]);
+  });
+
+  it("keeps Thread references when search has no matches and separates hosts", () => {
+    const reference = {
+      threadId: ThreadId.make("thread"),
+      threadTitle: "Work",
+      pullRequest: pullRequest(1),
+    };
+    const enterprise = { ...pullRequest(1), url: "https://git.example.com/acme/repo/pull/1" };
+    expect(
+      mergeWorkbenchTicketPullRequests({ threadPullRequests: [reference], matches: [] }),
+    ).toEqual([{ pullRequest: reference.pullRequest, threadTitle: "Work", matchesTicket: false }]);
+    expect(
+      mergeWorkbenchTicketPullRequests({ threadPullRequests: [reference], matches: [enterprise] }),
+    ).toHaveLength(2);
+  });
+});
 
 const pullRequest = (number: number, repository = "acme/repo"): ThreadLinkedPullRequest => ({
   projectId: ProjectId.make("project-one"),

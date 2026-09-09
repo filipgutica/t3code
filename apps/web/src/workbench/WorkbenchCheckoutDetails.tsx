@@ -1,10 +1,18 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId, WorkbenchTicketWorkspace } from "@t3tools/contracts";
-import { FolderIcon, GitBranchIcon } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { CheckIcon, CopyIcon, FolderIcon, GitBranchIcon } from "lucide-react";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import { Badge } from "../components/ui/badge";
+import {
+  ANCHORED_COPY_TOAST_TIMEOUT_MS,
+  showAnchoredCopyErrorToast,
+  showAnchoredCopySuccessToast,
+} from "../components/ui/anchoredCopyToast";
+import { Button } from "../components/ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
@@ -73,14 +81,42 @@ export function WorkbenchThreadCheckoutDetails({
   );
 }
 
+export function WorkbenchCheckoutDirectory({
+  cwd,
+  value = formatCheckoutPath(cwd),
+  icon,
+  valueClassName,
+}: {
+  readonly cwd: string;
+  readonly value?: string;
+  readonly icon?: ReactNode;
+  readonly valueClassName?: string;
+}) {
+  return (
+    <CheckoutDetailPopover
+      icon={icon ?? <FolderIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
+      label="Directory"
+      value={value}
+      valueClassName={valueClassName ?? "font-mono"}
+      fullValue={cwd}
+      copyLabel="Copy path"
+    />
+  );
+}
+
 export function WorkbenchCheckoutDetails({
   environmentId,
   cwd,
   shared,
+  showDirectory = true,
+  showPullRequest = true,
 }: {
   readonly environmentId: EnvironmentId;
   readonly cwd: string;
   readonly shared?: boolean;
+  /** Keep the full path available without repeating a repository name already shown by the parent. */
+  readonly showDirectory?: boolean;
+  readonly showPullRequest?: boolean;
 }) {
   const status = useEnvironmentQuery(vcsEnvironment.status({ environmentId, input: { cwd } }));
   const branchLabel = status.error
@@ -93,26 +129,31 @@ export function WorkbenchCheckoutDetails({
           ? "Detached HEAD"
           : status.data.refName;
   const branchValue = status.error ?? status.data?.refName ?? branchLabel;
+  const canCopyBranch =
+    status.error === null &&
+    status.data !== null &&
+    status.data.isRepo &&
+    status.data.refName !== null;
 
   return (
     <span className="mt-1 flex min-w-0 flex-col items-start gap-1 text-xs text-foreground/80">
-      <span className="flex min-w-0 w-full">
+      {showDirectory ? (
+        <span className="flex min-w-0 w-full">
+          <WorkbenchCheckoutDirectory cwd={cwd} />
+        </span>
+      ) : null}
+      <span className="flex min-w-0 w-full items-center gap-1">
         <CheckoutDetailPopover
-          icon={<FolderIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />}
-          label="Directory"
-          value={formatCheckoutPath(cwd)}
-          fullValue={cwd}
-        />
-      </span>
-      <span className="flex min-w-0 w-full">
-        <CheckoutDetailPopover
-          icon={<GitBranchIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />}
+          icon={<GitBranchIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
           label="Branch"
           value={formatBranchLabel(branchLabel)}
           fullValue={branchValue}
+          copyDisabled={!canCopyBranch}
+          copyLabel={undefined}
+          valueClassName="font-mono"
         />
       </span>
-      {status.data?.pr ? (
+      {showPullRequest && status.data?.pr ? (
         <WorkbenchPullRequestLink environmentId={environmentId} pullRequest={status.data.pr} />
       ) : null}
       {shared !== undefined ? (
@@ -141,22 +182,49 @@ function CheckoutDetailPopover({
   icon,
   label,
   value,
+  valueClassName,
   fullValue,
+  copyDisabled = false,
+  copyLabel,
 }: {
   readonly icon: ReactNode;
   readonly label: string;
   readonly value: string;
+  readonly valueClassName: string;
   readonly fullValue: string;
+  readonly copyDisabled?: boolean;
+  readonly copyLabel: string | undefined;
 }) {
   return (
     <Popover>
-      <PopoverTrigger
-        aria-label={`${label}: ${fullValue}`}
-        className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-sm text-left font-medium outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
-      >
-        {icon}
-        <span className="min-w-0 break-all font-mono">{value}</span>
-      </PopoverTrigger>
+      <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <PopoverTrigger
+                aria-label={`${label}: ${fullValue}`}
+                className="inline-flex min-w-0 max-w-full flex-1 items-center gap-1.5 rounded-sm text-left font-medium outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+              />
+            }
+          >
+            {icon}
+            <span className={`min-w-0 break-all ${valueClassName}`}>{value}</span>
+          </TooltipTrigger>
+          <TooltipPopup
+            side="top"
+            align="start"
+            className="max-w-[min(40rem,calc(100vw-2rem))] break-all"
+          >
+            {fullValue}
+          </TooltipPopup>
+        </Tooltip>
+        <CheckoutDetailCopyButton
+          copyLabel={copyLabel}
+          disabled={copyDisabled}
+          label={label}
+          value={fullValue}
+        />
+      </span>
       <PopoverPopup side="top" align="start" className="w-[min(36rem,calc(100vw-2rem))]">
         <div
           tabIndex={0}
@@ -171,5 +239,50 @@ function CheckoutDetailPopover({
         </div>
       </PopoverPopup>
     </Popover>
+  );
+}
+
+function CheckoutDetailCopyButton({
+  disabled,
+  label,
+  value,
+  copyLabel,
+}: {
+  readonly disabled: boolean;
+  readonly label: string;
+  readonly value: string;
+  readonly copyLabel: string | undefined;
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const { copyToClipboard, isCopied } = useCopyToClipboard<void>({
+    target: label.toLowerCase(),
+    onCopy: () => showAnchoredCopySuccessToast(ref),
+    onError: (error) => showAnchoredCopyErrorToast(ref, error),
+    timeout: ANCHORED_COPY_TOAST_TIMEOUT_MS,
+  });
+  const actionLabel = copyLabel ?? `Copy ${label}`;
+  const copiedLabel = copyLabel?.replace(/^Copy/, "Copied") ?? `${label} copied`;
+  const statusLabel = disabled ? `${label} unavailable` : isCopied ? copiedLabel : actionLabel;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            ref={ref}
+            aria-label={statusLabel}
+            className="text-muted-foreground hover:text-foreground"
+            disabled={disabled}
+            onClick={() => copyToClipboard(value, undefined)}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          />
+        }
+      >
+        {isCopied ? <CheckIcon className="size-3 text-success" /> : <CopyIcon className="size-3" />}
+      </TooltipTrigger>
+      <TooltipPopup side="top">{statusLabel}</TooltipPopup>
+    </Tooltip>
   );
 }
