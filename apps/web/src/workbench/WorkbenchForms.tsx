@@ -101,7 +101,9 @@ import {
   WorkbenchThreadCheckoutDetails,
 } from "./WorkbenchCheckoutDetails";
 import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
+import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 import { resolveWorkbenchTicketContent } from "./workbenchJira.logic";
+import { getWorkbenchTicketPullRequests } from "./workbenchPullRequests.logic";
 
 const NO_EPIC_VALUE = "__workbench_no_epic__";
 
@@ -329,11 +331,9 @@ export function WorkbenchEpicDetail({
                     const assignment = assignmentsByTicket.get(ticket.id);
                     const jiraIssueLink = jiraIssueLinksByTicketId.get(ticket.id);
                     return (
-                      <button
+                      <div
                         key={ticket.id}
-                        className="grid min-w-0 w-full gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/45 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-                        onClick={() => onOpenTicket(ticket)}
-                        type="button"
+                        className="relative grid min-w-0 w-full gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/45 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                       >
                         <span className="min-w-0">
                           <span className="flex min-w-0 items-center gap-2">
@@ -342,8 +342,15 @@ export function WorkbenchEpicDetail({
                             </Badge>
                             {jiraIssueLink ? (
                               <Badge
-                                aria-label={`Jira issue ${jiraIssueLink.issue.key}`}
-                                className="shrink-0"
+                                aria-label={`Open Jira issue ${jiraIssueLink.issue.key}`}
+                                render={
+                                  <a
+                                    href={jiraIssueLink.issue.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  />
+                                }
+                                className="relative z-10 shrink-0"
                                 size="sm"
                                 title={`Jira issue ${jiraIssueLink.issue.key}`}
                                 variant="outline"
@@ -354,7 +361,13 @@ export function WorkbenchEpicDetail({
                             ) : null}
                             <Tooltip>
                               <TooltipTrigger
-                                render={<span className="min-w-0 truncate text-sm font-medium" />}
+                                render={
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenTicket(ticket)}
+                                    className="min-w-0 truncate text-left text-sm font-medium outline-none after:absolute after:inset-0 after:content-[''] focus-visible:ring-2 focus-visible:ring-ring"
+                                  />
+                                }
                               >
                                 {ticket.title}
                               </TooltipTrigger>
@@ -380,7 +393,7 @@ export function WorkbenchEpicDetail({
                           </Badge>
                           <ArrowRightIcon className="size-3.5 text-muted-foreground" />
                         </span>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -1011,6 +1024,11 @@ export function WorkbenchTicketDetail({
   const activeAssignments = visibleAssignments.filter(
     (candidate) => candidate.supersededAt === null,
   );
+  const associatedPullRequests = getWorkbenchTicketPullRequests({
+    assignments: visibleAssignments,
+    threadsById,
+    archivedThreadsById,
+  });
   // Match the Workbench page's callback map for available assignments. Missing
   // assignments stay in that map so a Create Thread action can replace stale
   // persisted state even after the detail view hides the unavailable row.
@@ -1041,6 +1059,8 @@ export function WorkbenchTicketDetail({
         nativeLabel: resolveThreadStatusPill({ thread: nativeThread })?.label,
         sessionStatus: nativeThread.session?.status,
         turnState: nativeThread.latestTurn?.state,
+        settledOverride: nativeThread.settledOverride,
+        ticketStatus: ticket.status,
       })
     : null;
   const nativeThreadFailed = nativeThread?.session?.status === "error";
@@ -1518,6 +1538,8 @@ export function WorkbenchTicketDetail({
                                     ?.label,
                                   sessionStatus: liveThread.session?.status,
                                   turnState: liveThread.latestTurn?.state,
+                                  settledOverride: liveThread.settledOverride,
+                                  ticketStatus: ticket.status,
                                 })
                               : null;
                             const activeThreadState = displayedActiveThread
@@ -1680,6 +1702,38 @@ export function WorkbenchTicketDetail({
                 </div>
               ) : null}
             </section>
+
+            {associatedPullRequests.length > 0 ? (
+              <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
+                <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
+                  <div className="min-w-0">
+                    <h2 className="text-sm font-semibold">Pull Requests</h2>
+                    <p className="text-xs text-muted-foreground">
+                      Associated with this Ticket&apos;s Threads.
+                    </p>
+                  </div>
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {associatedPullRequests.length}
+                  </span>
+                </div>
+                <div className="space-y-2 px-4 py-3">
+                  {associatedPullRequests.map(({ pullRequest, threadTitle }) => (
+                    <div
+                      key={`${pullRequest.projectId}:${pullRequest.repository.toLowerCase()}:${pullRequest.number}`}
+                      className="min-w-0"
+                    >
+                      <WorkbenchPullRequestLink
+                        environmentId={environmentId}
+                        pullRequest={pullRequest}
+                      />
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
+                        From {threadTitle}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ) : null}
 
             <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
               <div className="flex items-start justify-between gap-3 border-b border-border/50 px-4 py-3">

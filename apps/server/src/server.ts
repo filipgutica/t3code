@@ -85,6 +85,7 @@ import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import {
   TicketExecutionReactorLayerLive,
+  TicketSettlementLayerLive,
   WorkbenchServicesLayerLive,
 } from "./workbench/serverLayer.ts";
 import { workbenchJiraOAuthRouteLayer } from "./workbench/jira/http.ts";
@@ -286,6 +287,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ThreadDeletionReactorLive),
   Layer.provideMerge(ThreadSettlementReactor.layer),
   Layer.provideMerge(TicketExecutionReactorLayerLive),
+  Layer.provideMerge(TicketSettlementLayerLive),
   Layer.provideMerge(ThreadPullRequestReactor.layer),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(RuntimeReceiptBusLive),

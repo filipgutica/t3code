@@ -9,6 +9,7 @@ import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
 import type { Project } from "../types";
+import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 
 export function useWorkbenchCheckoutStatusRefresh({
   environmentId,
@@ -111,6 +112,9 @@ export function WorkbenchCheckoutDetails({
           fullValue={branchValue}
         />
       </span>
+      {status.data?.pr ? (
+        <WorkbenchPullRequestLink environmentId={environmentId} pullRequest={status.data.pr} />
+      ) : null}
       {shared !== undefined ? (
         <Badge size="sm" variant={shared ? "secondary" : "outline"}>
           {shared ? "Shared" : "Separate"}
