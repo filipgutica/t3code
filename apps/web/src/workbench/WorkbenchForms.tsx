@@ -97,11 +97,14 @@ import {
 import { WorkbenchDescription } from "./WorkbenchDescription";
 import {
   useWorkbenchCheckoutStatusRefresh,
+  WorkbenchCheckoutDirectory,
   WorkbenchCheckoutDetails,
   WorkbenchThreadCheckoutDetails,
 } from "./WorkbenchCheckoutDetails";
 import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
+import { WorkbenchTicketPullRequests } from "./WorkbenchTicketPullRequests";
 import { resolveWorkbenchTicketContent } from "./workbenchJira.logic";
+import { getWorkbenchTicketPullRequests } from "./workbenchPullRequests.logic";
 
 const NO_EPIC_VALUE = "__workbench_no_epic__";
 
@@ -329,11 +332,9 @@ export function WorkbenchEpicDetail({
                     const assignment = assignmentsByTicket.get(ticket.id);
                     const jiraIssueLink = jiraIssueLinksByTicketId.get(ticket.id);
                     return (
-                      <button
+                      <div
                         key={ticket.id}
-                        className="grid min-w-0 w-full gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/45 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-                        onClick={() => onOpenTicket(ticket)}
-                        type="button"
+                        className="relative grid min-w-0 w-full gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/45 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                       >
                         <span className="min-w-0">
                           <span className="flex min-w-0 items-center gap-2">
@@ -342,8 +343,15 @@ export function WorkbenchEpicDetail({
                             </Badge>
                             {jiraIssueLink ? (
                               <Badge
-                                aria-label={`Jira issue ${jiraIssueLink.issue.key}`}
-                                className="shrink-0"
+                                aria-label={`Open Jira issue ${jiraIssueLink.issue.key}`}
+                                render={
+                                  <a
+                                    href={jiraIssueLink.issue.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  />
+                                }
+                                className="relative z-10 shrink-0"
                                 size="sm"
                                 title={`Jira issue ${jiraIssueLink.issue.key}`}
                                 variant="outline"
@@ -354,7 +362,13 @@ export function WorkbenchEpicDetail({
                             ) : null}
                             <Tooltip>
                               <TooltipTrigger
-                                render={<span className="min-w-0 truncate text-sm font-medium" />}
+                                render={
+                                  <button
+                                    type="button"
+                                    onClick={() => onOpenTicket(ticket)}
+                                    className="min-w-0 truncate text-left text-sm font-medium outline-none after:absolute after:inset-0 after:content-[''] focus-visible:ring-2 focus-visible:ring-ring"
+                                  />
+                                }
                               >
                                 {ticket.title}
                               </TooltipTrigger>
@@ -380,7 +394,7 @@ export function WorkbenchEpicDetail({
                           </Badge>
                           <ArrowRightIcon className="size-3.5 text-muted-foreground" />
                         </span>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -1002,6 +1016,9 @@ export function WorkbenchTicketDetail({
   const [threadPanelCollapsed, setThreadPanelCollapsed] = useState(false);
   const [detailsPanelCollapsed, setDetailsPanelCollapsed] = useState(false);
   const [repositoryScopePanelCollapsed, setRepositoryScopePanelCollapsed] = useState(false);
+  const [repositoryScopeEditorCollapsed, setRepositoryScopeEditorCollapsed] = useState(true);
+  const [advancedWorkspaceSettingsCollapsed, setAdvancedWorkspaceSettingsCollapsed] =
+    useState(true);
   const visibleAssignments = getVisibleWorkbenchAssignments(
     assignments,
     new Set(threadsById.keys()),
@@ -1011,6 +1028,11 @@ export function WorkbenchTicketDetail({
   const activeAssignments = visibleAssignments.filter(
     (candidate) => candidate.supersededAt === null,
   );
+  const associatedPullRequests = getWorkbenchTicketPullRequests({
+    assignments: visibleAssignments,
+    threadsById,
+    archivedThreadsById,
+  });
   // Match the Workbench page's callback map for available assignments. Missing
   // assignments stay in that map so a Create Thread action can replace stale
   // persisted state even after the detail view hides the unavailable row.
@@ -1041,6 +1063,8 @@ export function WorkbenchTicketDetail({
         nativeLabel: resolveThreadStatusPill({ thread: nativeThread })?.label,
         sessionStatus: nativeThread.session?.status,
         turnState: nativeThread.latestTurn?.state,
+        settledOverride: nativeThread.settledOverride,
+        ticketStatus: ticket.status,
       })
     : null;
   const nativeThreadFailed = nativeThread?.session?.status === "error";
@@ -1261,7 +1285,7 @@ export function WorkbenchTicketDetail({
           })();
         }}
       >
-        <div className="mx-auto grid min-h-0 min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="mx-auto grid min-h-0 min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
           <div className="min-w-0 space-y-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
             {error ? <WorkbenchInlineError message={error} /> : null}
             <section
@@ -1425,69 +1449,51 @@ export function WorkbenchTicketDetail({
               {!threadPanelCollapsed ? (
                 <div id="workbench-ticket-agent-threads" className="min-h-0">
                   {canOpenThread ? (
-                    <div className="flex min-w-0 flex-wrap items-center gap-2 border-b border-border/60 px-4 py-2">
-                      <button
-                        aria-label={`${
-                          threadActionPending ? thread.pendingActionLabel : thread.actionLabel
-                        } for ${displayedTitle}`}
-                        className="group flex min-w-0 flex-1 items-center gap-3 py-2 text-left outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-                        disabled={pending}
-                        onClick={() => onOpenThread(actionableTicket, assignment?.threadId)}
-                        type="button"
-                      >
-                        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted">
-                          <BotIcon className="size-4 text-muted-foreground" />
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-medium">{agentTitle}</span>
-                          <span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                            {nativeThread ? (
-                              <span
-                                aria-hidden
-                                className={`size-2 shrink-0 rounded-full ${
-                                  nativeStatus?.dotClass ??
-                                  (nativeThreadFailed ? "bg-destructive" : "bg-muted-foreground/60")
-                                }`}
-                              />
-                            ) : null}
-                            <span>{assignment ? thread.stateLabel : "Create a Thread"}</span>
-                          </span>
-                          {displayedThread?.modelSelection ? (
-                            <span className="mt-1 block break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                              {displayedThread.modelSelection.instanceId} ·{" "}
-                              {displayedThread.modelSelection.model}
-                            </span>
-                          ) : null}
-                        </span>
-                        <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground group-hover:text-foreground">
-                          <span className="sr-only">
-                            {threadActionPending ? thread.pendingActionLabel : thread.actionLabel}
-                          </span>
-                          <ArrowRightIcon className="size-3.5" />
-                        </span>
-                      </button>
-                      {assignment && displayedThread ? (
-                        <Button
-                          aria-label={`Delete Thread ${displayedThread.title}`}
-                          disabled={pending || isArchived}
-                          onClick={() => onDeleteThread(assignment.threadId)}
-                          size="icon-xs"
-                          type="button"
-                          variant="ghost"
-                        >
-                          <Trash2Icon />
-                        </Button>
-                      ) : null}
-                      {displayedThread ? (
-                        <div className="min-w-0 basis-full">
-                          <WorkbenchThreadCheckoutDetails
-                            environmentId={environmentId}
-                            thread={displayedThread}
-                            projects={linkedProjects}
-                            workspace={ticketWorkspace}
-                          />
-                        </div>
-                      ) : null}
+                    <div className="border-b border-border/60 px-4 py-3">
+                      <div className="relative isolate flex min-w-0 flex-wrap items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45 [&>button:not(:first-child)]:relative [&>button:not(:first-child)]:z-10">
+                        <WorkbenchThreadOpenButton
+                          ariaLabel={`${
+                            threadActionPending ? thread.pendingActionLabel : thread.actionLabel
+                          } for ${displayedTitle}`}
+                          disabled={pending}
+                          modelLabel={
+                            displayedThread?.modelSelection
+                              ? `${displayedThread.modelSelection.instanceId} · ${displayedThread.modelSelection.model}`
+                              : null
+                          }
+                          onClick={() => onOpenThread(actionableTicket, assignment?.threadId)}
+                          stateLabel={assignment ? thread.stateLabel : "Create a Thread"}
+                          statusDotClassName={
+                            nativeThread
+                              ? (nativeStatus?.dotClass ??
+                                (nativeThreadFailed ? "bg-destructive" : "bg-muted-foreground/60"))
+                              : undefined
+                          }
+                          title={agentTitle}
+                        />
+                        {assignment && displayedThread ? (
+                          <Button
+                            aria-label={`Delete Thread ${displayedThread.title}`}
+                            disabled={pending || isArchived}
+                            onClick={() => onDeleteThread(assignment.threadId)}
+                            size="icon-xs"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <Trash2Icon />
+                          </Button>
+                        ) : null}
+                        {displayedThread ? (
+                          <div className="pointer-events-none relative z-10 min-w-0 basis-full [&_a]:pointer-events-auto [&_button]:pointer-events-auto">
+                            <WorkbenchThreadCheckoutDetails
+                              environmentId={environmentId}
+                              thread={displayedThread}
+                              projects={linkedProjects}
+                              workspace={ticketWorkspace}
+                            />
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   ) : (
                     <p className="p-4 text-sm text-muted-foreground">
@@ -1512,12 +1518,17 @@ export function WorkbenchTicketDetail({
                               ? archivedThreadsById.get(activeAssignment.threadId)
                               : undefined;
                             const displayedActiveThread = liveThread ?? archivedActiveThread;
+                            const activeStatusPill = displayedActiveThread
+                              ? resolveThreadStatusPill({ thread: displayedActiveThread })
+                              : null;
                             const activeAgentState = liveThread
                               ? getWorkbenchAgentPresentation({
                                   nativeLabel: resolveThreadStatusPill({ thread: liveThread })
                                     ?.label,
                                   sessionStatus: liveThread.session?.status,
                                   turnState: liveThread.latestTurn?.state,
+                                  settledOverride: liveThread.settledOverride,
+                                  ticketStatus: ticket.status,
                                 })
                               : null;
                             const activeThreadState = displayedActiveThread
@@ -1531,36 +1542,28 @@ export function WorkbenchTicketDetail({
                             return (
                               <div
                                 key={activeAssignment.id}
-                                className="flex min-w-0 flex-wrap items-center gap-2 rounded-md px-2 py-2 hover:bg-muted"
+                                className="relative isolate flex min-w-0 flex-wrap items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45 [&>button:not(:first-child)]:relative [&>button:not(:first-child)]:z-10"
                               >
-                                <button
-                                  aria-label={`${activeThreadState} ${displayedActiveThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…")}`}
-                                  className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                                <WorkbenchThreadOpenButton
+                                  ariaLabel={`${activeThreadState} ${displayedActiveThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…")}`}
                                   disabled={pending || displayedActiveThread === undefined}
+                                  modelLabel={activeThreadModel}
                                   onClick={() => onOpenAssignedThread(activeAssignment.threadId)}
-                                  type="button"
-                                >
-                                  <BotIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                                  <span className="min-w-0 flex-1">
-                                    <span className="block truncate font-medium">
-                                      {displayedActiveThread?.title ??
-                                        (threadLookupReady ? "No Thread" : "Checking Thread…")}
-                                    </span>
-                                    <span className="block break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                                      {activeThreadModel ?? activeThreadState}
-                                    </span>
-                                    {displayedActiveThread ? (
-                                      <span
-                                        className={`block text-xs ${activeAgentState?.colorClass ?? "text-muted-foreground"}`}
-                                      >
-                                        {activeAgentState?.label ?? "Idle"}
-                                      </span>
-                                    ) : null}
-                                  </span>
-                                  <span className="shrink-0 text-xs text-muted-foreground">
-                                    {activeThreadState}
-                                  </span>
-                                </button>
+                                  stateLabel={
+                                    activeAgentState?.label ??
+                                    activeStatusPill?.label ??
+                                    (displayedActiveThread ? "Idle" : activeThreadState)
+                                  }
+                                  statusDotClassName={
+                                    activeAgentState?.dotClass ??
+                                    activeStatusPill?.dotClass ??
+                                    (displayedActiveThread ? "bg-muted-foreground/60" : undefined)
+                                  }
+                                  title={
+                                    displayedActiveThread?.title ??
+                                    (threadLookupReady ? "No Thread" : "Checking Thread…")
+                                  }
+                                />
                                 {displayedActiveThread ? (
                                   <Button
                                     aria-label={`Delete Thread ${displayedActiveThread.title}`}
@@ -1587,7 +1590,7 @@ export function WorkbenchTicketDetail({
                                   </Button>
                                 ) : null}
                                 {displayedActiveThread ? (
-                                  <div className="min-w-0 basis-full">
+                                  <div className="pointer-events-none relative z-10 min-w-0 basis-full [&_a]:pointer-events-auto [&_button]:pointer-events-auto">
                                     <WorkbenchThreadCheckoutDetails
                                       environmentId={environmentId}
                                       thread={displayedActiveThread}
@@ -1639,26 +1642,53 @@ export function WorkbenchTicketDetail({
                             : undefined;
                           const displayedHistoricalThread =
                             historicalThread ?? historicalArchivedThread;
+                          const historicalStatusPill = displayedHistoricalThread
+                            ? resolveThreadStatusPill({ thread: displayedHistoricalThread })
+                            : null;
+                          const historicalAgentState = displayedHistoricalThread
+                            ? getWorkbenchAgentPresentation({
+                                nativeLabel: resolveThreadStatusPill({
+                                  thread: displayedHistoricalThread,
+                                })?.label,
+                                sessionStatus: displayedHistoricalThread.session?.status,
+                                turnState: displayedHistoricalThread.latestTurn?.state,
+                                settledOverride: displayedHistoricalThread.settledOverride,
+                                ticketStatus: ticket.status,
+                              })
+                            : null;
                           return (
                             <div
                               key={historicalAssignment.id}
-                              className="flex min-w-0 items-center gap-2 rounded-md px-2 py-2 hover:bg-muted"
+                              className="relative isolate flex min-w-0 flex-wrap items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45 [&>button:not(:first-child)]:relative [&>button:not(:first-child)]:z-10"
                             >
-                              <button
-                                className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                              <WorkbenchThreadOpenButton
+                                ariaLabel={`${displayedHistoricalThread ? "Open" : "Checking"} ${displayedHistoricalThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…")}`}
                                 disabled={pending || !displayedHistoricalThread}
+                                modelLabel={
+                                  displayedHistoricalThread?.modelSelection
+                                    ? `${displayedHistoricalThread.modelSelection.instanceId} · ${displayedHistoricalThread.modelSelection.model}`
+                                    : null
+                                }
                                 onClick={() => onOpenAssignedThread(historicalAssignment.threadId)}
-                                type="button"
-                              >
-                                <BotIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                                <span className="min-w-0 flex-1 truncate">
-                                  {displayedHistoricalThread?.title ??
-                                    (threadLookupReady ? "No Thread" : "Checking Thread…")}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {displayedHistoricalThread ? "Open" : "Checking…"}
-                                </span>
-                              </button>
+                                stateLabel={
+                                  historicalAgentState?.label ??
+                                  historicalStatusPill?.label ??
+                                  (displayedHistoricalThread
+                                    ? "Historical"
+                                    : threadLookupReady
+                                      ? "No Thread"
+                                      : "Checking…")
+                                }
+                                statusDotClassName={
+                                  historicalAgentState?.dotClass ??
+                                  historicalStatusPill?.dotClass ??
+                                  (displayedHistoricalThread ? "bg-muted-foreground/60" : undefined)
+                                }
+                                title={
+                                  displayedHistoricalThread?.title ??
+                                  (threadLookupReady ? "No Thread" : "Checking Thread…")
+                                }
+                              />
                               {displayedHistoricalThread ? (
                                 <Button
                                   aria-label={`Delete Thread ${displayedHistoricalThread.title}`}
@@ -1681,16 +1711,34 @@ export function WorkbenchTicketDetail({
               ) : null}
             </section>
 
+            <WorkbenchTicketPullRequests
+              environmentId={environmentId}
+              ticketKey={jiraIssueLink?.issue.key ?? null}
+              repositoryProjectIds={selectedRepositoryProjectIds}
+              pullRequests={associatedPullRequests}
+              checkouts={repositories.flatMap(({ id, repository, openInCwd }) =>
+                openInCwd
+                  ? [
+                      {
+                        projectId: id,
+                        title: repository?.title ?? "Repository",
+                        cwd: openInCwd,
+                      },
+                    ]
+                  : [],
+              )}
+            />
+
             <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
               <div className="flex items-start justify-between gap-3 border-b border-border/50 px-4 py-3">
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold">Details</h2>
-                  {jiraFieldsManaged ? (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Type and Epic are managed by Jira.
-                    </p>
-                  ) : null}
                 </div>
+                {jiraFieldsManaged ? (
+                  <Badge size="sm" variant="outline">
+                    Managed by Jira
+                  </Badge>
+                ) : null}
                 <Button
                   aria-controls="workbench-ticket-details"
                   aria-expanded={!detailsPanelCollapsed}
@@ -1710,32 +1758,17 @@ export function WorkbenchTicketDetail({
               </div>
               {!detailsPanelCollapsed ? (
                 <div id="workbench-ticket-details" className="min-h-0">
-                  <div className="space-y-4 p-4">
-                    <div className="space-y-1.5">
-                      <Label>Ticket type</Label>
-                      <Select
-                        disabled={pending || jiraFieldsManaged || isArchived}
-                        value={ticket.kind}
-                        onValueChange={(value) => {
-                          if (isWorkbenchTicketKind(value))
-                            onUpdate(actionableTicket, { kind: value });
-                        }}
-                      >
-                        <SelectTrigger aria-label="Ticket type">
-                          <SelectValue>{WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}</SelectValue>
-                        </SelectTrigger>
-                        <SelectPopup>
-                          {WORKBENCH_TICKET_KINDS.map((ticketKind) => (
-                            <SelectItem key={ticketKind} value={ticketKind}>
-                              {WORKBENCH_TICKET_KIND_LABELS[ticketKind]}
-                            </SelectItem>
-                          ))}
-                        </SelectPopup>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <Label>Epic</Label>
+                  {jiraFieldsManaged ? (
+                    <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 p-4 text-sm">
+                      <dt className="text-muted-foreground">Type</dt>
+                      <dd className="min-w-0 break-words text-right font-medium [overflow-wrap:anywhere]">
+                        {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
+                      </dd>
+                      <dt className="text-muted-foreground">Epic</dt>
+                      <dd className="flex min-w-0 flex-wrap items-center justify-end gap-2 text-right">
+                        <span className="min-w-0 break-words font-medium [overflow-wrap:anywhere]">
+                          {epics.find((epic) => epic.id === ticket.epicId)?.title ?? "No Epic"}
+                        </span>
                         {linkedEpicId ? (
                           <Button
                             onClick={() => onOpenEpic(linkedEpicId)}
@@ -1746,40 +1779,80 @@ export function WorkbenchTicketDetail({
                             View Epic <ArrowRightIcon />
                           </Button>
                         ) : null}
+                      </dd>
+                    </dl>
+                  ) : (
+                    <div className="space-y-4 p-4">
+                      <div className="space-y-1.5">
+                        <Label>Ticket type</Label>
+                        <Select
+                          disabled={pending || isArchived}
+                          value={ticket.kind}
+                          onValueChange={(value) => {
+                            if (isWorkbenchTicketKind(value))
+                              onUpdate(actionableTicket, { kind: value });
+                          }}
+                        >
+                          <SelectTrigger aria-label="Ticket type">
+                            <SelectValue>{WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}</SelectValue>
+                          </SelectTrigger>
+                          <SelectPopup>
+                            {WORKBENCH_TICKET_KINDS.map((ticketKind) => (
+                              <SelectItem key={ticketKind} value={ticketKind}>
+                                {WORKBENCH_TICKET_KIND_LABELS[ticketKind]}
+                              </SelectItem>
+                            ))}
+                          </SelectPopup>
+                        </Select>
                       </div>
-                      <Select
-                        disabled={pending || jiraFieldsManaged || isArchived}
-                        value={ticket.epicId ?? NO_EPIC_VALUE}
-                        onValueChange={(value) =>
-                          onUpdate(actionableTicket, {
-                            epicId:
-                              !value || value === NO_EPIC_VALUE
-                                ? null
-                                : WorkbenchEpicId.make(value),
-                          })
-                        }
-                      >
-                        <SelectTrigger aria-label="Epic">
-                          <SelectValue>
-                            {epics.find((epic) => epic.id === ticket.epicId)?.title ?? "No Epic"}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectPopup>
-                          <SelectItem value={NO_EPIC_VALUE}>No Epic</SelectItem>
-                          {epics.map((epic) => (
-                            <SelectItem
-                              key={epic.id}
-                              disabled={epic.archivedAt !== null}
-                              value={epic.id}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <Label>Epic</Label>
+                          {linkedEpicId ? (
+                            <Button
+                              onClick={() => onOpenEpic(linkedEpicId)}
+                              size="xs"
+                              type="button"
+                              variant="ghost"
                             >
-                              {epic.title}
-                              {epic.archivedAt !== null ? " (Archived)" : ""}
-                            </SelectItem>
-                          ))}
-                        </SelectPopup>
-                      </Select>
+                              View Epic <ArrowRightIcon />
+                            </Button>
+                          ) : null}
+                        </div>
+                        <Select
+                          disabled={pending || isArchived}
+                          value={ticket.epicId ?? NO_EPIC_VALUE}
+                          onValueChange={(value) =>
+                            onUpdate(actionableTicket, {
+                              epicId:
+                                !value || value === NO_EPIC_VALUE
+                                  ? null
+                                  : WorkbenchEpicId.make(value),
+                            })
+                          }
+                        >
+                          <SelectTrigger aria-label="Epic">
+                            <SelectValue>
+                              {epics.find((epic) => epic.id === ticket.epicId)?.title ?? "No Epic"}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectPopup>
+                            <SelectItem value={NO_EPIC_VALUE}>No Epic</SelectItem>
+                            {epics.map((epic) => (
+                              <SelectItem
+                                key={epic.id}
+                                disabled={epic.archivedAt !== null}
+                                value={epic.id}
+                              >
+                                {epic.title}
+                                {epic.archivedAt !== null ? " (Archived)" : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectPopup>
+                        </Select>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               ) : null}
             </section>
@@ -1816,13 +1889,29 @@ export function WorkbenchTicketDetail({
                             >
                               <div className="min-w-0 flex-1">
                                 <div className="flex min-w-0 items-center gap-1.5">
-                                  <FolderGit2Icon
-                                    aria-hidden
-                                    className="size-4 shrink-0 text-muted-foreground"
-                                  />
-                                  <span className="truncate font-medium">
-                                    {repository?.title ?? "Repository unavailable"}
-                                  </span>
+                                  {openInCwd ? (
+                                    <WorkbenchCheckoutDirectory
+                                      cwd={openInCwd}
+                                      icon={
+                                        <FolderGit2Icon
+                                          aria-hidden
+                                          className="size-4 shrink-0 text-muted-foreground"
+                                        />
+                                      }
+                                      value={repository?.title ?? "Repository unavailable"}
+                                      valueClassName="line-clamp-2 break-words font-medium [overflow-wrap:anywhere]"
+                                    />
+                                  ) : (
+                                    <span className="flex min-w-0 items-center gap-1.5">
+                                      <FolderGit2Icon
+                                        aria-hidden
+                                        className="size-4 shrink-0 text-muted-foreground"
+                                      />
+                                      <span className="line-clamp-2 break-words font-medium [overflow-wrap:anywhere]">
+                                        {repository?.title ?? "Repository unavailable"}
+                                      </span>
+                                    </span>
+                                  )}
                                   {id === ticket.primaryT3ProjectId ? (
                                     <Badge size="sm" variant="outline">
                                       Primary
@@ -1845,6 +1934,8 @@ export function WorkbenchTicketDetail({
                                   <WorkbenchCheckoutDetails
                                     environmentId={environmentId}
                                     cwd={openInCwd}
+                                    showDirectory={false}
+                                    showPullRequest={false}
                                   />
                                 </div>
                               ) : null}
@@ -1872,113 +1963,219 @@ export function WorkbenchTicketDetail({
                           </Badge>
                         </div>
                       ) : null}
+                      {ticketWorkspace?.errorMessage ? (
+                        <p className="mt-2 break-words text-xs text-destructive" role="alert">
+                          {ticketWorkspace.errorMessage}
+                        </p>
+                      ) : null}
                       {ticketWorkspace?.status === "ready" ? (
                         <p className="mt-2 text-xs text-muted-foreground">
                           Threads in the same worktree share files and branch changes. Use a
                           separate native worktree for independent work.
                         </p>
                       ) : null}
-                      {ticketWorkspace && ticketWorkspace.status !== "released" ? (
-                        <Button
-                          className="mt-2"
-                          disabled={pending || isArchived}
-                          onClick={() => setResetConfirmationOpen(true)}
-                          size="sm"
-                          variant="outline"
-                        >
-                          <RotateCcwIcon /> Reset ticket workspace
-                        </Button>
+                      {ticketWorkspace ? (
+                        <div className="mt-3 border-t border-border pt-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <h3
+                                id="workbench-ticket-advanced-settings-heading"
+                                className="text-xs font-medium"
+                              >
+                                Advanced workspace settings
+                              </h3>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                Reset or remove this Ticket&apos;s prepared worktrees.
+                              </p>
+                            </div>
+                            <Button
+                              aria-controls="workbench-ticket-advanced-settings"
+                              aria-expanded={!advancedWorkspaceSettingsCollapsed}
+                              aria-label={
+                                advancedWorkspaceSettingsCollapsed
+                                  ? "Expand Advanced workspace settings"
+                                  : "Collapse Advanced workspace settings"
+                              }
+                              onClick={() =>
+                                setAdvancedWorkspaceSettingsCollapsed((collapsed) => !collapsed)
+                              }
+                              size="icon-xs"
+                              title={
+                                advancedWorkspaceSettingsCollapsed
+                                  ? "Expand Advanced workspace settings"
+                                  : "Collapse Advanced workspace settings"
+                              }
+                              type="button"
+                              variant="ghost"
+                            >
+                              <ChevronDownIcon
+                                className={advancedWorkspaceSettingsCollapsed ? "" : "rotate-180"}
+                              />
+                            </Button>
+                          </div>
+                          {!advancedWorkspaceSettingsCollapsed ? (
+                            <div
+                              id="workbench-ticket-advanced-settings"
+                              className="mt-3 space-y-2"
+                              aria-labelledby="workbench-ticket-advanced-settings-heading"
+                            >
+                              <p className="text-xs text-muted-foreground">
+                                Reset removes this Ticket&apos;s repository worktrees. The Ticket,
+                                Git branches, and commits are kept. Reset is refused while linked
+                                Threads exist or any worktree has local changes.
+                              </p>
+                              {ticketWorkspace.status !== "released" ? (
+                                <Button
+                                  disabled={pending || isArchived}
+                                  onClick={() => setResetConfirmationOpen(true)}
+                                  size="sm"
+                                  type="button"
+                                  variant="outline"
+                                >
+                                  <RotateCcwIcon /> Reset ticket workspace
+                                </Button>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">
+                                  No active workspace to reset. The next Create Thread prepares the
+                                  workspace again.
+                                </p>
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
                       ) : null}
                     </div>
                   </div>
-                  <fieldset className="space-y-2 border-t border-border pt-4">
-                    <legend className="text-xs font-medium text-muted-foreground">
-                      Edit repository scope
-                    </legend>
-                    {repositoryScopeLocked ? (
-                      <p className="text-xs text-muted-foreground">
-                        Wait for workspace preparation or release to finish before changing
-                        repositories.
-                      </p>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        Choose repositories for new Threads. Existing Threads stay unchanged.
-                      </p>
-                    )}
-                    {linkedProjects.map((repository) => {
-                      const checked = selectedRepositoryProjectIds.includes(repository.id);
-                      return (
-                        <label key={repository.id} className="flex items-center gap-2 text-sm">
-                          <Checkbox
-                            checked={checked}
-                            disabled={
-                              pending ||
-                              isArchived ||
-                              repositoryScopeLocked ||
-                              (checked && selectedRepositoryProjectIds.length === 1)
-                            }
-                            onCheckedChange={(nextChecked) => {
-                              const nextRepositoryProjectIds = nextChecked
-                                ? [...selectedRepositoryProjectIds, repository.id]
-                                : selectedRepositoryProjectIds.filter((id) => id !== repository.id);
-                              const primaryT3ProjectId = nextRepositoryProjectIds.includes(
-                                ticket.primaryT3ProjectId,
-                              )
-                                ? ticket.primaryT3ProjectId
-                                : nextRepositoryProjectIds[0];
-                              if (primaryT3ProjectId === undefined) return;
-                              onUpdate(actionableTicket, {
-                                repositoryProjectIds: nextRepositoryProjectIds,
-                                primaryT3ProjectId,
-                              });
-                            }}
-                          />
-                          <span className="min-w-0 flex-1 truncate">{repository.title}</span>
-                        </label>
-                      );
-                    })}
-                    <Label htmlFor={`primary-repository-${ticket.id}`}>Primary repository</Label>
-                    <p
-                      id={`primary-repository-description-${ticket.id}`}
-                      className="text-xs text-muted-foreground"
-                    >
-                      Where new Threads start.
-                    </p>
-                    <Select
-                      disabled={pending || isArchived || repositoryScopeLocked}
-                      value={ticket.primaryT3ProjectId}
-                      onValueChange={(value) => {
-                        if (value) {
-                          onUpdate(actionableTicket, {
-                            primaryT3ProjectId: ProjectId.make(value),
-                          });
-                        }
-                      }}
-                    >
-                      <SelectTrigger
-                        id={`primary-repository-${ticket.id}`}
-                        aria-label="Primary repository"
-                        aria-describedby={`primary-repository-description-${ticket.id}`}
+                  <div className="border-t border-border pt-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <h3
+                        id="workbench-ticket-repository-scope-heading"
+                        className="text-xs font-medium text-muted-foreground"
                       >
-                        <SelectValue>
-                          {linkedProjects.find(
-                            (repository) => repository.id === ticket.primaryT3ProjectId,
-                          )?.title ?? "Select primary repository"}
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectPopup>
-                        {linkedProjects
-                          .filter((repository) =>
-                            selectedRepositoryProjectIds.includes(repository.id),
-                          )
-                          .map((repository) => (
-                            <SelectItem key={repository.id} value={repository.id}>
-                              {repository.title}
-                            </SelectItem>
-                          ))}
-                      </SelectPopup>
-                    </Select>
-                  </fieldset>
+                        Edit repository scope
+                      </h3>
+                      <Button
+                        aria-controls="workbench-ticket-repository-scope-editor"
+                        aria-expanded={!repositoryScopeEditorCollapsed}
+                        aria-label={
+                          repositoryScopeEditorCollapsed
+                            ? "Expand Edit repository scope"
+                            : "Collapse Edit repository scope"
+                        }
+                        onClick={() => setRepositoryScopeEditorCollapsed((collapsed) => !collapsed)}
+                        size="icon-xs"
+                        title={
+                          repositoryScopeEditorCollapsed
+                            ? "Expand Edit repository scope"
+                            : "Collapse Edit repository scope"
+                        }
+                        type="button"
+                        variant="ghost"
+                      >
+                        <ChevronDownIcon
+                          className={repositoryScopeEditorCollapsed ? "" : "rotate-180"}
+                        />
+                      </Button>
+                    </div>
+                    {!repositoryScopeEditorCollapsed ? (
+                      <fieldset
+                        id="workbench-ticket-repository-scope-editor"
+                        className="mt-3 space-y-2"
+                        aria-labelledby="workbench-ticket-repository-scope-heading"
+                      >
+                        <legend className="sr-only">Edit repository scope</legend>
+                        {repositoryScopeLocked ? (
+                          <p className="text-xs text-muted-foreground">
+                            Wait for workspace preparation or release to finish before changing
+                            repositories.
+                          </p>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">
+                            Choose repositories for new Threads. Existing Threads stay unchanged.
+                          </p>
+                        )}
+                        {linkedProjects.map((repository) => {
+                          const checked = selectedRepositoryProjectIds.includes(repository.id);
+                          return (
+                            <label key={repository.id} className="flex items-center gap-2 text-sm">
+                              <Checkbox
+                                checked={checked}
+                                disabled={
+                                  pending ||
+                                  isArchived ||
+                                  repositoryScopeLocked ||
+                                  (checked && selectedRepositoryProjectIds.length === 1)
+                                }
+                                onCheckedChange={(nextChecked) => {
+                                  const nextRepositoryProjectIds = nextChecked
+                                    ? [...selectedRepositoryProjectIds, repository.id]
+                                    : selectedRepositoryProjectIds.filter(
+                                        (id) => id !== repository.id,
+                                      );
+                                  const primaryT3ProjectId = nextRepositoryProjectIds.includes(
+                                    ticket.primaryT3ProjectId,
+                                  )
+                                    ? ticket.primaryT3ProjectId
+                                    : nextRepositoryProjectIds[0];
+                                  if (primaryT3ProjectId === undefined) return;
+                                  onUpdate(actionableTicket, {
+                                    repositoryProjectIds: nextRepositoryProjectIds,
+                                    primaryT3ProjectId,
+                                  });
+                                }}
+                              />
+                              <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
+                                {repository.title}
+                              </span>
+                            </label>
+                          );
+                        })}
+                        <Label htmlFor={`primary-repository-${ticket.id}`}>
+                          Primary repository
+                        </Label>
+                        <p
+                          id={`primary-repository-description-${ticket.id}`}
+                          className="text-xs text-muted-foreground"
+                        >
+                          Where new Threads start.
+                        </p>
+                        <Select
+                          disabled={pending || isArchived || repositoryScopeLocked}
+                          value={ticket.primaryT3ProjectId}
+                          onValueChange={(value) => {
+                            if (value) {
+                              onUpdate(actionableTicket, {
+                                primaryT3ProjectId: ProjectId.make(value),
+                              });
+                            }
+                          }}
+                        >
+                          <SelectTrigger
+                            id={`primary-repository-${ticket.id}`}
+                            aria-label="Primary repository"
+                            aria-describedby={`primary-repository-description-${ticket.id}`}
+                          >
+                            <SelectValue>
+                              {linkedProjects.find(
+                                (repository) => repository.id === ticket.primaryT3ProjectId,
+                              )?.title ?? "Select primary repository"}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectPopup>
+                            {linkedProjects
+                              .filter((repository) =>
+                                selectedRepositoryProjectIds.includes(repository.id),
+                              )
+                              .map((repository) => (
+                                <SelectItem key={repository.id} value={repository.id}>
+                                  {repository.title}
+                                </SelectItem>
+                              ))}
+                          </SelectPopup>
+                        </Select>
+                      </fieldset>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
             </section>
@@ -2043,6 +2240,77 @@ export function WorkbenchTicketDetail({
         </AlertDialogPopup>
       </AlertDialog>
     </article>
+  );
+}
+
+function WorkbenchThreadTitle({
+  className,
+  title,
+}: {
+  readonly className: string;
+  readonly title: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className={className} />}>{title}</TooltipTrigger>
+      <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
+        {title}
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function WorkbenchThreadOpenButton({
+  ariaLabel,
+  disabled,
+  modelLabel,
+  onClick,
+  stateLabel,
+  statusDotClassName,
+  title,
+}: {
+  readonly ariaLabel: string;
+  readonly disabled: boolean;
+  readonly modelLabel: string | null;
+  readonly onClick: () => void;
+  readonly stateLabel: string;
+  readonly statusDotClassName: string | undefined;
+  readonly title: string;
+}) {
+  return (
+    <button
+      aria-label={ariaLabel}
+      className="group flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left text-sm outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring enabled:after:absolute enabled:after:inset-0 enabled:after:content-[''] disabled:cursor-default disabled:opacity-50"
+      disabled={disabled}
+      onClick={onClick}
+      type="button"
+    >
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">
+        <BotIcon className="size-3.5 text-muted-foreground" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <WorkbenchThreadTitle
+          className="relative z-10 line-clamp-2 break-words font-medium [overflow-wrap:anywhere]"
+          title={title}
+        />
+        <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+          {statusDotClassName ? (
+            <span aria-hidden className={`size-2 shrink-0 rounded-full ${statusDotClassName}`} />
+          ) : null}
+          <span>{stateLabel}</span>
+          {modelLabel ? (
+            <>
+              <span aria-hidden>·</span>
+              <span className="min-w-0 break-words [overflow-wrap:anywhere]">{modelLabel}</span>
+            </>
+          ) : null}
+        </span>
+      </span>
+      <span className="flex shrink-0 items-center text-muted-foreground group-hover:text-foreground">
+        <span className="sr-only">Open Thread</span>
+        <ArrowRightIcon className="size-3.5" />
+      </span>
+    </button>
   );
 }
 

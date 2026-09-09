@@ -52,6 +52,7 @@ import {
   EmptyTitle,
 } from "../components/ui/empty";
 import { Skeleton } from "../components/ui/skeleton";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
 import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
@@ -1260,6 +1261,19 @@ export function WorkbenchPage({
   const effectiveBoardGroupMode = projectEpics.length > 0 ? boardGroupMode : "none";
   const jiraBinding =
     jiraSnapshot?.bindings.find((binding) => binding.projectId === selectedProject?.id) ?? null;
+  const jiraSiteUrl = jiraSnapshot?.connections.find(
+    (connection) => connection.id === jiraBinding?.connectionId,
+  )?.siteUrl;
+  const jiraSprintLinks =
+    jiraBinding && jiraSiteUrl
+      ? getWorkbenchJiraBindingSprints(jiraBinding).map((sprint) => {
+          const url = new URL("/secure/RapidBoard.jspa", jiraSiteUrl);
+          url.searchParams.set("rapidView", String(jiraBinding.boardId));
+          url.searchParams.set("projectKey", jiraBinding.jiraProjectKey);
+          url.searchParams.set("sprint", String(sprint.id));
+          return { ...sprint, url: url.toString() };
+        })
+      : [];
   const activeJiraTicketIds = new Set(
     (jiraSnapshot?.issueLinks ?? []).filter((link) => link.active).map((link) => link.ticketId),
   );
@@ -1709,6 +1723,46 @@ export function WorkbenchPage({
                     </Button>
                     {jiraBinding ? (
                       <>
+                        {jiraSprintLinks.length > 1 ? (
+                          <Menu>
+                            <MenuTrigger render={<Button size="sm" variant="outline" />}>
+                              <LinkIcon />
+                              {jiraSprintLinks.length} Jira sprints
+                            </MenuTrigger>
+                            <MenuPopup align="end">
+                              {jiraSprintLinks.map((sprint) => (
+                                <MenuItem
+                                  key={sprint.id}
+                                  render={
+                                    <a
+                                      href={sprint.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                    />
+                                  }
+                                >
+                                  <LinkIcon /> Open {sprint.name} in Jira
+                                </MenuItem>
+                              ))}
+                            </MenuPopup>
+                          </Menu>
+                        ) : (
+                          jiraSprintLinks.map((sprint) => (
+                            <Button
+                              key={sprint.id}
+                              render={
+                                <a href={sprint.url} target="_blank" rel="noopener noreferrer" />
+                              }
+                              aria-label={`Open ${sprint.name} in Jira`}
+                              title={`Open ${jiraBinding.boardName} · ${sprint.name} in Jira`}
+                              size="sm"
+                              variant="outline"
+                            >
+                              <LinkIcon />
+                              <span className="max-w-40 truncate">{sprint.name}</span>
+                            </Button>
+                          ))
+                        )}
                         <Button
                           aria-label="Configure Jira sprint mirror"
                           onClick={openJiraDialog}
@@ -1720,12 +1774,7 @@ export function WorkbenchPage({
                             .join(" · ")}`}
                           variant="outline"
                         >
-                          <LinkIcon />
-                          <span className="hidden max-w-40 truncate md:inline">
-                            {getWorkbenchJiraBindingSprints(jiraBinding).length > 1
-                              ? `${getWorkbenchJiraBindingSprints(jiraBinding).length} sprints`
-                              : jiraBinding.sprintName}
-                          </span>
+                          <Settings2Icon />
                           <Badge size="sm" variant={jiraBinding.active ? "secondary" : "outline"}>
                             {jiraBinding.active ? "Jira" : "Jira paused"}
                           </Badge>

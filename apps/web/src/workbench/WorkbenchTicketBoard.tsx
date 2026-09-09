@@ -120,6 +120,7 @@ export function WorkbenchTicketBoard({
       WorkbenchTicketId,
       Array<Parameters<typeof getWorkbenchAgentPresentation>[0]>
     >();
+    const ticketsById = new Map(tickets.map((ticket) => [ticket.id, ticket]));
     for (const assignment of assignments) {
       if (assignment.supersededAt !== null) continue;
       const thread = threadsById.get(assignment.threadId);
@@ -129,6 +130,8 @@ export function WorkbenchTicketBoard({
         nativeLabel: resolveThreadStatusPill({ thread })?.label,
         sessionStatus: thread.session?.status,
         turnState: thread.latestTurn?.state,
+        settledOverride: thread.settledOverride,
+        ticketStatus: ticketsById.get(assignment.ticketId)?.status,
       });
       states.set(assignment.ticketId, group);
     }
@@ -138,7 +141,7 @@ export function WorkbenchTicketBoard({
         getWorkbenchTicketAgentPresentation(threads),
       ]),
     );
-  }, [assignments, threadsById]);
+  }, [assignments, threadsById, tickets]);
   const threadCounts = useMemo(() => {
     const counts = new Map<WorkbenchTicketId, number>();
     for (const assignment of getVisibleWorkbenchAssignments(
@@ -391,11 +394,7 @@ export function WorkbenchTicketBoard({
                                     </WorkbenchTicketStatusMenu>
                                   </div>
                                 </div>
-                                <button
-                                  className="mt-3 block w-full text-left outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
-                                  type="button"
-                                  onClick={() => onSelect(projectId, ticket.id)}
-                                >
+                                <div className="relative mt-3 block w-full text-left">
                                   <div className="space-y-1.5 text-xs text-muted-foreground">
                                     <div className="flex items-center gap-1.5">
                                       <Badge size="sm" variant="secondary">
@@ -414,8 +413,15 @@ export function WorkbenchTicketBoard({
                                       ) : null}
                                       {jiraIssueLink ? (
                                         <Badge
-                                          aria-label={`Jira issue ${jiraIssueLink.issue.key}`}
-                                          className="shrink-0"
+                                          aria-label={`Open Jira issue ${jiraIssueLink.issue.key}`}
+                                          render={
+                                            <a
+                                              href={jiraIssueLink.issue.url}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                            />
+                                          }
+                                          className="relative z-10 shrink-0"
                                           size="sm"
                                           title={`Jira issue ${jiraIssueLink.issue.key}`}
                                           variant="outline"
@@ -428,9 +434,11 @@ export function WorkbenchTicketBoard({
                                     <Tooltip>
                                       <TooltipTrigger
                                         render={
-                                          <p
+                                          <button
+                                            type="button"
+                                            onClick={() => onSelect(projectId, ticket.id)}
                                             aria-label={`Ticket summary: ${summary.text}`}
-                                            className="line-clamp-2 break-words text-xs text-muted-foreground outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+                                            className="line-clamp-2 break-words text-left text-xs text-muted-foreground outline-none after:absolute after:inset-0 after:content-[''] focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
                                             tabIndex={0}
                                           />
                                         }
@@ -489,7 +497,7 @@ export function WorkbenchTicketBoard({
                                       ) : null}
                                     </div>
                                   </div>
-                                </button>
+                                </div>
                                 <div className="mt-3">
                                   <Button
                                     className="w-full"

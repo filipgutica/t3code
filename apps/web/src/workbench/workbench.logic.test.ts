@@ -590,6 +590,23 @@ describe("Workbench ticket helpers", () => {
 
 describe("Workbench agent activity", () => {
   const idle = { nativeLabel: null, sessionStatus: null, turnState: null };
+  it("settles completed activity for Done Tickets and native settled Threads", () => {
+    expect(
+      getWorkbenchAgentPresentation({ ...idle, turnState: "completed", ticketStatus: "done" })
+        ?.label,
+    ).toBe("Completed");
+    expect(
+      getWorkbenchAgentPresentation({ ...idle, turnState: "completed", settledOverride: "settled" })
+        ?.label,
+    ).toBe("Settled");
+    expect(
+      getWorkbenchAgentPresentation({ ...idle, nativeLabel: "Working", ticketStatus: "done" })
+        ?.label,
+    ).toBe("Working");
+    expect(
+      getWorkbenchAgentPresentation({ ...idle, turnState: "error", ticketStatus: "done" })?.label,
+    ).toBe("Waiting for input");
+  });
   it("normalizes native activity independently of Ticket progress", () => {
     expect(getWorkbenchAgentPresentation(idle)).toBeNull();
     for (const nativeLabel of ["Working", "Connecting", "Monitoring"]) {

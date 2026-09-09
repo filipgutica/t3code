@@ -391,10 +391,14 @@ export function getWorkbenchAgentPresentation({
   nativeLabel,
   sessionStatus,
   turnState,
+  settledOverride,
+  ticketStatus,
 }: {
   readonly nativeLabel: string | null | undefined;
   readonly sessionStatus: string | null | undefined;
   readonly turnState: string | null | undefined;
+  readonly settledOverride?: "settled" | "active" | null;
+  readonly ticketStatus?: WorkbenchTicketStatus | undefined;
 }) {
   const needsInput = {
     label: "Waiting for input",
@@ -412,6 +416,12 @@ export function getWorkbenchAgentPresentation({
   }
   if (sessionStatus === "error" || turnState === "error" || turnState === "interrupted")
     return needsInput;
+  if (turnState === "completed" && (settledOverride === "settled" || ticketStatus === "done"))
+    return {
+      label: settledOverride === "settled" ? "Settled" : "Completed",
+      dotClass: "bg-muted-foreground/60",
+      colorClass: "text-muted-foreground",
+    } as const;
   if (turnState === "completed")
     return {
       label: "Ready for review",
@@ -429,6 +439,8 @@ export function getWorkbenchTicketAgentPresentation(
     states.find((state) => state?.label === "Waiting for input") ??
     states.find((state) => state?.label === "Working") ??
     states.find((state) => state?.label === "Ready for review") ??
+    states.find((state) => state?.label === "Completed") ??
+    states.find((state) => state?.label === "Settled") ??
     null
   );
 }
