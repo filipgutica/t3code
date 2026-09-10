@@ -3,7 +3,7 @@ name: Workbench upstream sync
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 9 * * *"
+    - cron: "17 * * * *"
 
 permissions:
   contents: read
@@ -12,6 +12,10 @@ concurrency:
   group: workbench-upstream-sync
   cancel-in-progress: false
 
+env:
+  PRODUCT_BRANCH: ${{ github.event.repository.default_branch }}
+  SYNC_BRANCH: automation/workbench-upstream-sync
+
 jobs:
   verify:
     runs-on: ubuntu-24.04
@@ -19,9 +23,7 @@ jobs:
     outputs:
       needed: ${{ steps.pending.outputs.needed }}
       product_sha: ${{ steps.pending.outputs.product_sha }}
-      upstream_sha: ${{ steps.pending.outputs.upstream_sha }}
-    env:
-      PRODUCT_BRANCH: ${{ github.event.repository.default_branch }}
+      verified_sha: ${{ steps.bundle.outputs.verified_sha }}
     steps:
       - name: Checkout product branch
         uses: actions/checkout@v6
@@ -41,7 +43,6 @@ jobs:
         name: Check for upstream commits
         run: |
           echo "product_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "upstream_sha=$(git rev-parse upstream/main)" >> "$GITHUB_OUTPUT"
           if git merge-base --is-ancestor upstream/main HEAD; then
             echo "needed=false" >> "$GITHUB_OUTPUT"
           else
@@ -60,8 +61,6 @@ jobs:
 
       - name: Merge upstream on a sync branch
         if: steps.pending.outputs.needed == 'true'
-        env:
-          SYNC_BRANCH: automation/workbench-upstream-${{ github.run_id }}
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
@@ -74,7 +73,17 @@ jobs:
         with:
           node-version-file: package.json
           cache: true
-          run-install: true
+          run-install: false
+
+      - name: Regenerate and install the merged lockfile
+        if: steps.pending.outputs.needed == 'true'
+        run: |
+          vp install --lockfile-only --no-frozen-lockfile
+          vp install --frozen-lockfile
+          git add pnpm-lock.yaml
+          if ! git diff --cached --quiet; then
+            git commit --amend --no-edit
+          fi
 
       - name: Verify Workbench overlay
         if: steps.pending.outputs.needed == 'true'
@@ -82,13 +91,32 @@ jobs:
           vp run --filter @t3tools/workbench typecheck
           vp run --filter @t3tools/workbench test
           vp run --filter @t3tools/workbench quality
-          vp test run packages/contracts/src/workbench.test.ts apps/server/src/workbench/WorkbenchStore.test.ts apps/server/src/auth/RpcAuthorization.test.ts apps/web/src/workbench/workbench.logic.test.ts
+          vp test run packages/contracts/src/workbench.test.ts apps/server/src/workbench apps/server/src/auth/RpcAuthorization.test.ts apps/web/src/workbench
           vp run --filter @t3tools/contracts typecheck
           vp run --filter t3 typecheck
           vp run --filter @t3tools/web typecheck
           vp run --filter @t3tools/desktop ensure:electron
           vp run build:desktop
           xvfb-run -a vp run --filter @t3tools/desktop smoke-test
+
+      - name: Bundle the verified merge
+        id: bundle
+        if: steps.pending.outputs.needed == 'true'
+        env:
+          PRODUCT_SHA: ${{ steps.pending.outputs.product_sha }}
+        run: |
+          git diff --exit-code HEAD
+          echo "verified_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git bundle create "$RUNNER_TEMP/verified-sync.bundle" "$SYNC_BRANCH" "^$PRODUCT_SHA"
+
+      - name: Upload the verified merge
+        if: steps.pending.outputs.needed == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: verified-upstream-sync
+          path: ${{ runner.temp }}/verified-sync.bundle
+          if-no-files-found: error
+          retention-days: 1
 
   publish:
     needs: verify
@@ -98,11 +126,9 @@ jobs:
       contents: write
       pull-requests: write
     env:
-      PRODUCT_BRANCH: ${{ github.event.repository.default_branch }}
-      SYNC_BRANCH: automation/workbench-upstream-sync
       GH_TOKEN: ${{ github.token }}
       PRODUCT_SHA: ${{ needs.verify.outputs.product_sha }}
-      UPSTREAM_SHA: ${{ needs.verify.outputs.upstream_sha }}
+      VERIFIED_SHA: ${{ needs.verify.outputs.verified_sha }}
     steps:
       - name: Checkout product branch
         uses: actions/checkout@v6
@@ -110,16 +136,19 @@ jobs:
           ref: ${{ env.PRODUCT_BRANCH }}
           fetch-depth: 0
 
-      - name: Recreate verified merge
+      - name: Download the verified merge
+        uses: actions/download-artifact@v8
+        with:
+          name: verified-upstream-sync
+          path: ${{ runner.temp }}
+
+      - name: Publish the verified merge
         run: |
-          git remote add upstream https://github.com/pingdotgg/t3code.git
-          git fetch --prune upstream main
           test "$(git rev-parse HEAD)" = "$PRODUCT_SHA"
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git switch -C "$SYNC_BRANCH"
-          git merge --no-edit "$UPSTREAM_SHA"
-          git push --force-with-lease origin "$SYNC_BRANCH"
+          git fetch "$RUNNER_TEMP/verified-sync.bundle" "$SYNC_BRANCH"
+          test "$(git rev-parse FETCH_HEAD)" = "$VERIFIED_SHA"
+          git merge-base --is-ancestor "$PRODUCT_SHA" "$VERIFIED_SHA"
+          git push --force-with-lease origin "$VERIFIED_SHA:refs/heads/$SYNC_BRANCH"
 
       - name: Open sync pull request
         run: |

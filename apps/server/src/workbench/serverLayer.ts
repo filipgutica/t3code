@@ -23,11 +23,16 @@ export const WorkbenchServicesLayerLive = Layer.empty.pipe(
   Layer.provideMerge(WorkbenchStoreLayerLive),
 );
 
-export const TicketExecutionReactorLayerLive = TicketExecutionReactor.layer.pipe(
+const TicketExecutionReactorLayerLive = TicketExecutionReactor.layer.pipe(
   Layer.provide(WorkbenchJiraLayerLive),
   Layer.provide(WorkbenchStoreLayerLive),
 );
 
-export const TicketSettlementLayerLive = TicketSettlement.layer.pipe(
+const TicketSettlementLayerLive = TicketSettlement.layer.pipe(
   Layer.provide(WorkbenchStoreLayerLive),
+);
+
+export const WorkbenchReactorsLayerLive = Layer.empty.pipe(
+  Layer.provideMerge(TicketExecutionReactorLayerLive),
+  Layer.provideMerge(TicketSettlementLayerLive),
 );

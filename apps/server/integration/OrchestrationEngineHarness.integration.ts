@@ -67,7 +67,6 @@ import {
 } from "../src/orchestration/Services/OrchestrationEngine.ts";
 import { ThreadDeletionReactor } from "../src/orchestration/Services/ThreadDeletionReactor.ts";
 import * as ThreadSettlementReactor from "../src/orchestration/ThreadSettlementReactor.ts";
-import { noopTicketExecutionReactorLayer } from "../src/workbench/testUtils.ts";
 import * as PullRequestSyncReactor from "../src/orchestration/PullRequestSyncReactor.ts";
 import * as ThreadPullRequestReactor from "../src/orchestration/ThreadPullRequestReactor.ts";
 import { OrchestrationReactor } from "../src/orchestration/Services/OrchestrationReactor.ts";
@@ -90,6 +89,7 @@ import { GitWorkflowService } from "../src/git/GitWorkflowService.ts";
 import * as VcsProcess from "../src/vcs/VcsProcess.ts";
 import * as AgentAwarenessRelay from "../src/relay/AgentAwarenessRelay.ts";
 import * as PullRequestService from "../src/pullRequest/PullRequestService.ts";
+import { noopTicketExecutionReactorLayer } from "../src/workbench/testUtils.ts";
 
 const decodeCodexSettings = Schema.decodeEffect(CodexSettings);
 
@@ -385,7 +385,6 @@ export const makeOrchestrationIntegrationHarness = (
       Layer.provideMerge(VcsProcess.layer),
     );
     const orchestrationReactorLayer = OrchestrationReactorLive.pipe(
-      Layer.provideMerge(noopTicketExecutionReactorLayer),
       Layer.provideMerge(runtimeIngestionLayer),
       Layer.provideMerge(providerCommandReactorLayer),
       Layer.provideMerge(checkpointReactorLayer),
@@ -424,6 +423,7 @@ export const makeOrchestrationIntegrationHarness = (
     const layer = Layer.empty.pipe(
       Layer.provideMerge(runtimeServicesLayer),
       Layer.provideMerge(orchestrationReactorLayer),
+      Layer.provideMerge(noopTicketExecutionReactorLayer),
       Layer.provideMerge(providerRegistryLayer),
       Layer.provide(persistenceLayer),
       Layer.provideMerge(RepositoryIdentityResolver.layer),
