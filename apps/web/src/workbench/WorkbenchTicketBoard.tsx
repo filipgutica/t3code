@@ -15,6 +15,7 @@ import type {
 import {
   ArrowRightIcon,
   BotIcon,
+  ChevronDownIcon,
   CircleAlertIcon,
   FolderGit2Icon,
   LayoutDashboardIcon,
@@ -22,12 +23,13 @@ import {
   MoreHorizontalIcon,
   PlusIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 
 import { resolveThreadStatusPill } from "../components/Sidebar.logic";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
+import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
 import { ToggleGroup, Toggle } from "../components/ui/toggle-group";
 import { cn } from "../lib/utils";
 import {
@@ -175,6 +177,9 @@ export function WorkbenchTicketBoard({
   const visibleColumnId = columns.some((column) => column.id === selectedColumnId)
     ? selectedColumnId
     : columns[0]?.id;
+  const boardStyle: CSSProperties & { "--board-column-count": number } = {
+    "--board-column-count": columns.length,
+  };
 
   return (
     <section
@@ -199,328 +204,341 @@ export function WorkbenchTicketBoard({
         </ToggleGroup>
       </div>
       <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3 sm:p-4">
-        <div className={groupMode === "epic" ? "min-w-0 space-y-3" : "min-w-0"}>
+        <div
+          style={boardStyle}
+          className="flex min-w-0 flex-col gap-3 md:min-w-[calc(var(--board-column-count)*18rem+(var(--board-column-count)-1)*0.75rem)]"
+        >
+          <div className="sticky top-0 z-10 hidden grid-flow-col auto-cols-[minmax(18rem,1fr)] gap-3 border-b border-border/60 bg-background pb-2 md:grid">
+            {columns.map((column) => (
+              <div key={column.id} className="flex min-w-0 items-center gap-2 px-2 py-2">
+                <span
+                  aria-hidden
+                  className={cn("size-2 shrink-0 rounded-full", STATUS_DOT_CLASS[column.status])}
+                />
+                <h2 className="min-w-0 flex-1 break-words text-sm font-semibold">{column.title}</h2>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {column.tickets.length}
+                </span>
+              </div>
+            ))}
+          </div>
           {swimlanes.map((swimlane) => {
             const laneTicketIds = new Set(swimlane.tickets.map((ticket) => ticket.id));
             const laneKey = groupMode === "epic" ? (swimlane.epic?.id ?? "no-epic") : "all-tickets";
             return (
-              <section
+              <Collapsible
                 key={laneKey}
-                aria-label={
-                  groupMode === "epic"
-                    ? `${swimlane.epic?.title ?? "No Epic"} swimlane`
-                    : "All Tickets"
+                defaultOpen
+                render={
+                  <section
+                    aria-label={
+                      groupMode === "epic"
+                        ? `${swimlane.epic?.title ?? "No Epic"} swimlane`
+                        : "All Tickets"
+                    }
+                  />
                 }
-                className={
-                  groupMode === "epic"
-                    ? "min-w-0 overflow-hidden rounded-xl border border-border/70 bg-muted/20"
-                    : "min-w-0"
-                }
+                className="min-w-0"
               >
                 {groupMode === "epic" ? (
-                  <header className="flex items-center gap-2 border-b border-border/60 px-3 py-2.5">
-                    <Layers3Icon className="size-3.5 text-muted-foreground" />
+                  <header className="mb-2 flex items-center gap-2 border-b border-border/40 py-1">
+                    <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-2 text-left outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring">
+                      <ChevronDownIcon className="size-3.5 shrink-0 -rotate-90 text-muted-foreground transition-transform group-data-panel-open:rotate-0 motion-reduce:transition-none" />
+                      <Layers3Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                      <h3 className="min-w-0 truncate text-sm font-semibold">
+                        {swimlane.epic?.title ?? "No Epic"}
+                      </h3>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        {swimlane.tickets.length}
+                      </span>
+                    </CollapsibleTrigger>
                     {swimlane.epic ? (
-                      <button
-                        className="min-w-0 flex-1 truncate text-left text-sm font-semibold outline-none hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+                      <Button
+                        variant="ghost"
+                        size="xs"
                         onClick={() => onSelectEpic(projectId, swimlane.epic!.id)}
-                        type="button"
                       >
-                        {swimlane.epic.title}
-                      </button>
-                    ) : (
-                      <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">No Epic</h2>
-                    )}
-                    <Badge size="sm" variant="secondary">
-                      {swimlane.tickets.length}
-                    </Badge>
+                        View Epic <ArrowRightIcon data-icon="inline-end" />
+                      </Button>
+                    ) : null}
                   </header>
                 ) : null}
-                <div
-                  className={cn(
-                    "grid min-w-0 grid-cols-1 gap-3 md:auto-cols-[minmax(18rem,1fr)] md:grid-flow-col md:grid-cols-none",
-                    groupMode === "epic" ? "p-3" : "min-h-full",
-                  )}
-                >
-                  {columns.map((column) => {
-                    const laneTickets = orderWorkbenchTicketsByJiraRank(
-                      column.tickets.filter((ticket) => laneTicketIds.has(ticket.id)),
-                      jiraIssueLinksByTicketId,
-                      activeJiraTicketIds,
-                    );
-                    return (
-                      <section
-                        key={column.id}
-                        aria-label={`${column.title} Tickets`}
-                        data-workbench-status={column.id}
-                        className={cn(
-                          "min-w-0 flex-col rounded-xl border border-border/70 bg-muted/35 md:flex",
-                          column.id === visibleColumnId ? "flex" : "hidden",
-                          groupMode === "epic" ? "min-h-40" : "h-full min-h-0",
-                        )}
-                      >
-                        <header className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 rounded-t-xl border-b border-border/60 bg-background px-3 py-2.5">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <span
-                              className={`size-2 rounded-full ${STATUS_DOT_CLASS[column.status]}`}
-                            />
-                            <h2 className="min-w-0 truncate text-sm font-semibold">
-                              {column.title}
-                            </h2>
-                          </div>
-                          <Badge size="sm" variant="secondary">
-                            {laneTickets.length}
-                          </Badge>
-                        </header>
-                        <div className="flex min-h-0 flex-1 flex-col gap-2 p-2.5">
-                          {laneTickets.map((ticket) => {
-                            const assignment = assignmentsByTicket.get(ticket.id);
-                            const nativeThread = assignment
-                              ? threadsById.get(assignment.threadId)
-                              : undefined;
-                            const archivedThread =
-                              assignment &&
-                              isWorkbenchThreadArchived(
-                                assignment.threadId,
-                                threadsById,
-                                archivedThreadsById,
-                              )
-                                ? archivedThreadsById.get(assignment.threadId)
+                <CollapsiblePanel className="transition-none">
+                  <div className="grid min-w-0 grid-cols-1 gap-3 md:auto-cols-[minmax(18rem,1fr)] md:grid-flow-col md:grid-cols-none">
+                    {columns.map((column) => {
+                      const laneTickets = orderWorkbenchTicketsByJiraRank(
+                        column.tickets.filter((ticket) => laneTicketIds.has(ticket.id)),
+                        jiraIssueLinksByTicketId,
+                        activeJiraTicketIds,
+                      );
+                      return (
+                        <section
+                          key={column.id}
+                          aria-label={`${column.title} Tickets`}
+                          data-workbench-status={column.id}
+                          className={cn(
+                            "min-w-0 flex-col rounded-lg bg-muted/20 md:flex",
+                            column.id === visibleColumnId ? "flex" : "hidden",
+                          )}
+                        >
+                          <div className="flex min-h-0 flex-1 flex-col gap-2 p-1.5">
+                            {laneTickets.map((ticket) => {
+                              const assignment = assignmentsByTicket.get(ticket.id);
+                              const nativeThread = assignment
+                                ? threadsById.get(assignment.threadId)
                                 : undefined;
-                            const nativeStatus = agentStatesByTicket.get(ticket.id) ?? null;
-                            const nativeThreadFailed = nativeThread?.session?.status === "error";
-                            const thread = getWorkbenchThreadPresentation(
-                              assignment !== undefined,
-                              nativeThread !== undefined,
-                              nativeStatus?.label ?? (nativeThreadFailed ? "Failed" : null),
-                              archivedThread !== undefined,
-                              threadLookupReady,
-                            );
-                            const threadActionPending =
-                              pendingAction === `start:${ticket.id}` ||
-                              (assignment !== undefined &&
-                                pendingAction === `restore:${assignment.threadId}`);
-                            const repository = repositoriesById.get(ticket.primaryT3ProjectId);
-                            const additionalRepositoryCount =
-                              getWorkbenchTicketRepositoryProjectIds(ticket).length - 1;
-                            const epic = ticket.epicId ? epicsById.get(ticket.epicId) : undefined;
-                            const jiraIssueLink = jiraIssueLinksByTicketId.get(ticket.id);
-                            const summary = getWorkbenchTicketSummaryPresentation(
-                              ticket.generatedSummary,
-                            );
-                            return (
-                              <article
-                                key={ticket.id}
-                                className={`w-full min-w-0 rounded-lg border bg-card p-3 transition-colors hover:border-foreground/20 ${
-                                  selectedTicketId === ticket.id
-                                    ? "border-primary/50 ring-2 ring-primary/15"
-                                    : "border-border/60"
-                                }`}
-                              >
-                                <div className="flex items-start gap-2">
-                                  <button
-                                    className="min-w-0 flex-1 text-left outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
-                                    type="button"
-                                    onClick={() => onSelect(projectId, ticket.id)}
-                                  >
+                              const archivedThread =
+                                assignment &&
+                                isWorkbenchThreadArchived(
+                                  assignment.threadId,
+                                  threadsById,
+                                  archivedThreadsById,
+                                )
+                                  ? archivedThreadsById.get(assignment.threadId)
+                                  : undefined;
+                              const nativeStatus = agentStatesByTicket.get(ticket.id) ?? null;
+                              const nativeThreadFailed = nativeThread?.session?.status === "error";
+                              const thread = getWorkbenchThreadPresentation(
+                                assignment !== undefined,
+                                nativeThread !== undefined,
+                                nativeStatus?.label ?? (nativeThreadFailed ? "Failed" : null),
+                                archivedThread !== undefined,
+                                threadLookupReady,
+                              );
+                              const threadActionPending =
+                                pendingAction === `start:${ticket.id}` ||
+                                (assignment !== undefined &&
+                                  pendingAction === `restore:${assignment.threadId}`);
+                              const repository = repositoriesById.get(ticket.primaryT3ProjectId);
+                              const additionalRepositoryCount =
+                                getWorkbenchTicketRepositoryProjectIds(ticket).length - 1;
+                              const epic = ticket.epicId ? epicsById.get(ticket.epicId) : undefined;
+                              const jiraIssueLink = jiraIssueLinksByTicketId.get(ticket.id);
+                              const summary = getWorkbenchTicketSummaryPresentation(
+                                ticket.generatedSummary,
+                              );
+                              return (
+                                <article
+                                  key={ticket.id}
+                                  className={`w-full min-w-0 rounded-lg border bg-card p-3 transition-colors hover:border-foreground/20 ${
+                                    selectedTicketId === ticket.id
+                                      ? "border-primary/50 ring-2 ring-primary/15"
+                                      : "border-border/60"
+                                  }`}
+                                >
+                                  <div className="flex items-start gap-2">
+                                    <button
+                                      className="min-w-0 flex-1 text-left outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+                                      type="button"
+                                      onClick={() => onSelect(projectId, ticket.id)}
+                                    >
+                                      <Tooltip>
+                                        <TooltipTrigger
+                                          render={
+                                            <h3 className="line-clamp-3 min-w-0 break-words text-sm font-medium leading-snug" />
+                                          }
+                                        >
+                                          {ticket.title}
+                                        </TooltipTrigger>
+                                        <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
+                                          {ticket.title}
+                                        </TooltipPopup>
+                                      </Tooltip>
+                                    </button>
+                                    <div className="flex min-w-0 shrink-0 items-center gap-1">
+                                      <WorkbenchTicketStatusMenu
+                                        key={`${environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
+                                        environmentId={environmentId}
+                                        ticket={ticket}
+                                        jiraIssueLink={jiraIssueLink ?? null}
+                                        disabled={pending || ticket.archivedAt != null}
+                                        onStatusChange={(status) => onMove(ticket, status)}
+                                        onJiraTransition={onJiraTransition}
+                                        trigger={
+                                          <Button
+                                            className="-mr-1 -mt-1 shrink-0"
+                                            size="icon-xs"
+                                            variant="ghost"
+                                          >
+                                            <MoreHorizontalIcon />
+                                          </Button>
+                                        }
+                                      >
+                                        <MenuItem
+                                          disabled={
+                                            pending ||
+                                            ticket.archivedAt != null ||
+                                            ticket.generatedSummary?.status === "pending"
+                                          }
+                                          onClick={() => onRegenerateSummary(ticket)}
+                                        >
+                                          {getWorkbenchTicketSummaryActionLabel(
+                                            ticket.generatedSummary,
+                                          )}
+                                        </MenuItem>
+                                      </WorkbenchTicketStatusMenu>
+                                    </div>
+                                  </div>
+                                  <div className="mt-2 flex min-w-0 flex-col gap-2 text-xs text-muted-foreground">
+                                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                      {jiraIssueLink ? (
+                                        <Badge
+                                          aria-label={`Open Jira issue ${jiraIssueLink.issue.key}`}
+                                          render={
+                                            <a
+                                              href={jiraIssueLink.issue.url}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                            />
+                                          }
+                                          size="sm"
+                                          title={`Jira issue ${jiraIssueLink.issue.key}`}
+                                          variant="outline"
+                                        >
+                                          <WorkbenchJiraIcon className="size-3" />
+                                          <span>{jiraIssueLink.issue.key}</span>
+                                        </Badge>
+                                      ) : null}
+                                      <Badge size="sm" variant="secondary">
+                                        {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
+                                      </Badge>
+                                      {groupMode === "none" && epic ? (
+                                        <Badge
+                                          className="min-w-0 max-w-full"
+                                          size="sm"
+                                          variant="outline"
+                                        >
+                                          <Layers3Icon />
+                                          <span className="truncate">{epic.title}</span>
+                                        </Badge>
+                                      ) : null}
+                                      {jiraIssueLink?.issue.flagged ? (
+                                        <Badge size="sm" variant="warning">
+                                          <CircleAlertIcon /> Jira flagged
+                                        </Badge>
+                                      ) : null}
+                                    </div>
                                     <Tooltip>
                                       <TooltipTrigger
                                         render={
-                                          <h3 className="line-clamp-3 min-w-0 break-words text-sm font-medium leading-snug" />
-                                        }
-                                      >
-                                        {ticket.title}
-                                      </TooltipTrigger>
-                                      <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
-                                        {ticket.title}
-                                      </TooltipPopup>
-                                    </Tooltip>
-                                  </button>
-                                  <div className="flex min-w-0 shrink-0 items-center gap-1">
-                                    <WorkbenchTicketStatusMenu
-                                      key={`${environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
-                                      environmentId={environmentId}
-                                      ticket={ticket}
-                                      jiraIssueLink={jiraIssueLink ?? null}
-                                      disabled={pending || ticket.archivedAt != null}
-                                      onStatusChange={(status) => onMove(ticket, status)}
-                                      onJiraTransition={onJiraTransition}
-                                      trigger={
-                                        <Button
-                                          className="-mr-1 -mt-1 shrink-0"
-                                          size="icon-xs"
-                                          variant="ghost"
-                                        >
-                                          <MoreHorizontalIcon />
-                                        </Button>
-                                      }
-                                    >
-                                      <MenuItem
-                                        disabled={
-                                          pending ||
-                                          ticket.archivedAt != null ||
-                                          ticket.generatedSummary?.status === "pending"
-                                        }
-                                        onClick={() => onRegenerateSummary(ticket)}
-                                      >
-                                        {getWorkbenchTicketSummaryActionLabel(
-                                          ticket.generatedSummary,
-                                        )}
-                                      </MenuItem>
-                                    </WorkbenchTicketStatusMenu>
-                                  </div>
-                                </div>
-                                <div className="mt-2 flex min-w-0 flex-col gap-2 text-xs text-muted-foreground">
-                                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                    {jiraIssueLink ? (
-                                      <Badge
-                                        aria-label={`Open Jira issue ${jiraIssueLink.issue.key}`}
-                                        render={
-                                          <a
-                                            href={jiraIssueLink.issue.url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
+                                          <button
+                                            type="button"
+                                            onClick={() => onSelect(projectId, ticket.id)}
+                                            aria-label={`Ticket summary: ${summary.text}`}
+                                            className="line-clamp-2 break-words text-left text-xs text-muted-foreground outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+                                            tabIndex={0}
                                           />
                                         }
-                                        size="sm"
-                                        title={`Jira issue ${jiraIssueLink.issue.key}`}
-                                        variant="outline"
                                       >
-                                        <WorkbenchJiraIcon className="size-3" />
-                                        <span>{jiraIssueLink.issue.key}</span>
-                                      </Badge>
-                                    ) : null}
-                                    <Badge size="sm" variant="secondary">
-                                      {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
-                                    </Badge>
-                                    {groupMode === "none" && epic ? (
-                                      <Badge
-                                        className="min-w-0 max-w-full"
-                                        size="sm"
-                                        variant="outline"
+                                        {summary.text}
+                                      </TooltipTrigger>
+                                      <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
+                                        {summary.text}
+                                      </TooltipPopup>
+                                    </Tooltip>
+                                    {summary.statusLabel ? (
+                                      <p
+                                        className="text-[11px] text-muted-foreground"
+                                        role="status"
                                       >
-                                        <Layers3Icon />
-                                        <span className="truncate">{epic.title}</span>
-                                      </Badge>
+                                        {summary.statusLabel}
+                                      </p>
                                     ) : null}
-                                    {jiraIssueLink?.issue.flagged ? (
-                                      <Badge size="sm" variant="warning">
-                                        <CircleAlertIcon /> Jira flagged
-                                      </Badge>
-                                    ) : null}
+                                    <Tooltip>
+                                      <TooltipTrigger
+                                        render={
+                                          <span
+                                            tabIndex={0}
+                                            className="flex min-w-0 items-center gap-1.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                          />
+                                        }
+                                      >
+                                        <FolderGit2Icon className="size-3.5 shrink-0" />
+                                        <span className="truncate">
+                                          {repository?.title ?? "Repository unavailable"}
+                                        </span>
+                                        {additionalRepositoryCount > 0 ? (
+                                          <span className="shrink-0">
+                                            +{additionalRepositoryCount}
+                                          </span>
+                                        ) : null}
+                                      </TooltipTrigger>
+                                      <TooltipPopup>
+                                        {getWorkbenchTicketRepositoryProjectIds(ticket)
+                                          .map(
+                                            (id) =>
+                                              repositoriesById.get(id)?.title ??
+                                              "Repository unavailable",
+                                          )
+                                          .join(", ")}
+                                      </TooltipPopup>
+                                    </Tooltip>
                                   </div>
-                                  <Tooltip>
-                                    <TooltipTrigger
-                                      render={
-                                        <button
-                                          type="button"
-                                          onClick={() => onSelect(projectId, ticket.id)}
-                                          aria-label={`Ticket summary: ${summary.text}`}
-                                          className="line-clamp-2 break-words text-left text-xs text-muted-foreground outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
-                                          tabIndex={0}
-                                        />
-                                      }
-                                    >
-                                      {summary.text}
-                                    </TooltipTrigger>
-                                    <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
-                                      {summary.text}
-                                    </TooltipPopup>
-                                  </Tooltip>
-                                  {summary.statusLabel ? (
-                                    <p className="text-[11px] text-muted-foreground" role="status">
-                                      {summary.statusLabel}
-                                    </p>
-                                  ) : null}
-                                  <Tooltip>
-                                    <TooltipTrigger
-                                      render={
+                                  <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-2">
+                                    <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                                      {thread.state === "linked" || thread.state === "archived" ? (
                                         <span
-                                          tabIndex={0}
-                                          className="flex min-w-0 items-center gap-1.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                          aria-hidden
+                                          className={`size-2 rounded-full ${
+                                            nativeStatus?.dotClass ??
+                                            (nativeThreadFailed
+                                              ? "bg-destructive"
+                                              : "bg-muted-foreground/60")
+                                          }`}
                                         />
-                                      }
-                                    >
-                                      <FolderGit2Icon className="size-3.5 shrink-0" />
-                                      <span className="truncate">
-                                        {repository?.title ?? "Repository unavailable"}
+                                      ) : (
+                                        <BotIcon className="size-3.5" />
+                                      )}
+                                      <span
+                                        className={
+                                          nativeStatus?.colorClass ??
+                                          (nativeThreadFailed ? "text-destructive" : undefined)
+                                        }
+                                      >
+                                        {thread.stateLabel}
                                       </span>
-                                      {additionalRepositoryCount > 0 ? (
-                                        <span className="shrink-0">
-                                          +{additionalRepositoryCount}
+                                      {(threadCounts.get(ticket.id) ?? 0) > 1 ? (
+                                        <span className="text-muted-foreground/60">
+                                          · {threadCounts.get(ticket.id)} Threads
                                         </span>
                                       ) : null}
-                                    </TooltipTrigger>
-                                    <TooltipPopup>
-                                      {getWorkbenchTicketRepositoryProjectIds(ticket)
-                                        .map(
-                                          (id) =>
-                                            repositoriesById.get(id)?.title ??
-                                            "Repository unavailable",
-                                        )
-                                        .join(", ")}
-                                    </TooltipPopup>
-                                  </Tooltip>
-                                </div>
-                                <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-2">
-                                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                                    {thread.state === "linked" || thread.state === "archived" ? (
-                                      <span
-                                        aria-hidden
-                                        className={`size-2 rounded-full ${
-                                          nativeStatus?.dotClass ??
-                                          (nativeThreadFailed
-                                            ? "bg-destructive"
-                                            : "bg-muted-foreground/60")
-                                        }`}
-                                      />
-                                    ) : (
-                                      <BotIcon className="size-3.5" />
-                                    )}
-                                    <span
-                                      className={
-                                        nativeStatus?.colorClass ??
-                                        (nativeThreadFailed ? "text-destructive" : undefined)
+                                    </div>
+                                    <Button
+                                      disabled={pending}
+                                      onClick={() => onOpenThread(ticket, assignment?.threadId)}
+                                      size="xs"
+                                      variant={
+                                        thread.state === "unassigned" || thread.state === "missing"
+                                          ? "default"
+                                          : "ghost"
                                       }
                                     >
-                                      {thread.stateLabel}
-                                    </span>
-                                    {(threadCounts.get(ticket.id) ?? 0) > 1 ? (
-                                      <span className="text-muted-foreground/60">
-                                        · {threadCounts.get(ticket.id)} Threads
-                                      </span>
-                                    ) : null}
+                                      {threadActionPending
+                                        ? thread.pendingActionLabel
+                                        : thread.actionLabel}
+                                      <ArrowRightIcon />
+                                    </Button>
                                   </div>
-                                  <Button
-                                    disabled={pending}
-                                    onClick={() => onOpenThread(ticket, assignment?.threadId)}
-                                    size="xs"
-                                    variant={
-                                      thread.state === "unassigned" || thread.state === "missing"
-                                        ? "default"
-                                        : "ghost"
-                                    }
-                                  >
-                                    {threadActionPending
-                                      ? thread.pendingActionLabel
-                                      : thread.actionLabel}
-                                    <ArrowRightIcon />
-                                  </Button>
-                                </div>
-                              </article>
-                            );
-                          })}
-                          {laneTickets.length === 0 ? (
-                            <p className="py-6 text-center text-xs text-muted-foreground">
-                              No tickets
-                            </p>
-                          ) : null}
-                        </div>
-                      </section>
-                    );
-                  })}
-                </div>
-              </section>
+                                </article>
+                              );
+                            })}
+                            {laneTickets.length === 0 ? (
+                              <p
+                                className={cn(
+                                  "py-3 text-center text-xs text-muted-foreground",
+                                  groupMode === "epic" && "md:sr-only",
+                                )}
+                              >
+                                No tickets in {column.title}
+                              </p>
+                            ) : null}
+                          </div>
+                        </section>
+                      );
+                    })}
+                  </div>
+                </CollapsiblePanel>
+              </Collapsible>
             );
           })}
         </div>
