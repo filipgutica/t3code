@@ -1,8 +1,10 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { useAtomValue } from "@effect/atom-react";
 import {
   EnvironmentId,
   type EditorId,
   ProjectId,
+  type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
   type ThreadId,
   type WorkbenchAssignment,
@@ -39,6 +41,9 @@ import {
 } from "./WorkbenchTicketStatusMenu";
 
 import { resolveThreadStatusPill } from "../components/Sidebar.logic";
+import { PROVIDER_ICON_BY_PROVIDER } from "../components/chat/providerIconUtils";
+import { deriveProviderInstanceEntries } from "../providerInstances";
+import { serverEnvironment } from "../state/server";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { isElectron } from "../env";
 
@@ -1023,6 +1028,12 @@ export function WorkbenchTicketDetail({
   const setDraft = useWorkbenchDraftStore((state) => state.setDraft);
   const markDraftSaved = useWorkbenchDraftStore((state) => state.markDraftSaved);
   const clearDraft = useWorkbenchDraftStore((state) => state.clearDraft);
+  const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
+  const providerEntries = deriveProviderInstanceEntries(providers ?? []);
+  const threadProviderKind = (thread: EnvironmentThreadShell | undefined) => {
+    const instanceId = thread?.session?.providerInstanceId ?? thread?.modelSelection.instanceId;
+    return providerEntries.find((entry) => entry.instanceId === instanceId)?.driverKind;
+  };
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const [resetConfirmationOpen, setResetConfirmationOpen] = useState(false);
   const [summaryPanelCollapsed, setSummaryPanelCollapsed] = useState(false);
@@ -1489,9 +1500,9 @@ export function WorkbenchTicketDetail({
             </section>
           </div>
 
-          <aside className="min-w-0 space-y-4 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
+          <aside className="min-w-0 space-y-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
             <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
-              <div className="flex items-start justify-between gap-3 border-b border-border/50 px-4 py-3">
+              <div className="flex items-start justify-between gap-3 border-b border-border/50 px-3 py-2.5">
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold">Agent Threads</h2>
                   <p className="text-xs text-muted-foreground">
@@ -1516,9 +1527,10 @@ export function WorkbenchTicketDetail({
               {!threadPanelCollapsed ? (
                 <div id="workbench-ticket-agent-threads" className="min-h-0">
                   {canOpenThread ? (
-                    <div className="border-b border-border/60 px-4 py-3">
+                    <div className="border-b border-border/60 px-3 py-2.5">
                       <div className="relative isolate flex min-w-0 flex-wrap items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45 [&>button:not(:first-child)]:relative [&>button:not(:first-child)]:z-10">
                         <WorkbenchThreadOpenButton
+                          providerKind={threadProviderKind(displayedThread)}
                           ariaLabel={`${
                             threadActionPending ? thread.pendingActionLabel : thread.actionLabel
                           } for ${displayedTitle}`}
@@ -1566,12 +1578,12 @@ export function WorkbenchTicketDetail({
                       </div>
                     </div>
                   ) : (
-                    <p className="p-4 text-sm text-muted-foreground">
+                    <p className="p-3 text-sm text-muted-foreground">
                       This archived Ticket has no Thread.
                     </p>
                   )}
                   {activeAssignments.length > 1 ? (
-                    <div className="border-t border-border px-4 py-3">
+                    <div className="border-t border-border px-3 py-2.5">
                       <p className="mb-2 text-xs font-medium text-muted-foreground">
                         Other active Threads
                       </p>
@@ -1618,6 +1630,7 @@ export function WorkbenchTicketDetail({
                                 className="relative isolate flex min-w-0 flex-wrap items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45 [&>button:not(:first-child)]:relative [&>button:not(:first-child)]:z-10"
                               >
                                 <WorkbenchThreadOpenButton
+                                  providerKind={threadProviderKind(displayedActiveThread)}
                                   ariaLabel={`${activeThreadState} ${displayedActiveThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…")}`}
                                   disabled={pending || displayedActiveThread === undefined}
                                   modelLabel={activeThreadModel}
@@ -1679,7 +1692,7 @@ export function WorkbenchTicketDetail({
                       </div>
                     </div>
                   ) : null}
-                  <div className="flex flex-wrap gap-2 border-t border-border px-4 py-3">
+                  <div className="flex flex-wrap gap-2 border-t border-border px-3 py-2.5">
                     <Button
                       disabled={pending || isArchived}
                       onClick={() => onNewThread(ticket)}
@@ -1700,7 +1713,7 @@ export function WorkbenchTicketDetail({
                     </Button>
                   </div>
                   {historicalAssignments.length > 0 ? (
-                    <div className="border-t border-border px-4 py-3">
+                    <div className="border-t border-border px-3 py-2.5">
                       <p className="mb-2 text-xs font-medium text-muted-foreground">
                         Thread history
                       </p>
@@ -1736,6 +1749,7 @@ export function WorkbenchTicketDetail({
                               className="relative isolate flex min-w-0 flex-wrap items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45 [&>button:not(:first-child)]:relative [&>button:not(:first-child)]:z-10"
                             >
                               <WorkbenchThreadOpenButton
+                                providerKind={threadProviderKind(displayedHistoricalThread)}
                                 ariaLabel={`${displayedHistoricalThread ? "Open" : "Checking"} ${displayedHistoricalThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…")}`}
                                 disabled={pending || !displayedHistoricalThread}
                                 modelLabel={
@@ -1809,7 +1823,7 @@ export function WorkbenchTicketDetail({
             />
 
             <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
-              <div className="flex items-start justify-between gap-3 border-b border-border/50 px-4 py-3">
+              <div className="flex items-start justify-between gap-3 border-b border-border/50 px-3 py-2.5">
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold">Details</h2>
                 </div>
@@ -1838,7 +1852,7 @@ export function WorkbenchTicketDetail({
               {!detailsPanelCollapsed ? (
                 <div id="workbench-ticket-details" className="min-h-0">
                   {jiraFieldsManaged ? (
-                    <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 p-4 text-sm">
+                    <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 p-3 text-sm">
                       <dt className="text-muted-foreground">Type</dt>
                       <dd className="min-w-0 break-words text-right font-medium [overflow-wrap:anywhere]">
                         {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
@@ -1861,7 +1875,7 @@ export function WorkbenchTicketDetail({
                       </dd>
                     </dl>
                   ) : (
-                    <div className="space-y-4 p-4">
+                    <div className="space-y-3 p-3">
                       <div className="space-y-1.5">
                         <Label>Ticket type</Label>
                         <Select
@@ -1937,7 +1951,7 @@ export function WorkbenchTicketDetail({
             </section>
 
             <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
-              <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
+              <div className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2.5">
                 <h2 className="text-sm font-semibold">Repository scope</h2>
                 <Button
                   aria-controls="workbench-ticket-repositories"
@@ -1956,7 +1970,7 @@ export function WorkbenchTicketDetail({
                 </Button>
               </div>
               {!repositoryScopePanelCollapsed ? (
-                <div id="workbench-ticket-repositories" className="space-y-4 p-4">
+                <div id="workbench-ticket-repositories" className="space-y-3 p-3">
                   <div className="flex min-w-0 items-start gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="space-y-1">
@@ -1964,7 +1978,7 @@ export function WorkbenchTicketDetail({
                           return (
                             <div
                               key={id}
-                              className="flex min-w-0 flex-wrap items-center gap-2 py-1.5 text-sm"
+                              className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 py-1 text-sm"
                             >
                               <div className="min-w-0 flex-1">
                                 <div className="flex min-w-0 items-center gap-1.5">
@@ -2345,6 +2359,7 @@ function WorkbenchThreadOpenButton({
   disabled,
   modelLabel,
   onClick,
+  providerKind,
   recencyLabel,
   stateLabel,
   statusDotClassName,
@@ -2354,11 +2369,13 @@ function WorkbenchThreadOpenButton({
   readonly disabled: boolean;
   readonly modelLabel: string | null;
   readonly onClick: () => void;
+  readonly providerKind: ProviderDriverKind | undefined;
   readonly recencyLabel: string | null;
   readonly stateLabel: string;
   readonly statusDotClassName: string | undefined;
   readonly title: string;
 }) {
+  const ThreadIcon = (providerKind && PROVIDER_ICON_BY_PROVIDER[providerKind]) || BotIcon;
   return (
     <button
       aria-label={ariaLabel}
@@ -2368,13 +2385,10 @@ function WorkbenchThreadOpenButton({
       type="button"
     >
       <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">
-        <BotIcon className="size-3.5 text-muted-foreground" />
+        <ThreadIcon aria-hidden className="size-4 text-muted-foreground" />
       </span>
       <span className="min-w-0 flex-1">
-        <WorkbenchThreadTitle
-          className="relative z-10 line-clamp-2 break-words font-medium [overflow-wrap:anywhere]"
-          title={title}
-        />
+        <WorkbenchThreadTitle className="relative z-10 block truncate font-medium" title={title} />
         <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
           {statusDotClassName ? (
             <span aria-hidden className={`size-2 shrink-0 rounded-full ${statusDotClassName}`} />

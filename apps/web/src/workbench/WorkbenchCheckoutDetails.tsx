@@ -3,7 +3,6 @@ import type { EnvironmentId, WorkbenchTicketWorkspace } from "@t3tools/contracts
 import { CheckIcon, CopyIcon, FolderIcon, GitBranchIcon } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 
-import { Badge } from "../components/ui/badge";
 import {
   ANCHORED_COPY_TOAST_TIMEOUT_MS,
   showAnchoredCopyErrorToast,
@@ -74,14 +73,25 @@ export function WorkbenchThreadCheckoutDetails({
     ) ?? false;
   return (
     <details className="w-full overflow-hidden rounded-md border border-border/50 bg-muted/15">
-      <summary className="cursor-pointer px-2 py-1.5 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring">
-        Checkout details
-        <span className="ml-1 font-normal text-muted-foreground/75">
-          · {shared ? "Shared checkout" : "Separate checkout"}
-        </span>
-      </summary>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <summary className="cursor-pointer px-2 py-1.5 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring" />
+          }
+        >
+          Checkout details
+          <span className="ml-1 font-normal text-muted-foreground/75">
+            · {shared ? "Ticket checkout" : "Other checkout"}
+          </span>
+        </TooltipTrigger>
+        <TooltipPopup className="max-w-72">
+          {shared
+            ? "This thread uses the ticket’s prepared working directory. Threads using this directory share files, branch, and uncommitted changes. This does not mean another thread is currently using it."
+            : "This thread uses a working directory outside the ticket’s prepared checkouts. Other threads may still use the same directory."}
+        </TooltipPopup>
+      </Tooltip>
       <div className="border-t border-border/50 px-2 pb-2">
-        <WorkbenchCheckoutDetails environmentId={environmentId} cwd={cwd} shared={shared} />
+        <WorkbenchCheckoutDetails environmentId={environmentId} cwd={cwd} />
       </div>
     </details>
   );
@@ -113,13 +123,11 @@ export function WorkbenchCheckoutDirectory({
 export function WorkbenchCheckoutDetails({
   environmentId,
   cwd,
-  shared,
   showDirectory = true,
   showPullRequest = true,
 }: {
   readonly environmentId: EnvironmentId;
   readonly cwd: string;
-  readonly shared?: boolean;
   /** Keep the full path available without repeating a repository name already shown by the parent. */
   readonly showDirectory?: boolean;
   readonly showPullRequest?: boolean;
@@ -161,11 +169,6 @@ export function WorkbenchCheckoutDetails({
       </span>
       {showPullRequest && status.data?.pr ? (
         <WorkbenchPullRequestLink environmentId={environmentId} pullRequest={status.data.pr} />
-      ) : null}
-      {shared !== undefined ? (
-        <Badge size="sm" variant={shared ? "secondary" : "outline"}>
-          {shared ? "Shared" : "Separate"}
-        </Badge>
       ) : null}
     </span>
   );
@@ -214,7 +217,7 @@ function CheckoutDetailPopover({
             }
           >
             {icon}
-            <span className={`min-w-0 break-all ${valueClassName}`}>{value}</span>
+            <span className={`min-w-0 truncate ${valueClassName}`}>{value}</span>
           </TooltipTrigger>
           <TooltipPopup
             side="top"

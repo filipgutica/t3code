@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { changeRequestRepositoryUrl } from "@t3tools/shared/changeRequestUrl";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
@@ -98,7 +99,7 @@ export function WorkbenchTicketPullRequests({
 
   return (
     <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
-      <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
+      <div className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2.5">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">
             Pull Requests{" "}
@@ -124,22 +125,36 @@ export function WorkbenchTicketPullRequests({
           </Button>
         ) : null}
       </div>
-      <div className="space-y-3 px-4 py-3">
-        {rows.map(({ pullRequest, threadTitle, matchesTicket }) => (
-          <div key={pullRequest.url.toLowerCase()} className="min-w-0">
-            <WorkbenchPullRequestLink environmentId={environmentId} pullRequest={pullRequest} />
-            <p className="mt-1 break-words text-xs text-muted-foreground">
-              {pullRequest.repository}
-            </p>
-            <p className="mt-0.5 break-words text-xs text-muted-foreground">
-              {matchesTicket
-                ? `Matches ${ticketKey}`
-                : threadTitle
-                  ? `From ${threadTitle}`
-                  : "Current checkout"}
-            </p>
-          </div>
-        ))}
+      <div className="space-y-2 px-3 py-2.5">
+        {rows.map(({ pullRequest, threadTitle, matchesTicket }) => {
+          const repositoryUrl = changeRequestRepositoryUrl(pullRequest.url);
+          return (
+            <div key={pullRequest.url.toLowerCase()} className="min-w-0">
+              <WorkbenchPullRequestLink environmentId={environmentId} pullRequest={pullRequest} />
+              <p className="mt-1.5 break-words px-3 text-xs leading-5 text-muted-foreground">
+                {repositoryUrl ? (
+                  <a
+                    href={repositoryUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-sm underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {pullRequest.repository}
+                  </a>
+                ) : (
+                  pullRequest.repository
+                )}
+              </p>
+              <p className="break-words px-3 text-xs leading-5 text-muted-foreground">
+                {matchesTicket
+                  ? `Matches ${ticketKey}`
+                  : threadTitle
+                    ? `From ${threadTitle}`
+                    : "Current checkout"}
+              </p>
+            </div>
+          );
+        })}
         {search.isPending ? (
           <p role="status" className="text-xs text-muted-foreground">
             Searching repositories…
