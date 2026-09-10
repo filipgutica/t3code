@@ -68,16 +68,22 @@ export function WorkbenchThreadCheckoutDetails({
     projects.find((project) => project.id === thread.projectId)?.workspaceRoot;
   if (!cwd)
     return <span className="block text-xs text-muted-foreground">Directory unavailable</span>;
+  const shared =
+    workspace?.repositories.some(
+      (repository) => repository.status === "ready" && repository.worktreePath === cwd,
+    ) ?? false;
   return (
-    <WorkbenchCheckoutDetails
-      environmentId={environmentId}
-      cwd={cwd}
-      shared={
-        workspace?.repositories.some(
-          (repository) => repository.status === "ready" && repository.worktreePath === cwd,
-        ) ?? false
-      }
-    />
+    <details className="w-full overflow-hidden rounded-md border border-border/50 bg-muted/15">
+      <summary className="cursor-pointer px-2 py-1.5 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring">
+        Checkout details
+        <span className="ml-1 font-normal text-muted-foreground/75">
+          · {shared ? "Shared checkout" : "Separate checkout"}
+        </span>
+      </summary>
+      <div className="border-t border-border/50 px-2 pb-2">
+        <WorkbenchCheckoutDetails environmentId={environmentId} cwd={cwd} shared={shared} />
+      </div>
+    </details>
   );
 }
 

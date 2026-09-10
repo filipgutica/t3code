@@ -33,6 +33,7 @@ import {
   Layers3Icon,
   LinkIcon,
   LayoutDashboardIcon,
+  MoreHorizontalIcon,
   PlusIcon,
   Settings2Icon,
   RefreshCwIcon,
@@ -52,7 +53,16 @@ import {
   EmptyTitle,
 } from "../components/ui/empty";
 import { Skeleton } from "../components/ui/skeleton";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
+import {
+  Menu,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+} from "../components/ui/menu";
+import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
 import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
@@ -1590,6 +1600,9 @@ export function WorkbenchPage({
               epics={projectEpics}
               jiraIssueLink={jiraIssueLinksByTicketId.get(selectedTicket.id) ?? null}
               jiraFieldsManaged={jiraManagedTicketIds.has(selectedTicket.id)}
+              jiraRefreshing={jiraPendingAction === "sync"}
+              jiraRefreshDisabled={jiraPendingAction !== null || !jiraBinding?.active}
+              onRefreshJira={jiraBinding ? () => void syncJiraBinding(jiraBinding) : null}
               lifecycleActionsEnabled={
                 jiraOwnershipKnown && !jiraManagedTicketIds.has(selectedTicket.id)
               }
@@ -1606,7 +1619,7 @@ export function WorkbenchPage({
                   pendingAction ===
                     `restore:${assignmentsByTicket.get(selectedTicket.id)?.threadId}`)
               }
-              error={error ?? query.error ?? archivedThreadsError}
+              error={error ?? query.error ?? archivedThreadsError ?? jiraError}
               onBack={() => {
                 setError(null);
                 closeWorkItem();
@@ -1678,142 +1691,120 @@ export function WorkbenchPage({
                 electron={isElectron}
                 className="h-auto min-h-20 items-start border-b border-border py-3"
               >
-                <div className="flex w-full min-w-0 flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="min-w-0 xl:flex-1">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <h2 className="truncate font-heading text-xl font-semibold">
-                        {selectedProject.title}
-                      </h2>
-                      <Badge variant="secondary">{projectTickets.length} tickets</Badge>
-                    </div>
-                    <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1.5 font-medium">
-                        <FolderGit2Icon className="size-3.5" /> Repositories
-                      </span>
-                      {linkedT3Projects.map((project) => (
-                        <span
-                          key={project.id}
-                          className="flex min-w-0 max-w-72 items-center gap-1.5"
-                        >
-                          <span className="truncate">{project.title}</span>
-                          <OpenInPicker
-                            environmentId={project.environmentId}
-                            keybindings={keybindings}
-                            availableEditors={availableEditors}
-                            openInCwd={project.workspaceRoot}
-                            compact
-                            enableShortcut={false}
-                          />
-                        </span>
-                      ))}
-                    </div>
+                <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-3">
+                  <div className="flex min-w-0 basis-full items-center gap-2 sm:basis-auto sm:flex-1">
+                    <h2 className="min-w-0 truncate font-heading text-xl font-semibold">
+                      {selectedProject.title}
+                    </h2>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {projectTickets.length} tickets
+                    </span>
+                    {jiraBinding && !jiraBinding.active ? (
+                      <Badge variant="outline">Jira paused</Badge>
+                    ) : null}
                   </div>
-                  <div className="flex w-full min-w-0 flex-wrap justify-start gap-2 xl:w-auto xl:shrink-0 xl:justify-end">
-                    <Button
-                      aria-label="Edit Workspace"
-                      title="Edit Workspace"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setError(null);
-                        setEditWorkspaceOpen(true);
-                      }}
-                    >
-                      <Settings2Icon />
-                    </Button>
-                    {jiraBinding ? (
-                      <>
-                        {jiraSprintLinks.length > 1 ? (
-                          <Menu>
-                            <MenuTrigger render={<Button size="sm" variant="outline" />}>
-                              <LinkIcon />
-                              {jiraSprintLinks.length} Jira sprints
-                            </MenuTrigger>
-                            <MenuPopup align="end">
-                              {jiraSprintLinks.map((sprint) => (
-                                <MenuItem
-                                  key={sprint.id}
-                                  render={
-                                    <a
-                                      href={sprint.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                    />
-                                  }
-                                >
-                                  <LinkIcon /> Open {sprint.name} in Jira
-                                </MenuItem>
-                              ))}
-                            </MenuPopup>
-                          </Menu>
-                        ) : (
-                          jiraSprintLinks.map((sprint) => (
-                            <Button
-                              key={sprint.id}
-                              render={
-                                <a href={sprint.url} target="_blank" rel="noopener noreferrer" />
-                              }
-                              aria-label={`Open ${sprint.name} in Jira`}
-                              title={`Open ${jiraBinding.boardName} · ${sprint.name} in Jira`}
-                              size="sm"
-                              variant="outline"
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <Popover>
+                      <PopoverTrigger render={<Button size="sm" variant="outline" />}>
+                        <FolderGit2Icon data-icon="inline-start" />
+                        Repositories {linkedT3Projects.length}
+                      </PopoverTrigger>
+                      <PopoverPopup align="end" className="w-80 max-w-[calc(100vw-2rem)]">
+                        <PopoverTitle>Repositories</PopoverTitle>
+                        <div className="mt-3 flex flex-col gap-2">
+                          {linkedT3Projects.map((project) => (
+                            <div
+                              key={project.id}
+                              className="flex min-w-0 items-center justify-between gap-3"
                             >
-                              <LinkIcon />
-                              <span className="max-w-40 truncate">{sprint.name}</span>
-                            </Button>
-                          ))
-                        )}
-                        <Button
-                          aria-label="Configure Jira sprint mirror"
-                          onClick={openJiraDialog}
-                          size="sm"
-                          title={`${jiraBinding.boardName} · ${getWorkbenchJiraBindingSprints(
-                            jiraBinding,
-                          )
-                            .map((sprint) => sprint.name)
-                            .join(" · ")}`}
-                          variant="outline"
-                        >
-                          <Settings2Icon />
-                          <Badge size="sm" variant={jiraBinding.active ? "secondary" : "outline"}>
-                            {jiraBinding.active ? "Jira" : "Jira paused"}
-                          </Badge>
-                        </Button>
-                        <Button
-                          aria-label="Sync Jira"
-                          disabled={jiraPendingAction !== null || !jiraBinding.active}
-                          onClick={() => void syncJiraBinding(jiraBinding)}
-                          size="icon-sm"
-                          title={jiraBinding.active ? "Sync Jira" : "Jira mirror is inactive"}
-                          variant="outline"
-                        >
-                          <RefreshCwIcon />
-                        </Button>
-                      </>
-                    ) : (
-                      <Button
-                        aria-label="Connect Jira"
-                        onClick={openJiraDialog}
-                        size="sm"
-                        variant="outline"
-                      >
-                        <LinkIcon />
-                        <span className="hidden md:inline">Connect Jira</span>
-                      </Button>
-                    )}
-                    <Button
-                      aria-label="New Epic"
-                      onClick={openEpicDialog}
-                      size="sm"
-                      variant="outline"
-                    >
-                      <Layers3Icon />
-                      <span className="hidden sm:inline">New Epic</span>
-                    </Button>
+                              <span className="min-w-0 break-words text-sm">{project.title}</span>
+                              <OpenInPicker
+                                environmentId={project.environmentId}
+                                keybindings={keybindings}
+                                availableEditors={availableEditors}
+                                openInCwd={project.workspaceRoot}
+                                compact
+                                enableShortcut={false}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </PopoverPopup>
+                    </Popover>
                     <Button aria-label="New Ticket" onClick={() => openTicketDialog()} size="sm">
-                      <PlusIcon />
-                      <span className="hidden sm:inline">New Ticket</span>
+                      <PlusIcon data-icon="inline-start" />
+                      New Ticket
                     </Button>
+                    <Menu>
+                      <MenuTrigger
+                        render={
+                          <Button aria-label="Workspace actions" size="icon-sm" variant="ghost" />
+                        }
+                      >
+                        <MoreHorizontalIcon />
+                      </MenuTrigger>
+                      <MenuPopup align="end">
+                        <MenuGroup>
+                          <MenuItem onClick={openEpicDialog}>
+                            <Layers3Icon /> New Epic
+                          </MenuItem>
+                          <MenuItem
+                            onClick={() => {
+                              setError(null);
+                              setEditWorkspaceOpen(true);
+                            }}
+                          >
+                            <Settings2Icon /> Edit Workspace
+                          </MenuItem>
+                        </MenuGroup>
+                        <MenuSeparator />
+                        {jiraBinding ? (
+                          <>
+                            <MenuGroup>
+                              <MenuGroupLabel>
+                                {jiraBinding.boardName}
+                                {!jiraBinding.active ? " · Paused" : ""}
+                              </MenuGroupLabel>
+                              <MenuItem onClick={openJiraDialog}>
+                                <Settings2Icon /> Configure Jira sprint mirror
+                              </MenuItem>
+                              <MenuItem
+                                disabled={jiraPendingAction !== null || !jiraBinding.active}
+                                onClick={() => void syncJiraBinding(jiraBinding)}
+                              >
+                                <RefreshCwIcon />{" "}
+                                {jiraPendingAction === "sync" ? "Syncing Jira…" : "Sync Jira"}
+                              </MenuItem>
+                            </MenuGroup>
+                            {jiraSprintLinks.length > 0 ? (
+                              <MenuGroup>
+                                <MenuGroupLabel>Jira sprints</MenuGroupLabel>
+                                {jiraSprintLinks.map((sprint) => (
+                                  <MenuItem
+                                    key={sprint.id}
+                                    render={
+                                      <a
+                                        href={sprint.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                      />
+                                    }
+                                  >
+                                    <LinkIcon /> {sprint.name}
+                                  </MenuItem>
+                                ))}
+                              </MenuGroup>
+                            ) : null}
+                          </>
+                        ) : (
+                          <MenuGroup>
+                            <MenuItem onClick={openJiraDialog}>
+                              <LinkIcon /> Connect Jira
+                            </MenuItem>
+                          </MenuGroup>
+                        )}
+                      </MenuPopup>
+                    </Menu>
                   </div>
                 </div>
               </WorkspacePageHeader>

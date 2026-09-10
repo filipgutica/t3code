@@ -1,10 +1,16 @@
 import { ExternalLinkIcon, GitPullRequestIcon } from "lucide-react";
-import { useOpenChangeRequestLink } from "../lib/openPullRequestLink";
-import type { EnvironmentId, PullRequestState } from "@t3tools/contracts";
-import type { MouseEvent } from "react";
+import { ChangeRequestLinkOpenContext, useOpenChangeRequestLink } from "../lib/openPullRequestLink";
+import type { EnvironmentId, PullRequestRef, PullRequestState } from "@t3tools/contracts";
+import { lazy, Suspense, useState, type MouseEvent } from "react";
 
 import { Badge } from "../components/ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+
+const WorkbenchPullRequestPanel = lazy(() =>
+  import("./WorkbenchPullRequestPanel").then((module) => ({
+    default: module.WorkbenchPullRequestPanel,
+  })),
+);
 
 export interface WorkbenchPullRequestReference {
   readonly number: number;
@@ -21,7 +27,11 @@ export function WorkbenchPullRequestLink({
   readonly environmentId: EnvironmentId;
   readonly pullRequest: WorkbenchPullRequestReference;
 }) {
-  const openChangeRequestLink = useOpenChangeRequestLink();
+  const [selection, setSelection] = useState<{
+    environmentId: EnvironmentId;
+    reference: PullRequestRef;
+  } | null>(null);
+  const openChangeRequestLink = useOpenChangeRequestLink(undefined, undefined, setSelection);
   const label =
     pullRequest.title ?? pullRequest.repository ?? `Pull request #${pullRequest.number}`;
   const openInWorkbench = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -65,6 +75,20 @@ export function WorkbenchPullRequestLink({
         </TooltipTrigger>
         <TooltipPopup>Open in browser</TooltipPopup>
       </Tooltip>
+      {selection ? (
+        <ChangeRequestLinkOpenContext value={setSelection}>
+          <Suspense fallback={<span role="status">Loading pull request…</span>}>
+            <WorkbenchPullRequestPanel
+              environmentId={selection.environmentId}
+              reference={selection.reference}
+              onClose={() => setSelection(null)}
+              onSelectPullRequest={(reference) =>
+                setSelection({ environmentId: selection.environmentId, reference })
+              }
+            />
+          </Suspense>
+        </ChangeRequestLinkOpenContext>
+      ) : null}
     </span>
   );
 }
