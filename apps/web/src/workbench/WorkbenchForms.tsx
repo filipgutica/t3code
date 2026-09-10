@@ -71,6 +71,7 @@ import {
 } from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { Project } from "../types";
 import {
   getWorkbenchThreadPresentation,
@@ -1013,6 +1014,7 @@ export function WorkbenchTicketDetail({
   const clearDraft = useWorkbenchDraftStore((state) => state.clearDraft);
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const [resetConfirmationOpen, setResetConfirmationOpen] = useState(false);
+  const [summaryPanelCollapsed, setSummaryPanelCollapsed] = useState(true);
   const [threadPanelCollapsed, setThreadPanelCollapsed] = useState(false);
   const [detailsPanelCollapsed, setDetailsPanelCollapsed] = useState(false);
   const [repositoryScopePanelCollapsed, setRepositoryScopePanelCollapsed] = useState(false);
@@ -1094,6 +1096,8 @@ export function WorkbenchTicketDetail({
     ((!jiraFieldsManaged && draft.title !== projectedContent.title) ||
       draft.markdown !== projectedContent.markdown);
   const summary = getWorkbenchTicketSummaryPresentation(ticket.generatedSummary);
+  const summaryHeaderLabel =
+    summary.statusLabel ?? summary.error ?? (!summary.hasText ? summary.text : null);
   const hasUnsavedChanges = dirty;
 
   useEffect(() => {
@@ -1288,54 +1292,6 @@ export function WorkbenchTicketDetail({
         <div className="mx-auto grid min-h-0 min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
           <div className="min-w-0 space-y-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
             {error ? <WorkbenchInlineError message={error} /> : null}
-            <section
-              aria-labelledby="workbench-ticket-generated-summary"
-              className="rounded-xl border border-border/60 bg-card/40"
-            >
-              <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
-                <div className="min-w-0">
-                  <h2 id="workbench-ticket-generated-summary" className="text-sm font-semibold">
-                    Generated summary
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    A short overview of the saved Ticket.
-                  </p>
-                </div>
-                <Button
-                  aria-label={`${getWorkbenchTicketSummaryActionLabel(ticket.generatedSummary)} for ${displayedTitle}`}
-                  disabled={
-                    pending ||
-                    isArchived ||
-                    ticket.generatedSummary?.status === "pending" ||
-                    hasUnsavedChanges
-                  }
-                  onClick={() => onRegenerateSummary(ticket)}
-                  size="xs"
-                  type="button"
-                  variant="outline"
-                >
-                  {getWorkbenchTicketSummaryActionLabel(ticket.generatedSummary)}
-                </Button>
-              </div>
-              <div className="px-4 py-3">
-                <p className="text-sm leading-relaxed text-muted-foreground">{summary.text}</p>
-                {summary.statusLabel ? (
-                  <p className="mt-2 text-xs text-muted-foreground" role="status">
-                    {summary.statusLabel}
-                  </p>
-                ) : null}
-                {summary.error ? (
-                  <p className="mt-1 break-words text-xs text-warning-foreground" role="status">
-                    {summary.error}
-                  </p>
-                ) : null}
-                {hasUnsavedChanges ? (
-                  <p className="mt-2 text-xs text-warning-foreground" role="status">
-                    Save changes to update summary.
-                  </p>
-                ) : null}
-              </div>
-            </section>
             <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 max-h-[min(70vh,42rem)] lg:max-h-none lg:flex-1">
               <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
                 <div>
@@ -1420,6 +1376,89 @@ export function WorkbenchTicketDetail({
                 </div>
               )}
             </section>
+            <section
+              aria-labelledby="workbench-ticket-generated-summary"
+              className="shrink-0 rounded-xl border border-border/60 bg-card/40"
+            >
+              <div className="px-4 py-3">
+                <button
+                  aria-controls="workbench-ticket-generated-summary-content"
+                  aria-expanded={!summaryPanelCollapsed}
+                  aria-label={`${summaryPanelCollapsed ? "Expand" : "Collapse"} Generated summary${summaryHeaderLabel ? `. ${summaryHeaderLabel}` : ""}${hasUnsavedChanges ? ". Save changes to update summary." : ""}`}
+                  className="flex w-full min-w-0 items-start gap-2 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => setSummaryPanelCollapsed((collapsed) => !collapsed)}
+                  type="button"
+                >
+                  <ChevronDownIcon
+                    aria-hidden
+                    className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform ${summaryPanelCollapsed ? "" : "rotate-180"}`}
+                  />
+                  <span className="min-w-0">
+                    <span
+                      id="workbench-ticket-generated-summary"
+                      role="heading"
+                      aria-level={2}
+                      className="block text-sm font-semibold"
+                    >
+                      Generated summary
+                    </span>
+                    {summaryHeaderLabel ? (
+                      <span
+                        className={`block truncate text-xs ${summary.error ? "text-warning-foreground" : "text-muted-foreground"}`}
+                        role="status"
+                      >
+                        {summaryHeaderLabel}
+                      </span>
+                    ) : null}
+                    {hasUnsavedChanges ? (
+                      <span
+                        className="block truncate text-xs text-warning-foreground"
+                        role="status"
+                      >
+                        Save changes to update summary.
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+              </div>
+              {!summaryPanelCollapsed ? (
+                <div
+                  id="workbench-ticket-generated-summary-content"
+                  className="border-t border-border/50 px-4 py-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm leading-relaxed text-muted-foreground">
+                        {summary.text}
+                      </p>
+                      {summary.error ? (
+                        <p
+                          className="mt-1 break-words text-xs text-warning-foreground"
+                          role="status"
+                        >
+                          {summary.error}
+                        </p>
+                      ) : null}
+                    </div>
+                    <Button
+                      aria-label={`${getWorkbenchTicketSummaryActionLabel(ticket.generatedSummary)} for ${displayedTitle}`}
+                      disabled={
+                        pending ||
+                        isArchived ||
+                        ticket.generatedSummary?.status === "pending" ||
+                        hasUnsavedChanges
+                      }
+                      onClick={() => onRegenerateSummary(ticket)}
+                      size="xs"
+                      type="button"
+                      variant="outline"
+                    >
+                      {getWorkbenchTicketSummaryActionLabel(ticket.generatedSummary)}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </section>
           </div>
 
           <aside className="min-w-0 space-y-4 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
@@ -1461,6 +1500,9 @@ export function WorkbenchTicketDetail({
                               ? `${displayedThread.modelSelection.instanceId} · ${displayedThread.modelSelection.model}`
                               : null
                           }
+                          recencyLabel={
+                            displayedThread ? getWorkbenchThreadRecencyLabel(displayedThread) : null
+                          }
                           onClick={() => onOpenThread(actionableTicket, assignment?.threadId)}
                           stateLabel={assignment ? thread.stateLabel : "Create a Thread"}
                           statusDotClassName={
@@ -1484,7 +1526,7 @@ export function WorkbenchTicketDetail({
                           </Button>
                         ) : null}
                         {displayedThread ? (
-                          <div className="pointer-events-none relative z-10 min-w-0 basis-full [&_a]:pointer-events-auto [&_button]:pointer-events-auto">
+                          <div className="pointer-events-none relative z-10 min-w-0 basis-full [&_a]:pointer-events-auto [&_button]:pointer-events-auto [&_summary]:pointer-events-auto">
                             <WorkbenchThreadCheckoutDetails
                               environmentId={environmentId}
                               thread={displayedThread}
@@ -1539,6 +1581,9 @@ export function WorkbenchTicketDetail({
                             const activeThreadModel = displayedActiveThread?.modelSelection
                               ? `${displayedActiveThread.modelSelection.instanceId} · ${displayedActiveThread.modelSelection.model}`
                               : null;
+                            const activeThreadRecency = displayedActiveThread
+                              ? getWorkbenchThreadRecencyLabel(displayedActiveThread)
+                              : null;
                             return (
                               <div
                                 key={activeAssignment.id}
@@ -1548,6 +1593,7 @@ export function WorkbenchTicketDetail({
                                   ariaLabel={`${activeThreadState} ${displayedActiveThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…")}`}
                                   disabled={pending || displayedActiveThread === undefined}
                                   modelLabel={activeThreadModel}
+                                  recencyLabel={activeThreadRecency}
                                   onClick={() => onOpenAssignedThread(activeAssignment.threadId)}
                                   stateLabel={
                                     activeAgentState?.label ??
@@ -1590,7 +1636,7 @@ export function WorkbenchTicketDetail({
                                   </Button>
                                 ) : null}
                                 {displayedActiveThread ? (
-                                  <div className="pointer-events-none relative z-10 min-w-0 basis-full [&_a]:pointer-events-auto [&_button]:pointer-events-auto">
+                                  <div className="pointer-events-none relative z-10 min-w-0 basis-full [&_a]:pointer-events-auto [&_button]:pointer-events-auto [&_summary]:pointer-events-auto">
                                     <WorkbenchThreadCheckoutDetails
                                       environmentId={environmentId}
                                       thread={displayedActiveThread}
@@ -1667,6 +1713,11 @@ export function WorkbenchTicketDetail({
                                 modelLabel={
                                   displayedHistoricalThread?.modelSelection
                                     ? `${displayedHistoricalThread.modelSelection.instanceId} · ${displayedHistoricalThread.modelSelection.model}`
+                                    : null
+                                }
+                                recencyLabel={
+                                  displayedHistoricalThread
+                                    ? getWorkbenchThreadRecencyLabel(displayedHistoricalThread)
                                     : null
                                 }
                                 onClick={() => onOpenAssignedThread(historicalAssignment.threadId)}
@@ -2265,6 +2316,7 @@ function WorkbenchThreadOpenButton({
   disabled,
   modelLabel,
   onClick,
+  recencyLabel,
   stateLabel,
   statusDotClassName,
   title,
@@ -2273,6 +2325,7 @@ function WorkbenchThreadOpenButton({
   readonly disabled: boolean;
   readonly modelLabel: string | null;
   readonly onClick: () => void;
+  readonly recencyLabel: string | null;
   readonly stateLabel: string;
   readonly statusDotClassName: string | undefined;
   readonly title: string;
@@ -2304,6 +2357,12 @@ function WorkbenchThreadOpenButton({
               <span className="min-w-0 break-words [overflow-wrap:anywhere]">{modelLabel}</span>
             </>
           ) : null}
+          {recencyLabel ? (
+            <>
+              <span aria-hidden>·</span>
+              <span className="shrink-0">{recencyLabel}</span>
+            </>
+          ) : null}
         </span>
       </span>
       <span className="flex shrink-0 items-center text-muted-foreground group-hover:text-foreground">
@@ -2311,6 +2370,12 @@ function WorkbenchThreadOpenButton({
         <ArrowRightIcon className="size-3.5" />
       </span>
     </button>
+  );
+}
+
+function getWorkbenchThreadRecencyLabel(thread: EnvironmentThreadShell): string {
+  return formatRelativeTimeLabel(
+    thread.latestUserMessageAt ?? thread.updatedAt ?? thread.createdAt,
   );
 }
 
