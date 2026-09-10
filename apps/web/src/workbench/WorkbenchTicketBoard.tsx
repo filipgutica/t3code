@@ -22,12 +22,14 @@ import {
   MoreHorizontalIcon,
   PlusIcon,
 } from "lucide-react";
-import { useMemo, useRef, useState, type UIEvent } from "react";
+import { useMemo, useState } from "react";
 
 import { resolveThreadStatusPill } from "../components/Sidebar.logic";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
+import { ToggleGroup, Toggle } from "../components/ui/toggle-group";
+import { cn } from "../lib/utils";
 import {
   Empty,
   EmptyContent,
@@ -169,59 +171,34 @@ export function WorkbenchTicketBoard({
     [epics, groupMode, tickets],
   );
   const epicsById = useMemo(() => new Map(epics.map((epic) => [epic.id, epic])), [epics]);
-  const [visibleStatus, setVisibleStatus] = useState<string>(columns[0]?.id ?? "todo");
-  const boardScrollRef = useRef<HTMLDivElement>(null);
-
-  const scrollToStatus = (status: string) => {
-    setVisibleStatus(status);
-    boardScrollRef.current
-      ?.querySelector<HTMLElement>(`[data-workbench-status="${status}"]`)
-      ?.scrollIntoView({ block: "nearest", inline: "start" });
-  };
-
-  const trackVisibleStatus = (event: UIEvent<HTMLDivElement>) => {
-    const viewport = event.currentTarget;
-    let nearestStatus = visibleStatus;
-    let nearestDistance = Number.POSITIVE_INFINITY;
-    for (const column of viewport.querySelectorAll<HTMLElement>("[data-workbench-status]")) {
-      const distance = Math.abs(column.offsetLeft - viewport.scrollLeft);
-      const status = column.dataset.workbenchStatus;
-      if (distance < nearestDistance && status && columns.some((column) => column.id === status)) {
-        nearestDistance = distance;
-        nearestStatus = status;
-      }
-    }
-    if (nearestStatus !== visibleStatus) setVisibleStatus(nearestStatus);
-  };
+  const [selectedColumnId, setSelectedColumnId] = useState<string | null>(null);
+  const visibleColumnId = columns.some((column) => column.id === selectedColumnId)
+    ? selectedColumnId
+    : columns[0]?.id;
 
   return (
     <section
       aria-label="Ticket board"
       className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
     >
-      <nav
-        aria-label="Board columns"
-        className="flex shrink-0 flex-wrap gap-1 border-b border-border/60 px-3 py-2 md:hidden"
-      >
-        {columns.map((column) => (
-          <Button
-            key={column.id}
-            aria-current={visibleStatus === column.id ? "true" : undefined}
-            className="shrink-0"
-            onClick={() => scrollToStatus(column.id)}
-            size="xs"
-            variant={visibleStatus === column.id ? "secondary" : "ghost"}
-          >
-            {column.title}
-            <span className="text-muted-foreground tabular-nums">{column.tickets.length}</span>
-          </Button>
-        ))}
-      </nav>
-      <div
-        ref={boardScrollRef}
-        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-3 sm:p-4"
-        onScroll={trackVisibleStatus}
-      >
+      <div className="shrink-0 overflow-x-auto border-b border-border/60 px-3 py-2 md:hidden">
+        <ToggleGroup
+          aria-label="Board columns"
+          value={visibleColumnId ? [visibleColumnId] : []}
+          onValueChange={(value) => {
+            const nextColumnId = value[0];
+            if (typeof nextColumnId === "string") setSelectedColumnId(nextColumnId);
+          }}
+        >
+          {columns.map((column) => (
+            <Toggle key={column.id} value={column.id} className="shrink-0">
+              {column.title}
+              <span className="text-muted-foreground tabular-nums">{column.tickets.length}</span>
+            </Toggle>
+          ))}
+        </ToggleGroup>
+      </div>
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3 sm:p-4">
         <div className={groupMode === "epic" ? "min-w-0 space-y-3" : "min-w-0"}>
           {swimlanes.map((swimlane) => {
             const laneTicketIds = new Set(swimlane.tickets.map((ticket) => ticket.id));
@@ -260,9 +237,10 @@ export function WorkbenchTicketBoard({
                   </header>
                 ) : null}
                 <div
-                  className={`grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 ${
-                    groupMode === "epic" ? "p-3" : "min-h-full"
-                  }`}
+                  className={cn(
+                    "grid min-w-0 grid-cols-1 gap-3 md:auto-cols-[minmax(18rem,1fr)] md:grid-flow-col md:grid-cols-none",
+                    groupMode === "epic" ? "p-3" : "min-h-full",
+                  )}
                 >
                   {columns.map((column) => {
                     const laneTickets = orderWorkbenchTicketsByJiraRank(
@@ -275,11 +253,13 @@ export function WorkbenchTicketBoard({
                         key={column.id}
                         aria-label={`${column.title} Tickets`}
                         data-workbench-status={column.id}
-                        className={`flex min-w-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-muted/35 ${
-                          groupMode === "epic" ? "min-h-40" : "h-full min-h-0"
-                        }`}
+                        className={cn(
+                          "min-w-0 flex-col rounded-xl border border-border/70 bg-muted/35 md:flex",
+                          column.id === visibleColumnId ? "flex" : "hidden",
+                          groupMode === "epic" ? "min-h-40" : "h-full min-h-0",
+                        )}
                       >
-                        <header className="flex shrink-0 items-center justify-between border-b border-border/60 px-3 py-2.5">
+                        <header className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-2 rounded-t-xl border-b border-border/60 bg-background px-3 py-2.5">
                           <div className="flex min-w-0 items-center gap-2">
                             <span
                               className={`size-2 rounded-full ${STATUS_DOT_CLASS[column.status]}`}
@@ -292,11 +272,7 @@ export function WorkbenchTicketBoard({
                             {laneTickets.length}
                           </Badge>
                         </header>
-                        <div
-                          className={`min-h-0 flex-1 space-y-2 p-2.5 ${
-                            groupMode === "epic" ? "" : "overflow-y-auto"
-                          }`}
-                        >
+                        <div className="flex min-h-0 flex-1 flex-col gap-2 p-2.5">
                           {laneTickets.map((ticket) => {
                             const assignment = assignmentsByTicket.get(ticket.id);
                             const nativeThread = assignment
