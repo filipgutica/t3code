@@ -28,6 +28,7 @@ import {
   MoreHorizontalIcon,
   PencilIcon,
   PlusIcon,
+  RefreshCwIcon,
   RotateCcwIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -925,6 +926,9 @@ export function WorkbenchTicketDetail({
   epics,
   jiraIssueLink,
   jiraFieldsManaged,
+  jiraRefreshing,
+  jiraRefreshDisabled,
+  onRefreshJira,
   keybindings,
   availableEditors,
   assignments,
@@ -959,6 +963,9 @@ export function WorkbenchTicketDetail({
   readonly epics: ReadonlyArray<WorkbenchEpic>;
   readonly jiraIssueLink: WorkbenchJiraIssueLink | null;
   readonly jiraFieldsManaged: boolean;
+  readonly jiraRefreshing: boolean;
+  readonly jiraRefreshDisabled: boolean;
+  readonly onRefreshJira: (() => void) | null;
   readonly keybindings: ResolvedKeybindingsConfig;
   readonly availableEditors: ReadonlyArray<EditorId>;
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
@@ -1216,6 +1223,19 @@ export function WorkbenchTicketDetail({
                 <Badge variant="warning">
                   <CircleAlertIcon /> Jira flagged
                 </Badge>
+              ) : null}
+              {jiraIssueLink && onRefreshJira ? (
+                <Button
+                  disabled={jiraRefreshDisabled}
+                  onClick={onRefreshJira}
+                  size="xs"
+                  title="Refresh this Workspace's mirrored tickets from Jira"
+                  type="button"
+                  variant="ghost"
+                >
+                  <RefreshCwIcon />
+                  {jiraRefreshing ? "Refreshing Jira…" : "Refresh from Jira"}
+                </Button>
               ) : null}
             </div>
           </div>

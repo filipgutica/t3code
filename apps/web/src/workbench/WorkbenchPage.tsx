@@ -1600,6 +1600,9 @@ export function WorkbenchPage({
               epics={projectEpics}
               jiraIssueLink={jiraIssueLinksByTicketId.get(selectedTicket.id) ?? null}
               jiraFieldsManaged={jiraManagedTicketIds.has(selectedTicket.id)}
+              jiraRefreshing={jiraPendingAction === "sync"}
+              jiraRefreshDisabled={jiraPendingAction !== null || !jiraBinding?.active}
+              onRefreshJira={jiraBinding ? () => void syncJiraBinding(jiraBinding) : null}
               lifecycleActionsEnabled={
                 jiraOwnershipKnown && !jiraManagedTicketIds.has(selectedTicket.id)
               }
@@ -1616,7 +1619,7 @@ export function WorkbenchPage({
                   pendingAction ===
                     `restore:${assignmentsByTicket.get(selectedTicket.id)?.threadId}`)
               }
-              error={error ?? query.error ?? archivedThreadsError}
+              error={error ?? query.error ?? archivedThreadsError ?? jiraError}
               onBack={() => {
                 setError(null);
                 closeWorkItem();
