@@ -25,6 +25,7 @@ import {
   LinkIcon,
   Layers3Icon,
   ListChecksIcon,
+  MoreHorizontalIcon,
   PencilIcon,
   PlusIcon,
   RotateCcwIcon,
@@ -37,10 +38,13 @@ import {
 } from "./WorkbenchTicketStatusMenu";
 
 import { resolveThreadStatusPill } from "../components/Sidebar.logic";
+import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
+import { isElectron } from "../env";
 
 import { Badge } from "../components/ui/badge";
 import { OpenInPicker } from "../components/chat/OpenInPicker";
 import { Button } from "../components/ui/button";
+import { Menu, MenuGroup, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
 import { Checkbox } from "../components/ui/checkbox";
 import {
   Dialog,
@@ -1158,13 +1162,16 @@ export function WorkbenchTicketDetail({
 
   return (
     <article className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <header className="shrink-0 border-b border-border px-4 py-4 sm:px-6">
-        <div className="mx-auto flex min-w-0 max-w-6xl flex-wrap items-start gap-3">
+      <WorkspacePageHeader
+        electron={isElectron}
+        className="h-auto items-start border-b border-border py-3"
+      >
+        <div className="mx-auto grid w-full min-w-0 max-w-6xl grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
           <Button aria-label="Back to Board" onClick={onBack} size="sm" variant="ghost">
-            <ArrowLeftIcon />
-            <span className="hidden sm:inline">Board</span>
+            <ArrowLeftIcon data-icon="inline-start" />
+            Board
           </Button>
-          <div className="min-w-0 flex-1">
+          <div className="col-span-2 row-start-2 min-w-0 sm:col-span-1 sm:col-start-2 sm:row-start-1">
             <p className="text-xs font-medium text-muted-foreground">{workspaceTitle} · Ticket</p>
             <h1 className="mt-1 break-words text-balance font-heading text-xl font-semibold leading-tight sm:text-2xl">
               {displayedTitle.trim() || ticket.title}
@@ -1212,33 +1219,7 @@ export function WorkbenchTicketDetail({
               ) : null}
             </div>
           </div>
-          <div className="flex min-w-0 shrink-0 flex-wrap justify-end gap-2">
-            {lifecycleActionsEnabled ? (
-              <>
-                <Button
-                  disabled={pending}
-                  onClick={() =>
-                    void onArchive(ticket, isArchived ? null : new Date().toISOString())
-                  }
-                  size="sm"
-                  type="button"
-                  variant="outline"
-                >
-                  {isArchived ? <RotateCcwIcon /> : <ArchiveIcon />}
-                  <span className="hidden sm:inline">{isArchived ? "Restore" : "Archive"}</span>
-                </Button>
-                <Button
-                  aria-label={`Delete ${displayedTitle}`}
-                  disabled={pending}
-                  onClick={() => setDeleteConfirmationOpen(true)}
-                  size="icon-sm"
-                  type="button"
-                  variant="outline"
-                >
-                  <Trash2Icon />
-                </Button>
-              </>
-            ) : null}
+          <div className="col-start-2 row-start-1 flex min-w-0 flex-wrap justify-end gap-2 sm:col-start-3">
             {canOpenThread ? (
               <Button
                 aria-label={`${
@@ -1255,15 +1236,42 @@ export function WorkbenchTicketDetail({
                 size="sm"
                 type="button"
               >
-                <BotIcon />
-                <span className="hidden sm:inline">
-                  {threadActionPending ? thread.pendingActionLabel : thread.actionLabel}
-                </span>
+                <BotIcon data-icon="inline-start" />
+                {threadActionPending ? thread.pendingActionLabel : thread.actionLabel}
               </Button>
+            ) : null}
+            {lifecycleActionsEnabled ? (
+              <Menu>
+                <MenuTrigger
+                  render={<Button aria-label="Ticket actions" size="icon-sm" variant="ghost" />}
+                >
+                  <MoreHorizontalIcon />
+                </MenuTrigger>
+                <MenuPopup align="end">
+                  <MenuGroup>
+                    <MenuItem
+                      disabled={pending}
+                      onClick={() =>
+                        void onArchive(ticket, isArchived ? null : new Date().toISOString())
+                      }
+                    >
+                      {isArchived ? <RotateCcwIcon /> : <ArchiveIcon />}
+                      {isArchived ? "Restore Ticket" : "Archive Ticket"}
+                    </MenuItem>
+                    <MenuItem
+                      disabled={pending}
+                      onClick={() => setDeleteConfirmationOpen(true)}
+                      variant="destructive"
+                    >
+                      <Trash2Icon /> Delete Ticket
+                    </MenuItem>
+                  </MenuGroup>
+                </MenuPopup>
+              </Menu>
             ) : null}
           </div>
         </div>
-      </header>
+      </WorkspacePageHeader>
 
       <form
         className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6 lg:overflow-y-hidden"
