@@ -95,7 +95,7 @@ node scripts/workbench-upstream-sync.ts --product main --upstream upstream/main
 
 The command is read-only. It reports ahead/behind counts, files changed by both sides since their merge base, and whether Git can synthesize a clean merge tree.
 
-`.github/workflows/workbench-upstream-sync.yml` runs the same preview every day. When upstream moved, a read-only job merges `upstream/main`, runs the focused Workbench suite, builds the desktop app, and runs its smoke test. Only then does a separate write-capable job recreate that exact verified merge and open or update one PR against the fork's default branch. A conflict or failed check leaves the product branch untouched.
+`.github/workflows/workbench-upstream-sync.yml` runs the same preview hourly, at minute 17. When upstream has new commits, a read-only job merges `upstream/main` and regenerates the lockfile. It installs with the lockfile frozen, runs the focused Workbench suite, builds the desktop app, and runs its smoke test. A Git bundle transfers the verified commit, including any lockfile correction, to a separate write-capable job. That job opens or updates one PR against the fork's default branch. A merge conflict or failed check leaves the product branch untouched.
 
 Release the fork from `main` using a separate fork-owned distribution channel. Do not point Workbench builds at T3 Code's upstream updater: upstream releases do not contain the overlay.
 
