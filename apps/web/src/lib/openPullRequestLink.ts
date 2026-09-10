@@ -1,6 +1,6 @@
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestRef, ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { type MouseEvent, useCallback } from "react";
+import { createContext, type MouseEvent, useCallback, useContext } from "react";
 
 import { pullRequestHostOf, type SourceControlProviderKind } from "@t3tools/contracts";
 import { parseChangeRequestUrl, type ChangeRequestLink } from "@t3tools/shared/changeRequestUrl";
@@ -115,9 +115,18 @@ export function shouldOpenPullRequestExternally(
   return event.metaKey || event.ctrlKey;
 }
 
+type OpenChangeRequest = (selection: {
+  environmentId: EnvironmentId;
+  reference: PullRequestRef;
+}) => void;
+
+/** Keeps links within an embedded PR detail surface on its owning page. */
+export const ChangeRequestLinkOpenContext = createContext<OpenChangeRequest | undefined>(undefined);
+
 export function useOpenChangeRequestLink(
   threadRef?: ScopedThreadRef,
   panelRef?: ScopedThreadRef,
+  onOpen?: OpenChangeRequest,
 ): (
   event: Pick<
     MouseEvent<HTMLElement>,
@@ -127,6 +136,8 @@ export function useOpenChangeRequestLink(
   targetThreadRef?: ScopedThreadRef,
   targetEnvironmentId?: EnvironmentId,
 ) => boolean {
+  const contextOpen = useContext(ChangeRequestLinkOpenContext);
+  const open = onOpen ?? contextOpen;
   const navigate = useNavigate();
   const allProjects = useProjects();
   const serverConfigs = useServerConfigs();
@@ -179,6 +190,18 @@ export function useOpenChangeRequestLink(
           : (sourceControlRepositorySelector(project.repositoryIdentity) ?? parsed.repository);
       event.preventDefault();
       event.stopPropagation();
+      if (open) {
+        open({
+          environmentId: project.environmentId,
+          reference: {
+            projectId: project.id,
+            repository,
+            number: parsed.number,
+            host: parsed.host,
+          },
+        });
+        return true;
+      }
       if (resolvedPanelRef) {
         useRightPanelStore.getState().openPullRequest(resolvedPanelRef, {
           // The standalone PR panel has a synthetic ref; each tab keeps its real environment.
@@ -229,7 +252,7 @@ export function useOpenChangeRequestLink(
       });
       return true;
     },
-    [allProjects, navigate, panelRef, primaryEnvironmentId, serverConfigs, threadRef],
+    [allProjects, navigate, open, panelRef, primaryEnvironmentId, serverConfigs, threadRef],
   );
 }
 
