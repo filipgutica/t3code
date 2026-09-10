@@ -2150,7 +2150,8 @@ export function WorkbenchTicketDetail({
                           </p>
                         ) : (
                           <p className="text-xs text-muted-foreground">
-                            Choose repositories for new Threads. Existing Threads stay unchanged.
+                            Choose repository context for new Threads. Existing Threads stay
+                            unchanged.
                           </p>
                         )}
                         {linkedProjects.map((repository) => {
