@@ -335,7 +335,7 @@ export function WorkbenchTicketBoard({
                             return (
                               <article
                                 key={ticket.id}
-                                className={`w-full max-w-md min-w-0 rounded-lg border bg-card/40 p-3 shadow-xs/5 transition-colors hover:border-foreground/20 ${
+                                className={`w-full min-w-0 rounded-lg border bg-card p-3 transition-colors hover:border-foreground/20 ${
                                   selectedTicketId === ticket.id
                                     ? "border-primary/50 ring-2 ring-primary/15"
                                     : "border-border/60"
@@ -350,7 +350,7 @@ export function WorkbenchTicketBoard({
                                     <Tooltip>
                                       <TooltipTrigger
                                         render={
-                                          <h3 className="min-w-0 truncate text-sm font-medium leading-snug" />
+                                          <h3 className="line-clamp-3 min-w-0 break-words text-sm font-medium leading-snug" />
                                         }
                                       >
                                         {ticket.title}
@@ -394,70 +394,77 @@ export function WorkbenchTicketBoard({
                                     </WorkbenchTicketStatusMenu>
                                   </div>
                                 </div>
-                                <div className="relative mt-3 block w-full text-left">
-                                  <div className="space-y-1.5 text-xs text-muted-foreground">
-                                    <div className="flex items-center gap-1.5">
-                                      <Badge size="sm" variant="secondary">
-                                        {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
-                                      </Badge>
-                                      {groupMode === "none" && epic ? (
-                                        <Badge className="max-w-full" size="sm" variant="outline">
-                                          <Layers3Icon />
-                                          <span className="truncate">{epic.title}</span>
-                                        </Badge>
-                                      ) : null}
-                                      {jiraIssueLink?.issue.flagged ? (
-                                        <Badge size="sm" variant="warning">
-                                          <CircleAlertIcon /> Jira flagged
-                                        </Badge>
-                                      ) : null}
-                                      {jiraIssueLink ? (
-                                        <Badge
-                                          aria-label={`Open Jira issue ${jiraIssueLink.issue.key}`}
-                                          render={
-                                            <a
-                                              href={jiraIssueLink.issue.url}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                            />
-                                          }
-                                          className="relative z-10 shrink-0"
-                                          size="sm"
-                                          title={`Jira issue ${jiraIssueLink.issue.key}`}
-                                          variant="outline"
-                                        >
-                                          <WorkbenchJiraIcon className="size-3" />
-                                          <span>{jiraIssueLink.issue.key}</span>
-                                        </Badge>
-                                      ) : null}
-                                    </div>
-                                    <Tooltip>
-                                      <TooltipTrigger
+                                <div className="mt-2 flex min-w-0 flex-col gap-2 text-xs text-muted-foreground">
+                                  <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                    {jiraIssueLink ? (
+                                      <Badge
+                                        aria-label={`Open Jira issue ${jiraIssueLink.issue.key}`}
                                         render={
-                                          <button
-                                            type="button"
-                                            onClick={() => onSelect(projectId, ticket.id)}
-                                            aria-label={`Ticket summary: ${summary.text}`}
-                                            className="line-clamp-2 break-words text-left text-xs text-muted-foreground outline-none after:absolute after:inset-0 after:content-[''] focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
-                                            tabIndex={0}
+                                          <a
+                                            href={jiraIssueLink.issue.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
                                           />
                                         }
+                                        size="sm"
+                                        title={`Jira issue ${jiraIssueLink.issue.key}`}
+                                        variant="outline"
                                       >
-                                        {summary.text}
-                                      </TooltipTrigger>
-                                      <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
-                                        {summary.text}
-                                      </TooltipPopup>
-                                    </Tooltip>
-                                    {summary.statusLabel ? (
-                                      <p
-                                        className="text-[11px] text-muted-foreground"
-                                        role="status"
-                                      >
-                                        {summary.statusLabel}
-                                      </p>
+                                        <WorkbenchJiraIcon className="size-3" />
+                                        <span>{jiraIssueLink.issue.key}</span>
+                                      </Badge>
                                     ) : null}
-                                    <div className="flex min-w-0 items-center gap-1.5">
+                                    <Badge size="sm" variant="secondary">
+                                      {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
+                                    </Badge>
+                                    {groupMode === "none" && epic ? (
+                                      <Badge
+                                        className="min-w-0 max-w-full"
+                                        size="sm"
+                                        variant="outline"
+                                      >
+                                        <Layers3Icon />
+                                        <span className="truncate">{epic.title}</span>
+                                      </Badge>
+                                    ) : null}
+                                    {jiraIssueLink?.issue.flagged ? (
+                                      <Badge size="sm" variant="warning">
+                                        <CircleAlertIcon /> Jira flagged
+                                      </Badge>
+                                    ) : null}
+                                  </div>
+                                  <Tooltip>
+                                    <TooltipTrigger
+                                      render={
+                                        <button
+                                          type="button"
+                                          onClick={() => onSelect(projectId, ticket.id)}
+                                          aria-label={`Ticket summary: ${summary.text}`}
+                                          className="line-clamp-2 break-words text-left text-xs text-muted-foreground outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+                                          tabIndex={0}
+                                        />
+                                      }
+                                    >
+                                      {summary.text}
+                                    </TooltipTrigger>
+                                    <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
+                                      {summary.text}
+                                    </TooltipPopup>
+                                  </Tooltip>
+                                  {summary.statusLabel ? (
+                                    <p className="text-[11px] text-muted-foreground" role="status">
+                                      {summary.statusLabel}
+                                    </p>
+                                  ) : null}
+                                  <Tooltip>
+                                    <TooltipTrigger
+                                      render={
+                                        <span
+                                          tabIndex={0}
+                                          className="flex min-w-0 items-center gap-1.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                        />
+                                      }
+                                    >
                                       <FolderGit2Icon className="size-3.5 shrink-0" />
                                       <span className="truncate">
                                         {repository?.title ?? "Repository unavailable"}
@@ -467,47 +474,55 @@ export function WorkbenchTicketBoard({
                                           +{additionalRepositoryCount}
                                         </span>
                                       ) : null}
-                                    </div>
-                                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                      {thread.state === "linked" || thread.state === "archived" ? (
-                                        <span
-                                          aria-hidden
-                                          className={`size-2 rounded-full ${
-                                            nativeStatus?.dotClass ??
-                                            (nativeThreadFailed
-                                              ? "bg-destructive"
-                                              : "bg-muted-foreground/60")
-                                          }`}
-                                        />
-                                      ) : (
-                                        <BotIcon className="size-3.5" />
-                                      )}
-                                      <span
-                                        className={
-                                          nativeStatus?.colorClass ??
-                                          (nativeThreadFailed ? "text-destructive" : undefined)
-                                        }
-                                      >
-                                        {thread.stateLabel}
-                                      </span>
-                                      {(threadCounts.get(ticket.id) ?? 0) > 1 ? (
-                                        <span className="text-muted-foreground/60">
-                                          · {threadCounts.get(ticket.id)} Threads
-                                        </span>
-                                      ) : null}
-                                    </div>
-                                  </div>
+                                    </TooltipTrigger>
+                                    <TooltipPopup>
+                                      {getWorkbenchTicketRepositoryProjectIds(ticket)
+                                        .map(
+                                          (id) =>
+                                            repositoriesById.get(id)?.title ??
+                                            "Repository unavailable",
+                                        )
+                                        .join(", ")}
+                                    </TooltipPopup>
+                                  </Tooltip>
                                 </div>
-                                <div className="mt-3">
+                                <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-2">
+                                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                                    {thread.state === "linked" || thread.state === "archived" ? (
+                                      <span
+                                        aria-hidden
+                                        className={`size-2 rounded-full ${
+                                          nativeStatus?.dotClass ??
+                                          (nativeThreadFailed
+                                            ? "bg-destructive"
+                                            : "bg-muted-foreground/60")
+                                        }`}
+                                      />
+                                    ) : (
+                                      <BotIcon className="size-3.5" />
+                                    )}
+                                    <span
+                                      className={
+                                        nativeStatus?.colorClass ??
+                                        (nativeThreadFailed ? "text-destructive" : undefined)
+                                      }
+                                    >
+                                      {thread.stateLabel}
+                                    </span>
+                                    {(threadCounts.get(ticket.id) ?? 0) > 1 ? (
+                                      <span className="text-muted-foreground/60">
+                                        · {threadCounts.get(ticket.id)} Threads
+                                      </span>
+                                    ) : null}
+                                  </div>
                                   <Button
-                                    className="w-full"
                                     disabled={pending}
                                     onClick={() => onOpenThread(ticket, assignment?.threadId)}
                                     size="xs"
                                     variant={
                                       thread.state === "unassigned" || thread.state === "missing"
                                         ? "default"
-                                        : "outline"
+                                        : "ghost"
                                     }
                                   >
                                     {threadActionPending
