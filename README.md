@@ -180,3 +180,21 @@ Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR
 Have a feature request? Start an [Ideas discussion](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
 
 Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+
+## Workbench fork
+
+This fork adds **Workbench** for planning work across repositories and connecting it to the agents doing the implementation. It is available in the web and desktop clients and uses native T3 Code Threads for agent conversations.
+
+- **Organize work:** group repositories into Workbench Workspaces, break work into Epics and Tickets, and track status and blocked work.
+- **Start agent work from a Ticket:** use the Ticket's description as context and keep its repository assignments and Threads together.
+- **Keep implementation connected:** create or reuse Ticket worktrees and navigate between Tickets, checkouts, Threads, and associated pull requests.
+
+To use Workbench, [run this fork from source](#run-locally). Jira is optional; you can create and manage Tickets entirely in Workbench.
+
+### Jira integration
+
+The Jira integration connects your sprint work to your coding sessions. Connect a Workbench Workspace to a Jira board and selected sprints. Workbench imports issues assigned to you as Tickets, ready to provide context for agent work.
+
+For imported Tickets, sync keeps issue details, Epic relationships, sprint membership, and progress aligned with Jira. You can map Jira statuses to Workbench's workflow or mirror the board's columns. From Workbench, you can edit issue descriptions and transition Jira statuses while keeping their Threads and checkout history together.
+
+See [Jira setup](#set-up-jira-for-local-development) to configure the optional connection.
