@@ -1,5 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
-import { ProjectId, ThreadId, type ThreadLinkedPullRequest } from "@t3tools/contracts";
+import {
+  ProjectId,
+  ThreadId,
+  type ThreadLinkedPullRequest,
+  type ThreadPullRequestLink,
+} from "@t3tools/contracts";
 
 import {
   getWorkbenchTicketPullRequests,
@@ -75,18 +80,37 @@ const pullRequest = (number: number, repository = "acme/repo"): ThreadLinkedPull
   url: `https://github.com/${repository}/pull/${number}`,
 });
 
+const pullRequestLink = (
+  number: number,
+  repository = "acme/repo",
+  source: ThreadPullRequestLink["source"] = "manual",
+): ThreadPullRequestLink => ({
+  host: "github.com",
+  repository,
+  number,
+  url: `https://github.com/${repository}/pull/${number}`,
+  source,
+  linkedAt: "2026-09-09T00:00:00.000Z",
+  snapshot: null,
+  stack: null,
+});
+
 const thread = ({
   id,
   linkedPullRequest,
   branchPullRequest,
+  pullRequests,
 }: {
   readonly id: string;
   readonly linkedPullRequest?: ThreadLinkedPullRequest | null;
   readonly branchPullRequest?: ThreadLinkedPullRequest | null;
+  readonly pullRequests?: ReadonlyArray<ThreadPullRequestLink>;
 }): WorkbenchPullRequestThread => ({
   id: ThreadId.make(id),
   title: id,
+  projectId: ProjectId.make("project-one"),
   linkedPullRequest: linkedPullRequest ?? null,
+  pullRequests: pullRequests ?? [],
   branchPullRequest: branchPullRequest ?? null,
 });
 
@@ -196,6 +220,56 @@ describe("Workbench Ticket pull request references", () => {
 
     expect(pullRequests).toEqual([
       { threadId: firstThread.id, threadTitle: "first-thread", pullRequest: lowerCasePullRequest },
+    ]);
+  });
+
+  it("collects visible multi-repository links and falls back to legacy fields", () => {
+    const firstLink = pullRequestLink(14, "acme/first");
+    const secondLink = pullRequestLink(15, "other/second");
+    const dismissedLink = pullRequestLink(16, "acme/dismissed", "stack-dismissed");
+    const multiLinkThread = thread({
+      id: "multi-link-thread",
+      pullRequests: [firstLink, secondLink, dismissedLink],
+      linkedPullRequest: pullRequest(99, "legacy/ignored"),
+    });
+    const dismissedOnlyThread = thread({
+      id: "dismissed-only-thread",
+      pullRequests: [dismissedLink],
+      linkedPullRequest: pullRequest(100, "legacy/resurrected"),
+    });
+    const legacyPullRequest = pullRequest(17, "legacy/repository");
+    const legacyThread = thread({ id: "legacy-thread", linkedPullRequest: legacyPullRequest });
+
+    const pullRequests = getWorkbenchTicketPullRequests({
+      assignments: [
+        { threadId: multiLinkThread.id },
+        { threadId: dismissedOnlyThread.id },
+        { threadId: legacyThread.id },
+      ],
+      threadsById: new Map([
+        [multiLinkThread.id, multiLinkThread],
+        [dismissedOnlyThread.id, dismissedOnlyThread],
+        [legacyThread.id, legacyThread],
+      ]),
+      archivedThreadsById: new Map(),
+    });
+
+    expect(pullRequests).toEqual([
+      {
+        threadId: multiLinkThread.id,
+        threadTitle: "multi-link-thread",
+        pullRequest: pullRequest(14, "acme/first"),
+      },
+      {
+        threadId: multiLinkThread.id,
+        threadTitle: "multi-link-thread",
+        pullRequest: pullRequest(15, "other/second"),
+      },
+      {
+        threadId: legacyThread.id,
+        threadTitle: "legacy-thread",
+        pullRequest: legacyPullRequest,
+      },
     ]);
   });
 });

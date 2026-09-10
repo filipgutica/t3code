@@ -282,6 +282,7 @@ const makeTestLayer = ({
               interactionMode: "default",
               branch: null,
               worktreePath: liveThreadWorktreePaths?.get(threadId) ?? null,
+              pullRequests: [],
               latestTurn: null,
               createdAt,
               updatedAt: createdAt,

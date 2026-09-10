@@ -5,10 +5,15 @@ import type {
   ThreadLinkedPullRequest,
   WorkbenchAssignment,
 } from "@t3tools/contracts";
+import {
+  legacyThreadPullRequestKey,
+  threadPullRequestKeyOf,
+  visibleThreadPullRequests,
+} from "@t3tools/shared/threadPullRequests";
 
 export type WorkbenchPullRequestThread = Pick<
   EnvironmentThreadShell,
-  "id" | "title" | "linkedPullRequest" | "branchPullRequest"
+  "id" | "projectId" | "title" | "pullRequests" | "linkedPullRequest" | "branchPullRequest"
 >;
 
 export interface WorkbenchTicketPullRequest {
@@ -77,9 +82,18 @@ export function getWorkbenchTicketPullRequests({
     const thread =
       threadsById.get(assignment.threadId) ?? archivedThreadsById.get(assignment.threadId);
     if (thread === undefined) continue;
-    for (const pullRequest of [thread.linkedPullRequest, thread.branchPullRequest]) {
+    const references =
+      thread.pullRequests.length > 0
+        ? visibleThreadPullRequests(thread.pullRequests).map(({ repository, number, url }) => ({
+            projectId: thread.projectId,
+            repository,
+            number,
+            url,
+          }))
+        : [thread.linkedPullRequest, thread.branchPullRequest];
+    for (const pullRequest of references) {
       if (pullRequest == null) continue;
-      const identity = `${pullRequest.projectId}:${pullRequest.repository.toLowerCase()}:${pullRequest.number}`;
+      const identity = threadPullRequestKeyOf(legacyThreadPullRequestKey(pullRequest));
       if (seen.has(identity)) continue;
       seen.add(identity);
       pullRequests.push({

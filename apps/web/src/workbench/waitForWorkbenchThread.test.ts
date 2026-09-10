@@ -35,6 +35,7 @@ const shell: EnvironmentThreadShell = {
     settledAt: null,
     branch: "workbench/ticket",
     worktreePath: "/worktrees/ticket",
+    pullRequests: [],
     latestTurn: null,
     session: null,
     createdAt: "2026-09-08T04:00:00.000Z",
