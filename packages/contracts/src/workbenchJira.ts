@@ -194,6 +194,7 @@ export const WorkbenchJiraEpicReference = Schema.Struct({
   id: TrimmedNonEmptyString,
   key: TrimmedNonEmptyString,
   summary: TrimmedNonEmptyString,
+  description: Schema.optionalKey(Schema.String),
 });
 export type WorkbenchJiraEpicReference = typeof WorkbenchJiraEpicReference.Type;
 

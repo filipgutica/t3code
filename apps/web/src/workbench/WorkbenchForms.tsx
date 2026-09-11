@@ -122,7 +122,8 @@ const NO_EPIC_VALUE = "__workbench_no_epic__";
 export function WorkbenchEpicDetail({
   workspaceTitle,
   epic,
-  jiraManagedTitle,
+  jiraManaged,
+  jiraUrl,
   tickets,
   repositoriesById,
   assignmentsByTicket,
@@ -136,7 +137,8 @@ export function WorkbenchEpicDetail({
 }: {
   readonly workspaceTitle: string;
   readonly epic: WorkbenchEpic;
-  readonly jiraManagedTitle: boolean;
+  readonly jiraManaged: boolean;
+  readonly jiraUrl: string | null;
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
   readonly repositoriesById: ReadonlyMap<Project["id"], Project>;
   readonly assignmentsByTicket: ReadonlyMap<WorkbenchTicket["id"], WorkbenchAssignment>;
@@ -182,6 +184,17 @@ export function WorkbenchEpicDetail({
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <Badge variant="secondary">Epic</Badge>
+              {jiraUrl ? (
+                <a
+                  href={jiraUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <WorkbenchJiraIcon className="size-3.5" /> Open in Jira
+                  <ExternalLinkIcon aria-hidden className="size-3" />
+                </a>
+              ) : null}
               <Badge variant="outline">
                 {progress.completed} of {progress.total} done
               </Badge>
@@ -208,10 +221,16 @@ export function WorkbenchEpicDetail({
                 <div>
                   <h2 className="text-sm font-semibold">Description</h2>
                   <p className="text-xs text-muted-foreground">
-                    Outcome and scope shared by the child Tickets.
+                    {jiraManaged
+                      ? "Synced from Jira. Edit the description in Jira, then refresh the board."
+                      : "Outcome and scope shared by the child Tickets."}
                   </p>
                 </div>
-                {!editing ? (
+                {jiraManaged ? (
+                  <Badge size="sm" variant="outline">
+                    Managed by Jira
+                  </Badge>
+                ) : !editing ? (
                   <Button
                     disabled={pending || epic.archivedAt !== null}
                     onClick={startEditing}
@@ -223,12 +242,12 @@ export function WorkbenchEpicDetail({
                   </Button>
                 ) : null}
               </div>
-              {editing ? (
+              {editing && !jiraManaged ? (
                 <form
                   className="min-w-0 space-y-4 p-4"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    const normalizedTitle = jiraManagedTitle ? epic.title : title.trim();
+                    const normalizedTitle = title.trim();
                     if (normalizedTitle.length === 0) return;
                     void (async () => {
                       if (!(await onSave(epic, normalizedTitle, markdown.trim()))) return;
@@ -239,30 +258,18 @@ export function WorkbenchEpicDetail({
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
                       <Label htmlFor="edit-workbench-epic-title">Title</Label>
-                      {jiraManagedTitle ? (
-                        <Badge size="sm" variant="outline">
-                          Managed by Jira
-                        </Badge>
-                      ) : null}
                     </div>
                     <Input
                       id="edit-workbench-epic-title"
-                      autoFocus={!jiraManagedTitle}
-                      disabled={jiraManagedTitle}
+                      autoFocus
                       value={title}
                       onChange={(event) => setTitle(event.currentTarget.value)}
                     />
-                    {jiraManagedTitle ? (
-                      <p className="text-xs text-muted-foreground">
-                        Jira keeps the Epic title in sync. The local description remains editable.
-                      </p>
-                    ) : null}
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="edit-workbench-epic-description">Description</Label>
                     <Textarea
                       id="edit-workbench-epic-description"
-                      autoFocus={jiraManagedTitle}
                       className="min-h-48"
                       placeholder="Context, scope, and intended outcome…"
                       value={markdown}
@@ -281,9 +288,8 @@ export function WorkbenchEpicDetail({
                     <Button
                       disabled={
                         pending ||
-                        (!jiraManagedTitle && title.trim().length === 0) ||
-                        ((jiraManagedTitle || title.trim() === epic.title) &&
-                          markdown.trim() === epic.markdown)
+                        title.trim().length === 0 ||
+                        (title.trim() === epic.title && markdown.trim() === epic.markdown)
                       }
                       type="submit"
                     >
@@ -430,7 +436,17 @@ export function WorkbenchEpicDetail({
                 <dd className="text-right font-medium">{progress.percent}% done</dd>
                 <dt className="text-muted-foreground">Child Tickets</dt>
                 <dd className="text-right font-medium">{progress.total}</dd>
-                <dt className="text-muted-foreground">Jira flagged</dt>
+                <dt className="text-muted-foreground">
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="cursor-help" />}>
+                      Flagged child tickets
+                    </TooltipTrigger>
+                    <TooltipPopup className="max-w-72">
+                      Child tickets marked as flagged in Jira, based on the latest sync. This is not
+                      a flag on the Epic itself.
+                    </TooltipPopup>
+                  </Tooltip>
+                </dt>
                 <dd className="text-right font-medium">{blockedCount}</dd>
               </dl>
             </section>

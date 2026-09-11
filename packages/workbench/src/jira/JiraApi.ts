@@ -114,6 +114,12 @@ const RawIssue = Schema.Struct({
     parent: Schema.optionalKey(Schema.NullOr(RawParentIssue)),
   }),
 });
+const RawEpicDetails = Schema.Struct({
+  fields: Schema.Struct({
+    summary: Schema.String,
+    description: Schema.NullOr(Schema.String),
+  }),
+});
 const IssuePage = Schema.Struct({
   issues: Schema.Array(RawIssue),
   isLast: Schema.optionalKey(Schema.Boolean),
@@ -382,7 +388,7 @@ export const make = Effect.gen(function* () {
         }
       }
       const siteUrl = context.connection.siteUrl.replace(/\/+$/u, "");
-      return issues.map((issue, rank) => {
+      const snapshots = issues.map((issue, rank) => {
         const parentIsEpic = issue.fields.parent?.fields?.issuetype?.name.toLowerCase() === "epic";
         const directEpic = issue.fields.epic;
         const parentEpic = parentIsEpic ? issue.fields.parent : null;
@@ -413,6 +419,35 @@ export const make = Effect.gen(function* () {
           rank,
           remoteUpdatedAt: issue.fields.updated ?? null,
         } satisfies WorkbenchJiraIssueSnapshot;
+      });
+      const epicIds = [
+        ...new Set(snapshots.flatMap((issue) => (issue.epic === null ? [] : [issue.epic.id]))),
+      ];
+      const epicDetails = yield* Effect.forEach(
+        epicIds,
+        (id) =>
+          executeJson({
+            ...context,
+            path: `/rest/api/2/issue/${encodeURIComponent(id)}`,
+            urlParams: { fields: "summary,description" },
+            schema: RawEpicDetails,
+          }).pipe(Effect.map((details) => [id, details.fields] as const)),
+        { concurrency: 4 },
+      );
+      const epicById = new Map(epicDetails);
+      return snapshots.map((issue) => {
+        const details = issue.epic === null ? undefined : epicById.get(issue.epic.id);
+        return {
+          ...issue,
+          epic:
+            issue.epic === null || details === undefined
+              ? issue.epic
+              : {
+                  ...issue.epic,
+                  summary: details.summary,
+                  description: details.description ?? "",
+                },
+        };
       });
     });
 

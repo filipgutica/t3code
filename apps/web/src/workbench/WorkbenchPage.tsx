@@ -1274,6 +1274,19 @@ export function WorkbenchPage({
   const jiraSiteUrl = jiraSnapshot?.connections.find(
     (connection) => connection.id === jiraBinding?.connectionId,
   )?.siteUrl;
+  const selectedJiraEpic =
+    jiraBinding && selectedEpic
+      ? jiraSnapshot?.issueLinks.find(
+          (link) =>
+            link.bindingId === jiraBinding.id &&
+            link.issue.epic !== null &&
+            selectedEpic.id === `jira:${jiraBinding.id}:epic:${link.issue.epic.id}`,
+        )?.issue.epic
+      : null;
+  const selectedJiraEpicUrl =
+    selectedJiraEpic && jiraSiteUrl
+      ? new URL(`/browse/${encodeURIComponent(selectedJiraEpic.key)}`, jiraSiteUrl).toString()
+      : null;
   const jiraSprintLinks =
     jiraBinding && jiraSiteUrl
       ? getWorkbenchJiraBindingSprints(jiraBinding).map((sprint) => {
@@ -1662,7 +1675,8 @@ export function WorkbenchPage({
               key={selectedEpic.id}
               workspaceTitle={selectedProject.title}
               epic={selectedEpic}
-              jiraManagedTitle={
+              jiraUrl={selectedJiraEpicUrl}
+              jiraManaged={
                 jiraBinding !== null && selectedEpic.id.startsWith(`jira:${jiraBinding.id}:epic:`)
               }
               tickets={selectedEpicTickets}

@@ -58,27 +58,36 @@ describe("JiraApi", () => {
               Effect.succeed(
                 HttpClientResponse.fromWeb(
                   request,
-                  Response.json({
-                    isLast: true,
-                    issues: [
-                      {
-                        id: "10001",
-                        key: "WB-1",
-                        fields: {
-                          summary: "Assigned issue",
-                          description: "Jira description with acceptance criteria.",
-                          issuetype: { id: "1", name: "Story" },
-                          status: { id: "2", name: "In Progress" },
-                          epic: {
-                            id: epicId,
-                            key: "WB-EPIC",
-                            name: "Integration",
+                  Response.json(
+                    request.url.includes("/rest/api/2/issue/")
+                      ? {
+                          fields: {
                             summary: "Jira integration",
+                            description: "Epic acceptance criteria.",
                           },
+                        }
+                      : {
+                          isLast: true,
+                          issues: [
+                            {
+                              id: "10001",
+                              key: "WB-1",
+                              fields: {
+                                summary: "Assigned issue",
+                                description: "Jira description with acceptance criteria.",
+                                issuetype: { id: "1", name: "Story" },
+                                status: { id: "2", name: "In Progress" },
+                                epic: {
+                                  id: epicId,
+                                  key: "WB-EPIC",
+                                  name: "Integration",
+                                  summary: "Jira integration",
+                                },
+                              },
+                            },
+                          ],
                         },
-                      },
-                    ],
-                  }),
+                  ),
                 ),
               ),
             ),
@@ -95,6 +104,7 @@ describe("JiraApi", () => {
           id: "10000",
           key: "WB-EPIC",
           summary: "Jira integration",
+          description: "Epic acceptance criteria.",
         });
       }
     }),
@@ -138,63 +148,66 @@ describe("JiraApi", () => {
         const nextPageToken = request.urlParams.params.find(
           ([name]) => name === "nextPageToken",
         )?.[1];
-        const body = request.url.includes("/configuration")
-          ? {
-              id: 42,
-              name: "Workbench board",
-              type: "scrum",
-              columnConfig: {
-                columns: [
-                  { name: "To Do", statuses: [{ id: "1" }] },
-                  { name: "In Progress", statuses: [{ id: "2" }] },
-                  { name: "Done", statuses: [{ id: "3" }] },
-                  { name: "Unused", statuses: [] },
-                ],
-              },
-              ranking: { rankCustomFieldId: 10019 },
-            }
-          : nextPageToken === undefined
+        const body = request.url.includes("/rest/api/2/issue/")
+          ? { fields: { summary: "Jira integration", description: null } }
+          : request.url.includes("/configuration")
             ? {
-                isLast: false,
-                nextPageToken: "page-2",
-                issues: [
-                  {
-                    id: "10001",
-                    key: "WB-1",
-                    fields: {
-                      summary: "Mirror assigned sprint tickets",
-                      issuetype: { id: "story", name: "Story" },
-                      status: { id: "2", name: "In Progress" },
-                      updated: "2026-09-03T00:00:00.000Z",
-                      flagged: true,
-                      parent: {
-                        id: "10000",
-                        key: "WB-EPIC",
-                        fields: {
-                          summary: "Jira integration",
-                          issuetype: { name: "Epic" },
+                id: 42,
+                name: "Workbench board",
+                type: "scrum",
+                columnConfig: {
+                  columns: [
+                    { name: "To Do", statuses: [{ id: "1" }] },
+                    { name: "In Progress", statuses: [{ id: "2" }] },
+                    { name: "Done", statuses: [{ id: "3" }] },
+                    { name: "Unused", statuses: [] },
+                  ],
+                },
+                ranking: { rankCustomFieldId: 10019 },
+              }
+            : nextPageToken === undefined
+              ? {
+                  isLast: false,
+                  nextPageToken: "page-2",
+                  issues: [
+                    {
+                      id: "10001",
+                      key: "WB-1",
+                      fields: {
+                        summary: "Mirror assigned sprint tickets",
+                        issuetype: { id: "story", name: "Story" },
+                        status: { id: "2", name: "In Progress" },
+                        updated: "2026-09-03T00:00:00.000Z",
+                        flagged: true,
+                        parent: {
+                          id: "10000",
+                          key: "WB-EPIC",
+                          fields: {
+                            summary: "Jira integration",
+                            issuetype: { name: "Epic" },
+                          },
                         },
                       },
                     },
-                  },
-                ],
-              }
-            : {
-                isLast: true,
-                issues: [
-                  {
-                    id: "10002",
-                    key: "WB-2",
-                    fields: {
-                      summary: "Second page",
-                      issuetype: { id: "bug", name: "Bug" },
-                      status: { id: "2", name: "In Progress" },
-                      updated: "2026-09-03T00:00:00.000Z",
-                      flagged: false,
+                  ],
+                }
+              : {
+                  isLast: true,
+                  issues: [
+                    {
+                      id: "10002",
+                      key: "WB-2",
+                      fields: {
+                        summary: "Second page",
+                        issuetype: { id: "bug", name: "Bug" },
+                        status: { id: "2", name: "In Progress" },
+                        updated: "2026-09-03T00:00:00.000Z",
+                        flagged: false,
+                        epic: { id: 10000, key: "WB-EPIC", summary: "Jira integration" },
+                      },
                     },
-                  },
-                ],
-              };
+                  ],
+                };
         return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(body)));
       });
       const service = yield* JiraApi.make.pipe(
@@ -219,6 +232,12 @@ describe("JiraApi", () => {
       assert.isTrue(issues[0]?.flagged ?? false);
       assert.strictEqual(issues[1]?.rank, 1);
       assert.strictEqual(issues[1]?.description, "");
+      assert.strictEqual(issues[0]?.epic?.description, "");
+      assert.deepStrictEqual(issues[1]?.epic, issues[0]?.epic);
+      assert.strictEqual(
+        requests.filter((request) => request.url.includes("/rest/api/2/issue/")).length,
+        1,
+      );
       assert.isTrue(
         requests[1]?.urlParams.params
           .find(([key]) => key === "fields")?.[1]
