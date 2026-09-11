@@ -203,12 +203,12 @@ export function WorkbenchTicketBoard({
           ))}
         </ToggleGroup>
       </div>
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3 sm:p-4">
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3 sm:p-4 md:pt-0">
         <div
           style={boardStyle}
           className="flex min-w-0 flex-col gap-3 md:min-w-[calc(var(--board-column-count)*18rem+(var(--board-column-count)-1)*0.75rem)]"
         >
-          <div className="sticky top-0 z-10 hidden grid-flow-col auto-cols-[minmax(18rem,1fr)] gap-3 border-b border-border/60 bg-background pb-2 md:grid">
+          <div className="sticky top-0 z-10 -mx-3 hidden grid-flow-col auto-cols-[minmax(18rem,1fr)] gap-3 border-b border-border/60 bg-background px-3 py-1 shadow-sm sm:-mx-4 sm:px-4 md:grid">
             {columns.map((column) => (
               <div key={column.id} className="flex min-w-0 items-center gap-2 px-2 py-2">
                 <span
