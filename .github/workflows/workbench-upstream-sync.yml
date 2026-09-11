@@ -85,6 +85,16 @@ jobs:
             git commit --amend --no-edit
           fi
 
+      - name: Setup APT mirrors
+        if: steps.pending.outputs.needed == 'true'
+        uses: ./.github/actions/setup-apt-mirrors
+
+      - name: Install browser secret helper build libraries
+        if: steps.pending.outputs.needed == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev pkg-config
+
       - name: Verify Workbench overlay
         if: steps.pending.outputs.needed == 'true'
         run: |
