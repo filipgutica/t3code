@@ -205,6 +205,12 @@ export function WorkbenchEpicDetail({
               ) : null}
               {epic.archivedAt ? <Badge variant="outline">Archived</Badge> : null}
             </div>
+            {jiraManaged ? (
+              <p className="mt-2 max-w-2xl text-xs text-muted-foreground">
+                Jira imports only tickets assigned to you in the selected sprints. Counts and
+                progress reflect the tickets shown here, not the whole Jira epic.
+              </p>
+            ) : null}
           </div>
           <Button disabled={pending || epic.archivedAt !== null} onClick={onCreateTicket} size="sm">
             <PlusIcon /> New Ticket
@@ -309,7 +315,9 @@ export function WorkbenchEpicDetail({
                 <div>
                   <h2 className="text-sm font-semibold">Child Tickets</h2>
                   <p className="text-xs text-muted-foreground">
-                    Stories and bugs that deliver this Epic.
+                    {jiraManaged
+                      ? "Your imported work for this epic, plus any tickets added in Workbench."
+                      : "Stories and bugs that deliver this Epic."}
                   </p>
                 </div>
                 <Button
@@ -325,7 +333,7 @@ export function WorkbenchEpicDetail({
               <div className="px-4 py-3">
                 <div className="flex items-center gap-3">
                   <div
-                    aria-label={`${progress.percent}% of Epic Tickets complete`}
+                    aria-label={`${progress.percent}% of ${jiraManaged ? "shown" : "Epic"} Tickets complete`}
                     aria-valuemax={100}
                     aria-valuemin={0}
                     aria-valuenow={progress.percent}
@@ -432,9 +440,13 @@ export function WorkbenchEpicDetail({
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-4 p-4 text-sm">
                 <dt className="text-muted-foreground">Type</dt>
                 <dd className="text-right font-medium">Epic</dd>
-                <dt className="text-muted-foreground">Progress</dt>
+                <dt className="text-muted-foreground">
+                  {jiraManaged ? "Shown progress" : "Progress"}
+                </dt>
                 <dd className="text-right font-medium">{progress.percent}% done</dd>
-                <dt className="text-muted-foreground">Child Tickets</dt>
+                <dt className="text-muted-foreground">
+                  {jiraManaged ? "Shown tickets" : "Child Tickets"}
+                </dt>
                 <dd className="text-right font-medium">{progress.total}</dd>
                 <dt className="text-muted-foreground">
                   <Tooltip>
