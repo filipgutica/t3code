@@ -79,6 +79,8 @@ import type { WorkbenchSearch } from "./workbenchSearch";
 import { openWorkbenchAssignedThread as openAssignedThreadWithRestore } from "./openWorkbenchAssignedThread";
 import { workbenchEnvironment } from "./state";
 import { useStartWorkbenchTicket } from "./useStartWorkbenchTicket";
+import { useOptimisticWorkbenchStatus } from "./useOptimisticWorkbenchStatus";
+import { WorkbenchJiraTransitionsPreloader } from "./WorkbenchJiraTransitionsPreloader";
 import { subscribeToWorkbenchRefresh } from "./workbenchRefresh";
 import { withWorkbenchEnvironmentSearch } from "./workbenchNavigation";
 import {
@@ -401,6 +403,10 @@ export function WorkbenchPage({
   const [jiraError, setJiraError] = useState<string | null>(null);
   const [jiraPendingAction, setJiraPendingAction] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const statusEnvironmentRef = useRef(environmentId);
+  useEffect(() => {
+    statusEnvironmentRef.current = environmentId;
+  }, [environmentId]);
   const [startThreadRequest, setStartThreadRequest] = useState<{
     ticket: WorkbenchTicket;
     assignment?: WorkbenchAssignment;
@@ -416,6 +422,11 @@ export function WorkbenchPage({
   const snapshot = query.data;
   const snapshotProjects = snapshot?.projects ?? null;
   const jiraSnapshot = jiraQuery.data;
+  const optimisticStatus = useOptimisticWorkbenchStatus({
+    environmentId,
+    tickets: snapshot?.tickets ?? [],
+    issueLinks: jiraSnapshot?.issueLinks ?? [],
+  });
   useEffect(() => {
     for (const [ticketId, draft] of ticketDrafts) {
       if (draft.mode !== "saved") continue;
@@ -452,8 +463,8 @@ export function WorkbenchPage({
         (epic) => epic.id === selectedEpicId && epic.projectId === selectedProject?.id,
       ) ?? null);
   const jiraIssueLinksByTicketId = useMemo(
-    () => new Map((jiraSnapshot?.issueLinks ?? []).map((link) => [link.ticketId, link])),
-    [jiraSnapshot?.issueLinks],
+    () => new Map(optimisticStatus.issueLinks.map((link) => [link.ticketId, link])),
+    [optimisticStatus.issueLinks],
   );
   const isTicketVisible = useCallback(
     (ticket: WorkbenchTicket) =>
@@ -461,16 +472,22 @@ export function WorkbenchPage({
     [jiraIssueLinksByTicketId],
   );
   const selectedTicket =
-    snapshot?.tickets.find(
+    optimisticStatus.tickets.find(
       (ticket) => ticket.id === selectedTicketId && ticket.projectId === selectedProject?.id,
     ) ?? null;
   const projectTickets = useMemo(
     () =>
-      snapshot?.tickets.filter(
+      optimisticStatus.tickets.filter(
         (ticket) => ticket.projectId === selectedProject?.id && isTicketVisible(ticket),
-      ) ?? [],
-    [isTicketVisible, selectedProject?.id, snapshot?.tickets],
+      ),
+    [isTicketVisible, selectedProject?.id, optimisticStatus.tickets],
   );
+  const projectJiraIssueLinks = useMemo(() => {
+    const ticketIds = new Set(projectTickets.map((ticket) => ticket.id));
+    return (jiraSnapshot?.issueLinks ?? []).filter(
+      (link) => link.active && ticketIds.has(link.ticketId),
+    );
+  }, [jiraSnapshot?.issueLinks, projectTickets]);
   const selectedEpicTickets = useMemo(
     () => projectTickets.filter((ticket) => ticket.epicId === selectedEpic?.id),
     [projectTickets, selectedEpic?.id],
@@ -819,7 +836,12 @@ export function WorkbenchPage({
       >
     >,
   ): Promise<WorkbenchTicketSavedVersion | false> => {
-    if (environmentId === null || pendingAction !== null) return false;
+    if (
+      environmentId === null ||
+      pendingAction !== null ||
+      optimisticStatus.pendingTicketIds.has(ticket.id)
+    )
+      return false;
     const jiraFieldsChanged = patch.markdown !== undefined || patch.status !== undefined;
     if (jiraFieldsChanged && !jiraOwnershipKnown) {
       setError("Jira ownership is still loading. Try again in a moment.");
@@ -855,7 +877,12 @@ export function WorkbenchPage({
       patch,
       jiraFieldsManaged: jiraManagedTicketIds.has(ticket.id),
     });
-    setPendingAction(`update:${ticket.id}`);
+    const statusToken =
+      patch.status !== undefined
+        ? optimisticStatus.begin({ ticketId: ticket.id, status: patch.status })
+        : null;
+    if (statusToken === false) return false;
+    if (statusToken === null) setPendingAction(`update:${ticket.id}`);
     setError(null);
     const expectedRevision =
       (patch.title !== undefined || patch.markdown !== undefined) && draft?.mode === "editing"
@@ -870,8 +897,20 @@ export function WorkbenchPage({
         updatedAt: new Date().toISOString(),
       },
     });
-    setPendingAction(null);
-    if (reportWorkbenchCommandFailure(result, setError)) return false;
+    if (statusToken === null) setPendingAction(null);
+    if (statusToken !== null && statusEnvironmentRef.current !== environmentId) return false;
+    if (
+      reportWorkbenchCommandFailure(result, (message) =>
+        setError(statusToken === null ? message : `${ticket.title}: ${message}`),
+      )
+    ) {
+      if (statusToken !== null) optimisticStatus.fail(statusToken);
+      query.refresh();
+      return false;
+    }
+    if (statusToken !== null) {
+      optimisticStatus.succeed({ token: statusToken, revision: result.value.revision });
+    }
     return { revision: result.value.revision };
   };
 
@@ -896,6 +935,7 @@ export function WorkbenchPage({
   const changeJiraTransition = async ({
     ticket,
     transitionId,
+    destination,
     expectedRemoteUpdatedAt,
   }: WorkbenchJiraTransitionSelection) => {
     if (environmentId === null || pendingAction !== null) return;
@@ -907,14 +947,43 @@ export function WorkbenchPage({
       setError("Save or cancel this Ticket's description edits before changing its status.");
       return;
     }
-    setPendingAction(`jira-update:${ticket.id}`);
+    const link = jiraSnapshot?.issueLinks.find((candidate) => candidate.ticketId === ticket.id);
+    const binding = jiraSnapshot?.bindings.find((candidate) => candidate.id === link?.bindingId);
+    const mappedStatus = binding?.statusMappings.find(
+      (mapping) => mapping.jiraStatusId === destination.id,
+    )?.workbenchStatus;
+    if (mappedStatus === undefined) {
+      setError("This Jira status is no longer mapped to the board. Refresh Jira and try again.");
+      return;
+    }
+    const token = optimisticStatus.begin({
+      ticketId: ticket.id,
+      status: mappedStatus,
+      jiraStatus: destination,
+    });
+    if (token === false) return;
     setError(null);
     const result = await updateJiraTicket({
       environmentId,
       input: { ticketId: ticket.id, transitionId, expectedRemoteUpdatedAt },
     });
-    setPendingAction(null);
-    reportWorkbenchCommandFailure(result, setError);
+    if (statusEnvironmentRef.current !== environmentId) return;
+    if (
+      reportWorkbenchCommandFailure(result, (message) => setError(`${ticket.title}: ${message}`))
+    ) {
+      optimisticStatus.fail(token);
+      query.refresh();
+      jiraQuery.refresh();
+      if (binding) void syncJiraBinding(binding);
+      return;
+    }
+    optimisticStatus.succeed({
+      token,
+      jiraIssue: result.value,
+      status:
+        binding?.statusMappings.find((mapping) => mapping.jiraStatusId === result.value.status.id)
+          ?.workbenchStatus ?? mappedStatus,
+    });
   };
 
   const changeTicket = (
@@ -1309,7 +1378,7 @@ export function WorkbenchPage({
   const jiraManagedTicketIds = new Set(
     (jiraSnapshot?.issueLinks ?? []).map((link) => link.ticketId),
   );
-  const jiraOwnershipKnown = jiraSnapshot !== null && !jiraQuery.isPending;
+  const jiraOwnershipKnown = jiraSnapshot !== null;
   const selectedAssignments = selectedTicket
     ? getAssignmentsForTicket(snapshot?.assignments ?? [], selectedTicket.id)
     : [];
@@ -1610,6 +1679,13 @@ export function WorkbenchPage({
         </div>
       ) : (
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <WorkbenchJiraTransitionsPreloader
+            environmentId={environmentId}
+            issueLinks={projectJiraIssueLinks}
+            paused={
+              pending || optimisticStatus.pendingTicketIds.size > 0 || jiraPendingAction !== null
+            }
+          />
           {selectedTicket ? (
             <WorkbenchTicketDetail
               key={selectedTicket.id}
@@ -1635,7 +1711,7 @@ export function WorkbenchPage({
               threadsById={threadsById}
               archivedThreadsById={archivedThreadsById}
               threadLookupReady={threadLookupReady}
-              pending={pending}
+              pending={pending || optimisticStatus.pendingTicketIds.has(selectedTicket.id)}
               threadActionPending={
                 pendingAction === `start:${selectedTicket.id}` ||
                 (assignmentsByTicket.get(selectedTicket.id) !== undefined &&
@@ -1907,6 +1983,7 @@ export function WorkbenchPage({
                   mirrorColumns={
                     jiraBinding?.boardMode === "mirror_jira" ? jiraBinding.boardColumns : null
                   }
+                  jiraStatusMappings={jiraBinding?.statusMappings ?? []}
                   projectId={selectedProject.id}
                   tickets={projectTickets}
                   epics={projectEpics}
@@ -1922,6 +1999,7 @@ export function WorkbenchPage({
                   threadLookupReady={threadLookupReady}
                   pending={pending}
                   pendingAction={pendingAction}
+                  pendingTicketIds={optimisticStatus.pendingTicketIds}
                   onSelect={(projectId, ticketId) => {
                     setAwaitingTicketId(null);
                     setAwaitingEpicId(null);

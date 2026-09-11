@@ -1,6 +1,7 @@
 import type {
   EnvironmentId,
   WorkbenchJiraIssueLink,
+  WorkbenchJiraTicketTransition,
   WorkbenchTicket,
   WorkbenchTicketStatus,
 } from "@t3tools/contracts";
@@ -14,6 +15,7 @@ import { getWorkbenchTicketStatusMoves, WORKBENCH_TICKET_STATUS_LABELS } from ".
 export interface WorkbenchJiraTransitionSelection {
   readonly ticket: WorkbenchTicket;
   readonly transitionId: string;
+  readonly destination: WorkbenchJiraTicketTransition["to"];
   readonly expectedRemoteUpdatedAt: string | null;
 }
 
@@ -91,6 +93,7 @@ export function WorkbenchTicketStatusMenu({
                     onJiraTransition({
                       ticket,
                       transitionId: transition.id,
+                      destination: transition.to,
                       expectedRemoteUpdatedAt: result.remoteUpdatedAt,
                     })
                   }
