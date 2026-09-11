@@ -117,7 +117,7 @@ const RawIssue = Schema.Struct({
 const RawEpicDetails = Schema.Struct({
   fields: Schema.Struct({
     summary: Schema.String,
-    description: Schema.NullOr(Schema.String),
+    description: Schema.optionalKey(Schema.NullOr(Schema.String)),
   }),
 });
 const IssuePage = Schema.Struct({
@@ -445,7 +445,9 @@ export const make = Effect.gen(function* () {
               : {
                   ...issue.epic,
                   summary: details.summary,
-                  description: details.description ?? "",
+                  ...(details.description === undefined
+                    ? {}
+                    : { description: details.description ?? "" }),
                 },
         };
       });

@@ -46,9 +46,14 @@ const auth = JiraAuthService.of({
 });
 
 describe("JiraApi", () => {
-  it.effect("imports descriptions and normalizes numeric and string Epic IDs", () =>
+  it.effect("imports optional descriptions and normalizes numeric and string Epic IDs", () =>
     Effect.gen(function* () {
-      for (const epicId of [10000, "10000"]) {
+      for (const { epicId, description } of [
+        { epicId: 10000, description: "Epic acceptance criteria." },
+        { epicId: "10000", description: "Epic acceptance criteria." },
+        { epicId: "10000", description: null },
+        { epicId: "10000", description: undefined },
+      ]) {
         const service = yield* JiraApi.make.pipe(
           Effect.provideService(WorkbenchJiraRepository, repository),
           Effect.provideService(JiraAuthService, auth),
@@ -63,7 +68,7 @@ describe("JiraApi", () => {
                       ? {
                           fields: {
                             summary: "Jira integration",
-                            description: "Epic acceptance criteria.",
+                            ...(description === undefined ? {} : { description }),
                           },
                         }
                       : {
@@ -104,7 +109,7 @@ describe("JiraApi", () => {
           id: "10000",
           key: "WB-EPIC",
           summary: "Jira integration",
-          description: "Epic acceptance criteria.",
+          ...(description === undefined ? {} : { description: description ?? "" }),
         });
       }
     }),
