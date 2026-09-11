@@ -276,7 +276,7 @@ export function WorkbenchTicketBoard({
                           aria-label={`${column.title} Tickets`}
                           data-workbench-status={column.id}
                           className={cn(
-                            "min-w-0 flex-col md:flex",
+                            "min-w-0 flex-col rounded-xl border border-foreground/6 bg-foreground/1 md:flex",
                             column.id === visibleColumnId ? "flex" : "hidden",
                           )}
                         >
@@ -334,7 +334,7 @@ export function WorkbenchTicketBoard({
                                       <Tooltip>
                                         <TooltipTrigger
                                           render={
-                                            <h3 className="line-clamp-3 min-w-0 break-words text-sm font-medium leading-snug" />
+                                            <h3 className="line-clamp-3 min-w-0 break-words text-sm font-semibold leading-snug" />
                                           }
                                         >
                                           {ticket.title}
@@ -410,7 +410,7 @@ export function WorkbenchTicketBoard({
                                             type="button"
                                             onClick={() => onSelect(projectId, ticket.id)}
                                             aria-label={`Ticket summary: ${summary.text}`}
-                                            className="relative z-10 line-clamp-2 cursor-pointer break-words text-left text-xs text-muted-foreground outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+                                            className="relative z-10 line-clamp-2 cursor-pointer break-words text-left text-xs text-foreground/80 outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
                                             tabIndex={0}
                                           />
                                         }
