@@ -76,6 +76,7 @@ import {
   Select,
   SelectItem,
   SelectPopup,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
@@ -119,6 +120,7 @@ import { resolveWorkbenchTicketContent } from "./workbenchJira.logic";
 import { getWorkbenchTicketPullRequests } from "./workbenchPullRequests.logic";
 
 const NO_EPIC_VALUE = "__workbench_no_epic__";
+const CREATE_EPIC_VALUE = "__workbench_create_epic__";
 
 export function WorkbenchEpicDetail({
   workspaceTitle,
@@ -682,6 +684,7 @@ export function WorkbenchEpicDialog({
 }
 
 export function WorkbenchTicketDialog({
+  onCreateEpic,
   open,
   linkedProjects,
   epics,
@@ -695,6 +698,7 @@ export function WorkbenchTicketDialog({
   readonly linkedProjects: ReadonlyArray<Project>;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
   readonly initialEpicId: WorkbenchEpicId | null;
+  readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
   readonly pending: boolean;
   readonly error: string | null;
   readonly onOpenChange: (open: boolean) => void;
@@ -807,9 +811,13 @@ export function WorkbenchTicketDialog({
               <Label>Epic</Label>
               <Select
                 value={epicId ?? NO_EPIC_VALUE}
-                onValueChange={(value) =>
-                  setEpicId(!value || value === NO_EPIC_VALUE ? null : WorkbenchEpicId.make(value))
-                }
+                onValueChange={(value) => {
+                  if (value === CREATE_EPIC_VALUE) {
+                    onCreateEpic(setEpicId);
+                    return;
+                  }
+                  setEpicId(!value || value === NO_EPIC_VALUE ? null : WorkbenchEpicId.make(value));
+                }}
               >
                 <SelectTrigger aria-label="Epic">
                   <SelectValue>
@@ -823,6 +831,8 @@ export function WorkbenchTicketDialog({
                       {epic.title}
                     </SelectItem>
                   ))}
+                  <SelectSeparator />
+                  <SelectItem value={CREATE_EPIC_VALUE}>Create Epic…</SelectItem>
                 </SelectPopup>
               </Select>
             </div>
@@ -962,6 +972,7 @@ export function WorkbenchTicketDetail({
   onUpdate,
   onJiraTransition,
   onOpenEpic,
+  onCreateEpic,
   onOpenThread,
   onOpenAssignedThread,
   onNewThread,
@@ -1018,6 +1029,7 @@ export function WorkbenchTicketDetail({
   ) => void;
   readonly onJiraTransition: (selection: WorkbenchJiraTransitionSelection) => void;
   readonly onOpenEpic: (epicId: WorkbenchEpicId) => void;
+  readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
   readonly onOpenThread: (ticket: WorkbenchTicket, threadId?: ThreadId) => void;
   readonly onOpenAssignedThread: (threadId: ThreadId) => void;
   readonly onNewThread: (ticket: WorkbenchTicket) => void;
@@ -1914,14 +1926,18 @@ export function WorkbenchTicketDetail({
                         <Select
                           disabled={pending || isArchived}
                           value={ticket.epicId ?? NO_EPIC_VALUE}
-                          onValueChange={(value) =>
+                          onValueChange={(value) => {
+                            if (value === CREATE_EPIC_VALUE) {
+                              onCreateEpic((epicId) => onUpdate(actionableTicket, { epicId }));
+                              return;
+                            }
                             onUpdate(actionableTicket, {
                               epicId:
                                 !value || value === NO_EPIC_VALUE
                                   ? null
                                   : WorkbenchEpicId.make(value),
-                            })
-                          }
+                            });
+                          }}
                         >
                           <SelectTrigger aria-label="Epic">
                             <SelectValue>
@@ -1940,6 +1956,8 @@ export function WorkbenchTicketDetail({
                                 {epic.archivedAt !== null ? " (Archived)" : ""}
                               </SelectItem>
                             ))}
+                            <SelectSeparator />
+                            <SelectItem value={CREATE_EPIC_VALUE}>Create Epic…</SelectItem>
                           </SelectPopup>
                         </Select>
                       </div>

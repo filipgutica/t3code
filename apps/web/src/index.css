@@ -1603,9 +1603,9 @@ code {
   -webkit-app-region: drag;
 }
 
-/* Native drag hit-testing ignores the modal's z-index. Suspend background
-   drag regions while the Workbench PR sheet covers the workspace header. */
-body:has([data-workbench-pull-request-panel]) .drag-region {
+/* Native drag hit-testing ignores z-index. Suspend background drag regions
+   while Workbench panels or workspace actions cover the workspace header. */
+body:has([data-workbench-pull-request-panel], [data-workbench-workspace-actions]) .drag-region {
   -webkit-app-region: no-drag;
 }
 
