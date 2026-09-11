@@ -469,7 +469,9 @@ export const make = Effect.gen(function* () {
               "The Jira Ticket link changed while transitions were loading. Refresh the Ticket and try again.",
             );
           }
-          const current = yield* readAssignedIssue(managed);
+          // Choices are background-cache data. The write path rereads Jira and
+          // validates this revision before applying a selected transition.
+          const current = managed.link.issue;
           const credentials = yield* getConnectionAndToken(managed.binding);
           const transitions = yield* getTransitions({
             issueId: current.issueId,

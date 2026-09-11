@@ -120,6 +120,7 @@ const makeHarness = (options?: {
       status: options?.initialStatus ?? makeIssue().status,
     });
     const issueRef = yield* Ref.make(initialIssue);
+    const sprintReads = yield* Ref.make(0);
     const linksRef = yield* Ref.make<ReadonlyArray<WorkbenchJiraIssueLink>>([
       makeLink(initialIssue),
     ]);
@@ -170,7 +171,10 @@ const makeHarness = (options?: {
       listSprints: () => Effect.die("unexpected sprint read"),
       getBoardConfiguration: () => Effect.die("unexpected configuration read"),
       listAssignedSprintIssues: () =>
-        Ref.get(issueRef).pipe(Effect.map((issue) => (options?.missingIssue ? [] : [issue]))),
+        Ref.update(sprintReads, (count) => count + 1).pipe(
+          Effect.andThen(Ref.get(issueRef)),
+          Effect.map((issue) => (options?.missingIssue ? [] : [issue])),
+        ),
     });
     const auth = JiraAuthService.of({
       begin: () => Effect.die("unexpected auth start"),
@@ -263,7 +267,7 @@ const makeHarness = (options?: {
       Effect.provideService(JiraTicketImporter, importer),
       Effect.provideService(HttpClient.HttpClient, http),
     );
-    return { service, issueRef, linksRef, imported, requests };
+    return { service, issueRef, linksRef, imported, requests, sprintReads };
   });
 
 type Harness = Effect.Success<ReturnType<typeof makeHarness>>;
@@ -278,6 +282,32 @@ const runWithHarness = <A, E, R>(
   });
 
 describe("JiraTicketWriteService", () => {
+  it.effect("loads transition choices without rereading the assigned sprints", () =>
+    runWithHarness((harness) =>
+      Effect.gen(function* () {
+        yield* Ref.update(harness.issueRef, (issue) => ({
+          ...issue,
+          remoteUpdatedAt: "2026-09-05T12:01:00.000Z",
+        }));
+        const result = yield* harness.service.getTicketTransitions({ ticketId });
+        assert.strictEqual(yield* Ref.get(harness.sprintReads), 0);
+        assert.strictEqual(result.remoteUpdatedAt, issueUpdatedAt);
+        const error = yield* Effect.flip(
+          harness.service.updateTicket({
+            ticketId,
+            transitionId: "21",
+            expectedRemoteUpdatedAt: result.remoteUpdatedAt,
+          }),
+        );
+        assert.strictEqual(error.code, "invalid_binding");
+        assert.strictEqual(yield* Ref.get(harness.sprintReads), 1);
+        assert.deepStrictEqual(
+          harness.requests.map((request) => request.method),
+          ["GET"],
+        );
+      }),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
   it.effect("lists available transitions with mapping availability and the remote timestamp", () =>
     runWithHarness(
       (harness) =>

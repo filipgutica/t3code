@@ -1,3 +1,12 @@
+import {
+  DndContext,
+  DragOverlay,
+  MouseSensor,
+  pointerWithin,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type {
   EnvironmentId,
@@ -7,6 +16,7 @@ import type {
   WorkbenchEpic,
   WorkbenchJiraIssueLink,
   WorkbenchJiraBoardColumn,
+  WorkbenchJiraStatusMapping,
   WorkbenchProjectId,
   WorkbenchTicket,
   WorkbenchTicketId,
@@ -24,6 +34,16 @@ import {
   PlusIcon,
 } from "lucide-react";
 import { useMemo, useState, type CSSProperties } from "react";
+
+import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useEnvironmentQuery } from "../state/query";
+import { workbenchEnvironment } from "./state";
+import { WorkbenchDraggableTicket, WorkbenchDropColumn } from "./WorkbenchBoardDrag";
+import { WorkbenchJiraDropDialog } from "./WorkbenchJiraDropDialog";
+import {
+  canMoveWorkbenchBoardTicket,
+  getWorkbenchBoardDropJiraStatusIds,
+} from "./workbenchBoardDrag.logic";
 
 import { resolveThreadStatusPill } from "../components/Sidebar.logic";
 
@@ -71,6 +91,7 @@ export function WorkbenchTicketBoard({
   environmentId,
   projectId,
   mirrorColumns,
+  jiraStatusMappings,
   tickets,
   epics,
   groupMode,
@@ -85,6 +106,7 @@ export function WorkbenchTicketBoard({
   threadLookupReady,
   pending,
   pendingAction,
+  pendingTicketIds,
   onSelect,
   onSelectEpic,
   onMove,
@@ -97,6 +119,7 @@ export function WorkbenchTicketBoard({
   readonly onJiraTransition: (selection: WorkbenchJiraTransitionSelection) => void;
   readonly projectId: WorkbenchProjectId;
   readonly mirrorColumns: ReadonlyArray<WorkbenchJiraBoardColumn> | null;
+  readonly jiraStatusMappings: ReadonlyArray<WorkbenchJiraStatusMapping>;
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
   readonly groupMode: "none" | "epic";
@@ -111,6 +134,7 @@ export function WorkbenchTicketBoard({
   readonly threadLookupReady: boolean;
   readonly pending: boolean;
   readonly pendingAction: string | null;
+  readonly pendingTicketIds: ReadonlySet<WorkbenchTicketId>;
   readonly onSelect: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
   readonly onSelectEpic: (projectId: WorkbenchProjectId, epicId: WorkbenchEpic["id"]) => void;
   readonly onMove: (ticket: WorkbenchTicket, status: WorkbenchTicketStatus) => void;
@@ -176,383 +200,577 @@ export function WorkbenchTicketBoard({
   const visibleColumnId = columns.some((column) => column.id === selectedColumnId)
     ? selectedColumnId
     : columns[0]?.id;
+  const wideBoard = useMediaQuery("md");
+  const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 6 } }));
+  const [activeTicketId, setActiveTicketId] = useState<WorkbenchTicketId | null>(null);
+  const [jiraDrop, setJiraDrop] = useState<{
+    ticketId: WorkbenchTicketId;
+    columnId: string;
+  } | null>(null);
+  const activeTicket = tickets.find((ticket) => ticket.id === activeTicketId);
+  const jiraDropTicket = tickets.find((ticket) => ticket.id === jiraDrop?.ticketId);
+  const jiraDropLink = jiraDropTicket ? jiraIssueLinksByTicketId.get(jiraDropTicket.id) : undefined;
+  const jiraDropColumn = columns.find((column) => column.id === jiraDrop?.columnId);
+  const transitionTicket = activeTicket ?? jiraDropTicket;
+  const transitionLink = transitionTicket
+    ? jiraIssueLinksByTicketId.get(transitionTicket.id)
+    : undefined;
+  // Start discovery during the drag and keep the shared query alive through the drop.
+  useEnvironmentQuery(
+    transitionTicket && transitionLink
+      ? workbenchEnvironment.jiraGetTicketTransitions({
+          environmentId,
+          input: {
+            ticketId: transitionTicket.id,
+            remoteUpdatedAt: transitionLink.issue.remoteUpdatedAt,
+          },
+        })
+      : null,
+  );
+  const hasJiraDrop = Boolean(jiraDropTicket && jiraDropLink && jiraDropColumn);
+  const dragDisabled = !wideBoard || pending || hasJiraDrop;
+  const dropTargets = useMemo(
+    () =>
+      new Map(
+        swimlanes.flatMap((lane) =>
+          columns.map(
+            (column) =>
+              [
+                JSON.stringify([lane.epic?.id ?? null, column.id]),
+                {
+                  columnId: column.id,
+                  title: column.title,
+                  status: column.status,
+                  epicId: lane.epic?.id ?? null,
+                },
+              ] as const,
+          ),
+        ),
+      ),
+    [columns, swimlanes],
+  );
+  const canDrop = (
+    ticket: WorkbenchTicket,
+    target: { columnId: string; status: WorkbenchTicketStatus; epicId: WorkbenchEpic["id"] | null },
+  ) =>
+    !dragDisabled &&
+    !pendingTicketIds.has(ticket.id) &&
+    canMoveWorkbenchBoardTicket({
+      ticket,
+      sourceColumnId: columns.find((column) =>
+        column.tickets.some((candidate) => candidate.id === ticket.id),
+      )?.id,
+      target,
+      jiraManaged: jiraIssueLinksByTicketId.has(ticket.id),
+      groupByEpic: groupMode === "epic",
+      pending,
+    });
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    setActiveTicketId(null);
+    const ticket = tickets.find((candidate) => candidate.id === active.id);
+    const target = over ? dropTargets.get(String(over.id)) : undefined;
+    if (!ticket || !target || !canDrop(ticket, target)) return;
+    if (jiraIssueLinksByTicketId.has(ticket.id)) {
+      setJiraDrop({ ticketId: ticket.id, columnId: target.columnId });
+    } else {
+      onMove(ticket, target.status);
+    }
+  };
   const boardStyle: CSSProperties & { "--board-column-count": number } = {
     "--board-column-count": columns.length,
   };
 
   return (
-    <section
-      aria-label="Ticket board"
-      className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+    <DndContext
+      sensors={sensors}
+      accessibility={{
+        screenReaderInstructions: {
+          draggable: "To change this ticket’s status with the keyboard, use its status menu.",
+        },
+        announcements: {
+          onDragStart: ({ active }) =>
+            `Picked up ${tickets.find((ticket) => ticket.id === active.id)?.title ?? "ticket"}.`,
+          onDragOver: ({ over }) => {
+            const target = over ? dropTargets.get(String(over.id)) : undefined;
+            return target ? `Over ${target.title}.` : "Outside a status column.";
+          },
+          onDragEnd: ({ over }) => {
+            const target = over ? dropTargets.get(String(over.id)) : undefined;
+            return target ? `Dropped on ${target.title}.` : "No status change.";
+          },
+          onDragCancel: () => "Status change canceled.",
+        },
+      }}
+      collisionDetection={pointerWithin}
+      onDragStart={({ active }) => {
+        const ticket = tickets.find((candidate) => candidate.id === active.id);
+        if (ticket && !dragDisabled) setActiveTicketId(ticket.id);
+      }}
+      onDragCancel={() => setActiveTicketId(null)}
+      onDragEnd={handleDragEnd}
     >
-      <div className="shrink-0 overflow-x-auto border-b border-border/60 px-3 py-2 md:hidden">
-        <ToggleGroup
-          aria-label="Board columns"
-          value={visibleColumnId ? [visibleColumnId] : []}
-          onValueChange={(value) => {
-            const nextColumnId = value[0];
-            if (typeof nextColumnId === "string") setSelectedColumnId(nextColumnId);
-          }}
-        >
-          {columns.map((column) => (
-            <Toggle key={column.id} value={column.id} className="shrink-0">
-              {column.title}
-              <span className="text-muted-foreground tabular-nums">{column.tickets.length}</span>
-            </Toggle>
-          ))}
-        </ToggleGroup>
-      </div>
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3 sm:p-4 md:pt-0">
-        <div
-          style={boardStyle}
-          className="flex min-w-0 flex-col gap-3 md:min-w-[calc(var(--board-column-count)*18rem+(var(--board-column-count)-1)*0.75rem)]"
-        >
-          <div className="sticky top-0 z-10 -mx-3 hidden grid-flow-col auto-cols-[minmax(18rem,1fr)] gap-3 border-b border-border/60 bg-background px-3 py-1 shadow-sm sm:-mx-4 sm:px-4 md:grid">
+      <section
+        aria-label="Ticket board"
+        className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+      >
+        <div className="shrink-0 overflow-x-auto border-b border-border/60 px-3 py-2 md:hidden">
+          <ToggleGroup
+            aria-label="Board columns"
+            value={visibleColumnId ? [visibleColumnId] : []}
+            onValueChange={(value) => {
+              const nextColumnId = value[0];
+              if (typeof nextColumnId === "string") setSelectedColumnId(nextColumnId);
+            }}
+          >
             {columns.map((column) => (
-              <div key={column.id} className="flex min-w-0 items-center gap-2 px-2 py-2">
-                <span
-                  aria-hidden
-                  className={cn("size-2 shrink-0 rounded-full", STATUS_DOT_CLASS[column.status])}
-                />
-                <h2 className="min-w-0 flex-1 break-words text-sm font-semibold">{column.title}</h2>
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {column.tickets.length}
-                </span>
-              </div>
+              <Toggle key={column.id} value={column.id} className="shrink-0">
+                {column.title}
+                <span className="text-muted-foreground tabular-nums">{column.tickets.length}</span>
+              </Toggle>
             ))}
-          </div>
-          {swimlanes.map((swimlane) => {
-            const laneTicketIds = new Set(swimlane.tickets.map((ticket) => ticket.id));
-            const laneKey = groupMode === "epic" ? (swimlane.epic?.id ?? "no-epic") : "all-tickets";
-            return (
-              <Collapsible
-                key={laneKey}
-                defaultOpen
-                render={
-                  <section
-                    aria-label={
-                      groupMode === "epic"
-                        ? `${swimlane.epic?.title ?? "No Epic"} swimlane`
-                        : "All Tickets"
-                    }
+          </ToggleGroup>
+        </div>
+        <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3 sm:p-4 md:pt-0">
+          <div
+            style={boardStyle}
+            className="flex min-w-0 flex-col gap-3 md:min-w-[calc(var(--board-column-count)*18rem+(var(--board-column-count)-1)*0.75rem)]"
+          >
+            <div className="sticky top-0 z-10 -mx-3 hidden grid-flow-col auto-cols-[minmax(18rem,1fr)] gap-3 border-b border-border/60 bg-background px-3 py-1 shadow-sm sm:-mx-4 sm:px-4 md:grid">
+              {columns.map((column) => (
+                <div key={column.id} className="flex min-w-0 items-center gap-2 px-2 py-2">
+                  <span
+                    aria-hidden
+                    className={cn("size-2 shrink-0 rounded-full", STATUS_DOT_CLASS[column.status])}
                   />
-                }
-                className="min-w-0"
-              >
-                {groupMode === "epic" ? (
-                  <header className="mb-2 flex items-center gap-2 border-b border-border/40 py-1">
-                    <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-2 text-left outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring">
-                      <ChevronDownIcon className="size-3.5 shrink-0 -rotate-90 text-muted-foreground transition-transform group-data-panel-open:rotate-0 motion-reduce:transition-none" />
-                      <Layers3Icon className="size-3.5 shrink-0 text-muted-foreground" />
-                      <h3 className="min-w-0 truncate text-sm font-semibold">
-                        {swimlane.epic?.title ?? "No Epic"}
-                      </h3>
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {swimlane.tickets.length}
-                      </span>
-                    </CollapsibleTrigger>
-                    {swimlane.epic ? (
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        onClick={() => onSelectEpic(projectId, swimlane.epic!.id)}
-                      >
-                        View Epic <ArrowRightIcon data-icon="inline-end" />
-                      </Button>
-                    ) : null}
-                  </header>
-                ) : null}
-                <CollapsiblePanel className="transition-none">
-                  <div className="grid min-w-0 grid-cols-1 gap-3 md:auto-cols-[minmax(18rem,1fr)] md:grid-flow-col md:grid-cols-none">
-                    {columns.map((column) => {
-                      const laneTickets = orderWorkbenchTicketsByJiraRank(
-                        column.tickets.filter((ticket) => laneTicketIds.has(ticket.id)),
-                        jiraIssueLinksByTicketId,
-                        activeJiraTicketIds,
-                      );
-                      return (
-                        <section
-                          key={column.id}
-                          aria-label={`${column.title} Tickets`}
-                          data-workbench-status={column.id}
-                          className={cn(
-                            "min-w-0 flex-col rounded-xl border border-foreground/6 bg-foreground/1 md:flex",
-                            column.id === visibleColumnId ? "flex" : "hidden",
-                          )}
+                  <h2 className="min-w-0 flex-1 break-words text-sm font-semibold">
+                    {column.title}
+                  </h2>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {column.tickets.length}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {swimlanes.map((swimlane) => {
+              const laneTicketIds = new Set(swimlane.tickets.map((ticket) => ticket.id));
+              const laneKey =
+                groupMode === "epic" ? (swimlane.epic?.id ?? "no-epic") : "all-tickets";
+              return (
+                <Collapsible
+                  key={laneKey}
+                  defaultOpen
+                  render={
+                    <section
+                      aria-label={
+                        groupMode === "epic"
+                          ? `${swimlane.epic?.title ?? "No Epic"} swimlane`
+                          : "All Tickets"
+                      }
+                    />
+                  }
+                  className="min-w-0"
+                >
+                  {groupMode === "epic" ? (
+                    <header className="mb-2 flex items-center gap-2 border-b border-border/40 py-1">
+                      <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-2 text-left outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring">
+                        <ChevronDownIcon className="size-3.5 shrink-0 -rotate-90 text-muted-foreground transition-transform group-data-panel-open:rotate-0 motion-reduce:transition-none" />
+                        <Layers3Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                        <h3 className="min-w-0 truncate text-sm font-semibold">
+                          {swimlane.epic?.title ?? "No Epic"}
+                        </h3>
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {swimlane.tickets.length}
+                        </span>
+                      </CollapsibleTrigger>
+                      {swimlane.epic ? (
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => onSelectEpic(projectId, swimlane.epic!.id)}
                         >
-                          <div className="flex min-h-0 flex-1 flex-col gap-2 p-1.5">
-                            {laneTickets.map((ticket) => {
-                              const assignment = assignmentsByTicket.get(ticket.id);
-                              const nativeThread = assignment
-                                ? threadsById.get(assignment.threadId)
-                                : undefined;
-                              const archivedThread =
-                                assignment &&
-                                isWorkbenchThreadArchived(
-                                  assignment.threadId,
-                                  threadsById,
-                                  archivedThreadsById,
-                                )
-                                  ? archivedThreadsById.get(assignment.threadId)
+                          View Epic <ArrowRightIcon data-icon="inline-end" />
+                        </Button>
+                      ) : null}
+                    </header>
+                  ) : null}
+                  <CollapsiblePanel className="transition-none">
+                    <div className="grid min-w-0 grid-cols-1 gap-3 md:auto-cols-[minmax(18rem,1fr)] md:grid-flow-col md:grid-cols-none">
+                      {columns.map((column) => {
+                        const laneTickets = orderWorkbenchTicketsByJiraRank(
+                          column.tickets.filter((ticket) => laneTicketIds.has(ticket.id)),
+                          jiraIssueLinksByTicketId,
+                          activeJiraTicketIds,
+                        );
+                        return (
+                          <WorkbenchDropColumn
+                            key={column.id}
+                            id={JSON.stringify([swimlane.epic?.id ?? null, column.id])}
+                            label={`${column.title} Tickets`}
+                            statusId={column.id}
+                            disabled={
+                              dragDisabled ||
+                              (activeTicket !== undefined &&
+                                !canDrop(activeTicket, {
+                                  columnId: column.id,
+                                  status: column.status,
+                                  epicId: swimlane.epic?.id ?? null,
+                                }))
+                            }
+                            className={cn(
+                              "min-w-0 flex-col rounded-xl border border-foreground/6 bg-foreground/1 md:flex",
+                              column.id === visibleColumnId ? "flex" : "hidden",
+                            )}
+                          >
+                            <div className="flex min-h-0 flex-1 flex-col gap-2 p-1.5">
+                              {laneTickets.map((ticket) => {
+                                const assignment = assignmentsByTicket.get(ticket.id);
+                                const nativeThread = assignment
+                                  ? threadsById.get(assignment.threadId)
                                   : undefined;
-                              const nativeStatus = agentStatesByTicket.get(ticket.id) ?? null;
-                              const nativeThreadFailed = nativeThread?.session?.status === "error";
-                              const thread = getWorkbenchThreadPresentation(
-                                assignment !== undefined,
-                                nativeThread !== undefined,
-                                nativeStatus?.label ?? (nativeThreadFailed ? "Failed" : null),
-                                archivedThread !== undefined,
-                                threadLookupReady,
-                              );
-                              const threadActionPending =
-                                pendingAction === `start:${ticket.id}` ||
-                                (assignment !== undefined &&
-                                  pendingAction === `restore:${assignment.threadId}`);
-                              const repository = repositoriesById.get(ticket.primaryT3ProjectId);
-                              const additionalRepositoryCount =
-                                getWorkbenchTicketRepositoryProjectIds(ticket).length - 1;
-                              const epic = ticket.epicId ? epicsById.get(ticket.epicId) : undefined;
-                              const jiraIssueLink = jiraIssueLinksByTicketId.get(ticket.id);
-                              const summary = getWorkbenchTicketSummaryPresentation(
-                                ticket.generatedSummary,
-                              );
-                              return (
-                                <article
-                                  key={ticket.id}
-                                  className={`relative isolate w-full min-w-0 cursor-pointer rounded-lg border bg-foreground/3 p-3 transition-colors hover:bg-foreground/6 ${
-                                    selectedTicketId === ticket.id
-                                      ? "border-primary/50 ring-2 ring-primary/15"
-                                      : "border-foreground/12"
-                                  }`}
-                                >
-                                  <div className="flex items-start gap-2">
-                                    <button
-                                      className="min-w-0 flex-1 cursor-pointer text-left outline-none after:absolute after:inset-0 after:z-[1] after:rounded-lg after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring"
-                                      type="button"
-                                      onClick={() => onSelect(projectId, ticket.id)}
-                                    >
-                                      <Tooltip>
-                                        <TooltipTrigger
-                                          render={
-                                            <h3 className="line-clamp-3 min-w-0 break-words text-sm font-semibold leading-snug" />
-                                          }
-                                        >
-                                          {ticket.title}
-                                        </TooltipTrigger>
-                                        <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
-                                          {ticket.title}
-                                        </TooltipPopup>
-                                      </Tooltip>
-                                    </button>
-                                    <div className="relative z-10 flex min-w-0 shrink-0 items-center gap-1">
-                                      <WorkbenchTicketStatusMenu
-                                        key={`${environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
-                                        environmentId={environmentId}
-                                        ticket={ticket}
-                                        jiraIssueLink={jiraIssueLink ?? null}
-                                        disabled={pending || ticket.archivedAt != null}
-                                        onStatusChange={(status) => onMove(ticket, status)}
-                                        onJiraTransition={onJiraTransition}
-                                        trigger={
-                                          <Button
-                                            className="-mr-1 -mt-1 shrink-0"
-                                            size="icon-xs"
-                                            variant="ghost"
-                                          >
-                                            <MoreHorizontalIcon />
-                                          </Button>
-                                        }
-                                      >
-                                        <MenuItem
-                                          disabled={
-                                            pending ||
-                                            ticket.archivedAt != null ||
-                                            ticket.generatedSummary?.status === "pending"
-                                          }
-                                          onClick={() => onRegenerateSummary(ticket)}
-                                        >
-                                          {getWorkbenchTicketSummaryActionLabel(
-                                            ticket.generatedSummary,
-                                          )}
-                                        </MenuItem>
-                                      </WorkbenchTicketStatusMenu>
-                                    </div>
-                                  </div>
-                                  <div className="mt-2 flex min-w-0 flex-col gap-2 text-xs text-muted-foreground">
-                                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                                      {jiraIssueLink ? (
-                                        <WorkbenchJiraIssueKey
-                                          issue={jiraIssueLink.issue}
-                                          className="z-10"
-                                        />
-                                      ) : null}
-                                      <WorkbenchTicketKindBadge kind={ticket.kind} />
-                                      {groupMode === "none" && epic ? (
-                                        <Badge
-                                          className="min-w-0 max-w-full"
-                                          size="default"
-                                          variant="outline"
-                                        >
-                                          <Layers3Icon />
-                                          <span className="truncate">{epic.title}</span>
-                                        </Badge>
-                                      ) : null}
-                                      {jiraIssueLink?.issue.flagged ? (
-                                        <Badge size="default" variant="warning">
-                                          <CircleAlertIcon /> Jira flagged
-                                        </Badge>
-                                      ) : null}
-                                    </div>
-                                    <Tooltip>
-                                      <TooltipTrigger
-                                        render={
-                                          <button
-                                            type="button"
-                                            onClick={() => onSelect(projectId, ticket.id)}
-                                            aria-label={`Ticket summary: ${summary.text}`}
-                                            className="relative z-10 line-clamp-2 cursor-pointer break-words text-left text-xs text-foreground/80 outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
-                                            tabIndex={0}
-                                          />
-                                        }
-                                      >
-                                        {summary.text}
-                                      </TooltipTrigger>
-                                      <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
-                                        {summary.text}
-                                      </TooltipPopup>
-                                    </Tooltip>
-                                    {summary.statusLabel ? (
-                                      <p
-                                        className="text-[11px] text-muted-foreground"
-                                        role="status"
-                                      >
-                                        {summary.statusLabel}
-                                      </p>
-                                    ) : null}
-                                    <Tooltip>
-                                      <TooltipTrigger
-                                        render={
-                                          <button
-                                            type="button"
-                                            onClick={() => onSelect(projectId, ticket.id)}
-                                            className="relative z-10 flex min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                                          />
-                                        }
-                                      >
-                                        <FolderGit2Icon className="size-3.5 shrink-0" />
-                                        <span className="truncate">
-                                          {repository?.title ?? "Repository unavailable"}
-                                        </span>
-                                        {additionalRepositoryCount > 0 ? (
-                                          <span className="shrink-0">
-                                            +{additionalRepositoryCount}
-                                          </span>
-                                        ) : null}
-                                      </TooltipTrigger>
-                                      <TooltipPopup>
-                                        {getWorkbenchTicketRepositoryProjectIds(ticket)
-                                          .map(
-                                            (id) =>
-                                              repositoriesById.get(id)?.title ??
-                                              "Repository unavailable",
+                                const archivedThread =
+                                  assignment &&
+                                  isWorkbenchThreadArchived(
+                                    assignment.threadId,
+                                    threadsById,
+                                    archivedThreadsById,
+                                  )
+                                    ? archivedThreadsById.get(assignment.threadId)
+                                    : undefined;
+                                const nativeStatus = agentStatesByTicket.get(ticket.id) ?? null;
+                                const nativeThreadFailed =
+                                  nativeThread?.session?.status === "error";
+                                const thread = getWorkbenchThreadPresentation(
+                                  assignment !== undefined,
+                                  nativeThread !== undefined,
+                                  nativeStatus?.label ?? (nativeThreadFailed ? "Failed" : null),
+                                  archivedThread !== undefined,
+                                  threadLookupReady,
+                                );
+                                const threadActionPending =
+                                  pendingAction === `start:${ticket.id}` ||
+                                  (assignment !== undefined &&
+                                    pendingAction === `restore:${assignment.threadId}`);
+                                const repository = repositoriesById.get(ticket.primaryT3ProjectId);
+                                const additionalRepositoryCount =
+                                  getWorkbenchTicketRepositoryProjectIds(ticket).length - 1;
+                                const epic = ticket.epicId
+                                  ? epicsById.get(ticket.epicId)
+                                  : undefined;
+                                const jiraIssueLink = jiraIssueLinksByTicketId.get(ticket.id);
+                                const summary = getWorkbenchTicketSummaryPresentation(
+                                  ticket.generatedSummary,
+                                );
+                                return (
+                                  <WorkbenchDraggableTicket
+                                    key={ticket.id}
+                                    id={ticket.id}
+                                    disabled={
+                                      dragDisabled ||
+                                      pendingTicketIds.has(ticket.id) ||
+                                      ticket.archivedAt != null
+                                    }
+                                  >
+                                    {({ attributes, listeners, setActivatorNodeRef }) => (
+                                      <article
+                                        onMouseDown={(event) => {
+                                          if (
+                                            event.target instanceof Element &&
+                                            event.target.closest("a, [data-workbench-no-drag]")
                                           )
-                                          .join(", ")}
-                                      </TooltipPopup>
-                                    </Tooltip>
-                                  </div>
-                                  <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-2">
-                                    <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                                      {thread.state === "linked" || thread.state === "archived" ? (
-                                        <span
-                                          aria-hidden
-                                          className={`size-2 rounded-full ${
-                                            nativeStatus?.dotClass ??
-                                            (nativeThreadFailed
-                                              ? "bg-destructive"
-                                              : "bg-muted-foreground/60")
-                                          }`}
-                                        />
-                                      ) : (
-                                        <BotIcon className="size-3.5" />
-                                      )}
-                                      <span
-                                        className={
-                                          nativeStatus?.colorClass ??
-                                          (nativeThreadFailed ? "text-destructive" : undefined)
-                                        }
+                                            return;
+                                          listeners?.onMouseDown?.(event);
+                                        }}
+                                        className={`relative isolate w-full min-w-0 cursor-pointer rounded-lg border bg-foreground/3 p-3 transition-colors hover:bg-foreground/6 ${
+                                          selectedTicketId === ticket.id
+                                            ? "border-primary/50 ring-2 ring-primary/15"
+                                            : "border-foreground/12"
+                                        }`}
                                       >
-                                        {thread.stateLabel}
-                                      </span>
-                                      {(threadCounts.get(ticket.id) ?? 0) > 1 ? (
-                                        <span className="text-muted-foreground/60">
-                                          · {threadCounts.get(ticket.id)} Threads
-                                        </span>
-                                      ) : null}
-                                    </div>
-                                    <Button
-                                      className="relative z-10"
-                                      disabled={pending}
-                                      onClick={() => onOpenThread(ticket, assignment?.threadId)}
-                                      size="xs"
-                                      variant={
-                                        thread.state === "unassigned" || thread.state === "missing"
-                                          ? "default"
-                                          : "ghost"
-                                      }
-                                    >
-                                      {threadActionPending
-                                        ? thread.pendingActionLabel
-                                        : thread.actionLabel}
-                                      <ArrowRightIcon />
-                                    </Button>
-                                  </div>
-                                </article>
-                              );
-                            })}
-                            {laneTickets.length === 0 ? (
-                              <p
-                                className={cn(
-                                  "py-3 text-center text-xs text-muted-foreground",
-                                  groupMode === "epic" && "md:sr-only",
-                                )}
-                              >
-                                No tickets in {column.title}
-                              </p>
-                            ) : null}
-                          </div>
-                        </section>
-                      );
-                    })}
-                  </div>
-                </CollapsiblePanel>
-              </Collapsible>
-            );
-          })}
-        </div>
-      </div>
-
-      {tickets.length === 0 && !(groupMode === "epic" && epics.length > 0) ? (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/45 p-6 backdrop-blur-[1px]">
-          <div className="w-full max-w-sm rounded-xl border border-border bg-background shadow-lg/10">
-            <Empty className="min-h-72">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <LayoutDashboardIcon />
-                </EmptyMedia>
-                <EmptyTitle>Plan the first piece of work</EmptyTitle>
-                <EmptyDescription>
-                  Tickets keep delivery context, status, and the native Agent Thread connected.
-                </EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button onClick={onCreateTicket}>
-                  <PlusIcon /> Create Ticket
-                </Button>
-              </EmptyContent>
-            </Empty>
+                                        <div className="flex items-start gap-2">
+                                          <button
+                                            ref={setActivatorNodeRef}
+                                            {...(!dragDisabled &&
+                                            !pendingTicketIds.has(ticket.id) &&
+                                            ticket.archivedAt == null
+                                              ? attributes
+                                              : {})}
+                                            className={cn(
+                                              "min-w-0 flex-1 cursor-pointer text-left outline-none after:absolute after:inset-0 after:z-[1] after:rounded-lg after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring",
+                                              !dragDisabled &&
+                                                !pendingTicketIds.has(ticket.id) &&
+                                                ticket.archivedAt == null &&
+                                                "cursor-grab active:cursor-grabbing",
+                                            )}
+                                            type="button"
+                                            onClick={() => onSelect(projectId, ticket.id)}
+                                          >
+                                            <Tooltip>
+                                              <TooltipTrigger
+                                                render={
+                                                  <h3 className="line-clamp-3 min-w-0 break-words text-sm font-semibold leading-snug" />
+                                                }
+                                              >
+                                                {ticket.title}
+                                              </TooltipTrigger>
+                                              <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
+                                                {ticket.title}
+                                              </TooltipPopup>
+                                            </Tooltip>
+                                          </button>
+                                          <div
+                                            data-workbench-no-drag=""
+                                            className="relative z-10 flex min-w-0 shrink-0 items-center gap-1"
+                                          >
+                                            <WorkbenchTicketStatusMenu
+                                              key={`${environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
+                                              environmentId={environmentId}
+                                              ticket={ticket}
+                                              jiraIssueLink={jiraIssueLink ?? null}
+                                              disabled={
+                                                pending ||
+                                                pendingTicketIds.has(ticket.id) ||
+                                                ticket.archivedAt != null
+                                              }
+                                              onStatusChange={(status) => onMove(ticket, status)}
+                                              onJiraTransition={onJiraTransition}
+                                              trigger={
+                                                <Button
+                                                  className="-mr-1 -mt-1 shrink-0"
+                                                  size="icon-xs"
+                                                  variant="ghost"
+                                                >
+                                                  <MoreHorizontalIcon />
+                                                </Button>
+                                              }
+                                            >
+                                              <MenuItem
+                                                disabled={
+                                                  pending ||
+                                                  pendingTicketIds.has(ticket.id) ||
+                                                  ticket.archivedAt != null ||
+                                                  ticket.generatedSummary?.status === "pending"
+                                                }
+                                                onClick={() => onRegenerateSummary(ticket)}
+                                              >
+                                                {getWorkbenchTicketSummaryActionLabel(
+                                                  ticket.generatedSummary,
+                                                )}
+                                              </MenuItem>
+                                            </WorkbenchTicketStatusMenu>
+                                          </div>
+                                        </div>
+                                        <div className="mt-2 flex min-w-0 flex-col gap-2 text-xs text-muted-foreground">
+                                          {pendingTicketIds.has(ticket.id) ? (
+                                            <span role="status">Saving status…</span>
+                                          ) : null}
+                                          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                                            {jiraIssueLink ? (
+                                              <WorkbenchJiraIssueKey
+                                                issue={jiraIssueLink.issue}
+                                                className="z-10"
+                                              />
+                                            ) : null}
+                                            <WorkbenchTicketKindBadge kind={ticket.kind} />
+                                            {groupMode === "none" && epic ? (
+                                              <Badge
+                                                className="min-w-0 max-w-full"
+                                                size="default"
+                                                variant="outline"
+                                              >
+                                                <Layers3Icon />
+                                                <span className="truncate">{epic.title}</span>
+                                              </Badge>
+                                            ) : null}
+                                            {jiraIssueLink?.issue.flagged ? (
+                                              <Badge size="default" variant="warning">
+                                                <CircleAlertIcon /> Jira flagged
+                                              </Badge>
+                                            ) : null}
+                                          </div>
+                                          <Tooltip>
+                                            <TooltipTrigger
+                                              render={
+                                                <button
+                                                  type="button"
+                                                  onClick={() => onSelect(projectId, ticket.id)}
+                                                  aria-label={`Ticket summary: ${summary.text}`}
+                                                  className="relative z-10 line-clamp-2 cursor-pointer break-words text-left text-xs text-foreground/80 outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+                                                  tabIndex={0}
+                                                />
+                                              }
+                                            >
+                                              {summary.text}
+                                            </TooltipTrigger>
+                                            <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
+                                              {summary.text}
+                                            </TooltipPopup>
+                                          </Tooltip>
+                                          {summary.statusLabel ? (
+                                            <p
+                                              className="text-[11px] text-muted-foreground"
+                                              role="status"
+                                            >
+                                              {summary.statusLabel}
+                                            </p>
+                                          ) : null}
+                                          <Tooltip>
+                                            <TooltipTrigger
+                                              render={
+                                                <button
+                                                  type="button"
+                                                  onClick={() => onSelect(projectId, ticket.id)}
+                                                  className="relative z-10 flex min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                                />
+                                              }
+                                            >
+                                              <FolderGit2Icon className="size-3.5 shrink-0" />
+                                              <span className="truncate">
+                                                {repository?.title ?? "Repository unavailable"}
+                                              </span>
+                                              {additionalRepositoryCount > 0 ? (
+                                                <span className="shrink-0">
+                                                  +{additionalRepositoryCount}
+                                                </span>
+                                              ) : null}
+                                            </TooltipTrigger>
+                                            <TooltipPopup>
+                                              {getWorkbenchTicketRepositoryProjectIds(ticket)
+                                                .map(
+                                                  (id) =>
+                                                    repositoriesById.get(id)?.title ??
+                                                    "Repository unavailable",
+                                                )
+                                                .join(", ")}
+                                            </TooltipPopup>
+                                          </Tooltip>
+                                        </div>
+                                        <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-2">
+                                          <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                                            {thread.state === "linked" ||
+                                            thread.state === "archived" ? (
+                                              <span
+                                                aria-hidden
+                                                className={`size-2 rounded-full ${
+                                                  nativeStatus?.dotClass ??
+                                                  (nativeThreadFailed
+                                                    ? "bg-destructive"
+                                                    : "bg-muted-foreground/60")
+                                                }`}
+                                              />
+                                            ) : (
+                                              <BotIcon className="size-3.5" />
+                                            )}
+                                            <span
+                                              className={
+                                                nativeStatus?.colorClass ??
+                                                (nativeThreadFailed
+                                                  ? "text-destructive"
+                                                  : undefined)
+                                              }
+                                            >
+                                              {thread.stateLabel}
+                                            </span>
+                                            {(threadCounts.get(ticket.id) ?? 0) > 1 ? (
+                                              <span className="text-muted-foreground/60">
+                                                · {threadCounts.get(ticket.id)} Threads
+                                              </span>
+                                            ) : null}
+                                          </div>
+                                          <Button
+                                            data-workbench-no-drag=""
+                                            className="relative z-10"
+                                            disabled={pending || pendingTicketIds.has(ticket.id)}
+                                            onClick={() =>
+                                              onOpenThread(ticket, assignment?.threadId)
+                                            }
+                                            size="xs"
+                                            variant={
+                                              thread.state === "unassigned" ||
+                                              thread.state === "missing"
+                                                ? "default"
+                                                : "ghost"
+                                            }
+                                          >
+                                            {threadActionPending
+                                              ? thread.pendingActionLabel
+                                              : thread.actionLabel}
+                                            <ArrowRightIcon />
+                                          </Button>
+                                        </div>
+                                      </article>
+                                    )}
+                                  </WorkbenchDraggableTicket>
+                                );
+                              })}
+                              {laneTickets.length === 0 ? (
+                                <p
+                                  className={cn(
+                                    "py-3 text-center text-xs text-muted-foreground",
+                                    groupMode === "epic" && "md:sr-only",
+                                  )}
+                                >
+                                  No tickets in {column.title}
+                                </p>
+                              ) : null}
+                            </div>
+                          </WorkbenchDropColumn>
+                        );
+                      })}
+                    </div>
+                  </CollapsiblePanel>
+                </Collapsible>
+              );
+            })}
           </div>
         </div>
+
+        {tickets.length === 0 && !(groupMode === "epic" && epics.length > 0) ? (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/45 p-6 backdrop-blur-[1px]">
+            <div className="w-full max-w-sm rounded-xl border border-border bg-background shadow-lg/10">
+              <Empty className="min-h-72">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <LayoutDashboardIcon />
+                  </EmptyMedia>
+                  <EmptyTitle>Plan the first piece of work</EmptyTitle>
+                  <EmptyDescription>
+                    Tickets keep delivery context, status, and the native Agent Thread connected.
+                  </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button onClick={onCreateTicket}>
+                    <PlusIcon /> Create Ticket
+                  </Button>
+                </EmptyContent>
+              </Empty>
+            </div>
+          </div>
+        ) : null}
+      </section>
+      <DragOverlay dropAnimation={null}>
+        {activeTicket ? (
+          <div className="max-w-sm cursor-grabbing rounded-lg border border-primary/50 bg-background p-3 shadow-lg">
+            <p className="line-clamp-3 text-sm font-semibold">{activeTicket.title}</p>
+          </div>
+        ) : null}
+      </DragOverlay>
+      {jiraDropTicket && jiraDropLink && jiraDropColumn ? (
+        <WorkbenchJiraDropDialog
+          key={`${jiraDropTicket.id}:${jiraDropColumn.id}:${jiraDropLink.issue.remoteUpdatedAt}`}
+          environmentId={environmentId}
+          ticket={jiraDropTicket}
+          jiraIssueLink={jiraDropLink}
+          columnTitle={jiraDropColumn.title}
+          jiraStatusIds={getWorkbenchBoardDropJiraStatusIds({
+            columnId: jiraDropColumn.id,
+            status: jiraDropColumn.status,
+            mirrorColumns,
+            statusMappings: jiraStatusMappings,
+          })}
+          onTransition={onJiraTransition}
+          onClose={() => setJiraDrop(null)}
+        />
       ) : null}
-    </section>
+    </DndContext>
   );
 }
