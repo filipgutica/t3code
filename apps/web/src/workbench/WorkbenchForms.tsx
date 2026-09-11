@@ -1,8 +1,10 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { useAtomValue } from "@effect/atom-react";
 import {
   EnvironmentId,
   type EditorId,
   ProjectId,
+  type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
   type ThreadId,
   type WorkbenchAssignment,
@@ -39,6 +41,9 @@ import {
 } from "./WorkbenchTicketStatusMenu";
 
 import { resolveThreadStatusPill } from "../components/Sidebar.logic";
+import { PROVIDER_ICON_BY_PROVIDER } from "../components/chat/providerIconUtils";
+import { deriveProviderInstanceEntries } from "../providerInstances";
+import { serverEnvironment } from "../state/server";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { isElectron } from "../env";
 
@@ -71,6 +76,7 @@ import {
   Select,
   SelectItem,
   SelectPopup,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
@@ -107,17 +113,20 @@ import {
   WorkbenchCheckoutDetails,
   WorkbenchThreadCheckoutDetails,
 } from "./WorkbenchCheckoutDetails";
+import { WorkbenchJiraIssueKey, WorkbenchTicketKindBadge } from "./WorkbenchTicketMetadata";
 import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
 import { WorkbenchTicketPullRequests } from "./WorkbenchTicketPullRequests";
 import { resolveWorkbenchTicketContent } from "./workbenchJira.logic";
 import { getWorkbenchTicketPullRequests } from "./workbenchPullRequests.logic";
 
 const NO_EPIC_VALUE = "__workbench_no_epic__";
+const CREATE_EPIC_VALUE = "__workbench_create_epic__";
 
 export function WorkbenchEpicDetail({
   workspaceTitle,
   epic,
-  jiraManagedTitle,
+  jiraManaged,
+  jiraUrl,
   tickets,
   repositoriesById,
   assignmentsByTicket,
@@ -131,7 +140,8 @@ export function WorkbenchEpicDetail({
 }: {
   readonly workspaceTitle: string;
   readonly epic: WorkbenchEpic;
-  readonly jiraManagedTitle: boolean;
+  readonly jiraManaged: boolean;
+  readonly jiraUrl: string | null;
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
   readonly repositoriesById: ReadonlyMap<Project["id"], Project>;
   readonly assignmentsByTicket: ReadonlyMap<WorkbenchTicket["id"], WorkbenchAssignment>;
@@ -177,6 +187,17 @@ export function WorkbenchEpicDetail({
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <Badge variant="secondary">Epic</Badge>
+              {jiraUrl ? (
+                <a
+                  href={jiraUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <WorkbenchJiraIcon className="size-3.5" /> Open in Jira
+                  <ExternalLinkIcon aria-hidden className="size-3" />
+                </a>
+              ) : null}
               <Badge variant="outline">
                 {progress.completed} of {progress.total} done
               </Badge>
@@ -187,6 +208,12 @@ export function WorkbenchEpicDetail({
               ) : null}
               {epic.archivedAt ? <Badge variant="outline">Archived</Badge> : null}
             </div>
+            {jiraManaged ? (
+              <p className="mt-2 max-w-2xl text-xs text-muted-foreground">
+                Jira imports only tickets assigned to you in the selected sprints. Counts and
+                progress reflect the tickets shown here, not the whole Jira epic.
+              </p>
+            ) : null}
           </div>
           <Button disabled={pending || epic.archivedAt !== null} onClick={onCreateTicket} size="sm">
             <PlusIcon /> New Ticket
@@ -203,10 +230,16 @@ export function WorkbenchEpicDetail({
                 <div>
                   <h2 className="text-sm font-semibold">Description</h2>
                   <p className="text-xs text-muted-foreground">
-                    Outcome and scope shared by the child Tickets.
+                    {jiraManaged
+                      ? "Synced from Jira. Edit the description in Jira, then refresh the board."
+                      : "Outcome and scope shared by the child Tickets."}
                   </p>
                 </div>
-                {!editing ? (
+                {jiraManaged ? (
+                  <Badge size="default" variant="outline">
+                    Managed by Jira
+                  </Badge>
+                ) : !editing ? (
                   <Button
                     disabled={pending || epic.archivedAt !== null}
                     onClick={startEditing}
@@ -218,12 +251,12 @@ export function WorkbenchEpicDetail({
                   </Button>
                 ) : null}
               </div>
-              {editing ? (
+              {editing && !jiraManaged ? (
                 <form
                   className="min-w-0 space-y-4 p-4"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    const normalizedTitle = jiraManagedTitle ? epic.title : title.trim();
+                    const normalizedTitle = title.trim();
                     if (normalizedTitle.length === 0) return;
                     void (async () => {
                       if (!(await onSave(epic, normalizedTitle, markdown.trim()))) return;
@@ -234,30 +267,18 @@ export function WorkbenchEpicDetail({
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
                       <Label htmlFor="edit-workbench-epic-title">Title</Label>
-                      {jiraManagedTitle ? (
-                        <Badge size="sm" variant="outline">
-                          Managed by Jira
-                        </Badge>
-                      ) : null}
                     </div>
                     <Input
                       id="edit-workbench-epic-title"
-                      autoFocus={!jiraManagedTitle}
-                      disabled={jiraManagedTitle}
+                      autoFocus
                       value={title}
                       onChange={(event) => setTitle(event.currentTarget.value)}
                     />
-                    {jiraManagedTitle ? (
-                      <p className="text-xs text-muted-foreground">
-                        Jira keeps the Epic title in sync. The local description remains editable.
-                      </p>
-                    ) : null}
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="edit-workbench-epic-description">Description</Label>
                     <Textarea
                       id="edit-workbench-epic-description"
-                      autoFocus={jiraManagedTitle}
                       className="min-h-48"
                       placeholder="Context, scope, and intended outcome…"
                       value={markdown}
@@ -276,9 +297,8 @@ export function WorkbenchEpicDetail({
                     <Button
                       disabled={
                         pending ||
-                        (!jiraManagedTitle && title.trim().length === 0) ||
-                        ((jiraManagedTitle || title.trim() === epic.title) &&
-                          markdown.trim() === epic.markdown)
+                        title.trim().length === 0 ||
+                        (title.trim() === epic.title && markdown.trim() === epic.markdown)
                       }
                       type="submit"
                     >
@@ -298,7 +318,9 @@ export function WorkbenchEpicDetail({
                 <div>
                   <h2 className="text-sm font-semibold">Child Tickets</h2>
                   <p className="text-xs text-muted-foreground">
-                    Stories and bugs that deliver this Epic.
+                    {jiraManaged
+                      ? "Your imported work for this epic, plus any tickets added in Workbench."
+                      : "Stories and bugs that deliver this Epic."}
                   </p>
                 </div>
                 <Button
@@ -314,7 +336,7 @@ export function WorkbenchEpicDetail({
               <div className="px-4 py-3">
                 <div className="flex items-center gap-3">
                   <div
-                    aria-label={`${progress.percent}% of Epic Tickets complete`}
+                    aria-label={`${progress.percent}% of ${jiraManaged ? "shown" : "Epic"} Tickets complete`}
                     aria-valuemax={100}
                     aria-valuemin={0}
                     aria-valuenow={progress.percent}
@@ -340,39 +362,23 @@ export function WorkbenchEpicDetail({
                     return (
                       <div
                         key={ticket.id}
-                        className="relative grid min-w-0 w-full gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/45 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                        className="relative isolate grid min-w-0 w-full cursor-pointer gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/45 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                       >
                         <span className="min-w-0">
-                          <span className="flex min-w-0 items-center gap-2">
-                            <Badge size="sm" variant="secondary">
-                              {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
-                            </Badge>
+                          <span className="flex min-w-0 flex-wrap items-center gap-2">
+                            <WorkbenchTicketKindBadge kind={ticket.kind} />
                             {jiraIssueLink ? (
-                              <Badge
-                                aria-label={`Open Jira issue ${jiraIssueLink.issue.key}`}
-                                render={
-                                  <a
-                                    href={jiraIssueLink.issue.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  />
-                                }
-                                className="relative z-10 shrink-0"
-                                size="sm"
-                                title={`Jira issue ${jiraIssueLink.issue.key}`}
-                                variant="outline"
-                              >
-                                <WorkbenchJiraIcon className="size-3" />
-                                <span>{jiraIssueLink.issue.key}</span>
-                              </Badge>
+                              <WorkbenchJiraIssueKey issue={jiraIssueLink.issue} className="z-10" />
                             ) : null}
+                          </span>
+                          <span className="mt-1 block min-w-0">
                             <Tooltip>
                               <TooltipTrigger
                                 render={
                                   <button
                                     type="button"
                                     onClick={() => onOpenTicket(ticket)}
-                                    className="min-w-0 truncate text-left text-sm font-medium outline-none after:absolute after:inset-0 after:content-[''] focus-visible:ring-2 focus-visible:ring-ring"
+                                    className="min-w-0 cursor-pointer truncate text-left text-sm font-medium outline-none after:absolute after:inset-0 after:z-[1] after:content-[''] focus-visible:ring-2 focus-visible:ring-ring"
                                   />
                                 }
                               >
@@ -390,11 +396,11 @@ export function WorkbenchEpicDetail({
                         </span>
                         <span className="flex items-center gap-2">
                           {jiraIssueLink?.issue.flagged ? (
-                            <Badge size="sm" variant="warning">
+                            <Badge size="default" variant="warning">
                               Jira flagged
                             </Badge>
                           ) : null}
-                          <Badge size="sm" variant="outline">
+                          <Badge size="default" variant="outline">
                             {jiraIssueLink?.issue.status.name ??
                               WORKBENCH_TICKET_STATUS_LABELS[ticket.status]}
                           </Badge>
@@ -421,11 +427,25 @@ export function WorkbenchEpicDetail({
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-4 p-4 text-sm">
                 <dt className="text-muted-foreground">Type</dt>
                 <dd className="text-right font-medium">Epic</dd>
-                <dt className="text-muted-foreground">Progress</dt>
+                <dt className="text-muted-foreground">
+                  {jiraManaged ? "Shown progress" : "Progress"}
+                </dt>
                 <dd className="text-right font-medium">{progress.percent}% done</dd>
-                <dt className="text-muted-foreground">Child Tickets</dt>
+                <dt className="text-muted-foreground">
+                  {jiraManaged ? "Shown tickets" : "Child Tickets"}
+                </dt>
                 <dd className="text-right font-medium">{progress.total}</dd>
-                <dt className="text-muted-foreground">Jira flagged</dt>
+                <dt className="text-muted-foreground">
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="cursor-help" />}>
+                      Flagged child tickets
+                    </TooltipTrigger>
+                    <TooltipPopup className="max-w-72">
+                      Child tickets marked as flagged in Jira, based on the latest sync. This is not
+                      a flag on the Epic itself.
+                    </TooltipPopup>
+                  </Tooltip>
+                </dt>
                 <dd className="text-right font-medium">{blockedCount}</dd>
               </dl>
             </section>
@@ -613,8 +633,13 @@ export function WorkbenchEpicDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogPopup>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!pending) handleOpenChange(nextOpen);
+      }}
+    >
+      <DialogPopup showCloseButton={!pending}>
         <DialogHeader>
           <DialogTitle>Create Epic</DialogTitle>
           <DialogDescription>
@@ -647,7 +672,7 @@ export function WorkbenchEpicDialog({
           </form>
         </DialogPanel>
         <DialogFooter>
-          <Button onClick={() => handleOpenChange(false)} variant="outline">
+          <Button disabled={pending} onClick={() => handleOpenChange(false)} variant="outline">
             Cancel
           </Button>
           <Button
@@ -664,6 +689,7 @@ export function WorkbenchEpicDialog({
 }
 
 export function WorkbenchTicketDialog({
+  onCreateEpic,
   open,
   linkedProjects,
   epics,
@@ -677,6 +703,7 @@ export function WorkbenchTicketDialog({
   readonly linkedProjects: ReadonlyArray<Project>;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
   readonly initialEpicId: WorkbenchEpicId | null;
+  readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
   readonly pending: boolean;
   readonly error: string | null;
   readonly onOpenChange: (open: boolean) => void;
@@ -788,10 +815,15 @@ export function WorkbenchTicketDialog({
             <div className="space-y-1.5">
               <Label>Epic</Label>
               <Select
+                disabled={pending}
                 value={epicId ?? NO_EPIC_VALUE}
-                onValueChange={(value) =>
-                  setEpicId(!value || value === NO_EPIC_VALUE ? null : WorkbenchEpicId.make(value))
-                }
+                onValueChange={(value) => {
+                  if (value === CREATE_EPIC_VALUE) {
+                    onCreateEpic(setEpicId);
+                    return;
+                  }
+                  setEpicId(!value || value === NO_EPIC_VALUE ? null : WorkbenchEpicId.make(value));
+                }}
               >
                 <SelectTrigger aria-label="Epic">
                   <SelectValue>
@@ -805,6 +837,8 @@ export function WorkbenchTicketDialog({
                       {epic.title}
                     </SelectItem>
                   ))}
+                  <SelectSeparator />
+                  <SelectItem value={CREATE_EPIC_VALUE}>Create Epic…</SelectItem>
                 </SelectPopup>
               </Select>
             </div>
@@ -944,6 +978,7 @@ export function WorkbenchTicketDetail({
   onUpdate,
   onJiraTransition,
   onOpenEpic,
+  onCreateEpic,
   onOpenThread,
   onOpenAssignedThread,
   onNewThread,
@@ -1000,6 +1035,7 @@ export function WorkbenchTicketDetail({
   ) => void;
   readonly onJiraTransition: (selection: WorkbenchJiraTransitionSelection) => void;
   readonly onOpenEpic: (epicId: WorkbenchEpicId) => void;
+  readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
   readonly onOpenThread: (ticket: WorkbenchTicket, threadId?: ThreadId) => void;
   readonly onOpenAssignedThread: (threadId: ThreadId) => void;
   readonly onNewThread: (ticket: WorkbenchTicket) => void;
@@ -1023,6 +1059,12 @@ export function WorkbenchTicketDetail({
   const setDraft = useWorkbenchDraftStore((state) => state.setDraft);
   const markDraftSaved = useWorkbenchDraftStore((state) => state.markDraftSaved);
   const clearDraft = useWorkbenchDraftStore((state) => state.clearDraft);
+  const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
+  const providerEntries = deriveProviderInstanceEntries(providers ?? []);
+  const threadProviderKind = (thread: EnvironmentThreadShell | undefined) => {
+    const instanceId = thread?.session?.providerInstanceId ?? thread?.modelSelection.instanceId;
+    return providerEntries.find((entry) => entry.instanceId === instanceId)?.driverKind;
+  };
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const [resetConfirmationOpen, setResetConfirmationOpen] = useState(false);
   const [summaryPanelCollapsed, setSummaryPanelCollapsed] = useState(false);
@@ -1184,22 +1226,8 @@ export function WorkbenchTicketDetail({
               {displayedTitle.trim() || ticket.title}
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">{WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}</Badge>
-              {jiraIssueLink ? (
-                <Button
-                  aria-label={`Open Jira issue ${jiraIssueLink.issue.key}`}
-                  render={
-                    <a href={jiraIssueLink.issue.url} rel="noopener noreferrer" target="_blank" />
-                  }
-                  size="xs"
-                  title={`Open ${jiraIssueLink.issue.key} in Jira`}
-                  variant="outline"
-                >
-                  <WorkbenchJiraIcon className="size-3.5" />
-                  <span>{jiraIssueLink.issue.key}</span>
-                  <ExternalLinkIcon />
-                </Button>
-              ) : null}
+              <WorkbenchTicketKindBadge kind={ticket.kind} />
+              {jiraIssueLink ? <WorkbenchJiraIssueKey issue={jiraIssueLink.issue} /> : null}
               {isArchived ? <Badge variant="outline">Archived</Badge> : null}
               <WorkbenchTicketStatusMenu
                 key={`${environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
@@ -1489,9 +1517,9 @@ export function WorkbenchTicketDetail({
             </section>
           </div>
 
-          <aside className="min-w-0 space-y-4 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
+          <aside className="min-w-0 space-y-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
             <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
-              <div className="flex items-start justify-between gap-3 border-b border-border/50 px-4 py-3">
+              <div className="flex items-start justify-between gap-3 border-b border-border/50 px-3 py-2.5">
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold">Agent Threads</h2>
                   <p className="text-xs text-muted-foreground">
@@ -1516,9 +1544,10 @@ export function WorkbenchTicketDetail({
               {!threadPanelCollapsed ? (
                 <div id="workbench-ticket-agent-threads" className="min-h-0">
                   {canOpenThread ? (
-                    <div className="border-b border-border/60 px-4 py-3">
+                    <div className="border-b border-border/60 px-3 py-2.5">
                       <div className="relative isolate flex min-w-0 flex-wrap items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45 [&>button:not(:first-child)]:relative [&>button:not(:first-child)]:z-10">
                         <WorkbenchThreadOpenButton
+                          providerKind={threadProviderKind(displayedThread)}
                           ariaLabel={`${
                             threadActionPending ? thread.pendingActionLabel : thread.actionLabel
                           } for ${displayedTitle}`}
@@ -1566,12 +1595,12 @@ export function WorkbenchTicketDetail({
                       </div>
                     </div>
                   ) : (
-                    <p className="p-4 text-sm text-muted-foreground">
+                    <p className="p-3 text-sm text-muted-foreground">
                       This archived Ticket has no Thread.
                     </p>
                   )}
                   {activeAssignments.length > 1 ? (
-                    <div className="border-t border-border px-4 py-3">
+                    <div className="border-t border-border px-3 py-2.5">
                       <p className="mb-2 text-xs font-medium text-muted-foreground">
                         Other active Threads
                       </p>
@@ -1618,6 +1647,7 @@ export function WorkbenchTicketDetail({
                                 className="relative isolate flex min-w-0 flex-wrap items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45 [&>button:not(:first-child)]:relative [&>button:not(:first-child)]:z-10"
                               >
                                 <WorkbenchThreadOpenButton
+                                  providerKind={threadProviderKind(displayedActiveThread)}
                                   ariaLabel={`${activeThreadState} ${displayedActiveThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…")}`}
                                   disabled={pending || displayedActiveThread === undefined}
                                   modelLabel={activeThreadModel}
@@ -1679,7 +1709,7 @@ export function WorkbenchTicketDetail({
                       </div>
                     </div>
                   ) : null}
-                  <div className="flex flex-wrap gap-2 border-t border-border px-4 py-3">
+                  <div className="flex flex-wrap gap-2 border-t border-border px-3 py-2.5">
                     <Button
                       disabled={pending || isArchived}
                       onClick={() => onNewThread(ticket)}
@@ -1700,7 +1730,7 @@ export function WorkbenchTicketDetail({
                     </Button>
                   </div>
                   {historicalAssignments.length > 0 ? (
-                    <div className="border-t border-border px-4 py-3">
+                    <div className="border-t border-border px-3 py-2.5">
                       <p className="mb-2 text-xs font-medium text-muted-foreground">
                         Thread history
                       </p>
@@ -1736,6 +1766,7 @@ export function WorkbenchTicketDetail({
                               className="relative isolate flex min-w-0 flex-wrap items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45 [&>button:not(:first-child)]:relative [&>button:not(:first-child)]:z-10"
                             >
                               <WorkbenchThreadOpenButton
+                                providerKind={threadProviderKind(displayedHistoricalThread)}
                                 ariaLabel={`${displayedHistoricalThread ? "Open" : "Checking"} ${displayedHistoricalThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…")}`}
                                 disabled={pending || !displayedHistoricalThread}
                                 modelLabel={
@@ -1809,12 +1840,12 @@ export function WorkbenchTicketDetail({
             />
 
             <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
-              <div className="flex items-start justify-between gap-3 border-b border-border/50 px-4 py-3">
+              <div className="flex items-start justify-between gap-3 border-b border-border/50 px-3 py-2.5">
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold">Details</h2>
                 </div>
                 {jiraFieldsManaged ? (
-                  <Badge size="sm" variant="outline">
+                  <Badge size="default" variant="outline">
                     Managed by Jira
                   </Badge>
                 ) : null}
@@ -1838,7 +1869,7 @@ export function WorkbenchTicketDetail({
               {!detailsPanelCollapsed ? (
                 <div id="workbench-ticket-details" className="min-h-0">
                   {jiraFieldsManaged ? (
-                    <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-3 p-4 text-sm">
+                    <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 p-3 text-sm">
                       <dt className="text-muted-foreground">Type</dt>
                       <dd className="min-w-0 break-words text-right font-medium [overflow-wrap:anywhere]">
                         {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
@@ -1861,7 +1892,7 @@ export function WorkbenchTicketDetail({
                       </dd>
                     </dl>
                   ) : (
-                    <div className="space-y-4 p-4">
+                    <div className="space-y-3 p-3">
                       <div className="space-y-1.5">
                         <Label>Ticket type</Label>
                         <Select
@@ -1901,14 +1932,18 @@ export function WorkbenchTicketDetail({
                         <Select
                           disabled={pending || isArchived}
                           value={ticket.epicId ?? NO_EPIC_VALUE}
-                          onValueChange={(value) =>
+                          onValueChange={(value) => {
+                            if (value === CREATE_EPIC_VALUE) {
+                              onCreateEpic((epicId) => onUpdate(actionableTicket, { epicId }));
+                              return;
+                            }
                             onUpdate(actionableTicket, {
                               epicId:
                                 !value || value === NO_EPIC_VALUE
                                   ? null
                                   : WorkbenchEpicId.make(value),
-                            })
-                          }
+                            });
+                          }}
                         >
                           <SelectTrigger aria-label="Epic">
                             <SelectValue>
@@ -1927,6 +1962,8 @@ export function WorkbenchTicketDetail({
                                 {epic.archivedAt !== null ? " (Archived)" : ""}
                               </SelectItem>
                             ))}
+                            <SelectSeparator />
+                            <SelectItem value={CREATE_EPIC_VALUE}>Create Epic…</SelectItem>
                           </SelectPopup>
                         </Select>
                       </div>
@@ -1937,7 +1974,7 @@ export function WorkbenchTicketDetail({
             </section>
 
             <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
-              <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
+              <div className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2.5">
                 <h2 className="text-sm font-semibold">Repository scope</h2>
                 <Button
                   aria-controls="workbench-ticket-repositories"
@@ -1956,7 +1993,7 @@ export function WorkbenchTicketDetail({
                 </Button>
               </div>
               {!repositoryScopePanelCollapsed ? (
-                <div id="workbench-ticket-repositories" className="space-y-4 p-4">
+                <div id="workbench-ticket-repositories" className="space-y-3 p-3">
                   <div className="flex min-w-0 items-start gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="space-y-1">
@@ -1964,7 +2001,7 @@ export function WorkbenchTicketDetail({
                           return (
                             <div
                               key={id}
-                              className="flex min-w-0 flex-wrap items-center gap-2 py-1.5 text-sm"
+                              className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 py-1 text-sm"
                             >
                               <div className="min-w-0 flex-1">
                                 <div className="flex min-w-0 items-center gap-1.5">
@@ -1992,7 +2029,7 @@ export function WorkbenchTicketDetail({
                                     </span>
                                   )}
                                   {id === ticket.primaryT3ProjectId ? (
-                                    <Badge size="sm" variant="outline">
+                                    <Badge size="default" variant="outline">
                                       Primary
                                     </Badge>
                                   ) : null}
@@ -2345,6 +2382,7 @@ function WorkbenchThreadOpenButton({
   disabled,
   modelLabel,
   onClick,
+  providerKind,
   recencyLabel,
   stateLabel,
   statusDotClassName,
@@ -2354,11 +2392,13 @@ function WorkbenchThreadOpenButton({
   readonly disabled: boolean;
   readonly modelLabel: string | null;
   readonly onClick: () => void;
+  readonly providerKind: ProviderDriverKind | undefined;
   readonly recencyLabel: string | null;
   readonly stateLabel: string;
   readonly statusDotClassName: string | undefined;
   readonly title: string;
 }) {
+  const ThreadIcon = (providerKind && PROVIDER_ICON_BY_PROVIDER[providerKind]) || BotIcon;
   return (
     <button
       aria-label={ariaLabel}
@@ -2368,13 +2408,10 @@ function WorkbenchThreadOpenButton({
       type="button"
     >
       <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted">
-        <BotIcon className="size-3.5 text-muted-foreground" />
+        <ThreadIcon aria-hidden className="size-4 text-muted-foreground" />
       </span>
       <span className="min-w-0 flex-1">
-        <WorkbenchThreadTitle
-          className="relative z-10 line-clamp-2 break-words font-medium [overflow-wrap:anywhere]"
-          title={title}
-        />
+        <WorkbenchThreadTitle className="relative z-10 block truncate font-medium" title={title} />
         <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
           {statusDotClassName ? (
             <span aria-hidden className={`size-2 shrink-0 rounded-full ${statusDotClassName}`} />

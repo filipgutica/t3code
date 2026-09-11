@@ -7,6 +7,8 @@ import {
   type WorkbenchJiraIssueSnapshot,
   type WorkbenchTicketStatus,
   type WorkbenchTicket,
+  type WorkbenchEpic,
+  type WorkbenchJiraEpicReference,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -138,11 +140,12 @@ export const layer = Layer.effect(
       function* (input: {
         readonly epicId: WorkbenchEpicId;
         readonly title: string;
+        readonly markdown: string;
         readonly updatedAt: string;
       }) {
         const updated = yield* sql<{ readonly epicId: string }>`
           UPDATE workbench_epics
-          SET title = ${input.title}, updated_at = MAX(updated_at, ${input.updatedAt})
+          SET title = ${input.title}, markdown = ${input.markdown}, updated_at = MAX(updated_at, ${input.updatedAt})
           WHERE epic_id = ${input.epicId} AND archived_at IS NULL
           RETURNING epic_id AS "epicId"
         `;
@@ -157,6 +160,52 @@ export const layer = Layer.effect(
         return yield* workbench.updateJiraTicketFields(input);
       },
     );
+
+    const upsertEpic = Effect.fn("JiraTicketImporter.upsertEpic")(function* ({
+      input,
+      epic,
+      epics,
+    }: {
+      input: JiraTicketImportInput;
+      epic: WorkbenchJiraEpicReference;
+      epics: ReadonlyArray<WorkbenchEpic>;
+    }) {
+      const epicTitle = normalizeJiraTitle(epic.summary);
+      const epicDescription = epic.description;
+      if (epicDescription !== undefined && epicDescription.length > WORKBENCH_MARKDOWN_MAX_LENGTH) {
+        return yield* importError(
+          `Jira Epic ${epic.key} description exceeds Workbench's ${WORKBENCH_MARKDOWN_MAX_LENGTH} character limit. Shorten it in Jira, then sync again.`,
+        );
+      }
+      const proposedEpicId = jiraEpicId(input.binding.id, epic.id);
+      const existingEpic = epics.find((epic) => epic.id === proposedEpicId);
+      if (existingEpic === undefined) {
+        yield* workbench
+          .createEpic({
+            id: proposedEpicId,
+            projectId: input.binding.projectId,
+            title: epicTitle,
+            markdown: epicDescription ?? "",
+            createdAt: input.issue.remoteUpdatedAt ?? input.binding.updatedAt,
+          })
+          .pipe(Effect.mapError(() => importError("A Jira Epic could not be created.")));
+        return proposedEpicId;
+      } else if (existingEpic.archivedAt === null) {
+        if (
+          existingEpic.title !== epicTitle ||
+          (epicDescription !== undefined && existingEpic.markdown !== epicDescription)
+        ) {
+          yield* updateJiraOwnedEpicFields({
+            epicId: existingEpic.id,
+            title: epicTitle,
+            markdown: epicDescription ?? existingEpic.markdown,
+            updatedAt: input.issue.remoteUpdatedAt ?? input.binding.updatedAt,
+          }).pipe(Effect.mapError(() => importError("A Jira Epic could not be updated.")));
+        }
+        return proposedEpicId;
+      }
+      return null;
+    });
 
     return JiraTicketImporter.of({
       upsertJiraProjection: (input) =>
@@ -173,30 +222,7 @@ export const layer = Layer.effect(
           );
           let epicId: WorkbenchEpicId | null = null;
           if (input.issue.epic !== null) {
-            const epicTitle = normalizeJiraTitle(input.issue.epic.summary);
-            const proposedEpicId = jiraEpicId(input.binding.id, input.issue.epic.id);
-            const existingEpic = snapshot.epics.find((epic) => epic.id === proposedEpicId);
-            if (existingEpic === undefined) {
-              yield* workbench
-                .createEpic({
-                  id: proposedEpicId,
-                  projectId: input.binding.projectId,
-                  title: epicTitle,
-                  markdown: "",
-                  createdAt: input.issue.remoteUpdatedAt ?? input.binding.updatedAt,
-                })
-                .pipe(Effect.mapError(() => importError("A Jira Epic could not be created.")));
-              epicId = proposedEpicId;
-            } else if (existingEpic.archivedAt === null) {
-              epicId = proposedEpicId;
-              if (existingEpic.title !== epicTitle) {
-                yield* updateJiraOwnedEpicFields({
-                  epicId: existingEpic.id,
-                  title: epicTitle,
-                  updatedAt: input.issue.remoteUpdatedAt ?? input.binding.updatedAt,
-                }).pipe(Effect.mapError(() => importError("A Jira Epic could not be updated.")));
-              }
-            }
+            epicId = yield* upsertEpic({ input, epic: input.issue.epic, epics: snapshot.epics });
             snapshot = yield* workbench.getSnapshot.pipe(
               Effect.mapError(() =>
                 importError("Workbench data could not be refreshed for Jira sync."),

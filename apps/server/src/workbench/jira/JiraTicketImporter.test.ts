@@ -123,7 +123,12 @@ describe("JiraTicketImporter", () => {
           description: "Shared Jira description used by the Agent.",
           issueType: { id: "10002", name: "Bug" },
           status: { id: "2", name: "In Progress" },
-          epic: { id: "10003", key: "WB-EPIC", summary: "Jira integration" },
+          epic: {
+            id: "10003",
+            key: "WB-EPIC",
+            summary: "Jira integration",
+            description: "Epic scope from Jira.",
+          },
           flagged: true,
           rank: 0,
           remoteUpdatedAt: "2026-09-03T13:00:00.000Z",
@@ -165,7 +170,29 @@ describe("JiraTicketImporter", () => {
         epicId: "jira:binding-1:epic:10003",
       });
       expect(assignment).toMatchObject({ ticketId, threadId, supersededAt: null });
-      expect(epic).toMatchObject({ title: "Jira integration", markdown: "", archivedAt: null });
+      expect(epic).toMatchObject({
+        title: "Jira integration",
+        markdown: "Epic scope from Jira.",
+        archivedAt: null,
+      });
+      for (const description of ["Updated Jira scope.", undefined, ""]) {
+        yield* importer.upsertJiraProjection({
+          ...importInput,
+          issue: {
+            ...importInput.issue,
+            epic: {
+              id: "10003",
+              key: "WB-EPIC",
+              summary: "Jira integration",
+              ...(description === undefined ? {} : { description }),
+            },
+          },
+        });
+        expect(
+          (yield* workbench.getSnapshot).epics.find((candidate) => candidate.id === epic?.id)
+            ?.markdown,
+        ).toBe(description ?? "Updated Jira scope.");
+      }
     }).pipe(Effect.provide(TestLayer)),
   );
 

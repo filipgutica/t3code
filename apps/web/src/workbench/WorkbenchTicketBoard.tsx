@@ -57,10 +57,9 @@ import {
   getWorkbenchTicketSummaryPresentation,
   groupWorkbenchTicketsByEpic,
   isWorkbenchThreadArchived,
-  WORKBENCH_TICKET_KIND_LABELS,
 } from "./workbench.logic";
+import { WorkbenchJiraIssueKey, WorkbenchTicketKindBadge } from "./WorkbenchTicketMetadata";
 import { getWorkbenchBoardColumns, orderWorkbenchTicketsByJiraRank } from "./workbenchJira.logic";
-import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
 
 const STATUS_DOT_CLASS: Record<WorkbenchTicketStatus, string> = {
   todo: "bg-muted-foreground/55",
@@ -203,12 +202,12 @@ export function WorkbenchTicketBoard({
           ))}
         </ToggleGroup>
       </div>
-      <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3 sm:p-4">
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3 sm:p-4 md:pt-0">
         <div
           style={boardStyle}
           className="flex min-w-0 flex-col gap-3 md:min-w-[calc(var(--board-column-count)*18rem+(var(--board-column-count)-1)*0.75rem)]"
         >
-          <div className="sticky top-0 z-10 hidden grid-flow-col auto-cols-[minmax(18rem,1fr)] gap-3 border-b border-border/60 bg-background pb-2 md:grid">
+          <div className="sticky top-0 z-10 -mx-3 hidden grid-flow-col auto-cols-[minmax(18rem,1fr)] gap-3 border-b border-border/60 bg-background px-3 py-1 shadow-sm sm:-mx-4 sm:px-4 md:grid">
             {columns.map((column) => (
               <div key={column.id} className="flex min-w-0 items-center gap-2 px-2 py-2">
                 <span
@@ -277,7 +276,7 @@ export function WorkbenchTicketBoard({
                           aria-label={`${column.title} Tickets`}
                           data-workbench-status={column.id}
                           className={cn(
-                            "min-w-0 flex-col rounded-lg bg-muted/20 md:flex",
+                            "min-w-0 flex-col rounded-xl border border-foreground/6 bg-foreground/1 md:flex",
                             column.id === visibleColumnId ? "flex" : "hidden",
                           )}
                         >
@@ -320,22 +319,22 @@ export function WorkbenchTicketBoard({
                               return (
                                 <article
                                   key={ticket.id}
-                                  className={`w-full min-w-0 rounded-lg border bg-card p-3 transition-colors hover:border-foreground/20 ${
+                                  className={`relative isolate w-full min-w-0 cursor-pointer rounded-lg border bg-foreground/3 p-3 transition-colors hover:bg-foreground/6 ${
                                     selectedTicketId === ticket.id
                                       ? "border-primary/50 ring-2 ring-primary/15"
-                                      : "border-border/60"
+                                      : "border-foreground/12"
                                   }`}
                                 >
                                   <div className="flex items-start gap-2">
                                     <button
-                                      className="min-w-0 flex-1 text-left outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+                                      className="min-w-0 flex-1 cursor-pointer text-left outline-none after:absolute after:inset-0 after:z-[1] after:rounded-lg after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring"
                                       type="button"
                                       onClick={() => onSelect(projectId, ticket.id)}
                                     >
                                       <Tooltip>
                                         <TooltipTrigger
                                           render={
-                                            <h3 className="line-clamp-3 min-w-0 break-words text-sm font-medium leading-snug" />
+                                            <h3 className="line-clamp-3 min-w-0 break-words text-sm font-semibold leading-snug" />
                                           }
                                         >
                                           {ticket.title}
@@ -345,7 +344,7 @@ export function WorkbenchTicketBoard({
                                         </TooltipPopup>
                                       </Tooltip>
                                     </button>
-                                    <div className="flex min-w-0 shrink-0 items-center gap-1">
+                                    <div className="relative z-10 flex min-w-0 shrink-0 items-center gap-1">
                                       <WorkbenchTicketStatusMenu
                                         key={`${environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
                                         environmentId={environmentId}
@@ -382,30 +381,16 @@ export function WorkbenchTicketBoard({
                                   <div className="mt-2 flex min-w-0 flex-col gap-2 text-xs text-muted-foreground">
                                     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                                       {jiraIssueLink ? (
-                                        <Badge
-                                          aria-label={`Open Jira issue ${jiraIssueLink.issue.key}`}
-                                          render={
-                                            <a
-                                              href={jiraIssueLink.issue.url}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                            />
-                                          }
-                                          size="sm"
-                                          title={`Jira issue ${jiraIssueLink.issue.key}`}
-                                          variant="outline"
-                                        >
-                                          <WorkbenchJiraIcon className="size-3" />
-                                          <span>{jiraIssueLink.issue.key}</span>
-                                        </Badge>
+                                        <WorkbenchJiraIssueKey
+                                          issue={jiraIssueLink.issue}
+                                          className="z-10"
+                                        />
                                       ) : null}
-                                      <Badge size="sm" variant="secondary">
-                                        {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
-                                      </Badge>
+                                      <WorkbenchTicketKindBadge kind={ticket.kind} />
                                       {groupMode === "none" && epic ? (
                                         <Badge
                                           className="min-w-0 max-w-full"
-                                          size="sm"
+                                          size="default"
                                           variant="outline"
                                         >
                                           <Layers3Icon />
@@ -413,7 +398,7 @@ export function WorkbenchTicketBoard({
                                         </Badge>
                                       ) : null}
                                       {jiraIssueLink?.issue.flagged ? (
-                                        <Badge size="sm" variant="warning">
+                                        <Badge size="default" variant="warning">
                                           <CircleAlertIcon /> Jira flagged
                                         </Badge>
                                       ) : null}
@@ -425,7 +410,7 @@ export function WorkbenchTicketBoard({
                                             type="button"
                                             onClick={() => onSelect(projectId, ticket.id)}
                                             aria-label={`Ticket summary: ${summary.text}`}
-                                            className="line-clamp-2 break-words text-left text-xs text-muted-foreground outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+                                            className="relative z-10 line-clamp-2 cursor-pointer break-words text-left text-xs text-foreground/80 outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
                                             tabIndex={0}
                                           />
                                         }
@@ -447,9 +432,10 @@ export function WorkbenchTicketBoard({
                                     <Tooltip>
                                       <TooltipTrigger
                                         render={
-                                          <span
-                                            tabIndex={0}
-                                            className="flex min-w-0 items-center gap-1.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                          <button
+                                            type="button"
+                                            onClick={() => onSelect(projectId, ticket.id)}
+                                            className="relative z-10 flex min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
                                           />
                                         }
                                       >
@@ -504,6 +490,7 @@ export function WorkbenchTicketBoard({
                                       ) : null}
                                     </div>
                                     <Button
+                                      className="relative z-10"
                                       disabled={pending}
                                       onClick={() => onOpenThread(ticket, assignment?.threadId)}
                                       size="xs"

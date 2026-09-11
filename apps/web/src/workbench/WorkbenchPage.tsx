@@ -394,6 +394,7 @@ export function WorkbenchPage({
   const [ticketDialogOpen, setTicketDialogOpen] = useState(false);
   const [ticketDialogEpicId, setTicketDialogEpicId] = useState<WorkbenchEpicId | null>(null);
   const [epicDialogOpen, setEpicDialogOpen] = useState(false);
+  const epicCreatedRef = useRef<((epicId: WorkbenchEpicId) => void) | null>(null);
   const [jiraDialogOpen, setJiraDialogOpen] = useState(false);
   const [boardGroupMode, setBoardGroupMode] = useState<"none" | "epic">("none");
   const [error, setError] = useState<string | null>(null);
@@ -1056,6 +1057,7 @@ export function WorkbenchPage({
 
   const submitEpic = async (title: string, markdown: string) => {
     if (environmentId === null || selectedProject === null) return false;
+    const onCreated = epicCreatedRef.current;
     setPendingAction("create-epic");
     setError(null);
     const id = WorkbenchEpicId.make(randomUUID());
@@ -1071,6 +1073,10 @@ export function WorkbenchPage({
     });
     setPendingAction(null);
     if (reportWorkbenchCommandFailure(result, setError)) return false;
+    if (onCreated) {
+      onCreated(id);
+      return true;
+    }
     setAwaitingEpicId(id);
     setAwaitingTicketId(null);
     setSelectedEpicId(id);
@@ -1274,6 +1280,19 @@ export function WorkbenchPage({
   const jiraSiteUrl = jiraSnapshot?.connections.find(
     (connection) => connection.id === jiraBinding?.connectionId,
   )?.siteUrl;
+  const selectedJiraEpic =
+    jiraBinding && selectedEpic
+      ? jiraSnapshot?.issueLinks.find(
+          (link) =>
+            link.bindingId === jiraBinding.id &&
+            link.issue.epic !== null &&
+            selectedEpic.id === `jira:${jiraBinding.id}:epic:${link.issue.epic.id}`,
+        )?.issue.epic
+      : null;
+  const selectedJiraEpicUrl =
+    selectedJiraEpic && jiraSiteUrl
+      ? new URL(`/browse/${encodeURIComponent(selectedJiraEpic.key)}`, jiraSiteUrl).toString()
+      : null;
   const jiraSprintLinks =
     jiraBinding && jiraSiteUrl
       ? getWorkbenchJiraBindingSprints(jiraBinding).map((sprint) => {
@@ -1492,7 +1511,8 @@ export function WorkbenchPage({
     setTicketDialogEpicId(epicId);
     setTicketDialogOpen(true);
   };
-  const openEpicDialog = () => {
+  const openEpicDialog = (onCreated?: (epicId: WorkbenchEpicId) => void) => {
+    epicCreatedRef.current = onCreated ?? null;
     setError(null);
     setEpicDialogOpen(true);
   };
@@ -1526,7 +1546,10 @@ export function WorkbenchPage({
   };
   const handleEpicDialogOpenChange = (open: boolean) => {
     setEpicDialogOpen(open);
-    if (!open) setError(null);
+    if (!open) {
+      epicCreatedRef.current = null;
+      setError(null);
+    }
   };
   const handleJiraDialogOpenChange = (open: boolean) => {
     setJiraDialogOpen(open);
@@ -1534,7 +1557,7 @@ export function WorkbenchPage({
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col" data-workbench-page="">
       {environmentId === null ? (
         <Empty>
           <EmptyHeader>
@@ -1632,6 +1655,7 @@ export function WorkbenchPage({
               onJiraTransition={(selection) => {
                 void changeJiraTransition(selection);
               }}
+              onCreateEpic={openEpicDialog}
               onOpenEpic={(epicId) => {
                 setAwaitingTicketId(null);
                 setAwaitingEpicId(null);
@@ -1662,7 +1686,8 @@ export function WorkbenchPage({
               key={selectedEpic.id}
               workspaceTitle={selectedProject.title}
               epic={selectedEpic}
-              jiraManagedTitle={
+              jiraUrl={selectedJiraEpicUrl}
+              jiraManaged={
                 jiraBinding !== null && selectedEpic.id.startsWith(`jira:${jiraBinding.id}:epic:`)
               }
               tickets={selectedEpicTickets}
@@ -1743,9 +1768,9 @@ export function WorkbenchPage({
                       >
                         <MoreHorizontalIcon />
                       </MenuTrigger>
-                      <MenuPopup align="end">
+                      <MenuPopup align="end" data-workbench-workspace-actions="">
                         <MenuGroup>
-                          <MenuItem onClick={openEpicDialog}>
+                          <MenuItem onClick={() => openEpicDialog()}>
                             <Layers3Icon /> New Epic
                           </MenuItem>
                           <MenuItem
@@ -2023,6 +2048,7 @@ export function WorkbenchPage({
           error={error ?? query.error}
           onOpenChange={handleTicketDialogOpenChange}
           onCreate={submitTicket}
+          onCreateEpic={openEpicDialog}
         />
       ) : null}
     </div>
