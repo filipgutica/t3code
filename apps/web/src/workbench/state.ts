@@ -1,10 +1,13 @@
-import { WS_METHODS, type EnvironmentId } from "@t3tools/contracts";
+import { WS_METHODS, type EnvironmentId, type WorkbenchTicketId } from "@t3tools/contracts";
+import { request } from "@t3tools/client-runtime/rpc";
 import {
   createAtomCommandScheduler,
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
+  createEnvironmentQueryAtomFamily,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Effect from "effect/Effect";
+import * as Atom from "effect/unstable/reactivity/Atom";
 import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
 
 import { connectionAtomRuntime } from "../connection/runtime";
@@ -20,6 +23,25 @@ const jiraSnapshot = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, 
   tag: WS_METHODS.workbenchJiraGetSnapshot,
   staleTimeMs: 5_000,
 });
+
+const JIRA_TRANSITIONS_STALE_TIME_MS = 30_000;
+const jiraTicketTransitionsCache = createEnvironmentQueryAtomFamily(connectionAtomRuntime, {
+  label: "environment-data:workbench:jira:get-ticket-transitions",
+  staleTimeMs: JIRA_TRANSITIONS_STALE_TIME_MS,
+  // Workflow actions belong to a Jira revision; a refreshed issue must not reuse old actions.
+  execute: ({ ticketId }: { ticketId: WorkbenchTicketId; remoteUpdatedAt: string | null }) =>
+    request(WS_METHODS.workbenchJiraGetTicketTransitions, { ticketId }),
+});
+
+// Retain the shared result, but recreate its observer on menu open so SWR checks its age.
+// Keeping the observer alive for the cache's idle TTL would skip that check on reopen.
+const jiraTicketTransitionsObserver = Atom.family(
+  (cached: ReturnType<typeof jiraTicketTransitionsCache>) =>
+    cached.pipe(
+      Atom.swr({ staleTime: JIRA_TRANSITIONS_STALE_TIME_MS, revalidateOnMount: true }),
+      Atom.setIdleTTL(0),
+    ),
+);
 
 const scheduler = createAtomCommandScheduler();
 const serialPerEnvironment = {
@@ -157,10 +179,8 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
     onSuccess: refreshWorkbenchAndJiraSnapshots,
   }),
-  jiraGetTicketTransitions: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:jira:get-ticket-transitions",
-    tag: WS_METHODS.workbenchJiraGetTicketTransitions,
-  }),
+  jiraGetTicketTransitions: (target: Parameters<typeof jiraTicketTransitionsCache>[0]) =>
+    jiraTicketTransitionsObserver(jiraTicketTransitionsCache(target)),
   createTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:create-ticket",
     tag: WS_METHODS.workbenchCreateTicket,
