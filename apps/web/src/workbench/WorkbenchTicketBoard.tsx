@@ -276,7 +276,7 @@ export function WorkbenchTicketBoard({
                           aria-label={`${column.title} Tickets`}
                           data-workbench-status={column.id}
                           className={cn(
-                            "min-w-0 flex-col rounded-lg bg-muted/20 md:flex",
+                            "min-w-0 flex-col md:flex",
                             column.id === visibleColumnId ? "flex" : "hidden",
                           )}
                         >
@@ -319,10 +319,10 @@ export function WorkbenchTicketBoard({
                               return (
                                 <article
                                   key={ticket.id}
-                                  className={`relative isolate w-full min-w-0 cursor-pointer rounded-lg border bg-card p-3 transition-colors hover:bg-muted/45 ${
+                                  className={`relative isolate w-full min-w-0 cursor-pointer rounded-lg border bg-foreground/3 p-3 transition-colors hover:bg-foreground/6 ${
                                     selectedTicketId === ticket.id
                                       ? "border-primary/50 ring-2 ring-primary/15"
-                                      : "border-border/60"
+                                      : "border-foreground/12"
                                   }`}
                                 >
                                   <div className="flex items-start gap-2">

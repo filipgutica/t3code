@@ -41,6 +41,7 @@ export function WorkbenchPullRequestPanel({
       }}
     >
       <SheetPopup
+        data-workbench-pull-request-panel=""
         className={RIGHT_PANEL_SHEET_CLASS_NAME}
         style={{ width, maxWidth, minWidth: 0 }}
         showCloseButton={false}
