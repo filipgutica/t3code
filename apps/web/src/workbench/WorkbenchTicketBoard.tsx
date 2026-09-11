@@ -328,7 +328,7 @@ export function WorkbenchTicketBoard({
                                 >
                                   <div className="flex items-start gap-2">
                                     <button
-                                      className="min-w-0 flex-1 text-left outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+                                      className="min-w-0 flex-1 cursor-pointer text-left outline-none hover:text-primary focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
                                       type="button"
                                       onClick={() => onSelect(projectId, ticket.id)}
                                     >
@@ -425,7 +425,7 @@ export function WorkbenchTicketBoard({
                                             type="button"
                                             onClick={() => onSelect(projectId, ticket.id)}
                                             aria-label={`Ticket summary: ${summary.text}`}
-                                            className="line-clamp-2 break-words text-left text-xs text-muted-foreground outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+                                            className="line-clamp-2 cursor-pointer break-words text-left text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
                                             tabIndex={0}
                                           />
                                         }
