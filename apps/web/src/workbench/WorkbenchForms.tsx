@@ -112,6 +112,7 @@ import {
   WorkbenchCheckoutDetails,
   WorkbenchThreadCheckoutDetails,
 } from "./WorkbenchCheckoutDetails";
+import { WorkbenchJiraIssueKey, WorkbenchTicketKindBadge } from "./WorkbenchTicketMetadata";
 import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
 import { WorkbenchTicketPullRequests } from "./WorkbenchTicketPullRequests";
 import { resolveWorkbenchTicketContent } from "./workbenchJira.logic";
@@ -233,7 +234,7 @@ export function WorkbenchEpicDetail({
                   </p>
                 </div>
                 {jiraManaged ? (
-                  <Badge size="sm" variant="outline">
+                  <Badge size="default" variant="outline">
                     Managed by Jira
                   </Badge>
                 ) : !editing ? (
@@ -359,39 +360,23 @@ export function WorkbenchEpicDetail({
                     return (
                       <div
                         key={ticket.id}
-                        className="relative grid min-w-0 w-full gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/45 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                        className="relative isolate grid min-w-0 w-full cursor-pointer gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/45 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                       >
                         <span className="min-w-0">
-                          <span className="flex min-w-0 items-center gap-2">
-                            <Badge size="sm" variant="secondary">
-                              {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
-                            </Badge>
+                          <span className="flex min-w-0 flex-wrap items-center gap-2">
+                            <WorkbenchTicketKindBadge kind={ticket.kind} />
                             {jiraIssueLink ? (
-                              <Badge
-                                aria-label={`Open Jira issue ${jiraIssueLink.issue.key}`}
-                                render={
-                                  <a
-                                    href={jiraIssueLink.issue.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                  />
-                                }
-                                className="relative z-10 shrink-0"
-                                size="sm"
-                                title={`Jira issue ${jiraIssueLink.issue.key}`}
-                                variant="outline"
-                              >
-                                <WorkbenchJiraIcon className="size-3" />
-                                <span>{jiraIssueLink.issue.key}</span>
-                              </Badge>
+                              <WorkbenchJiraIssueKey issue={jiraIssueLink.issue} className="z-10" />
                             ) : null}
+                          </span>
+                          <span className="mt-1 block min-w-0">
                             <Tooltip>
                               <TooltipTrigger
                                 render={
                                   <button
                                     type="button"
                                     onClick={() => onOpenTicket(ticket)}
-                                    className="min-w-0 truncate text-left text-sm font-medium outline-none after:absolute after:inset-0 after:content-[''] focus-visible:ring-2 focus-visible:ring-ring"
+                                    className="min-w-0 cursor-pointer truncate text-left text-sm font-medium outline-none after:absolute after:inset-0 after:z-[1] after:content-[''] focus-visible:ring-2 focus-visible:ring-ring"
                                   />
                                 }
                               >
@@ -409,11 +394,11 @@ export function WorkbenchEpicDetail({
                         </span>
                         <span className="flex items-center gap-2">
                           {jiraIssueLink?.issue.flagged ? (
-                            <Badge size="sm" variant="warning">
+                            <Badge size="default" variant="warning">
                               Jira flagged
                             </Badge>
                           ) : null}
-                          <Badge size="sm" variant="outline">
+                          <Badge size="default" variant="outline">
                             {jiraIssueLink?.issue.status.name ??
                               WORKBENCH_TICKET_STATUS_LABELS[ticket.status]}
                           </Badge>
@@ -1223,22 +1208,8 @@ export function WorkbenchTicketDetail({
               {displayedTitle.trim() || ticket.title}
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">{WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}</Badge>
-              {jiraIssueLink ? (
-                <Button
-                  aria-label={`Open Jira issue ${jiraIssueLink.issue.key}`}
-                  render={
-                    <a href={jiraIssueLink.issue.url} rel="noopener noreferrer" target="_blank" />
-                  }
-                  size="xs"
-                  title={`Open ${jiraIssueLink.issue.key} in Jira`}
-                  variant="outline"
-                >
-                  <WorkbenchJiraIcon className="size-3.5" />
-                  <span>{jiraIssueLink.issue.key}</span>
-                  <ExternalLinkIcon />
-                </Button>
-              ) : null}
+              <WorkbenchTicketKindBadge kind={ticket.kind} />
+              {jiraIssueLink ? <WorkbenchJiraIssueKey issue={jiraIssueLink.issue} /> : null}
               {isArchived ? <Badge variant="outline">Archived</Badge> : null}
               <WorkbenchTicketStatusMenu
                 key={`${environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
@@ -1856,7 +1827,7 @@ export function WorkbenchTicketDetail({
                   <h2 className="text-sm font-semibold">Details</h2>
                 </div>
                 {jiraFieldsManaged ? (
-                  <Badge size="sm" variant="outline">
+                  <Badge size="default" variant="outline">
                     Managed by Jira
                   </Badge>
                 ) : null}
@@ -2034,7 +2005,7 @@ export function WorkbenchTicketDetail({
                                     </span>
                                   )}
                                   {id === ticket.primaryT3ProjectId ? (
-                                    <Badge size="sm" variant="outline">
+                                    <Badge size="default" variant="outline">
                                       Primary
                                     </Badge>
                                   ) : null}

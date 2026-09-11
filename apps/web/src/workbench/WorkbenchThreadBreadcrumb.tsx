@@ -6,6 +6,7 @@ import {
   WorkspaceBreadcrumbItem,
   WorkspaceBreadcrumbSeparator,
 } from "../components/WorkspaceBreadcrumb";
+import { Badge } from "../components/ui/badge";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
 import { getWorkbenchContextForThread, WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
@@ -58,9 +59,13 @@ export function WorkbenchThreadBreadcrumb({
           <BlocksIcon className="size-3.5 shrink-0 text-primary @3xl/header-actions:hidden" />
           <TicketIcon className="hidden size-3.5 shrink-0 @3xl/header-actions:block" />
           <span className="truncate">{ticket.title}</span>
-          <span className="hidden shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground @5xl/header-actions:inline">
+          <Badge
+            size="default"
+            variant="secondary"
+            className="hidden font-normal text-muted-foreground @5xl/header-actions:inline-flex"
+          >
             {WORKBENCH_TICKET_STATUS_LABELS[ticket.status]}
-          </span>
+          </Badge>
         </Link>
       </WorkspaceBreadcrumbItem>
       <WorkspaceBreadcrumbSeparator />
