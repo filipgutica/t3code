@@ -308,7 +308,7 @@ export function WorkbenchEpicDetail({
                 </form>
               ) : (
                 <div className="min-h-32 break-words p-4">
-                  <WorkbenchDescription markdown={epic.markdown} />
+                  <WorkbenchDescription markdown={epic.markdown} jira={jiraManaged} />
                 </div>
               )}
             </section>
