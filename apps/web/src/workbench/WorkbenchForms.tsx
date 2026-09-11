@@ -633,8 +633,13 @@ export function WorkbenchEpicDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogPopup>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!pending) handleOpenChange(nextOpen);
+      }}
+    >
+      <DialogPopup showCloseButton={!pending}>
         <DialogHeader>
           <DialogTitle>Create Epic</DialogTitle>
           <DialogDescription>
@@ -667,7 +672,7 @@ export function WorkbenchEpicDialog({
           </form>
         </DialogPanel>
         <DialogFooter>
-          <Button onClick={() => handleOpenChange(false)} variant="outline">
+          <Button disabled={pending} onClick={() => handleOpenChange(false)} variant="outline">
             Cancel
           </Button>
           <Button
@@ -810,6 +815,7 @@ export function WorkbenchTicketDialog({
             <div className="space-y-1.5">
               <Label>Epic</Label>
               <Select
+                disabled={pending}
                 value={epicId ?? NO_EPIC_VALUE}
                 onValueChange={(value) => {
                   if (value === CREATE_EPIC_VALUE) {
