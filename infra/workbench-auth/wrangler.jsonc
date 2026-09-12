@@ -1,0 +1,22 @@
+{
+  "name": "workbench-auth",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-11",
+  "workers_dev": true,
+  "keep_vars": true,
+  "observability": { "enabled": false },
+  "durable_objects": {
+    "bindings": [{ "name": "AUTH_SESSION", "class_name": "AuthSession" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AuthSession"] }],
+  "ratelimits": [
+    {
+      "name": "AUTH_RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 60, "period": 60 },
+    },
+  ],
+  "vars": {
+    "PUBLIC_BASE_URL": "https://workbench-auth.fgutica.workers.dev",
+  },
+}

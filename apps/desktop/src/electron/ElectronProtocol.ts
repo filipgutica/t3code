@@ -7,10 +7,13 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 import * as Electron from "electron";
+import { isWorkbenchBuild, WORKBENCH_DISTRIBUTION } from "../workbench/distribution.ts";
 
 export const DESKTOP_HOST = "app";
-const DESKTOP_PRODUCTION_SCHEME = "t3code";
-const DESKTOP_DEVELOPMENT_SCHEME = "t3code-dev";
+const DESKTOP_PRODUCTION_SCHEME = isWorkbenchBuild() ? WORKBENCH_DISTRIBUTION.scheme : "t3code";
+const DESKTOP_DEVELOPMENT_SCHEME = isWorkbenchBuild()
+  ? `${WORKBENCH_DISTRIBUTION.scheme}-dev`
+  : "t3code-dev";
 
 export function getDesktopScheme(isDevelopment: boolean): string {
   return isDevelopment ? DESKTOP_DEVELOPMENT_SCHEME : DESKTOP_PRODUCTION_SCHEME;

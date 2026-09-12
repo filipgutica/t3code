@@ -258,6 +258,37 @@ const makeWindowsPayloadFixture = Effect.fn("test.makeWindowsPayloadFixture")(fu
 });
 
 it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
+  it.effect("packages Workbench with its own install identity and manual preview updates", () =>
+    Effect.gen(function* () {
+      const config = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "0.1.0",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      assert.equal(config.appId, "com.filipgutica.t3code.workbench");
+      assert.equal(config.productName, "T3 Code Workbench");
+      assert.equal(config.artifactName, "T3-Code-Workbench-${version}-${arch}.${ext}");
+      assert.deepInclude(config.mac, {
+        protocols: [{ name: "T3 Code Workbench", schemes: ["t3code-workbench"] }],
+      });
+      assert.isNull(config.publish);
+    }).pipe(
+      Effect.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({
+            env: {
+              T3CODE_WORKBENCH_BUILD: "1",
+              T3CODE_DESKTOP_UPDATE_REPOSITORY: "filipgutica/t3code",
+            },
+          }),
+        ),
+      ),
+    ),
+  );
   it("resolves the dedicated nightly updater channel from nightly versions", () => {
     assert.equal(resolveDesktopUpdateChannel("0.0.17-nightly.20260413.42"), "nightly");
     assert.equal(resolveDesktopUpdateChannel("0.0.17"), "latest");

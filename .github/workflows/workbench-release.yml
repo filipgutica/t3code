@@ -1,0 +1,448 @@
+name: Workbench desktop release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Workbench version to release (X.Y.Z)"
+        required: true
+        default: "0.0.1"
+        type: string
+      previous_tag:
+        description: "Optional previous Workbench tag for notes (for example workbench-v0.0.1)"
+        required: false
+        type: string
+      release_mode:
+        description: "Unsigned preview draft or build-only validation"
+        required: true
+        default: unsigned-preview
+        type: choice
+        options:
+          - unsigned-preview
+          - build-only
+
+# A release is deliberately started by a maintainer. A second run for the same
+# version waits for the first one instead of canceling it mid-upload.
+concurrency:
+  group: workbench-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+# These values are part of the Workbench desktop build contract. Jira's broker
+# is public configuration; its Atlassian client secret remains in the broker.
+env:
+  T3CODE_WORKBENCH_BUILD: "1"
+  T3_WORKBENCH_JIRA_BROKER_URL: https://workbench-auth.fgutica.workers.dev
+
+jobs:
+  resolve:
+    name: Resolve release metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      previous_tag: ${{ steps.resolve.outputs.previous_tag }}
+      upstream_sha: ${{ steps.resolve.outputs.upstream_sha }}
+      upstream_base: ${{ steps.resolve.outputs.upstream_base }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - id: resolve
+        name: Resolve exact main commit and release tags
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          REQUESTED_PREVIOUS_TAG: ${{ inputs.previous_tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_REPOSITORY" != "filipgutica/t3code" ]]; then
+            echo "This workflow is guarded for filipgutica/t3code; refusing to release $GITHUB_REPOSITORY." >&2
+            exit 1
+          fi
+
+          version="$RELEASE_VERSION"
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Version must be X.Y.Z without a leading v: $version" >&2
+            exit 1
+          fi
+
+          sha="$(git rev-parse HEAD)"
+          # Prefix Workbench tags so this fork's releases never trigger the
+          # upstream-compatible v* release workflow in the same repository.
+          tag="workbench-v$version"
+          if git show-ref --tags --verify --quiet "refs/tags/$tag"; then
+            echo "Release tag already exists: $tag" >&2
+            exit 1
+          fi
+
+          previous_tag="$REQUESTED_PREVIOUS_TAG"
+          if [[ -n "$previous_tag" ]]; then
+            if [[ "$previous_tag" == workbench-v* ]]; then
+              :
+            elif [[ "$previous_tag" == v* ]]; then
+              previous_tag="workbench-$previous_tag"
+            else
+              previous_tag="workbench-v$previous_tag"
+            fi
+            git rev-parse --verify "refs/tags/$previous_tag^{commit}" >/dev/null
+          else
+            previous_tag="$(git tag --sort=-version:refname --list 'workbench-v[0-9]*' | head -n 1)"
+          fi
+
+          upstream_sha=""
+          upstream_base=""
+          if git remote add upstream https://github.com/pingdotgg/t3code.git && git fetch --no-tags upstream main; then
+            upstream_sha="$(git rev-parse upstream/main)"
+            upstream_base="$(git merge-base "$sha" "$upstream_sha" || true)"
+          fi
+
+          printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+          printf 'previous_tag=%s\n' "$previous_tag" >> "$GITHUB_OUTPUT"
+          printf 'upstream_sha=%s\n' "$upstream_sha" >> "$GITHUB_OUTPUT"
+          printf 'upstream_base=%s\n' "$upstream_base" >> "$GITHUB_OUTPUT"
+          echo "Selected main commit: $sha"
+          echo "Previous release tag for notes: ${previous_tag:-none}"
+          echo "Upstream main: ${upstream_sha:-unavailable}"
+          echo "Upstream merge base: ${upstream_base:-unavailable}"
+
+  quality:
+    name: Workbench quality gates
+    needs: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout selected commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          fetch-depth: 1
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Typecheck Workbench
+        run: vp run --filter @t3tools/workbench typecheck
+
+      - name: Test Workbench
+        run: vp run --filter @t3tools/workbench test
+
+      - name: Run Workbench quality checks
+        run: vp run --filter @t3tools/workbench quality
+
+  build_wsl_node_pty:
+    name: Build WSL node-pty (linux-x64)
+    needs: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout selected commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          fetch-depth: 1
+
+      - name: Install WSL prebuild dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=t3...
+
+      - name: Build node-pty linux-x64 prebuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: ['$GITHUB_WORKSPACE/apps/server'] }))")"
+          pty_dir="$(dirname "$pty_pkg")"
+          ( cd "$pty_dir" && npx --yes node-gyp rebuild )
+          mkdir -p wsl-prebuild
+          cp "$pty_dir/build/Release/pty.node" wsl-prebuild/pty.node
+          file wsl-prebuild/pty.node
+
+      - name: Upload WSL node-pty prebuild
+        uses: actions/upload-artifact@v7
+        with:
+          name: workbench-wsl-node-pty-x64
+          path: wsl-prebuild/pty.node
+          if-no-files-found: error
+          retention-days: 1
+
+  build:
+    name: Build ${{ matrix.label }}
+    needs: [resolve, quality, build_wsl_node_pty]
+    if: >-
+      always() && !cancelled() &&
+      needs.resolve.result == 'success' &&
+      needs.quality.result == 'success' &&
+      needs.build_wsl_node_pty.result == 'success'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS arm64
+            runner: macos-14
+            platform: mac
+            target: dmg
+            arch: arm64
+            rust_target: aarch64-apple-darwin
+          - label: macOS x64
+            runner: macos-15-intel
+            platform: mac
+            target: dmg
+            arch: x64
+            rust_target: x86_64-apple-darwin
+          - label: Linux x64
+            runner: ubuntu-24.04
+            platform: linux
+            target: AppImage
+            arch: x64
+            rust_target: x86_64-unknown-linux-gnu
+          - label: Windows x64
+            runner: windows-2022
+            platform: win
+            target: nsis
+            arch: x64
+            rust_target: x86_64-pc-windows-msvc
+    env:
+      RELEASE_MODE: ${{ inputs.release_mode }}
+      RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+      T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Checkout selected commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          fetch-depth: 1
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: ${{ matrix.platform != 'win' }}
+          run-install: false
+
+      - name: Install desktop dependencies
+        run: vp install --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+
+      - name: Align package versions to release version
+        shell: bash
+        run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
+
+      - name: Install Linux desktop build libraries
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libsecret-1-dev pkg-config imagemagick
+
+      - name: Install Spectre-mitigated MSVC libraries
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installPath = & $vswhere -products * -latest -property installationPath
+          $setupExe = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+          $proc = Start-Process -FilePath $setupExe -ArgumentList "modify", "--installPath", "`"$installPath`"", "--add", "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre", "--quiet", "--norestart" -Wait -PassThru -NoNewWindow
+          if ($null -eq $proc -or $proc.ExitCode -ne 0) { exit 1 }
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Download WSL node-pty prebuild
+        if: matrix.platform == 'win'
+        uses: actions/download-artifact@v8
+        with:
+          name: workbench-wsl-node-pty-x64
+          path: wsl-prebuild
+
+      - name: Build desktop artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            --platform "${{ matrix.platform }}"
+            --target "${{ matrix.target }}"
+            --arch "${{ matrix.arch }}"
+            --build-version "$RELEASE_VERSION"
+            --verbose
+          )
+          if [[ "${{ matrix.platform }}" == win ]]; then
+            args+=(--wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node")
+          fi
+          vp run dist:desktop:artifact "${args[@]}"
+
+      - name: Validate and checksum package
+        shell: bash
+        env:
+          BUILD_PLATFORM: ${{ matrix.platform }}
+          BUILD_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-publish
+          shopt -s nullglob
+          for pattern in "release/*.dmg" "release/*.zip" "release/*.AppImage" "release/*.exe" "release/*.blockmap"; do
+            for file in $pattern; do cp "$file" release-publish/; done
+          done
+
+          case "$BUILD_PLATFORM" in
+            mac)
+              packages=(release-publish/*.dmg)
+              (( ${#packages[@]} == 1 )) || { echo "Expected one macOS DMG." >&2; exit 1; }
+              ;;
+            linux)
+              packages=(release-publish/*.AppImage)
+              (( ${#packages[@]} == 1 )) || { echo "Expected one Linux AppImage." >&2; exit 1; }
+              ;;
+            win)
+              packages=(release-publish/*.exe)
+              (( ${#packages[@]} == 1 )) || { echo "Expected one Windows installer." >&2; exit 1; }
+              ;;
+          esac
+
+          status="UNSIGNED PREVIEW"
+          if [[ "$RELEASE_MODE" == build-only ]]; then status="UNSIGNED BUILD VALIDATION"; fi
+          metadata="release-publish/WORKBENCH-BUILD-INFO-${BUILD_PLATFORM}-${BUILD_ARCH}.txt"
+          {
+            printf 'T3 Code Workbench desktop build\n'
+            printf 'Version: %s\n' "$RELEASE_VERSION"
+            printf 'Commit: %s\n' "${{ needs.resolve.outputs.sha }}"
+            printf 'Platform: %s\n' "$BUILD_PLATFORM"
+            printf 'Architecture: %s\n' "$BUILD_ARCH"
+            printf 'Signing status: %s\n' "$status"
+            printf 'Jira broker: %s\n' "$T3_WORKBENCH_JIRA_BROKER_URL"
+          } > "$metadata"
+
+          BUILD_PLATFORM="$BUILD_PLATFORM" BUILD_ARCH="$BUILD_ARCH" node --input-type=module -e '
+            import { createHash } from "node:crypto";
+            import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+            import { join } from "node:path";
+            const dir = "release-publish";
+            const names = readdirSync(dir).filter((name) => !name.startsWith("SHA256SUMS-")).sort();
+            const lines = names.map((name) => `${createHash("sha256").update(readFileSync(join(dir, name))).digest("hex")}  ${name}`);
+            writeFileSync(join(dir, `SHA256SUMS-${process.env.BUILD_PLATFORM}-${process.env.BUILD_ARCH}.txt`), `${lines.join("\n")}\n`);
+          '
+
+      - name: Upload desktop artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: workbench-desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          path: release-publish/*
+          if-no-files-found: error
+          retention-days: 7
+
+  unsigned_preview_draft:
+    name: Create unsigned preview draft GitHub Release
+    needs: [resolve, quality, build]
+    if: ${{ inputs.release_mode == 'unsigned-preview' && !failure() && !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+      RELEASE_SHA: ${{ needs.resolve.outputs.sha }}
+      PREVIOUS_TAG: ${{ needs.resolve.outputs.previous_tag }}
+      UPSTREAM_SHA: ${{ needs.resolve.outputs.upstream_sha }}
+      UPSTREAM_BASE: ${{ needs.resolve.outputs.upstream_base }}
+    steps:
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: workbench-desktop-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Verify package checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          checksum_files=(release-assets/SHA256SUMS-*.txt)
+          (( ${#checksum_files[@]} > 0 )) || { echo "No per-platform checksum files found." >&2; exit 1; }
+          for checksum_file in "${checksum_files[@]}"; do
+            ( cd release-assets && sha256sum --check "$(basename "$checksum_file")" )
+          done
+          rm -f release-assets/SHA256SUMS-*.txt
+          test -n "$(find release-assets -type f -print -quit)"
+
+          node --input-type=module -e '
+            import { createHash } from "node:crypto";
+            import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+            import { join } from "node:path";
+            const dir = "release-assets";
+            const names = readdirSync(dir).filter((name) => !name.startsWith("SHA256SUMS-")).sort();
+            const lines = names.map((name) => `${createHash("sha256").update(readFileSync(join(dir, name))).digest("hex")}  ${name}`);
+            writeFileSync(join(dir, "SHA256SUMS.txt"), `${lines.join("\n")}\n`);
+          '
+
+      - name: Generate release notes from pull requests
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            --method POST
+            "/repos/$GITHUB_REPOSITORY/releases/generate-notes"
+            -f "tag_name=$RELEASE_TAG"
+            -f "target_commitish=$RELEASE_SHA"
+          )
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            args+=( -f "previous_tag_name=$PREVIOUS_TAG" )
+          fi
+          generated_notes="$(gh api "${args[@]}" --jq .body)"
+          {
+            printf '# T3 Code Workbench %s\n\n' "$RELEASE_VERSION"
+            printf 'This is an unsigned preview of T3 Code Workbench.\n\n'
+            printf '%s\n' "$generated_notes"
+            printf '\n## Installation\n\n'
+            printf 'Install this preview alongside official T3 Code. It uses separate saved data. Updates are manual downloads for now.\n\n'
+            printf 'macOS may require System Settings → Privacy & Security → Open Anyway. Windows may show an unknown-publisher or SmartScreen warning; device policies can block unsigned apps. On Linux, make the AppImage executable.\n\n'
+            printf 'See [Apple installation guidance](https://support.apple.com/en-ca/guide/mac-help/mh40616/mac) and [Windows signing guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).\n'
+            printf '\n## Build provenance\n\n'
+            printf -- '- Selected fork `main` commit: `%s`\n' "$RELEASE_SHA"
+            printf -- '- Previous tag used for generated notes: `%s`\n' "${PREVIOUS_TAG:-none}"
+            printf -- '- Upstream `pingdotgg/t3code` main: `%s`\n' "${UPSTREAM_SHA:-unavailable}"
+            printf -- '- Upstream merge base: `%s`\n' "${UPSTREAM_BASE:-unavailable}"
+            printf -- '- Jira broker: `%s`\n' "$T3_WORKBENCH_JIRA_BROKER_URL"
+            printf '\n## Verification\n\n- macOS arm64 and x64, Linux x64, and Windows x64 artifacts were built and checksummed.\n- These preview artifacts are unsigned.\n'
+          } > "$RUNNER_TEMP/workbench-release-notes.md"
+
+      - name: Create draft release
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$RELEASE_SHA" \
+            --title "T3 Code Workbench $RELEASE_VERSION (unsigned preview)" \
+            --prerelease \
+            --draft \
+            --notes-file "$RUNNER_TEMP/workbench-release-notes.md"
+          gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber

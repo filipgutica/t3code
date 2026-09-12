@@ -2,6 +2,8 @@ import {
   WorkbenchJiraOperationError,
   type WorkbenchJiraBeginAuthInput,
   type WorkbenchJiraBeginAuthResult,
+  type WorkbenchJiraClaimAuthInput,
+  type WorkbenchJiraClaimAuthResult,
   type WorkbenchJiraBinding,
   type WorkbenchJiraBoardMode,
   type WorkbenchJiraCompleteAuthInput,
@@ -71,6 +73,9 @@ interface WorkbenchJiraServiceShape {
   readonly completeAuth: (
     input: WorkbenchJiraCompleteAuthInput,
   ) => Effect.Effect<WorkbenchJiraCompleteAuthResult, WorkbenchJiraOperationError>;
+  readonly claimAuth: (
+    input: WorkbenchJiraClaimAuthInput,
+  ) => Effect.Effect<WorkbenchJiraClaimAuthResult, WorkbenchJiraOperationError>;
   readonly listProjects: JiraApiShape["listProjects"];
   readonly listBoards: JiraApiShape["listBoards"];
   readonly listSprints: JiraApiShape["listSprints"];
@@ -384,6 +389,15 @@ export const make = Effect.gen(function* () {
     getSnapshot,
     beginAuth: auth.begin,
     completeAuth: auth.complete,
+    claimAuth:
+      auth.claim ??
+      (() =>
+        Effect.fail(
+          new WorkbenchJiraOperationError({
+            code: "not_configured",
+            message: "The Jira authorization broker is not configured for this server.",
+          }),
+        )),
     listProjects: api.listProjects,
     listBoards: api.listBoards,
     listSprints: api.listSprints,

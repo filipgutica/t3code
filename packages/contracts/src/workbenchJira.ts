@@ -267,6 +267,8 @@ export const WorkbenchJiraBeginAuthResult = Schema.Struct({
   authorizationUrl: TrimmedNonEmptyString,
   state: TrimmedNonEmptyString,
   expiresAt: IsoDateTime,
+  /** Broker authorizations complete out of band and are claimed by polling. */
+  mode: Schema.optionalKey(Schema.Literals(["direct", "broker"])),
 });
 export type WorkbenchJiraBeginAuthResult = typeof WorkbenchJiraBeginAuthResult.Type;
 
@@ -281,6 +283,24 @@ export const WorkbenchJiraCompleteAuthResult = Schema.Struct({
   connections: Schema.Array(WorkbenchJiraConnection).check(Schema.isMinLength(1)),
 });
 export type WorkbenchJiraCompleteAuthResult = typeof WorkbenchJiraCompleteAuthResult.Type;
+
+export const WorkbenchJiraClaimAuthInput = Schema.Struct({
+  state: TrimmedNonEmptyString,
+});
+export type WorkbenchJiraClaimAuthInput = typeof WorkbenchJiraClaimAuthInput.Type;
+
+export const WorkbenchJiraClaimAuthResult = Schema.Union([
+  Schema.Struct({ status: Schema.Literal("pending") }),
+  Schema.Struct({
+    status: Schema.Literal("complete"),
+    connections: Schema.Array(WorkbenchJiraConnection).check(Schema.isMinLength(1)),
+  }),
+  Schema.Struct({
+    status: Schema.Literal("failed"),
+    error: TrimmedNonEmptyString,
+  }),
+]);
+export type WorkbenchJiraClaimAuthResult = typeof WorkbenchJiraClaimAuthResult.Type;
 
 export const WorkbenchJiraListBoardsInput = Schema.Struct({
   connectionId: WorkbenchJiraConnectionId,

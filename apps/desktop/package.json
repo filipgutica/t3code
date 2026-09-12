@@ -40,5 +40,13 @@
     "tailwindcss": "^4.0.0",
     "vite-plus": "catalog:"
   },
-  "productName": "T3 Code (Alpha)"
+  "productName": "T3 Code (Alpha)",
+  "workbenchDistribution": {
+    "appId": "com.filipgutica.t3code.workbench",
+    "productName": "T3 Code Workbench",
+    "executableName": "t3code-workbench",
+    "homeDirectoryName": ".t3-workbench",
+    "scheme": "t3code-workbench",
+    "desktopEntryName": "com.filipgutica.t3code.workbench.desktop"
+  }
 }

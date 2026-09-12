@@ -32,6 +32,8 @@ import {
   WorkbenchJiraBinding,
   WorkbenchJiraBoard,
   WorkbenchJiraBoardConfiguration,
+  WorkbenchJiraClaimAuthInput,
+  WorkbenchJiraClaimAuthResult,
   WorkbenchJiraCompleteAuthInput,
   WorkbenchJiraCompleteAuthResult,
   WorkbenchJiraCreateBindingInput,
@@ -72,6 +74,7 @@ export const WORKBENCH_WS_METHODS = {
   workbenchJiraGetSnapshot: "workbench.jira.getSnapshot",
   workbenchJiraBeginAuth: "workbench.jira.auth.begin",
   workbenchJiraCompleteAuth: "workbench.jira.auth.complete",
+  workbenchJiraClaimAuth: "workbench.jira.auth.claim",
   workbenchJiraListProjects: "workbench.jira.projects.list",
   workbenchJiraListBoards: "workbench.jira.boards.list",
   workbenchJiraListSprints: "workbench.jira.sprints.list",
@@ -207,6 +210,12 @@ const WsWorkbenchJiraCompleteAuthRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchJi
   error: WorkbenchJiraRpcError,
 });
 
+const WsWorkbenchJiraClaimAuthRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchJiraClaimAuth, {
+  payload: WorkbenchJiraClaimAuthInput,
+  success: WorkbenchJiraClaimAuthResult,
+  error: WorkbenchJiraRpcError,
+});
+
 const WsWorkbenchJiraListProjectsRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchJiraListProjects, {
   payload: WorkbenchJiraListProjectsInput,
   success: Schema.Array(WorkbenchJiraProject),
@@ -286,6 +295,7 @@ export const WorkbenchRpcGroup = RpcGroup.make(
   WsWorkbenchJiraGetSnapshotRpc,
   WsWorkbenchJiraBeginAuthRpc,
   WsWorkbenchJiraCompleteAuthRpc,
+  WsWorkbenchJiraClaimAuthRpc,
   WsWorkbenchJiraListProjectsRpc,
   WsWorkbenchJiraListBoardsRpc,
   WsWorkbenchJiraListSprintsRpc,

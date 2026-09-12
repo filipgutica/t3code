@@ -4,6 +4,7 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import { afterEach, vi } from "vite-plus/test";
 
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
@@ -40,6 +41,22 @@ const makeEnvironment = (
   DesktopEnvironment.DesktopEnvironment.pipe(Effect.provide(makeEnvironmentLayer(overrides, env)));
 
 describe("DesktopEnvironment", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.effect("isolates packaged Workbench identity and saved data from official T3 Code", () =>
+    Effect.gen(function* () {
+      vi.stubGlobal("__T3CODE_WORKBENCH_BUILD__", true);
+      const environment = yield* makeEnvironment({ isPackaged: true });
+      assert.equal(environment.displayName, "T3 Code Workbench");
+      assert.equal(environment.baseDir, "/Users/alice/.t3-workbench");
+      assert.equal(environment.stateDir, "/Users/alice/.t3-workbench/userdata");
+      assert.equal(environment.userDataDirName, "t3code-workbench");
+      assert.equal(environment.legacyUserDataDirName, "t3code-workbench");
+      assert.equal(environment.appUserModelId, "com.filipgutica.t3code.workbench");
+      assert.equal(environment.linuxWmClass, "t3code-workbench");
+      assert.equal(environment.linuxDesktopEntryName, "com.filipgutica.t3code.workbench.desktop");
+    }),
+  );
   it.effect("derives state paths and development identity inside Effect", () =>
     Effect.gen(function* () {
       const environment = yield* makeEnvironment(

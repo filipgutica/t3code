@@ -127,6 +127,13 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
     onSuccess: refreshJiraSnapshot,
   }),
+  jiraClaimAuth: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:jira:claim-auth",
+    tag: WS_METHODS.workbenchJiraClaimAuth,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshJiraSnapshot,
+  }),
   jiraListProjects: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:jira:list-projects",
     tag: WS_METHODS.workbenchJiraListProjects,

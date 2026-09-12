@@ -72,6 +72,9 @@ export default mergeConfig(
         __T3CODE_BUILD_RELAY_CLIENT_OTLP_TRACES_TOKEN__: JSON.stringify(
           repoEnv.T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN?.trim() ?? "",
         ),
+        __T3CODE_BUILD_WORKBENCH_JIRA_BROKER_URL__: JSON.stringify(
+          repoEnv.T3_WORKBENCH_JIRA_BROKER_URL?.trim() ?? "",
+        ),
       },
     },
     test: {

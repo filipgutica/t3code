@@ -81,6 +81,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workbenchJiraGetSnapshot]: AuthOrchestrationReadScope,
   [WS_METHODS.workbenchJiraBeginAuth]: AuthOrchestrationOperateScope,
   [WS_METHODS.workbenchJiraCompleteAuth]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workbenchJiraClaimAuth]: AuthOrchestrationOperateScope,
   [WS_METHODS.workbenchJiraListProjects]: AuthOrchestrationOperateScope,
   [WS_METHODS.workbenchJiraListBoards]: AuthOrchestrationOperateScope,
   [WS_METHODS.workbenchJiraListSprints]: AuthOrchestrationOperateScope,

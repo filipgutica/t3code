@@ -124,6 +124,88 @@ describe("JiraAuthService", () => {
       }),
     );
 
+    it.effect("claims broker authorization without exposing the verifier to the client", () =>
+      Effect.gen(function* () {
+        const repository = repositoryHarness();
+        const credentialStore = credentialHarness();
+        let brokerVerifier = "";
+        let claimCount = 0;
+        const oauth = JiraOAuthClient.of({
+          exchangeCode: () => Effect.die("unexpected direct exchange"),
+          refresh: () => Effect.die("unexpected direct refresh"),
+          startBroker: ({ claimChallenge }) => {
+            assert.match(claimChallenge, /^[A-Za-z0-9_-]{43}$/);
+            return Effect.succeed({
+              sessionId: "broker-session",
+              authorizationUrl: "https://auth.example/authorize",
+              expiresAt: "2099-01-01T00:00:00.000Z",
+            });
+          },
+          claimBroker: ({ sessionId, verifier }) => {
+            assert.strictEqual(sessionId, "broker-session");
+            brokerVerifier = verifier;
+            claimCount += 1;
+            return Effect.succeed(
+              claimCount === 1
+                ? ({ status: "pending" } as const)
+                : {
+                    status: "complete" as const,
+                    credential: {
+                      accessToken: "broker-access",
+                      refreshToken: "broker-refresh",
+                      scope: JIRA_OAUTH_SCOPES.join(" "),
+                      expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+                    },
+                  },
+            );
+          },
+          listAccessibleSites: () =>
+            Effect.succeed([
+              {
+                cloudId: "cloud-1",
+                name: "Example Jira",
+                url: "https://example.atlassian.net",
+                avatarUrl: null,
+                scopes: [...JIRA_OAUTH_SCOPES],
+              },
+            ]),
+        });
+        const service = yield* JiraAuthService.make.pipe(
+          Effect.provideService(WorkbenchJiraRepository, repository.service),
+          Effect.provideService(JiraCredentialStore, credentialStore.service),
+          Effect.provideService(JiraOAuthClient, oauth),
+          Effect.provideService(
+            JiraConfig,
+            JiraConfig.of({ get: Effect.succeed({ brokerUrl: "https://broker.example" }) }),
+          ),
+        );
+
+        const started = yield* service.begin({ redirectUri: "http://localhost/workbench" });
+        assert.strictEqual(started.mode, "broker");
+        assert.isFalse("verifier" in started);
+        assert.isTrue(credentialStore.pending.has(started.state));
+        const pending = credentialStore.pending.get(started.state);
+        assert.ok(pending);
+        assert.strictEqual(pending.brokerSessionId, "broker-session");
+        assert.isTrue(pending.verifier !== undefined);
+
+        const claim = service.claim;
+        if (claim === undefined) throw new Error("The Jira auth claim operation is unavailable.");
+        assert.deepStrictEqual(yield* claim({ state: started.state }), {
+          status: "pending",
+        });
+        const completed = yield* claim({ state: started.state });
+        assert.strictEqual(completed.status, "complete");
+        assert.strictEqual(brokerVerifier, pending.verifier);
+        assert.isFalse(credentialStore.pending.has(started.state));
+        const connection = completed.status === "complete" ? completed.connections[0] : undefined;
+        assert.ok(connection);
+        const credentialId = repository.credentialIds.get(connection.id);
+        assert.ok(credentialId);
+        assert.strictEqual(credentialStore.credentials.get(credentialId)?.authMode, "broker");
+      }),
+    );
+
     it.effect("stores the token outside public connection metadata", () =>
       Effect.gen(function* () {
         const repository = repositoryHarness();
@@ -154,14 +236,18 @@ describe("JiraAuthService", () => {
           Effect.provideService(JiraOAuthClient, oauth),
           Effect.provideService(
             JiraConfig,
-            jiraConfig({
-              T3_WORKBENCH_JIRA_CLIENT_ID: "client-id",
-              T3_WORKBENCH_JIRA_CLIENT_SECRET: "client-secret",
+            JiraConfig.of({
+              get: Effect.succeed({
+                clientId: "client-id",
+                clientSecret: "client-secret",
+                brokerUrl: "https://broker.example",
+              }),
             }),
           ),
         );
 
         const started = yield* service.begin({ redirectUri: "http://localhost/oauth/jira" });
+        assert.strictEqual(started.mode, "direct");
         const authorizationUrl = new URL(started.authorizationUrl);
         assert.strictEqual(authorizationUrl.searchParams.get("state"), started.state);
         assert.deepStrictEqual(authorizationUrl.searchParams.get("scope")?.split(" "), [
@@ -245,6 +331,74 @@ describe("JiraAuthService", () => {
         assert.strictEqual(
           credentialStore.credentials.get("credential-1")?.refreshToken,
           "rotated-refresh",
+        );
+      }),
+    );
+
+    it.effect("refreshes broker credentials through the broker after deployment", () =>
+      Effect.gen(function* () {
+        const repository = repositoryHarness();
+        const credentialStore = credentialHarness();
+        const connectionId = WorkbenchJiraConnectionId.make("broker-connection");
+        yield* repository.service.upsertConnection(
+          {
+            id: connectionId,
+            cloudId: "cloud-1",
+            siteName: "Example Jira",
+            siteUrl: "https://example.atlassian.net",
+            avatarUrl: null,
+            scopes: [...JIRA_OAUTH_SCOPES],
+            createdAt: "1970-01-01T00:00:00.000Z",
+            updatedAt: "1970-01-01T00:00:00.000Z",
+          },
+          "broker-credential",
+        );
+        yield* credentialStore.service.setCredential("broker-credential", {
+          accessToken: "expired",
+          refreshToken: "broker-refresh",
+          scope: JIRA_OAUTH_SCOPES.join(" "),
+          expiresAtEpochMs: 0,
+          authMode: "broker",
+        });
+        const oauth = JiraOAuthClient.of({
+          exchangeCode: () => Effect.die("unexpected exchange"),
+          refresh: () => Effect.die("must not use direct OAuth for broker credentials"),
+          refreshBroker: ({ brokerUrl, refreshToken }) => {
+            assert.strictEqual(brokerUrl, "https://broker.example");
+            assert.strictEqual(refreshToken, "broker-refresh");
+            return Effect.succeed({
+              accessToken: "broker-fresh",
+              refreshToken: "broker-rotated",
+              scope: JIRA_OAUTH_SCOPES.join(" "),
+              expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
+            });
+          },
+          listAccessibleSites: () => Effect.die("unexpected site lookup"),
+        });
+        const service = yield* JiraAuthService.make.pipe(
+          Effect.provideService(WorkbenchJiraRepository, repository.service),
+          Effect.provideService(JiraCredentialStore, credentialStore.service),
+          Effect.provideService(JiraOAuthClient, oauth),
+          Effect.provideService(
+            JiraConfig,
+            JiraConfig.of({
+              get: Effect.succeed({
+                brokerUrl: "https://broker.example",
+                clientId: "dev-client",
+                clientSecret: "dev-secret",
+              }),
+            }),
+          ),
+        );
+
+        assert.strictEqual(yield* service.getAccessToken(connectionId), "broker-fresh");
+        assert.strictEqual(
+          credentialStore.credentials.get("broker-credential")?.refreshToken,
+          "broker-rotated",
+        );
+        assert.strictEqual(
+          credentialStore.credentials.get("broker-credential")?.authMode,
+          "broker",
         );
       }),
     );

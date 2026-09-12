@@ -9,12 +9,17 @@ export const JiraOAuthCredential = Schema.Struct({
   refreshToken: Schema.NullOr(Schema.String),
   scope: Schema.String,
   expiresAtEpochMs: Schema.Number,
+  /** Identifies which OAuth backend must refresh this credential. */
+  authMode: Schema.optionalKey(Schema.Literals(["direct", "broker"])),
 });
 export type JiraOAuthCredential = typeof JiraOAuthCredential.Type;
 
 export const PendingJiraAuthorization = Schema.Struct({
   redirectUri: Schema.String,
   expiresAtEpochMs: Schema.Number,
+  /** Broker sessions keep their claim verifier server-side in this secret. */
+  brokerSessionId: Schema.optionalKey(Schema.String),
+  verifier: Schema.optionalKey(Schema.String),
 });
 export type PendingJiraAuthorization = typeof PendingJiraAuthorization.Type;
 

@@ -129,6 +129,12 @@ export const makeWorkbenchRpcHandlers = ({
         workbenchJira.completeAuth(input),
         { "rpc.aggregate": "workbench" },
       ),
+    [WORKBENCH_WS_METHODS.workbenchJiraClaimAuth]: (input) =>
+      observeRpcEffect(
+        WORKBENCH_WS_METHODS.workbenchJiraClaimAuth,
+        workbenchJira.claimAuth(input),
+        { "rpc.aggregate": "workbench" },
+      ),
     [WORKBENCH_WS_METHODS.workbenchJiraListProjects]: (input) =>
       observeRpcEffect(
         WORKBENCH_WS_METHODS.workbenchJiraListProjects,

@@ -81,6 +81,11 @@ import { workbenchEnvironment } from "./state";
 import { useStartWorkbenchTicket } from "./useStartWorkbenchTicket";
 import { useOptimisticWorkbenchStatus } from "./useOptimisticWorkbenchStatus";
 import { WorkbenchJiraTransitionsPreloader } from "./WorkbenchJiraTransitionsPreloader";
+import {
+  decodePendingJiraBrokerAuth,
+  serializePendingJiraBrokerAuth,
+  type JiraBrokerAuthState,
+} from "./jiraBrokerAuth";
 import { subscribeToWorkbenchRefresh } from "./workbenchRefresh";
 import { withWorkbenchEnvironmentSearch } from "./workbenchNavigation";
 import {
@@ -131,6 +136,7 @@ interface WorkbenchPageProps {
 
 const JIRA_OAUTH_WORKSPACE_STORAGE_KEY = "t3code:workbench:jira-oauth-workspace";
 const JIRA_OAUTH_ENVIRONMENT_STORAGE_KEY = "t3code:workbench:jira-oauth-environment";
+const JIRA_OAUTH_STATE_STORAGE_KEY = "t3code:workbench:jira-oauth-state";
 const JIRA_REFRESH_INTERVAL_MS = 15_000;
 const EMPTY_TICKET_DRAFTS = new Map<WorkbenchTicketId, WorkbenchTicketDraft>();
 const isEnvironmentId = Schema.is(EnvironmentId);
@@ -141,6 +147,31 @@ const readPendingJiraEnvironmentId = (): EnvironmentId | null => {
     return value !== null && isEnvironmentId(value) ? value : null;
   } catch {
     return null;
+  }
+};
+
+const readPendingJiraBrokerAuth = (): JiraBrokerAuthState | null => {
+  try {
+    const serialized = sessionStorage.getItem(JIRA_OAUTH_STATE_STORAGE_KEY);
+    if (serialized === null) return null;
+    const state = decodePendingJiraBrokerAuth({ serialized, nowEpochMs: Date.now() });
+    if (state === null) sessionStorage.removeItem(JIRA_OAUTH_STATE_STORAGE_KEY);
+    return state;
+  } catch {
+    try {
+      sessionStorage.removeItem(JIRA_OAUTH_STATE_STORAGE_KEY);
+    } catch {
+      // Ignore storage failures while restoring an optional pending flow.
+    }
+    return null;
+  }
+};
+
+const writePendingJiraBrokerAuth = (state: JiraBrokerAuthState): void => {
+  try {
+    sessionStorage.setItem(JIRA_OAUTH_STATE_STORAGE_KEY, serializePendingJiraBrokerAuth(state));
+  } catch {
+    // The in-memory state still lets the current tab finish authorization.
   }
 };
 
@@ -173,11 +204,15 @@ const launchJiraAuthorization = async ({
   authorizationUrl,
   environmentId,
   selectedProjectId,
+  broker,
+  brokerWindow,
   setError,
 }: {
   readonly authorizationUrl: string;
   readonly environmentId: EnvironmentId;
   readonly selectedProjectId: WorkbenchProjectId | null;
+  readonly broker: boolean;
+  readonly brokerWindow: Window | null;
   readonly setError: (message: string) => void;
 }) => {
   if (isElectron) {
@@ -194,6 +229,19 @@ const launchJiraAuthorization = async ({
     sessionStorage.setItem(JIRA_OAUTH_WORKSPACE_STORAGE_KEY, selectedProjectId);
   }
   sessionStorage.setItem(JIRA_OAUTH_ENVIRONMENT_STORAGE_KEY, environmentId);
+  if (broker) {
+    if (brokerWindow === null || brokerWindow.closed) {
+      setError("Could not open Jira authorization. Allow pop-ups and try again.");
+      return;
+    }
+    try {
+      brokerWindow.location.assign(authorizationUrl);
+    } catch {
+      setError("Could not open Jira authorization. Allow pop-ups and try again.");
+    }
+    return;
+  }
+  brokerWindow?.close();
   window.location.assign(authorizationUrl);
 };
 
@@ -333,6 +381,9 @@ export function WorkbenchPage({
   const jiraCompleteAuth = useAtomCommand(workbenchEnvironment.jiraCompleteAuth, {
     reportFailure: false,
   });
+  const jiraClaimAuth = useAtomCommand(workbenchEnvironment.jiraClaimAuth, {
+    reportFailure: false,
+  });
   const jiraListProjects = useAtomCommand(workbenchEnvironment.jiraListProjects, {
     reportFailure: false,
   });
@@ -402,6 +453,9 @@ export function WorkbenchPage({
   const [error, setError] = useState<string | null>(null);
   const [jiraError, setJiraError] = useState<string | null>(null);
   const [jiraPendingAction, setJiraPendingAction] = useState<string | null>(null);
+  const [jiraBrokerAuth, setJiraBrokerAuth] = useState<JiraBrokerAuthState | null>(
+    readPendingJiraBrokerAuth,
+  );
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const statusEnvironmentRef = useRef(environmentId);
   useEffect(() => {
@@ -1161,6 +1215,16 @@ export function WorkbenchPage({
       setJiraError("The selected environment URL is unavailable. Reconnect it and try again.");
       return;
     }
+    // Open the broker window during the click gesture. The authorization RPC is
+    // asynchronous, so opening it after the response can be blocked by browsers.
+    const brokerWindow = isElectron ? null : window.open("about:blank", "_blank");
+    if (brokerWindow !== null) brokerWindow.opener = null;
+    setJiraBrokerAuth(null);
+    try {
+      sessionStorage.removeItem(JIRA_OAUTH_STATE_STORAGE_KEY);
+    } catch {
+      // The in-memory state is authoritative for this tab.
+    }
     setJiraPendingAction("authorize");
     setJiraError(null);
     const result = await jiraBeginAuth({
@@ -1168,11 +1232,25 @@ export function WorkbenchPage({
       input: { redirectUri },
     });
     setJiraPendingAction(null);
-    if (reportWorkbenchCommandFailure(result, setJiraError)) return;
+    if (reportWorkbenchCommandFailure(result, setJiraError)) {
+      brokerWindow?.close();
+      return;
+    }
+    if (result.value.mode === "broker") {
+      const brokerAuth = {
+        environmentId,
+        state: result.value.state,
+        expiresAt: result.value.expiresAt,
+      } satisfies JiraBrokerAuthState;
+      writePendingJiraBrokerAuth(brokerAuth);
+      setJiraBrokerAuth(brokerAuth);
+    }
     await launchJiraAuthorization({
       authorizationUrl: result.value.authorizationUrl,
       environmentId,
       selectedProjectId: selectedProject?.id ?? null,
+      broker: result.value.mode === "broker",
+      brokerWindow,
       setError: setJiraError,
     });
   };
@@ -1392,6 +1470,71 @@ export function WorkbenchPage({
   }, [jiraDialogOpen, refreshJiraSnapshot]);
 
   useEffect(() => {
+    if (jiraBrokerAuth === null || environmentId === null) return;
+    if (jiraBrokerAuth.environmentId !== environmentId) {
+      // A pending state is bound to the server that created it; discard it when
+      // the selected environment changes so it cannot be claimed elsewhere.
+      // oxlint-disable-next-line react/set-state-in-effect
+      setJiraBrokerAuth(null);
+      sessionStorage.removeItem(JIRA_OAUTH_STATE_STORAGE_KEY);
+      setJiraPendingAction(null);
+      return;
+    }
+    let stopped = false;
+    let inFlight = false;
+    const clearBrokerAuth = () => {
+      setJiraBrokerAuth(null);
+      sessionStorage.removeItem(JIRA_OAUTH_STATE_STORAGE_KEY);
+      setJiraPendingAction(null);
+    };
+    const poll = async () => {
+      if (stopped || inFlight) return;
+      const expiresAt = Date.parse(jiraBrokerAuth.expiresAt);
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+        clearBrokerAuth();
+        setJiraError("Jira authorization expired. Connect Jira again.");
+        return;
+      }
+      inFlight = true;
+      setJiraPendingAction("complete-auth");
+      try {
+        const result = await jiraClaimAuth({
+          environmentId: jiraBrokerAuth.environmentId,
+          input: { state: jiraBrokerAuth.state },
+        });
+        if (stopped) return;
+        if (reportWorkbenchCommandFailure(result, setJiraError)) {
+          clearBrokerAuth();
+          return;
+        }
+        if (result.value.status === "pending") return;
+        clearBrokerAuth();
+        if (result.value.status === "failed") {
+          setJiraError(result.value.error);
+          return;
+        }
+        setJiraError(null);
+        setJiraDialogOpen(true);
+        await refreshJiraSnapshot();
+      } catch (error) {
+        if (stopped) return;
+        clearBrokerAuth();
+        setJiraError(
+          error instanceof Error ? error.message : "Jira authorization could not be completed.",
+        );
+      } finally {
+        inFlight = false;
+      }
+    };
+    void poll();
+    const interval = window.setInterval(() => void poll(), 1_500);
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+    };
+  }, [environmentId, jiraBrokerAuth, jiraClaimAuth, refreshJiraSnapshot]);
+
+  useEffect(() => {
     const refresh = () => refreshWorkbenchSnapshot();
     return subscribeToWorkbenchRefresh({
       target: window,
@@ -1488,6 +1631,9 @@ export function WorkbenchPage({
     })();
   }, [
     environmentId,
+    // The command is intentionally listed with the callback inputs so a fresh
+    // environment command cannot be used after reconnecting the server.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies
     jiraCompleteAuth,
     jiraOAuthCode,
     jiraOAuthError,

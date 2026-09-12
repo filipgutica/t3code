@@ -2,8 +2,11 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
 export interface JiraOAuthConfig {
-  readonly clientId: string;
-  readonly clientSecret: string;
+  /** The direct OAuth client is retained for local development and self-hosted setups. */
+  readonly clientId?: string;
+  readonly clientSecret?: string;
+  /** Public broker URL used by production builds; it never contains credentials. */
+  readonly brokerUrl?: string;
 }
 
 export interface JiraConfigShape {

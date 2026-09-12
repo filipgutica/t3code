@@ -40,6 +40,38 @@ const AccessibleResource = Schema.Struct({
 });
 const AccessibleResources = Schema.Array(AccessibleResource);
 
+const BrokerStartResponse = Schema.Struct({
+  sessionId: Schema.String,
+  authorizationUrl: Schema.String,
+  expiresAt: Schema.String,
+});
+const BrokerClaimResponse = Schema.Union([
+  Schema.Struct({ status: Schema.Literal("pending") }),
+  Schema.Struct({
+    status: Schema.Literal("complete"),
+    tokens: Schema.Struct({
+      accessToken: Schema.String,
+      refreshToken: Schema.String,
+      expiresAt: Schema.String,
+      scope: Schema.String,
+    }),
+  }),
+  Schema.Struct({ status: Schema.Literal("failed"), error: Schema.optionalKey(Schema.String) }),
+]);
+const BrokerRefreshResponse = Schema.Struct({
+  tokens: Schema.Struct({
+    accessToken: Schema.String,
+    refreshToken: Schema.String,
+    expiresAt: Schema.String,
+    scope: Schema.String,
+  }),
+});
+
+export type JiraOAuthBrokerClaim =
+  | { readonly status: "pending" }
+  | { readonly status: "complete"; readonly credential: JiraOAuthCredential }
+  | { readonly status: "failed"; readonly error: string };
+
 export interface JiraOAuthClientShape {
   readonly exchangeCode: (input: {
     readonly clientId: string;
@@ -51,6 +83,24 @@ export interface JiraOAuthClientShape {
   readonly refresh: (input: {
     readonly clientId: string;
     readonly clientSecret: string;
+    readonly refreshToken: string;
+    readonly previousScope: string;
+    readonly nowEpochMs: number;
+  }) => Effect.Effect<JiraOAuthCredential, WorkbenchJiraOperationError>;
+  readonly startBroker?: (input: {
+    readonly brokerUrl: string;
+    readonly claimChallenge: string;
+  }) => Effect.Effect<
+    { readonly sessionId: string; readonly authorizationUrl: string; readonly expiresAt: string },
+    WorkbenchJiraOperationError
+  >;
+  readonly claimBroker?: (input: {
+    readonly brokerUrl: string;
+    readonly sessionId: string;
+    readonly verifier: string;
+  }) => Effect.Effect<JiraOAuthBrokerClaim, WorkbenchJiraOperationError>;
+  readonly refreshBroker?: (input: {
+    readonly brokerUrl: string;
     readonly refreshToken: string;
     readonly previousScope: string;
     readonly nowEpochMs: number;
@@ -83,6 +133,20 @@ export function buildJiraAuthorizationUrl(input: {
 const requestError = (code: "oauth_exchange_failed" | "authorization_failed", message: string) =>
   new WorkbenchJiraOperationError({ code, message });
 
+const brokerRequestError = (message: string) => requestError("oauth_exchange_failed", message);
+
+const brokerUrl = (base: string, path: string) => {
+  try {
+    const url = new URL(base);
+    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
+      throw new Error("invalid broker URL");
+    }
+    return new URL(path, url.origin).toString();
+  } catch {
+    throw brokerRequestError("The Jira authorization service is unavailable.");
+  }
+};
+
 const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
 
@@ -97,6 +161,31 @@ const make = Effect.gen(function* () {
       Effect.flatMap(HttpClientResponse.schemaBodyJson(input.schema)),
       Effect.mapError(() => requestError(input.code, input.message)),
     );
+
+  const executeBroker = <S extends Schema.Top>(input: {
+    readonly brokerUrl: string;
+    readonly path: string;
+    readonly body: Record<string, string>;
+    readonly schema: S;
+  }): Effect.Effect<S["Type"], WorkbenchJiraOperationError, S["DecodingServices"]> => {
+    const makeRequest: Effect.Effect<
+      HttpClientRequest.HttpClientRequest,
+      WorkbenchJiraOperationError
+    > = Effect.try({
+      try: () =>
+        HttpClientRequest.post(brokerUrl(input.brokerUrl, input.path)).pipe(
+          HttpClientRequest.bodyJsonUnsafe(input.body),
+        ),
+      catch: () => brokerRequestError("The Jira authorization service is unavailable."),
+    });
+    return Effect.gen(function* () {
+      const request = yield* makeRequest;
+      return yield* httpClient.execute(request.pipe(HttpClientRequest.acceptJson)).pipe(
+        Effect.flatMap(HttpClientResponse.schemaBodyJson(input.schema)),
+        Effect.mapError(() => brokerRequestError("Jira authorization could not be completed.")),
+      );
+    });
+  };
 
   const exchangeToken = (input: {
     readonly body: Record<string, string>;
@@ -145,6 +234,67 @@ const make = Effect.gen(function* () {
         previousScope: input.previousScope,
         nowEpochMs: input.nowEpochMs,
       }),
+    startBroker: (input) =>
+      executeBroker({
+        brokerUrl: input.brokerUrl,
+        path: "/jira/start",
+        body: { claimChallenge: input.claimChallenge },
+        schema: BrokerStartResponse,
+      }),
+    claimBroker: (input) =>
+      executeBroker({
+        brokerUrl: input.brokerUrl,
+        path: "/jira/claim",
+        body: { sessionId: input.sessionId, verifier: input.verifier },
+        schema: BrokerClaimResponse,
+      }).pipe(
+        Effect.flatMap(
+          (response): Effect.Effect<JiraOAuthBrokerClaim, WorkbenchJiraOperationError> => {
+            if (response.status === "pending") return Effect.succeed(response);
+            if (response.status === "failed") {
+              return Effect.succeed({
+                status: "failed",
+                error: response.error ?? "authorization_failed",
+              } satisfies JiraOAuthBrokerClaim);
+            }
+            const expiresAtEpochMs = Date.parse(response.tokens.expiresAt);
+            if (!Number.isFinite(expiresAtEpochMs)) {
+              return Effect.fail(
+                brokerRequestError("Jira authorization returned an invalid token."),
+              );
+            }
+            return Effect.succeed({
+              status: "complete",
+              credential: {
+                accessToken: response.tokens.accessToken,
+                refreshToken: response.tokens.refreshToken,
+                scope: response.tokens.scope,
+                expiresAtEpochMs,
+              },
+            } satisfies JiraOAuthBrokerClaim);
+          },
+        ),
+      ),
+    refreshBroker: (input) =>
+      executeBroker({
+        brokerUrl: input.brokerUrl,
+        path: "/jira/refresh",
+        body: { refreshToken: input.refreshToken },
+        schema: BrokerRefreshResponse,
+      }).pipe(
+        Effect.flatMap((response) => {
+          const expiresAtEpochMs = Date.parse(response.tokens.expiresAt);
+          if (!Number.isFinite(expiresAtEpochMs)) {
+            return Effect.fail(brokerRequestError("Jira access returned an invalid token."));
+          }
+          return Effect.succeed({
+            accessToken: response.tokens.accessToken,
+            refreshToken: response.tokens.refreshToken,
+            scope: response.tokens.scope || input.previousScope,
+            expiresAtEpochMs,
+          } satisfies JiraOAuthCredential);
+        }),
+      ),
     listAccessibleSites: (accessToken) =>
       execute({
         request: HttpClientRequest.get(ATLASSIAN_ACCESSIBLE_RESOURCES_URL).pipe(

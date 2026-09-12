@@ -10,6 +10,7 @@ import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import { ChildProcessSpawner } from "effect/unstable/process";
+import { afterEach, vi } from "vite-plus/test";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopBackendConfiguration from "./DesktopBackendConfiguration.ts";
@@ -293,6 +294,19 @@ describe("DesktopBackendConfiguration", () => {
       );
       assert.equal(config.env.ELECTRON_RUN_AS_NODE, "1");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.effect("Workbench WSL uses its own Linux home for persisted state", () =>
+    withHarness(
+      Effect.gen(function* () {
+        vi.stubGlobal("__T3CODE_WORKBENCH_BUILD__", true);
+        const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
+        const wsl = yield* configuration.resolveWsl({ port: 5000, distro: null });
+        assert.equal(wsl.bootstrap.t3Home, "~/.t3-workbench");
+      }),
+    ),
   );
 
   it.effect("resolveWsl reuses the primary's bootstrap token", () =>
