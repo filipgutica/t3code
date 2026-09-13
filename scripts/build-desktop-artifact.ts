@@ -2831,10 +2831,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
-      // Keep Electron's hardened runtime enabled for both distributions. The
-      // Workbench path intentionally relies on osx-sign's default Electron
-      // entitlements instead of the upstream app's passkey profile.
-      hardenedRuntime: true,
+      // Ad-hoc previews need a complete bundle signature after Electron is
+      // renamed. Hardened library validation requires a Developer ID team.
+      hardenedRuntime: !workbench || signed,
+      ...(workbench && !signed ? { identity: "-", notarize: false } : {}),
       extendInfo: {
         NSScreenCaptureUsageDescription:
           "T3 Code captures the active window when you use the window capture shortcut.",

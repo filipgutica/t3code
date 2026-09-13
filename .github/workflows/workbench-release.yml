@@ -345,8 +345,8 @@ jobs:
           fi
           vp run dist:desktop:artifact "${args[@]}"
 
-      - name: Verify macOS signature and notarization
-        if: matrix.platform == 'mac' && inputs.sign_macos
+      - name: Verify macOS signature and optional notarization
+        if: matrix.platform == 'mac'
         shell: bash
         run: |
           set -euo pipefail
@@ -355,8 +355,10 @@ jobs:
           ditto -x -k "release/T3-Code-Workbench-$RELEASE_VERSION-${{ matrix.arch }}.zip" "$verify_dir"
           app="$verify_dir/T3 Code Workbench.app"
           codesign --verify --deep --strict "$app"
-          spctl --assess --type execute --verbose "$app"
-          xcrun stapler validate "$app"
+          if [[ "${{ inputs.sign_macos }}" == true ]]; then
+            spctl --assess --type execute --verbose "$app"
+            xcrun stapler validate "$app"
+          fi
 
       - name: Remove notarization key
         if: always() && matrix.platform == 'mac' && inputs.sign_macos

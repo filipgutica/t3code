@@ -1944,6 +1944,31 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
+  it.effect("ad-hoc signs Workbench Mac previews without Developer ID or notarization", () =>
+    Effect.gen(function* () {
+      const config = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "0.0.3",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      const mac = config.mac as Record<string, unknown>;
+
+      assert.equal(mac.identity, "-");
+      assert.equal(mac.hardenedRuntime, false);
+      assert.equal(mac.notarize, false);
+      assert.notProperty(mac, "sign");
+      assert.notProperty(config, "forceCodeSigning");
+    }).pipe(
+      Effect.provide(
+        ConfigProvider.layer(ConfigProvider.fromEnv({ env: { T3CODE_WORKBENCH_BUILD: "1" } })),
+      ),
+    ),
+  );
+
   it.effect("signs Workbench macOS builds without upstream passkey entitlements", () =>
     Effect.gen(function* () {
       const config = yield* createBuildConfig(
