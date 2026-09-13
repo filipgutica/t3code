@@ -4,6 +4,10 @@ Workbench connects planning to implementation. Group repositories into a Workspa
 
 Workbench is available in the web and desktop clients. Jira is optional. Each connected T3 environment has its own Workspaces and Tickets; boards do not combine records from different environments. There is no dedicated Workbench mobile interface yet.
 
+![Orbit Workspace with Tickets across Todo, In Progress, and Done, and repository context on each card.](./media/workbench/board.png)
+
+The examples use fictional Orbit and Beacon projects in an isolated desktop environment. The repository worktrees and linked demo pull requests are real.
+
 ## In this guide
 
 - [Create your first Workspace and Ticket](#create-your-first-workspace-and-ticket)
@@ -40,6 +44,12 @@ To rename the Workspace or add repositories later, choose **Edit Workspace** in 
 
 **Creating a Thread does not start an agent turn.** Workbench prepares one Git worktree per selected repository and opens the Thread in the primary repository's worktree. The context chip supplies the Ticket description and repository paths when you send.
 
+Select the context chip to inspect what the agent will receive. In this example, one Ticket includes separate Orbit API and Orbit Web worktrees.
+
+![Ticket context containing the description, acceptance criteria, and paths to both repository worktrees.](./media/workbench/ticket-context.png)
+
+[Watch: create a Thread and prepare both repository worktrees](./media/workbench/create-ticket-worktrees.mp4).
+
 Use **New Thread** for another conversation on the same Ticket. Each new Thread starts with Ticket context and waits for you to send.
 
 ### Navigate between planning and conversations
@@ -63,6 +73,24 @@ When a linked Thread starts executing a turn, a To Do Ticket moves to In Progres
 **A completed agent turn does not mark the Ticket Done.** Review the result, then update progress from the Ticket or Board card menu when the work is accepted.
 
 For Jira Tickets, Workbench first applies an available Jira transition. If that transition fails, the Thread continues and its work log shows a warning.
+
+### Track pull requests across repositories
+
+The Ticket's **Pull Requests** section collects PRs from its linked Threads and repository checkouts. A change spanning an API and web app can have both PRs visible in one place.
+
+To attach a PR yourself:
+
+1. Open the Ticket's Thread.
+2. Open the right panel and choose **Linked pull requests**.
+3. Choose **Link pull request**, or **Link** if the list already contains a PR.
+4. Paste the full PR URL and choose **Link**.
+5. Return to the Ticket to see its PRs together.
+
+Use a full URL for a PR in another repository. A number such as `#42` refers to the Thread's own repository. The environment needs a Project with access to the PR's host.
+
+![One Ticket showing pull requests from Orbit Web and Orbit API, alongside its Thread and prepared repository worktrees.](./media/workbench/pull-requests.png)
+
+[Watch: link a PR and review work across two repositories](./media/workbench/link-pull-requests.mp4).
 
 ## Edit and organize Tickets
 
@@ -89,6 +117,8 @@ If generation fails, Workbench keeps the previous summary. Summaries do not chan
 
 Choose **New Epic** on the Board and assign related Tickets to it. Use Epic swimlanes on the Board to see that work together.
 
+![The Orbit Board grouped into two Epic swimlanes, with all three progress columns visible.](./media/workbench/epics.png)
+
 ### Archive, restore, or delete local Tickets
 
 | Task                                      | Action                                                                 | Result                                  |
@@ -108,6 +138,16 @@ Threads using the same Ticket worktree share its files and branch changes. Use a
 The Ticket shows each repository's directory and latest reported branch. These refresh when you open the Ticket or return to the window. Linked Threads show their actual checkout and whether they share a Ticket worktree.
 
 New worktrees have readable names based on the Jira issue key or local Ticket title, with a unique suffix. Branch descriptions are generated using the source control writer model when available, otherwise the text generation model. If generation fails, Workbench uses the Ticket title. Existing worktree paths and branch names are retained.
+
+Creating a Workbench **Workspace** groups existing Projects; it does not create repository directories. **Create Thread** prepares the Ticket's directories. For a new two-repository Ticket, the layout looks like this:
+
+```text
+worktrees/workbench/save-onboarding-progress-<suffix>/
+├── orbit-api/
+└── orbit-web/
+```
+
+Each directory is a Git worktree for its own repository. Workbench initially creates the same Ticket branch name in both. **Repository scope** shows their paths and branches; the primary repository is where the Thread starts.
 
 ### Change a Ticket's repositories
 
@@ -156,9 +196,15 @@ Published Workbench desktop previews include a hosted Jira connection. You autho
 
 An issue in more than one selected sprint appears only once. Importing creates Tickets, not worktrees. Before starting a Thread, check that Ticket's **Repository scope**.
 
+The Orbit example mirrors six assigned Jira issues into the same Workspace as its local Tickets. Jira issue keys identify imported work. Both Orbit API and Orbit Web are selected as the default repository scope.
+
+![Orbit Workspace showing imported Jira issues alongside local Tickets, with To Do, In Progress, In Review, and Done columns.](./media/workbench/jira-board.png)
+
 ### Sync and follow sprints
 
 Choose **Sync Jira** for an immediate refresh. An active mirror also checks Jira every five minutes while its server is running. Open Boards refresh automatically and when the app regains focus, including Workspaces without Jira.
+
+[Watch: a Jira status change appear in Workbench](./media/workbench/jira-sync.mp4). In this clip, ORBIT-4 moves from In Review to Done after a change in Jira and a manual sync. The recording shows the desktop Board; the Jira edit and sync command happen outside the captured window.
 
 With **Follow selected sprints automatically** enabled, Workbench keeps active selected sprints and replaces closed ones when it can identify a complete successor selection. It keeps the previous Board and reports an error if replacements are missing or ambiguous. A sprint already observed running alongside the selection is not considered a successor.
 
