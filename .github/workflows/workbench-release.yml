@@ -556,7 +556,7 @@ jobs:
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$RELEASE_SHA" \
-            --title "T3 Code Workbench $RELEASE_VERSION (preview)" \
+            --title "$RELEASE_TAG" \
             --prerelease \
             --draft \
             --notes-file "$RUNNER_TEMP/workbench-release-notes.md"
