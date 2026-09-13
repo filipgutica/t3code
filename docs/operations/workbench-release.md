@@ -19,26 +19,34 @@ available.
 
 ## Run modes
 
-`unsigned-preview` is the default for the first shared release. It produces
-explicitly labelled `UNSIGNED PREVIEW` packages and creates a **draft,
-prerelease** GitHub Release with the installers, build
-provenance, and `SHA256SUMS.txt`. A maintainer must review and publish that
-draft manually. The tag is named `workbench-vX.Y.Z`, so it does not trigger the
-upstream-compatible `v*` release workflow in this fork.
+`unsigned-preview` creates a draft prerelease. `build-only` uploads workflow
+artifacts without creating a release. Both default to unsigned builds. Set
+**sign_macos** to sign and notarize the Mac builds in either mode; Windows and
+Linux remain unsigned. Missing Apple credentials stop the run before builds
+start. A signing or notarization failure fails the release rather than falling
+back to unsigned output.
 
-`build-only` produces explicitly labelled `UNSIGNED BUILD VALIDATION` packages
-as workflow artifacts and does not create a GitHub Release. Use it to prove the
-native packaging and Workbench build before creating a shareable preview.
+Review the draft and publish it manually. Only published releases become
+update candidates. The tag is `workbench-vX.Y.Z`, so it does not trigger the
+upstream-compatible `v*` release workflow.
 
-Signing is intentionally not part of this first preview workflow. A future
-signed mode must require every Apple and Windows credential below in a
-preflight before any platform build starts; it must never silently turn a
-requested signed release into an unsigned one.
+## Updates
 
-The release is not operational until a run succeeds on GitHub and the resulting
-draft has been reviewed. In particular, an unsigned build artifact or a passing
-local command does not prove that the public release, update feed, or Jira
-experience is ready.
+The first preview, 0.0.1, has no update feed. Install the first updater-enabled
+release manually. Subsequent updater-enabled Windows installations, Linux
+AppImages, and signed macOS builds check GitHub releases automatically. Users
+choose when to download and restart; updates do not install silently.
+
+The updater considers only published `workbench-vX.Y.Z` releases in
+`filipgutica/t3code`, including preview releases. It ignores drafts and unrelated
+tags. Keep Workbench version numbers increasing. Unsigned macOS builds require
+manual downloads because the native Mac updater requires code signing.
+
+Each build emits update metadata. Unsigned Mac releases omit their Mac update
+manifest so signed clients cannot select them. For signed builds, the release job merges both Mac manifests
+into `latest-mac.yml`, retains `latest.yml` for Windows and `latest-linux.yml`
+for Linux, and recomputes the final checksums after merging. Publish only after every platform and metadata check passes. Keep updater
+metadata attached while installed clients can still select that release.
 
 ## Required build configuration
 
@@ -48,17 +56,11 @@ The workflow exports these values into every desktop build:
 - `T3_WORKBENCH_JIRA_BROKER_URL=https://workbench-auth.fgutica.workers.dev`
 - `T3CODE_DESKTOP_UPDATE_REPOSITORY=${{ github.repository }}`
 
-The repository value reserves this fork's release source for future updater support.
-Automatic updates are disabled for the unsigned preview; users install later
-versions from this fork's GitHub Releases page.
-
-The preview installs as **T3 Code Workbench**, using app identifier
-`com.filipgutica.t3code.workbench`, URL scheme `t3code-workbench`, and its own
-`.t3-workbench` data directory. It does not migrate existing T3 Code data.
-Before signed distribution, confirm the fork's app protocol and Clerk callback
-configuration, including any macOS passkey or associated-domain requirements.
-Those external allowlists are a release prerequisite and are not proven by a
-successful unsigned package build.
+The updater is restricted to this fork even if another updater repository is
+present in the build environment. The preview installs as **T3 Code Workbench**,
+using app identifier `com.filipgutica.t3code.workbench`, URL scheme
+`t3code-workbench`, and its own `.t3-workbench` data directory. It does not
+migrate existing T3 Code data.
 
 Windows packages include the Linux `node-pty` prebuild used by the WSL backend.
 The workflow builds it on Ubuntu with `build-essential` and Python 3, then
@@ -67,24 +69,49 @@ passes it to the Windows packaging job. Linux packaging installs
 uses the hosted Visual Studio installation, Rust's MSVC target, Python 3, tar,
 and the Spectre-mitigated MSVC runtime component.
 
-## Configure signing for a future signed mode
+## Set up Apple signing
 
-Add secrets and variables at **Repository → Settings → Secrets and variables →
-Actions**. Keep private keys and passwords as Actions secrets; the
-future signing setup can keep `APPLE_TEAM_ID` as a repository variable.
+After your paid [Apple Developer enrollment](https://developer.apple.com/programs/enroll/)
+is active:
 
-For macOS, the signing setup requires a paid Apple Developer membership and
-the following values:
+1. Create a **Developer ID Application** certificate using
+   [Apple's certificate instructions](https://developer.apple.com/help/account/certificates/create-developer-id-certificates).
+   This is for distribution outside the Mac App Store. In Keychain Access,
+   export the certificate **with its private key** as a password-protected
+   `.p12`. A `.cer` file alone cannot sign the application.
+2. Create a team App Store Connect API key for notarization through
+   **Users and Access → Integrations → App Store Connect API**. Record its Key
+   ID and Issuer ID, and download the `.p8` private key. Follow
+   [Apple's API key instructions](https://developer.apple.com/documentation/appstoreconnectapi/creating-api-keys-for-app-store-connect-api).
+3. Add the following repository Actions secrets at
+   [Workbench Actions secrets](https://github.com/filipgutica/t3code/settings/secrets/actions).
+   Keep private keys and passwords out of chat and Git.
 
-| Name                         | Kind     | Value                                                      |
-| ---------------------------- | -------- | ---------------------------------------------------------- |
-| `CSC_LINK`                   | secret   | Base64-encoded Developer ID Application `.p12` certificate |
-| `CSC_KEY_PASSWORD`           | secret   | Password for that `.p12` file                              |
-| `APPLE_API_KEY`              | secret   | Contents of the App Store Connect API `.p8` key            |
-| `APPLE_API_KEY_ID`           | secret   | App Store Connect API key ID                               |
-| `APPLE_API_ISSUER`           | secret   | App Store Connect issuer UUID                              |
-| `APPLE_TEAM_ID`              | variable | Apple Developer Team ID                                    |
-| `MACOS_PROVISIONING_PROFILE` | secret   | Base64-encoded macOS provisioning profile                  |
+| Actions secret                   | Value                                                  |
+| -------------------------------- | ------------------------------------------------------ |
+| `WORKBENCH_MAC_CSC_LINK`         | Base64 contents of the Developer ID Application `.p12` |
+| `WORKBENCH_MAC_CSC_KEY_PASSWORD` | Password used when exporting the `.p12`                |
+| `WORKBENCH_APPLE_API_KEY`        | Full text of the downloaded `.p8` private key          |
+| `WORKBENCH_APPLE_API_KEY_ID`     | API key's Key ID                                       |
+| `WORKBENCH_APPLE_API_ISSUER`     | API key's Issuer ID                                    |
+
+The workflow writes the notarization key to a private temporary file and passes
+its path to electron-builder's `APPLE_API_KEY`. It removes that file after the
+build. These Workbench-only secret names do not configure the upstream release
+or mobile workflows.
+
+Run **build-only** with **sign_macos** enabled first. Both Mac architectures
+must pass signature verification, Gatekeeper assessment, and notarization
+ticket validation. Then create a preview release with the same signing option.
+Use the same Apple signing identity for future updates. A valid signing and
+update cycle cannot be verified until credentials and two signed versions are
+available.
+
+Workbench does not require the upstream Clerk passkey provisioning profile or
+associated domains for its current distribution. Configuring those features
+later requires a separate identity and entitlement review.
+
+## Future Windows signing
 
 The existing Windows packager supports Azure Artifact Signing (formerly Trusted
 Signing). A future signed workflow can use it. Configure the Azure
@@ -103,7 +130,7 @@ publisher values below:
 
 Confirm the Azure service's current pricing and eligibility in its account
 before relying on it for distribution. These values are documentation for the
-future signed workflow; the current unsigned preview workflow does not read
+future signed workflow; the current preview workflow does not read
 them.
 
 ## Jira production app prerequisite

@@ -6,12 +6,17 @@ on:
       version:
         description: "Workbench version to release (X.Y.Z)"
         required: true
-        default: "0.0.1"
+        default: "0.0.2"
         type: string
       previous_tag:
         description: "Optional previous Workbench tag for notes (for example workbench-v0.0.1)"
         required: false
         type: string
+      sign_macos:
+        description: "Sign and notarize macOS builds (requires Workbench Apple secrets)"
+        required: true
+        default: false
+        type: boolean
       release_mode:
         description: "Unsigned preview draft or build-only validation"
         required: true
@@ -54,6 +59,24 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+
+      - name: Validate macOS signing credentials
+        if: inputs.sign_macos
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.WORKBENCH_MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WORKBENCH_MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.WORKBENCH_APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.WORKBENCH_APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.WORKBENCH_APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY APPLE_API_KEY_ID APPLE_API_ISSUER; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required Workbench signing credential: $name" >&2
+              exit 1
+            fi
+          done
 
       - id: resolve
         name: Resolve exact main commit and release tags
@@ -282,6 +305,27 @@ jobs:
           name: workbench-wsl-node-pty-x64
           path: wsl-prebuild
 
+      - name: Configure macOS signing
+        if: matrix.platform == 'mac' && inputs.sign_macos
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.WORKBENCH_MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WORKBENCH_MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.WORKBENCH_APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.WORKBENCH_APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.WORKBENCH_APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          umask 077
+          key_path="$RUNNER_TEMP/workbench-notarization.p8"
+          printf '%s' "$APPLE_API_KEY_CONTENT" > "$key_path"
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY_ID APPLE_API_ISSUER; do
+            # GitHub multiline values preserve certificate data and passwords.
+            delimiter="WORKBENCH_$(openssl rand -hex 16)"
+            printf '%s<<%s\n%s\n%s\n' "$name" "$delimiter" "${!name}" "$delimiter" >> "$GITHUB_ENV"
+          done
+          printf 'APPLE_API_KEY=%s\n' "$key_path" >> "$GITHUB_ENV"
+
       - name: Build desktop artifact
         shell: bash
         run: |
@@ -296,7 +340,28 @@ jobs:
           if [[ "${{ matrix.platform }}" == win ]]; then
             args+=(--wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node")
           fi
+          if [[ "${{ matrix.platform }}" == mac && "${{ inputs.sign_macos }}" == true ]]; then
+            args+=(--signed)
+          fi
           vp run dist:desktop:artifact "${args[@]}"
+
+      - name: Verify macOS signature and notarization
+        if: matrix.platform == 'mac' && inputs.sign_macos
+        shell: bash
+        run: |
+          set -euo pipefail
+          verify_dir="$RUNNER_TEMP/workbench-signature-check"
+          mkdir -p "$verify_dir"
+          ditto -x -k "release/T3-Code-Workbench-$RELEASE_VERSION-${{ matrix.arch }}.zip" "$verify_dir"
+          app="$verify_dir/T3 Code Workbench.app"
+          codesign --verify --deep --strict "$app"
+          spctl --assess --type execute --verbose "$app"
+          xcrun stapler validate "$app"
+
+      - name: Remove notarization key
+        if: always() && matrix.platform == 'mac' && inputs.sign_macos
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/workbench-notarization.p8"
 
       - name: Validate and checksum package
         shell: bash
@@ -307,7 +372,7 @@ jobs:
           set -euo pipefail
           mkdir -p release-publish
           shopt -s nullglob
-          for pattern in "release/*.dmg" "release/*.zip" "release/*.AppImage" "release/*.exe" "release/*.blockmap"; do
+          for pattern in "release/*.dmg" "release/*.zip" "release/*.AppImage" "release/*.exe" "release/*.blockmap" "release/latest*.yml"; do
             for file in $pattern; do cp "$file" release-publish/; done
           done
 
@@ -326,8 +391,27 @@ jobs:
               ;;
           esac
 
+          # Signed clients must never select an unsigned Mac update.
+          if [[ "$BUILD_PLATFORM" == mac && "${{ inputs.sign_macos }}" != true ]]; then
+            rm release-publish/latest-mac.yml
+          elif [[ "$BUILD_PLATFORM" == mac && "$BUILD_ARCH" == x64 ]]; then
+            mv release-publish/latest-mac.yml release-publish/latest-mac-x64.yml
+          fi
+          case "$BUILD_PLATFORM" in
+            mac)
+              suffix=""
+              if [[ "$BUILD_ARCH" == x64 ]]; then suffix="-x64"; fi
+              if [[ "${{ inputs.sign_macos }}" == true ]]; then
+                test -f "release-publish/latest-mac$suffix.yml"
+              fi
+              ;;
+            linux) test -f release-publish/latest-linux.yml ;;
+            win) test -f release-publish/latest.yml ;;
+          esac
+
           status="UNSIGNED PREVIEW"
           if [[ "$RELEASE_MODE" == build-only ]]; then status="UNSIGNED BUILD VALIDATION"; fi
+          if [[ "$BUILD_PLATFORM" == mac && "${{ inputs.sign_macos }}" == true ]]; then status="SIGNED AND NOTARIZED"; fi
           metadata="release-publish/WORKBENCH-BUILD-INFO-${BUILD_PLATFORM}-${BUILD_ARCH}.txt"
           {
             printf 'T3 Code Workbench desktop build\n'
@@ -358,7 +442,7 @@ jobs:
           retention-days: 7
 
   unsigned_preview_draft:
-    name: Create unsigned preview draft GitHub Release
+    name: Create preview draft GitHub Release
     needs: [resolve, quality, build]
     if: ${{ inputs.release_mode == 'unsigned-preview' && !failure() && !cancelled() }}
     runs-on: ubuntu-24.04
@@ -374,6 +458,21 @@ jobs:
       UPSTREAM_SHA: ${{ needs.resolve.outputs.upstream_sha }}
       UPSTREAM_BASE: ${{ needs.resolve.outputs.upstream_base }}
     steps:
+      - name: Checkout selected commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          fetch-depth: 1
+
+      - name: Setup manifest merge tools
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/scripts...
+
       - name: Download desktop artifacts
         uses: actions/download-artifact@v8
         with:
@@ -393,6 +492,16 @@ jobs:
           done
           rm -f release-assets/SHA256SUMS-*.txt
           test -n "$(find release-assets -type f -print -quit)"
+
+          if [[ "${{ inputs.sign_macos }}" == true ]]; then
+            node scripts/merge-update-manifests.ts --platform mac release-assets/latest-mac.yml release-assets/latest-mac-x64.yml
+            rm release-assets/latest-mac-x64.yml
+          else
+            test ! -f release-assets/latest-mac.yml
+            test ! -f release-assets/latest-mac-x64.yml
+          fi
+          test -f release-assets/latest.yml
+          test -f release-assets/latest-linux.yml
 
           node --input-type=module -e '
             import { createHash } from "node:crypto";
@@ -420,10 +529,14 @@ jobs:
           generated_notes="$(gh api "${args[@]}" --jq .body)"
           {
             printf '# T3 Code Workbench %s\n\n' "$RELEASE_VERSION"
-            printf 'This is an unsigned preview of T3 Code Workbench.\n\n'
+            if [[ "${{ inputs.sign_macos }}" == true ]]; then
+              printf 'This preview has signed and notarized macOS builds. Windows and Linux builds are unsigned.\n\n'
+            else
+              printf 'This is an unsigned preview of T3 Code Workbench.\n\n'
+            fi
             printf '%s\n' "$generated_notes"
             printf '\n## Installation\n\n'
-            printf 'Install this preview alongside official T3 Code. It uses separate saved data. Updates are manual downloads for now.\n\n'
+            printf 'Install this preview alongside official T3 Code. It uses separate saved data. Windows and Linux AppImage builds check published Workbench releases automatically; choose when to download and restart. Signed macOS builds also support updates; unsigned macOS builds require manual downloads. Version 0.0.1 needs one manual upgrade to enable update checks.\n\n'
             printf 'macOS may require System Settings → Privacy & Security → Open Anyway. Windows may show an unknown-publisher or SmartScreen warning; device policies can block unsigned apps. On Linux, make the AppImage executable.\n\n'
             printf 'See [Apple installation guidance](https://support.apple.com/en-ca/guide/mac-help/mh40616/mac) and [Windows signing guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).\n'
             printf '\n## Build provenance\n\n'
@@ -432,7 +545,7 @@ jobs:
             printf -- '- Upstream `pingdotgg/t3code` main: `%s`\n' "${UPSTREAM_SHA:-unavailable}"
             printf -- '- Upstream merge base: `%s`\n' "${UPSTREAM_BASE:-unavailable}"
             printf -- '- Jira broker: `%s`\n' "$T3_WORKBENCH_JIRA_BROKER_URL"
-            printf '\n## Verification\n\n- macOS arm64 and x64, Linux x64, and Windows x64 artifacts were built and checksummed.\n- These preview artifacts are unsigned.\n'
+            printf '\n## Verification\n\n- macOS arm64 and x64, Linux x64, and Windows x64 artifacts were built and checksummed.\n- See the platform build metadata for signing status.\n'
           } > "$RUNNER_TEMP/workbench-release-notes.md"
 
       - name: Create draft release
@@ -441,7 +554,7 @@ jobs:
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$RELEASE_SHA" \
-            --title "T3 Code Workbench $RELEASE_VERSION (unsigned preview)" \
+            --title "T3 Code Workbench $RELEASE_VERSION (preview)" \
             --prerelease \
             --draft \
             --notes-file "$RUNNER_TEMP/workbench-release-notes.md"

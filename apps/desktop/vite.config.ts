@@ -7,6 +7,7 @@ const repoEnv = loadRepoEnv();
 const shouldLaunchElectronAfterPack = process.env.T3CODE_DESKTOP_DEV === "1";
 const publicConfigDefine = {
   __T3CODE_WORKBENCH_BUILD__: JSON.stringify(repoEnv.T3CODE_WORKBENCH_BUILD === "1"),
+  __T3CODE_WORKBENCH_MAC_SIGNED__: JSON.stringify(repoEnv.T3CODE_WORKBENCH_MAC_SIGNED === "1"),
   __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
     repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
   ),

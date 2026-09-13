@@ -38,7 +38,10 @@ import {
   LinuxDesktopBuildPrerequisitesMissingError,
   MacDesktopBuildPrerequisitesMissingError,
   MacPasskeySigningConfigurationResolutionError,
+  MacWorkbenchSigningConfigurationResolutionError,
   MissingMacPasskeyProvisioningProfileError,
+  MissingMacWorkbenchSigningCredentialsError,
+  WorkbenchMacBuildReuseError,
   packWindowsServerAsar,
   preflightLinuxDesktopBuild,
   preflightMacDesktopBuild,
@@ -48,10 +51,14 @@ import {
   resolveMacPasskeySigningConfiguration,
   resolveDesktopRuntimeDependencies,
   resolveMacStageDependencies,
+  resolveMacWorkbenchSigningConfiguration,
   resolveFffNativeDependencies,
   resolveBuildOptions,
   resolveDesktopBuildIconAssets,
   resolveDesktopProductName,
+  resolveDesktopPackageName,
+  resolveDesktopBundleBuildEnvironment,
+  validateWorkbenchMacBuildMode,
   resolveDesktopUpdateChannel,
   resolveDesktopWebAssetBrand,
   resolveResourceMonitorRustTargets,
@@ -258,7 +265,53 @@ const makeWindowsPayloadFixture = Effect.fn("test.makeWindowsPayloadFixture")(fu
 });
 
 it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
-  it.effect("packages Workbench with its own install identity and manual preview updates", () =>
+  it("keeps the Workbench updater cache separate from official T3 Code", () => {
+    assert.equal(resolveDesktopPackageName(), "t3code");
+    assert.equal(resolveDesktopPackageName(true), "t3code-workbench");
+  });
+
+  it("rejects Workbench macOS packaging when reusing a differently compiled bundle", () => {
+    assert.doesNotThrow(() =>
+      validateWorkbenchMacBuildMode({ workbench: true, platform: "mac", skipBuild: false }),
+    );
+    assert.doesNotThrow(() =>
+      validateWorkbenchMacBuildMode({ workbench: false, platform: "mac", skipBuild: true }),
+    );
+    const error = validateWorkbenchMacBuildMode({
+      workbench: true,
+      platform: "mac",
+      skipBuild: true,
+    });
+    assert.instanceOf(error, WorkbenchMacBuildReuseError);
+  });
+
+  it("compiles the Workbench macOS update gate from the signing mode", () => {
+    const signed = resolveDesktopBundleBuildEnvironment({
+      baseEnv: { T3CODE_WORKBENCH_MAC_SIGNED: "0", KEEP_ME: "yes" },
+      workbench: true,
+      platform: "mac",
+      signed: true,
+    });
+    const unsigned = resolveDesktopBundleBuildEnvironment({
+      baseEnv: { T3CODE_WORKBENCH_MAC_SIGNED: "1", KEEP_ME: "yes" },
+      workbench: true,
+      platform: "mac",
+      signed: false,
+    });
+    const official = resolveDesktopBundleBuildEnvironment({
+      baseEnv: { T3CODE_WORKBENCH_MAC_SIGNED: "1", KEEP_ME: "yes" },
+      workbench: false,
+      platform: "mac",
+      signed: true,
+    });
+
+    assert.equal(signed.T3CODE_WORKBENCH_MAC_SIGNED, "1");
+    assert.equal(unsigned.T3CODE_WORKBENCH_MAC_SIGNED, "0");
+    assert.equal(official.T3CODE_WORKBENCH_MAC_SIGNED, "1");
+    assert.equal(unsigned.KEEP_ME, "yes");
+  });
+
+  it.effect("packages Workbench with its own install identity and release update metadata", () =>
     Effect.gen(function* () {
       const config = yield* createBuildConfig(
         "mac",
@@ -275,7 +328,15 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepInclude(config.mac, {
         protocols: [{ name: "T3 Code Workbench", schemes: ["t3code-workbench"] }],
       });
-      assert.isNull(config.publish);
+      assert.deepStrictEqual(config.publish, [
+        {
+          provider: "github",
+          owner: "filipgutica",
+          repo: "t3code",
+          channel: "latest",
+          releaseType: "prerelease",
+        },
+      ]);
     }).pipe(
       Effect.provide(
         ConfigProvider.layer(
@@ -1829,6 +1890,42 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.notInclude(error.message, secret);
   });
 
+  it("requires distribution and notarization credentials for signed Workbench builds", () => {
+    const complete = {
+      CSC_LINK: "base64-encoded-p12",
+      CSC_KEY_PASSWORD: "password",
+      APPLE_API_KEY: "/tmp/AuthKey_TEST.p8",
+      APPLE_API_KEY_ID: "TESTKEYID",
+      APPLE_API_ISSUER: "00000000-0000-0000-0000-000000000000",
+    };
+    assert.doesNotThrow(() => resolveMacWorkbenchSigningConfiguration(complete));
+
+    const error = assert.throws(() =>
+      resolveMacWorkbenchSigningConfiguration({
+        CSC_LINK: complete.CSC_LINK,
+        APPLE_API_KEY: complete.APPLE_API_KEY,
+        APPLE_API_KEY_ID: complete.APPLE_API_KEY_ID,
+      }),
+    );
+    assert.instanceOf(error, MissingMacWorkbenchSigningCredentialsError);
+    assert.deepStrictEqual(error.missing, ["CSC_KEY_PASSWORD", "APPLE_API_ISSUER"]);
+    assert.equal(
+      error.message,
+      "Signed Workbench macOS builds require CSC_KEY_PASSWORD, APPLE_API_ISSUER.",
+    );
+    assert.notInclude(JSON.stringify(error), complete.CSC_LINK);
+  });
+
+  it("preserves known Workbench signing configuration errors at the build boundary", () => {
+    const knownError = new MissingMacWorkbenchSigningCredentialsError({
+      missing: ["CSC_LINK"],
+    });
+    const error = MacWorkbenchSigningConfigurationResolutionError.fromCause(knownError);
+
+    assert.strictEqual(error, knownError);
+    assert.instanceOf(error, MissingMacWorkbenchSigningCredentialsError);
+  });
+
   it.effect("adds passkey entitlements and both renderer protocols to signed macOS builds", () =>
     Effect.gen(function* () {
       const config = yield* createBuildConfig("mac", "dmg", "1.2.3", true, false, undefined, {
@@ -1845,6 +1942,33 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         { name: "T3 Code", schemes: ["t3code", "t3code-dev"] },
       ]);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+  );
+
+  it.effect("signs Workbench macOS builds without upstream passkey entitlements", () =>
+    Effect.gen(function* () {
+      const config = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "1.2.3",
+        true,
+        false,
+        undefined,
+        undefined,
+      );
+      const mac = config.mac as Record<string, unknown>;
+
+      assert.equal(config.appId, "com.filipgutica.t3code.workbench");
+      assert.equal(config.productName, "T3 Code Workbench");
+      assert.match(String(mac.sign), /[\\/]scripts[\\/]sign-macos\.ts$/);
+      assert.equal(mac.hardenedRuntime, true);
+      assert.equal(config.forceCodeSigning, true);
+      assert.notProperty(mac, "entitlements");
+      assert.notProperty(mac, "provisioningProfile");
+    }).pipe(
+      Effect.provide(
+        ConfigProvider.layer(ConfigProvider.fromEnv({ env: { T3CODE_WORKBENCH_BUILD: "1" } })),
+      ),
+    ),
   );
 
   it.effect("uses the nightly DMG background for nightly macOS builds", () =>

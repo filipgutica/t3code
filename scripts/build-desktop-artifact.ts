@@ -55,6 +55,8 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
 const DESKTOP_APP_ID = "com.t3tools.t3code";
 const WORKBENCH_DISTRIBUTION = desktopPackageJson.workbenchDistribution;
+const DESKTOP_PACKAGE_NAME = "t3code";
+const WORKBENCH_PACKAGE_NAME = "t3code-workbench";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -1177,6 +1179,57 @@ export class MissingMacPasskeyDomainConfigurationError extends Schema.TaggedErro
   }
 }
 
+const MAC_WORKBENCH_SIGNING_ENVIRONMENT_VARIABLES = [
+  "CSC_LINK",
+  "CSC_KEY_PASSWORD",
+  "APPLE_API_KEY",
+  "APPLE_API_KEY_ID",
+  "APPLE_API_ISSUER",
+] as const;
+
+export class MissingMacWorkbenchSigningCredentialsError extends Schema.TaggedError<MissingMacWorkbenchSigningCredentialsError>()(
+  "MissingMacWorkbenchSigningCredentialsError",
+  {
+    missing: Schema.Array(Schema.String),
+  },
+) {
+  override get message(): string {
+    return `Signed Workbench macOS builds require ${this.missing.join(", ")}.`;
+  }
+}
+
+export const isMacWorkbenchSigningConfigurationError = Schema.is(
+  MissingMacWorkbenchSigningCredentialsError,
+);
+
+export class MacWorkbenchSigningConfigurationResolutionError extends Schema.TaggedError<MacWorkbenchSigningConfigurationResolutionError>()(
+  "MacWorkbenchSigningConfigurationResolutionError",
+  {
+    cause: Schema.Defect(),
+  },
+) {
+  static fromCause(
+    cause: unknown,
+  ): MissingMacWorkbenchSigningCredentialsError | MacWorkbenchSigningConfigurationResolutionError {
+    return isMacWorkbenchSigningConfigurationError(cause)
+      ? cause
+      : new MacWorkbenchSigningConfigurationResolutionError({ cause });
+  }
+
+  override get message(): string {
+    return "Failed to resolve macOS Workbench signing configuration.";
+  }
+}
+
+export class WorkbenchMacBuildReuseError extends Schema.TaggedError<WorkbenchMacBuildReuseError>()(
+  "WorkbenchMacBuildReuseError",
+  {},
+) {
+  override get message(): string {
+    return "Workbench macOS packaging cannot use --skip-build because signing state is compiled into the desktop bundle.";
+  }
+}
+
 export class InvalidMacPasskeyPublishableKeyError extends Schema.TaggedError<InvalidMacPasskeyPublishableKeyError>()(
   "InvalidMacPasskeyPublishableKeyError",
   {
@@ -1291,6 +1344,52 @@ export function resolveMacPasskeySigningConfiguration(
     rpDomains: uniqueRpDomains,
     provisioningProfilePath,
   };
+}
+
+/**
+ * Workbench uses a Developer ID certificate and App Store Connect API key for
+ * distribution signing. It deliberately does not use the upstream app's
+ * Associated Domains entitlement or provisioning profile.
+ *
+ * `APPLE_API_KEY` is the path to the temporary `.p8` file consumed by
+ * electron-builder's notarytool integration. CI writes that file from the
+ * secret contents before invoking this script.
+ */
+export function resolveMacWorkbenchSigningConfiguration(
+  env: Readonly<Record<string, string | undefined>>,
+): void {
+  const missing = MAC_WORKBENCH_SIGNING_ENVIRONMENT_VARIABLES.filter((name) => !env[name]?.trim());
+  if (missing.length > 0) {
+    throw new MissingMacWorkbenchSigningCredentialsError({ missing: [...missing] });
+  }
+}
+
+export function validateWorkbenchMacBuildMode(input: {
+  readonly workbench: boolean;
+  readonly platform: typeof BuildPlatform.Type;
+  readonly skipBuild: boolean;
+}): WorkbenchMacBuildReuseError | undefined {
+  if (input.workbench && input.platform === "mac" && input.skipBuild) {
+    return new WorkbenchMacBuildReuseError();
+  }
+  return undefined;
+}
+
+export function resolveDesktopBundleBuildEnvironment(input: {
+  readonly baseEnv: Readonly<NodeJS.ProcessEnv>;
+  readonly workbench: boolean;
+  readonly platform: typeof BuildPlatform.Type;
+  readonly signed: boolean;
+}): NodeJS.ProcessEnv {
+  const buildEnv: NodeJS.ProcessEnv = { ...input.baseEnv };
+  if (input.workbench && input.platform === "mac") {
+    buildEnv.T3CODE_WORKBENCH_MAC_SIGNED = input.signed ? "1" : "0";
+  }
+  return buildEnv;
+}
+
+export function resolveDesktopPackageName(workbench = false): string {
+  return workbench ? WORKBENCH_PACKAGE_NAME : DESKTOP_PACKAGE_NAME;
 }
 
 function escapeXml(value: string): string {
@@ -2671,6 +2770,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     (yield* Config.string("T3CODE_WORKBENCH_BUILD").pipe(Config.withDefault(""))) === "1";
   const buildConfig: Record<string, unknown> = {
     appId: workbench ? WORKBENCH_DISTRIBUTION.appId : DESKTOP_APP_ID,
+    ...(workbench && platform === "mac" && signed ? { forceCodeSigning: true } : {}),
     productName: resolveDesktopProductName(version, workbench),
     artifactName: workbench
       ? "T3-Code-Workbench-${version}-${arch}.${ext}"
@@ -2698,10 +2798,18 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     ],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
-  // Unsigned Workbench previews use manual downloads until a signed update channel is available.
   if (workbench) {
-    // Explicit null also disables electron-builder's automatic GitHub repository detection.
-    buildConfig.publish = null;
+    // Emit updater metadata even for draft previews. The Workbench runtime
+    // resolves only published Workbench tags in this repository.
+    buildConfig.publish = [
+      {
+        provider: "github",
+        owner: "filipgutica",
+        repo: "t3code",
+        channel: "latest",
+        releaseType: "prerelease",
+      },
+    ];
   } else if (!isDesktopPreviewVersion(version)) {
     const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
     if (publishConfig) {
@@ -2723,6 +2831,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
+      // Keep Electron's hardened runtime enabled for both distributions. The
+      // Workbench path intentionally relies on osx-sign's default Electron
+      // entitlements instead of the upstream app's passkey profile.
+      hardenedRuntime: true,
       extendInfo: {
         NSScreenCaptureUsageDescription:
           "T3 Code captures the active window when you use the window capture shortcut.",
@@ -3459,6 +3571,16 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;
   const hostPlatform = yield* HostProcessPlatform;
+  const repoEnv = loadRepoEnv({ repoRoot });
+  const workbench = repoEnv.T3CODE_WORKBENCH_BUILD === "1";
+  const buildModeError = validateWorkbenchMacBuildMode({
+    workbench,
+    platform: options.platform,
+    skipBuild: options.skipBuild,
+  });
+  if (buildModeError !== undefined) {
+    return yield* buildModeError;
+  }
   if (hostPlatform === "linux" && options.platform === "linux") {
     yield* preflightLinuxDesktopBuild(options.arch);
   }
@@ -3547,11 +3669,23 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
 
   if (!options.skipBuild) {
     yield* Effect.log("[desktop-artifact] Building desktop/server/web artifacts...");
-    const spawnCommand = yield* resolveSpawnCommand("vp", ["run", "build:desktop"]);
+    // The desktop bundle uses this compile-time flag to enable automatic
+    // updates only in a signed Workbench distribution. Keep unsigned builds
+    // explicitly false even when a shell inherited a stale value.
+    const desktopBuildEnv = resolveDesktopBundleBuildEnvironment({
+      baseEnv: process.env,
+      workbench,
+      platform: options.platform,
+      signed: options.signed,
+    });
+    const spawnCommand = yield* resolveSpawnCommand("vp", ["run", "build:desktop"], {
+      env: desktopBuildEnv,
+    });
     yield* runCommand(
       ChildProcess.make(spawnCommand.command, spawnCommand.args, {
         cwd: repoRoot,
         shell: spawnCommand.shell,
+        env: desktopBuildEnv,
       }),
       { label: "vp run build:desktop", verbose: options.verbose },
     );
@@ -3716,10 +3850,16 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const stageProdResourcesDir = path.join(stageAppDir, "apps/desktop/prod-resources");
   yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
 
+  if (options.platform === "mac" && options.signed && workbench) {
+    yield* Effect.try({
+      try: () => resolveMacWorkbenchSigningConfiguration(repoEnv),
+      catch: MacWorkbenchSigningConfigurationResolutionError.fromCause,
+    });
+  }
   const configuredMacPasskeySigning =
-    options.platform === "mac" && options.signed
+    options.platform === "mac" && options.signed && !workbench
       ? yield* Effect.try({
-          try: () => resolveMacPasskeySigningConfiguration(loadRepoEnv({ repoRoot })),
+          try: () => resolveMacPasskeySigningConfiguration(repoEnv),
           catch: MacPasskeySigningConfigurationResolutionError.fromCause,
         })
       : undefined;
@@ -3777,7 +3917,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
       : undefined;
   const stagePackageJson: StagePackageJson = {
-    name: "t3code",
+    name: resolveDesktopPackageName(workbench),
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,

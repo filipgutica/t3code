@@ -27,8 +27,10 @@ import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
+import { isWorkbenchBuild, isWorkbenchMacSigned } from "../workbench/distribution.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
+import { WorkbenchGithubProvider } from "../electron/WorkbenchGithubProvider.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
@@ -251,6 +253,8 @@ function getAutoUpdateDisabledReason(args: {
   appImage?: string | undefined;
   disabledByEnv: boolean;
   hasUpdateFeedConfig: boolean;
+  isWorkbench: boolean;
+  isWorkbenchMacSigned: boolean;
 }): string | null {
   if (!args.hasUpdateFeedConfig) {
     return "Automatic updates are not available because no update feed is configured.";
@@ -263,6 +267,9 @@ function getAutoUpdateDisabledReason(args: {
   }
   if (args.platform === "linux" && !args.appImage) {
     return "Automatic updates on Linux require running the AppImage build.";
+  }
+  if (args.isWorkbench && args.platform === "darwin" && !args.isWorkbenchMacSigned) {
+    return "Automatic updates for unsigned T3 Code Workbench macOS builds require manual installation from the GitHub release page.";
   }
   return null;
 }
@@ -345,6 +352,8 @@ export const make = Effect.gen(function* () {
         appImage: Option.getOrUndefined(config.appImagePath),
         disabledByEnv: config.disableAutoUpdate,
         hasUpdateFeedConfig: hasFeedConfig,
+        isWorkbench: isWorkbenchBuild(),
+        isWorkbenchMacSigned: isWorkbenchMacSigned(),
       }),
     );
   });
@@ -874,11 +883,18 @@ export const make = Effect.gen(function* () {
           provider: "generic",
           url: `http://localhost:${config.mockUpdateServerPort}`,
         } as ElectronUpdater.ElectronUpdaterFeedUrl);
+      } else if (isWorkbenchBuild()) {
+        yield* electronUpdater.setFeedURL({
+          provider: "custom",
+          updateProvider: WorkbenchGithubProvider,
+          channel: "latest",
+        } as ElectronUpdater.ElectronUpdaterFeedUrl);
       }
 
       const settings = yield* desktopSettings.get;
+      const updateChannel = isWorkbenchBuild() ? ("latest" as const) : settings.updateChannel;
       const enabled = yield* shouldEnableAutoUpdates;
-      yield* setState(createBaseUpdateState(settings.updateChannel, enabled, environment));
+      yield* setState(createBaseUpdateState(updateChannel, enabled, environment));
       if (!enabled) {
         return;
       }
@@ -886,7 +902,7 @@ export const make = Effect.gen(function* () {
 
       yield* electronUpdater.setAutoDownload(false);
       yield* electronUpdater.setAutoInstallOnAppQuit(false);
-      yield* applyAutoUpdaterChannel(settings.updateChannel);
+      yield* applyAutoUpdaterChannel(updateChannel);
       yield* electronUpdater.setDisableDifferentialDownload(
         isArm64HostRunningIntelBuild(environment.runtimeInfo),
       );
@@ -925,37 +941,39 @@ export const make = Effect.gen(function* () {
     setChannel: Effect.fn("desktop.updates.setChannel")(function* (
       nextChannel: DesktopUpdateChannel,
     ) {
-      yield* Effect.annotateCurrentSpan({ channel: nextChannel });
+      const resolvedChannel = isWorkbenchBuild() ? ("latest" as const) : nextChannel;
+      yield* Effect.annotateCurrentSpan({ channel: resolvedChannel });
       const activeAction = yield* tryStartChannelChange;
       if (Option.isSome(activeAction)) {
         return yield* new DesktopUpdateActionInProgressError({
           action: activeAction.value === "install-recovery" ? "install" : activeAction.value,
-          requestedChannel: nextChannel,
+          requestedChannel: resolvedChannel,
         });
       }
 
       return yield* Effect.gen(function* () {
         const state = yield* Ref.get(updateStateRef);
-        if (nextChannel === state.channel) {
+        if (resolvedChannel === state.channel) {
           return state;
         }
 
         yield* desktopSettings
-          .setUpdateChannel(nextChannel)
+          .setUpdateChannel(resolvedChannel)
           .pipe(
             Effect.mapError(
-              (cause) => new DesktopUpdateChannelPersistenceError({ channel: nextChannel, cause }),
+              (cause) =>
+                new DesktopUpdateChannelPersistenceError({ channel: resolvedChannel, cause }),
             ),
           );
 
         const enabled = yield* shouldEnableAutoUpdates;
-        yield* setState(createBaseUpdateState(nextChannel, enabled, environment));
+        yield* setState(createBaseUpdateState(resolvedChannel, enabled, environment));
 
         if (!enabled || !(yield* Ref.get(updaterConfiguredRef))) {
           return yield* Ref.get(updateStateRef);
         }
 
-        yield* applyAutoUpdaterChannel(nextChannel);
+        yield* applyAutoUpdaterChannel(resolvedChannel);
         const allowDowngrade = yield* electronUpdater.allowDowngrade;
         yield* electronUpdater.setAllowDowngrade(true);
         yield* checkForUpdates("channel-change", "held").pipe(
