@@ -1,60 +1,204 @@
-# Agent Workbench
+# Workbench user guide
 
-Agent Workbench adds a small planning layer to T3 Code without replacing its native Agent experience.
+Workbench connects planning to implementation. Group repositories into a Workspace, create Tickets, and work on them in native T3 Threads.
 
-Open **Agent Workbench** from the sidebar. Use **Add Workspace** in the Workspaces sidebar and link the T3 Projects that its tickets may target. Inside it you can:
+Workbench is available in the web and desktop clients. Jira is optional. Each connected T3 environment has its own Workspaces and Tickets; boards do not combine records from different environments. There is no dedicated Workbench mobile interface yet.
 
-- create Story or Bug tickets from an editable Markdown template;
-- create Epics and group the Board into Jira-style Epic swimlanes;
-- attach each ticket to one or more Workspace repositories and choose its primary repository;
-- open a ticket into its focused Ticket workspace, then use **Edit** when its title or context needs to change;
-- move tickets directly from a card through Todo, In Progress, and Done;
-- start work in a native T3 Thread and see its live delivery state from the Board.
+## In this guide
 
-To rename a Workspace or add repositories, open its Board and choose **Edit Workspace** (the settings icon in the header). Select additional T3 Projects and choose **Save changes**. If a directory is missing from the list, add it as a T3 Project first. Already-linked repositories stay linked; existing Tickets and Threads keep their repository scope.
+- [Create your first Workspace and Ticket](#create-your-first-workspace-and-ticket)
+- [Start agent work](#start-agent-work)
+- [Track progress and review results](#track-progress-and-review-results)
+- [Edit and organize Tickets](#edit-and-organize-tickets)
+- [Manage repositories and Threads](#manage-repositories-and-threads)
+- [Connect Jira](#connect-jira)
+- [Troubleshooting](#troubleshooting)
 
-Mirrored Tickets display a Jira icon and their issue key in a linked badge. Local Tickets offer **Archive** and **Delete** in the Ticket detail view. Archive hides a Ticket from the active Board; use **Archived Tickets** to restore it. Delete removes the Ticket from Workbench. Both actions keep native Threads and repository worktrees. Jira mirrors cannot be archived or deleted locally.
+## Create your first Workspace and Ticket
 
-**Create Thread** lets you choose a provider, model, and model options. It prepares one Git worktree per attached repository and opens a native T3 Thread in the primary repository’s worktree. The composer contains a Ticket context chip with the description and repository paths. Add a message if you wish, then send when you are ready. Creating the Thread does not start an Agent turn.
+A **Workspace** groups T3 Projects that belong together. A **Ticket** describes work to do. An **Epic** groups related Tickets.
 
-New Ticket worktrees use readable directory names, such as `<T3 home>/worktrees/workbench/ma-1234-a1b2c3d4/kanalytics`. Jira Tickets use their issue key and local Tickets use their title, each with a short unique suffix. Repository folders use the source repository's directory name. Existing workspaces keep their recorded paths and branches.
+1. Add the repository directories you need as T3 Projects.
+2. Open **Agent Workbench** from the sidebar.
+3. Choose **Add Workspace**, name it, select its Projects, then choose **Create Workspace**.
+4. Open the Workspace's Board, choose **New Ticket**, and select Story or Bug.
+5. Enter a title and description. Use the Markdown template to describe the work and acceptance criteria.
+6. Select the repositories the Ticket needs and choose its primary repository.
+7. Choose **Create Ticket**.
 
-New branches use a generated description, such as `workbench/ma-1234-fix-request-validation-a1b2c3d4`. They use the same model settings as native branch naming: the source control writer model when configured and available, otherwise the text generation model. If generation fails, the Ticket title supplies the description. Existing branches keep their names, including after a workspace reset.
+The primary repository is where new Threads open. A Ticket can also include other repositories for work that spans several codebases.
 
-The Ticket workspace shows each repository’s directory and latest reported branch, refreshing when you open the Ticket or return to the window. Linked Threads show their actual checkout and whether they share a Ticket worktree. Threads in the same worktree share files and branch changes; use a separate native worktree for independent work. Native branch changes are kept when you create another Thread. You can change the selected repositories and primary repository after creating Threads. Added repositories are prepared when you create another Thread; existing Threads keep their working directory and sent context. Removing a repository from the selection keeps its worktree on disk. Repository edits are temporarily unavailable while worktrees are being prepared or released.
+To rename the Workspace or add repositories later, choose **Edit Workspace** in the Board header. Select the additional Projects and choose **Save changes**. Existing Tickets and Threads keep their repository scope.
 
-Use **Reset ticket workspace** under **Repository scope** to remove a Ticket's worktrees. First delete its linked Threads, including archived Threads and those in **Thread history**, and clear local worktree changes. Then confirm the destructive action. Reset keeps the Ticket, Git branches, and commits. The next **Create Thread** prepares the worktrees again.
+## Start agent work
 
-A Ticket can have several active Threads. Use **New Thread** to choose a provider and model for another conversation. Every new conversation opens with a Ticket context chip and waits for you to send, including additional and replacement Threads. Use **Attach existing Thread** to link an unassigned conversation from the Ticket’s primary repository without changing its content or workspace. Each linked Thread can be opened or deleted from the Ticket; deletion uses native T3 confirmation and preserves the Ticket’s shared worktrees.
+1. Open a Ticket from the Board.
+2. Check **Repository scope**, including the primary repository.
+3. Choose **Create Thread** and select a provider, model, and model options.
+4. Review the Ticket context chip in the native Thread composer.
+5. Add any further instructions, then send your message.
 
-If a Thread is archived, the ticket offers **Open Thread** and returns it to T3's active Thread list before opening it. If the Thread was deleted, **Create Thread** creates a new native Thread and Assignment while keeping the previous Assignment in the ticket's history. If a recorded worktree is missing, delete the linked Threads and reset the Ticket workspace before preparing it again. If its directory still exists but is detached or unregistered, restore its branch checkout or Git worktree registration before retrying; Workbench will not remove that directory. Archived historical Threads can be restored from that history.
+**Creating a Thread does not start an agent turn.** Workbench prepares one Git worktree per selected repository and opens the Thread in the primary repository's worktree. The context chip supplies the Ticket description and repository paths when you send.
 
-A Thread opened from a Workbench Ticket stays inside the Agent Workbench frame: the Workspaces sidebar remains visible, the header keeps the Workspace and Ticket context, and separate links return to the Board or exact Ticket. Use **Back to Threads** to restore the regular T3 sidebar. On a Ticket-linked Thread, this keeps the same conversation open. Opening that Thread through normal T3 navigation also uses the regular sidebar; its Board and Ticket backlinks remain available and return to the Thread’s environment. The Ticket workspace keeps its active Thread and earlier Thread history together. Each Workbench database belongs to one connected T3 environment; records are not combined across remote environments in this first slice.
+Use **New Thread** for another conversation on the same Ticket. Each new Thread starts with Ticket context and waits for you to send.
 
-The Board fits the available width without horizontal scrolling. Ticket titles and previews truncate on cards; open a Ticket to read the full content. Descriptions render formatting when viewed and show their raw source when edited. On desktop, the description and collapsible detail panels scroll internally, with Save and Cancel kept visible. Narrow screens stack the panels.
+### Navigate between planning and conversations
 
-Tickets have a separate **Generated summary** for Board previews and a quick overview above the full description. Summaries use **Settings → General → Text generation model**. Workbench generates them automatically and refreshes them when the saved title or description changes. Choose **Regenerate summary** from the Ticket menu or summary section to try again. Save unsaved edits before regenerating. If generation fails, Workbench keeps the previous summary and offers a retry. Summaries do not change Jira fields or replace the full description sent to the Agent.
+Opening a Thread from a Ticket keeps the Workbench sidebar and Workspace context visible. Use the Board or Ticket links to return to planning.
 
-Unsaved Ticket edits remain available if you close the Ticket or switch Workspaces during the current Workbench session. A save keeps any further text you enter while it is pending. Reopen the Ticket to continue editing, or use **Cancel** to discard the draft. Open Boards refresh automatically and when the app regains focus, including Workspaces without Jira.
+Choose **Back to Threads** to restore the regular T3 sidebar while keeping the conversation open. Opening a linked Thread through normal T3 navigation also uses that sidebar. Its Board and Ticket links return to the owning environment.
 
-When a linked Thread starts executing a turn, a **To Do** Ticket moves to **In Progress**. Creating or opening a Thread does not change progress. For Jira Tickets, Workbench applies an available Jira transition and confirms the result before updating the Board. If the transition fails, the Thread continues and its work log shows a warning.
+## Track progress and review results
 
-Agent activity is shown separately from Ticket progress: **Waiting for input**, **Working**, or **Ready for review**. A completed turn does not mark the Ticket Done; change its progress when the work is accepted. Jira flags are shown separately as **Jira flagged**. Existing Tickets in the former Ready for Review column move to In Progress.
+Ticket progress and agent activity answer different questions:
 
-## Jira sprint mirrors
+| Indicator                                    | Meaning                                                                        |
+| -------------------------------------------- | ------------------------------------------------------------------------------ |
+| To Do, In Progress, Done                     | How far the Ticket's work has progressed.                                      |
+| Waiting for input, Working, Ready for review | What the linked agent activity needs now.                                      |
+| Jira flagged                                 | Jira has flagged the issue; this is separate from progress and agent activity. |
 
-A Workspace can mirror the connected user's assigned Tickets from a Jira board, including a board that spans several Jira projects. Choose **Connect Jira**, authorize an Atlassian site, then select the board and the sprints to mirror. The sprint list supports one, some, or all of the listed sprints through individual checkboxes and **Select all**. Set the default repository scope and status mappings, then save. Issues included in more than one selected sprint appear once on the Workbench Board.
+When a linked Thread starts executing a turn, a To Do Ticket moves to In Progress. Creating or opening a Thread does not change progress.
 
-Newly imported Tickets inherit the mirror's default repository scope. Importing does not create worktrees. Before choosing **Create Thread**, open the Ticket's **Repository scope** to select its repositories and primary repository. Creating the Thread prepares worktrees for that selection.
+**A completed agent turn does not mark the Ticket Done.** Review the result, then update progress from the Ticket or Board card menu when the work is accepted.
 
-Use **Sync** for an immediate refresh. With **Follow selected sprints automatically** enabled, an active mirror checks every five minutes while the server is running. Sprints that are still active remain selected. Workbench replaces closed sprints when the newly active candidates identify a complete replacement set. It preserves the previous Board and shows an actionable error when replacements are missing or ambiguous. A sprint already observed running alongside the selection is not treated as a successor. **Select all** selects the sprints currently listed; it does not automatically include unrelated future sprints.
+For Jira Tickets, Workbench first applies an available Jira transition. If that transition fails, the Thread continues and its work log shows a warning.
 
-Turn off automatic following to pin the selection. You can pause the mirror without removing its imported Tickets or configuration, then resume it later. All selected sprints refresh as one update: if any sprint cannot be read or imported, Workbench keeps the previous Board.
+## Edit and organize Tickets
 
-Map Jira statuses to the three default Ticket columns, or enable **Mirror Jira states** to use the Jira board's column names and order. Change a mirrored Ticket's status from its header or Board menu using the transitions Jira currently allows. A destination must be mapped to Workbench before you can select it. Agent activity remains a separate label in either mode. Jira column changes are picked up on the next successful sync.
+### Update a Ticket's context
 
-Mirrored Tickets share their description and progress with Jira. The Ticket description is included in the context chip when you create a Thread and reaches the Agent when you send it. Saving a description or changing progress writes to Jira before Workbench shows the change as synced. Jira workflow permissions and available transitions still apply. Workbench owns repository scope, Ticket Workspaces, Assignments, and native T3 Threads. Jira Tickets that leave the selected sprints are removed from the active Board without being deleted from Workbench history. Refresh also pulls description and status changes made in Jira. The server checks Jira every five minutes while the mirror is active.
+Open the Ticket and choose **Edit** to change its title or description. Descriptions display formatting when viewed and show their source when edited.
 
-The Jira OAuth app must be configured by the environment operator before **Connect Jira** can authorize a site. Authorization happens on Atlassian's website. If access expires, is revoked, or was granted before issue editing was enabled, open the mirror settings and choose **Reconnect Jira** to grant issue write access. Reconnect with the same Jira site to retain its existing mirror and Ticket history. Cancelling authorization leaves the existing mirror unchanged.
+Unsaved edits remain available when you close the Ticket or switch Workspaces during the current Workbench session. Reopen it to continue, or choose **Cancel** to discard the draft. Text entered while a save is pending remains available for further editing.
 
-This experiment does not include general Artifacts, mobile UI, or multi-environment boards.
+For imported Jira Tickets, saving a description writes the change to Jira. Jira permissions still apply.
+
+### Use summaries for a quick overview
+
+Workbench generates a separate summary for Board previews using **Settings → General → Text generation model**. It refreshes the summary when the saved title or description changes.
+
+To retry or replace a summary:
+
+1. Save any unsaved Ticket edits.
+2. Choose **Regenerate summary** from the Ticket menu or summary section.
+
+If generation fails, Workbench keeps the previous summary. Summaries do not change Jira fields or replace the full description sent to the agent.
+
+### Group Tickets into Epics
+
+Choose **New Epic** on the Board and assign related Tickets to it. Use Epic swimlanes on the Board to see that work together.
+
+### Archive, restore, or delete local Tickets
+
+| Task                                      | Action                                                                 | Result                                  |
+| ----------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------- |
+| Hide a local Ticket from the active Board | Choose **Archive Ticket** in its detail view.                          | The Ticket can be restored later.       |
+| Restore an archived Ticket                | Open the sidebar’s **Archived** section and choose **Restore Ticket**. | The Ticket returns to the active Board. |
+| Remove a local Ticket                     | Choose **Delete Ticket** in its detail view.                           | The Ticket is removed from Workbench.   |
+
+Archiving or deleting a Ticket keeps its native Threads and repository worktrees. Imported Jira Tickets cannot be archived or deleted locally.
+
+## Manage repositories and Threads
+
+### Understand shared worktrees
+
+Threads using the same Ticket worktree share its files and branch changes. Use a separate native worktree when you need independent work.
+
+The Ticket shows each repository's directory and latest reported branch. These refresh when you open the Ticket or return to the window. Linked Threads show their actual checkout and whether they share a Ticket worktree.
+
+New worktrees have readable names based on the Jira issue key or local Ticket title, with a unique suffix. Branch descriptions are generated using the source control writer model when available, otherwise the text generation model. If generation fails, Workbench uses the Ticket title. Existing worktree paths and branch names are retained.
+
+### Change a Ticket's repositories
+
+Open **Repository scope** to change the selected repositories or primary repository, even after creating Threads.
+
+- Added repositories receive worktrees when you create another Thread.
+- Existing Threads retain their working directory and previously sent context.
+- Removing a repository from the selection leaves its worktree on disk.
+- Branch changes made in native Threads are retained when you create another Thread.
+
+Repository edits are temporarily unavailable while Workbench prepares or releases worktrees.
+
+### Attach or reopen a Thread
+
+Use **Attach existing** to link an unassigned conversation from the Ticket's primary repository. This does not change the conversation's content or checkout.
+
+Choose **Open Thread** to reopen an archived linked Thread; Workbench restores it to T3's active Thread list. Earlier conversations remain accessible through **Thread history**.
+
+If a Thread was deleted, **Create Thread** starts a replacement and retains the previous link in the Ticket's history. Deleting a linked Thread uses T3's confirmation flow and preserves shared Ticket worktrees.
+
+### Reset a Ticket's worktrees
+
+Use a reset when you need to remove and prepare the Ticket's worktrees again.
+
+1. Delete all linked Threads, including archived Threads and those in **Thread history**.
+2. Commit or otherwise preserve any local worktree changes, then make sure the worktrees are clean.
+3. Open **Repository scope** and choose **Reset ticket workspace**.
+4. Review and confirm the removal.
+
+Reset removes the worktrees but keeps the Ticket, Git branches, and commits. The next **Create Thread** prepares the worktrees again.
+
+## Connect Jira
+
+A Workspace can import issues assigned to the connected Jira user from a board and selected sprints. The board can span several Jira projects. Imported Tickets show a Jira badge with a link to the issue.
+
+Published Workbench desktop previews include a hosted Jira connection. You authorize access on Atlassian's website; you do not need to create your own OAuth app. For a source-based development environment, follow the [local Jira setup instructions](../../README.md#set-up-jira-for-local-development).
+
+### Set up a sprint mirror
+
+1. Open the Workspace, choose **Connect Jira**, then **Connect Atlassian**.
+2. Authorize access on Atlassian's website, then choose the site and board.
+3. Select one or more sprints. **Select all** selects the sprints currently listed.
+4. Set the default repository scope for imported Tickets.
+5. Map Jira statuses to Workbench columns, or enable **Mirror Jira states** to use the board's column names and order.
+6. Save the configuration.
+
+An issue in more than one selected sprint appears only once. Importing creates Tickets, not worktrees. Before starting a Thread, check that Ticket's **Repository scope**.
+
+### Sync and follow sprints
+
+Choose **Sync Jira** for an immediate refresh. An active mirror also checks Jira every five minutes while its server is running. Open Boards refresh automatically and when the app regains focus, including Workspaces without Jira.
+
+With **Follow selected sprints automatically** enabled, Workbench keeps active selected sprints and replaces closed ones when it can identify a complete successor selection. It keeps the previous Board and reports an error if replacements are missing or ambiguous. A sprint already observed running alongside the selection is not considered a successor.
+
+Turn off automatic following to keep the same sprint selection. **Select all** does not include unrelated future sprints automatically.
+
+You can pause the mirror and resume it later without removing its Tickets or configuration. If any selected sprint fails to sync, Workbench keeps the previous Board rather than applying a partial update.
+
+### Know what sync changes
+
+| Jira controls                                                         | Workbench controls                                                               |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Issue descriptions, status, Epic relationships, and sprint membership | Repository selections, Ticket worktrees, linked Threads, and generated summaries |
+
+Saving an imported Ticket's description or changing its progress writes to Jira before Workbench reports it as synced. Changes made in Jira appear on the next successful sync. When mirroring board columns, changes to those columns are also picked up on sync.
+
+Status choices use the transitions Jira currently allows. A destination must be mapped to Workbench before you can select it. Agent activity remains separate from Jira status.
+
+Issues that leave the selected sprints disappear from the active Board but remain in Workbench history with their linked work.
+
+### Reconnect Jira
+
+If access expires, is revoked, or lacks issue-editing permission:
+
+1. Open the mirror settings and choose **Reconnect Jira**.
+2. Authorize access on Atlassian's website.
+3. Use the same Jira site to retain the mirror and Ticket history.
+
+Cancelling authorization leaves the existing mirror unchanged.
+
+## Troubleshooting
+
+| Problem                                                     | What to check                                                                                                                                           |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A repository is missing when editing a Workspace            | Add its directory as a T3 Project first.                                                                                                                |
+| The agent has not started after creating a Thread           | Send a message; creating the Thread only prepares the conversation.                                                                                     |
+| A completed turn leaves the Ticket In Progress              | Review the result and change progress yourself.                                                                                                         |
+| A generated summary fails                                   | Check the text generation model setting, save edits, then regenerate.                                                                                   |
+| A recorded Ticket worktree is missing                       | Delete linked Threads, reset the Ticket workspace, then create a Thread again.                                                                          |
+| A worktree directory exists but is detached or unregistered | Restore its branch checkout or Git worktree registration. Workbench will not remove that directory automatically.                                       |
+| Jira cannot advance to the next sprint                      | Review the reported error and choose a valid sprint selection in mirror settings.                                                                       |
+| Workspaces or Tickets seem to be missing                    | Check the connected environment. Each environment has its own records. The installed Workbench fork also has separate saved data from official T3 Code. |
+
+For connecting another device, see [Remote access](./remote-access.md).
