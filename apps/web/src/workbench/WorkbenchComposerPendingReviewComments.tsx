@@ -6,7 +6,6 @@ import {
   COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
   COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME,
 } from "../components/composerInlineChip";
-import { ComposerPendingReviewComments } from "../components/chat/ComposerPendingReviewComments";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
 import type { ReviewCommentContext } from "../reviewCommentContext";
 import { cn } from "../lib/utils";
@@ -92,28 +91,14 @@ export function WorkbenchComposerPendingReviewComments({
   readonly className?: string;
 }) {
   if (comments.length === 0) return null;
-  if (!comments.some(isWorkbenchTicketReviewComment)) {
-    return (
-      <ComposerPendingReviewComments
-        comments={comments}
-        onRemove={onRemove}
-        {...(className !== undefined ? { className } : {})}
-      />
-    );
-  }
+  const workbenchComments = comments.filter(isWorkbenchTicketReviewComment);
+  if (workbenchComments.length === 0) return null;
 
-  const children = comments.map((comment) =>
-    isWorkbenchTicketReviewComment(comment) ? (
-      <WorkbenchTicketReviewComment key={comment.id} comment={comment} onRemove={onRemove} />
-    ) : (
-      <ComposerPendingReviewComments
-        key={`native-${comment.id}`}
-        comments={[comment]}
-        onRemove={onRemove}
-        className="contents"
-      />
-    ),
+  return (
+    <div className={cn("flex flex-wrap gap-1.5", className)}>
+      {workbenchComments.map((comment) => (
+        <WorkbenchTicketReviewComment key={comment.id} comment={comment} onRemove={onRemove} />
+      ))}
+    </div>
   );
-
-  return <div className={cn("flex flex-wrap gap-1.5", className)}>{children}</div>;
 }

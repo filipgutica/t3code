@@ -8,12 +8,23 @@ workflow**.
 Workbench starts at version **0.0.1**, independently of the bundled upstream
 version. Enter the next Workbench version explicitly for later previews.
 
-The workflow resolves the current fork `main` commit once. Every quality check
+Merging a pull request updates `main` without creating a release. Upstream sync
+pull requests follow the same manual merge process. The inherited upstream
+release workflow skips this fork.
+
+Enter a commit SHA from `main` in **commit_sha** to release that checkpoint. For
+a merged PR, use its merge commit, not a commit from its feature branch. Leave
+it empty to use the current fork `main`. The release includes all changes
+through that commit; later merges stay out. Commits outside the first-parent
+history of `main` are rejected.
+
+The workflow resolves the selected commit once. Every quality check
 and desktop matrix job checks out that exact SHA. It builds macOS arm64 and x64,
 Linux x64, and Windows x64 packages, validates the expected installer, and
 creates SHA-256 manifests. GitHub Release notes are generated from pull
 requests, using the supplied `previous_tag` (or the newest `workbench-v*` tag
-when that input is empty). The selected commit, the notes tag, and the upstream
+reachable from the selected commit when that input is empty). A supplied tag
+must also be an ancestor of the selected commit. The selected commit, the notes tag, and the upstream
 `pingdotgg/t3code` SHA and merge base are recorded when the upstream lookup is
 available.
 
