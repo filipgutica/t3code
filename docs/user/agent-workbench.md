@@ -50,7 +50,7 @@ Select the context chip to inspect what the agent will receive. In this example,
 
 Watch: start on the Orbit Board, create a Ticket with both repositories, then create a Thread and inspect its context.
 
-https://github.com/user-attachments/assets/1ec5453d-33e0-4116-8dd6-8c1fbcd31aa0
+https://github.com/user-attachments/assets/027521c7-6113-49a1-8b2c-c54640ce9d8b
 
 Use **New Thread** for another conversation on the same Ticket. Each new Thread starts with Ticket context and waits for you to send.
 
@@ -93,9 +93,9 @@ Use a full URL for a PR in another repository. A number such as `#42` refers to 
 
 ![One Ticket showing pull requests from Orbit Web and Orbit API, alongside its Thread and prepared repository worktrees.](./media/workbench/pull-requests.png)
 
-Watch: open a Ticket's Thread, link a PR through the command palette, and return to the Ticket to review both repositories.
+Watch: open a Ticket's Thread, link a PR through the command palette, and return to the Ticket to see the linked pull request.
 
-https://github.com/user-attachments/assets/29737e53-f59f-45c0-a857-46fdb3658df0
+https://github.com/user-attachments/assets/d74bb27e-57ce-4e56-9a37-9afab00d62e6
 
 ## Edit and organize Tickets
 
@@ -211,7 +211,7 @@ Choose **Sync Jira** for an immediate refresh. An active mirror also checks Jira
 
 Watch: change ORBIT-4 from In Review to Done in Jira, return to the Orbit Board, and choose **Sync Jira**. Open the mirrored Ticket to confirm its updated status.
 
-https://github.com/user-attachments/assets/c2bb7ab4-a597-431c-97d9-43f83774a9ad
+https://github.com/user-attachments/assets/4133a8d1-504e-4cbd-a517-48e6f35899ef
 
 With **Follow selected sprints automatically** enabled, Workbench keeps active selected sprints and replaces closed ones when it can identify a complete successor selection. It keeps the previous Board and reports an error if replacements are missing or ambiguous. A sprint already observed running alongside the selection is not considered a successor.
 
