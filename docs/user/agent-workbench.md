@@ -48,7 +48,9 @@ Select the context chip to inspect what the agent will receive. In this example,
 
 ![Ticket context containing the description, acceptance criteria, and paths to both repository worktrees.](./media/workbench/ticket-context.png)
 
-[Watch: create a Thread and prepare both repository worktrees](./media/workbench/create-ticket-worktrees.mp4).
+Watch: create a Thread and prepare both repository worktrees.
+
+https://github.com/user-attachments/assets/5db8ecb8-be45-4d8f-a74f-52d4e4a3c546
 
 Use **New Thread** for another conversation on the same Ticket. Each new Thread starts with Ticket context and waits for you to send.
 
@@ -90,7 +92,9 @@ Use a full URL for a PR in another repository. A number such as `#42` refers to 
 
 ![One Ticket showing pull requests from Orbit Web and Orbit API, alongside its Thread and prepared repository worktrees.](./media/workbench/pull-requests.png)
 
-[Watch: link a PR and review work across two repositories](./media/workbench/link-pull-requests.mp4).
+Watch: link a PR and review work across two repositories.
+
+https://github.com/user-attachments/assets/37d81262-966a-41a7-b683-05e63253a3f4
 
 ## Edit and organize Tickets
 
@@ -204,7 +208,9 @@ The Orbit example mirrors six assigned Jira issues into the same Workspace as it
 
 Choose **Sync Jira** for an immediate refresh. An active mirror also checks Jira every five minutes while its server is running. Open Boards refresh automatically and when the app regains focus, including Workspaces without Jira.
 
-[Watch: a Jira status change appear in Workbench](./media/workbench/jira-sync.mp4). In this clip, ORBIT-4 moves from In Review to Done after a change in Jira and a manual sync. The recording shows the desktop Board; the Jira edit and sync command happen outside the captured window.
+Watch: a Jira status change appear in Workbench. In this clip, ORBIT-4 moves from In Review to Done after a change in Jira and a manual sync. The recording shows the desktop Board; the Jira edit and sync command happen outside the captured window.
+
+https://github.com/user-attachments/assets/d0815236-c8a5-4e39-b5ae-0d1978b859a7
 
 With **Follow selected sprints automatically** enabled, Workbench keeps active selected sprints and replaces closed ones when it can identify a complete successor selection. It keeps the previous Board and reports an error if replacements are missing or ambiguous. A sprint already observed running alongside the selection is not considered a successor.
 
