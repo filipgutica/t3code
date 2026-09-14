@@ -190,6 +190,7 @@ const makeTestLayer = ({
   initialWorktreeBranches,
   missingWorktreePaths,
   existingPaths,
+  realPaths,
   existingPathPattern,
   unownedBranchNames,
   projectWorkspaceRoots,
@@ -208,6 +209,7 @@ const makeTestLayer = ({
   initialWorktreeBranches?: ReadonlyMap<string, string>;
   missingWorktreePaths?: ReadonlySet<string>;
   existingPaths?: ReadonlySet<string>;
+  realPaths?: ReadonlyMap<string, string>;
   existingPathPattern?: RegExp;
   unownedBranchNames?: ReadonlySet<string>;
   projectWorkspaceRoots?: ReadonlyMap<ProjectId, string>;
@@ -418,6 +420,12 @@ const makeTestLayer = ({
       const fileSystem = yield* FileSystem.FileSystem;
       return FileSystem.FileSystem.of({
         ...fileSystem,
+        realPath: (candidate) => {
+          const canonical = realPaths?.get(candidate);
+          return canonical === undefined
+            ? fileSystem.realPath(candidate)
+            : Effect.succeed(canonical);
+        },
         exists: (candidate) =>
           Effect.succeed(
             !missingPaths.has(candidate) &&
@@ -668,6 +676,45 @@ describe("TicketWorkspaceService", () => {
           initialWorktrees: [
             { sourcePath: "/repos/secondary", worktreePath: "/worktrees/ready-secondary" },
           ],
+        }),
+      ),
+    );
+  });
+
+  it.effect("reuses registered worktrees reached through filesystem aliases", () => {
+    const events: Array<string> = [];
+    return Effect.gen(function* () {
+      yield* seedTicket;
+      yield* seedReadyTicketWorkspace;
+      yield* seedActiveAssignment;
+      const service = yield* TicketWorkspaceService;
+
+      const workspace = yield* service.prepare({ ticketId, requestedAt: createdAt });
+
+      expect(workspace.status).toBe("ready");
+      expect(workspace.attemptId).toBe("ready-attempt");
+      expect(workspace.repositories.map((repository) => repository.worktreePath).sort()).toEqual([
+        "/worktrees/ready-primary",
+        "/worktrees/ready-secondary",
+      ]);
+      expect(events.filter((event) => /^(create|remove):/.test(event))).toEqual([]);
+    }).pipe(
+      Effect.provide(
+        makeTestLayer({
+          events,
+          liveThreadIds: new Set([activeThreadId]),
+          liveThreadWorktreePaths: new Map([[activeThreadId, "/worktrees/ready-primary"]]),
+          initialWorktrees: [
+            { sourcePath: "/repos/primary", worktreePath: "/canonical/ready-primary" },
+            { sourcePath: "/repos/secondary", worktreePath: "/canonical/ready-secondary" },
+          ],
+          existingPaths: new Set(["/worktrees/ready-primary", "/worktrees/ready-secondary"]),
+          realPaths: new Map([
+            ["/worktrees/ready-primary", "/canonical/ready-primary"],
+            ["/worktrees/ready-secondary", "/canonical/ready-secondary"],
+            ["/canonical/ready-primary", "/canonical/ready-primary"],
+            ["/canonical/ready-secondary", "/canonical/ready-secondary"],
+          ]),
         }),
       ),
     );

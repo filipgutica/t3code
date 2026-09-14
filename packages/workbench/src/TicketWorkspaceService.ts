@@ -211,14 +211,19 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
             preparationError(`Could not inspect a Ticket Workspace repository: ${cause.detail}`),
           ),
         );
-      const expectedPath = path.resolve(worktreePath);
-      const registered = refs.refs.find(
-        (ref) =>
-          ref.isRemote !== true &&
-          ref.worktreePath !== null &&
-          path.resolve(ref.worktreePath) === expectedPath,
-      );
-      return registered === undefined ? Option.none<string>() : Option.some(registered.name);
+      const canonicalizePath = (value: string) => {
+        const resolved = path.resolve(value);
+        // Missing paths still need their lexical identity for stale-worktree handling.
+        return fileSystem.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved));
+      };
+      const expectedPath = yield* canonicalizePath(worktreePath);
+      for (const ref of refs.refs) {
+        if (ref.isRemote === true || ref.worktreePath === null) continue;
+        if ((yield* canonicalizePath(ref.worktreePath)) === expectedPath) {
+          return Option.some(ref.name);
+        }
+      }
+      return Option.none<string>();
     },
   );
 

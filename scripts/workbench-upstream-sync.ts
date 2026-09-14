@@ -103,7 +103,10 @@ function main() {
       2,
     )}\n`,
   );
-  if (!clean) process.exitCode = 2;
+  if (!clean) {
+    process.stderr.write(mergePreview.stdout);
+    process.exitCode = 2;
+  }
 }
 
 try {

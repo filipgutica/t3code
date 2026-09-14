@@ -3,6 +3,10 @@ name: Workbench desktop release
 on:
   workflow_dispatch:
     inputs:
+      commit_sha:
+        description: "Merged commit to release (blank uses current main)"
+        required: false
+        type: string
       version:
         description: "Workbench version to release (X.Y.Z)"
         required: true
@@ -83,6 +87,7 @@ jobs:
         shell: bash
         env:
           RELEASE_VERSION: ${{ inputs.version }}
+          REQUESTED_COMMIT_SHA: ${{ inputs.commit_sha }}
           REQUESTED_PREVIOUS_TAG: ${{ inputs.previous_tag }}
         run: |
           set -euo pipefail
@@ -99,6 +104,17 @@ jobs:
           fi
 
           sha="$(git rev-parse HEAD)"
+          if [[ -n "$REQUESTED_COMMIT_SHA" ]]; then
+            if [[ ! "$REQUESTED_COMMIT_SHA" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+              echo "Commit must be a full or abbreviated Git SHA: $REQUESTED_COMMIT_SHA" >&2
+              exit 1
+            fi
+            sha="$(git rev-parse --verify "$REQUESTED_COMMIT_SHA^{commit}")"
+            if ! git rev-list --first-parent HEAD | grep -Fx "$sha" > /dev/null; then
+              echo "Selected commit must be a checkpoint on main (use the PR merge commit): $sha" >&2
+              exit 1
+            fi
+          fi
           # Prefix Workbench tags so this fork's releases never trigger the
           # upstream-compatible v* release workflow in the same repository.
           tag="workbench-v$version"
@@ -116,9 +132,13 @@ jobs:
             else
               previous_tag="workbench-v$previous_tag"
             fi
-            git rev-parse --verify "refs/tags/$previous_tag^{commit}" >/dev/null
+            previous_sha="$(git rev-parse --verify "refs/tags/$previous_tag^{commit}")"
+            if ! git merge-base --is-ancestor "$previous_sha" "$sha"; then
+              echo "Previous release tag must be an ancestor of the selected commit: $previous_tag" >&2
+              exit 1
+            fi
           else
-            previous_tag="$(git tag --sort=-version:refname --list 'workbench-v[0-9]*' | head -n 1)"
+            previous_tag="$(git tag --merged "$sha" --sort=-version:refname --list 'workbench-v[0-9]*' | head -n 1)"
           fi
 
           upstream_sha=""

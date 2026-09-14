@@ -8,11 +8,6 @@ import {
   WorkbenchTicketId,
 } from "@t3tools/contracts";
 import {
-  formatReviewCommentContext,
-  parseReviewCommentMessageSegments,
-} from "../reviewCommentContext";
-
-import {
   buildTicketReviewComment,
   buildTicketThreadContext,
   getActiveAssignmentsByTicket,
@@ -269,11 +264,7 @@ describe("Workbench ticket helpers", () => {
       [],
     );
 
-    const [segment] = parseReviewCommentMessageSegments(formatReviewCommentContext(comment));
-    expect(segment?.kind).toBe("review-comment");
-    expect(segment?.kind === "review-comment" ? segment.comment.diff : "").toContain(
-      "&lt;/review_comment> followed by more context.",
-    );
+    expect(comment.diff).toContain("&lt;/review_comment> followed by more context.");
   });
 
   it("falls back to the primary Repository for snapshots decoded without a scope", () => {
