@@ -48,9 +48,9 @@ Select the context chip to inspect what the agent will receive. In this example,
 
 ![Ticket context containing the description, acceptance criteria, and paths to both repository worktrees.](./media/workbench/ticket-context.png)
 
-Watch: create a Thread and prepare both repository worktrees.
+Watch: start on the Orbit Board, create a Ticket with both repositories, then create a Thread and inspect its context.
 
-https://github.com/user-attachments/assets/5db8ecb8-be45-4d8f-a74f-52d4e4a3c546
+https://github.com/user-attachments/assets/1ec5453d-33e0-4116-8dd6-8c1fbcd31aa0
 
 Use **New Thread** for another conversation on the same Ticket. Each new Thread starts with Ticket context and waits for you to send.
 
@@ -83,18 +83,19 @@ The Ticket's **Pull Requests** section collects PRs from its linked Threads and 
 To attach a PR yourself:
 
 1. Open the Ticket's Thread.
-2. Open the right panel and choose **Linked pull requests**.
-3. Choose **Link pull request**, or **Link** if the list already contains a PR.
-4. Paste the full PR URL and choose **Link**.
-5. Return to the Ticket to see its PRs together.
+2. Open the command palette with **⌘K** on macOS or **Ctrl+K** on Windows and Linux.
+3. Choose **Link pull request to thread**, paste the full PR URL, and choose **Link**.
+4. Return to the Ticket to see its PRs together.
+
+Once the Thread has a linked PR, you can also open **Linked pull requests** in the right panel and choose **Link** to add another.
 
 Use a full URL for a PR in another repository. A number such as `#42` refers to the Thread's own repository. The environment needs a Project with access to the PR's host.
 
 ![One Ticket showing pull requests from Orbit Web and Orbit API, alongside its Thread and prepared repository worktrees.](./media/workbench/pull-requests.png)
 
-Watch: link a PR and review work across two repositories.
+Watch: open a Ticket's Thread, link a PR through the command palette, and return to the Ticket to review both repositories.
 
-https://github.com/user-attachments/assets/37d81262-966a-41a7-b683-05e63253a3f4
+https://github.com/user-attachments/assets/29737e53-f59f-45c0-a857-46fdb3658df0
 
 ## Edit and organize Tickets
 
@@ -208,9 +209,9 @@ The Orbit example mirrors six assigned Jira issues into the same Workspace as it
 
 Choose **Sync Jira** for an immediate refresh. An active mirror also checks Jira every five minutes while its server is running. Open Boards refresh automatically and when the app regains focus, including Workspaces without Jira.
 
-Watch: a Jira status change appear in Workbench. In this clip, ORBIT-4 moves from In Review to Done after a change in Jira and a manual sync. The recording shows the desktop Board; the Jira edit and sync command happen outside the captured window.
+Watch: change ORBIT-4 from In Review to Done in Jira, return to the Orbit Board, and choose **Sync Jira**. Open the mirrored Ticket to confirm its updated status.
 
-https://github.com/user-attachments/assets/d0815236-c8a5-4e39-b5ae-0d1978b859a7
+https://github.com/user-attachments/assets/c2bb7ab4-a597-431c-97d9-43f83774a9ad
 
 With **Follow selected sprints automatically** enabled, Workbench keeps active selected sprints and replaces closed ones when it can identify a complete successor selection. It keeps the previous Board and reports an error if replacements are missing or ambiguous. A sprint already observed running alongside the selection is not considered a successor.
 
