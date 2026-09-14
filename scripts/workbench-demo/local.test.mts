@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - The fixture intentionally invokes Git in a disposable directory.
-import * as NodeFS from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeOS from "node:os";
 
@@ -8,13 +8,13 @@ import { assert, it } from "@effect/vitest";
 import { LOCAL_DEMO_REPOSITORIES, setupLocal, verifyLocal } from "./local.mts";
 
 it("creates an idempotent local repository fixture", async () => {
-  const home = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-workbench-demo-"));
+  const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-workbench-demo-"));
   try {
     const first = await setupLocal({
       home,
       now: () => "2026-01-01T00:00:00.000Z",
     });
-    await NodeFS.writeFile(
+    await NodeFSP.writeFile(
       NodePath.join(home, "projects", "orbit-web", "README.md"),
       "User edit preserved\n",
     );
@@ -34,10 +34,10 @@ it("creates an idempotent local repository fixture", async () => {
       assignments: 4,
     });
     assert.equal(
-      await NodeFS.readFile(NodePath.join(home, "projects", "orbit-web", "README.md"), "utf8"),
+      await NodeFSP.readFile(NodePath.join(home, "projects", "orbit-web", "README.md"), "utf8"),
       "User edit preserved\n",
     );
   } finally {
-    await NodeFS.rm(home, { recursive: true, force: true });
+    await NodeFSP.rm(home, { recursive: true, force: true });
   }
 });

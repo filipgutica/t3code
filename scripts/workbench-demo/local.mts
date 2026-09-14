@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalDate:off globalFetch:off - This host-side fixture creates an isolated local T3 environment.
 import * as NodeChildProcess from "node:child_process";
-import * as NodeFS from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
 
@@ -155,7 +155,7 @@ const isoNow = (): string => new Date().toISOString();
 
 const pathExists = async (path: string): Promise<boolean> => {
   try {
-    await NodeFS.access(path);
+    await NodeFSP.access(path);
     return true;
   } catch {
     return false;
@@ -173,7 +173,7 @@ const ensureRepository = async (
   remoteUrl: string | undefined,
 ): Promise<void> => {
   if (remoteUrl !== undefined && !(await pathExists(root))) {
-    await NodeFS.mkdir(NodePath.dirname(root), { recursive: true });
+    await NodeFSP.mkdir(NodePath.dirname(root), { recursive: true });
     if (remoteUrl.startsWith("https://github.com/")) {
       await execFile("gh", [
         "repo",
@@ -207,35 +207,35 @@ const ensureRepository = async (
   }
   const ownershipPath = NodePath.join(root, ".workbench-demo-repository");
   if (await pathExists(root)) {
-    const entries = await NodeFS.readdir(root);
+    const entries = await NodeFSP.readdir(root);
     if (
       entries.length &&
       (!(await pathExists(ownershipPath)) ||
-        (await NodeFS.readFile(ownershipPath, "utf8")) !== repository.id)
+        (await NodeFSP.readFile(ownershipPath, "utf8")) !== repository.id)
     ) {
       throw new Error(`Refusing to seed an unowned repository directory: ${root}`);
     }
   }
-  await NodeFS.mkdir(root, { recursive: true });
-  await NodeFS.writeFile(ownershipPath, repository.id);
-  await NodeFS.mkdir(NodePath.join(root, "src"), { recursive: true });
+  await NodeFSP.mkdir(root, { recursive: true });
+  await NodeFSP.writeFile(ownershipPath, repository.id);
+  await NodeFSP.mkdir(NodePath.join(root, "src"), { recursive: true });
   const readme = NodePath.join(root, "README.md");
   if (!(await pathExists(readme))) {
-    await NodeFS.writeFile(
+    await NodeFSP.writeFile(
       readme,
       `# ${repository.title}\n\n${repository.description}\n\n${LOCAL_DEMO_MARKER}\n`,
     );
   }
   const packageJson = NodePath.join(root, "package.json");
   if (!(await pathExists(packageJson))) {
-    await NodeFS.writeFile(
+    await NodeFSP.writeFile(
       packageJson,
       `${JSON.stringify({ name: repository.id, private: true, type: "module", scripts: { test: "node --test" } }, null, 2)}\n`,
     );
   }
   const source = NodePath.join(root, "src/index.js");
   if (!(await pathExists(source))) {
-    await NodeFS.writeFile(
+    await NodeFSP.writeFile(
       source,
       `export const projectName = ${JSON.stringify(repository.title)};\n`,
     );
@@ -266,7 +266,7 @@ const ensureRepository = async (
   }
   const markerFile = NodePath.join(root, "src", "demo-marker.js");
   if (!(await pathExists(markerFile))) {
-    await NodeFS.writeFile(
+    await NodeFSP.writeFile(
       markerFile,
       `export const demoMarker = ${JSON.stringify(LOCAL_DEMO_MARKER)};\n`,
     );
@@ -538,7 +538,7 @@ const seedWorkbench = async (
     const worktreePath = NodePath.join(options.home, "worktrees", "demo", thread.id);
     const branch = `demo/${thread.id}`;
     if (!(await pathExists(worktreePath))) {
-      await NodeFS.mkdir(NodePath.dirname(worktreePath), { recursive: true });
+      await NodeFSP.mkdir(NodePath.dirname(worktreePath), { recursive: true });
       const branchExists = await runGit(source, [
         "show-ref",
         "--verify",
@@ -614,7 +614,7 @@ export const setupLocal = async (options: LocalDemoOptions): Promise<LocalDemoMa
   const home = NodePath.resolve(options.home);
   const now = options.now ?? isoNow;
   const prepareWorkspaces = options.prepareWorkspaces ?? false;
-  await NodeFS.mkdir(NodePath.join(home, "projects"), { recursive: true });
+  await NodeFSP.mkdir(NodePath.join(home, "projects"), { recursive: true });
   for (const repository of LOCAL_DEMO_REPOSITORIES) {
     await ensureRepository(
       NodePath.join(home, "projects", repository.id),
@@ -645,29 +645,31 @@ export const setupLocal = async (options: LocalDemoOptions): Promise<LocalDemoMa
     ),
     assignedThreads: ASSIGNED_THREADS.map((thread) => thread.id),
   };
-  await NodeFS.writeFile(manifestPath(home), `${JSON.stringify(manifest, null, 2)}\n`, {
+  await NodeFSP.writeFile(manifestPath(home), `${JSON.stringify(manifest, null, 2)}\n`, {
     encoding: "utf8",
   });
   return manifest;
 };
 
+const decodeLocalManifest = Schema.decodeUnknownSync(
+  Schema.fromJsonString(
+    Schema.Struct({
+      version: Schema.Number,
+      home: Schema.String,
+      projects: Schema.Array(Schema.Struct({ id: Schema.String, path: Schema.String })),
+      workbenchProjects: Schema.Array(Schema.String),
+      epics: Schema.Array(Schema.String),
+      tickets: Schema.Array(Schema.String),
+      assignedThreads: Schema.Array(Schema.String),
+    }),
+  ),
+);
+
 export const verifyLocal = async (
   options: Pick<LocalDemoOptions, "home" | "wsUrl" | "token">,
 ): Promise<LocalDemoVerification> => {
   const home = NodePath.resolve(options.home);
-  const manifest = Schema.decodeUnknownSync(
-    Schema.fromJsonString(
-      Schema.Struct({
-        version: Schema.Number,
-        home: Schema.String,
-        projects: Schema.Array(Schema.Struct({ id: Schema.String, path: Schema.String })),
-        workbenchProjects: Schema.Array(Schema.String),
-        epics: Schema.Array(Schema.String),
-        tickets: Schema.Array(Schema.String),
-        assignedThreads: Schema.Array(Schema.String),
-      }),
-    ),
-  )(await NodeFS.readFile(manifestPath(home), "utf8"));
+  const manifest = decodeLocalManifest(await NodeFSP.readFile(manifestPath(home), "utf8"));
   if (
     manifest.version !== DEMO_VERSION ||
     manifest.home !== home ||

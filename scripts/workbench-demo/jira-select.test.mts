@@ -1,10 +1,10 @@
 // @effect-diagnostics nodeBuiltinImport:off - Standalone setup tests exercise host file I/O.
 import { it, expect, vi } from "vite-plus/test";
-import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { PassThrough } from "node:stream";
+import * as NodeAssert from "node:assert/strict";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+import * as NodeStream from "node:stream";
 import { setupHome } from "./environment.mts";
 import {
   chooseOption,
@@ -127,11 +127,11 @@ it("uses valid saved/default choices and reprompts invalid indexes", async () =>
 });
 
 it("selects names, skips sprint reads for provision, and writes only after success", async () => {
-  const root = mkdtempSync(join(tmpdir(), "jira-select-test-"));
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "jira-select-test-"));
   try {
-    const home = setupHome(join(root, "demo"));
-    writeFileSync(
-      join(home, "config.env"),
+    const home = setupHome(NodePath.join(root, "demo"));
+    NodeFS.writeFileSync(
+      NodePath.join(home, "config.env"),
       "DEMO_JIRA_SITE_URL=https://example.atlassian.net\nDEMO_JIRA_EMAIL=person@example.com\nDEMO_JIRA_API_TOKEN=secret\nDEMO_JIRA_RESOURCE_MODE=provision\nUNRELATED=keep\n",
     );
     const paths: string[] = [];
@@ -144,24 +144,24 @@ it("selects names, skips sprint reads for provision, and writes only after succe
     const result = await selectJira({ home, fetcher, readLine: async () => "" });
     expect(result.sprint).toBeUndefined();
     expect(paths).toEqual(["/rest/api/3/project/search", "/rest/agile/1.0/board"]);
-    const config = readFileSync(join(home, "config.env"), "utf8");
+    const config = NodeFS.readFileSync(NodePath.join(home, "config.env"), "utf8");
     expect(config).toContain("UNRELATED=keep");
     expect(config).toContain("DEMO_JIRA_PROJECT_KEY=DEMO");
     expect(config).toContain("DEMO_JIRA_BOARD_ID=42");
     expect(config).toContain("DEMO_JIRA_SPRINT_ID=\n");
-    expect(statSync(join(home, "config.env")).mode & 0o777).toBe(0o600);
+    expect(NodeFS.statSync(NodePath.join(home, "config.env")).mode & 0o777).toBe(0o600);
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    NodeFS.rmSync(root, { recursive: true, force: true });
   }
 });
 
 it("does not write config when input ends during selection", async () => {
-  const root = mkdtempSync(join(tmpdir(), "jira-select-test-"));
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "jira-select-test-"));
   try {
-    const home = setupHome(join(root, "demo"));
+    const home = setupHome(NodePath.join(root, "demo"));
     const before =
       "DEMO_JIRA_SITE_URL=https://example.atlassian.net\nDEMO_JIRA_EMAIL=a@b\nDEMO_JIRA_API_TOKEN=secret\nDEMO_JIRA_RESOURCE_MODE=reuse\n";
-    writeFileSync(join(home, "config.env"), before);
+    NodeFS.writeFileSync(NodePath.join(home, "config.env"), before);
     const fetcher = vi.fn(
       async (url: string | URL) =>
         new Response(
@@ -175,18 +175,18 @@ it("does not write config when input ends during selection", async () => {
     await expect(selectJira({ home, fetcher, readLine: async () => null })).rejects.toThrow(
       /Input ended/,
     );
-    expect(readFileSync(join(home, "config.env"), "utf8")).toBe(before);
+    expect(NodeFS.readFileSync(NodePath.join(home, "config.env"), "utf8")).toBe(before);
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    NodeFS.rmSync(root, { recursive: true, force: true });
   }
 });
 
 it("preserves config values while upserting selected IDs", () => {
-  const root = mkdtempSync(join(tmpdir(), "jira-select-test-"));
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "jira-select-test-"));
   try {
-    const home = setupHome(join(root, "demo"));
-    writeFileSync(
-      join(home, "config.env"),
+    const home = setupHome(NodePath.join(root, "demo"));
+    NodeFS.writeFileSync(
+      NodePath.join(home, "config.env"),
       "SECRET=literal$(not-executed)\nDEMO_JIRA_PROJECT_KEY=OLD\nDEMO_JIRA_SITE_URL=https://example.atlassian.net/jira/software/projects/ORBIT\n",
     );
     saveSelection({
@@ -198,18 +198,18 @@ it("preserves config values while upserting selected IDs", () => {
         sprint: { id: 3, name: "Sprint" },
       },
     });
-    const config = readFileSync(join(home, "config.env"), "utf8");
-    assert.match(config, /SECRET=literal\$\(not-executed\)/);
-    assert.match(config, /DEMO_JIRA_PROJECT_KEY=NEW/);
+    const config = NodeFS.readFileSync(NodePath.join(home, "config.env"), "utf8");
+    NodeAssert.match(config, /SECRET=literal\$\(not-executed\)/);
+    NodeAssert.match(config, /DEMO_JIRA_PROJECT_KEY=NEW/);
     expect(config).toContain("DEMO_JIRA_SITE_URL=https://example.atlassian.net\n");
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    NodeFS.rmSync(root, { recursive: true, force: true });
   }
 });
 
 it("terminal input retains queued answers and settles when input closes", async () => {
-  const input = new PassThrough();
-  const terminal = terminalReader({ input, output: new PassThrough() });
+  const input = new NodeStream.PassThrough();
+  const terminal = terminalReader({ input, output: new NodeStream.PassThrough() });
   try {
     const pending = terminal.readLine("Choice: ");
     input.end("2\n\n");
@@ -222,11 +222,11 @@ it("terminal input retains queued answers and settles when input closes", async 
 });
 
 it("reuses saved project, board and sprint choices across paginated lists", async () => {
-  const root = mkdtempSync(join(tmpdir(), "jira-menu-reuse-"));
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "jira-menu-reuse-"));
   try {
-    const home = setupHome(join(root, "demo"));
-    writeFileSync(
-      join(home, "config.env"),
+    const home = setupHome(NodePath.join(root, "demo"));
+    NodeFS.writeFileSync(
+      NodePath.join(home, "config.env"),
       "DEMO_JIRA_SITE_URL=https://example.atlassian.net\nDEMO_JIRA_EMAIL=a@b\nDEMO_JIRA_API_TOKEN=secret\nDEMO_JIRA_RESOURCE_MODE=reuse\nDEMO_JIRA_PROJECT_KEY=ORBIT\nDEMO_JIRA_BOARD_ID=42\nDEMO_JIRA_SPRINT_ID=9\n",
     );
     const fetcher = async (url: string | URL, init?: RequestInit) => {
@@ -276,8 +276,10 @@ it("reuses saved project, board and sprint choices across paginated lists", asyn
     expect(selected.board.id).toBe(42);
     expect(selected.sprint?.id).toBe(9);
     expect(printed).toContain("2. Guide sprint (future)");
-    expect(readFileSync(join(home, "config.env"), "utf8")).toContain("DEMO_JIRA_SPRINT_ID=9");
+    expect(NodeFS.readFileSync(NodePath.join(home, "config.env"), "utf8")).toContain(
+      "DEMO_JIRA_SPRINT_ID=9",
+    );
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    NodeFS.rmSync(root, { recursive: true, force: true });
   }
 });

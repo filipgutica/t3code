@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off - Optional offline screenshot fixtures use Node SQLite after the demo has stopped.
-import { DatabaseSync } from "node:sqlite";
-import { join } from "node:path";
+import * as NodeSqlite from "node:sqlite";
+import * as NodePath from "node:path";
 import { requireHome, resetHome } from "./environment.mts";
 
 /** Projection-only content for screenshots; this is not an orchestration event history. */
@@ -8,7 +8,7 @@ export const seedVisualHistory = (input: string) => {
   const home = requireHome(input);
   // Reuse the same conservative stopped-server checks as local reset; preview mutates nothing.
   resetHome({ home, apply: false });
-  const db = new DatabaseSync(join(home, "userdata", "state.sqlite"));
+  const db = new NodeSqlite.DatabaseSync(NodePath.join(home, "userdata", "state.sqlite"));
   const threads = [
     "orbit-001-thread",
     "orbit-005-thread",
@@ -20,7 +20,7 @@ export const seedVisualHistory = (input: string) => {
       if (!db.prepare("SELECT thread_id FROM projection_threads WHERE thread_id = ?").get(id))
         throw new Error("Run seed before adding screenshot history.");
     }
-    const backup = join(home, `before-visual-history-${Date.now()}.sqlite`);
+    const backup = NodePath.join(home, `before-visual-history-${Date.now()}.sqlite`);
     db.prepare("VACUUM INTO ?").run(backup);
     db.exec("BEGIN IMMEDIATE");
     try {

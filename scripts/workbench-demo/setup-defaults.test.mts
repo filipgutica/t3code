@@ -1,24 +1,24 @@
 // @effect-diagnostics nodeBuiltinImport:off - Exercise the bash prompt boundary with synthetic configuration.
 import { it, expect } from "vite-plus/test";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 
-const helper = fileURLToPath(new URL("./setup-defaults.sh", import.meta.url));
+const helper = NodeURL.fileURLToPath(new URL("./setup-defaults.sh", import.meta.url));
 const run = (script: string, config = "", input = "\n") => {
-  const home = mkdtempSync(join(tmpdir(), "demo-prompts-"));
-  const file = join(home, "config.env");
-  writeFileSync(file, config);
+  const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "demo-prompts-"));
+  const file = NodePath.join(home, "config.env");
+  NodeFS.writeFileSync(file, config);
   try {
-    return execFileSync(
+    return NodeChildProcess.execFileSync(
       "bash",
       ["-c", 'set -eu; source "$1"; ENV_FILE="$2"; ' + script, "test", helper, file],
       { input, encoding: "utf8" },
     );
   } finally {
-    rmSync(home, { recursive: true, force: true });
+    NodeFS.rmSync(home, { recursive: true, force: true });
   }
 };
 

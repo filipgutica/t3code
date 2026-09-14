@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off globalConsole:off - Standalone demo CLI owns host setup outside the application runtime.
-import { parseArgs } from "node:util";
+import * as NodeUtil from "node:util";
 import { defaultHome, requireHome, setupHome, readConfig, resetHome } from "./environment.mts";
 import { seedVisualHistory } from "./history.mts";
 import { startDemo, stopDemo } from "./lifecycle.mts";
@@ -14,15 +14,17 @@ import {
   verifyDemoJira,
 } from "./integrations.mts";
 import { withDemoAccess } from "./access.mts";
-import { writeFileSync, readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 
 const saveRemote = (home: string, key: string, value: unknown) => {
-  const path = join(home, "remotes.json");
-  const previous: unknown = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
+  const path = NodePath.join(home, "remotes.json");
+  const previous: unknown = NodeFS.existsSync(path)
+    ? JSON.parse(NodeFS.readFileSync(path, "utf8"))
+    : {};
   if (typeof previous !== "object" || previous === null || Array.isArray(previous))
     throw new Error("Invalid remote resource manifest.");
-  writeFileSync(path, JSON.stringify({ ...previous, [key]: value }, null, 2) + "\n", {
+  NodeFS.writeFileSync(path, JSON.stringify({ ...previous, [key]: value }, null, 2) + "\n", {
     mode: 0o600,
   });
 };
@@ -45,7 +47,7 @@ Default home: ${defaultHome}
 Human account setup: bash scripts/workbench-demo/setup.sh
 See scripts/workbench-demo/README.md for configuration and external resource reuse.
 `;
-const { values, positionals } = parseArgs({
+const { values, positionals } = NodeUtil.parseArgs({
   allowPositionals: true,
   options: {
     home: { type: "string", default: defaultHome },
@@ -103,8 +105,10 @@ const main = async () => {
         ];
     return names.map((name) => (name.includes("/") ? name : `${owner}/${name}`));
   };
-  const savedPath = join(home, "remotes.json");
-  const saved: unknown = existsSync(savedPath) ? JSON.parse(readFileSync(savedPath, "utf8")) : {};
+  const savedPath = NodePath.join(home, "remotes.json");
+  const saved: unknown = NodeFS.existsSync(savedPath)
+    ? JSON.parse(NodeFS.readFileSync(savedPath, "utf8"))
+    : {};
   const jiraRecord =
     typeof saved === "object" && saved !== null && "jira" in saved ? saved.jira : undefined;
   const baseline =

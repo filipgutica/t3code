@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - The demo provisioner shells out to the user's CLI tools.
 import * as NodeChildProcess from "node:child_process";
-import * as NodeFS from "node:fs/promises";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
@@ -210,9 +210,9 @@ const writeSyntheticRepository = async (
   fullName: string,
   marker: string,
 ): Promise<{ readonly directory: string; readonly defaultBranch: string }> => {
-  const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-workbench-demo-"));
+  const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-workbench-demo-"));
   try {
-    await NodeFS.writeFile(
+    await NodeFSP.writeFile(
       NodePath.join(directory, "README.md"),
       `# Workbench demo repository\n\n${marker}\n`,
     );
@@ -243,14 +243,14 @@ const writeSyntheticRepository = async (
       { cwd: directory },
     );
   } catch (error) {
-    await NodeFS.rm(directory, { recursive: true, force: true });
+    await NodeFSP.rm(directory, { recursive: true, force: true });
     throw error;
   }
   return { directory, defaultBranch: "main" };
 };
 
 const cloneMarkedRepository = async (runner: CommandRunner, fullName: string): Promise<string> => {
-  const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-workbench-demo-"));
+  const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-workbench-demo-"));
   try {
     await gh(runner, ["repo", "clone", fullName, directory]);
     await runner("git", ["config", "user.name", "Workbench Demo"], { cwd: directory });
@@ -259,7 +259,7 @@ const cloneMarkedRepository = async (runner: CommandRunner, fullName: string): P
     });
     return directory;
   } catch (error) {
-    await NodeFS.rm(directory, { recursive: true, force: true });
+    await NodeFSP.rm(directory, { recursive: true, force: true });
     throw error;
   }
 };
@@ -283,7 +283,7 @@ const commitBranch = async ({
   await runner("git", ["pull", "--ff-only", "origin", defaultBranch], { cwd: directory });
   await runner("git", ["checkout", "-b", branch], { cwd: directory });
   const path = NodePath.join(directory, `demo-${scenario}.md`);
-  await NodeFS.writeFile(
+  await NodeFSP.writeFile(
     path,
     `# ${scenario} demo change\n\n${marker}\n\nThis file is synthetic demo content.\n`,
   );
@@ -412,7 +412,7 @@ export const provisionGitHub = async ({
       defaultBranch = created.defaultBranch;
       repo = await inspectRepository(commandRunner, fullName);
       if (!repo) {
-        await NodeFS.rm(directory, { recursive: true, force: true });
+        await NodeFSP.rm(directory, { recursive: true, force: true });
         throw new Error(`Could not inspect newly created repository ${fullName}.`);
       }
     }
@@ -511,7 +511,7 @@ export const provisionGitHub = async ({
         pullRequests,
       });
     } finally {
-      if (directory) await NodeFS.rm(directory, { recursive: true, force: true });
+      if (directory) await NodeFSP.rm(directory, { recursive: true, force: true });
     }
   }
   return { owner: safeOwner, prefix: safePrefix, apply: true, marker, repositories };

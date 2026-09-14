@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off globalConsole:off globalTimers:off - Standalone setup tooling owns its host I/O.
-import { chmodSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { createInterface } from "node:readline";
-import { stdin as input, stdout as output } from "node:process";
-import type { Readable, Writable } from "node:stream";
-import { fileURLToPath } from "node:url";
-import { parseArgs } from "node:util";
-import { join, resolve } from "node:path";
-import { randomUUID } from "node:crypto";
+import * as NodeFS from "node:fs";
+import * as NodeReadline from "node:readline";
+import * as NodeProcess from "node:process";
+import type * as NodeStream from "node:stream";
+import * as NodeURL from "node:url";
+import * as NodeUtil from "node:util";
+import * as NodePath from "node:path";
+import * as NodeCrypto from "node:crypto";
 import { requireHome, readConfig } from "./environment.mts";
 
 export type JiraProject = { key: string; name: string };
@@ -72,7 +72,7 @@ export const requestJson = async ({
     }
   } catch (error) {
     if (error instanceof Error && error.message.startsWith("Jira ")) throw error;
-    throw new Error("Jira request failed or timed out.");
+    throw new Error("Jira request failed or timed out.", { cause: error });
   } finally {
     clearTimeout(timer);
   }
@@ -270,8 +270,8 @@ export const saveSelection = ({
   selection: JiraSelection;
   provision: boolean;
 }) => {
-  const path = join(home, "config.env");
-  const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
+  const path = NodePath.join(home, "config.env");
+  const existing = NodeFS.existsSync(path) ? NodeFS.readFileSync(path, "utf8") : "";
   const updates = new Map([
     ["DEMO_JIRA_PROJECT_KEY", selection.project.key],
     ["DEMO_JIRA_BOARD_ID", String(selection.board.id)],
@@ -296,11 +296,13 @@ export const saveSelection = ({
   if (additions)
     content =
       content && !content.endsWith("\n") ? `${content}\n${additions}` : `${content}${additions}`;
-  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
-  writeFileSync(temporary, content.endsWith("\n") ? content : `${content}\n`, { mode: 0o600 });
-  chmodSync(temporary, 0o600);
-  renameSync(temporary, path);
-  chmodSync(path, 0o600);
+  const temporary = `${path}.${process.pid}.${NodeCrypto.randomUUID()}.tmp`;
+  NodeFS.writeFileSync(temporary, content.endsWith("\n") ? content : `${content}\n`, {
+    mode: 0o600,
+  });
+  NodeFS.chmodSync(temporary, 0o600);
+  NodeFS.renameSync(temporary, path);
+  NodeFS.chmodSync(path, 0o600);
 };
 
 export const selectJira = async ({
@@ -366,8 +368,14 @@ export const selectJira = async ({
   return { project, board, sprint };
 };
 
-export const terminalReader = ({ input, output }: { input: Readable; output: Writable }) => {
-  const rl = createInterface({ input, output });
+export const terminalReader = ({
+  input,
+  output,
+}: {
+  input: NodeStream.Readable;
+  output: NodeStream.Writable;
+}) => {
+  const rl = NodeReadline.createInterface({ input, output });
   const lines = rl[Symbol.asyncIterator]();
   return {
     readLine: async (prompt: string) => {
@@ -380,14 +388,14 @@ export const terminalReader = ({ input, output }: { input: Readable; output: Wri
 };
 
 export const main = async () => {
-  const { values, positionals } = parseArgs({
+  const { values, positionals } = NodeUtil.parseArgs({
     options: { home: { type: "string" } },
     allowPositionals: true,
   });
   if (positionals.length) throw new Error("Unexpected positional argument.");
   if (!values.home) throw new Error("Usage: jira-select.mts --home HOME");
   const home = requireHome(values.home);
-  const terminal = terminalReader({ input, output });
+  const terminal = terminalReader({ input: NodeProcess.stdin, output: NodeProcess.stdout });
   try {
     const result = await selectJira({ home, readLine: terminal.readLine });
     console.log(
@@ -398,7 +406,7 @@ export const main = async () => {
   }
 };
 
-if (resolve(process.argv[1] ?? "") === fileURLToPath(import.meta.url))
+if (NodePath.resolve(process.argv[1] ?? "") === NodeURL.fileURLToPath(import.meta.url))
   main().catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : "Jira selection failed.");
     process.exitCode = 1;

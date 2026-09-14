@@ -1,19 +1,19 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetch:off - Short-lived local CLI authentication uses the existing auth command.
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeUtil from "node:util";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
 import { requireHome } from "./environment.mts";
-const exec = promisify(execFile);
-const root = fileURLToPath(new URL("../../", import.meta.url));
+const exec = NodeUtil.promisify(NodeChildProcess.execFile);
+const root = NodeURL.fileURLToPath(new URL("../../", import.meta.url));
 export const withDemoAccess = async <T,>(
   homeInput: string,
   operation: (access: { wsUrl: string; token: string }) => Promise<T>,
 ): Promise<T> => {
   const home = requireHome(homeInput);
   const runtime: unknown = JSON.parse(
-    await readFile(join(home, "userdata", "server-runtime.json"), "utf8"),
+    await NodeFSP.readFile(NodePath.join(home, "userdata", "server-runtime.json"), "utf8"),
   );
   if (
     typeof runtime !== "object" ||

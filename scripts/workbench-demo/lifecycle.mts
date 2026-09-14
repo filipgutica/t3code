@@ -1,23 +1,24 @@
 // @effect-diagnostics nodeBuiltinImport:off globalDate:off - Standalone host tooling owns filesystem and process lifecycle before the Effect app starts.
-import { spawn } from "node:child_process";
-import { createServer, createConnection } from "node:net";
-import { closeSync, openSync, unlinkSync, existsSync, chmodSync, readFileSync } from "node:fs";
-import { join, delimiter } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createHash } from "node:crypto";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeNet from "node:net";
+import * as NodeFS from "node:fs";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
+import * as NodeCrypto from "node:crypto";
 import { requireHome, readConfig } from "./environment.mts";
 
-const root = fileURLToPath(new URL("../../", import.meta.url));
+const root = NodeURL.fileURLToPath(new URL("../../", import.meta.url));
 const socketPath = (home: string) =>
-  process.platform === "win32"
-    ? `\\\\.\\pipe\\workbench-demo-${createHash("sha256").update(home).digest("hex").slice(0, 24)}`
-    : join(home, "control.sock");
+  HostProcessPlatform.defaultValue() === "win32"
+    ? `\\\\.\\pipe\\workbench-demo-${NodeCrypto.createHash("sha256").update(home).digest("hex").slice(0, 24)}`
+    : NodePath.join(home, "control.sock");
 
 export const startDemo = async (input: string): Promise<number> => {
   const home = requireHome(input);
-  const runtimePath = join(home, "userdata", "server-runtime.json");
-  if (existsSync(runtimePath)) {
-    const runtime: unknown = JSON.parse(readFileSync(runtimePath, "utf8"));
+  const runtimePath = NodePath.join(home, "userdata", "server-runtime.json");
+  if (NodeFS.existsSync(runtimePath)) {
+    const runtime: unknown = JSON.parse(NodeFS.readFileSync(runtimePath, "utf8"));
     if (
       typeof runtime === "object" &&
       runtime !== null &&
@@ -36,24 +37,24 @@ export const startDemo = async (input: string): Promise<number> => {
         );
     }
   }
-  const lock = join(home, "run.lock");
-  const fd = openSync(lock, "wx", 0o600);
-  closeSync(fd);
-  const server = createServer();
+  const lock = NodePath.join(home, "run.lock");
+  const fd = NodeFS.openSync(lock, "wx", 0o600);
+  NodeFS.closeSync(fd);
+  const server = NodeNet.createServer();
   const cleanup = () => {
     server.close();
-    if (existsSync(lock)) unlinkSync(lock);
+    if (NodeFS.existsSync(lock)) NodeFS.unlinkSync(lock);
   };
   try {
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(socketPath(home), () => resolve());
     });
-    if (process.platform !== "win32") chmodSync(socketPath(home), 0o600);
+    if (HostProcessPlatform.defaultValue() !== "win32") NodeFS.chmodSync(socketPath(home), 0o600);
     const config = readConfig(home);
     const env = {
       ...process.env,
-      PATH: `${join(root, "node_modules", ".bin")}${delimiter}${process.env.PATH ?? ""}`,
+      PATH: `${NodePath.join(root, "node_modules", ".bin")}${NodePath.delimiter}${process.env.PATH ?? ""}`,
       T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "0",
     };
     for (const key of [
@@ -63,11 +64,15 @@ export const startDemo = async (input: string): Promise<number> => {
     ]) {
       if (config[key]) Object.assign(env, { [key]: config[key] });
     }
-    const child = spawn(process.execPath, ["scripts/dev-runner.ts", "dev", "--home-dir", home], {
-      cwd: root,
-      env,
-      stdio: "inherit",
-    });
+    const child = NodeChildProcess.spawn(
+      process.execPath,
+      ["scripts/dev-runner.ts", "dev", "--home-dir", home],
+      {
+        cwd: root,
+        env,
+        stdio: "inherit",
+      },
+    );
     let stopping = false;
     const stop = () => {
       stopping = true;
@@ -107,7 +112,7 @@ export const startDemo = async (input: string): Promise<number> => {
 export const stopDemo = async (input: string) => {
   const home = requireHome(input);
   return await new Promise<string>((resolve, reject) => {
-    const socket = createConnection(socketPath(home));
+    const socket = NodeNet.createConnection(socketPath(home));
     socket.setTimeout(60_000, () => socket.destroy(new Error("Demo controller did not respond.")));
     socket.once("error", reject);
     socket.once("connect", () => socket.write("stop\n"));
