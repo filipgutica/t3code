@@ -62,9 +62,13 @@ export const makeWorkbenchRpcHandlers = ({
         "rpc.aggregate": "workbench",
       }),
     [WORKBENCH_WS_METHODS.workbenchCreateTicket]: (input) =>
-      observeRpcEffect(WORKBENCH_WS_METHODS.workbenchCreateTicket, workbench.createTicket(input), {
-        "rpc.aggregate": "workbench",
-      }),
+      observeRpcEffect(
+        WORKBENCH_WS_METHODS.workbenchCreateTicket,
+        workbenchJira.createTicket(input),
+        {
+          "rpc.aggregate": "workbench",
+        },
+      ),
     [WORKBENCH_WS_METHODS.workbenchUpdateTicket]: (input) =>
       observeRpcEffect(WORKBENCH_WS_METHODS.workbenchUpdateTicket, workbench.updateTicket(input), {
         "rpc.aggregate": "workbench",

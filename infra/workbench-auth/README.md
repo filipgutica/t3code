@@ -23,6 +23,33 @@ The fork's configured production callback is
 Enable sharing before testing with users other than the app owner. Atlassian can
 display an unapproved-integration warning until the app has been reviewed.
 
+The Worker requests these 11 scopes. Keep this list in sync with `JIRA_SCOPES` in
+`infra/workbench-auth/src/protocol.ts` and `JIRA_OAUTH_SCOPES` in
+`packages/workbench/src/jira/JiraOAuthClient.ts`.
+
+| Scope                                  | Used for                                                                         |
+| -------------------------------------- | -------------------------------------------------------------------------------- |
+| `read:project:jira`                    | List projects and read the project data needed to choose a board.                |
+| `read:jira-work`                       | Read Jira project and issue data, including issue searches.                      |
+| `write:jira-work`                      | Create issues, edit descriptions, and apply issue transitions.                   |
+| `read:board-scope:jira-software`       | List boards that the connected user can view.                                    |
+| `read:board-scope.admin:jira-software` | Read board configuration and its columns.                                        |
+| `read:sprint:jira-software`            | List selected sprints and read issues in those sprints.                          |
+| `read:issue-details:jira`              | Read issue fields and Epic details returned by Jira Software.                    |
+| `read:jql:jira`                        | Run the assigned-user JQL used to mirror sprint issues.                          |
+| `read:jira-user`                       | Read the connected account ID from `/rest/api/3/myself` for new issue assignees. |
+| `write:sprint:jira-software`           | Move a newly created issue into the selected sprint.                             |
+| `offline_access`                       | Refresh access tokens without asking the user to sign in again.                  |
+
+The scope names control what the integration may request. They do not grant the
+connected Jira user access to projects or issues. The user still needs the Jira
+project permissions required by each operation, such as Browse projects and
+Create issues for creation, Assign Issues when assigning, Edit issues for
+description changes, and Transition issues for status changes. Atlassian's
+[Jira product scope reference](https://developer.atlassian.com/platform/forge/manifest-reference/scopes-product-jira/)
+and [Jira Software scope reference](https://developer.atlassian.com/platform/forge/manifest-reference/scopes-product-jsw/)
+describe the OAuth scopes separately from Jira permissions.
+
 ## Configure Cloudflare
 
 Use separate Worker deployments and Atlassian applications for development and
@@ -76,4 +103,12 @@ request bodies. Use safe status codes and aggregate metrics for diagnostics.
 ## References
 
 - [Atlassian OAuth and distribution](https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/)
+- [Jira product OAuth scopes](https://developer.atlassian.com/platform/forge/manifest-reference/scopes-product-jira/)
+- [Jira Software OAuth scopes](https://developer.atlassian.com/platform/forge/manifest-reference/scopes-product-jsw/)
+- [Jira Cloud REST API: projects](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-projects/)
+- [Jira Software Cloud REST API: boards and sprints](https://developer.atlassian.com/cloud/jira/software/rest/api-group-board/)
+- [Jira Cloud REST API: issues](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/)
+- [Jira Cloud REST API: current user](https://developer.atlassian.com/cloud/jira/platform/rest/v2/api-group-myself/)
+- [Atlassian OAuth refresh token flow](https://developer.atlassian.com/cloud/oauth/getting-started/refresh-tokens/)
+- [Jira project permission reference](https://support.atlassian.com/jira-cloud-administration/docs/permissions-for-company-managed-projects/)
 - [Cloudflare Worker secrets](https://developers.cloudflare.com/workers/configuration/secrets/)

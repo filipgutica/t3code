@@ -1,5 +1,7 @@
 import {
   WorkbenchJiraOperationError,
+  WorkbenchOperationError,
+  type WorkbenchCreateTicketInput,
   type WorkbenchJiraBeginAuthInput,
   type WorkbenchJiraBeginAuthResult,
   type WorkbenchJiraClaimAuthInput,
@@ -13,6 +15,7 @@ import {
   type WorkbenchJiraSelectedSprint,
   type WorkbenchJiraSprint,
   type WorkbenchJiraUpdateBindingInput,
+  type WorkbenchTicket,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -32,15 +35,12 @@ import {
   JiraTicketWriteService,
   type JiraTicketWriteServiceShape,
 } from "./JiraTicketWriteService.ts";
-import {
-  WorkbenchJiraRepository,
-  type WorkbenchJiraRepositoryError,
-} from "./WorkbenchJiraRepository.ts";
+import { WorkbenchJiraRepository } from "./WorkbenchJiraRepository.ts";
 
 const operationError = (message: string) =>
   new WorkbenchJiraOperationError({ code: "invalid_binding", message });
 
-const repositoryError = (_cause: WorkbenchJiraRepositoryError) =>
+const repositoryError = (_cause: unknown) =>
   new WorkbenchJiraOperationError({
     code: "persistence_failed",
     message: "Jira connection state could not be saved or loaded.",
@@ -90,6 +90,9 @@ interface WorkbenchJiraServiceShape {
   readonly getTicketTransitions: JiraTicketWriteServiceShape["getTicketTransitions"];
   readonly updateTicket: JiraTicketWriteServiceShape["updateTicket"];
   readonly startTicketExecution: JiraTicketWriteServiceShape["startTicketExecution"];
+  readonly createTicket: (
+    input: WorkbenchCreateTicketInput,
+  ) => Effect.Effect<WorkbenchTicket, WorkbenchJiraOperationError | WorkbenchOperationError>;
 }
 
 export class WorkbenchJiraService extends Context.Service<
@@ -359,6 +362,84 @@ export const make = Effect.gen(function* () {
       }),
     );
 
+  const createTicket: WorkbenchJiraServiceShape["createTicket"] = (input) =>
+    Effect.gen(function* () {
+      const bindings = yield* repository.listBindings().pipe(Effect.mapError(repositoryError));
+      const matches = bindings.filter((binding) => binding.projectId === input.projectId);
+      if (matches.length === 0) {
+        return yield* workbench.createTicket(input);
+      }
+      if (matches.length > 1) {
+        return yield* operationError(
+          "This Workbench Workspace is linked to more than one Jira binding. Repair the binding before creating Tickets.",
+        );
+      }
+      const binding = matches[0]!;
+      if (!binding.active) {
+        return yield* new WorkbenchJiraOperationError({
+          code: "binding_inactive",
+          message:
+            "This Jira Workspace is paused. Resume the Jira binding before creating Tickets.",
+        });
+      }
+      const before = yield* workbench.getSnapshot;
+      const project = before.projects.find((candidate) => candidate.id === input.projectId);
+      const repositories = input.repositoryProjectIds ?? [input.primaryT3ProjectId];
+      if (
+        !project ||
+        repositories.length === 0 ||
+        !repositories.includes(input.primaryT3ProjectId) ||
+        new Set(repositories).size !== repositories.length ||
+        repositories.some((id) => !project.linkedProjectIds.includes(id))
+      ) {
+        return yield* operationError(
+          "Select valid linked repositories and a primary repository before creating a Jira Ticket.",
+        );
+      }
+      if (
+        input.epicId &&
+        !before.epics.some(
+          (epic) =>
+            epic.id === input.epicId &&
+            epic.projectId === input.projectId &&
+            epic.archivedAt === null &&
+            epic.id.startsWith(`jira:${binding.id}:epic:`),
+        )
+      ) {
+        return yield* operationError(
+          "Select an active Jira Epic from this Workspace before creating the Ticket.",
+        );
+      }
+      if (before.tickets.some((ticket) => ticket.id === input.id)) {
+        const creation = yield* sql<{ readonly bindingId: string }>`
+          SELECT binding_id AS "bindingId" FROM workbench_jira_ticket_creations WHERE ticket_id = ${input.id}
+        `.pipe(Effect.mapError(repositoryError));
+        if (creation[0]?.bindingId !== binding.id) {
+          return yield* operationError(
+            "This Ticket ID is already in use. Start a new Ticket creation.",
+          );
+        }
+      }
+      const ticketId = yield* ticketWriter.createTicket({ ...input, binding });
+      const snapshot = yield* workbench.getSnapshot.pipe(
+        Effect.mapError(
+          () =>
+            new WorkbenchOperationError({
+              code: "persistence_failed",
+              message: "Jira created the Ticket, but Workbench could not reload it.",
+            }),
+        ),
+      );
+      const ticket = snapshot.tickets.find((candidate) => candidate.id === ticketId);
+      if (ticket === undefined) {
+        return yield* new WorkbenchOperationError({
+          code: "persistence_failed",
+          message: "Jira created the Ticket, but Workbench could not find its local projection.",
+        });
+      }
+      return ticket;
+    });
+
   const syncActiveBindings = repository.listBindings().pipe(
     Effect.mapError(repositoryError),
     Effect.flatMap((bindings) =>
@@ -404,6 +485,7 @@ export const make = Effect.gen(function* () {
     getBoardConfiguration: api.getBoardConfiguration,
     createBinding,
     updateBinding,
+    createTicket,
     syncBinding: sync.syncBinding,
     getTicketTransitions: ticketWriter.getTicketTransitions,
     updateTicket: ticketWriter.updateTicket,

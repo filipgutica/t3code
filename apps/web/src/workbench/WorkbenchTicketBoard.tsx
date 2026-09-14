@@ -30,6 +30,7 @@ import {
   FolderGit2Icon,
   LayoutDashboardIcon,
   Layers3Icon,
+  LoaderCircleIcon,
   MoreHorizontalIcon,
   PlusIcon,
 } from "lucide-react";
@@ -67,6 +68,10 @@ import {
 } from "./WorkbenchTicketStatusMenu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import type { Project } from "../types";
+import {
+  getWorkbenchTicketStartProgressLabel,
+  isWorkbenchTicketStartPending,
+} from "./startWorkbenchTicket";
 import {
   getWorkbenchThreadPresentation,
   getVisibleWorkbenchAssignments,
@@ -447,9 +452,12 @@ export function WorkbenchTicketBoard({
                                   threadLookupReady,
                                 );
                                 const threadActionPending =
-                                  pendingAction === `start:${ticket.id}` ||
+                                  isWorkbenchTicketStartPending(pendingAction, ticket.id) ||
                                   (assignment !== undefined &&
                                     pendingAction === `restore:${assignment.threadId}`);
+                                const threadActionLabel =
+                                  getWorkbenchTicketStartProgressLabel(pendingAction, ticket.id) ??
+                                  (threadActionPending ? thread.pendingActionLabel : null);
                                 const repository = repositoriesById.get(ticket.primaryT3ProjectId);
                                 const additionalRepositoryCount =
                                   getWorkbenchTicketRepositoryProjectIds(ticket).length - 1;
@@ -677,6 +685,8 @@ export function WorkbenchTicketBoard({
                                             ) : null}
                                           </div>
                                           <Button
+                                            aria-busy={threadActionPending}
+                                            aria-label={`${threadActionLabel ?? thread.actionLabel} for ${ticket.title}`}
                                             data-workbench-no-drag=""
                                             className="relative z-10"
                                             disabled={pending || pendingTicketIds.has(ticket.id)}
@@ -691,10 +701,11 @@ export function WorkbenchTicketBoard({
                                                 : "ghost"
                                             }
                                           >
-                                            {threadActionPending
-                                              ? thread.pendingActionLabel
-                                              : thread.actionLabel}
-                                            <ArrowRightIcon />
+                                            {threadActionPending ? (
+                                              <LoaderCircleIcon className="animate-spin" />
+                                            ) : null}
+                                            {threadActionLabel ?? thread.actionLabel}
+                                            {threadActionPending ? null : <ArrowRightIcon />}
                                           </Button>
                                         </div>
                                       </article>

@@ -19,7 +19,11 @@ import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
 import type { ReviewCommentContext } from "../reviewCommentContext";
 import { resolveThreadRouteRenderState } from "../threadRoutes";
 
-import { coordinateWorkbenchTicketStart } from "./startWorkbenchTicket";
+import {
+  coordinateWorkbenchTicketStart,
+  getWorkbenchTicketStartProgressLabel,
+  isWorkbenchTicketStartPending,
+} from "./startWorkbenchTicket";
 
 const environmentId = EnvironmentId.make("environment-one");
 const projectId = ProjectId.make("repository-one");
@@ -130,6 +134,34 @@ function startInput(assignment?: WorkbenchAssignment) {
 }
 
 describe("coordinateWorkbenchTicketStart", () => {
+  it("reports visible progress while creating a new Thread", async () => {
+    const stages: string[] = [];
+
+    await coordinateWorkbenchTicketStart(startInput(), {
+      ...makeDependencies([]),
+      onStage: (stage) => stages.push(stage),
+    });
+
+    expect(stages).toEqual([
+      "checking-thread",
+      "preparing-workspace",
+      "creating-thread",
+      "linking-thread",
+      "attaching-context",
+      "opening-thread",
+    ]);
+  });
+
+  it("maps pending start stages to user-facing labels", () => {
+    expect(
+      getWorkbenchTicketStartProgressLabel(`start:${ticket.id}:creating-thread`, ticket.id),
+    ).toBe("Creating Thread…");
+    expect(isWorkbenchTicketStartPending(`start:${ticket.id}:creating-thread`, ticket.id)).toBe(
+      true,
+    );
+    expect(getWorkbenchTicketStartProgressLabel("delete:ticket-one", ticket.id)).toBeNull();
+  });
+
   it("keeps ticket context on the intended route while the new thread reaches the client", async () => {
     const events: string[] = [];
     const comments: ReviewCommentContext[] = [];

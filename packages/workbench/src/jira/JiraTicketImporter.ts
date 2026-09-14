@@ -22,13 +22,17 @@ export interface JiraTicketImportInput {
   readonly existingTicketId: WorkbenchTicketId | null;
   readonly issue: WorkbenchJiraIssueSnapshot;
   readonly mappedStatus: WorkbenchTicketStatus;
+  /** Caller-owned scope for a newly created local projection. */
+  readonly primaryT3ProjectId?: WorkbenchTicket["primaryT3ProjectId"];
+  readonly repositoryProjectIds?: WorkbenchTicket["repositoryProjectIds"];
 }
 
 export interface JiraTicketImporterShape {
   /**
    * Creates or updates the local Ticket projection for Jira-owned fields only:
    * title, description, remote type, mapped status, and Epic link. An implementation must
-   * preserve repository scope, Assignments, and Thread history.
+   * preserve Assignments and Thread history. Repository scope changes only when
+   * explicitly supplied to finish a Workbench-originated creation.
    */
   readonly upsertJiraProjection: (
     input: JiraTicketImportInput,
@@ -116,6 +120,46 @@ const makeJiraTicketFieldPatch = ({
     ...changes,
   };
 };
+
+const restoreCreationScope = ({
+  workbench,
+  ticketId,
+  input,
+  updatedAt,
+}: {
+  readonly workbench: WorkbenchStore["Service"];
+  readonly ticketId: WorkbenchTicketId;
+  readonly input: JiraTicketImportInput;
+  readonly updatedAt: string;
+}) =>
+  Effect.gen(function* () {
+    if (input.primaryT3ProjectId === undefined || input.repositoryProjectIds === undefined) return;
+    const current = (yield* workbench.getSnapshot.pipe(
+      Effect.mapError(() => importError("The Jira Ticket scope could not be loaded.")),
+    )).tickets.find((ticket) => ticket.id === ticketId);
+    if (
+      current &&
+      (current.primaryT3ProjectId !== input.primaryT3ProjectId ||
+        current.repositoryProjectIds.length !== input.repositoryProjectIds.length ||
+        current.repositoryProjectIds.some(
+          (id, index) => id !== input.repositoryProjectIds?.[index],
+        ))
+    ) {
+      yield* workbench
+        .updateTicket({
+          id: ticketId,
+          expectedRevision: current.revision,
+          primaryT3ProjectId: input.primaryT3ProjectId,
+          repositoryProjectIds: input.repositoryProjectIds,
+          updatedAt,
+        })
+        .pipe(
+          Effect.mapError(() =>
+            importError("The Jira Ticket repository scope could not be saved."),
+          ),
+        );
+    }
+  });
 
 const recheckPendingTicketSummary = ({
   workbench,
@@ -244,8 +288,10 @@ export const layer = Layer.effect(
                 title,
                 kind,
                 markdown: description,
-                primaryT3ProjectId: input.binding.defaultPrimaryT3ProjectId,
-                repositoryProjectIds: input.binding.defaultRepositoryProjectIds,
+                primaryT3ProjectId:
+                  input.primaryT3ProjectId ?? input.binding.defaultPrimaryT3ProjectId,
+                repositoryProjectIds:
+                  input.repositoryProjectIds ?? input.binding.defaultRepositoryProjectIds,
                 createdAt: updatedAt,
               })
               .pipe(
@@ -294,6 +340,8 @@ export const layer = Layer.effect(
               );
             }
           }
+          if (existingTicket)
+            yield* restoreCreationScope({ workbench, ticketId, input, updatedAt });
           yield* recheckPendingTicketSummary({ workbench, ticketId, ticket: existingTicket });
           return ticketId;
         }),

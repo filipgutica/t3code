@@ -1,5 +1,6 @@
 import {
   WorkbenchJiraOperationError,
+  type WorkbenchCreateTicketInput,
   type WorkbenchJiraBinding,
   type WorkbenchJiraGetTicketTransitionsInput,
   type WorkbenchJiraGetTicketTransitionsResult,
@@ -23,15 +24,12 @@ import { JiraApi } from "./JiraApi.ts";
 import { JiraAuthService } from "./JiraAuthService.ts";
 import { JiraSyncService } from "./JiraSyncService.ts";
 import { JiraTicketImporter } from "./JiraTicketImporter.ts";
-import {
-  WorkbenchJiraRepository,
-  type WorkbenchJiraRepositoryError,
-} from "./WorkbenchJiraRepository.ts";
+import { WorkbenchJiraRepository } from "./WorkbenchJiraRepository.ts";
 
 const operationError = (code: WorkbenchJiraOperationError["code"], message: string) =>
   new WorkbenchJiraOperationError({ code, message });
 
-const repositoryError = (_cause: WorkbenchJiraRepositoryError) =>
+const repositoryError = (_cause: unknown) =>
   operationError("persistence_failed", "Jira connection metadata could not be loaded.");
 
 const selectedSprintsForBinding = (
@@ -42,6 +40,40 @@ const selectedSprintsForBinding = (
     : ([
         { id: binding.sprintId, name: binding.sprintName },
       ] satisfies ReadonlyArray<WorkbenchJiraSelectedSprint>);
+
+const encodeCreationFingerprint = Schema.encodeSync(
+  Schema.fromJsonString(
+    Schema.Struct({
+      projectId: Schema.String,
+      bindingId: Schema.String,
+      connectionId: Schema.String,
+      jiraProjectKey: Schema.String,
+      boardId: Schema.Int,
+      title: Schema.String,
+      markdown: Schema.String,
+      kind: Schema.String,
+      epicId: Schema.NullOr(Schema.String),
+      sprintId: Schema.Int,
+      primaryT3ProjectId: Schema.String,
+      repositoryProjectIds: Schema.Array(Schema.String),
+    }),
+  ),
+);
+
+type JiraTicketCreationRow = {
+  readonly ticketId: string;
+  readonly bindingId: string;
+  readonly title: string;
+  readonly kind: string;
+  readonly markdown: string;
+  readonly requestFingerprint: string;
+  readonly resultTicketId: WorkbenchCreateTicketInput["id"] | null;
+  readonly jiraIssueId: string | null;
+  readonly jiraIssueKey: string | null;
+  readonly state: "pending" | "uncertain" | "created";
+  readonly createdAt: string;
+  readonly updatedAt: string;
+};
 
 const RawTransitionId = Schema.Union([Schema.String, Schema.Number]);
 const RawTransition = Schema.Struct({
@@ -127,6 +159,9 @@ const validateReadback = ({
 };
 
 export interface JiraTicketWriteServiceShape {
+  readonly createTicket: (
+    input: WorkbenchCreateTicketInput & { readonly binding: WorkbenchJiraBinding },
+  ) => Effect.Effect<WorkbenchCreateTicketInput["id"], WorkbenchJiraOperationError>;
   readonly getTicketTransitions: (
     input: WorkbenchJiraGetTicketTransitionsInput,
   ) => Effect.Effect<WorkbenchJiraGetTicketTransitionsResult, WorkbenchJiraOperationError>;
@@ -189,6 +224,99 @@ export const make = Effect.gen(function* () {
         connection: connection.value,
         accessToken: yield* auth.getAccessToken(binding.connectionId),
       };
+    });
+
+  const loadCreation = (ticketId: string) =>
+    sql<JiraTicketCreationRow>`
+      SELECT
+        ticket_id AS "ticketId",
+        binding_id AS "bindingId",
+        title,
+        kind,
+        markdown,
+        request_fingerprint AS "requestFingerprint",
+        result_ticket_id AS "resultTicketId",
+        jira_issue_id AS "jiraIssueId",
+        jira_issue_key AS "jiraIssueKey",
+        state,
+        created_at AS "createdAt",
+        updated_at AS "updatedAt"
+      FROM workbench_jira_ticket_creations
+      WHERE ticket_id = ${ticketId}
+      LIMIT 1
+    `.pipe(Effect.map((rows) => rows[0]));
+
+  const reserveCreation = (input: {
+    readonly ticket: WorkbenchCreateTicketInput;
+    readonly binding: WorkbenchJiraBinding;
+    readonly fingerprint: string;
+  }) =>
+    Effect.gen(function* () {
+      yield* sql`
+        INSERT OR IGNORE INTO workbench_jira_ticket_creations (
+          ticket_id, binding_id, title, kind, markdown, request_fingerprint, state, created_at, updated_at
+        ) VALUES (
+          ${input.ticket.id}, ${input.binding.id}, ${input.ticket.title}, ${input.ticket.kind},
+          ${input.ticket.markdown}, ${input.fingerprint}, 'pending', ${input.ticket.createdAt}, ${input.ticket.createdAt}
+        )
+      `;
+      return yield* loadMatchingCreation({
+        ticketId: input.ticket.id,
+        fingerprint: input.fingerprint,
+      });
+    });
+
+  const markCreationUncertain = (ticketId: string, updatedAt: string) =>
+    Effect.gen(function* () {
+      const claimed = yield* sql<{ ticket_id: string }>`
+        UPDATE workbench_jira_ticket_creations
+        SET state = 'uncertain', updated_at = ${updatedAt}
+        WHERE ticket_id = ${ticketId} AND jira_issue_id IS NULL AND state = 'pending'
+        RETURNING ticket_id
+      `;
+      if (claimed.length === 0) {
+        return yield* operationError(
+          "request_failed",
+          "This Jira creation is already in progress. Check Jira before starting another Ticket.",
+        );
+      }
+    });
+
+  const markCreationCreated = (input: {
+    readonly ticketId: string;
+    readonly jiraIssueId: string;
+    readonly jiraIssueKey: string;
+    readonly updatedAt: string;
+  }) =>
+    sql`
+      UPDATE workbench_jira_ticket_creations
+      SET state = 'created', jira_issue_id = ${input.jiraIssueId},
+          jira_issue_key = ${input.jiraIssueKey}, updated_at = ${input.updatedAt}
+      WHERE ticket_id = ${input.ticketId} AND jira_issue_id IS NULL
+    `;
+
+  const loadMatchingCreation = ({
+    ticketId,
+    fingerprint,
+  }: {
+    readonly ticketId: string;
+    readonly fingerprint: string;
+  }) =>
+    Effect.gen(function* () {
+      const existing = yield* loadCreation(ticketId).pipe(Effect.mapError(repositoryError));
+      if (existing && existing.requestFingerprint !== fingerprint) {
+        return yield* operationError(
+          "invalid_binding",
+          "This creation is already in progress with different content. Restore the original fields to retry, or check Jira before starting another Ticket.",
+        );
+      }
+      if (existing?.state === "uncertain" && existing.jiraIssueId === null) {
+        return yield* operationError(
+          "request_failed",
+          "Jira may have accepted this Ticket, but Workbench could not confirm it. Check Jira before starting another creation; this request will not be sent again.",
+        );
+      }
+      return existing;
     });
 
   const findManagedIssue = (ticketId: WorkbenchJiraUpdateTicketInput["ticketId"]) =>
@@ -369,6 +497,221 @@ export const make = Effect.gen(function* () {
           ),
         ),
       );
+
+  const createTicket = (
+    input: WorkbenchCreateTicketInput & { readonly binding: WorkbenchJiraBinding },
+  ): Effect.Effect<WorkbenchCreateTicketInput["id"], WorkbenchJiraOperationError> =>
+    Effect.gen(function* () {
+      if (!input.binding.active) {
+        return yield* operationError(
+          "binding_inactive",
+          "This Jira Workspace is paused. Resume the Jira binding before creating Tickets.",
+        );
+      }
+      const selectedSprints = selectedSprintsForBinding(input.binding);
+      const sprint =
+        input.jiraSprintId === undefined
+          ? selectedSprints.length === 1
+            ? selectedSprints[0]
+            : undefined
+          : selectedSprints.find((candidate) => candidate.id === input.jiraSprintId);
+      if (sprint === undefined) {
+        return yield* operationError(
+          "invalid_binding",
+          input.jiraSprintId === undefined
+            ? "Select a Jira sprint before creating a Ticket because this Workspace has multiple selected sprints."
+            : "The selected Jira sprint is not configured for this Workspace.",
+        );
+      }
+      const { connection } = yield* getConnectionAndToken(input.binding);
+      const missingScopes = ["read:jira-user", "write:sprint:jira-software"].filter(
+        (scope) => !connection.scopes.includes(scope),
+      );
+      if (missingScopes.length > 0) {
+        return yield* operationError(
+          "authorization_failed",
+          `Reconnect Jira to create Tickets. Required access: ${missingScopes.join(", ")}.`,
+        );
+      }
+      const fingerprint = encodeCreationFingerprint({
+        projectId: input.projectId,
+        bindingId: input.binding.id,
+        connectionId: input.binding.connectionId,
+        jiraProjectKey: input.binding.jiraProjectKey,
+        boardId: input.binding.boardId,
+        title: input.title,
+        markdown: input.markdown,
+        kind: input.kind,
+        epicId: input.epicId ?? null,
+        sprintId: sprint.id,
+        primaryT3ProjectId: input.primaryT3ProjectId,
+        repositoryProjectIds: input.repositoryProjectIds ?? [input.primaryT3ProjectId],
+      });
+      return yield* sync.withBindingPermit(
+        input.binding.id,
+        Effect.gen(function* () {
+          const currentBinding = yield* repository
+            .getBinding(input.binding.id)
+            .pipe(Effect.mapError(repositoryError));
+          if (
+            Option.isNone(currentBinding) ||
+            !currentBinding.value.active ||
+            currentBinding.value.updatedAt !== input.binding.updatedAt
+          ) {
+            return yield* operationError(
+              "invalid_binding",
+              "The Jira configuration changed. Refresh the Workspace before creating a Ticket.",
+            );
+          }
+          const existing = yield* loadMatchingCreation({ ticketId: input.id, fingerprint });
+          if (existing?.resultTicketId) return existing.resultTicketId;
+          // Preflight reads can fail safely: do not reserve an ambiguous write until they pass.
+          const prepared = existing?.jiraIssueId
+            ? undefined
+            : yield* api.prepareIssueCreation({
+                connectionId: input.binding.connectionId,
+                projectKey: input.binding.jiraProjectKey,
+                kind: input.kind,
+              });
+          const creation =
+            existing ??
+            (yield* reserveCreation({ ticket: input, binding: input.binding, fingerprint }).pipe(
+              Effect.mapError(repositoryError),
+            ));
+          if (!creation)
+            return yield* operationError(
+              "persistence_failed",
+              "Could not reserve Jira Ticket creation.",
+            );
+          let jiraIssueId = creation.jiraIssueId;
+          let jiraIssueKey = creation.jiraIssueKey;
+          if (jiraIssueId === null || jiraIssueKey === null) {
+            if (!prepared)
+              return yield* operationError(
+                "request_failed",
+                "Jira creation metadata is unavailable.",
+              );
+            // Persist before POST: a crash or failed response must never permit a duplicate POST.
+            yield* markCreationUncertain(input.id, input.createdAt).pipe(
+              Effect.mapError(repositoryError),
+            );
+            const created = yield* api
+              .createIssue({
+                connectionId: input.binding.connectionId,
+                projectKey: input.binding.jiraProjectKey,
+                ticket: input,
+                ...prepared,
+                ...(input.epicId
+                  ? { epicIssueId: input.epicId.slice(`jira:${input.binding.id}:epic:`.length) }
+                  : {}),
+              })
+              .pipe(
+                Effect.catch((error) =>
+                  Effect.gen(function* () {
+                    if (error.outcome === "rejected") {
+                      yield* sql`DELETE FROM workbench_jira_ticket_creations WHERE ticket_id = ${input.id} AND jira_issue_id IS NULL`.pipe(
+                        Effect.mapError(repositoryError),
+                      );
+                    }
+                    return yield* operationError("request_failed", error.message);
+                  }),
+                ),
+              );
+            jiraIssueId = created.id;
+            jiraIssueKey = created.key;
+            yield* markCreationCreated({
+              ticketId: input.id,
+              jiraIssueId,
+              jiraIssueKey,
+              updatedAt: input.createdAt,
+            }).pipe(
+              Effect.mapError(() =>
+                operationError(
+                  "persistence_failed",
+                  "Jira created the Ticket, but Workbench could not save its resumable creation state.",
+                ),
+              ),
+            );
+          }
+
+          yield* api.addIssueToSprint({
+            connectionId: input.binding.connectionId,
+            sprintId: sprint.id,
+            issueKey: jiraIssueKey,
+          });
+          const assignedIssues = yield* api.listAssignedSprintIssues({
+            connectionId: input.binding.connectionId,
+            boardId: input.binding.boardId,
+            sprintId: sprint.id,
+          });
+          const issue = assignedIssues.find((candidate) => candidate.issueId === jiraIssueId);
+          if (issue === undefined) {
+            return yield* operationError(
+              "request_failed",
+              `Jira issue ${jiraIssueKey} was created, but Workbench could not read it in the selected sprint. Refresh Jira before retrying.`,
+            );
+          }
+          const mappedStatus = input.binding.statusMappings.find(
+            (mapping) => mapping.jiraStatusId === issue.status.id,
+          )?.workbenchStatus;
+          if (mappedStatus === undefined) {
+            return yield* operationError(
+              "status_unmapped",
+              `Jira created ${jiraIssueKey} with status ${issue.status.name}, which is not mapped to a Workbench column.`,
+            );
+          }
+
+          const syncedAt = DateTime.formatIso(DateTime.makeUnsafe(yield* clock.currentTimeMillis));
+          const ticketId = yield* sql
+            .withTransaction(
+              Effect.gen(function* () {
+                const links = yield* repository
+                  .listIssueLinks(input.binding.id)
+                  .pipe(Effect.mapError(repositoryError));
+                const existingLink = links.find((link) => link.issue.issueId === issue.issueId);
+                const projectedId = existingLink?.ticketId ?? input.id;
+                yield* importer.upsertJiraProjection({
+                  binding: input.binding,
+                  existingTicketId: projectedId,
+                  issue,
+                  mappedStatus,
+                  ...(input.primaryT3ProjectId === undefined
+                    ? {}
+                    : { primaryT3ProjectId: input.primaryT3ProjectId }),
+                  repositoryProjectIds: input.repositoryProjectIds ?? [input.primaryT3ProjectId],
+                });
+                const targetLink: WorkbenchJiraIssueLink = {
+                  bindingId: input.binding.id,
+                  ticketId: projectedId,
+                  issue,
+                  active: true,
+                  linkedAt: existingLink?.linkedAt ?? syncedAt,
+                  lastSeenAt: syncedAt,
+                };
+                yield* repository
+                  .replaceIssueLinks(
+                    input.binding.id,
+                    links.filter((link) => link.issue.issueId !== issue.issueId).concat(targetLink),
+                  )
+                  .pipe(Effect.mapError(repositoryError));
+                yield* sql`UPDATE workbench_jira_ticket_creations SET result_ticket_id = ${projectedId} WHERE ticket_id = ${input.id}`;
+                return projectedId;
+              }),
+            )
+            .pipe(
+              Effect.catch(() =>
+                Effect.fail(
+                  operationError(
+                    "persistence_failed",
+                    "Jira created the Ticket, but Workbench could not save its local link. Retry to resume the saved creation.",
+                  ),
+                ),
+              ),
+            );
+          return ticketId;
+        }),
+      );
+    });
 
   const selectTransition = (input: {
     readonly transitions: ReadonlyArray<{
@@ -709,7 +1052,12 @@ export const make = Effect.gen(function* () {
       );
     });
 
-  return JiraTicketWriteService.of({ getTicketTransitions, updateTicket, startTicketExecution });
+  return JiraTicketWriteService.of({
+    createTicket,
+    getTicketTransitions,
+    updateTicket,
+    startTicketExecution,
+  });
 });
 
 export const layer = Layer.effect(JiraTicketWriteService, make);

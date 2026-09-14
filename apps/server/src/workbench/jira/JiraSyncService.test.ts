@@ -139,6 +139,9 @@ describe("JiraSyncService", () => {
             requestedSprintIds.push(input.sprintId);
             return input.sprintId === 7 ? [issueOne] : [issueOne, issueTwo];
           }),
+        prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint update"),
       });
       const importer = JiraTicketImporter.of({
         upsertJiraProjection: ({ issue }) =>
@@ -252,6 +255,9 @@ describe("JiraSyncService", () => {
           }
           return Effect.succeed([oldIssue(input.sprintId === 7 ? "10001" : "10002").issue]);
         },
+        prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint update"),
       });
       const importer = JiraTicketImporter.of({
         upsertJiraProjection: ({ issue }) =>
@@ -332,6 +338,9 @@ describe("JiraSyncService", () => {
               summary: "Updated from Jira",
             },
           ]),
+        prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint update"),
       });
       const importer = JiraTicketImporter.of({
         upsertJiraProjection: ({ existingTicketId: id }) =>
@@ -388,6 +397,9 @@ describe("JiraSyncService", () => {
             }
             return [];
           }),
+        prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint update"),
       });
       const importer = JiraTicketImporter.of({
         upsertJiraProjection: () => Effect.die("unexpected Ticket import"),
@@ -440,6 +452,9 @@ describe("JiraSyncService", () => {
         replaceIssueLinks: () => Effect.void,
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint write"),
         listProjects: () => Effect.die("unexpected project read"),
         listBoards: () => Effect.die("unexpected board read"),
         listSprints: () => Effect.die("unexpected sprint read"),
@@ -493,6 +508,9 @@ describe("JiraSyncService", () => {
         replaceIssueLinks: () => Effect.void,
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint write"),
         listProjects: () => Effect.die("unexpected project read"),
         listBoards: () => Effect.die("unexpected board read"),
         listSprints: () => Effect.die("unexpected sprint read"),
@@ -570,6 +588,9 @@ describe("JiraSyncService", () => {
           }),
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint write"),
         listProjects: () => Effect.die("unexpected project read"),
         listBoards: () => Effect.die("unexpected board read"),
         listSprints: () => Effect.die("unexpected sprint read"),
@@ -666,6 +687,9 @@ describe("JiraSyncService", () => {
         replaceIssueLinks: () => Effect.void,
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint write"),
         listProjects: () => Effect.die("unexpected project read"),
         listBoards: () => Effect.die("unexpected board read"),
         listSprints: () =>
@@ -793,6 +817,9 @@ describe("JiraSyncService", () => {
         completeDate: null,
       });
       const api = JiraApi.of({
+        prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint write"),
         listProjects: () => Effect.die("unexpected project read"),
         listBoards: () => Effect.die("unexpected board read"),
         listSprints: () => Effect.succeed(activeSprintIds.map(activeSprint)),
@@ -865,6 +892,9 @@ describe("JiraSyncService", () => {
         replaceIssueLinks: () => Effect.die("unexpected link replacement"),
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint write"),
         listProjects: () => Effect.die("unexpected project read"),
         listBoards: () => Effect.die("unexpected board read"),
         listSprints: () => Effect.succeed([]),
@@ -930,6 +960,9 @@ describe("JiraSyncService", () => {
         completeDate: null,
       });
       const api = JiraApi.of({
+        prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint write"),
         listProjects: () => Effect.die("unexpected project read"),
         listBoards: () => Effect.die("unexpected board read"),
         listSprints: () => Effect.succeed([activeSprint(8), activeSprint(9)]),

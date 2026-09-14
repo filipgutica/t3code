@@ -142,7 +142,7 @@ Threads using the same Ticket worktree share its files and branch changes. Use a
 
 The Ticket shows each repository's directory and latest reported branch. These refresh when you open the Ticket or return to the window. Linked Threads show their actual checkout and whether they share a Ticket worktree.
 
-New worktrees have readable names based on the Jira issue key or local Ticket title, with a unique suffix. Branch descriptions are generated using the source control writer model when available, otherwise the text generation model. If generation fails, Workbench uses the Ticket title. Existing worktree paths and branch names are retained.
+New worktrees and branches have readable names based on the Ticket title and, when available, its Jira issue key, with a unique suffix. Naming does not wait for text generation. Existing worktree paths and branch names are retained.
 
 Creating a Workbench **Workspace** groups existing Projects; it does not create repository directories. **Create Thread** prepares the Ticket's directories. For a new two-repository Ticket, the layout looks like this:
 
@@ -218,6 +218,14 @@ With **Follow selected sprints automatically** enabled, Workbench keeps active s
 Turn off automatic following to keep the same sprint selection. **Select all** does not include unrelated future sprints automatically.
 
 You can pause the mirror and resume it later without removing its Tickets or configuration. If any selected sprint fails to sync, Workbench keeps the previous Board rather than applying a partial update.
+
+### Create a Jira Ticket
+
+In a Jira-linked Workspace, **New Ticket** creates an issue in the configured Jira project and assigns it to your connected account. Select a sprint if the Workspace mirrors more than one. The chosen repositories stay attached to the Workbench Ticket.
+
+Resume a paused mirror before creating a Ticket. If Workbench reports missing Jira permissions, reconnect Jira and authorize the requested access. If Jira created the issue but syncing fails, retry the same open form to resume the saved request. If the outcome is unknown, check Jira before starting another creation.
+
+OAuth scopes and Jira project permissions are separate. The connected Jira user needs Browse projects and Create issues to create a Ticket. Assign Issues may be required to assign it to the connected account. Edit issues is required to save a description, and Transition issues is required to change its status. See Atlassian's [Jira issue REST permissions](https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issues/), [Jira project permission reference](https://support.atlassian.com/jira-cloud-administration/docs/permissions-for-company-managed-projects/), and [Jira Software OAuth scopes](https://developer.atlassian.com/platform/forge/manifest-reference/scopes-product-jsw/) for the exact requirements. If the Jira connection predates issue creation support, choose **Reconnect Jira** to grant `read:jira-user` and `write:sprint:jira-software`.
 
 ### Know what sync changes
 

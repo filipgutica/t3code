@@ -9,6 +9,8 @@ export const JIRA_SCOPES = [
   "read:sprint:jira-software",
   "read:issue-details:jira",
   "read:jql:jira",
+  "read:jira-user",
+  "write:sprint:jira-software",
   "offline_access",
 ].join(" ");
 

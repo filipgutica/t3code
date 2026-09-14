@@ -87,6 +87,11 @@ export const WORKBENCH_WS_METHODS = {
 } as const;
 
 const WorkbenchRpcError = Schema.Union([WorkbenchOperationError, EnvironmentAuthorizationError]);
+const WorkbenchCreateTicketRpcError = Schema.Union([
+  WorkbenchOperationError,
+  WorkbenchJiraOperationError,
+  EnvironmentAuthorizationError,
+]);
 
 const WsWorkbenchGetSnapshotRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchGetSnapshot, {
   payload: Schema.Struct({}),
@@ -127,7 +132,7 @@ const WsWorkbenchArchiveEpicRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchArchive
 const WsWorkbenchCreateTicketRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchCreateTicket, {
   payload: WorkbenchCreateTicketInput,
   success: WorkbenchTicket,
-  error: WorkbenchRpcError,
+  error: WorkbenchCreateTicketRpcError,
 });
 
 const WsWorkbenchUpdateTicketRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchUpdateTicket, {
