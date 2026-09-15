@@ -33,7 +33,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      DEMO_HOME: ${{ runner.temp }}/workbench-live
       WORKBENCH_REGRESSION_LIVE: "1"
       DEMO_JIRA_EMAIL: ${{ secrets.DEMO_JIRA_EMAIL }}
       DEMO_JIRA_API_TOKEN: ${{ secrets.DEMO_JIRA_API_TOKEN }}
@@ -48,6 +47,8 @@ jobs:
       T3_WORKBENCH_JIRA_VAULT: ""
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Set demo home
+        run: echo "DEMO_HOME=$RUNNER_TEMP/workbench-live" >> "$GITHUB_ENV"
       - uses: actions/checkout@v6
         with:
           sparse-checkout: |
@@ -76,7 +77,7 @@ jobs:
         working-directory: scripts
         run: vp exec playwright test --config workbench-regression/playwright.config.ts
       - name: Preserve rotated Jira credentials
-        if: always() && steps.regression.outcome != 'skipped'
+        if: always() && steps.regression.outcome != '' && steps.regression.outcome != 'skipped'
         env:
           DEMO_CREDENTIALS_TOKEN: ${{ secrets.DEMO_CREDENTIALS_TOKEN }}
         run: |
