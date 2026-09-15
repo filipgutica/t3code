@@ -214,6 +214,8 @@ export const WorkbenchCreateTicketInput = Schema.Struct({
   repositoryProjectIds: Schema.optionalKey(Schema.Array(ProjectId).check(Schema.isMinLength(1))),
   /** Selects the target Jira sprint when the Workspace has more than one. */
   jiraSprintId: Schema.optionalKey(PositiveInt),
+  /** Explicitly publish an existing local Ticket without replacing its identity. */
+  existingLocalTicketRevision: Schema.optionalKey(NonNegativeInt),
   createdAt: IsoDateTime,
 });
 export type WorkbenchCreateTicketInput = typeof WorkbenchCreateTicketInput.Type;

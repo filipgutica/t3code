@@ -168,6 +168,112 @@ describe("JiraSyncService", () => {
     }).pipe(Effect.provide(SqlitePersistenceMemory)),
   );
 
+  it.effect("defers an interrupted Ticket creation until its migration resumes", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`
+        CREATE TABLE workbench_tickets (
+          ticket_id TEXT PRIMARY KEY,
+          title TEXT NOT NULL
+        )
+      `;
+      yield* sql`
+        INSERT INTO workbench_tickets (ticket_id, title)
+        VALUES (${existingTicketId}, 'Edited locally while Jira was creating')
+      `;
+      yield* sql`
+        CREATE TABLE workbench_jira_ticket_creations (
+          ticket_id TEXT PRIMARY KEY,
+          binding_id TEXT NOT NULL,
+          jira_issue_id TEXT,
+          result_ticket_id TEXT,
+          state TEXT NOT NULL
+        )
+      `;
+      yield* sql`
+        INSERT INTO workbench_jira_ticket_creations
+          (ticket_id, binding_id, jira_issue_id, result_ticket_id, state)
+        VALUES
+          (${existingTicketId}, ${bindingId}, '10003', NULL, 'created')
+      `;
+
+      let links: ReadonlyArray<WorkbenchJiraIssueLink> = [];
+      let savedBinding = binding;
+      let projectedId: WorkbenchTicketId | null = null;
+      const repository = WorkbenchJiraRepository.of({
+        findConnectionByCloudId: () => Effect.succeed(Option.none()),
+        getConnection: () => Effect.succeed(Option.none()),
+        listConnections: () => Effect.succeed([]),
+        getCredentialId: () => Effect.succeed(Option.none()),
+        upsertConnection: () => Effect.void,
+        upsertConnections: () => Effect.void,
+        getBinding: () => Effect.succeed(Option.some(savedBinding)),
+        listBindings: () => Effect.succeed([savedBinding]),
+        upsertBinding: () => Effect.void,
+        updateBindingSyncMetadata: ({ syncedAt }) =>
+          Effect.sync(() => {
+            savedBinding = { ...savedBinding, lastSyncedAt: syncedAt, updatedAt: syncedAt };
+            return true;
+          }),
+        updateBindingSyncError: () => Effect.succeed(true),
+        listIssueLinks: () => Effect.succeed(links),
+        replaceIssueLinks: (_id, next) =>
+          Effect.sync(() => {
+            links = next;
+          }),
+      } satisfies WorkbenchJiraRepositoryShape);
+      const api = JiraApi.of({
+        listProjects: () => Effect.die("unexpected project read"),
+        listBoards: () => Effect.die("unexpected board read"),
+        listSprints: () => Effect.die("unexpected sprint read"),
+        getBoardConfiguration: () => Effect.die("unexpected configuration read"),
+        listAssignedSprintIssues: () => Effect.succeed([oldIssue("10003").issue]),
+        prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint update"),
+      });
+      const importer = JiraTicketImporter.of({
+        upsertJiraProjection: ({ existingTicketId }) =>
+          Effect.sync(() => {
+            projectedId = existingTicketId;
+            return existingTicketId ?? WorkbenchTicketId.make("unexpected-new-ticket");
+          }),
+      });
+      const service = yield* JiraSyncService.make.pipe(
+        Effect.provideService(WorkbenchJiraRepository, repository),
+        Effect.provideService(JiraApi, api),
+        Effect.provideService(JiraTicketImporter, importer),
+      );
+
+      yield* service.syncBinding({ bindingId });
+
+      assert.strictEqual(projectedId, null);
+      assert.deepStrictEqual(links, []);
+      const local = yield* sql<{ readonly title: string }>`
+        SELECT title FROM workbench_tickets WHERE ticket_id = ${existingTicketId}
+      `;
+      assert.strictEqual(local[0]?.title, "Edited locally while Jira was creating");
+
+      // A successful migration retry records the local projection identity;
+      // the next sync can safely finish the link using that identity.
+      yield* sql`
+        UPDATE workbench_jira_ticket_creations
+        SET result_ticket_id = ${existingTicketId}
+        WHERE ticket_id = ${existingTicketId}
+      `;
+      yield* service.syncBinding({ bindingId });
+
+      assert.strictEqual(projectedId, existingTicketId);
+      assert.strictEqual(links[0]?.ticketId, existingTicketId);
+      const saved = yield* sql<{ readonly resultTicketId: string | null }>`
+        SELECT result_ticket_id AS "resultTicketId"
+        FROM workbench_jira_ticket_creations
+        WHERE ticket_id = ${existingTicketId}
+      `;
+      assert.strictEqual(saved[0]?.resultTicketId, existingTicketId);
+    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+  );
+
   it.effect("keeps the prior snapshot when one replacement sprint cannot be fetched", () =>
     Effect.gen(function* () {
       const followedBinding = {

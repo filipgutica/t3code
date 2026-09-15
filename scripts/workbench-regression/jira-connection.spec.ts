@@ -199,7 +199,7 @@ test.describe("Jira connection UX @live", () => {
     await page.getByRole("button", { name: "Workspace actions" }).click();
     await page.getByRole("menuitem", { name: "Connect Jira", exact: true }).click();
 
-    const dialog = page.getByRole("dialog", { name: "Connect Jira", exact: true });
+    const dialog = page.getByRole("dialog", { name: /^(Connect Jira|Jira sprint mirror)$/ });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(sourceConnection.siteName, { exact: true })).toBeVisible();
     await dialog.getByRole("button", { name: "Continue", exact: true }).click();
@@ -258,10 +258,8 @@ test.describe("Jira connection UX @live", () => {
     await expect(page.getByText(firstImportedIssue.key, { exact: true }).first()).toBeVisible();
 
     await page.reload();
-    await expect(
-      page.getByRole("status").filter({ hasText: /Synced \d+ Jira tickets?/i }),
-    ).toBeVisible();
     await expect(page.getByLabel("Jira sync status")).toContainText("Jira synced");
+    await expect(page.getByText(firstImportedIssue.key, { exact: true }).first()).toBeVisible();
   });
 
   test("J1 error: a failed Jira sync is visible and retryable", async ({ page, demo }) => {

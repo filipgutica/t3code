@@ -155,7 +155,11 @@ const validateReadback = ({
 
 export interface JiraTicketWriteServiceShape {
   readonly createTicket: (
-    input: WorkbenchCreateTicketInput & { readonly binding: WorkbenchJiraBinding },
+    input: WorkbenchCreateTicketInput & {
+      readonly binding: WorkbenchJiraBinding;
+      /** Remote Epic ID used while publishing a local Epic. */
+      readonly remoteEpicIssueId?: string;
+    },
   ) => Effect.Effect<WorkbenchCreateTicketInput["id"], WorkbenchJiraOperationError>;
   readonly getTicketTransitions: (
     input: WorkbenchJiraGetTicketTransitionsInput,
@@ -308,6 +312,32 @@ export const make = Effect.gen(function* () {
       }
       return existing;
     });
+
+  const ensureExistingLocalTicketRevision = (input: WorkbenchCreateTicketInput) =>
+    Effect.gen(function* () {
+      if (input.existingLocalTicketRevision === undefined) return;
+      const rows = yield* sql<{ readonly revision: number; readonly deletedAt: string | null }>`
+        SELECT revision, deleted_at AS "deletedAt"
+        FROM workbench_tickets
+        WHERE ticket_id = ${input.id}
+        LIMIT 1
+      `;
+      if (rows[0]?.revision !== input.existingLocalTicketRevision || rows[0]?.deletedAt !== null) {
+        return yield* operationError(
+          "invalid_binding",
+          "The local Ticket changed. Refresh before publishing it to Jira.",
+        );
+      }
+    }).pipe(
+      Effect.catchTag("SqlError", () =>
+        Effect.fail(
+          operationError(
+            "persistence_failed",
+            "The local Ticket revision could not be checked before the Jira write.",
+          ),
+        ),
+      ),
+    );
 
   const findManagedIssue = (ticketId: WorkbenchJiraUpdateTicketInput["ticketId"]) =>
     Effect.gen(function* () {
@@ -489,7 +519,10 @@ export const make = Effect.gen(function* () {
       );
 
   const createTicket = (
-    input: WorkbenchCreateTicketInput & { readonly binding: WorkbenchJiraBinding },
+    input: WorkbenchCreateTicketInput & {
+      readonly binding: WorkbenchJiraBinding;
+      readonly remoteEpicIssueId?: string;
+    },
   ): Effect.Effect<WorkbenchCreateTicketInput["id"], WorkbenchJiraOperationError> =>
     Effect.gen(function* () {
       if (!input.binding.active) {
@@ -532,7 +565,7 @@ export const make = Effect.gen(function* () {
         title: input.title,
         markdown: input.markdown,
         kind: input.kind,
-        epicId: input.epicId ?? null,
+        epicId: input.remoteEpicIssueId ?? input.epicId ?? null,
         sprintId: sprint.id,
         primaryT3ProjectId: input.primaryT3ProjectId,
         repositoryProjectIds: input.repositoryProjectIds ?? [input.primaryT3ProjectId],
@@ -553,6 +586,10 @@ export const make = Effect.gen(function* () {
               "The Jira configuration changed. Refresh the Workspace before creating a Ticket.",
             );
           }
+          // Migration callers provide the local revision they confirmed. Check
+          // it before any resumable fast path so a completed creation cannot
+          // silently succeed after the local Ticket was edited.
+          yield* ensureExistingLocalTicketRevision(input);
           const existing = yield* loadMatchingCreation({ ticketId: input.id, fingerprint });
           if (existing?.resultTicketId) return existing.resultTicketId;
           // Preflight reads can fail safely: do not reserve an ambiguous write until they pass.
@@ -581,6 +618,8 @@ export const make = Effect.gen(function* () {
                 "request_failed",
                 "Jira creation metadata is unavailable.",
               );
+            // Recheck immediately before POST so a concurrent local edit cannot be overwritten.
+            yield* ensureExistingLocalTicketRevision(input);
             // Persist before POST: a crash or failed response must never permit a duplicate POST.
             yield* markCreationUncertain(input.id, input.createdAt).pipe(
               Effect.mapError(repositoryError),
@@ -591,9 +630,13 @@ export const make = Effect.gen(function* () {
                 projectKey: input.binding.jiraProjectKey,
                 ticket: input,
                 ...prepared,
-                ...(input.epicId
-                  ? { epicIssueId: input.epicId.slice(`jira:${input.binding.id}:epic:`.length) }
-                  : {}),
+                ...(input.remoteEpicIssueId !== undefined
+                  ? { epicIssueId: input.remoteEpicIssueId }
+                  : input.epicId
+                    ? {
+                        epicIssueId: input.epicId.slice(`jira:${input.binding.id}:epic:`.length),
+                      }
+                    : {}),
               })
               .pipe(
                 Effect.catch((error) =>
@@ -655,6 +698,7 @@ export const make = Effect.gen(function* () {
           const ticketId = yield* sql
             .withTransaction(
               Effect.gen(function* () {
+                yield* ensureExistingLocalTicketRevision(input);
                 const links = yield* repository
                   .listIssueLinks(input.binding.id)
                   .pipe(Effect.mapError(repositoryError));

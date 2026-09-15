@@ -5,12 +5,14 @@ import * as Schema from "effect/Schema";
 import {
   WorkbenchJiraBinding,
   WorkbenchJiraCompleteAuthResult,
+  WorkbenchJiraEpicLink,
   WorkbenchJiraIssueLink,
   WorkbenchJiraUpdateTicketInput,
 } from "./workbenchJira.ts";
 
 const decodeBinding = Schema.decodeUnknownEffect(WorkbenchJiraBinding);
 const decodeIssueLink = Schema.decodeUnknownEffect(WorkbenchJiraIssueLink);
+const decodeEpicLink = Schema.decodeUnknownEffect(WorkbenchJiraEpicLink);
 const decodeCompleteAuthResult = Schema.decodeUnknownEffect(WorkbenchJiraCompleteAuthResult);
 
 describe("Workbench Jira contracts", () => {
@@ -118,6 +120,20 @@ describe("Workbench Jira contracts", () => {
         binding.selectedSprints.map((sprint) => sprint.id),
         [7, 17],
       );
+    }),
+  );
+
+  it.effect("decodes an Epic mapping without requiring a child issue", () =>
+    Effect.gen(function* () {
+      const link = yield* decodeEpicLink({
+        bindingId: "binding-1",
+        epicId: "local-epic",
+        jiraIssueId: "10042",
+        jiraIssueKey: "WB-42",
+      });
+
+      assert.strictEqual(link.epicId, "local-epic");
+      assert.strictEqual(link.jiraIssueKey, "WB-42");
     }),
   );
 

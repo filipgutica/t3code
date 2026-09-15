@@ -6,6 +6,7 @@ import {
   type WorkbenchJiraSelectedSprint,
   type WorkbenchJiraSyncBindingInput,
   type WorkbenchJiraSyncResult,
+  WorkbenchTicketId,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -29,6 +30,8 @@ const syncError = (code: WorkbenchJiraOperationError["code"], message: string) =
   new WorkbenchJiraOperationError({ code, message });
 
 const repositoryError = (_cause: WorkbenchJiraRepositoryError) =>
+  syncError("persistence_failed", "Jira synchronization state could not be saved or loaded.");
+const sqlPersistenceError = () =>
   syncError("persistence_failed", "Jira synchronization state could not be saved or loaded.");
 
 const selectedSprintsForBinding = (
@@ -224,6 +227,45 @@ export const make = Effect.gen(function* () {
         .listIssueLinks(binding.id)
         .pipe(Effect.mapError(repositoryError));
       const existingByIssueId = new Map(existing.map((link) => [link.issue.issueId, link]));
+      // A Ticket creation is recorded before the remote POST. If the POST
+      // succeeds but the local projection transaction is interrupted, the
+      // creation row is the only durable owner of that Jira issue until the
+      // writer resumes. Prefer that identity during sync so an automatic sync
+      // cannot create a second local Ticket for the same remote issue.
+      // Keep sync usable against a pre-migration in-memory database. Normal
+      // Workbench startup creates this table before Jira sync begins.
+      const creationTable = yield* sql<{ readonly name: string }>`
+        SELECT name FROM sqlite_master
+        WHERE type = 'table' AND name = 'workbench_jira_ticket_creations'
+        LIMIT 1
+      `.pipe(Effect.mapError(sqlPersistenceError));
+      const savedCreations =
+        creationTable.length === 0
+          ? []
+          : yield* sql<{
+              readonly ticketId: string;
+              readonly jiraIssueId: string;
+              readonly resultTicketId: string | null;
+            }>`
+              SELECT ticket_id AS "ticketId", jira_issue_id AS "jiraIssueId",
+                     result_ticket_id AS "resultTicketId"
+              FROM workbench_jira_ticket_creations
+              WHERE binding_id = ${binding.id}
+                AND jira_issue_id IS NOT NULL
+            `.pipe(Effect.mapError(sqlPersistenceError));
+      const incompleteCreationIssueIds = new Set(
+        savedCreations
+          .filter((creation) => creation.resultTicketId === null)
+          .map((creation) => creation.jiraIssueId),
+      );
+      const creationByIssueId = new Map(
+        savedCreations
+          .filter((creation) => creation.resultTicketId !== null)
+          .map((creation) => [
+            creation.jiraIssueId,
+            { ...creation, ticketId: WorkbenchTicketId.make(creation.ticketId) },
+          ]),
+      );
       const issuesById = new Map<string, WorkbenchJiraIssueSnapshot>();
       for (const selectedSprint of selectedSprints) {
         const sprintIssues = yield* api.listAssignedSprintIssues({
@@ -242,6 +284,10 @@ export const make = Effect.gen(function* () {
         readonly mappedStatus: WorkbenchJiraBinding["statusMappings"][number]["workbenchStatus"];
       }>;
       for (const issue of issues) {
+        // A remote issue whose local projection was interrupted must remain
+        // out of generic sync until the migration retry confirms its local
+        // revision. Importing it here could overwrite a concurrent edit.
+        if (incompleteCreationIssueIds.has(issue.issueId)) continue;
         const mappedStatus = effectiveBinding.statusMappings.find(
           (mapping) => mapping.jiraStatusId === issue.status.id,
         )?.workbenchStatus;
@@ -273,12 +319,30 @@ export const make = Effect.gen(function* () {
 
             const incoming: Array<JiraIssueImport> = [];
             for (const entry of imports) {
+              const savedCreation = creationByIssueId.get(entry.issue.issueId);
               const ticketId = yield* importer.upsertJiraProjection({
                 binding: effectiveBinding,
-                existingTicketId: existingByIssueId.get(entry.issue.issueId)?.ticketId ?? null,
+                existingTicketId:
+                  savedCreation?.ticketId ??
+                  existingByIssueId.get(entry.issue.issueId)?.ticketId ??
+                  null,
                 issue: entry.issue,
                 mappedStatus: entry.mappedStatus,
               });
+              if (savedCreation !== undefined && ticketId !== savedCreation.ticketId) {
+                return yield* syncError(
+                  "persistence_failed",
+                  `Jira issue ${entry.issue.key} is reserved for local Ticket ${savedCreation.ticketId}, but its Workbench projection returned ${ticketId}. Refresh Jira before retrying.`,
+                );
+              }
+              if (savedCreation !== undefined) {
+                yield* sql`
+                  UPDATE workbench_jira_ticket_creations
+                  SET result_ticket_id = ${ticketId}, state = 'created'
+                  WHERE binding_id = ${binding.id}
+                    AND jira_issue_id = ${entry.issue.issueId}
+                `;
+              }
               incoming.push({ ticketId, issue: entry.issue });
             }
 

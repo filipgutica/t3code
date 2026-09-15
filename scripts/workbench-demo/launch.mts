@@ -18,7 +18,7 @@ export const launchDemo = async (input: { home: string; env?: NodeJS.ProcessEnv 
       env: {
         ...process.env,
         ...input.env,
-        PATH: `${NodePath.join(root, "node_modules/.bin")}${path.delimiter}${input.env?.PATH ?? process.env.PATH}`,
+        PATH: `${NodePath.join(root, "node_modules/.bin")}${NodePath.delimiter}${input.env?.PATH ?? process.env.PATH}`,
         T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "0",
       },
       stdio: ["ignore", "pipe", "pipe"],

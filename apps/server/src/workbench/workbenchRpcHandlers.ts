@@ -197,4 +197,10 @@ export const makeWorkbenchRpcHandlers = ({
         workbenchJira.getTicketTransitions(input),
         { "rpc.aggregate": "workbench" },
       ),
+    [WORKBENCH_WS_METHODS.workbenchJiraMigrateLocalTickets]: (input) =>
+      observeRpcEffect(
+        WORKBENCH_WS_METHODS.workbenchJiraMigrateLocalTickets,
+        workbenchJira.migrateLocalTickets(input),
+        { "rpc.aggregate": "workbench" },
+      ),
   }) satisfies WorkbenchRpcHandlers;

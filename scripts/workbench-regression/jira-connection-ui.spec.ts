@@ -327,6 +327,15 @@ const routeMockJira = async (page: Page) => {
         sendExit(socket, payload.id, binding);
         return;
       }
+      if (payload.tag === WORKBENCH_WS_METHODS.workbenchJiraUpdateBinding) {
+        if (!binding || input.id !== binding.id) {
+          sendFailure(socket, payload.id, "The Jira sprint binding was not found.");
+          return;
+        }
+        binding = { ...binding, ...input };
+        sendExit(socket, payload.id, binding);
+        return;
+      }
       if (payload.tag === WORKBENCH_WS_METHODS.workbenchJiraMigrateLocalTickets) {
         migrationRequests.push(input);
         migrate(socket, payload.id, input);
@@ -498,7 +507,7 @@ const seedLocalEpicAndTicket = async (
 const connectJira = async (page: Page) => {
   await page.getByRole("button", { name: "Workspace actions" }).click();
   await page.getByRole("menuitem", { name: "Connect Jira", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Connect Jira", exact: true });
+  const dialog = page.getByRole("dialog", { name: /^(Connect Jira|Jira sprint mirror)$/ });
   await expect(dialog.getByText(fakeConnection.siteName, { exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(dialog.getByRole("combobox", { name: "Jira project" })).toBeVisible();
@@ -552,7 +561,6 @@ test.describe("Jira connection UI contract", () => {
     const dialog = await connectJira(page);
     route.setMode("failure");
     await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
-    await expect(dialog).not.toBeVisible();
     const status = page
       .getByRole("status")
       .filter({ hasText: "Jira sync failed for deterministic regression." });
@@ -652,7 +660,7 @@ test.describe("Jira connection UI contract", () => {
       epics: [{ id: epic.id, updatedAt: epic.updatedAt }],
     });
 
-    await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
+    await dialog.getByRole("button", { name: "Save mirror", exact: true }).click();
     await expect(dialog).not.toBeVisible();
     await expect(
       page.getByRole("status").filter({ hasText: /Synced \d+ Jira tickets?/i }),

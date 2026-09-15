@@ -9,6 +9,9 @@ test("T4: summary generation persists; failed regeneration preserves prior text 
 }) => {
   const controlPath = providerControlPath(demo.home);
   const original = await NodeFSP.readFile(controlPath, "utf8");
+  // The Board refreshes background summary results every 15 seconds. Allow
+  // that refresh plus transport/render time, rather than racing its interval.
+  const summaryRefreshTimeout = 20_000;
   try {
     await page.goto("/workbench?workbenchProjectId=orbit&ticketId=orbit-003");
     const summary = page.getByRole("region", { name: "Generated summary", exact: true });
@@ -26,7 +29,7 @@ test("T4: summary generation persists; failed regeneration preserves prior text 
     await generate.click();
     await expect(
       summary.getByRole("status").filter({ hasText: /^Summary generation failed$/ }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: summaryRefreshTimeout });
     await expect(summary.getByText(REGRESSION_PROVIDER_SUMMARY, { exact: true })).toBeVisible();
     await NodeFSP.writeFile(
       controlPath,
@@ -36,7 +39,9 @@ test("T4: summary generation persists; failed regeneration preserves prior text 
       }),
     );
     await generate.click();
-    await expect(summary.getByText("Updated regression summary.", { exact: true })).toBeVisible();
+    await expect(summary.getByText("Updated regression summary.", { exact: true })).toBeVisible({
+      timeout: summaryRefreshTimeout,
+    });
     await expect(summary.getByRole("status")).not.toBeVisible();
   } finally {
     await NodeFSP.writeFile(controlPath, original);

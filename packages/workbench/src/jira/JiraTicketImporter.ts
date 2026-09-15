@@ -221,7 +221,13 @@ export const layer = Layer.effect(
           `Jira Epic ${epic.key} description exceeds Workbench's ${WORKBENCH_MARKDOWN_MAX_LENGTH} character limit. Shorten it in Jira, then sync again.`,
         );
       }
-      const proposedEpicId = jiraEpicId(input.binding.id, epic.id);
+      const mappedEpic = yield* sql<{ readonly epicId: WorkbenchEpicId }>`
+        SELECT epic_id AS "epicId"
+        FROM workbench_jira_epic_links
+        WHERE binding_id = ${input.binding.id} AND jira_issue_id = ${epic.id}
+        LIMIT 1
+      `.pipe(Effect.mapError(() => importError("The Jira Epic mapping could not be loaded.")));
+      const proposedEpicId = mappedEpic[0]?.epicId ?? jiraEpicId(input.binding.id, epic.id);
       const existingEpic = epics.find((epic) => epic.id === proposedEpicId);
       if (existingEpic === undefined) {
         yield* workbench

@@ -3,6 +3,7 @@ import {
   type WorkbenchJiraBindingId,
   WorkbenchJiraConnection,
   type WorkbenchJiraConnectionId,
+  WorkbenchJiraEpicLink,
   WorkbenchJiraIssueLink,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -71,6 +72,10 @@ export interface WorkbenchJiraRepositoryShape {
   readonly listIssueLinks: (
     bindingId: WorkbenchJiraBindingId,
   ) => Effect.Effect<ReadonlyArray<WorkbenchJiraIssueLink>, WorkbenchJiraRepositoryError>;
+  /** Lists every mapped Epic, including Epics with no child Tickets. */
+  readonly listEpicLinks?: (
+    bindingId: WorkbenchJiraBindingId,
+  ) => Effect.Effect<ReadonlyArray<WorkbenchJiraEpicLink>, WorkbenchJiraRepositoryError>;
   readonly replaceIssueLinks: (
     bindingId: WorkbenchJiraBindingId,
     links: ReadonlyArray<WorkbenchJiraIssueLink>,
@@ -131,6 +136,13 @@ const IssueLinkRow = Schema.Struct({
   active: Schema.Number,
   linkedAt: WorkbenchJiraIssueLink.fields.linkedAt,
   lastSeenAt: WorkbenchJiraIssueLink.fields.lastSeenAt,
+});
+
+const EpicLinkRow = Schema.Struct({
+  bindingId: WorkbenchJiraEpicLink.fields.bindingId,
+  epicId: WorkbenchJiraEpicLink.fields.epicId,
+  jiraIssueId: WorkbenchJiraEpicLink.fields.jiraIssueId,
+  jiraIssueKey: WorkbenchJiraEpicLink.fields.jiraIssueKey,
 });
 
 const decodeJson = <S extends Schema.Top>(schema: S, value: string) =>
@@ -286,6 +298,21 @@ export const layerSql = Layer.effect(
           ),
         ),
       );
+    });
+
+    const loadEpicLinks = Effect.fn("WorkbenchJiraRepository.loadEpicLinks")(function* (
+      bindingId: WorkbenchJiraBindingId,
+    ) {
+      return yield* sql<Schema.Schema.Type<typeof EpicLinkRow>>`
+        SELECT
+          binding_id AS "bindingId",
+          epic_id AS "epicId",
+          jira_issue_id AS "jiraIssueId",
+          jira_issue_key AS "jiraIssueKey"
+        FROM workbench_jira_epic_links
+        WHERE binding_id = ${bindingId}
+        ORDER BY jira_issue_key ASC, jira_issue_id ASC
+      `;
     });
 
     const protect = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -520,6 +547,7 @@ export const layerSql = Layer.effect(
           }),
         ),
       listIssueLinks: (bindingId) => protect(loadIssueLinks(bindingId)),
+      listEpicLinks: (bindingId) => protect(loadEpicLinks(bindingId)),
       replaceIssueLinks: (bindingId, links) =>
         protect(
           sql.withTransaction(

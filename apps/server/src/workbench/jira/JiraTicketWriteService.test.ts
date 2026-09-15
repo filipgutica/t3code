@@ -466,6 +466,35 @@ describe("JiraTicketWriteService", () => {
     ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
   );
 
+  it.effect("checks the confirmed local revision before resuming a completed creation", () =>
+    runWithHarness((h) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`
+          CREATE TABLE workbench_tickets (
+            ticket_id TEXT PRIMARY KEY,
+            revision INTEGER NOT NULL,
+            deleted_at TEXT
+          )
+        `;
+        yield* sql`
+          INSERT INTO workbench_tickets (ticket_id, revision, deleted_at)
+          VALUES (${createdTicketId}, 0, NULL)
+        `;
+        const confirmed = { ...creationInput, existingLocalTicketRevision: 0 };
+        yield* h.service.createTicket(confirmed);
+        yield* sql`
+          UPDATE workbench_tickets SET revision = 1 WHERE ticket_id = ${createdTicketId}
+        `;
+
+        const error = yield* Effect.flip(h.service.createTicket(confirmed));
+        assert.strictEqual(error.code, "invalid_binding");
+        assert.isTrue(error.message.includes("local Ticket changed"));
+        assert.strictEqual(yield* Ref.get(h.createCalls), 1);
+      }),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
   it.effect("does not retry an unconfirmed Jira creation", () =>
     runWithHarness(
       (harness) =>
