@@ -102,5 +102,15 @@ export const resetHome = ({ home: input, apply }: { home: string; apply: boolean
     if (NodeFS.existsSync(NodePath.join(backup, file)))
       NodeFS.copyFileSync(NodePath.join(backup, file), NodePath.join(home, file));
   }
-  return `Archived previous environment at ${backup}. Configuration retained; run start, then seed.`;
+  // Jira OAuth credentials are stored in the demo server's secret store. Keep
+  // those credentials across a fixture reset so callers can immediately seed
+  // and sync Jira again without repeating browser consent.
+  const secrets = NodePath.join(backup, "userdata", "secrets");
+  if (NodeFS.existsSync(secrets)) {
+    NodeFS.cpSync(secrets, NodePath.join(home, "userdata", "secrets"), {
+      recursive: true,
+      force: false,
+    });
+  }
+  return `Archived previous environment at ${backup}. Configuration and OAuth credentials retained; run start, then seed.`;
 };

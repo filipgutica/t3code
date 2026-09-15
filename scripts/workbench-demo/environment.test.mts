@@ -45,9 +45,21 @@ test("reset previews, refuses running homes, archives data and retains configura
     NodeFS.writeFileSync(NodePath.join(home, "run.lock"), "lock");
     NodeAssert.throws(() => resetHome({ home, apply: true }), /Stop/);
     NodeFS.rmSync(NodePath.join(home, "run.lock"));
+    NodeFS.mkdirSync(NodePath.join(home, "userdata", "secrets"), { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(home, "userdata", "secrets", "workbench-jira-credential-demo.bin"),
+      "encrypted fixture",
+    );
     NodeAssert.match(resetHome({ home, apply: true }), /Archived/);
     NodeAssert.equal(readConfig(home).DEMO_OWNER, "literal$(not-executed)");
     NodeAssert.equal(NodeFS.existsSync(NodePath.join(home, "fixture")), false);
+    NodeAssert.equal(
+      NodeFS.readFileSync(
+        NodePath.join(home, "userdata", "secrets", "workbench-jira-credential-demo.bin"),
+        "utf8",
+      ),
+      "encrypted fixture",
+    );
   } finally {
     NodeFS.rmSync(root, { recursive: true });
   }

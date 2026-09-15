@@ -14,7 +14,7 @@
     },
     "scripts": {
       // Knip loads its preprocessor through a CLI option, not a source import.
-      "entry": ["knip-schemas.ts"],
+      "entry": ["knip-schemas.ts", "workbench-regression/playwright.config.ts"],
     },
     "apps/server": {
       // Vite+ pack entries and the launcher used by installed background services.
