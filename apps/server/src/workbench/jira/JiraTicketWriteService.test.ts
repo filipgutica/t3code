@@ -135,6 +135,7 @@ const makeHarness = (options?: {
   readonly failPreflight?: boolean;
   readonly creationScopes?: boolean;
   readonly bindings?: ReadonlyArray<WorkbenchJiraBinding>;
+  readonly bindingAfterPermit?: WorkbenchJiraBinding;
   readonly gatePreflight?: boolean;
 }) =>
   Effect.gen(function* () {
@@ -181,7 +182,7 @@ const makeHarness = (options?: {
       )
     `;
     const binding = makeBinding(options?.additionalStatusMappings);
-    const bindings = options?.bindings ?? [binding];
+    let bindings = options?.bindings ?? [binding];
 
     const repository = WorkbenchJiraRepository.of({
       findConnectionByCloudId: () => Effect.succeed(Option.none()),
@@ -272,7 +273,11 @@ const makeHarness = (options?: {
       getAccessToken: () => Effect.succeed("access-token"),
     });
     const sync = JiraSyncService.of({
-      withBindingPermit: (_bindingId, effect) => effect,
+      withBindingPermit: (_bindingId, effect) =>
+        Effect.suspend(() => {
+          if (options?.bindingAfterPermit) bindings = [options.bindingAfterPermit];
+          return effect;
+        }),
       syncBinding: () => Effect.die("unexpected sync"),
     });
     const importer = JiraTicketImporter.of({
@@ -737,6 +742,41 @@ describe("JiraTicketWriteService", () => {
           { id: "31", name: "Review", to: { id: "4", name: "Review" } },
           { id: "21", name: "Start", to: { id: "2", name: "Implementation" } },
         ],
+      },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("starts after a concurrent sync refreshes binding metadata", () =>
+    runWithHarness(
+      (harness) =>
+        Effect.gen(function* () {
+          const started = yield* harness.service.startTicketExecution({ ticketId });
+          assert.strictEqual(started.status.id, "2");
+          assert.strictEqual((yield* Ref.get(harness.imported))[0]?.mappedStatus, "in_progress");
+        }),
+      {
+        bindingAfterPermit: {
+          ...makeBinding(),
+          updatedAt: "2026-09-14T23:00:00.000Z",
+          lastSyncedAt: "2026-09-14T23:00:00.000Z",
+        },
+      },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("rejects a different Jira connection while waiting to start", () =>
+    runWithHarness(
+      (harness) =>
+        Effect.gen(function* () {
+          const error = yield* Effect.flip(harness.service.startTicketExecution({ ticketId }));
+          assert.strictEqual(error.code, "invalid_binding");
+          assert.deepStrictEqual(harness.requests, []);
+        }),
+      {
+        bindingAfterPermit: {
+          ...makeBinding(),
+          connectionId: WorkbenchJiraConnectionId.make("other-connection"),
+        },
       },
     ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
   );

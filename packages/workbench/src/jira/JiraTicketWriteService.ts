@@ -972,7 +972,7 @@ export const make = Effect.gen(function* () {
           const managed = yield* findManagedIssue(input.ticketId);
           if (
             managed.binding.id !== initial.binding.id ||
-            managed.binding.updatedAt !== initial.binding.updatedAt ||
+            managed.binding.connectionId !== initial.binding.connectionId ||
             managed.link.issue.issueId !== initial.link.issue.issueId
           ) {
             return yield* operationError(
