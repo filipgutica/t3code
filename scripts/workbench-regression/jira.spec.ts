@@ -347,6 +347,10 @@ test.describe("Jira Workbench integration @live", () => {
       await expect(transitionItem).toBeVisible();
       await transitionItem.click();
       await expect(statusButton).toHaveText(transition.to.name);
+      // The status label updates optimistically; the control stays disabled until
+      // the Jira write and authoritative snapshots have completed.
+      await expect(statusButton).toBeEnabled();
+      await expect(statusButton).toHaveText(transition.to.name);
       remoteIssue = await client.issue(original.key);
       expect(remoteIssue.status.id).toBe(transition.to.id);
     } finally {
