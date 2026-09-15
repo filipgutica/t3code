@@ -1001,7 +1001,7 @@ export const make = Effect.gen(function* () {
       Effect.forEach(
         bindings.filter((binding) => binding.active),
         (binding) =>
-          sync.syncBinding({ bindingId: binding.id }).pipe(
+          sync.syncBinding({ bindingId: binding.id, background: true }).pipe(
             Effect.catch((cause) =>
               Effect.logWarning("Workbench Jira background sync failed", {
                 bindingId: binding.id,

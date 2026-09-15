@@ -392,6 +392,7 @@ export type WorkbenchJiraListAssignedSprintIssuesInput =
 
 export const WorkbenchJiraSyncBindingInput = Schema.Struct({
   bindingId: WorkbenchJiraBindingId,
+  background: Schema.optionalKey(Schema.Boolean),
 });
 export type WorkbenchJiraSyncBindingInput = typeof WorkbenchJiraSyncBindingInput.Type;
 

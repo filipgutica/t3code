@@ -33,6 +33,13 @@ const repositoryError = (_cause: WorkbenchJiraRepositoryError) =>
   syncError("persistence_failed", "Jira synchronization state could not be saved or loaded.");
 const sqlPersistenceError = () =>
   syncError("persistence_failed", "Jira synchronization state could not be saved or loaded.");
+const BACKGROUND_SYNC_COOLDOWN_MS = 15_000;
+
+const parseTimestamp = (value: string | null) => {
+  if (value === null) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+};
 
 const selectedSprintsForBinding = (
   binding: Pick<WorkbenchJiraBinding, "sprintId" | "sprintName" | "selectedSprints">,
@@ -87,6 +94,10 @@ export const make = Effect.gen(function* () {
   const repository = yield* WorkbenchJiraRepository;
   const sql = yield* SqlClient.SqlClient;
   const bindingLocks = yield* Ref.make<ReadonlyMap<string, Semaphore.Semaphore>>(new Map());
+  const lastAttemptAt = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
+  const lastAttemptErrors = yield* Ref.make<ReadonlyMap<string, WorkbenchJiraOperationError>>(
+    new Map(),
+  );
 
   const getBindingLock = Effect.fn("JiraSyncService.getBindingLock")(function* (bindingId: string) {
     const existing = (yield* Ref.get(bindingLocks)).get(bindingId);
@@ -121,6 +132,53 @@ export const make = Effect.gen(function* () {
     if (!binding.active) {
       return yield* syncError("binding_inactive", "The Jira sprint binding is inactive.");
     }
+
+    const now = yield* clock.currentTimeMillis;
+    const inMemoryAttemptAt = (yield* Ref.get(lastAttemptAt)).get(binding.id);
+    const recentAttemptAt =
+      inMemoryAttemptAt ??
+      Math.max(
+        parseTimestamp(binding.lastSyncedAt) ?? Number.NEGATIVE_INFINITY,
+        binding.lastSyncError === null
+          ? Number.NEGATIVE_INFINITY
+          : (parseTimestamp(binding.updatedAt) ?? Number.NEGATIVE_INFINITY),
+      );
+    if (input.background === true && now - recentAttemptAt < BACKGROUND_SYNC_COOLDOWN_MS) {
+      const persistedSyncedAt = parseTimestamp(binding.lastSyncedAt);
+      const previousError =
+        persistedSyncedAt !== null &&
+        inMemoryAttemptAt !== undefined &&
+        persistedSyncedAt >= inMemoryAttemptAt
+          ? undefined
+          : (yield* Ref.get(lastAttemptErrors)).get(binding.id);
+      if (binding.lastSyncError !== null || previousError !== undefined) {
+        return yield* (
+          previousError ??
+            syncError(
+              "request_failed",
+              binding.lastSyncError ?? "Jira synchronization is cooling down; try again shortly.",
+            )
+        );
+      }
+      if (binding.lastSyncedAt !== null) {
+        const links = yield* repository
+          .listIssueLinks(binding.id)
+          .pipe(Effect.mapError(repositoryError));
+        return {
+          bindingId: binding.id,
+          syncedAt: binding.lastSyncedAt,
+          activated: 0,
+          updated: 0,
+          deactivated: 0,
+          links,
+        } satisfies WorkbenchJiraSyncResult;
+      }
+      return yield* syncError(
+        "request_failed",
+        "Jira synchronization is cooling down; try again shortly.",
+      );
+    }
+    yield* Ref.update(lastAttemptAt, (attempts) => new Map(attempts).set(binding.id, now));
 
     let observedActiveSprintIdsForError:
       | WorkbenchJiraBinding["observedActiveSprintIds"]
@@ -397,7 +455,20 @@ export const make = Effect.gen(function* () {
         );
     });
 
-    return yield* sync.pipe(Effect.tapError(persistSyncError));
+    return yield* sync.pipe(
+      Effect.tap(() =>
+        Ref.update(lastAttemptErrors, (errors) => {
+          const next = new Map(errors);
+          next.delete(binding.id);
+          return next;
+        }),
+      ),
+      Effect.tapError((error) =>
+        Ref.update(lastAttemptErrors, (errors) => new Map(errors).set(binding.id, error)).pipe(
+          Effect.andThen(persistSyncError(error)),
+        ),
+      ),
+    );
   });
 
   return JiraSyncService.of({ syncBinding, withBindingPermit });

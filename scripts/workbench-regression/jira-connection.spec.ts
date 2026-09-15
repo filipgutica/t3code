@@ -55,7 +55,14 @@ const routeJiraSync = async (page: import("@playwright/test").Page) => {
     syncServer = server;
     socket.onMessage((message) => {
       const payload = decode(message);
+      const input = payload?.payload;
+      const background =
+        input !== null &&
+        typeof input === "object" &&
+        "background" in input &&
+        input.background === true;
       if (
+        !background &&
         heldRequest === null &&
         mode === "hold" &&
         payload?._tag === "Request" &&
@@ -68,6 +75,7 @@ const routeJiraSync = async (page: import("@playwright/test").Page) => {
         return;
       }
       if (
+        !background &&
         targetRequestId === null &&
         (mode === "failure" || mode === "empty") &&
         payload?._tag === "Request" &&

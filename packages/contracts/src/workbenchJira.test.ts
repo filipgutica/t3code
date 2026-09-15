@@ -7,6 +7,7 @@ import {
   WorkbenchJiraCompleteAuthResult,
   WorkbenchJiraEpicLink,
   WorkbenchJiraIssueLink,
+  WorkbenchJiraSyncBindingInput,
   WorkbenchJiraUpdateTicketInput,
 } from "./workbenchJira.ts";
 
@@ -14,6 +15,7 @@ const decodeBinding = Schema.decodeUnknownEffect(WorkbenchJiraBinding);
 const decodeIssueLink = Schema.decodeUnknownEffect(WorkbenchJiraIssueLink);
 const decodeEpicLink = Schema.decodeUnknownEffect(WorkbenchJiraEpicLink);
 const decodeCompleteAuthResult = Schema.decodeUnknownEffect(WorkbenchJiraCompleteAuthResult);
+const decodeSyncBinding = Schema.decodeUnknownEffect(WorkbenchJiraSyncBindingInput);
 
 describe("Workbench Jira contracts", () => {
   it.effect("accepts legacy status writes and exact Jira transition writes", () =>
@@ -30,6 +32,16 @@ describe("Workbench Jira contracts", () => {
       assert.isUndefined(transition.status);
       const invalid = yield* Effect.result(decodeUpdate({ ...identity, transitionId: "" }));
       assert.strictEqual(invalid._tag, "Failure");
+    }),
+  );
+
+  it.effect("keeps sync requests manual unless background mode is explicit", () =>
+    Effect.gen(function* () {
+      const manual = yield* decodeSyncBinding({ bindingId: "binding-1" });
+      const background = yield* decodeSyncBinding({ bindingId: "binding-1", background: true });
+
+      assert.isUndefined(manual.background);
+      assert.isTrue(background.background);
     }),
   );
 

@@ -210,7 +210,9 @@ Jira issue keys identify imported work. The Orbit example uses Orbit API and Orb
 
 ### Sync and follow sprints
 
-Choose **Sync Jira** for an immediate refresh. The Board shows when a sync is in progress, the number of imported Tickets, an empty-assignment result, or an error with **Retry**. After a successful sync, choose **View imported tickets** to filter the Board to Jira-managed Tickets; choose **Show all tickets** to clear the filter. An active mirror also checks Jira every five minutes while its server is running. Open Boards refresh automatically and when the app regains focus, including Workspaces without Jira.
+Choose **Sync Jira** for an immediate refresh. The Board shows when a sync is in progress, the number of imported Tickets, an empty-assignment result, or an error with **Retry**. After a successful sync, choose **View imported tickets** to filter the Board to Jira-managed Tickets; choose **Show all tickets** to clear the filter.
+
+While a connected Workspace is visible and online, Workbench checks Jira about every 15 seconds and when you return to the app. Automatic refreshes update Tickets quietly. Hidden views pause these requests; the server still checks active mirrors every five minutes. Multiple open clients share the refresh limit for each mirror.
 
 Watch: change ORBIT-4 from In Review to Done in Jira, return to the Orbit Board, and choose **Sync Jira**. Then move it back in Workbench and confirm the change in Jira.
 

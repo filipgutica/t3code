@@ -124,7 +124,10 @@ test.describe("Jira Workbench integration @live", () => {
     await sprintCheckbox.uncheck();
     await expect(dialog.getByRole("button", { name: "Save mirror", exact: true })).toBeDisabled();
     await dialog.getByRole("button", { name: "Back", exact: true }).click();
-    await dialog.getByRole("button", { name: "Close", exact: true }).click();
+    await dialog
+      .getByRole("button", { name: "Close", exact: true })
+      .filter({ hasText: /^Close$/ })
+      .click();
   });
 
   test("J3 switches between mapped and mirrored Jira columns without changing ticket identity", async ({
@@ -191,7 +194,10 @@ test.describe("Jira Workbench integration @live", () => {
       await expect(
         dialog.getByRole("button", { name: "Resume mirror", exact: true }),
       ).toBeVisible();
-      await dialog.getByRole("button", { name: "Close", exact: true }).click();
+      await dialog
+        .getByRole("button", { name: "Close", exact: true })
+        .filter({ hasText: /^Close$/ })
+        .click();
       await expect(page.getByText("Jira paused", { exact: true })).toBeVisible();
 
       await page.getByRole("button", { name: "New Ticket", exact: true }).click();
@@ -207,7 +213,10 @@ test.describe("Jira Workbench integration @live", () => {
       dialog = await openJiraDialog(page);
       await dialog.getByRole("button", { name: "Resume mirror", exact: true }).click();
       await expect(dialog.getByRole("button", { name: "Pause mirror", exact: true })).toBeVisible();
-      await dialog.getByRole("button", { name: "Close", exact: true }).click();
+      await dialog
+        .getByRole("button", { name: "Close", exact: true })
+        .filter({ hasText: /^Close$/ })
+        .click();
       await expect(page.getByText("Jira paused", { exact: true })).not.toBeVisible();
     } finally {
       const current = await jiraSnapshot(demo.home);
@@ -220,7 +229,10 @@ test.describe("Jira Workbench integration @live", () => {
             exact: true,
           })
           .click();
-        await dialog.getByRole("button", { name: "Close", exact: true }).click();
+        await dialog
+          .getByRole("button", { name: "Close", exact: true })
+          .filter({ hasText: /^Close$/ })
+          .click();
       }
     }
     const afterWorkbench = await snapshot(demo.home);
@@ -392,7 +404,7 @@ test.describe("Jira Workbench integration @live", () => {
     }
   });
 
-  test("J8 keeps the same local Ticket identity and scope after remote refresh", async ({
+  test("J8 automatically imports remote edits while preserving Ticket identity and scope", async ({
     page,
     demo,
   }) => {
@@ -411,8 +423,9 @@ test.describe("Jira Workbench integration @live", () => {
       await page.goto(
         `/workbench?workbenchProjectId=demo-jira&ticketId=${encodeURIComponent(link.ticketId)}`,
       );
-      await page.getByRole("button", { name: "Refresh from Jira", exact: true }).click();
-      await expect(page.getByText("J8 transient remote edit.", { exact: true })).toBeVisible();
+      await expect(page.getByText("J8 transient remote edit.", { exact: true })).toBeVisible({
+        timeout: 30_000,
+      });
       const after = await snapshot(demo.home);
       const ticketAfter = after.tickets.find((ticket) => ticket.id === link.ticketId);
       expect(ticketAfter?.id).toBe(ticketBefore.id);

@@ -148,6 +148,8 @@ const JIRA_OAUTH_WORKSPACE_STORAGE_KEY = "t3code:workbench:jira-oauth-workspace"
 const JIRA_OAUTH_ENVIRONMENT_STORAGE_KEY = "t3code:workbench:jira-oauth-environment";
 const JIRA_OAUTH_STATE_STORAGE_KEY = "t3code:workbench:jira-oauth-state";
 const JIRA_REFRESH_INTERVAL_MS = 15_000;
+// Stay just beyond the server's 15-second background-sync cooldown.
+const JIRA_FOREGROUND_SYNC_INTERVAL_MS = 16_000;
 const EMPTY_TICKET_DRAFTS = new Map<WorkbenchTicketId, WorkbenchTicketDraft>();
 const isEnvironmentId = Schema.is(EnvironmentId);
 type PendingJiraMigration = {
@@ -491,6 +493,7 @@ export function WorkbenchPage({
   const statusEnvironmentRef = useRef(environmentId);
   const jiraScopeRef = useRef({ environmentId, projectId: selectedProjectId });
   const pendingJiraMigrationBindingsRef = useRef(new Map<string, PendingJiraMigration>());
+  const automaticJiraRequestsRef = useRef(new Set<string>());
   const jiraMigrationKey = (projectId: WorkbenchProjectId) =>
     `${environmentId ?? "none"}:${projectId}`;
   useEffect(() => {
@@ -1404,7 +1407,7 @@ export function WorkbenchPage({
       return false;
     }
     const binding = result.value;
-    let migrationComplete = pendingMigration?.migrationComplete ?? false;
+    let migrationComplete = pendingMigration?.migrationComplete ?? draft.localDataAction === "none";
     pendingJiraMigrationBindingsRef.current.set(migrationKey, { binding, migrationComplete });
     if (!migrationComplete && draft.localDataAction !== "none") {
       const migration = await migrateJiraLocalData({
@@ -1454,7 +1457,7 @@ export function WorkbenchPage({
     }
     const migrationKey = jiraMigrationKey(result.value.projectId);
     const pendingMigration = pendingJiraMigrationBindingsRef.current.get(migrationKey);
-    let migrationComplete = pendingMigration?.migrationComplete ?? false;
+    let migrationComplete = pendingMigration?.migrationComplete ?? draft.localDataAction === "none";
     pendingJiraMigrationBindingsRef.current.set(migrationKey, {
       binding: result.value,
       migrationComplete,
@@ -1680,6 +1683,67 @@ export function WorkbenchPage({
       intervalMs: JIRA_REFRESH_INTERVAL_MS,
     });
   }, [jiraBinding?.active, refreshJiraSnapshot]);
+
+  const automaticJiraBindingId = jiraBinding?.active ? jiraBinding.id : null;
+  const automaticJiraProjectId = jiraBinding?.projectId ?? null;
+  useEffect(() => {
+    if (
+      environmentId === null ||
+      automaticJiraBindingId === null ||
+      automaticJiraProjectId === null ||
+      jiraDialogOpen ||
+      jiraPendingAction !== null
+    )
+      return;
+    let disposed = false;
+    const requestKey = `${environmentId}:${automaticJiraBindingId}`;
+    const migrationKey = `${environmentId}:${automaticJiraProjectId}`;
+    const requests = automaticJiraRequestsRef.current;
+    const refresh = () => {
+      if (
+        requests.has(requestKey) ||
+        pendingJiraMigrationBindingsRef.current.get(migrationKey)?.migrationComplete === false
+      )
+        return;
+      requests.add(requestKey);
+      void jiraSyncBinding({
+        environmentId,
+        input: { bindingId: automaticJiraBindingId, background: true },
+      })
+        .then(async (result) => {
+          if (disposed) return;
+          // Jira persists sync failures on the binding. Refresh that status
+          // without producing recurring banners for background requests.
+          await refreshJiraSnapshot();
+          if (result._tag === "Success") await refreshWorkbenchSnapshot();
+        })
+        .catch((cause: unknown) => {
+          if (!disposed)
+            setJiraError(cause instanceof Error ? cause.message : "Jira refresh failed.");
+        })
+        .finally(() => requests.delete(requestKey));
+    };
+    const unsubscribe = subscribeToWorkbenchRefresh({
+      target: window,
+      refresh,
+      intervalMs: JIRA_FOREGROUND_SYNC_INTERVAL_MS,
+      immediate: true,
+    });
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, [
+    environmentId,
+    automaticJiraBindingId,
+    automaticJiraProjectId,
+    automaticJiraRequestsRef,
+    jiraDialogOpen,
+    jiraPendingAction,
+    jiraSyncBinding,
+    refreshJiraSnapshot,
+    refreshWorkbenchSnapshot,
+  ]);
 
   async function syncJiraBinding(
     binding: WorkbenchJiraBinding,

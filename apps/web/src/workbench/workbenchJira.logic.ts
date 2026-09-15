@@ -25,7 +25,7 @@ export const resolveWorkbenchTicketContent = ({
   markdown: jiraIssue?.description ?? ticket.markdown,
 });
 
-export const workbenchJiraEpicIdPrefix = (bindingId: WorkbenchJiraBindingId | string) =>
+const workbenchJiraEpicIdPrefix = (bindingId: WorkbenchJiraBindingId | string) =>
   `jira:${bindingId}:epic:`;
 
 type WorkbenchJiraEpicIssueLink = {

@@ -15,12 +15,14 @@ export interface WorkbenchRefreshOptions {
   readonly target: WorkbenchRefreshTarget;
   readonly refresh: () => void;
   readonly intervalMs: number;
+  readonly immediate?: boolean;
 }
 
 export function subscribeToWorkbenchRefresh({
   target,
   refresh,
   intervalMs,
+  immediate = false,
 }: WorkbenchRefreshOptions): () => void {
   const canRefresh = () =>
     target.document?.visibilityState !== "hidden" && (target.navigator?.onLine ?? true);
@@ -34,6 +36,7 @@ export function subscribeToWorkbenchRefresh({
   target.addEventListener("focus", onFocus);
   target.addEventListener("online", onOnline);
   target.document?.addEventListener("visibilitychange", onVisibilityChange);
+  if (immediate) refreshIfAvailable();
   return () => {
     target.clearInterval(intervalId);
     target.removeEventListener("focus", onFocus);

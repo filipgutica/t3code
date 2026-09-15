@@ -65,6 +65,9 @@ const routeMockJira = async (page: Page) => {
   const rpcTags: string[] = [];
   let bindingCreateCount = 0;
   let syncRequestCount = 0;
+  let backgroundSyncRequestCount = 0;
+  let remoteTicketTitle = "Imported Jira regression ticket";
+  let importedTicketTitle = remoteTicketTitle;
   let syncServer: WebSocketServer | null = null;
   let heldSyncRequestId: RpcRequestId | null = null;
   let migrationServer: WebSocketServer | null = null;
@@ -129,7 +132,7 @@ const routeMockJira = async (page: Page) => {
       issueId: "regression-jira-issue",
       key: "ORBIT-999",
       url: "https://jira.example.test/browse/ORBIT-999",
-      summary: "Imported Jira regression ticket",
+      summary: importedTicketTitle,
       description: "Imported from the deterministic Jira contract fixture.",
       issueType: { id: "10001", name: "Story" },
       status: { id: "1", name: "To Do" },
@@ -146,7 +149,7 @@ const routeMockJira = async (page: Page) => {
     id: "jira-regression-ticket",
     projectId: targetProjectId,
     epicId: null,
-    title: "Imported Jira regression ticket",
+    title: importedTicketTitle,
     kind: "story" as const,
     markdown: "Imported from the deterministic Jira contract fixture.",
     primaryT3ProjectId: (binding?.defaultPrimaryT3ProjectId as string) ?? "orbit-api",
@@ -188,6 +191,7 @@ const routeMockJira = async (page: Page) => {
       }),
     );
   const syncValue = (empty = mode === "empty") => {
+    importedTicketTitle = remoteTicketTitle;
     const syncedAt = now();
     if (binding) binding = { ...binding, lastSyncedAt: syncedAt, updatedAt: syncedAt };
     links = empty ? [] : [makeLink()];
@@ -342,6 +346,11 @@ const routeMockJira = async (page: Page) => {
         return;
       }
       if (payload.tag === WORKBENCH_WS_METHODS.workbenchJiraSyncBinding) {
+        if (input.background === true) {
+          backgroundSyncRequestCount += 1;
+          sendExit(socket, payload.id, syncValue(links.length === 0));
+          return;
+        }
         syncRequestCount += 1;
         if (mode === "hold") {
           heldSyncRequestId = payload.id;
@@ -404,6 +413,10 @@ const routeMockJira = async (page: Page) => {
     getRpcTags: () => rpcTags,
     getBindingCreateCount: () => bindingCreateCount,
     getSyncRequestCount: () => syncRequestCount,
+    getBackgroundSyncRequestCount: () => backgroundSyncRequestCount,
+    setRemoteTicketTitle: (title: string) => {
+      remoteTicketTitle = title;
+    },
     waitForSync: async () => {
       await Promise.race([
         syncRequestSeen,
@@ -523,6 +536,31 @@ const connectJira = async (page: Page) => {
 };
 
 test.describe("Jira connection UI contract", () => {
+  test("refreshes remote Jira changes when returning to Workbench without a manual sync", async ({
+    page,
+    demo,
+  }) => {
+    const route = await routeMockJira(page);
+    await createWorkspace(page, demo.home, "Foreground Jira Refresh");
+    const dialog = await connectJira(page);
+    await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    await page.getByRole("button", { name: "View imported tickets", exact: true }).click();
+    await expect(page.getByText("ORBIT-999", { exact: true })).toBeVisible();
+
+    route.setRemoteTicketTitle("Changed in Jira while away");
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await expect(
+      page.getByRole("heading", { name: "Changed in Jira while away", exact: true }),
+    ).toBeVisible({ timeout: 20_000 });
+    expect(route.getSyncRequestCount()).toBe(1);
+    expect(route.getBackgroundSyncRequestCount()).toBeGreaterThan(0);
+    await expect(
+      page.getByRole("button", { name: "View imported tickets", exact: true }),
+    ).not.toBeVisible();
+    await expect(page.getByLabel("Jira sync status")).toContainText("Jira synced");
+  });
+
   test("automatically syncs after connection and persists the visible result", async ({
     page,
     demo,
@@ -637,6 +675,7 @@ test.describe("Jira connection UI contract", () => {
     route.setMigrationMode("hold");
     await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
     await route.waitForMigration();
+    expect(route.getBackgroundSyncRequestCount()).toBe(0);
     await expect(dialog.getByRole("status")).toContainText(
       "Saving the mirror and importing Jira tickets…",
     );
