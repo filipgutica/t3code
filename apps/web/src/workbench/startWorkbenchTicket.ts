@@ -38,16 +38,13 @@ interface StartWorkbenchTicketInput {
   readonly threadLookupReady: boolean;
 }
 
-export const WORKBENCH_TICKET_START_STAGES = [
-  "checking-thread",
-  "preparing-workspace",
-  "creating-thread",
-  "linking-thread",
-  "attaching-context",
-  "opening-thread",
-] as const;
-
-export type WorkbenchTicketStartStage = (typeof WORKBENCH_TICKET_START_STAGES)[number];
+export type WorkbenchTicketStartStage =
+  | "checking-thread"
+  | "preparing-workspace"
+  | "creating-thread"
+  | "linking-thread"
+  | "attaching-context"
+  | "opening-thread";
 
 const WORKBENCH_TICKET_START_STAGE_LABELS: Record<WorkbenchTicketStartStage, string> = {
   "checking-thread": "Checking for an existing Thread…",

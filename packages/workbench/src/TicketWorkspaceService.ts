@@ -43,7 +43,6 @@ export interface TicketWorkspaceNamingInput {
   readonly ticketId: string;
   readonly jiraIssueKey?: string | null;
   readonly title?: string;
-  readonly generatedBranchName?: string | null;
 }
 
 /** Human-readable identity used for new workspace directories and branches. */
@@ -64,14 +63,12 @@ export const ticketWorkspaceBranchName = (input: string | TicketWorkspaceNamingI
 
   const issueKeySlug = slugSegment(input.jiraIssueKey ?? "", "");
   const titleSlug = slugSegment(input.title ?? "", "ticket");
-  const generatedSlug = slugSegment(input.generatedBranchName ?? "", "");
-  const descriptor = generatedSlug || titleSlug;
   const descriptorWithoutIssueKey =
-    issueKeySlug && descriptor.startsWith(`${issueKeySlug}-`)
-      ? descriptor.slice(issueKeySlug.length + 1)
-      : descriptor === issueKeySlug
+    issueKeySlug && titleSlug.startsWith(`${issueKeySlug}-`)
+      ? titleSlug.slice(issueKeySlug.length + 1)
+      : titleSlug === issueKeySlug
         ? ""
-        : descriptor;
+        : titleSlug;
   const readable = descriptorWithoutIssueKey || titleSlug;
   const prefix = issueKeySlug ? `${issueKeySlug}-${readable}` : readable;
   return `workbench/${prefix}-${shortStableSuffix(input.ticketId)}`;

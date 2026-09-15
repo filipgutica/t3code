@@ -63,16 +63,11 @@ const encodeCreationFingerprint = Schema.encodeSync(
 type JiraTicketCreationRow = {
   readonly ticketId: string;
   readonly bindingId: string;
-  readonly title: string;
-  readonly kind: string;
-  readonly markdown: string;
   readonly requestFingerprint: string;
   readonly resultTicketId: WorkbenchCreateTicketInput["id"] | null;
   readonly jiraIssueId: string | null;
   readonly jiraIssueKey: string | null;
   readonly state: "pending" | "uncertain" | "created";
-  readonly createdAt: string;
-  readonly updatedAt: string;
 };
 
 const RawTransitionId = Schema.Union([Schema.String, Schema.Number]);
@@ -231,16 +226,11 @@ export const make = Effect.gen(function* () {
       SELECT
         ticket_id AS "ticketId",
         binding_id AS "bindingId",
-        title,
-        kind,
-        markdown,
         request_fingerprint AS "requestFingerprint",
         result_ticket_id AS "resultTicketId",
         jira_issue_id AS "jiraIssueId",
         jira_issue_key AS "jiraIssueKey",
-        state,
-        created_at AS "createdAt",
-        updated_at AS "updatedAt"
+        state
       FROM workbench_jira_ticket_creations
       WHERE ticket_id = ${ticketId}
       LIMIT 1

@@ -230,8 +230,6 @@ export const make = Effect.gen(function* () {
     });
 
   const executeJsonRequest = <S extends Schema.Top>(input: {
-    readonly connection: WorkbenchJiraConnection;
-    readonly accessToken: string;
     readonly path: string;
     readonly request: HttpClientRequest.HttpClientRequest;
     readonly schema: S;
@@ -253,10 +251,7 @@ export const make = Effect.gen(function* () {
     );
   };
 
-  const executeRequest = (input: {
-    readonly path: string;
-    readonly request: HttpClientRequest.HttpClientRequest;
-  }) =>
+  const executeRequest = (input: { readonly request: HttpClientRequest.HttpClientRequest }) =>
     httpClient.execute(input.request).pipe(
       Effect.mapError(() => apiError("request_failed", "The Jira request could not be sent.")),
       Effect.flatMap((response) =>
@@ -266,10 +261,7 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-  const executeCreateRequest = (input: {
-    readonly path: string;
-    readonly request: HttpClientRequest.HttpClientRequest;
-  }) =>
+  const executeCreateRequest = (input: { readonly request: HttpClientRequest.HttpClientRequest }) =>
     httpClient.execute(input.request).pipe(
       Effect.mapError(
         () =>
@@ -312,7 +304,7 @@ export const make = Effect.gen(function* () {
       url,
       input.urlParams === undefined ? undefined : { urlParams: input.urlParams },
     ).pipe(HttpClientRequest.acceptJson, HttpClientRequest.bearerToken(input.accessToken));
-    return executeJsonRequest({ ...input, request });
+    return executeJsonRequest({ path: input.path, schema: input.schema, request });
   };
 
   const collectPages = <S extends Schema.Top, A>(input: {
@@ -587,8 +579,6 @@ export const make = Effect.gen(function* () {
         ),
       );
       return yield* executeCreateRequest({
-        ...context,
-        path: "/rest/api/2/issue",
         request: HttpClientRequest.post(
           `https://api.atlassian.com/ex/jira/${encodeURIComponent(context.connection.cloudId)}/rest/api/2/issue`,
         ).pipe(
@@ -613,7 +603,6 @@ export const make = Effect.gen(function* () {
     return Effect.gen(function* () {
       const context = yield* authorized(input.connectionId);
       yield* executeRequest({
-        path,
         request: HttpClientRequest.post(
           `https://api.atlassian.com/ex/jira/${encodeURIComponent(context.connection.cloudId)}${path}`,
         ).pipe(

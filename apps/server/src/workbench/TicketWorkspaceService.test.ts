@@ -486,35 +486,27 @@ describe("TicketWorkspaceService", () => {
     const firstBranch = ticketWorkspaceBranchName({
       ticketId: "ticket-1",
       jiraIssueKey: "MA-123",
-      generatedBranchName: "MA-123-fix-validation",
+      title: "MA-123-fix-validation",
     });
     const secondBranch = ticketWorkspaceBranchName({
       ticketId: "ticket-2",
       jiraIssueKey: "MA-123",
-      generatedBranchName: "MA-123-fix-validation",
+      title: "MA-123-fix-validation",
     });
     expect(firstBranch).toMatch(/^workbench\/ma-123-fix-validation-[0-9a-f]{8}$/);
     expect(firstBranch).not.toBe(secondBranch);
   });
 
-  it("falls back to the ticket title when a generated branch fragment is empty or unsafe", () => {
-    const fallback = "workbench/ma-123-prepare-repositories-";
-    expect(
-      ticketWorkspaceBranchName({
-        ticketId: "ticket-1",
-        jiraIssueKey: "MA-123",
-        title: "Prepare repositories",
-        generatedBranchName: "",
-      }),
-    ).toBe(`${fallback}737ce60f`);
-    expect(
-      ticketWorkspaceBranchName({
-        ticketId: "ticket-1",
-        jiraIssueKey: "MA-123",
-        title: "Prepare repositories",
-        generatedBranchName: "../../",
-      }),
-    ).toBe(`${fallback}737ce60f`);
+  it("uses a safe fallback when the ticket title is empty or unsafe", () => {
+    for (const title of ["", "../../"]) {
+      expect(
+        ticketWorkspaceBranchName({
+          ticketId: "ticket-1",
+          jiraIssueKey: "MA-123",
+          title,
+        }),
+      ).toBe("workbench/ma-123-ticket-737ce60f");
+    }
   });
 
   it.effect("rejects preparation for an archived Ticket before inspecting repositories", () => {
