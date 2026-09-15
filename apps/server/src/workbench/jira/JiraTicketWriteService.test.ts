@@ -710,6 +710,37 @@ describe("JiraTicketWriteService", () => {
     ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
   );
 
+  it.effect("starts in the first working mirror column instead of a later review column", () =>
+    runWithHarness(
+      (harness) =>
+        Effect.gen(function* () {
+          const started = yield* harness.service.startTicketExecution({ ticketId });
+          assert.strictEqual(started.status.id, "2");
+          assert.strictEqual(
+            harness.requests.find((request) => request.method === "POST")?.body,
+            JSON.stringify({ transition: { id: "21" } }),
+          );
+        }),
+      {
+        bindings: [
+          {
+            ...makeBinding([{ jiraStatusId: "4", workbenchStatus: "in_progress" }]),
+            boardMode: "mirror_jira",
+            boardColumns: [
+              { name: "To Do", statusIds: ["1"], done: false },
+              { name: "Implementation", statusIds: ["2"], done: false },
+              { name: "Review", statusIds: ["4"], done: false },
+            ],
+          },
+        ],
+        transitions: [
+          { id: "31", name: "Review", to: { id: "4", name: "Review" } },
+          { id: "21", name: "Start", to: { id: "2", name: "Implementation" } },
+        ],
+      },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
   it.effect("keeps a Jira issue already further along without applying a transition", () =>
     runWithHarness(
       (harness) =>

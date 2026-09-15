@@ -720,11 +720,14 @@ export const make = Effect.gen(function* () {
     }>;
     readonly statusMappings: WorkbenchJiraBinding["statusMappings"];
     readonly targetStatus: WorkbenchTicketStatus | undefined;
+    readonly targetStatusIds?: ReadonlyArray<string>;
     readonly currentStatusName: string;
   }) => {
     const candidates = input.transitions.filter((transition) =>
       input.statusMappings.some(
         (mapping) =>
+          (input.targetStatusIds === undefined ||
+            input.targetStatusIds.includes(transition.to.id)) &&
           mapping.jiraStatusId === transition.to.id &&
           mapping.workbenchStatus === input.targetStatus,
       ),
@@ -754,6 +757,7 @@ export const make = Effect.gen(function* () {
     readonly currentStatusName: string;
     readonly status: WorkbenchTicketStatus | undefined;
     readonly transitionId: string | undefined;
+    readonly targetStatusIds?: ReadonlyArray<string>;
   }) =>
     Effect.gen(function* () {
       const credentials = yield* getConnectionAndToken(input.binding);
@@ -769,6 +773,9 @@ export const make = Effect.gen(function* () {
               transitions,
               statusMappings: input.binding.statusMappings,
               targetStatus: input.status,
+              ...(input.targetStatusIds === undefined
+                ? {}
+                : { targetStatusIds: input.targetStatusIds }),
               currentStatusName: input.currentStatusName,
             });
       if (candidate === undefined) {
@@ -1005,7 +1012,23 @@ export const make = Effect.gen(function* () {
             );
           }
 
+          // Mirror columns preserve workflow order; later review columns also map to
+          // in_progress, but starting execution belongs in the first working column.
+          const startColumn =
+            managed.binding.boardMode === "mirror_jira"
+              ? managed.binding.boardColumns.find(
+                  (column) =>
+                    !column.done &&
+                    column.statusIds.some((id) =>
+                      managed.binding.statusMappings.some(
+                        (mapping) =>
+                          mapping.jiraStatusId === id && mapping.workbenchStatus === "in_progress",
+                      ),
+                    ),
+                )
+              : undefined;
           const transition = yield* resolveTransition({
+            ...(startColumn === undefined ? {} : { targetStatusIds: startColumn.statusIds }),
             binding: managed.binding,
             issueId: current.issueId,
             currentStatusName: current.status.name,
