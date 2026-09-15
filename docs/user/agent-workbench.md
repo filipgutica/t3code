@@ -50,7 +50,7 @@ Select the context chip to inspect what the agent will receive. In this example,
 
 Watch: start on the Orbit Board, create a Ticket with both repositories, then create a Thread and inspect its context.
 
-https://github.com/user-attachments/assets/027521c7-6113-49a1-8b2c-c54640ce9d8b
+https://github.com/user-attachments/assets/9fdcf4ac-4ac7-4a99-8e4f-ac3be8753236
 
 Use **New Thread** for another conversation on the same Ticket. Each new Thread starts with Ticket context and waits for you to send.
 
@@ -95,7 +95,7 @@ Use a full URL for a PR in another repository. A number such as `#42` refers to 
 
 Watch: open a Ticket's Thread, link a PR through the command palette, and return to the Ticket to see the linked pull request.
 
-https://github.com/user-attachments/assets/d74bb27e-57ce-4e56-9a37-9afab00d62e6
+https://github.com/user-attachments/assets/bffc4ea8-7274-403b-98d4-baba4d326a33
 
 ## Edit and organize Tickets
 
@@ -209,9 +209,9 @@ The Orbit example mirrors six assigned Jira issues into the same Workspace as it
 
 Choose **Sync Jira** for an immediate refresh. An active mirror also checks Jira every five minutes while its server is running. Open Boards refresh automatically and when the app regains focus, including Workspaces without Jira.
 
-Watch: change ORBIT-4 from In Review to Done in Jira, return to the Orbit Board, and choose **Sync Jira**. Open the mirrored Ticket to confirm its updated status.
+Watch: change ORBIT-4 from In Review to Done in Jira, return to the Orbit Board, and choose **Sync Jira**. Then move it back in Workbench and confirm the change in Jira.
 
-https://github.com/user-attachments/assets/4133a8d1-504e-4cbd-a517-48e6f35899ef
+https://github.com/user-attachments/assets/36544bb0-ef11-4147-a32a-070f44023eff
 
 With **Follow selected sprints automatically** enabled, Workbench keeps active selected sprints and replaces closed ones when it can identify a complete successor selection. It keeps the previous Board and reports an error if replacements are missing or ambiguous. A sprint already observed running alongside the selection is not considered a successor.
 
