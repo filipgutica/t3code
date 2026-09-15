@@ -39,7 +39,11 @@ const liveJira = async (home: string) => {
   const baselineLinks = jira.issueLinks.filter(
     (link) => link.bindingId === binding.id && link.active && baselineKeys.has(link.issue.key),
   );
-  return { client, jira, binding, baselineLinks };
+  const todoKeys = new Set(
+    baseline.issues.filter((issue) => issue.state === "todo").map((issue) => issue.key),
+  );
+  const todoLinks = baselineLinks.filter((link) => todoKeys.has(link.issue.key));
+  return { client, jira, binding, baselineLinks, todoLinks };
 };
 
 const openJiraDialog = async (page: Page) => {
@@ -362,12 +366,14 @@ test.describe("Jira Workbench integration @live", () => {
     page,
     demo,
   }) => {
-    const { client, binding, baselineLinks } = await liveJira(demo.home);
-    const link = baselineLinks.find((candidate) =>
-      /^(to do|open|backlog)$/iu.test(candidate.issue.status.name),
-    );
-    if (!link) throw new Error("The live demo has no Jira issue to exercise.");
+    const { client, binding, todoLinks } = await liveJira(demo.home);
+    const link = todoLinks[0];
+    if (!link) throw new Error("The live demo baseline has no Jira Todo issue to exercise.");
     const issue = await client.issue(link.issue.key);
+    expect(
+      binding.statusMappings.find((mapping) => mapping.jiraStatusId === issue.status.id)
+        ?.workbenchStatus,
+    ).toBe("todo");
     const inProgressStatusIds = new Set(
       binding.statusMappings
         .filter((mapping) => mapping.workbenchStatus === "in_progress")
