@@ -221,6 +221,35 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
         ON DELETE CASCADE
     )
   `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS workbench_jira_ticket_creations (
+      ticket_id TEXT PRIMARY KEY,
+      binding_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      markdown TEXT NOT NULL,
+      jira_issue_id TEXT,
+      jira_issue_key TEXT,
+      request_fingerprint TEXT NOT NULL DEFAULT '',
+      result_ticket_id TEXT,
+      state TEXT NOT NULL CHECK (state IN ('pending', 'uncertain', 'created')),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (binding_id)
+        REFERENCES workbench_jira_bindings(binding_id)
+        ON DELETE CASCADE
+    )
+  `;
+
+  const creationColumns = yield* sql<{
+    readonly name: string;
+  }>`PRAGMA table_info(workbench_jira_ticket_creations)`;
+  if (!creationColumns.some((column) => column.name === "request_fingerprint")) {
+    yield* sql`ALTER TABLE workbench_jira_ticket_creations ADD COLUMN request_fingerprint TEXT NOT NULL DEFAULT ''`;
+  }
+  if (!creationColumns.some((column) => column.name === "result_ticket_id")) {
+    yield* sql`ALTER TABLE workbench_jira_ticket_creations ADD COLUMN result_ticket_id TEXT`;
+  }
 
   const ticketColumns = yield* sql<{ readonly name: string }>`
     PRAGMA table_info(workbench_tickets)

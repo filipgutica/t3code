@@ -6,6 +6,7 @@ import {
   ProjectId,
   ThreadId,
   NonNegativeInt,
+  PositiveInt,
   TrimmedNonEmptyString,
   TrimmedString,
 } from "./baseSchemas.ts";
@@ -211,6 +212,8 @@ export const WorkbenchCreateTicketInput = Schema.Struct({
   markdown: WorkbenchTicket.fields.markdown,
   primaryT3ProjectId: ProjectId,
   repositoryProjectIds: Schema.optionalKey(Schema.Array(ProjectId).check(Schema.isMinLength(1))),
+  /** Selects the target Jira sprint when the Workspace has more than one. */
+  jiraSprintId: Schema.optionalKey(PositiveInt),
   createdAt: IsoDateTime,
 });
 export type WorkbenchCreateTicketInput = typeof WorkbenchCreateTicketInput.Type;

@@ -12,8 +12,10 @@ import {
   type WorkbenchJiraListSprintsInput,
   type WorkbenchJiraProject,
   type WorkbenchJiraSprint,
+  type WorkbenchCreateTicketInput,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -125,6 +127,17 @@ const IssuePage = Schema.Struct({
   isLast: Schema.optionalKey(Schema.Boolean),
   nextPageToken: Schema.optionalKey(Schema.String),
 });
+const IssueTypePage = Schema.Struct({
+  ...PageMetadata,
+  issueTypes: Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String })),
+});
+const CurrentUser = Schema.Struct({ accountId: Schema.String });
+const CreatedIssue = Schema.Struct({ id: Schema.String, key: Schema.String });
+
+export class JiraIssueCreateError extends Data.TaggedError("JiraIssueCreateError")<{
+  readonly outcome: "rejected" | "unknown";
+  readonly message: string;
+}> {}
 
 const apiError = (
   code: "connection_not_found" | "request_failed" | "response_invalid",
@@ -169,6 +182,28 @@ export interface JiraApiShape {
   readonly listAssignedSprintIssues: (
     input: WorkbenchJiraListAssignedSprintIssuesInput,
   ) => Effect.Effect<ReadonlyArray<WorkbenchJiraIssueSnapshot>, WorkbenchJiraOperationError>;
+  readonly prepareIssueCreation: (input: {
+    readonly connectionId: WorkbenchJiraConnectionId;
+    readonly projectKey: string;
+    readonly kind: WorkbenchCreateTicketInput["kind"];
+  }) => Effect.Effect<
+    { readonly issueTypeId: string; readonly accountId: string },
+    WorkbenchJiraOperationError
+  >;
+  /** Creates a Jira issue. Sprint placement is a separate resumable step. */
+  readonly createIssue: (input: {
+    readonly connectionId: WorkbenchJiraConnectionId;
+    readonly projectKey: string;
+    readonly ticket: Pick<WorkbenchCreateTicketInput, "id" | "title" | "markdown" | "kind">;
+    readonly issueTypeId: string;
+    readonly accountId: string;
+    readonly epicIssueId?: string;
+  }) => Effect.Effect<{ readonly id: string; readonly key: string }, JiraIssueCreateError>;
+  readonly addIssueToSprint: (input: {
+    readonly connectionId: WorkbenchJiraConnectionId;
+    readonly sprintId: number;
+    readonly issueKey: string;
+  }) => Effect.Effect<void, WorkbenchJiraOperationError>;
 }
 
 export class JiraApi extends Context.Service<JiraApi, JiraApiShape>()(
@@ -194,19 +229,12 @@ export const make = Effect.gen(function* () {
       };
     });
 
-  const executeJson = <S extends Schema.Top>(input: {
-    readonly connection: WorkbenchJiraConnection;
-    readonly accessToken: string;
+  const executeJsonRequest = <S extends Schema.Top>(input: {
     readonly path: string;
-    readonly urlParams?: Record<string, string>;
+    readonly request: HttpClientRequest.HttpClientRequest;
     readonly schema: S;
   }): Effect.Effect<S["Type"], WorkbenchJiraOperationError, S["DecodingServices"]> => {
-    const url = `https://api.atlassian.com/ex/jira/${encodeURIComponent(input.connection.cloudId)}${input.path}`;
-    const request = HttpClientRequest.get(
-      url,
-      input.urlParams === undefined ? undefined : { urlParams: input.urlParams },
-    ).pipe(HttpClientRequest.acceptJson, HttpClientRequest.bearerToken(input.accessToken));
-    return httpClient.execute(request).pipe(
+    return httpClient.execute(input.request).pipe(
       Effect.mapError(() => apiError("request_failed", "The Jira request could not be sent.")),
       Effect.flatMap((response) =>
         response.status >= 200 && response.status < 300
@@ -221,6 +249,62 @@ export const make = Effect.gen(function* () {
           : Effect.fail(apiError("request_failed", httpStatusErrorMessage(response.status))),
       ),
     );
+  };
+
+  const executeRequest = (input: { readonly request: HttpClientRequest.HttpClientRequest }) =>
+    httpClient.execute(input.request).pipe(
+      Effect.mapError(() => apiError("request_failed", "The Jira request could not be sent.")),
+      Effect.flatMap((response) =>
+        response.status >= 200 && response.status < 300
+          ? Effect.void
+          : Effect.fail(apiError("request_failed", httpStatusErrorMessage(response.status))),
+      ),
+    );
+
+  const executeCreateRequest = (input: { readonly request: HttpClientRequest.HttpClientRequest }) =>
+    httpClient.execute(input.request).pipe(
+      Effect.mapError(
+        () =>
+          new JiraIssueCreateError({
+            outcome: "unknown",
+            message: "The Jira issue request could not be sent. Check Jira before retrying.",
+          }),
+      ),
+      Effect.flatMap((response) => {
+        if (response.status >= 200 && response.status < 300) {
+          return HttpClientResponse.schemaBodyJson(CreatedIssue)(response).pipe(
+            Effect.mapError(
+              () =>
+                new JiraIssueCreateError({
+                  outcome: "unknown",
+                  message:
+                    "Jira may have created the issue, but returned an invalid response. Check Jira before retrying.",
+                }),
+            ),
+          );
+        }
+        return Effect.fail(
+          new JiraIssueCreateError({
+            outcome: response.status >= 400 && response.status < 500 ? "rejected" : "unknown",
+            message: httpStatusErrorMessage(response.status),
+          }),
+        );
+      }),
+    );
+
+  const executeJson = <S extends Schema.Top>(input: {
+    readonly connection: WorkbenchJiraConnection;
+    readonly accessToken: string;
+    readonly path: string;
+    readonly urlParams?: Record<string, string>;
+    readonly schema: S;
+  }): Effect.Effect<S["Type"], WorkbenchJiraOperationError, S["DecodingServices"]> => {
+    const url = `https://api.atlassian.com/ex/jira/${encodeURIComponent(input.connection.cloudId)}${input.path}`;
+    const request = HttpClientRequest.get(
+      url,
+      input.urlParams === undefined ? undefined : { urlParams: input.urlParams },
+    ).pipe(HttpClientRequest.acceptJson, HttpClientRequest.bearerToken(input.accessToken));
+    return executeJsonRequest({ path: input.path, schema: input.schema, request });
   };
 
   const collectPages = <S extends Schema.Top, A>(input: {
@@ -453,12 +537,92 @@ export const make = Effect.gen(function* () {
       });
     });
 
+  const prepareIssueCreation: JiraApiShape["prepareIssueCreation"] = (input) =>
+    Effect.gen(function* () {
+      const context = yield* authorized(input.connectionId);
+      const issueTypes = yield* collectPages({
+        ...context,
+        path: `/rest/api/3/issue/createmeta/${encodeURIComponent(input.projectKey)}/issuetypes`,
+        schema: IssueTypePage,
+        values: (page) => page.issueTypes,
+        isLast: (page, received) =>
+          page.isLast === true ||
+          (page.total !== undefined && (page.startAt ?? 0) + received >= page.total),
+      });
+      const desiredType = input.kind === "bug" ? "bug" : "story";
+      const issueType = issueTypes.find(
+        (candidate) => candidate.name.trim().toLowerCase() === desiredType,
+      );
+      if (issueType === undefined) {
+        return yield* apiError(
+          "request_failed",
+          `Jira project ${input.projectKey} does not expose a ${desiredType} issue type for this account.`,
+        );
+      }
+      const currentUser = yield* executeJson({
+        ...context,
+        path: "/rest/api/3/myself",
+        schema: CurrentUser,
+      });
+      return { issueTypeId: issueType.id, accountId: currentUser.accountId };
+    });
+
+  const createIssue: JiraApiShape["createIssue"] = (input) =>
+    Effect.gen(function* () {
+      const context = yield* authorized(input.connectionId).pipe(
+        Effect.mapError(
+          (error) =>
+            new JiraIssueCreateError({
+              outcome: "rejected",
+              message: error.message,
+            }),
+        ),
+      );
+      return yield* executeCreateRequest({
+        request: HttpClientRequest.post(
+          `https://api.atlassian.com/ex/jira/${encodeURIComponent(context.connection.cloudId)}/rest/api/2/issue`,
+        ).pipe(
+          HttpClientRequest.acceptJson,
+          HttpClientRequest.bearerToken(context.accessToken),
+          HttpClientRequest.bodyJsonUnsafe({
+            fields: {
+              project: { key: input.projectKey },
+              summary: input.ticket.title,
+              description: input.ticket.markdown,
+              issuetype: { id: input.issueTypeId },
+              assignee: { accountId: input.accountId },
+              ...(input.epicIssueId === undefined ? {} : { parent: { id: input.epicIssueId } }),
+            },
+          }),
+        ),
+      });
+    });
+
+  const addIssueToSprint: NonNullable<JiraApiShape["addIssueToSprint"]> = (input) => {
+    const path = `/rest/agile/1.0/sprint/${input.sprintId}/issue`;
+    return Effect.gen(function* () {
+      const context = yield* authorized(input.connectionId);
+      yield* executeRequest({
+        request: HttpClientRequest.post(
+          `https://api.atlassian.com/ex/jira/${encodeURIComponent(context.connection.cloudId)}${path}`,
+        ).pipe(
+          HttpClientRequest.acceptJson,
+          HttpClientRequest.bearerToken(context.accessToken),
+          HttpClientRequest.bodyJsonUnsafe({ issues: [input.issueKey] }),
+        ),
+      });
+    });
+  };
+
   return JiraApi.of({
     listProjects,
     listBoards,
     listSprints,
     getBoardConfiguration,
     listAssignedSprintIssues,
+    prepareIssueCreation,
+    createIssue,
+    addIssueToSprint,
   });
 });
 

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   ProjectId,
+  WorkbenchEpicId,
   WorkbenchJiraBindingId,
   WorkbenchJiraConnectionId,
   WorkbenchProjectId,
+  WorkbenchTicketId,
   type WorkbenchJiraBinding,
   type WorkbenchJiraConnection,
 } from "@t3tools/contracts";
@@ -30,12 +32,201 @@ import * as WorkbenchJiraService from "@t3tools/workbench/jira/WorkbenchJiraServ
 
 const TestLayer = WorkbenchStoreLive.pipe(Layer.provideMerge(SqlitePersistenceMemory));
 const ticketWriter = JiraTicketWriteService.of({
+  createTicket: () => Effect.die("unexpected Jira Ticket creation"),
   getTicketTransitions: () => Effect.die("unexpected Jira transition lookup"),
   updateTicket: () => Effect.die("unexpected Jira Ticket write"),
   startTicketExecution: () => Effect.die("unexpected Jira execution"),
 });
 
 describe("WorkbenchJiraService", () => {
+  it.effect("keeps unlinked creation local and validates Jira creation before writing", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const workbench = yield* WorkbenchStore;
+      const nativeProjectId = ProjectId.make("native-project-1");
+      const otherNativeProjectId = ProjectId.make("native-project-2");
+      const unlinkedWorkspaceId = WorkbenchProjectId.make("workspace-unlinked");
+      const activeWorkspaceId = WorkbenchProjectId.make("workspace-active");
+      const pausedWorkspaceId = WorkbenchProjectId.make("workspace-paused");
+      const createdAt = "2026-09-03T12:00:00.000Z";
+
+      for (const projectId of [nativeProjectId, otherNativeProjectId]) {
+        yield* sql`
+          INSERT INTO projection_projects (
+            project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+          ) VALUES (
+            ${projectId}, 'T3 Code', '/repos/t3code', '[]', ${createdAt}, ${createdAt}, NULL
+          )
+        `;
+      }
+      for (const projectId of [unlinkedWorkspaceId, activeWorkspaceId, pausedWorkspaceId]) {
+        yield* workbench.createProject({
+          id: projectId,
+          title: projectId,
+          linkedProjectIds: [nativeProjectId],
+          createdAt,
+        });
+      }
+      const localEpic = yield* workbench.createEpic({
+        id: WorkbenchEpicId.make("local-epic"),
+        projectId: activeWorkspaceId,
+        title: "Local Epic",
+        markdown: "This Epic is not a Jira projection.",
+        createdAt,
+      });
+
+      const activeBinding: WorkbenchJiraBinding = {
+        id: WorkbenchJiraBindingId.make("binding-active"),
+        projectId: activeWorkspaceId,
+        connectionId: WorkbenchJiraConnectionId.make("connection-1"),
+        jiraProjectId: "10000",
+        jiraProjectKey: "WB",
+        jiraProjectName: "Workbench",
+        boardId: 42,
+        boardName: "Workbench Board",
+        sprintId: 7,
+        sprintName: "Sprint 7",
+        defaultPrimaryT3ProjectId: nativeProjectId,
+        defaultRepositoryProjectIds: [nativeProjectId],
+        statusMappings: [{ jiraStatusId: "1", workbenchStatus: "todo" }],
+        selectedSprints: [{ id: 7, name: "Sprint 7" }],
+        followActiveSprint: true,
+        observedActiveSprintIds: [7],
+        boardMode: "mapped",
+        boardColumns: [],
+        active: true,
+        lastSyncedAt: null,
+        lastSyncError: null,
+        createdAt,
+        updatedAt: createdAt,
+      };
+      const pausedBinding = {
+        ...activeBinding,
+        id: WorkbenchJiraBindingId.make("binding-paused"),
+        projectId: pausedWorkspaceId,
+        active: false,
+      };
+      const repository = WorkbenchJiraRepository.of({
+        findConnectionByCloudId: () => Effect.succeed(Option.none()),
+        getConnection: () => Effect.succeed(Option.none()),
+        listConnections: () => Effect.succeed([]),
+        getCredentialId: () => Effect.succeed(Option.none()),
+        upsertConnection: () => Effect.void,
+        upsertConnections: () => Effect.void,
+        getBinding: () => Effect.succeed(Option.none()),
+        listBindings: () => Effect.succeed([activeBinding, pausedBinding]),
+        upsertBinding: () => Effect.void,
+        updateBindingSyncMetadata: () => Effect.succeed(true),
+        updateBindingSyncError: () => Effect.succeed(true),
+        listIssueLinks: () => Effect.succeed([]),
+        replaceIssueLinks: () => Effect.void,
+      } satisfies WorkbenchJiraRepositoryShape);
+      const api = JiraApi.of({
+        listProjects: () => Effect.die("unexpected project read"),
+        listBoards: () => Effect.die("unexpected board read"),
+        listSprints: () => Effect.die("unexpected sprint read"),
+        getBoardConfiguration: () => Effect.die("unexpected configuration read"),
+        listAssignedSprintIssues: () => Effect.die("unexpected issue read"),
+        prepareIssueCreation: () => Effect.die("unexpected Jira creation metadata read"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint update"),
+      });
+      const auth = JiraAuthService.of({
+        begin: () => Effect.die("unexpected auth start"),
+        complete: () => Effect.die("unexpected auth completion"),
+        getAccessToken: () => Effect.die("unexpected token read"),
+      });
+      const sync = JiraSyncService.of({
+        withBindingPermit: (_bindingId, effect) => effect,
+        syncBinding: () => Effect.die("unexpected Jira synchronization"),
+      });
+      const createCalls = yield* Ref.make(0);
+      const writer = JiraTicketWriteService.of({
+        createTicket: (input) =>
+          Ref.update(createCalls, (count) => count + 1).pipe(Effect.as(input.id)),
+        getTicketTransitions: () => Effect.die("unexpected Jira transition lookup"),
+        updateTicket: () => Effect.die("unexpected Jira Ticket write"),
+        startTicketExecution: () => Effect.die("unexpected Jira execution"),
+      });
+      const service = yield* WorkbenchJiraService.make.pipe(
+        Effect.provideService(WorkbenchJiraRepository, repository),
+        Effect.provideService(JiraApi, api),
+        Effect.provideService(JiraAuthService, auth),
+        Effect.provideService(JiraSyncService, sync),
+        Effect.provideService(JiraTicketWriteService, writer),
+      );
+
+      const localInput = {
+        id: WorkbenchTicketId.make("local-ticket"),
+        projectId: unlinkedWorkspaceId,
+        title: "Local Ticket",
+        kind: "story" as const,
+        markdown: "Keep this creation in Workbench.",
+        primaryT3ProjectId: nativeProjectId,
+        repositoryProjectIds: [nativeProjectId],
+        createdAt,
+      };
+      const localTicket = yield* service.createTicket(localInput);
+      expect(localTicket.id).toBe(localInput.id);
+      expect(yield* Ref.get(createCalls)).toBe(0);
+
+      const invalidRepository = yield* Effect.flip(
+        service.createTicket({
+          ...localInput,
+          id: WorkbenchTicketId.make("invalid-repository"),
+          projectId: activeWorkspaceId,
+          repositoryProjectIds: [otherNativeProjectId],
+        }),
+      );
+      expect(invalidRepository.code).toBe("invalid_binding");
+
+      const invalidPrimary = yield* Effect.flip(
+        service.createTicket({
+          ...localInput,
+          id: WorkbenchTicketId.make("invalid-primary"),
+          projectId: activeWorkspaceId,
+          primaryT3ProjectId: otherNativeProjectId,
+          repositoryProjectIds: [nativeProjectId],
+        }),
+      );
+      expect(invalidPrimary.code).toBe("invalid_binding");
+
+      const invalidEpic = yield* Effect.flip(
+        service.createTicket({
+          ...localInput,
+          id: WorkbenchTicketId.make("invalid-epic"),
+          projectId: activeWorkspaceId,
+          epicId: localEpic.id,
+        }),
+      );
+      expect(invalidEpic.code).toBe("invalid_binding");
+
+      const existingTicket = yield* workbench.createTicket({
+        ...localInput,
+        id: WorkbenchTicketId.make("existing-local-ticket"),
+        projectId: activeWorkspaceId,
+      });
+      const unrelatedExisting = yield* Effect.flip(
+        service.createTicket({
+          ...localInput,
+          id: existingTicket.id,
+          projectId: activeWorkspaceId,
+        }),
+      );
+      expect(unrelatedExisting.code).toBe("invalid_binding");
+
+      const paused = yield* Effect.flip(
+        service.createTicket({
+          ...localInput,
+          id: WorkbenchTicketId.make("paused-ticket"),
+          projectId: pausedWorkspaceId,
+        }),
+      );
+      expect(paused.code).toBe("binding_inactive");
+      expect(yield* Ref.get(createCalls)).toBe(0);
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
   it.effect("runs the five-minute scheduler for active bindings and skips paused bindings", () =>
     Effect.gen(function* () {
       const calls = yield* Ref.make<Array<WorkbenchJiraBindingId>>([]);
@@ -91,6 +282,9 @@ describe("WorkbenchJiraService", () => {
         listSprints: () => Effect.die("unexpected sprint read"),
         getBoardConfiguration: () => Effect.die("unexpected configuration read"),
         listAssignedSprintIssues: () => Effect.die("unexpected issue read"),
+        prepareIssueCreation: () => Effect.die("unexpected Jira creation metadata read"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint update"),
       });
       const auth = JiraAuthService.of({
         begin: () => Effect.die("unexpected auth start"),
@@ -213,6 +407,9 @@ describe("WorkbenchJiraService", () => {
             rankFieldId: null,
           }),
         listAssignedSprintIssues: () => Effect.die("unexpected issue read"),
+        prepareIssueCreation: () => Effect.die("unexpected Jira creation metadata read"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint update"),
       });
       const auth = JiraAuthService.of({
         begin: () => Effect.die("unexpected auth start"),
@@ -356,6 +553,9 @@ describe("WorkbenchJiraService", () => {
         listSprints: () => Effect.die("unexpected sprint read"),
         getBoardConfiguration: () => Effect.die("unexpected configuration read"),
         listAssignedSprintIssues: () => Effect.die("unexpected issue read"),
+        prepareIssueCreation: () => Effect.die("unexpected Jira creation metadata read"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint update"),
       });
       const auth = JiraAuthService.of({
         begin: () => Effect.die("unexpected auth start"),

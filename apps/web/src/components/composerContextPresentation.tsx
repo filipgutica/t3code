@@ -93,6 +93,16 @@ export const ComposerContextRecordsContext = createContext<ComposerDraftContextR
   EMPTY_COMPOSER_CONTEXT_RECORDS,
 );
 
+/** Ticket context is kept in the prompt for persistence and sending, but its inline chip is
+ * redundant with the removable Ticket attachment shown above the editor. */
+export function isWorkbenchTicketContextRecord(
+  record: ComposerDraftContextRecord | undefined,
+): boolean {
+  return (
+    record?.kind === "review-comment" && record.record.sectionId.startsWith("workbench-ticket:")
+  );
+}
+
 export function composerContextRecordsFromDraft(input: {
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
   reviewComments?: ReadonlyArray<ReviewCommentContext>;
@@ -458,6 +468,9 @@ export function ComposerContextReferenceChip(props: {
   label: string;
 }): ReactElement {
   const records = use(ComposerContextRecordsContext);
+  if (isWorkbenchTicketContextRecord(records.get(props.contextId))) {
+    return <span hidden aria-hidden="true" data-composer-context-reference-hidden="true" />;
+  }
   return composerContextPresentationRegistry.render(props.kind, records.get(props.contextId), {
     label: props.label,
   });

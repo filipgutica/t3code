@@ -157,6 +157,7 @@ describe("WorkbenchStore package boundary", () => {
         "workbench_jira_bindings",
         "workbench_jira_connections",
         "workbench_jira_issue_links",
+        "workbench_jira_ticket_creations",
         "workbench_project_links",
         "workbench_projects",
         "workbench_schema_migrations",

@@ -11,13 +11,16 @@ import {
   type WorkbenchTicketStatus,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
-import { JiraApi } from "@t3tools/workbench/jira/JiraApi";
+import { JiraApi, JiraIssueCreateError } from "@t3tools/workbench/jira/JiraApi";
 import { JiraAuthService } from "@t3tools/workbench/jira/JiraAuthService";
 import { JiraSyncService } from "@t3tools/workbench/jira/JiraSyncService";
 import { JiraTicketImporter } from "@t3tools/workbench/jira/JiraTicketImporter";
@@ -30,6 +33,7 @@ import {
 const connectionId = WorkbenchJiraConnectionId.make("connection-1");
 const bindingId = WorkbenchJiraBindingId.make("binding-1");
 const ticketId = WorkbenchTicketId.make("ticket-1");
+const createdTicketId = WorkbenchTicketId.make("created-ticket-1");
 const issueUpdatedAt = "2026-09-05T12:00:00.000Z";
 
 const makeIssue = (overrides?: Partial<WorkbenchJiraIssueSnapshot>) =>
@@ -93,6 +97,18 @@ const makeLink = (issue: WorkbenchJiraIssueSnapshot): WorkbenchJiraIssueLink => 
   lastSeenAt: issueUpdatedAt,
 });
 
+const makeOtherBinding = (): WorkbenchJiraBinding =>
+  ({
+    ...makeBinding(),
+    id: WorkbenchJiraBindingId.make("binding-2"),
+    jiraProjectId: "10001",
+    jiraProjectKey: "OTHER",
+    boardId: 43,
+    sprintId: 8,
+    sprintName: "Sprint 8",
+    selectedSprints: [{ id: 8, name: "Sprint 8" }],
+  }) satisfies WorkbenchJiraBinding;
+
 const makeHarness = (options?: {
   readonly transitions?: ReadonlyArray<{
     readonly id: string;
@@ -113,6 +129,14 @@ const makeHarness = (options?: {
     readonly jiraStatusId: string;
     readonly workbenchStatus: WorkbenchTicketStatus;
   }>;
+  readonly failCreate?: boolean;
+  readonly rejectedCreate?: boolean;
+  readonly crashCreate?: boolean;
+  readonly failPreflight?: boolean;
+  readonly creationScopes?: boolean;
+  readonly bindings?: ReadonlyArray<WorkbenchJiraBinding>;
+  readonly bindingAfterPermit?: WorkbenchJiraBinding;
+  readonly gatePreflight?: boolean;
 }) =>
   Effect.gen(function* () {
     const initialIssue = makeIssue({
@@ -128,6 +152,7 @@ const makeHarness = (options?: {
       Array<{
         readonly issue: WorkbenchJiraIssueSnapshot;
         readonly mappedStatus: WorkbenchTicketStatus;
+        readonly repositoryProjectIds: ReadonlyArray<ProjectId> | undefined;
       }>
     >([]);
     const requests: Array<{
@@ -135,7 +160,29 @@ const makeHarness = (options?: {
       readonly url: string;
       readonly body?: string;
     }> = [];
+    const createCalls = yield* Ref.make(0);
+    const preflightCalls = yield* Ref.make(0);
+    const preflightReady = yield* Deferred.make<void>();
+    const preflightGate = yield* Deferred.make<void>();
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`
+      CREATE TABLE workbench_jira_ticket_creations (
+        ticket_id TEXT PRIMARY KEY,
+        binding_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        markdown TEXT NOT NULL,
+        jira_issue_id TEXT,
+        jira_issue_key TEXT,
+        request_fingerprint TEXT NOT NULL,
+        result_ticket_id TEXT,
+        state TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `;
     const binding = makeBinding(options?.additionalStatusMappings);
+    let bindings = options?.bindings ?? [binding];
 
     const repository = WorkbenchJiraRepository.of({
       findConnectionByCloudId: () => Effect.succeed(Option.none()),
@@ -147,7 +194,15 @@ const makeHarness = (options?: {
             siteName: "Example Jira",
             siteUrl: "https://example.atlassian.net",
             avatarUrl: null,
-            scopes: options?.writeScope === false ? [] : ["write:jira-work"],
+            scopes:
+              options?.writeScope === false
+                ? []
+                : [
+                    "write:jira-work",
+                    ...(options?.creationScopes === false
+                      ? []
+                      : ["read:jira-user", "write:sprint:jira-software"]),
+                  ],
             createdAt: issueUpdatedAt,
             updatedAt: issueUpdatedAt,
           }),
@@ -156,8 +211,11 @@ const makeHarness = (options?: {
       getCredentialId: () => Effect.succeed(Option.none()),
       upsertConnection: () => Effect.void,
       upsertConnections: () => Effect.void,
-      getBinding: () => Effect.succeed(Option.some(binding)),
-      listBindings: () => Effect.succeed([binding]),
+      getBinding: (requestedBindingId) =>
+        Effect.succeed(
+          Option.fromNullishOr(bindings.find((candidate) => candidate.id === requestedBindingId)),
+        ),
+      listBindings: () => Effect.succeed(bindings),
       upsertBinding: () => Effect.void,
       updateBindingSyncMetadata: () => Effect.succeed(true),
       updateBindingSyncError: () => Effect.succeed(true),
@@ -175,6 +233,39 @@ const makeHarness = (options?: {
           Effect.andThen(Ref.get(issueRef)),
           Effect.map((issue) => (options?.missingIssue ? [] : [issue])),
         ),
+      prepareIssueCreation: () =>
+        Ref.updateAndGet(preflightCalls, (count) => count + 1).pipe(
+          Effect.tap((count) =>
+            count === 2 ? Deferred.succeed(preflightReady, undefined) : Effect.void,
+          ),
+          Effect.andThen(options?.gatePreflight ? Deferred.await(preflightGate) : Effect.void),
+          Effect.andThen(
+            options?.failPreflight
+              ? Effect.fail(
+                  new WorkbenchJiraOperationError({
+                    code: "request_failed",
+                    message: "metadata unavailable",
+                  }),
+                )
+              : Effect.succeed({ issueTypeId: "10001", accountId: "user-1" }),
+          ),
+        ),
+      createIssue: () =>
+        Ref.update(createCalls, (count) => count + 1).pipe(
+          Effect.andThen(
+            options?.crashCreate
+              ? Effect.die("simulated interruption")
+              : options?.failCreate
+                ? Effect.fail(
+                    new JiraIssueCreateError({
+                      outcome: options.rejectedCreate ? "rejected" : "unknown",
+                      message: "The Jira request failed.",
+                    }),
+                  )
+                : Effect.succeed({ id: "10001", key: "WB-1" }),
+          ),
+        ),
+      addIssueToSprint: () => Effect.void,
     });
     const auth = JiraAuthService.of({
       begin: () => Effect.die("unexpected auth start"),
@@ -182,7 +273,11 @@ const makeHarness = (options?: {
       getAccessToken: () => Effect.succeed("access-token"),
     });
     const sync = JiraSyncService.of({
-      withBindingPermit: (_bindingId, effect) => effect,
+      withBindingPermit: (_bindingId, effect) =>
+        Effect.suspend(() => {
+          if (options?.bindingAfterPermit) bindings = [options.bindingAfterPermit];
+          return effect;
+        }),
       syncBinding: () => Effect.die("unexpected sync"),
     });
     const importer = JiraTicketImporter.of({
@@ -196,7 +291,11 @@ const makeHarness = (options?: {
             )
           : Ref.update(imported, (current) => [
               ...current,
-              { issue: input.issue, mappedStatus: input.mappedStatus },
+              {
+                issue: input.issue,
+                mappedStatus: input.mappedStatus,
+                repositoryProjectIds: input.repositoryProjectIds,
+              },
             ]).pipe(Effect.as(input.existingTicketId!)),
     });
     const http = HttpClient.make((request) => {
@@ -267,7 +366,18 @@ const makeHarness = (options?: {
       Effect.provideService(JiraTicketImporter, importer),
       Effect.provideService(HttpClient.HttpClient, http),
     );
-    return { service, issueRef, linksRef, imported, requests, sprintReads };
+    return {
+      service,
+      issueRef,
+      linksRef,
+      imported,
+      requests,
+      sprintReads,
+      createCalls,
+      preflightCalls,
+      preflightReady,
+      preflightGate,
+    };
   });
 
 type Harness = Effect.Success<ReturnType<typeof makeHarness>>;
@@ -282,6 +392,221 @@ const runWithHarness = <A, E, R>(
   });
 
 describe("JiraTicketWriteService", () => {
+  it.effect("serializes same Ticket IDs across different Jira destinations", () =>
+    runWithHarness(
+      (harness) =>
+        Effect.gen(function* () {
+          const firstBinding = makeBinding();
+          const secondBinding = makeOtherBinding();
+          const firstInput = {
+            id: createdTicketId,
+            projectId: WorkbenchProjectId.make("workspace-1"),
+            epicId: null,
+            title: "Create in the first Jira project",
+            kind: "story" as const,
+            markdown: "Shared description",
+            primaryT3ProjectId: ProjectId.make("project-1"),
+            repositoryProjectIds: [ProjectId.make("project-1")],
+            createdAt: issueUpdatedAt,
+            binding: firstBinding,
+          };
+          const secondInput = {
+            ...firstInput,
+            title: "Create in the second Jira project",
+            binding: secondBinding,
+          };
+          const firstFiber = yield* Effect.forkChild(
+            Effect.exit(harness.service.createTicket(firstInput)),
+          );
+          const secondFiber = yield* Effect.forkChild(
+            Effect.exit(harness.service.createTicket(secondInput)),
+          );
+          yield* Effect.yieldNow;
+
+          yield* Deferred.await(harness.preflightReady);
+          assert.strictEqual(yield* Ref.get(harness.preflightCalls), 2);
+          yield* Deferred.succeed(harness.preflightGate, undefined);
+
+          const outcomes = [yield* Fiber.join(firstFiber), yield* Fiber.join(secondFiber)];
+          assert.strictEqual(outcomes.filter((outcome) => outcome._tag === "Success").length, 1);
+          assert.strictEqual(outcomes.filter((outcome) => outcome._tag === "Failure").length, 1);
+          assert.strictEqual(yield* Ref.get(harness.createCalls), 1);
+        }),
+      {
+        bindings: [makeBinding(), makeOtherBinding()],
+        gatePreflight: true,
+      },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("creates a Jira issue once and resumes the local link on retry", () =>
+    runWithHarness((harness) =>
+      Effect.gen(function* () {
+        const input = {
+          id: createdTicketId,
+          projectId: WorkbenchProjectId.make("workspace-1"),
+          epicId: null,
+          title: "Create a shared Ticket",
+          kind: "story" as const,
+          markdown: "Shared description",
+          primaryT3ProjectId: ProjectId.make("project-1"),
+          repositoryProjectIds: [ProjectId.make("project-1")],
+          createdAt: issueUpdatedAt,
+          binding: makeBinding(),
+        };
+        yield* Ref.set(harness.linksRef, []);
+        const first = yield* harness.service.createTicket(input);
+        const second = yield* harness.service.createTicket(input);
+
+        assert.strictEqual(first, createdTicketId);
+        assert.strictEqual(second, createdTicketId);
+        assert.strictEqual(yield* Ref.get(harness.createCalls), 1);
+        assert.strictEqual((yield* Ref.get(harness.imported)).length, 1);
+      }),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("does not retry an unconfirmed Jira creation", () =>
+    runWithHarness(
+      (harness) =>
+        Effect.gen(function* () {
+          const input = {
+            id: createdTicketId,
+            projectId: WorkbenchProjectId.make("workspace-1"),
+            epicId: null,
+            title: "Unconfirmed Ticket",
+            kind: "story" as const,
+            markdown: "Shared description",
+            primaryT3ProjectId: ProjectId.make("project-1"),
+            repositoryProjectIds: [ProjectId.make("project-1")],
+            createdAt: issueUpdatedAt,
+            binding: makeBinding(),
+          };
+          const first = yield* Effect.flip(harness.service.createTicket(input));
+          const second = yield* Effect.flip(harness.service.createTicket(input));
+
+          assert.strictEqual(first.code, "request_failed");
+          assert.isTrue(second.message.includes("could not confirm"));
+          assert.strictEqual(yield* Ref.get(harness.createCalls), 1);
+        }),
+      { failCreate: true },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  const creationInput = {
+    id: createdTicketId,
+    projectId: WorkbenchProjectId.make("workspace-1"),
+    epicId: null,
+    title: "Create shared work",
+    kind: "story" as const,
+    markdown: "Description",
+    primaryT3ProjectId: ProjectId.make("project-1"),
+    repositoryProjectIds: [ProjectId.make("project-1")],
+    createdAt: issueUpdatedAt,
+    binding: makeBinding(),
+  };
+
+  it.effect("does not POST again after a defect interrupts the first creation", () =>
+    runWithHarness(
+      (h) =>
+        Effect.gen(function* () {
+          yield* Effect.exit(h.service.createTicket(creationInput));
+          const error = yield* Effect.flip(h.service.createTicket(creationInput));
+          assert.isTrue(error.message.includes("will not be sent again"));
+          assert.strictEqual(yield* Ref.get(h.createCalls), 1);
+        }),
+      { crashCreate: true },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("allows corrected input after a definitive Jira rejection", () =>
+    runWithHarness(
+      (h) =>
+        Effect.gen(function* () {
+          yield* Effect.flip(h.service.createTicket(creationInput));
+          yield* Effect.flip(
+            h.service.createTicket({ ...creationInput, title: "Corrected title" }),
+          );
+          assert.strictEqual(yield* Ref.get(h.createCalls), 2);
+        }),
+      { failCreate: true, rejectedCreate: true },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("does not reserve creation when metadata fails", () =>
+    runWithHarness(
+      (h) =>
+        Effect.gen(function* () {
+          yield* Effect.flip(h.service.createTicket(creationInput));
+          assert.strictEqual(yield* Ref.get(h.createCalls), 0);
+          const sql = yield* SqlClient.SqlClient;
+          assert.deepStrictEqual(yield* sql`SELECT * FROM workbench_jira_ticket_creations`, []);
+        }),
+      { failPreflight: true },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("requires creation permissions before any Jira write", () =>
+    runWithHarness(
+      (h) =>
+        Effect.gen(function* () {
+          const error = yield* Effect.flip(h.service.createTicket(creationInput));
+          assert.strictEqual(error.code, "authorization_failed");
+          assert.strictEqual(yield* Ref.get(h.createCalls), 0);
+        }),
+      { creationScopes: false },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("adopts the Ticket identity already imported by sync", () =>
+    runWithHarness((h) =>
+      Effect.gen(function* () {
+        const result = yield* h.service.createTicket(creationInput);
+        assert.strictEqual(result, ticketId);
+        assert.strictEqual((yield* Ref.get(h.linksRef)).length, 1);
+      }),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("restores an omitted repository scope when adopting a synced Ticket", () =>
+    runWithHarness((h) =>
+      Effect.gen(function* () {
+        const primaryT3ProjectId = ProjectId.make("project-2");
+        const result = yield* h.service.createTicket({
+          id: createdTicketId,
+          projectId: WorkbenchProjectId.make("workspace-1"),
+          epicId: null,
+          title: "Create a shared Ticket",
+          kind: "story" as const,
+          markdown: "Shared description",
+          primaryT3ProjectId,
+          createdAt: issueUpdatedAt,
+          binding: makeBinding(),
+        });
+        const imported = yield* Ref.get(h.imported);
+
+        assert.strictEqual(result, ticketId);
+        assert.deepStrictEqual(imported[0]?.repositoryProjectIds, [primaryT3ProjectId]);
+      }),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("rejects changed repository scope for an already-created request", () =>
+    runWithHarness((h) =>
+      Effect.gen(function* () {
+        yield* h.service.createTicket(creationInput);
+        const error = yield* Effect.flip(
+          h.service.createTicket({
+            ...creationInput,
+            repositoryProjectIds: [ProjectId.make("other")],
+          }),
+        );
+        assert.strictEqual(error.code, "invalid_binding");
+        assert.strictEqual(yield* Ref.get(h.createCalls), 1);
+      }),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
   it.effect("loads transition choices without rereading the assigned sprints", () =>
     runWithHarness((harness) =>
       Effect.gen(function* () {
@@ -387,6 +712,72 @@ describe("JiraTicketWriteService", () => {
         assert.strictEqual(imported.length, 1);
         assert.strictEqual(imported[0]?.mappedStatus, "in_progress");
       }),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("starts in the first working mirror column instead of a later review column", () =>
+    runWithHarness(
+      (harness) =>
+        Effect.gen(function* () {
+          const started = yield* harness.service.startTicketExecution({ ticketId });
+          assert.strictEqual(started.status.id, "2");
+          assert.strictEqual(
+            harness.requests.find((request) => request.method === "POST")?.body,
+            '{"transition":{"id":"21"}}',
+          );
+        }),
+      {
+        bindings: [
+          {
+            ...makeBinding([{ jiraStatusId: "4", workbenchStatus: "in_progress" }]),
+            boardMode: "mirror_jira",
+            boardColumns: [
+              { name: "To Do", statusIds: ["1"], done: false },
+              { name: "Implementation", statusIds: ["2"], done: false },
+              { name: "Review", statusIds: ["4"], done: false },
+            ],
+          },
+        ],
+        transitions: [
+          { id: "31", name: "Review", to: { id: "4", name: "Review" } },
+          { id: "21", name: "Start", to: { id: "2", name: "Implementation" } },
+        ],
+      },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("starts after a concurrent sync refreshes binding metadata", () =>
+    runWithHarness(
+      (harness) =>
+        Effect.gen(function* () {
+          const started = yield* harness.service.startTicketExecution({ ticketId });
+          assert.strictEqual(started.status.id, "2");
+          assert.strictEqual((yield* Ref.get(harness.imported))[0]?.mappedStatus, "in_progress");
+        }),
+      {
+        bindingAfterPermit: {
+          ...makeBinding(),
+          updatedAt: "2026-09-14T23:00:00.000Z",
+          lastSyncedAt: "2026-09-14T23:00:00.000Z",
+        },
+      },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("rejects a different Jira connection while waiting to start", () =>
+    runWithHarness(
+      (harness) =>
+        Effect.gen(function* () {
+          const error = yield* Effect.flip(harness.service.startTicketExecution({ ticketId }));
+          assert.strictEqual(error.code, "invalid_binding");
+          assert.deepStrictEqual(harness.requests, []);
+        }),
+      {
+        bindingAfterPermit: {
+          ...makeBinding(),
+          connectionId: WorkbenchJiraConnectionId.make("other-connection"),
+        },
+      },
     ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
   );
 

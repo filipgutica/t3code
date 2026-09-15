@@ -22,6 +22,7 @@ import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
   coordinateWorkbenchTicketStart,
+  type WorkbenchTicketStartStage,
   type StartWorkbenchTicketOptions,
 } from "./startWorkbenchTicket";
 import { workbenchEnvironment } from "./state";
@@ -75,7 +76,7 @@ export function useStartWorkbenchTicket({
     (ticket: WorkbenchTicket, options?: StartWorkbenchTicketOptions) => {
       if (environmentId === null) return;
       void (async () => {
-        onPendingChange(`start:${ticket.id}`);
+        onPendingChange(`start:${ticket.id}:checking-thread`);
         onError(null);
         let result: Awaited<ReturnType<typeof coordinateWorkbenchTicketStart>>;
         try {
@@ -104,6 +105,8 @@ export function useStartWorkbenchTicket({
               makeThreadId: newThreadId,
               makeAssignmentId: () => WorkbenchAssignmentId.make(randomUUID()),
               now: () => new Date().toISOString(),
+              onStage: (stage: WorkbenchTicketStartStage) =>
+                onPendingChange(`start:${ticket.id}:${stage}`),
             },
             options,
           );

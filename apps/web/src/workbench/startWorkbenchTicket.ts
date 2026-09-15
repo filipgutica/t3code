@@ -38,6 +38,42 @@ interface StartWorkbenchTicketInput {
   readonly threadLookupReady: boolean;
 }
 
+export type WorkbenchTicketStartStage =
+  | "checking-thread"
+  | "preparing-workspace"
+  | "creating-thread"
+  | "linking-thread"
+  | "attaching-context"
+  | "opening-thread";
+
+const WORKBENCH_TICKET_START_STAGE_LABELS: Record<WorkbenchTicketStartStage, string> = {
+  "checking-thread": "Checking for an existing Thread…",
+  "preparing-workspace": "Preparing repositories…",
+  "creating-thread": "Creating Thread…",
+  "linking-thread": "Linking Thread to Ticket…",
+  "attaching-context": "Attaching Ticket context…",
+  "opening-thread": "Opening Thread…",
+};
+
+/** Resolve the visible progress label encoded in the page's pending action. */
+export function getWorkbenchTicketStartProgressLabel(
+  action: string | null,
+  ticketId: WorkbenchTicket["id"],
+): string | null {
+  if (action === null) return null;
+  const prefix = `start:${ticketId}:`;
+  if (!action.startsWith(prefix)) return null;
+  const stage = action.slice(prefix.length) as WorkbenchTicketStartStage;
+  return WORKBENCH_TICKET_START_STAGE_LABELS[stage] ?? "Starting Thread…";
+}
+
+export function isWorkbenchTicketStartPending(
+  action: string | null,
+  ticketId: WorkbenchTicket["id"],
+): boolean {
+  return getWorkbenchTicketStartProgressLabel(action, ticketId) !== null;
+}
+
 /**
  * Controls how a Ticket start is coordinated. A normal start opens an
  * existing active Thread when one is assigned, then creates a replacement
@@ -78,6 +114,7 @@ interface StartWorkbenchTicketDependencies {
   readonly makeThreadId: () => ThreadId;
   readonly makeAssignmentId: () => WorkbenchAssignmentId;
   readonly now: () => string;
+  readonly onStage?: (stage: WorkbenchTicketStartStage) => void;
 }
 
 export type StartWorkbenchTicketResult =
@@ -99,6 +136,7 @@ export async function coordinateWorkbenchTicketStart(
   options: StartWorkbenchTicketOptions = {},
 ): Promise<StartWorkbenchTicketResult> {
   if (options.mode === undefined) {
+    dependencies.onStage?.("checking-thread");
     const target = resolveWorkbenchTicketThreadTarget(
       input.ticket,
       input.projects,
@@ -107,6 +145,7 @@ export async function coordinateWorkbenchTicketStart(
       input.threadLookupReady,
     );
     if (target.state === "open") {
+      dependencies.onStage?.("opening-thread");
       try {
         await dependencies.openThread(target.threadId);
       } catch (cause) {
@@ -130,6 +169,7 @@ export async function coordinateWorkbenchTicketStart(
   const threadId = dependencies.makeThreadId();
   const assignmentId = dependencies.makeAssignmentId();
   const createdAt = dependencies.now();
+  dependencies.onStage?.("preparing-workspace");
   const workspaceResult = await dependencies.prepareTicketWorkspace({
     environmentId: input.environmentId,
     input: { ticketId: input.ticket.id, requestedAt: createdAt },
@@ -143,6 +183,7 @@ export async function coordinateWorkbenchTicketStart(
   if (!primaryWorkspace) {
     throw new Error("The prepared Ticket Workspace has no ready primary repository.");
   }
+  dependencies.onStage?.("creating-thread");
   const threadResult = await dependencies.createThread({
     environmentId: input.environmentId,
     input: {
@@ -162,6 +203,7 @@ export async function coordinateWorkbenchTicketStart(
   }
 
   const previousThreadId = options.previousThreadId ?? input.assignment?.threadId;
+  dependencies.onStage?.("linking-thread");
   const assignmentResult =
     options.mode !== "additional" && previousThreadId
       ? await dependencies.replaceAssignment({
@@ -208,9 +250,11 @@ export async function coordinateWorkbenchTicketStart(
       workspaceRoot: preparedPaths.get(repository.id) ?? repository.workspaceRoot,
     })),
   );
+  dependencies.onStage?.("attaching-context");
   dependencies.addReviewComment(scopeThreadRef(input.environmentId, threadId), ticketContext);
 
   try {
+    dependencies.onStage?.("opening-thread");
     await dependencies.waitForThread(threadId);
     await dependencies.openThread(threadId);
   } catch (cause) {

@@ -1,7 +1,12 @@
 import { assert, describe, it, vi } from "@effect/vitest";
-import { WorkbenchJiraConnectionId, type WorkbenchJiraConnection } from "@t3tools/contracts";
+import {
+  WorkbenchJiraConnectionId,
+  WorkbenchTicketId,
+  type WorkbenchJiraConnection,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
 
 import * as JiraApi from "./JiraApi.ts";
@@ -44,6 +49,8 @@ const auth = JiraAuthService.of({
   complete: () => Effect.die("unexpected complete"),
   getAccessToken: () => Effect.succeed("access-token"),
 });
+
+const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 describe("JiraApi", () => {
   it.effect("imports optional descriptions and normalizes numeric and string Epic IDs", () =>
@@ -255,6 +262,160 @@ describe("JiraApi", () => {
       assert.deepStrictEqual(requests[1]?.urlParams.params[0], ["jql", "assignee = currentUser()"]);
       assert.strictEqual(requests[1]?.headers.authorization, "Bearer access-token");
       assert.deepStrictEqual(requests[2]?.urlParams.params.at(-1), ["nextPageToken", "page-2"]);
+    }),
+  );
+
+  it.effect("prepares issue creation from paginated metadata and the current user", () =>
+    Effect.gen(function* () {
+      const requests: Array<HttpClientRequest.HttpClientRequest> = [];
+      const service = yield* JiraApi.make.pipe(
+        Effect.provideService(WorkbenchJiraRepository, repository),
+        Effect.provideService(JiraAuthService, auth),
+        Effect.provideService(
+          HttpClient.HttpClient,
+          HttpClient.make((request) => {
+            requests.push(request);
+            if (request.url.includes("/myself")) {
+              return Effect.succeed(
+                HttpClientResponse.fromWeb(request, Response.json({ accountId: "account-1" })),
+              );
+            }
+            const startAt = request.urlParams.params.find(([key]) => key === "startAt")?.[1];
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json(
+                  startAt === "0"
+                    ? {
+                        startAt: 0,
+                        maxResults: 1,
+                        total: 2,
+                        issueTypes: [{ id: "10001", name: "Task" }],
+                      }
+                    : {
+                        startAt: 1,
+                        maxResults: 1,
+                        total: 2,
+                        issueTypes: [{ id: "10002", name: "Story" }],
+                      },
+                ),
+              ),
+            );
+          }),
+        ),
+      );
+
+      const prepared = yield* service.prepareIssueCreation({
+        connectionId,
+        projectKey: "WB",
+        kind: "story",
+      });
+
+      assert.deepStrictEqual(prepared, { issueTypeId: "10002", accountId: "account-1" });
+      assert.strictEqual(requests.length, 3);
+      assert.strictEqual(
+        requests[0]?.urlParams.params.find(([key]) => key === "startAt")?.[1],
+        "0",
+      );
+      assert.strictEqual(
+        requests[1]?.urlParams.params.find(([key]) => key === "startAt")?.[1],
+        "1",
+      );
+      assert.isTrue(requests[2]?.url.includes("/rest/api/3/myself") ?? false);
+    }),
+  );
+
+  it.effect("creates a Jira issue with prepared metadata and an optional Epic parent", () =>
+    Effect.gen(function* () {
+      let request: HttpClientRequest.HttpClientRequest | undefined;
+      const service = yield* JiraApi.make.pipe(
+        Effect.provideService(WorkbenchJiraRepository, repository),
+        Effect.provideService(JiraAuthService, auth),
+        Effect.provideService(
+          HttpClient.HttpClient,
+          HttpClient.make((nextRequest) => {
+            request = nextRequest;
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                nextRequest,
+                Response.json({ id: "10003", key: "WB-3" }, { status: 201 }),
+              ),
+            );
+          }),
+        ),
+      );
+
+      const created = yield* service.createIssue({
+        connectionId,
+        projectKey: "WB",
+        ticket: {
+          id: WorkbenchTicketId.make("ticket-1"),
+          title: "Create from Workbench",
+          markdown: "Plain Jira wiki description.",
+          kind: "story",
+        },
+        issueTypeId: "10002",
+        accountId: "account-1",
+        epicIssueId: "10000",
+      });
+
+      assert.deepStrictEqual(created, { id: "10003", key: "WB-3" });
+      assert.strictEqual(
+        request?.url,
+        "https://api.atlassian.com/ex/jira/cloud-1/rest/api/2/issue",
+      );
+      assert.strictEqual(request?.headers.authorization, "Bearer access-token");
+      assert.ok(request);
+      const body = (request.body as { readonly body?: Uint8Array }).body;
+      assert.ok(body);
+      assert.deepStrictEqual(decodeJson(new TextDecoder().decode(body)), {
+        fields: {
+          project: { key: "WB" },
+          summary: "Create from Workbench",
+          description: "Plain Jira wiki description.",
+          issuetype: { id: "10002" },
+          assignee: { accountId: "account-1" },
+          parent: { id: "10000" },
+        },
+      });
+    }),
+  );
+
+  it.effect("classifies create failures by whether Jira may have accepted the issue", () =>
+    Effect.gen(function* () {
+      for (const { status, body, outcome } of [
+        { status: 400, body: {}, outcome: "rejected" },
+        { status: 500, body: {}, outcome: "unknown" },
+        { status: 201, body: { id: "missing-key" }, outcome: "unknown" },
+      ] as const) {
+        const service = yield* JiraApi.make.pipe(
+          Effect.provideService(WorkbenchJiraRepository, repository),
+          Effect.provideService(JiraAuthService, auth),
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make((request) =>
+              Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(body, { status }))),
+            ),
+          ),
+        );
+
+        const error = yield* Effect.flip(
+          service.createIssue({
+            connectionId,
+            projectKey: "WB",
+            ticket: {
+              id: WorkbenchTicketId.make("ticket-1"),
+              title: "Create from Workbench",
+              markdown: "Description.",
+              kind: "story",
+            },
+            issueTypeId: "10002",
+            accountId: "account-1",
+          }),
+        );
+        assert.strictEqual(error._tag, "JiraIssueCreateError");
+        assert.strictEqual(error.outcome, outcome);
+      }
     }),
   );
 });

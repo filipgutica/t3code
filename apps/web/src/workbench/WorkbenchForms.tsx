@@ -8,10 +8,13 @@ import {
   type ResolvedKeybindingsConfig,
   type ThreadId,
   type WorkbenchAssignment,
+  type WorkbenchCreateTicketInput,
+  type WorkbenchJiraBinding,
   type WorkbenchEpic,
   WorkbenchEpicId,
   type WorkbenchJiraIssueLink,
   type WorkbenchTicket,
+  WorkbenchTicketId,
   type WorkbenchTicketKind,
   type WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
@@ -27,6 +30,7 @@ import {
   LinkIcon,
   Layers3Icon,
   ListChecksIcon,
+  LoaderCircleIcon,
   MoreHorizontalIcon,
   PencilIcon,
   PlusIcon,
@@ -82,6 +86,7 @@ import {
 } from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { randomUUID } from "../lib/utils";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { Project } from "../types";
 import {
@@ -688,12 +693,18 @@ export function WorkbenchEpicDialog({
   );
 }
 
+export type WorkbenchCreateTicketDraft = Omit<
+  WorkbenchCreateTicketInput,
+  "projectId" | "createdAt"
+>;
+
 export function WorkbenchTicketDialog({
   onCreateEpic,
   open,
   linkedProjects,
   epics,
   initialEpicId,
+  jiraBinding = null,
   pending,
   error,
   onOpenChange,
@@ -703,19 +714,24 @@ export function WorkbenchTicketDialog({
   readonly linkedProjects: ReadonlyArray<Project>;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
   readonly initialEpicId: WorkbenchEpicId | null;
+  readonly jiraBinding?: WorkbenchJiraBinding | null;
   readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
   readonly pending: boolean;
   readonly error: string | null;
   readonly onOpenChange: (open: boolean) => void;
-  readonly onCreate: (
-    title: string,
-    markdown: string,
-    kind: WorkbenchTicketKind,
-    epicId: WorkbenchEpicId | null,
-    repositoryProjectIds: ReadonlyArray<ProjectId>,
-    primaryProjectId: ProjectId,
-  ) => Promise<boolean>;
+  readonly onCreate: (draft: WorkbenchCreateTicketDraft) => Promise<boolean>;
 }) {
+  const [requestId, setRequestId] = useState(() => WorkbenchTicketId.make(randomUUID()));
+  const [jiraSprintId, setJiraSprintId] = useState<number | null>(null);
+  const jiraSprints = jiraBinding
+    ? jiraBinding.selectedSprints.length > 0
+      ? jiraBinding.selectedSprints
+      : [{ id: jiraBinding.sprintId, name: jiraBinding.sprintName }]
+    : [];
+  const selectedSprintId =
+    jiraSprints.length === 1
+      ? jiraSprints[0]!.id
+      : jiraSprints.find((sprint) => sprint.id === jiraSprintId)?.id;
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<WorkbenchTicketKind>("story");
   const [epicId, setEpicId] = useState<WorkbenchEpicId | null>(initialEpicId);
@@ -723,7 +739,10 @@ export function WorkbenchTicketDialog({
   const [repositoryProjectIds, setRepositoryProjectIds] = useState<ReadonlyArray<ProjectId>>([]);
   const [primaryProjectId, setPrimaryProjectId] = useState<ProjectId | null>(null);
   const handleOpenChange = (nextOpen: boolean) => {
+    if (pending) return;
     if (!nextOpen) {
+      setRequestId(WorkbenchTicketId.make(randomUUID()));
+      setJiraSprintId(null);
       setTitle("");
       setKind("story");
       setEpicId(initialEpicId);
@@ -744,19 +763,32 @@ export function WorkbenchTicketDialog({
     selectedRepositoryProjectIds.find((id) => id === primaryProjectId) ??
     selectedRepositoryProjectIds[0] ??
     null;
+  const createLabel = pending
+    ? jiraBinding
+      ? "Creating in Jira…"
+      : "Creating Ticket…"
+    : "Create Ticket";
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (title.trim().length === 0 || selectedProjectId === null) return;
+    if (
+      pending ||
+      title.trim().length === 0 ||
+      selectedProjectId === null ||
+      (jiraBinding !== null && (!jiraBinding.active || selectedSprintId === undefined))
+    )
+      return;
     void (async () => {
       if (
-        !(await onCreate(
+        !(await onCreate({
+          id: requestId,
           title,
           markdown,
           kind,
           epicId,
-          selectedRepositoryProjectIds,
-          selectedProjectId,
-        ))
+          repositoryProjectIds: selectedRepositoryProjectIds,
+          primaryT3ProjectId: selectedProjectId,
+          ...(selectedSprintId === undefined ? {} : { jiraSprintId: selectedSprintId }),
+        }))
       )
         return;
       handleOpenChange(false);
@@ -769,12 +801,41 @@ export function WorkbenchTicketDialog({
         <DialogHeader>
           <DialogTitle>Create Ticket</DialogTitle>
           <DialogDescription>
-            Capture the work and choose the repository where its Agent Thread will run.
+            {jiraBinding
+              ? `Create an issue in ${jiraBinding.jiraProjectKey}, assigned to your connected Jira account.`
+              : "Capture the work and choose the repository where its Agent Thread will run."}
           </DialogDescription>
         </DialogHeader>
         <DialogPanel>
           <form id="create-workbench-ticket" className="space-y-5" onSubmit={submit}>
             {error ? <WorkbenchInlineError message={error} /> : null}
+            {jiraBinding && !jiraBinding.active ? (
+              <WorkbenchInlineError message="Resume the Jira connection before creating a Ticket." />
+            ) : null}
+            {jiraBinding ? (
+              <div className="space-y-1.5">
+                <Label>Jira sprint</Label>
+                <Select
+                  disabled={pending || jiraSprints.length === 1}
+                  value={selectedSprintId === undefined ? null : String(selectedSprintId)}
+                  onValueChange={(value) => setJiraSprintId(value ? Number(value) : null)}
+                >
+                  <SelectTrigger aria-label="Jira sprint">
+                    <SelectValue>
+                      {jiraSprints.find((sprint) => sprint.id === selectedSprintId)?.name ??
+                        "Select a sprint"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup>
+                    {jiraSprints.map((sprint) => (
+                      <SelectItem key={sprint.id} value={String(sprint.id)}>
+                        {sprint.name}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label>Ticket type</Label>
               <Select
@@ -837,8 +898,12 @@ export function WorkbenchTicketDialog({
                       {epic.title}
                     </SelectItem>
                   ))}
-                  <SelectSeparator />
-                  <SelectItem value={CREATE_EPIC_VALUE}>Create Epic…</SelectItem>
+                  {jiraBinding === null ? (
+                    <>
+                      <SelectSeparator />
+                      <SelectItem value={CREATE_EPIC_VALUE}>Create Epic…</SelectItem>
+                    </>
+                  ) : null}
                 </SelectPopup>
               </Select>
             </div>
@@ -935,15 +1000,23 @@ export function WorkbenchTicketDialog({
           </form>
         </DialogPanel>
         <DialogFooter>
-          <Button onClick={() => handleOpenChange(false)} variant="outline">
+          <Button disabled={pending} onClick={() => handleOpenChange(false)} variant="outline">
             Cancel
           </Button>
           <Button
             form="create-workbench-ticket"
-            disabled={pending || title.trim().length === 0 || selectedProjectId === null}
+            aria-label={createLabel}
+            aria-busy={pending}
+            disabled={
+              pending ||
+              title.trim().length === 0 ||
+              selectedProjectId === null ||
+              (jiraBinding !== null && (!jiraBinding.active || selectedSprintId === undefined))
+            }
             type="submit"
           >
-            <PlusIcon /> Create Ticket
+            {pending ? <LoaderCircleIcon className="animate-spin" /> : <PlusIcon />}
+            <span role="status">{createLabel}</span>
           </Button>
         </DialogFooter>
       </DialogPopup>
@@ -971,6 +1044,7 @@ export function WorkbenchTicketDetail({
   threadLookupReady,
   pending,
   threadActionPending,
+  threadActionLabel,
   error,
   onBack,
   onSave,
@@ -1009,6 +1083,7 @@ export function WorkbenchTicketDetail({
   readonly threadLookupReady: boolean;
   readonly pending: boolean;
   readonly threadActionPending: boolean;
+  readonly threadActionLabel?: string | null;
   readonly error: string | null;
   readonly onBack: () => void;
   readonly onSave: (
@@ -1269,24 +1344,38 @@ export function WorkbenchTicketDetail({
           </div>
           <div className="col-start-2 row-start-1 flex min-w-0 flex-wrap justify-end gap-2 sm:col-start-3">
             {canOpenThread ? (
-              <Button
-                aria-label={`${
-                  threadActionPending ? thread.pendingActionLabel : thread.actionLabel
-                } for ${displayedTitle}`}
-                disabled={pending}
-                onClick={() => {
-                  if (assignment && thread.state === "missing") {
-                    onReplaceThread(ticket, assignment.threadId);
-                    return;
-                  }
-                  onOpenThread(actionableTicket, assignment?.threadId);
-                }}
-                size="sm"
-                type="button"
-              >
-                <BotIcon data-icon="inline-start" />
-                {threadActionPending ? thread.pendingActionLabel : thread.actionLabel}
-              </Button>
+              <>
+                {threadActionPending ? (
+                  <span aria-live="polite" className="sr-only" role="status">
+                    {threadActionLabel ?? thread.pendingActionLabel}
+                  </span>
+                ) : null}
+                <Button
+                  aria-busy={threadActionPending}
+                  aria-label={`${
+                    threadActionLabel ??
+                    (threadActionPending ? thread.pendingActionLabel : thread.actionLabel)
+                  } for ${displayedTitle}`}
+                  disabled={pending}
+                  onClick={() => {
+                    if (assignment && thread.state === "missing") {
+                      onReplaceThread(ticket, assignment.threadId);
+                      return;
+                    }
+                    onOpenThread(actionableTicket, assignment?.threadId);
+                  }}
+                  size="sm"
+                  type="button"
+                >
+                  {threadActionPending ? (
+                    <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
+                  ) : (
+                    <BotIcon data-icon="inline-start" />
+                  )}
+                  {threadActionLabel ??
+                    (threadActionPending ? thread.pendingActionLabel : thread.actionLabel)}
+                </Button>
+              </>
             ) : null}
             {lifecycleActionsEnabled ? (
               <Menu>

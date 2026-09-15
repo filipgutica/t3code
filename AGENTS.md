@@ -144,9 +144,13 @@ Clients send typed WebSocket requests. The server turns them into _commands_, a 
 
 Full glossary with file links: `docs/internals/glossary.md`
 
-## Where code lives
+## Workbench isolation and upstream sync
 
 Keep the fork's Workbench core/backend code in `packages/workbench`, T3-specific adapters and composition in `apps/server/src/workbench`, React UI in `apps/web/src/workbench`, and wire schemas in the Workbench contract modules. The Workbench package must not import from applications, including through test helpers. Keep changes to upstream-owned files limited to thin integration points so regular T3 Code updates remain practical. Native T3 Threads remain the conversation experience; reference native records rather than duplicating them. See `docs/internals/workbench-fork.md` for ownership and sync verification.
+
+Before changing core T3 Code for a Workbench feature, check whether an existing adapter or extension point can own it. Keep Workbench business rules in the fork-owned modules; core integration should delegate to them and preserve behavior outside Workbench. For each upstream-owned file changed, review why that integration is necessary and whether it can be smaller. Verify package isolation with `vp run --filter @t3tools/workbench typecheck`, which checks resolved application imports and workspace dependency cycles. During upstream conflict resolution, preserve upstream behavior and reapply the smallest Workbench integration rather than retaining a forked copy of core logic.
+
+## Where code lives
 
 - `apps/server` - WebSocket, orchestration, providers, checkpointing. Effect-heavy: read `.repos/effect-smol/LLMS.md` before writing Effect code.
 - `apps/web` - React/Vite UI. `apps/desktop` wraps it, `apps/mobile` is React Native, `apps/marketing` is the site.

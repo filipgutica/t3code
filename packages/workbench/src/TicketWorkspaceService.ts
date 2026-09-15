@@ -43,7 +43,6 @@ export interface TicketWorkspaceNamingInput {
   readonly ticketId: string;
   readonly jiraIssueKey?: string | null;
   readonly title?: string;
-  readonly generatedBranchName?: string | null;
 }
 
 /** Human-readable identity used for new workspace directories and branches. */
@@ -64,14 +63,12 @@ export const ticketWorkspaceBranchName = (input: string | TicketWorkspaceNamingI
 
   const issueKeySlug = slugSegment(input.jiraIssueKey ?? "", "");
   const titleSlug = slugSegment(input.title ?? "", "ticket");
-  const generatedSlug = slugSegment(input.generatedBranchName ?? "", "");
-  const descriptor = generatedSlug || titleSlug;
   const descriptorWithoutIssueKey =
-    issueKeySlug && descriptor.startsWith(`${issueKeySlug}-`)
-      ? descriptor.slice(issueKeySlug.length + 1)
-      : descriptor === issueKeySlug
+    issueKeySlug && titleSlug.startsWith(`${issueKeySlug}-`)
+      ? titleSlug.slice(issueKeySlug.length + 1)
+      : titleSlug === issueKeySlug
         ? ""
-        : descriptor;
+        : titleSlug;
   const readable = descriptorWithoutIssueKey || titleSlug;
   const prefix = issueKeySlug ? `${issueKeySlug}-${readable}` : readable;
   return `workbench/${prefix}-${shortStableSuffix(input.ticketId)}`;
@@ -135,7 +132,7 @@ interface ValidatedRepository {
 
 const makeTicketWorkspaceService = Effect.gen(function* () {
   const store = yield* WorkbenchStore;
-  const { generateBranchName, git, projections, worktreesDir } = yield* TicketWorkspaceHost;
+  const { git, projections, worktreesDir } = yield* TicketWorkspaceHost;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const clock = yield* Clock.Clock;
@@ -145,41 +142,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     worktreePath,
   }: Pick<WorkbenchTicketWorkspace["repositories"][number], "sourcePath" | "worktreePath">) =>
     `${path.basename(sourcePath)} at ${worktreePath}`;
-
-  const generateOptionalBranchName = Effect.fn("TicketWorkspaceService.generateOptionalBranchName")(
-    function* ({ ticket }: { readonly ticket: WorkbenchSnapshot["tickets"][number] }) {
-      const project = yield* projections.getProjectShellById(ticket.primaryT3ProjectId).pipe(
-        Effect.tapError((cause) =>
-          Effect.logWarning(
-            "Ticket Workspace branch name generation could not load its repository.",
-            {
-              ticketId: ticket.id,
-              cause,
-            },
-          ),
-        ),
-        Effect.orElseSucceed(() => Option.none()),
-      );
-      if (Option.isNone(project)) return "";
-
-      return yield* generateBranchName({
-        cwd: project.value.workspaceRoot,
-        title: ticket.title,
-        description: ticket.markdown,
-      }).pipe(
-        Effect.tapError((cause) =>
-          Effect.logWarning(
-            "Ticket Workspace branch name generation failed; using the Ticket title.",
-            {
-              ticketId: ticket.id,
-              cause,
-            },
-          ),
-        ),
-        Effect.orElseSucceed(() => ""),
-      );
-    },
-  );
 
   const getWorkspaceLock = Effect.fn("TicketWorkspaceService.getWorkspaceLock")(function* (
     ticketId: string,
@@ -1023,9 +985,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     const jiraIssueKey = startsNewGeneration
       ? Option.getOrNull(yield* store.getTicketJiraIssueKey(ticket.id))
       : null;
-    const generatedBranchName = Option.isNone(reconciledExisting)
-      ? yield* generateOptionalBranchName({ ticket })
-      : undefined;
     const proposedWorkspaceDirectoryName = ticketWorkspaceDirectoryName({
       ticketId: ticket.id,
       jiraIssueKey,
@@ -1037,7 +996,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
           ticketId: ticket.id,
           jiraIssueKey,
           title: ticket.title,
-          ...(generatedBranchName !== undefined ? { generatedBranchName } : {}),
         });
     const workspaceDirectory =
       !startsNewGeneration &&

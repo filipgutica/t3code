@@ -21,6 +21,8 @@ export const JIRA_OAUTH_SCOPES = [
   "read:sprint:jira-software",
   "read:issue-details:jira",
   "read:jql:jira",
+  "read:jira-user",
+  "write:sprint:jira-software",
   "offline_access",
 ] as const;
 

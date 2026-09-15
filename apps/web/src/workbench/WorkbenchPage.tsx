@@ -21,7 +21,6 @@ import {
   WorkbenchProjectId,
   WorkbenchTicketId,
   type WorkbenchTicket,
-  type WorkbenchTicketKind,
 } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { useNavigate } from "@tanstack/react-router";
@@ -77,6 +76,10 @@ import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import type { WorkbenchSearch } from "./workbenchSearch";
 import { openWorkbenchAssignedThread as openAssignedThreadWithRestore } from "./openWorkbenchAssignedThread";
+import {
+  getWorkbenchTicketStartProgressLabel,
+  isWorkbenchTicketStartPending,
+} from "./startWorkbenchTicket";
 import { workbenchEnvironment } from "./state";
 import { useStartWorkbenchTicket } from "./useStartWorkbenchTicket";
 import { useOptimisticWorkbenchStatus } from "./useOptimisticWorkbenchStatus";
@@ -96,6 +99,7 @@ import {
 import {
   WorkbenchTicketDetail,
   WorkbenchTicketDialog,
+  type WorkbenchCreateTicketDraft,
   WorkbenchEpicDetail,
   WorkbenchEpicDialog,
   WorkbenchWorkspaceDialog,
@@ -832,19 +836,11 @@ export function WorkbenchPage({
     return true;
   };
 
-  const submitTicket = async (
-    title: string,
-    markdown: string,
-    kind: WorkbenchTicketKind,
-    epicId: WorkbenchEpicId | null,
-    repositoryProjectIds: ReadonlyArray<ProjectId>,
-    primaryProjectId: ProjectId,
-  ) => {
+  const submitTicket = async (draft: WorkbenchCreateTicketDraft) => {
     if (environmentId === null || selectedProject === null) return false;
     setPendingAction("create-ticket");
     setError(null);
-    const id = WorkbenchTicketId.make(randomUUID());
-    const primaryProject = projects.find((project) => project.id === primaryProjectId);
+    const primaryProject = projects.find((project) => project.id === draft.primaryT3ProjectId);
     if (!primaryProject) {
       setPendingAction(null);
       setError("The selected T3 Project is no longer available.");
@@ -853,19 +849,14 @@ export function WorkbenchPage({
     const result = await createTicket({
       environmentId,
       input: {
-        id,
+        ...draft,
         projectId: selectedProject.id,
-        epicId,
-        title,
-        markdown,
-        kind,
-        repositoryProjectIds,
-        primaryT3ProjectId: primaryProject.id,
         createdAt: new Date().toISOString(),
       },
     });
     setPendingAction(null);
     if (reportWorkbenchCommandFailure(result, setError)) return false;
+    const id = result.value.id;
     setAwaitingTicketId(id);
     setAwaitingEpicId(null);
     setSelectedTicketId(id);
@@ -1859,11 +1850,15 @@ export function WorkbenchPage({
               threadLookupReady={threadLookupReady}
               pending={pending || optimisticStatus.pendingTicketIds.has(selectedTicket.id)}
               threadActionPending={
-                pendingAction === `start:${selectedTicket.id}` ||
+                isWorkbenchTicketStartPending(pendingAction, selectedTicket.id) ||
                 (assignmentsByTicket.get(selectedTicket.id) !== undefined &&
                   pendingAction ===
                     `restore:${assignmentsByTicket.get(selectedTicket.id)?.threadId}`)
               }
+              threadActionLabel={getWorkbenchTicketStartProgressLabel(
+                pendingAction,
+                selectedTicket.id,
+              )}
               error={error ?? query.error ?? archivedThreadsError ?? jiraError}
               onBack={() => {
                 setError(null);
@@ -2266,8 +2261,19 @@ export function WorkbenchPage({
           key={`${selectedProject.id}:${ticketDialogEpicId ?? "no-epic"}`}
           open={ticketDialogOpen}
           linkedProjects={linkedT3Projects}
-          epics={activeProjectEpics}
-          initialEpicId={ticketDialogEpicId}
+          epics={
+            jiraBinding
+              ? activeProjectEpics.filter((epic) =>
+                  epic.id.startsWith(`jira:${jiraBinding.id}:epic:`),
+                )
+              : activeProjectEpics
+          }
+          initialEpicId={
+            jiraBinding && !ticketDialogEpicId?.startsWith(`jira:${jiraBinding.id}:epic:`)
+              ? null
+              : ticketDialogEpicId
+          }
+          jiraBinding={jiraBinding}
           pending={pending}
           error={error ?? query.error}
           onOpenChange={handleTicketDialogOpenChange}

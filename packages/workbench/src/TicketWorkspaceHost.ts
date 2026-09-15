@@ -21,11 +21,6 @@ export class TicketWorkspaceHost extends Context.Service<
   TicketWorkspaceHost,
   {
     readonly worktreesDir: string;
-    readonly generateBranchName: (input: {
-      readonly cwd: string;
-      readonly title: string;
-      readonly description: string;
-    }) => Effect.Effect<string, WorkbenchOperationError>;
     readonly git: {
       readonly listRefs: (
         input: VcsListRefsInput,

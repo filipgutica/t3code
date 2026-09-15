@@ -486,35 +486,27 @@ describe("TicketWorkspaceService", () => {
     const firstBranch = ticketWorkspaceBranchName({
       ticketId: "ticket-1",
       jiraIssueKey: "MA-123",
-      generatedBranchName: "MA-123-fix-validation",
+      title: "MA-123-fix-validation",
     });
     const secondBranch = ticketWorkspaceBranchName({
       ticketId: "ticket-2",
       jiraIssueKey: "MA-123",
-      generatedBranchName: "MA-123-fix-validation",
+      title: "MA-123-fix-validation",
     });
     expect(firstBranch).toMatch(/^workbench\/ma-123-fix-validation-[0-9a-f]{8}$/);
     expect(firstBranch).not.toBe(secondBranch);
   });
 
-  it("falls back to the ticket title when a generated branch fragment is empty or unsafe", () => {
-    const fallback = "workbench/ma-123-prepare-repositories-";
-    expect(
-      ticketWorkspaceBranchName({
-        ticketId: "ticket-1",
-        jiraIssueKey: "MA-123",
-        title: "Prepare repositories",
-        generatedBranchName: "",
-      }),
-    ).toBe(`${fallback}737ce60f`);
-    expect(
-      ticketWorkspaceBranchName({
-        ticketId: "ticket-1",
-        jiraIssueKey: "MA-123",
-        title: "Prepare repositories",
-        generatedBranchName: "../../",
-      }),
-    ).toBe(`${fallback}737ce60f`);
+  it("uses a safe fallback when the ticket title is empty or unsafe", () => {
+    for (const title of ["", "../../"]) {
+      expect(
+        ticketWorkspaceBranchName({
+          ticketId: "ticket-1",
+          jiraIssueKey: "MA-123",
+          title,
+        }),
+      ).toBe("workbench/ma-123-ticket-737ce60f");
+    }
   });
 
   it.effect("rejects preparation for an archived Ticket before inspecting repositories", () => {
@@ -941,16 +933,12 @@ describe("TicketWorkspaceService", () => {
       const service = yield* TicketWorkspaceService;
       const workspace = yield* service.prepare({ ticketId, requestedAt: createdAt });
 
-      expect(workspace.branchName).toBe("workbench/ma-4037-fix-validation-737ce60f");
+      expect(workspace.branchName).toBe("workbench/ma-4037-prepare-repositories-737ce60f");
       expect(workspace.repositories.map((repository) => repository.worktreePath)).toEqual([
         expect.stringMatching(/workbench\/ma-4037-737ce60f\/primary$/),
         expect.stringMatching(/workbench\/ma-4037-737ce60f\/secondary$/),
       ]);
-      expect(generationCalls).toHaveLength(1);
-      expect(generationCalls[0]).toMatchObject({
-        cwd: "/repos/primary",
-        message: "Prepare repositories\n\n",
-      });
+      expect(generationCalls).toHaveLength(0);
     }).pipe(
       Effect.provide(
         makeTestLayer({
@@ -964,7 +952,7 @@ describe("TicketWorkspaceService", () => {
     );
   });
 
-  it.effect("falls back to the ticket title when branch generation fails", () => {
+  it.effect("prepares worktrees without invoking text generation", () => {
     const events: Array<string> = [];
     return Effect.gen(function* () {
       yield* seedTicket;
@@ -976,13 +964,7 @@ describe("TicketWorkspaceService", () => {
       Effect.provide(
         makeTestLayer({
           events,
-          generateBranchName: () =>
-            Effect.fail(
-              new TextGenerationError({
-                operation: "generateBranchName",
-                detail: "simulated generation failure",
-              }),
-            ),
+          generateBranchName: () => Effect.die("Thread creation must not invoke text generation"),
         }),
       ),
     );
@@ -1226,7 +1208,7 @@ describe("TicketWorkspaceService", () => {
       const second = yield* service.prepare({ ticketId, requestedAt: "2026-09-03T12:06:00.000Z" });
 
       expect(second.branchName).toBe(first.branchName);
-      expect(generationCalls).toHaveLength(1);
+      expect(generationCalls).toHaveLength(0);
       expect(second.repositories.map((repository) => repository.worktreePath)).toEqual(
         first.repositories.map((repository) => repository.worktreePath),
       );

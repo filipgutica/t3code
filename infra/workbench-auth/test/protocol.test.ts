@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   decryptTokens,
   encryptTokens,
+  JIRA_SCOPES,
   requestTokens,
   secretField,
   type Tokens,
@@ -26,6 +27,12 @@ const environment = (overrides: Partial<WorkbenchAuthEnv> = {}) =>
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Workbench auth protocol", () => {
+  it("requests Jira scopes needed for issue creation and sprint placement", () => {
+    expect(JIRA_SCOPES.split(" ")).toEqual(
+      expect.arrayContaining(["read:jira-user", "write:jira-work", "write:sprint:jira-software"]),
+    );
+  });
+
   it("identifies rejected client credentials without exposing provider details", async () => {
     vi.stubGlobal(
       "fetch",
