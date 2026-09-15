@@ -4,6 +4,7 @@ import * as NodeCrypto from "node:crypto";
 import { readConfig } from "../workbench-demo/environment.mts";
 import { withDemoAccess } from "../workbench-demo/access.mts";
 import { runRpc } from "../workbench-demo/local.mts";
+import { validateJiraBaseline } from "../workbench-demo/remotes.mts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 import type { WorkbenchJiraSnapshot } from "../../packages/contracts/src/workbenchJira.ts";
 import { JiraHttpClient, JIRA_REGRESSION_CLEANUP_LABEL, type JiraIssue } from "./jira-http.mts";
@@ -33,7 +34,12 @@ const liveJira = async (home: string) => {
   const jira = await jiraSnapshot(home);
   const binding = jira.bindings.find((candidate) => candidate.projectId === "demo-jira");
   if (!binding) throw new Error("The live demo has no preconnected demo-jira binding.");
-  return { client, jira, binding };
+  const baseline = validateJiraBaseline(JSON.parse(process.env.DEMO_JIRA_BASELINE ?? "null"));
+  const baselineKeys = new Set(baseline.issues.map((issue) => issue.key));
+  const baselineLinks = jira.issueLinks.filter(
+    (link) => link.bindingId === binding.id && link.active && baselineKeys.has(link.issue.key),
+  );
+  return { client, jira, binding, baselineLinks };
 };
 
 const openJiraDialog = async (page: Page) => {
@@ -295,10 +301,8 @@ test.describe("Jira Workbench integration @live", () => {
     page,
     demo,
   }) => {
-    const { client, jira, binding } = await liveJira(demo.home);
-    const link = jira.issueLinks.find(
-      (candidate) => candidate.bindingId === binding.id && candidate.active,
-    );
+    const { client, binding, baselineLinks } = await liveJira(demo.home);
+    const link = baselineLinks[0];
     if (!link) throw new Error("The live demo has no baseline Jira issue to exercise.");
     const original = await client.issue(link.issue.key);
     const remoteDescription = "Remote description written by the Jira regression.";
@@ -354,12 +358,9 @@ test.describe("Jira Workbench integration @live", () => {
     page,
     demo,
   }) => {
-    const { client, jira, binding } = await liveJira(demo.home);
-    const link = jira.issueLinks.find(
-      (candidate) =>
-        candidate.bindingId === binding.id &&
-        candidate.active &&
-        /^(to do|open|backlog)$/iu.test(candidate.issue.status.name),
+    const { client, binding, baselineLinks } = await liveJira(demo.home);
+    const link = baselineLinks.find((candidate) =>
+      /^(to do|open|backlog)$/iu.test(candidate.issue.status.name),
     );
     if (!link) throw new Error("The live demo has no Jira issue to exercise.");
     const issue = await client.issue(link.issue.key);
@@ -414,10 +415,8 @@ test.describe("Jira Workbench integration @live", () => {
     page,
     demo,
   }) => {
-    const { client, jira, binding } = await liveJira(demo.home);
-    const link = jira.issueLinks.find(
-      (candidate) => candidate.bindingId === binding.id && candidate.active,
-    );
+    const { client, baselineLinks } = await liveJira(demo.home);
+    const link = baselineLinks[0];
     if (!link) throw new Error("The live demo has no Jira issue to exercise.");
     const before = await snapshot(demo.home);
     const ticketBefore = before.tickets.find((ticket) => ticket.id === link.ticketId);
