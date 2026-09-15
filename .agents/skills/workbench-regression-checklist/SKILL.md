@@ -1,11 +1,14 @@
 ---
 name: workbench-regression-checklist
-description: Run a visual regression pass of the Workbench addon in its isolated demo environment before merging Workbench changes or preparing a release. Covers planning, repository worktrees, native Thread handoff, PR tracking, and Jira integration with explicit coverage results.
+description: Manually run the Workbench visual regression checklist in its isolated demo environment, covering planning, worktrees, Threads, PRs, and Jira.
+disable-model-invocation: true
 ---
 
 # Workbench regression checklist
 
-Use this checklist to exercise Workbench through a real web or desktop client.
+Run only when the user explicitly invokes this skill or requests the Workbench
+regression checklist. This expensive visual pass is opt-in, not an automatic PR,
+merge, or release requirement. Exercise Workbench through a real web or desktop client.
 Creating the checklist does not itself authorize running provider turns, changing
 remote Jira/GitHub data, or publishing evidence. Use the current task's authority;
 ask only for missing authorization, and continue independent checks.
