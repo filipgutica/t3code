@@ -257,6 +257,9 @@ test.describe("Jira Workbench integration @live", () => {
       await page.getByRole("button", { name: "New Ticket", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "Create Ticket", exact: true });
       await dialog.getByPlaceholder("What needs doing?").fill(title);
+      // Creation uses the user's selected scope; mirror defaults apply to imports.
+      await dialog.getByRole("checkbox", { name: /Orbit API/ }).check();
+      await dialog.getByRole("checkbox", { name: /Orbit Web/ }).uncheck();
       await dialog
         .getByPlaceholder("Goal, constraints, and acceptance criteria…")
         .fill(description);
@@ -267,8 +270,6 @@ test.describe("Jira Workbench integration @live", () => {
       const workbench = await snapshot(demo.home);
       const ticket = workbench.tickets.find((candidate) => candidate.title === title);
       expect(ticket).toBeDefined();
-      expect(ticket?.primaryT3ProjectId).toBe(binding.defaultPrimaryT3ProjectId);
-      expect(ticket?.repositoryProjectIds).toEqual([binding.defaultPrimaryT3ProjectId]);
       const jira = await jiraSnapshot(demo.home);
       const link = jira.issueLinks.find(
         (candidate) => candidate.ticketId === ticket?.id && candidate.active,
@@ -277,6 +278,8 @@ test.describe("Jira Workbench integration @live", () => {
       key = link?.issue.key;
       if (!key) throw new Error("Workbench created a Ticket without a Jira issue link.");
       await client.updateIssue(key, { labels: [JIRA_REGRESSION_CLEANUP_LABEL] });
+      expect(ticket?.primaryT3ProjectId).toBe("orbit-api");
+      expect(ticket?.repositoryProjectIds).toEqual(["orbit-api"]);
       const issue = await client.issue(key);
       expect(issue.summary).toBe(title);
       expect(issue.description).toBe(description);
@@ -315,6 +318,8 @@ test.describe("Jira Workbench integration @live", () => {
       await page.getByRole("button", { name: "Edit", exact: true }).click();
       await page.getByLabel("Description", { exact: true }).fill(uiDescription);
       await page.getByRole("button", { name: "Save Ticket", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+      await expect(page.getByText(uiDescription, { exact: true })).toBeVisible();
       expect((await client.issue(original.key)).description).toBe(uiDescription);
 
       remoteIssue = await client.issue(original.key);
@@ -326,7 +331,10 @@ test.describe("Jira Workbench integration @live", () => {
           candidate.to.id !== remoteIssue.status.id && mappedStatusIds.has(candidate.to.id),
       );
       if (!transition) throw new Error(`Jira issue ${original.key} has no available transition.`);
-      const statusButton = page.getByRole("button", { name: remoteIssue.status.name, exact: true });
+      const statusButton = page.getByRole("button", {
+        name: `Change status of ${original.summary}`,
+        exact: true,
+      });
       await statusButton.click();
       const transitionItem = page
         .getByRole("menuitem")
@@ -334,9 +342,7 @@ test.describe("Jira Workbench integration @live", () => {
         .first();
       await expect(transitionItem).toBeVisible();
       await transitionItem.click();
-      await expect(
-        page.getByRole("button", { name: transition.to.name, exact: true }),
-      ).toBeVisible();
+      await expect(statusButton).toHaveText(transition.to.name);
       remoteIssue = await client.issue(original.key);
       expect(remoteIssue.status.id).toBe(transition.to.id);
     } finally {
