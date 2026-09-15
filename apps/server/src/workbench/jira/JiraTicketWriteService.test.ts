@@ -723,7 +723,7 @@ describe("JiraTicketWriteService", () => {
           assert.strictEqual(started.status.id, "2");
           assert.strictEqual(
             harness.requests.find((request) => request.method === "POST")?.body,
-            JSON.stringify({ transition: { id: "21" } }),
+            '{"transition":{"id":"21"}}',
           );
         }),
       {
