@@ -1,12 +1,8 @@
-import { test, expect, snapshot } from "./fixtures.ts";
+import { test, expect, snapshot, jiraSnapshot, type Demo } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import * as NodeCrypto from "node:crypto";
 import { readConfig } from "../workbench-demo/environment.mts";
-import { withDemoAccess } from "../workbench-demo/access.mts";
-import { runRpc } from "../workbench-demo/local.mts";
 import { validateJiraBaseline } from "../workbench-demo/remotes.mts";
-import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
-import type { WorkbenchJiraSnapshot } from "../../packages/contracts/src/workbenchJira.ts";
 import { JiraHttpClient, JIRA_REGRESSION_CLEANUP_LABEL, type JiraIssue } from "./jira-http.mts";
 
 const live = process.env.WORKBENCH_REGRESSION_LIVE === "1";
@@ -24,14 +20,9 @@ const jiraConfig = (home: string) => {
   return { site, email, token };
 };
 
-const jiraSnapshot = (home: string): Promise<WorkbenchJiraSnapshot> =>
-  withDemoAccess(home, ({ wsUrl, token }) =>
-    runRpc(wsUrl, token, (client) => client[WORKBENCH_WS_METHODS.workbenchJiraGetSnapshot]({})),
-  );
-
-const liveJira = async (home: string) => {
-  const client = new JiraHttpClient(jiraConfig(home));
-  const jira = await jiraSnapshot(home);
+const liveJira = async (demo: Demo) => {
+  const client = new JiraHttpClient(jiraConfig(demo.home));
+  const jira = await jiraSnapshot(demo);
   const binding = jira.bindings.find((candidate) => candidate.projectId === "demo-jira");
   if (!binding) throw new Error("The live demo has no preconnected demo-jira binding.");
   const baseline = validateJiraBaseline(JSON.parse(process.env.DEMO_JIRA_BASELINE ?? "null"));
@@ -84,7 +75,7 @@ test.describe("Jira Workbench integration @live", () => {
     page,
     demo,
   }) => {
-    const { client, jira, binding } = await liveJira(demo.home);
+    const { client, jira, binding } = await liveJira(demo);
     const links = jira.issueLinks.filter((link) => link.bindingId === binding.id && link.active);
     expect(binding.active).toBe(true);
     expect(binding.selectedSprints.length).toBeGreaterThan(0);
@@ -105,7 +96,7 @@ test.describe("Jira Workbench integration @live", () => {
       expect((await client.issue(link.issue.key)).assigneeAccountId).toBe(accountId);
     }
 
-    const workbench = await snapshot(demo.home);
+    const workbench = await snapshot(demo);
     const linkedTicketIds = new Set(links.map((link) => link.ticketId));
     expect(links.length).toBeGreaterThan(0);
     for (const ticketId of linkedTicketIds) {
@@ -144,7 +135,7 @@ test.describe("Jira Workbench integration @live", () => {
     page,
     demo,
   }) => {
-    const before = await liveJira(demo.home);
+    const before = await liveJira(demo);
     const ticketIds = before.jira.issueLinks
       .filter((link) => link.bindingId === before.binding.id && link.active)
       .map((link) => link.ticketId);
@@ -158,7 +149,7 @@ test.describe("Jira Workbench integration @live", () => {
       await dialog.getByRole("button", { name: "Save mirror", exact: true }).click();
       await expect(dialog).not.toBeVisible();
 
-      let after = await jiraSnapshot(demo.home);
+      let after = await jiraSnapshot(demo);
       const mapped = after.bindings.find((binding) => binding.id === before.binding.id);
       expect(mapped?.boardMode).toBe("mapped");
       expect(
@@ -172,12 +163,12 @@ test.describe("Jira Workbench integration @live", () => {
       await dialog.getByRole("checkbox", { name: "Mirror Jira states" }).check();
       await dialog.getByRole("button", { name: "Save mirror", exact: true }).click();
       await expect(dialog).not.toBeVisible();
-      after = await jiraSnapshot(demo.home);
+      after = await jiraSnapshot(demo);
       expect(after.bindings.find((binding) => binding.id === before.binding.id)?.boardMode).toBe(
         "mirror_jira",
       );
     } finally {
-      const current = await jiraSnapshot(demo.home);
+      const current = await jiraSnapshot(demo);
       const binding = current.bindings.find((candidate) => candidate.id === before.binding.id);
       if (binding?.boardMode !== before.binding.boardMode) {
         const dialog = await openJiraDialog(page);
@@ -196,8 +187,8 @@ test.describe("Jira Workbench integration @live", () => {
     page,
     demo,
   }) => {
-    const before = await liveJira(demo.home);
-    const beforeWorkbench = await snapshot(demo.home);
+    const before = await liveJira(demo);
+    const beforeWorkbench = await snapshot(demo);
     try {
       let dialog = await openJiraDialog(page);
       await dialog.getByRole("button", { name: "Pause mirror", exact: true }).click();
@@ -229,7 +220,7 @@ test.describe("Jira Workbench integration @live", () => {
         .click();
       await expect(page.getByText("Jira paused", { exact: true })).not.toBeVisible();
     } finally {
-      const current = await jiraSnapshot(demo.home);
+      const current = await jiraSnapshot(demo);
       const binding = current.bindings.find((candidate) => candidate.id === before.binding.id);
       if (binding && binding.active !== before.binding.active) {
         const dialog = await openJiraDialog(page);
@@ -245,7 +236,7 @@ test.describe("Jira Workbench integration @live", () => {
           .click();
       }
     }
-    const afterWorkbench = await snapshot(demo.home);
+    const afterWorkbench = await snapshot(demo);
     expect(afterWorkbench.tickets.map((ticket) => ticket.id)).toEqual(
       beforeWorkbench.tickets.map((ticket) => ticket.id),
     );
@@ -258,7 +249,7 @@ test.describe("Jira Workbench integration @live", () => {
     page,
     demo,
   }) => {
-    const { client, binding } = await liveJira(demo.home);
+    const { client, binding } = await liveJira(demo);
     const title = `[Workbench regression] Jira create ${NodeCrypto.randomUUID()}`;
     const description = "Created by the live Workbench Jira regression.";
     let key: string | undefined;
@@ -277,10 +268,10 @@ test.describe("Jira Workbench integration @live", () => {
       await expect(dialog).not.toBeVisible();
       await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
 
-      const workbench = await snapshot(demo.home);
+      const workbench = await snapshot(demo);
       const ticket = workbench.tickets.find((candidate) => candidate.title === title);
       expect(ticket).toBeDefined();
-      const jira = await jiraSnapshot(demo.home);
+      const jira = await jiraSnapshot(demo);
       const link = jira.issueLinks.find(
         (candidate) => candidate.ticketId === ticket?.id && candidate.active,
       );
@@ -311,7 +302,7 @@ test.describe("Jira Workbench integration @live", () => {
     page,
     demo,
   }) => {
-    const { client, binding, baselineLinks } = await liveJira(demo.home);
+    const { client, binding, baselineLinks } = await liveJira(demo);
     const link = baselineLinks[0];
     if (!link) throw new Error("The live demo has no baseline Jira issue to exercise.");
     const original = await client.issue(link.issue.key);
@@ -372,7 +363,7 @@ test.describe("Jira Workbench integration @live", () => {
     page,
     demo,
   }) => {
-    const { client, binding, todoLinks } = await liveJira(demo.home);
+    const { client, binding, todoLinks } = await liveJira(demo);
     const link = todoLinks[0];
     if (!link) throw new Error("The live demo baseline has no Jira Todo issue to exercise.");
     const issue = await client.issue(link.issue.key);
@@ -443,10 +434,10 @@ test.describe("Jira Workbench integration @live", () => {
     page,
     demo,
   }) => {
-    const { client, baselineLinks } = await liveJira(demo.home);
+    const { client, baselineLinks } = await liveJira(demo);
     const link = baselineLinks[0];
     if (!link) throw new Error("The live demo has no Jira issue to exercise.");
-    const before = await snapshot(demo.home);
+    const before = await snapshot(demo);
     const ticketBefore = before.tickets.find((ticket) => ticket.id === link.ticketId);
     if (!ticketBefore) throw new Error(`Missing local Ticket for Jira issue ${link.issue.key}.`);
     const issue = await client.issue(link.issue.key);
@@ -459,7 +450,7 @@ test.describe("Jira Workbench integration @live", () => {
       await expect(page.getByText("J8 transient remote edit.", { exact: true })).toBeVisible({
         timeout: 30_000,
       });
-      const after = await snapshot(demo.home);
+      const after = await snapshot(demo);
       const ticketAfter = after.tickets.find((ticket) => ticket.id === link.ticketId);
       expect(ticketAfter?.id).toBe(ticketBefore.id);
       expect(ticketAfter?.primaryT3ProjectId).toBe(ticketBefore.primaryT3ProjectId);

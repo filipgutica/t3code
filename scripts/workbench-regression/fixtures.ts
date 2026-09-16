@@ -5,7 +5,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { setupHome } from "../workbench-demo/environment.mts";
 import { withDemoAccess } from "../workbench-demo/access.mts";
-import { runRpc } from "../workbench-demo/local.mts";
+import { runRpc, readShellSnapshot } from "../workbench-demo/local.mts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 import { configureProvider } from "./provider-settings.mts";
 import { resetToBaseline } from "../workbench-demo/reset-to-baseline.mts";
@@ -13,7 +13,12 @@ import { decodeJiraAuthBundle } from "../workbench-demo/jira-auth.mts";
 import { resetJira, validateJiraBaseline } from "../workbench-demo/remotes.mts";
 import { DEMO_REPOSITORIES } from "../workbench-demo/repositories.mts";
 
-type Demo = { home: string; origin: string };
+export type Demo = {
+  home: string;
+  origin: string;
+  rpc: <A, E>(operation: Parameters<typeof runRpc<A, E>>[2]) => Promise<A>;
+  shellSnapshot: () => ReturnType<typeof readShellSnapshot>;
+};
 type StorageState = Awaited<ReturnType<BrowserContext["storageState"]>>;
 
 export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
@@ -78,7 +83,16 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
         await NodeFSP.writeFile(NodePath.join(home, "pairing-url"), server.pairingUrl, {
           mode: 0o600,
         });
-        await use({ home, origin: server.origin });
+        // One short-lived session belongs to this worker's disposable server.
+        // Snapshot assertions still read through real RPCs; revocation runs before shutdown.
+        await withDemoAccess(home, ({ wsUrl, token }) =>
+          use({
+            home,
+            origin: server.origin,
+            rpc: (operation) => runRpc(wsUrl, token, operation),
+            shellSnapshot: () => readShellSnapshot(wsUrl, token),
+          }),
+        );
       } finally {
         await server.stop();
         if (baseline)
@@ -111,7 +125,8 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
 });
 
 export { expect };
-export const snapshot = (home: string) =>
-  withDemoAccess(home, ({ wsUrl, token }) =>
-    runRpc(wsUrl, token, (client) => client[WORKBENCH_WS_METHODS.workbenchGetSnapshot]({})),
-  );
+export const snapshot = (demo: Demo) =>
+  demo.rpc((client) => client[WORKBENCH_WS_METHODS.workbenchGetSnapshot]({}));
+
+export const jiraSnapshot = (demo: Demo) =>
+  demo.rpc((client) => client[WORKBENCH_WS_METHODS.workbenchJiraGetSnapshot]({}));

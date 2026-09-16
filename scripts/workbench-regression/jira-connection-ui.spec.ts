@@ -1,5 +1,5 @@
 // @effect-diagnostics globalTimers:off globalDate:off - Playwright owns deterministic browser test timing and timestamps.
-import { test, expect, snapshot } from "./fixtures.ts";
+import { test, expect, snapshot, type Demo } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 
@@ -478,7 +478,7 @@ const routeMockJira = async (page: Page) => {
   };
 };
 
-const createWorkspace = async (page: Page, home: string, title: string) => {
+const createWorkspace = async (page: Page, demo: Demo, title: string) => {
   await page.goto("/workbench?workbenchProjectId=orbit");
   await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Add Workspace", exact: true }).click();
@@ -488,15 +488,11 @@ const createWorkspace = async (page: Page, home: string, title: string) => {
   await dialog.getByRole("checkbox", { name: /Orbit Web/ }).check();
   await dialog.getByRole("button", { name: "Create Workspace", exact: true }).click();
   await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
-  const current = await snapshot(home);
+  const current = await snapshot(demo);
   return current.projects.find((project) => project.title === title)?.id;
 };
 
-const seedLocalEpicAndTicket = async (
-  page: Page,
-  home: string,
-  workspaceId: string | undefined,
-) => {
+const seedLocalEpicAndTicket = async (page: Page, demo: Demo, workspaceId: string | undefined) => {
   if (!workspaceId) throw new Error("Created Jira migration Workspace was not persisted.");
   await page.getByRole("button", { name: "Workspace actions" }).click();
   await page.getByRole("menuitem", { name: "New Epic", exact: true }).click();
@@ -510,7 +506,7 @@ const seedLocalEpicAndTicket = async (
   await epicDialog.getByRole("button", { name: "Create Epic", exact: true }).click();
   await expect(epicDialog).not.toBeVisible();
 
-  const currentAfterEpic = await snapshot(home);
+  const currentAfterEpic = await snapshot(demo);
   const epic = currentAfterEpic.epics.find(
     (candidate) =>
       candidate.title === "Jira migration regression Epic" && candidate.projectId === workspaceId,
@@ -524,7 +520,7 @@ const seedLocalEpicAndTicket = async (
   await ticketDialog.getByRole("button", { name: "Create Ticket", exact: true }).click();
   await expect(ticketDialog).not.toBeVisible();
 
-  const currentAfterTicket = await snapshot(home);
+  const currentAfterTicket = await snapshot(demo);
   const ticket = currentAfterTicket.tickets.find(
     (candidate) =>
       candidate.title === "Jira migration regression Ticket" && candidate.projectId === workspaceId,
@@ -560,7 +556,7 @@ test.describe("Jira connection UI contract", () => {
     demo,
   }) => {
     const route = await routeMockJira(page);
-    await createWorkspace(page, demo.home, "Foreground Jira Refresh");
+    await createWorkspace(page, demo, "Foreground Jira Refresh");
     const dialog = await connectJira(page);
     await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
     await expect(dialog).not.toBeVisible();
@@ -585,7 +581,7 @@ test.describe("Jira connection UI contract", () => {
     demo,
   }) => {
     const route = await routeMockJira(page);
-    await createWorkspace(page, demo.home, "Deterministic Jira Connection");
+    await createWorkspace(page, demo, "Deterministic Jira Connection");
     const dialog = await connectJira(page);
     route.setMode("hold");
     await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
@@ -606,7 +602,7 @@ test.describe("Jira connection UI contract", () => {
     await page.reload();
     await expect(page.getByLabel("Jira sync status")).toContainText("Jira synced");
     expect(
-      (await snapshot(demo.home)).projects.some(
+      (await snapshot(demo)).projects.some(
         (project) => project.title === "Deterministic Jira Connection",
       ),
     ).toBe(true);
@@ -614,7 +610,7 @@ test.describe("Jira connection UI contract", () => {
 
   test("shows a failed sync with a retry action", async ({ page, demo }) => {
     const route = await routeMockJira(page);
-    await createWorkspace(page, demo.home, "Deterministic Jira Retry");
+    await createWorkspace(page, demo, "Deterministic Jira Retry");
     const dialog = await connectJira(page);
     route.setMode("failure");
     await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
@@ -639,7 +635,7 @@ test.describe("Jira connection UI contract", () => {
 
   test("explains an empty Jira result", async ({ page, demo }) => {
     const route = await routeMockJira(page);
-    await createWorkspace(page, demo.home, "Deterministic Jira Empty");
+    await createWorkspace(page, demo, "Deterministic Jira Empty");
     const dialog = await connectJira(page);
     route.setMode("empty");
     await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
@@ -656,8 +652,8 @@ test.describe("Jira connection UI contract", () => {
     demo,
   }) => {
     const route = await routeMockJira(page);
-    const workspaceId = await createWorkspace(page, demo.home, "Deterministic Jira Delete Choice");
-    const { epic, ticket } = await seedLocalEpicAndTicket(page, demo.home, workspaceId);
+    const workspaceId = await createWorkspace(page, demo, "Deterministic Jira Delete Choice");
+    const { epic, ticket } = await seedLocalEpicAndTicket(page, demo, workspaceId);
     const dialog = await connectJira(page);
     const createButton = dialog.getByRole("button", { name: "Create mirror", exact: true });
 
@@ -676,7 +672,7 @@ test.describe("Jira connection UI contract", () => {
     expect(route.getMigrationRequests()).toHaveLength(0);
     expect(route.getSyncRequestCount()).toBe(0);
 
-    const current = await snapshot(demo.home);
+    const current = await snapshot(demo);
     expect(current.epics.some((candidate) => candidate.id === epic.id)).toBe(true);
     expect(current.tickets.some((candidate) => candidate.id === ticket.id)).toBe(true);
   });
@@ -686,8 +682,8 @@ test.describe("Jira connection UI contract", () => {
     demo,
   }) => {
     const route = await routeMockJira(page);
-    const workspaceId = await createWorkspace(page, demo.home, "Deterministic Jira Publish Retry");
-    const { epic, ticket } = await seedLocalEpicAndTicket(page, demo.home, workspaceId);
+    const workspaceId = await createWorkspace(page, demo, "Deterministic Jira Publish Retry");
+    const { epic, ticket } = await seedLocalEpicAndTicket(page, demo, workspaceId);
     const dialog = await connectJira(page);
     await dialog.getByRole("radio", { name: /Publish local data to Jira/ }).click();
 
@@ -743,12 +739,8 @@ test.describe("Jira connection UI contract", () => {
       demo,
     }) => {
       const route = await routeMockJira(page);
-      const workspaceId = await createWorkspace(
-        page,
-        demo.home,
-        "Deterministic Jira Lost Response",
-      );
-      await seedLocalEpicAndTicket(page, demo.home, workspaceId);
+      const workspaceId = await createWorkspace(page, demo, "Deterministic Jira Lost Response");
+      await seedLocalEpicAndTicket(page, demo, workspaceId);
       const dialog = await connectJira(page);
       await dialog.getByRole("radio", { name: /Delete local data/ }).click();
       route.setMigrationMode("lost-response");

@@ -39,7 +39,7 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
   await expect(page).toHaveURL(
     (url) => url.pathname !== "/workbench" && url.searchParams.get("workbench") === "true",
   );
-  const prepared = await snapshot(demo.home);
+  const prepared = await snapshot(demo);
   expect(prepared.tickets.find((t) => t.id === "orbit-004")?.status).toBe("todo");
   expect(prepared.assignments.filter((a) => a.ticketId === "orbit-004")).toHaveLength(1);
   const editor = page.locator('[contenteditable="true"]').first();
@@ -53,7 +53,7 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
   await expect(
     page.getByRole("button", { name: "Stop generation", exact: true }),
   ).not.toBeVisible();
-  const complete = await snapshot(demo.home);
+  const complete = await snapshot(demo);
   const ticket = prepared.tickets.find((candidate) => candidate.id === "orbit-004");
   expect(ticket?.markdown).toBeTruthy();
   const providerState = decodeProviderState(
@@ -81,7 +81,7 @@ test("R1 R3: multi-repository worktrees persist and reset refuses retained Threa
   page,
   demo,
 }) => {
-  const before = await snapshot(demo.home);
+  const before = await snapshot(demo);
   const workspace = before.ticketWorkspaces.find((w) => w.ticketId === "orbit-001");
   expect(workspace).toBeDefined();
   await page.goto("/workbench?workbenchProjectId=orbit&ticketId=orbit-001");
@@ -93,9 +93,10 @@ test("R1 R3: multi-repository worktrees persist and reset refuses retained Threa
     .click();
   await page.getByRole("button", { name: "Reset ticket workspace", exact: true }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Cancel", exact: true }).click();
-  expect(
-    (await snapshot(demo.home)).ticketWorkspaces.find((w) => w.ticketId === "orbit-001"),
-  ).toEqual(workspace);
+  await expect(page.getByRole("alertdialog")).not.toBeVisible();
+  expect((await snapshot(demo)).ticketWorkspaces.find((w) => w.ticketId === "orbit-001")).toEqual(
+    workspace,
+  );
   await page.getByRole("button", { name: "Reset ticket workspace", exact: true }).click();
   await page
     .getByRole("alertdialog")
@@ -104,7 +105,7 @@ test("R1 R3: multi-repository worktrees persist and reset refuses retained Threa
   await expect(
     page.getByText(/Threads.*(exist|linked)|linked.*Threads|Thread.*before.*reset/i).last(),
   ).toBeVisible();
-  expect(
-    (await snapshot(demo.home)).ticketWorkspaces.find((w) => w.ticketId === "orbit-001"),
-  ).toEqual(workspace);
+  expect((await snapshot(demo)).ticketWorkspaces.find((w) => w.ticketId === "orbit-001")).toEqual(
+    workspace,
+  );
 });

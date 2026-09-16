@@ -1,7 +1,7 @@
 import { test, expect, snapshot } from "./fixtures.ts";
 
 test("W1 W2: create and rename a Workspace without preparing worktrees", async ({ page, demo }) => {
-  const before = await snapshot(demo.home);
+  const before = await snapshot(demo);
   await page.goto("/workbench?workbenchProjectId=orbit");
   await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Add Workspace", exact: true }).click();
@@ -16,7 +16,7 @@ test("W1 W2: create and rename a Workspace without preparing worktrees", async (
   await expect(
     page.getByRole("heading", { name: "Regression Workspace", exact: true }),
   ).toBeVisible();
-  const created = await snapshot(demo.home);
+  const created = await snapshot(demo);
   expect(created.assignments).toEqual(before.assignments);
   expect(
     created.projects.find((p) => p.title === "Regression Workspace")?.linkedProjectIds,
@@ -67,9 +67,7 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
       page.getByRole("button", { name: "Change status of Edited regression ticket", exact: true }),
     ).toContainText(to);
   }
-  const ticket = (await snapshot(demo.home)).tickets.find(
-    (t) => t.title === "Edited regression ticket",
-  );
+  const ticket = (await snapshot(demo)).tickets.find((t) => t.title === "Edited regression ticket");
   if (!ticket) throw new Error("Created Ticket was not persisted");
   expect(ticket.status).toBe("todo");
   await page.getByRole("button", { name: "Ticket actions" }).click();
@@ -92,7 +90,7 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
   await expect(
     page.getByRole("heading", { name: "Edited regression ticket", exact: true }),
   ).not.toBeVisible();
-  expect((await snapshot(demo.home)).tickets.some((t) => t.id === ticket.id)).toBe(false);
+  expect((await snapshot(demo)).tickets.some((t) => t.id === ticket.id)).toBe(false);
 });
 
 test("W3 W4 X2: direct routes, history and narrow layout retain Ticket ownership", async ({

@@ -1,11 +1,8 @@
-import { test, expect, snapshot } from "./fixtures.ts";
+import { test, expect, snapshot, jiraSnapshot } from "./fixtures.ts";
 import * as Effect from "effect/Effect";
 import type { Page } from "@playwright/test";
 import { readConfig } from "../workbench-demo/environment.mts";
-import { withDemoAccess } from "../workbench-demo/access.mts";
-import { runRpc } from "../workbench-demo/local.mts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
-import type { WorkbenchJiraSnapshot } from "../../packages/contracts/src/workbenchJira.ts";
 
 const live = process.env.WORKBENCH_REGRESSION_LIVE === "1";
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -16,11 +13,6 @@ const jiraSite = (home: string) => {
   if (!site) throw new Error("Live Jira regression requires DEMO_JIRA_SITE_URL.");
   return site;
 };
-
-const jiraSnapshot = (home: string): Promise<WorkbenchJiraSnapshot> =>
-  withDemoAccess(home, ({ wsUrl, token }) =>
-    runRpc(wsUrl, token, (client) => client[WORKBENCH_WS_METHODS.workbenchJiraGetSnapshot]({})),
-  );
 
 type JiraSyncRouteMode = "normal" | "hold" | "failure" | "empty";
 
@@ -175,13 +167,11 @@ test.describe("Jira connection UX @live", () => {
     demo,
   }) => {
     const site = jiraSite(demo.home);
-    const [before, beforeJira] = await withDemoAccess(demo.home, ({ wsUrl, token }) =>
-      runRpc(wsUrl, token, (client) =>
-        Effect.all([
-          client[WORKBENCH_WS_METHODS.workbenchGetSnapshot]({}),
-          client[WORKBENCH_WS_METHODS.workbenchJiraGetSnapshot]({}),
-        ]),
-      ),
+    const [before, beforeJira] = await demo.rpc((client) =>
+      Effect.all([
+        client[WORKBENCH_WS_METHODS.workbenchGetSnapshot]({}),
+        client[WORKBENCH_WS_METHODS.workbenchJiraGetSnapshot]({}),
+      ]),
     );
     const sourceBinding = beforeJira.bindings.find(
       (candidate) => candidate.projectId === "demo-jira",
@@ -203,7 +193,7 @@ test.describe("Jira connection UX @live", () => {
     await expect(
       page.getByRole("heading", { name: "Regression Jira Connection", exact: true }),
     ).toBeVisible();
-    const createdSnapshot = await snapshot(demo.home);
+    const createdSnapshot = await snapshot(demo);
     const workspace = createdSnapshot.projects.find(
       (project) => project.title === "Regression Jira Connection",
     );
@@ -259,7 +249,7 @@ test.describe("Jira connection UX @live", () => {
       timeout: 30_000,
     });
 
-    const after = await jiraSnapshot(demo.home);
+    const after = await jiraSnapshot(demo);
     const binding = after.bindings.find((candidate) => candidate.projectId === workspace.id);
     expect(binding).toBeDefined();
     expect(binding?.lastSyncedAt).not.toBeNull();
@@ -279,7 +269,7 @@ test.describe("Jira connection UX @live", () => {
   });
 
   test("J1 error: a failed Jira sync is visible and retryable", async ({ page, demo }) => {
-    const jira = await jiraSnapshot(demo.home);
+    const jira = await jiraSnapshot(demo);
     const binding = jira.bindings.find((candidate) => candidate.projectId === "demo-jira");
     if (!binding) throw new Error("The live demo has no preconnected Jira binding.");
     const syncRoute = await routeJiraSync(page);
@@ -295,7 +285,7 @@ test.describe("Jira connection UX @live", () => {
   });
 
   test("J1 empty: an empty Jira import explains what was checked", async ({ page, demo }) => {
-    const jira = await jiraSnapshot(demo.home);
+    const jira = await jiraSnapshot(demo);
     const binding = jira.bindings.find((candidate) => candidate.projectId === "demo-jira");
     if (!binding) throw new Error("The live demo has no preconnected Jira binding.");
     const syncRoute = await routeJiraSync(page);

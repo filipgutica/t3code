@@ -15,7 +15,7 @@ test("E1 T3: Epic creation, child membership and completion progress persist", a
     .fill("**Reliable releases** for Beacon.");
   await epicDialog.getByRole("button", { name: "Create Epic", exact: true }).click();
   await expect(epicDialog).not.toBeVisible();
-  const epic = (await snapshot(demo.home)).epics.find((e) => e.title === "Regression Epic");
+  const epic = (await snapshot(demo)).epics.find((e) => e.title === "Regression Epic");
   if (!epic) throw new Error("Created Epic was not persisted");
   await page.goto(`/workbench?workbenchProjectId=beacon&epicId=${epic.id}`);
   await expect(page.getByRole("heading", { name: "Regression Epic", exact: true })).toBeVisible();
@@ -26,9 +26,7 @@ test("E1 T3: Epic creation, child membership and completion progress persist", a
   await page.getByRole("option", { name: "Bug", exact: true }).click();
   await dialog.getByRole("button", { name: "Create Ticket", exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  const child = (await snapshot(demo.home)).tickets.find(
-    (t) => t.title === "Regression Epic child",
-  );
+  const child = (await snapshot(demo)).tickets.find((t) => t.title === "Regression Epic child");
   if (!child) throw new Error("Created child was not persisted");
   expect(child.epicId).toBe(epic.id);
   expect(child.kind).toBe("bug");

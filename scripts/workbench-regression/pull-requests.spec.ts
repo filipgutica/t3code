@@ -3,9 +3,8 @@ import * as NodeCrypto from "node:crypto";
 import { CommandId, ThreadId } from "../../packages/contracts/src/baseSchemas.ts";
 import * as NodeFSP from "node:fs/promises";
 import type { Page } from "@playwright/test";
-import { test, expect } from "./fixtures.ts";
-import { readShellSnapshot, runRpc, dispatch } from "../workbench-demo/local.mts";
-import { withDemoAccess } from "../workbench-demo/access.mts";
+import { test, expect, type Demo } from "./fixtures.ts";
+import { dispatch } from "../workbench-demo/local.mts";
 
 type PullRequestLink = {
   readonly url: string;
@@ -35,8 +34,8 @@ const openLinkedPullRequests = async (page: Page, home: string, threadId: string
   await expect(page.getByText(/\d+ open · \d+ linked/, { exact: false })).toBeVisible();
 };
 
-const requireDemoLinks = async (home: string) => {
-  const shell = await readShellSnapshotFromHome(home);
+const requireDemoLinks = async (demo: Demo) => {
+  const shell = await demo.shellSnapshot();
   const thread = shell.threads.find((candidate) => candidate.id === "orbit-001-thread");
   const links = thread?.pullRequests ?? [];
   const second = shell.threads
@@ -49,10 +48,6 @@ const requireDemoLinks = async (home: string) => {
   return { links, second };
 };
 
-const readShellSnapshotFromHome = async (home: string) => {
-  return withDemoAccess(home, ({ wsUrl, token }) => readShellSnapshot(wsUrl, token));
-};
-
 const linkPullRequest = async (page: Page, url: string) => {
   await page.getByRole("button", { name: /^Link(?: pull request)?$/, exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Link pull request", exact: true });
@@ -61,41 +56,40 @@ const linkPullRequest = async (page: Page, url: string) => {
   await expect(dialog).not.toBeVisible();
 };
 
-const setLink = ({
-  home,
+const setLink = async ({
+  demo,
   link,
   linked,
 }: {
-  home: string;
+  demo: Demo;
   link: PullRequestLink;
   linked: boolean;
-}) =>
-  withDemoAccess(home, async ({ wsUrl, token }) => {
-    const shell = await readShellSnapshot(wsUrl, token);
-    const exists =
-      shell.threads
-        .find((thread) => thread.id === "orbit-001-thread")
-        ?.pullRequests.some((candidate) => candidate.url === link.url) ?? false;
-    if (exists === linked) return;
-    await runRpc(wsUrl, token, (client) =>
-      dispatch(client, {
-        commandId: CommandId.make(NodeCrypto.randomUUID()),
-        threadId: ThreadId.make("orbit-001-thread"),
-        host: "github.com",
-        repository: link.repository,
-        number: link.number,
-        ...(linked
-          ? { type: "thread.pull-request.link" as const, url: link.url, source: "manual" as const }
-          : { type: "thread.pull-request.unlink" as const }),
-      }),
-    );
-  });
+}) => {
+  const shell = await demo.shellSnapshot();
+  const exists =
+    shell.threads
+      .find((thread) => thread.id === "orbit-001-thread")
+      ?.pullRequests.some((candidate) => candidate.url === link.url) ?? false;
+  if (exists === linked) return;
+  await demo.rpc((client) =>
+    dispatch(client, {
+      commandId: CommandId.make(NodeCrypto.randomUUID()),
+      threadId: ThreadId.make("orbit-001-thread"),
+      host: "github.com",
+      repository: link.repository,
+      number: link.number,
+      ...(linked
+        ? { type: "thread.pull-request.link" as const, url: link.url, source: "manual" as const }
+        : { type: "thread.pull-request.unlink" as const }),
+    }),
+  );
+};
 
 test.describe("Pull request integration @live", () => {
   test.skip(!live, "Live pull request regression is opt-in (WORKBENCH_REGRESSION_LIVE=1).");
 
   test("P1: links and unlinks a real GitHub PR from a native Thread", async ({ page, demo }) => {
-    const { links } = await requireDemoLinks(demo.home);
+    const { links } = await requireDemoLinks(demo);
     const first = links[0]!;
     await openLinkedPullRequests(page, demo.home, "orbit-001-thread");
 
@@ -116,7 +110,7 @@ test.describe("Pull request integration @live", () => {
         page.locator(`a[href=${JSON.stringify(first.url)}]:not([target])`),
       ).toBeVisible();
     } finally {
-      await setLink({ home: demo.home, link: first, linked: true });
+      await setLink({ demo, link: first, linked: true });
     }
   });
 
@@ -124,7 +118,7 @@ test.describe("Pull request integration @live", () => {
     page,
     demo,
   }) => {
-    const { links, second } = await requireDemoLinks(demo.home);
+    const { links, second } = await requireDemoLinks(demo);
     await openLinkedPullRequests(page, demo.home, "orbit-001-thread");
     const first = links[0]!;
     const addedSecond = !links.some((link) => link.url === second.url);
@@ -171,7 +165,7 @@ test.describe("Pull request integration @live", () => {
         page.getByRole("navigation", { name: "Pull request tabs", exact: true }),
       ).not.toBeVisible();
     } finally {
-      if (addedSecond) await setLink({ home: demo.home, link: second, linked: false });
+      if (addedSecond) await setLink({ demo, link: second, linked: false });
     }
   });
 });
