@@ -1169,11 +1169,16 @@ export function WorkbenchTicketDetail({
   // Match the Workbench page's callback map for available assignments. Missing
   // assignments stay in that map so a Create Thread action can replace stale
   // persisted state even after the detail view hides the unavailable row.
-  const assignment = getActiveAssignmentsByTicket(
-    visibleAssignments,
-    new Set(threadsById.keys()),
-    new Set(archivedThreadsById.keys()),
-  ).get(ticket.id);
+  const assignment = getActiveAssignmentsByTicket({
+    assignments: visibleAssignments,
+    liveThreadIds: new Set(threadsById.keys()),
+    archivedThreadIds: new Set(archivedThreadsById.keys()),
+    workingThreadIds: new Set(
+      [...threadsById.values()]
+        .filter((thread) => resolveThreadStatusPill({ thread })?.label === "Working")
+        .map((thread) => thread.id),
+    ),
+  }).get(ticket.id);
   const historicalAssignments = visibleAssignments.filter(
     (candidate) => candidate.supersededAt !== null,
   );

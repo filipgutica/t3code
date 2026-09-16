@@ -184,11 +184,17 @@ export function getWorkbenchContextForThread(
   return workspace ? { assignment, ticket, workspace } : null;
 }
 
-export function getActiveAssignmentsByTicket(
-  assignments: ReadonlyArray<WorkbenchAssignment>,
-  liveThreadIds?: ReadonlySet<ThreadId>,
-  archivedThreadIds?: ReadonlySet<ThreadId>,
-): ReadonlyMap<WorkbenchTicketId, WorkbenchAssignment> {
+export function getActiveAssignmentsByTicket({
+  assignments,
+  liveThreadIds,
+  archivedThreadIds,
+  workingThreadIds,
+}: {
+  readonly assignments: ReadonlyArray<WorkbenchAssignment>;
+  readonly liveThreadIds?: ReadonlySet<ThreadId>;
+  readonly archivedThreadIds?: ReadonlySet<ThreadId>;
+  readonly workingThreadIds?: ReadonlySet<ThreadId>;
+}): ReadonlyMap<WorkbenchTicketId, WorkbenchAssignment> {
   const activeAssignments = new Map<WorkbenchTicketId, WorkbenchAssignment>();
   for (const assignment of assignments.toSorted(
     (left, right) =>
@@ -197,13 +203,17 @@ export function getActiveAssignmentsByTicket(
     if (assignment.supersededAt !== null) continue;
     const current = activeAssignments.get(assignment.ticketId);
     const assignmentAvailability = liveThreadIds?.has(assignment.threadId)
-      ? 2
+      ? workingThreadIds?.has(assignment.threadId)
+        ? 3
+        : 2
       : archivedThreadIds?.has(assignment.threadId)
         ? 1
         : 0;
     const currentAvailability = current
       ? liveThreadIds?.has(current.threadId)
-        ? 2
+        ? workingThreadIds?.has(current.threadId)
+          ? 3
+          : 2
         : archivedThreadIds?.has(current.threadId)
           ? 1
           : 0

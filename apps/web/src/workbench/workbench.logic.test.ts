@@ -467,7 +467,9 @@ describe("Workbench ticket helpers", () => {
       supersededAt: null,
     } as const;
 
-    expect(getActiveAssignmentsByTicket([historical, active]).get(ticketId)).toEqual(active);
+    expect(
+      getActiveAssignmentsByTicket({ assignments: [historical, active] }).get(ticketId),
+    ).toEqual(active);
     expect(getAssignmentsForTicket([historical, active], ticketId)).toEqual([active, historical]);
   });
 
@@ -486,9 +488,79 @@ describe("Workbench ticket helpers", () => {
       threadId: ThreadId.make("deleted"),
       createdAt: "2026-09-04T00:00:00.000Z",
     };
-    expect(getActiveAssignmentsByTicket([newer, older]).get(ticketId)).toEqual(newer);
+    expect(getActiveAssignmentsByTicket({ assignments: [newer, older] }).get(ticketId)).toEqual(
+      newer,
+    );
     expect(
-      getActiveAssignmentsByTicket([older, newer], new Set([older.threadId])).get(ticketId),
+      getActiveAssignmentsByTicket({
+        assignments: [older, newer],
+        liveThreadIds: new Set([older.threadId]),
+      }).get(ticketId),
+    ).toEqual(older);
+  });
+
+  it("prefers an older working Thread over a newer idle or review Thread", () => {
+    const ticketId = WorkbenchTicketId.make("ticket-working");
+    const working = {
+      id: WorkbenchAssignmentId.make("working"),
+      ticketId,
+      threadId: ThreadId.make("working-thread"),
+      createdAt: "2026-09-03T00:00:00.000Z",
+      supersededAt: null,
+    };
+    const idle = {
+      ...working,
+      id: WorkbenchAssignmentId.make("idle"),
+      threadId: ThreadId.make("idle-thread"),
+      createdAt: "2026-09-04T00:00:00.000Z",
+    };
+    for (const assignments of [
+      [working, idle],
+      [idle, working],
+    ]) {
+      expect(
+        getActiveAssignmentsByTicket({
+          assignments,
+          liveThreadIds: new Set([working.threadId, idle.threadId]),
+          workingThreadIds: new Set([working.threadId]),
+        }).get(ticketId),
+      ).toEqual(working);
+    }
+  });
+
+  it("breaks working-thread ties by recency and excludes superseded or unavailable work", () => {
+    const ticketId = WorkbenchTicketId.make("ticket-working");
+    const older = {
+      id: WorkbenchAssignmentId.make("older"),
+      ticketId,
+      threadId: ThreadId.make("older"),
+      createdAt: "2026-09-01T00:00:00.000Z",
+      supersededAt: null,
+    };
+    const newer = {
+      ...older,
+      id: WorkbenchAssignmentId.make("newer"),
+      threadId: ThreadId.make("newer"),
+      createdAt: "2026-09-02T00:00:00.000Z",
+    };
+    const input = {
+      assignments: [older, newer],
+      liveThreadIds: new Set([older.threadId, newer.threadId]),
+      workingThreadIds: new Set([older.threadId, newer.threadId]),
+    };
+    expect(getActiveAssignmentsByTicket(input).get(ticketId)).toEqual(newer);
+    expect(
+      getActiveAssignmentsByTicket({
+        ...input,
+        assignments: [older, { ...newer, supersededAt: "2026-09-03T00:00:00.000Z" }],
+      }).get(ticketId),
+    ).toEqual(older);
+    expect(
+      getActiveAssignmentsByTicket({
+        ...input,
+        liveThreadIds: new Set([older.threadId]),
+        archivedThreadIds: new Set([newer.threadId]),
+      }).get(ticketId),
     ).toEqual(older);
   });
 
@@ -515,18 +587,18 @@ describe("Workbench ticket helpers", () => {
     };
 
     expect(
-      getActiveAssignmentsByTicket(
-        [missing, archived, live],
-        new Set([live.threadId]),
-        new Set([archived.threadId]),
-      ).get(ticketId),
+      getActiveAssignmentsByTicket({
+        assignments: [missing, archived, live],
+        liveThreadIds: new Set([live.threadId]),
+        archivedThreadIds: new Set([archived.threadId]),
+      }).get(ticketId),
     ).toEqual(live);
     expect(
-      getActiveAssignmentsByTicket(
-        [missing, archived, live],
-        new Set(),
-        new Set([archived.threadId]),
-      ).get(ticketId),
+      getActiveAssignmentsByTicket({
+        assignments: [missing, archived, live],
+        liveThreadIds: new Set(),
+        archivedThreadIds: new Set([archived.threadId]),
+      }).get(ticketId),
     ).toEqual(archived);
   });
 
