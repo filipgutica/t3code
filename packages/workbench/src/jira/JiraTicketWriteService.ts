@@ -41,7 +41,7 @@ const selectedSprintsForBinding = (
         { id: binding.sprintId, name: binding.sprintName },
       ] satisfies ReadonlyArray<WorkbenchJiraSelectedSprint>);
 
-// Sync updates timestamps, errors, and observed active sprints as bookkeeping. Those changes
+// Sync updates timestamps, errors, and sprint display names as bookkeeping. Those changes
 // must not invalidate a write that was already waiting for the binding permit, while changes to
 // the binding configuration still need the stale-write guard.
 const bindingConfiguration = (binding: WorkbenchJiraBinding) =>
@@ -55,8 +55,9 @@ const bindingConfiguration = (binding: WorkbenchJiraBinding) =>
     binding.boardId,
     binding.boardName,
     binding.sprintId,
-    binding.sprintName,
-    binding.selectedSprints,
+    selectedSprintsForBinding(binding)
+      .map((sprint) => sprint.id)
+      .sort((left, right) => left - right),
     binding.defaultPrimaryT3ProjectId,
     binding.defaultRepositoryProjectIds,
     binding.statusMappings,

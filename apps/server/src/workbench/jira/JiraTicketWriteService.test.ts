@@ -783,6 +783,34 @@ describe("JiraTicketWriteService", () => {
     );
   }
 
+  it.effect(
+    "allows an edit after a refresh renames and materializes the same sprint selection",
+    () =>
+      runWithHarness(
+        (harness) =>
+          Effect.gen(function* () {
+            const updated = yield* harness.service.updateTicket({
+              ticketId,
+              markdown: "Updated after sprint rename",
+              expectedRemoteUpdatedAt: issueUpdatedAt,
+            });
+            assert.strictEqual(updated.description, "Updated after sprint rename");
+            assert.deepStrictEqual(
+              harness.requests.map((request) => request.method),
+              ["PUT"],
+            );
+          }),
+        {
+          bindings: [{ ...makeBinding(), selectedSprints: [] }],
+          bindingAfterPermit: {
+            ...makeBinding(),
+            sprintName: "Renamed sprint",
+            selectedSprints: [{ id: makeBinding().sprintId, name: "Renamed sprint" }],
+          },
+        },
+      ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
   it.effect("writes the shared description and mapped status, then stores the readback", () =>
     runWithHarness((harness) =>
       Effect.gen(function* () {
