@@ -1,6 +1,8 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type {
   PullRequestListEntry,
+  ProjectId,
+  WorkbenchTicketWorkspace,
   ThreadId,
   ThreadLinkedPullRequest,
   WorkbenchAssignment,
@@ -105,3 +107,20 @@ export function getWorkbenchTicketPullRequests({
   }
   return pullRequests;
 }
+
+/** Shared repository roots are navigation targets, not evidence of a Ticket's PR ownership. */
+export const getWorkbenchTicketPullRequestCheckouts = ({
+  workspace,
+  repositories,
+}: {
+  readonly workspace: WorkbenchTicketWorkspace | undefined;
+  readonly repositories: ReadonlyArray<{ readonly projectId: ProjectId; readonly title: string }>;
+}) => {
+  if (workspace?.status !== "ready") return [];
+  return repositories.flatMap(({ projectId, title }) => {
+    const prepared = workspace.repositories.find(
+      (repository) => repository.projectId === projectId && repository.status === "ready",
+    );
+    return prepared ? [{ projectId, title, cwd: prepared.worktreePath }] : [];
+  });
+};

@@ -110,7 +110,7 @@ export function WorkbenchTicketPullRequests({
           <p className="mt-1 text-xs text-muted-foreground">
             {canSearch
               ? `Linked PRs and repository mentions of ${ticketKey}.`
-              : "From this Ticket’s Threads and checkouts."}
+              : "From this Ticket’s Threads and prepared workspace."}
           </p>
         </div>
         {canSearch ? (
@@ -150,7 +150,7 @@ export function WorkbenchTicketPullRequests({
                   ? `Mentions ${ticketKey}`
                   : threadTitle
                     ? `From ${threadTitle}`
-                    : "Current checkout"}
+                    : "Ticket workspace"}
               </p>
             </div>
           );
