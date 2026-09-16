@@ -1,4 +1,5 @@
 import {
+  WorkbenchEpicId,
   ProjectId,
   WorkbenchJiraBindingId,
   WorkbenchJiraConnectionId,
@@ -223,6 +224,34 @@ describe("WorkbenchJiraRepository SQL", () => {
       expect(Option.getOrThrow(yield* repository.getCredentialId(existing.id))).toBe(
         "credential-existing",
       );
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect("loads Epic mappings even when an Epic has no child Tickets", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const repository = yield* WorkbenchJiraRepository;
+
+      // This fixture intentionally omits a child Ticket. The mapping itself is
+      // the source of truth for migrated Epics, including empty ones.
+      yield* sql`PRAGMA foreign_keys = OFF`;
+      yield* sql`
+        INSERT INTO workbench_jira_epic_links
+          (binding_id, jira_issue_id, jira_issue_key, epic_id)
+        VALUES
+          ('binding-1', '10042', 'WB-42', 'local-empty-epic')
+      `;
+
+      const links = yield* repository.listEpicLinks!(WorkbenchJiraBindingId.make("binding-1"));
+
+      expect(links).toEqual([
+        {
+          bindingId: WorkbenchJiraBindingId.make("binding-1"),
+          epicId: WorkbenchEpicId.make("local-empty-epic"),
+          jiraIssueId: "10042",
+          jiraIssueKey: "WB-42",
+        },
+      ]);
     }).pipe(Effect.provide(TestLayer)),
   );
 });

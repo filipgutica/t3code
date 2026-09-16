@@ -8,6 +8,8 @@ import * as NodeUtil from "node:util";
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 
 export const WORKBENCH_DEMO_MARKER = "t3-workbench-demo";
+/** Label used only by live regression-created Jira issues so an interrupted run can be recovered. */
+export const WORKBENCH_DEMO_CLEANUP_LABEL = "workbench-regression" as const;
 
 type CommandResult = {
   readonly stdout: string;
@@ -583,8 +585,11 @@ type JiraIssue = {
   readonly key: string;
   readonly fields?: {
     readonly summary?: string;
+    readonly description?: unknown;
     readonly status?: { readonly name?: string };
     readonly labels?: readonly string[];
+    readonly assignee?: { readonly accountId?: string } | null;
+    readonly parent?: { readonly key?: string } | null;
   };
 };
 type JiraTransition = { readonly id: string; readonly to?: { readonly name?: string } };
@@ -643,6 +648,7 @@ const decodeJiraIssueSearch = (
   value: unknown,
 ): {
   readonly issues: readonly JiraIssue[];
+  readonly total?: number;
   readonly nextPageToken?: string;
   readonly isLast?: boolean;
 } => {
@@ -651,6 +657,7 @@ const decodeJiraIssueSearch = (
     throw new Error("Jira returned an invalid issue search response.");
   return {
     issues: record.issues.map((issue) => decodeJiraIssue(issue)),
+    ...(typeof record.total === "number" ? { total: record.total } : {}),
     ...(typeof record.nextPageToken === "string" ? { nextPageToken: record.nextPageToken } : {}),
     ...(typeof record.isLast === "boolean" ? { isLast: record.isLast } : {}),
   };
@@ -709,6 +716,12 @@ const decodeJiraBoard = (
   };
 };
 
+const supportsJiraSprints = (type: string | undefined): boolean =>
+  type === undefined || type.toLowerCase() === "scrum" || type.toLowerCase() === "simple";
+
+const isJiraIssueInProject = (key: string, projectKey: string): boolean =>
+  new RegExp(`^${projectKey}-\\d+$`).test(key);
+
 export type JiraDemoState = "todo" | "in-progress" | "in-review" | "done" | "closed";
 
 export type ProvisionedJiraIssue = {
@@ -761,6 +774,23 @@ const jiraDescription = (text: string) => ({
   version: 1,
   content: [{ type: "paragraph", content: [{ type: "text", text }] }],
 });
+
+const jiraDescriptionText = (value: unknown): string | undefined => {
+  // Agile sprint responses use wiki text; REST v3 responses use ADF.
+  if (typeof value === "string") return value;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const content = Reflect.get(value, "content");
+  if (!Array.isArray(content)) return undefined;
+  const inlineText = (node: unknown): string => {
+    if (Array.isArray(node)) return node.map(inlineText).join("");
+    if (typeof node !== "object" || node === null) return "";
+    const text = Reflect.get(node, "text");
+    if (typeof text === "string") return text;
+    const nested = Reflect.get(node, "content");
+    return Array.isArray(nested) ? inlineText(nested) : "";
+  };
+  return content.map(inlineText).join("\n");
+};
 
 const desiredStatuses: Record<JiraDemoState, readonly string[]> = {
   todo: ["To Do", "Open", "Backlog"],
@@ -817,6 +847,34 @@ const jiraRequest = ({
     }
     return body as T;
   };
+};
+
+const listJiraSprintIssues = async ({
+  request,
+  sprintId,
+  fields,
+}: {
+  readonly request: JiraRequest;
+  readonly sprintId: number;
+  readonly fields: string;
+}): Promise<readonly JiraIssue[]> => {
+  const page = decodeJiraIssueSearch(
+    await request<unknown>(
+      `/rest/agile/1.0/sprint/${encodeURIComponent(String(sprintId))}/issue?maxResults=100&fields=${encodeURIComponent(fields)}`,
+    ),
+  );
+  if (
+    page.nextPageToken !== undefined ||
+    page.isLast === false ||
+    (page.total !== undefined && page.total > page.issues.length)
+  ) {
+    throw new Error(`Jira sprint ${sprintId} contains more than 100 issues.`);
+  }
+  const keys = page.issues.map(({ key }) => key);
+  if (new Set(keys).size !== keys.length) {
+    throw new Error(`Jira sprint ${sprintId} returned duplicate issue keys.`);
+  }
+  return page.issues;
 };
 
 const findMarkedIssues = async (request: JiraRequest, projectKey: string, marker: string) => {
@@ -1109,5 +1167,440 @@ export const inspectJira = async ({
     ...(board === undefined ? {} : { board }),
     sprints,
     warnings,
+  };
+};
+
+/**
+ * The subset of Jira state that a regression run owns. Issue keys are kept in
+ * the local remote manifest after the initial OAuth sync; resetting never
+ * searches for or mutates issues outside this explicit list.
+ */
+export type JiraBaselineIssue = {
+  readonly key: string;
+  readonly summary: string;
+  readonly description: string;
+  readonly labels: readonly string[];
+  readonly assigneeAccountId: string | null;
+  readonly epicKey: string | null;
+  readonly state: JiraDemoState;
+};
+
+export type JiraBaseline = {
+  readonly site: string;
+  readonly projectKey: string;
+  readonly boardId: number;
+  readonly boardName: string;
+  readonly sprintId: number;
+  readonly sprintName: string;
+  readonly issues: readonly JiraBaselineIssue[];
+};
+
+export type JiraBaselineResetResult = {
+  readonly site: string;
+  readonly projectKey: string;
+  readonly boardId: number;
+  readonly sprintId: number;
+  readonly issueKeys: readonly string[];
+  readonly removedExtras: readonly string[];
+  readonly updated: readonly string[];
+  readonly transitioned: readonly string[];
+  readonly verifiedIssueKeys: readonly string[];
+};
+
+export type ResetJiraOptions = {
+  readonly baseline: JiraBaseline;
+  readonly email: string;
+  readonly token: string;
+  readonly apply?: boolean;
+  readonly fetcher?: typeof fetch;
+};
+
+export type SnapshotJiraBaselineOptions = {
+  readonly site: string;
+  readonly projectKey: string;
+  readonly boardId: number;
+  readonly sprintId: number;
+  readonly email: string;
+  readonly token: string;
+  readonly fetcher?: typeof fetch;
+};
+
+/** Capture the complete owned sprint state once, before a regression run. */
+export const snapshotJiraBaseline = async ({
+  site: rawSite,
+  projectKey: rawProjectKey,
+  boardId,
+  sprintId,
+  email,
+  token,
+  fetcher = fetch,
+}: SnapshotJiraBaselineOptions): Promise<JiraBaseline> => {
+  const site = jiraSite(rawSite);
+  const projectKey = rawProjectKey.trim().toUpperCase();
+  if (!site) throw new Error("Jira baseline site is required.");
+  if (!email.trim() || !token.trim()) {
+    throw new Error("Jira email and API token are required to capture a Jira baseline.");
+  }
+  if (!/^[A-Z][A-Z0-9_]{1,9}$/.test(projectKey)) {
+    throw new Error("Jira baseline project key is invalid.");
+  }
+  const request = jiraRequest({ site, email, token, fetcher });
+  const project = decodeJiraProject(
+    await request<unknown>(`/rest/api/3/project/${encodeURIComponent(projectKey)}`),
+  );
+  if (project.key.toUpperCase() !== projectKey) {
+    throw new Error(`Jira returned project ${project.key}; expected ${projectKey}.`);
+  }
+  const board = decodeJiraBoard(
+    await request<unknown>(`/rest/agile/1.0/board/${encodeURIComponent(String(boardId))}`),
+  );
+  if (!supportsJiraSprints(board.type)) {
+    throw new Error(`Jira board ${boardId} is ${board.type}, not a sprint board.`);
+  }
+  if (board.id !== boardId) {
+    throw new Error(`Jira returned board ${board.id}; expected ${boardId}.`);
+  }
+  const sprint = decodeJiraSprint(
+    await request<unknown>(`/rest/agile/1.0/sprint/${encodeURIComponent(String(sprintId))}`),
+  );
+  if (sprint.id !== sprintId) {
+    throw new Error(`Jira returned sprint ${sprint.id}; expected ${sprintId}.`);
+  }
+  const issues = (
+    await listJiraSprintIssues({
+      request,
+      sprintId,
+      fields: "project,summary,description,labels,assignee,parent,status",
+    })
+  ).map((issue) => {
+    if (!isJiraIssueInProject(issue.key, project.key)) {
+      throw new Error(`Jira sprint issue ${issue.key} is outside project ${project.key}.`);
+    }
+    const fields = issue.fields;
+    // Jira returns null for an empty description; persist that as an empty
+    // string so the baseline still records the field explicitly.
+    const description =
+      fields !== undefined && "description" in fields
+        ? fields.description === null
+          ? ""
+          : jiraDescriptionText(fields.description)
+        : undefined;
+    const state = stateForStatus(fields?.status?.name);
+    const assignee = fields?.assignee;
+    const parent = fields?.parent;
+    if (
+      fields === undefined ||
+      typeof fields.summary !== "string" ||
+      description === undefined ||
+      !Array.isArray(fields.labels) ||
+      state === "unknown" ||
+      !("assignee" in fields) ||
+      (assignee !== null && typeof assignee?.accountId !== "string") ||
+      (parent !== undefined && parent !== null && typeof parent.key !== "string")
+    ) {
+      throw new Error(`Jira issue ${issue.key} does not expose all baseline fields.`);
+    }
+    return {
+      key: issue.key,
+      summary: fields.summary,
+      description,
+      labels: [...fields.labels],
+      assigneeAccountId: fields.assignee?.accountId ?? null,
+      epicKey: fields.parent?.key ?? null,
+      state,
+    } satisfies JiraBaselineIssue;
+  });
+  return validateJiraBaseline({
+    site,
+    projectKey: project.key,
+    boardId: board.id,
+    boardName: board.name,
+    sprintId: sprint.id,
+    sprintName: sprint.name,
+    issues,
+  });
+};
+
+export const validateJiraBaseline = (baseline: JiraBaseline): JiraBaseline => {
+  const site = jiraSite(baseline.site);
+  if (!site) throw new Error("Jira baseline site is required.");
+  const projectKey = baseline.projectKey.trim().toUpperCase();
+  if (!/^[A-Z][A-Z0-9_]{1,9}$/.test(projectKey)) {
+    throw new Error("Jira baseline project key is invalid.");
+  }
+  if (!Number.isSafeInteger(baseline.boardId) || baseline.boardId <= 0) {
+    throw new Error("Jira baseline board ID must be a positive integer.");
+  }
+  if (!baseline.boardName.trim()) {
+    throw new Error("Jira baseline board name is required.");
+  }
+  if (!Number.isSafeInteger(baseline.sprintId) || baseline.sprintId <= 0) {
+    throw new Error("Jira baseline sprint ID must be a positive integer.");
+  }
+  if (!baseline.sprintName.trim()) {
+    throw new Error("Jira baseline sprint name is required.");
+  }
+  const issues = baseline.issues.map(
+    ({ key, summary, description, labels, assigneeAccountId, epicKey, state }) => {
+      const normalized = key.trim().toUpperCase();
+      if (!new RegExp(`^${projectKey}-\\d+$`).test(normalized)) {
+        throw new Error(`Jira baseline issue must belong to ${projectKey}: ${key}`);
+      }
+      if (!summary.trim() || typeof description !== "string") {
+        throw new Error(`Jira baseline issue ${normalized} is missing summary or description.`);
+      }
+      if (
+        !Array.isArray(labels) ||
+        labels.some((label) => typeof label !== "string" || label.trim().length === 0)
+      ) {
+        throw new Error(`Jira baseline issue ${normalized} has invalid labels.`);
+      }
+      if (assigneeAccountId !== null && !assigneeAccountId.trim()) {
+        throw new Error(`Jira baseline issue ${normalized} has an invalid assignee.`);
+      }
+      if (epicKey !== null && !new RegExp(`^${projectKey}-\\d+$`).test(epicKey)) {
+        throw new Error(`Jira baseline issue ${normalized} has an invalid Epic.`);
+      }
+      if (!(state in desiredStatuses)) {
+        throw new Error(`Jira baseline issue ${normalized} has an invalid state.`);
+      }
+      return {
+        key: normalized,
+        summary: summary.trim(),
+        description,
+        labels: [...labels],
+        assigneeAccountId,
+        epicKey,
+        state,
+      };
+    },
+  );
+  if (new Set(issues.map(({ key }) => key)).size !== issues.length) {
+    throw new Error("Jira baseline contains duplicate issue keys.");
+  }
+  return {
+    site,
+    projectKey,
+    boardId: baseline.boardId,
+    boardName: baseline.boardName.trim(),
+    sprintId: baseline.sprintId,
+    sprintName: baseline.sprintName.trim(),
+    issues,
+  };
+};
+
+/**
+ * Restore explicitly owned Jira issues to the selected sprint and, when the
+ * baseline records a state, transition them through the real Jira workflow.
+ * The default is a write-free plan so both the wizard and CI can show the same
+ * actions before applying them.
+ */
+export const resetJira = async ({
+  baseline: input,
+  email,
+  token,
+  apply = false,
+  fetcher = fetch,
+}: ResetJiraOptions): Promise<JiraBaselineResetResult | JiraProvisionPlan> => {
+  const baseline = validateJiraBaseline(input);
+  const operations = [
+    `Verify Jira project ${baseline.projectKey} and board ${baseline.boardId}.`,
+    `Add ${baseline.issues.length} owned issue(s) to sprint ${baseline.sprintId}.`,
+    ...baseline.issues.map((issue) => `Restore ${issue.key} to ${issue.state}.`),
+    `Delete marked ${WORKBENCH_DEMO_CLEANUP_LABEL} extras and move other ${baseline.projectKey} sprint extras to the backlog.`,
+    `Verify all ${baseline.projectKey} issues in the sprint match the recorded baseline.`,
+  ];
+  if (!apply) {
+    return {
+      site: baseline.site,
+      projectKey: baseline.projectKey,
+      marker: `${WORKBENCH_DEMO_MARKER}-baseline`,
+      apply: false,
+      operations,
+    };
+  }
+  if (!email.trim() || !token.trim()) {
+    throw new Error("Jira email and API token are required when applying a Jira baseline reset.");
+  }
+
+  const request = jiraRequest({ site: baseline.site, email, token, fetcher });
+  const project = decodeJiraProject(
+    await request<unknown>(`/rest/api/3/project/${encodeURIComponent(baseline.projectKey)}`),
+  );
+  if (project.key !== baseline.projectKey) {
+    throw new Error(
+      `Jira returned project ${project.key}; expected ${baseline.projectKey}. Refusing baseline reset.`,
+    );
+  }
+  const board = decodeJiraBoard(
+    await request<unknown>(`/rest/agile/1.0/board/${baseline.boardId}`),
+  );
+  if (!supportsJiraSprints(board.type)) {
+    throw new Error(`Jira board ${baseline.boardId} is ${board.type}, not a sprint board.`);
+  }
+  if (board.id !== baseline.boardId) {
+    throw new Error(`Jira returned board ${board.id}; expected ${baseline.boardId}.`);
+  }
+  if (board.name !== baseline.boardName) {
+    throw new Error(
+      `Jira board ${baseline.boardId} is named ${board.name}; expected ${baseline.boardName}.`,
+    );
+  }
+  const sprint = decodeJiraSprint(
+    await request<unknown>(`/rest/agile/1.0/sprint/${baseline.sprintId}`),
+  );
+  if (sprint.id !== baseline.sprintId) {
+    throw new Error(`Jira returned sprint ${sprint.id}; expected ${baseline.sprintId}.`);
+  }
+  if (sprint.name !== baseline.sprintName) {
+    throw new Error(
+      `Jira sprint ${baseline.sprintId} is named ${sprint.name}; expected ${baseline.sprintName}.`,
+    );
+  }
+
+  // Read the complete current membership before any writes so a huge or
+  // malformed sprint fails during preflight rather than after a partial reset.
+  const sprintIssues = await listJiraSprintIssues({
+    request,
+    sprintId: baseline.sprintId,
+    fields: "project,labels",
+  });
+  const baselineKeys = new Set(baseline.issues.map(({ key }) => key));
+  const markedIssues = await findMarkedIssues(
+    request,
+    baseline.projectKey,
+    WORKBENCH_DEMO_CLEANUP_LABEL,
+  );
+  const removableExtras = markedIssues.filter(
+    (issue) =>
+      isJiraIssueInProject(issue.key, baseline.projectKey) &&
+      !baselineKeys.has(issue.key) &&
+      issue.fields?.labels?.includes(WORKBENCH_DEMO_CLEANUP_LABEL),
+  );
+  const removableExtraKeys = new Set(removableExtras.map(({ key }) => key));
+  const sprintBacklogExtras = sprintIssues.filter(
+    (issue) =>
+      isJiraIssueInProject(issue.key, baseline.projectKey) &&
+      !baselineKeys.has(issue.key) &&
+      !removableExtraKeys.has(issue.key),
+  );
+
+  const issueKeys: string[] = [];
+  const updates: Array<{
+    readonly key: string;
+    readonly fields: Record<string, unknown>;
+    readonly transitionId?: string;
+  }> = [];
+  for (const baselineIssue of baseline.issues) {
+    const issue = decodeJiraIssue(
+      await request<unknown>(
+        `/rest/api/3/issue/${encodeURIComponent(baselineIssue.key)}?fields=project,summary,description,labels,assignee,parent,status`,
+      ),
+    );
+    if (issue.key !== baselineIssue.key) {
+      throw new Error(
+        `Jira issue ${baselineIssue.key} resolved to ${issue.key}; refusing to reset a different issue.`,
+      );
+    }
+    issueKeys.push(issue.key);
+
+    let transitionId: string | undefined;
+    if (stateForStatus(issue.fields?.status?.name) !== baselineIssue.state) {
+      const transitions = decodeJiraTransitions(
+        await request<unknown>(`/rest/api/3/issue/${encodeURIComponent(issue.key)}/transitions`),
+      );
+      transitionId = transitions.find((candidate) =>
+        desiredStatuses[baselineIssue.state].some(
+          (name) => name.toLowerCase() === candidate.to?.name?.toLowerCase(),
+        ),
+      )?.id;
+      if (transitionId === undefined) {
+        throw new Error(
+          `Jira issue ${issue.key} cannot transition to ${baselineIssue.state}; refusing partial baseline reset.`,
+        );
+      }
+    }
+    updates.push({
+      key: issue.key,
+      fields: {
+        summary: baselineIssue.summary,
+        description: jiraDescription(baselineIssue.description),
+        labels: [...baselineIssue.labels],
+        assignee:
+          baselineIssue.assigneeAccountId === null
+            ? null
+            : { accountId: baselineIssue.assigneeAccountId },
+        parent: baselineIssue.epicKey === null ? null : { key: baselineIssue.epicKey },
+      },
+      ...(transitionId === undefined ? {} : { transitionId }),
+    });
+  }
+
+  const removedExtras: string[] = [];
+  for (const extra of removableExtras) {
+    await request(`/rest/api/3/issue/${encodeURIComponent(extra.key)}`, {
+      method: "DELETE",
+    });
+    removedExtras.push(extra.key);
+  }
+  if (sprintBacklogExtras.length > 0) {
+    await request("/rest/agile/1.0/backlog/issue", {
+      method: "POST",
+      body: JSON.stringify({ issues: sprintBacklogExtras.map(({ key }) => key) }),
+    });
+  }
+
+  const updated: string[] = [];
+  for (const update of updates) {
+    await request(`/rest/api/3/issue/${encodeURIComponent(update.key)}`, {
+      method: "PUT",
+      body: JSON.stringify({ fields: update.fields }),
+    });
+    updated.push(update.key);
+  }
+  if (issueKeys.length) {
+    await request(`/rest/agile/1.0/sprint/${baseline.sprintId}/issue`, {
+      method: "POST",
+      body: JSON.stringify({ issues: issueKeys }),
+    });
+  }
+
+  const transitioned: string[] = [];
+  for (const update of updates) {
+    if (update.transitionId === undefined) continue;
+    await request(`/rest/api/3/issue/${encodeURIComponent(update.key)}/transitions`, {
+      method: "POST",
+      body: JSON.stringify({ transition: { id: update.transitionId } }),
+    });
+    transitioned.push(update.key);
+  }
+  const verifiedIssueKeys = (
+    await listJiraSprintIssues({
+      request,
+      sprintId: baseline.sprintId,
+      fields: "project,labels",
+    })
+  ).map(({ key }) => key);
+  const verifiedProjectIssueKeys = verifiedIssueKeys.filter((key) =>
+    isJiraIssueInProject(key, baseline.projectKey),
+  );
+  const verifiedSet = new Set(verifiedIssueKeys);
+  const missing = baseline.issues.map(({ key }) => key).filter((key) => !verifiedSet.has(key));
+  const unexpected = verifiedProjectIssueKeys.filter((key) => !baselineKeys.has(key));
+  if (missing.length || unexpected.length) {
+    throw new Error(
+      `Jira sprint ${baseline.sprintId} membership mismatch after reset (missing: ${missing.join(", ") || "none"}; unexpected: ${unexpected.join(", ") || "none"}).`,
+    );
+  }
+  return {
+    site: baseline.site,
+    projectKey: baseline.projectKey,
+    boardId: board.id,
+    sprintId: sprint.id,
+    issueKeys,
+    removedExtras,
+    updated,
+    transitioned,
+    verifiedIssueKeys,
   };
 };

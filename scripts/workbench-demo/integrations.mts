@@ -106,8 +106,8 @@ export const syncDemoJira = async ({
           projectKeyOrId: projectKey,
         });
         const board = boards.find((item) => item.id === boardId);
-        if (!board || board.type !== "scrum")
-          throw new Error("Select an accessible Scrum board for this Jira project.");
+        if (!board || (board.type !== "scrum" && board.type !== "simple"))
+          throw new Error("Select an accessible sprint board for this Jira project.");
         const sprints = yield* client[methods.workbenchJiraListSprints]({
           connectionId: connection.id,
           boardId,

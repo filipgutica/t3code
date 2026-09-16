@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "@effect/vitest";
 import { subscribeToWorkbenchRefresh, type WorkbenchRefreshTarget } from "./workbenchRefresh";
 
 describe("Workbench refresh subscription", () => {
-  it("refreshes on the interval and when the window regains focus", () => {
+  it("refreshes immediately, on the interval, and when the window regains focus", () => {
     vi.useFakeTimers();
     try {
       const focusHandlers = new Set<() => void>();
@@ -38,19 +38,21 @@ describe("Workbench refresh subscription", () => {
         target,
         refresh,
         intervalMs: 15_000,
+        immediate: true,
       });
-      vi.advanceTimersByTime(15_000);
       expect(refresh).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(15_000);
+      expect(refresh).toHaveBeenCalledTimes(2);
 
       for (const handler of focusHandlers) handler();
-      expect(refresh).toHaveBeenCalledTimes(2);
+      expect(refresh).toHaveBeenCalledTimes(3);
 
       unsubscribe();
       vi.advanceTimersByTime(15_000);
       for (const handler of focusHandlers) handler();
       for (const handler of onlineHandlers) handler();
       for (const handler of visibilityHandlers) handler();
-      expect(refresh).toHaveBeenCalledTimes(2);
+      expect(refresh).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
     }
@@ -63,7 +65,7 @@ describe("Workbench refresh subscription", () => {
       const onlineHandlers = new Set<() => void>();
       const visibilityHandlers = new Set<() => void>();
       const document = {
-        visibilityState: "visible" as DocumentVisibilityState,
+        visibilityState: "hidden" as DocumentVisibilityState,
         addEventListener: (_type: "visibilitychange", handler: () => void) => {
           visibilityHandlers.add(handler);
         },
@@ -91,7 +93,9 @@ describe("Workbench refresh subscription", () => {
         target,
         refresh,
         intervalMs: 15_000,
+        immediate: true,
       });
+      expect(refresh).not.toHaveBeenCalled();
 
       document.visibilityState = "hidden";
       vi.advanceTimersByTime(15_000);

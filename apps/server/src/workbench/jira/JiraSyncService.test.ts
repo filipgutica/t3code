@@ -15,6 +15,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
@@ -84,6 +85,100 @@ const oldIssue = (issueId: string): WorkbenchJiraIssueLink => ({
   linkedAt: "2026-09-01T00:00:00.000Z",
   lastSeenAt: "2026-09-01T00:00:00.000Z",
 });
+
+const makeSyncHarness = (options?: {
+  readonly active?: boolean;
+  readonly holdFirstRequest?: boolean;
+}) =>
+  Effect.gen(function* () {
+    const firstRequestStarted = yield* Deferred.make<void>();
+    const releaseFirstRequest = yield* Deferred.make<void>();
+    let savedBinding = { ...binding, active: options?.active ?? true };
+    let links: ReadonlyArray<WorkbenchJiraIssueLink> = [];
+    let requestCount = 0;
+    let shouldFail = false;
+    const repository = WorkbenchJiraRepository.of({
+      findConnectionByCloudId: () => Effect.succeed(Option.none()),
+      getConnection: () => Effect.succeed(Option.none()),
+      listConnections: () => Effect.succeed([]),
+      getCredentialId: () => Effect.succeed(Option.none()),
+      upsertConnection: () => Effect.void,
+      upsertConnections: () => Effect.void,
+      getBinding: () => Effect.succeed(Option.some(savedBinding)),
+      listBindings: () => Effect.succeed([savedBinding]),
+      upsertBinding: () => Effect.void,
+      updateBindingSyncMetadata: (input) =>
+        Effect.sync(() => {
+          savedBinding = {
+            ...savedBinding,
+            lastSyncedAt: input.syncedAt,
+            lastSyncError: null,
+            updatedAt: input.syncedAt,
+          };
+          return true;
+        }),
+      updateBindingSyncError: (input) =>
+        Effect.sync(() => {
+          savedBinding = {
+            ...savedBinding,
+            lastSyncError: input.message,
+            updatedAt: input.updatedAt,
+          };
+          return true;
+        }),
+      listIssueLinks: () => Effect.succeed(links),
+      replaceIssueLinks: (_bindingId, next) =>
+        Effect.sync(() => {
+          links = next;
+        }),
+    } satisfies WorkbenchJiraRepositoryShape);
+    const api = JiraApi.of({
+      listProjects: () => Effect.die("unexpected project read"),
+      listBoards: () => Effect.die("unexpected board read"),
+      listSprints: () => Effect.die("unexpected sprint read"),
+      getBoardConfiguration: () => Effect.die("unexpected configuration read"),
+      listAssignedSprintIssues: () =>
+        Effect.gen(function* () {
+          requestCount += 1;
+          if (options?.holdFirstRequest && requestCount === 1) {
+            yield* Deferred.succeed(firstRequestStarted, undefined);
+            yield* Deferred.await(releaseFirstRequest);
+          }
+          if (shouldFail) {
+            return yield* Effect.fail(
+              new WorkbenchJiraOperationError({
+                code: "request_failed",
+                message: "Jira could not be read.",
+              }),
+            );
+          }
+          return [];
+        }),
+      prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
+      createIssue: () => Effect.die("unexpected Jira issue creation"),
+      addIssueToSprint: () => Effect.die("unexpected Jira sprint update"),
+    });
+    const importer = JiraTicketImporter.of({
+      upsertJiraProjection: () => Effect.die("unexpected Ticket import"),
+    });
+    const service = yield* JiraSyncService.make.pipe(
+      Effect.provideService(WorkbenchJiraRepository, repository),
+      Effect.provideService(JiraApi, api),
+      Effect.provideService(JiraTicketImporter, importer),
+    );
+
+    return {
+      service,
+      firstRequestStarted,
+      releaseFirstRequest,
+      getRequestCount: () => requestCount,
+      getBinding: () => savedBinding,
+      getLinks: () => links,
+      setShouldFail: (value: boolean) => {
+        shouldFail = value;
+      },
+    };
+  });
 
 describe("JiraSyncService", () => {
   it.effect("imports and deduplicates the assigned issue union across selected sprints", () =>
@@ -165,6 +260,112 @@ describe("JiraSyncService", () => {
         ["10001", "10002"],
       );
       assert.deepStrictEqual(savedBinding.selectedSprints, multiBinding.selectedSprints);
+    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("defers an interrupted Ticket creation until its migration resumes", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`
+        CREATE TABLE workbench_tickets (
+          ticket_id TEXT PRIMARY KEY,
+          title TEXT NOT NULL
+        )
+      `;
+      yield* sql`
+        INSERT INTO workbench_tickets (ticket_id, title)
+        VALUES (${existingTicketId}, 'Edited locally while Jira was creating')
+      `;
+      yield* sql`
+        CREATE TABLE workbench_jira_ticket_creations (
+          ticket_id TEXT PRIMARY KEY,
+          binding_id TEXT NOT NULL,
+          jira_issue_id TEXT,
+          result_ticket_id TEXT,
+          state TEXT NOT NULL
+        )
+      `;
+      yield* sql`
+        INSERT INTO workbench_jira_ticket_creations
+          (ticket_id, binding_id, jira_issue_id, result_ticket_id, state)
+        VALUES
+          (${existingTicketId}, ${bindingId}, '10003', NULL, 'created')
+      `;
+
+      let links: ReadonlyArray<WorkbenchJiraIssueLink> = [];
+      let savedBinding = binding;
+      let projectedId: WorkbenchTicketId | null = null;
+      const repository = WorkbenchJiraRepository.of({
+        findConnectionByCloudId: () => Effect.succeed(Option.none()),
+        getConnection: () => Effect.succeed(Option.none()),
+        listConnections: () => Effect.succeed([]),
+        getCredentialId: () => Effect.succeed(Option.none()),
+        upsertConnection: () => Effect.void,
+        upsertConnections: () => Effect.void,
+        getBinding: () => Effect.succeed(Option.some(savedBinding)),
+        listBindings: () => Effect.succeed([savedBinding]),
+        upsertBinding: () => Effect.void,
+        updateBindingSyncMetadata: ({ syncedAt }) =>
+          Effect.sync(() => {
+            savedBinding = { ...savedBinding, lastSyncedAt: syncedAt, updatedAt: syncedAt };
+            return true;
+          }),
+        updateBindingSyncError: () => Effect.succeed(true),
+        listIssueLinks: () => Effect.succeed(links),
+        replaceIssueLinks: (_id, next) =>
+          Effect.sync(() => {
+            links = next;
+          }),
+      } satisfies WorkbenchJiraRepositoryShape);
+      const api = JiraApi.of({
+        listProjects: () => Effect.die("unexpected project read"),
+        listBoards: () => Effect.die("unexpected board read"),
+        listSprints: () => Effect.die("unexpected sprint read"),
+        getBoardConfiguration: () => Effect.die("unexpected configuration read"),
+        listAssignedSprintIssues: () => Effect.succeed([oldIssue("10003").issue]),
+        prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
+        createIssue: () => Effect.die("unexpected Jira issue creation"),
+        addIssueToSprint: () => Effect.die("unexpected Jira sprint update"),
+      });
+      const importer = JiraTicketImporter.of({
+        upsertJiraProjection: ({ existingTicketId }) =>
+          Effect.sync(() => {
+            projectedId = existingTicketId;
+            return existingTicketId ?? WorkbenchTicketId.make("unexpected-new-ticket");
+          }),
+      });
+      const service = yield* JiraSyncService.make.pipe(
+        Effect.provideService(WorkbenchJiraRepository, repository),
+        Effect.provideService(JiraApi, api),
+        Effect.provideService(JiraTicketImporter, importer),
+      );
+
+      yield* service.syncBinding({ bindingId });
+
+      assert.strictEqual(projectedId, null);
+      assert.deepStrictEqual(links, []);
+      const local = yield* sql<{ readonly title: string }>`
+        SELECT title FROM workbench_tickets WHERE ticket_id = ${existingTicketId}
+      `;
+      assert.strictEqual(local[0]?.title, "Edited locally while Jira was creating");
+
+      // A successful migration retry records the local projection identity;
+      // the next sync can safely finish the link using that identity.
+      yield* sql`
+        UPDATE workbench_jira_ticket_creations
+        SET result_ticket_id = ${existingTicketId}
+        WHERE ticket_id = ${existingTicketId}
+      `;
+      yield* service.syncBinding({ bindingId });
+
+      assert.strictEqual(projectedId, existingTicketId);
+      assert.strictEqual(links[0]?.ticketId, existingTicketId);
+      const saved = yield* sql<{ readonly resultTicketId: string | null }>`
+        SELECT result_ticket_id AS "resultTicketId"
+        FROM workbench_jira_ticket_creations
+        WHERE ticket_id = ${existingTicketId}
+      `;
+      assert.strictEqual(saved[0]?.resultTicketId, existingTicketId);
     }).pipe(Effect.provide(SqlitePersistenceMemory)),
   );
 
@@ -421,6 +622,103 @@ describe("JiraSyncService", () => {
       yield* Fiber.join(second);
       assert.strictEqual(yield* Ref.get(apiCallCount), 2);
     }).pipe(Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("collapses concurrent background synchronization for the same binding", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeSyncHarness({ holdFirstRequest: true });
+      const first = yield* harness.service
+        .syncBinding({ bindingId, background: true })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(harness.firstRequestStarted);
+      const second = yield* harness.service
+        .syncBinding({ bindingId, background: true })
+        .pipe(Effect.forkChild);
+      yield* Effect.yieldNow;
+
+      assert.strictEqual(harness.getRequestCount(), 1);
+      yield* TestClock.adjust("10 seconds");
+      yield* Deferred.succeed(harness.releaseFirstRequest, undefined);
+      const firstResult = yield* Fiber.join(first);
+      const secondResult = yield* Fiber.join(second);
+
+      assert.deepStrictEqual(secondResult.links, harness.getLinks());
+      assert.strictEqual(secondResult.syncedAt, firstResult.syncedAt);
+      assert.strictEqual(harness.getRequestCount(), 1);
+
+      yield* TestClock.adjust("5 seconds");
+      yield* harness.service.syncBinding({ bindingId, background: true });
+      assert.strictEqual(harness.getRequestCount(), 2);
+    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistenceMemory, TestClock.layer()))),
+  );
+
+  it.effect("returns the persisted result during the background cooldown", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeSyncHarness();
+      const firstResult = yield* harness.service.syncBinding({ bindingId, background: true });
+      const secondResult = yield* harness.service.syncBinding({ bindingId, background: true });
+
+      assert.strictEqual(harness.getRequestCount(), 1);
+      assert.deepStrictEqual(secondResult.links, harness.getLinks());
+      assert.strictEqual(secondResult.syncedAt, firstResult.syncedAt);
+      assert.strictEqual(secondResult.activated, 0);
+      assert.strictEqual(secondResult.updated, 0);
+      assert.strictEqual(secondResult.deactivated, 0);
+      assert.isNull(harness.getBinding().lastSyncError);
+
+      yield* TestClock.adjust("15 seconds");
+      yield* harness.service.syncBinding({ bindingId, background: true });
+      assert.strictEqual(harness.getRequestCount(), 2);
+    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistenceMemory, TestClock.layer()))),
+  );
+
+  it.effect("lets manual synchronization bypass the background cooldown", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeSyncHarness();
+      yield* harness.service.syncBinding({ bindingId, background: true });
+      yield* harness.service.syncBinding({ bindingId });
+      yield* harness.service.syncBinding({ bindingId, background: true });
+
+      assert.strictEqual(harness.getRequestCount(), 2);
+    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistenceMemory, TestClock.layer()))),
+  );
+
+  it.effect("throttles repeated background failures without clearing the saved error", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeSyncHarness();
+      yield* harness.service.syncBinding({ bindingId, background: true });
+      yield* TestClock.adjust("15 seconds");
+      harness.setShouldFail(true);
+      const firstError = yield* Effect.flip(
+        harness.service.syncBinding({ bindingId, background: true }),
+      );
+      const secondError = yield* Effect.flip(
+        harness.service.syncBinding({ bindingId, background: true }),
+      );
+
+      assert.strictEqual(harness.getRequestCount(), 2);
+      assert.strictEqual(secondError.code, firstError.code);
+      assert.strictEqual(secondError.message, firstError.message);
+      assert.strictEqual(harness.getBinding().lastSyncError, firstError.message);
+
+      harness.setShouldFail(false);
+      yield* TestClock.adjust("15 seconds");
+      yield* harness.service.syncBinding({ bindingId, background: true });
+      assert.strictEqual(harness.getRequestCount(), 3);
+      assert.isNull(harness.getBinding().lastSyncError);
+    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistenceMemory, TestClock.layer()))),
+  );
+
+  it.effect("rejects background synchronization for a paused binding", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeSyncHarness({ active: false });
+      const error = yield* Effect.flip(
+        harness.service.syncBinding({ bindingId, background: true }),
+      );
+
+      assert.strictEqual(error.code, "binding_inactive");
+      assert.strictEqual(harness.getRequestCount(), 0);
+    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistenceMemory, TestClock.layer()))),
   );
 
   it.effect("holds binding updates until an in-flight synchronization completes", () =>

@@ -91,6 +91,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workbenchJiraSyncBinding]: AuthOrchestrationOperateScope,
   [WS_METHODS.workbenchJiraUpdateTicket]: AuthOrchestrationOperateScope,
   [WS_METHODS.workbenchJiraGetTicketTransitions]: AuthOrchestrationReadScope,
+  [WS_METHODS.workbenchJiraMigrateLocalTickets]: AuthOrchestrationOperateScope,
   [WS_METHODS.cloudGetRelayClientStatus]: AuthRelayReadScope,
   [WS_METHODS.cloudInstallRelayClient]: AuthRelayWriteScope,
   [WS_METHODS.pullRequestsList]: AuthOrchestrationReadScope,

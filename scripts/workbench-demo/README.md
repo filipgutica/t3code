@@ -3,8 +3,9 @@
 Set up an isolated local Workbench with sample repositories, tickets, Epics, and
 threads. Connect it to existing GitHub/Jira demo resources, or create your own.
 
-**The wizard saves configuration. It does not launch Workbench or create remote
-tickets and PRs.** Run the commands below after setup.
+**Initial setup saves configuration.** Run the commands below to launch and seed
+Workbench. On later runs, the wizard also offers `reset` to restore and launch the
+saved baseline.
 
 ## 1. Run the wizard
 
@@ -20,10 +21,13 @@ bash scripts/workbench-demo/setup.sh
 - Saved settings take priority over environment variables and detected defaults.
 - GitHub defaults to your signed-in account. Known demo repository pairs are detected when possible.
 - Saved secrets stay hidden; Enter retains them.
-- With a complete saved profile, press Enter to skip setup or type `edit` to review it.
+- With a complete saved profile, press Enter to skip setup, type `edit` to review it,
+  or `reset` to restore the saved baseline.
 
-The profile lives in `$DEMO_HOME/config.env`, outside the checkout. Keep this file
-private: it can contain credentials. Choose another `DEMO_HOME` for a separate demo.
+The **demo home** is a separate data directory containing configuration, database,
+credentials, and repository clones. The current checkout runs against that directory;
+it is not another app installation. The profile is `$DEMO_HOME/config.env`.
+Keep it private and choose another `DEMO_HOME` for a separate demo.
 
 ## 2. Choose existing or new remote demo resources
 
@@ -44,16 +48,17 @@ separate from these remote resource modes and does not verify access.
 
 ### What the fields mean
 
-| Field                    | What to enter                                                                                                        |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| GitHub owner             | The user or organization owning the demo repositories. Enter accepts the detected login.                             |
-| Repository names         | Two existing repositories, API first and web second. Used for `reuse`.                                               |
-| Repository prefix        | A name such as `workbench-demo` for identifying provisioned resources. Keep it unchanged on reruns.                  |
-| Jira site / project key  | Enter the site URL; select the project by name. Its key is saved automatically.                                      |
-| Board / sprint ID        | Select the Scrum board and sprint by name. The wizard saves their IDs.                                               |
-| Jira email / API token   | Required for the Jira selection menus and provisioning. Enter keeps saved credentials. Use a classic user API token. |
-| OAuth client ID / secret | Credentials from your Atlassian OAuth app, used by Workbench to connect Jira. These are separate from the API token. |
-| Callback URL             | The redirect registered in that OAuth app. For web, use the actual running web origin plus `/workbench`.             |
+| Field                    | What to enter                                                                                                                                              |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GitHub owner             | The user or organization owning the demo repositories. Enter accepts the detected login.                                                                   |
+| Repository names         | Two existing repositories, API first and web second. Used for `reuse`.                                                                                     |
+| Repository prefix        | A name such as `workbench-demo` for identifying provisioned resources. Keep it unchanged on reruns.                                                        |
+| Jira site / project key  | Enter the site URL; select the project by name. Its key is saved automatically.                                                                            |
+| Board / sprint ID        | Select the Scrum board and sprint by name. The wizard saves their IDs.                                                                                     |
+| Jira email / API token   | Required for the Jira selection menus and provisioning. Enter keeps saved credentials. Use a classic user API token.                                       |
+| OAuth mode / broker URL  | `broker` (recommended) uses the hosted Workbench OAuth broker at `https://workbench-auth.fgutica.workers.dev`; `direct` uses your own Atlassian OAuth app. |
+| OAuth client ID / secret | Required only for `direct`; these credentials are used by Workbench to connect Jira and are separate from the API token.                                   |
+| Callback URL             | Required only for `direct`: register the actual running web origin plus `/workbench` (or the desktop callback) in that OAuth app.                          |
 
 ### Choosing Jira resources without IDs
 
@@ -122,9 +127,12 @@ repositories are cloned and their PRs linked. No agent provider runs during seed
 
 Open the **full pairing URL**, including its token, from the first terminal.
 Connect Jira through Workbench's **Connect Jira → Connect Atlassian** flow.
-Register the actual callback origin/port in your OAuth app before connecting;
-ports can change if occupied. For desktop, use the server origin plus
-`/oauth/workbench/jira/callback` instead.
+The recommended broker mode needs no local client ID, client secret, or callback
+registration. The deployed worker owns the Atlassian app credentials and callback.
+
+Only in **direct** mode, register your actual callback before connecting. Web uses
+its origin plus `/workbench`; desktop uses the server origin plus
+`/oauth/workbench/jira/callback`. Ports can change if occupied.
 
 After consent, import the Jira sprint and verify:
 
@@ -151,21 +159,62 @@ Stop with Ctrl-C in the first terminal, or run:
 node scripts/workbench-demo/cli.mts stop --home "$DEMO_HOME"
 ```
 
-To reset local data, stop first, preview, then apply:
+For repeatable testing, use **reset-baseline** below. It preserves the Jira
+connection and launches the seeded environment.
 
-```sh
-node scripts/workbench-demo/cli.mts reset --home "$DEMO_HOME"
-node scripts/workbench-demo/cli.mts reset --home "$DEMO_HOME" --apply
-```
-
-Reset archives the previous home and keeps configuration and remote resource IDs.
-It does not delete GitHub or Jira data. Run `start`, then `seed` again.
+The lower-level `reset --apply` only archives the home and retains configuration
+and remote resource IDs. It discards the active local database and connection.
+Use it when you intend to start, seed, and connect Jira again.
 
 For optional screenshot conversations, run `history --home "$DEMO_HOME"` while
 stopped, then restart. It backs up the database and adds eight labeled synthetic
 messages to display records only. These are not provider executions; reset before
 using that environment to test real provider turns.
 
-Local lifecycle and repeat seeding have been tested. Live GitHub/Jira provisioning
-still needs end-to-end validation. For all commands, run
+### Restore the shared regression baseline
+
+Capture the intended Jira sprint once, using the configured classic API token:
+
+```sh
+node scripts/workbench-demo/cli.mts capture-baseline --home "$DEMO_HOME" --apply
+```
+
+Review and restore the baseline with the same reset used by CI:
+
+```sh
+node scripts/workbench-demo/cli.mts reset-baseline --home "$DEMO_HOME"
+node scripts/workbench-demo/cli.mts reset-baseline --home "$DEMO_HOME" --apply --remote-apply
+```
+
+The reset archives local state, recreates the demo repositories and Workbench
+fixtures, retains the Jira OAuth connection, and imports the saved sprint. Remote
+reset restores recorded Jira issue fields and workflow states, returns extra
+same-project sprint issues to the backlog, and deletes marked regression-only
+issues. Use it only with the dedicated demo project. Omit `--remote-apply` to leave
+remote Jira data unchanged. Local resets are not coordinated with CI: do not reset
+the shared ORBIT sprint while a live CI job is using it.
+
+The public Orbit repositories use pinned commits; Beacon uses synthetic local
+repositories. GitHub remote branches and PRs are read, not reset. See the
+[regression suite setup](../workbench-regression/README.md) for CI credentials,
+coverage, and limits. For all commands, run
 `node scripts/workbench-demo/cli.mts --help`.
+
+## Broker configuration outside the wizard
+
+For ordinary local development, set these variables in the server environment:
+
+```sh
+export T3_WORKBENCH_JIRA_BROKER_URL="https://workbench-auth.fgutica.workers.dev"
+export T3_WORKBENCH_JIRA_CLIENT_ID=""
+export T3_WORKBENCH_JIRA_CLIENT_SECRET=""
+```
+
+The wizard saves these values in the demo profile. An unbundled development
+server needs the broker URL explicitly; released builds can use their bundled default.
+Restart after changing configuration, then connect Jira once from that environment.
+
+The worker handles authorization and token refresh. Each environment stores its
+own grant and calls Jira directly. Use a separate local connection from the CI
+grant because Atlassian rotates refresh tokens. Keep direct OAuth for developing
+the authentication integration or operating your own Atlassian app.

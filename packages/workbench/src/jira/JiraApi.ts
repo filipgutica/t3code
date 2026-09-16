@@ -190,11 +190,24 @@ export interface JiraApiShape {
     { readonly issueTypeId: string; readonly accountId: string },
     WorkbenchJiraOperationError
   >;
+  /** The Jira Epic issue type and current account used by local migration. */
+  readonly prepareEpicCreation?: (input: {
+    readonly connectionId: WorkbenchJiraConnectionId;
+    readonly projectKey: string;
+  }) => Effect.Effect<
+    { readonly issueTypeId: string; readonly accountId: string },
+    WorkbenchJiraOperationError
+  >;
   /** Creates a Jira issue. Sprint placement is a separate resumable step. */
   readonly createIssue: (input: {
     readonly connectionId: WorkbenchJiraConnectionId;
     readonly projectKey: string;
-    readonly ticket: Pick<WorkbenchCreateTicketInput, "id" | "title" | "markdown" | "kind">;
+    readonly ticket: {
+      readonly id: string;
+      readonly title: WorkbenchCreateTicketInput["title"];
+      readonly markdown: WorkbenchCreateTicketInput["markdown"];
+      readonly kind: WorkbenchCreateTicketInput["kind"];
+    };
     readonly issueTypeId: string;
     readonly accountId: string;
     readonly epicIssueId?: string;
@@ -567,6 +580,35 @@ export const make = Effect.gen(function* () {
       return { issueTypeId: issueType.id, accountId: currentUser.accountId };
     });
 
+  const prepareEpicCreation: NonNullable<JiraApiShape["prepareEpicCreation"]> = (input) =>
+    Effect.gen(function* () {
+      const context = yield* authorized(input.connectionId);
+      const issueTypes = yield* collectPages({
+        ...context,
+        path: `/rest/api/3/issue/createmeta/${encodeURIComponent(input.projectKey)}/issuetypes`,
+        schema: IssueTypePage,
+        values: (page) => page.issueTypes,
+        isLast: (page, received) =>
+          page.isLast === true ||
+          (page.total !== undefined && (page.startAt ?? 0) + received >= page.total),
+      });
+      const issueType = issueTypes.find(
+        (candidate) => candidate.name.trim().toLowerCase() === "epic",
+      );
+      if (issueType === undefined) {
+        return yield* apiError(
+          "request_failed",
+          `Jira project ${input.projectKey} does not expose an Epic issue type for this account.`,
+        );
+      }
+      const currentUser = yield* executeJson({
+        ...context,
+        path: "/rest/api/3/myself",
+        schema: CurrentUser,
+      });
+      return { issueTypeId: issueType.id, accountId: currentUser.accountId };
+    });
+
   const createIssue: JiraApiShape["createIssue"] = (input) =>
     Effect.gen(function* () {
       const context = yield* authorized(input.connectionId).pipe(
@@ -621,6 +663,7 @@ export const make = Effect.gen(function* () {
     getBoardConfiguration,
     listAssignedSprintIssues,
     prepareIssueCreation,
+    prepareEpicCreation,
     createIssue,
     addIssueToSprint,
   });

@@ -179,6 +179,13 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
     onSuccess: refreshWorkbenchAndJiraSnapshots,
   }),
+  jiraMigrateLocalTickets: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:jira:migrate-local-tickets",
+    tag: WS_METHODS.workbenchJiraMigrateLocalTickets,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshWorkbenchAndJiraSnapshots,
+  }),
   jiraUpdateTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:jira:update-ticket",
     tag: WS_METHODS.workbenchJiraUpdateTicket,

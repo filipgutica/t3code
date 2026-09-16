@@ -1,12 +1,19 @@
-import { ProjectId, WorkbenchTicketId } from "@t3tools/contracts";
+import {
+  ProjectId,
+  WorkbenchEpicId,
+  WorkbenchJiraBindingId,
+  WorkbenchTicketId,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import {
   orderWorkbenchTicketLanesByJiraRank,
   getWorkbenchBoardColumns,
   getWorkbenchJiraBindingSprints,
+  isWorkbenchJiraEpic,
   resolveWorkbenchJiraOAuthCallback,
   resolveWorkbenchJiraRedirectUri,
+  resolveWorkbenchJiraEpicKey,
   resolveWorkbenchTicketContent,
   reconcileWorkbenchJiraStatusMappings,
   resolveWorkbenchTicketUpdateFields,
@@ -44,6 +51,43 @@ describe("Workbench Jira helpers", () => {
       { id: 17, name: "Data Pipeline Sprint 17" },
     ];
     expect(getWorkbenchJiraBindingSprints({ ...legacy, selectedSprints })).toEqual(selectedSprints);
+  });
+  it("uses durable Epic mappings for migrated and empty local Epics", () => {
+    const bindingId = WorkbenchJiraBindingId.make("binding-1");
+    const migratedEpicId = WorkbenchEpicId.make("local-epic");
+    const emptyEpicId = WorkbenchEpicId.make("empty-local-epic");
+    const legacyEpicId = WorkbenchEpicId.make(`jira:${bindingId}:epic:10001`);
+    const epicLinks = [
+      { bindingId, epicId: migratedEpicId, jiraIssueId: "10002", jiraIssueKey: "ORBIT-2" },
+      { bindingId, epicId: emptyEpicId, jiraIssueId: "10003", jiraIssueKey: "ORBIT-3" },
+    ];
+    const issueLinks = [
+      {
+        bindingId,
+        issue: { epic: { id: "10001", key: "ORBIT-1", summary: "Legacy Epic" } },
+      },
+    ];
+
+    expect(isWorkbenchJiraEpic({ epicId: migratedEpicId, bindingId, epicLinks })).toBe(true);
+    expect(isWorkbenchJiraEpic({ epicId: emptyEpicId, bindingId, epicLinks })).toBe(true);
+    expect(isWorkbenchJiraEpic({ epicId: legacyEpicId, bindingId, epicLinks })).toBe(true);
+    expect(resolveWorkbenchJiraEpicKey({ epicId: migratedEpicId, bindingId, epicLinks })).toBe(
+      "ORBIT-2",
+    );
+    expect(resolveWorkbenchJiraEpicKey({ epicId: emptyEpicId, bindingId, epicLinks })).toBe(
+      "ORBIT-3",
+    );
+    expect(
+      resolveWorkbenchJiraEpicKey({ epicId: legacyEpicId, bindingId, epicLinks, issueLinks }),
+    ).toBe("ORBIT-1");
+    expect(
+      resolveWorkbenchJiraEpicKey({
+        epicId: WorkbenchEpicId.make("unmapped-local-epic"),
+        bindingId,
+        epicLinks,
+        issueLinks,
+      }),
+    ).toBeNull();
   });
   it("uses an HTTP server callback for desktop and retains the browser return route", () => {
     expect(

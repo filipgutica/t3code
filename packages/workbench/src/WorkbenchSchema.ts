@@ -240,6 +240,38 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
         ON DELETE CASCADE
     )
   `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS workbench_jira_epic_creations (
+      epic_id TEXT PRIMARY KEY,
+      binding_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      markdown TEXT NOT NULL,
+      jira_issue_id TEXT,
+      jira_issue_key TEXT,
+      request_fingerprint TEXT NOT NULL DEFAULT '',
+      state TEXT NOT NULL CHECK (state IN ('pending', 'uncertain', 'created')),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (binding_id)
+        REFERENCES workbench_jira_bindings(binding_id)
+        ON DELETE CASCADE
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS workbench_jira_epic_links (
+      binding_id TEXT NOT NULL,
+      jira_issue_id TEXT NOT NULL,
+      jira_issue_key TEXT NOT NULL,
+      epic_id TEXT NOT NULL,
+      PRIMARY KEY (binding_id, jira_issue_id),
+      FOREIGN KEY (binding_id)
+        REFERENCES workbench_jira_bindings(binding_id)
+        ON DELETE CASCADE,
+      FOREIGN KEY (epic_id)
+        REFERENCES workbench_epics(epic_id)
+        ON DELETE CASCADE
+    )
+  `;
 
   const creationColumns = yield* sql<{
     readonly name: string;

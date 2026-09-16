@@ -80,6 +80,30 @@ it("offers quick reuse only for a complete saved profile", () => {
   ).toBe("incomplete");
 });
 
+it("accepts a hosted broker profile without direct OAuth credentials", () => {
+  const config = [
+    "DEMO_GITHUB_OWNER=person",
+    "DEMO_GITHUB_RESOURCE_MODE=reuse",
+    "DEMO_GITHUB_REPOSITORIES=orbit-api,orbit-web",
+    "DEMO_JIRA_SITE_URL=https://example.atlassian.net",
+    "DEMO_JIRA_RESOURCE_MODE=reuse",
+    "DEMO_JIRA_PROJECT_KEY=DEMO",
+    "DEMO_JIRA_BOARD_ID=1",
+    "DEMO_JIRA_SPRINT_ID=2",
+    "T3_WORKBENCH_JIRA_BROKER_URL=https://workbench-auth.example",
+  ].join("\n");
+
+  expect(
+    run("if demo_profile_complete; then printf ready; else printf incomplete; fi", config),
+  ).toBe("ready");
+  expect(
+    run(
+      "if demo_profile_complete; then printf ready; else printf incomplete; fi",
+      config.replace("T3_WORKBENCH_JIRA_BROKER_URL=https://workbench-auth.example", ""),
+    ),
+  ).toBe("incomplete");
+});
+
 it("switching from reuse to provision clears saved remote identities", () => {
   expect(
     run(

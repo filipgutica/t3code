@@ -3,12 +3,18 @@ import * as Schema from "effect/Schema";
 
 import {
   IsoDateTime,
+  NonNegativeInt,
   PositiveInt,
   ProjectId,
   TrimmedNonEmptyString,
   TrimmedString,
 } from "./baseSchemas.ts";
-import { WorkbenchProjectId, WorkbenchTicketId, WorkbenchTicketStatus } from "./workbench.ts";
+import {
+  WorkbenchEpicId,
+  WorkbenchProjectId,
+  WorkbenchTicketId,
+  WorkbenchTicketStatus,
+} from "./workbench.ts";
 
 const makeJiraId = <Brand extends string>(brand: Brand) =>
   TrimmedNonEmptyString.pipe(Schema.brand(brand));
@@ -228,6 +234,19 @@ export const WorkbenchJiraIssueLink = Schema.Struct({
 });
 export type WorkbenchJiraIssueLink = typeof WorkbenchJiraIssueLink.Type;
 
+/**
+ * Durable mapping for a Jira Epic, including Epics without any child issues.
+ * The Workbench Epic ID is intentionally independent of the Jira issue ID so
+ * local Epics published during connection setup retain their identity.
+ */
+export const WorkbenchJiraEpicLink = Schema.Struct({
+  bindingId: WorkbenchJiraBindingId,
+  epicId: WorkbenchEpicId,
+  jiraIssueId: TrimmedNonEmptyString,
+  jiraIssueKey: TrimmedNonEmptyString,
+});
+export type WorkbenchJiraEpicLink = typeof WorkbenchJiraEpicLink.Type;
+
 export const WorkbenchJiraTicketTransition = Schema.Struct({
   id: TrimmedNonEmptyString,
   name: TrimmedNonEmptyString,
@@ -257,6 +276,43 @@ export const WorkbenchJiraUpdateTicketInput = Schema.Struct({
   expectedRemoteUpdatedAt: Schema.NullOr(IsoDateTime),
 });
 export type WorkbenchJiraUpdateTicketInput = typeof WorkbenchJiraUpdateTicketInput.Type;
+
+/** Explicitly confirms the local snapshot that a Jira connection may migrate. */
+export const WorkbenchJiraLocalTicketMigrationItem = Schema.Struct({
+  id: WorkbenchTicketId,
+  revision: NonNegativeInt,
+});
+export type WorkbenchJiraLocalTicketMigrationItem =
+  typeof WorkbenchJiraLocalTicketMigrationItem.Type;
+
+export const WorkbenchJiraLocalEpicMigrationItem = Schema.Struct({
+  id: WorkbenchEpicId,
+  /** Epics predate numeric revisions; their updated timestamp is the snapshot token. */
+  updatedAt: IsoDateTime,
+});
+export type WorkbenchJiraLocalEpicMigrationItem = typeof WorkbenchJiraLocalEpicMigrationItem.Type;
+
+export const WorkbenchJiraMigrateLocalTicketsInput = Schema.Struct({
+  bindingId: WorkbenchJiraBindingId,
+  action: Schema.Literals(["publish", "delete"]),
+  tickets: Schema.Array(WorkbenchJiraLocalTicketMigrationItem),
+  epics: Schema.optionalKey(Schema.Array(WorkbenchJiraLocalEpicMigrationItem)),
+});
+export type WorkbenchJiraMigrateLocalTicketsInput =
+  typeof WorkbenchJiraMigrateLocalTicketsInput.Type;
+
+export const WorkbenchJiraMigrateLocalTicketsResult = Schema.Struct({
+  action: Schema.Literals(["publish", "delete"]),
+  requestedTicketCount: NonNegativeInt,
+  publishedTicketCount: NonNegativeInt,
+  publishedEpicCount: NonNegativeInt,
+  deletedTicketCount: NonNegativeInt,
+  deletedEpicCount: NonNegativeInt,
+  ticketIds: Schema.Array(WorkbenchTicketId),
+  epicIds: Schema.Array(WorkbenchEpicId),
+});
+export type WorkbenchJiraMigrateLocalTicketsResult =
+  typeof WorkbenchJiraMigrateLocalTicketsResult.Type;
 
 export const WorkbenchJiraBeginAuthInput = Schema.Struct({
   redirectUri: TrimmedNonEmptyString,
@@ -336,6 +392,7 @@ export type WorkbenchJiraListAssignedSprintIssuesInput =
 
 export const WorkbenchJiraSyncBindingInput = Schema.Struct({
   bindingId: WorkbenchJiraBindingId,
+  background: Schema.optionalKey(Schema.Boolean),
 });
 export type WorkbenchJiraSyncBindingInput = typeof WorkbenchJiraSyncBindingInput.Type;
 
@@ -353,6 +410,8 @@ export const WorkbenchJiraSnapshot = Schema.Struct({
   connections: Schema.Array(WorkbenchJiraConnection),
   bindings: Schema.Array(WorkbenchJiraBinding),
   issueLinks: Schema.Array(WorkbenchJiraIssueLink),
+  /** New snapshots include every mapped Epic, even when it has no Tickets. */
+  epicLinks: Schema.optionalKey(Schema.Array(WorkbenchJiraEpicLink)),
 });
 export type WorkbenchJiraSnapshot = typeof WorkbenchJiraSnapshot.Type;
 

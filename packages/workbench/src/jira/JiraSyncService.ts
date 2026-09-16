@@ -6,6 +6,7 @@ import {
   type WorkbenchJiraSelectedSprint,
   type WorkbenchJiraSyncBindingInput,
   type WorkbenchJiraSyncResult,
+  WorkbenchTicketId,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -30,6 +31,15 @@ const syncError = (code: WorkbenchJiraOperationError["code"], message: string) =
 
 const repositoryError = (_cause: WorkbenchJiraRepositoryError) =>
   syncError("persistence_failed", "Jira synchronization state could not be saved or loaded.");
+const sqlPersistenceError = () =>
+  syncError("persistence_failed", "Jira synchronization state could not be saved or loaded.");
+const BACKGROUND_SYNC_COOLDOWN_MS = 15_000;
+
+const parseTimestamp = (value: string | null) => {
+  if (value === null) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+};
 
 const selectedSprintsForBinding = (
   binding: Pick<WorkbenchJiraBinding, "sprintId" | "sprintName" | "selectedSprints">,
@@ -84,6 +94,10 @@ export const make = Effect.gen(function* () {
   const repository = yield* WorkbenchJiraRepository;
   const sql = yield* SqlClient.SqlClient;
   const bindingLocks = yield* Ref.make<ReadonlyMap<string, Semaphore.Semaphore>>(new Map());
+  const lastAttemptAt = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
+  const lastAttemptErrors = yield* Ref.make<ReadonlyMap<string, WorkbenchJiraOperationError>>(
+    new Map(),
+  );
 
   const getBindingLock = Effect.fn("JiraSyncService.getBindingLock")(function* (bindingId: string) {
     const existing = (yield* Ref.get(bindingLocks)).get(bindingId);
@@ -118,6 +132,53 @@ export const make = Effect.gen(function* () {
     if (!binding.active) {
       return yield* syncError("binding_inactive", "The Jira sprint binding is inactive.");
     }
+
+    const now = yield* clock.currentTimeMillis;
+    const inMemoryAttemptAt = (yield* Ref.get(lastAttemptAt)).get(binding.id);
+    const recentAttemptAt =
+      inMemoryAttemptAt ??
+      Math.max(
+        parseTimestamp(binding.lastSyncedAt) ?? Number.NEGATIVE_INFINITY,
+        binding.lastSyncError === null
+          ? Number.NEGATIVE_INFINITY
+          : (parseTimestamp(binding.updatedAt) ?? Number.NEGATIVE_INFINITY),
+      );
+    if (input.background === true && now - recentAttemptAt < BACKGROUND_SYNC_COOLDOWN_MS) {
+      const persistedSyncedAt = parseTimestamp(binding.lastSyncedAt);
+      const previousError =
+        persistedSyncedAt !== null &&
+        inMemoryAttemptAt !== undefined &&
+        persistedSyncedAt >= inMemoryAttemptAt
+          ? undefined
+          : (yield* Ref.get(lastAttemptErrors)).get(binding.id);
+      if (binding.lastSyncError !== null || previousError !== undefined) {
+        return yield* (
+          previousError ??
+            syncError(
+              "request_failed",
+              binding.lastSyncError ?? "Jira synchronization is cooling down; try again shortly.",
+            )
+        );
+      }
+      if (binding.lastSyncedAt !== null) {
+        const links = yield* repository
+          .listIssueLinks(binding.id)
+          .pipe(Effect.mapError(repositoryError));
+        return {
+          bindingId: binding.id,
+          syncedAt: binding.lastSyncedAt,
+          activated: 0,
+          updated: 0,
+          deactivated: 0,
+          links,
+        } satisfies WorkbenchJiraSyncResult;
+      }
+      return yield* syncError(
+        "request_failed",
+        "Jira synchronization is cooling down; try again shortly.",
+      );
+    }
+    yield* Ref.update(lastAttemptAt, (attempts) => new Map(attempts).set(binding.id, now));
 
     let observedActiveSprintIdsForError:
       | WorkbenchJiraBinding["observedActiveSprintIds"]
@@ -224,6 +285,45 @@ export const make = Effect.gen(function* () {
         .listIssueLinks(binding.id)
         .pipe(Effect.mapError(repositoryError));
       const existingByIssueId = new Map(existing.map((link) => [link.issue.issueId, link]));
+      // A Ticket creation is recorded before the remote POST. If the POST
+      // succeeds but the local projection transaction is interrupted, the
+      // creation row is the only durable owner of that Jira issue until the
+      // writer resumes. Prefer that identity during sync so an automatic sync
+      // cannot create a second local Ticket for the same remote issue.
+      // Keep sync usable against a pre-migration in-memory database. Normal
+      // Workbench startup creates this table before Jira sync begins.
+      const creationTable = yield* sql<{ readonly name: string }>`
+        SELECT name FROM sqlite_master
+        WHERE type = 'table' AND name = 'workbench_jira_ticket_creations'
+        LIMIT 1
+      `.pipe(Effect.mapError(sqlPersistenceError));
+      const savedCreations =
+        creationTable.length === 0
+          ? []
+          : yield* sql<{
+              readonly ticketId: string;
+              readonly jiraIssueId: string;
+              readonly resultTicketId: string | null;
+            }>`
+              SELECT ticket_id AS "ticketId", jira_issue_id AS "jiraIssueId",
+                     result_ticket_id AS "resultTicketId"
+              FROM workbench_jira_ticket_creations
+              WHERE binding_id = ${binding.id}
+                AND jira_issue_id IS NOT NULL
+            `.pipe(Effect.mapError(sqlPersistenceError));
+      const incompleteCreationIssueIds = new Set(
+        savedCreations
+          .filter((creation) => creation.resultTicketId === null)
+          .map((creation) => creation.jiraIssueId),
+      );
+      const creationByIssueId = new Map(
+        savedCreations
+          .filter((creation) => creation.resultTicketId !== null)
+          .map((creation) => [
+            creation.jiraIssueId,
+            { ...creation, ticketId: WorkbenchTicketId.make(creation.ticketId) },
+          ]),
+      );
       const issuesById = new Map<string, WorkbenchJiraIssueSnapshot>();
       for (const selectedSprint of selectedSprints) {
         const sprintIssues = yield* api.listAssignedSprintIssues({
@@ -242,6 +342,10 @@ export const make = Effect.gen(function* () {
         readonly mappedStatus: WorkbenchJiraBinding["statusMappings"][number]["workbenchStatus"];
       }>;
       for (const issue of issues) {
+        // A remote issue whose local projection was interrupted must remain
+        // out of generic sync until the migration retry confirms its local
+        // revision. Importing it here could overwrite a concurrent edit.
+        if (incompleteCreationIssueIds.has(issue.issueId)) continue;
         const mappedStatus = effectiveBinding.statusMappings.find(
           (mapping) => mapping.jiraStatusId === issue.status.id,
         )?.workbenchStatus;
@@ -273,12 +377,30 @@ export const make = Effect.gen(function* () {
 
             const incoming: Array<JiraIssueImport> = [];
             for (const entry of imports) {
+              const savedCreation = creationByIssueId.get(entry.issue.issueId);
               const ticketId = yield* importer.upsertJiraProjection({
                 binding: effectiveBinding,
-                existingTicketId: existingByIssueId.get(entry.issue.issueId)?.ticketId ?? null,
+                existingTicketId:
+                  savedCreation?.ticketId ??
+                  existingByIssueId.get(entry.issue.issueId)?.ticketId ??
+                  null,
                 issue: entry.issue,
                 mappedStatus: entry.mappedStatus,
               });
+              if (savedCreation !== undefined && ticketId !== savedCreation.ticketId) {
+                return yield* syncError(
+                  "persistence_failed",
+                  `Jira issue ${entry.issue.key} is reserved for local Ticket ${savedCreation.ticketId}, but its Workbench projection returned ${ticketId}. Refresh Jira before retrying.`,
+                );
+              }
+              if (savedCreation !== undefined) {
+                yield* sql`
+                  UPDATE workbench_jira_ticket_creations
+                  SET result_ticket_id = ${ticketId}, state = 'created'
+                  WHERE binding_id = ${binding.id}
+                    AND jira_issue_id = ${entry.issue.issueId}
+                `;
+              }
               incoming.push({ ticketId, issue: entry.issue });
             }
 
@@ -333,7 +455,20 @@ export const make = Effect.gen(function* () {
         );
     });
 
-    return yield* sync.pipe(Effect.tapError(persistSyncError));
+    return yield* sync.pipe(
+      Effect.tap(() =>
+        Ref.update(lastAttemptErrors, (errors) => {
+          const next = new Map(errors);
+          next.delete(binding.id);
+          return next;
+        }),
+      ),
+      Effect.tapError((error) =>
+        Ref.update(lastAttemptErrors, (errors) => new Map(errors).set(binding.id, error)).pipe(
+          Effect.andThen(persistSyncError(error)),
+        ),
+      ),
+    );
   });
 
   return JiraSyncService.of({ syncBinding, withBindingPermit });

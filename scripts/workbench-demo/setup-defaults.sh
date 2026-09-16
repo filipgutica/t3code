@@ -1,4 +1,6 @@
 # Fork-owned prompt helpers. Keep the shared wizard library unchanged.
+DEMO_JIRA_BROKER_DEFAULT_URL="${DEMO_JIRA_BROKER_DEFAULT_URL:-https://workbench-auth.fgutica.workers.dev}"
+
 demo_saved() {
   node --input-type=module - "$ENV_FILE" "$1" <<'JS'
 import { existsSync, readFileSync } from 'node:fs';
@@ -27,8 +29,8 @@ demo_ask() {
 }
 
 demo_profile_complete() {
-  local key
-  for key in DEMO_GITHUB_OWNER DEMO_GITHUB_RESOURCE_MODE DEMO_JIRA_SITE_URL DEMO_JIRA_RESOURCE_MODE DEMO_JIRA_PROJECT_KEY DEMO_JIRA_BOARD_ID T3_WORKBENCH_JIRA_CLIENT_ID T3_WORKBENCH_JIRA_CLIENT_SECRET DEMO_JIRA_CALLBACK_URL; do
+  local key broker client_id client_secret
+  for key in DEMO_GITHUB_OWNER DEMO_GITHUB_RESOURCE_MODE DEMO_JIRA_SITE_URL DEMO_JIRA_RESOURCE_MODE DEMO_JIRA_PROJECT_KEY DEMO_JIRA_BOARD_ID; do
     [[ -n "$(demo_saved "$key")" ]] || return 1
   done
   case "$(demo_saved DEMO_GITHUB_RESOURCE_MODE)" in
@@ -41,6 +43,15 @@ demo_profile_complete() {
     provision) [[ -n "$(demo_saved DEMO_JIRA_EMAIL)" && -n "$(demo_saved DEMO_JIRA_API_TOKEN)" ]] || return 1 ;;
     *) return 1 ;;
   esac
+
+  broker="$(demo_saved T3_WORKBENCH_JIRA_BROKER_URL)"
+  client_id="$(demo_saved T3_WORKBENCH_JIRA_CLIENT_ID)"
+  client_secret="$(demo_saved T3_WORKBENCH_JIRA_CLIENT_SECRET)"
+  if [[ -n "$client_id" && -n "$client_secret" ]]; then
+    [[ -n "$(demo_saved DEMO_JIRA_CALLBACK_URL)" ]] || return 1
+  else
+    [[ "$broker" =~ ^https://[^[:space:]]+$ ]] || return 1
+  fi
 }
 
 # Probe only the kit's known repository pairs; do not enumerate unrelated repos.

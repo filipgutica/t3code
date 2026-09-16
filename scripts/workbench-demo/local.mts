@@ -122,6 +122,8 @@ export interface LocalDemoOptions {
   readonly token?: string | undefined;
   /** Explicit remote URLs supplied by GitHub provisioning or reuse mode. */
   readonly repositoryRemotes?: Readonly<Record<string, string>>;
+  /** Immutable commits for freshly cloned remote fixtures. Existing checkouts must already match. */
+  readonly repositoryCommits?: Readonly<Record<string, string>>;
   readonly now?: () => string;
   readonly prepareWorkspaces?: boolean;
 }
@@ -616,11 +618,22 @@ export const setupLocal = async (options: LocalDemoOptions): Promise<LocalDemoMa
   const prepareWorkspaces = options.prepareWorkspaces ?? false;
   await NodeFSP.mkdir(NodePath.join(home, "projects"), { recursive: true });
   for (const repository of LOCAL_DEMO_REPOSITORIES) {
-    await ensureRepository(
-      NodePath.join(home, "projects", repository.id),
-      repository,
-      options.repositoryRemotes?.[repository.id],
-    );
+    const repositoryPath = NodePath.join(home, "projects", repository.id);
+    const existed = await pathExists(repositoryPath);
+    const commit = options.repositoryCommits?.[repository.id];
+    if (commit && (!/^[a-f0-9]{40}$/.test(commit) || !options.repositoryRemotes?.[repository.id])) {
+      throw new Error("Pinned demo commits require a remote and a full Git SHA.");
+    }
+    await ensureRepository(repositoryPath, repository, options.repositoryRemotes?.[repository.id]);
+    if (commit) {
+      if (!existed) {
+        await runGit(repositoryPath, ["checkout", "-B", "main", commit]);
+      } else if ((await runGit(repositoryPath, ["rev-parse", "HEAD"])) !== commit) {
+        throw new Error(
+          `Demo checkout ${repository.id} differs from its pinned commit. Reset the demo baseline first.`,
+        );
+      }
+    }
   }
   if (options.wsUrl !== undefined) {
     await seedWorkbench({
