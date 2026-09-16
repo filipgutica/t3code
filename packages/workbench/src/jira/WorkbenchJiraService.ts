@@ -750,7 +750,7 @@ export const make = Effect.gen(function* () {
               const references = yield* sql<{ readonly ticketId: string }>`
                 SELECT ticket_id AS "ticketId"
                 FROM workbench_tickets
-                WHERE epic_id = ${epic.id}
+                WHERE epic_id = ${epic.id} AND deleted_at IS NULL
               `;
               if (references.some((reference) => !selectedTicketIds.has(reference.ticketId))) {
                 return yield* operationError(
@@ -768,6 +768,11 @@ export const make = Effect.gen(function* () {
               yield* sql`UPDATE workbench_tickets SET epic_id = NULL WHERE ticket_id = ${ticket.id}`;
             }
             for (const epic of epics) {
+              // Deleted Tickets retain their history, but cannot keep a removed Epic alive.
+              yield* sql`
+                UPDATE workbench_tickets SET epic_id = NULL
+                WHERE epic_id = ${epic.id} AND deleted_at IS NOT NULL
+              `;
               const deleted = yield* sql<{ readonly epicId: string }>`
                 DELETE FROM workbench_epics
                 WHERE epic_id = ${epic.id}
@@ -803,6 +808,33 @@ export const make = Effect.gen(function* () {
           // The publish flow keeps its idempotency, CAS, and post-create checks together.
           // eslint-disable-next-line complexity
           Effect.gen(function* () {
+            const currentBindingOption = yield* repository
+              .getBinding(binding.id)
+              .pipe(Effect.mapError(repositoryError));
+            if (Option.isNone(currentBindingOption)) {
+              return yield* new WorkbenchJiraOperationError({
+                code: "binding_not_found",
+                message: "The Jira sprint binding was not found.",
+              });
+            }
+            const currentBinding = currentBindingOption.value;
+            if (!currentBinding.active) {
+              return yield* new WorkbenchJiraOperationError({
+                code: "binding_inactive",
+                message: "The Jira sprint binding is inactive.",
+              });
+            }
+            // Epics belong to a Jira project, independently of sprint selection.
+            if (
+              currentBinding.projectId !== binding.projectId ||
+              currentBinding.connectionId !== binding.connectionId ||
+              currentBinding.jiraProjectId !== binding.jiraProjectId ||
+              currentBinding.jiraProjectKey !== binding.jiraProjectKey
+            ) {
+              return yield* operationError(
+                "The Jira connection changed while Epic publication was waiting. Refresh the Workspace and confirm the migration again.",
+              );
+            }
             const fingerprint = encodeEpicMigrationFingerprint({
               bindingId: binding.id,
               connectionId: binding.connectionId,

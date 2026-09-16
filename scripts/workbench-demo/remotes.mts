@@ -769,11 +769,14 @@ type JiraRequest = <T>(path: string, init?: RequestInit) => Promise<T>;
 const jiraSite = (site: string): string => site.trim().replace(/\/+$/, "");
 const jiraMarker = (prefix: string) =>
   `${WORKBENCH_DEMO_MARKER}-${slug(prefix, "Jira demo prefix")}`;
-const jiraDescription = (text: string) => ({
-  type: "doc",
-  version: 1,
-  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
-});
+const jiraDescription = (text: string) =>
+  text === ""
+    ? null
+    : {
+        type: "doc",
+        version: 1,
+        content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+      };
 
 const jiraDescriptionText = (value: unknown): string | undefined => {
   // Agile sprint responses use wiki text; REST v3 responses use ADF.

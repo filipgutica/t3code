@@ -74,13 +74,21 @@ const makeRepository = (): WorkbenchJiraRepository["Service"] =>
     replaceIssueLinks: () => Effect.void,
   } satisfies WorkbenchJiraRepositoryShape);
 
-const makeService = (
-  writer: JiraTicketWriteService["Service"],
-  creates: Ref.Ref<number>,
-  prepareEpicCreation: NonNullable<JiraApiShape["prepareEpicCreation"]> = () =>
-    Effect.succeed({ issueTypeId: "epic", accountId: "account-1" }),
-  onEpicCreate: () => Effect.Effect<void> = () => Effect.void,
-) =>
+const makeService = ({
+  writer,
+  creates,
+  prepareEpicCreation = () => Effect.succeed({ issueTypeId: "epic", accountId: "account-1" }),
+  onEpicCreate = () => Effect.void,
+  repository = makeRepository(),
+  beforeBindingPermit = Effect.void,
+}: {
+  writer: JiraTicketWriteService["Service"];
+  creates: Ref.Ref<number>;
+  prepareEpicCreation?: NonNullable<JiraApiShape["prepareEpicCreation"]>;
+  onEpicCreate?: () => Effect.Effect<void>;
+  repository?: WorkbenchJiraRepository["Service"];
+  beforeBindingPermit?: Effect.Effect<void>;
+}) =>
   Effect.gen(function* () {
     const api = JiraApi.of({
       listProjects: () => Effect.die("unexpected project read"),
@@ -103,11 +111,11 @@ const makeService = (
       getAccessToken: () => Effect.die("unexpected token read"),
     });
     const sync = JiraSyncService.of({
-      withBindingPermit: (_bindingId, effect) => effect,
+      withBindingPermit: (_bindingId, effect) => beforeBindingPermit.pipe(Effect.andThen(effect)),
       syncBinding: () => Effect.die("unexpected Jira synchronization"),
     });
     return yield* WorkbenchJiraService.make.pipe(
-      Effect.provideService(WorkbenchJiraRepository, makeRepository()),
+      Effect.provideService(WorkbenchJiraRepository, repository),
       Effect.provideService(JiraApi, api),
       Effect.provideService(JiraAuthService, auth),
       Effect.provideService(JiraSyncService, sync),
@@ -166,7 +174,7 @@ describe("WorkbenchJiraService local migration", () => {
           updateTicket: () => Effect.die("unexpected Jira Ticket write"),
           startTicketExecution: () => Effect.die("unexpected Jira execution"),
         });
-        const service = yield* makeService(writer, creates);
+        const service = yield* makeService({ writer, creates });
         const { epic, ticket } = yield* seedLocalData;
         const result = yield* service.migrateLocalTickets({
           bindingId: binding.id,
@@ -183,6 +191,85 @@ describe("WorkbenchJiraService local migration", () => {
       }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
+  it.effect("deletes a local Epic whose child Ticket was already deleted", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const workbench = yield* WorkbenchStore;
+      const creates = yield* Ref.make(0);
+      const writer = JiraTicketWriteService.of({
+        createTicket: () => Effect.die("unexpected Jira Ticket creation"),
+        getTicketTransitions: () => Effect.die("unexpected Jira transition lookup"),
+        updateTicket: () => Effect.die("unexpected Jira Ticket write"),
+        startTicketExecution: () => Effect.die("unexpected Jira execution"),
+      });
+      const service = yield* makeService({ writer, creates });
+      const { epic, ticket } = yield* seedLocalData;
+      yield* workbench.deleteTicket({
+        ticketId: ticket.id,
+        expectedRevision: ticket.revision,
+        deletedAt: createdAt,
+      });
+      const result = yield* service.migrateLocalTickets({
+        bindingId: binding.id,
+        action: "delete",
+        tickets: [],
+        epics: [{ id: epic.id, updatedAt: epic.updatedAt }],
+      });
+      expect(result.deletedEpicCount).toBe(1);
+      expect(result.deletedTicketCount).toBe(0);
+      expect((yield* workbench.getSnapshot).epics).toEqual([]);
+      expect(
+        yield* sql`SELECT epic_id, deleted_at FROM workbench_tickets WHERE ticket_id = ${ticket.id}`,
+      ).toEqual([{ epic_id: null, deleted_at: createdAt }]);
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  for (const change of ["paused", "connection", "project"] as const) {
+    it.effect(
+      `refuses Epic publication when the binding is ${change} before acquiring its permit`,
+      () =>
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          const creates = yield* Ref.make(0);
+          const writer = JiraTicketWriteService.of({
+            createTicket: () => Effect.die("unexpected Jira Ticket creation"),
+            getTicketTransitions: () => Effect.die("unexpected Jira transition lookup"),
+            updateTicket: () => Effect.die("unexpected Jira Ticket write"),
+            startTicketExecution: () => Effect.die("unexpected Jira execution"),
+          });
+          const current = yield* Ref.make(binding);
+          const service = yield* makeService({
+            writer,
+            creates,
+            repository: {
+              ...makeRepository(),
+              getBinding: () => Ref.get(current).pipe(Effect.map(Option.some)),
+            },
+            beforeBindingPermit: Ref.set(current, {
+              ...binding,
+              ...(change === "paused"
+                ? { active: false }
+                : change === "connection"
+                  ? { connectionId: WorkbenchJiraConnectionId.make("connection-2") }
+                  : { jiraProjectKey: "OTHER" }),
+            }),
+          });
+          const { epic } = yield* seedLocalData;
+          const error = yield* Effect.flip(
+            service.migrateLocalTickets({
+              bindingId: binding.id,
+              action: "publish",
+              tickets: [],
+              epics: [{ id: epic.id, updatedAt: epic.updatedAt }],
+            }),
+          );
+          expect(error.code).toBe(change === "paused" ? "binding_inactive" : "invalid_binding");
+          expect(yield* Ref.get(creates)).toBe(0);
+          expect(yield* sql`SELECT * FROM workbench_jira_epic_creations`).toEqual([]);
+        }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+    );
+  }
+
   it.effect("rolls back earlier local deletes when a later Ticket revision conflicts", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -194,7 +281,7 @@ describe("WorkbenchJiraService local migration", () => {
         updateTicket: () => Effect.die("unexpected Jira Ticket write"),
         startTicketExecution: () => Effect.die("unexpected Jira execution"),
       });
-      const service = yield* makeService(writer, creates);
+      const service = yield* makeService({ writer, creates });
       const { epic, ticket } = yield* seedLocalData;
       const laterTicket = yield* workbench.createTicket({
         id: WorkbenchTicketId.make("local-ticket-2"),
@@ -254,7 +341,7 @@ describe("WorkbenchJiraService local migration", () => {
         updateTicket: () => Effect.die("unexpected Jira Ticket write"),
         startTicketExecution: () => Effect.die("unexpected Jira execution"),
       });
-      const service = yield* makeService(writer, creates);
+      const service = yield* makeService({ writer, creates });
       const { epic, ticket } = yield* seedLocalData;
 
       // The Ticket delete happens before the raw Epic delete. Make that
@@ -300,7 +387,7 @@ describe("WorkbenchJiraService local migration", () => {
         updateTicket: () => Effect.die("unexpected Jira Ticket write"),
         startTicketExecution: () => Effect.die("unexpected Jira execution"),
       });
-      const service = yield* makeService(writer, creates);
+      const service = yield* makeService({ writer, creates });
       const { ticket } = yield* seedLocalData;
       const error = yield* Effect.flip(
         service.migrateLocalTickets({
@@ -342,7 +429,7 @@ describe("WorkbenchJiraService local migration", () => {
           ),
           Effect.as({ issueTypeId: "epic", accountId: "account-1" }),
         );
-      const service = yield* makeService(writer, creates, prepareEpicCreation);
+      const service = yield* makeService({ writer, creates, prepareEpicCreation });
       const { epic, ticket } = yield* seedLocalData;
       const error = yield* Effect.flip(
         service.migrateLocalTickets({
@@ -378,7 +465,7 @@ describe("WorkbenchJiraService local migration", () => {
               updated_at = '2026-09-15T12:01:00.000Z'
           WHERE epic_id = 'local-epic'
         `.pipe(Effect.orDie, Effect.asVoid);
-      const service = yield* makeService(writer, creates, undefined, onEpicCreate);
+      const service = yield* makeService({ writer, creates, onEpicCreate });
       const { epic, ticket } = yield* seedLocalData;
       const error = yield* Effect.flip(
         service.migrateLocalTickets({
@@ -471,7 +558,7 @@ describe("WorkbenchJiraService local migration", () => {
         updateTicket: () => Effect.die("unexpected Jira Ticket write"),
         startTicketExecution: () => Effect.die("unexpected Jira execution"),
       });
-      const service = yield* makeService(writer, creates);
+      const service = yield* makeService({ writer, creates });
       const { epic, ticket } = yield* seedLocalData;
       const canonicalEpic = yield* workbench.createEpic({
         id: WorkbenchEpicId.make("jira:binding-1:epic:remote-canonical-epic"),
@@ -592,7 +679,7 @@ describe("WorkbenchJiraService local migration", () => {
         updateTicket: () => Effect.die("unexpected Jira Ticket write"),
         startTicketExecution: () => Effect.die("unexpected Jira execution"),
       });
-      const service = yield* makeService(writer, creates);
+      const service = yield* makeService({ writer, creates });
       const { epic, ticket } = yield* seedLocalData;
       const result = yield* service.migrateLocalTickets({
         bindingId: binding.id,

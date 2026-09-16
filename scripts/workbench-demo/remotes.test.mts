@@ -548,6 +548,75 @@ describe("resetJira", () => {
     ).rejects.toThrow("must belong to ORBIT");
   });
 
+  it("clears an empty baseline description with null instead of invalid empty ADF text", async () => {
+    const requests: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      requests.push({ url: url.pathname, init: init ?? {} });
+      if (url.pathname.endsWith("/project/ORBIT")) return Response.json({ id: "1", key: "ORBIT" });
+      if (url.pathname.endsWith("/board/42"))
+        return Response.json({ id: 42, name: "Orbit board", type: "simple" });
+      if (url.pathname.endsWith("/sprint/7"))
+        return Response.json({ id: 7, name: "Orbit sprint", state: "ACTIVE" });
+      if (url.pathname.endsWith("/sprint/7/issue"))
+        return Response.json({ issues: [{ id: "10001", key: "ORBIT-1", fields: { labels: [] } }] });
+      if (url.pathname.endsWith("/search/jql")) return Response.json({ issues: [], isLast: true });
+      if (url.pathname.endsWith("/issue/ORBIT-1") && init?.method !== "PUT")
+        return Response.json({
+          id: "10001",
+          key: "ORBIT-1",
+          fields: {
+            summary: "Baseline issue",
+            description: null,
+            labels: [],
+            assignee: null,
+            parent: null,
+            status: { name: "To Do" },
+          },
+        });
+      if (url.pathname.endsWith("/issue/ORBIT-1") && init?.method === "PUT")
+        return Response.json({});
+      throw new Error(`Unexpected Jira request: ${init?.method ?? "GET"} ${url.pathname}`);
+    };
+
+    await resetJira({
+      baseline: {
+        site: "https://example.atlassian.net",
+        projectKey: "ORBIT",
+        boardId: 42,
+        boardName: "Orbit board",
+        sprintId: 7,
+        sprintName: "Orbit sprint",
+        issues: [
+          {
+            key: "ORBIT-1",
+            summary: "Baseline issue",
+            description: "",
+            labels: [],
+            assigneeAccountId: null,
+            epicKey: null,
+            state: "todo",
+          },
+        ],
+      },
+      email: "user@example.test",
+      token: "secret",
+      apply: true,
+      fetcher,
+    });
+
+    const update = requests.find(({ init }) => init.method === "PUT");
+    expect(JSON.parse(String(update?.init.body))).toEqual({
+      fields: {
+        summary: "Baseline issue",
+        description: null,
+        labels: [],
+        assignee: null,
+        parent: null,
+      },
+    });
+  });
+
   it("verifies the selected project, board, sprint, and issue before re-adding it", async () => {
     const calls: string[] = [];
     const fetcher: typeof fetch = async (input, init) => {
@@ -1062,4 +1131,47 @@ describe("snapshotJiraBaseline", () => {
       });
     },
   );
+
+  it("captures Jira's null description as an empty string", async () => {
+    const fetcher: typeof fetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/project/ORBIT")) return Response.json({ id: "1", key: "ORBIT" });
+      if (url.pathname.endsWith("/board/42"))
+        return Response.json({ id: 42, name: "Orbit board", type: "simple" });
+      if (url.pathname.endsWith("/sprint/7"))
+        return Response.json({ id: 7, name: "Orbit sprint", state: "ACTIVE" });
+      if (url.pathname.endsWith("/sprint/7/issue"))
+        return Response.json({
+          issues: [
+            {
+              id: "10001",
+              key: "ORBIT-1",
+              fields: {
+                summary: "Empty description",
+                description: null,
+                labels: [],
+                assignee: null,
+                status: { name: "To Do" },
+              },
+            },
+          ],
+          isLast: true,
+        });
+      throw new Error(`Unexpected Jira request: ${url.pathname}`);
+    };
+
+    await expect(
+      snapshotJiraBaseline({
+        site: "https://example.atlassian.net",
+        projectKey: "ORBIT",
+        boardId: 42,
+        sprintId: 7,
+        email: "user@example.test",
+        token: "secret",
+        fetcher,
+      }),
+    ).resolves.toMatchObject({
+      issues: [expect.objectContaining({ key: "ORBIT-1", description: "" })],
+    });
+  });
 });

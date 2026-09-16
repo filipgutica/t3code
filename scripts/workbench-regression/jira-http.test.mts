@@ -60,6 +60,39 @@ it("decodes Jira issue documents and sends authenticated updates", async () => {
   });
 });
 
+it("clears an empty Jira description with null instead of invalid empty ADF text", async () => {
+  const requests: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+  const client = new JiraHttpClient({
+    site: "https://example.atlassian.net",
+    email: "demo@example.test",
+    token: "test-token",
+    fetcher: async (input, init = {}) => {
+      requests.push({ url: String(input), init });
+      if (String(input).includes("/issue/ORBIT-1?")) {
+        return Response.json({
+          id: "10001",
+          key: "ORBIT-1",
+          fields: {
+            summary: "An issue without a description",
+            description: null,
+            labels: [],
+            assignee: null,
+            status: { id: "10000", name: "To Do" },
+          },
+        });
+      }
+      return new Response(null, { status: 204 });
+    },
+  });
+
+  await expect(client.issue("ORBIT-1")).resolves.toMatchObject({ description: "" });
+  await client.updateIssue("ORBIT-1", { description: "" });
+
+  expect(JSON.parse(String(requests[1]?.init.body))).toEqual({
+    fields: { description: null },
+  });
+});
+
 it("decodes transitions, current user, and sprint issue keys", async () => {
   const client = new JiraHttpClient({
     site: "https://example.atlassian.net",

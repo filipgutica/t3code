@@ -61,11 +61,14 @@ const descriptionText = (value: unknown): string => {
     .join("\n");
 };
 
-const documentDescription = (text: string) => ({
-  type: "doc",
-  version: 1,
-  content: [{ type: "paragraph", content: [{ type: "text", text }] }],
-});
+const documentDescription = (text: string) =>
+  text === ""
+    ? null
+    : {
+        type: "doc",
+        version: 1,
+        content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+      };
 
 const siteUrl = (site: string): string => {
   const url = new URL(site.trim());
