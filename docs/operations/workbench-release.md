@@ -30,9 +30,10 @@ available.
 
 ## Run modes
 
+`release` creates a draft release and requires **sign_macos**.
 `unsigned-preview` creates a draft prerelease. `build-only` uploads workflow
-artifacts without creating a release. Both default to unsigned builds. Set
-**sign_macos** to sign and notarize the Mac builds in either mode; Windows and
+artifacts without creating a release. The preview and build-only modes default to unsigned builds. Set
+**sign_macos** to sign and notarize the Mac builds in those modes; Windows and
 Linux remain unsigned. Missing Apple credentials stop the run before builds
 start. A signing or notarization failure fails the release rather than falling
 back to unsigned output.
@@ -73,9 +74,10 @@ using app identifier `com.filipgutica.t3code.workbench`, URL scheme
 `t3code-workbench`, and its own `.t3-workbench` data directory. It does not
 migrate existing T3 Code data.
 
-Windows packages include the Linux `node-pty` prebuild used by the WSL backend.
-The workflow builds it on Ubuntu with `build-essential` and Python 3, then
-passes it to the Windows packaging job. Linux packaging installs
+Windows packages embed the complete Linux CLI archive used by the upstream
+WSL backend. The workflow builds and smoke-tests it on Ubuntu with upstream
+`build-cli-archive.ts` and `smoke-cli-archive.ts`, then passes it to the Windows
+packager through `--wsl-runtime`. Linux packaging installs
 `build-essential`, `libsecret-1-dev`, `pkg-config`, and ImageMagick. Windows
 uses the hosted Visual Studio installation, Rust's MSVC target, Python 3, tar,
 and the Spectre-mitigated MSVC runtime component.
