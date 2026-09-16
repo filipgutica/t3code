@@ -82,7 +82,7 @@ const liveJira = async (demo: Demo) => {
   return { client, jira, binding, baselineLinks };
 };
 
-test.describe("Jira sprint rollover and multi-client conflicts @live", () => {
+test.describe("Jira multi-sprint selection and client conflicts @live", () => {
   test.skip(!live, "Live Jira regression is opt-in (WORKBENCH_REGRESSION_LIVE=1).");
 
   test("J9 maps a future sprint with the original sprint and restores Ticket identity", async ({
@@ -131,7 +131,7 @@ test.describe("Jira sprint rollover and multi-client conflicts @live", () => {
       const follow = dialog.getByRole("checkbox", {
         name: "Follow selected sprints automatically",
       });
-      await expect(follow).toBeChecked();
+      await expect(follow).toBeChecked({ checked: beforeBinding.followActiveSprint });
       await follow.uncheck();
       const futureCheckbox = sprintCheckbox(dialog, futureSprintName);
       await expect(futureCheckbox).toBeVisible();
