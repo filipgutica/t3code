@@ -262,6 +262,8 @@ export class JiraHttpClient {
       throw new Error("Jira board ID must be a positive integer.");
     }
     if (!name.trim()) throw new Error("Jira sprint name is required.");
+    if (name.trim().length > 30)
+      throw new Error("Jira sprint names must not exceed 30 characters.");
     return parseSprint(
       await this.#request<unknown>("/rest/agile/1.0/sprint", {
         method: "POST",

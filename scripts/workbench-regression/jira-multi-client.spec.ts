@@ -103,13 +103,13 @@ test.describe("Jira sprint rollover and multi-client conflicts @live", () => {
     let futureSprintName: string | undefined;
     let testFailure: unknown;
     try {
-      futureSprintName = `[Workbench regression] future ${NodeCrypto.randomUUID()}`;
+      futureSprintName = `WB-reg-${NodeCrypto.randomBytes(10).toString("hex")}`;
       let futureSprint: JiraSprint;
       try {
         futureSprint = await client.createFutureSprint(binding.boardId, futureSprintName);
       } catch (error) {
         // A successful Jira create can still lose its response. Recover only the
-        // UUID-named future sprint on this board before surfacing the failure.
+        // uniquely named future sprint on this board before surfacing the failure.
         const matches = await client.futureSprintsForBoard(binding.boardId).catch(() => []);
         const recovered = matches.filter(
           (candidate) => candidate.name === futureSprintName && candidate.state === "future",

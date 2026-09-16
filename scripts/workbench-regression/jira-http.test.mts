@@ -184,6 +184,10 @@ it("creates, moves, and deletes only validated sprint IDs", async () => {
   await expect(client.createFutureSprint(0, "invalid")).rejects.toThrow(
     "Jira board ID must be a positive integer.",
   );
+  await expect(client.createFutureSprint(7, "x".repeat(31))).rejects.toThrow(
+    "Jira sprint names must not exceed 30 characters.",
+  );
+  expect(requests).toHaveLength(5);
   await expect(client.moveIssuesToSprint(19, [])).rejects.toThrow(
     "At least one Jira issue is required.",
   );
