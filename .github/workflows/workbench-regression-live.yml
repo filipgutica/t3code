@@ -75,6 +75,8 @@ jobs:
       - name: Run live Workbench regressions
         id: regression
         working-directory: scripts
+        env:
+          T3CODE_BUNDLED_DEV: "1"
         run: vp exec playwright test --config workbench-regression/playwright.config.ts
       - name: Preserve rotated Jira credentials
         if: always() && steps.regression.outcome != '' && steps.regression.outcome != 'skipped'

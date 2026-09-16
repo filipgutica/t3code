@@ -28,6 +28,13 @@ export type JiraTransition = {
   readonly to: { readonly id: string; readonly name: string };
 };
 
+export type JiraSprint = {
+  readonly id: number;
+  readonly name: string;
+  readonly state: string;
+  readonly originBoardId?: number;
+};
+
 const record = (value: unknown): Record<string, unknown> | null =>
   typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -132,6 +139,26 @@ const parseSprintKeys = (value: unknown): readonly string[] => {
   });
 };
 
+const parseSprint = (value: unknown): JiraSprint => {
+  const root = record(value);
+  if (
+    root === null ||
+    typeof root.id !== "number" ||
+    !Number.isSafeInteger(root.id) ||
+    root.id <= 0 ||
+    typeof root.name !== "string" ||
+    typeof root.state !== "string"
+  ) {
+    throw new Error("Jira returned an unexpected sprint response.");
+  }
+  return {
+    id: root.id,
+    name: root.name,
+    state: root.state,
+    ...(typeof root.originBoardId === "number" ? { originBoardId: root.originBoardId } : {}),
+  };
+};
+
 const parseAccountId = (value: unknown): string => {
   const accountId = stringValue(record(value)?.accountId);
   if (accountId === undefined)
@@ -228,6 +255,64 @@ export class JiraHttpClient {
         `/rest/agile/1.0/sprint/${encodeURIComponent(String(sprintId))}/issue?maxResults=100&fields=key`,
       ),
     );
+  }
+
+  async createFutureSprint(boardId: number, name: string): Promise<JiraSprint> {
+    if (!Number.isSafeInteger(boardId) || boardId <= 0) {
+      throw new Error("Jira board ID must be a positive integer.");
+    }
+    if (!name.trim()) throw new Error("Jira sprint name is required.");
+    return parseSprint(
+      await this.#request<unknown>("/rest/agile/1.0/sprint", {
+        method: "POST",
+        body: JSON.stringify({ name: name.trim(), originBoardId: boardId }),
+      }),
+    );
+  }
+
+  async sprint(sprintId: number): Promise<JiraSprint> {
+    if (!Number.isSafeInteger(sprintId) || sprintId <= 0) {
+      throw new Error("Jira sprint ID must be a positive integer.");
+    }
+    return parseSprint(
+      await this.#request<unknown>(
+        `/rest/agile/1.0/sprint/${encodeURIComponent(String(sprintId))}`,
+      ),
+    );
+  }
+
+  async futureSprintsForBoard(boardId: number): Promise<readonly JiraSprint[]> {
+    if (!Number.isSafeInteger(boardId) || boardId <= 0) {
+      throw new Error("Jira board ID must be a positive integer.");
+    }
+    const root = record(
+      await this.#request<unknown>(
+        `/rest/agile/1.0/board/${encodeURIComponent(String(boardId))}/sprint?state=future&maxResults=100`,
+      ),
+    );
+    if (!Array.isArray(root?.values))
+      throw new Error("Jira returned an unexpected sprint response.");
+    return root.values.map((value) => parseSprint(value));
+  }
+
+  async moveIssuesToSprint(sprintId: number, issueKeys: readonly string[]): Promise<void> {
+    if (!Number.isSafeInteger(sprintId) || sprintId <= 0) {
+      throw new Error("Jira sprint ID must be a positive integer.");
+    }
+    if (issueKeys.length === 0) throw new Error("At least one Jira issue is required.");
+    await this.#request(`/rest/agile/1.0/sprint/${encodeURIComponent(String(sprintId))}/issue`, {
+      method: "POST",
+      body: JSON.stringify({ issues: [...issueKeys] }),
+    });
+  }
+
+  async deleteSprint(sprintId: number): Promise<void> {
+    if (!Number.isSafeInteger(sprintId) || sprintId <= 0) {
+      throw new Error("Jira sprint ID must be a positive integer.");
+    }
+    await this.#request(`/rest/agile/1.0/sprint/${encodeURIComponent(String(sprintId))}`, {
+      method: "DELETE",
+    });
   }
 
   /** Recover only the unique issue created by a failed UI test. */

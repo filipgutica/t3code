@@ -27,24 +27,44 @@ REST calls, and a preconnected Workbench OAuth grant. The API token resets and
 checks fixtures; Workbench uses OAuth for its own Jira operations. Provider
 responses remain scripted. Interactive Atlassian login is outside this suite.
 
-| Area            | Current browser coverage                                                                                                                   |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Planning        | Workspace creation/rename, Ticket editing/status/archive/restore/delete, Epic membership/progress, routes and narrow layout                |
-| Provider        | Full Ticket context sent to a native Thread, completed turn, summary failure/retry, retained worktrees                                     |
-| Jira connection | First import, progress, failure/retry, empty results, local-data choice/cancel, publish retry, lost-response recovery, imported-only Board |
-| Live Jira       | Sprint imports, mapped/mirrored columns, pause/resume, issue creation, description/status writes, start-work transition, refresh identity  |
-| Live GitHub     | Existing public PR linking/unlinking and detail tabs                                                                                       |
+| Area            | Current browser coverage                                                                                                                                                                               |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Planning        | Workspace creation/rename, Ticket editing/status/archive/restore/delete, Epic membership/progress, routes and narrow layout                                                                            |
+| Provider        | Full Ticket context sent to a native Thread, completed turn, summary failure/retry, retained worktrees                                                                                                 |
+| Jira connection | First import, progress, failure/retry, empty results, local-data choice/cancel, publish retry, lost-response recovery, imported-only Board                                                             |
+| Live Jira       | Sprint imports, multiple selected sprints, mapped/mirrored columns, pause/resume, issue creation, description/status writes, start-work transition, refresh identity, two-browser stale-edit rejection |
+| Live GitHub     | Existing public PR linking/unlinking and detail tabs                                                                                                                                                   |
 
 The [manual checklist](../../.agents/skills/workbench-regression-checklist/SKILL.md)
 remains the broader acceptance guide. Gaps include draft/cancel races, drag and drop,
 Thread archive/delete/attach, complete workspace reset, multi-repository branch
-assertions, reconnect/permission failures, sprint rollover, multi-sprint changes,
-two-client conflicts, provider approval states, full PR lifecycle, and desktop.
+assertions, reconnect/permission failures, provider approval states, full PR
+lifecycle, and desktop.
+
+The default workflow also runs SQL-backed Jira lifecycle tests. They verify sprint
+rollover, ambiguous rollover, and overlapping refresh/edit operations through the
+real Workbench services and persistence, with controlled Jira responses. Run them
+locally from the repository root:
+
+```sh
+vp test run apps/server/src/workbench/jira/JiraLifecycle.integration.test.ts
+```
+
+The live multi-sprint test creates a temporary future sprint, moves one baseline
+issue, and restores both before deleting its sprint. It never closes the shared
+baseline sprint. Rollover coverage does not exercise Atlassian's sprint-close API.
+The two-client test uses separate browser contexts against one server; it does
+not cover separate servers sharing an OAuth grant.
 
 Browser tests share one server per serial run. Each run starts from the baseline;
 live tests restore their remote edits, and teardown restores the Jira baseline.
 GitHub branches and PRs are read, not reset. The public Orbit revisions are pinned;
 Beacon repositories are synthetic. Temporary homes remain available for diagnosis.
+Snapshot checks reuse one short-lived RPC credential per worker, while each check
+still reads current server state. The credential is revoked before server shutdown.
+CI enables the existing bundled-dev mode to reduce source-module loading costs.
+Use `T3CODE_BUNDLED_DEV=1` with the local browser command to reproduce that mode;
+set it to `0` to compare unbundled development behavior.
 
 ## GitHub Actions setup
 

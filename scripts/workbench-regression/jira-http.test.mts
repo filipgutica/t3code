@@ -112,3 +112,82 @@ it("recovers only exact test summaries across Jira search pages", async () => {
     "ORBIT-2",
   ]);
 });
+
+it("creates, moves, and deletes only validated sprint IDs", async () => {
+  const requests: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+  const client = new JiraHttpClient({
+    site: "https://example.atlassian.net",
+    email: "demo@example.test",
+    token: "test-token",
+    fetcher: async (input, init = {}) => {
+      requests.push({ url: String(input), init });
+      if (String(input).endsWith("/rest/agile/1.0/sprint")) {
+        return new Response(
+          JSON.stringify({ id: 19, name: "Regression future", state: "future", originBoardId: 7 }),
+          {
+            status: 201,
+          },
+        );
+      }
+      if (String(input).endsWith("/rest/agile/1.0/sprint/19")) {
+        return new Response(
+          JSON.stringify({ id: 19, name: "Regression future", state: "future", originBoardId: 7 }),
+          { status: 200 },
+        );
+      }
+      if (String(input).includes("/rest/agile/1.0/board/7/sprint?state=future")) {
+        return new Response(
+          JSON.stringify({
+            values: [{ id: 19, name: "Regression future", state: "future", originBoardId: 7 }],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(null, { status: 204 });
+    },
+  });
+
+  await expect(client.createFutureSprint(7, " Regression future ")).resolves.toEqual({
+    id: 19,
+    name: "Regression future",
+    state: "future",
+    originBoardId: 7,
+  });
+  await expect(client.sprint(19)).resolves.toEqual({
+    id: 19,
+    name: "Regression future",
+    state: "future",
+    originBoardId: 7,
+  });
+  await expect(client.futureSprintsForBoard(7)).resolves.toEqual([
+    { id: 19, name: "Regression future", state: "future", originBoardId: 7 },
+  ]);
+  await client.moveIssuesToSprint(19, ["ORBIT-1"]);
+  await client.deleteSprint(19);
+
+  expect(requests.map(({ url, init }) => [url, init.method])).toEqual([
+    ["https://example.atlassian.net/rest/agile/1.0/sprint", "POST"],
+    ["https://example.atlassian.net/rest/agile/1.0/sprint/19", undefined],
+    [
+      "https://example.atlassian.net/rest/agile/1.0/board/7/sprint?state=future&maxResults=100",
+      undefined,
+    ],
+    ["https://example.atlassian.net/rest/agile/1.0/sprint/19/issue", "POST"],
+    ["https://example.atlassian.net/rest/agile/1.0/sprint/19", "DELETE"],
+  ]);
+  expect(JSON.parse(String(requests[0]?.init.body))).toEqual({
+    name: "Regression future",
+    originBoardId: 7,
+  });
+  expect(JSON.parse(String(requests[3]?.init.body))).toEqual({ issues: ["ORBIT-1"] });
+
+  await expect(client.createFutureSprint(0, "invalid")).rejects.toThrow(
+    "Jira board ID must be a positive integer.",
+  );
+  await expect(client.moveIssuesToSprint(19, [])).rejects.toThrow(
+    "At least one Jira issue is required.",
+  );
+  await expect(client.deleteSprint(0)).rejects.toThrow(
+    "Jira sprint ID must be a positive integer.",
+  );
+});
