@@ -277,8 +277,10 @@ test.describe("Jira multi-sprint selection and client conflicts @live", () => {
     const link = baselineLinks[0];
     if (!link) throw new Error("The live demo has no baseline Jira issue to exercise.");
     const original = await client.issue(link.issue.key);
-    const winner = `${original.description}\n\nJ10 winner from client one.`;
-    const stale = `${original.description}\n\nJ10 stale edit from client two.`;
+    // Keep the competing values plain text so Jira's rich-text normalization
+    // does not obscure which client's edit won. Restore the baseline below.
+    const winner = "J10 winner from client one.";
+    const stale = "J10 stale edit from client two.";
     const secondContext = await browser.newContext({
       baseURL: demo.origin,
       storageState: pairedState,
