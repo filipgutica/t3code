@@ -24,6 +24,7 @@ concurrency:
 
 jobs:
   jira-github:
+    name: Real Jira and GitHub integration
     if: >-
       github.repository == 'filipgutica/t3code' &&
       (github.event_name != 'pull_request' ||

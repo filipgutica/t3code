@@ -22,6 +22,7 @@ concurrency:
 
 jobs:
   browser:
+    name: UI flows and Jira lifecycle (simulated services)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

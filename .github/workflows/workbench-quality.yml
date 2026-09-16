@@ -42,7 +42,7 @@ concurrency:
 
 jobs:
   quality:
-    name: Workbench quality gates
+    name: Types, unit tests, lint and isolation
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -71,7 +71,7 @@ jobs:
         run: vp run --filter @t3tools/workbench quality
 
   reports:
-    name: Workbench advisory reports
+    name: Complexity and duplication reports
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
