@@ -111,7 +111,7 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
     { scope: "worker", timeout: 180_000 },
   ],
   pairedState: [
-    async ({ browser, demo }, use) => {
+    async ({ browser, demo }, use, workerInfo) => {
       const context = await browser.newContext();
       try {
         const page = await context.newPage();
@@ -120,9 +120,17 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
         // Pairing redirects before the cold Vite module graph and app state finish loading.
         // Publish storage only once the seeded application is ready for test navigation.
         await page.goto(`${demo.origin}/workbench?workbenchProjectId=orbit`);
-        await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible({
-          timeout: 30_000,
-        });
+        try {
+          await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible({
+            timeout: 30_000,
+          });
+        } catch (error) {
+          await NodeFSP.mkdir(workerInfo.project.outputDir, { recursive: true });
+          await page.screenshot({
+            path: NodePath.join(workerInfo.project.outputDir, "startup-failure.png"),
+          });
+          throw error;
+        }
         await use(await context.storageState());
       } finally {
         await context.close();
