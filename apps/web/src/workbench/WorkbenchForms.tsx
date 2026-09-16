@@ -122,7 +122,10 @@ import { WorkbenchJiraIssueKey, WorkbenchTicketKindBadge } from "./WorkbenchTick
 import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
 import { WorkbenchTicketPullRequests } from "./WorkbenchTicketPullRequests";
 import { resolveWorkbenchTicketContent } from "./workbenchJira.logic";
-import { getWorkbenchTicketPullRequests } from "./workbenchPullRequests.logic";
+import {
+  getWorkbenchTicketPullRequests,
+  getWorkbenchTicketPullRequestCheckouts,
+} from "./workbenchPullRequests.logic";
 
 const NO_EPIC_VALUE = "__workbench_no_epic__";
 const CREATE_EPIC_VALUE = "__workbench_create_epic__";
@@ -1915,17 +1918,13 @@ export function WorkbenchTicketDetail({
               ticketKey={jiraIssueLink?.issue.key ?? null}
               repositoryProjectIds={selectedRepositoryProjectIds}
               pullRequests={associatedPullRequests}
-              checkouts={repositories.flatMap(({ id, repository, openInCwd }) =>
-                openInCwd
-                  ? [
-                      {
-                        projectId: id,
-                        title: repository?.title ?? "Repository",
-                        cwd: openInCwd,
-                      },
-                    ]
-                  : [],
-              )}
+              checkouts={getWorkbenchTicketPullRequestCheckouts({
+                workspace: ticketWorkspace,
+                repositories: repositories.map(({ id, repository }) => ({
+                  projectId: id,
+                  title: repository?.title ?? "Repository",
+                })),
+              })}
             />
 
             <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">

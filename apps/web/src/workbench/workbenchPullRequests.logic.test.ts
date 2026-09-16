@@ -2,12 +2,16 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   ProjectId,
   ThreadId,
+  WorkbenchTicketId,
+  WorkbenchTicketWorkspaceAttemptId,
+  type WorkbenchTicketWorkspace,
   type ThreadLinkedPullRequest,
   type ThreadPullRequestLink,
 } from "@t3tools/contracts";
 
 import {
   getWorkbenchTicketPullRequests,
+  getWorkbenchTicketPullRequestCheckouts,
   mergeWorkbenchTicketPullRequests,
   type WorkbenchPullRequestThread,
 } from "./workbenchPullRequests.logic";
@@ -271,5 +275,74 @@ describe("Workbench Ticket pull request references", () => {
         pullRequest: legacyPullRequest,
       },
     ]);
+  });
+});
+
+describe("Ticket-owned PR checkouts", () => {
+  const projectId = ProjectId.make("repo");
+  const repositories = [{ projectId, title: "Repository" }];
+  const workspace: WorkbenchTicketWorkspace = {
+    ticketId: WorkbenchTicketId.make("ticket"),
+    attemptId: WorkbenchTicketWorkspaceAttemptId.make("attempt"),
+    status: "ready",
+    branchName: "ticket-branch",
+    errorMessage: null,
+    createdAt: "2026-09-16T00:00:00.000Z",
+    updatedAt: "2026-09-16T00:00:00.000Z",
+    repositories: [
+      {
+        projectId,
+        isPrimary: true,
+        sourcePath: "/shared/repo",
+        worktreePath: "/worktrees/ticket/repo",
+        branchName: "ticket-branch",
+        status: "ready",
+        errorMessage: null,
+        createdAt: "2026-09-16T00:00:00.000Z",
+        updatedAt: "2026-09-16T00:00:00.000Z",
+      },
+    ],
+  };
+
+  it("does not infer a checkout from repository scope before preparation", () => {
+    expect(getWorkbenchTicketPullRequestCheckouts({ workspace: undefined, repositories })).toEqual(
+      [],
+    );
+  });
+
+  it.each(["preparing", "failed", "releasing", "released"] as const)(
+    "does not discover branch PRs from a %s workspace",
+    (status) => {
+      expect(
+        getWorkbenchTicketPullRequestCheckouts({
+          workspace: { ...workspace, status },
+          repositories,
+        }),
+      ).toEqual([]);
+    },
+  );
+
+  it("uses only ready, in-scope ticket worktrees, never the shared source path", () => {
+    expect(getWorkbenchTicketPullRequestCheckouts({ workspace, repositories })).toEqual([
+      { projectId, title: "Repository", cwd: "/worktrees/ticket/repo" },
+    ]);
+    expect(
+      getWorkbenchTicketPullRequestCheckouts({
+        workspace,
+        repositories: [{ projectId: ProjectId.make("other"), title: "Other" }],
+      }),
+    ).toEqual([]);
+    expect(
+      getWorkbenchTicketPullRequestCheckouts({
+        workspace: {
+          ...workspace,
+          repositories: workspace.repositories.map((repository) => ({
+            ...repository,
+            status: "released",
+          })),
+        },
+        repositories,
+      }),
+    ).toEqual([]);
   });
 });
