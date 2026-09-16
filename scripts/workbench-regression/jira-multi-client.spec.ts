@@ -322,9 +322,9 @@ test.describe("Jira multi-sprint selection and client conflicts @live", () => {
       await expect.poll(async () => (await client.issue(original.key)).description).toBe(winner);
 
       await secondPage.getByRole("button", { name: "Save Ticket", exact: true }).click();
-      await expect(secondPage.getByRole("alert")).toContainText(
-        /changed remotely|Refresh the Ticket/i,
-      );
+      await expect(
+        secondPage.getByRole("alert").filter({ hasText: "This Jira Ticket changed remotely." }),
+      ).toContainText("Refresh the Ticket before saving your edits.");
       await expect.poll(async () => (await client.issue(original.key)).description).toBe(winner);
       const finalWorkbench = await snapshot(demo);
       const finalTicket = finalWorkbench.tickets.find((ticket) => ticket.id === link.ticketId);
