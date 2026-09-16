@@ -134,10 +134,16 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
         });
         await page.goto(await NodeFSP.readFile(NodePath.join(demo.home, "pairing-url"), "utf8"));
         await expect(page).not.toHaveURL(/\/pair/, { timeout: 30_000 });
-        // Pairing redirects before the cold Vite module graph and app state finish loading.
-        // Publish storage only once the seeded application is ready for test navigation.
-        await page.goto(`${demo.origin}/workbench?workbenchProjectId=orbit`);
         try {
+          // The pairing redirect precedes the first app render. Navigating again here
+          // can abort Vite's lazy module requests and strand bundled dev on its splash.
+          await expect(
+            page.getByRole("button", { name: "Toggle main sidebar", exact: true }),
+          ).toBeVisible({
+            timeout: 30_000,
+          });
+          // Publish storage only once the seeded application is ready for test navigation.
+          await page.goto(`${demo.origin}/workbench?workbenchProjectId=orbit`);
           await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible({
             timeout: 30_000,
           });
