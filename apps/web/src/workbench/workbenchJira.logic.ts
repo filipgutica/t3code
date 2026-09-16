@@ -1,6 +1,9 @@
 import type {
+  WorkbenchEpicId,
   WorkbenchJiraBoardConfiguration,
   WorkbenchJiraBoardColumn,
+  WorkbenchJiraBindingId,
+  WorkbenchJiraEpicLink,
   WorkbenchJiraStatusMapping,
   WorkbenchJiraIssueSnapshot,
   WorkbenchTicket,
@@ -21,6 +24,54 @@ export const resolveWorkbenchTicketContent = ({
   title: jiraIssue?.summary ?? ticket.title,
   markdown: jiraIssue?.description ?? ticket.markdown,
 });
+
+const workbenchJiraEpicIdPrefix = (bindingId: WorkbenchJiraBindingId | string) =>
+  `jira:${bindingId}:epic:`;
+
+type WorkbenchJiraEpicIssueLink = {
+  readonly bindingId: WorkbenchJiraBindingId;
+  readonly issue: Pick<WorkbenchJiraIssueSnapshot, "epic">;
+};
+
+export const isWorkbenchJiraEpic = ({
+  epicId,
+  bindingId,
+  epicLinks,
+}: {
+  readonly epicId: WorkbenchEpicId;
+  readonly bindingId: WorkbenchJiraBindingId;
+  readonly epicLinks?:
+    | ReadonlyArray<Pick<WorkbenchJiraEpicLink, "bindingId" | "epicId">>
+    | undefined;
+}): boolean =>
+  epicId.startsWith(workbenchJiraEpicIdPrefix(bindingId)) ||
+  (epicLinks?.some((link) => link.bindingId === bindingId && link.epicId === epicId) ?? false);
+
+/** Resolve a Jira Epic key for both legacy imported IDs and mapped local IDs. */
+export const resolveWorkbenchJiraEpicKey = ({
+  epicId,
+  bindingId,
+  epicLinks,
+  issueLinks,
+}: {
+  readonly epicId: WorkbenchEpicId;
+  readonly bindingId: WorkbenchJiraBindingId;
+  readonly epicLinks?:
+    | ReadonlyArray<Pick<WorkbenchJiraEpicLink, "bindingId" | "epicId" | "jiraIssueKey">>
+    | undefined;
+  readonly issueLinks?: ReadonlyArray<WorkbenchJiraEpicIssueLink> | undefined;
+}): string | null => {
+  const mapped = epicLinks?.find((link) => link.bindingId === bindingId && link.epicId === epicId);
+  if (mapped !== undefined) return mapped.jiraIssueKey;
+
+  const prefix = workbenchJiraEpicIdPrefix(bindingId);
+  if (!epicId.startsWith(prefix)) return null;
+  const jiraEpicId = epicId.slice(prefix.length);
+  return (
+    issueLinks?.find((link) => link.bindingId === bindingId && link.issue.epic?.id === jiraEpicId)
+      ?.issue.epic?.key ?? null
+  );
+};
 
 export const getWorkbenchJiraBindingSprints = (binding: {
   readonly sprintId: number;

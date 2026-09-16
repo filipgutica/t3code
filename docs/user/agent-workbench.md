@@ -197,17 +197,22 @@ Published Workbench desktop previews include a hosted Jira connection. You autho
 3. Select one or more sprints. **Select all** selects the sprints currently listed.
 4. Set the default repository scope for imported Tickets.
 5. Map Jira statuses to Workbench columns, or enable **Mirror Jira states** to use the board's column names and order.
-6. Save the configuration.
+6. If the Workspace has local Tickets or Epics, choose whether to publish them to Jira or delete them before importing. Deleting requires an exact-count confirmation; native Agent Threads remain in history.
+7. Save the configuration. Workbench saves the mirror and starts the first Jira sync automatically.
 
 An issue in more than one selected sprint appears only once. Importing creates Tickets, not worktrees. Before starting a Thread, check that Ticket's **Repository scope**.
 
-The Orbit example mirrors six assigned Jira issues into the same Workspace as its local Tickets. Jira issue keys identify imported work. Both Orbit API and Orbit Web are selected as the default repository scope.
+If a migration is interrupted, the setup dialog stays open so you can retry. Choose the same local-data action to resume the migration. Workbench keeps the original local revision checks for that attempt and reports an error if a Ticket or Epic changed.
+
+Jira issue keys identify imported work. The Orbit example uses Orbit API and Orbit Web as the default repository scope.
 
 ![Orbit Workspace showing imported Jira issues alongside local Tickets, with To Do, In Progress, In Review, and Done columns.](./media/workbench/jira-board.png)
 
 ### Sync and follow sprints
 
-Choose **Sync Jira** for an immediate refresh. An active mirror also checks Jira every five minutes while its server is running. Open Boards refresh automatically and when the app regains focus, including Workspaces without Jira.
+Choose **Sync Jira** for an immediate refresh. The Board shows when a sync is in progress, the number of imported Tickets, an empty-assignment result, or an error with **Retry**. After a successful sync, choose **View imported tickets** to filter the Board to Jira-managed Tickets; choose **Show all tickets** to clear the filter.
+
+While a connected Workspace is visible and online, Workbench checks Jira about every 15 seconds and when you return to the app. Automatic refreshes update Tickets quietly. Hidden views pause these requests; the server still checks active mirrors every five minutes. Multiple open clients share the refresh limit for each mirror.
 
 Watch: change ORBIT-4 from In Review to Done in Jira, return to the Orbit Board, and choose **Sync Jira**. Then move it back in Workbench and confirm the change in Jira.
 

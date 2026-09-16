@@ -204,15 +204,32 @@ if demo_profile_complete; then
   note "Saved demo profile: $ENV_FILE"
   note "GitHub owner: $(demo_saved DEMO_GITHUB_OWNER)"
   note "Jira: $(demo_saved DEMO_JIRA_SITE_URL) / $(demo_saved DEMO_JIRA_PROJECT_KEY)"
-  demo_ask DEMO_SETUP_ACTION "Press Enter to reuse this profile, or type edit" "reuse"
-  if [[ "$DEMO_SETUP_ACTION" == reuse ]]; then
-    say "Configuration retained. Start with:"
-    say "node scripts/workbench-demo/cli.mts start --home \"$DEMO_HOME\""
-    exit 0
-  elif [[ "$DEMO_SETUP_ACTION" != edit ]]; then
-    warn "Choose reuse or edit."
-    exit 1
-  fi
+  demo_ask DEMO_SETUP_ACTION "Press Enter to reuse this profile, type edit, or reset the baseline" "reuse"
+  case "$DEMO_SETUP_ACTION" in
+    reuse)
+      say "Configuration retained. Start with:"
+      say "node scripts/workbench-demo/cli.mts start --home \"$DEMO_HOME\""
+      exit 0
+      ;;
+    reset)
+      if ! confirm "Reset local state and reconcile the recorded Jira baseline?"; then
+        say "Reset cancelled. Configuration retained."
+        exit 0
+      fi
+      if [[ -n "$(demo_saved DEMO_JIRA_EMAIL)" && -n "$(demo_saved DEMO_JIRA_API_TOKEN)" ]]; then
+        node "$SCRIPT_DIR/cli.mts" reset-baseline --home "$DEMO_HOME" --apply --remote-apply
+      else
+        warn "No Jira API token is saved; resetting local state and retaining remote Jira state."
+        node "$SCRIPT_DIR/cli.mts" reset-baseline --home "$DEMO_HOME" --apply
+      fi
+      exit 0
+      ;;
+    edit) ;;
+    *)
+      warn "Choose reuse, edit, or reset."
+      exit 1
+      ;;
+  esac
 fi
 
 banner "T3 Code Workbench demo setup"
@@ -314,31 +331,59 @@ DEMO_JIRA_SPRINT_ID=$(demo_saved DEMO_JIRA_SPRINT_ID)
 note "The selected sprint must contain issues assigned to the account you later connect in Workbench."
 
 stage "Workbench Jira: OAuth app and callback"
-say "Create or select an Atlassian OAuth 2.0 (3LO) app for this local Workbench server."
-open_url "https://developer.atlassian.com/console/myapps/"
-step "Under Permissions → Jira API, add read:project:jira, read:jira-work, write:jira-work, read:board-scope:jira-software, read:board-scope.admin:jira-software, read:sprint:jira-software, read:issue-details:jira, and read:jql:jira."
-step "Under Authorization → OAuth 2.0 (3LO), add the callback URL below. Workbench requests offline_access in its authorization request."
-step "Start the demo once to learn its actual web origin, then register that exact origin plus /workbench as the web callback."
-step "For desktop testing, register the server origin plus /oauth/workbench/jira/callback instead."
-demo_ask T3_WORKBENCH_JIRA_CLIENT_ID "OAuth client ID:"
-if [[ -z "$T3_WORKBENCH_JIRA_CLIENT_ID" ]]; then
-  warn "An OAuth client ID is required."
-  exit 1
+JIRA_OAUTH_MODE_DEFAULT="broker"
+if [[ -n "$(demo_saved T3_WORKBENCH_JIRA_CLIENT_ID)" && -n "$(demo_saved T3_WORKBENCH_JIRA_CLIENT_SECRET)" ]]; then
+  JIRA_OAUTH_MODE_DEFAULT="direct"
 fi
-write_env T3_WORKBENCH_JIRA_CLIENT_ID "$T3_WORKBENCH_JIRA_CLIENT_ID"
-demo_ask T3_WORKBENCH_JIRA_CLIENT_SECRET "OAuth client secret" "" secret
-if [[ -z "$T3_WORKBENCH_JIRA_CLIENT_SECRET" ]]; then
-  warn "An OAuth client secret is required."
-  exit 1
-fi
-write_env T3_WORKBENCH_JIRA_CLIENT_SECRET "$T3_WORKBENCH_JIRA_CLIENT_SECRET"
-demo_ask DEMO_JIRA_CALLBACK_URL "Registered callback URL:"
-if [[ ! "$DEMO_JIRA_CALLBACK_URL" =~ ^https?:// ]]; then
-  warn "The callback URL must start with http:// or https://."
-  exit 1
-fi
-write_env DEMO_JIRA_CALLBACK_URL "$DEMO_JIRA_CALLBACK_URL"
-note "The callback is recorded for verification and documentation; the running server still derives its redirect URI from the selected client surface."
+step "broker (recommended): use the hosted Workbench OAuth broker; its Atlassian app and callback are already configured."
+step "direct: use your own Atlassian OAuth 2.0 (3LO) app and register the callback for this demo server."
+demo_ask DEMO_JIRA_OAUTH_MODE "OAuth configuration (broker/direct)" "$JIRA_OAUTH_MODE_DEFAULT"
+case "$DEMO_JIRA_OAUTH_MODE" in
+  broker)
+    demo_ask T3_WORKBENCH_JIRA_BROKER_URL "Workbench OAuth broker URL" "$DEMO_JIRA_BROKER_DEFAULT_URL"
+    if [[ ! "$T3_WORKBENCH_JIRA_BROKER_URL" =~ ^https://[^[:space:]]+$ ]]; then
+      warn "The broker URL must start with https:// and contain no spaces."
+      exit 1
+    fi
+    write_env T3_WORKBENCH_JIRA_BROKER_URL "$T3_WORKBENCH_JIRA_BROKER_URL"
+    write_env T3_WORKBENCH_JIRA_CLIENT_ID ""
+    write_env T3_WORKBENCH_JIRA_CLIENT_SECRET ""
+    write_env DEMO_JIRA_CALLBACK_URL ""
+    note "The hosted broker owns the Atlassian callback; no client ID, secret, or callback registration is needed."
+    ;;
+  direct)
+    say "Create or select an Atlassian OAuth 2.0 (3LO) app for this local Workbench server."
+    open_url "https://developer.atlassian.com/console/myapps/"
+    step "Under Permissions → Jira API, add read:project:jira, read:jira-user, read:jira-work, write:jira-work, read:board-scope:jira-software, read:board-scope.admin:jira-software, read:sprint:jira-software, write:sprint:jira-software, read:issue-details:jira, and read:jql:jira."
+    step "Under Authorization → OAuth 2.0 (3LO), add the callback URL below. Workbench requests offline_access in its authorization request."
+    step "Start the demo once to learn its actual web origin, then register that exact origin plus /workbench as the web callback."
+    step "For desktop testing, register the server origin plus /oauth/workbench/jira/callback instead."
+    write_env T3_WORKBENCH_JIRA_BROKER_URL ""
+    demo_ask T3_WORKBENCH_JIRA_CLIENT_ID "OAuth client ID:"
+    if [[ -z "$T3_WORKBENCH_JIRA_CLIENT_ID" ]]; then
+      warn "An OAuth client ID is required."
+      exit 1
+    fi
+    write_env T3_WORKBENCH_JIRA_CLIENT_ID "$T3_WORKBENCH_JIRA_CLIENT_ID"
+    demo_ask T3_WORKBENCH_JIRA_CLIENT_SECRET "OAuth client secret" "" secret
+    if [[ -z "$T3_WORKBENCH_JIRA_CLIENT_SECRET" ]]; then
+      warn "An OAuth client secret is required."
+      exit 1
+    fi
+    write_env T3_WORKBENCH_JIRA_CLIENT_SECRET "$T3_WORKBENCH_JIRA_CLIENT_SECRET"
+    demo_ask DEMO_JIRA_CALLBACK_URL "Registered callback URL:"
+    if [[ ! "$DEMO_JIRA_CALLBACK_URL" =~ ^https?:// ]]; then
+      warn "The callback URL must start with http:// or https://."
+      exit 1
+    fi
+    write_env DEMO_JIRA_CALLBACK_URL "$DEMO_JIRA_CALLBACK_URL"
+    note "The callback is recorded for verification and documentation; the running server still derives its redirect URI from the selected client surface."
+    ;;
+  *)
+    warn "OAuth configuration must be broker or direct."
+    exit 1
+    ;;
+esac
 
 stage "Workbench Jira: browser authorization"
 say "Configuration is saved; the app and demo data still need to be started/seeded."
@@ -348,7 +393,11 @@ step "From the repository root, run: node scripts/workbench-demo/cli.mts setup -
 step "Run: node scripts/workbench-demo/cli.mts start --home \"$DEMO_HOME\""
 step "In a second terminal, run: node scripts/workbench-demo/cli.mts seed --home \"$DEMO_HOME\""
 step "Open the printed pairing URL, open the seeded demo Workspace, choose Connect Jira, then choose Connect Atlassian."
-step "Authorize the OAuth app in the browser and return to the running Workbench."
+if [[ "$DEMO_JIRA_OAUTH_MODE" == broker ]]; then
+  step "Choose Connect Atlassian in Workbench; the hosted broker opens Atlassian consent in the browser."
+else
+  step "Authorize the direct OAuth app in the browser and return to the running Workbench."
+fi
 step "Run: node scripts/workbench-demo/cli.mts sync-jira --home \"$DEMO_HOME\" to create the Orbit Jira Workspace and mirrored binding, then sync the selected sprint."
 step "Run: node scripts/workbench-demo/cli.mts verify --home \"$DEMO_HOME\" --jira"
 if confirm "Have you completed the Workbench Jira browser authorization?"; then

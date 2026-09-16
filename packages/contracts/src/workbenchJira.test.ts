@@ -5,13 +5,17 @@ import * as Schema from "effect/Schema";
 import {
   WorkbenchJiraBinding,
   WorkbenchJiraCompleteAuthResult,
+  WorkbenchJiraEpicLink,
   WorkbenchJiraIssueLink,
+  WorkbenchJiraSyncBindingInput,
   WorkbenchJiraUpdateTicketInput,
 } from "./workbenchJira.ts";
 
 const decodeBinding = Schema.decodeUnknownEffect(WorkbenchJiraBinding);
 const decodeIssueLink = Schema.decodeUnknownEffect(WorkbenchJiraIssueLink);
+const decodeEpicLink = Schema.decodeUnknownEffect(WorkbenchJiraEpicLink);
 const decodeCompleteAuthResult = Schema.decodeUnknownEffect(WorkbenchJiraCompleteAuthResult);
+const decodeSyncBinding = Schema.decodeUnknownEffect(WorkbenchJiraSyncBindingInput);
 
 describe("Workbench Jira contracts", () => {
   it.effect("accepts legacy status writes and exact Jira transition writes", () =>
@@ -28,6 +32,16 @@ describe("Workbench Jira contracts", () => {
       assert.isUndefined(transition.status);
       const invalid = yield* Effect.result(decodeUpdate({ ...identity, transitionId: "" }));
       assert.strictEqual(invalid._tag, "Failure");
+    }),
+  );
+
+  it.effect("keeps sync requests manual unless background mode is explicit", () =>
+    Effect.gen(function* () {
+      const manual = yield* decodeSyncBinding({ bindingId: "binding-1" });
+      const background = yield* decodeSyncBinding({ bindingId: "binding-1", background: true });
+
+      assert.isUndefined(manual.background);
+      assert.isTrue(background.background);
     }),
   );
 
@@ -118,6 +132,20 @@ describe("Workbench Jira contracts", () => {
         binding.selectedSprints.map((sprint) => sprint.id),
         [7, 17],
       );
+    }),
+  );
+
+  it.effect("decodes an Epic mapping without requiring a child issue", () =>
+    Effect.gen(function* () {
+      const link = yield* decodeEpicLink({
+        bindingId: "binding-1",
+        epicId: "local-epic",
+        jiraIssueId: "10042",
+        jiraIssueKey: "WB-42",
+      });
+
+      assert.strictEqual(link.epicId, "local-epic");
+      assert.strictEqual(link.jiraIssueKey, "WB-42");
     }),
   );
 

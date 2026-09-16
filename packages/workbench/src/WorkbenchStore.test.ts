@@ -156,6 +156,8 @@ describe("WorkbenchStore package boundary", () => {
         "workbench_epics",
         "workbench_jira_bindings",
         "workbench_jira_connections",
+        "workbench_jira_epic_creations",
+        "workbench_jira_epic_links",
         "workbench_jira_issue_links",
         "workbench_jira_ticket_creations",
         "workbench_project_links",
@@ -167,7 +169,7 @@ describe("WorkbenchStore package boundary", () => {
         "workbench_tickets",
       ]);
       expect(migrations.map(({ version }) => version)).toEqual([
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
       ]);
     }).pipe(Effect.provide(testLayer())),
   );

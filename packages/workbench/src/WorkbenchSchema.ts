@@ -190,6 +190,7 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
       observed_active_sprint_ids_json TEXT NOT NULL DEFAULT '[]',
       board_mode TEXT NOT NULL DEFAULT 'mapped',
       board_columns_json TEXT NOT NULL DEFAULT '[]',
+      local_migration_pending INTEGER NOT NULL DEFAULT 0,
       active INTEGER NOT NULL,
       last_synced_at TEXT,
       last_sync_error TEXT,
@@ -237,6 +238,38 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
       updated_at TEXT NOT NULL,
       FOREIGN KEY (binding_id)
         REFERENCES workbench_jira_bindings(binding_id)
+        ON DELETE CASCADE
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS workbench_jira_epic_creations (
+      epic_id TEXT PRIMARY KEY,
+      binding_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      markdown TEXT NOT NULL,
+      jira_issue_id TEXT,
+      jira_issue_key TEXT,
+      request_fingerprint TEXT NOT NULL DEFAULT '',
+      state TEXT NOT NULL CHECK (state IN ('pending', 'uncertain', 'created')),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (binding_id)
+        REFERENCES workbench_jira_bindings(binding_id)
+        ON DELETE CASCADE
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS workbench_jira_epic_links (
+      binding_id TEXT NOT NULL,
+      jira_issue_id TEXT NOT NULL,
+      jira_issue_key TEXT NOT NULL,
+      epic_id TEXT NOT NULL,
+      PRIMARY KEY (binding_id, jira_issue_id),
+      FOREIGN KEY (binding_id)
+        REFERENCES workbench_jira_bindings(binding_id)
+        ON DELETE CASCADE,
+      FOREIGN KEY (epic_id)
+        REFERENCES workbench_epics(epic_id)
         ON DELETE CASCADE
     )
   `;
@@ -594,6 +627,32 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
     }),
   );
 
+  yield* sql.withTransaction(
+    Effect.gen(function* () {
+      const migration = yield* sql<{ readonly version: number }>`
+        SELECT version
+        FROM workbench_schema_migrations
+        WHERE version = 14
+        LIMIT 1
+      `;
+      if (migration.length > 0) return;
+
+      const jiraBindingColumns = yield* sql<{ readonly name: string }>`
+        PRAGMA table_info(workbench_jira_bindings)
+      `;
+      if (!jiraBindingColumns.some((column) => column.name === "local_migration_pending")) {
+        yield* sql`
+          ALTER TABLE workbench_jira_bindings
+          ADD COLUMN local_migration_pending INTEGER NOT NULL DEFAULT 0
+        `;
+      }
+      yield* sql`
+        INSERT OR IGNORE INTO workbench_schema_migrations (version)
+        VALUES (14)
+      `;
+    }),
+  );
+
   yield* sql`
     INSERT OR IGNORE INTO workbench_ticket_repositories (
       ticket_id,
@@ -630,6 +689,6 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
   `;
   yield* sql`
     INSERT OR IGNORE INTO workbench_schema_migrations (version)
-    VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13)
+    VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13), (14)
   `;
 });

@@ -109,6 +109,43 @@ const makeOtherBinding = (): WorkbenchJiraBinding =>
     selectedSprints: [{ id: 8, name: "Sprint 8" }],
   }) satisfies WorkbenchJiraBinding;
 
+const metadataOnlyBinding = {
+  ...makeBinding(),
+  observedActiveSprintIds: [99],
+  lastSyncedAt: "2026-09-05T12:01:00.000Z",
+  lastSyncError: "A previous background refresh failed.",
+  updatedAt: "2026-09-05T12:01:00.000Z",
+} satisfies WorkbenchJiraBinding;
+
+const updateBindingChanges = [
+  [
+    "selected sprint",
+    {
+      ...makeBinding(),
+      sprintId: 8,
+      sprintName: "Sprint 8",
+      selectedSprints: [{ id: 8, name: "Sprint 8" }],
+    },
+  ],
+  [
+    "status mapping",
+    {
+      ...makeBinding(),
+      statusMappings: [
+        { jiraStatusId: "1", workbenchStatus: "in_progress" },
+        { jiraStatusId: "2", workbenchStatus: "in_progress" },
+      ],
+    },
+  ],
+  [
+    "Jira connection",
+    {
+      ...makeBinding(),
+      connectionId: WorkbenchJiraConnectionId.make("other-connection"),
+    },
+  ],
+] as const satisfies ReadonlyArray<readonly [string, WorkbenchJiraBinding]>;
+
 const makeHarness = (options?: {
   readonly transitions?: ReadonlyArray<{
     readonly id: string;
@@ -466,6 +503,35 @@ describe("JiraTicketWriteService", () => {
     ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
   );
 
+  it.effect("checks the confirmed local revision before resuming a completed creation", () =>
+    runWithHarness((h) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`
+          CREATE TABLE workbench_tickets (
+            ticket_id TEXT PRIMARY KEY,
+            revision INTEGER NOT NULL,
+            deleted_at TEXT
+          )
+        `;
+        yield* sql`
+          INSERT INTO workbench_tickets (ticket_id, revision, deleted_at)
+          VALUES (${createdTicketId}, 0, NULL)
+        `;
+        const confirmed = { ...creationInput, existingLocalTicketRevision: 0 };
+        yield* h.service.createTicket(confirmed);
+        yield* sql`
+          UPDATE workbench_tickets SET revision = 1 WHERE ticket_id = ${createdTicketId}
+        `;
+
+        const error = yield* Effect.flip(h.service.createTicket(confirmed));
+        assert.strictEqual(error.code, "invalid_binding");
+        assert.isTrue(error.message.includes("local Ticket changed"));
+        assert.strictEqual(yield* Ref.get(h.createCalls), 1);
+      }),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
   it.effect("does not retry an unconfirmed Jira creation", () =>
     runWithHarness(
       (harness) =>
@@ -505,6 +571,19 @@ describe("JiraTicketWriteService", () => {
     createdAt: issueUpdatedAt,
     binding: makeBinding(),
   };
+
+  it.effect("allows creation after a refresh changes only binding metadata", () =>
+    runWithHarness(
+      (harness) =>
+        Effect.gen(function* () {
+          yield* Ref.set(harness.linksRef, []);
+          const result = yield* harness.service.createTicket(creationInput);
+          assert.strictEqual(result, createdTicketId);
+          assert.strictEqual(yield* Ref.get(harness.createCalls), 1);
+        }),
+      { bindingAfterPermit: metadataOnlyBinding },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
 
   it.effect("does not POST again after a defect interrupts the first creation", () =>
     runWithHarness(
@@ -666,6 +745,70 @@ describe("JiraTicketWriteService", () => {
         ],
       },
     ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("allows transition lookup after a refresh changes only binding metadata", () =>
+    runWithHarness(
+      (harness) =>
+        Effect.gen(function* () {
+          const result = yield* harness.service.getTicketTransitions({ ticketId });
+          assert.strictEqual(result.transitions.length, 1);
+          assert.deepStrictEqual(
+            harness.requests.map((request) => request.method),
+            ["GET"],
+          );
+        }),
+      { bindingAfterPermit: metadataOnlyBinding },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  for (const [change, bindingAfterPermit] of updateBindingChanges) {
+    it.effect(`rejects an update after ${change} changes while waiting`, () =>
+      runWithHarness(
+        (harness) =>
+          Effect.gen(function* () {
+            const error = yield* Effect.flip(
+              harness.service.updateTicket({
+                ticketId,
+                markdown: "Should not write",
+                expectedRemoteUpdatedAt: issueUpdatedAt,
+              }),
+            );
+            assert.strictEqual(error.code, "invalid_binding");
+            assert.deepStrictEqual(harness.requests, []);
+            assert.strictEqual(yield* Ref.get(harness.sprintReads), 0);
+          }),
+        { bindingAfterPermit },
+      ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    );
+  }
+
+  it.effect(
+    "allows an edit after a refresh renames and materializes the same sprint selection",
+    () =>
+      runWithHarness(
+        (harness) =>
+          Effect.gen(function* () {
+            const updated = yield* harness.service.updateTicket({
+              ticketId,
+              markdown: "Updated after sprint rename",
+              expectedRemoteUpdatedAt: issueUpdatedAt,
+            });
+            assert.strictEqual(updated.description, "Updated after sprint rename");
+            assert.deepStrictEqual(
+              harness.requests.map((request) => request.method),
+              ["PUT"],
+            );
+          }),
+        {
+          bindings: [{ ...makeBinding(), selectedSprints: [] }],
+          bindingAfterPermit: {
+            ...makeBinding(),
+            sprintName: "Renamed sprint",
+            selectedSprints: [{ id: makeBinding().sprintId, name: "Renamed sprint" }],
+          },
+        },
+      ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
   );
 
   it.effect("writes the shared description and mapped status, then stores the readback", () =>

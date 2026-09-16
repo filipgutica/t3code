@@ -1873,6 +1873,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
         title = CASE
           WHEN EXISTS (
             SELECT 1
+            FROM workbench_jira_epic_links AS jira_epic_link
+            JOIN workbench_jira_bindings AS jira_binding
+              ON jira_binding.binding_id = jira_epic_link.binding_id
+            WHERE jira_epic_link.epic_id = workbench_epics.epic_id
+              AND jira_binding.workbench_project_id = workbench_epics.workbench_project_id
+          ) OR EXISTS (
+            SELECT 1
             FROM workbench_jira_bindings AS jira_binding
             WHERE jira_binding.workbench_project_id = workbench_epics.workbench_project_id
               AND instr(

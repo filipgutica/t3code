@@ -5,6 +5,8 @@ import {
   inspectJira,
   provisionGitHub,
   provisionJira,
+  resetJira,
+  snapshotJiraBaseline,
   type CommandRunner,
 } from "./remotes.mts";
 
@@ -482,5 +484,694 @@ describe("inspectJira", () => {
     });
     expect(result.sprints).toEqual([{ id: 9, name: "Demo sprint", state: "ACTIVE" }]);
     expect(methods.every((method) => method === "GET")).toBe(true);
+  });
+});
+
+describe("resetJira", () => {
+  it("returns a write-free plan and validates issue ownership", async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const result = await resetJira({
+      baseline: {
+        site: "https://example.atlassian.net/",
+        projectKey: "orbit",
+        boardId: 42,
+        boardName: "Orbit board",
+        sprintId: 7,
+        sprintName: "Orbit sprint",
+        issues: [
+          {
+            key: "ORBIT-1",
+            summary: "Baseline issue",
+            description: "Baseline description",
+            labels: ["baseline"],
+            assigneeAccountId: null,
+            epicKey: null,
+            state: "todo",
+          },
+        ],
+      },
+      email: "user@example.test",
+      token: "secret",
+      fetcher,
+    });
+
+    expect(result).toMatchObject({
+      site: "https://example.atlassian.net",
+      projectKey: "ORBIT",
+      apply: false,
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+    await expect(
+      resetJira({
+        baseline: {
+          site: "https://example.atlassian.net",
+          projectKey: "ORBIT",
+          boardId: 42,
+          boardName: "Orbit board",
+          sprintId: 7,
+          sprintName: "Orbit sprint",
+          issues: [
+            {
+              key: "BEACON-1",
+              summary: "Baseline issue",
+              description: "Baseline description",
+              labels: ["baseline"],
+              assigneeAccountId: null,
+              epicKey: null,
+              state: "todo",
+            },
+          ],
+        },
+        email: "user@example.test",
+        token: "secret",
+      }),
+    ).rejects.toThrow("must belong to ORBIT");
+  });
+
+  it("clears an empty baseline description with null instead of invalid empty ADF text", async () => {
+    const requests: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      requests.push({ url: url.pathname, init: init ?? {} });
+      if (url.pathname.endsWith("/project/ORBIT")) return Response.json({ id: "1", key: "ORBIT" });
+      if (url.pathname.endsWith("/board/42"))
+        return Response.json({ id: 42, name: "Orbit board", type: "simple" });
+      if (url.pathname.endsWith("/sprint/7"))
+        return Response.json({ id: 7, name: "Orbit sprint", state: "ACTIVE" });
+      if (url.pathname.endsWith("/sprint/7/issue"))
+        return Response.json({ issues: [{ id: "10001", key: "ORBIT-1", fields: { labels: [] } }] });
+      if (url.pathname.endsWith("/search/jql")) return Response.json({ issues: [], isLast: true });
+      if (url.pathname.endsWith("/issue/ORBIT-1") && init?.method !== "PUT")
+        return Response.json({
+          id: "10001",
+          key: "ORBIT-1",
+          fields: {
+            summary: "Baseline issue",
+            description: null,
+            labels: [],
+            assignee: null,
+            parent: null,
+            status: { name: "To Do" },
+          },
+        });
+      if (url.pathname.endsWith("/issue/ORBIT-1") && init?.method === "PUT")
+        return Response.json({});
+      throw new Error(`Unexpected Jira request: ${init?.method ?? "GET"} ${url.pathname}`);
+    };
+
+    await resetJira({
+      baseline: {
+        site: "https://example.atlassian.net",
+        projectKey: "ORBIT",
+        boardId: 42,
+        boardName: "Orbit board",
+        sprintId: 7,
+        sprintName: "Orbit sprint",
+        issues: [
+          {
+            key: "ORBIT-1",
+            summary: "Baseline issue",
+            description: "",
+            labels: [],
+            assigneeAccountId: null,
+            epicKey: null,
+            state: "todo",
+          },
+        ],
+      },
+      email: "user@example.test",
+      token: "secret",
+      apply: true,
+      fetcher,
+    });
+
+    const update = requests.find(({ init }) => init.method === "PUT");
+    expect(JSON.parse(String(update?.init.body))).toEqual({
+      fields: {
+        summary: "Baseline issue",
+        description: null,
+        labels: [],
+        assignee: null,
+        parent: null,
+      },
+    });
+  });
+
+  it("verifies the selected project, board, sprint, and issue before re-adding it", async () => {
+    const calls: string[] = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      calls.push(`${init?.method ?? "GET"} ${url.pathname}`);
+      if (url.pathname.endsWith("/project/ORBIT")) return Response.json({ id: "1", key: "ORBIT" });
+      if (url.pathname.endsWith("/board/42"))
+        return Response.json({ id: 42, name: "Orbit board", type: "simple" });
+      if (url.pathname.endsWith("/sprint/7"))
+        return Response.json({ id: 7, name: "Orbit sprint", state: "ACTIVE" });
+      if (url.pathname.endsWith("/issue/ORBIT-1"))
+        return Response.json({
+          id: "10001",
+          key: "ORBIT-1",
+          fields: {
+            summary: "Baseline issue",
+            description: {
+              type: "doc",
+              version: 1,
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "Baseline description" }],
+                },
+              ],
+            },
+            labels: ["baseline"],
+            assignee: null,
+            parent: null,
+            status: { name: "To Do" },
+          },
+        });
+      if (url.pathname.endsWith("/issue/ORBIT-1") && init?.method === "PUT")
+        return Response.json({});
+      if (url.pathname.endsWith("/sprint/7/issue"))
+        return Response.json({
+          issues: [{ id: "10001", key: "ORBIT-1", fields: { labels: ["baseline"] } }],
+          isLast: true,
+        });
+      if (url.pathname.endsWith("/search/jql")) return Response.json({ issues: [], isLast: true });
+      throw new Error(`Unexpected Jira request: ${init?.method ?? "GET"} ${url.pathname}`);
+    };
+
+    const result = await resetJira({
+      baseline: {
+        site: "https://example.atlassian.net",
+        projectKey: "ORBIT",
+        boardId: 42,
+        boardName: "Orbit board",
+        sprintId: 7,
+        sprintName: "Orbit sprint",
+        issues: [
+          {
+            key: "ORBIT-1",
+            summary: "Baseline issue",
+            description: "Baseline description",
+            labels: ["baseline"],
+            assigneeAccountId: null,
+            epicKey: null,
+            state: "todo",
+          },
+        ],
+      },
+      email: "user@example.test",
+      token: "secret",
+      apply: true,
+      fetcher,
+    });
+
+    expect(result).toEqual({
+      site: "https://example.atlassian.net",
+      projectKey: "ORBIT",
+      boardId: 42,
+      sprintId: 7,
+      issueKeys: ["ORBIT-1"],
+      removedExtras: [],
+      updated: ["ORBIT-1"],
+      transitioned: [],
+      verifiedIssueKeys: ["ORBIT-1"],
+    });
+    expect(calls).toEqual([
+      "GET /rest/api/3/project/ORBIT",
+      "GET /rest/agile/1.0/board/42",
+      "GET /rest/agile/1.0/sprint/7",
+      "GET /rest/agile/1.0/sprint/7/issue",
+      "GET /rest/api/3/search/jql",
+      "GET /rest/api/3/issue/ORBIT-1",
+      "PUT /rest/api/3/issue/ORBIT-1",
+      "POST /rest/agile/1.0/sprint/7/issue",
+      "GET /rest/agile/1.0/sprint/7/issue",
+    ]);
+  });
+
+  it("fails during preflight when a recorded status cannot be reached", async () => {
+    const calls: string[] = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      calls.push(`${init?.method ?? "GET"} ${url.pathname}`);
+      if (url.pathname.endsWith("/project/ORBIT")) return Response.json({ id: "1", key: "ORBIT" });
+      if (url.pathname.endsWith("/board/42"))
+        return Response.json({ id: 42, name: "Orbit board", type: "scrum" });
+      if (url.pathname.endsWith("/sprint/7"))
+        return Response.json({ id: 7, name: "Orbit sprint", state: "ACTIVE" });
+      if (url.pathname.endsWith("/sprint/7/issue"))
+        return Response.json({
+          issues: [{ id: "10001", key: "ORBIT-1", fields: { labels: [] } }],
+          isLast: true,
+        });
+      if (url.pathname.endsWith("/search/jql")) return Response.json({ issues: [], isLast: true });
+      if (url.pathname.endsWith("/issue/ORBIT-1"))
+        return Response.json({
+          id: "10001",
+          key: "ORBIT-1",
+          fields: {
+            summary: "Baseline issue",
+            description: {},
+            labels: [],
+            assignee: null,
+            parent: null,
+            status: { name: "To Do" },
+          },
+        });
+      if (url.pathname.endsWith("/transitions")) return Response.json({ transitions: [] });
+      throw new Error(`Unexpected Jira request: ${init?.method ?? "GET"} ${url.pathname}`);
+    };
+
+    await expect(
+      resetJira({
+        baseline: {
+          site: "https://example.atlassian.net",
+          projectKey: "ORBIT",
+          boardId: 42,
+          boardName: "Orbit board",
+          sprintId: 7,
+          sprintName: "Orbit sprint",
+          issues: [
+            {
+              key: "ORBIT-1",
+              summary: "Baseline issue",
+              description: "Baseline description",
+              labels: [],
+              assigneeAccountId: null,
+              epicKey: null,
+              state: "done",
+            },
+          ],
+        },
+        email: "user@example.test",
+        token: "secret",
+        apply: true,
+        fetcher,
+      }),
+    ).rejects.toThrow("refusing partial baseline reset");
+    expect(calls.some((call) => call.startsWith("PUT "))).toBe(false);
+    expect(calls.some((call) => call.startsWith("POST "))).toBe(false);
+  });
+
+  it("deletes marked extras and moves unlabelled project extras to the backlog", async () => {
+    const calls: string[] = [];
+    let markedExtraPresent = true;
+    let unlabelledExtraPresent = true;
+    const fetcher: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? "GET";
+      calls.push(`${method} ${url.pathname}`);
+      if (url.pathname.endsWith("/project/ORBIT")) return Response.json({ id: "1", key: "ORBIT" });
+      if (url.pathname.endsWith("/board/42"))
+        return Response.json({ id: 42, name: "Orbit board", type: "scrum" });
+      if (url.pathname.endsWith("/sprint/7"))
+        return Response.json({ id: 7, name: "Orbit sprint", state: "ACTIVE" });
+      if (url.pathname.endsWith("/sprint/7/issue")) {
+        if (method === "POST") return Response.json({});
+        return Response.json({
+          issues: [
+            { id: "10001", key: "ORBIT-1", fields: { labels: ["baseline"] } },
+            ...(markedExtraPresent
+              ? [{ id: "10099", key: "ORBIT-99", fields: { labels: ["workbench-regression"] } }]
+              : []),
+            ...(unlabelledExtraPresent
+              ? [{ id: "10097", key: "ORBIT-97", fields: { labels: [] } }]
+              : []),
+          ],
+          isLast: true,
+        });
+      }
+      if (url.pathname.endsWith("/search/jql"))
+        return Response.json({
+          issues: [
+            { id: "10099", key: "ORBIT-99", fields: { labels: ["workbench-regression"] } },
+            { id: "10098", key: "ORBIT-98", fields: { labels: ["workbench-regression"] } },
+          ],
+          isLast: true,
+        });
+      if (url.pathname.endsWith("/issue/ORBIT-99") || url.pathname.endsWith("/issue/ORBIT-98")) {
+        if (method === "DELETE") {
+          if (url.pathname.endsWith("/issue/ORBIT-99")) markedExtraPresent = false;
+          return Response.json({});
+        }
+        throw new Error("The cleanup candidate should only be deleted.");
+      }
+      if (url.pathname.endsWith("/backlog/issue")) {
+        expect(method).toBe("POST");
+        expect(JSON.parse(String(init?.body))).toEqual({ issues: ["ORBIT-97"] });
+        unlabelledExtraPresent = false;
+        return Response.json({});
+      }
+      if (url.pathname.endsWith("/issue/ORBIT-1")) {
+        if (method === "PUT") return Response.json({});
+        return Response.json({
+          id: "10001",
+          key: "ORBIT-1",
+          fields: {
+            summary: "Baseline issue",
+            description: {},
+            labels: ["baseline"],
+            assignee: null,
+            parent: null,
+            status: { name: "To Do" },
+          },
+        });
+      }
+      throw new Error(`Unexpected Jira request: ${method} ${url.pathname}`);
+    };
+
+    const result = await resetJira({
+      baseline: {
+        site: "https://example.atlassian.net",
+        projectKey: "ORBIT",
+        boardId: 42,
+        boardName: "Orbit board",
+        sprintId: 7,
+        sprintName: "Orbit sprint",
+        issues: [
+          {
+            key: "ORBIT-1",
+            summary: "Baseline issue",
+            description: "Baseline description",
+            labels: ["baseline"],
+            assigneeAccountId: null,
+            epicKey: null,
+            state: "todo",
+          },
+        ],
+      },
+      email: "user@example.test",
+      token: "secret",
+      apply: true,
+      fetcher,
+    });
+
+    expect(result).toMatchObject({
+      issueKeys: ["ORBIT-1"],
+      removedExtras: ["ORBIT-99", "ORBIT-98"],
+      verifiedIssueKeys: ["ORBIT-1"],
+    });
+    expect(calls.filter((call) => call.startsWith("DELETE "))).toEqual([
+      "DELETE /rest/api/3/issue/ORBIT-99",
+      "DELETE /rest/api/3/issue/ORBIT-98",
+    ]);
+    expect(calls.some((call) => call.includes("ORBIT-97") && call.startsWith("DELETE "))).toBe(
+      false,
+    );
+    expect(calls.filter((call) => call === "POST /rest/agile/1.0/backlog/issue")).toHaveLength(1);
+  });
+
+  it("recovers on retry when reset is interrupted after cleanup", async () => {
+    const calls: string[] = [];
+    let markedExtraPresent = true;
+    let failSprintAdd = true;
+    const fetcher: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? "GET";
+      calls.push(`${method} ${url.pathname}`);
+      if (url.pathname.endsWith("/project/ORBIT")) return Response.json({ id: "1", key: "ORBIT" });
+      if (url.pathname.endsWith("/board/42"))
+        return Response.json({ id: 42, name: "Orbit board", type: "scrum" });
+      if (url.pathname.endsWith("/sprint/7"))
+        return Response.json({ id: 7, name: "Orbit sprint", state: "ACTIVE" });
+      if (url.pathname.endsWith("/sprint/7/issue")) {
+        if (method === "DELETE") return Response.json({});
+        if (method === "POST") {
+          if (failSprintAdd) {
+            failSprintAdd = false;
+            return new Response("interrupted", { status: 503 });
+          }
+          return Response.json({});
+        }
+        return Response.json({
+          issues: [
+            { id: "10001", key: "ORBIT-1", fields: { labels: ["baseline"] } },
+            ...(markedExtraPresent
+              ? [{ id: "10099", key: "ORBIT-99", fields: { labels: ["workbench-regression"] } }]
+              : []),
+          ],
+          isLast: true,
+        });
+      }
+      if (url.pathname.endsWith("/search/jql"))
+        return Response.json({
+          issues: markedExtraPresent
+            ? [{ id: "10099", key: "ORBIT-99", fields: { labels: ["workbench-regression"] } }]
+            : [],
+          isLast: true,
+        });
+      if (url.pathname.endsWith("/issue/ORBIT-99")) {
+        if (method === "DELETE") {
+          markedExtraPresent = false;
+          return Response.json({});
+        }
+        throw new Error("The cleanup candidate should only be deleted.");
+      }
+      if (url.pathname.endsWith("/issue/ORBIT-1")) {
+        if (method === "PUT") return Response.json({});
+        return Response.json({
+          id: "10001",
+          key: "ORBIT-1",
+          fields: {
+            summary: "Baseline issue",
+            description: {},
+            labels: ["baseline"],
+            assignee: null,
+            parent: null,
+            status: { name: "To Do" },
+          },
+        });
+      }
+      throw new Error(`Unexpected Jira request: ${method} ${url.pathname}`);
+    };
+    const baseline = {
+      site: "https://example.atlassian.net",
+      projectKey: "ORBIT",
+      boardId: 42,
+      boardName: "Orbit board",
+      sprintId: 7,
+      sprintName: "Orbit sprint",
+      issues: [
+        {
+          key: "ORBIT-1",
+          summary: "Baseline issue",
+          description: "Baseline description",
+          labels: ["baseline"],
+          assigneeAccountId: null,
+          epicKey: null,
+          state: "todo" as const,
+        },
+      ],
+    };
+    await expect(
+      resetJira({ baseline, email: "user@example.test", token: "secret", apply: true, fetcher }),
+    ).rejects.toThrow("POST /rest/agile/1.0/sprint/7/issue failed");
+    const retry = await resetJira({
+      baseline,
+      email: "user@example.test",
+      token: "secret",
+      apply: true,
+      fetcher,
+    });
+    expect(retry).toMatchObject({
+      removedExtras: [],
+      verifiedIssueKeys: ["ORBIT-1"],
+    });
+    expect(calls.filter((call) => call.startsWith("DELETE "))).toHaveLength(1);
+  });
+
+  it("preserves unrelated-project Jira issues while resetting the selected project", async () => {
+    const calls: string[] = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      const method = init?.method ?? "GET";
+      calls.push(`${method} ${url.pathname}`);
+      if (url.pathname.endsWith("/project/ORBIT")) return Response.json({ id: "1", key: "ORBIT" });
+      if (url.pathname.endsWith("/board/42"))
+        return Response.json({ id: 42, name: "Orbit board", type: "scrum" });
+      if (url.pathname.endsWith("/sprint/7"))
+        return Response.json({ id: 7, name: "Orbit sprint", state: "ACTIVE" });
+      if (url.pathname.endsWith("/sprint/7/issue")) {
+        if (method === "POST") return Response.json({});
+        return Response.json({
+          issues: [
+            { id: "10001", key: "ORBIT-1", fields: { labels: ["baseline"] } },
+            { id: "10077", key: "BEACON-77", fields: { labels: ["user-owned"] } },
+          ],
+          isLast: true,
+        });
+      }
+      if (url.pathname.endsWith("/search/jql")) return Response.json({ issues: [], isLast: true });
+      if (url.pathname.endsWith("/issue/ORBIT-1")) {
+        if (method === "PUT") return Response.json({});
+        return Response.json({
+          id: "10001",
+          key: "ORBIT-1",
+          fields: {
+            summary: "Baseline issue",
+            description: {},
+            labels: ["baseline"],
+            assignee: null,
+            parent: null,
+            status: { name: "To Do" },
+          },
+        });
+      }
+      throw new Error(`Unexpected Jira request: ${method} ${url.pathname}`);
+    };
+    const result = await resetJira({
+      baseline: {
+        site: "https://example.atlassian.net",
+        projectKey: "ORBIT",
+        boardId: 42,
+        boardName: "Orbit board",
+        sprintId: 7,
+        sprintName: "Orbit sprint",
+        issues: [
+          {
+            key: "ORBIT-1",
+            summary: "Baseline issue",
+            description: "Baseline description",
+            labels: ["baseline"],
+            assigneeAccountId: null,
+            epicKey: null,
+            state: "todo",
+          },
+        ],
+      },
+      email: "user@example.test",
+      token: "secret",
+      apply: true,
+      fetcher,
+    });
+    expect(result).toMatchObject({
+      verifiedIssueKeys: ["ORBIT-1", "BEACON-77"],
+      removedExtras: [],
+    });
+    expect(calls.some((call) => call.includes("BEACON-77") && call.startsWith("DELETE "))).toBe(
+      false,
+    );
+    expect(calls.some((call) => call === "POST /rest/agile/1.0/backlog/issue")).toBe(false);
+  });
+});
+
+describe("snapshotJiraBaseline", () => {
+  it.each([true, false])(
+    "captures full issue fields, including Jira's omitted parent when ungrouped (%s)",
+    async (hasParent) => {
+      const fetcher: typeof fetch = async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname.endsWith("/project/ORBIT"))
+          return Response.json({ id: "1", key: "ORBIT" });
+        if (url.pathname.endsWith("/board/42"))
+          return Response.json({ id: 42, name: "Orbit board", type: "simple" });
+        if (url.pathname.endsWith("/sprint/7"))
+          return Response.json({ id: 7, name: "Orbit sprint", state: "ACTIVE" });
+        if (url.pathname.endsWith("/sprint/7/issue"))
+          return Response.json({
+            issues: [
+              {
+                id: "10001",
+                key: "ORBIT-1",
+                fields: {
+                  summary: "Baseline issue",
+                  description: hasParent
+                    ? {
+                        type: "doc",
+                        version: 1,
+                        content: [
+                          {
+                            type: "paragraph",
+                            content: [{ type: "text", text: "Baseline description" }],
+                          },
+                        ],
+                      }
+                    : "Baseline description",
+                  labels: ["baseline"],
+                  assignee: { accountId: "account-1" },
+                  ...(hasParent ? { parent: { key: "ORBIT-10" } } : {}),
+                  status: { name: "To Do" },
+                },
+              },
+            ],
+            isLast: true,
+          });
+        throw new Error(`Unexpected Jira request: ${url.pathname}`);
+      };
+
+      await expect(
+        snapshotJiraBaseline({
+          site: "https://example.atlassian.net",
+          projectKey: "ORBIT",
+          boardId: 42,
+          sprintId: 7,
+          email: "user@example.test",
+          token: "secret",
+          fetcher,
+        }),
+      ).resolves.toEqual({
+        site: "https://example.atlassian.net",
+        projectKey: "ORBIT",
+        boardId: 42,
+        boardName: "Orbit board",
+        sprintId: 7,
+        sprintName: "Orbit sprint",
+        issues: [
+          {
+            key: "ORBIT-1",
+            summary: "Baseline issue",
+            description: "Baseline description",
+            labels: ["baseline"],
+            assigneeAccountId: "account-1",
+            epicKey: hasParent ? "ORBIT-10" : null,
+            state: "todo",
+          },
+        ],
+      });
+    },
+  );
+
+  it("captures Jira's null description as an empty string", async () => {
+    const fetcher: typeof fetch = async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/project/ORBIT")) return Response.json({ id: "1", key: "ORBIT" });
+      if (url.pathname.endsWith("/board/42"))
+        return Response.json({ id: 42, name: "Orbit board", type: "simple" });
+      if (url.pathname.endsWith("/sprint/7"))
+        return Response.json({ id: 7, name: "Orbit sprint", state: "ACTIVE" });
+      if (url.pathname.endsWith("/sprint/7/issue"))
+        return Response.json({
+          issues: [
+            {
+              id: "10001",
+              key: "ORBIT-1",
+              fields: {
+                summary: "Empty description",
+                description: null,
+                labels: [],
+                assignee: null,
+                status: { name: "To Do" },
+              },
+            },
+          ],
+          isLast: true,
+        });
+      throw new Error(`Unexpected Jira request: ${url.pathname}`);
+    };
+
+    await expect(
+      snapshotJiraBaseline({
+        site: "https://example.atlassian.net",
+        projectKey: "ORBIT",
+        boardId: 42,
+        sprintId: 7,
+        email: "user@example.test",
+        token: "secret",
+        fetcher,
+      }),
+    ).resolves.toMatchObject({
+      issues: [expect.objectContaining({ key: "ORBIT-1", description: "" })],
+    });
   });
 });

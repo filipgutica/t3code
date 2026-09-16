@@ -4,6 +4,10 @@ import * as NodeUtil from "node:util";
 import { defaultHome, requireHome, setupHome, readConfig, resetHome } from "./environment.mts";
 import { seedVisualHistory } from "./history.mts";
 import { startDemo, stopDemo } from "./lifecycle.mts";
+import { planBaselineReset } from "./baseline.mts";
+import { resetToBaseline } from "./reset-to-baseline.mts";
+import { exportJiraAuth, writeJiraAuthBundleFile } from "./jira-auth.mts";
+import { snapshotJiraBaseline } from "./remotes.mts";
 import { provisionGitHub, provisionJira, inspectGitHub, inspectJira } from "./remotes.mts";
 
 import { setupLocal, verifyLocal } from "./local.mts";
@@ -42,6 +46,9 @@ node scripts/workbench-demo/cli.mts COMMAND [--home PATH] [--apply]
   sync-jira Create the local Jira workspace/binding and sync after browser OAuth
   jira     Preview Jira provisioning; --apply creates demo resources
   reset    Preview local reset; --apply archives old data, retaining config
+  reset-baseline Preview full reset; --apply recreates and starts the demo
+  capture-baseline Record the selected Jira sprint's baseline (--apply required)
+  export-jira-auth Export stopped demo OAuth to --output FILE (never printed)
 
 Default home: ${defaultHome}
 Human account setup: bash scripts/workbench-demo/setup.sh
@@ -54,6 +61,8 @@ const { values, positionals } = NodeUtil.parseArgs({
     apply: { type: "boolean", default: false },
     preview: { type: "boolean", default: false },
     jira: { type: "boolean", default: false },
+    "remote-apply": { type: "boolean", default: false },
+    output: { type: "string" },
     help: { type: "boolean", short: "h", default: false },
   },
 });
@@ -70,6 +79,30 @@ const main = async () => {
     return;
   }
   const home = requireHome(values.home);
+  if (command === "export-jira-auth") {
+    if (!values.output)
+      throw new Error("Specify --output with a private file outside the checkout.");
+    await writeJiraAuthBundleFile({ path: values.output, bundle: await exportJiraAuth({ home }) });
+    console.log("Exported Jira connection to the requested private file.");
+    return;
+  }
+  if (command === "reset-baseline") {
+    if (!values.apply) {
+      console.log(JSON.stringify(planBaselineReset({ home }), null, 2));
+      return;
+    }
+    const server = await resetToBaseline({ home, remoteApply: values["remote-apply"] });
+    console.log(`Baseline ready. Pairing URL: ${server.pairingUrl}`);
+    const stop = () => {
+      void server.stop();
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+    await server.exited;
+    process.off("SIGINT", stop);
+    process.off("SIGTERM", stop);
+    return;
+  }
   if (command === "start") {
     process.exitCode = await startDemo(home);
     return;
@@ -126,6 +159,23 @@ const main = async () => {
       throw new Error("Set DEMO_JIRA_SPRINT_ID or provision the demo sprint first.");
     return value;
   };
+  if (command === "capture-baseline") {
+    if (!values.apply)
+      throw new Error(
+        "Capturing replaces the saved baseline. Use --apply once the demo is in its intended starting state.",
+      );
+    const captured = await snapshotJiraBaseline({
+      site: required("DEMO_JIRA_SITE_URL"),
+      projectKey: required("DEMO_JIRA_PROJECT_KEY"),
+      boardId: Number(required("DEMO_JIRA_BOARD_ID")),
+      sprintId: selectedSprint(),
+      email: required("DEMO_JIRA_EMAIL"),
+      token: required("DEMO_JIRA_API_TOKEN"),
+    });
+    saveRemote(home, "jiraBaseline", captured);
+    console.log(`Captured ${captured.issues.length} Jira issues as the reset baseline.`);
+    return;
+  }
   const expectedJiraKeys = () => {
     if (
       typeof jiraRecord === "object" &&

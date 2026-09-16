@@ -5,6 +5,8 @@ import {
   type WorkbenchJiraBoardConfiguration,
   type WorkbenchJiraConnection,
   WorkbenchJiraConnectionId,
+  type WorkbenchJiraLocalEpicMigrationItem,
+  type WorkbenchJiraLocalTicketMigrationItem,
   type WorkbenchJiraProject,
   type WorkbenchJiraSprint,
   type WorkbenchJiraStatusMapping,
@@ -16,6 +18,15 @@ import { useState } from "react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Checkbox } from "../components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "../components/ui/alert-dialog";
 import {
   Dialog,
   DialogDescription,
@@ -32,6 +43,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
+import { Radio, RadioGroup } from "../components/ui/radio-group";
 import type { Project } from "../types";
 import { WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
 import {
@@ -52,6 +64,9 @@ export interface WorkbenchJiraCreateDraft {
   readonly statusMappings: ReadonlyArray<WorkbenchJiraStatusMapping>;
   readonly followActiveSprint: boolean;
   readonly boardMode: "mapped" | "mirror_jira";
+  readonly localDataAction: "publish" | "delete" | "none";
+  readonly localTickets: ReadonlyArray<WorkbenchJiraLocalTicketMigrationItem>;
+  readonly localEpics: ReadonlyArray<WorkbenchJiraLocalEpicMigrationItem>;
 }
 
 export interface WorkbenchJiraUpdateDraft {
@@ -62,6 +77,9 @@ export interface WorkbenchJiraUpdateDraft {
   readonly statusMappings: ReadonlyArray<WorkbenchJiraStatusMapping>;
   readonly followActiveSprint: boolean;
   readonly boardMode: "mapped" | "mirror_jira";
+  readonly localDataAction: "publish" | "delete" | "none";
+  readonly localTickets: ReadonlyArray<WorkbenchJiraLocalTicketMigrationItem>;
+  readonly localEpics: ReadonlyArray<WorkbenchJiraLocalEpicMigrationItem>;
 }
 
 const formatLastSynced = (value: string | null) =>
@@ -72,6 +90,8 @@ export function WorkbenchJiraDialog({
   connections,
   existingBinding,
   linkedProjects,
+  localTickets,
+  localEpics,
   pending,
   error,
   onOpenChange,
@@ -88,6 +108,8 @@ export function WorkbenchJiraDialog({
   readonly connections: ReadonlyArray<WorkbenchJiraConnection>;
   readonly existingBinding: WorkbenchJiraBinding | null;
   readonly linkedProjects: ReadonlyArray<Project>;
+  readonly localTickets: ReadonlyArray<WorkbenchJiraLocalTicketMigrationItem>;
+  readonly localEpics: ReadonlyArray<WorkbenchJiraLocalEpicMigrationItem>;
   readonly pending: boolean;
   readonly error: string | null;
   readonly onOpenChange: (open: boolean) => void;
@@ -142,6 +164,18 @@ export function WorkbenchJiraDialog({
   const [primaryProjectId, setPrimaryProjectId] = useState<ProjectId | null>(
     existingBinding?.defaultPrimaryT3ProjectId ?? linkedProjects[0]?.id ?? null,
   );
+  const [saving, setSaving] = useState(false);
+  const [localDataAction, setLocalDataAction] = useState<"publish" | "delete" | null>(null);
+  const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
+  // Keep the revision/timestamp tokens from the moment this dialog opened so
+  // a retry cannot silently migrate data that changed while the request ran.
+  const [localTicketSnapshot] = useState(() => [...localTickets]);
+  const [localEpicSnapshot] = useState(() => [...localEpics]);
+
+  const localTicketCount = localTicketSnapshot.length;
+  const localEpicCount = localEpicSnapshot.length;
+  const localDataCount = localTicketCount + localEpicCount;
+  const resolvedLocalDataAction = localDataCount === 0 ? "none" : localDataAction;
 
   const effectiveConnectionId = connectionId ?? connections[0]?.id ?? null;
   const selectedProject = projects.find((project) => project.id === jiraProjectId) ?? null;
@@ -225,38 +259,55 @@ export function WorkbenchJiraDialog({
     ]);
   };
 
-  const save = async () => {
+  const save = async ({ allowDelete = false }: { readonly allowDelete?: boolean } = {}) => {
+    if (saving || pending) return;
     if (
       selectedSprints.length === 0 ||
       selectedPrimaryProjectId === null ||
       selectedRepositoryProjectIds.length === 0 ||
-      statusMappings.length !== jiraStatusCount
+      statusMappings.length !== jiraStatusCount ||
+      resolvedLocalDataAction === null
     )
       return;
-    const saved = existingBinding
-      ? await onUpdate({
-          binding: existingBinding,
-          sprints: selectedSprints,
-          defaultPrimaryT3ProjectId: selectedPrimaryProjectId,
-          defaultRepositoryProjectIds: selectedRepositoryProjectIds,
-          statusMappings,
-          followActiveSprint,
-          boardMode,
-        })
-      : effectiveConnectionId && selectedProject && selectedBoard
-        ? await onCreate({
-            connectionId: effectiveConnectionId,
-            jiraProject: selectedProject,
-            board: selectedBoard,
+    if (resolvedLocalDataAction === "delete" && !allowDelete) {
+      setDeleteConfirmationOpen(true);
+      return;
+    }
+    setSaving(true);
+    try {
+      const saved = existingBinding
+        ? await onUpdate({
+            binding: existingBinding,
             sprints: selectedSprints,
             defaultPrimaryT3ProjectId: selectedPrimaryProjectId,
             defaultRepositoryProjectIds: selectedRepositoryProjectIds,
             statusMappings,
             followActiveSprint,
             boardMode,
+            localDataAction: resolvedLocalDataAction,
+            localTickets: localTicketSnapshot,
+            localEpics: localEpicSnapshot,
           })
-        : false;
-    if (saved) onOpenChange(false);
+        : effectiveConnectionId && selectedProject && selectedBoard
+          ? await onCreate({
+              connectionId: effectiveConnectionId,
+              jiraProject: selectedProject,
+              board: selectedBoard,
+              sprints: selectedSprints,
+              defaultPrimaryT3ProjectId: selectedPrimaryProjectId,
+              defaultRepositoryProjectIds: selectedRepositoryProjectIds,
+              statusMappings,
+              followActiveSprint,
+              boardMode,
+              localDataAction: resolvedLocalDataAction,
+              localTickets: localTicketSnapshot,
+              localEpics: localEpicSnapshot,
+            })
+          : false;
+      if (saved) onOpenChange(false);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -299,6 +350,11 @@ export function WorkbenchJiraDialog({
                   <Badge size="sm" variant={existingBinding.active ? "secondary" : "outline"}>
                     {existingBinding.active ? "Active" : "Paused"}
                   </Badge>
+                  {existingBinding.localMigrationPending === true ? (
+                    <Badge size="sm" variant="outline">
+                      Migration pending
+                    </Badge>
+                  ) : null}
                 </div>
                 <p className="mt-2 text-sm text-muted-foreground">
                   {existingBinding.boardName} ·{" "}
@@ -312,6 +368,12 @@ export function WorkbenchJiraDialog({
                     ? " · Following selected sprints"
                     : " · Pinned sprints"}
                 </p>
+                {existingBinding.localMigrationPending === true ? (
+                  <p className="mt-2 text-xs text-warning-foreground" role="status">
+                    Finish the local data migration before importing Jira issues. Choose “Edit
+                    sprints and mappings” to resume it.
+                  </p>
+                ) : null}
               </div>
               {existingBinding.lastSyncError ? (
                 <p role="status" className="text-sm text-warning-foreground">
@@ -323,14 +385,14 @@ export function WorkbenchJiraDialog({
                   Close
                 </Button>
                 <Button
-                  disabled={pending}
+                  disabled={pending || saving}
                   onClick={() => void onSetActive(existingBinding, !existingBinding.active)}
                   variant="outline"
                 >
                   {existingBinding.active ? "Pause mirror" : "Resume mirror"}
                 </Button>
                 <Button
-                  disabled={pending}
+                  disabled={pending || saving}
                   onClick={() =>
                     void loadBoardSetup({
                       targetConnectionId: existingBinding.connectionId,
@@ -502,6 +564,52 @@ export function WorkbenchJiraDialog({
                 Checks every five minutes while the server is running. Keeps the current board
                 between sprints; asks you to choose when replacement sprints are ambiguous.
               </p>
+              {localDataCount > 0 ? (
+                <fieldset className="space-y-3 rounded-lg border border-border/60 p-3">
+                  <legend className="px-1 text-sm font-medium">Existing local data</legend>
+                  <p className="text-xs text-muted-foreground">
+                    This workspace has {localTicketCount} local{" "}
+                    {localTicketCount === 1 ? "Ticket" : "Tickets"}
+                    {localEpicCount > 0
+                      ? ` and ${localEpicCount} local ${localEpicCount === 1 ? "Epic" : "Epics"}`
+                      : ""}
+                    . Choose what to do before importing Jira issues.
+                    {existingBinding?.localMigrationPending === true
+                      ? " A previous local data migration is still pending. Choose the same action to resume it before importing Jira issues."
+                      : existingBinding !== null
+                        ? " If a previous migration was interrupted, choose the same action to resume it."
+                        : ""}
+                  </p>
+                  <RadioGroup
+                    aria-label="Existing local data action"
+                    value={localDataAction}
+                    onValueChange={(value) => {
+                      if (value === "publish" || value === "delete") setLocalDataAction(value);
+                    }}
+                  >
+                    <label className="flex items-start gap-2 text-sm">
+                      <Radio value="publish" />
+                      <span>
+                        <span className="font-medium">Publish local data to Jira</span>
+                        <span className="block text-xs text-muted-foreground">
+                          Keep the existing Tickets and Epics, creating Jira issues in the selected
+                          sprint.
+                        </span>
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 text-sm">
+                      <Radio value="delete" />
+                      <span>
+                        <span className="font-medium">Delete local data</span>
+                        <span className="block text-xs text-muted-foreground">
+                          Remove local Tickets and Epics before importing. Native Agent Threads are
+                          retained.
+                        </span>
+                      </span>
+                    </label>
+                  </RadioGroup>
+                </fieldset>
+              ) : null}
               <fieldset className="space-y-2">
                 <legend className="text-sm font-medium">
                   {followActiveSprint ? "Current active sprints" : "Pinned sprints"}
@@ -689,6 +797,12 @@ export function WorkbenchJiraDialog({
                 )}
               </fieldset>
 
+              {saving ? (
+                <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
+                  Saving the mirror and importing Jira tickets…
+                </p>
+              ) : null}
+
               <div className="flex justify-between gap-2">
                 <Button
                   onClick={() => setStep(existingBinding ? "existing" : "board")}
@@ -699,20 +813,53 @@ export function WorkbenchJiraDialog({
                 <Button
                   disabled={
                     pending ||
+                    saving ||
                     selectedSprints.length === 0 ||
                     !selectedPrimaryProjectId ||
                     selectedRepositoryProjectIds.length === 0 ||
-                    statusMappings.length !== jiraStatusCount
+                    statusMappings.length !== jiraStatusCount ||
+                    resolvedLocalDataAction === null
                   }
                   onClick={() => void save()}
                 >
-                  {existingBinding ? "Save mirror" : "Create mirror"}
+                  {saving
+                    ? "Syncing with Jira…"
+                    : existingBinding
+                      ? "Save mirror"
+                      : "Create mirror"}
                 </Button>
               </div>
             </div>
           ) : null}
         </DialogPanel>
       </DialogPopup>
+      <AlertDialog open={deleteConfirmationOpen} onOpenChange={setDeleteConfirmationOpen}>
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete local data before importing?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will delete {localDataCount} local {localDataCount === 1 ? "item" : "items"} from
+              this Workspace before the Jira import. Native Agent Threads will be retained, but
+              their local Tickets and Epics will be removed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button disabled={saving} variant="outline" />}>
+              Cancel
+            </AlertDialogClose>
+            <Button
+              disabled={saving}
+              onClick={() => {
+                setDeleteConfirmationOpen(false);
+                void save({ allowDelete: true });
+              }}
+              variant="destructive"
+            >
+              Delete and import
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
     </Dialog>
   );
 }

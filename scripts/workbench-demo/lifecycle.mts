@@ -60,9 +60,11 @@ export const startDemo = async (input: string): Promise<number> => {
     for (const key of [
       "T3_WORKBENCH_JIRA_CLIENT_ID",
       "T3_WORKBENCH_JIRA_CLIENT_SECRET",
+      "T3_WORKBENCH_JIRA_BROKER_URL",
+      "T3_WORKBENCH_JIRA_VAULT",
       "T3CODE_PORT_OFFSET",
     ]) {
-      if (config[key]) Object.assign(env, { [key]: config[key] });
+      if (config[key] !== undefined) Object.assign(env, { [key]: config[key] });
     }
     const child = NodeChildProcess.spawn(
       process.execPath,
@@ -71,12 +73,23 @@ export const startDemo = async (input: string): Promise<number> => {
         cwd: root,
         env,
         stdio: "inherit",
+        // Own one process group so a stopped launcher cannot leave Vite or the
+        // backend watcher running with this demo's credentials.
+        detached: HostProcessPlatform.defaultValue() !== "win32",
       },
     );
     let stopping = false;
     const stop = () => {
       stopping = true;
-      child.kill("SIGINT");
+      if (HostProcessPlatform.defaultValue() === "win32" || child.pid === undefined) {
+        child.kill("SIGINT");
+      } else {
+        try {
+          process.kill(-child.pid, "SIGTERM");
+        } catch (error) {
+          if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
+        }
+      }
     };
     process.on("SIGINT", stop);
     process.on("SIGTERM", stop);
@@ -94,7 +107,7 @@ export const startDemo = async (input: string): Promise<number> => {
         child.once("error", reject);
         child.once("exit", (code, signal) =>
           resolve(
-            stopping && (code === 130 || signal === "SIGINT")
+            stopping && (code === 130 || signal === "SIGINT" || signal === "SIGTERM")
               ? 0
               : (code ?? (signal === "SIGINT" ? 0 : 1)),
           ),

@@ -1,0 +1,99 @@
+name: Workbench live regression
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/web/src/workbench/**"
+      - "apps/server/src/workbench/**"
+      - "packages/workbench/**"
+      - "packages/contracts/src/workbench*"
+      - "scripts/workbench-demo/**"
+      - "scripts/workbench-regression/**"
+      - ".github/workflows/workbench-regression-live.yml"
+  schedule:
+    - cron: "23 14 * * *"
+
+permissions:
+  contents: read
+
+# Every run changes the same dedicated ORBIT fixtures and rotates the same OAuth credential.
+concurrency:
+  group: workbench-regression-live
+  cancel-in-progress: false
+
+jobs:
+  jira-github:
+    name: Real Jira and GitHub integration
+    if: >-
+      github.repository == 'filipgutica/t3code' &&
+      (github.event_name != 'pull_request' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login == github.repository_owner))
+    environment: workbench-demo
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      WORKBENCH_REGRESSION_LIVE: "1"
+      DEMO_JIRA_EMAIL: ${{ secrets.DEMO_JIRA_EMAIL }}
+      DEMO_JIRA_API_TOKEN: ${{ secrets.DEMO_JIRA_API_TOKEN }}
+      DEMO_JIRA_SITE_URL: ${{ vars.DEMO_JIRA_SITE_URL || secrets.DEMO_JIRA_SITE_URL }}
+      DEMO_JIRA_PROJECT_KEY: ${{ vars.DEMO_JIRA_PROJECT_KEY || secrets.DEMO_JIRA_PROJECT_KEY }}
+      DEMO_JIRA_BOARD_ID: ${{ vars.DEMO_JIRA_BOARD_ID || secrets.DEMO_JIRA_BOARD_ID }}
+      DEMO_JIRA_BASELINE: ${{ secrets.DEMO_JIRA_BASELINE }}
+      DEMO_JIRA_OAUTH_BUNDLE: ${{ secrets.DEMO_JIRA_OAUTH_BUNDLE }}
+      T3_WORKBENCH_JIRA_CLIENT_ID: ""
+      T3_WORKBENCH_JIRA_CLIENT_SECRET: ""
+      T3_WORKBENCH_JIRA_BROKER_URL: https://workbench-auth.fgutica.workers.dev
+      T3_WORKBENCH_JIRA_VAULT: ""
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Set demo home
+        run: echo "DEMO_HOME=$RUNNER_TEMP/workbench-live" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          run-install: true
+      - name: Check live configuration
+        env:
+          DEMO_CREDENTIALS_TOKEN: ${{ secrets.DEMO_CREDENTIALS_TOKEN }}
+        run: |
+          node --input-type=module - <<'JS'
+          for (const key of ['DEMO_JIRA_EMAIL', 'DEMO_JIRA_API_TOKEN', 'DEMO_JIRA_SITE_URL', 'DEMO_JIRA_PROJECT_KEY', 'DEMO_JIRA_BOARD_ID', 'DEMO_JIRA_BASELINE', 'DEMO_JIRA_OAUTH_BUNDLE', 'DEMO_CREDENTIALS_TOKEN']) {
+            if (!process.env[key]) throw new Error(`Missing repository configuration: ${key}`);
+          }
+          JS
+          node scripts/workbench-demo/jira-auth-ci.mts --preflight --repository "$GITHUB_REPOSITORY" --secret-environment workbench-demo
+      - name: Install Chromium
+        working-directory: scripts
+        run: vp exec playwright install --with-deps chromium
+      - name: Run live Workbench regressions
+        id: regression
+        working-directory: scripts
+        env:
+          T3CODE_BUNDLED_DEV: "1"
+        run: vp exec playwright test --config workbench-regression/playwright.config.ts
+      - name: Preserve rotated Jira credentials
+        if: always() && steps.regression.outcome != '' && steps.regression.outcome != 'skipped'
+        env:
+          DEMO_CREDENTIALS_TOKEN: ${{ secrets.DEMO_CREDENTIALS_TOKEN }}
+        run: |
+          if [ -e "$DEMO_HOME/run.lock" ]; then
+            node scripts/workbench-demo/cli.mts stop --home "$DEMO_HOME"
+          fi
+          node scripts/workbench-demo/jira-auth-ci.mts --export --home "$DEMO_HOME" --repository "$GITHUB_REPOSITORY" --secret-environment workbench-demo
+      - name: Upload browser evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-live-regression
+          path: .test-results/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7

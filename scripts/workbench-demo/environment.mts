@@ -102,5 +102,5 @@ export const resetHome = ({ home: input, apply }: { home: string; apply: boolean
     if (NodeFS.existsSync(NodePath.join(backup, file)))
       NodeFS.copyFileSync(NodePath.join(backup, file), NodePath.join(home, file));
   }
-  return `Archived previous environment at ${backup}. Configuration retained; run start, then seed.`;
+  return `Archived previous environment at ${backup}. Configuration retained; Jira must be reconnected after start and seed. Use reset-baseline to preserve the Jira connection.`;
 };

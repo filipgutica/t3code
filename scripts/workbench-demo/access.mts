@@ -10,6 +10,7 @@ const root = NodeURL.fileURLToPath(new URL("../../", import.meta.url));
 export const withDemoAccess = async <T,>(
   homeInput: string,
   operation: (access: { wsUrl: string; token: string }) => Promise<T>,
+  options: { ttl?: "10m" | "30m" } = {},
 ): Promise<T> => {
   const home = requireHome(homeInput);
   const runtime: unknown = JSON.parse(
@@ -40,7 +41,7 @@ export const withDemoAccess = async <T,>(
       "--base-dir",
       home,
       "--ttl",
-      "10m",
+      options.ttl ?? "10m",
       "--label",
       "Workbench demo setup",
       "--json",

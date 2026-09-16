@@ -11,6 +11,7 @@ import {
   terminalReader,
   jiraOrigin,
   listProjects,
+  listBoards,
   saveSelection,
   selectJira,
 } from "./jira-select.mts";
@@ -237,7 +238,7 @@ it("reuses saved project, board and sprint choices across paginated lists", asyn
         return response({ values: [{ key: "ORBIT", name: "Orbit Demo" }], isLast: true });
       if (parsed.pathname.endsWith("/board")) {
         expect(parsed.searchParams.get("projectKeyOrId")).toBe("ORBIT");
-        expect(parsed.searchParams.get("type")).toBe("scrum");
+        expect(parsed.searchParams.has("type")).toBe(false);
         return parsed.searchParams.get("startAt") === "1"
           ? response({
               values: [{ id: 42, name: "Guide board", type: "scrum" }],
@@ -282,4 +283,25 @@ it("reuses saved project, board and sprint choices across paginated lists", asyn
   } finally {
     NodeFS.rmSync(root, { recursive: true, force: true });
   }
+});
+
+it("includes team-managed sprint boards while excluding kanban", async () => {
+  const boards = await listBoards({
+    site: "https://example.atlassian.net",
+    email: "demo@example.com",
+    token: "secret",
+    projectKey: "ORBIT",
+    fetcher: async (url) => {
+      expect(new URL(url).searchParams.has("type")).toBe(false);
+      return response({
+        isLast: true,
+        values: [
+          { id: 1, name: "Scrum", type: "scrum" },
+          { id: 2, name: "Orbit", type: "simple" },
+          { id: 3, name: "Kanban", type: "kanban" },
+        ],
+      });
+    },
+  });
+  expect(boards.map((board) => board.id)).toEqual([1, 2]);
 });

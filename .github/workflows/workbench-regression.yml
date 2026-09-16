@@ -1,0 +1,61 @@
+name: Workbench regression
+
+on:
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "apps/server/**"
+      - "packages/**"
+      - "scripts/workbench-demo/**"
+      - "scripts/workbench-regression/**"
+      - "scripts/package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/workbench-regression.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workbench-regression-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    name: UI flows and Jira lifecycle (simulated services)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          run-install: true
+      - name: Install Chromium
+        working-directory: scripts
+        run: vp exec playwright install --with-deps chromium
+      - name: Check regression tooling
+        run: |
+          vp exec tsc --noEmit -p scripts/workbench-regression/tsconfig.json
+          vp lint scripts/workbench-regression --report-unused-disable-directives
+      - name: Run Jira lifecycle regressions
+        run: vp test run apps/server/src/workbench/jira/JiraLifecycle.integration.test.ts
+      - name: Run browser regressions
+        working-directory: scripts
+        env:
+          T3CODE_BUNDLED_DEV: "1"
+        run: vp exec playwright test --config workbench-regression/playwright.config.ts
+      - name: Upload browser evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-regression
+          path: .test-results/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7

@@ -11,6 +11,7 @@ export default defineConfig({
   test: {
     environment: "node",
     exclude: [
+      "**/workbench-regression/**/*.spec.ts",
       "**/.repos/**",
       "**/node_modules/**",
       "**/dist/**",
