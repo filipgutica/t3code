@@ -91,4 +91,6 @@ jobs:
         with:
           name: workbench-live-regression
           path: .test-results/
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 7
