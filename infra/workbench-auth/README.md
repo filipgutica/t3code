@@ -4,8 +4,9 @@ This Worker brokers Jira authorization for Workbench installations. The Atlassia
 app secret stays in Cloudflare. Each T3 environment keeps its own Jira credentials
 and makes its own Jira API requests.
 
-The Worker is separate from T3 Connect. Deploying it does not connect the current
-Workbench client; that client integration is a separate change.
+The Worker is separate from T3 Connect. Each Workbench environment must connect
+Jira once through its client. Ordinary local development can use the deployed
+worker; see [demo configuration](../../scripts/workbench-demo/README.md#broker-configuration-outside-the-wizard).
 
 ## Configure the Atlassian app
 
@@ -52,8 +53,10 @@ describe the OAuth scopes separately from Jira permissions.
 
 ## Configure Cloudflare
 
-Use separate Worker deployments and Atlassian applications for development and
-production. Do not copy production credentials into tests.
+When developing the broker itself, use a separate Worker deployment and Atlassian
+app. Ordinary Workbench development and the live regression suite use the deployed
+broker with disposable Jira accounts. The Atlassian client secret stays in the
+worker; local environments and CI receive only their own OAuth grants.
 
 In the Worker's **Settings → Variables and Secrets**, configure:
 

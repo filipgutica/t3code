@@ -148,7 +148,9 @@ export const planBaselineReset = ({ home: input }: PlanBaselineResetOptions): De
         ? ["Retain Jira connection and remote manifest; no Jira issue baseline is recorded."]
         : [
             `Re-add ${jira.issues.length} explicitly owned Jira issue(s) to sprint ${jira.sprintId}.`,
-            "Restore any recorded Jira workflow states.",
+            "Restore recorded descriptions, labels, assignees, Epic relationships, and workflow states.",
+            "Delete non-baseline issues marked workbench-regression in the configured Jira project.",
+            "Move other non-baseline issues from the selected sprint to the backlog.",
           ]),
     ],
     githubRepositories,

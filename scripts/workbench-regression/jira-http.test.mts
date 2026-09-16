@@ -86,3 +86,29 @@ it("decodes transitions, current user, and sprint issue keys", async () => {
   await expect(client.currentUserAccountId()).resolves.toBe("account-1");
   await expect(client.sprintIssueKeys(7)).resolves.toEqual(["ORBIT-1"]);
 });
+
+it("recovers only exact test summaries across Jira search pages", async () => {
+  const summary = "Regression unique-id";
+  const client = new JiraHttpClient({
+    site: "https://example.atlassian.net",
+    email: "demo@example.test",
+    token: "test-token",
+    fetcher: async (input) => {
+      const url = new URL(String(input));
+      expect(url.searchParams.get("jql")).toBe('project = "ORBIT"');
+      return new Response(
+        JSON.stringify(
+          url.searchParams.has("nextPageToken")
+            ? { issues: [{ key: "ORBIT-2", fields: { summary } }], isLast: true }
+            : {
+                issues: [{ key: "ORBIT-1", fields: { summary: "Regression unique-id other" } }],
+                nextPageToken: "next",
+              },
+        ),
+      );
+    },
+  });
+  await expect(client.issueKeysWithSummary({ projectKey: "ORBIT", summary })).resolves.toEqual([
+    "ORBIT-2",
+  ]);
+});

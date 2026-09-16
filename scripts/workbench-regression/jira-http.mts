@@ -230,6 +230,40 @@ export class JiraHttpClient {
     );
   }
 
+  /** Recover only the unique issue created by a failed UI test. */
+  async issueKeysWithSummary({
+    projectKey,
+    summary,
+  }: {
+    projectKey: string;
+    summary: string;
+  }): Promise<readonly string[]> {
+    const keys: string[] = [];
+    let nextPageToken: string | undefined;
+    const seen = new Set<string>();
+    do {
+      const query = new URLSearchParams({
+        jql: `project = ${JSON.stringify(projectKey)}`,
+        fields: "summary",
+        maxResults: "100",
+      });
+      if (nextPageToken) query.set("nextPageToken", nextPageToken);
+      const result = record(await this.#request<unknown>(`/rest/api/3/search/jql?${query}`));
+      if (!Array.isArray(result?.issues))
+        throw new Error("Jira returned an unexpected issue search response.");
+      for (const value of result.issues) {
+        const issue = record(value);
+        if (record(issue?.fields)?.summary === summary && typeof issue?.key === "string")
+          keys.push(issue.key);
+      }
+      nextPageToken = stringValue(result.nextPageToken);
+      if (nextPageToken && seen.has(nextPageToken))
+        throw new Error("Jira repeated an issue search page.");
+      if (nextPageToken) seen.add(nextPageToken);
+    } while (nextPageToken);
+    return keys;
+  }
+
   async deleteIssue(key: string): Promise<void> {
     await this.#request(`/rest/api/3/issue/${encodeURIComponent(key)}`, { method: "DELETE" });
   }

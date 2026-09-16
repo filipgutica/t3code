@@ -88,7 +88,9 @@ it("builds a deterministic plan from the saved remote baseline", () => {
         `Archive local demo state for ${home}.`,
         "Recreate local clones for filipgutica/orbit, filipgutica/beacon.",
         "Re-add 2 explicitly owned Jira issue(s) to sprint 7.",
-        "Restore any recorded Jira workflow states.",
+        "Restore recorded descriptions, labels, assignees, Epic relationships, and workflow states.",
+        "Delete non-baseline issues marked workbench-regression in the configured Jira project.",
+        "Move other non-baseline issues from the selected sprint to the backlog.",
       ],
     });
   } finally {

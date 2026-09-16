@@ -75,6 +75,36 @@ test("preflight proves write access with the unchanged bundle and hides credenti
   );
 });
 
+test("CI rejects direct and legacy OAuth bundles before updating secrets", async () => {
+  for (const authMode of ["direct", undefined] as const) {
+    const { authMode: _mode, ...tokens } = credential;
+    let writes = 0;
+    await NodeAssert.rejects(
+      preflightJiraAuthPersistence({
+        repository: "filipgutica/t3code",
+        environment: {
+          [DEMO_CREDENTIALS_TOKEN]: "writer-secret",
+          [JIRA_OAUTH_BUNDLE_SECRET]: encodeJiraAuthBundle({
+            version: 1,
+            connections: [connection],
+            credentials: [
+              {
+                id: connection.credentialId,
+                value: { ...tokens, ...(authMode ? { authMode } : {}) },
+              },
+            ],
+          }),
+        },
+        commandRunner: async () => {
+          writes += 1;
+        },
+      }),
+      /broker/,
+    );
+    NodeAssert.equal(writes, 0);
+  }
+});
+
 const makeConnectedHome = async (): Promise<{ readonly root: string; readonly home: string }> => {
   const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "jira-auth-ci-"));
   const home = setupHome(NodePath.join(root, "demo"));

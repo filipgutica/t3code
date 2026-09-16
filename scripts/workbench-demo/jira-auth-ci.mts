@@ -88,7 +88,13 @@ export const preflightJiraAuthPersistence = async (input: {
   if (!token) throw new Error(`${DEMO_CREDENTIALS_TOKEN} is required to update the GitHub secret.`);
   const value = environment[JIRA_OAUTH_BUNDLE_SECRET]?.trim();
   if (!value) throw new Error(`${JIRA_OAUTH_BUNDLE_SECRET} is required.`);
-  const secretValue = encodeJiraAuthBundle(decodeJiraAuthBundle(value));
+  const bundle = decodeJiraAuthBundle(value);
+  if (bundle.credentials.some((credential) => credential.value.authMode !== "broker")) {
+    throw new Error(
+      "CI requires broker OAuth credentials. Reconnect Jira through the deployed broker, then export a new bundle.",
+    );
+  }
+  const secretValue = encodeJiraAuthBundle(bundle);
   const { [DEMO_CREDENTIALS_TOKEN]: _token, ...inheritedEnvironment } = environment;
   try {
     await (input.commandRunner ?? defaultGhSecretSetRunner)({

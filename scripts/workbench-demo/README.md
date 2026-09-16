@@ -24,8 +24,10 @@ bash scripts/workbench-demo/setup.sh
 - With a complete saved profile, press Enter to skip setup, type `edit` to review it,
   or `reset` to restore the saved baseline.
 
-The profile lives in `$DEMO_HOME/config.env`, outside the checkout. Keep this file
-private: it can contain credentials. Choose another `DEMO_HOME` for a separate demo.
+The **demo home** is a separate data directory containing configuration, database,
+credentials, and repository clones. The current checkout runs against that directory;
+it is not another app installation. The profile is `$DEMO_HOME/config.env`.
+Keep it private and choose another `DEMO_HOME` for a separate demo.
 
 ## 2. Choose existing or new remote demo resources
 
@@ -125,9 +127,12 @@ repositories are cloned and their PRs linked. No agent provider runs during seed
 
 Open the **full pairing URL**, including its token, from the first terminal.
 Connect Jira through Workbench's **Connect Jira → Connect Atlassian** flow.
-Register the actual callback origin/port in your OAuth app before connecting;
-ports can change if occupied. For desktop, use the server origin plus
-`/oauth/workbench/jira/callback` instead.
+The recommended broker mode needs no local client ID, client secret, or callback
+registration. The deployed worker owns the Atlassian app credentials and callback.
+
+Only in **direct** mode, register your actual callback before connecting. Web uses
+its origin plus `/workbench`; desktop uses the server origin plus
+`/oauth/workbench/jira/callback`. Ports can change if occupied.
 
 After consent, import the Jira sprint and verify:
 
@@ -154,15 +159,12 @@ Stop with Ctrl-C in the first terminal, or run:
 node scripts/workbench-demo/cli.mts stop --home "$DEMO_HOME"
 ```
 
-To reset local data, stop first, preview, then apply:
+For repeatable testing, use **reset-baseline** below. It preserves the Jira
+connection and launches the seeded environment.
 
-```sh
-node scripts/workbench-demo/cli.mts reset --home "$DEMO_HOME"
-node scripts/workbench-demo/cli.mts reset --home "$DEMO_HOME" --apply
-```
-
-Reset archives the previous home and keeps configuration and remote resource IDs.
-It does not delete GitHub or Jira data. Run `start`, then `seed` again.
+The lower-level `reset --apply` only archives the home and retains configuration
+and remote resource IDs. It discards the active local database and connection.
+Use it when you intend to start, seed, and connect Jira again.
 
 For optional screenshot conversations, run `history --home "$DEMO_HOME"` while
 stopped, then restart. It backs up the database and adds eight labeled synthetic
@@ -189,10 +191,30 @@ fixtures, retains the Jira OAuth connection, and imports the saved sprint. Remot
 reset restores recorded Jira issue fields and workflow states, returns extra
 same-project sprint issues to the backlog, and deletes marked regression-only
 issues. Use it only with the dedicated demo project. Omit `--remote-apply` to leave
-remote Jira data unchanged.
+remote Jira data unchanged. Local resets are not coordinated with CI: do not reset
+the shared ORBIT sprint while a live CI job is using it.
 
 The public Orbit repositories use pinned commits; Beacon uses synthetic local
 repositories. GitHub remote branches and PRs are read, not reset. See the
 [regression suite setup](../workbench-regression/README.md) for CI credentials,
 coverage, and limits. For all commands, run
 `node scripts/workbench-demo/cli.mts --help`.
+
+## Broker configuration outside the wizard
+
+For ordinary local development, set these variables in the server environment:
+
+```sh
+export T3_WORKBENCH_JIRA_BROKER_URL="https://workbench-auth.fgutica.workers.dev"
+export T3_WORKBENCH_JIRA_CLIENT_ID=""
+export T3_WORKBENCH_JIRA_CLIENT_SECRET=""
+```
+
+The wizard saves these values in the demo profile. An unbundled development
+server needs the broker URL explicitly; released builds can use their bundled default.
+Restart after changing configuration, then connect Jira once from that environment.
+
+The worker handles authorization and token refresh. Each environment stores its
+own grant and calls Jira directly. Use a separate local connection from the CI
+grant because Atlassian rotates refresh tokens. Keep direct OAuth for developing
+the authentication integration or operating your own Atlassian app.

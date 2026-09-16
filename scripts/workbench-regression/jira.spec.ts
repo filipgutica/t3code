@@ -297,7 +297,13 @@ test.describe("Jira Workbench integration @live", () => {
       expect(issue.assigneeAccountId).toBe(await client.currentUserAccountId());
       expect(await client.sprintIssueKeys(binding.sprintId)).toContain(key);
     } finally {
-      if (key) await client.deleteIssue(key);
+      const keys = key
+        ? [key]
+        : await client.issueKeysWithSummary({
+            projectKey: readConfig(demo.home).DEMO_JIRA_PROJECT_KEY!,
+            summary: title,
+          });
+      for (const createdKey of keys) await client.deleteIssue(createdKey);
     }
   });
 
@@ -415,6 +421,17 @@ test.describe("Jira Workbench integration @live", () => {
       await expect(
         page.getByRole("button", { name: "Stop generation", exact: true }),
       ).not.toBeVisible();
+      // The provider can finish before the Ticket execution reactor finishes its
+      // Jira write. The Ticket status reflects the reactor's confirmed readback.
+      await page
+        .getByRole("link", {
+          name: `Back to Ticket ${issue.summary} in Workspace Orbit Jira`,
+          exact: true,
+        })
+        .click();
+      await expect(
+        page.getByRole("button", { name: `Change status of ${issue.summary}`, exact: true }),
+      ).toHaveText(transition.to.name);
       const updated = await client.issue(issue.key);
       expect(updated.status.id).toBe(transition.to.id);
     } finally {

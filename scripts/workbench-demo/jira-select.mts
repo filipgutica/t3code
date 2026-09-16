@@ -199,13 +199,14 @@ export const listBoards = async (
     await paginatedValues({
       ...args,
       path: "/rest/agile/1.0/board",
-      query: { projectKeyOrId: args.projectKey, type: "scrum" },
+      query: { projectKeyOrId: args.projectKey },
     })
   )
     .map(boardValue)
     .filter(
       (value): value is JiraBoard =>
-        value !== undefined && (value.type === undefined || value.type === "scrum"),
+        value !== undefined &&
+        (value.type === undefined || value.type === "scrum" || value.type === "simple"),
     );
 export const listSprints = async (
   args: Omit<Parameters<typeof paginatedValues>[0], "path" | "query"> & { boardId: number },

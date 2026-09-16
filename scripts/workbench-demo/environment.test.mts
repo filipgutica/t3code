@@ -50,12 +50,18 @@ test("reset previews, refuses running homes, archives data and retains configura
       NodePath.join(home, "userdata", "secrets", "workbench-jira-credential-demo.bin"),
       "encrypted fixture",
     );
-    NodeAssert.match(resetHome({ home, apply: true }), /Archived/);
+    NodeAssert.match(
+      resetHome({ home, apply: true }),
+      /Use reset-baseline to preserve the Jira connection/,
+    );
     NodeAssert.equal(readConfig(home).DEMO_OWNER, "literal$(not-executed)");
     NodeAssert.equal(NodeFS.existsSync(NodePath.join(home, "fixture")), false);
+    NodeAssert.equal(NodeFS.existsSync(NodePath.join(home, "userdata", "secrets")), false);
+    const backup = NodeFS.readdirSync(root).find((entry) => entry.startsWith("demo.backup-"));
+    NodeAssert.ok(backup);
     NodeAssert.equal(
       NodeFS.readFileSync(
-        NodePath.join(home, "userdata", "secrets", "workbench-jira-credential-demo.bin"),
+        NodePath.join(root, backup, "userdata", "secrets", "workbench-jira-credential-demo.bin"),
         "utf8",
       ),
       "encrypted fixture",

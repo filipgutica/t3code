@@ -35,9 +35,16 @@ responses remain scripted. Interactive Atlassian login is outside this suite.
 | Live Jira       | Sprint imports, mapped/mirrored columns, pause/resume, issue creation, description/status writes, start-work transition, refresh identity |
 | Live GitHub     | Existing public PR linking/unlinking and detail tabs                                                                                      |
 
-This is not complete automation of the manual checklist. Sprint rollover,
-multi-sprint changes, all provider approval states, and the full PR lifecycle
-still need additional browser scenarios.
+The [manual checklist](../../.agents/skills/workbench-regression-checklist/SKILL.md)
+remains the broader acceptance guide. Gaps include draft/cancel races, drag and drop,
+Thread archive/delete/attach, complete workspace reset, multi-repository branch
+assertions, reconnect/permission failures, sprint rollover, multi-sprint changes,
+two-client conflicts, provider approval states, full PR lifecycle, and desktop.
+
+Browser tests share one server per serial run. Each run starts from the baseline;
+live tests restore their remote edits, and teardown restores the Jira baseline.
+GitHub branches and PRs are read, not reset. The public Orbit revisions are pinned;
+Beacon repositories are synthetic. Temporary homes remain available for diagnosis.
 
 ## GitHub Actions setup
 
@@ -64,15 +71,30 @@ the preceding run. Repository secrets are read earlier, when a run is queued.
 Do not keep a separate actively used copy of this OAuth grant in a local demo;
 concurrent refreshes can invalidate one another.
 
-Export a bundle from a stopped, connected demo:
+Connect a dedicated demo through the broker, select the disposable Jira site,
+then stop it. Export that connection and save it to the environment secret:
 
 ```sh
 node scripts/workbench-demo/cli.mts export-jira-auth --home "$DEMO_HOME" --output /tmp/demo-jira-oauth
 gh secret set DEMO_JIRA_OAUTH_BUNDLE --repo filipgutica/t3code --env workbench-demo < /tmp/demo-jira-oauth
+rm /tmp/demo-jira-oauth
 ```
 
 The workflow uses the hosted Workbench OAuth broker. It does not need the
 Atlassian client ID or client secret in Actions. It checks secret-write access
-before refreshing credentials and saves the rotated bundle after stopping the
+and rejects direct OAuth bundles before refreshing credentials and saves the rotated bundle after stopping the
 server, including after a test failure. A killed runner can still lose the latest
 refresh token; reconnect and export a new bundle if that occurs.
+
+## Local demo and live runs
+
+Use the [demo wizard](../workbench-demo/README.md) for interactive testing. It uses
+the same `reset-baseline` path as this suite and can retain a real provider.
+The regression fixture substitutes scripted provider responses when it starts.
+
+The default command above is suitable for everyday local checks. To run the live
+lane locally, provide the same `DEMO_JIRA_*` inputs listed above, including a
+**separate** broker OAuth bundle, and set `WORKBENCH_REGRESSION_LIVE=1`.
+Do not run against the shared ORBIT sprint during CI. Prefer a manual Actions run
+when testing the shared environment: its concurrency group coordinates access
+and preserves refreshed credentials automatically.

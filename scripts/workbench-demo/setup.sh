@@ -354,7 +354,7 @@ case "$DEMO_JIRA_OAUTH_MODE" in
   direct)
     say "Create or select an Atlassian OAuth 2.0 (3LO) app for this local Workbench server."
     open_url "https://developer.atlassian.com/console/myapps/"
-    step "Under Permissions → Jira API, add read:project:jira, read:jira-work, write:jira-work, read:board-scope:jira-software, read:board-scope.admin:jira-software, read:sprint:jira-software, read:issue-details:jira, and read:jql:jira."
+    step "Under Permissions → Jira API, add read:project:jira, read:jira-user, read:jira-work, write:jira-work, read:board-scope:jira-software, read:board-scope.admin:jira-software, read:sprint:jira-software, write:sprint:jira-software, read:issue-details:jira, and read:jql:jira."
     step "Under Authorization → OAuth 2.0 (3LO), add the callback URL below. Workbench requests offline_access in its authorization request."
     step "Start the demo once to learn its actual web origin, then register that exact origin plus /workbench as the web callback."
     step "For desktop testing, register the server origin plus /oauth/workbench/jira/callback instead."
