@@ -85,13 +85,17 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
         });
         // One short-lived session belongs to this worker's disposable server.
         // Snapshot assertions still read through real RPCs; revocation runs before shutdown.
-        await withDemoAccess(home, ({ wsUrl, token }) =>
-          use({
-            home,
-            origin: server.origin,
-            rpc: (operation) => runRpc(wsUrl, token, operation),
-            shellSnapshot: () => readShellSnapshot(wsUrl, token),
-          }),
+        await withDemoAccess(
+          home,
+          ({ wsUrl, token }) =>
+            use({
+              home,
+              origin: server.origin,
+              rpc: (operation) => runRpc(wsUrl, token, operation),
+              shellSnapshot: () => readShellSnapshot(wsUrl, token),
+            }),
+          // Covers the 25-minute live-job ceiling, including slow Jira responses.
+          { ttl: "30m" },
         );
       } finally {
         await server.stop();
@@ -113,6 +117,12 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
         const page = await context.newPage();
         await page.goto(await NodeFSP.readFile(NodePath.join(demo.home, "pairing-url"), "utf8"));
         await expect(page).not.toHaveURL(/\/pair/, { timeout: 30_000 });
+        // Pairing redirects before the cold Vite module graph and app state finish loading.
+        // Publish storage only once the seeded application is ready for test navigation.
+        await page.goto(`${demo.origin}/workbench?workbenchProjectId=orbit`);
+        await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible({
+          timeout: 30_000,
+        });
         await use(await context.storageState());
       } finally {
         await context.close();
