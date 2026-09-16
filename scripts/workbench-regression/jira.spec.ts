@@ -395,6 +395,7 @@ test.describe("Jira Workbench integration @live", () => {
       await expect(page.getByRole("heading", { name: issue.summary, exact: true })).toBeVisible();
       await page
         .getByRole("button", { name: `Create Thread for ${issue.summary}`, exact: true })
+        .filter({ hasText: /^Create Thread$/ })
         .click();
       await page
         .getByRole("dialog")
