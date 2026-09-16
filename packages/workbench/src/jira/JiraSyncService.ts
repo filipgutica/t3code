@@ -132,6 +132,23 @@ export const make = Effect.gen(function* () {
     if (!binding.active) {
       return yield* syncError("binding_inactive", "The Jira sprint binding is inactive.");
     }
+    if (binding.localMigrationPending === true) {
+      const migrationComplete =
+        repository.completeLocalMigrationIfReady === undefined
+          ? false
+          : yield* repository
+              .completeLocalMigrationIfReady(binding.id, binding.projectId)
+              .pipe(Effect.mapError(repositoryError));
+      if (!migrationComplete) {
+        return yield* syncError(
+          "invalid_binding",
+          "Finish the pending local data migration before importing Jira issues.",
+        );
+      }
+      // A completed remote write can leave this flag behind if the client
+      // disappeared after the local link was saved. The repository clears it
+      // here so the next sync can recover without importing duplicate issues.
+    }
 
     const now = yield* clock.currentTimeMillis;
     const inMemoryAttemptAt = (yield* Ref.get(lastAttemptAt)).get(binding.id);

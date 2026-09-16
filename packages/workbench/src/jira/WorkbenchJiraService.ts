@@ -135,6 +135,20 @@ export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const clock = yield* Clock.Clock;
 
+  const completeLocalMigration = (binding: WorkbenchJiraBinding) =>
+    Effect.gen(function* () {
+      if (binding.localMigrationPending !== true) return;
+      if (repository.completeLocalMigrationIfReady === undefined) return;
+      const complete = yield* repository
+        .completeLocalMigrationIfReady(binding.id, binding.projectId)
+        .pipe(Effect.mapError(repositoryError));
+      if (!complete) {
+        return yield* operationError(
+          "Finish migrating all active local Tickets and Epics before importing Jira issues.",
+        );
+      }
+    });
+
   const getSnapshot = sql
     .withTransaction(
       Effect.gen(function* () {
@@ -310,6 +324,7 @@ export const make = Effect.gen(function* () {
         boardColumns: configuration.columns,
         statusMappings:
           boardMode === "mirror_jira" ? mirrorStatusMappings(configuration) : input.statusMappings,
+        localMigrationPending: input.localMigrationPending ?? false,
         active: true,
         lastSyncedAt: null,
         lastSyncError: null,
@@ -346,9 +361,8 @@ export const make = Effect.gen(function* () {
         const verifyRemote =
           requestedRepresentativeSprint.id !== existing.value.sprintId ||
           !sameSelectedSprints(selectedSprints, selectedSprintsForBinding(existing.value)) ||
-          (input.followActiveSprint !== undefined &&
-            input.followActiveSprint !== existing.value.followActiveSprint) ||
-          (input.boardMode !== undefined && input.boardMode !== existing.value.boardMode);
+          followActiveSprint !== existing.value.followActiveSprint ||
+          boardMode !== existing.value.boardMode;
         const validation = yield* validateBinding({
           ...input,
           projectId: existing.value.projectId,
@@ -387,6 +401,10 @@ export const make = Effect.gen(function* () {
                 ? existing.value.statusMappings
                 : mirrorStatusMappings(configuration)
               : input.statusMappings,
+          // Only a successful migration may clear this flag. A binding edit
+          // during an interrupted migration must keep automatic imports gated.
+          localMigrationPending:
+            existing.value.localMigrationPending === true || input.localMigrationPending === true,
           lastSyncError: null,
         } satisfies WorkbenchJiraBinding;
         yield* repository.upsertBinding(binding).pipe(Effect.mapError(repositoryError));
@@ -764,6 +782,7 @@ export const make = Effect.gen(function* () {
                 );
               }
             }
+            yield* completeLocalMigration(binding);
             return {
               action: input.action,
               requestedTicketCount: tickets.length,
@@ -974,6 +993,7 @@ export const make = Effect.gen(function* () {
           ...(remoteEpicIssueId === undefined ? {} : { remoteEpicIssueId }),
         });
       }
+      yield* completeLocalMigration(binding);
       return {
         action: input.action,
         requestedTicketCount: tickets.length,

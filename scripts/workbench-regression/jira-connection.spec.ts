@@ -1,4 +1,5 @@
 import { test, expect, snapshot } from "./fixtures.ts";
+import * as Effect from "effect/Effect";
 import type { Page } from "@playwright/test";
 import { readConfig } from "../workbench-demo/environment.mts";
 import { withDemoAccess } from "../workbench-demo/access.mts";
@@ -174,8 +175,14 @@ test.describe("Jira connection UX @live", () => {
     demo,
   }) => {
     const site = jiraSite(demo.home);
-    const before = await snapshot(demo.home);
-    const beforeJira = await jiraSnapshot(demo.home);
+    const [before, beforeJira] = await withDemoAccess(demo.home, ({ wsUrl, token }) =>
+      runRpc(wsUrl, token, (client) =>
+        Effect.all([
+          client[WORKBENCH_WS_METHODS.workbenchGetSnapshot]({}),
+          client[WORKBENCH_WS_METHODS.workbenchJiraGetSnapshot]({}),
+        ]),
+      ),
+    );
     const sourceBinding = beforeJira.bindings.find(
       (candidate) => candidate.projectId === "demo-jira",
     );
@@ -196,12 +203,13 @@ test.describe("Jira connection UX @live", () => {
     await expect(
       page.getByRole("heading", { name: "Regression Jira Connection", exact: true }),
     ).toBeVisible();
-    const workspace = (await snapshot(demo.home)).projects.find(
+    const createdSnapshot = await snapshot(demo.home);
+    const workspace = createdSnapshot.projects.find(
       (project) => project.title === "Regression Jira Connection",
     );
     if (!workspace) throw new Error("The empty Jira regression workspace was not persisted.");
     expect(
-      (await snapshot(demo.home)).tickets.filter((ticket) => ticket.projectId === workspace.id),
+      createdSnapshot.tickets.filter((ticket) => ticket.projectId === workspace.id),
     ).toHaveLength(0);
 
     await page.getByRole("button", { name: "Workspace actions" }).click();

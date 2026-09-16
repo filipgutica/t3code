@@ -96,6 +96,7 @@ describe("WorkbenchJiraRepository SQL", () => {
           { name: "To Do", statusIds: ["1"], done: false },
           { name: "Done", statusIds: ["2"], done: true },
         ],
+        localMigrationPending: true,
         active: true,
         lastSyncedAt: null,
         lastSyncError: "A previous sync failed.",
@@ -252,6 +253,98 @@ describe("WorkbenchJiraRepository SQL", () => {
           jiraIssueKey: "WB-42",
         },
       ]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect("clears the local migration gate only when active local data is linked", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const repository = yield* WorkbenchJiraRepository;
+      const projectId = WorkbenchProjectId.make("migration-project");
+      const connectionId = WorkbenchJiraConnectionId.make("migration-connection");
+      const bindingId = WorkbenchJiraBindingId.make("migration-binding");
+      const ticketId = WorkbenchTicketId.make("migration-ticket");
+      const createdAt = "2026-09-03T12:00:00.000Z";
+      const binding: WorkbenchJiraBinding = {
+        id: bindingId,
+        projectId,
+        connectionId,
+        jiraProjectId: "10000",
+        jiraProjectKey: "WB",
+        jiraProjectName: "Workbench",
+        boardId: 42,
+        boardName: "Workbench Board",
+        sprintId: 7,
+        sprintName: "Sprint 7",
+        defaultPrimaryT3ProjectId: ProjectId.make("migration-project-1"),
+        defaultRepositoryProjectIds: [ProjectId.make("migration-project-1")],
+        statusMappings: [{ jiraStatusId: "1", workbenchStatus: "todo" }],
+        selectedSprints: [{ id: 7, name: "Sprint 7" }],
+        followActiveSprint: false,
+        observedActiveSprintIds: [],
+        boardMode: "mapped",
+        boardColumns: [],
+        localMigrationPending: true,
+        active: true,
+        lastSyncedAt: null,
+        lastSyncError: null,
+        createdAt,
+        updatedAt: createdAt,
+      };
+
+      yield* sql`
+        INSERT INTO workbench_projects (project_id, title, created_at, updated_at)
+        VALUES (${projectId}, 'Migration Workspace', ${createdAt}, ${createdAt})
+      `;
+      yield* sql`
+        INSERT INTO workbench_jira_connections (
+          connection_id, cloud_id, credential_id, site_name, site_url,
+          avatar_url, scopes_json, created_at, updated_at
+        ) VALUES (
+          ${connectionId}, 'migration-cloud', 'credential', 'Jira',
+          'https://example.atlassian.net', NULL, '[]', ${createdAt}, ${createdAt}
+        )
+      `;
+      yield* sql`
+        INSERT INTO workbench_tickets (
+          ticket_id, workbench_project_id, title, markdown,
+          primary_t3_project_id, status, blocked, created_at, updated_at
+        ) VALUES (
+          ${ticketId}, ${projectId}, 'Migration Ticket', 'Details',
+          'migration-project-1', 'todo', 0, ${createdAt}, ${createdAt}
+        )
+      `;
+      yield* sql`
+        INSERT INTO workbench_epics (
+          epic_id, workbench_project_id, title, markdown, created_at, updated_at
+        ) VALUES
+          ('local-epic', ${projectId}, 'Local Epic', 'Details', ${createdAt}, ${createdAt}),
+          (${`jira:${bindingId}:epic:10042`}, ${projectId}, 'Imported Epic', 'Details', ${createdAt}, ${createdAt})
+      `;
+      yield* repository.upsertBinding(binding);
+
+      expect(yield* repository.completeLocalMigrationIfReady!(bindingId, projectId)).toBe(false);
+
+      yield* sql`
+        INSERT INTO workbench_jira_issue_links (
+          binding_id, jira_issue_id, ticket_id, issue_json, active, linked_at, last_seen_at
+        ) VALUES (
+          ${bindingId}, '10001', ${ticketId}, '{}', 0, ${createdAt}, ${createdAt}
+        )
+      `;
+      yield* sql`
+        UPDATE workbench_epics
+        SET archived_at = ${createdAt}
+        WHERE epic_id = 'local-epic'
+      `;
+
+      expect(yield* repository.completeLocalMigrationIfReady!(bindingId, projectId)).toBe(true);
+      const saved = yield* sql<{ readonly pending: number }>`
+        SELECT local_migration_pending AS pending
+        FROM workbench_jira_bindings
+        WHERE binding_id = ${bindingId}
+      `;
+      expect(saved[0]?.pending).toBe(0);
     }).pipe(Effect.provide(TestLayer)),
   );
 });

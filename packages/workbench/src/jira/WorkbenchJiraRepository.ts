@@ -50,6 +50,11 @@ export interface WorkbenchJiraRepositoryShape {
   readonly upsertBinding: (
     binding: WorkbenchJiraBinding,
   ) => Effect.Effect<void, WorkbenchJiraRepositoryError>;
+  /** Clears the migration gate only when no active local data remains. */
+  readonly completeLocalMigrationIfReady?: (
+    bindingId: WorkbenchJiraBindingId,
+    projectId: WorkbenchJiraBinding["projectId"],
+  ) => Effect.Effect<boolean, WorkbenchJiraRepositoryError>;
   readonly updateBindingSyncMetadata: (input: {
     readonly id: WorkbenchJiraBindingId;
     readonly expectedUpdatedAt: string;
@@ -123,6 +128,7 @@ const BindingRow = Schema.Struct({
   boardMode: WorkbenchJiraBinding.fields.boardMode,
   boardColumnsJson: Schema.String,
   active: Schema.Number,
+  localMigrationPending: Schema.Number,
   lastSyncedAt: WorkbenchJiraBinding.fields.lastSyncedAt,
   lastSyncError: WorkbenchJiraBinding.fields.lastSyncError,
   createdAt: WorkbenchJiraBinding.fields.createdAt,
@@ -213,6 +219,7 @@ export const layerSql = Layer.effect(
           board_mode AS "boardMode",
           board_columns_json AS "boardColumnsJson",
           active,
+          local_migration_pending AS "localMigrationPending",
           last_synced_at AS "lastSyncedAt",
           last_sync_error AS "lastSyncError",
           created_at AS "createdAt",
@@ -258,6 +265,7 @@ export const layerSql = Layer.effect(
                 followActiveSprint: row.followActiveSprint === 1,
                 boardMode: row.boardMode,
                 active: row.active === 1,
+                ...(row.localMigrationPending === 1 ? { localMigrationPending: true } : {}),
                 lastSyncedAt: row.lastSyncedAt,
                 lastSyncError: row.lastSyncError,
                 createdAt: row.createdAt,
@@ -313,6 +321,51 @@ export const layerSql = Layer.effect(
         WHERE binding_id = ${bindingId}
         ORDER BY jira_issue_key ASC, jira_issue_id ASC
       `;
+    });
+
+    const completeLocalMigrationIfReady = Effect.fn(
+      "WorkbenchJiraRepository.completeLocalMigrationIfReady",
+    )(function* (bindingId: WorkbenchJiraBindingId, projectId: WorkbenchJiraBinding["projectId"]) {
+      return yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const remainingTickets = yield* sql<{ readonly id: string }>`
+            SELECT ticket_id AS id
+            FROM workbench_tickets AS ticket
+            WHERE ticket.workbench_project_id = ${projectId}
+              AND ticket.archived_at IS NULL
+              AND ticket.deleted_at IS NULL
+              AND NOT EXISTS (
+                SELECT 1
+                FROM workbench_jira_issue_links AS jira_link
+                WHERE jira_link.binding_id = ${bindingId}
+                  AND jira_link.ticket_id = ticket.ticket_id
+              )
+            LIMIT 1
+          `;
+          const epicPrefix = `jira:${bindingId}:epic:`;
+          const remainingEpics = yield* sql<{ readonly id: string }>`
+            SELECT epic_id AS id
+            FROM workbench_epics AS epic
+            WHERE epic.workbench_project_id = ${projectId}
+              AND epic.archived_at IS NULL
+              AND substr(epic.epic_id, 1, ${epicPrefix.length}) <> ${epicPrefix}
+              AND NOT EXISTS (
+                SELECT 1
+                FROM workbench_jira_epic_links AS jira_link
+                WHERE jira_link.binding_id = ${bindingId}
+                  AND jira_link.epic_id = epic.epic_id
+              )
+            LIMIT 1
+          `;
+          if (remainingTickets.length > 0 || remainingEpics.length > 0) return false;
+          yield* sql`
+            UPDATE workbench_jira_bindings
+            SET local_migration_pending = 0
+            WHERE binding_id = ${bindingId} AND local_migration_pending = 1
+          `;
+          return true;
+        }),
+      );
     });
 
     const protect = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -425,7 +478,8 @@ export const layerSql = Layer.effect(
               selected_sprints_json, default_primary_t3_project_id, default_repository_project_ids_json,
               status_mappings_json, follow_active_sprint, observed_active_sprint_ids_json,
               board_mode, board_columns_json,
-              active, last_synced_at, last_sync_error, created_at, updated_at
+              active, local_migration_pending, last_synced_at, last_sync_error,
+              created_at, updated_at
             ) VALUES (
               ${binding.id}, ${binding.projectId}, ${binding.connectionId}, ${binding.jiraProjectId},
               ${binding.jiraProjectKey}, ${binding.jiraProjectName}, ${binding.boardId},
@@ -436,6 +490,7 @@ export const layerSql = Layer.effect(
               ${statusMappingsJson}, ${binding.followActiveSprint ? 1 : 0},
               ${observedActiveSprintIdsJson}, ${binding.boardMode},
               ${boardColumnsJson}, ${binding.active ? 1 : 0},
+              ${binding.localMigrationPending === true ? 1 : 0},
               ${binding.lastSyncedAt}, ${binding.lastSyncError}, ${binding.createdAt},
               ${binding.updatedAt}
             )
@@ -457,12 +512,15 @@ export const layerSql = Layer.effect(
               board_mode = excluded.board_mode,
               board_columns_json = excluded.board_columns_json,
               active = excluded.active,
+              local_migration_pending = excluded.local_migration_pending,
               last_synced_at = excluded.last_synced_at,
               last_sync_error = excluded.last_sync_error,
               updated_at = excluded.updated_at
             `;
           }),
         ),
+      completeLocalMigrationIfReady: (bindingId, projectId) =>
+        protect(completeLocalMigrationIfReady(bindingId, projectId)),
       updateBindingSyncMetadata: (input) =>
         protect(
           Effect.gen(function* () {

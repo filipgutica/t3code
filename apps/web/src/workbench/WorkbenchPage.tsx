@@ -415,6 +415,9 @@ export function WorkbenchPage({
   const jiraGetBoardConfiguration = useAtomCommand(workbenchEnvironment.jiraGetBoardConfiguration, {
     reportFailure: false,
   });
+  const jiraReadSnapshot = useAtomCommand(workbenchEnvironment.jiraReadSnapshot, {
+    reportFailure: false,
+  });
   const jiraCreateBinding = useAtomCommand(workbenchEnvironment.jiraCreateBinding, {
     reportFailure: false,
   });
@@ -1395,6 +1398,7 @@ export function WorkbenchPage({
               defaultPrimaryT3ProjectId: draft.defaultPrimaryT3ProjectId,
               defaultRepositoryProjectIds: draft.defaultRepositoryProjectIds,
               statusMappings: draft.statusMappings,
+              localMigrationPending: draft.localDataAction !== "none",
               followActiveSprint: draft.followActiveSprint,
               boardMode: draft.boardMode,
               createdAt: new Date().toISOString(),
@@ -1407,7 +1411,10 @@ export function WorkbenchPage({
       return false;
     }
     const binding = result.value;
-    let migrationComplete = pendingMigration?.migrationComplete ?? draft.localDataAction === "none";
+    let migrationComplete =
+      draft.localDataAction === "none" ||
+      pendingMigration?.migrationComplete === true ||
+      (pendingBinding !== null && (await wasJiraMigrationCommitted(pendingBinding)));
     pendingJiraMigrationBindingsRef.current.set(migrationKey, { binding, migrationComplete });
     if (!migrationComplete && draft.localDataAction !== "none") {
       const migration = await migrateJiraLocalData({
@@ -1416,7 +1423,7 @@ export function WorkbenchPage({
         tickets: draft.localTickets,
         epics: draft.localEpics,
       });
-      if (migration === null) return false;
+      if (migration === null && !(await wasJiraMigrationCommitted(binding))) return false;
       migrationComplete = true;
       pendingJiraMigrationBindingsRef.current.set(migrationKey, { binding, migrationComplete });
     }
@@ -1434,6 +1441,13 @@ export function WorkbenchPage({
     if (environmentId === null || !firstSprint) return false;
     setJiraPendingAction("update-binding");
     setJiraError(null);
+    const migrationKey = jiraMigrationKey(draft.binding.projectId);
+    const pendingMigration = pendingJiraMigrationBindingsRef.current.get(migrationKey);
+    let migrationComplete =
+      draft.localDataAction === "none" ||
+      pendingMigration?.migrationComplete === true ||
+      (pendingMigration !== undefined &&
+        (await wasJiraMigrationCommitted(pendingMigration.binding)));
     const result = await jiraUpdateBinding({
       environmentId,
       input: {
@@ -1447,6 +1461,7 @@ export function WorkbenchPage({
         followActiveSprint: draft.followActiveSprint,
         boardMode: draft.boardMode,
         active: draft.binding.active,
+        ...(migrationComplete ? {} : { localMigrationPending: true }),
         updatedAt: new Date().toISOString(),
       },
     });
@@ -1455,9 +1470,6 @@ export function WorkbenchPage({
       if (!isAtomCommandInterrupted(result)) setJiraError(failureMessage(result));
       return false;
     }
-    const migrationKey = jiraMigrationKey(result.value.projectId);
-    const pendingMigration = pendingJiraMigrationBindingsRef.current.get(migrationKey);
-    let migrationComplete = pendingMigration?.migrationComplete ?? draft.localDataAction === "none";
     pendingJiraMigrationBindingsRef.current.set(migrationKey, {
       binding: result.value,
       migrationComplete,
@@ -1469,7 +1481,7 @@ export function WorkbenchPage({
         tickets: draft.localTickets,
         epics: draft.localEpics,
       });
-      if (migration === null) return false;
+      if (migration === null && !(await wasJiraMigrationCommitted(result.value))) return false;
       migrationComplete = true;
       pendingJiraMigrationBindingsRef.current.set(migrationKey, {
         binding: result.value,
@@ -1686,6 +1698,9 @@ export function WorkbenchPage({
 
   const automaticJiraBindingId = jiraBinding?.active ? jiraBinding.id : null;
   const automaticJiraProjectId = jiraBinding?.projectId ?? null;
+  const hasPendingLocalMigrationData =
+    jiraBinding?.localMigrationPending === true &&
+    (localTicketsForJiraMigration.length > 0 || localEpicsForJiraMigration.length > 0);
   useEffect(() => {
     if (
       environmentId === null ||
@@ -1702,7 +1717,8 @@ export function WorkbenchPage({
     const refresh = () => {
       if (
         requests.has(requestKey) ||
-        pendingJiraMigrationBindingsRef.current.get(migrationKey)?.migrationComplete === false
+        pendingJiraMigrationBindingsRef.current.get(migrationKey)?.migrationComplete === false ||
+        hasPendingLocalMigrationData
       )
         return;
       requests.add(requestKey);
@@ -1738,6 +1754,7 @@ export function WorkbenchPage({
     automaticJiraBindingId,
     automaticJiraProjectId,
     automaticJiraRequestsRef,
+    hasPendingLocalMigrationData,
     jiraDialogOpen,
     jiraPendingAction,
     jiraSyncBinding,
@@ -1811,6 +1828,16 @@ export function WorkbenchPage({
     } finally {
       if (statusEnvironmentRef.current === targetEnvironmentId) setJiraPendingAction(null);
     }
+  }
+
+  async function wasJiraMigrationCommitted(binding: WorkbenchJiraBinding): Promise<boolean> {
+    if (environmentId === null || binding.localMigrationPending !== true) return false;
+    const result = await jiraReadSnapshot({ environmentId, input: {} });
+    if (statusEnvironmentRef.current !== environmentId || result._tag !== "Success") return false;
+    const saved = result.value.bindings.find((candidate) => candidate.id === binding.id);
+    // Only the server can clear this gate. Preserve the original migration
+    // error unless this fresh response confirms it already committed.
+    return saved !== undefined && saved.localMigrationPending !== true;
   }
 
   async function migrateJiraLocalData({

@@ -49,7 +49,7 @@ const fakeBoardConfiguration = {
 };
 
 type SyncMode = "normal" | "hold" | "failure" | "empty";
-type MigrationMode = "normal" | "hold" | "failure";
+type MigrationMode = "normal" | "hold" | "failure" | "lost-response";
 type RpcMessage = string | Buffer;
 type RpcRequestId = string | number;
 type WebSocketServer = { send: (message: RpcMessage) => void };
@@ -57,6 +57,9 @@ type WebSocketServer = { send: (message: RpcMessage) => void };
 const routeMockJira = async (page: Page) => {
   let mode: SyncMode = "normal";
   let migrationMode: MigrationMode = "normal";
+  let failRecoveryRead = false;
+  let migrationResponseLost = false;
+  let failedSnapshotCount = 0;
   let targetProjectId: string | null = null;
   let binding: Record<string, unknown> | null = null;
   let links: Array<Record<string, unknown>> = [];
@@ -235,6 +238,7 @@ const routeMockJira = async (page: Page) => {
       );
       return;
     }
+    const lostResponse = migrationMode === "lost-response";
     migrationMode = "normal";
     const action = input.action === "delete" ? "delete" : "publish";
     const tickets = Array.isArray(input.tickets) ? input.tickets : [];
@@ -266,6 +270,12 @@ const routeMockJira = async (page: Page) => {
           ];
         }),
       ];
+    }
+    if (binding) binding = { ...binding, localMigrationPending: false };
+    if (lostResponse) {
+      migrationResponseLost = true;
+      sendFailure(socket, requestId, "Migration response was lost after committing.");
+      return;
     }
     sendExit(socket, requestId, {
       action,
@@ -300,6 +310,11 @@ const routeMockJira = async (page: Page) => {
         return;
       }
       if (payload.tag === WORKBENCH_WS_METHODS.workbenchJiraGetSnapshot) {
+        if (migrationResponseLost && failRecoveryRead) {
+          failedSnapshotCount += 1;
+          sendFailure(socket, payload.id, "Connection unavailable during recovery.");
+          return;
+        }
         sendExit(socket, payload.id, {
           connections: [fakeConnection],
           bindings: binding ? [binding] : [],
@@ -409,6 +424,10 @@ const routeMockJira = async (page: Page) => {
       migrationMode = next;
       heldMigrationRequestId = null;
     },
+    setRecoveryReadFailure: (fail: boolean) => {
+      failRecoveryRead = fail;
+    },
+    getFailedSnapshotCount: () => failedSnapshotCount,
     getMigrationRequests: () => migrationRequests,
     getRpcTags: () => rpcTags,
     getBindingCreateCount: () => bindingCreateCount,
@@ -717,4 +736,47 @@ test.describe("Jira connection UI contract", () => {
     expect(migrateTags).toHaveLength(2);
     expect(syncIndex).toBeGreaterThan(migrateTags[1] ?? -1);
   });
+
+  for (const recoveryReadFails of [false, true]) {
+    test(`recovers a committed local deletion after a lost response${recoveryReadFails ? " and reconnect" : ""}`, async ({
+      page,
+      demo,
+    }) => {
+      const route = await routeMockJira(page);
+      const workspaceId = await createWorkspace(
+        page,
+        demo.home,
+        "Deterministic Jira Lost Response",
+      );
+      await seedLocalEpicAndTicket(page, demo.home, workspaceId);
+      const dialog = await connectJira(page);
+      await dialog.getByRole("radio", { name: /Delete local data/ }).click();
+      route.setMigrationMode("lost-response");
+      route.setRecoveryReadFailure(recoveryReadFails);
+      await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
+      await page
+        .getByRole("alertdialog")
+        .getByRole("button", { name: "Delete and import", exact: true })
+        .click();
+      if (recoveryReadFails) {
+        await expect(dialog.getByRole("alert")).toContainText(
+          "Migration response was lost after committing.",
+        );
+        await expect.poll(route.getFailedSnapshotCount).toBeGreaterThan(0);
+        route.setRecoveryReadFailure(false);
+        await dialog.getByRole("button", { name: "Save mirror", exact: true }).click();
+        await page
+          .getByRole("alertdialog")
+          .getByRole("button", { name: "Delete and import", exact: true })
+          .click();
+      }
+      await expect(dialog).not.toBeVisible();
+      await expect(
+        page.getByRole("status").filter({ hasText: /Synced \d+ Jira tickets?/i }),
+      ).toBeVisible();
+      expect(route.getBindingCreateCount()).toBe(1);
+      expect(route.getMigrationRequests()).toHaveLength(1);
+      expect(route.getSyncRequestCount()).toBe(1);
+    });
+  }
 });

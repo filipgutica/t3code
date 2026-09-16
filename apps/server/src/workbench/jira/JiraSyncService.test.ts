@@ -65,6 +65,7 @@ const ImporterIntegrationLayer = jiraTicketImporterLayer.pipe(
   Layer.provideMerge(WorkbenchStoreLive),
   Layer.provideMerge(SqlitePersistenceMemory),
 );
+const TestLayer = WorkbenchStoreLive.pipe(Layer.provideMerge(SqlitePersistenceMemory));
 
 const oldIssue = (issueId: string): WorkbenchJiraIssueLink => ({
   bindingId,
@@ -181,6 +182,103 @@ const makeSyncHarness = (options?: {
   });
 
 describe("JiraSyncService", () => {
+  it.effect(
+    "keeps the migration gate across service recreation and clears it only after local data is linked",
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const pendingBinding = { ...binding, localMigrationPending: true };
+        let savedBinding: WorkbenchJiraBinding = pendingBinding;
+        let requestCount = 0;
+        yield* sql`
+        INSERT INTO workbench_projects (project_id, title, created_at, updated_at)
+        VALUES (${binding.projectId}, 'Migration workspace', '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z')
+      `;
+        yield* sql`
+        INSERT INTO workbench_tickets (
+          ticket_id, workbench_project_id, title, kind, markdown,
+          primary_t3_project_id, status, blocked, revision, created_at, updated_at
+        ) VALUES (
+          'pending-local-ticket', ${binding.projectId}, 'Pending local Ticket', 'story', 'Details',
+          'project-1', 'todo', 0, 0, '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z'
+        )
+      `;
+
+        const repository = WorkbenchJiraRepository.of({
+          findConnectionByCloudId: () => Effect.succeed(Option.none()),
+          getConnection: () => Effect.succeed(Option.none()),
+          listConnections: () => Effect.succeed([]),
+          getCredentialId: () => Effect.succeed(Option.none()),
+          upsertConnection: () => Effect.void,
+          upsertConnections: () => Effect.void,
+          getBinding: () => Effect.succeed(Option.some(savedBinding)),
+          listBindings: () => Effect.succeed([savedBinding]),
+          upsertBinding: () => Effect.void,
+          completeLocalMigrationIfReady: () =>
+            Effect.gen(function* () {
+              const remaining = yield* sql<{ readonly id: string }>`
+              SELECT ticket_id AS id
+              FROM workbench_tickets
+              WHERE workbench_project_id = ${binding.projectId}
+                AND archived_at IS NULL
+                AND deleted_at IS NULL
+              LIMIT 1
+            `;
+              if (remaining.length > 0) return false;
+              savedBinding = { ...savedBinding, localMigrationPending: false };
+              return true;
+            }).pipe(Effect.orDie),
+          updateBindingSyncMetadata: (input) =>
+            Effect.sync(() => {
+              savedBinding = {
+                ...savedBinding,
+                lastSyncedAt: input.syncedAt,
+                lastSyncError: null,
+                updatedAt: input.syncedAt,
+              };
+              return true;
+            }),
+          updateBindingSyncError: () => Effect.succeed(true),
+          listIssueLinks: () => Effect.succeed([]),
+          replaceIssueLinks: () => Effect.void,
+        } satisfies WorkbenchJiraRepositoryShape);
+        const api = JiraApi.of({
+          listProjects: () => Effect.die("unexpected project read"),
+          listBoards: () => Effect.die("unexpected board read"),
+          listSprints: () => Effect.die("unexpected sprint read"),
+          getBoardConfiguration: () => Effect.die("unexpected configuration read"),
+          listAssignedSprintIssues: () =>
+            Effect.sync(() => {
+              requestCount += 1;
+              return [];
+            }),
+          prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
+          createIssue: () => Effect.die("unexpected Jira issue creation"),
+          addIssueToSprint: () => Effect.die("unexpected Jira sprint update"),
+        });
+        const importer = JiraTicketImporter.of({
+          upsertJiraProjection: () => Effect.die("unexpected Ticket import"),
+        });
+        const makeService = () =>
+          JiraSyncService.make.pipe(
+            Effect.provideService(WorkbenchJiraRepository, repository),
+            Effect.provideService(JiraApi, api),
+            Effect.provideService(JiraTicketImporter, importer),
+          );
+
+        const firstService = yield* makeService();
+        const blocked = yield* Effect.flip(firstService.syncBinding({ bindingId }));
+        assert.strictEqual(blocked.code, "invalid_binding");
+        assert.strictEqual(requestCount, 0);
+
+        yield* sql`DELETE FROM workbench_tickets WHERE ticket_id = 'pending-local-ticket'`;
+        // A newly constructed service still observes the durable binding state.
+        const restartedService = yield* makeService();
+        yield* restartedService.syncBinding({ bindingId });
+        assert.strictEqual(requestCount, 1);
+      }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.effect("imports and deduplicates the assigned issue union across selected sprints", () =>
     Effect.gen(function* () {
       const multiBinding = {

@@ -27,13 +27,13 @@ REST calls, and a preconnected Workbench OAuth grant. The API token resets and
 checks fixtures; Workbench uses OAuth for its own Jira operations. Provider
 responses remain scripted. Interactive Atlassian login is outside this suite.
 
-| Area            | Current browser coverage                                                                                                                  |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Planning        | Workspace creation/rename, Ticket editing/status/archive/restore/delete, Epic membership/progress, routes and narrow layout               |
-| Provider        | Full Ticket context sent to a native Thread, completed turn, summary failure/retry, retained worktrees                                    |
-| Jira connection | First import, progress, failure/retry, empty results, local-data choice/cancel, publish retry, imported-only Board                        |
-| Live Jira       | Sprint imports, mapped/mirrored columns, pause/resume, issue creation, description/status writes, start-work transition, refresh identity |
-| Live GitHub     | Existing public PR linking/unlinking and detail tabs                                                                                      |
+| Area            | Current browser coverage                                                                                                                   |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Planning        | Workspace creation/rename, Ticket editing/status/archive/restore/delete, Epic membership/progress, routes and narrow layout                |
+| Provider        | Full Ticket context sent to a native Thread, completed turn, summary failure/retry, retained worktrees                                     |
+| Jira connection | First import, progress, failure/retry, empty results, local-data choice/cancel, publish retry, lost-response recovery, imported-only Board |
+| Live Jira       | Sprint imports, mapped/mirrored columns, pause/resume, issue creation, description/status writes, start-work transition, refresh identity  |
+| Live GitHub     | Existing public PR linking/unlinking and detail tabs                                                                                       |
 
 The [manual checklist](../../.agents/skills/workbench-regression-checklist/SKILL.md)
 remains the broader acceptance guide. Gaps include draft/cancel races, drag and drop,

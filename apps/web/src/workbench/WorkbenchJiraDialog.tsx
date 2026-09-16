@@ -350,6 +350,11 @@ export function WorkbenchJiraDialog({
                   <Badge size="sm" variant={existingBinding.active ? "secondary" : "outline"}>
                     {existingBinding.active ? "Active" : "Paused"}
                   </Badge>
+                  {existingBinding.localMigrationPending === true ? (
+                    <Badge size="sm" variant="outline">
+                      Migration pending
+                    </Badge>
+                  ) : null}
                 </div>
                 <p className="mt-2 text-sm text-muted-foreground">
                   {existingBinding.boardName} ·{" "}
@@ -363,6 +368,12 @@ export function WorkbenchJiraDialog({
                     ? " · Following selected sprints"
                     : " · Pinned sprints"}
                 </p>
+                {existingBinding.localMigrationPending === true ? (
+                  <p className="mt-2 text-xs text-warning-foreground" role="status">
+                    Finish the local data migration before importing Jira issues. Choose “Edit
+                    sprints and mappings” to resume it.
+                  </p>
+                ) : null}
               </div>
               {existingBinding.lastSyncError ? (
                 <p role="status" className="text-sm text-warning-foreground">
@@ -563,9 +574,11 @@ export function WorkbenchJiraDialog({
                       ? ` and ${localEpicCount} local ${localEpicCount === 1 ? "Epic" : "Epics"}`
                       : ""}
                     . Choose what to do before importing Jira issues.
-                    {existingBinding !== null
-                      ? " If a previous migration was interrupted, choose the same action to resume it."
-                      : ""}
+                    {existingBinding?.localMigrationPending === true
+                      ? " A previous local data migration is still pending. Choose the same action to resume it before importing Jira issues."
+                      : existingBinding !== null
+                        ? " If a previous migration was interrupted, choose the same action to resume it."
+                        : ""}
                   </p>
                   <RadioGroup
                     aria-label="Existing local data action"

@@ -138,6 +138,8 @@ export const WorkbenchJiraBinding = Schema.Struct({
   boardColumns: Schema.Array(WorkbenchJiraBoardColumn).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
+  /** Prevents automatic Jira imports until the initial local data migration finishes. */
+  localMigrationPending: Schema.optionalKey(Schema.Boolean),
   active: Schema.Boolean,
   lastSyncedAt: Schema.NullOr(IsoDateTime),
   lastSyncError: Schema.NullOr(TrimmedString).pipe(
@@ -165,6 +167,7 @@ export const WorkbenchJiraCreateBindingInput = Schema.Struct({
   followActiveSprint: Schema.optionalKey(Schema.Boolean),
   selectedSprints: Schema.optionalKey(Schema.Array(WorkbenchJiraSelectedSprint)),
   boardMode: Schema.optionalKey(WorkbenchJiraBoardMode),
+  localMigrationPending: Schema.optionalKey(Schema.Boolean),
   createdAt: IsoDateTime,
 });
 export type WorkbenchJiraCreateBindingInput = typeof WorkbenchJiraCreateBindingInput.Type;
@@ -179,6 +182,7 @@ export const WorkbenchJiraUpdateBindingInput = Schema.Struct({
   followActiveSprint: Schema.optionalKey(Schema.Boolean),
   selectedSprints: Schema.optionalKey(Schema.Array(WorkbenchJiraSelectedSprint)),
   boardMode: Schema.optionalKey(WorkbenchJiraBoardMode),
+  localMigrationPending: Schema.optionalKey(Schema.Boolean),
   active: Schema.Boolean,
   updatedAt: IsoDateTime,
 });

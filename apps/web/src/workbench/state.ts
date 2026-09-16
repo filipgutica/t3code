@@ -86,6 +86,14 @@ const refreshWorkbenchAndJiraSnapshots = (
 export const workbenchEnvironment = {
   snapshot,
   jiraSnapshot,
+  // A failed migration can have committed remotely; recovery needs a fresh reply,
+  // not the query atom's cached value or its fire-and-forget refresh.
+  jiraReadSnapshot: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:jira:read-snapshot",
+    tag: WS_METHODS.workbenchJiraGetSnapshot,
+    scheduler,
+    concurrency: serialPerEnvironment,
+  }),
   createProject: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:create-project",
     tag: WS_METHODS.workbenchCreateProject,
