@@ -6,6 +6,7 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
+  ...(process.env.CI ? { maxFailures: 1 } : {}),
   ...(process.env.WORKBENCH_REGRESSION_LIVE === "1"
     ? { maxFailures: 1, grep: /@live/ }
     : { grepInvert: /@live/ }),
