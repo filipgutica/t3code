@@ -43,6 +43,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { resolveThreadStatusPill } from "../components/Sidebar.logic";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { OpenInPicker } from "../components/chat/OpenInPicker";
 import { Badge } from "../components/ui/badge";
@@ -629,11 +630,16 @@ export function WorkbenchPage({
   );
   const assignmentsByTicket = useMemo(
     () =>
-      getActiveAssignmentsByTicket(
-        snapshot?.assignments ?? [],
-        new Set(threadsById.keys()),
-        new Set(archivedThreadsById.keys()),
-      ),
+      getActiveAssignmentsByTicket({
+        assignments: snapshot?.assignments ?? [],
+        liveThreadIds: new Set(threadsById.keys()),
+        archivedThreadIds: new Set(archivedThreadsById.keys()),
+        workingThreadIds: new Set(
+          [...threadsById.values()]
+            .filter((thread) => resolveThreadStatusPill({ thread })?.label === "Working")
+            .map((thread) => thread.id),
+        ),
+      }),
     [archivedThreadsById, snapshot?.assignments, threadsById],
   );
   const threadLookupReady = !archivedThreadsLoading && archivedThreadsError === null;
