@@ -111,18 +111,47 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
     { scope: "worker", timeout: 180_000 },
   ],
   pairedState: [
-    async ({ browser, demo }, use) => {
+    async ({ browser, demo }, use, workerInfo) => {
       const context = await browser.newContext();
       try {
         const page = await context.newPage();
+        const startupErrors: string[] = [];
+        const pendingScripts = new Set<string>();
+        page.on("pageerror", (error) => startupErrors.push(error.message));
+        page.on("request", (request) => {
+          if (request.resourceType() === "script")
+            pendingScripts.add(new URL(request.url()).pathname);
+        });
+        page.on("requestfinished", (request) =>
+          pendingScripts.delete(new URL(request.url()).pathname),
+        );
+        page.on("requestfailed", (request) => {
+          pendingScripts.delete(new URL(request.url()).pathname);
+          if (request.resourceType() === "script")
+            startupErrors.push(
+              `${new URL(request.url()).pathname}: ${request.failure()?.errorText}`,
+            );
+        });
         await page.goto(await NodeFSP.readFile(NodePath.join(demo.home, "pairing-url"), "utf8"));
         await expect(page).not.toHaveURL(/\/pair/, { timeout: 30_000 });
         // Pairing redirects before the cold Vite module graph and app state finish loading.
         // Publish storage only once the seeded application is ready for test navigation.
         await page.goto(`${demo.origin}/workbench?workbenchProjectId=orbit`);
-        await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible({
-          timeout: 30_000,
-        });
+        try {
+          await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible({
+            timeout: 30_000,
+          });
+        } catch (error) {
+          await NodeFSP.mkdir(workerInfo.project.outputDir, { recursive: true });
+          await page.screenshot({
+            path: NodePath.join(workerInfo.project.outputDir, "startup-failure.png"),
+          });
+          await NodeFSP.writeFile(
+            NodePath.join(workerInfo.project.outputDir, "startup-failure.json"),
+            JSON.stringify({ errors: startupErrors, pendingScripts: [...pendingScripts] }, null, 2),
+          );
+          throw error;
+        }
         await use(await context.storageState());
       } finally {
         await context.close();

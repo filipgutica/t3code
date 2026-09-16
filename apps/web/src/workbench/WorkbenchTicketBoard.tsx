@@ -33,6 +33,8 @@ import {
   LoaderCircleIcon,
   MoreHorizontalIcon,
   PlusIcon,
+  SearchIcon,
+  XIcon,
 } from "lucide-react";
 import { useMemo, useState, type CSSProperties } from "react";
 
@@ -49,6 +51,8 @@ import {
 import { resolveThreadStatusPill } from "../components/Sidebar.logic";
 
 import { Badge } from "../components/ui/badge";
+import { Input } from "../components/ui/input";
+import { matchesWorkbenchTicketSearch, useWorkbenchTicketSearch } from "./useWorkbenchTicketSearch";
 import { Button } from "../components/ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
 import { ToggleGroup, Toggle } from "../components/ui/toggle-group";
@@ -147,6 +151,22 @@ export function WorkbenchTicketBoard({
   readonly onOpenThread: (ticket: WorkbenchTicket, threadId?: ThreadId) => void;
   readonly onCreateTicket: () => void;
 }) {
+  const search = useWorkbenchTicketSearch();
+  const visibleTickets = useMemo(
+    () =>
+      tickets.filter((ticket) =>
+        matchesWorkbenchTicketSearch({
+          title: ticket.title,
+          jiraKey: jiraIssueLinksByTicketId.get(ticket.id)?.issue.key,
+          query: search.query,
+        }),
+      ),
+    [tickets, jiraIssueLinksByTicketId, search.query],
+  );
+  const visibleTicketIds = useMemo(
+    () => new Set(visibleTickets.map((ticket) => ticket.id)),
+    [visibleTickets],
+  );
   const agentStatesByTicket = useMemo(() => {
     const states = new Map<
       WorkbenchTicketId,
@@ -190,15 +210,24 @@ export function WorkbenchTicketBoard({
   }, [assignments, threadsById, archivedThreadsById]);
   const columns = useMemo(
     () =>
-      getWorkbenchBoardColumns({ tickets, mirrorColumns, issueLinks: jiraIssueLinksByTicketId }),
-    [tickets, mirrorColumns, jiraIssueLinksByTicketId],
+      getWorkbenchBoardColumns({
+        tickets,
+        mirrorColumns,
+        issueLinks: jiraIssueLinksByTicketId,
+      }).map((column) => ({
+        ...column,
+        tickets: column.tickets.filter((ticket) => visibleTicketIds.has(ticket.id)),
+      })),
+    [tickets, mirrorColumns, jiraIssueLinksByTicketId, visibleTicketIds],
   );
   const swimlanes = useMemo(
     () =>
       groupMode === "epic"
-        ? groupWorkbenchTicketsByEpic(tickets, epics)
-        : [{ epic: null, tickets }],
-    [epics, groupMode, tickets],
+        ? groupWorkbenchTicketsByEpic(visibleTickets, epics).filter(
+            (lane) => !search.query || lane.tickets.length > 0,
+          )
+        : [{ epic: null, tickets: visibleTickets }],
+    [epics, groupMode, visibleTickets, search.query],
   );
   const epicsById = useMemo(() => new Map(epics.map((epic) => [epic.id, epic])), [epics]);
   const [selectedColumnId, setSelectedColumnId] = useState<string | null>(null);
@@ -318,6 +347,54 @@ export function WorkbenchTicketBoard({
         aria-label="Ticket board"
         className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
       >
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2 sm:px-4">
+          <div className="relative min-w-0 flex-1 sm:max-w-xs">
+            <SearchIcon
+              aria-hidden
+              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              aria-label="Search tickets"
+              placeholder="Search by title or Jira key…"
+              value={search.text}
+              onChange={(event) => search.setText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.stopPropagation();
+                  search.setText("");
+                }
+              }}
+              className="pr-9 pl-9"
+            />
+            {search.text ? (
+              <Button
+                aria-label="Clear ticket search"
+                variant="ghost"
+                size="icon-xs"
+                className="absolute top-1/2 right-1 -translate-y-1/2"
+                onClick={() => search.setText("")}
+              >
+                <XIcon />
+              </Button>
+            ) : null}
+          </div>
+          {search.query ? (
+            <span role="status" className="text-xs text-muted-foreground">
+              {visibleTickets.length} of {tickets.length} tickets
+            </span>
+          ) : null}
+        </div>
+        {search.query && visibleTickets.length === 0 ? (
+          <div
+            role="status"
+            className="flex shrink-0 items-center justify-center gap-3 p-4 text-sm text-muted-foreground"
+          >
+            No matching tickets.
+            <Button variant="outline" size="sm" onClick={() => search.setText("")}>
+              Clear search
+            </Button>
+          </div>
+        ) : null}
         <div className="shrink-0 overflow-x-auto border-b border-border/60 px-3 py-2 md:hidden">
           <ToggleGroup
             aria-label="Board columns"

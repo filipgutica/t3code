@@ -99,6 +99,8 @@ https://github.com/user-attachments/assets/bffc4ea8-7274-403b-98d4-baba4d326a33
 
 ## Edit and organize Tickets
 
+Use the Board search to find loaded Tickets by title or Jira key. Search stays within the current Workspace and respects the Jira-only filter. Clear the search or press Escape in the search field to show the full Board again.
+
 ### Update a Ticket's context
 
 Open the Ticket and choose **Edit** to change its title or description. Descriptions display formatting when viewed and show their source when edited.
