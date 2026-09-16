@@ -97,6 +97,15 @@ The command is read-only. It reports ahead/behind counts, files changed by both 
 
 `.github/workflows/workbench-upstream-sync.yml` runs the same preview hourly, at minute 17. When upstream has new commits, a read-only job merges `upstream/main` and regenerates the lockfile. It installs with the lockfile frozen, runs the focused Workbench suite, builds the desktop app, and runs its smoke test. A Git bundle transfers the verified commit, including any lockfile correction, to a separate write-capable job. That job opens or updates one PR against the fork's default branch. A merge conflict or failed check leaves the product branch untouched.
 
+Merge sync PRs with **Create a merge commit** or `gh pr merge --merge`. Squash and rebase merges discard the upstream ancestry, causing later syncs to revisit already-integrated changes. Set `SYNCED_UPSTREAM_SHA` to the exact upstream commit recorded by the sync. After merging, fetch the product branch and verify ancestry:
+
+```sh
+git fetch origin main
+git merge-base --is-ancestor "$SYNCED_UPSTREAM_SHA" origin/main
+```
+
+An exit code of zero confirms that upstream ancestry was preserved. Use the recorded sync SHA, not the latest `upstream/main`, which may have advanced.
+
 Release the fork from `main` using a separate fork-owned distribution channel. Do not point Workbench builds at T3 Code's upstream updater: upstream releases do not contain the overlay.
 
 ## Sync acceptance

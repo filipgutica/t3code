@@ -167,5 +167,5 @@ jobs:
               --base "$PRODUCT_BRANCH" \
               --head "$SYNC_BRANCH" \
               --title "chore: sync T3 Code upstream" \
-              --body "Automated merge of pingdotgg/t3code main into the Workbench product branch. Focused Workbench tests, typechecks, desktop build, and desktop smoke passed before this PR was opened."
+              --body "Automated merge of pingdotgg/t3code main into the Workbench product branch. Focused Workbench tests, typechecks, desktop build, and desktop smoke passed before this PR was opened. Merge this PR with a merge commit, never squash or rebase, to preserve upstream ancestry for future syncs."
           fi

@@ -5,7 +5,19 @@ import { RightPanelResizeHandle } from "../components/preview/RightPanelResizeHa
 import { PullRequestDetailPanel } from "../components/pullRequest/PullRequestDetailPanel";
 import { Sheet, SheetPopup, SheetTitle } from "../components/ui/sheet";
 import { useResizableWidth } from "../hooks/useResizableWidth";
+import { isTerminalFocused } from "../lib/terminalFocus";
+import type { ShortcutMatchContext } from "../keybindings";
 import { RIGHT_PANEL_SHEET_CLASS_NAME } from "../rightPanelLayout";
+
+function getShortcutContext(): ShortcutMatchContext {
+  return {
+    terminalFocus: isTerminalFocused(),
+    terminalOpen: false,
+    previewFocus: false,
+    previewOpen: false,
+    modelPickerOpen: false,
+  };
+}
 
 export function WorkbenchPullRequestPanel({
   environmentId,
@@ -52,6 +64,8 @@ export function WorkbenchPullRequestPanel({
         <PullRequestDetailPanel
           environmentId={environmentId}
           reference={reference}
+          shortcutsEnabled
+          getShortcutContext={getShortcutContext}
           onClose={onClose}
           onSelectPullRequest={onSelectPullRequest}
         />
