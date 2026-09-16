@@ -22,11 +22,12 @@ on:
         default: false
         type: boolean
       release_mode:
-        description: "Unsigned preview draft or build-only validation"
+        description: "Release draft, unsigned preview draft, or build-only validation"
         required: true
         default: unsigned-preview
         type: choice
         options:
+          - release
           - unsigned-preview
           - build-only
 
@@ -63,6 +64,12 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+
+      - name: Require signed macOS builds for releases
+        if: inputs.release_mode == 'release' && !inputs.sign_macos
+        run: |
+          echo "Release mode requires sign_macos=true." >&2
+          exit 1
 
       - name: Validate macOS signing credentials
         if: inputs.sign_macos
@@ -187,8 +194,8 @@ jobs:
       - name: Run Workbench quality checks
         run: vp run --filter @t3tools/workbench quality
 
-  build_wsl_node_pty:
-    name: Build WSL node-pty (linux-x64)
+  build_wsl_runtime:
+    name: Build WSL CLI runtime (linux-x64)
     needs: resolve
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -199,10 +206,10 @@ jobs:
           ref: ${{ needs.resolve.outputs.sha }}
           fetch-depth: 1
 
-      - name: Install WSL prebuild dependencies
+      - name: Install Linux CLI build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential python3
+          sudo apt-get install -y build-essential python3 libsecret-1-dev pkg-config
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1
@@ -212,36 +219,64 @@ jobs:
           run-install: |
             args:
               - --filter=t3...
+              - --filter=@t3tools/scripts...
 
-      - name: Build node-pty linux-x64 prebuild
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Align package versions to release version
+        run: node scripts/update-release-package-versions.ts "${{ needs.resolve.outputs.version }}"
+
+      - name: Build server and web client
+        run: vp run --filter t3 build
+
+      # Match release-desktop.yml: package the complete Linux CLI for WSL.
+      - name: Build CLI single-executable
+        env:
+          VP_NODE_VERSION: "26.8.2"
+        run: node apps/server/scripts/cli.ts build-exe --verbose
+
+      - name: Build and stage resource monitor
         shell: bash
         run: |
           set -euo pipefail
-          pty_pkg="$(node -e "console.log(require.resolve('node-pty/package.json', { paths: ['$GITHUB_WORKSPACE/apps/server'] }))")"
-          pty_dir="$(dirname "$pty_pkg")"
-          ( cd "$pty_dir" && npx --yes node-gyp rebuild )
-          mkdir -p wsl-prebuild
-          cp "$pty_dir/build/Release/pty.node" wsl-prebuild/pty.node
-          file wsl-prebuild/pty.node
+          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target x86_64-unknown-linux-gnu
+          mkdir -p "$RUNNER_TEMP/cli-resource-monitor/linux-x64"
+          cp native/resource-monitor/target/x86_64-unknown-linux-gnu/release/t3-resource-monitor "$RUNNER_TEMP/cli-resource-monitor/linux-x64/"
 
-      - name: Upload WSL node-pty prebuild
+      - name: Build CLI archive
+        shell: bash
+        run: |
+          node scripts/build-cli-archive.ts \
+            --platform linux \
+            --arch x64 \
+            --version "${{ needs.resolve.outputs.version }}" \
+            --resource-monitor-dir "$RUNNER_TEMP/cli-resource-monitor" \
+            --output-dir release-cli
+
+      - name: Smoke-test CLI archive
+        run: node scripts/smoke-cli-archive.ts --archive release-cli/* --expect-version "${{ needs.resolve.outputs.version }}"
+
+      - name: Upload Linux CLI archive for WSL
         uses: actions/upload-artifact@v7
         with:
-          name: workbench-wsl-node-pty-x64
-          path: wsl-prebuild/pty.node
+          name: workbench-cli-linux-x64
+          path: release-cli/*
           if-no-files-found: error
           retention-days: 1
 
   build:
     name: Build ${{ matrix.label }}
-    needs: [resolve, quality, build_wsl_node_pty]
+    needs: [resolve, quality, build_wsl_runtime]
     if: >-
       always() && !cancelled() &&
       needs.resolve.result == 'success' &&
       needs.quality.result == 'success' &&
-      needs.build_wsl_node_pty.result == 'success'
+      needs.build_wsl_runtime.result == 'success'
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    timeout-minutes: ${{ matrix.platform == 'mac' && 90 || 45 }}
     strategy:
       fail-fast: false
       matrix:
@@ -318,12 +353,12 @@ jobs:
         with:
           targets: ${{ matrix.rust_target }}
 
-      - name: Download WSL node-pty prebuild
+      - name: Download Linux CLI archive for WSL
         if: matrix.platform == 'win'
         uses: actions/download-artifact@v8
         with:
-          name: workbench-wsl-node-pty-x64
-          path: wsl-prebuild
+          name: workbench-cli-linux-x64
+          path: wsl-runtime
 
       - name: Configure macOS signing
         if: matrix.platform == 'mac' && inputs.sign_macos
@@ -358,7 +393,7 @@ jobs:
             --verbose
           )
           if [[ "${{ matrix.platform }}" == win ]]; then
-            args+=(--wsl-prebuild "$GITHUB_WORKSPACE/wsl-prebuild/pty.node")
+            args+=(--wsl-runtime "$GITHUB_WORKSPACE"/wsl-runtime/t3-*-linux-${{ matrix.arch }}.tar.gz)
           fi
           if [[ "${{ matrix.platform }}" == mac && "${{ inputs.sign_macos }}" == true ]]; then
             args+=(--signed)
@@ -431,7 +466,7 @@ jobs:
             win) test -f release-publish/latest.yml ;;
           esac
 
-          status="UNSIGNED PREVIEW"
+          status="UNSIGNED"
           if [[ "$RELEASE_MODE" == build-only ]]; then status="UNSIGNED BUILD VALIDATION"; fi
           if [[ "$BUILD_PLATFORM" == mac && "${{ inputs.sign_macos }}" == true ]]; then status="SIGNED AND NOTARIZED"; fi
           metadata="release-publish/WORKBENCH-BUILD-INFO-${BUILD_PLATFORM}-${BUILD_ARCH}.txt"
@@ -463,10 +498,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  unsigned_preview_draft:
-    name: Create preview draft GitHub Release
+  release_draft:
+    name: Create draft GitHub Release
     needs: [resolve, quality, build]
-    if: ${{ inputs.release_mode == 'unsigned-preview' && !failure() && !cancelled() }}
+    if: ${{ inputs.release_mode != 'build-only' && !failure() && !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -552,14 +587,17 @@ jobs:
           {
             printf '# T3 Code Workbench %s\n\n' "$RELEASE_VERSION"
             if [[ "${{ inputs.sign_macos }}" == true ]]; then
-              printf 'This preview has signed and notarized macOS builds. Windows and Linux builds are unsigned.\n\n'
+              printf 'This release has signed and notarized macOS builds. Windows and Linux builds are unsigned.\n\n'
             else
               printf 'This is an unsigned preview of T3 Code Workbench.\n\n'
             fi
             printf '%s\n' "$generated_notes"
             printf '\n## Installation\n\n'
-            printf 'Install this preview alongside official T3 Code. It uses separate saved data. Windows and Linux AppImage builds check published Workbench releases automatically; choose when to download and restart. Signed macOS builds also support updates; unsigned macOS builds require manual downloads. Version 0.0.1 needs one manual upgrade to enable update checks.\n\n'
-            printf 'macOS may require System Settings → Privacy & Security → Open Anyway. Windows may show an unknown-publisher or SmartScreen warning; device policies can block unsigned apps. On Linux, make the AppImage executable.\n\n'
+            printf 'Install Workbench alongside official T3 Code. It uses separate saved data. Windows and Linux AppImage builds check published Workbench releases automatically; choose when to download and restart. Signed macOS builds also support updates; unsigned macOS builds require manual downloads. Existing unsigned macOS installations and version 0.0.1 need a manual upgrade to this release to enable updates.\n\n'
+            if [[ "${{ inputs.sign_macos }}" != true ]]; then
+              printf 'macOS may require System Settings → Privacy & Security → Open Anyway.\n\n'
+            fi
+            printf 'Windows may show an unknown-publisher or SmartScreen warning; device policies can block unsigned apps. On Linux, make the AppImage executable.\n\n'
             printf 'See [Apple installation guidance](https://support.apple.com/en-ca/guide/mac-help/mh40616/mac) and [Windows signing guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).\n'
             printf '\n## Build provenance\n\n'
             printf -- '- Selected fork `main` commit: `%s`\n' "$RELEASE_SHA"
@@ -573,11 +611,15 @@ jobs:
       - name: Create draft release
         run: |
           set -euo pipefail
+          release_flags=()
+          if [[ "${{ inputs.release_mode }}" == unsigned-preview ]]; then
+            release_flags+=(--prerelease)
+          fi
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$RELEASE_SHA" \
             --title "$RELEASE_TAG" \
-            --prerelease \
+            "${release_flags[@]}" \
             --draft \
             --notes-file "$RUNNER_TEMP/workbench-release-notes.md"
           gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
