@@ -41,6 +41,36 @@ const selectedSprintsForBinding = (
         { id: binding.sprintId, name: binding.sprintName },
       ] satisfies ReadonlyArray<WorkbenchJiraSelectedSprint>);
 
+// Sync updates timestamps, errors, and observed active sprints as bookkeeping. Those changes
+// must not invalidate a write that was already waiting for the binding permit, while changes to
+// the binding configuration still need the stale-write guard.
+const bindingConfiguration = (binding: WorkbenchJiraBinding) =>
+  JSON.stringify([
+    binding.id,
+    binding.projectId,
+    binding.connectionId,
+    binding.jiraProjectId,
+    binding.jiraProjectKey,
+    binding.jiraProjectName,
+    binding.boardId,
+    binding.boardName,
+    binding.sprintId,
+    binding.sprintName,
+    binding.selectedSprints,
+    binding.defaultPrimaryT3ProjectId,
+    binding.defaultRepositoryProjectIds,
+    binding.statusMappings,
+    binding.followActiveSprint,
+    binding.boardMode,
+    binding.boardColumns,
+    binding.localMigrationPending ?? false,
+    binding.active,
+    binding.createdAt,
+  ]);
+
+const sameBindingConfiguration = (left: WorkbenchJiraBinding, right: WorkbenchJiraBinding) =>
+  bindingConfiguration(left) === bindingConfiguration(right);
+
 const encodeCreationFingerprint = Schema.encodeSync(
   Schema.fromJsonString(
     Schema.Struct({
@@ -579,7 +609,7 @@ export const make = Effect.gen(function* () {
           if (
             Option.isNone(currentBinding) ||
             !currentBinding.value.active ||
-            currentBinding.value.updatedAt !== input.binding.updatedAt
+            !sameBindingConfiguration(currentBinding.value, input.binding)
           ) {
             return yield* operationError(
               "invalid_binding",
@@ -844,8 +874,7 @@ export const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const managed = yield* findManagedIssue(input.ticketId);
           if (
-            managed.binding.id !== initial.binding.id ||
-            managed.binding.updatedAt !== initial.binding.updatedAt ||
+            !sameBindingConfiguration(managed.binding, initial.binding) ||
             managed.link.issue.issueId !== initial.link.issue.issueId
           ) {
             return yield* operationError(
@@ -897,8 +926,7 @@ export const make = Effect.gen(function* () {
           // stale issue link or sprint selection.
           const managed = yield* findManagedIssue(input.ticketId);
           if (
-            managed.binding.id !== initial.binding.id ||
-            managed.binding.updatedAt !== initial.binding.updatedAt ||
+            !sameBindingConfiguration(managed.binding, initial.binding) ||
             managed.link.issue.issueId !== initial.link.issue.issueId
           ) {
             return yield* operationError(

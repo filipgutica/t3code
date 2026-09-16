@@ -404,6 +404,9 @@ describe("Jira lifecycle persistence", () => {
 
       const refresh = yield* service.syncBinding({ bindingId }).pipe(Effect.forkChild);
       yield* Deferred.await(refreshStarted);
+      // A completed refresh updates only its bookkeeping timestamp. A waiting writer should
+      // still be allowed to proceed when the binding configuration is unchanged.
+      yield* TestClock.adjust("1 second");
       const edit = yield* Effect.gen(function* () {
         yield* Deferred.succeed(editAttemptStarted, undefined);
         return yield* writer.updateTicket({
@@ -419,7 +422,8 @@ describe("Jira lifecycle persistence", () => {
 
       yield* Deferred.succeed(releaseRefresh, undefined);
       yield* Fiber.join(refresh);
-      yield* Deferred.await(httpPutStarted);
+      const refreshedBinding = Option.getOrThrow(yield* repository.getBinding(bindingId));
+      assert.strictEqual(refreshedBinding.updatedAt, "2026-09-01T00:00:01.000Z");
       const edited = yield* Fiber.join(edit);
       const persistedRemoteIssue = yield* Ref.get(remoteIssue);
       const snapshot = yield* workbench.getSnapshot;
