@@ -102,6 +102,7 @@ function makeTestRuntime() {
       removeRelayEnvironments: () => Effect.void,
       retryNow: (_environmentId: EnvironmentId) => Effect.void,
       setEnabled: (_environmentId: EnvironmentId, _enabled: boolean) => Effect.void,
+      setCompatibility: (_environmentId: EnvironmentId, _error) => Effect.void,
       state: (_environmentId: EnvironmentId) => Effect.succeed(connectionState),
       stateChanges: (_environmentId: EnvironmentId) => SubscriptionRef.changes(state),
       run: (_environmentId, effect) =>
