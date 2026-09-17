@@ -656,7 +656,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         .pipe(
           Effect.mapError((cause) =>
             preparationError(
-              `Could not fetch origin/main for ${project.value.title}: ${cause.detail}`,
+              `Could not fetch origin/main for ${project.value.title}. Workspace preparation stopped. Check that origin has a main branch, and verify your network connection and Git credentials before retrying. Git reported: ${cause.detail}`,
             ),
           ),
         );
