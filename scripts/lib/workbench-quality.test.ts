@@ -1,5 +1,5 @@
 import { expect, it } from "vite-plus/test";
-import { evaluateWorkbenchQuality } from "./workbench-quality";
+import { evaluateWorkbenchQuality } from "./workbench-quality.ts";
 
 const owned = "apps/web/src/workbench/Example.ts";
 const upstream = "apps/web/src/components/Example.ts";
