@@ -16,11 +16,17 @@ import * as Option from "effect/Option";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
 import { layerSql, WorkbenchJiraRepository } from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 
 const TestLayer = Layer.merge(WorkbenchStoreLive, layerSql).pipe(
   Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(
+    Layer.mock(GitWorkflowService.GitWorkflowService, {
+      isRepository: () => Effect.succeed(true),
+    }),
+  ),
 );
 
 describe("WorkbenchJiraRepository SQL", () => {

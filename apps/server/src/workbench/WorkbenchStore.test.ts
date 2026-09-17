@@ -18,11 +18,63 @@ import {
   makeSqlitePersistenceLive,
   SqlitePersistenceMemory,
 } from "../persistence/Layers/Sqlite.ts";
+import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
 
-const TestLayer = WorkbenchStoreLive.pipe(Layer.provideMerge(SqlitePersistenceMemory));
+const TestLayer = WorkbenchStoreLive.pipe(
+  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(
+    Layer.mock(GitWorkflowService.GitWorkflowService, {
+      isRepository: () => Effect.succeed(true),
+    }),
+  ),
+);
 
 describe("WorkbenchStore", () => {
+  it.effect("rejects a native project that is not a Git repository", () => {
+    const inspectedRoots: Array<string> = [];
+    const projectId = ProjectId.make("native-non-repository");
+    const workspaceId = WorkbenchProjectId.make("workspace-native-non-repository");
+    const createdAt = "2026-09-17T10:00:00.000Z";
+    const layer = WorkbenchStoreLive.pipe(
+      Layer.provideMerge(SqlitePersistenceMemory),
+      Layer.provideMerge(
+        Layer.mock(GitWorkflowService.GitWorkflowService, {
+          isRepository: (cwd) => {
+            inspectedRoots.push(cwd);
+            return Effect.succeed(false);
+          },
+        }),
+      ),
+    );
+
+    return Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* WorkbenchStore;
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+        ) VALUES (
+          ${projectId}, 'Native folder', '/folders/native-non-repository', '[]',
+          ${createdAt}, ${createdAt}, NULL
+        )
+      `;
+
+      const error = yield* Effect.flip(
+        store.createProject({
+          id: workspaceId,
+          title: "Native folder workspace",
+          linkedProjectIds: [projectId],
+          createdAt,
+        }),
+      );
+
+      expect(error.code).toBe("linked_project_not_repository");
+      expect(inspectedRoots).toEqual(["/folders/native-non-repository"]);
+      expect((yield* store.getSnapshot).projects).toEqual([]);
+    }).pipe(Effect.provide(layer));
+  });
+
   it.effect("applies optional Ticket patches with a revision check", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -1382,7 +1434,14 @@ describe("WorkbenchStore", () => {
     const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-workbench-store-"));
     const dbPath = NodePath.join(tempDir, "orchestration.sqlite");
     const persistence = makeSqlitePersistenceLive(dbPath).pipe(Layer.provide(NodeServices.layer));
-    const layer = WorkbenchStoreLive.pipe(Layer.provideMerge(persistence));
+    const layer = WorkbenchStoreLive.pipe(
+      Layer.provideMerge(persistence),
+      Layer.provideMerge(
+        Layer.mock(GitWorkflowService.GitWorkflowService, {
+          isRepository: () => Effect.succeed(true),
+        }),
+      ),
+    );
     const createdAt = "2026-09-03T12:00:00.000Z";
     const linkedProjectId = ProjectId.make("t3-project-restart");
     const projectId = WorkbenchProjectId.make("workbench-project-restart");
@@ -2101,7 +2160,14 @@ describe("WorkbenchStore", () => {
     const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-workbench-v1-"));
     const dbPath = NodePath.join(tempDir, "orchestration.sqlite");
     const persistence = makeSqlitePersistenceLive(dbPath).pipe(Layer.provide(NodeServices.layer));
-    const workbench = WorkbenchStoreLive.pipe(Layer.provideMerge(persistence));
+    const workbench = WorkbenchStoreLive.pipe(
+      Layer.provideMerge(persistence),
+      Layer.provideMerge(
+        Layer.mock(GitWorkflowService.GitWorkflowService, {
+          isRepository: () => Effect.succeed(true),
+        }),
+      ),
+    );
     const createdAt = "2026-09-03T12:00:00.000Z";
 
     return Effect.gen(function* () {

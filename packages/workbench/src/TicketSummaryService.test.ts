@@ -25,6 +25,7 @@ const storeLayer = WorkbenchStoreLive.pipe(
   Layer.provide(
     Layer.succeed(WorkbenchNativeAccess, {
       findProject: (id) => Effect.succeed(Option.some({ id })),
+      isProjectRepository: () => Effect.succeed(true),
       findThread: () => Effect.succeed(Option.none()),
       hasThreadAtWorktreePath: () => Effect.succeed(false),
     }),

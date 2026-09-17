@@ -20,15 +20,18 @@ import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
 
 const nativeLayer = (options?: {
   readonly projects?: ReadonlySet<string>;
+  readonly repositoryProjects?: ReadonlySet<string>;
   readonly threads?: ReadonlyMap<string, string>;
 }) => {
   const projects = options?.projects ?? new Set<string>();
+  const repositoryProjects = options?.repositoryProjects ?? projects;
   const threads = options?.threads ?? new Map<string, string>();
   return Layer.succeed(
     WorkbenchNativeAccess,
     WorkbenchNativeAccess.of({
       findProject: (projectId) =>
         Effect.succeed(projects.has(projectId) ? Option.some({ id: projectId }) : Option.none()),
+      isProjectRepository: (projectId) => Effect.succeed(repositoryProjects.has(projectId)),
       findThread: (threadId) => {
         const projectId = threads.get(threadId);
         return Effect.succeed(
@@ -431,6 +434,94 @@ describe("WorkbenchStore package boundary", () => {
         }),
       ]);
     }).pipe(Effect.provide(testLayer({ projects: new Set(["native-project"]) }))),
+  );
+
+  it.effect("rejects non-Git linked projects before creating a Workspace", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const projectId = ProjectId.make("non-repository-project");
+      const workspaceId = WorkbenchProjectId.make("non-repository-workspace");
+
+      const error = yield* Effect.flip(
+        store.createProject({
+          id: workspaceId,
+          title: "Non-repository Workspace",
+          linkedProjectIds: [projectId],
+          createdAt: "2026-09-07T10:00:00.000Z",
+        }),
+      );
+
+      expect(error.code).toBe("linked_project_not_repository");
+      expect((yield* store.getSnapshot).projects).toEqual([]);
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          projects: new Set(["non-repository-project"]),
+          repositoryProjects: new Set(),
+        }),
+      ),
+    ),
+  );
+
+  it.effect("keeps an existing non-Git link while adding a valid link", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* WorkbenchStore;
+      const invalidProjectId = ProjectId.make("legacy-non-repository-project");
+      const validProjectId = ProjectId.make("new-repository-project");
+      const invalidAdditionId = ProjectId.make("invalid-addition-project");
+      const workspaceId = WorkbenchProjectId.make("legacy-link-workspace");
+      const createdAt = "2026-09-07T10:00:00.000Z";
+
+      yield* sql`
+        INSERT INTO workbench_projects (project_id, title, created_at, updated_at)
+        VALUES (${workspaceId}, 'Legacy links', ${createdAt}, ${createdAt})
+      `;
+      yield* sql`
+        INSERT INTO workbench_project_links (workbench_project_id, t3_project_id, position)
+        VALUES (${workspaceId}, ${invalidProjectId}, 0)
+      `;
+      const updated = yield* store.updateProject({
+        id: workspaceId,
+        title: "Renamed legacy links",
+        linkedProjectIds: [invalidProjectId, validProjectId],
+        updatedAt: "2026-09-07T10:01:00.000Z",
+      });
+
+      expect(updated).toMatchObject({
+        id: workspaceId,
+        title: "Renamed legacy links",
+        linkedProjectIds: [invalidProjectId, validProjectId],
+      });
+
+      const rejected = yield* Effect.flip(
+        store.updateProject({
+          id: workspaceId,
+          title: "Should not persist",
+          linkedProjectIds: [invalidProjectId, validProjectId, invalidAdditionId],
+          updatedAt: "2026-09-07T10:02:00.000Z",
+        }),
+      );
+      expect(rejected.code).toBe("linked_project_not_repository");
+      expect((yield* store.getSnapshot).projects).toEqual([
+        expect.objectContaining({
+          id: workspaceId,
+          title: "Renamed legacy links",
+          linkedProjectIds: [invalidProjectId, validProjectId],
+        }),
+      ]);
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          projects: new Set([
+            "legacy-non-repository-project",
+            "new-repository-project",
+            "invalid-addition-project",
+          ]),
+          repositoryProjects: new Set(["new-repository-project"]),
+        }),
+      ),
+    ),
   );
 
   it.effect("checks native thread existence and project ownership for assignments", () =>

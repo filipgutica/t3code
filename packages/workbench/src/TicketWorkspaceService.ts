@@ -663,6 +663,19 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
           `The linked T3 Project ${projectId} does not exist on this environment.`,
         );
       }
+      yield* git.invalidateLocalStatus(project.value.workspaceRoot);
+      const status = yield* git
+        .localStatus({ cwd: project.value.workspaceRoot })
+        .pipe(
+          Effect.mapError((cause) =>
+            preparationError(`Could not inspect ${project.value.title}: ${cause.message}`),
+          ),
+        );
+      if (!status.isRepo) {
+        return yield* preparationError(
+          `${project.value.title} is not a Git repository and cannot receive a Ticket worktree.`,
+        );
+      }
       yield* git
         .fetchRemoteTrackingBranch({
           cwd: project.value.workspaceRoot,

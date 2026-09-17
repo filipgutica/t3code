@@ -20,7 +20,7 @@ The examples use fictional Orbit and Beacon projects in an isolated desktop envi
 
 ## Create your first Workspace and Ticket
 
-A **Workspace** groups T3 Projects that belong together. A **Ticket** describes work to do. An **Epic** groups related Tickets.
+A **Workspace** groups T3 Projects that belong together. Linked Projects must point to Git repositories. A **Ticket** describes work to do. An **Epic** groups related Tickets.
 
 1. Add the repository directories you need as T3 Projects.
 2. Open **Agent Workbench** from the sidebar.
