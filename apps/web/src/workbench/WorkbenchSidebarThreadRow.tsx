@@ -26,6 +26,7 @@ import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useUiStateStore } from "../uiStateStore";
 import type { WorkbenchSidebarThread } from "./workbenchSidebar.logic";
+import { filterWorkbenchThreadActionMenuItems } from "./workbenchThreadActionMenu";
 
 /** Native thread behavior, presented inside the Workbench ticket hierarchy. */
 export function WorkbenchSidebarThreadRow({
@@ -54,6 +55,7 @@ export function WorkbenchSidebarThreadRow({
     threadRef,
     projectCwd: project?.workspaceRoot ?? null,
     onStartRename: startRename,
+    filterMenuItems: filterWorkbenchThreadActionMenuItems,
   });
   const commitRename = () => {
     if (renameCommitted.current || renameTitle === null) return;

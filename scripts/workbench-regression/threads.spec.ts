@@ -144,6 +144,16 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
   await sidebar
     .getByRole("button", { name: `Actions for Thread ${nativeThread.title}`, exact: true })
     .click();
+  await expect(page.getByRole("button", { name: /^New thread on / })).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Pin thread", exact: true })).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Snooze", exact: true })).not.toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Project settings", exact: true }),
+  ).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Archive thread", exact: true })).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Delete", exact: true })).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Un-settle thread", exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("workbench-thread-menu.png") });
   await page.getByRole("button", { name: "Rename thread", exact: true }).click();
   await sidebar
     .getByRole("textbox", { name: `Rename Thread ${nativeThread.title}`, exact: true })
