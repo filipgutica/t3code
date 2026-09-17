@@ -8,6 +8,7 @@ import {
   TextGenerationError,
   ThreadId,
   type VcsStatusLocalResult,
+  type VcsCreateWorktreeInput,
   WorkbenchAssignmentId,
   WorkbenchOperationError,
   WorkbenchProjectId,
@@ -200,6 +201,9 @@ const makeTestLayer = ({
   onRemoveWorktree,
   removals,
   onListRefs,
+  worktreeInputs,
+  fetchRemoteTrackingBranchCalls,
+  failFetchRemoteTrackingBranch,
   failRemoveOnceSourcePath,
   generateBranchName,
 }: {
@@ -219,6 +223,13 @@ const makeTestLayer = ({
   onRemoveWorktree?: () => Effect.Effect<void, WorkbenchOperationError>;
   removals?: Array<{ readonly cwd: string; readonly force: boolean | undefined }>;
   onListRefs?: () => Effect.Effect<void, WorkbenchOperationError>;
+  worktreeInputs?: Array<VcsCreateWorktreeInput>;
+  fetchRemoteTrackingBranchCalls?: Array<{
+    readonly cwd: string;
+    readonly remoteName: string;
+    readonly remoteBranch: string;
+  }>;
+  failFetchRemoteTrackingBranch?: boolean;
   failRemoveOnceSourcePath?: string;
   generateBranchName?: (
     input: BranchNameGenerationInput,
@@ -315,6 +326,21 @@ const makeTestLayer = ({
       events.push(`invalidate:${cwd}`);
       return Effect.void;
     },
+    fetchRemoteTrackingBranch: (input) => {
+      events.push(`fetch:${input.cwd}:${input.remoteName}/${input.remoteBranch}`);
+      fetchRemoteTrackingBranchCalls?.push(input);
+      if (failFetchRemoteTrackingBranch) {
+        return Effect.fail(
+          new GitCommandError({
+            operation: "test.fetchRemoteTrackingBranch",
+            command: "git fetch",
+            cwd: input.cwd,
+            detail: "simulated fetch failure",
+          }),
+        );
+      }
+      return Effect.void;
+    },
     listRefs: ({ cwd }) => {
       events.push(`validate:${cwd}`);
       const registeredWorktreePath = worktrees.get(cwd);
@@ -358,6 +384,7 @@ const makeTestLayer = ({
     },
     createWorktree: (input) => {
       events.push(`create:${input.cwd}`);
+      worktreeInputs?.push(input);
       const projectId = input.cwd === "/repos/primary" ? primaryProjectId : secondaryProjectId;
       if (projectId === failProjectId) {
         return Effect.fail(
@@ -867,18 +894,55 @@ describe("TicketWorkspaceService", () => {
 
   it.effect("validates every repository before creating deterministic worktrees", () => {
     const events: Array<string> = [];
+    const fetchRemoteTrackingBranchCalls: Array<{
+      readonly cwd: string;
+      readonly remoteName: string;
+      readonly remoteBranch: string;
+    }> = [];
+    const worktreeInputs: Array<VcsCreateWorktreeInput> = [];
     return Effect.gen(function* () {
       yield* seedTicket;
       const service = yield* TicketWorkspaceService;
       const workspace = yield* service.prepare({ ticketId, requestedAt: createdAt });
 
+      expect(fetchRemoteTrackingBranchCalls).toEqual([
+        { cwd: "/repos/primary", remoteName: "origin", remoteBranch: "main" },
+        { cwd: "/repos/secondary", remoteName: "origin", remoteBranch: "main" },
+      ]);
       expect(events.filter((event) => event.startsWith("validate:"))).toEqual([
         "validate:/repos/primary",
         "validate:/repos/secondary",
       ]);
+      expect(events.indexOf("fetch:/repos/primary:origin/main")).toBeLessThan(
+        events.indexOf("validate:/repos/primary"),
+      );
+      expect(events.indexOf("fetch:/repos/secondary:origin/main")).toBeLessThan(
+        events.indexOf("validate:/repos/secondary"),
+      );
       expect(events.findIndex((event) => event.startsWith("create:"))).toBeGreaterThan(
         events.lastIndexOf("validate:/repos/secondary"),
       );
+      expect(
+        worktreeInputs.map(({ cwd, refName, newRefName, baseRefName }) => ({
+          cwd,
+          refName,
+          newRefName,
+          baseRefName,
+        })),
+      ).toEqual([
+        {
+          cwd: "/repos/primary",
+          refName: "origin/main",
+          newRefName: ticketWorkspaceBranchName({ ticketId, title: "Prepare repositories" }),
+          baseRefName: "origin/main",
+        },
+        {
+          cwd: "/repos/secondary",
+          refName: "origin/main",
+          newRefName: ticketWorkspaceBranchName({ ticketId, title: "Prepare repositories" }),
+          baseRefName: "origin/main",
+        },
+      ]);
       expect(workspace.status).toBe("ready");
       expect(workspace.repositories).toHaveLength(2);
       expect(workspace.repositories.every((repository) => repository.status === "ready")).toBe(
@@ -888,7 +952,25 @@ describe("TicketWorkspaceService", () => {
         ticketWorkspaceBranchName({ ticketId, title: "Prepare repositories" }),
       );
       expect(workspace.repositories[0]?.worktreePath).toContain("workbench/prepare-repositories-");
-    }).pipe(Effect.provide(makeTestLayer({ events })));
+    }).pipe(
+      Effect.provide(makeTestLayer({ events, fetchRemoteTrackingBranchCalls, worktreeInputs })),
+    );
+  });
+
+  it.effect("fails clearly when origin/main cannot be fetched", () => {
+    const events: Array<string> = [];
+    return Effect.gen(function* () {
+      yield* seedTicket;
+      const service = yield* TicketWorkspaceService;
+
+      const error = yield* Effect.flip(service.prepare({ ticketId, requestedAt: createdAt }));
+
+      expect(error.code).toBe("ticket_workspace_preparation_failed");
+      expect(error.message).toContain("Could not fetch origin/main for project-primary");
+      expect(error.message).toContain("simulated fetch failure");
+      expect(events.filter((event) => event.startsWith("validate"))).toEqual([]);
+      expect(events.filter((event) => event.startsWith("create:"))).toEqual([]);
+    }).pipe(Effect.provide(makeTestLayer({ events, failFetchRemoteTrackingBranch: true })));
   });
 
   it.effect("reconciles the observed branch after a native branch switch", () => {
