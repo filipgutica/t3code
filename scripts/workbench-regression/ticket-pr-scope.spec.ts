@@ -156,6 +156,7 @@ test("ticket PR discovery includes other Workspace repositories without changing
     (assignment) => assignment.ticketId === ticket.id,
   )?.threadId;
   if (!threadId) throw new Error("Expected a linked demo Thread");
+  const threadTitle = "Database setup and connection verification for the development environment";
   const timestamp = "2026-09-17T00:00:00.000Z";
   const ticketKey = "DEMO-5191";
   const requests: unknown[] = [];
@@ -198,7 +199,7 @@ test("ticket PR discovery includes other Workspace repositories without changing
                     thread.id === threadId
                       ? {
                           ...thread,
-                          title: "Database setup",
+                          title: threadTitle,
                           pullRequests: [
                             {
                               host: "github.com",
@@ -337,9 +338,17 @@ test("ticket PR discovery includes other Workspace repositories without changing
   await page.getByRole("heading", { name: /^Pull Requests/ }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("ticket-pr-discovery.png") });
   await expect(page.getByText("Fix request scoping [DEMO-5191]", { exact: true })).toBeVisible();
-  await expect(
-    page.getByText("Linked through thread: Database setup", { exact: true }),
-  ).toBeVisible();
+  const threadBadge = page.getByRole("button", {
+    name: `Open linked Thread: ${threadTitle}`,
+    exact: true,
+  });
+  await expect(threadBadge).toBeVisible();
+  await threadBadge.focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(page.locator('[data-slot="tooltip-popup"]')).toContainText(threadTitle);
+  await page.screenshot({ path: testInfo.outputPath("ticket-thread-tooltip.png") });
+  await threadBadge.press("Escape");
   const linkedPr = page.getByRole("link", {
     name: "Open pull request #1584: Add remote database setup in T3 Code (open)",
     exact: true,
@@ -357,6 +366,14 @@ test("ticket PR discovery includes other Workspace repositories without changing
       projectIds: workspace.linkedProjectIds,
       query: ticketKey,
     }),
+  );
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect(threadBadge).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("ticket-metadata-narrow.png") });
+  await threadBadge.click();
+  await expect(page).toHaveURL(
+    (url) => url.pathname.includes(threadId) && url.searchParams.get("workbench") === "true",
   );
   // Discovering the PR must not add its repository to the Ticket's saved preparation scope.
   expect((await snapshot(demo)).tickets.find((candidate) => candidate.id === ticket.id)).toEqual(

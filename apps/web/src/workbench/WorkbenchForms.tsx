@@ -1728,7 +1728,7 @@ export function WorkbenchTicketDetail({
                 <div id="workbench-ticket-agent-threads" className="min-h-0">
                   {canOpenThread ? (
                     <div className="border-b border-border/60 px-3 py-2.5">
-                      <div className="relative isolate flex min-w-0 flex-wrap items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45 [&>button:not(:first-child)]:relative [&>button:not(:first-child)]:z-10">
+                      <div className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45">
                         <WorkbenchThreadOpenButton
                           providerKind={threadProviderKind(displayedThread)}
                           ariaLabel={`${
@@ -1760,38 +1760,38 @@ export function WorkbenchTicketDetail({
                           title={agentTitle}
                         />
                         {assignment && displayedThread ? (
-                          <Button
-                            aria-label={`Unlink Thread ${displayedThread.title}`}
-                            disabled={pending || isArchived}
-                            onClick={() => onUnlinkThread(assignment.threadId)}
-                            size="icon-xs"
-                            title="Unlink Thread from Ticket"
-                            type="button"
-                            variant="ghost"
-                          >
-                            <UnlinkIcon />
-                          </Button>
-                        ) : null}
-                        {supportsSettlement && displayedThread ? (
-                          <WorkbenchThreadSettlementButton
-                            disabled={pending || isArchived || archivedThread !== undefined}
-                            onClick={() => void toggleThreadSettlement(displayedThread)}
-                            pending={settlementPendingThreadId === displayedThread.id}
-                            settled={displayedThread.settledOverride === "settled"}
-                            title={displayedThread.title}
-                          />
-                        ) : null}
-                        {assignment && displayedThread ? (
-                          <Button
-                            aria-label={`Delete Thread ${displayedThread.title}`}
-                            disabled={pending || isArchived}
-                            onClick={() => onDeleteThread(assignment.threadId)}
-                            size="icon-xs"
-                            type="button"
-                            variant="ghost"
-                          >
-                            <Trash2Icon />
-                          </Button>
+                          <div className="relative z-10 flex basis-full flex-wrap items-center gap-2 ps-11">
+                            <Button
+                              aria-label={`Unlink Thread ${displayedThread.title}`}
+                              disabled={pending || isArchived}
+                              onClick={() => onUnlinkThread(assignment.threadId)}
+                              size="icon-xs"
+                              title="Unlink Thread from Ticket"
+                              type="button"
+                              variant="ghost"
+                            >
+                              <UnlinkIcon />
+                            </Button>
+                            {supportsSettlement ? (
+                              <WorkbenchThreadSettlementButton
+                                disabled={pending || isArchived || archivedThread !== undefined}
+                                onClick={() => void toggleThreadSettlement(displayedThread)}
+                                pending={settlementPendingThreadId === displayedThread.id}
+                                settled={displayedThread.settledOverride === "settled"}
+                                title={displayedThread.title}
+                              />
+                            ) : null}
+                            <Button
+                              aria-label={`Delete Thread ${displayedThread.title}`}
+                              disabled={pending || isArchived}
+                              onClick={() => onDeleteThread(assignment.threadId)}
+                              size="icon-xs"
+                              type="button"
+                              variant="ghost"
+                            >
+                              <Trash2Icon />
+                            </Button>
+                          </div>
                         ) : null}
                         {displayedThread ? (
                           <div className="pointer-events-none relative z-10 min-w-0 basis-full [&_a]:pointer-events-auto [&_button]:pointer-events-auto [&_summary]:pointer-events-auto">
@@ -1858,7 +1858,7 @@ export function WorkbenchTicketDetail({
                             return (
                               <div
                                 key={activeAssignment.id}
-                                className="relative isolate flex min-w-0 flex-wrap items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45 [&>button:not(:first-child)]:relative [&>button:not(:first-child)]:z-10"
+                                className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45"
                               >
                                 <WorkbenchThreadOpenButton
                                   providerKind={threadProviderKind(displayedActiveThread)}
@@ -1883,55 +1883,63 @@ export function WorkbenchTicketDetail({
                                   }
                                 />
                                 {displayedActiveThread ? (
-                                  <Button
-                                    aria-label={`Unlink Thread ${displayedActiveThread.title}`}
-                                    disabled={pending || isArchived}
-                                    onClick={() => onUnlinkThread(activeAssignment.threadId)}
-                                    size="icon-xs"
-                                    title="Unlink Thread from Ticket"
-                                    type="button"
-                                    variant="ghost"
-                                  >
-                                    <UnlinkIcon />
-                                  </Button>
-                                ) : null}
-                                {displayedActiveThread ? (
-                                  <Button
-                                    aria-label={`Delete Thread ${displayedActiveThread.title}`}
-                                    disabled={pending || isArchived}
-                                    onClick={() => onDeleteThread(activeAssignment.threadId)}
-                                    size="icon-xs"
-                                    type="button"
-                                    variant="ghost"
-                                  >
-                                    <Trash2Icon />
-                                  </Button>
+                                  <div className="relative z-10 flex basis-full flex-wrap items-center gap-2 ps-11">
+                                    <Button
+                                      aria-label={`Unlink Thread ${displayedActiveThread.title}`}
+                                      disabled={pending || isArchived}
+                                      onClick={() => onUnlinkThread(activeAssignment.threadId)}
+                                      size="icon-xs"
+                                      title="Unlink Thread from Ticket"
+                                      type="button"
+                                      variant="ghost"
+                                    >
+                                      <UnlinkIcon />
+                                    </Button>
+                                    {supportsSettlement ? (
+                                      <WorkbenchThreadSettlementButton
+                                        disabled={
+                                          pending ||
+                                          isArchived ||
+                                          archivedActiveThread !== undefined
+                                        }
+                                        onClick={() =>
+                                          void toggleThreadSettlement(displayedActiveThread)
+                                        }
+                                        pending={
+                                          settlementPendingThreadId === displayedActiveThread.id
+                                        }
+                                        settled={
+                                          displayedActiveThread.settledOverride === "settled"
+                                        }
+                                        title={displayedActiveThread.title}
+                                      />
+                                    ) : null}
+                                    <Button
+                                      aria-label={`Delete Thread ${displayedActiveThread.title}`}
+                                      disabled={pending || isArchived}
+                                      onClick={() => onDeleteThread(activeAssignment.threadId)}
+                                      size="icon-xs"
+                                      type="button"
+                                      variant="ghost"
+                                    >
+                                      <Trash2Icon />
+                                    </Button>
+                                  </div>
                                 ) : threadLookupReady ? (
-                                  <Button
-                                    aria-label={`Create Thread for ${ticket.title}`}
-                                    disabled={pending || isArchived}
-                                    onClick={() =>
-                                      onReplaceThread(ticket, activeAssignment.threadId)
-                                    }
-                                    size="xs"
-                                    type="button"
-                                    variant="ghost"
-                                  >
-                                    Create Thread
-                                  </Button>
-                                ) : null}
-                                {supportsSettlement && displayedActiveThread ? (
-                                  <WorkbenchThreadSettlementButton
-                                    disabled={
-                                      pending || isArchived || archivedActiveThread !== undefined
-                                    }
-                                    onClick={() =>
-                                      void toggleThreadSettlement(displayedActiveThread)
-                                    }
-                                    pending={settlementPendingThreadId === displayedActiveThread.id}
-                                    settled={displayedActiveThread.settledOverride === "settled"}
-                                    title={displayedActiveThread.title}
-                                  />
+                                  <div className="relative z-10 flex basis-full flex-wrap items-center gap-2 ps-11">
+                                    <Button
+                                      aria-label={`Create Thread for ${ticket.title}`}
+                                      disabled={pending || isArchived}
+                                      onClick={() =>
+                                        onReplaceThread(ticket, activeAssignment.threadId)
+                                      }
+                                      size="xs"
+                                      type="button"
+                                      variant="ghost"
+                                    >
+                                      Create Thread
+                                    </Button>
+                                  </div>
                                 ) : null}
                                 {displayedActiveThread ? (
                                   <div className="pointer-events-none relative z-10 min-w-0 basis-full [&_a]:pointer-events-auto [&_button]:pointer-events-auto [&_summary]:pointer-events-auto">
@@ -2016,7 +2024,7 @@ export function WorkbenchTicketDetail({
                             return (
                               <div
                                 key={settledAssignment.id}
-                                className="relative isolate flex min-w-0 flex-wrap items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45 [&>button:not(:first-child)]:relative [&>button:not(:first-child)]:z-10"
+                                className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45"
                               >
                                 <WorkbenchThreadOpenButton
                                   providerKind={threadProviderKind(settledThread)}
@@ -2033,38 +2041,40 @@ export function WorkbenchTicketDetail({
                                   statusDotClassName="bg-muted-foreground/60"
                                   title={settledThread.title}
                                 />
-                                {supportsSettlement ? (
-                                  <WorkbenchThreadSettlementButton
-                                    disabled={
-                                      pending || isArchived || settledThread.archivedAt !== null
-                                    }
-                                    onClick={() => void toggleThreadSettlement(settledThread)}
-                                    pending={settlementPendingThreadId === settledThread.id}
-                                    settled
-                                    title={settledThread.title}
-                                  />
-                                ) : null}
-                                <Button
-                                  aria-label={`Unlink Thread ${settledThread.title}`}
-                                  disabled={pending || isArchived}
-                                  onClick={() => onUnlinkThread(settledAssignment.threadId)}
-                                  size="icon-xs"
-                                  title="Unlink Thread from Ticket"
-                                  type="button"
-                                  variant="ghost"
-                                >
-                                  <UnlinkIcon />
-                                </Button>
-                                <Button
-                                  aria-label={`Delete Thread ${settledThread.title}`}
-                                  disabled={pending || isArchived}
-                                  onClick={() => onDeleteThread(settledAssignment.threadId)}
-                                  size="icon-xs"
-                                  type="button"
-                                  variant="ghost"
-                                >
-                                  <Trash2Icon />
-                                </Button>
+                                <div className="relative z-10 flex basis-full flex-wrap items-center gap-2 ps-11">
+                                  <Button
+                                    aria-label={`Unlink Thread ${settledThread.title}`}
+                                    disabled={pending || isArchived}
+                                    onClick={() => onUnlinkThread(settledAssignment.threadId)}
+                                    size="icon-xs"
+                                    title="Unlink Thread from Ticket"
+                                    type="button"
+                                    variant="ghost"
+                                  >
+                                    <UnlinkIcon />
+                                  </Button>
+                                  {supportsSettlement ? (
+                                    <WorkbenchThreadSettlementButton
+                                      disabled={
+                                        pending || isArchived || settledThread.archivedAt !== null
+                                      }
+                                      onClick={() => void toggleThreadSettlement(settledThread)}
+                                      pending={settlementPendingThreadId === settledThread.id}
+                                      settled
+                                      title={settledThread.title}
+                                    />
+                                  ) : null}
+                                  <Button
+                                    aria-label={`Delete Thread ${settledThread.title}`}
+                                    disabled={pending || isArchived}
+                                    onClick={() => onDeleteThread(settledAssignment.threadId)}
+                                    size="icon-xs"
+                                    type="button"
+                                    variant="ghost"
+                                  >
+                                    <Trash2Icon />
+                                  </Button>
+                                </div>
                               </div>
                             );
                           })}
@@ -2108,7 +2118,7 @@ export function WorkbenchTicketDetail({
                           return (
                             <div
                               key={historicalAssignment.id}
-                              className="relative isolate flex min-w-0 flex-wrap items-center gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45 [&>button:not(:first-child)]:relative [&>button:not(:first-child)]:z-10"
+                              className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45"
                             >
                               <WorkbenchThreadOpenButton
                                 providerKind={threadProviderKind(displayedHistoricalThread)}
@@ -2145,44 +2155,48 @@ export function WorkbenchTicketDetail({
                                 }
                               />
                               {displayedHistoricalThread ? (
-                                <Button
-                                  aria-label={`Unlink Thread ${displayedHistoricalThread.title}`}
-                                  disabled={pending || isArchived}
-                                  onClick={() => onUnlinkThread(historicalAssignment.threadId)}
-                                  size="icon-xs"
-                                  title="Unlink Thread from Ticket"
-                                  type="button"
-                                  variant="ghost"
-                                >
-                                  <UnlinkIcon />
-                                </Button>
-                              ) : null}
-                              {displayedHistoricalThread ? (
-                                <Button
-                                  aria-label={`Delete Thread ${displayedHistoricalThread.title}`}
-                                  disabled={pending || isArchived}
-                                  onClick={() => onDeleteThread(historicalAssignment.threadId)}
-                                  size="icon-xs"
-                                  type="button"
-                                  variant="ghost"
-                                >
-                                  <Trash2Icon />
-                                </Button>
-                              ) : null}
-                              {supportsSettlement && displayedHistoricalThread ? (
-                                <WorkbenchThreadSettlementButton
-                                  disabled={
-                                    pending || isArchived || historicalArchivedThread !== undefined
-                                  }
-                                  onClick={() =>
-                                    void toggleThreadSettlement(displayedHistoricalThread)
-                                  }
-                                  pending={
-                                    settlementPendingThreadId === displayedHistoricalThread.id
-                                  }
-                                  settled={displayedHistoricalThread.settledOverride === "settled"}
-                                  title={displayedHistoricalThread.title}
-                                />
+                                <div className="relative z-10 flex basis-full flex-wrap items-center gap-2 ps-11">
+                                  <Button
+                                    aria-label={`Unlink Thread ${displayedHistoricalThread.title}`}
+                                    disabled={pending || isArchived}
+                                    onClick={() => onUnlinkThread(historicalAssignment.threadId)}
+                                    size="icon-xs"
+                                    title="Unlink Thread from Ticket"
+                                    type="button"
+                                    variant="ghost"
+                                  >
+                                    <UnlinkIcon />
+                                  </Button>
+                                  {supportsSettlement ? (
+                                    <WorkbenchThreadSettlementButton
+                                      disabled={
+                                        pending ||
+                                        isArchived ||
+                                        historicalArchivedThread !== undefined
+                                      }
+                                      onClick={() =>
+                                        void toggleThreadSettlement(displayedHistoricalThread)
+                                      }
+                                      pending={
+                                        settlementPendingThreadId === displayedHistoricalThread.id
+                                      }
+                                      settled={
+                                        displayedHistoricalThread.settledOverride === "settled"
+                                      }
+                                      title={displayedHistoricalThread.title}
+                                    />
+                                  ) : null}
+                                  <Button
+                                    aria-label={`Delete Thread ${displayedHistoricalThread.title}`}
+                                    disabled={pending || isArchived}
+                                    onClick={() => onDeleteThread(historicalAssignment.threadId)}
+                                    size="icon-xs"
+                                    type="button"
+                                    variant="ghost"
+                                  >
+                                    <Trash2Icon />
+                                  </Button>
+                                </div>
                               ) : null}
                             </div>
                           );
@@ -2195,6 +2209,7 @@ export function WorkbenchTicketDetail({
             </section>
 
             <WorkbenchTicketPullRequests
+              onOpenThread={onOpenAssignedThread}
               environmentId={environmentId}
               ticketKey={jiraIssueLink?.issue.key ?? null}
               workspaceRepositoryProjectIds={linkedProjects.map((project) => project.id)}
@@ -2906,7 +2921,7 @@ function WorkbenchThreadOpenButton({
   return (
     <button
       aria-label={ariaLabel}
-      className="group flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left text-sm outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring enabled:after:absolute enabled:after:inset-0 enabled:after:content-[''] disabled:cursor-default disabled:opacity-50"
+      className="group relative flex min-w-0 flex-1 basis-full cursor-pointer items-start gap-3 text-left text-sm outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring enabled:after:absolute enabled:after:inset-0 enabled:after:content-[''] disabled:cursor-default disabled:opacity-50"
       disabled={disabled}
       onClick={onClick}
       type="button"
@@ -2915,23 +2930,29 @@ function WorkbenchThreadOpenButton({
         <ThreadIcon aria-hidden className="size-4 text-muted-foreground" />
       </span>
       <span className="min-w-0 flex-1">
-        <WorkbenchThreadTitle className="relative z-10 block truncate font-medium" title={title} />
-        <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
-          {statusDotClassName ? (
-            <span aria-hidden className={`size-2 shrink-0 rounded-full ${statusDotClassName}`} />
-          ) : null}
-          <span>{stateLabel}</span>
-          {modelLabel ? (
-            <>
-              <span aria-hidden>·</span>
-              <span className="min-w-0 break-words [overflow-wrap:anywhere]">{modelLabel}</span>
-            </>
-          ) : null}
-          {recencyLabel ? (
-            <>
-              <span aria-hidden>·</span>
-              <span className="shrink-0">{recencyLabel}</span>
-            </>
+        <WorkbenchThreadTitle
+          className="relative z-10 line-clamp-2 break-words font-medium [overflow-wrap:anywhere]"
+          title={title}
+        />
+        <span className="mt-1 flex min-w-0 flex-col gap-0.5 text-xs text-muted-foreground">
+          <span className="flex min-w-0 items-center gap-1.5">
+            {statusDotClassName ? (
+              <span aria-hidden className={`size-2 shrink-0 rounded-full ${statusDotClassName}`} />
+            ) : null}
+            <span className="min-w-0 break-words [overflow-wrap:anywhere]">{stateLabel}</span>
+          </span>
+          {modelLabel || recencyLabel ? (
+            <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px]">
+              {modelLabel ? (
+                <span className="min-w-0 break-words [overflow-wrap:anywhere]">{modelLabel}</span>
+              ) : null}
+              {recencyLabel ? (
+                <span className="shrink-0 whitespace-nowrap">
+                  {modelLabel ? <span aria-hidden>· </span> : null}
+                  {recencyLabel}
+                </span>
+              ) : null}
+            </span>
           ) : null}
         </span>
       </span>

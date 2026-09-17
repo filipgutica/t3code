@@ -1,12 +1,14 @@
 import { useAtomValue } from "@effect/atom-react";
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, type ThreadId } from "@t3tools/contracts";
 import { changeRequestRepositoryUrl } from "@t3tools/shared/changeRequestUrl";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { RefreshCwIcon } from "lucide-react";
+import { MessageSquareIcon, RefreshCwIcon } from "lucide-react";
 
 import { Button } from "../components/ui/button";
+import { Badge } from "../components/ui/badge";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { usePullRequestList } from "../state/pullRequests";
 import { formatEnvironmentQueryError } from "../state/query";
 import { vcsEnvironment } from "../state/vcs";
@@ -49,11 +51,13 @@ export function WorkbenchTicketPullRequests({
   workspaceRepositoryProjectIds,
   pullRequests,
   checkouts,
+  onOpenThread,
 }: {
   readonly environmentId: EnvironmentId;
   readonly ticketKey: string | null;
   readonly workspaceRepositoryProjectIds: ReadonlyArray<ProjectId>;
   readonly pullRequests: ReadonlyArray<WorkbenchTicketPullRequest>;
+  readonly onOpenThread: (threadId: ThreadId) => void;
   readonly checkouts: ReadonlyArray<{
     readonly projectId: ProjectId;
     readonly title: string;
@@ -126,7 +130,7 @@ export function WorkbenchTicketPullRequests({
         ) : null}
       </div>
       <div className="space-y-2 px-3 py-2.5">
-        {rows.map(({ pullRequest, threadTitle, matchesTicket }) => {
+        {rows.map(({ pullRequest, threadId, threadTitle, matchesTicket }) => {
           const repositoryUrl = changeRequestRepositoryUrl(pullRequest.url);
           return (
             <div key={pullRequest.url.toLowerCase()} className="min-w-0">
@@ -145,16 +149,33 @@ export function WorkbenchTicketPullRequests({
                   pullRequest.repository
                 )}
               </p>
-              {matchesTicket ? (
-                <p className="break-words px-3 text-xs leading-5 text-muted-foreground">
-                  Mentions {ticketKey}
-                </p>
-              ) : null}
-              {threadTitle || !matchesTicket ? (
-                <p className="break-words px-3 text-xs leading-5 text-muted-foreground">
-                  {threadTitle ? `Linked through thread: ${threadTitle}` : "Ticket workspace"}
-                </p>
-              ) : null}
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 px-3 pb-1">
+                {matchesTicket ? <Badge variant="secondary">Mentions {ticketKey}</Badge> : null}
+                {threadId !== null && threadTitle !== null ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Badge
+                          render={<button type="button" />}
+                          variant="outline"
+                          size="control"
+                          className="max-w-full shrink"
+                          aria-label={`Open linked Thread: ${threadTitle}`}
+                          onClick={() => onOpenThread(threadId)}
+                        />
+                      }
+                    >
+                      <MessageSquareIcon />
+                      <span className="min-w-0 truncate">Linked Thread</span>
+                    </TooltipTrigger>
+                    <TooltipPopup className="max-w-72 break-words">
+                      Linked through thread: {threadTitle}
+                    </TooltipPopup>
+                  </Tooltip>
+                ) : !matchesTicket ? (
+                  <Badge variant="secondary">Ticket workspace</Badge>
+                ) : null}
+              </div>
             </div>
           );
         })}
