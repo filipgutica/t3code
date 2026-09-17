@@ -19,7 +19,7 @@ env:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 35
     outputs:
       needed: ${{ steps.pending.outputs.needed }}
       product_sha: ${{ steps.pending.outputs.product_sha }}
@@ -65,7 +65,7 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git switch -c "$SYNC_BRANCH"
-          git merge --no-edit upstream/main
+          git merge --no-edit --no-ff upstream/main
 
       - name: Setup Vite+
         if: steps.pending.outputs.needed == 'true'
@@ -98,16 +98,36 @@ jobs:
       - name: Verify Workbench overlay
         if: steps.pending.outputs.needed == 'true'
         run: |
+          vp lint --report-unused-disable-directives
+          vp fmt --check
           vp run --filter @t3tools/workbench typecheck
           vp run --filter @t3tools/workbench test
           vp run --filter @t3tools/workbench quality
-          vp test run packages/contracts/src/workbench.test.ts apps/server/src/workbench apps/server/src/auth/RpcAuthorization.test.ts apps/web/src/workbench
+          vp test run packages/contracts/src/workbench.test.ts apps/server/src/workbench apps/server/src/auth/RpcAuthorization.test.ts apps/server/src/orchestration/ThreadSettlementReactor.test.ts apps/web/src/workbench scripts/workbench-upstream-sync-merge.test.ts
           vp run --filter @t3tools/contracts typecheck
           vp run --filter t3 typecheck
           vp run --filter @t3tools/web typecheck
+          vp run --filter @t3tools/scripts typecheck
           vp run --filter @t3tools/desktop ensure:electron
           vp run build:desktop
           xvfb-run -a vp run --filter @t3tools/desktop smoke-test
+
+      - name: Install Chromium for Workbench lifecycle
+        if: steps.pending.outputs.needed == 'true'
+        working-directory: scripts
+        run: vp exec playwright install --with-deps chromium
+
+      - name: Verify Workbench lifecycle
+        if: steps.pending.outputs.needed == 'true'
+        working-directory: scripts
+        env:
+          T3CODE_BUNDLED_DEV: "1"
+        run: >-
+          vp exec playwright test
+          --config workbench-regression/playwright.config.ts
+          planning.spec.ts
+          threads.spec.ts
+          ticket-workspace.spec.ts
 
       - name: Bundle the verified merge
         id: bundle
@@ -116,6 +136,10 @@ jobs:
           PRODUCT_SHA: ${{ steps.pending.outputs.product_sha }}
         run: |
           git diff --exit-code HEAD
+          read -r first_parent second_parent extra <<< "$(git show -s --format='%P' HEAD)"
+          test "$first_parent" = "$PRODUCT_SHA"
+          test -n "$second_parent"
+          test -z "${extra:-}"
           echo "verified_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           git bundle create "$RUNNER_TEMP/verified-sync.bundle" "$SYNC_BRANCH" "^$PRODUCT_SHA"
 
@@ -152,20 +176,72 @@ jobs:
           name: verified-upstream-sync
           path: ${{ runner.temp }}
 
+      - name: Setup Node for merge validation
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+
       - name: Publish the verified merge
         run: |
+          set -euo pipefail
           test "$(git rev-parse HEAD)" = "$PRODUCT_SHA"
           git fetch "$RUNNER_TEMP/verified-sync.bundle" "$SYNC_BRANCH"
           test "$(git rev-parse FETCH_HEAD)" = "$VERIFIED_SHA"
           git merge-base --is-ancestor "$PRODUCT_SHA" "$VERIFIED_SHA"
-          git push --force-with-lease origin "$VERIFIED_SHA:refs/heads/$SYNC_BRANCH"
+          product_remote_sha="$(git ls-remote --refs origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
+          test "$product_remote_sha" = "$PRODUCT_SHA"
 
-      - name: Open sync pull request
-        run: |
-          if [[ -z "$(gh pr list --base "$PRODUCT_BRANCH" --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number // empty')" ]]; then
+          sync_remote_sha="$(git ls-remote --refs origin "refs/heads/$SYNC_BRANCH" | awk '{print $1}')"
+          if [[ -n "$sync_remote_sha" ]]; then
+            git push --force-with-lease="refs/heads/$SYNC_BRANCH:$sync_remote_sha" origin "$VERIFIED_SHA:refs/heads/$SYNC_BRANCH"
+          else
+            git push --force-with-lease="refs/heads/$SYNC_BRANCH:" origin "$VERIFIED_SHA:refs/heads/$SYNC_BRANCH"
+          fi
+
+          pr_number="$(gh pr list --repo "$GITHUB_REPOSITORY" --base "$PRODUCT_BRANCH" --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number // empty')"
+          if [[ -z "$pr_number" ]]; then
             gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
               --base "$PRODUCT_BRANCH" \
               --head "$SYNC_BRANCH" \
               --title "chore: sync T3 Code upstream" \
-              --body "Automated merge of pingdotgg/t3code main into the Workbench product branch. Focused Workbench tests, typechecks, desktop build, and desktop smoke passed before this PR was opened. Merge this PR with a merge commit, never squash or rebase, to preserve upstream ancestry for future syncs."
+              --body "Automated merge of pingdotgg/t3code main into the Workbench product branch. Focused Workbench tests, typechecks, desktop build, and desktop smoke passed before this PR was opened. This workflow merges only the exact verified head with a merge commit, never squash or rebase, to preserve upstream ancestry for future syncs." \
+              > /dev/null
+            pr_number="$(gh pr list --repo "$GITHUB_REPOSITORY" --base "$PRODUCT_BRANCH" --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number // empty')"
           fi
+          test -n "$pr_number"
+
+          product_remote_sha="$(git ls-remote --refs origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
+          test "$product_remote_sha" = "$PRODUCT_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number" > "$RUNNER_TEMP/sync-pr.json"
+          node scripts/workbench-upstream-sync-merge.ts \
+            --pr-json "$RUNNER_TEMP/sync-pr.json" \
+            --repository "$GITHUB_REPOSITORY" \
+            --product-branch "$PRODUCT_BRANCH" \
+            --sync-branch "$SYNC_BRANCH" \
+            --product-sha "$PRODUCT_SHA" \
+            --verified-sha "$VERIFIED_SHA"
+
+          # GitHub publishes the PR's conflict-checked merge commit at this
+          # ref. Use that exact commit so protected-branch rules see a real PR
+          # merge, while the normal non-force push rejects a moved base.
+          git fetch --no-tags origin "refs/pull/$pr_number/merge"
+          merge_sha="$(git rev-parse FETCH_HEAD)"
+          read -r first_parent second_parent extra <<< "$(git show -s --format='%P' "$merge_sha")"
+          test -z "${extra:-}"
+          test "$first_parent" = "$PRODUCT_SHA"
+          test "$second_parent" = "$VERIFIED_SHA"
+          test "$(git rev-parse "$merge_sha^{tree}")" = "$(git rev-parse "$VERIFIED_SHA^{tree}")"
+
+          # This is intentionally a normal update. If main changed after the
+          # base check, the ref update is rejected instead of merging an
+          # unverified base. Branch protection is also allowed to reject it.
+          git push origin "$merge_sha:refs/heads/$PRODUCT_BRANCH"
+
+          git fetch --no-tags origin "$PRODUCT_BRANCH"
+          git cat-file -e "$merge_sha^{commit}"
+          git merge-base --is-ancestor "$merge_sha" "origin/$PRODUCT_BRANCH"
+          read -r first_parent second_parent extra <<< "$(git show -s --format='%P' "$merge_sha")"
+          test -z "${extra:-}"
+          test "$first_parent" = "$PRODUCT_SHA"
+          test "$second_parent" = "$VERIFIED_SHA"

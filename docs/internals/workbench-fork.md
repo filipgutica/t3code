@@ -95,9 +95,9 @@ node scripts/workbench-upstream-sync.ts --product main --upstream upstream/main
 
 The command is read-only. It reports ahead/behind counts, files changed by both sides since their merge base, and whether Git can synthesize a clean merge tree.
 
-`.github/workflows/workbench-upstream-sync.yml` runs the same preview hourly, at minute 17. When upstream has new commits, a read-only job merges `upstream/main` and regenerates the lockfile. It installs with the lockfile frozen, runs the focused Workbench suite, builds the desktop app, and runs its smoke test. A Git bundle transfers the verified commit, including any lockfile correction, to a separate write-capable job. That job opens or updates one PR against the fork's default branch. A merge conflict or failed check leaves the product branch untouched.
+`.github/workflows/workbench-upstream-sync.yml` runs the same preview hourly, at minute 17. When upstream has new commits, a read-only job merges `upstream/main` and regenerates the lockfile. It installs with the lockfile frozen, runs the focused Workbench suite, builds the desktop app, runs its smoke test, and exercises the planning, Ticket Workspace, native Thread, and Ticket breadcrumb browser lifecycle. A Git bundle transfers the verified two-parent merge commit, including any lockfile correction, to a separate write-capable job. That job opens or updates one PR against the fork's default branch, validates the exact base and head, fetches GitHub's conflict-checked PR merge commit, and publishes that commit with an ordinary non-force update. Git rejects the update if the product branch advances with content outside the verified merge ancestry, while branch protection can still refuse the update; the sync PR remains available for review. Because a `GITHUB_TOKEN`-created PR does not start another workflow run, the sync job's focused gates are the verification boundary.
 
-Merge sync PRs with **Create a merge commit** or `gh pr merge --merge`. Squash and rebase merges discard the upstream ancestry, causing later syncs to revisit already-integrated changes. Set `SYNCED_UPSTREAM_SHA` to the exact upstream commit recorded by the sync. After merging, fetch the product branch and verify ancestry:
+If a sync PR needs manual review, merge it with **Create a merge commit** or `gh pr merge --merge`. Squash and rebase merges discard the upstream ancestry, causing later syncs to revisit already-integrated changes. Set `SYNCED_UPSTREAM_SHA` to the exact upstream commit recorded by the sync. After merging, fetch the product branch and verify ancestry:
 
 ```sh
 git fetch origin main
@@ -116,7 +116,7 @@ An upstream sync is acceptable when:
 2. Workbench contracts, store tests, authorization tests, and UI logic tests pass;
 3. contracts, server, and web typechecks pass;
 4. the desktop smoke test passes;
-5. a manual desktop pass can create a Workspace and Ticket, start its native Thread, and return through the ticket breadcrumb.
+5. the automated sync lifecycle creates or updates the sync PR, publishes the exact GitHub conflict-checked two-parent merge commit, and leaves the product branch unchanged when the base, head, or checks are stale; the browser lane covers Workspace and Ticket creation, native Thread start, and return through the Ticket breadcrumb, with a maintainer's manual desktop pass as an optional additional check.
 
 Treat new edits outside Workbench-owned directories as maintenance cost. Prefer an adapter or Workbench-owned module before adding another upstream integration file.
 
