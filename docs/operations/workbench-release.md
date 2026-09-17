@@ -8,9 +8,11 @@ workflow**.
 Workbench starts at version **0.0.1**, independently of the bundled upstream
 version. Enter the next Workbench version explicitly for later previews.
 
-Merging a pull request updates `main` without creating a release. Upstream sync
-pull requests follow the same manual merge process. The inherited upstream
-release workflow skips this fork.
+Merging a pull request updates `main` without creating a release. Verified
+upstream syncs update `main` automatically after their focused gates and
+conflict-checked base update; a stale or protected update remains an open PR
+for manual review.
+The inherited upstream release workflow skips this fork.
 
 Enter a commit SHA from `main` in **commit_sha** to release that checkpoint. For
 a merged PR, use its merge commit, not a commit from its feature branch. Leave

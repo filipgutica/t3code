@@ -75,6 +75,18 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
   await expect(
     page.getByText("Fix focus after creating a project", { exact: true }).first(),
   ).toBeVisible();
+  await page
+    .getByRole("link", {
+      name: "Back to Ticket Fix focus after creating a project in Workspace Orbit",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Fix focus after creating a project",
+      exact: true,
+    }),
+  ).toBeVisible();
 });
 
 test("R1 R3: multi-repository worktrees persist and reset refuses retained Threads", async ({
