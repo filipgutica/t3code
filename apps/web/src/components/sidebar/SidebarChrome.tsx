@@ -1,4 +1,4 @@
-import { ArrowLeftIcon, BlocksIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
@@ -29,6 +29,8 @@ import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPr
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUpdateArchitectureWarning, SidebarUpdatePill } from "./SidebarUpdatePill";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
+import { WorkbenchSidebarUtilityItem } from "~/workbench/WorkbenchSidebarUtilityItem";
+import { isWorkbenchSidebarPage } from "~/workbench/workbenchNavigation";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -142,7 +144,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             ? "usage"
             : location.pathname === "/pull-requests"
               ? "pull-requests"
-              : location.pathname === "/workbench"
+              : isWorkbenchSidebarPage(location.pathname)
                 ? "workbench"
                 : null,
   });
@@ -168,11 +170,6 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
   }, [closeMobileSidebar, navigate]);
-  const handleWorkbenchClick = useCallback(() => {
-    closeMobileSidebar();
-    void navigate({ to: "/workbench", search: {} });
-  }, [closeMobileSidebar, navigate]);
-
   const handleUsageClick = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
@@ -205,11 +202,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             label="Settings"
             onClick={handleSettingsClick}
           />
-          <SidebarUtilityItem
-            icon={<BlocksIcon />}
-            label="Agent Workbench"
-            onClick={handleWorkbenchClick}
-          />
+          <WorkbenchSidebarUtilityItem render={SidebarUtilityItem} />
           {pullRequestsSupported ? (
             <SidebarUtilityItem
               icon={<PullRequestGlyph.pullRequest />}

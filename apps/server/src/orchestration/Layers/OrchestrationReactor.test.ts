@@ -15,7 +15,6 @@ import * as ThreadPullRequestReactor from "../ThreadPullRequestReactor.ts";
 import { OrchestrationReactor } from "../Services/OrchestrationReactor.ts";
 import { makeOrchestrationReactor } from "./OrchestrationReactor.ts";
 import * as AgentAwarenessRelay from "../../relay/AgentAwarenessRelay.ts";
-import * as TicketExecutionReactor from "../../workbench/TicketExecutionReactor.ts";
 import { StorageCleanup } from "../../storageCleanup.ts";
 
 describe("OrchestrationReactor", () => {
@@ -33,16 +32,6 @@ describe("OrchestrationReactor", () => {
 
     runtime = ManagedRuntime.make(
       Layer.effect(OrchestrationReactor, makeOrchestrationReactor).pipe(
-        Layer.provideMerge(
-          Layer.succeed(TicketExecutionReactor.TicketExecutionReactor, {
-            start: () => {
-              started.push("ticket-execution-reactor");
-              return Effect.void;
-            },
-            drain: Effect.void,
-            drainThrough: () => Effect.void,
-          }),
-        ),
         Layer.provideMerge(
           Layer.succeed(StorageCleanup, {
             start: () => {
@@ -133,7 +122,6 @@ describe("OrchestrationReactor", () => {
     await Effect.runPromise(reactor.start().pipe(Scope.provide(scope)));
 
     expect(started).toEqual([
-      "ticket-execution-reactor",
       "provider-runtime-ingestion",
       "provider-command-reactor",
       "checkpoint-reactor",

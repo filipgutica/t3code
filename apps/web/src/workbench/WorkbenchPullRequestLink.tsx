@@ -1,15 +1,13 @@
-import { ExternalLinkIcon, GitPullRequestIcon } from "lucide-react";
+import { ExternalLinkIcon } from "lucide-react";
 import { ChangeRequestLinkOpenContext, useOpenChangeRequestLink } from "../lib/openPullRequestLink";
 import type { EnvironmentId, PullRequestRef, PullRequestState } from "@t3tools/contracts";
 import { lazy, Suspense, useState, type MouseEvent } from "react";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
-
-const pullRequestStateClass = {
-  open: "text-emerald-600 dark:text-emerald-300/90",
-  merged: "text-violet-600 dark:text-violet-300/90",
-  closed: "text-red-600 dark:text-red-300/90",
-} satisfies Record<PullRequestState, string>;
+import {
+  PULL_REQUEST_STATE_PRESENTATION,
+  PullRequestGlyph,
+} from "../components/pullRequest/pullRequestIcons";
 
 const WorkbenchPullRequestPanel = lazy(() =>
   import("./WorkbenchPullRequestPanel").then((module) => ({
@@ -39,9 +37,11 @@ export function WorkbenchPullRequestLink({
   const openChangeRequestLink = useOpenChangeRequestLink(undefined, undefined, setSelection);
   const label =
     pullRequest.title ?? pullRequest.repository ?? `Pull request #${pullRequest.number}`;
-  const stateClass = pullRequest.state
-    ? pullRequestStateClass[pullRequest.state]
-    : "text-muted-foreground";
+  const presentation = pullRequest.state
+    ? PULL_REQUEST_STATE_PRESENTATION[pullRequest.state]
+    : undefined;
+  const stateClass = presentation?.toneClassName ?? "text-muted-foreground";
+  const PullRequestIcon = presentation?.Icon ?? PullRequestGlyph.pullRequest;
   const openInWorkbench = (event: MouseEvent<HTMLAnchorElement>) => {
     openChangeRequestLink(event, pullRequest.url, undefined, environmentId);
   };
@@ -57,7 +57,7 @@ export function WorkbenchPullRequestLink({
         target="_blank"
       >
         <span className={`inline-flex items-center gap-1.5 leading-5 ${stateClass}`}>
-          <GitPullRequestIcon aria-hidden className="size-3.5 shrink-0" />
+          <PullRequestIcon aria-hidden className="size-3.5 shrink-0" />
           <span className="tabular-nums">#{pullRequest.number}</span>
         </span>
         <Tooltip>

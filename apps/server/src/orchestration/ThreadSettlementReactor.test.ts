@@ -49,6 +49,7 @@ import * as Path from "effect/Path";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import { ServerConfig } from "../config.ts";
 import * as StorageCleanup from "../storageCleanup.ts";
+import * as WorkbenchWorktreeOwnership from "../workbench/worktreeOwnership.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import { TerminalManager } from "../terminal/Manager.ts";
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
@@ -1559,6 +1560,7 @@ describe("storage cleanup", () => {
           const cleanup = yield* StorageCleanup.make.pipe(
             Effect.provide(
               Layer.mergeAll(
+                WorkbenchWorktreeOwnership.layer,
                 Layer.succeed(ServerSettingsService, settingsService),
                 Layer.succeed(FileSystem.FileSystem, {
                   ...fs,

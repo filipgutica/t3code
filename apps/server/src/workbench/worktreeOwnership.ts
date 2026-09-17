@@ -1,7 +1,10 @@
-import type * as Path from "effect/Path";
+import * as Path from "effect/Path";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import { WorkspaceCleanupPolicy } from "../workspace/WorkspaceCleanupPolicy.ts";
 
 /** Ticket lifecycle operations own this directory, even after a checkout changes branch. */
-export const isWorkbenchWorktreePath = ({
+const isWorkbenchWorktreePath = ({
   path,
   worktreesDir,
   worktreePath,
@@ -16,3 +19,14 @@ export const isWorkbenchWorktreePath = ({
     (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
   );
 };
+
+export const layer = Layer.effect(
+  WorkspaceCleanupPolicy,
+  Effect.gen(function* () {
+    const path = yield* Path.Path;
+    return {
+      canRemove: (input: { readonly worktreesDir: string; readonly worktreePath: string }) =>
+        Effect.succeed(!isWorkbenchWorktreePath({ path, ...input })),
+    };
+  }),
+);

@@ -35,7 +35,7 @@ import * as Settings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import { withWorkspaceLease } from "./workspace/workspaceLease.ts";
-import { isWorkbenchWorktreePath } from "./workbench/worktreeOwnership.ts";
+import { WorkspaceCleanupPolicy } from "./workspace/WorkspaceCleanupPolicy.ts";
 
 export class StorageCleanup extends Context.Service<
   StorageCleanup,
@@ -118,6 +118,7 @@ export const make = Effect.gen(function* () {
   const terminals = yield* TerminalManager.TerminalManager;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const cleanupPolicy = yield* WorkspaceCleanupPolicy;
   const liveTerminals = new Map<string, Map<string, TerminalSummary>>();
   const noteTerminal = (terminal: TerminalSummary) => {
     const threadTerminals =
@@ -215,7 +216,7 @@ export const make = Effect.gen(function* () {
       )
         continue;
       yield* Effect.gen(function* () {
-        if (isWorkbenchWorktreePath({ path, worktreesDir: root, worktreePath })) return;
+        if (!(yield* cleanupPolicy.canRemove({ worktreesDir: root, worktreePath }))) return;
         if (!inside(root, worktreePath) || !(yield* fs.exists(worktreePath))) return;
         if ((yield* fs.realPath(worktreePath)) !== worktreePath) return;
         if (yield* containsProjectRoot(worktreePath, [project, ...snapshot.projects])) return;
