@@ -1,4 +1,5 @@
 import type {
+  OrchestrationThreadShell,
   ProjectId,
   ThreadId,
   WorkbenchAssignment,
@@ -225,6 +226,49 @@ export function getActiveAssignmentsByTicket({
   return activeAssignments;
 }
 
+export interface WorkbenchTicketThreadSections {
+  readonly active: ReadonlyArray<WorkbenchAssignment>;
+  readonly history: ReadonlyArray<WorkbenchAssignment>;
+  readonly settled: ReadonlyArray<WorkbenchAssignment>;
+}
+
+/**
+ * Keeps native settled Threads out of a Ticket's active and historical lists.
+ * Missing Threads stay visible in their original section while the lookup is
+ * incomplete, so an assignment cannot disappear just because its shell is
+ * still loading.
+ */
+export function getWorkbenchTicketThreadSections({
+  assignments,
+  threadsById,
+  archivedThreadsById,
+}: {
+  readonly assignments: ReadonlyArray<WorkbenchAssignment>;
+  readonly threadsById: ReadonlyMap<ThreadId, Pick<OrchestrationThreadShell, "settledOverride">>;
+  readonly archivedThreadsById: ReadonlyMap<
+    ThreadId,
+    Pick<OrchestrationThreadShell, "settledOverride">
+  >;
+}): WorkbenchTicketThreadSections {
+  const active: WorkbenchAssignment[] = [];
+  const history: WorkbenchAssignment[] = [];
+  const settled: WorkbenchAssignment[] = [];
+
+  for (const assignment of assignments) {
+    const thread =
+      threadsById.get(assignment.threadId) ?? archivedThreadsById.get(assignment.threadId);
+    if (thread?.settledOverride === "settled") {
+      settled.push(assignment);
+    } else if (assignment.supersededAt === null) {
+      active.push(assignment);
+    } else {
+      history.push(assignment);
+    }
+  }
+
+  return { active, history, settled };
+}
+
 export function getVisibleWorkbenchAssignments(
   assignments: ReadonlyArray<WorkbenchAssignment>,
   liveThreadIds: ReadonlySet<ThreadId>,
@@ -424,11 +468,17 @@ export function getWorkbenchAgentPresentation({
   if (nativeLabel === "Working" || nativeLabel === "Connecting" || nativeLabel === "Monitoring") {
     return { label: "Working", dotClass: "bg-info", colorClass: "text-info-foreground" } as const;
   }
+  if (settledOverride === "settled")
+    return {
+      label: "Settled",
+      dotClass: "bg-muted-foreground/60",
+      colorClass: "text-muted-foreground",
+    } as const;
   if (sessionStatus === "error" || turnState === "error" || turnState === "interrupted")
     return needsInput;
-  if (turnState === "completed" && (settledOverride === "settled" || ticketStatus === "done"))
+  if (turnState === "completed" && ticketStatus === "done")
     return {
-      label: settledOverride === "settled" ? "Settled" : "Completed",
+      label: "Completed",
       dotClass: "bg-muted-foreground/60",
       colorClass: "text-muted-foreground",
     } as const;

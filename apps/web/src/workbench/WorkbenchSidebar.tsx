@@ -341,13 +341,18 @@ function WorkbenchSidebarNavigation({
           const ticketSections = ticketGroupsByWorkspace.get(workspace.id) ?? {
             active: [],
             done: [],
+            settled: [],
           };
           const activeTicketGroups = ticketSections.active;
           const doneTicketGroups = ticketSections.done;
+          const settledTicketGroups = ticketSections.settled;
           const hasArchivedTickets =
             workspace.id === selectedWorkspaceId && archivedTickets.length > 0;
           const hasDescendants =
-            activeTicketGroups.length > 0 || doneTicketGroups.length > 0 || hasArchivedTickets;
+            activeTicketGroups.length > 0 ||
+            doneTicketGroups.length > 0 ||
+            settledTicketGroups.length > 0 ||
+            hasArchivedTickets;
           const workspaceExpanded = expansion.workspaceId === workspace.id;
           const workspacePanelId = `workbench-sidebar-workspace-${workspace.id}`;
           const workspaceIsDestination =
@@ -401,15 +406,17 @@ function WorkbenchSidebarNavigation({
                         <WorkbenchSidebarTicketGroups
                           groups={activeTicketGroups}
                           isDone={false}
+                          isSettled={false}
                           onOpenThread={onOpenThread}
                           onSelectTicket={onSelectTicket}
-                          onToggleTicket={(ticketId, done) =>
+                          onToggleTicket={(ticketId, done, settled) =>
                             setExpansion((state) =>
                               reduceWorkbenchSidebarExpansion(state, {
                                 type: "toggleTicket",
                                 ticketId,
                                 workspaceId: workspace.id,
                                 done,
+                                settled,
                               }),
                             )
                           }
@@ -441,6 +448,7 @@ function WorkbenchSidebarNavigation({
                                 ticketId,
                                 workspaceId: workspace.id,
                                 done,
+                                settled: false,
                               }),
                             )
                           }
@@ -450,6 +458,40 @@ function WorkbenchSidebarNavigation({
                           expansion={expansion}
                           workspaceId={workspace.id}
                           panelId={`workbench-sidebar-done-${workspace.id}`}
+                        />
+                      ) : null}
+                      {settledTicketGroups.length > 0 ? (
+                        <WorkbenchSidebarSettledThreads
+                          groups={settledTicketGroups}
+                          expanded={expansion.settled}
+                          onOpenThread={onOpenThread}
+                          onSelectTicket={onSelectTicket}
+                          onToggle={() =>
+                            setExpansion((state) =>
+                              reduceWorkbenchSidebarExpansion(state, {
+                                type: "toggleSettled",
+                                workspaceId: workspace.id,
+                              }),
+                            )
+                          }
+                          onToggleTicket={(ticketId, done, settled) =>
+                            setExpansion((state) =>
+                              reduceWorkbenchSidebarExpansion(state, {
+                                type: "toggleTicket",
+                                ticketId,
+                                workspaceId: workspace.id,
+                                done,
+                                settled,
+                              }),
+                            )
+                          }
+                          selectedEpicId={selectedEpicId}
+                          selectedTicketId={selectedTicketId}
+                          contextThreadId={contextThreadId}
+                          expansion={expansion}
+                          workspaceId={workspace.id}
+                          panelId={`workbench-sidebar-settled-${workspace.id}`}
+                          workspaceTitle={workspace.title}
                         />
                       ) : null}
                       {hasArchivedTickets ? (
@@ -488,12 +530,17 @@ type WorkbenchSidebarTicketGroupsProps = {
   readonly expansion: WorkbenchSidebarExpansion;
   readonly groups: ReadonlyArray<WorkbenchSidebarTicketGroup>;
   readonly isDone: boolean;
+  readonly isSettled: boolean;
   readonly onOpenThread: (thread: {
     readonly environmentId: EnvironmentId;
     readonly id: ThreadId;
   }) => void;
   readonly onSelectTicket: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
-  readonly onToggleTicket: (ticketId: WorkbenchTicketId, isDone: boolean) => void;
+  readonly onToggleTicket: (
+    ticketId: WorkbenchTicketId,
+    isDone: boolean,
+    isSettled: boolean,
+  ) => void;
   readonly selectedEpicId: WorkbenchEpicId | undefined;
   readonly selectedTicketId: WorkbenchTicketId | undefined;
   readonly workspaceId: WorkbenchProjectId;
@@ -504,6 +551,7 @@ function WorkbenchSidebarTicketGroups({
   expansion,
   groups,
   isDone,
+  isSettled,
   onOpenThread,
   onSelectTicket,
   onToggleTicket,
@@ -519,6 +567,7 @@ function WorkbenchSidebarTicketGroups({
           expansion={expansion}
           group={group}
           isDone={isDone}
+          isSettled={isSettled}
           key={group.ticket.id}
           onOpenThread={onOpenThread}
           onSelectTicket={onSelectTicket}
@@ -537,6 +586,7 @@ function WorkbenchSidebarTicketGroupRow({
   expansion,
   group,
   isDone,
+  isSettled,
   onOpenThread,
   onSelectTicket,
   onToggleTicket,
@@ -547,8 +597,13 @@ function WorkbenchSidebarTicketGroupRow({
   readonly group: WorkbenchSidebarTicketGroup;
 }) {
   const { ticket, threads } = group;
-  const ticketExpanded = expansion.ticketId === ticket.id && expansion.done === isDone;
-  const ticketPanelId = `workbench-sidebar-ticket-${ticket.id}`;
+  const ticketExpanded =
+    expansion.ticketId === ticket.id &&
+    expansion.done === isDone &&
+    expansion.settled === isSettled;
+  const ticketPanelId = `workbench-sidebar-ticket-${ticket.id}-${
+    isSettled ? "settled" : isDone ? "done" : "active"
+  }`;
   const ticketIsDestination =
     ticket.id === selectedTicketId && contextThreadId === undefined && selectedEpicId === undefined;
 
@@ -560,7 +615,7 @@ function WorkbenchSidebarTicketGroupRow({
             controls={ticketPanelId}
             expanded={ticketExpanded}
             label={`${ticketExpanded ? "Collapse" : "Expand"} ${ticket.title}`}
-            onToggle={() => onToggleTicket(ticket.id, isDone)}
+            onToggle={() => onToggleTicket(ticket.id, isDone, isSettled)}
           />
         ) : (
           <span aria-hidden className="size-7 shrink-0" />
@@ -627,7 +682,7 @@ function WorkbenchSidebarDoneTickets({
   selectedEpicId,
   selectedTicketId,
   workspaceId,
-}: Omit<WorkbenchSidebarTicketGroupsProps, "isDone"> & {
+}: Omit<WorkbenchSidebarTicketGroupsProps, "isDone" | "isSettled"> & {
   readonly expanded: boolean;
   readonly onToggle: () => void;
   readonly panelId: string;
@@ -655,6 +710,67 @@ function WorkbenchSidebarDoneTickets({
             expansion={expansion}
             groups={groups}
             isDone
+            isSettled={false}
+            onOpenThread={onOpenThread}
+            onSelectTicket={onSelectTicket}
+            onToggleTicket={onToggleTicket}
+            selectedEpicId={selectedEpicId}
+            selectedTicketId={selectedTicketId}
+            workspaceId={workspaceId}
+          />
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function WorkbenchSidebarSettledThreads({
+  contextThreadId,
+  expansion,
+  expanded,
+  groups,
+  onOpenThread,
+  onSelectTicket,
+  onToggle,
+  onToggleTicket,
+  panelId,
+  selectedEpicId,
+  selectedTicketId,
+  workspaceId,
+  workspaceTitle,
+}: Omit<WorkbenchSidebarTicketGroupsProps, "isDone" | "isSettled"> & {
+  readonly expanded: boolean;
+  readonly onToggle: () => void;
+  readonly panelId: string;
+  readonly workspaceTitle: string;
+}) {
+  const threadCount = groups.reduce((count, group) => count + group.threads.length, 0);
+
+  return (
+    <section aria-label={`Settled Threads in ${workspaceTitle}`} className="mt-2">
+      <button
+        aria-label={`${expanded ? "Collapse" : "Expand"} Settled Threads in ${workspaceTitle}`}
+        aria-controls={panelId}
+        aria-expanded={expanded}
+        className="mx-0.5 flex h-8 w-[calc(100%-0.25rem)] cursor-pointer items-center gap-2 rounded-[var(--control-radius)] px-2 text-left text-xs font-medium text-sidebar-muted-foreground/60 outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={onToggle}
+        type="button"
+      >
+        <span className="shrink-0">Settled ({threadCount})</span>
+        <span aria-hidden className="h-px min-w-2 flex-1 bg-sidebar-border/60" />
+        <ChevronDownIcon
+          aria-hidden
+          className={`size-3 shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`}
+        />
+      </button>
+      <div aria-label={`${workspaceTitle} Settled Thread list`} hidden={!expanded} id={panelId}>
+        {expanded ? (
+          <WorkbenchSidebarTicketGroups
+            contextThreadId={contextThreadId}
+            expansion={expansion}
+            groups={groups}
+            isDone={false}
+            isSettled
             onOpenThread={onOpenThread}
             onSelectTicket={onSelectTicket}
             onToggleTicket={onToggleTicket}

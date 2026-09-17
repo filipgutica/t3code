@@ -31,6 +31,7 @@ export interface WorkbenchSidebarTicketGroup {
 export interface WorkbenchSidebarTicketSections {
   readonly active: ReadonlyArray<WorkbenchSidebarTicketGroup>;
   readonly done: ReadonlyArray<WorkbenchSidebarTicketGroup>;
+  readonly settled: ReadonlyArray<WorkbenchSidebarTicketGroup>;
 }
 
 export interface WorkbenchSidebarExpansion {
@@ -38,6 +39,7 @@ export interface WorkbenchSidebarExpansion {
   readonly ticketId: WorkbenchTicketId | null;
   readonly done: boolean;
   readonly archived: boolean;
+  readonly settled: boolean;
 }
 
 export type WorkbenchSidebarExpansionAction =
@@ -50,9 +52,14 @@ export type WorkbenchSidebarExpansionAction =
       readonly workspaceId: WorkbenchProjectId;
       readonly ticketId: WorkbenchTicketId;
       readonly done: boolean;
+      readonly settled: boolean;
     }
   | {
       readonly type: "toggleArchived";
+      readonly workspaceId: WorkbenchProjectId;
+    }
+  | {
+      readonly type: "toggleSettled";
       readonly workspaceId: WorkbenchProjectId;
     }
   | {
@@ -74,6 +81,7 @@ export function getWorkbenchSidebarExpansionDefaults({
     ticketId: ticketId ?? null,
     done: ticketIsDone,
     archived: false,
+    settled: false,
   };
 }
 
@@ -84,17 +92,27 @@ export function reduceWorkbenchSidebarExpansion(
   switch (action.type) {
     case "toggleWorkspace":
       return action.workspaceId === state.workspaceId
-        ? { workspaceId: null, ticketId: null, done: false, archived: false }
-        : { workspaceId: action.workspaceId, ticketId: null, done: false, archived: false };
+        ? { workspaceId: null, ticketId: null, done: false, archived: false, settled: false }
+        : {
+            workspaceId: action.workspaceId,
+            ticketId: null,
+            done: false,
+            archived: false,
+            settled: false,
+          };
     case "toggleTicket":
       return {
         workspaceId: action.workspaceId,
         ticketId:
-          action.workspaceId === state.workspaceId && action.ticketId === state.ticketId
+          action.workspaceId === state.workspaceId &&
+          action.ticketId === state.ticketId &&
+          action.done === state.done &&
+          action.settled === state.settled
             ? null
             : action.ticketId,
         done: action.done,
         archived: false,
+        settled: action.settled,
       };
     case "toggleArchived":
       return {
@@ -102,6 +120,15 @@ export function reduceWorkbenchSidebarExpansion(
         ticketId: null,
         done: false,
         archived: action.workspaceId === state.workspaceId ? !state.archived : true,
+        settled: false,
+      };
+    case "toggleSettled":
+      return {
+        workspaceId: action.workspaceId,
+        ticketId: null,
+        done: false,
+        archived: false,
+        settled: action.workspaceId === state.workspaceId ? !state.settled : true,
       };
     case "toggleDone":
       return {
@@ -109,13 +136,15 @@ export function reduceWorkbenchSidebarExpansion(
         ticketId: null,
         done: action.workspaceId === state.workspaceId ? !state.done : true,
         archived: false,
+        settled: false,
       };
   }
 }
 
 /**
- * Selects the live native Threads that give a Workbench Ticket a sidebar row.
- * The selected Ticket is retained even when its assignment has no live shell,
+ * Groups live native Threads by Ticket status and settlement lifecycle. Settled
+ * Threads are kept in a separate workspace section so active groups never mix
+ * them. The selected Ticket is retained when its assignment has no live shell,
  * which keeps the current Ticket discoverable while its Thread lookup catches up.
  */
 export function getWorkbenchSidebarTicketGroups({
@@ -145,22 +174,29 @@ export function getWorkbenchSidebarTicketGroups({
     }
   }
 
-  const activeAssignmentsByTicket = new Map<WorkbenchTicketId, WorkbenchAssignment[]>();
+  const assignmentsByTicket = new Map<WorkbenchTicketId, WorkbenchAssignment[]>();
   for (const assignment of assignments) {
-    if (assignment.supersededAt !== null || !liveThreadsById.has(assignment.threadId)) continue;
-    const ticketAssignments = activeAssignmentsByTicket.get(assignment.ticketId) ?? [];
+    const thread = liveThreadsById.get(assignment.threadId);
+    if (thread === undefined) continue;
+    if (assignment.supersededAt !== null && thread.settledOverride !== "settled") continue;
+    const ticketAssignments = assignmentsByTicket.get(assignment.ticketId) ?? [];
     ticketAssignments.push(assignment);
-    activeAssignmentsByTicket.set(assignment.ticketId, ticketAssignments);
+    assignmentsByTicket.set(assignment.ticketId, ticketAssignments);
   }
 
   const groups = new Map<
     WorkbenchProjectId,
-    { active: WorkbenchSidebarTicketGroup[]; done: WorkbenchSidebarTicketGroup[] }
+    {
+      active: WorkbenchSidebarTicketGroup[];
+      done: WorkbenchSidebarTicketGroup[];
+      settled: WorkbenchSidebarTicketGroup[];
+    }
   >();
   for (const ticket of tickets) {
     if (ticket.archivedAt != null && ticket.id !== selectedTicketId) continue;
 
-    const ticketAssignments = activeAssignmentsByTicket.get(ticket.id) ?? [];
+    const ticketAssignments = assignmentsByTicket.get(ticket.id) ?? [];
+    const seenThreadIds = new Set<ThreadId>();
     const ticketThreads = ticketAssignments
       .toSorted(
         (left, right) =>
@@ -168,17 +204,33 @@ export function getWorkbenchSidebarTicketGroups({
       )
       .flatMap(({ threadId }) => {
         const thread = liveThreadsById.get(threadId);
-        return thread === undefined ? [] : [thread];
+        if (thread === undefined || seenThreadIds.has(thread.id)) return [];
+        seenThreadIds.add(thread.id);
+        return [thread];
       });
-    const workspaceTickets = groups.get(ticket.projectId) ?? { active: [], done: [] };
+    const workspaceTickets = groups.get(ticket.projectId) ?? {
+      active: [],
+      done: [],
+      settled: [],
+    };
+    const activeThreads = ticketThreads.filter((thread) => thread.settledOverride !== "settled");
+    const settledThreads = ticketThreads.filter((thread) => thread.settledOverride === "settled");
     if (ticket.status === "done" && ticket.archivedAt == null) {
-      workspaceTickets.done.push({ ticket, threads: ticketThreads });
+      workspaceTickets.done.push({ ticket, threads: activeThreads });
     } else if (
-      ticketThreads.some((thread) => thread.settledOverride !== "settled") ||
-      ticket.id === selectedTicketId
+      activeThreads.length > 0 ||
+      (ticket.id === selectedTicketId && selectedThreadId === undefined)
     ) {
-      workspaceTickets.active.push({ ticket, threads: ticketThreads });
-    } else {
+      workspaceTickets.active.push({ ticket, threads: activeThreads });
+    }
+    if (settledThreads.length > 0) {
+      workspaceTickets.settled.push({ ticket, threads: settledThreads });
+    }
+    if (
+      workspaceTickets.active.length === 0 &&
+      workspaceTickets.done.length === 0 &&
+      workspaceTickets.settled.length === 0
+    ) {
       continue;
     }
     groups.set(ticket.projectId, workspaceTickets);

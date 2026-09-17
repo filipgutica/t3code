@@ -20,6 +20,7 @@ import {
   getWorkbenchTicketSummaryActionLabel,
   getWorkbenchTicketSummaryPresentation,
   getWorkbenchTicketTemplate,
+  getWorkbenchTicketThreadSections,
   getWorkbenchThreadPresentation,
   getWorkbenchAgentPresentation,
   getWorkbenchTicketStatusMoves,
@@ -473,6 +474,50 @@ describe("Workbench ticket helpers", () => {
     expect(getAssignmentsForTicket([historical, active], ticketId)).toEqual([active, historical]);
   });
 
+  it("moves existing settled Threads into their own section", () => {
+    const ticketId = WorkbenchTicketId.make("ticket-settled");
+    const active = {
+      id: WorkbenchAssignmentId.make("active"),
+      ticketId,
+      threadId: ThreadId.make("active-thread"),
+      createdAt: "2026-09-03T00:00:00.000Z",
+      supersededAt: null,
+    } as const;
+    const settled = {
+      ...active,
+      id: WorkbenchAssignmentId.make("settled"),
+      threadId: ThreadId.make("settled-thread"),
+    } as const;
+    const historicalSettled = {
+      ...active,
+      id: WorkbenchAssignmentId.make("historical-settled"),
+      threadId: ThreadId.make("historical-settled-thread"),
+      supersededAt: "2026-09-04T00:00:00.000Z",
+    } as const;
+    const historicalMissing = {
+      ...active,
+      id: WorkbenchAssignmentId.make("historical-missing"),
+      threadId: ThreadId.make("historical-missing-thread"),
+      supersededAt: "2026-09-05T00:00:00.000Z",
+    } as const;
+
+    expect(
+      getWorkbenchTicketThreadSections({
+        assignments: [active, settled, historicalSettled, historicalMissing],
+        threadsById: new Map([
+          [active.threadId, { settledOverride: null }],
+          [settled.threadId, { settledOverride: "settled" as const }],
+          [historicalSettled.threadId, { settledOverride: "settled" as const }],
+        ]),
+        archivedThreadsById: new Map(),
+      }),
+    ).toEqual({
+      active: [active],
+      history: [historicalMissing],
+      settled: [settled, historicalSettled],
+    });
+  });
+
   it("chooses the newest available active Thread independent of assignment order", () => {
     const ticketId = WorkbenchTicketId.make("ticket-one");
     const older = {
@@ -653,7 +698,7 @@ describe("Workbench ticket helpers", () => {
 
 describe("Workbench agent activity", () => {
   const idle = { nativeLabel: null, sessionStatus: null, turnState: null };
-  it("settles completed activity for Done Tickets and native settled Threads", () => {
+  it("shows native settlement independently of the last turn", () => {
     expect(
       getWorkbenchAgentPresentation({ ...idle, turnState: "completed", ticketStatus: "done" })
         ?.label,
@@ -662,6 +707,30 @@ describe("Workbench agent activity", () => {
       getWorkbenchAgentPresentation({ ...idle, turnState: "completed", settledOverride: "settled" })
         ?.label,
     ).toBe("Settled");
+    expect(getWorkbenchAgentPresentation({ ...idle, settledOverride: "settled" })?.label).toBe(
+      "Settled",
+    );
+    expect(
+      getWorkbenchAgentPresentation({
+        ...idle,
+        turnState: "interrupted",
+        settledOverride: "settled",
+      })?.label,
+    ).toBe("Settled");
+    expect(
+      getWorkbenchAgentPresentation({
+        ...idle,
+        nativeLabel: "Working",
+        settledOverride: "settled",
+      })?.label,
+    ).toBe("Working");
+    expect(
+      getWorkbenchAgentPresentation({
+        ...idle,
+        nativeLabel: "Pending Approval",
+        settledOverride: "settled",
+      })?.label,
+    ).toBe("Waiting for input");
     expect(
       getWorkbenchAgentPresentation({ ...idle, nativeLabel: "Working", ticketStatus: "done" })
         ?.label,
