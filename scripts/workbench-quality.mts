@@ -20,6 +20,11 @@ const diff = NodeChildProcess.execFileSync(
   { cwd: root, encoding: "utf8" },
 );
 
+if (!diff.trim()) {
+  console.log("No Workbench changes to audit.");
+  NodeProcess.exit(0);
+}
+
 const result = NodeChildProcess.spawnSync(
   "fallow",
   [

@@ -55,11 +55,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
+          # Fallow checks out the base in a temporary worktree. Avoid a partial
+          # clone: that checkout would lazily fetch the vendored blobs one by one.
           fetch-depth: 0
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1
