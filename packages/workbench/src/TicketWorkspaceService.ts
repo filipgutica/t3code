@@ -127,6 +127,7 @@ interface ValidatedRepository {
   readonly branchName: string | undefined;
   readonly refName: string;
   readonly newRefName: string | undefined;
+  readonly baseRefName: string | undefined;
   readonly needsCreation: boolean;
 }
 
@@ -612,6 +613,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         branchName: observedBranch.value,
         refName: observedBranch.value,
         newRefName: undefined,
+        baseRefName: undefined,
         needsCreation: false,
       } satisfies ValidatedRepository;
     },
@@ -645,6 +647,19 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
           `The linked T3 Project ${projectId} does not exist on this environment.`,
         );
       }
+      yield* git
+        .fetchRemoteTrackingBranch({
+          cwd: project.value.workspaceRoot,
+          remoteName: "origin",
+          remoteBranch: "main",
+        })
+        .pipe(
+          Effect.mapError((cause) =>
+            preparationError(
+              `Could not fetch origin/main for ${project.value.title}. Workspace preparation stopped. Check that origin has a main branch, and verify your network connection and Git credentials before retrying. Git reported: ${cause.detail}`,
+            ),
+          ),
+        );
       const refs = yield* git
         .listRefs({ cwd: project.value.workspaceRoot, limit: 200 })
         .pipe(
@@ -681,24 +696,16 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
           `${project.value.title} already has ${branchName} checked out at ${existingBranch.worktreePath}.`,
         );
       }
-      const baseRef =
-        refs.refs.find((ref) => ref.current && ref.isRemote !== true) ??
-        refs.refs.find((ref) => ref.isDefault && ref.isRemote !== true) ??
-        refs.refs.find((ref) => ref.isDefault) ??
-        refs.refs.find((ref) => ref.isRemote !== true);
-      if (!existingBranch && !baseRef) {
-        return yield* preparationError(
-          `${project.value.title} has no local or default branch to prepare from.`,
-        );
-      }
+      const baseRef = "origin/main";
       return {
         projectId,
         isPrimary,
         sourcePath: project.value.workspaceRoot,
         worktreePath,
         branchName: undefined,
-        refName: existingBranch?.name ?? baseRef!.name,
+        refName: existingBranch?.name ?? baseRef,
         newRefName: existingBranch ? undefined : branchName,
+        baseRefName: existingBranch ? undefined : baseRef,
         needsCreation: true,
       } satisfies ValidatedRepository;
     },
@@ -835,6 +842,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         cwd: repository.sourcePath,
         refName: repository.refName,
         ...(repository.newRefName ? { newRefName: repository.newRefName } : {}),
+        ...(repository.baseRefName ? { baseRefName: repository.baseRefName } : {}),
         path: repository.worktreePath,
       }),
     );

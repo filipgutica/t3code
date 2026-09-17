@@ -146,6 +146,8 @@ The Ticket shows each repository's directory and latest reported branch. These r
 
 New worktrees and branches have readable names based on the Ticket title and, when available, its Jira issue key, with a unique suffix. Naming does not wait for text generation. Existing worktree paths and branch names are retained.
 
+Before preparing a new worktree, Workbench fetches `main` from `origin`. New Ticket branches start from the updated `origin/main`. Preparation stops if the fetch fails or `origin/main` is unavailable.
+
 Creating a Workbench **Workspace** groups existing Projects; it does not create repository directories. **Create Thread** prepares the Ticket's directories. For a new two-repository Ticket, the layout looks like this:
 
 ```text

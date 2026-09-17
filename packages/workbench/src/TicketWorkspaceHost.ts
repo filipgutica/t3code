@@ -22,6 +22,11 @@ export class TicketWorkspaceHost extends Context.Service<
   {
     readonly worktreesDir: string;
     readonly git: {
+      readonly fetchRemoteTrackingBranch: (input: {
+        readonly cwd: string;
+        readonly remoteName: string;
+        readonly remoteBranch: string;
+      }) => Effect.Effect<void, GitCommandError>;
       readonly listRefs: (
         input: VcsListRefsInput,
       ) => Effect.Effect<VcsListRefsResult, GitCommandError>;

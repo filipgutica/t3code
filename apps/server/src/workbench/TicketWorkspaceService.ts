@@ -19,6 +19,7 @@ export const ticketWorkspaceHostLayer = Layer.effect(
     return TicketWorkspaceHost.of({
       worktreesDir,
       git: {
+        fetchRemoteTrackingBranch: git.fetchRemoteTrackingBranch,
         listRefs: git.listRefs,
         createWorktree: git.createWorktree,
         removeWorktree: git.removeWorktree,
