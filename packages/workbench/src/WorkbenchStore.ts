@@ -21,6 +21,7 @@ import {
   ProjectId,
   type WorkbenchArchiveTicketInput,
   type WorkbenchCreateAssignmentInput,
+  type WorkbenchUnlinkAssignmentInput,
   type WorkbenchArchiveEpicInput,
   type WorkbenchCreateEpicInput,
   type WorkbenchCreateProjectInput,
@@ -361,9 +362,15 @@ interface WorkbenchStoreShape {
   readonly createAssignment: (
     input: WorkbenchCreateAssignmentInput,
   ) => Effect.Effect<WorkbenchAssignment, WorkbenchOperationError>;
+  readonly unlinkAssignment: (
+    input: WorkbenchUnlinkAssignmentInput,
+  ) => Effect.Effect<void, WorkbenchOperationError>;
   readonly replaceAssignment: (
     input: WorkbenchReplaceAssignmentInput,
   ) => Effect.Effect<WorkbenchAssignment, WorkbenchOperationError>;
+  readonly hasThreadAtWorktreePath: (
+    worktreePath: string,
+  ) => Effect.Effect<boolean, WorkbenchOperationError>;
   readonly getTicketWorkspace: (
     ticketId: WorkbenchTicketId,
   ) => Effect.Effect<Option.Option<WorkbenchTicketWorkspace>, WorkbenchOperationError>;
@@ -669,6 +676,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
       Effect.mapError(persistenceError),
     ),
   );
+  const hasThreadAtWorktreePath: WorkbenchStoreShape["hasThreadAtWorktreePath"] = Effect.fn(
+    "WorkbenchStore.hasThreadAtWorktreePath",
+  )(function* (worktreePath: string) {
+    return yield* native.hasThreadAtWorktreePath(worktreePath);
+  });
   const isJiraManagedTicket = Effect.fn("WorkbenchStore.isJiraManagedTicket")(function* (
     ticketId: WorkbenchTicketId,
   ) {
@@ -1664,6 +1676,23 @@ const makeWorkbenchStore = Effect.gen(function* () {
                 ? "The Ticket Workspace cannot be reset while it has linked Agent Threads, including archived or historical Threads."
                 : "The Ticket Workspace cannot be released while it has an active Agent Thread.",
             });
+          }
+          if (input.requireNoLinkedThreads === true) {
+            const repositories = yield* listTicketWorkspaceRepositoriesByTicket({
+              ticketId: input.ticketId,
+            });
+            for (const repository of repositories) {
+              if (
+                repository.status !== "released" &&
+                (yield* native.hasThreadAtWorktreePath(repository.worktreePath))
+              ) {
+                return yield* new WorkbenchOperationError({
+                  code: "ticket_workspace_in_use",
+                  message:
+                    "The Ticket Workspace cannot be reset while a native Thread still uses one of its worktrees.",
+                });
+              }
+            }
           }
           yield* sql`
             UPDATE workbench_ticket_workspaces
@@ -2792,6 +2821,40 @@ const makeWorkbenchStore = Effect.gen(function* () {
       .pipe(Effect.mapError(workbenchStoreError));
   });
 
+  const unlinkAssignment: WorkbenchStoreShape["unlinkAssignment"] = Effect.fn(
+    "WorkbenchStore.unlinkAssignment",
+  )(function* (input) {
+    return yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* requireActiveTicket({
+            ticketId: input.ticketId,
+            archivedMessage: "Archived Workbench Tickets cannot unlink an Agent Thread.",
+          });
+          const ticketWorkspace = yield* findTicketWorkspaceRow({ ticketId: input.ticketId });
+          if (
+            Option.isSome(ticketWorkspace) &&
+            (ticketWorkspace.value.status === "preparing" ||
+              ticketWorkspace.value.status === "releasing")
+          ) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_workspace_in_use",
+              message: "The Ticket Workspace is changing and cannot unlink an Agent Thread.",
+            });
+          }
+          // Remove historical rows too so the native Thread can be linked to
+          // this Ticket again after an explicit unlink.
+          yield* sql`
+            DELETE FROM workbench_assignments
+            WHERE ticket_id = ${input.ticketId}
+              AND thread_id = ${input.threadId}
+          `;
+          return undefined;
+        }),
+      )
+      .pipe(Effect.mapError(workbenchStoreError));
+  });
+
   const replaceAssignment: WorkbenchStoreShape["replaceAssignment"] = Effect.fn(
     "WorkbenchStore.replaceAssignment",
   )(function* (input) {
@@ -2896,7 +2959,9 @@ const makeWorkbenchStore = Effect.gen(function* () {
     archiveTicket,
     deleteTicket,
     createAssignment,
+    unlinkAssignment,
     replaceAssignment,
+    hasThreadAtWorktreePath,
     getTicketWorkspace,
     getTicketJiraIssueKey,
     getTicketWorkspaceRepositoryStates,

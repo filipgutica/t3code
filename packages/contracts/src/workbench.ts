@@ -278,6 +278,12 @@ export const WorkbenchCreateAssignmentInput = Schema.Struct({
 });
 export type WorkbenchCreateAssignmentInput = typeof WorkbenchCreateAssignmentInput.Type;
 
+export const WorkbenchUnlinkAssignmentInput = Schema.Struct({
+  ticketId: WorkbenchTicketId,
+  threadId: ThreadId,
+});
+export type WorkbenchUnlinkAssignmentInput = typeof WorkbenchUnlinkAssignmentInput.Type;
+
 export const WorkbenchReplaceAssignmentInput = Schema.Struct({
   id: Schema.optionalKey(WorkbenchAssignmentId),
   ticketId: WorkbenchTicketId,

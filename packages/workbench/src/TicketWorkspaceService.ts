@@ -410,6 +410,22 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
           });
         }
       }
+      // An assignment can be removed while a native Thread still retains the worktree.
+      for (const worktreePath of protectedWorktreePaths) {
+        const hasThread = yield* store
+          .hasThreadAtWorktreePath(worktreePath)
+          .pipe(
+            Effect.mapError(() =>
+              preparationError("The native Agent Threads could not be loaded."),
+            ),
+          );
+        if (hasThread) {
+          return yield* new WorkbenchOperationError({
+            code: "ticket_workspace_in_use",
+            message,
+          });
+        }
+      }
     },
   );
 

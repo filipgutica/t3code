@@ -317,9 +317,11 @@ export const OpenInPicker = memo(function OpenInPicker({
                 <MenuItem key={value} onClick={() => openInEditor(value)}>
                   <Icon aria-hidden="true" className={getOpenInIconClass(kind)} />
                   {label}
-                  {value === preferredEditor && openFavoriteEditorShortcutLabel && (
-                    <MenuShortcut>{openFavoriteEditorShortcutLabel}</MenuShortcut>
-                  )}
+                  {enableShortcut &&
+                    value === preferredEditor &&
+                    openFavoriteEditorShortcutLabel && (
+                      <MenuShortcut>{openFavoriteEditorShortcutLabel}</MenuShortcut>
+                    )}
                 </MenuItem>
               ))}
               {remote.mode === "remote-links" && !remoteHintSeen && (

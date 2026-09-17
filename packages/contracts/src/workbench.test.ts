@@ -16,6 +16,7 @@ import {
   WorkbenchTicketKind,
   WorkbenchTicketWorkspace,
   WorkbenchTicketStatus,
+  WorkbenchUnlinkAssignmentInput,
   WorkbenchUpdateProjectInput,
   WorkbenchUpdateJiraTicketFieldsInput,
   WorkbenchUpdateTicketInput,
@@ -38,6 +39,9 @@ const decodeWorkbenchUpdateJiraTicketFieldsInput = Schema.decodeUnknownEffect(
 const decodeWorkbenchUpdateTicketInput = Schema.decodeUnknownEffect(WorkbenchUpdateTicketInput);
 const decodeWorkbenchReplaceAssignmentInput = Schema.decodeUnknownEffect(
   WorkbenchReplaceAssignmentInput,
+);
+const decodeWorkbenchUnlinkAssignmentInput = Schema.decodeUnknownEffect(
+  WorkbenchUnlinkAssignmentInput,
 );
 const isWorkbenchProject = Schema.is(WorkbenchProject);
 const isWorkbenchEpic = Schema.is(WorkbenchEpic);
@@ -253,6 +257,10 @@ describe("Workbench contracts", () => {
         threadId: "thread-2",
         replacedAt: "2026-09-03T12:02:00.000Z",
       });
+      const unlinkInput = yield* decodeWorkbenchUnlinkAssignmentInput({
+        ticketId: "ticket-1",
+        threadId: "thread-1",
+      });
       const epicInput = yield* decodeWorkbenchCreateEpicInput({
         id: "epic-1",
         projectId: "workbench-project-1",
@@ -286,6 +294,7 @@ describe("Workbench contracts", () => {
       expect(updateInput.primaryT3ProjectId).toBeUndefined();
       expect(updateInput.repositoryProjectIds).toBeUndefined();
       expect(replaceInput.id).toBeUndefined();
+      expect(unlinkInput).toEqual({ ticketId: "ticket-1", threadId: "thread-1" });
       expect(epicInput.title).toBe("Native planning");
       expect(archiveInput.archivedAt).toBeNull();
       expect(deleteInput.deletedAt).toBe("2026-09-03T12:04:00.000Z");

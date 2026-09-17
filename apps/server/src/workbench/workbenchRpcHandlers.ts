@@ -97,6 +97,12 @@ export const makeWorkbenchRpcHandlers = ({
         workbench.createAssignment(input),
         { "rpc.aggregate": "workbench" },
       ),
+    [WORKBENCH_WS_METHODS.workbenchUnlinkAssignment]: (input) =>
+      observeRpcEffect(
+        WORKBENCH_WS_METHODS.workbenchUnlinkAssignment,
+        workbench.unlinkAssignment(input),
+        { "rpc.aggregate": "workbench" },
+      ),
     [WORKBENCH_WS_METHODS.workbenchReplaceAssignment]: (input) =>
       observeRpcEffect(
         WORKBENCH_WS_METHODS.workbenchReplaceAssignment,

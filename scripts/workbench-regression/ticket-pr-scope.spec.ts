@@ -128,13 +128,13 @@ test("ticket PRs exclude shared checkouts until a workspace is prepared", async 
   });
   await page.goto(`/workbench?workbenchProjectId=orbit&ticketId=${ticket.id}`);
   await expect(page.getByRole("heading", { name: ticket.title, exact: true })).toBeVisible();
-  await expect(page.getByText("unrelated-work", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("unrelated-work", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: /^Pull Requests/ })).toHaveCount(0);
 
   prepared = true;
   await page.reload();
   await expect(page.getByRole("heading", { name: /^Pull Requests/ })).toBeVisible();
-  await expect(page.getByText("Ticket workspace", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ticket workspace", exact: true })).toBeVisible();
   await expect(page.getByText("Ticket workspace change", { exact: true })).toBeVisible();
   await expect(page.getByText("Unrelated shared checkout change", { exact: true })).toHaveCount(0);
 });

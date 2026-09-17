@@ -392,6 +392,9 @@ export function WorkbenchPage({
   const deleteTicket = useAtomCommand(workbenchEnvironment.deleteTicket, {
     reportFailure: false,
   });
+  const prepareTicketWorkspace = useAtomCommand(workbenchEnvironment.prepareTicketWorkspace, {
+    reportFailure: false,
+  });
   const releaseTicketWorkspace = useAtomCommand(workbenchEnvironment.releaseTicketWorkspace, {
     reportFailure: false,
   });
@@ -433,6 +436,9 @@ export function WorkbenchPage({
   });
   const unarchiveThread = useAtomCommand(threadEnvironment.unarchive, { reportFailure: false });
   const attachAssignment = useAtomCommand(workbenchEnvironment.createAssignment, {
+    reportFailure: false,
+  });
+  const unlinkAssignment = useAtomCommand(workbenchEnvironment.unlinkAssignment, {
     reportFailure: false,
   });
   const { confirmAndDeleteThread } = useThreadActions();
@@ -521,6 +527,8 @@ export function WorkbenchPage({
     previousThreadId?: ThreadId;
   } | null>(null);
   const [attachThreadTicket, setAttachThreadTicket] = useState<WorkbenchTicket | null>(null);
+  const [workspacePreparationFailure, setWorkspacePreparationFailure] =
+    useState<WorkbenchTicketId | null>(null);
   const [awaitingProjectId, setAwaitingProjectId] = useState<WorkbenchProjectId | null>(null);
   const [awaitingTicketId, setAwaitingTicketId] = useState<WorkbenchTicketId | null>(null);
   const [awaitingEpicId, setAwaitingEpicId] = useState<WorkbenchEpicId | null>(null);
@@ -996,13 +1004,13 @@ export function WorkbenchPage({
         updatedAt: new Date().toISOString(),
       },
     });
-    if (statusToken === null) setPendingAction(null);
     if (statusToken !== null && statusEnvironmentRef.current !== environmentId) return false;
     if (
       reportWorkbenchCommandFailure(result, (message) =>
         setError(statusToken === null ? message : `${ticket.title}: ${message}`),
       )
     ) {
+      if (statusToken === null) setPendingAction(null);
       if (statusToken !== null) optimisticStatus.fail(statusToken);
       query.refresh();
       return false;
@@ -1010,6 +1018,29 @@ export function WorkbenchPage({
     if (statusToken !== null) {
       optimisticStatus.succeed({ token: statusToken, revision: result.value.revision });
     }
+    const workspace = snapshot?.ticketWorkspaces.find(
+      (candidate) => candidate.ticketId === ticket.id,
+    );
+    if (
+      (patch.repositoryProjectIds !== undefined || patch.primaryT3ProjectId !== undefined) &&
+      workspace?.status === "ready"
+    ) {
+      setWorkspacePreparationFailure(null);
+      setPendingAction(`prepare-workspace:${ticket.id}`);
+      const preparation = await prepareTicketWorkspace({
+        environmentId,
+        input: { ticketId: ticket.id, requestedAt: new Date().toISOString() },
+      });
+      if (
+        reportWorkbenchCommandFailure(preparation, (message) =>
+          setError(`Repository selection saved. Workspace preparation failed: ${message}`),
+        )
+      ) {
+        setWorkspacePreparationFailure(ticket.id);
+        query.refresh();
+      }
+    }
+    if (statusToken === null) setPendingAction(null);
     return { revision: result.value.revision };
   };
 
@@ -1152,6 +1183,42 @@ export function WorkbenchPage({
     if (reportWorkbenchCommandFailure(result, setError)) return false;
     clearTicketDraft(environmentId, ticket.id);
     closeWorkItem();
+    return true;
+  };
+
+  const unlinkThread = async (threadId: ThreadId) => {
+    if (
+      environmentId === null ||
+      selectedTicket === undefined ||
+      selectedTicket === null ||
+      pendingAction !== null
+    )
+      return;
+    setPendingAction(`unlink-thread:${threadId}`);
+    setError(null);
+    const result = await unlinkAssignment({
+      environmentId,
+      input: { ticketId: selectedTicket.id, threadId },
+    });
+    setPendingAction(null);
+    reportWorkbenchCommandFailure(result, setError);
+  };
+
+  const prepareWorkspace = async (ticket: WorkbenchTicket) => {
+    if (environmentId === null || pendingAction !== null) return false;
+    setWorkspacePreparationFailure(null);
+    setPendingAction(`prepare-workspace:${ticket.id}`);
+    setError(null);
+    const result = await prepareTicketWorkspace({
+      environmentId,
+      input: { ticketId: ticket.id, requestedAt: new Date().toISOString() },
+    });
+    setPendingAction(null);
+    if (reportWorkbenchCommandFailure(result, setError)) {
+      setWorkspacePreparationFailure(ticket.id);
+      query.refresh();
+      return false;
+    }
     return true;
   };
 
@@ -2221,6 +2288,9 @@ export function WorkbenchPage({
                 setError(null);
                 setAttachThreadTicket(ticket);
               }}
+              onUnlinkThread={(threadId) => {
+                void unlinkThread(threadId);
+              }}
               onDeleteThread={(threadId) => {
                 void deleteAssignedThread(threadId);
               }}
@@ -2230,6 +2300,12 @@ export function WorkbenchPage({
               }}
               onArchive={setTicketArchived}
               onDelete={removeTicket}
+              preparationFailed={workspacePreparationFailure === selectedTicket.id}
+              preparationPending={
+                pendingAction === `prepare-workspace:${selectedTicket.id}` ||
+                pendingAction === `start:${selectedTicket.id}:preparing-workspace`
+              }
+              onPrepareWorkspace={prepareWorkspace}
               onResetWorkspace={resetTicketWorkspace}
             />
           ) : selectedEpic ? (

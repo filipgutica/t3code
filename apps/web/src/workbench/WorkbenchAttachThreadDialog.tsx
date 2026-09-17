@@ -1,5 +1,6 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { ThreadId } from "@t3tools/contracts";
+import { LinkIcon } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "../components/ui/button";
@@ -41,11 +42,11 @@ export function WorkbenchAttachThreadDialog({
     >
       <DialogPopup className="min-w-0 max-w-lg">
         <DialogHeader>
-          <DialogTitle>Attach existing Thread</DialogTitle>
+          <DialogTitle>Link existing Thread</DialogTitle>
           <DialogDescription>
             Choose a non-archived Thread from this Ticket’s primary repository in this environment.
-            Threads already linked to a Ticket, including past assignments, cannot be attached. No
-            prompt is sent.
+            Threads already linked to a Ticket, including past assignments, cannot be linked. The
+            Thread keeps its existing branch and working directory. No prompt is sent.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="min-w-0 space-y-3">
@@ -70,7 +71,7 @@ export function WorkbenchAttachThreadDialog({
             {matching.length === 0 ? (
               <p className="py-3 text-sm text-muted-foreground">
                 {threads.length === 0
-                  ? "No available Threads in this Ticket’s primary repository. Create a new Thread instead."
+                  ? "No available Threads in this Ticket’s primary repository. Create a Thread instead."
                   : "No Threads match your search."}
               </p>
             ) : null}
@@ -86,6 +87,7 @@ export function WorkbenchAttachThreadDialog({
             Cancel
           </Button>
           <Button
+            className="[&_svg]:mx-0"
             disabled={
               pending || selectedId === null || !threads.some((thread) => thread.id === selectedId)
             }
@@ -93,7 +95,7 @@ export function WorkbenchAttachThreadDialog({
               if (selectedId !== null) void onAttach(selectedId);
             }}
           >
-            Attach Thread
+            <LinkIcon /> Link Thread
           </Button>
         </DialogFooter>
       </DialogPopup>
