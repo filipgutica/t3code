@@ -24,6 +24,7 @@ import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
 import { JiraApi } from "@t3tools/workbench/jira/JiraApi";
 import * as JiraSyncService from "@t3tools/workbench/jira/JiraSyncService";
@@ -43,6 +44,11 @@ const TestLayer = jiraTicketImporterLayer.pipe(
   Layer.provideMerge(WorkbenchStoreLive),
   Layer.provideMerge(jiraRepositoryLayer),
   Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(
+    Layer.mock(GitWorkflowService.GitWorkflowService, {
+      isRepository: () => Effect.succeed(true),
+    }),
+  ),
 );
 
 const createdAt = "2026-09-01T00:00:00.000Z";

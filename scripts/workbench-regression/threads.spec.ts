@@ -119,19 +119,78 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
     .click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
-  await page.getByRole("button", { name: "Expand Settled Threads in Orbit", exact: true }).click();
-  const settledSidebar = page.getByRole("region", {
-    name: "Settled Threads in Orbit",
+  const sidebar = page.locator('[data-slot="sidebar-content"]');
+  await expect(
+    sidebar.getByRole("button", { name: /^Fix focus after creating a project \d+$/ }),
+  ).toHaveCount(1);
+  await sidebar
+    .getByRole("button", {
+      name: "Expand Settled Threads in Fix focus after creating a project",
+      exact: true,
+    })
+    .click();
+  const settledSidebar = sidebar.getByRole("region", {
+    name: "Settled Threads in Fix focus after creating a project",
     exact: true,
   });
-  await settledSidebar
-    .getByRole("button", { name: "Expand Fix focus after creating a project", exact: true })
-    .click();
   await settledSidebar.getByRole("button", { name: nativeThread.title, exact: true }).click();
   await expect(page).toHaveURL(
     (url) =>
       url.pathname.endsWith(`/${nativeThread.id}`) && url.searchParams.get("workbench") === "true",
   );
+  await expect(
+    sidebar.getByRole("button", { name: nativeThread.title, exact: true }),
+  ).toBeVisible();
+  await sidebar
+    .getByRole("button", { name: `Actions for Thread ${nativeThread.title}`, exact: true })
+    .click();
+  await page.getByRole("button", { name: "Rename thread", exact: true }).click();
+  await sidebar
+    .getByRole("textbox", { name: `Rename Thread ${nativeThread.title}`, exact: true })
+    .fill("Sidebar renamed thread");
+  await sidebar
+    .getByRole("textbox", { name: `Rename Thread ${nativeThread.title}`, exact: true })
+    .press("Enter");
+  await expect(
+    sidebar.getByRole("button", { name: "Sidebar renamed thread", exact: true }),
+  ).toBeVisible();
+  await sidebar
+    .getByRole("button", { name: "Actions for Thread Sidebar renamed thread", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Rename thread", exact: true }).click();
+  await sidebar
+    .getByRole("textbox", { name: "Rename Thread Sidebar renamed thread", exact: true })
+    .fill(nativeThread.title);
+  await sidebar
+    .getByRole("textbox", { name: "Rename Thread Sidebar renamed thread", exact: true })
+    .press("Enter");
+  await expect(
+    sidebar.getByRole("button", { name: nativeThread.title, exact: true }),
+  ).toBeVisible();
+  await sidebar
+    .getByRole("button", { name: `Actions for Thread ${nativeThread.title}`, exact: true })
+    .click();
+  await page.getByRole("button", { name: "Un-settle thread", exact: true }).click();
+  await expect(
+    sidebar.getByRole("button", { name: nativeThread.title, exact: true }),
+  ).toBeVisible();
+  await sidebar
+    .getByRole("button", { name: `Actions for Thread ${nativeThread.title}`, exact: true })
+    .click();
+  await page.getByRole("button", { name: "Settle thread", exact: true }).click();
+  await expect(
+    sidebar.getByRole("button", { name: nativeThread.title, exact: true }),
+  ).toBeVisible();
+  await expect(
+    sidebar.getByRole("button", {
+      name: "Collapse Settled Threads in Fix focus after creating a project",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("sidebar-settled-thread.png"),
+    fullPage: true,
+  });
   await page
     .getByRole("link", {
       name: "Back to Ticket Fix focus after creating a project in Workspace Orbit",

@@ -719,6 +719,27 @@ const makeWorkbenchStore = Effect.gen(function* () {
   }) {
     return yield* native.findProject(linkedProjectId);
   });
+  const validateLinkedProject = Effect.fn("WorkbenchStore.validateLinkedProject")(function* ({
+    linkedProjectId,
+  }: {
+    readonly linkedProjectId: ProjectId;
+  }) {
+    const project = yield* findT3Project({ linkedProjectId }).pipe(
+      Effect.mapError(persistenceError),
+    );
+    if (Option.isNone(project)) {
+      return yield* new WorkbenchOperationError({
+        code: "linked_project_not_found",
+        message: "A linked T3 Project does not exist on this environment.",
+      });
+    }
+    if (!(yield* native.isProjectRepository(linkedProjectId))) {
+      return yield* new WorkbenchOperationError({
+        code: "linked_project_not_repository",
+        message: "A linked T3 Project must point to a Git repository.",
+      });
+    }
+  });
   const findProject = SqlSchema.findOneOption({
     Request: Schema.Struct({ id: WorkbenchProjectId }),
     Result: WorkbenchProjectRow,
@@ -1741,15 +1762,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
   )(function* (input) {
     const linkedProjectIds = [...new Set(input.linkedProjectIds)];
     for (const linkedProjectId of linkedProjectIds) {
-      const project = yield* findT3Project({ linkedProjectId }).pipe(
-        Effect.mapError(persistenceError),
-      );
-      if (Option.isNone(project)) {
-        return yield* new WorkbenchOperationError({
-          code: "linked_project_not_found",
-          message: "A linked T3 Project does not exist on this environment.",
-        });
-      }
+      yield* validateLinkedProject({ linkedProjectId });
     }
 
     yield* sql
@@ -1810,13 +1823,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             (linkedProjectId) => !existingProjectIdSet.has(linkedProjectId),
           );
           for (const linkedProjectId of additions) {
-            const project = yield* findT3Project({ linkedProjectId });
-            if (Option.isNone(project)) {
-              return yield* new WorkbenchOperationError({
-                code: "linked_project_not_found",
-                message: "A linked T3 Project does not exist on this environment.",
-              });
-            }
+            yield* validateLinkedProject({ linkedProjectId });
           }
 
           yield* sql`

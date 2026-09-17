@@ -19,6 +19,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
 import { JiraApi } from "@t3tools/workbench/jira/JiraApi";
 import * as JiraSyncService from "@t3tools/workbench/jira/JiraSyncService";
@@ -64,8 +65,20 @@ const binding: WorkbenchJiraBinding = {
 const ImporterIntegrationLayer = jiraTicketImporterLayer.pipe(
   Layer.provideMerge(WorkbenchStoreLive),
   Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(
+    Layer.mock(GitWorkflowService.GitWorkflowService, {
+      isRepository: () => Effect.succeed(true),
+    }),
+  ),
 );
-const TestLayer = WorkbenchStoreLive.pipe(Layer.provideMerge(SqlitePersistenceMemory));
+const TestLayer = WorkbenchStoreLive.pipe(
+  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(
+    Layer.mock(GitWorkflowService.GitWorkflowService, {
+      isRepository: () => Effect.succeed(true),
+    }),
+  ),
+);
 
 const oldIssue = (issueId: string): WorkbenchJiraIssueLink => ({
   bindingId,

@@ -316,6 +316,7 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "ticket_summary_generation_failed",
   "jira_managed_ticket",
   "linked_project_not_found",
+  "linked_project_not_repository",
   "primary_project_not_linked",
   "repository_not_linked",
   "primary_repository_not_selected",

@@ -17,6 +17,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
 import {
   JiraTicketImporter,
@@ -26,6 +27,11 @@ import {
 const TestLayer = jiraTicketImporterLayer.pipe(
   Layer.provideMerge(WorkbenchStoreLive),
   Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(
+    Layer.mock(GitWorkflowService.GitWorkflowService, {
+      isRepository: () => Effect.succeed(true),
+    }),
+  ),
 );
 const decodeWorkbenchSnapshot = Schema.decodeUnknownEffect(WorkbenchSnapshot);
 

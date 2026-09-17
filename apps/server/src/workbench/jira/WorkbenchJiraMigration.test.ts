@@ -16,6 +16,7 @@ import * as Ref from "effect/Ref";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
 import { JiraApi, type JiraApiShape } from "@t3tools/workbench/jira/JiraApi";
 import { JiraAuthService } from "@t3tools/workbench/jira/JiraAuthService";
@@ -27,7 +28,14 @@ import {
 } from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 import * as WorkbenchJiraService from "@t3tools/workbench/jira/WorkbenchJiraService";
 
-const TestLayer = WorkbenchStoreLive.pipe(Layer.provideMerge(SqlitePersistenceMemory));
+const TestLayer = WorkbenchStoreLive.pipe(
+  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(
+    Layer.mock(GitWorkflowService.GitWorkflowService, {
+      isRepository: () => Effect.succeed(true),
+    }),
+  ),
+);
 const createdAt = "2026-09-15T12:00:00.000Z";
 const nativeProjectId = ProjectId.make("native-project");
 const workspaceId = WorkbenchProjectId.make("workspace-1");

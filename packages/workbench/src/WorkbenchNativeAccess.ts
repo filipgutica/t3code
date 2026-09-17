@@ -10,6 +10,10 @@ export class WorkbenchNativeAccess extends Context.Service<
     readonly findProject: (
       projectId: ProjectId,
     ) => Effect.Effect<Option.Option<{ readonly id: ProjectId }>, WorkbenchOperationError>;
+    /** Whether a native T3 Project points at a Git repository. */
+    readonly isProjectRepository: (
+      projectId: ProjectId,
+    ) => Effect.Effect<boolean, WorkbenchOperationError>;
     readonly findThread: (
       threadId: ThreadId,
     ) => Effect.Effect<

@@ -18,6 +18,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
 import { JiraApi } from "@t3tools/workbench/jira/JiraApi";
 import { JiraAuthService } from "@t3tools/workbench/jira/JiraAuthService";
@@ -30,7 +31,14 @@ import {
 } from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 import * as WorkbenchJiraService from "@t3tools/workbench/jira/WorkbenchJiraService";
 
-const TestLayer = WorkbenchStoreLive.pipe(Layer.provideMerge(SqlitePersistenceMemory));
+const TestLayer = WorkbenchStoreLive.pipe(
+  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(
+    Layer.mock(GitWorkflowService.GitWorkflowService, {
+      isRepository: () => Effect.succeed(true),
+    }),
+  ),
+);
 const ticketWriter = JiraTicketWriteService.of({
   createTicket: () => Effect.die("unexpected Jira Ticket creation"),
   getTicketTransitions: () => Effect.die("unexpected Jira transition lookup"),

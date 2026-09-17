@@ -7,7 +7,9 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
-const NativeProjectRow = Schema.Struct({ id: ProjectId });
+import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+
+const NativeProjectRow = Schema.Struct({ id: ProjectId, workspaceRoot: Schema.String });
 const NativeThreadRow = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
@@ -21,11 +23,14 @@ const persistenceError = (_cause: unknown) =>
 
 const makeWorkbenchNativeAccess = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const git = yield* GitWorkflowService.GitWorkflowService;
   const findProjectRow = SqlSchema.findOneOption({
     Request: Schema.Struct({ projectId: ProjectId }),
     Result: NativeProjectRow,
     execute: ({ projectId }) => sql`
-      SELECT project_id AS "id"
+      SELECT
+        project_id AS "id",
+        workspace_root AS "workspaceRoot"
       FROM projection_projects
       WHERE project_id = ${projectId}
         AND deleted_at IS NULL
@@ -56,7 +61,19 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
   const findProject = Effect.fn("WorkbenchNativeAccess.findProject")(function* (
     projectId: ProjectId,
   ) {
-    return yield* findProjectRow({ projectId }).pipe(Effect.mapError(persistenceError));
+    return yield* findProjectRow({ projectId }).pipe(
+      Effect.map(Option.map(({ id }) => ({ id }))),
+      Effect.mapError(persistenceError),
+    );
+  });
+  const isProjectRepository = Effect.fn("WorkbenchNativeAccess.isProjectRepository")(function* (
+    projectId: ProjectId,
+  ) {
+    const project = yield* findProjectRow({ projectId }).pipe(Effect.mapError(persistenceError));
+    if (Option.isNone(project)) return false;
+    return yield* git
+      .isRepository(project.value.workspaceRoot)
+      .pipe(Effect.mapError(persistenceError));
   });
   const findThread = Effect.fn("WorkbenchNativeAccess.findThread")(function* (threadId: ThreadId) {
     return yield* findThreadRow({ threadId }).pipe(Effect.mapError(persistenceError));
@@ -70,7 +87,12 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
     },
   );
 
-  return WorkbenchNativeAccess.of({ findProject, findThread, hasThreadAtWorktreePath });
+  return WorkbenchNativeAccess.of({
+    findProject,
+    isProjectRepository,
+    findThread,
+    hasThreadAtWorktreePath,
+  });
 });
 
 export const WorkbenchNativeAccessLive = Layer.effect(

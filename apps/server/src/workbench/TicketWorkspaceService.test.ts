@@ -187,6 +187,7 @@ const seedActiveAssignment = Effect.gen(function* () {
 const makeTestLayer = ({
   events,
   failProjectId,
+  nonRepositoryPaths,
   initialWorktrees,
   initialWorktreeBranches,
   missingWorktreePaths,
@@ -209,6 +210,7 @@ const makeTestLayer = ({
 }: {
   events: Array<string>;
   failProjectId?: ProjectId;
+  nonRepositoryPaths?: ReadonlySet<string>;
   initialWorktrees?: ReadonlyArray<{ readonly sourcePath: string; readonly worktreePath: string }>;
   initialWorktreeBranches?: ReadonlyMap<string, string>;
   missingWorktreePaths?: ReadonlySet<string>;
@@ -247,11 +249,18 @@ const makeTestLayer = ({
   const missingPaths = new Set(missingWorktreePaths);
   const paths = new Set(existingPaths);
   const dirtyPaths = new Set(dirtyWorktreePaths);
+  const nonRepositoryPathsSet = new Set(nonRepositoryPaths);
   let shouldFailRemove = failRemoveOnceSourcePath !== undefined;
   let pendingListRefsHook = onListRefs;
   const branchNameGenerator =
     generateBranchName ?? (() => Effect.succeed("") as Effect.Effect<string, never>);
-  const storeLayer = WorkbenchStoreLive.pipe(Layer.provideMerge(SqlitePersistenceMemory));
+  const storeGitLayer = Layer.mock(GitWorkflowService.GitWorkflowService, {
+    isRepository: () => Effect.succeed(true),
+  });
+  const storeLayer = WorkbenchStoreLive.pipe(
+    Layer.provideMerge(SqlitePersistenceMemory),
+    Layer.provideMerge(storeGitLayer),
+  );
   const configLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
     prefix: "t3-ticket-workspace-test-",
   }).pipe(Layer.provide(NodeServices.layer));
@@ -312,16 +321,18 @@ const makeTestLayer = ({
       ),
   });
   const gitLayer = Layer.mock(GitWorkflowService.GitWorkflowService)({
-    localStatus: ({ cwd }) =>
-      Effect.succeed({
-        isRepo: true,
+    localStatus: ({ cwd }) => {
+      events.push(`status:${cwd}`);
+      return Effect.succeed({
+        isRepo: !nonRepositoryPathsSet.has(cwd),
         hasPrimaryRemote: false,
         isDefaultRef: false,
         refName: ticketWorkspaceBranchName(ticketId),
         hasWorkingTreeChanges:
           dirtyPaths.has(cwd) || [...dirtyPaths].some((path) => cwd.endsWith(path)),
         workingTree: { files: [], insertions: 0, deletions: 0 },
-      } satisfies VcsStatusLocalResult),
+      } satisfies VcsStatusLocalResult);
+    },
     invalidateLocalStatus: (cwd) => {
       events.push(`invalidate:${cwd}`);
       return Effect.void;
@@ -554,6 +565,35 @@ describe("TicketWorkspaceService", () => {
       expect(error.code).toBe("ticket_archived");
       expect(events).toEqual([]);
     }).pipe(Effect.provide(makeTestLayer({ events })));
+  });
+
+  it.effect("rejects a non-Git repository before fetching origin/main", () => {
+    const events: Array<string> = [];
+    const fetches: Array<{
+      readonly cwd: string;
+      readonly remoteName: string;
+      readonly remoteBranch: string;
+    }> = [];
+    return Effect.gen(function* () {
+      yield* seedTicket;
+      const service = yield* TicketWorkspaceService;
+
+      const error = yield* Effect.flip(service.prepare({ ticketId, requestedAt: createdAt }));
+
+      expect(error.code).toBe("ticket_workspace_preparation_failed");
+      expect(error.message).toContain("is not a Git repository");
+      expect(events).toContain("status:/repos/primary");
+      expect(events).not.toContain("fetch:/repos/primary:origin/main");
+      expect(fetches).toEqual([]);
+    }).pipe(
+      Effect.provide(
+        makeTestLayer({
+          events,
+          nonRepositoryPaths: new Set(["/repos/primary"]),
+          fetchRemoteTrackingBranchCalls: fetches,
+        }),
+      ),
+    );
   });
 
   it.effect("reuses a ready Workspace while every recorded worktree still exists", () => {
@@ -1386,7 +1426,7 @@ describe("TicketWorkspaceService", () => {
 
       expect(error.code).toBe("ticket_workspace_preparation_failed");
       expect(error.message).toContain("secondary at");
-      expect(events.filter((event) => event.startsWith("invalidate:"))).toHaveLength(2);
+      expect(events.filter((event) => event.startsWith("invalidate:"))).toHaveLength(4);
       expect(events.filter((event) => event.startsWith("remove:"))).toEqual([]);
       const store = yield* WorkbenchStore;
       expect(Option.getOrThrow(yield* store.getTicketWorkspace(ticketId)).status).toBe("ready");

@@ -97,12 +97,11 @@ describe("Workbench sidebar ticket groups", () => {
         },
       ],
       done: [],
-      settled: [],
     });
     expect(groups.has(otherWorkspaceId)).toBe(false);
   });
 
-  it("ignores superseded assignments and archived tickets", () => {
+  it("retains replaced thread history but ignores archived tickets", () => {
     const supersededTicket = ticket("superseded-ticket");
     const archivedTicket = { ...ticket("archived-ticket"), archivedAt: "2026-01-01" };
     const supersededThread = thread("superseded-thread");
@@ -122,9 +121,12 @@ describe("Workbench sidebar ticket groups", () => {
       selectedTicketId: undefined,
     });
 
-    expect(groups.size).toBe(0);
+    expect(groups.get(workspaceId)).toEqual({
+      active: [{ ticket: supersededTicket, threads: [supersededThread] }],
+      done: [],
+    });
   });
-  it("separates active and settled threads for the same ticket", () => {
+  it("keeps active and settled threads under one ticket", () => {
     const mixed = ticket("mixed");
     const active = thread("active");
     const settled = { ...thread("settled"), settledOverride: "settled" as const };
@@ -140,13 +142,12 @@ describe("Workbench sidebar ticket groups", () => {
     expect(
       getWorkbenchSidebarTicketGroups({ ...input, selectedTicketId: undefined }).get(workspaceId),
     ).toEqual({
-      active: [{ ticket: mixed, threads: [active] }],
+      active: [{ ticket: mixed, threads: [settled, active] }],
       done: [],
-      settled: [{ ticket: mixed, threads: [settled] }],
     });
   });
 
-  it("shows settled-only tickets in the settled section", () => {
+  it("keeps settled-only tickets in their ticket section", () => {
     const settledTicket = ticket("settled-only");
     const settled = { ...thread("settled"), settledOverride: "settled" as const };
     const groups = getWorkbenchSidebarTicketGroups({
@@ -158,9 +159,8 @@ describe("Workbench sidebar ticket groups", () => {
     });
 
     expect(groups.get(workspaceId)).toEqual({
-      active: [],
+      active: [{ ticket: settledTicket, threads: [settled] }],
       done: [],
-      settled: [{ ticket: settledTicket, threads: [settled] }],
     });
   });
 
@@ -177,9 +177,8 @@ describe("Workbench sidebar ticket groups", () => {
     });
 
     expect(groups.get(workspaceId)).toEqual({
-      active: [],
+      active: [{ ticket: selectedTicket, threads: [settled] }],
       done: [],
-      settled: [{ ticket: selectedTicket, threads: [settled] }],
     });
   });
 
@@ -215,9 +214,30 @@ describe("Workbench sidebar ticket groups", () => {
     });
 
     expect(groups.get(workspaceId)).toEqual({
-      active: [],
+      active: [{ ticket: settledTicket, threads: [settled] }],
       done: [],
-      settled: [{ ticket: settledTicket, threads: [settled] }],
+    });
+  });
+
+  it("keeps a historical thread in its ticket after un-settling", () => {
+    const historyTicket = ticket("history");
+    const historicalThread = { ...thread("historical"), settledOverride: "active" as const };
+    const groups = getWorkbenchSidebarTicketGroups({
+      environmentId,
+      tickets: [historyTicket],
+      assignments: [
+        {
+          ...assignment("old", historyTicket.id, historicalThread.id, "2026-01-01"),
+          supersededAt: "2026-01-02",
+        },
+      ],
+      threads: [historicalThread],
+      selectedTicketId: historyTicket.id,
+      selectedThreadId: historicalThread.id,
+    });
+    expect(groups.get(workspaceId)).toEqual({
+      active: [{ ticket: historyTicket, threads: [historicalThread] }],
+      done: [],
     });
   });
 
@@ -236,12 +256,27 @@ describe("Workbench sidebar ticket groups", () => {
     expect(groups.get(workspaceId)).toEqual({
       active: [],
       done: [{ ticket: doneWithoutThread, threads: [] }],
-      settled: [],
     });
     expect(groups.get(otherWorkspaceId)).toEqual({
       active: [],
       done: [{ ticket: doneInOtherWorkspace, threads: [] }],
-      settled: [],
+    });
+  });
+
+  it("keeps settled history inside a done ticket without duplicating it", () => {
+    const doneTicket = ticket("done-history", workspaceId, "done");
+    const settled = { ...thread("settled"), settledOverride: "settled" as const };
+    const groups = getWorkbenchSidebarTicketGroups({
+      environmentId,
+      tickets: [doneTicket],
+      assignments: [assignment("settled", doneTicket.id, settled.id, "2026-01-01")],
+      threads: [settled],
+      selectedTicketId: doneTicket.id,
+      selectedThreadId: settled.id,
+    });
+    expect(groups.get(workspaceId)).toEqual({
+      active: [],
+      done: [{ ticket: doneTicket, threads: [settled] }],
     });
   });
 
@@ -259,7 +294,6 @@ describe("Workbench sidebar ticket groups", () => {
     expect(groups.get(workspaceId)).toEqual({
       active: [],
       done: [{ ticket: doneTicket, threads: [activeThread] }],
-      settled: [],
     });
   });
 
@@ -277,7 +311,6 @@ describe("Workbench sidebar ticket groups", () => {
     expect(groups.get(workspaceId)).toEqual({
       active: [{ ticket: currentTicket, threads: [currentThread] }],
       done: [],
-      settled: [],
     });
   });
 });
@@ -289,7 +322,6 @@ describe("Workbench sidebar expansion", () => {
     ticketId,
     done: false,
     archived: false,
-    settled: false,
   };
 
   it("opens the active workspace and ticket by default", () => {
@@ -315,7 +347,6 @@ describe("Workbench sidebar expansion", () => {
       ticketId: archivedTicketId,
       done: false,
       archived: false,
-      settled: false,
     });
     expect(
       getWorkbenchSidebarExpansionDefaults({
@@ -328,7 +359,6 @@ describe("Workbench sidebar expansion", () => {
       ticketId: null,
       done: false,
       archived: false,
-      settled: false,
     });
     expect(
       getWorkbenchSidebarExpansionDefaults({
@@ -336,7 +366,7 @@ describe("Workbench sidebar expansion", () => {
         ticketId,
         ticketIsDone: true,
       }),
-    ).toEqual({ workspaceId, ticketId, done: true, archived: false, settled: false });
+    ).toEqual({ workspaceId, ticketId, done: true, archived: false });
   });
 
   it("keeps one workspace and one ticket group open at a time", () => {
@@ -350,7 +380,6 @@ describe("Workbench sidebar expansion", () => {
       ticketId: null,
       done: false,
       archived: false,
-      settled: false,
     });
     expect(
       reduceWorkbenchSidebarExpansion(otherWorkspace, {
@@ -358,14 +387,12 @@ describe("Workbench sidebar expansion", () => {
         workspaceId: otherWorkspaceId,
         ticketId: otherTicketId,
         done: false,
-        settled: false,
       }),
     ).toEqual({
       workspaceId: otherWorkspaceId,
       ticketId: otherTicketId,
       done: false,
       archived: false,
-      settled: false,
     });
   });
 
@@ -379,21 +406,18 @@ describe("Workbench sidebar expansion", () => {
       ticketId: null,
       done: false,
       archived: false,
-      settled: false,
     });
     const closedTicket = reduceWorkbenchSidebarExpansion(initial, {
       type: "toggleTicket",
       workspaceId,
       ticketId,
       done: false,
-      settled: false,
     });
     expect(closedTicket).toEqual({
       workspaceId,
       ticketId: null,
       done: false,
       archived: false,
-      settled: false,
     });
     const openArchived = reduceWorkbenchSidebarExpansion(initial, {
       type: "toggleArchived",
@@ -404,67 +428,22 @@ describe("Workbench sidebar expansion", () => {
       ticketId: null,
       done: false,
       archived: true,
-      settled: false,
     });
     expect(
       reduceWorkbenchSidebarExpansion(openArchived, {
         type: "toggleArchived",
         workspaceId,
       }),
-    ).toEqual({ workspaceId, ticketId: null, done: false, archived: false, settled: false });
+    ).toEqual({ workspaceId, ticketId: null, done: false, archived: false });
     const doneTicket = reduceWorkbenchSidebarExpansion(
-      { workspaceId, ticketId, done: true, archived: false, settled: false },
-      { type: "toggleTicket", workspaceId, ticketId, done: true, settled: false },
+      { workspaceId, ticketId, done: true, archived: false },
+      { type: "toggleTicket", workspaceId, ticketId, done: true },
     );
     expect(doneTicket).toEqual({
       workspaceId,
       ticketId: null,
       done: true,
       archived: false,
-      settled: false,
     });
-    const openSettled = reduceWorkbenchSidebarExpansion(initial, {
-      type: "toggleSettled",
-      workspaceId,
-    });
-    expect(openSettled).toEqual({
-      workspaceId,
-      ticketId: null,
-      done: false,
-      archived: false,
-      settled: true,
-    });
-    expect(
-      reduceWorkbenchSidebarExpansion(openSettled, {
-        type: "toggleSettled",
-        workspaceId,
-      }),
-    ).toEqual({ workspaceId, ticketId: null, done: false, archived: false, settled: false });
-  });
-
-  it("keeps active and settled ticket expansion independent", () => {
-    const settledTicket = reduceWorkbenchSidebarExpansion(initial, {
-      type: "toggleTicket",
-      workspaceId,
-      ticketId,
-      done: false,
-      settled: true,
-    });
-    expect(settledTicket).toEqual({
-      workspaceId,
-      ticketId,
-      done: false,
-      archived: false,
-      settled: true,
-    });
-    expect(
-      reduceWorkbenchSidebarExpansion(settledTicket, {
-        type: "toggleTicket",
-        workspaceId,
-        ticketId,
-        done: false,
-        settled: false,
-      }),
-    ).toEqual(initial);
   });
 });
