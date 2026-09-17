@@ -124,6 +124,8 @@ export interface LocalDemoOptions {
   readonly repositoryRemotes?: Readonly<Record<string, string>>;
   /** Immutable commits for freshly cloned remote fixtures. Existing checkouts must already match. */
   readonly repositoryCommits?: Readonly<Record<string, string>>;
+  /** Optional disposable bare remotes for synthetic repositories that prepare Ticket worktrees. */
+  readonly localOriginDirectory?: string;
   readonly now?: () => string;
   readonly prepareWorkspaces?: boolean;
 }
@@ -286,6 +288,27 @@ const ensureRepository = async (
       ],
       { cwd: root },
     );
+  }
+};
+
+const ensureLocalOrigin = async ({
+  root,
+  repositoryId,
+  originDirectory,
+}: {
+  readonly root: string;
+  readonly repositoryId: string;
+  readonly originDirectory: string;
+}): Promise<void> => {
+  const originRoot = NodePath.join(originDirectory, `${repositoryId}.git`);
+  await NodeFSP.mkdir(originDirectory, { recursive: true });
+  if (!(await pathExists(originRoot))) {
+    await execFile("git", ["init", "--bare", originRoot]);
+  }
+  await execFile("git", ["push", "--force", originRoot, "main:refs/heads/main"], { cwd: root });
+  const origin = await runGit(root, ["remote", "get-url", "origin"]).catch(() => undefined);
+  if (origin === undefined) {
+    await runGit(root, ["remote", "add", "origin", originRoot]);
   }
 };
 
@@ -633,6 +656,16 @@ export const setupLocal = async (options: LocalDemoOptions): Promise<LocalDemoMa
           `Demo checkout ${repository.id} differs from its pinned commit. Reset the demo baseline first.`,
         );
       }
+    }
+    if (
+      options.localOriginDirectory !== undefined &&
+      options.repositoryRemotes?.[repository.id] === undefined
+    ) {
+      await ensureLocalOrigin({
+        root: repositoryPath,
+        repositoryId: repository.id,
+        originDirectory: options.localOriginDirectory,
+      });
     }
   }
   if (options.wsUrl !== undefined) {

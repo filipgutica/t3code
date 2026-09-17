@@ -88,6 +88,7 @@ export const resetToBaseline = async (input: {
         ...access,
         repositoryRemotes,
         repositoryCommits,
+        localOriginDirectory: NodePath.join(home, "git-remotes"),
         prepareWorkspaces: true,
       }),
     );
