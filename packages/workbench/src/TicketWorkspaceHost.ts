@@ -21,6 +21,18 @@ export class TicketWorkspaceHost extends Context.Service<
   TicketWorkspaceHost,
   {
     readonly worktreesDir: string;
+    /** Resolve one safe same-repository open PR head for a new worktree. */
+    readonly resolveOpenPullRequestBranch: (input: {
+      readonly projectId: ProjectId;
+      readonly assignedThreadIds: ReadonlyArray<ThreadId>;
+      readonly jiraIssueKey: string | null;
+    }) => Effect.Effect<
+      Option.Option<{
+        readonly remoteName: string;
+        readonly remoteBranch: string;
+      }>,
+      WorkbenchOperationError
+    >;
     readonly git: {
       readonly fetchRemoteTrackingBranch: (input: {
         readonly cwd: string;

@@ -21,7 +21,7 @@ export type WorkbenchPullRequestThread = Pick<
 export interface WorkbenchTicketPullRequest {
   readonly threadId: ThreadId;
   readonly threadTitle: string;
-  readonly pullRequest: ThreadLinkedPullRequest;
+  readonly pullRequest: TicketPullRequestReference;
 }
 
 export type TicketPullRequestReference = ThreadLinkedPullRequest &
@@ -29,6 +29,7 @@ export type TicketPullRequestReference = ThreadLinkedPullRequest &
 
 interface TicketPullRequestRow {
   readonly pullRequest: TicketPullRequestReference;
+  readonly threadId: ThreadId | null;
   readonly threadTitle: string | null;
   readonly matchesTicket: boolean;
 }
@@ -46,13 +47,14 @@ export const mergeWorkbenchTicketPullRequests = ({
   const rows = new Map<string, TicketPullRequestRow>();
   const identity = (reference: TicketPullRequestReference) =>
     reference.url.toLowerCase().replace(/\/$/, "");
-  for (const { pullRequest, threadTitle } of threadPullRequests) {
-    rows.set(identity(pullRequest), { pullRequest, threadTitle, matchesTicket: false });
+  for (const { pullRequest, threadId, threadTitle } of threadPullRequests) {
+    rows.set(identity(pullRequest), { pullRequest, threadId, threadTitle, matchesTicket: false });
   }
   for (const pullRequest of checkoutPullRequests) {
     const key = identity(pullRequest);
     rows.set(key, {
       pullRequest,
+      threadId: rows.get(key)?.threadId ?? null,
       threadTitle: rows.get(key)?.threadTitle ?? null,
       matchesTicket: false,
     });
@@ -61,6 +63,7 @@ export const mergeWorkbenchTicketPullRequests = ({
     const key = identity(pullRequest);
     rows.set(key, {
       pullRequest,
+      threadId: rows.get(key)?.threadId ?? null,
       threadTitle: rows.get(key)?.threadTitle ?? null,
       matchesTicket: true,
     });
@@ -86,12 +89,15 @@ export function getWorkbenchTicketPullRequests({
     if (thread === undefined) continue;
     const references =
       thread.pullRequests.length > 0
-        ? visibleThreadPullRequests(thread.pullRequests).map(({ repository, number, url }) => ({
-            projectId: thread.projectId,
-            repository,
-            number,
-            url,
-          }))
+        ? visibleThreadPullRequests(thread.pullRequests).map(
+            ({ repository, number, url, snapshot }) => ({
+              projectId: thread.projectId,
+              repository,
+              number,
+              url,
+              ...(snapshot ? { title: snapshot.title, state: snapshot.state } : {}),
+            }),
+          )
         : [thread.linkedPullRequest, thread.branchPullRequest];
     for (const pullRequest of references) {
       if (pullRequest == null) continue;

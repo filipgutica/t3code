@@ -7,6 +7,10 @@ import * as Layer from "effect/Layer";
 import { ServerConfig } from "../config.ts";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import {
+  TicketWorkspacePullRequestResolver,
+  TicketWorkspacePullRequestResolverLive,
+} from "./TicketWorkspacePullRequestResolver.ts";
 
 export { TicketWorkspaceService } from "@t3tools/workbench/TicketWorkspaceService";
 
@@ -15,9 +19,11 @@ export const ticketWorkspaceHostLayer = Layer.effect(
   Effect.gen(function* () {
     const git = yield* GitWorkflowService;
     const projections = yield* ProjectionSnapshotQuery;
+    const pullRequestResolver = yield* TicketWorkspacePullRequestResolver;
     const { worktreesDir } = yield* ServerConfig;
     return TicketWorkspaceHost.of({
       worktreesDir,
+      resolveOpenPullRequestBranch: pullRequestResolver.resolveOpenPullRequestBranch,
       git: {
         fetchRemoteTrackingBranch: git.fetchRemoteTrackingBranch,
         listRefs: git.listRefs,
@@ -54,4 +60,5 @@ export const ticketWorkspaceHostLayer = Layer.effect(
 
 export const TicketWorkspaceServiceLive = serviceLayer.pipe(
   Layer.provide(ticketWorkspaceHostLayer),
+  Layer.provide(TicketWorkspacePullRequestResolverLive),
 );

@@ -33,6 +33,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import type { BranchNameGenerationInput } from "../textGeneration/TextGeneration.ts";
 import { ticketWorkspaceHostLayer } from "./TicketWorkspaceService.ts";
+import { TicketWorkspacePullRequestResolver } from "./TicketWorkspacePullRequestResolver.ts";
 import {
   TicketWorkspaceService,
   ticketWorkspaceDirectoryName,
@@ -205,6 +206,9 @@ const makeTestLayer = ({
   worktreeInputs,
   fetchRemoteTrackingBranchCalls,
   failFetchRemoteTrackingBranch,
+  resolveOpenPullRequestBranches,
+  resolveOpenPullRequestBranchCalls,
+  queryBranchPages,
   failRemoveOnceSourcePath,
   generateBranchName,
 }: {
@@ -232,6 +236,12 @@ const makeTestLayer = ({
     readonly remoteBranch: string;
   }>;
   failFetchRemoteTrackingBranch?: boolean;
+  resolveOpenPullRequestBranches?: ReadonlyMap<
+    ProjectId,
+    { readonly remoteName: string; readonly remoteBranch: string } | null
+  >;
+  resolveOpenPullRequestBranchCalls?: Array<ProjectId>;
+  queryBranchPages?: ReadonlyMap<ProjectId, ReadonlyArray<ReadonlyArray<string>>>;
   failRemoveOnceSourcePath?: string;
   generateBranchName?: (
     input: BranchNameGenerationInput,
@@ -352,8 +362,9 @@ const makeTestLayer = ({
       }
       return Effect.void;
     },
-    listRefs: ({ cwd }) => {
+    listRefs: ({ cwd, cursor, query }) => {
       events.push(`validate:${cwd}`);
+      const projectId = cwd === "/repos/primary" ? primaryProjectId : secondaryProjectId;
       const registeredWorktreePath = worktrees.get(cwd);
       const visibleWorktreePath =
         registeredWorktreePath !== undefined && !missingPaths.has(registeredWorktreePath)
@@ -383,6 +394,22 @@ const makeTestLayer = ({
         nextCursor: null,
         totalCount: 1,
       };
+      const pages = query === undefined ? undefined : queryBranchPages?.get(projectId);
+      if (pages !== undefined) {
+        const pageIndex = cursor ?? 0;
+        const page = pages[pageIndex] ?? [];
+        return Effect.succeed({
+          ...result,
+          refs: page.map((name) => ({
+            name,
+            current: false,
+            isDefault: false,
+            worktreePath: null,
+          })),
+          nextCursor: pageIndex + 1 < pages.length ? pageIndex + 1 : null,
+          totalCount: pages.reduce((count, names) => count + names.length, 0),
+        });
+      }
       const hook = pendingListRefsHook;
       pendingListRefsHook = undefined;
       if (hook !== undefined) {
@@ -480,6 +507,13 @@ const makeTestLayer = ({
         configLayer,
         gitLayer,
         projectionLayer,
+        Layer.mock(TicketWorkspacePullRequestResolver)({
+          resolveOpenPullRequestBranch: ({ projectId }) => {
+            resolveOpenPullRequestBranchCalls?.push(projectId);
+            const branch = resolveOpenPullRequestBranches?.get(projectId);
+            return Effect.succeed(branch ? Option.some(branch) : Option.none());
+          },
+        }),
         Layer.mock(ServerSettings.ServerSettingsService)({
           getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
         }),
@@ -994,6 +1028,144 @@ describe("TicketWorkspaceService", () => {
       expect(workspace.repositories[0]?.worktreePath).toContain("workbench/prepare-repositories-");
     }).pipe(
       Effect.provide(makeTestLayer({ events, fetchRemoteTrackingBranchCalls, worktreeInputs })),
+    );
+  });
+
+  it.effect("prepares each repository from its resolved open PR branch", () => {
+    const events: Array<string> = [];
+    const fetches: Array<{
+      readonly cwd: string;
+      readonly remoteName: string;
+      readonly remoteBranch: string;
+    }> = [];
+    const worktreeInputs: Array<VcsCreateWorktreeInput> = [];
+    return Effect.gen(function* () {
+      yield* seedTicket;
+      const service = yield* TicketWorkspaceService;
+
+      yield* service.prepare({ ticketId, requestedAt: createdAt });
+
+      expect(fetches).toEqual([
+        { cwd: "/repos/primary", remoteName: "origin", remoteBranch: "feature/primary" },
+        { cwd: "/repos/secondary", remoteName: "upstream", remoteBranch: "feature/secondary" },
+      ]);
+      expect(
+        worktreeInputs.map(({ cwd, refName, newRefName, baseRefName }) => ({
+          cwd,
+          refName,
+          newRefName,
+          baseRefName,
+        })),
+      ).toEqual([
+        {
+          cwd: "/repos/primary",
+          refName: "origin/feature/primary",
+          newRefName: "feature/primary",
+          baseRefName: undefined,
+        },
+        {
+          cwd: "/repos/secondary",
+          refName: "upstream/feature/secondary",
+          newRefName: "feature/secondary",
+          baseRefName: undefined,
+        },
+      ]);
+    }).pipe(
+      Effect.provide(
+        makeTestLayer({
+          events,
+          fetchRemoteTrackingBranchCalls: fetches,
+          worktreeInputs,
+          resolveOpenPullRequestBranches: new Map([
+            [primaryProjectId, { remoteName: "origin", remoteBranch: "feature/primary" }],
+            [secondaryProjectId, { remoteName: "upstream", remoteBranch: "feature/secondary" }],
+          ]),
+        }),
+      ),
+    );
+  });
+
+  it.effect("reuses an unoccupied resolved PR branch without resetting it", () => {
+    const events: Array<string> = [];
+    const worktreeInputs: Array<VcsCreateWorktreeInput> = [];
+    return Effect.gen(function* () {
+      yield* seedTicket;
+      const service = yield* TicketWorkspaceService;
+
+      yield* service.prepare({ ticketId, requestedAt: createdAt });
+
+      expect(worktreeInputs[0]).toMatchObject({
+        cwd: "/repos/primary",
+        refName: "feature/existing-pr",
+      });
+      expect(worktreeInputs[0]?.newRefName).toBeUndefined();
+      expect(worktreeInputs[0]?.baseRefName).toBeUndefined();
+      expect(events).not.toContain("fetch:/repos/primary:origin/main");
+    }).pipe(
+      Effect.provide(
+        makeTestLayer({
+          events,
+          worktreeInputs,
+          queryBranchPages: new Map([
+            [primaryProjectId, [["feature/existing-pr-copy"], ["feature/existing-pr"]]],
+          ]),
+          resolveOpenPullRequestBranches: new Map([
+            [primaryProjectId, { remoteName: "origin", remoteBranch: "feature/existing-pr" }],
+          ]),
+        }),
+      ),
+    );
+  });
+
+  it.effect("rejects a resolved PR branch that is checked out elsewhere", () => {
+    const events: Array<string> = [];
+    const branch = "feature/checked-out-pr";
+    return Effect.gen(function* () {
+      yield* seedTicket;
+      const service = yield* TicketWorkspaceService;
+
+      const error = yield* Effect.flip(service.prepare({ ticketId, requestedAt: createdAt }));
+
+      expect(error.message).toContain(`${branch} checked out`);
+      expect(events.filter((event) => event.startsWith("create:"))).toEqual([]);
+    }).pipe(
+      Effect.provide(
+        makeTestLayer({
+          events,
+          initialWorktrees: [
+            { sourcePath: "/repos/primary", worktreePath: "/worktrees/other-ticket" },
+          ],
+          initialWorktreeBranches: new Map([["/repos/primary", branch]]),
+          resolveOpenPullRequestBranches: new Map([
+            [primaryProjectId, { remoteName: "origin", remoteBranch: branch }],
+          ]),
+        }),
+      ),
+    );
+  });
+
+  it.effect("does not resolve pull requests while reusing a ready Workspace", () => {
+    const events: Array<string> = [];
+    const resolverCalls: Array<ProjectId> = [];
+    return Effect.gen(function* () {
+      yield* seedTicket;
+      yield* seedReadyTicketWorkspace;
+      const service = yield* TicketWorkspaceService;
+
+      yield* service.prepare({ ticketId, requestedAt: createdAt });
+
+      expect(resolverCalls).toEqual([]);
+    }).pipe(
+      Effect.provide(
+        makeTestLayer({
+          events,
+          resolveOpenPullRequestBranchCalls: resolverCalls,
+          initialWorktrees: [
+            { sourcePath: "/repos/primary", worktreePath: "/worktrees/ready-primary" },
+            { sourcePath: "/repos/secondary", worktreePath: "/worktrees/ready-secondary" },
+          ],
+        }),
+      ),
     );
   });
 

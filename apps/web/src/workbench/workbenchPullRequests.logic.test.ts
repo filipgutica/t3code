@@ -25,7 +25,7 @@ describe("Jira search and Thread PR references", () => {
         checkoutPullRequests: [checkout],
         matches: [],
       }),
-    ).toEqual([{ pullRequest: checkout, threadTitle: null, matchesTicket: false }]);
+    ).toEqual([{ pullRequest: checkout, threadId: null, threadTitle: null, matchesTicket: false }]);
     const match = { ...checkout, state: "merged" as const };
     expect(
       mergeWorkbenchTicketPullRequests({
@@ -33,7 +33,7 @@ describe("Jira search and Thread PR references", () => {
         checkoutPullRequests: [checkout],
         matches: [match],
       }),
-    ).toEqual([{ pullRequest: match, threadTitle: null, matchesTicket: true }]);
+    ).toEqual([{ pullRequest: match, threadId: null, threadTitle: null, matchesTicket: true }]);
   });
   it("includes merged matches from other branches and enriches duplicate Thread references", () => {
     const reference = {
@@ -49,12 +49,19 @@ describe("Jira search and Thread PR references", () => {
     expect(
       mergeWorkbenchTicketPullRequests({
         threadPullRequests: [reference],
+        checkoutPullRequests: [reference.pullRequest],
         matches: [matched, { ...pullRequest(13803, "Kong/konnect-ui-apps"), state: "merged" }],
       }),
     ).toEqual([
-      { pullRequest: matched, threadTitle: "Ticket work", matchesTicket: true },
+      {
+        pullRequest: matched,
+        threadId: reference.threadId,
+        threadTitle: "Ticket work",
+        matchesTicket: true,
+      },
       {
         pullRequest: { ...pullRequest(13803, "Kong/konnect-ui-apps"), state: "merged" },
+        threadId: null,
         threadTitle: null,
         matchesTicket: true,
       },
@@ -70,7 +77,14 @@ describe("Jira search and Thread PR references", () => {
     const enterprise = { ...pullRequest(1), url: "https://git.example.com/acme/repo/pull/1" };
     expect(
       mergeWorkbenchTicketPullRequests({ threadPullRequests: [reference], matches: [] }),
-    ).toEqual([{ pullRequest: reference.pullRequest, threadTitle: "Work", matchesTicket: false }]);
+    ).toEqual([
+      {
+        pullRequest: reference.pullRequest,
+        threadId: reference.threadId,
+        threadTitle: "Work",
+        matchesTicket: false,
+      },
+    ]);
     expect(
       mergeWorkbenchTicketPullRequests({ threadPullRequests: [reference], matches: [enterprise] }),
     ).toHaveLength(2);
@@ -224,6 +238,41 @@ describe("Workbench Ticket pull request references", () => {
 
     expect(pullRequests).toEqual([
       { threadId: firstThread.id, threadTitle: "first-thread", pullRequest: lowerCasePullRequest },
+    ]);
+  });
+
+  it("preserves the native snapshot state and title for a PR linked through a Thread", () => {
+    const linkedThread = thread({
+      id: "Database setup",
+      pullRequests: [
+        {
+          ...pullRequestLink(1584),
+          snapshot: {
+            state: "open",
+            title: "Add remote database setup",
+            headBranch: "remote-setup",
+            baseBranch: "main",
+            isDraft: false,
+            updatedAt: null,
+            syncedAt: "2026-09-17T00:00:00.000Z",
+          },
+        },
+      ],
+    });
+    const references = getWorkbenchTicketPullRequests({
+      assignments: [{ threadId: linkedThread.id }],
+      threadsById: new Map([[linkedThread.id, linkedThread]]),
+      archivedThreadsById: new Map(),
+    });
+    expect(
+      mergeWorkbenchTicketPullRequests({ threadPullRequests: references, matches: [] }),
+    ).toEqual([
+      {
+        pullRequest: { ...pullRequest(1584), state: "open", title: "Add remote database setup" },
+        threadId: linkedThread.id,
+        threadTitle: "Database setup",
+        matchesTicket: false,
+      },
     ]);
   });
 
