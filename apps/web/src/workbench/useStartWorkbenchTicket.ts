@@ -157,7 +157,11 @@ export function useStartWorkbenchTicket({
           );
           return;
         }
-        onError(commandFailureMessage(result.failure));
+        onError(
+          result.stage === "thread"
+            ? `The workspace is prepared, but the Thread could not be created. Try Create thread again to reuse it. ${commandFailureMessage(result.failure)}`
+            : commandFailureMessage(result.failure),
+        );
       })();
     },
     [

@@ -37,6 +37,7 @@ import {
   RefreshCwIcon,
   RotateCcwIcon,
   Trash2Icon,
+  UnlinkIcon,
 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import {
@@ -99,7 +100,6 @@ import {
   getWorkbenchTicketSummaryPresentation,
   getVisibleWorkbenchAssignments,
   isWorkbenchThreadArchived,
-  resolveWorkbenchRepositoryOpenCwd,
   WORKBENCH_TICKET_KINDS,
   WORKBENCH_TICKET_KIND_LABELS,
   WORKBENCH_TICKET_STATUS_LABELS,
@@ -1046,6 +1046,8 @@ export function WorkbenchTicketDetail({
   archivedThreadsById,
   threadLookupReady,
   pending,
+  preparationFailed,
+  preparationPending,
   threadActionPending,
   threadActionLabel,
   error,
@@ -1060,10 +1062,12 @@ export function WorkbenchTicketDetail({
   onOpenAssignedThread,
   onNewThread,
   onAttachThread,
+  onUnlinkThread,
   onDeleteThread,
   onReplaceThread,
   onArchive,
   onDelete,
+  onPrepareWorkspace,
   onResetWorkspace,
   lifecycleActionsEnabled,
 }: {
@@ -1085,6 +1089,8 @@ export function WorkbenchTicketDetail({
   readonly archivedThreadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   readonly threadLookupReady: boolean;
   readonly pending: boolean;
+  readonly preparationFailed: boolean;
+  readonly preparationPending: boolean;
   readonly threadActionPending: boolean;
   readonly threadActionLabel?: string | null;
   readonly error: string | null;
@@ -1118,10 +1124,12 @@ export function WorkbenchTicketDetail({
   readonly onOpenAssignedThread: (threadId: ThreadId) => void;
   readonly onNewThread: (ticket: WorkbenchTicket) => void;
   readonly onAttachThread: (ticket: WorkbenchTicket) => void;
+  readonly onUnlinkThread: (threadId: ThreadId) => void;
   readonly onDeleteThread: (threadId: ThreadId) => void;
   readonly onReplaceThread: (ticket: WorkbenchTicket, previousThreadId: ThreadId) => void;
   readonly onArchive: (ticket: WorkbenchTicket, archivedAt: string | null) => Promise<boolean>;
   readonly onDelete: (ticket: WorkbenchTicket) => Promise<boolean>;
+  readonly onPrepareWorkspace: (ticket: WorkbenchTicket) => Promise<boolean>;
   readonly onResetWorkspace: (ticket: WorkbenchTicket) => Promise<boolean>;
   readonly lifecycleActionsEnabled: boolean;
 }) {
@@ -1183,13 +1191,38 @@ export function WorkbenchTicketDetail({
     (candidate) => candidate.supersededAt !== null,
   );
   const repositoryScopeLocked =
-    ticketWorkspace?.status === "preparing" || ticketWorkspace?.status === "releasing";
+    preparationPending ||
+    ticketWorkspace?.status === "preparing" ||
+    ticketWorkspace?.status === "releasing";
   const selectedRepositoryProjectIds = getWorkbenchTicketRepositoryProjectIds(ticket);
   const workspaceHasSelectedRepositories = selectedRepositoryProjectIds.every((projectId) =>
     ticketWorkspace?.repositories.some(
       (repository) => repository.projectId === projectId && repository.status === "ready",
     ),
   );
+  const selectedRepositoryProjectIdSet = new Set(selectedRepositoryProjectIds);
+  const workspaceIsReady = ticketWorkspace?.status === "ready" && workspaceHasSelectedRepositories;
+  const workspaceIsPreparing = preparationPending || ticketWorkspace?.status === "preparing";
+  const workspaceHasFailure =
+    !workspaceIsReady && (preparationFailed || ticketWorkspace?.status === "failed");
+  const workspaceStatusLabel = workspaceIsPreparing
+    ? "Preparing"
+    : workspaceHasFailure
+      ? "Preparation failed"
+      : ticketWorkspace === undefined
+        ? "Not prepared"
+        : ticketWorkspace.status === "releasing"
+          ? "Releasing"
+          : ticketWorkspace.status === "released"
+            ? "Released"
+            : workspaceIsReady
+              ? "Ready"
+              : "Needs preparation";
+  const workspacePreparationActionLabel = workspaceIsPreparing
+    ? "Preparing workspace…"
+    : workspaceHasFailure
+      ? "Retry preparation"
+      : "Prepare workspace";
   const nativeThread = assignment ? threadsById.get(assignment.threadId) : undefined;
   const archivedThread =
     assignment && isWorkbenchThreadArchived(assignment.threadId, threadsById, archivedThreadsById)
@@ -1262,23 +1295,29 @@ export function WorkbenchTicketDetail({
     const preparedRepository = ticketWorkspace?.repositories.find(
       (candidate) => candidate.projectId === id && candidate.status === "ready",
     );
-    const openInCwd =
-      preparedRepository?.worktreePath ??
-      (repository
-        ? resolveWorkbenchRepositoryOpenCwd({
-            repositoryId: id,
-            primaryProjectId: ticket.primaryT3ProjectId,
-            repositoryWorkspaceRoot: repository.workspaceRoot,
-            activeThreadWorktreePath:
-              nativeThread?.projectId === id ? nativeThread.worktreePath : undefined,
-          })
-        : null);
-    return { id, repository, openInCwd };
+    return {
+      id,
+      repository,
+      openInCwd: preparedRepository?.worktreePath ?? null,
+      isPrimary: id === ticket.primaryT3ProjectId,
+    };
   });
+  const retainedRepositories = (ticketWorkspace?.repositories ?? [])
+    .filter(
+      (repository) =>
+        repository.status === "ready" && !selectedRepositoryProjectIdSet.has(repository.projectId),
+    )
+    .map((workspaceRepository) => ({
+      id: workspaceRepository.projectId,
+      repository: linkedProjects.find((project) => project.id === workspaceRepository.projectId),
+      openInCwd: workspaceRepository.worktreePath,
+      isPrimary: workspaceRepository.isPrimary,
+    }));
   useWorkbenchCheckoutStatusRefresh({
     environmentId,
     cwds: [
       ...repositories.map((repository) => repository.openInCwd),
+      ...retainedRepositories.map((repository) => repository.openInCwd),
       ...activeAssignments.map(({ threadId }) => {
         const linkedThread = threadsById.get(threadId) ?? archivedThreadsById.get(threadId);
         return linkedThread
@@ -1293,7 +1332,7 @@ export function WorkbenchTicketDetail({
   const canOpenThread = !isArchived || assignment !== undefined;
 
   return (
-    <article className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <article className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [&_[data-slot=button]>svg]:mx-0">
       <WorkspacePageHeader
         electron={isElectron}
         className="h-auto items-start border-b border-border py-3"
@@ -1419,7 +1458,7 @@ export function WorkbenchTicketDetail({
       </WorkspacePageHeader>
 
       <form
-        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6 lg:overflow-y-hidden"
+        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6 lg:overflow-y-auto [&_[data-slot=button]>svg]:mx-0"
         onSubmit={(event) => {
           event.preventDefault();
           if (!editing) return;
@@ -1443,7 +1482,7 @@ export function WorkbenchTicketDetail({
         }}
       >
         <div className="mx-auto grid min-h-0 min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
-          <div className="min-w-0 space-y-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
+          <div className="min-w-0 space-y-4">
             {error ? <WorkbenchInlineError message={error} /> : null}
             <section
               aria-labelledby="workbench-ticket-generated-summary"
@@ -1528,7 +1567,7 @@ export function WorkbenchTicketDetail({
                 </div>
               ) : null}
             </section>
-            <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 max-h-[min(70vh,42rem)] lg:max-h-none lg:flex-1">
+            <section className="shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/40">
               <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
                 <div>
                   <h2 className="text-sm font-semibold">Description</h2>
@@ -1607,14 +1646,14 @@ export function WorkbenchTicketDetail({
                   </div>
                 </>
               ) : (
-                <div className="min-h-40 min-w-0 flex-1 overflow-y-auto p-4">
+                <div className="min-h-40 min-w-0 p-4">
                   <WorkbenchDescription markdown={displayedMarkdown} jira={jiraFieldsManaged} />
                 </div>
               )}
             </section>
           </div>
 
-          <aside className="min-w-0 space-y-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
+          <aside className="flex min-w-0 flex-col space-y-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
             <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
               <div className="flex items-start justify-between gap-3 border-b border-border/50 px-3 py-2.5">
                 <div className="min-w-0">
@@ -1669,6 +1708,19 @@ export function WorkbenchTicketDetail({
                         />
                         {assignment && displayedThread ? (
                           <Button
+                            aria-label={`Unlink Thread ${displayedThread.title}`}
+                            disabled={pending || isArchived}
+                            onClick={() => onUnlinkThread(assignment.threadId)}
+                            size="icon-xs"
+                            title="Unlink Thread from Ticket"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <UnlinkIcon />
+                          </Button>
+                        ) : null}
+                        {assignment && displayedThread ? (
+                          <Button
                             aria-label={`Delete Thread ${displayedThread.title}`}
                             disabled={pending || isArchived}
                             onClick={() => onDeleteThread(assignment.threadId)}
@@ -1715,12 +1767,15 @@ export function WorkbenchTicketDetail({
                               : undefined;
                             const displayedActiveThread = liveThread ?? archivedActiveThread;
                             const activeStatusPill = displayedActiveThread
-                              ? resolveThreadStatusPill({ thread: displayedActiveThread })
+                              ? resolveThreadStatusPill({
+                                  thread: displayedActiveThread,
+                                })
                               : null;
                             const activeAgentState = liveThread
                               ? getWorkbenchAgentPresentation({
-                                  nativeLabel: resolveThreadStatusPill({ thread: liveThread })
-                                    ?.label,
+                                  nativeLabel: resolveThreadStatusPill({
+                                    thread: liveThread,
+                                  })?.label,
                                   sessionStatus: liveThread.session?.status,
                                   turnState: liveThread.latestTurn?.state,
                                   settledOverride: liveThread.settledOverride,
@@ -1767,6 +1822,19 @@ export function WorkbenchTicketDetail({
                                 />
                                 {displayedActiveThread ? (
                                   <Button
+                                    aria-label={`Unlink Thread ${displayedActiveThread.title}`}
+                                    disabled={pending || isArchived}
+                                    onClick={() => onUnlinkThread(activeAssignment.threadId)}
+                                    size="icon-xs"
+                                    title="Unlink Thread from Ticket"
+                                    type="button"
+                                    variant="ghost"
+                                  >
+                                    <UnlinkIcon />
+                                  </Button>
+                                ) : null}
+                                {displayedActiveThread ? (
+                                  <Button
                                     aria-label={`Delete Thread ${displayedActiveThread.title}`}
                                     disabled={pending || isArchived}
                                     onClick={() => onDeleteThread(activeAssignment.threadId)}
@@ -1807,15 +1875,17 @@ export function WorkbenchTicketDetail({
                     </div>
                   ) : null}
                   <div className="flex flex-wrap gap-2 border-t border-border px-3 py-2.5">
-                    <Button
-                      disabled={pending || isArchived}
-                      onClick={() => onNewThread(ticket)}
-                      size="xs"
-                      type="button"
-                      variant="outline"
-                    >
-                      <PlusIcon /> New Thread
-                    </Button>
+                    {activeAssignments.length > 0 ? (
+                      <Button
+                        disabled={pending || isArchived}
+                        onClick={() => onNewThread(ticket)}
+                        size="xs"
+                        type="button"
+                        variant="outline"
+                      >
+                        <PlusIcon /> Create Thread
+                      </Button>
+                    ) : null}
                     <Button
                       disabled={pending || isArchived}
                       onClick={() => onAttachThread(ticket)}
@@ -1823,7 +1893,7 @@ export function WorkbenchTicketDetail({
                       type="button"
                       variant="outline"
                     >
-                      <LinkIcon /> Attach existing
+                      <LinkIcon /> Link existing Thread
                     </Button>
                   </div>
                   {historicalAssignments.length > 0 ? (
@@ -1844,7 +1914,9 @@ export function WorkbenchTicketDetail({
                           const displayedHistoricalThread =
                             historicalThread ?? historicalArchivedThread;
                           const historicalStatusPill = displayedHistoricalThread
-                            ? resolveThreadStatusPill({ thread: displayedHistoricalThread })
+                            ? resolveThreadStatusPill({
+                                thread: displayedHistoricalThread,
+                              })
                             : null;
                           const historicalAgentState = displayedHistoricalThread
                             ? getWorkbenchAgentPresentation({
@@ -1898,6 +1970,19 @@ export function WorkbenchTicketDetail({
                               />
                               {displayedHistoricalThread ? (
                                 <Button
+                                  aria-label={`Unlink Thread ${displayedHistoricalThread.title}`}
+                                  disabled={pending || isArchived}
+                                  onClick={() => onUnlinkThread(historicalAssignment.threadId)}
+                                  size="icon-xs"
+                                  title="Unlink Thread from Ticket"
+                                  type="button"
+                                  variant="ghost"
+                                >
+                                  <UnlinkIcon />
+                                </Button>
+                              ) : null}
+                              {displayedHistoricalThread ? (
+                                <Button
                                   aria-label={`Delete Thread ${displayedHistoricalThread.title}`}
                                   disabled={pending || isArchived}
                                   onClick={() => onDeleteThread(historicalAssignment.threadId)}
@@ -1934,253 +2019,115 @@ export function WorkbenchTicketDetail({
 
             <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
               <div className="flex items-start justify-between gap-3 border-b border-border/50 px-3 py-2.5">
-                <div className="min-w-0">
-                  <h2 className="text-sm font-semibold">Details</h2>
-                </div>
-                {jiraFieldsManaged ? (
-                  <Badge size="default" variant="outline">
-                    Managed by Jira
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <h2 className="text-sm font-semibold">Ticket workspace</h2>
+                  <Badge
+                    size="sm"
+                    variant={
+                      workspaceStatusLabel === "Preparation failed" ||
+                      workspaceStatusLabel === "Needs preparation"
+                        ? "warning"
+                        : "outline"
+                    }
+                  >
+                    {workspaceStatusLabel}
                   </Badge>
-                ) : null}
-                <Button
-                  aria-controls="workbench-ticket-details"
-                  aria-expanded={!detailsPanelCollapsed}
-                  aria-label={
-                    detailsPanelCollapsed ? "Expand Ticket Details" : "Collapse Ticket Details"
-                  }
-                  onClick={() => setDetailsPanelCollapsed((collapsed) => !collapsed)}
-                  size="icon-xs"
-                  title={
-                    detailsPanelCollapsed ? "Expand Ticket Details" : "Collapse Ticket Details"
-                  }
-                  type="button"
-                  variant="ghost"
-                >
-                  <ChevronDownIcon className={detailsPanelCollapsed ? "" : "rotate-180"} />
-                </Button>
-              </div>
-              {!detailsPanelCollapsed ? (
-                <div id="workbench-ticket-details" className="min-h-0">
-                  {jiraFieldsManaged ? (
-                    <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 p-3 text-sm">
-                      <dt className="text-muted-foreground">Type</dt>
-                      <dd className="min-w-0 break-words text-right font-medium [overflow-wrap:anywhere]">
-                        {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
-                      </dd>
-                      <dt className="text-muted-foreground">Epic</dt>
-                      <dd className="flex min-w-0 flex-wrap items-center justify-end gap-2 text-right">
-                        <span className="min-w-0 break-words font-medium [overflow-wrap:anywhere]">
-                          {epics.find((epic) => epic.id === ticket.epicId)?.title ?? "No Epic"}
-                        </span>
-                        {linkedEpicId ? (
-                          <Button
-                            onClick={() => onOpenEpic(linkedEpicId)}
-                            size="xs"
-                            type="button"
-                            variant="ghost"
-                          >
-                            View Epic <ArrowRightIcon />
-                          </Button>
-                        ) : null}
-                      </dd>
-                    </dl>
-                  ) : (
-                    <div className="space-y-3 p-3">
-                      <div className="space-y-1.5">
-                        <Label>Ticket type</Label>
-                        <Select
-                          disabled={pending || isArchived}
-                          value={ticket.kind}
-                          onValueChange={(value) => {
-                            if (isWorkbenchTicketKind(value))
-                              onUpdate(actionableTicket, { kind: value });
-                          }}
-                        >
-                          <SelectTrigger aria-label="Ticket type">
-                            <SelectValue>{WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}</SelectValue>
-                          </SelectTrigger>
-                          <SelectPopup>
-                            {WORKBENCH_TICKET_KINDS.map((ticketKind) => (
-                              <SelectItem key={ticketKind} value={ticketKind}>
-                                {WORKBENCH_TICKET_KIND_LABELS[ticketKind]}
-                              </SelectItem>
-                            ))}
-                          </SelectPopup>
-                        </Select>
-                      </div>
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <Label>Epic</Label>
-                          {linkedEpicId ? (
-                            <Button
-                              onClick={() => onOpenEpic(linkedEpicId)}
-                              size="xs"
-                              type="button"
-                              variant="ghost"
-                            >
-                              View Epic <ArrowRightIcon />
-                            </Button>
-                          ) : null}
-                        </div>
-                        <Select
-                          disabled={pending || isArchived}
-                          value={ticket.epicId ?? NO_EPIC_VALUE}
-                          onValueChange={(value) => {
-                            if (value === CREATE_EPIC_VALUE) {
-                              onCreateEpic((epicId) => onUpdate(actionableTicket, { epicId }));
-                              return;
-                            }
-                            onUpdate(actionableTicket, {
-                              epicId:
-                                !value || value === NO_EPIC_VALUE
-                                  ? null
-                                  : WorkbenchEpicId.make(value),
-                            });
-                          }}
-                        >
-                          <SelectTrigger aria-label="Epic">
-                            <SelectValue>
-                              {epics.find((epic) => epic.id === ticket.epicId)?.title ?? "No Epic"}
-                            </SelectValue>
-                          </SelectTrigger>
-                          <SelectPopup>
-                            <SelectItem value={NO_EPIC_VALUE}>No Epic</SelectItem>
-                            {epics.map((epic) => (
-                              <SelectItem
-                                key={epic.id}
-                                disabled={epic.archivedAt !== null}
-                                value={epic.id}
-                              >
-                                {epic.title}
-                                {epic.archivedAt !== null ? " (Archived)" : ""}
-                              </SelectItem>
-                            ))}
-                            <SelectSeparator />
-                            <SelectItem value={CREATE_EPIC_VALUE}>Create Epic…</SelectItem>
-                          </SelectPopup>
-                        </Select>
-                      </div>
-                    </div>
-                  )}
                 </div>
-              ) : null}
-            </section>
-
-            <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
-              <div className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2.5">
-                <h2 className="text-sm font-semibold">Repository scope</h2>
-                <Button
-                  aria-controls="workbench-ticket-repositories"
-                  aria-expanded={!repositoryScopePanelCollapsed}
-                  aria-label={
-                    repositoryScopePanelCollapsed
-                      ? "Expand Repository scope"
-                      : "Collapse Repository scope"
-                  }
-                  onClick={() => setRepositoryScopePanelCollapsed((collapsed) => !collapsed)}
-                  size="icon-xs"
-                  type="button"
-                  variant="ghost"
-                >
-                  <ChevronDownIcon className={repositoryScopePanelCollapsed ? "" : "rotate-180"} />
-                </Button>
+                <div className="flex shrink-0 items-center gap-1">
+                  {!workspaceIsReady ? (
+                    <Button
+                      aria-busy={workspaceIsPreparing || pending}
+                      disabled={
+                        pending || preparationPending || isArchived || repositoryScopeLocked
+                      }
+                      onClick={() => {
+                        void onPrepareWorkspace(ticket);
+                      }}
+                      size="xs"
+                      type="button"
+                      variant="outline"
+                    >
+                      <FolderGit2Icon />
+                      {workspacePreparationActionLabel}
+                    </Button>
+                  ) : null}
+                  <Button
+                    aria-controls="workbench-ticket-repositories"
+                    aria-expanded={!repositoryScopePanelCollapsed}
+                    aria-label={
+                      repositoryScopePanelCollapsed
+                        ? "Expand Ticket workspace"
+                        : "Collapse Ticket workspace"
+                    }
+                    onClick={() => setRepositoryScopePanelCollapsed((collapsed) => !collapsed)}
+                    size="icon-xs"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <ChevronDownIcon
+                      className={repositoryScopePanelCollapsed ? "" : "rotate-180"}
+                    />
+                  </Button>
+                </div>
               </div>
               {!repositoryScopePanelCollapsed ? (
                 <div id="workbench-ticket-repositories" className="space-y-3 p-3">
                   <div className="flex min-w-0 items-start gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="space-y-1">
-                        {repositories.map(({ id, repository, openInCwd }) => {
-                          return (
-                            <div
-                              key={id}
-                              className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 py-1 text-sm"
-                            >
-                              <div className="min-w-0 flex-1">
-                                <div className="flex min-w-0 items-center gap-1.5">
-                                  {openInCwd ? (
-                                    <WorkbenchCheckoutDirectory
-                                      cwd={openInCwd}
-                                      icon={
-                                        <FolderGit2Icon
-                                          aria-hidden
-                                          className="size-4 shrink-0 text-muted-foreground"
-                                        />
-                                      }
-                                      value={repository?.title ?? "Repository unavailable"}
-                                      valueClassName="line-clamp-2 break-words font-medium [overflow-wrap:anywhere]"
-                                    />
-                                  ) : (
-                                    <span className="flex min-w-0 items-center gap-1.5">
-                                      <FolderGit2Icon
-                                        aria-hidden
-                                        className="size-4 shrink-0 text-muted-foreground"
-                                      />
-                                      <span className="line-clamp-2 break-words font-medium [overflow-wrap:anywhere]">
-                                        {repository?.title ?? "Repository unavailable"}
-                                      </span>
-                                    </span>
-                                  )}
-                                  {id === ticket.primaryT3ProjectId ? (
-                                    <Badge size="default" variant="outline">
-                                      Primary
-                                    </Badge>
-                                  ) : null}
-                                </div>
-                              </div>
-                              {repository && !isArchived ? (
-                                <OpenInPicker
-                                  environmentId={repository.environmentId}
-                                  keybindings={keybindings}
-                                  availableEditors={availableEditors}
-                                  openInCwd={openInCwd}
-                                  compact
-                                  enableShortcut={false}
-                                />
-                              ) : null}
-                              {openInCwd ? (
-                                <div className="min-w-0 basis-full">
-                                  <WorkbenchCheckoutDetails
-                                    environmentId={environmentId}
-                                    cwd={openInCwd}
-                                    showDirectory={false}
-                                    showPullRequest={false}
-                                  />
-                                </div>
-                              ) : null}
-                            </div>
-                          );
-                        })}
+                        {repositories.map((entry) => (
+                          <WorkbenchTicketRepositoryRow
+                            key={entry.id}
+                            environmentId={environmentId}
+                            entry={entry}
+                            keybindings={keybindings}
+                            availableEditors={availableEditors}
+                            isArchived={isArchived}
+                            isRetained={false}
+                            canOpen={ticketWorkspace?.status === "ready" && !workspaceIsPreparing}
+                          />
+                        ))}
+                        {retainedRepositories.length > 0 ? (
+                          <div className="mt-3 border-t border-border/60 pt-2">
+                            <p className="mb-1 text-xs font-medium text-muted-foreground">
+                              Retained worktrees
+                            </p>
+                            {retainedRepositories.map((entry) => (
+                              <WorkbenchTicketRepositoryRow
+                                key={entry.id}
+                                environmentId={environmentId}
+                                entry={entry}
+                                keybindings={keybindings}
+                                availableEditors={availableEditors}
+                                isArchived={isArchived}
+                                isRetained
+                                canOpen={
+                                  ticketWorkspace?.status === "ready" && !workspaceIsPreparing
+                                }
+                              />
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
-                      {ticketWorkspace ? (
-                        <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                          <Badge
-                            size="sm"
-                            variant={ticketWorkspace.status === "failed" ? "warning" : "outline"}
-                          >
-                            {ticketWorkspace.status === "ready"
-                              ? workspaceHasSelectedRepositories
-                                ? "Workspace prepared"
-                                : "Workspace updates pending"
-                              : ticketWorkspace.status === "preparing"
-                                ? "Preparing workspace"
-                                : ticketWorkspace.status === "releasing"
-                                  ? "Releasing workspace"
-                                  : ticketWorkspace.status === "released"
-                                    ? "No active workspace"
-                                    : "Workspace failed"}
-                          </Badge>
-                        </div>
-                      ) : null}
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        {workspaceIsPreparing
+                          ? "Preparing the selected repositories."
+                          : ticketWorkspace === undefined
+                            ? "Prepare a workspace to work in your editor, or create a Thread to prepare it automatically."
+                            : ticketWorkspace.status === "ready" &&
+                                !workspaceHasSelectedRepositories
+                              ? "Repository selection changed. Prepare the workspace to add the missing repositories; existing worktrees stay available."
+                              : ticketWorkspace.status === "released"
+                                ? "No active worktrees. Prepare a workspace for your editor, or create a Thread to prepare it automatically."
+                                : ticketWorkspace.status === "failed"
+                                  ? "Preparation failed. Retry preparation after resolving the reported repository error."
+                                  : ticketWorkspace.status === "releasing"
+                                    ? "Removing prepared worktrees."
+                                    : "Threads in the same worktree share files and branch changes. Use a separate native worktree for independent work."}
+                      </p>
                       {ticketWorkspace?.errorMessage ? (
                         <p className="mt-2 break-words text-xs text-destructive" role="alert">
                           {ticketWorkspace.errorMessage}
-                        </p>
-                      ) : null}
-                      {ticketWorkspace?.status === "ready" ? (
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          Threads in the same worktree share files and branch changes. Use a
-                          separate native worktree for independent work.
                         </p>
                       ) : null}
                       {ticketWorkspace ? (
@@ -2229,10 +2176,17 @@ export function WorkbenchTicketDetail({
                               aria-labelledby="workbench-ticket-advanced-settings-heading"
                             >
                               <p className="text-xs text-muted-foreground">
-                                Reset removes this Ticket&apos;s repository worktrees. The Ticket,
-                                Git branches, and commits are kept. Reset is refused while linked
-                                Threads exist or any worktree has local changes.
+                                Remove prepared worktrees when you are done. The Ticket, Git
+                                branches, and commits are kept. Removal is refused while linked
+                                Threads or native Threads using these worktrees exist, or any
+                                worktree has local changes.
                               </p>
+                              {activeAssignments.length > 0 ? (
+                                <p className="text-xs text-warning-foreground">
+                                  Removal is currently blocked by {activeAssignments.length} linked{" "}
+                                  {activeAssignments.length === 1 ? "Thread" : "Threads"}.
+                                </p>
+                              ) : null}
                               {ticketWorkspace.status !== "released" ? (
                                 <Button
                                   disabled={pending || isArchived}
@@ -2241,12 +2195,12 @@ export function WorkbenchTicketDetail({
                                   type="button"
                                   variant="outline"
                                 >
-                                  <RotateCcwIcon /> Reset ticket workspace
+                                  <RotateCcwIcon /> Remove prepared worktrees
                                 </Button>
                               ) : (
                                 <p className="text-xs text-muted-foreground">
-                                  No active workspace to reset. The next Create Thread prepares the
-                                  workspace again.
+                                  No prepared worktrees to remove. Prepare the workspace when you
+                                  are ready to work on this Ticket.
                                 </p>
                               )}
                             </div>
@@ -2389,6 +2343,21 @@ export function WorkbenchTicketDetail({
                 </div>
               ) : null}
             </section>
+
+            <WorkbenchTicketDetailsPanel
+              collapsed={detailsPanelCollapsed}
+              epics={epics}
+              isArchived={isArchived}
+              jiraFieldsManaged={jiraFieldsManaged}
+              linkedEpicId={linkedEpicId}
+              onCreateEpic={onCreateEpic}
+              onOpenEpic={onOpenEpic}
+              onUpdate={onUpdate}
+              onToggle={() => setDetailsPanelCollapsed((collapsed) => !collapsed)}
+              pending={pending}
+              ticket={ticket}
+              actionableTicket={actionableTicket}
+            />
           </aside>
         </div>
       </form>
@@ -2422,11 +2391,12 @@ export function WorkbenchTicketDetail({
       <AlertDialog open={resetConfirmationOpen} onOpenChange={setResetConfirmationOpen}>
         <AlertDialogPopup>
           <AlertDialogHeader>
-            <AlertDialogTitle>Reset workspace for “{displayedTitle}”?</AlertDialogTitle>
+            <AlertDialogTitle>Remove prepared worktrees for “{displayedTitle}”?</AlertDialogTitle>
             <AlertDialogDescription>
-              This destructive action removes this Ticket's repository worktrees. The Ticket, Git
-              branches, and commits are kept. Reset is refused while linked Threads exist or any
-              worktree has local changes. The next Create Thread prepares the workspace again.
+              This removes this Ticket&apos;s prepared repository worktrees. The Ticket, Git
+              branches, and commits are kept. Removal is refused while linked Threads or native
+              Threads using these worktrees exist, or any worktree has local changes. Prepare the
+              workspace again whenever you need it.
             </AlertDialogDescription>
             {error ? <WorkbenchInlineError message={error} /> : null}
           </AlertDialogHeader>
@@ -2444,12 +2414,262 @@ export function WorkbenchTicketDetail({
               }}
               variant="destructive"
             >
-              <RotateCcwIcon /> {pending ? "Resetting workspace…" : "Reset ticket workspace"}
+              <RotateCcwIcon /> {pending ? "Removing worktrees…" : "Remove prepared worktrees"}
             </Button>
           </AlertDialogFooter>
         </AlertDialogPopup>
       </AlertDialog>
     </article>
+  );
+}
+
+type WorkbenchTicketUpdatePatch = Partial<
+  Pick<
+    WorkbenchTicket,
+    | "title"
+    | "markdown"
+    | "kind"
+    | "epicId"
+    | "repositoryProjectIds"
+    | "primaryT3ProjectId"
+    | "status"
+    | "blocked"
+  >
+>;
+
+function WorkbenchTicketDetailsPanel({
+  collapsed,
+  epics,
+  isArchived,
+  jiraFieldsManaged,
+  linkedEpicId,
+  onCreateEpic,
+  onOpenEpic,
+  onToggle,
+  onUpdate,
+  pending,
+  ticket,
+  actionableTicket,
+}: {
+  readonly collapsed: boolean;
+  readonly epics: ReadonlyArray<WorkbenchEpic>;
+  readonly isArchived: boolean;
+  readonly jiraFieldsManaged: boolean;
+  readonly linkedEpicId: WorkbenchEpicId | null;
+  readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
+  readonly onOpenEpic: (epicId: WorkbenchEpicId) => void;
+  readonly onToggle: () => void;
+  readonly onUpdate: (ticket: WorkbenchTicket, patch: WorkbenchTicketUpdatePatch) => void;
+  readonly pending: boolean;
+  readonly ticket: WorkbenchTicket;
+  readonly actionableTicket: WorkbenchTicket;
+}) {
+  return (
+    <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
+      <div className="flex items-start justify-between gap-3 border-b border-border/50 px-3 py-2.5">
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">Details</h2>
+        </div>
+        {jiraFieldsManaged ? (
+          <Badge size="default" variant="outline">
+            Managed by Jira
+          </Badge>
+        ) : null}
+        <Button
+          aria-controls="workbench-ticket-details"
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? "Expand Ticket Details" : "Collapse Ticket Details"}
+          onClick={onToggle}
+          size="icon-xs"
+          title={collapsed ? "Expand Ticket Details" : "Collapse Ticket Details"}
+          type="button"
+          variant="ghost"
+        >
+          <ChevronDownIcon className={collapsed ? "" : "rotate-180"} />
+        </Button>
+      </div>
+      {!collapsed ? (
+        <div id="workbench-ticket-details" className="min-h-0">
+          {jiraFieldsManaged ? (
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 p-3 text-sm">
+              <dt className="text-muted-foreground">Type</dt>
+              <dd className="min-w-0 break-words text-right font-medium [overflow-wrap:anywhere]">
+                {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
+              </dd>
+              <dt className="text-muted-foreground">Epic</dt>
+              <dd className="flex min-w-0 flex-wrap items-center justify-end gap-2 text-right">
+                <span className="min-w-0 break-words font-medium [overflow-wrap:anywhere]">
+                  {epics.find((epic) => epic.id === ticket.epicId)?.title ?? "No Epic"}
+                </span>
+                {linkedEpicId ? (
+                  <Button
+                    onClick={() => onOpenEpic(linkedEpicId)}
+                    size="xs"
+                    type="button"
+                    variant="ghost"
+                  >
+                    View Epic <ArrowRightIcon />
+                  </Button>
+                ) : null}
+              </dd>
+            </dl>
+          ) : (
+            <div className="space-y-3 p-3">
+              <div className="space-y-1.5">
+                <Label>Ticket type</Label>
+                <Select
+                  disabled={pending || isArchived}
+                  value={ticket.kind}
+                  onValueChange={(value) => {
+                    if (isWorkbenchTicketKind(value)) onUpdate(actionableTicket, { kind: value });
+                  }}
+                >
+                  <SelectTrigger aria-label="Ticket type">
+                    <SelectValue>{WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup>
+                    {WORKBENCH_TICKET_KINDS.map((ticketKind) => (
+                      <SelectItem key={ticketKind} value={ticketKind}>
+                        {WORKBENCH_TICKET_KIND_LABELS[ticketKind]}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Epic</Label>
+                  {linkedEpicId ? (
+                    <Button
+                      onClick={() => onOpenEpic(linkedEpicId)}
+                      size="xs"
+                      type="button"
+                      variant="ghost"
+                    >
+                      View Epic <ArrowRightIcon />
+                    </Button>
+                  ) : null}
+                </div>
+                <Select
+                  disabled={pending || isArchived}
+                  value={ticket.epicId ?? NO_EPIC_VALUE}
+                  onValueChange={(value) => {
+                    if (value === CREATE_EPIC_VALUE) {
+                      onCreateEpic((epicId) => onUpdate(actionableTicket, { epicId }));
+                      return;
+                    }
+                    onUpdate(actionableTicket, {
+                      epicId:
+                        !value || value === NO_EPIC_VALUE ? null : WorkbenchEpicId.make(value),
+                    });
+                  }}
+                >
+                  <SelectTrigger aria-label="Epic">
+                    <SelectValue>
+                      {epics.find((epic) => epic.id === ticket.epicId)?.title ?? "No Epic"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup>
+                    <SelectItem value={NO_EPIC_VALUE}>No Epic</SelectItem>
+                    {epics.map((epic) => (
+                      <SelectItem key={epic.id} disabled={epic.archivedAt !== null} value={epic.id}>
+                        {epic.title}
+                        {epic.archivedAt !== null ? " (Archived)" : ""}
+                      </SelectItem>
+                    ))}
+                    <SelectSeparator />
+                    <SelectItem value={CREATE_EPIC_VALUE}>Create Epic…</SelectItem>
+                  </SelectPopup>
+                </Select>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+type WorkbenchTicketRepositoryEntry = {
+  readonly id: ProjectId;
+  readonly isPrimary: boolean;
+  readonly repository: Project | undefined;
+  readonly openInCwd: string | null;
+};
+
+function WorkbenchTicketRepositoryRow({
+  environmentId,
+  entry,
+  keybindings,
+  availableEditors,
+  isArchived,
+  isRetained,
+  canOpen,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly entry: WorkbenchTicketRepositoryEntry;
+  readonly keybindings: ResolvedKeybindingsConfig;
+  readonly availableEditors: ReadonlyArray<EditorId>;
+  readonly isArchived: boolean;
+  readonly isRetained: boolean;
+  readonly canOpen: boolean;
+}) {
+  const { repository, openInCwd } = entry;
+  const repositoryTitle = repository?.title ?? "Repository unavailable";
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 py-1 text-sm">
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+          {openInCwd ? (
+            <WorkbenchCheckoutDirectory
+              cwd={openInCwd}
+              icon={
+                <FolderGit2Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              }
+              value={repositoryTitle}
+              valueClassName="line-clamp-2 break-words font-medium [overflow-wrap:anywhere]"
+            />
+          ) : (
+            <span className="flex min-w-0 items-center gap-1.5">
+              <FolderGit2Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              <span className="line-clamp-2 break-words font-medium [overflow-wrap:anywhere]">
+                {repositoryTitle}
+              </span>
+            </span>
+          )}
+          {entry.isPrimary && !isRetained ? (
+            <Badge size="default" variant="outline">
+              Primary
+            </Badge>
+          ) : null}
+          {isRetained ? (
+            <Badge size="sm" variant="outline">
+              Retained · outside ticket context
+            </Badge>
+          ) : null}
+        </div>
+      </div>
+      {repository && !isArchived && canOpen && openInCwd ? (
+        <OpenInPicker
+          environmentId={repository.environmentId}
+          keybindings={keybindings}
+          availableEditors={availableEditors}
+          openInCwd={openInCwd}
+          compact
+          enableShortcut={false}
+        />
+      ) : null}
+      {openInCwd ? (
+        <div className="min-w-0 basis-full">
+          <WorkbenchCheckoutDetails
+            environmentId={environmentId}
+            cwd={openInCwd}
+            showDirectory={false}
+            showPullRequest={false}
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 

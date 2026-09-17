@@ -91,16 +91,16 @@ test("R1 R3: multi-repository worktrees persist and reset refuses retained Threa
   await page
     .getByRole("button", { name: "Expand Advanced workspace settings", exact: true })
     .click();
-  await page.getByRole("button", { name: "Reset ticket workspace", exact: true }).click();
+  await page.getByRole("button", { name: "Remove prepared worktrees", exact: true }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(page.getByRole("alertdialog")).not.toBeVisible();
   expect((await snapshot(demo)).ticketWorkspaces.find((w) => w.ticketId === "orbit-001")).toEqual(
     workspace,
   );
-  await page.getByRole("button", { name: "Reset ticket workspace", exact: true }).click();
+  await page.getByRole("button", { name: "Remove prepared worktrees", exact: true }).click();
   await page
     .getByRole("alertdialog")
-    .getByRole("button", { name: "Reset ticket workspace", exact: true })
+    .getByRole("button", { name: "Remove prepared worktrees", exact: true })
     .click();
   await expect(
     page.getByText(/Threads.*(exist|linked)|linked.*Threads|Thread.*before.*reset/i).last(),

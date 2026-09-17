@@ -16,5 +16,9 @@ export class WorkbenchNativeAccess extends Context.Service<
       Option.Option<{ readonly id: ThreadId; readonly projectId: ProjectId }>,
       WorkbenchOperationError
     >;
+    /** Whether a non-deleted native Thread still owns the given worktree path. */
+    readonly hasThreadAtWorktreePath: (
+      worktreePath: string,
+    ) => Effect.Effect<boolean, WorkbenchOperationError>;
   }
 >()("@t3tools/workbench/WorkbenchNativeAccess") {}

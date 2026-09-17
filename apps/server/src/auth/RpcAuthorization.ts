@@ -75,6 +75,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.workbenchArchiveTicket]: AuthOrchestrationOperateScope,
   [WS_METHODS.workbenchDeleteTicket]: AuthOrchestrationOperateScope,
   [WS_METHODS.workbenchCreateAssignment]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workbenchUnlinkAssignment]: AuthOrchestrationOperateScope,
   [WS_METHODS.workbenchReplaceAssignment]: AuthOrchestrationOperateScope,
   [WS_METHODS.workbenchPrepareTicketWorkspace]: AuthOrchestrationOperateScope,
   [WS_METHODS.workbenchReleaseTicketWorkspace]: AuthOrchestrationOperateScope,

@@ -26,6 +26,7 @@ const storeLayer = WorkbenchStoreLive.pipe(
     Layer.succeed(WorkbenchNativeAccess, {
       findProject: (id) => Effect.succeed(Option.some({ id })),
       findThread: () => Effect.succeed(Option.none()),
+      hasThreadAtWorktreePath: () => Effect.succeed(false),
     }),
   ),
   Layer.provide(NodeSqliteClient.layerMemory()),

@@ -1444,6 +1444,66 @@ describe("TicketWorkspaceService", () => {
     );
   });
 
+  it.effect(
+    "does not recover an interrupted preparation used by an unlinked archived Thread",
+    () => {
+      const events: Array<string> = [];
+      const primaryWorktreePath = "/worktrees/interrupted-primary";
+      return Effect.gen(function* () {
+        yield* seedTicket;
+        const store = yield* WorkbenchStore;
+        yield* store.claimTicketWorkspace({
+          ticketId,
+          attemptId: WorkbenchTicketWorkspaceAttemptId.make("interrupted-unlinked-attempt"),
+          branchName: ticketWorkspaceBranchName(ticketId),
+          repositories: [
+            {
+              projectId: primaryProjectId,
+              isPrimary: true,
+              sourcePath: "/repos/primary",
+              worktreePath: primaryWorktreePath,
+            },
+            {
+              projectId: secondaryProjectId,
+              isPrimary: false,
+              sourcePath: "/repos/secondary",
+              worktreePath: "/worktrees/interrupted-secondary",
+            },
+          ],
+          claimedAt: "2026-09-03T11:00:00.000Z",
+        });
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`
+        INSERT INTO projection_threads (
+          thread_id, project_id, title, model_selection_json, runtime_mode,
+          interaction_mode, pending_approval_count, pending_user_input_count,
+          has_actionable_proposed_plan, worktree_path, created_at, updated_at,
+          archived_at, deleted_at
+        ) VALUES (
+          'thread-unlinked-archived', ${primaryProjectId}, 'Archived work', '{}',
+          'full-access', 'default', 0, 0, 0, ${primaryWorktreePath},
+          ${createdAt}, ${createdAt}, ${createdAt}, NULL
+        )
+      `;
+        const service = yield* TicketWorkspaceService;
+
+        const error = yield* Effect.flip(service.prepare({ ticketId, requestedAt: createdAt }));
+
+        expect(error.code).toBe("ticket_workspace_in_use");
+        expect(events.filter((event) => event.startsWith("remove:"))).toEqual([]);
+        expect(events.filter((event) => event.startsWith("prune:"))).toEqual([]);
+        expect(events.filter((event) => event.startsWith("create:"))).toEqual([]);
+      }).pipe(
+        Effect.provide(
+          makeTestLayer({
+            events,
+            initialWorktrees: [{ sourcePath: "/repos/primary", worktreePath: primaryWorktreePath }],
+          }),
+        ),
+      );
+    },
+  );
+
   it.effect("recovers an interrupted preparation assigned to a deleted Thread", () => {
     const events: Array<string> = [];
     const primaryWorktreePath = "/worktrees/interrupted-primary";

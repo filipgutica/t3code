@@ -22,6 +22,7 @@ import {
   WorkbenchSnapshot,
   WorkbenchTicket,
   WorkbenchTicketWorkspace,
+  WorkbenchUnlinkAssignmentInput,
   WorkbenchUpdateEpicInput,
   WorkbenchUpdateProjectInput,
   WorkbenchUpdateTicketInput,
@@ -70,6 +71,7 @@ export const WORKBENCH_WS_METHODS = {
   workbenchArchiveTicket: "workbench.tickets.archive",
   workbenchDeleteTicket: "workbench.tickets.delete",
   workbenchCreateAssignment: "workbench.assignments.create",
+  workbenchUnlinkAssignment: "workbench.assignments.unlink",
   workbenchReplaceAssignment: "workbench.assignments.replace",
   workbenchPrepareTicketWorkspace: "workbench.ticketWorkspaces.prepare",
   workbenchReleaseTicketWorkspace: "workbench.ticketWorkspaces.release",
@@ -168,6 +170,12 @@ const WsWorkbenchDeleteTicketRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchDelete
 const WsWorkbenchCreateAssignmentRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchCreateAssignment, {
   payload: WorkbenchCreateAssignmentInput,
   success: WorkbenchAssignment,
+  error: WorkbenchRpcError,
+});
+
+const WsWorkbenchUnlinkAssignmentRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchUnlinkAssignment, {
+  payload: WorkbenchUnlinkAssignmentInput,
+  success: Schema.Void,
   error: WorkbenchRpcError,
 });
 
@@ -311,6 +319,7 @@ export const WorkbenchRpcGroup = RpcGroup.make(
   WsWorkbenchArchiveTicketRpc,
   WsWorkbenchDeleteTicketRpc,
   WsWorkbenchCreateAssignmentRpc,
+  WsWorkbenchUnlinkAssignmentRpc,
   WsWorkbenchReplaceAssignmentRpc,
   WsWorkbenchPrepareTicketWorkspaceRpc,
   WsWorkbenchReleaseTicketWorkspaceRpc,

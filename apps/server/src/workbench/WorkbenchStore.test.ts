@@ -217,6 +217,136 @@ describe("WorkbenchStore", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
+  it.effect(
+    "unlinks and relinks Threads, and protects reset from an unlinked archived Thread",
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const store = yield* WorkbenchStore;
+        const projectId = ProjectId.make("t3-project-unlink");
+        const workspaceId = WorkbenchProjectId.make("workbench-project-unlink");
+        const ticketId = WorkbenchTicketId.make("ticket-unlink");
+        const threadId = ThreadId.make("thread-unlink");
+        const createdAt = "2026-09-05T12:00:00.000Z";
+        const worktreePath = "/worktrees/ticket-unlink/repository";
+
+        yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+        ) VALUES (
+          ${projectId}, 'Unlink repository', '/repos/unlink', '[]', ${createdAt}, ${createdAt}, NULL
+        )
+      `;
+        yield* store.createProject({
+          id: workspaceId,
+          title: "Unlink Workspace",
+          linkedProjectIds: [projectId],
+          createdAt,
+        });
+        yield* store.createTicket({
+          id: ticketId,
+          projectId: workspaceId,
+          title: "Unlink assignment",
+          kind: "story",
+          markdown: "Keep the native Thread available for relinking.",
+          primaryT3ProjectId: projectId,
+          repositoryProjectIds: [projectId],
+          createdAt,
+        });
+        yield* sql`
+        INSERT INTO projection_threads (
+          thread_id, project_id, title, model_selection_json, runtime_mode,
+          interaction_mode, pending_approval_count, pending_user_input_count,
+          has_actionable_proposed_plan, worktree_path, created_at, updated_at, deleted_at
+        ) VALUES (
+          ${threadId}, ${projectId}, 'Unlink thread', '{}', 'full-access',
+          'default', 0, 0, 0, ${worktreePath}, ${createdAt}, ${createdAt}, NULL
+        )
+      `;
+        yield* store.createAssignment({
+          id: WorkbenchAssignmentId.make("unlink-assignment-1"),
+          ticketId,
+          threadId,
+          createdAt,
+        });
+
+        yield* sql`
+        INSERT INTO workbench_ticket_workspaces (
+          ticket_id, attempt_id, status, branch_name, error_message, created_at, updated_at
+        ) VALUES (
+          ${ticketId}, 'unlink-guard-attempt', 'preparing', 'workbench/ticket-unlink', NULL,
+          ${createdAt}, ${createdAt}
+        )
+      `;
+        yield* sql`
+        INSERT INTO workbench_ticket_workspace_repositories (
+          ticket_id, t3_project_id, attempt_id, is_primary, source_path, worktree_path,
+          branch_name, status, error_message, created_at, updated_at
+        ) VALUES (
+          ${ticketId}, ${projectId}, 'unlink-guard-attempt', 1, '/repos/unlink',
+          ${worktreePath}, 'workbench/ticket-unlink', 'ready', NULL, ${createdAt}, ${createdAt}
+        )
+      `;
+        const preparingError = yield* Effect.flip(store.unlinkAssignment({ ticketId, threadId }));
+        yield* sql`
+        UPDATE workbench_ticket_workspaces
+        SET status = 'releasing'
+        WHERE ticket_id = ${ticketId}
+      `;
+        const releasingError = yield* Effect.flip(store.unlinkAssignment({ ticketId, threadId }));
+        expect(preparingError.code).toBe("ticket_workspace_in_use");
+        expect(releasingError.code).toBe("ticket_workspace_in_use");
+        yield* sql`
+        UPDATE workbench_ticket_workspaces
+        SET status = 'ready'
+        WHERE ticket_id = ${ticketId}
+      `;
+        yield* store.unlinkAssignment({ ticketId, threadId });
+        expect((yield* store.getSnapshot).assignments).toEqual([]);
+
+        yield* store.createAssignment({
+          id: WorkbenchAssignmentId.make("unlink-assignment-2"),
+          ticketId,
+          threadId,
+          createdAt: "2026-09-05T12:01:00.000Z",
+        });
+        const archivedTicket = yield* store.archiveTicket({
+          ticketId,
+          expectedRevision: 0,
+          archivedAt: "2026-09-05T12:01:30.000Z",
+          updatedAt: "2026-09-05T12:01:30.000Z",
+        });
+        const archivedError = yield* Effect.flip(store.unlinkAssignment({ ticketId, threadId }));
+        expect(archivedError.code).toBe("ticket_archived");
+        yield* store.archiveTicket({
+          ticketId,
+          expectedRevision: archivedTicket.revision,
+          archivedAt: null,
+          updatedAt: "2026-09-05T12:01:45.000Z",
+        });
+        yield* store.unlinkAssignment({ ticketId, threadId });
+        // Unlink is idempotent and does not delete the native Thread.
+        yield* store.unlinkAssignment({ ticketId, threadId });
+
+        yield* sql`
+        UPDATE projection_threads
+        SET archived_at = '2026-09-05T12:03:00.000Z'
+        WHERE thread_id = ${threadId}
+      `;
+
+        const resetError = yield* Effect.flip(
+          store.claimTicketWorkspaceRelease({
+            ticketId,
+            attemptId: WorkbenchTicketWorkspaceAttemptId.make("unlink-guard-attempt"),
+            claimedAt: "2026-09-05T12:04:00.000Z",
+            requireNoLinkedThreads: true,
+          }),
+        );
+        expect(resetError.code).toBe("ticket_workspace_in_use");
+        expect((yield* store.getSnapshot).assignments).toEqual([]);
+      }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.effect("renames a Workspace and adds repositories without removing existing links", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

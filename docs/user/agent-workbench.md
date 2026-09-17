@@ -148,7 +148,9 @@ New worktrees and branches have readable names based on the Ticket title and, wh
 
 Before preparing a new worktree, Workbench fetches `main` from `origin`. New Ticket branches start from the updated `origin/main`. Preparation stops if the fetch fails or `origin/main` is unavailable.
 
-Creating a Workbench **Workspace** groups existing Projects; it does not create repository directories. **Create Thread** prepares the Ticket's directories. For a new two-repository Ticket, the layout looks like this:
+Creating a Workbench **Workspace** groups existing Projects; it does not create repository directories. In **Ticket workspace**, choose **Prepare workspace** to create worktrees without creating a Thread, then open a repository in your editor. **Create thread** also prepares missing worktrees and reuses existing ones. Creating, importing, or viewing a Ticket does not prepare worktrees.
+
+For a new two-repository Ticket, the layout looks like this:
 
 ```text
 worktrees/workbench/save-onboarding-progress-<suffix>/
@@ -156,22 +158,24 @@ worktrees/workbench/save-onboarding-progress-<suffix>/
 └── orbit-web/
 ```
 
-Each directory is a Git worktree for its own repository. Workbench initially creates the same Ticket branch name in both. **Repository scope** shows their paths and branches; the primary repository is where the Thread starts.
+Each directory is a Git worktree for its own repository. Workbench initially creates the same Ticket branch name in both. **Ticket workspace** shows their paths and branches; the primary repository is where the Thread starts.
 
 ### Change a Ticket's repositories
 
-Open **Repository scope** to change the selected repositories or primary repository, even after creating Threads.
+In **Ticket workspace**, expand **Edit repository scope** to change the selected repositories or primary repository, even after creating Threads.
 
-- Added repositories receive worktrees when you create another Thread.
+- Adding a repository to a prepared workspace prepares its worktree automatically. Before initial preparation, additions only change the selection.
 - Existing Threads retain their working directory and previously sent context.
-- Removing a repository from the selection leaves its worktree on disk.
+- Removing a repository from the selection retains its worktree and local changes. It appears outside the active context. Adding it back reuses that worktree.
 - Branch changes made in native Threads are retained when you create another Thread.
 
 Repository edits are temporarily unavailable while Workbench prepares or releases worktrees.
 
-### Attach or reopen a Thread
+### Link or reopen a Thread
 
-Use **Attach existing** to link an unassigned conversation from the Ticket's primary repository. This does not change the conversation's content or checkout.
+Use **Link existing thread** to link an unassigned conversation from the Ticket's primary repository. This does not change the conversation's content or checkout.
+
+Use **Unlink from ticket** to remove that association without deleting the Thread. You can link it again later. Unlinking does not move its checkout or make that worktree safe to remove while the Thread still uses it.
 
 Choose **Open Thread** to reopen an archived linked Thread; Workbench restores it to T3's active Thread list. Earlier conversations remain accessible through **Thread history**.
 
@@ -181,12 +185,12 @@ If a Thread was deleted, **Create Thread** starts a replacement and retains the 
 
 Use a reset when you need to remove and prepare the Ticket's worktrees again.
 
-1. Delete all linked Threads, including archived Threads and those in **Thread history**.
+1. Remove links to Threads working elsewhere. Delete Threads that still use the Ticket worktrees, including archived Threads.
 2. Commit or otherwise preserve any local worktree changes, then make sure the worktrees are clean.
-3. Open **Repository scope** and choose **Reset ticket workspace**.
+3. Open **Ticket workspace**, expand **Advanced workspace settings**, and choose **Remove prepared worktrees**.
 4. Review and confirm the removal.
 
-Reset removes the worktrees but keeps the Ticket, Git branches, and commits. The next **Create Thread** prepares the worktrees again.
+Reset removes the worktrees but keeps the Ticket, Git branches, and commits. **Prepare workspace** or **Create thread** prepares the worktrees again.
 
 ## Connect Jira
 
@@ -204,7 +208,7 @@ Published Workbench desktop previews include a hosted Jira connection. You autho
 6. If the Workspace has local Tickets or Epics, choose whether to publish them to Jira or delete them before importing. Deleting requires an exact-count confirmation; native Agent Threads remain in history.
 7. Save the configuration. Workbench saves the mirror and starts the first Jira sync automatically.
 
-An issue in more than one selected sprint appears only once. Importing creates Tickets, not worktrees. Before starting a Thread, check that Ticket's **Repository scope**.
+An issue in more than one selected sprint appears only once. Importing creates Tickets, not worktrees. Before preparing worktrees or starting a Thread, check the repositories in **Ticket workspace**.
 
 If a migration is interrupted, the setup dialog stays open so you can retry. Choose the same local-data action to resume the migration. Workbench keeps the original local revision checks for that attempt and reports an error if a Ticket or Epic changed.
 

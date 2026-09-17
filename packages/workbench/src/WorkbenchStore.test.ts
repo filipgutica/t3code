@@ -37,6 +37,7 @@ const nativeLayer = (options?: {
             : Option.some({ id: threadId, projectId: ProjectId.make(projectId) }),
         );
       },
+      hasThreadAtWorktreePath: () => Effect.succeed(false),
     }),
   );
 };

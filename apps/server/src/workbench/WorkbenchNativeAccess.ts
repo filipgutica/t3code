@@ -2,6 +2,7 @@ import { ProjectId, ThreadId, WorkbenchOperationError } from "@t3tools/contracts
 import { WorkbenchNativeAccess } from "@t3tools/workbench/WorkbenchNativeAccess";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
@@ -40,6 +41,17 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
         AND deleted_at IS NULL
     `,
   });
+  const findThreadAtWorktreePathRow = SqlSchema.findOneOption({
+    Request: Schema.Struct({ worktreePath: Schema.String }),
+    Result: Schema.Struct({ id: ThreadId }),
+    execute: ({ worktreePath }) => sql`
+      SELECT thread_id AS "id"
+      FROM projection_threads
+      WHERE worktree_path = ${worktreePath}
+        AND deleted_at IS NULL
+      LIMIT 1
+    `,
+  });
 
   const findProject = Effect.fn("WorkbenchNativeAccess.findProject")(function* (
     projectId: ProjectId,
@@ -49,8 +61,16 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
   const findThread = Effect.fn("WorkbenchNativeAccess.findThread")(function* (threadId: ThreadId) {
     return yield* findThreadRow({ threadId }).pipe(Effect.mapError(persistenceError));
   });
+  const hasThreadAtWorktreePath = Effect.fn("WorkbenchNativeAccess.hasThreadAtWorktreePath")(
+    function* (worktreePath: string) {
+      return yield* findThreadAtWorktreePathRow({ worktreePath }).pipe(
+        Effect.map(Option.isSome),
+        Effect.mapError(persistenceError),
+      );
+    },
+  );
 
-  return WorkbenchNativeAccess.of({ findProject, findThread });
+  return WorkbenchNativeAccess.of({ findProject, findThread, hasThreadAtWorktreePath });
 });
 
 export const WorkbenchNativeAccessLive = Layer.effect(
