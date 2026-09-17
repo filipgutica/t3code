@@ -53,6 +53,7 @@
     "workbench:lint": "vp lint packages/workbench --deny-warnings",
     "workbench:knip": "knip --workspace packages/workbench --include files,dependencies,exports --preprocessor ./scripts/knip-schemas.ts --no-config-hints",
     "workbench:fallow": "fallow --config packages/workbench/.fallowrc.jsonc --workspace packages/workbench dead-code --include-entry-exports --format json --quiet --explain",
+    "workbench:fallow:audit": "node scripts/workbench-quality.mts",
     "workbench:fallow:health": "fallow --config packages/workbench/.fallowrc.jsonc --workspace packages/workbench health --complexity --report-only --format json --quiet --explain",
     "workbench:fallow:dupes": "fallow --config packages/workbench/.fallowrc.jsonc --workspace packages/workbench dupes --threshold 0 --format json --quiet --explain"
   },
