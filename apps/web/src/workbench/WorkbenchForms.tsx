@@ -2197,7 +2197,7 @@ export function WorkbenchTicketDetail({
             <WorkbenchTicketPullRequests
               environmentId={environmentId}
               ticketKey={jiraIssueLink?.issue.key ?? null}
-              repositoryProjectIds={selectedRepositoryProjectIds}
+              workspaceRepositoryProjectIds={linkedProjects.map((project) => project.id)}
               pullRequests={associatedPullRequests}
               checkouts={getWorkbenchTicketPullRequestCheckouts({
                 workspace: ticketWorkspace,

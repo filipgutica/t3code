@@ -46,13 +46,13 @@ const ticketCheckoutPullRequests = Atom.family((key: string) => {
 export function WorkbenchTicketPullRequests({
   environmentId,
   ticketKey,
-  repositoryProjectIds,
+  workspaceRepositoryProjectIds,
   pullRequests,
   checkouts,
 }: {
   readonly environmentId: EnvironmentId;
   readonly ticketKey: string | null;
-  readonly repositoryProjectIds: ReadonlyArray<ProjectId>;
+  readonly workspaceRepositoryProjectIds: ReadonlyArray<ProjectId>;
   readonly pullRequests: ReadonlyArray<WorkbenchTicketPullRequest>;
   readonly checkouts: ReadonlyArray<{
     readonly projectId: ProjectId;
@@ -63,7 +63,7 @@ export function WorkbenchTicketPullRequests({
   const checkout = useAtomValue(
     ticketCheckoutPullRequests(JSON.stringify({ environmentId, checkouts })),
   );
-  const canSearch = ticketKey !== null && repositoryProjectIds.length > 0;
+  const canSearch = ticketKey !== null && workspaceRepositoryProjectIds.length > 0;
   const search = usePullRequestList(
     canSearch
       ? [
@@ -72,7 +72,7 @@ export function WorkbenchTicketPullRequests({
             input: {
               state: "all",
               involvement: "all",
-              projectIds: repositoryProjectIds,
+              projectIds: workspaceRepositoryProjectIds,
               query: ticketKey,
               limit: 50,
             },
@@ -109,7 +109,7 @@ export function WorkbenchTicketPullRequests({
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
             {canSearch
-              ? `Linked PRs and repository mentions of ${ticketKey}.`
+              ? `Linked PRs and Workspace repository mentions of ${ticketKey}.`
               : "From this Ticket’s Threads and prepared workspace."}
           </p>
         </div>
@@ -145,13 +145,16 @@ export function WorkbenchTicketPullRequests({
                   pullRequest.repository
                 )}
               </p>
-              <p className="break-words px-3 text-xs leading-5 text-muted-foreground">
-                {matchesTicket
-                  ? `Mentions ${ticketKey}`
-                  : threadTitle
-                    ? `From ${threadTitle}`
-                    : "Ticket workspace"}
-              </p>
+              {matchesTicket ? (
+                <p className="break-words px-3 text-xs leading-5 text-muted-foreground">
+                  Mentions {ticketKey}
+                </p>
+              ) : null}
+              {threadTitle || !matchesTicket ? (
+                <p className="break-words px-3 text-xs leading-5 text-muted-foreground">
+                  {threadTitle ? `Linked through thread: ${threadTitle}` : "Ticket workspace"}
+                </p>
+              ) : null}
             </div>
           );
         })}

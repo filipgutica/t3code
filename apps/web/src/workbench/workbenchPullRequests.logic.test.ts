@@ -227,6 +227,40 @@ describe("Workbench Ticket pull request references", () => {
     ]);
   });
 
+  it("preserves the native snapshot state and title for a PR linked through a Thread", () => {
+    const linkedThread = thread({
+      id: "Database setup",
+      pullRequests: [
+        {
+          ...pullRequestLink(1584),
+          snapshot: {
+            state: "open",
+            title: "Add remote database setup",
+            headBranch: "remote-setup",
+            baseBranch: "main",
+            isDraft: false,
+            updatedAt: null,
+            syncedAt: "2026-09-17T00:00:00.000Z",
+          },
+        },
+      ],
+    });
+    const references = getWorkbenchTicketPullRequests({
+      assignments: [{ threadId: linkedThread.id }],
+      threadsById: new Map([[linkedThread.id, linkedThread]]),
+      archivedThreadsById: new Map(),
+    });
+    expect(
+      mergeWorkbenchTicketPullRequests({ threadPullRequests: references, matches: [] }),
+    ).toEqual([
+      {
+        pullRequest: { ...pullRequest(1584), state: "open", title: "Add remote database setup" },
+        threadTitle: "Database setup",
+        matchesTicket: false,
+      },
+    ]);
+  });
+
   it("collects visible multi-repository links and falls back to legacy fields", () => {
     const firstLink = pullRequestLink(14, "acme/first");
     const secondLink = pullRequestLink(15, "other/second");

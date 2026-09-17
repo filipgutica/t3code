@@ -78,7 +78,7 @@ For Jira Tickets, Workbench first applies an available Jira transition. If that 
 
 ### Track pull requests across repositories
 
-The Ticket's **Pull Requests** section collects PRs from its linked Threads and repository checkouts. A change spanning an API and web app can have both PRs visible in one place.
+The Ticket's **Pull Requests** section collects PRs from its linked Threads and prepared worktrees. For Jira Tickets, it also searches every repository linked to the Workspace for the issue key. Each PR shows whether it mentions the issue or comes through a linked Thread. Finding a PR does not add its repository to the Ticket's preparation scope.
 
 To attach a PR yourself:
 
@@ -144,9 +144,11 @@ Threads using the same Ticket worktree share its files and branch changes. Use a
 
 The Ticket shows each repository's directory and latest reported branch. These refresh when you open the Ticket or return to the window. Linked Threads show their actual checkout and whether they share a Ticket worktree.
 
-New worktrees and branches have readable names based on the Ticket title and, when available, its Jira issue key, with a unique suffix. Naming does not wait for text generation. Existing worktree paths and branch names are retained.
+New worktree directories have readable names based on the Ticket title and, when available, its Jira issue key, with a unique suffix. Naming does not wait for text generation. Already prepared worktrees retain their paths and branches.
 
-Before preparing a new worktree, Workbench fetches `main` from `origin`. New Ticket branches start from the updated `origin/main`. Preparation stops if the fetch fails or `origin/main` is unavailable.
+For each selected repository, preparation looks for open PRs that mention the Jira key or are linked through active Ticket Threads. If exactly one matches, Workbench fetches its branch and uses it for the new worktree. An existing local branch is reused without resetting its changes. Preparation stops if the branch is already checked out, multiple open PRs match, or the PR comes from a fork or an unverifiable head repository.
+
+Without a matching PR, Workbench fetches `main` from `origin` and creates a Ticket branch from the updated `origin/main`. Preparation stops if the required fetch fails or the base branch is unavailable. PR discovery does not add repositories to the Ticket's selected scope.
 
 Creating a Workbench **Workspace** groups existing Projects; it does not create repository directories. In **Ticket workspace**, choose **Prepare workspace** to create worktrees without creating a Thread, then open a repository in your editor. **Create thread** also prepares missing worktrees and reuses existing ones. Creating, importing, or viewing a Ticket does not prepare worktrees.
 
@@ -158,7 +160,7 @@ worktrees/workbench/save-onboarding-progress-<suffix>/
 └── orbit-web/
 ```
 
-Each directory is a Git worktree for its own repository. Workbench initially creates the same Ticket branch name in both. **Ticket workspace** shows their paths and branches; the primary repository is where the Thread starts.
+Each directory is a Git worktree for its own repository, using its matching PR branch or a generated Ticket branch. **Ticket workspace** shows their paths and branches; the primary repository is where the Thread starts.
 
 ### Change a Ticket's repositories
 

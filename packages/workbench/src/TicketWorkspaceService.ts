@@ -4,6 +4,8 @@ import {
   WorkbenchOperationError,
   WorkbenchTicketWorkspaceAttemptId,
   type ProjectId,
+  type ThreadId,
+  type VcsRef,
   type WorkbenchTicketId,
   type WorkbenchPrepareTicketWorkspaceInput,
   type WorkbenchReleaseTicketWorkspaceInput,
@@ -133,7 +135,8 @@ interface ValidatedRepository {
 
 const makeTicketWorkspaceService = Effect.gen(function* () {
   const store = yield* WorkbenchStore;
-  const { git, projections, worktreesDir } = yield* TicketWorkspaceHost;
+  const { git, projections, resolveOpenPullRequestBranch, worktreesDir } =
+    yield* TicketWorkspaceHost;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const clock = yield* Clock.Clock;
@@ -635,11 +638,54 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     },
   );
 
+  const findExactLocalBranch = Effect.fn("TicketWorkspaceService.findExactLocalBranch")(function* ({
+    cwd,
+    repositoryTitle,
+    branchName,
+    refs,
+    searchPages,
+  }: {
+    readonly cwd: string;
+    readonly repositoryTitle: string;
+    readonly branchName: string;
+    readonly refs: ReadonlyArray<VcsRef>;
+    readonly searchPages: boolean;
+  }) {
+    const exact = (candidates: typeof refs) =>
+      candidates.find((ref) => ref.name === branchName && ref.isRemote !== true);
+    const fromInitialPage = exact(refs);
+    if (fromInitialPage !== undefined || !searchPages) return fromInitialPage;
+
+    let cursor: number | undefined;
+    while (true) {
+      const page = yield* git
+        .listRefs({
+          cwd,
+          query: branchName,
+          refKind: "local",
+          limit: 200,
+          ...(cursor === undefined ? {} : { cursor }),
+        })
+        .pipe(
+          Effect.mapError((cause) =>
+            preparationError(`Could not inspect ${repositoryTitle}: ${cause.detail}`),
+          ),
+        );
+      const match = exact(page.refs);
+      if (match !== undefined || page.nextCursor === null || page.nextCursor === cursor) {
+        return match;
+      }
+      cursor = page.nextCursor;
+    }
+  });
+
   const validateNewRepository = Effect.fn("TicketWorkspaceService.validateNewRepository")(
     function* ({
       projectId,
       isPrimary,
       branchName,
+      assignedThreadIds,
+      jiraIssueKey,
       workspaceDirectory,
       existingRepository,
       usedRepositoryDirectoryNames,
@@ -647,6 +693,8 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       readonly projectId: ProjectId;
       readonly isPrimary: boolean;
       readonly branchName: string;
+      readonly assignedThreadIds: ReadonlyArray<ThreadId>;
+      readonly jiraIssueKey: string | null;
       readonly workspaceDirectory: string;
       readonly existingRepository: WorkbenchTicketWorkspace["repositories"][number] | undefined;
       readonly usedRepositoryDirectoryNames: Set<string>;
@@ -676,16 +724,24 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
           `${project.value.title} is not a Git repository and cannot receive a Ticket worktree.`,
         );
       }
+      const pullRequestBranch = yield* resolveOpenPullRequestBranch({
+        projectId,
+        assignedThreadIds,
+        jiraIssueKey,
+      });
+      const source = Option.isSome(pullRequestBranch)
+        ? pullRequestBranch.value
+        : { remoteName: "origin", remoteBranch: "main" };
       yield* git
         .fetchRemoteTrackingBranch({
           cwd: project.value.workspaceRoot,
-          remoteName: "origin",
-          remoteBranch: "main",
+          remoteName: source.remoteName,
+          remoteBranch: source.remoteBranch,
         })
         .pipe(
           Effect.mapError((cause) =>
             preparationError(
-              `Could not fetch origin/main for ${project.value.title}. Workspace preparation stopped. Check that origin has a main branch, and verify your network connection and Git credentials before retrying. Git reported: ${cause.detail}`,
+              `Could not fetch ${source.remoteName}/${source.remoteBranch} for ${project.value.title}. Workspace preparation stopped. Check that the remote branch exists, and verify your network connection and Git credentials before retrying. Git reported: ${cause.detail}`,
             ),
           ),
         );
@@ -712,17 +768,24 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
           `${project.value.title} already occupies the Ticket Workspace path ${worktreePath}.`,
         );
       }
-      const existingBranch = refs.refs.find(
-        (ref) => ref.name === branchName && ref.isRemote !== true,
-      );
-      if (existingBranch && existingRepository === undefined) {
+      const targetBranchName = Option.isSome(pullRequestBranch)
+        ? pullRequestBranch.value.remoteBranch
+        : branchName;
+      const existingBranch = yield* findExactLocalBranch({
+        cwd: project.value.workspaceRoot,
+        repositoryTitle: project.value.title,
+        branchName: targetBranchName,
+        refs: refs.refs,
+        searchPages: Option.isSome(pullRequestBranch),
+      });
+      if (existingBranch && Option.isNone(pullRequestBranch) && existingRepository === undefined) {
         return yield* preparationError(
-          `${project.value.title} already has the Ticket Workspace branch ${branchName}; it is not recorded for this Ticket.`,
+          `${project.value.title} already has the Ticket Workspace branch ${targetBranchName}; it is not recorded for this Ticket.`,
         );
       }
       if (existingBranch?.worktreePath) {
         return yield* preparationError(
-          `${project.value.title} already has ${branchName} checked out at ${existingBranch.worktreePath}.`,
+          `${project.value.title} already has ${targetBranchName} checked out at ${existingBranch.worktreePath}.`,
         );
       }
       const baseRef = "origin/main";
@@ -732,9 +795,9 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         sourcePath: project.value.workspaceRoot,
         worktreePath,
         branchName: undefined,
-        refName: existingBranch?.name ?? baseRef,
-        newRefName: existingBranch ? undefined : branchName,
-        baseRefName: existingBranch ? undefined : baseRef,
+        refName: existingBranch?.name ?? `${source.remoteName}/${source.remoteBranch}`,
+        newRefName: existingBranch ? undefined : targetBranchName,
+        baseRefName: existingBranch || Option.isSome(pullRequestBranch) ? undefined : baseRef,
         needsCreation: true,
       } satisfies ValidatedRepository;
     },
@@ -743,11 +806,15 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
   const validateRepositories = Effect.fn("TicketWorkspaceService.validateRepositories")(function* ({
     ticket,
     branchName,
+    assignedThreadIds,
+    jiraIssueKey,
     existingWorkspace,
     workspaceDirectory,
   }: {
     readonly ticket: WorkbenchSnapshot["tickets"][number];
     readonly branchName: string;
+    readonly assignedThreadIds: ReadonlyArray<ThreadId>;
+    readonly jiraIssueKey: string | null;
     readonly existingWorkspace: Option.Option<WorkbenchTicketWorkspace>;
     readonly workspaceDirectory: string;
   }) {
@@ -780,6 +847,8 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
           projectId,
           isPrimary: projectId === ticket.primaryT3ProjectId,
           branchName,
+          assignedThreadIds,
+          jiraIssueKey,
           workspaceDirectory,
           existingRepository,
           usedRepositoryDirectoryNames,
@@ -1019,9 +1088,10 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     const reconciledExisting = yield* store.getTicketWorkspace(input.ticketId);
     const startsNewGeneration =
       Option.isNone(reconciledExisting) || reconciledExisting.value.status === "released";
-    const jiraIssueKey = startsNewGeneration
-      ? Option.getOrNull(yield* store.getTicketJiraIssueKey(ticket.id))
-      : null;
+    const jiraIssueKey = Option.getOrNull(yield* store.getTicketJiraIssueKey(ticket.id));
+    const assignedThreadIds = snapshot.assignments
+      .filter((assignment) => assignment.ticketId === ticket.id && assignment.supersededAt === null)
+      .map((assignment) => assignment.threadId);
     const proposedWorkspaceDirectoryName = ticketWorkspaceDirectoryName({
       ticketId: ticket.id,
       jiraIssueKey,
@@ -1070,6 +1140,8 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     const validatedRepositories = yield* validateRepositories({
       ticket,
       branchName,
+      assignedThreadIds,
+      jiraIssueKey,
       existingWorkspace: reconciledExisting,
       workspaceDirectory,
     });

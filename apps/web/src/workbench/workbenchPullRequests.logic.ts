@@ -21,7 +21,7 @@ export type WorkbenchPullRequestThread = Pick<
 export interface WorkbenchTicketPullRequest {
   readonly threadId: ThreadId;
   readonly threadTitle: string;
-  readonly pullRequest: ThreadLinkedPullRequest;
+  readonly pullRequest: TicketPullRequestReference;
 }
 
 export type TicketPullRequestReference = ThreadLinkedPullRequest &
@@ -86,12 +86,15 @@ export function getWorkbenchTicketPullRequests({
     if (thread === undefined) continue;
     const references =
       thread.pullRequests.length > 0
-        ? visibleThreadPullRequests(thread.pullRequests).map(({ repository, number, url }) => ({
-            projectId: thread.projectId,
-            repository,
-            number,
-            url,
-          }))
+        ? visibleThreadPullRequests(thread.pullRequests).map(
+            ({ repository, number, url, snapshot }) => ({
+              projectId: thread.projectId,
+              repository,
+              number,
+              url,
+              ...(snapshot ? { title: snapshot.title, state: snapshot.state } : {}),
+            }),
+          )
         : [thread.linkedPullRequest, thread.branchPullRequest];
     for (const pullRequest of references) {
       if (pullRequest == null) continue;
