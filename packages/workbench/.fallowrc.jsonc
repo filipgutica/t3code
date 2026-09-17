@@ -4,4 +4,14 @@
     // Match Knip: exported service/contract types remain part of the package API.
     "unused-types": "off",
   },
+  "duplicates": {
+    "minTokens": 50,
+    "minLines": 5,
+    "minOccurrences": 2,
+  },
+  "health": {
+    // Keep new Workbench functions within Fallow's default complexity budget.
+    "maxCyclomatic": 20,
+    "maxCognitive": 15,
+  },
 }

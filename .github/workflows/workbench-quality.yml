@@ -5,6 +5,7 @@ on:
     paths:
       - packages/workbench/**
       - apps/server/src/workbench/**
+      - apps/web/src/workbench/**
       - packages/contracts/**
       - packages/shared/**
       - package.json
@@ -14,6 +15,8 @@ on:
       - vite.config.ts
       - knip.jsonc
       - scripts/knip-schemas.ts
+      - scripts/workbench-quality.mts
+      - scripts/lib/workbench-quality*
       - .github/workflows/workbench-quality.yml
   push:
     branches:
@@ -21,6 +24,7 @@ on:
     paths:
       - packages/workbench/**
       - apps/server/src/workbench/**
+      - apps/web/src/workbench/**
       - packages/contracts/**
       - packages/shared/**
       - package.json
@@ -30,6 +34,8 @@ on:
       - vite.config.ts
       - knip.jsonc
       - scripts/knip-schemas.ts
+      - scripts/workbench-quality.mts
+      - scripts/lib/workbench-quality*
       - .github/workflows/workbench-quality.yml
   workflow_dispatch:
 
@@ -49,10 +55,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+          # Fallow checks out the base in a temporary worktree. Avoid a partial
+          # clone: that checkout would lazily fetch the vendored blobs one by one.
+          fetch-depth: 0
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1
@@ -69,6 +74,14 @@ jobs:
 
       - name: Run Workbench quality checks
         run: vp run --filter @t3tools/workbench quality
+
+      - name: Test Workbench quality gate
+        run: vp test run scripts/lib/workbench-quality.test.ts
+
+      - name: Gate new Workbench quality findings
+        env:
+          FALLOW_AUDIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
+        run: vp run --filter @t3tools/workbench fallow:audit
 
   reports:
     name: Complexity and duplication reports
