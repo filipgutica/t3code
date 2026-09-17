@@ -266,6 +266,8 @@ export const layer = Layer.effect(
               `Jira issue ${input.issue.key} description exceeds Workbench's ${WORKBENCH_MARKDOWN_MAX_LENGTH} character limit. Shorten it in Jira, then sync again.`,
             );
           }
+          // Match Workbench's TrimmedString decoding before comparing or persisting Jira text.
+          const normalizedDescription = input.issue.description?.trim();
           const title = normalizeJiraTitle(input.issue.summary);
           let snapshot = yield* workbench.getSnapshot.pipe(
             Effect.mapError(() => importError("Workbench data could not be loaded for Jira sync.")),
@@ -293,7 +295,7 @@ export const layer = Layer.effect(
                 epicId,
                 title,
                 kind,
-                markdown: description,
+                markdown: normalizedDescription ?? "",
                 primaryT3ProjectId:
                   input.primaryT3ProjectId ?? input.binding.defaultPrimaryT3ProjectId,
                 repositoryProjectIds:
@@ -313,7 +315,7 @@ export const layer = Layer.effect(
               kind,
               status: input.mappedStatus,
               blocked: input.issue.flagged,
-              description: input.issue.description,
+              description: normalizedDescription,
               updatedAt,
             });
             if (patch !== undefined) {

@@ -143,6 +143,31 @@ describe("JiraTicketImporter", () => {
       const revisionAfterSecondImport = (yield* workbench.getSnapshot).tickets.find(
         (ticket) => ticket.id === ticketId,
       )?.revision;
+      yield* workbench.requestTicketSummary({ ticketId, requestId: "saved-summary" });
+      yield* workbench.completeTicketSummary({
+        ticketId,
+        requestId: "saved-summary",
+        summary: "A stable generated summary.",
+      });
+      for (let sync = 0; sync < 3; sync += 1) {
+        yield* importer.upsertJiraProjection({
+          ...importInput,
+          issue: {
+            ...importInput.issue,
+            description: `\n ${importInput.issue.description} \n`,
+          },
+        });
+        const refreshed = (yield* workbench.getSnapshot).tickets.find(
+          (ticket) => ticket.id === ticketId,
+        );
+        expect(refreshed?.generatedSummary).toEqual({
+          text: "A stable generated summary.",
+          status: "ready",
+          stale: false,
+          error: null,
+        });
+        expect(refreshed?.revision).toBe(revisionAfterSecondImport);
+      }
       const newTicketId = yield* importer.upsertJiraProjection({
         ...importInput,
         existingTicketId: null,
