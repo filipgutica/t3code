@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off globalConsole:off - Standalone demo CLI owns host setup outside the application runtime.
 import * as NodeUtil from "node:util";
-import { defaultHome, requireHome, setupHome, readConfig, resetHome } from "./environment.mts";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeURL from "node:url";
+import { defaultHomeFor, requireHome, setupHome, readConfig } from "./environment.mts";
 import { seedVisualHistory } from "./history.mts";
 import { startDemo, stopDemo } from "./lifecycle.mts";
 import { planBaselineReset } from "./baseline.mts";
@@ -9,6 +11,8 @@ import { resetToBaseline } from "./reset-to-baseline.mts";
 import { exportJiraAuth, writeJiraAuthBundleFile } from "./jira-auth.mts";
 import { snapshotJiraBaseline } from "./remotes.mts";
 import { provisionGitHub, provisionJira, inspectGitHub, inspectJira } from "./remotes.mts";
+import { recoverDisposableDemo, startDisposableDemo } from "./disposable.mts";
+import { prepareDemoProfile } from "./prepare.mts";
 
 import { setupLocal, verifyLocal } from "./local.mts";
 import {
@@ -20,6 +24,8 @@ import {
 import { withDemoAccess } from "./access.mts";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
+
+const repositoryRoot = NodeURL.fileURLToPath(new URL("../../", import.meta.url));
 
 const saveRemote = (home: string, key: string, value: unknown) => {
   const path = NodePath.join(home, "remotes.json");
@@ -34,51 +40,86 @@ const saveRemote = (home: string, key: string, value: unknown) => {
 };
 const help = `Workbench demo kit (run with the repository's Node version)
 
-node scripts/workbench-demo/cli.mts COMMAND [--home PATH] [--apply]
+node scripts/workbench-demo/cli.mts COMMAND [--home PATH]
 
-  setup    Claim a new/empty persistent demo home (no remote writes)
-  start    Run this checkout against the demo; retain terminal for logs/pairing
-  stop     Ask this home's captured launcher to stop
-  seed     Populate local demo repositories and Workbench records
-  history  Add labeled synthetic conversation fixtures while stopped (screenshots only)
-  verify   Verify local demo readiness
-  github   Preview GitHub provisioning; --apply creates demo resources
-  sync-jira Create the local Jira workspace/binding and sync after browser OAuth
-  jira     Preview Jira provisioning; --apply creates demo resources
-  reset    Preview local reset; --apply archives old data, retaining config
-  reset-baseline Preview full reset; --apply recreates and starts the demo
-  capture-baseline Record the selected Jira sprint's baseline (--apply required)
-  export-jira-auth Export stopped demo OAuth to --output FILE (never printed)
+  setup    Run the first-time setup wizard (bash scripts/workbench-demo/setup.sh)
+  run      Start a fresh disposable demo from the connected profile; Ctrl-C cleans it up
+  recover  Recover a stopped disposable demo and return its refreshed Jira grant
 
-Default home: ${defaultHome}
+Maintenance: --help --maintenance (see scripts/workbench-demo/maintenance.md)
+
+Default home: ${defaultHomeFor()}
 Human account setup: bash scripts/workbench-demo/setup.sh
 See scripts/workbench-demo/README.md for configuration and external resource reuse.
+`;
+const maintenanceHelp = `Workbench demo maintenance
+
+node scripts/workbench-demo/cli.mts COMMAND [--home PATH]
+
+  stop              Stop the tracked launcher (also used by CI)
+  seed              Seed local fixtures in a running maintenance environment
+  verify [--jira]   Check local fixtures and optionally Jira
+  github [--apply]  Inspect or provision configured GitHub resources
+  jira [--apply]    Inspect or provision configured Jira resources
+  sync-jira         Sync the configured sprint into a Jira workspace
+  capture-baseline --apply  Replace the recorded Jira baseline
+  reset-baseline [--apply] [--remote-apply]  Restore regression fixtures
+  export-jira-auth --output FILE  Export a stopped environment's private grant
+  history           Add labeled screenshot-only history while stopped
+
+Remote writes require --apply; remote baseline restoration also requires --remote-apply.
+See scripts/workbench-demo/maintenance.md before changing shared fixtures.
 `;
 const { values, positionals } = NodeUtil.parseArgs({
   allowPositionals: true,
   options: {
-    home: { type: "string", default: defaultHome },
+    home: { type: "string", default: defaultHomeFor() },
     apply: { type: "boolean", default: false },
     preview: { type: "boolean", default: false },
     jira: { type: "boolean", default: false },
     "remote-apply": { type: "boolean", default: false },
     output: { type: "string" },
+    run: { type: "string" },
     help: { type: "boolean", short: "h", default: false },
+    maintenance: { type: "boolean", default: false },
   },
 });
 const main = async () => {
   const command = positionals[0];
   if (values.apply && values.preview) throw new Error("Choose --preview or --apply, not both.");
   if (values.help || !command) {
-    console.log(help);
+    console.log(values.maintenance ? maintenanceHelp : help);
     return;
   }
   if (positionals.length !== 1) throw new Error("Expected one command. Use --help.");
+  if (command === "init") {
+    const home = setupHome(values.home);
+    if (
+      NodeFS.existsSync(NodePath.join(home, ".disposable-demo.lock")) ||
+      NodeFS.existsSync(NodePath.join(home, "run.lock"))
+    )
+      throw new Error("Stop or recover the active demo before editing its saved profile.");
+    console.log(`Demo home: ${home}`);
+    return;
+  }
   if (command === "setup") {
-    console.log(`Demo home: ${setupHome(values.home)}`);
+    const result = NodeChildProcess.spawnSync(
+      "bash",
+      [NodePath.join(repositoryRoot, "scripts/workbench-demo/setup.sh")],
+      {
+        cwd: repositoryRoot,
+        env: { ...process.env, DEMO_HOME: values.home },
+        stdio: "inherit",
+      },
+    );
+    process.exitCode = result.status ?? 1;
     return;
   }
   const home = requireHome(values.home);
+  if (command === "prepare") {
+    await prepareDemoProfile({ home });
+    return;
+  }
   if (command === "export-jira-auth") {
     if (!values.output)
       throw new Error("Specify --output with a private file outside the checkout.");
@@ -107,16 +148,43 @@ const main = async () => {
     process.exitCode = await startDemo(home);
     return;
   }
+  if (command === "run") {
+    let session: Awaited<ReturnType<typeof startDisposableDemo>> | undefined;
+    let stopRequested = false;
+    const stop = () => {
+      stopRequested = true;
+      void session?.stop();
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+    try {
+      console.log(`Preparing a fresh demo from ${home}; seeding repositories and checking Jira…`);
+      session = await startDisposableDemo({ sourceHome: home });
+      console.log(`Disposable demo home: ${session.runHome}`);
+      console.log(`Pairing URL: ${session.pairingUrl}`);
+      console.log("Ready. Press Ctrl-C to stop and clean up this demo.");
+      if (stopRequested) await session.stop();
+      await session.exited;
+      await session.finish();
+      console.log("Demo removed. Jira authorization saved for the next run.");
+    } finally {
+      process.off("SIGINT", stop);
+      process.off("SIGTERM", stop);
+    }
+    return;
+  }
+  if (command === "recover") {
+    if (!values.run) throw new Error("Specify --run PATH for the disposable demo to recover.");
+    await recoverDisposableDemo({ sourceHome: home, runHome: values.run });
+    console.log(`Recovered Jira authorization and removed disposable demo ${values.run}.`);
+    return;
+  }
   if (command === "stop") {
     console.log(await stopDemo(home));
     return;
   }
   if (command === "history") {
     console.log(JSON.stringify(seedVisualHistory(home), null, 2));
-    return;
-  }
-  if (command === "reset") {
-    console.log(resetHome({ home, apply: values.apply }));
     return;
   }
   const config = readConfig(home);

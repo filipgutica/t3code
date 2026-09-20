@@ -16,6 +16,11 @@ const socketPath = (home: string) =>
 
 export const startDemo = async (input: string): Promise<number> => {
   const home = requireHome(input);
+  const disposableLock = NodePath.join(home, ".disposable-demo.lock");
+  if (NodeFS.existsSync(disposableLock))
+    throw new Error(
+      "A disposable demo run owns this profile's Jira grant. Stop or recover that run before starting the persistent profile.",
+    );
   const runtimePath = NodePath.join(home, "userdata", "server-runtime.json");
   if (NodeFS.existsSync(runtimePath)) {
     const runtime: unknown = JSON.parse(NodeFS.readFileSync(runtimePath, "utf8"));

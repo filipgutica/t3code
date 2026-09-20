@@ -36,6 +36,7 @@ export const resetToBaseline = async (input: {
   remoteApply: boolean;
   oauthBundle?: JiraAuthBundle;
   configure?: (home: string) => Promise<void>;
+  onAuthImported?: (home: string) => Promise<void>;
 }) => {
   const home = requireHome(input.home);
   const plan = planBaselineReset({ home });
@@ -56,6 +57,7 @@ export const resetToBaseline = async (input: {
       // The first boot migrates a new database. Credentials are imported only while stopped.
       await server.stop();
       await importJiraAuth({ home, bundle: oauthBundle });
+      await input.onAuthImported?.(home);
       server = await launchDemo({ home });
     }
     const config = readConfig(home);

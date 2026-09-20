@@ -1,0 +1,37 @@
+---
+import { Image } from "astro:assets";
+import type { ImageMetadata } from "astro";
+
+interface Props {
+  src: ImageMetadata;
+  alt: string;
+  eager?: boolean;
+  crop?: { x: number; y: number; width: number; height: number };
+}
+
+const { src, alt, eager = false, crop } = Astro.props;
+const cropStyle = crop
+  ? `aspect-ratio:${crop.width}/${crop.height};--image-width:${src.width / crop.width * 100}%;--image-left:${-crop.x / crop.width * 100}%;--image-top:${-crop.y / crop.height * 100}%;`
+  : undefined;
+---
+
+<a class:list={["product-image", { cropped: crop }]} style={cropStyle} href={src.src} target="_blank" rel="noopener" aria-label={`${alt} — open full-size screenshot`}>
+  <Image
+    src={src}
+    alt={alt}
+    widths={[480, 800, 1200, 1600].filter((width) => width < src.width).concat(src.width)}
+    sizes={crop ? "1440px" : "(max-width: 700px) 92vw, (max-width: 1050px) 94vw, 700px"}
+    format="webp"
+    quality={85}
+    loading={eager ? "eager" : "lazy"}
+    fetchpriority={eager ? "high" : "auto"}
+  />
+</a>
+
+<style>
+  .product-image { display: block; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: #141519; }
+  img { width: 100%; height: auto; display: block; }
+  .cropped { position: relative; }
+  .cropped img { position: absolute; width: var(--image-width); max-width: none; left: var(--image-left); top: var(--image-top); }
+  .product-image:hover { border-color: #626b66; }
+</style>

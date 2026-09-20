@@ -6,7 +6,7 @@ Workbench is available in the web and desktop clients. Jira is optional. Each co
 
 ![Orbit Workspace with Tickets across Todo, In Progress, and Done, and repository context on each card.](./media/workbench/board.png)
 
-The examples use fictional Orbit and Beacon projects in an isolated desktop environment. The repository worktrees and linked demo pull requests are real.
+The examples use fictional Orbit and Beacon projects in an isolated demo environment. The repository worktrees and linked demo pull requests are real.
 
 ## In this guide
 
@@ -37,10 +37,11 @@ To rename the Workspace or add repositories later, choose **Edit Workspace** in 
 ## Start agent work
 
 1. Open a Ticket from the Board.
-2. Check **Repository scope**, including the primary repository.
-3. Choose **Create Thread** and select a provider, model, and model options.
-4. Review the Ticket context chip in the native Thread composer.
-5. Add any further instructions, then send your message.
+2. Open **Ticket workspace** and check the selected repositories and **Primary repository**.
+3. Choose **Prepare workspace** if you want to create the worktrees before opening a conversation. **Create Thread** also prepares missing worktrees automatically.
+4. Choose **Create Thread** and select a provider, model, and model options.
+5. Review the Ticket context chip in the native Thread composer.
+6. Add any further instructions, then send your message.
 
 **Creating a Thread does not start an agent turn.** Workbench prepares one Git worktree per selected repository and opens the Thread in the primary repository's worktree. The context chip supplies the Ticket description and repository paths when you send.
 
@@ -53,6 +54,10 @@ Watch: start on the Orbit Board, create a Ticket with both repositories, then cr
 https://github.com/user-attachments/assets/9fdcf4ac-4ac7-4a99-8e4f-ac3be8753236
 
 Use **New Thread** for another conversation on the same Ticket. Each new Thread starts with Ticket context and waits for you to send.
+
+Ticket detail groups linked conversations into active Threads, **Settled Threads**, and **Thread history**. Thread rows show the current agent state and recent activity. Expand **Checkout details** to inspect or copy the working directory and branch, and to open a pull request reported for that checkout. A **Ticket checkout** is a prepared directory shared by Threads using it; Threads in the same directory share files, branch changes, and uncommitted changes.
+
+Use **Link existing Thread** to add an unassigned conversation, **Unlink Thread from Ticket** to remove the association, and **Settle** or **Un-settle** to move a conversation between the active and settled groups. The Thread row menu keeps the available native actions within the Ticket grouping.
 
 ### Navigate between planning and conversations
 
@@ -78,7 +83,9 @@ For Jira Tickets, Workbench first applies an available Jira transition. If that 
 
 ### Track pull requests across repositories
 
-The Ticket's **Pull Requests** section collects PRs from its linked Threads and prepared worktrees. For Jira Tickets, it also searches every repository linked to the Workspace for the issue key. Each PR shows whether it mentions the issue or comes through a linked Thread. Finding a PR does not add its repository to the Ticket's preparation scope.
+The Ticket's **Pull Requests** section collects PRs from its linked Threads and prepared worktrees. For Jira Tickets, it also searches every repository linked to the Workspace for the issue key. Each result identifies its source with badges such as **Mentions &lt;issue key&gt;**, **Linked Thread**, or **Ticket workspace**. Finding a PR does not add its repository to the Ticket's preparation scope.
+
+Use the refresh button in the section to repeat a Jira issue-key search. The search only associates results from repository hosts that support text search; Workbench reports when a host cannot be searched. Results are limited to 50 matches per repository.
 
 To attach a PR yourself:
 
@@ -122,7 +129,9 @@ If generation fails, Workbench keeps the previous summary. Summaries do not chan
 
 ### Group Tickets into Epics
 
-Choose **New Epic** on the Board and assign related Tickets to it. Use Epic swimlanes on the Board to see that work together.
+Choose **New Epic** from the Workspace actions menu on the Board and assign related Tickets to it. When a Workspace has Epics, use the Board's **Group** toggle to choose **None** or **Epic**. Epic grouping displays collapsible swimlanes and a **View Epic** link for each lane.
+
+On desktop, drag a Ticket between status columns to change its progress. Jira-managed Tickets use the Jira transition flow instead. On smaller screens, use the column selector above the Board to switch between columns.
 
 ![The Orbit Board grouped into two Epic swimlanes, with all three progress columns visible.](./media/workbench/epics.png)
 
@@ -198,7 +207,7 @@ Reset removes the worktrees but keeps the Ticket, Git branches, and commits. **P
 
 A Workspace can import issues assigned to the connected Jira user from a board and selected sprints. The board can span several Jira projects. Imported Tickets show a Jira badge with a link to the issue.
 
-Published Workbench desktop previews include a hosted Jira connection. You authorize access on Atlassian's website; you do not need to create your own OAuth app. For a source-based development environment, follow the [local Jira setup instructions](../../README.md#set-up-jira-for-local-development).
+Published Workbench desktop releases include a hosted Jira connection. You authorize access on Atlassian's website; you do not need to create your own OAuth app. For a source-based development environment, follow the [local Jira setup instructions](../../README.md#set-up-jira-for-local-development).
 
 ### Set up a sprint mirror
 

@@ -4,7 +4,21 @@ import * as NodeAssert from "node:assert/strict";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { setupHome, requireHome, resetHome, resolveHome, readConfig } from "./environment.mts";
+import {
+  defaultHome,
+  defaultHomeFor,
+  setupHome,
+  requireHome,
+  resetHome,
+  resolveHome,
+  readConfig,
+} from "./environment.mts";
+
+test("selects DEMO_HOME when set and otherwise uses the durable default", () => {
+  NodeAssert.equal(defaultHomeFor({ DEMO_HOME: "/tmp/connected-demo" }), "/tmp/connected-demo");
+  NodeAssert.equal(defaultHomeFor({ DEMO_HOME: "   " }), defaultHome);
+  NodeAssert.equal(defaultHomeFor({}), defaultHome);
+});
 
 test("claims only empty directories, reuses ownership, and preserves unknown files", () => {
   const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "demo-home-test-"));
@@ -42,6 +56,12 @@ test("reset previews, refuses running homes, archives data and retains configura
     NodeFS.writeFileSync(NodePath.join(home, "fixture"), "preserved in backup");
     NodeAssert.match(resetHome({ home, apply: false }), /Would archive/);
     NodeAssert.ok(NodeFS.existsSync(NodePath.join(home, "fixture")));
+    NodeFS.writeFileSync(
+      NodePath.join(home, ".disposable-demo.lock"),
+      JSON.stringify({ runHome: NodePath.join(home, "runs", "run-test") }),
+    );
+    NodeAssert.throws(() => resetHome({ home, apply: true }), /disposable demo run owns/);
+    NodeFS.rmSync(NodePath.join(home, ".disposable-demo.lock"));
     NodeFS.writeFileSync(NodePath.join(home, "run.lock"), "lock");
     NodeAssert.throws(() => resetHome({ home, apply: true }), /Stop/);
     NodeFS.rmSync(NodePath.join(home, "run.lock"));

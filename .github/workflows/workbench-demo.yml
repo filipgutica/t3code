@@ -33,5 +33,5 @@ jobs:
       - run: node scripts/workbench-demo/cli.mts --help
       - run: vp lint scripts/workbench-demo --report-unused-disable-directives
       - run: vp exec tsc --noEmit -p scripts/workbench-demo/tsconfig.json
-      - run: vp test run scripts/workbench-demo/local.test.mts scripts/workbench-demo/remotes.test.mts scripts/workbench-demo/environment.test.mts scripts/workbench-demo/setup-defaults.test.mts scripts/workbench-demo/jira-select.test.mts
-      - run: bash -n scripts/workbench-demo/setup.sh && bash -n scripts/workbench-demo/setup-defaults.sh
+      - run: vp test run scripts/workbench-demo
+      - run: bash -n scripts/workbench-demo/setup.sh && bash -n scripts/workbench-demo/setup-defaults.sh && bash -n scripts/workbench-demo/run.sh
