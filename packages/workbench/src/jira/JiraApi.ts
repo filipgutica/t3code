@@ -20,7 +20,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest, HttpClientResponse, UrlParams } from "effect/unstable/http";
 
 import { JiraAuthService } from "./JiraAuthService.ts";
 import {
@@ -166,6 +166,11 @@ const boardType = (value: string): WorkbenchJiraBoard["type"] =>
 const sprintState = (value: string): WorkbenchJiraSprint["state"] =>
   value === "future" || value === "active" || value === "closed" ? value : "closed";
 
+type ListAssignedSprintIssuesInput = WorkbenchJiraListAssignedSprintIssuesInput & {
+  /** Issue IDs Jira should reconcile into the sprint search before returning results. */
+  readonly reconcileIssueIds?: ReadonlyArray<string>;
+};
+
 export interface JiraApiShape {
   readonly listProjects: (
     input: WorkbenchJiraListProjectsInput,
@@ -180,7 +185,7 @@ export interface JiraApiShape {
     input: WorkbenchJiraGetBoardConfigurationInput,
   ) => Effect.Effect<WorkbenchJiraBoardConfiguration, WorkbenchJiraOperationError>;
   readonly listAssignedSprintIssues: (
-    input: WorkbenchJiraListAssignedSprintIssuesInput,
+    input: ListAssignedSprintIssuesInput,
   ) => Effect.Effect<ReadonlyArray<WorkbenchJiraIssueSnapshot>, WorkbenchJiraOperationError>;
   readonly prepareIssueCreation: (input: {
     readonly connectionId: WorkbenchJiraConnectionId;
@@ -309,7 +314,7 @@ export const make = Effect.gen(function* () {
     readonly connection: WorkbenchJiraConnection;
     readonly accessToken: string;
     readonly path: string;
-    readonly urlParams?: Record<string, string>;
+    readonly urlParams?: UrlParams.Input;
     readonly schema: S;
   }): Effect.Effect<S["Type"], WorkbenchJiraOperationError, S["DecodingServices"]> => {
     const url = `https://api.atlassian.com/ex/jira/${encodeURIComponent(input.connection.cloudId)}${input.path}`;
@@ -471,6 +476,9 @@ export const make = Effect.gen(function* () {
             fields: "summary,description,issuetype,status,updated,flagged,epic,parent",
             maxResults: "100",
             ...(nextPageToken === undefined ? {} : { nextPageToken }),
+            ...(input.reconcileIssueIds === undefined
+              ? {}
+              : { reconcileIssues: input.reconcileIssueIds }),
           },
           schema: IssuePage,
         });

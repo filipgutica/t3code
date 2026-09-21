@@ -30,7 +30,9 @@ jobs:
       (github.event_name != 'pull_request' ||
        (github.event.pull_request.head.repo.full_name == github.repository &&
         github.event.pull_request.user.login == github.repository_owner))
-    environment: workbench-demo
+    environment:
+      name: workbench-demo
+      deployment: false
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:

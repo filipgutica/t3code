@@ -1,6 +1,7 @@
 ---
 import { getImage } from "astro:assets";
 import ProductImage from "../components/ProductImage.astro";
+import ImageLightbox from "../components/ImageLightbox.astro";
 import board from "../assets/screenshots/board.png";
 import ticket from "../assets/screenshots/ticket.png";
 import context from "../assets/screenshots/context.png";
@@ -151,5 +152,6 @@ const videoPoster = await getImage({ src: board, width: 2400, format: "png" });
       <p>Built on <a href="https://github.com/pingdotgg/t3code">T3 Code</a>. An independent, open-source fork.</p>
       <a href={repository}>Browse the source <span aria-hidden="true">↗</span></a>
     </footer>
+    <ImageLightbox />
   </body>
 </html>

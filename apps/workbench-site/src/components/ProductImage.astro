@@ -15,7 +15,7 @@ const cropStyle = crop
   : undefined;
 ---
 
-<a class:list={["product-image", { cropped: crop }]} style={cropStyle} href={src.src} target="_blank" rel="noopener" aria-label={`${alt} — open full-size screenshot`}>
+<a class:list={["product-image", { cropped: crop }]} style={cropStyle} href={src.src} data-product-image aria-haspopup="dialog" aria-label={`${alt} — enlarge screenshot`}>
   <Image
     src={src}
     alt={alt}
