@@ -278,7 +278,7 @@ it.effect("starts a fresh detail lookup while an interrupted read is cleaning up
             return Effect.gen(function* () {
               if (call === 1) {
                 yield* Deferred.succeed(detailStarted, undefined);
-                yield* Effect.never;
+                return yield* Effect.never;
               }
               return hostedChangeRequest("fresh detail");
             }).pipe(
