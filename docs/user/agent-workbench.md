@@ -34,7 +34,9 @@ keep their scope.
 
 ## Start agent work
 
-[Watch: create a Ticket, prepare worktrees, and inspect Thread context (38 seconds).](./media/workbench/create-ticket-worktrees.mp4)
+Watch: create a Ticket, prepare worktrees, and inspect Thread context (38 seconds).
+
+https://github.com/user-attachments/assets/3dff743f-5ced-4834-89bf-3238ca090607
 
 1. Open a Ticket and review **Ticket workspace**, including the repository scope
    and **Primary repository**.
@@ -82,7 +84,9 @@ repository.
 
 ![One Ticket showing pull requests from Orbit Web and Orbit API, alongside its Thread and prepared repository worktrees.](./media/workbench/pull-requests.png)
 
-[Watch: link a pull request and review it from the Ticket (36 seconds).](./media/workbench/link-pull-requests.mp4)
+Watch: link a pull request and review it from the Ticket (36 seconds).
+
+https://github.com/user-attachments/assets/ce40598e-5ac8-424d-9038-30ec59ac0e70
 
 ## Edit and organize Tickets
 
@@ -145,7 +149,9 @@ selection, Ticket worktrees, linked Threads, and generated summaries. Changes ma
 in Jira appear on the next successful sync; issues that leave the selected sprints
 leave the active Board but remain in Workbench history.
 
-[Watch: sync Jira and open an imported Ticket (26 seconds).](./media/workbench/jira-sync.mp4)
+Watch: sync Jira and open an imported Ticket (26 seconds).
+
+https://github.com/user-attachments/assets/1915ccb3-b67e-44bd-8e28-5258573a30fc
 
 **New Ticket** in a Jira-linked Workspace creates an issue in the configured Jira
 project and assigns it to the connected account. If access expires, choose
