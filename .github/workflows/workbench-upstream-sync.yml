@@ -65,7 +65,18 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git switch -c "$SYNC_BRANCH"
-          git merge --no-edit --no-ff upstream/main
+          if git merge --no-commit --no-ff upstream/main; then
+            :
+          else
+            conflict_paths="$(git diff --name-only --diff-filter=U)"
+            if [[ "$conflict_paths" != "pnpm-lock.yaml" ]]; then
+              git merge --abort
+              echo "Unsupported upstream merge conflicts: ${conflict_paths:-unknown paths}" >&2
+              exit 1
+            fi
+            git checkout --theirs -- pnpm-lock.yaml
+            git add pnpm-lock.yaml
+          fi
 
       - name: Setup Vite+
         if: steps.pending.outputs.needed == 'true'
@@ -81,9 +92,7 @@ jobs:
           vp install --lockfile-only --no-frozen-lockfile
           vp install --frozen-lockfile
           git add pnpm-lock.yaml
-          if ! git diff --cached --quiet; then
-            git commit --amend --no-edit
-          fi
+          git commit --no-edit
 
       - name: Setup APT mirrors
         if: steps.pending.outputs.needed == 'true'
@@ -103,7 +112,7 @@ jobs:
           vp run --filter @t3tools/workbench typecheck
           vp run --filter @t3tools/workbench test
           vp run --filter @t3tools/workbench quality
-          vp test run packages/contracts/src/workbench.test.ts apps/server/src/workbench apps/server/src/auth/RpcAuthorization.test.ts apps/server/src/orchestration/ThreadSettlementReactor.test.ts apps/web/src/workbench scripts/workbench-upstream-sync-merge.test.ts
+          vp test run packages/contracts/src/workbench.test.ts apps/server/src/workbench apps/server/src/auth/RpcAuthorization.test.ts apps/server/src/orchestration/ThreadSettlementReactor.test.ts apps/web/src/workbench scripts/workbench-upstream-sync.test.ts scripts/workbench-upstream-sync-merge.test.ts
           vp run --filter @t3tools/contracts typecheck
           vp run --filter t3 typecheck
           vp run --filter @t3tools/web typecheck

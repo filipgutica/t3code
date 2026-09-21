@@ -36,6 +36,14 @@ function lines(value: string): ReadonlyArray<string> {
     .filter(Boolean);
 }
 
+const generatedLockfilePath = "pnpm-lock.yaml";
+
+function parseMergeTreeConflictPaths(output: string): ReadonlyArray<string> {
+  const fields = output.split("\0");
+  const end = fields.indexOf("");
+  return fields.slice(1, end === -1 ? fields.length : end);
+}
+
 function previewMerge(productSha: string, upstreamSha: string) {
   const objectDirectory = NodeFS.mkdtempSync(
     NodePath.join(NodeOS.tmpdir(), "t3-workbench-merge-tree-"),
@@ -44,7 +52,7 @@ function previewMerge(productSha: string, upstreamSha: string) {
   try {
     return NodeChildProcess.spawnSync(
       "git",
-      ["merge-tree", "--write-tree", productSha, upstreamSha],
+      ["merge-tree", "--write-tree", "--name-only", "-z", "--no-messages", productSha, upstreamSha],
       {
         encoding: "utf8",
         env: {
@@ -85,6 +93,10 @@ function main() {
     throw new Error(`git merge-tree failed: ${detail}`);
   }
   const clean = mergePreview.status === 0;
+  const conflictPaths = clean ? [] : parseMergeTreeConflictPaths(mergePreview.stdout);
+  const generatedLockfileConflict =
+    conflictPaths.length === 1 && conflictPaths[0] === generatedLockfilePath;
+  const acceptable = clean || generatedLockfileConflict;
 
   process.stdout.write(
     `${JSON.stringify(
@@ -97,14 +109,19 @@ function main() {
         upstreamCommitsAhead: Number(ahead),
         productCommitsAhead: Number(behind),
         overlappingFiles,
-        mergePreview: clean ? "clean" : "conflict",
+        mergePreview: clean
+          ? "clean"
+          : generatedLockfileConflict
+            ? "generated-lockfile"
+            : "conflict",
+        conflictPaths,
       },
       null,
       2,
     )}\n`,
   );
-  if (!clean) {
-    process.stderr.write(mergePreview.stdout);
+  if (!acceptable) {
+    process.stderr.write(`Merge conflicts: ${conflictPaths.join(", ") || "unknown paths"}\n`);
     process.exitCode = 2;
   }
 }
