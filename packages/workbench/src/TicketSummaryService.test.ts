@@ -30,7 +30,7 @@ const storeLayer = WorkbenchStoreLive.pipe(
       hasThreadAtWorktreePath: () => Effect.succeed(false),
     }),
   ),
-  Layer.provide(NodeSqliteClient.layerMemory()),
+  Layer.provide(NodeSqliteClient.layer({ filename: ":memory:" })),
 );
 
 const testLayer = (host: TicketSummaryHost["Service"]) =>

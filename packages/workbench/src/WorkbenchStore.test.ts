@@ -48,7 +48,7 @@ const nativeLayer = (options?: {
 const testLayer = (options?: Parameters<typeof nativeLayer>[0]) =>
   WorkbenchStoreLive.pipe(
     Layer.provideMerge(nativeLayer(options)),
-    Layer.provideMerge(NodeSqliteClient.layerMemory()),
+    Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" })),
   );
 
 const seedTicket = (input: {

@@ -11,7 +11,13 @@ const MAX_TICKET_SUMMARY_WORDS = 45;
 
 /** Convert an Effect Schema to a flat JSON Schema object, inlining `$defs` when present. */
 export function toJsonSchemaObject(schema: Schema.Top): unknown {
-  const document = Schema.toJsonSchemaDocument(Schema.toType(schema));
+  // The type side, so decoding defaults do not turn required fields into
+  // optional ones, and closed objects (`additionalProperties: false`):
+  // structured-output modes require both, and closed was the generator
+  // default before effect rc.113.
+  const document = Schema.toJsonSchemaDocument(Schema.toType(schema), {
+    onExcessProperty: "error",
+  });
   if (document.definitions && Object.keys(document.definitions).length > 0) {
     return { ...document.schema, $defs: document.definitions };
   }
