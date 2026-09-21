@@ -6,12 +6,15 @@ import { PullRequestDetailPanel } from "../components/pullRequest/PullRequestDet
 import { Sheet, SheetPopup, SheetTitle } from "../components/ui/sheet";
 import { useResizableWidth } from "../hooks/useResizableWidth";
 import { isTerminalFocused } from "../lib/terminalFocus";
+import { isElectron } from "../env";
 import type { ShortcutMatchContext } from "../keybindings";
 import { RIGHT_PANEL_SHEET_CLASS_NAME } from "../rightPanelLayout";
 
 function getShortcutContext(): ShortcutMatchContext {
   return {
     terminalFocus: isTerminalFocused(),
+    isWeb: !isElectron,
+    isDesktop: isElectron,
     terminalOpen: false,
     previewFocus: false,
     previewOpen: false,

@@ -1,3 +1,4 @@
+import { Select as SelectPrimitive } from "@base-ui/react/select";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
@@ -87,7 +88,6 @@ import {
   Select,
   SelectItem,
   SelectPopup,
-  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
@@ -912,7 +912,7 @@ export function WorkbenchTicketDialog({
                   ))}
                   {jiraBinding === null ? (
                     <>
-                      <SelectSeparator />
+                      <SelectPrimitive.Separator className="mx-2 my-1 h-px bg-border" />
                       <SelectItem value={CREATE_EPIC_VALUE}>Create Epic…</SelectItem>
                     </>
                   ) : null}
@@ -2783,7 +2783,7 @@ function WorkbenchTicketDetailsPanel({
                         {epic.archivedAt !== null ? " (Archived)" : ""}
                       </SelectItem>
                     ))}
-                    <SelectSeparator />
+                    <SelectPrimitive.Separator className="mx-2 my-1 h-px bg-border" />
                     <SelectItem value={CREATE_EPIC_VALUE}>Create Epic…</SelectItem>
                   </SelectPopup>
                 </Select>
