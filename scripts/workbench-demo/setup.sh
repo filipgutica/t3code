@@ -191,7 +191,7 @@ if ! command -v node >/dev/null 2>&1; then
   warn "Node.js is required to claim the demo home. Install it, then re-run this wizard."
   exit 1
 fi
-node "$SCRIPT_DIR/cli.mts" setup --home "$DEMO_HOME"
+node "$SCRIPT_DIR/cli.mts" init --home "$DEMO_HOME"
 DEMO_HOME="$(cd -- "$DEMO_HOME" && pwd)"
 chmod 700 "$DEMO_HOME"
 ENV_FILE="$DEMO_HOME/config.env"
@@ -204,36 +204,25 @@ if demo_profile_complete; then
   note "Saved demo profile: $ENV_FILE"
   note "GitHub owner: $(demo_saved DEMO_GITHUB_OWNER)"
   note "Jira: $(demo_saved DEMO_JIRA_SITE_URL) / $(demo_saved DEMO_JIRA_PROJECT_KEY)"
-  demo_ask DEMO_SETUP_ACTION "Press Enter to reuse this profile, type edit, or reset the baseline" "reuse"
+  demo_ask DEMO_SETUP_ACTION "Press Enter to keep this profile, or type edit" "reuse"
   case "$DEMO_SETUP_ACTION" in
     reuse)
-      say "Configuration retained. Start with:"
-      say "node scripts/workbench-demo/cli.mts start --home \"$DEMO_HOME\""
-      exit 0
-      ;;
-    reset)
-      if ! confirm "Reset local state and reconcile the recorded Jira baseline?"; then
-        say "Reset cancelled. Configuration retained."
-        exit 0
-      fi
-      if [[ -n "$(demo_saved DEMO_JIRA_EMAIL)" && -n "$(demo_saved DEMO_JIRA_API_TOKEN)" ]]; then
-        node "$SCRIPT_DIR/cli.mts" reset-baseline --home "$DEMO_HOME" --apply --remote-apply
-      else
-        warn "No Jira API token is saved; resetting local state and retaining remote Jira state."
-        node "$SCRIPT_DIR/cli.mts" reset-baseline --home "$DEMO_HOME" --apply
-      fi
+      note "Validating the saved Jira authorization and refreshing the disposable baseline."
+      node "$SCRIPT_DIR/cli.mts" prepare --home "$DEMO_HOME"
+      finish
+      say "Start a fresh demo: bash scripts/workbench-demo/run.sh --home \"$DEMO_HOME\""
       exit 0
       ;;
     edit) ;;
     *)
-      warn "Choose reuse, edit, or reset."
+      warn "Type edit or press Enter to keep the saved profile."
       exit 1
       ;;
   esac
 fi
 
 banner "T3 Code Workbench demo setup"
-note "This wizard saves settings only. It does not start Workbench or create tickets/PRs."
+note "This wizard saves the profile, prepares one connected baseline, then stops the setup server."
 note "Usage and field meanings: $SCRIPT_DIR/README.md"
 
 stage "GitHub: account and owner"
@@ -386,24 +375,9 @@ case "$DEMO_JIRA_OAUTH_MODE" in
 esac
 
 stage "Workbench Jira: browser authorization"
-say "Configuration is saved; the app and demo data still need to be started/seeded."
-step "If you chose provision, follow README.md section 3 to preview and create remote examples first."
-say "Finish authorization after the local server is running."
-step "From the repository root, run: node scripts/workbench-demo/cli.mts setup --home \"$DEMO_HOME\""
-step "Run: node scripts/workbench-demo/cli.mts start --home \"$DEMO_HOME\""
-step "In a second terminal, run: node scripts/workbench-demo/cli.mts seed --home \"$DEMO_HOME\""
-step "Open the printed pairing URL, open the seeded demo Workspace, choose Connect Jira, then choose Connect Atlassian."
-if [[ "$DEMO_JIRA_OAUTH_MODE" == broker ]]; then
-  step "Choose Connect Atlassian in Workbench; the hosted broker opens Atlassian consent in the browser."
-else
-  step "Authorize the direct OAuth app in the browser and return to the running Workbench."
-fi
-step "Run: node scripts/workbench-demo/cli.mts sync-jira --home \"$DEMO_HOME\" to create the Orbit Jira Workspace and mirrored binding, then sync the selected sprint."
-step "Run: node scripts/workbench-demo/cli.mts verify --home \"$DEMO_HOME\" --jira"
-if confirm "Have you completed the Workbench Jira browser authorization?"; then
-  note "Authorization completed by the human operator; verify the binding with the demo verify command."
-else
-  warn "Authorization is still pending. Run the start command and connect Jira before demo verification."
-fi
+say "The setup command now starts the seeded demo, prints one pairing URL, and waits while you connect Jira."
+say "After you press Enter, it verifies the workspace, captures the Jira baseline, and stops the setup server."
+node "$SCRIPT_DIR/cli.mts" prepare --home "$DEMO_HOME"
 
 finish
+say "Start a fresh demo: bash scripts/workbench-demo/run.sh --home \"$DEMO_HOME\""

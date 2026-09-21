@@ -1,0 +1,63 @@
+name: Workbench Pages
+
+on:
+  pull_request:
+    paths:
+      - apps/workbench-site/**
+      - docs/user/media/workbench/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - package.json
+      - .github/workflows/workbench-pages.yml
+  push:
+    branches: [main]
+    paths:
+      - apps/workbench-site/**
+      - docs/user/media/workbench/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - package.json
+      - .github/workflows/workbench-pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workbench-pages-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+      - name: Check site
+        run: vp run --filter @t3tools/workbench-site typecheck
+      - name: Build static site
+        run: vp run --filter @t3tools/workbench-site build
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: apps/workbench-site/dist
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

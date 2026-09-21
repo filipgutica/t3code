@@ -157,6 +157,7 @@ export const verifyDemoJira = async ({
   projectKey,
   sprintId,
   expectedKeys,
+  requireEpic = true,
 }: {
   wsUrl: string;
   token: string;
@@ -165,6 +166,7 @@ export const verifyDemoJira = async ({
   projectKey: string;
   sprintId: number;
   expectedKeys: readonly string[];
+  requireEpic?: boolean;
 }) => {
   const snapshot = await runRpc(wsUrl, token, (client) =>
     client[methods.workbenchJiraGetSnapshot]({}),
@@ -193,7 +195,7 @@ export const verifyDemoJira = async ({
   const missing = expectedKeys.filter((key) => !links.some((link) => link.issue.key === key));
   if (missing.length)
     throw new Error(`Expected demo Jira issues were not imported: ${missing.join(", ")}`);
-  if (!links.some((link) => link.issue.epic !== null))
+  if (requireEpic && !links.some((link) => link.issue.epic !== null))
     throw new Error("No imported Jira demo issue has an Epic parent.");
   return {
     bindingId: binding.id,

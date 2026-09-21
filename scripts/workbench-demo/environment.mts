@@ -5,6 +5,8 @@ import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
 
 export const defaultHome = NodePath.join(NodeOS.homedir(), ".t3-workbench-demos", "guide");
+export const defaultHomeFor = (environment: NodeJS.ProcessEnv = process.env): string =>
+  environment.DEMO_HOME?.trim() || defaultHome;
 const marker = ".workbench-demo.json";
 const canonical = (input: string): string =>
   NodeFS.existsSync(input)
@@ -72,6 +74,10 @@ export const readConfig = (home: string) =>
 
 export const resetHome = ({ home: input, apply }: { home: string; apply: boolean }) => {
   const home = requireHome(input);
+  if (NodeFS.existsSync(NodePath.join(home, ".disposable-demo.lock")))
+    throw new Error(
+      "A disposable demo run owns this profile's Jira grant. Stop or recover that run before resetting it.",
+    );
   if (NodeFS.existsSync(NodePath.join(home, "run.lock")))
     throw new Error("Stop the demo before resetting it.");
   const runtimeFile = NodePath.join(home, "userdata", "server-runtime.json");

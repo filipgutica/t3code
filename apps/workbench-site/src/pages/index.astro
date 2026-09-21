@@ -1,0 +1,155 @@
+---
+import { getImage } from "astro:assets";
+import ProductImage from "../components/ProductImage.astro";
+import board from "../assets/screenshots/board.png";
+import ticket from "../assets/screenshots/ticket.png";
+import context from "../assets/screenshots/context.png";
+import jira from "../assets/screenshots/jira.png";
+import "../styles/site.css";
+
+const repository = "https://github.com/filipgutica/t3code";
+const guide = `${repository}/blob/main/docs/user/agent-workbench.md`;
+const downloads = `${repository}/releases`;
+const title = "T3 Code Workbench — Your work, across repositories";
+const description = "A control center for work across repositories. Track Tickets, agent Threads, pull requests, and isolated worktrees together. Jira optional.";
+const base = import.meta.env.BASE_URL;
+const canonical = new URL(base, Astro.site);
+const videoPoster = await getImage({ src: board, width: 2400, format: "png" });
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#0b0c0e" />
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={new URL(videoPoster.src, Astro.site)} />
+    <meta property="og:image:alt" content="T3 Code Workbench Board showing Tickets across workflow statuses." />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header wrap">
+      <a class="brand" href={base} aria-label="T3 Code Workbench home">T3 Code <span>Workbench</span></a>
+      <nav aria-label="Main navigation">
+        <a href={guide}>Guide</a>
+        <a href={repository}>GitHub</a>
+        <a class="button small" href={downloads}>Download Workbench</a>
+      </nav>
+    </header>
+    <main id="main" class="wrap">
+      <section class="hero" aria-labelledby="hero-heading">
+        <div class="hero-copy">
+          <h1 id="hero-heading">Your work, across repositories.</h1>
+          <p class="lead">See what’s to do, in progress, and done. One place for your Tickets, repositories, and agents.</p>
+          <div class="actions">
+            <a class="button" href={downloads}>Download Workbench</a>
+            <a class="text-link" href={guide}>Read the guide <span aria-hidden="true">↗</span></a>
+          </div>
+          <p class="provenance">An independent fork, regularly synced with upstream <a href="https://t3.codes">T3 Code</a>.</p>
+        </div>
+        <figure class="hero-media">
+          <ProductImage src={board} eager alt="Workbench Board with Tickets, repository scope, and linked agent Threads" />
+        </figure>
+      </section>
+
+      <section class="section walkthrough-section" aria-labelledby="walkthrough-heading">
+        <div class="review-heading">
+          <p class="section-label"><span>01</span> See it in action</p>
+          <h2 id="walkthrough-heading">From the Board to the work.</h2>
+          <p>Open a Ticket to see the context, agents, pull requests, and worktrees behind the work.</p>
+        </div>
+        <figure class="walkthrough-media">
+          <video
+            class="overview-video"
+            controls
+            playsinline
+            preload="none"
+            poster={videoPoster.src}
+            aria-label="Workbench overview: open a Ticket and see its description, linked pull request, and repository worktrees"
+          >
+            <source src={`${base}media/workbench-overview-guided.mp4`} type="video/mp4" />
+            <a href={`${base}media/workbench-overview-guided.mp4`}>Watch the Workbench overview</a>
+          </video>
+          <figcaption>Draft walkthrough · 16 seconds. Recorded in the real Workbench demo.</figcaption>
+        </figure>
+      </section>
+
+      <section class="split section" aria-labelledby="scope-heading">
+        <div class="section-copy">
+          <p class="section-label"><span>02</span> One Ticket, one workspace</p>
+          <h2 id="scope-heading">An isolated workspace for every Ticket.</h2>
+          <p>A Ticket brings together what needs doing, the repositories involved, and the agents working on it.</p>
+          <p>Start an agent Thread and Workbench prepares a Git worktree for each repository in scope. The Ticket’s context and repository paths come with it.</p>
+          <a class="text-link" href={`${guide}#start-agent-work`}>See how a Ticket becomes a Thread <span aria-hidden="true">↗</span></a>
+        </div>
+        <figure class="media-stage">
+          <ProductImage src={ticket} alt="Workbench Ticket with its description, linked PRs, and prepared API and web worktrees" />
+          <figcaption>One Ticket, with worktrees across all the repositories it touches.</figcaption>
+        </figure>
+      </section>
+
+      <section class="section review-section" aria-labelledby="review-heading">
+        <div class="review-heading">
+          <p class="section-label"><span>03</span> Build and review</p>
+          <h2 id="review-heading">Keep the whole job in view.</h2>
+          <p>See which agents are working on a Ticket, open their native T3 Threads, and follow pull requests across repositories—all from the same place.</p>
+        </div>
+        <div class="review-media">
+          <figure>
+            <h3>Start with the context attached.</h3>
+            <ProductImage src={context} crop={{ x: 1170, y: 580, width: 1550, height: 1420 }} alt="Native T3 composer with the Ticket description, acceptance criteria, and both repository paths" />
+            <figcaption>Inspect the context, then send your first message.</figcaption>
+          </figure>
+          <figure>
+            <h3>Bring the results back to the Ticket.</h3>
+            <ProductImage src={ticket} crop={{ x: 2320, y: 810, width: 770, height: 1150 }} alt="A linked Orbit API pull request above the prepared Orbit Web and Orbit API worktrees" />
+            <figcaption>Follow pull requests across the repositories involved.</figcaption>
+          </figure>
+        </div>
+        <div class="workflow" aria-label="Workbench workflow">
+          <p><span>01</span><strong>See the work</strong>Track what’s to do, in progress, and done.</p>
+          <p><span>02</span><strong>Give agents context</strong>Start Threads in the Ticket’s prepared workspace.</p>
+          <p><span>03</span><strong>Review the result</strong>Follow the PRs, then mark the Ticket Done.</p>
+        </div>
+      </section>
+
+      <section class="split section jira-section" aria-labelledby="jira-heading">
+        <div class="section-copy">
+          <p class="section-label"><span>04</span> Bring your sprint</p>
+          <h2 id="jira-heading">Your sprint, closer to the code.</h2>
+          <p class="lead">Connect Jira, or keep your tickets local.</p>
+          <p>Bring your assigned sprint issues into Workbench. Update descriptions and statuses, with repository scope and agent conversations attached to the work.</p>
+          <a class="text-link" href={`${guide}#connect-jira`}>Explore the Jira workflow <span aria-hidden="true">↗</span></a>
+        </div>
+        <figure class="media-stage">
+          <ProductImage src={jira} alt="Orbit Jira Workspace with sprint issues and their workflow statuses" />
+          <figcaption>Jira is optional. Local Tickets work on their own.</figcaption>
+        </figure>
+      </section>
+
+      <section class="closing section" aria-labelledby="closing-heading">
+        <h2 id="closing-heading">One place to see where the work stands.</h2>
+        <p>Your control center for Tickets, repositories, and agents.<br />Install Workbench alongside official T3 Code, with separate saved data.</p>
+        <div class="actions">
+          <a class="button" href={downloads}>Download Workbench</a>
+          <a class="text-link" href={guide}>Read the guide <span aria-hidden="true">↗</span></a>
+        </div>
+        <p class="release-note">Signed and notarized for macOS. See the release notes for platform downloads and update details.</p>
+      </section>
+    </main>
+    <footer class="site-footer wrap">
+      <a class="brand" href={base}>T3 Code <span>Workbench</span></a>
+      <p>Built on <a href="https://github.com/pingdotgg/t3code">T3 Code</a>. An independent, open-source fork.</p>
+      <a href={repository}>Browse the source <span aria-hidden="true">↗</span></a>
+    </footer>
+  </body>
+</html>
