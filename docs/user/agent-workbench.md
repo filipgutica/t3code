@@ -1,7 +1,8 @@
 # Workbench user guide
 
-Workbench connects planning to implementation. Group repositories into a Workspace,
-describe work in Tickets, and carry that context into native T3 Threads.
+Workbench gives you one view of work across repositories: what’s to do, in progress,
+and done. Each Ticket brings together its context, agents, pull requests, and an
+isolated workspace with worktrees for the repositories involved.
 
 Workbench is available in the web and desktop clients. Jira is optional. Each T3
 environment has its own Workspaces and Tickets, so records do not appear across
@@ -55,7 +56,7 @@ to remove the association without deleting it. **Settle** moves a conversation o
 of the active group; **Thread history** keeps earlier conversations available.
 
 Opening a Thread from a Ticket keeps the Workbench context visible. Use the Board
-or Ticket links to return to planning, or choose **Back to Threads** to restore the
+or Ticket links to return to the work, or choose **Back to Threads** to restore the
 regular T3 sidebar.
 
 ## Follow progress and review results

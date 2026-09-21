@@ -19,10 +19,9 @@ const cropStyle = crop
   <Image
     src={src}
     alt={alt}
-    widths={[480, 800, 1200, 1600].filter((width) => width < src.width).concat(src.width)}
-    sizes={crop ? "1440px" : "(max-width: 700px) 92vw, (max-width: 1050px) 94vw, 700px"}
-    format="webp"
-    quality={85}
+    widths={[480, 800, 1200, 1600, 2400].filter((width) => width < src.width).concat(src.width)}
+    sizes={crop ? `${Math.ceil(src.width / crop.width * 650)}px` : eager ? "(max-width: 1376px) 94vw, 1280px" : "(max-width: 700px) 92vw, (max-width: 1050px) 50vw, 700px"}
+    format="png"
     loading={eager ? "eager" : "lazy"}
     fetchpriority={eager ? "high" : "auto"}
   />
