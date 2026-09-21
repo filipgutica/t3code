@@ -233,6 +233,7 @@ describe("JiraApi", () => {
         connectionId,
         boardId: 42,
         sprintId: 7,
+        reconcileIssueIds: ["10001", "10002"],
       });
 
       assert.deepStrictEqual(
@@ -260,8 +261,17 @@ describe("JiraApi", () => {
         requests[1]?.url.includes("/rest/software/1.0/board/42/sprint/7/issue") ?? false,
       );
       assert.deepStrictEqual(requests[1]?.urlParams.params[0], ["jql", "assignee = currentUser()"]);
+      assert.deepStrictEqual(
+        requests[1]?.urlParams.params
+          .filter(([key]) => key === "reconcileIssues")
+          .map(([, value]) => value),
+        ["10001", "10002"],
+      );
       assert.strictEqual(requests[1]?.headers.authorization, "Bearer access-token");
-      assert.deepStrictEqual(requests[2]?.urlParams.params.at(-1), ["nextPageToken", "page-2"]);
+      assert.deepStrictEqual(
+        requests[2]?.urlParams.params.find(([key]) => key === "nextPageToken"),
+        ["nextPageToken", "page-2"],
+      );
     }),
   );
 

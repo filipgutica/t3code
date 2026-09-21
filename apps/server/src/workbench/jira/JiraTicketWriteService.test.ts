@@ -156,6 +156,7 @@ const makeHarness = (options?: {
   readonly failStatusWrite?: boolean;
   readonly failImport?: boolean;
   readonly missingIssue?: boolean;
+  readonly staleSprintSearch?: boolean;
   readonly missingRemoteUpdatedAt?: boolean;
   readonly preserveDescriptionOnPut?: boolean;
   readonly preserveStatusOnPost?: boolean;
@@ -182,6 +183,7 @@ const makeHarness = (options?: {
     });
     const issueRef = yield* Ref.make(initialIssue);
     const sprintReads = yield* Ref.make(0);
+    const reconciledIssueIds = yield* Ref.make<Array<ReadonlyArray<string>>>([]);
     const linksRef = yield* Ref.make<ReadonlyArray<WorkbenchJiraIssueLink>>([
       makeLink(initialIssue),
     ]);
@@ -265,11 +267,19 @@ const makeHarness = (options?: {
       listBoards: () => Effect.die("unexpected board read"),
       listSprints: () => Effect.die("unexpected sprint read"),
       getBoardConfiguration: () => Effect.die("unexpected configuration read"),
-      listAssignedSprintIssues: () =>
-        Ref.update(sprintReads, (count) => count + 1).pipe(
-          Effect.andThen(Ref.get(issueRef)),
-          Effect.map((issue) => (options?.missingIssue ? [] : [issue])),
-        ),
+      listAssignedSprintIssues: (input) =>
+        Effect.gen(function* () {
+          yield* Ref.update(sprintReads, (count) => count + 1);
+          yield* Ref.update(reconciledIssueIds, (current) => [
+            ...current,
+            input.reconcileIssueIds ?? [],
+          ]);
+          const issue = yield* Ref.get(issueRef);
+          return options?.missingIssue ||
+            (options?.staleSprintSearch && !input.reconcileIssueIds?.includes(issue.issueId))
+            ? []
+            : [issue];
+        }),
       prepareIssueCreation: () =>
         Ref.updateAndGet(preflightCalls, (count) => count + 1).pipe(
           Effect.tap((count) =>
@@ -410,6 +420,7 @@ const makeHarness = (options?: {
       imported,
       requests,
       sprintReads,
+      reconciledIssueIds,
       createCalls,
       preflightCalls,
       preflightReady,
@@ -571,6 +582,20 @@ describe("JiraTicketWriteService", () => {
     createdAt: issueUpdatedAt,
     binding: makeBinding(),
   };
+
+  it.effect("reconciles a newly created issue missing from the sprint search", () =>
+    runWithHarness(
+      (harness) =>
+        Effect.gen(function* () {
+          yield* Ref.set(harness.linksRef, []);
+          const result = yield* harness.service.createTicket(creationInput);
+
+          assert.strictEqual(result, createdTicketId);
+          assert.deepStrictEqual(yield* Ref.get(harness.reconciledIssueIds), [["10001"]]);
+        }),
+      { staleSprintSearch: true },
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
 
   it.effect("allows creation after a refresh changes only binding metadata", () =>
     runWithHarness(

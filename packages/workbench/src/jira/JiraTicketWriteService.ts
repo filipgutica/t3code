@@ -707,6 +707,10 @@ export const make = Effect.gen(function* () {
             connectionId: input.binding.connectionId,
             boardId: input.binding.boardId,
             sprintId: sprint.id,
+            // Jira's sprint search can lag immediately after the successful move. Ask the
+            // endpoint to reconcile this issue while retaining its board, sprint, and assignee
+            // filters before deciding that creation cannot be projected locally.
+            reconcileIssueIds: [jiraIssueId],
           });
           const issue = assignedIssues.find((candidate) => candidate.issueId === jiraIssueId);
           if (issue === undefined) {
