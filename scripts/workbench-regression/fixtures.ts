@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - Playwright host fixtures own disposable state.
-import { test as base, expect, type BrowserContext } from "@playwright/test";
+import { test as base, expect, type BrowserContext, type Page } from "@playwright/test";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -27,6 +27,18 @@ const workbenchUrlFor = (environmentId: string, path: string): string => {
   if (url.pathname !== "/workbench") throw new Error(`Expected a Workbench URL, received ${path}.`);
   url.searchParams.set("environmentId", environmentId);
   return `${url.pathname}${url.search}${url.hash}`;
+};
+
+const waitForWorkbenchStartup = async (page: Page, demo: Demo) => {
+  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
+  await Promise.all([
+    expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible({
+      timeout: 60_000,
+    }),
+    expect(page.getByRole("list", { name: "Workbench Workspaces", exact: true })).toBeVisible({
+      timeout: 60_000,
+    }),
+  ]);
 };
 
 export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
@@ -179,7 +191,14 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
         await context.close();
       }
     },
-    { scope: "worker" },
+    { scope: "worker", timeout: 120_000 },
+  ],
+  page: [
+    async ({ page, demo }, use) => {
+      await waitForWorkbenchStartup(page, demo);
+      await use(page);
+    },
+    { scope: "test", timeout: 120_000 },
   ],
   storageState: async ({ pairedState }, use) => use(pairedState),
   baseURL: async ({ demo }, use) => use(demo.origin),
