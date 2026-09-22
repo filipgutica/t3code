@@ -1505,7 +1505,7 @@ export function WorkbenchTicketDetail({
       </WorkspacePageHeader>
 
       <form
-        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6 lg:overflow-y-auto [&_[data-slot=button]>svg]:mx-0"
+        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6 xl:overflow-y-hidden [&_[data-slot=button]>svg]:mx-0"
         onSubmit={(event) => {
           event.preventDefault();
           if (!editing) return;
@@ -1528,8 +1528,8 @@ export function WorkbenchTicketDetail({
           })();
         }}
       >
-        <div className="mx-auto grid min-h-0 min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-4 lg:h-full lg:grid-cols-[minmax(0,1fr)_20rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
-          <div className="min-w-0 space-y-4">
+        <div className="mx-auto grid min-h-0 min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-4 xl:h-full xl:grid-cols-[minmax(0,1fr)_24rem]">
+          <div className="min-w-0 space-y-4 xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:gap-4 xl:space-y-0">
             {error ? <WorkbenchInlineError message={error} /> : null}
             <section
               aria-labelledby="workbench-ticket-generated-summary"
@@ -1614,7 +1614,7 @@ export function WorkbenchTicketDetail({
                 </div>
               ) : null}
             </section>
-            <section className="shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/40">
+            <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 xl:min-h-0 xl:flex-1">
               <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
                 <div>
                   <h2 className="text-sm font-semibold">Description</h2>
@@ -1693,15 +1693,17 @@ export function WorkbenchTicketDetail({
                   </div>
                 </>
               ) : (
-                <div className="min-h-40 min-w-0 p-4">
+                <div className="min-h-40 min-w-0 p-4 xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:overscroll-contain">
                   <WorkbenchDescription markdown={displayedMarkdown} jira={jiraFieldsManaged} />
                 </div>
               )}
             </section>
           </div>
 
-          <aside className="flex min-w-0 flex-col space-y-3 lg:h-full lg:min-h-0 lg:overflow-y-auto lg:overscroll-contain">
-            <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
+          <aside className="flex min-w-0 flex-col gap-3 xl:h-full xl:min-h-0 xl:overflow-hidden">
+            <section
+              className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 ${threadPanelCollapsed ? "" : "xl:min-h-0 xl:flex-1"}`}
+            >
               <div className="flex items-start justify-between gap-3 border-b border-border/50 px-3 py-2.5">
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold">Agent Threads</h2>
@@ -1725,7 +1727,10 @@ export function WorkbenchTicketDetail({
                 </Button>
               </div>
               {!threadPanelCollapsed ? (
-                <div id="workbench-ticket-agent-threads" className="min-h-0">
+                <div
+                  id="workbench-ticket-agent-threads"
+                  className="min-h-0 xl:overflow-y-auto xl:overscroll-contain"
+                >
                   {canOpenThread ? (
                     <div className="border-b border-border/60 px-3 py-2.5">
                       <div className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45">
@@ -2223,7 +2228,9 @@ export function WorkbenchTicketDetail({
               })}
             />
 
-            <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
+            <section
+              className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 ${repositoryScopePanelCollapsed ? "" : "xl:min-h-0 xl:flex-1"}`}
+            >
               <div className="flex items-start justify-between gap-3 border-b border-border/50 px-3 py-2.5">
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <h2 className="text-sm font-semibold">Ticket workspace</h2>
@@ -2277,7 +2284,10 @@ export function WorkbenchTicketDetail({
                 </div>
               </div>
               {!repositoryScopePanelCollapsed ? (
-                <div id="workbench-ticket-repositories" className="space-y-3 p-3">
+                <div
+                  id="workbench-ticket-repositories"
+                  className="min-h-0 space-y-3 p-3 xl:overflow-y-auto xl:overscroll-contain"
+                >
                   <div className="flex min-w-0 items-start gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="space-y-1">
@@ -2671,7 +2681,9 @@ function WorkbenchTicketDetailsPanel({
   readonly actionableTicket: WorkbenchTicket;
 }) {
   return (
-    <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
+    <section
+      className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 ${collapsed ? "" : "xl:min-h-0 xl:flex-1"}`}
+    >
       <div className="flex items-start justify-between gap-3 border-b border-border/50 px-3 py-2.5">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">Details</h2>
@@ -2695,7 +2707,10 @@ function WorkbenchTicketDetailsPanel({
         </Button>
       </div>
       {!collapsed ? (
-        <div id="workbench-ticket-details" className="min-h-0">
+        <div
+          id="workbench-ticket-details"
+          className="min-h-0 xl:overflow-y-auto xl:overscroll-contain"
+        >
           {jiraFieldsManaged ? (
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 p-3 text-sm">
               <dt className="text-muted-foreground">Type</dt>

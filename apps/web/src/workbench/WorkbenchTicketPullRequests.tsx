@@ -102,7 +102,7 @@ export function WorkbenchTicketPullRequests({
     return null;
 
   return (
-    <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40">
+    <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 xl:min-h-0 xl:flex-1">
       <div className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2.5">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">
@@ -129,7 +129,7 @@ export function WorkbenchTicketPullRequests({
           </Button>
         ) : null}
       </div>
-      <div className="space-y-2 px-3 py-2.5">
+      <div className="min-h-0 space-y-2 px-3 py-2.5 xl:overflow-y-auto xl:overscroll-contain">
         {rows.map(({ pullRequest, threadId, threadTitle, matchesTicket }) => {
           const repositoryUrl = changeRequestRepositoryUrl(pullRequest.url);
           return (
