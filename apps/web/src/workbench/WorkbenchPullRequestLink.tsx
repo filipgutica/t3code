@@ -21,14 +21,17 @@ export interface WorkbenchPullRequestReference {
   readonly title?: string;
   readonly repository?: string;
   readonly state?: PullRequestState;
+  readonly isDraft?: boolean | undefined;
 }
 
 export function WorkbenchPullRequestLink({
   environmentId,
   pullRequest,
+  compact = false,
 }: {
   readonly environmentId: EnvironmentId;
   readonly pullRequest: WorkbenchPullRequestReference;
+  readonly compact?: boolean;
 }) {
   const [selection, setSelection] = useState<{
     environmentId: EnvironmentId;
@@ -38,7 +41,9 @@ export function WorkbenchPullRequestLink({
   const label =
     pullRequest.title ?? pullRequest.repository ?? `Pull request #${pullRequest.number}`;
   const presentation = pullRequest.state
-    ? PULL_REQUEST_STATE_PRESENTATION[pullRequest.state]
+    ? PULL_REQUEST_STATE_PRESENTATION[
+        pullRequest.state === "open" && pullRequest.isDraft ? "draft" : pullRequest.state
+      ]
     : undefined;
   const stateClass = presentation?.toneClassName ?? "text-muted-foreground";
   const PullRequestIcon = presentation?.Icon ?? PullRequestGlyph.pullRequest;
@@ -47,10 +52,20 @@ export function WorkbenchPullRequestLink({
   };
 
   return (
-    <span className="inline-flex w-full min-w-0 items-stretch rounded-lg border border-border/60 bg-background/40">
+    <span
+      className={
+        compact
+          ? "inline-flex shrink-0"
+          : "inline-flex w-full min-w-0 items-stretch rounded-lg border border-border/60 bg-background/40"
+      }
+    >
       <a
-        aria-label={`Open pull request #${pullRequest.number}${pullRequest.title ? `: ${pullRequest.title}` : ""} in T3 Code${pullRequest.state ? ` (${pullRequest.state})` : ""}`}
-        className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-l-lg px-3 py-1.5 text-sm font-medium text-foreground outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={`Open pull request #${pullRequest.number}${pullRequest.title ? `: ${pullRequest.title}` : ""} in T3 Code${presentation ? ` (${presentation.label})` : ""}`}
+        className={
+          compact
+            ? "inline-flex shrink-0 rounded text-xs outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+            : "flex min-w-0 flex-1 flex-col gap-0.5 rounded-l-lg px-3 py-1.5 text-sm font-medium text-foreground outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring"
+        }
         href={pullRequest.url}
         onClick={openInWorkbench}
         rel="noopener noreferrer"
@@ -60,35 +75,39 @@ export function WorkbenchPullRequestLink({
           <PullRequestIcon aria-hidden className="size-3.5 shrink-0" />
           <span className="tabular-nums">#{pullRequest.number}</span>
         </span>
+        {!compact ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span className="block min-w-0 truncate font-normal leading-5 text-muted-foreground" />
+              }
+            >
+              {label}
+            </TooltipTrigger>
+            <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
+              {label}
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
+      </a>
+      {!compact ? (
         <Tooltip>
           <TooltipTrigger
             render={
-              <span className="block min-w-0 truncate font-normal leading-5 text-muted-foreground" />
+              <a
+                aria-label={`Open pull request #${pullRequest.number} in browser`}
+                className="inline-flex w-9 shrink-0 items-center justify-center rounded-r-lg border-l border-border/60 text-muted-foreground outline-none hover:bg-accent/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                href={pullRequest.url}
+                rel="noopener noreferrer"
+                target="_blank"
+              />
             }
           >
-            {label}
+            <ExternalLinkIcon aria-hidden className="size-3" />
           </TooltipTrigger>
-          <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
-            {label}
-          </TooltipPopup>
+          <TooltipPopup>Open in browser</TooltipPopup>
         </Tooltip>
-      </a>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <a
-              aria-label={`Open pull request #${pullRequest.number} in browser`}
-              className="inline-flex w-9 shrink-0 items-center justify-center rounded-r-lg border-l border-border/60 text-muted-foreground outline-none hover:bg-accent/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              href={pullRequest.url}
-              rel="noopener noreferrer"
-              target="_blank"
-            />
-          }
-        >
-          <ExternalLinkIcon aria-hidden className="size-3" />
-        </TooltipTrigger>
-        <TooltipPopup>Open in browser</TooltipPopup>
-      </Tooltip>
+      ) : null}
       {selection ? (
         <ChangeRequestLinkOpenContext value={setSelection}>
           <Suspense fallback={<span role="status">Loading pull request…</span>}>
