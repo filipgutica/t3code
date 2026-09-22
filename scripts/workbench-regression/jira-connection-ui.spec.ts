@@ -1,5 +1,12 @@
 // @effect-diagnostics globalTimers:off globalDate:off - Playwright owns deterministic browser test timing and timestamps.
-import { test, expect, snapshot, type Demo } from "./fixtures.ts";
+import {
+  test,
+  expect,
+  openWorkbench,
+  snapshot,
+  type Demo,
+  waitForWorkbench,
+} from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 
@@ -479,7 +486,7 @@ const routeMockJira = async (page: Page) => {
 };
 
 const createWorkspace = async (page: Page, demo: Demo, title: string) => {
-  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
+  await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
   await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Add Workspace", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: /Workspace/ });
@@ -512,7 +519,8 @@ const seedLocalEpicAndTicket = async (page: Page, demo: Demo, workspaceId: strin
       candidate.title === "Jira migration regression Epic" && candidate.projectId === workspaceId,
   );
   if (!epic) throw new Error("Created Jira migration Epic was not persisted.");
-  await page.goto(
+  await openWorkbench(
+    page,
     demo.workbenchUrl(`/workbench?workbenchProjectId=${workspaceId}&epicId=${epic.id}`),
   );
   await expect(page.getByRole("heading", { name: epic.title, exact: true })).toBeVisible();
@@ -529,7 +537,7 @@ const seedLocalEpicAndTicket = async (page: Page, demo: Demo, workspaceId: strin
   );
   if (!ticket) throw new Error("Created Jira migration Ticket was not persisted.");
   expect(ticket.epicId).toBe(epic.id);
-  await page.goto(demo.workbenchUrl(`/workbench?workbenchProjectId=${workspaceId}`));
+  await openWorkbench(page, demo.workbenchUrl(`/workbench?workbenchProjectId=${workspaceId}`));
   await expect(page.getByRole("button", { name: "Workspace actions" })).toBeVisible();
   return { epic, ticket };
 };
@@ -602,6 +610,7 @@ test.describe("Jira connection UI contract", () => {
     ).toBeVisible();
     expect(new URL(page.url()).searchParams.get("ticketId")).toBeNull();
     await page.reload();
+    await waitForWorkbench(page);
     await expect(page.getByLabel("Jira sync status")).toContainText("Jira synced");
     expect(
       (await snapshot(demo)).projects.some(

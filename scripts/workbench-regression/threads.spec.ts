@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - Read the scripted provider's received input for the end-to-end assertion.
-import { test, expect, snapshot } from "./fixtures.ts";
+import { test, expect, snapshot, openWorkbench, waitForWorkbench } from "./fixtures.ts";
 import * as NodeFSP from "node:fs/promises";
 import { providerStatePath } from "./provider-settings.mts";
 import * as Schema from "effect/Schema";
@@ -21,7 +21,7 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
   page,
   demo,
 }, testInfo) => {
-  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-004"));
+  await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-004"));
   await expect(
     page.getByRole("heading", { name: "Fix focus after creating a project", exact: true }),
   ).toBeVisible();
@@ -71,6 +71,7 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
   expect(complete.tickets.find((t) => t.id === "orbit-004")?.status).toBe("in_progress");
   expect(complete.assignments.filter((a) => a.ticketId === "orbit-004")).toHaveLength(1);
   await page.reload();
+  await waitForWorkbench(page);
   await expect(page.getByText("Workbench regression passed.", { exact: true })).toBeVisible();
   await expect(
     page.getByText("Fix focus after creating a project", { exact: true }).first(),
@@ -106,6 +107,7 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
       ?.settledOverride,
   ).toBe("settled");
   await page.reload();
+  await waitForWorkbench(page);
   await expect(
     page.getByRole("button", { name: "Expand Settled Threads", exact: true }),
   ).toBeVisible();
@@ -239,7 +241,7 @@ test("R1 R3: multi-repository worktrees persist and reset refuses retained Threa
   const before = await snapshot(demo);
   const workspace = before.ticketWorkspaces.find((w) => w.ticketId === "orbit-001");
   expect(workspace).toBeDefined();
-  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-001"));
+  await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-001"));
   await expect(
     page.getByRole("heading", { name: "Create the welcome checklist", exact: true }),
   ).toBeVisible();

@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - The test controls the external provider fixture through a private file.
 import * as NodeFSP from "node:fs/promises";
-import { test, expect } from "./fixtures.ts";
+import { test, expect, openWorkbench, waitForWorkbench } from "./fixtures.ts";
 import { providerControlPath, REGRESSION_PROVIDER_SUMMARY } from "./provider-settings.mts";
 
 test("T4: summary generation persists; failed regeneration preserves prior text and retry recovers", async ({
@@ -13,7 +13,10 @@ test("T4: summary generation persists; failed regeneration preserves prior text 
   // that refresh plus transport/render time, rather than racing its interval.
   const summaryRefreshTimeout = 20_000;
   try {
-    await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-003"));
+    await openWorkbench(
+      page,
+      demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-003"),
+    );
     const summary = page.getByRole("region", { name: "Generated summary", exact: true });
     const generate = page.getByRole("button", {
       name: /^(Generate|Regenerate|Retry).*for Add helpful empty states$/,
@@ -21,6 +24,7 @@ test("T4: summary generation persists; failed regeneration preserves prior text 
     await generate.click();
     await expect(summary.getByText(REGRESSION_PROVIDER_SUMMARY, { exact: true })).toBeVisible();
     await page.reload();
+    await waitForWorkbench(page);
     await expect(summary.getByText(REGRESSION_PROVIDER_SUMMARY, { exact: true })).toBeVisible();
     await NodeFSP.writeFile(
       controlPath,

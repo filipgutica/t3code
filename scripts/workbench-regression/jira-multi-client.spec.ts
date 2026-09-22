@@ -1,4 +1,11 @@
-import { test, expect, snapshot, jiraSnapshot, type Demo } from "./fixtures.ts";
+import {
+  test,
+  expect,
+  jiraSnapshot,
+  openWorkbench,
+  snapshot,
+  type Demo,
+} from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import * as NodeCrypto from "node:crypto";
 import { readConfig } from "../workbench-demo/environment.mts";
@@ -24,7 +31,7 @@ const jiraConfig = (home: string) => {
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const openJiraDialog = async (page: Page, demo: Demo) => {
-  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=demo-jira"));
+  await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=demo-jira"));
   await expect(page.getByRole("heading", { name: "Orbit Jira", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Workspace actions" }).click();
   await page.getByRole("menuitem", { name: "Configure Jira sprint mirror", exact: true }).click();
@@ -294,7 +301,7 @@ test.describe("Jira multi-sprint selection and client conflicts @live", () => {
       const ticketUrl = demo.workbenchUrl(
         `/workbench?workbenchProjectId=demo-jira&ticketId=${encodeURIComponent(link.ticketId)}`,
       );
-      await Promise.all([page.goto(ticketUrl), secondPage.goto(ticketUrl)]);
+      await Promise.all([openWorkbench(page, ticketUrl), openWorkbench(secondPage, ticketUrl)]);
       await Promise.all([
         expect(page.getByRole("heading", { name: original.summary, exact: true })).toBeVisible(),
         expect(

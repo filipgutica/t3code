@@ -1,10 +1,10 @@
-import { test, expect, snapshot } from "./fixtures.ts";
+import { test, expect, openWorkbench, snapshot } from "./fixtures.ts";
 
 test("local board search filters titles, clears, and resets between Workspaces", async ({
   page,
   demo,
 }) => {
-  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
+  await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
   const board = page.getByRole("region", { name: "Ticket board", exact: true });
   const search = board.getByRole("textbox", { name: "Search tickets" });
   await expect(board.locator("article").first()).toBeVisible();

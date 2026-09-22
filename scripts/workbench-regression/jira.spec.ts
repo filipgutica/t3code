@@ -1,4 +1,11 @@
-import { test, expect, snapshot, jiraSnapshot, type Demo } from "./fixtures.ts";
+import {
+  test,
+  expect,
+  jiraSnapshot,
+  openWorkbench,
+  snapshot,
+  type Demo,
+} from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import * as NodeCrypto from "node:crypto";
 import { readConfig } from "../workbench-demo/environment.mts";
@@ -38,7 +45,7 @@ const liveJira = async (demo: Demo) => {
 };
 
 const openJiraDialog = async (page: Page, demo: Demo) => {
-  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=demo-jira"));
+  await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=demo-jira"));
   await expect(page.getByRole("heading", { name: "Orbit Jira", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Workspace actions" }).click();
   await page.getByRole("menuitem", { name: "Configure Jira sprint mirror", exact: true }).click();
@@ -109,7 +116,7 @@ test.describe("Jira Workbench integration @live", () => {
       workbench.ticketWorkspaces.filter((workspace) => linkedTicketIds.has(workspace.ticketId)),
     ).toHaveLength(0);
 
-    await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=demo-jira"));
+    await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=demo-jira"));
     await expect(page.getByRole("heading", { name: "Orbit Jira", exact: true })).toBeVisible();
     for (const link of links) {
       await expect(page.getByText(link.issue.key, { exact: true }).first()).toBeVisible();
@@ -254,7 +261,7 @@ test.describe("Jira Workbench integration @live", () => {
     const description = "Created by the live Workbench Jira regression.";
     let key: string | undefined;
     try {
-      await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=demo-jira"));
+      await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=demo-jira"));
       await page.getByRole("button", { name: "New Ticket", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "Create Ticket", exact: true });
       await dialog.getByPlaceholder("What needs doing?").fill(title);
@@ -311,7 +318,8 @@ test.describe("Jira Workbench integration @live", () => {
     let remoteIssue = original;
     try {
       await client.updateIssue(original.key, { description: remoteDescription });
-      await page.goto(
+      await openWorkbench(
+        page,
         demo.workbenchUrl(
           `/workbench?workbenchProjectId=demo-jira&ticketId=${encodeURIComponent(link.ticketId)}`,
         ),
@@ -388,7 +396,8 @@ test.describe("Jira Workbench integration @live", () => {
     );
     if (!transition) throw new Error(`Jira issue ${issue.key} has no available transition.`);
     try {
-      await page.goto(
+      await openWorkbench(
+        page,
         demo.workbenchUrl(
           `/workbench?workbenchProjectId=demo-jira&ticketId=${encodeURIComponent(link.ticketId)}`,
         ),
@@ -448,7 +457,8 @@ test.describe("Jira Workbench integration @live", () => {
     const changedDescription = `${issue.description}\n\nJ8 transient remote edit.`;
     try {
       await client.updateIssue(issue.key, { description: changedDescription });
-      await page.goto(
+      await openWorkbench(
+        page,
         demo.workbenchUrl(
           `/workbench?workbenchProjectId=demo-jira&ticketId=${encodeURIComponent(link.ticketId)}`,
         ),
