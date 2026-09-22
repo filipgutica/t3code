@@ -4,7 +4,7 @@ test("local board search filters titles, clears, and resets between Workspaces",
   page,
   demo,
 }) => {
-  await page.goto("/workbench?workbenchProjectId=orbit");
+  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
   const board = page.getByRole("region", { name: "Ticket board", exact: true });
   const search = board.getByRole("textbox", { name: "Search tickets" });
   await expect(board.locator("article").first()).toBeVisible();

@@ -13,7 +13,7 @@ test("T4: summary generation persists; failed regeneration preserves prior text 
   // that refresh plus transport/render time, rather than racing its interval.
   const summaryRefreshTimeout = 20_000;
   try {
-    await page.goto("/workbench?workbenchProjectId=orbit&ticketId=orbit-003");
+    await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-003"));
     const summary = page.getByRole("region", { name: "Generated summary", exact: true });
     const generate = page.getByRole("button", {
       name: /^(Generate|Regenerate|Retry).*for Add helpful empty states$/,
