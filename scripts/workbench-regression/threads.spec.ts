@@ -126,7 +126,7 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
   await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
   const sidebar = page.locator('[data-slot="sidebar-content"]');
   await expect(
-    sidebar.getByRole("button", { name: /^Fix focus after creating a project \d+$/ }),
+    sidebar.getByRole("button", { name: "Fix focus after creating a project", exact: true }),
   ).toHaveCount(1);
   await sidebar
     .getByRole("button", {
@@ -144,7 +144,7 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
       url.pathname.endsWith(`/${nativeThread.id}`) && url.searchParams.get("workbench") === "true",
   );
   await expect(
-    sidebar.getByRole("button", { name: nativeThread.title, exact: true }),
+    settledSidebar.getByRole("button", { name: nativeThread.title, exact: true }),
   ).toBeVisible();
   await sidebar
     .getByRole("button", { name: `Actions for Thread ${nativeThread.title}`, exact: true })
@@ -180,21 +180,23 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
     .getByRole("textbox", { name: "Rename Thread Sidebar renamed thread", exact: true })
     .press("Enter");
   await expect(
-    sidebar.getByRole("button", { name: nativeThread.title, exact: true }),
+    settledSidebar.getByRole("button", { name: nativeThread.title, exact: true }),
   ).toBeVisible();
   await sidebar
     .getByRole("button", { name: `Actions for Thread ${nativeThread.title}`, exact: true })
     .click();
   await page.getByRole("button", { name: "Un-settle thread", exact: true }).click();
   await expect(
-    sidebar.getByRole("button", { name: nativeThread.title, exact: true }),
+    sidebar
+      .locator("#workbench-sidebar-ticket-orbit-004-active")
+      .getByRole("button", { name: nativeThread.title, exact: true }),
   ).toBeVisible();
   await sidebar
     .getByRole("button", { name: `Actions for Thread ${nativeThread.title}`, exact: true })
     .click();
   await page.getByRole("button", { name: "Settle thread", exact: true }).click();
   await expect(
-    sidebar.getByRole("button", { name: nativeThread.title, exact: true }),
+    settledSidebar.getByRole("button", { name: nativeThread.title, exact: true }),
   ).toBeVisible();
   await expect(
     sidebar.getByRole("button", {

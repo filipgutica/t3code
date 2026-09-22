@@ -241,7 +241,7 @@ describe("Workbench Ticket pull request references", () => {
     ]);
   });
 
-  it("preserves the native snapshot state and title for a PR linked through a Thread", () => {
+  it("preserves the native snapshot state, draft flag, and title for a PR linked through a Thread", () => {
     const linkedThread = thread({
       id: "Database setup",
       pullRequests: [
@@ -252,7 +252,7 @@ describe("Workbench Ticket pull request references", () => {
             title: "Add remote database setup",
             headBranch: "remote-setup",
             baseBranch: "main",
-            isDraft: false,
+            isDraft: true,
             updatedAt: null,
             syncedAt: "2026-09-17T00:00:00.000Z",
           },
@@ -268,7 +268,12 @@ describe("Workbench Ticket pull request references", () => {
       mergeWorkbenchTicketPullRequests({ threadPullRequests: references, matches: [] }),
     ).toEqual([
       {
-        pullRequest: { ...pullRequest(1584), state: "open", title: "Add remote database setup" },
+        pullRequest: {
+          ...pullRequest(1584),
+          state: "open",
+          isDraft: true,
+          title: "Add remote database setup",
+        },
         threadId: linkedThread.id,
         threadTitle: "Database setup",
         matchesTicket: false,

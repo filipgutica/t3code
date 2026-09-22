@@ -25,7 +25,9 @@ export interface WorkbenchTicketPullRequest {
 }
 
 export type TicketPullRequestReference = ThreadLinkedPullRequest &
-  Partial<Pick<PullRequestListEntry, "title" | "state">>;
+  Partial<Pick<PullRequestListEntry, "title" | "state">> & {
+    readonly isDraft?: boolean | undefined;
+  };
 
 interface TicketPullRequestRow {
   readonly pullRequest: TicketPullRequestReference;
@@ -95,7 +97,9 @@ export function getWorkbenchTicketPullRequests({
               repository,
               number,
               url,
-              ...(snapshot ? { title: snapshot.title, state: snapshot.state } : {}),
+              ...(snapshot
+                ? { title: snapshot.title, state: snapshot.state, isDraft: snapshot.isDraft }
+                : {}),
             }),
           )
         : [thread.linkedPullRequest, thread.branchPullRequest];

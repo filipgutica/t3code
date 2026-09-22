@@ -11,7 +11,6 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
   AlertCircleIcon,
-  ArchiveIcon,
   ArrowLeftIcon,
   BlocksIcon,
   ChevronDownIcon,
@@ -19,10 +18,14 @@ import {
   LayoutDashboardIcon,
   PlusIcon,
   RefreshCwIcon,
-  TicketIcon,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { WorkbenchSidebarTicketButton } from "./WorkbenchSidebarTicketButton";
+import {
+  getWorkbenchSidebarTicketDetails,
+  type WorkbenchSidebarTicketDetails,
+} from "./workbenchSidebarContext.logic";
 import { WorkbenchSidebarThreadRow } from "./WorkbenchSidebarThreadRow";
 import { SidebarChromeFooter } from "../components/sidebar/SidebarChrome";
 import { Button } from "../components/ui/button";
@@ -37,7 +40,7 @@ import {
 import { Skeleton } from "../components/ui/skeleton";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { usePrimaryEnvironmentId } from "../state/environments";
-import { useThreadDetail, useThreadShells } from "../state/entities";
+import { useProjects, useThreadDetail, useThreadShells } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
 import {
@@ -100,6 +103,32 @@ export function WorkbenchSidebar({
     environmentId === null ? null : workbenchEnvironment.snapshot({ environmentId, input: {} }),
   );
   const snapshot = query.data;
+  const nativeProjects = useProjects();
+  const jiraQuery = useEnvironmentQuery(
+    environmentId === null ? null : workbenchEnvironment.jiraSnapshot({ environmentId, input: {} }),
+  );
+  const ticketDetailsById = useMemo(
+    () =>
+      snapshot
+        ? getWorkbenchSidebarTicketDetails({
+            environmentId,
+            tickets: snapshot.tickets,
+            assignments: snapshot.assignments,
+            threads: currentThread ? [...threadShells, currentThread] : threadShells,
+            projects: nativeProjects,
+            epics: snapshot.epics,
+            issueLinks: jiraQuery.data?.issueLinks ?? [],
+          })
+        : new Map<WorkbenchTicketId, WorkbenchSidebarTicketDetails>(),
+    [
+      environmentId,
+      snapshot,
+      threadShells,
+      currentThread,
+      nativeProjects,
+      jiraQuery.data?.issueLinks,
+    ],
+  );
   const selectedTicket = snapshot?.tickets.find((ticket) => ticket.id === selectedTicketId);
   const selectedTicketStatus = selectedTicket?.status;
   const selectedTicketIsDone =
@@ -285,6 +314,7 @@ export function WorkbenchSidebar({
               selectedWorkspaceId={selectedWorkspaceId}
               ticketCountsByWorkspace={ticketCountsByWorkspace}
               ticketGroupsByWorkspace={ticketGroupsByWorkspace}
+              ticketDetailsById={ticketDetailsById}
             />
           )}
         </SidebarGroup>
@@ -296,6 +326,7 @@ export function WorkbenchSidebar({
 
 type WorkbenchSidebarNavigationProps = {
   readonly archivedTickets: ReadonlyArray<WorkbenchSidebarTicket>;
+  readonly ticketDetailsById: ReadonlyMap<WorkbenchTicketId, WorkbenchSidebarTicketDetails>;
   readonly contextThreadId: ThreadId | undefined;
   readonly onOpenThread: (thread: {
     readonly environmentId: EnvironmentId;
@@ -314,6 +345,7 @@ type WorkbenchSidebarNavigationProps = {
 
 function WorkbenchSidebarNavigation({
   archivedTickets,
+  ticketDetailsById,
   contextThreadId,
   onOpenThread,
   onSelectTicket,
@@ -399,6 +431,7 @@ function WorkbenchSidebarNavigation({
                     <div className="ms-3 border-sidebar-border border-l ps-2">
                       {activeTicketGroups.length > 0 ? (
                         <WorkbenchSidebarTicketGroups
+                          ticketDetailsById={ticketDetailsById}
                           groups={activeTicketGroups}
                           isDone={false}
                           onOpenThread={onOpenThread}
@@ -422,6 +455,7 @@ function WorkbenchSidebarNavigation({
                       ) : null}
                       {doneTicketGroups.length > 0 ? (
                         <WorkbenchSidebarDoneTickets
+                          ticketDetailsById={ticketDetailsById}
                           groups={doneTicketGroups}
                           expanded={expansion.done}
                           onOpenThread={onOpenThread}
@@ -454,6 +488,7 @@ function WorkbenchSidebarNavigation({
                       ) : null}
                       {hasArchivedTickets ? (
                         <WorkbenchSidebarArchivedTickets
+                          ticketDetailsById={ticketDetailsById}
                           archivedTickets={archivedTickets}
                           expanded={expansion.archived}
                           onSelectTicket={onSelectTicket}
@@ -487,6 +522,7 @@ type WorkbenchSidebarTicketGroupsProps = {
   readonly contextThreadId: ThreadId | undefined;
   readonly expansion: WorkbenchSidebarExpansion;
   readonly groups: ReadonlyArray<WorkbenchSidebarTicketGroup>;
+  readonly ticketDetailsById: ReadonlyMap<WorkbenchTicketId, WorkbenchSidebarTicketDetails>;
   readonly isDone: boolean;
   readonly onOpenThread: (thread: {
     readonly environmentId: EnvironmentId;
@@ -500,6 +536,7 @@ type WorkbenchSidebarTicketGroupsProps = {
 };
 
 function WorkbenchSidebarTicketGroups({
+  ticketDetailsById,
   contextThreadId,
   expansion,
   groups,
@@ -515,6 +552,7 @@ function WorkbenchSidebarTicketGroups({
     <SidebarMenu>
       {groups.map((group) => (
         <WorkbenchSidebarTicketGroupRow
+          ticketDetailsById={ticketDetailsById}
           contextThreadId={contextThreadId}
           expansion={expansion}
           group={group}
@@ -533,6 +571,7 @@ function WorkbenchSidebarTicketGroups({
 }
 
 function WorkbenchSidebarTicketGroupRow({
+  ticketDetailsById,
   contextThreadId,
   expansion,
   group,
@@ -565,22 +604,12 @@ function WorkbenchSidebarTicketGroupRow({
         ) : (
           <span aria-hidden className="size-7 shrink-0" />
         )}
-        <SidebarMenuButton
-          aria-current={ticketIsDestination ? "page" : undefined}
-          className="h-9 w-auto min-w-0 flex-1 gap-2.5 rounded-md px-2.5 text-sm"
+        <WorkbenchSidebarTicketButton
+          ticket={ticket}
+          details={ticketDetailsById.get(ticket.id)}
           isActive={ticketIsDestination}
-          onClick={() => onSelectTicket(workspaceId, ticket.id)}
-          size="sm"
-          tooltip={{ children: ticket.title, hidden: false }}
-        >
-          <TicketIcon />
-          <WorkbenchSidebarItemTitle>{ticket.title}</WorkbenchSidebarItemTitle>
-          {threads.length > 0 ? (
-            <span className="text-[10px] tabular-nums text-sidebar-muted-foreground">
-              {threads.length}
-            </span>
-          ) : null}
-        </SidebarMenuButton>
+          onSelect={() => onSelectTicket(workspaceId, ticket.id)}
+        />
       </div>
       {threads.length > 0 ? (
         <div
@@ -611,6 +640,7 @@ function WorkbenchSidebarTicketGroupRow({
 }
 
 function WorkbenchSidebarDoneTickets({
+  ticketDetailsById,
   contextThreadId,
   expansion,
   expanded,
@@ -647,6 +677,7 @@ function WorkbenchSidebarDoneTickets({
       <div aria-label="Done Ticket list" hidden={!expanded} id={panelId}>
         {expanded ? (
           <WorkbenchSidebarTicketGroups
+            ticketDetailsById={ticketDetailsById}
             contextThreadId={contextThreadId}
             expansion={expansion}
             groups={groups}
@@ -744,6 +775,7 @@ function WorkbenchSidebarItemTitle({ children }: { readonly children: string }) 
 }
 
 function WorkbenchSidebarArchivedTickets({
+  ticketDetailsById,
   archivedTickets,
   contextThreadId,
   expanded,
@@ -754,6 +786,7 @@ function WorkbenchSidebarArchivedTickets({
   selectedTicketId,
 }: {
   readonly archivedTickets: ReadonlyArray<WorkbenchSidebarTicket>;
+  readonly ticketDetailsById: ReadonlyMap<WorkbenchTicketId, WorkbenchSidebarTicketDetails>;
   readonly contextThreadId: ThreadId | undefined;
   readonly expanded: boolean;
   readonly onSelectTicket: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
@@ -783,26 +816,16 @@ function WorkbenchSidebarArchivedTickets({
           <SidebarMenu className="ps-px">
             {archivedTickets.map((ticket) => (
               <SidebarMenuItem key={ticket.id}>
-                <SidebarMenuButton
-                  aria-current={
-                    ticket.id === selectedTicketId &&
-                    contextThreadId === undefined &&
-                    selectedEpicId === undefined
-                      ? "page"
-                      : undefined
-                  }
+                <WorkbenchSidebarTicketButton
+                  ticket={ticket}
+                  details={ticketDetailsById.get(ticket.id)}
                   isActive={
                     ticket.id === selectedTicketId &&
                     contextThreadId === undefined &&
                     selectedEpicId === undefined
                   }
-                  onClick={() => onSelectTicket(ticket.projectId, ticket.id)}
-                  className="h-9 gap-2.5 rounded-md px-2.5 text-sm text-sidebar-muted-foreground/75"
-                  tooltip={{ children: ticket.title, hidden: false }}
-                >
-                  <ArchiveIcon />
-                  <WorkbenchSidebarItemTitle>{ticket.title}</WorkbenchSidebarItemTitle>
-                </SidebarMenuButton>
+                  onSelect={() => onSelectTicket(ticket.projectId, ticket.id)}
+                />
               </SidebarMenuItem>
             ))}
           </SidebarMenu>

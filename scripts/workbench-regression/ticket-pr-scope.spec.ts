@@ -356,10 +356,12 @@ test("ticket PR discovery includes other Workspace repositories without changing
   await expect(page.locator('[data-slot="tooltip-popup"]')).toContainText(threadTitle);
   await page.screenshot({ path: testInfo.outputPath("ticket-thread-tooltip.png") });
   await threadBadge.press("Escape");
-  const linkedPr = page.getByRole("link", {
-    name: "Open pull request #1584: Add remote database setup in T3 Code (open)",
-    exact: true,
-  });
+  const linkedPr = page
+    .getByRole("link", {
+      name: "Open pull request #1584: Add remote database setup in T3 Code (open)",
+      exact: true,
+    })
+    .filter({ hasText: "Add remote database setup" });
   await expect(linkedPr).toBeVisible();
   await expect(
     linkedPr

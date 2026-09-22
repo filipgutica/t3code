@@ -1,32 +1,214 @@
-import {
-  scopeProjectRef,
-  scopedThreadKey,
-  scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { ClockIcon, MessageSquareIcon, MoreHorizontalIcon, PinIcon } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 
 import {
-  hasUnseenCompletion,
-  resolveSidebarThreadStatus,
-  resolveThreadStatusPill,
-} from "../components/Sidebar.logic";
-import { ThreadStatusLabel } from "../components/ThreadStatusIndicators";
+  ThreadPullRequestBadgeControl,
+  ThreadStatusLabel,
+} from "../components/ThreadStatusIndicators";
 import { Input } from "../components/ui/input";
 import { SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar";
-import { toastManager } from "../components/ui/toast";
-import { useThreadActionMenu } from "../hooks/useThreadActionMenu";
-import { useProject, useThreadShell } from "../state/entities";
-import { threadEnvironment } from "../state/threads";
-import { useAtomCommand } from "../state/use-atom-command";
-import { useUiStateStore } from "../uiStateStore";
 import type { WorkbenchSidebarThread } from "./workbenchSidebar.logic";
-import { filterWorkbenchThreadActionMenuItems } from "./workbenchThreadActionMenu";
+import { WorkbenchSidebarThreadPreview } from "./WorkbenchSidebarThreadPreview";
+import {
+  useWorkbenchSidebarThreadInteraction,
+  useWorkbenchSidebarThreadRename,
+  useWorkbenchSidebarThreadRowData,
+  type WorkbenchSidebarThreadRowData,
+} from "./WorkbenchSidebarThreadRow.logic";
+
+function WorkbenchSidebarThreadRenameInput({
+  thread,
+  renameTitle,
+  setRenameTitle,
+  commitRename,
+  cancelRename,
+}: {
+  readonly thread: WorkbenchSidebarThread;
+  readonly renameTitle: string;
+  readonly setRenameTitle: Dispatch<SetStateAction<string | null>>;
+  readonly commitRename: () => void;
+  readonly cancelRename: () => void;
+}) {
+  return (
+    <Input
+      aria-label={`Rename Thread ${thread.title}`}
+      autoFocus
+      value={renameTitle}
+      onFocus={(event) => event.currentTarget.select()}
+      onChange={(event) => setRenameTitle(event.currentTarget.value)}
+      onBlur={commitRename}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          commitRename();
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          cancelRename();
+        }
+      }}
+    />
+  );
+}
+
+function WorkbenchSidebarThreadTitle({
+  thread,
+  data,
+}: {
+  readonly thread: WorkbenchSidebarThread;
+  readonly data: WorkbenchSidebarThreadRowData;
+}) {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span
+        className={`min-w-0 flex-1 truncate ${data.unread ? "font-medium text-sidebar-foreground" : "text-sidebar-muted-foreground/75"}`}
+      >
+        {thread.title}
+      </span>
+      {data.shell?.pinnedAt ? <PinIcon aria-label="Pinned" className="size-3 shrink-0" /> : null}
+      {data.snoozed ? <ClockIcon aria-label="Snoozed" className="size-3 shrink-0" /> : null}
+      {data.failed ? (
+        <span className="text-[10px] text-red-600 dark:text-red-300">Failed</span>
+      ) : data.status ? (
+        <ThreadStatusLabel status={{ ...data.status, pulse: false }} />
+      ) : null}
+    </span>
+  );
+}
+
+function WorkbenchSidebarThreadNavigation({
+  thread,
+  isActive,
+  onOpenThread,
+  data,
+  openMenu,
+}: {
+  readonly thread: WorkbenchSidebarThread;
+  readonly isActive: boolean;
+  readonly onOpenThread: (thread: WorkbenchSidebarThread) => void;
+  readonly data: WorkbenchSidebarThreadRowData;
+  readonly openMenu: (position: { x: number; y: number }) => void;
+}) {
+  return (
+    <SidebarMenuButton
+      aria-label={thread.title}
+      aria-current={isActive ? "page" : undefined}
+      className="h-auto min-h-12 min-w-0 flex-1 items-stretch"
+      isActive={isActive}
+      onClick={() => onOpenThread(thread)}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        openMenu({ x: event.clientX, y: event.clientY });
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+          event.preventDefault();
+          const bounds = event.currentTarget.getBoundingClientRect();
+          openMenu({ x: bounds.left, y: bounds.bottom });
+        }
+      }}
+      size="lg"
+      tooltip={{
+        align: "start",
+        children: (
+          <WorkbenchSidebarThreadPreview
+            environment={data.environment}
+            project={data.project}
+            providerEntry={data.providerEntry}
+            pullRequests={data.pullRequests}
+            shell={data.shell}
+            thread={thread}
+          />
+        ),
+        hidden: false,
+        side: "right",
+        sideOffset: 4,
+        variant: "glass",
+        className: "max-w-80 whitespace-normal [&_[data-slot=tooltip-viewport]]:p-0",
+      }}
+    >
+      <MessageSquareIcon className="mt-0.5 shrink-0" />
+      <span className="min-w-0 flex-1">
+        <WorkbenchSidebarThreadTitle data={data} thread={thread} />
+        <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground/60">
+          <span className="min-w-0 flex-1 truncate">{data.repositoryLabel ?? "Workspace"}</span>
+        </span>
+      </span>
+    </SidebarMenuButton>
+  );
+}
+
+function WorkbenchSidebarThreadPrBadge({
+  data,
+  onOpenPullRequest,
+  onOpenPullRequestStack,
+}: {
+  readonly data: WorkbenchSidebarThreadRowData;
+  readonly onOpenPullRequest: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  readonly onOpenPullRequestStack: () => void;
+}) {
+  if (!data.pullRequestBadge) return null;
+  return (
+    <span className="flex shrink-0 self-stretch items-end pb-2">
+      <ThreadPullRequestBadgeControl
+        variant="underline"
+        badge={data.pullRequestBadge}
+        number={data.currentPullRequest?.number}
+        url={data.currentPullRequest?.url}
+        status={data.pullRequestIndicator}
+        onOpenStack={onOpenPullRequestStack}
+        onOpenPullRequest={onOpenPullRequest}
+      />
+    </span>
+  );
+}
+
+function WorkbenchSidebarThreadRowView({
+  thread,
+  isActive,
+  onOpenThread,
+  data,
+  openMenu,
+  onOpenPullRequest,
+  onOpenPullRequestStack,
+}: {
+  readonly thread: WorkbenchSidebarThread;
+  readonly isActive: boolean;
+  readonly onOpenThread: (thread: WorkbenchSidebarThread) => void;
+  readonly data: WorkbenchSidebarThreadRowData;
+  readonly openMenu: (position: { x: number; y: number }) => void;
+  readonly onOpenPullRequest: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  readonly onOpenPullRequestStack: () => void;
+}) {
+  return (
+    <div className="flex min-w-0 items-center">
+      <WorkbenchSidebarThreadNavigation
+        data={data}
+        isActive={isActive}
+        onOpenThread={onOpenThread}
+        openMenu={openMenu}
+        thread={thread}
+      />
+      <WorkbenchSidebarThreadPrBadge
+        data={data}
+        onOpenPullRequest={onOpenPullRequest}
+        onOpenPullRequestStack={onOpenPullRequestStack}
+      />
+      <button
+        aria-label={`Actions for Thread ${thread.title}`}
+        className="size-6 shrink-0 rounded text-sidebar-muted-foreground opacity-0 hover:bg-sidebar-row-hover focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover/thread-row:opacity-100 [@media(hover:none)]:opacity-100"
+        onClick={(event) => {
+          const bounds = event.currentTarget.getBoundingClientRect();
+          openMenu({ x: bounds.left, y: bounds.bottom });
+        }}
+        type="button"
+      >
+        <MoreHorizontalIcon className="mx-auto size-4" />
+      </button>
+    </div>
+  );
+}
 
 /** Native thread behavior, presented inside the Workbench ticket hierarchy. */
 export function WorkbenchSidebarThreadRow({
@@ -39,118 +221,38 @@ export function WorkbenchSidebarThreadRow({
   readonly onOpenThread: (thread: WorkbenchSidebarThread) => void;
 }) {
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-  const shell = useThreadShell(threadRef);
-  const project = useProject(shell ? scopeProjectRef(shell.environmentId, shell.projectId) : null);
-  const lastVisitedAt = useUiStateStore(
-    (state) => state.threadLastVisitedAtById[scopedThreadKey(threadRef)],
-  );
-  const [renameTitle, setRenameTitle] = useState<string | null>(null);
-  const renameCommitted = useRef(false);
-  const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
-  const startRename = useCallback(() => {
-    renameCommitted.current = false;
-    setRenameTitle(thread.title);
-  }, [thread.title]);
-  const { openMenu } = useThreadActionMenu({
+  const data = useWorkbenchSidebarThreadRowData({ thread, threadRef });
+  const rename = useWorkbenchSidebarThreadRename(thread);
+  const interaction = useWorkbenchSidebarThreadInteraction({
+    currentPullRequest: data.currentPullRequest,
+    isActive,
+    onOpenThread,
+    projectCwd: data.project?.workspaceRoot ?? null,
+    startRename: rename.startRename,
+    thread,
     threadRef,
-    projectCwd: project?.workspaceRoot ?? null,
-    onStartRename: startRename,
-    filterMenuItems: filterWorkbenchThreadActionMenuItems,
   });
-  const commitRename = () => {
-    if (renameCommitted.current || renameTitle === null) return;
-    renameCommitted.current = true;
-    setRenameTitle(null);
-    const title = renameTitle.trim();
-    if (!title) {
-      toastManager.add({ type: "warning", title: "Thread title cannot be empty" });
-      return;
-    }
-    if (title === thread.title) return;
-    void updateMetadata({
-      environmentId: thread.environmentId,
-      input: { threadId: thread.id, title },
-    }).then((result) => {
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        toastManager.add({
-          type: "error",
-          title: "Failed to rename thread",
-          description: error instanceof Error ? error.message : "An error occurred.",
-        });
-      }
-    });
-  };
-  const status = shell ? resolveThreadStatusPill({ thread: { ...shell, lastVisitedAt } }) : null;
-  const failed = shell !== null && resolveSidebarThreadStatus(shell) === "failed";
-  const unread = shell !== null && hasUnseenCompletion({ ...shell, lastVisitedAt });
-  const snoozed = shell !== null && effectiveSnoozed(shell, { now: new Date().toISOString() });
+
   return (
     <SidebarMenuItem className="group/thread-row">
-      {renameTitle !== null ? (
-        <Input
-          aria-label={`Rename Thread ${thread.title}`}
-          autoFocus
-          value={renameTitle}
-          onFocus={(event) => event.currentTarget.select()}
-          onChange={(event) => setRenameTitle(event.currentTarget.value)}
-          onBlur={commitRename}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              commitRename();
-            }
-            if (event.key === "Escape") {
-              event.preventDefault();
-              renameCommitted.current = true;
-              setRenameTitle(null);
-            }
-          }}
+      {rename.renameTitle !== null ? (
+        <WorkbenchSidebarThreadRenameInput
+          cancelRename={rename.cancelRename}
+          commitRename={rename.commitRename}
+          renameTitle={rename.renameTitle}
+          setRenameTitle={rename.setRenameTitle}
+          thread={thread}
         />
       ) : (
-        <div className="flex min-w-0 items-center">
-          <SidebarMenuButton
-            aria-label={thread.title}
-            aria-current={isActive ? "page" : undefined}
-            className={`h-9 min-w-0 flex-1 gap-2 rounded-md px-2.5 text-sm ${unread ? "font-medium text-sidebar-foreground" : "text-sidebar-muted-foreground/75"}`}
-            isActive={isActive}
-            onClick={() => onOpenThread(thread)}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              openMenu({ x: event.clientX, y: event.clientY });
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-                event.preventDefault();
-                const bounds = event.currentTarget.getBoundingClientRect();
-                openMenu({ x: bounds.left, y: bounds.bottom });
-              }
-            }}
-            size="sm"
-            tooltip={{ children: thread.title, hidden: false }}
-          >
-            <MessageSquareIcon />
-            <span className="min-w-0 flex-1 truncate">{thread.title}</span>
-            {shell?.pinnedAt ? <PinIcon aria-label="Pinned" className="size-3 shrink-0" /> : null}
-            {snoozed ? <ClockIcon aria-label="Snoozed" className="size-3 shrink-0" /> : null}
-            {failed ? (
-              <span className="text-[10px] text-red-600 dark:text-red-300">Failed</span>
-            ) : status ? (
-              <ThreadStatusLabel status={{ ...status, pulse: false }} />
-            ) : null}
-          </SidebarMenuButton>
-          <button
-            aria-label={`Actions for Thread ${thread.title}`}
-            className="size-6 shrink-0 rounded text-sidebar-muted-foreground opacity-0 hover:bg-sidebar-row-hover focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover/thread-row:opacity-100 [@media(hover:none)]:opacity-100"
-            onClick={(event) => {
-              const bounds = event.currentTarget.getBoundingClientRect();
-              openMenu({ x: bounds.left, y: bounds.bottom });
-            }}
-            type="button"
-          >
-            <MoreHorizontalIcon className="mx-auto size-4" />
-          </button>
-        </div>
+        <WorkbenchSidebarThreadRowView
+          data={data}
+          isActive={isActive}
+          onOpenPullRequest={interaction.handleOpenPullRequest}
+          onOpenPullRequestStack={interaction.handleOpenPullRequestStack}
+          onOpenThread={onOpenThread}
+          openMenu={interaction.openMenu}
+          thread={thread}
+        />
       )}
     </SidebarMenuItem>
   );
