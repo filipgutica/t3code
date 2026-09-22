@@ -57,7 +57,7 @@ export function WorkbenchPullRequestLink({
       }
     >
       <a
-        aria-label={`Open pull request #${pullRequest.number}${pullRequest.title ? `: ${pullRequest.title}` : ""} in T3 Code${presentation ? ` (${presentation.label})` : ""}`}
+        aria-label={`Open pull request #${pullRequest.number}${pullRequest.title ? `: ${pullRequest.title}` : ""} in T3 Code${state ? ` (${state})` : ""}`}
         className={
           compact
             ? "inline-flex shrink-0 rounded text-xs outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
