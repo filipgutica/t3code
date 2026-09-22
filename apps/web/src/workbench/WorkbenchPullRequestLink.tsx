@@ -7,6 +7,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip"
 import {
   PULL_REQUEST_STATE_PRESENTATION,
   PullRequestGlyph,
+  type PullRequestGlyphIcon,
 } from "../components/pullRequest/pullRequestIcons";
 
 const WorkbenchPullRequestPanel = lazy(() =>
@@ -22,6 +23,27 @@ export interface WorkbenchPullRequestReference {
   readonly repository?: string;
   readonly state?: PullRequestState;
   readonly isDraft?: boolean | undefined;
+}
+
+function WorkbenchPullRequestIdentifier({
+  Icon,
+  number,
+  stateClass,
+  compact,
+}: {
+  readonly Icon: PullRequestGlyphIcon;
+  readonly number: number;
+  readonly stateClass: string;
+  readonly compact: boolean;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center ${compact ? "gap-0.5" : "gap-1.5"} leading-5 ${stateClass}`}
+    >
+      <Icon aria-hidden className={`${compact ? "size-3" : "size-3.5"} shrink-0`} />
+      <span className="tabular-nums">{compact ? number : `#${number}`}</span>
+    </span>
+  );
 }
 
 export function WorkbenchPullRequestLink({
@@ -68,10 +90,12 @@ export function WorkbenchPullRequestLink({
         rel="noopener noreferrer"
         target="_blank"
       >
-        <span className={`inline-flex items-center gap-1.5 leading-5 ${stateClass}`}>
-          <PullRequestIcon aria-hidden className="size-3.5 shrink-0" />
-          <span className="tabular-nums">#{pullRequest.number}</span>
-        </span>
+        <WorkbenchPullRequestIdentifier
+          Icon={PullRequestIcon}
+          compact={compact}
+          number={pullRequest.number}
+          stateClass={stateClass}
+        />
         {!compact ? (
           <Tooltip>
             <TooltipTrigger

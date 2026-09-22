@@ -1,0 +1,4 @@
+/* Ticket and Thread PR controls share one selected or hovered row surface. */
+.workbench-sidebar-item-row > [data-sidebar="menu-button"]:is(:hover, [data-active]) {
+  background-color: transparent;
+}

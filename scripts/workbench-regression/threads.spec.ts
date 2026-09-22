@@ -146,9 +146,9 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
   await expect(
     settledSidebar.getByRole("button", { name: nativeThread.title, exact: true }),
   ).toBeVisible();
-  await sidebar
-    .getByRole("button", { name: `Actions for Thread ${nativeThread.title}`, exact: true })
-    .click();
+  await settledSidebar
+    .getByRole("button", { name: nativeThread.title, exact: true })
+    .click({ button: "right" });
   await expect(page.getByRole("button", { name: /^New thread on / })).not.toBeVisible();
   await expect(page.getByRole("button", { name: "Pin thread", exact: true })).not.toBeVisible();
   await expect(page.getByRole("button", { name: "Snooze", exact: true })).not.toBeVisible();
@@ -169,9 +169,9 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
   await expect(
     sidebar.getByRole("button", { name: "Sidebar renamed thread", exact: true }),
   ).toBeVisible();
-  await sidebar
-    .getByRole("button", { name: "Actions for Thread Sidebar renamed thread", exact: true })
-    .click();
+  await settledSidebar
+    .getByRole("button", { name: "Sidebar renamed thread", exact: true })
+    .click({ button: "right" });
   await page.getByRole("button", { name: "Rename thread", exact: true }).click();
   await sidebar
     .getByRole("textbox", { name: "Rename Thread Sidebar renamed thread", exact: true })
@@ -182,9 +182,9 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
   await expect(
     settledSidebar.getByRole("button", { name: nativeThread.title, exact: true }),
   ).toBeVisible();
-  await sidebar
-    .getByRole("button", { name: `Actions for Thread ${nativeThread.title}`, exact: true })
-    .click();
+  await settledSidebar
+    .getByRole("button", { name: nativeThread.title, exact: true })
+    .click({ button: "right" });
   await page.getByRole("button", { name: "Un-settle thread", exact: true }).click();
   await expect(
     sidebar
@@ -192,8 +192,9 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
       .getByRole("button", { name: nativeThread.title, exact: true }),
   ).toBeVisible();
   await sidebar
-    .getByRole("button", { name: `Actions for Thread ${nativeThread.title}`, exact: true })
-    .click();
+    .locator("#workbench-sidebar-ticket-orbit-004-active")
+    .getByRole("button", { name: nativeThread.title, exact: true })
+    .click({ button: "right" });
   await page.getByRole("button", { name: "Settle thread", exact: true }).click();
   await expect(
     settledSidebar.getByRole("button", { name: nativeThread.title, exact: true }),
