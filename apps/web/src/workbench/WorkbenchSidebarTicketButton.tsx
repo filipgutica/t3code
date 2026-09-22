@@ -1,7 +1,6 @@
 import { ArchiveIcon, BookOpenIcon, BugIcon, CircleAlertIcon } from "lucide-react";
 
 import { SidebarMenuButton } from "../components/ui/sidebar";
-import { Button } from "../components/ui/button";
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
 import { WORKBENCH_TICKET_KIND_LABELS, WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
@@ -94,6 +93,120 @@ function TicketPreview({
   );
 }
 
+const TICKET_ICON_TONE = {
+  story: "text-info-foreground",
+  bug: "text-destructive-foreground",
+} satisfies Record<WorkbenchSidebarTicketDetails["kind"], string>;
+
+const TICKET_STATUS_DOT_TONE = {
+  todo: "bg-sidebar-muted-foreground/55",
+  in_progress: "bg-info",
+  done: "bg-success",
+} satisfies Record<WorkbenchSidebarTicket["status"], string>;
+
+function WorkbenchSidebarTicketLabel({
+  ticket,
+  details,
+  status,
+}: {
+  readonly ticket: WorkbenchSidebarTicket;
+  readonly details: WorkbenchSidebarTicketDetails | undefined;
+  readonly status: string;
+}) {
+  const kind = details?.kind ?? "story";
+  const Icon = ticket.archivedAt ? ArchiveIcon : kind === "bug" ? BugIcon : BookOpenIcon;
+  const iconTone = ticket.archivedAt ? "text-sidebar-muted-foreground/60" : TICKET_ICON_TONE[kind];
+  const hasPullRequests = Boolean(details?.environmentId && details.pullRequests.length);
+
+  return (
+    <>
+      <span aria-hidden className={`mt-0.5 size-3.5 shrink-0 ${iconTone}`}>
+        <Icon className="size-3.5" />
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="flex min-w-0 items-center gap-1">
+          <span className="min-w-0 flex-1 truncate">{ticket.title}</span>
+          {details?.attentionLabel ? (
+            <CircleAlertIcon
+              aria-label={details.attentionLabel}
+              className="size-3 shrink-0 text-warning"
+            />
+          ) : null}
+        </span>
+        <span
+          className={`flex min-w-0 items-center gap-1 text-[11px] font-normal text-sidebar-muted-foreground ${hasPullRequests ? "pe-14" : ""}`}
+        >
+          <span
+            aria-hidden
+            className={`size-1.5 shrink-0 rounded-full ${TICKET_STATUS_DOT_TONE[ticket.status]}`}
+          />
+          {details?.issueLink ? (
+            <span className="min-w-0 truncate font-mono">{details.issueLink.issue.key}</span>
+          ) : null}
+          {details?.issueLink ? <span aria-hidden>·</span> : null}
+          <span className="truncate">{status}</span>
+        </span>
+      </span>
+    </>
+  );
+}
+
+function WorkbenchSidebarTicketPrControl({
+  ticket,
+  details,
+}: {
+  readonly ticket: WorkbenchSidebarTicket;
+  readonly details: WorkbenchSidebarTicketDetails | undefined;
+}) {
+  const environmentId = details?.environmentId;
+  const pullRequests = details?.pullRequests ?? [];
+  if (!environmentId || pullRequests.length === 0) return null;
+
+  return (
+    <div className="absolute end-2 bottom-2 z-10">
+      {pullRequests.length === 1 && pullRequests[0] ? (
+        <WorkbenchPullRequestLink
+          compact
+          environmentId={environmentId}
+          pullRequest={pullRequests[0].pullRequest}
+        />
+      ) : (
+        <Popover>
+          <PopoverTrigger
+            render={
+              <button
+                type="button"
+                className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 whitespace-nowrap border-b border-transparent text-xs tabular-nums text-sidebar-muted-foreground hover:border-current focus-visible:outline-2 focus-visible:outline-ring"
+                aria-label={`Show ${pullRequests.length} linked pull requests for ${ticket.title}`}
+              />
+            }
+          >
+            <PullRequestGlyph.pullRequest aria-hidden className="size-3 shrink-0" />
+            {pullRequests.length}
+          </PopoverTrigger>
+          <PopoverPopup
+            side="right"
+            align="start"
+            className="w-72"
+            aria-label={`Linked pull requests for ${ticket.title}`}
+          >
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-medium">Linked from Threads</p>
+              {pullRequests.map(({ pullRequest }) => (
+                <WorkbenchPullRequestLink
+                  key={pullRequest.url}
+                  environmentId={environmentId}
+                  pullRequest={pullRequest}
+                />
+              ))}
+            </div>
+          </PopoverPopup>
+        </Popover>
+      )}
+    </div>
+  );
+}
+
 export function WorkbenchSidebarTicketButton({
   ticket,
   details,
@@ -105,22 +218,7 @@ export function WorkbenchSidebarTicketButton({
   readonly isActive: boolean;
   readonly onSelect: () => void;
 }) {
-  const Icon = ticket.archivedAt ? ArchiveIcon : details?.kind === "bug" ? BugIcon : BookOpenIcon;
-  const environmentId = details?.environmentId;
-  const pullRequests = details?.pullRequests ?? [];
-  const hasPullRequests = Boolean(environmentId && pullRequests.length);
   const status = details?.statusLabel ?? WORKBENCH_TICKET_STATUS_LABELS[ticket.status];
-  const iconTone = ticket.archivedAt
-    ? "text-sidebar-muted-foreground/60"
-    : details?.kind === "bug"
-      ? "text-destructive-foreground"
-      : "text-info-foreground";
-  const statusDotTone =
-    ticket.status === "done"
-      ? "bg-success"
-      : ticket.status === "in_progress"
-        ? "bg-info"
-        : "bg-sidebar-muted-foreground/55";
 
   return (
     <div
@@ -141,74 +239,9 @@ export function WorkbenchSidebarTicketButton({
           className: "max-w-80 text-left whitespace-normal",
         }}
       >
-        <span aria-hidden className={`mt-0.5 size-3.5 shrink-0 ${iconTone}`}>
-          <Icon className="size-3.5" />
-        </span>
-        <span className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="flex min-w-0 items-center gap-1">
-            <span className="min-w-0 flex-1 truncate">{ticket.title}</span>
-            {details?.attentionLabel ? (
-              <CircleAlertIcon
-                aria-label={details.attentionLabel}
-                className="size-3 shrink-0 text-warning"
-              />
-            ) : null}
-          </span>
-          <span
-            className={`flex min-w-0 items-center gap-1 text-[11px] font-normal text-sidebar-muted-foreground ${hasPullRequests ? "pe-14" : ""}`}
-          >
-            <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${statusDotTone}`} />
-            {details?.issueLink ? (
-              <span className="min-w-0 truncate font-mono">{details.issueLink.issue.key}</span>
-            ) : null}
-            {details?.issueLink ? <span aria-hidden>·</span> : null}
-            <span className="truncate">{status}</span>
-          </span>
-        </span>
+        <WorkbenchSidebarTicketLabel ticket={ticket} details={details} status={status} />
       </SidebarMenuButton>
-      {environmentId && pullRequests.length ? (
-        <div className="absolute end-2 bottom-1.5 z-10">
-          {pullRequests.length === 1 && pullRequests[0] ? (
-            <WorkbenchPullRequestLink
-              compact
-              environmentId={environmentId}
-              pullRequest={pullRequests[0].pullRequest}
-            />
-          ) : (
-            <Popover>
-              <PopoverTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    aria-label={`Show ${pullRequests.length} linked pull requests for ${ticket.title}`}
-                  />
-                }
-              >
-                <PullRequestGlyph.pullRequest />
-                {pullRequests.length}
-              </PopoverTrigger>
-              <PopoverPopup
-                side="right"
-                align="start"
-                className="w-72"
-                aria-label={`Linked pull requests for ${ticket.title}`}
-              >
-                <div className="flex flex-col gap-2">
-                  <p className="text-xs font-medium">Linked from Threads</p>
-                  {pullRequests.map(({ pullRequest }) => (
-                    <WorkbenchPullRequestLink
-                      key={pullRequest.url}
-                      environmentId={environmentId}
-                      pullRequest={pullRequest}
-                    />
-                  ))}
-                </div>
-              </PopoverPopup>
-            </Popover>
-          )}
-        </div>
-      ) : null}
+      <WorkbenchSidebarTicketPrControl ticket={ticket} details={details} />
     </div>
   );
 }
