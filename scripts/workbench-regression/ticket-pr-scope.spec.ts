@@ -127,7 +127,7 @@ test("ticket PRs exclude shared checkouts until a workspace is prepared", async 
     });
     server.onMessage((message) => socket.send(message));
   });
-  await page.goto(`/workbench?workbenchProjectId=orbit&ticketId=${ticket.id}`);
+  await page.goto(demo.workbenchUrl(`/workbench?workbenchProjectId=orbit&ticketId=${ticket.id}`));
   await expect(page.getByRole("heading", { name: ticket.title, exact: true })).toBeVisible();
   await expect(page.getByText("unrelated-work", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: /^Pull Requests/ })).toHaveCount(0);
@@ -331,7 +331,9 @@ test("ticket PR discovery includes other Workspace repositories without changing
     });
     server.onMessage((message) => socket.send(message));
   });
-  await page.goto(`/workbench?workbenchProjectId=${workspace.id}&ticketId=${ticket.id}`);
+  await page.goto(
+    demo.workbenchUrl(`/workbench?workbenchProjectId=${workspace.id}&ticketId=${ticket.id}`),
+  );
   await expect(page.getByRole("heading", { name: ticket.title, exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: /^Pull Requests/ })).toBeVisible();
   await expect(page.getByText("Searching repositories…", { exact: true })).toHaveCount(0);

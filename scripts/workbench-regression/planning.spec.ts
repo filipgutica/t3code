@@ -2,7 +2,7 @@ import { test, expect, snapshot } from "./fixtures.ts";
 
 test("W1 W2: create and rename a Workspace without preparing worktrees", async ({ page, demo }) => {
   const before = await snapshot(demo);
-  await page.goto("/workbench?workbenchProjectId=orbit");
+  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
   await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Add Workspace", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: /Workspace/ });
@@ -36,7 +36,7 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
   page,
   demo,
 }) => {
-  await page.goto("/workbench?workbenchProjectId=orbit");
+  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
   await page.getByRole("button", { name: "New Ticket", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Create Ticket", exact: true });
   await dialog.getByPlaceholder("What needs doing?").fill("Regression disposable ticket");
@@ -72,7 +72,7 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
   expect(ticket.status).toBe("todo");
   await page.getByRole("button", { name: "Ticket actions" }).click();
   await page.getByRole("menuitem", { name: "Archive Ticket", exact: true }).click();
-  await page.goto(`/workbench?workbenchProjectId=orbit&ticketId=${ticket.id}`);
+  await page.goto(demo.workbenchUrl(`/workbench?workbenchProjectId=orbit&ticketId=${ticket.id}`));
   await page.getByRole("button", { name: "Ticket actions" }).click();
   await page.getByRole("menuitem", { name: "Restore Ticket", exact: true }).click();
   await page.getByRole("button", { name: "Ticket actions" }).click();
@@ -95,8 +95,9 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
 
 test("W3 W4 X2: direct routes, history and narrow layout retain Ticket ownership", async ({
   page,
+  demo,
 }) => {
-  await page.goto("/workbench?workbenchProjectId=orbit&ticketId=orbit-001");
+  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-001"));
   await expect(
     page.getByRole("heading", { name: "Create the welcome checklist", exact: true }),
   ).toBeVisible();
@@ -104,7 +105,7 @@ test("W3 W4 X2: direct routes, history and narrow layout retain Ticket ownership
   await expect(
     page.getByRole("heading", { name: "Create the welcome checklist", exact: true }),
   ).toBeVisible();
-  await page.goto("/workbench?workbenchProjectId=beacon&ticketId=beacon-010");
+  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=beacon&ticketId=beacon-010"));
   await expect(
     page.getByRole("heading", { name: "Write the five-minute quickstart", exact: true }),
   ).toBeVisible();

@@ -93,7 +93,7 @@ test("board shortcut opens the working Thread rather than the newer idle Thread"
       server.send(message);
     });
   });
-  await page.goto("/workbench?workbenchProjectId=orbit");
+  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
   const card = page.getByRole("article").filter({ hasText: ticket.title });
   await expect(card.getByText("Working", { exact: true })).toBeVisible();
   await expect(card.getByText("· 2 Threads", { exact: true })).toBeVisible();

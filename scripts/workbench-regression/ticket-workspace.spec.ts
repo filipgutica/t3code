@@ -9,7 +9,7 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   demo,
 }, testInfo) => {
   test.setTimeout(120_000);
-  await page.goto("/workbench?workbenchProjectId=orbit&ticketId=orbit-007");
+  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-007"));
   await expect(
     page.getByRole("heading", { name: "Add a team settings page", exact: true }),
   ).toBeVisible();
@@ -87,7 +87,7 @@ test("unlink preserves a native thread and its workspace, and permits relinking"
   page,
   demo,
 }) => {
-  await page.goto("/workbench?workbenchProjectId=orbit&ticketId=orbit-008");
+  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-008"));
   await page
     .getByRole("button", { name: "Create Thread for Validate invitation addresses", exact: true })
     .first()
@@ -109,7 +109,7 @@ test("unlink preserves a native thread and its workspace, and permits relinking"
       .find((candidate) => candidate.ticketId === "orbit-008")
       ?.repositories.some((repository) => repository.worktreePath === thread.worktreePath),
   ).toBe(true);
-  await page.goto("/workbench?workbenchProjectId=orbit&ticketId=orbit-008");
+  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-008"));
   await page.getByRole("button", { name: `Unlink Thread ${thread.title}`, exact: true }).click();
   await expect(
     page.getByRole("button", { name: `Unlink Thread ${thread.title}`, exact: true }),
@@ -198,7 +198,7 @@ test("standalone preparation shows progress immediately and retries a failed req
       server.send(message);
     });
   });
-  await page.goto("/workbench?workbenchProjectId=orbit&ticketId=orbit-003");
+  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-003"));
   await page.getByRole("button", { name: "Prepare workspace", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Preparing workspace…", exact: true }),

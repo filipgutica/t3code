@@ -479,7 +479,7 @@ const routeMockJira = async (page: Page) => {
 };
 
 const createWorkspace = async (page: Page, demo: Demo, title: string) => {
-  await page.goto("/workbench?workbenchProjectId=orbit");
+  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
   await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Add Workspace", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: /Workspace/ });
@@ -512,7 +512,9 @@ const seedLocalEpicAndTicket = async (page: Page, demo: Demo, workspaceId: strin
       candidate.title === "Jira migration regression Epic" && candidate.projectId === workspaceId,
   );
   if (!epic) throw new Error("Created Jira migration Epic was not persisted.");
-  await page.goto(`/workbench?workbenchProjectId=${workspaceId}&epicId=${epic.id}`);
+  await page.goto(
+    demo.workbenchUrl(`/workbench?workbenchProjectId=${workspaceId}&epicId=${epic.id}`),
+  );
   await expect(page.getByRole("heading", { name: epic.title, exact: true })).toBeVisible();
   await page.getByRole("button", { name: "New Ticket", exact: true }).click();
   const ticketDialog = page.getByRole("dialog", { name: "Create Ticket", exact: true });
@@ -527,7 +529,7 @@ const seedLocalEpicAndTicket = async (page: Page, demo: Demo, workspaceId: strin
   );
   if (!ticket) throw new Error("Created Jira migration Ticket was not persisted.");
   expect(ticket.epicId).toBe(epic.id);
-  await page.goto(`/workbench?workbenchProjectId=${workspaceId}`);
+  await page.goto(demo.workbenchUrl(`/workbench?workbenchProjectId=${workspaceId}`));
   await expect(page.getByRole("button", { name: "Workspace actions" })).toBeVisible();
   return { epic, ticket };
 };
