@@ -108,10 +108,24 @@ export function WorkbenchSidebarTicketButton({
   const Icon = ticket.archivedAt ? ArchiveIcon : details?.kind === "bug" ? BugIcon : BookOpenIcon;
   const environmentId = details?.environmentId;
   const pullRequests = details?.pullRequests ?? [];
+  const hasPullRequests = Boolean(environmentId && pullRequests.length);
   const status = details?.statusLabel ?? WORKBENCH_TICKET_STATUS_LABELS[ticket.status];
+  const iconTone = ticket.archivedAt
+    ? "text-sidebar-muted-foreground/60"
+    : details?.kind === "bug"
+      ? "text-destructive-foreground"
+      : "text-info-foreground";
+  const statusDotTone =
+    ticket.status === "done"
+      ? "bg-success"
+      : ticket.status === "in_progress"
+        ? "bg-info"
+        : "bg-sidebar-muted-foreground/55";
 
   return (
-    <div className="flex min-w-0 flex-1 items-end">
+    <div
+      className={`workbench-sidebar-item-row relative flex min-w-0 flex-1 items-end rounded-lg ${isActive ? "bg-sidebar-row-selected" : "hover:bg-sidebar-row-hover"}`}
+    >
       <SidebarMenuButton
         aria-label={ticket.title}
         aria-current={isActive ? "page" : undefined}
@@ -127,7 +141,9 @@ export function WorkbenchSidebarTicketButton({
           className: "max-w-80 text-left whitespace-normal",
         }}
       >
-        <Icon className="mt-0.5 size-3.5 shrink-0" />
+        <span aria-hidden className={`mt-0.5 size-3.5 shrink-0 ${iconTone}`}>
+          <Icon className="size-3.5" />
+        </span>
         <span className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="flex min-w-0 items-center gap-1">
             <span className="min-w-0 flex-1 truncate">{ticket.title}</span>
@@ -138,7 +154,10 @@ export function WorkbenchSidebarTicketButton({
               />
             ) : null}
           </span>
-          <span className="flex min-w-0 items-center gap-1 text-[11px] font-normal text-sidebar-muted-foreground">
+          <span
+            className={`flex min-w-0 items-center gap-1 text-[11px] font-normal text-sidebar-muted-foreground ${hasPullRequests ? "pe-14" : ""}`}
+          >
+            <span aria-hidden className={`size-1.5 shrink-0 rounded-full ${statusDotTone}`} />
             {details?.issueLink ? (
               <span className="min-w-0 truncate font-mono">{details.issueLink.issue.key}</span>
             ) : null}
@@ -148,7 +167,7 @@ export function WorkbenchSidebarTicketButton({
         </span>
       </SidebarMenuButton>
       {environmentId && pullRequests.length ? (
-        <div className="mr-2 mb-1.5 shrink-0">
+        <div className="absolute end-2 bottom-1.5 z-10">
           {pullRequests.length === 1 && pullRequests[0] ? (
             <WorkbenchPullRequestLink
               compact

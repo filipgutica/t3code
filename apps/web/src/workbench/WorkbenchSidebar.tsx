@@ -27,6 +27,7 @@ import {
   type WorkbenchSidebarTicketDetails,
 } from "./workbenchSidebarContext.logic";
 import { WorkbenchSidebarThreadRow } from "./WorkbenchSidebarThreadRow";
+import "./WorkbenchSidebarRows.css";
 import { SidebarChromeFooter } from "../components/sidebar/SidebarChrome";
 import { Button } from "../components/ui/button";
 import {
@@ -717,7 +718,7 @@ function WorkbenchSidebarTicketThreads({
     />
   );
   return (
-    <div className="ms-3 border-sidebar-border border-l ps-2">
+    <div className="ms-8 border-sidebar-border border-l ps-2">
       <SidebarMenu>{activeThreads.map(renderThread)}</SidebarMenu>
       {settledThreads.length > 0 ? (
         <section aria-label={`Settled Threads in ${ticket.title}`} className="mt-1">

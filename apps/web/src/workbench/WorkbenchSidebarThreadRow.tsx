@@ -1,11 +1,12 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { ClockIcon, MessageSquareIcon, MoreHorizontalIcon, PinIcon } from "lucide-react";
+import { ClockIcon, MessageSquareIcon, PinIcon } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 
 import {
   ThreadPullRequestBadgeControl,
   ThreadStatusLabel,
 } from "../components/ThreadStatusIndicators";
+import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
 import { Input } from "../components/ui/input";
 import { SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar";
 import type { WorkbenchSidebarThread } from "./workbenchSidebar.logic";
@@ -55,14 +56,16 @@ function WorkbenchSidebarThreadRenameInput({
 function WorkbenchSidebarThreadTitle({
   thread,
   data,
+  isActive,
 }: {
   readonly thread: WorkbenchSidebarThread;
   readonly data: WorkbenchSidebarThreadRowData;
+  readonly isActive: boolean;
 }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       <span
-        className={`min-w-0 flex-1 truncate ${data.unread ? "font-medium text-sidebar-foreground" : "text-sidebar-muted-foreground/75"}`}
+        className={`min-w-0 flex-1 truncate ${data.unread || isActive ? "font-medium text-sidebar-foreground" : "text-sidebar-muted-foreground/75"}`}
       >
         {thread.title}
       </span>
@@ -97,10 +100,6 @@ function WorkbenchSidebarThreadNavigation({
       className="h-auto min-h-12 min-w-0 flex-1 items-stretch"
       isActive={isActive}
       onClick={() => onOpenThread(thread)}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        openMenu({ x: event.clientX, y: event.clientY });
-      }}
       onKeyDown={(event) => {
         if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
           event.preventDefault();
@@ -128,10 +127,21 @@ function WorkbenchSidebarThreadNavigation({
         className: "max-w-80 whitespace-normal [&_[data-slot=tooltip-viewport]]:p-0",
       }}
     >
-      <MessageSquareIcon className="mt-0.5 shrink-0" />
+      {data.providerEntry ? (
+        <ProviderInstanceIcon
+          driverKind={data.providerEntry.driverKind}
+          displayName={data.providerEntry.displayName}
+          className={`mt-0.5 size-4 ${isActive ? "" : "opacity-75"}`}
+          iconClassName="size-4"
+        />
+      ) : (
+        <MessageSquareIcon className="mt-0.5 shrink-0" />
+      )}
       <span className="min-w-0 flex-1">
-        <WorkbenchSidebarThreadTitle data={data} thread={thread} />
-        <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground/60">
+        <WorkbenchSidebarThreadTitle data={data} isActive={isActive} thread={thread} />
+        <span
+          className={`mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-sidebar-muted-foreground/80 ${data.pullRequestBadge ? "pe-14" : ""}`}
+        >
           <span className="min-w-0 flex-1 truncate">{data.repositoryLabel ?? "Workspace"}</span>
         </span>
       </span>
@@ -150,7 +160,7 @@ function WorkbenchSidebarThreadPrBadge({
 }) {
   if (!data.pullRequestBadge) return null;
   return (
-    <span className="flex shrink-0 self-stretch items-end pb-2">
+    <span className="absolute end-2 bottom-2 z-10 flex items-center">
       <ThreadPullRequestBadgeControl
         variant="underline"
         badge={data.pullRequestBadge}
@@ -182,7 +192,13 @@ function WorkbenchSidebarThreadRowView({
   readonly onOpenPullRequestStack: () => void;
 }) {
   return (
-    <div className="flex min-w-0 items-center">
+    <div
+      className={`workbench-sidebar-item-row relative flex min-w-0 items-center rounded-lg ${isActive ? "bg-sidebar-row-selected" : "hover:bg-sidebar-row-hover"}`}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        openMenu({ x: event.clientX, y: event.clientY });
+      }}
+    >
       <WorkbenchSidebarThreadNavigation
         data={data}
         isActive={isActive}
@@ -195,17 +211,6 @@ function WorkbenchSidebarThreadRowView({
         onOpenPullRequest={onOpenPullRequest}
         onOpenPullRequestStack={onOpenPullRequestStack}
       />
-      <button
-        aria-label={`Actions for Thread ${thread.title}`}
-        className="size-6 shrink-0 rounded text-sidebar-muted-foreground opacity-0 hover:bg-sidebar-row-hover focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover/thread-row:opacity-100 [@media(hover:none)]:opacity-100"
-        onClick={(event) => {
-          const bounds = event.currentTarget.getBoundingClientRect();
-          openMenu({ x: bounds.left, y: bounds.bottom });
-        }}
-        type="button"
-      >
-        <MoreHorizontalIcon className="mx-auto size-4" />
-      </button>
     </div>
   );
 }
@@ -234,7 +239,7 @@ export function WorkbenchSidebarThreadRow({
   });
 
   return (
-    <SidebarMenuItem className="group/thread-row">
+    <SidebarMenuItem>
       {rename.renameTitle !== null ? (
         <WorkbenchSidebarThreadRenameInput
           cancelRename={rename.cancelRename}
