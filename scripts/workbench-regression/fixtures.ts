@@ -29,16 +29,15 @@ const workbenchUrlFor = (environmentId: string, path: string): string => {
   return `${url.pathname}${url.search}${url.hash}`;
 };
 
-const waitForWorkbenchStartup = async (page: Page, demo: Demo) => {
-  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
-  await Promise.all([
-    expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible({
-      timeout: 60_000,
-    }),
-    expect(page.getByRole("list", { name: "Workbench Workspaces", exact: true })).toBeVisible({
-      timeout: 60_000,
-    }),
-  ]);
+export const waitForWorkbench = async (page: Page) => {
+  await expect(page.getByRole("list", { name: "Workbench Workspaces", exact: true })).toBeVisible({
+    timeout: 60_000,
+  });
+};
+
+export const openWorkbench = async (page: Page, url: string) => {
+  await page.goto(url);
+  await waitForWorkbench(page);
 };
 
 export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
@@ -192,13 +191,6 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
       }
     },
     { scope: "worker", timeout: 120_000 },
-  ],
-  page: [
-    async ({ page, demo }, use) => {
-      await waitForWorkbenchStartup(page, demo);
-      await use(page);
-    },
-    { scope: "test", timeout: 120_000 },
   ],
   storageState: async ({ pairedState }, use) => use(pairedState),
   baseURL: async ({ demo }, use) => use(demo.origin),

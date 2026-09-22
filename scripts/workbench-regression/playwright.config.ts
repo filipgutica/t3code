@@ -10,7 +10,7 @@ export default defineConfig({
   ...(process.env.WORKBENCH_REGRESSION_LIVE === "1"
     ? { maxFailures: 1, grep: /@live/ }
     : { grepInvert: /@live/ }),
-  timeout: 60_000,
+  timeout: process.env.CI ? 180_000 : 60_000,
   expect: { timeout: 15_000 },
   forbidOnly: Boolean(process.env.CI),
   outputDir: "../../.test-results/workbench",

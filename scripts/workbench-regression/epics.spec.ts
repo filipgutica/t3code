@@ -1,10 +1,10 @@
-import { test, expect, snapshot } from "./fixtures.ts";
+import { test, expect, openWorkbench, snapshot, waitForWorkbench } from "./fixtures.ts";
 
 test("E1 T3: Epic creation, child membership and completion progress persist", async ({
   page,
   demo,
 }) => {
-  await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=beacon"));
+  await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=beacon"));
   await page.getByRole("button", { name: "Workspace actions" }).click();
   await page.getByRole("menuitem", { name: "New Epic" }).click();
   const epicDialog = page.getByRole("dialog", { name: "Create Epic", exact: true });
@@ -17,7 +17,10 @@ test("E1 T3: Epic creation, child membership and completion progress persist", a
   await expect(epicDialog).not.toBeVisible();
   const epic = (await snapshot(demo)).epics.find((e) => e.title === "Regression Epic");
   if (!epic) throw new Error("Created Epic was not persisted");
-  await page.goto(demo.workbenchUrl(`/workbench?workbenchProjectId=beacon&epicId=${epic.id}`));
+  await openWorkbench(
+    page,
+    demo.workbenchUrl(`/workbench?workbenchProjectId=beacon&epicId=${epic.id}`),
+  );
   await expect(page.getByRole("heading", { name: "Regression Epic", exact: true })).toBeVisible();
   await expect(page.getByText("0 of 0 done", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "New Ticket", exact: true }).click();
@@ -30,7 +33,10 @@ test("E1 T3: Epic creation, child membership and completion progress persist", a
   if (!child) throw new Error("Created child was not persisted");
   expect(child.epicId).toBe(epic.id);
   expect(child.kind).toBe("bug");
-  await page.goto(demo.workbenchUrl(`/workbench?workbenchProjectId=beacon&ticketId=${child.id}`));
+  await openWorkbench(
+    page,
+    demo.workbenchUrl(`/workbench?workbenchProjectId=beacon&ticketId=${child.id}`),
+  );
   await page
     .getByRole("button", { name: "Change status of Regression Epic child", exact: true })
     .click();
@@ -38,11 +44,15 @@ test("E1 T3: Epic creation, child membership and completion progress persist", a
   await expect(
     page.getByRole("button", { name: "Change status of Regression Epic child", exact: true }),
   ).toContainText("Done");
-  await page.goto(demo.workbenchUrl(`/workbench?workbenchProjectId=beacon&epicId=${epic.id}`));
+  await openWorkbench(
+    page,
+    demo.workbenchUrl(`/workbench?workbenchProjectId=beacon&epicId=${epic.id}`),
+  );
   await expect(page.getByText("1 of 1 done", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByLabel("Description", { exact: true }).fill("Updated Epic scope.");
   await page.getByRole("button", { name: "Save Epic" }).click();
   await page.reload();
+  await waitForWorkbench(page);
   await expect(page.getByText("Updated Epic scope.", { exact: true })).toBeVisible();
 });

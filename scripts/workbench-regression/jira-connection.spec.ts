@@ -1,4 +1,12 @@
-import { test, expect, snapshot, jiraSnapshot, type Demo } from "./fixtures.ts";
+import {
+  test,
+  expect,
+  jiraSnapshot,
+  openWorkbench,
+  snapshot,
+  type Demo,
+  waitForWorkbench,
+} from "./fixtures.ts";
 import * as Effect from "effect/Effect";
 import type { Page } from "@playwright/test";
 import { readConfig } from "../workbench-demo/environment.mts";
@@ -153,7 +161,8 @@ const routeJiraSync = async (page: import("@playwright/test").Page) => {
 };
 
 const openSyncMenu = async (page: Page, demo: Demo, projectId: string) => {
-  await page.goto(
+  await openWorkbench(
+    page,
     demo.workbenchUrl(`/workbench?workbenchProjectId=${encodeURIComponent(projectId)}`),
   );
   await expect(page.getByRole("button", { name: "Workspace actions" })).toBeVisible();
@@ -184,7 +193,7 @@ test.describe("Jira connection UX @live", () => {
     expect(before.projects.some((project) => project.id === "orbit")).toBe(true);
 
     const syncRoute = await routeJiraSync(page);
-    await page.goto(demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
+    await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
     await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Add Workspace", exact: true }).click();
     const workspaceDialog = page.getByRole("dialog", { name: /Workspace/ });
@@ -266,6 +275,7 @@ test.describe("Jira connection UX @live", () => {
     await expect(page.getByText(firstImportedIssue.key, { exact: true }).first()).toBeVisible();
 
     await page.reload();
+    await waitForWorkbench(page);
     await expect(page.getByLabel("Jira sync status")).toContainText("Jira synced");
     await expect(page.getByText(firstImportedIssue.key, { exact: true }).first()).toBeVisible();
   });
