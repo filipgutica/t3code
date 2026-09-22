@@ -184,6 +184,7 @@ import {
   type TerminalContextSelection,
 } from "../../lib/terminalContext";
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
+import { usePanelAnimationSettings } from "../../panelAnimations";
 import { WorkbenchComposerPendingReviewComments } from "../../workbench/WorkbenchComposerPendingReviewComments";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import {
@@ -1488,6 +1489,8 @@ export interface ChatComposerProps {
 // --------------------------------------------------------------------------
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
+  const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
+    usePanelAnimationSettings();
   const {
     composerDraftTarget,
     environmentId,
