@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - Playwright host fixtures own disposable state.
-import { test as base, expect, type BrowserContext } from "@playwright/test";
+import { test as base, expect, type BrowserContext, type Page } from "@playwright/test";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -16,10 +16,29 @@ import { DEMO_REPOSITORIES } from "../workbench-demo/repositories.mts";
 export type Demo = {
   home: string;
   origin: string;
+  workbenchUrl: (path: string) => string;
   rpc: <A, E>(operation: Parameters<typeof runRpc<A, E>>[2]) => Promise<A>;
   shellSnapshot: () => ReturnType<typeof readShellSnapshot>;
 };
 type StorageState = Awaited<ReturnType<BrowserContext["storageState"]>>;
+
+const workbenchUrlFor = (environmentId: string, path: string): string => {
+  const url = new URL(path, "http://workbench.test");
+  if (url.pathname !== "/workbench") throw new Error(`Expected a Workbench URL, received ${path}.`);
+  url.searchParams.set("environmentId", environmentId);
+  return `${url.pathname}${url.search}${url.hash}`;
+};
+
+export const waitForWorkbench = async (page: Page) => {
+  await expect(page.getByRole("list", { name: "Workbench Workspaces", exact: true })).toBeVisible({
+    timeout: 60_000,
+  });
+};
+
+export const openWorkbench = async (page: Page, url: string) => {
+  await page.goto(url);
+  await waitForWorkbench(page);
+};
 
 export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
   // Playwright requires an explicit destructuring pattern for fixture dependencies.
@@ -80,6 +99,10 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
           })
         : await resetToBaseline({ home, remoteApply: false, configure: configureProvider });
       try {
+        const environmentId = (
+          await NodeFSP.readFile(NodePath.join(home, "userdata", "environment-id"), "utf8")
+        ).trim();
+        if (!environmentId) throw new Error("The demo has no environment ID.");
         await NodeFSP.writeFile(NodePath.join(home, "pairing-url"), server.pairingUrl, {
           mode: 0o600,
         });
@@ -91,6 +114,7 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
             use({
               home,
               origin: server.origin,
+              workbenchUrl: (path) => workbenchUrlFor(environmentId, path),
               rpc: (operation) => runRpc(wsUrl, token, operation),
               shellSnapshot: () => readShellSnapshot(wsUrl, token),
             }),
@@ -143,7 +167,9 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
             timeout: 30_000,
           });
           // Publish storage only once the seeded application is ready for test navigation.
-          await page.goto(`${demo.origin}/workbench?workbenchProjectId=orbit`);
+          await page.goto(
+            `${demo.origin}${demo.workbenchUrl("/workbench?workbenchProjectId=orbit")}`,
+          );
           await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible({
             timeout: 30_000,
           });
@@ -158,12 +184,13 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
           );
           throw error;
         }
-        await use(await context.storageState());
+        // Registered environments live in IndexedDB, alongside the session cookie.
+        await use(await context.storageState({ indexedDB: true }));
       } finally {
         await context.close();
       }
     },
-    { scope: "worker" },
+    { scope: "worker", timeout: 120_000 },
   ],
   storageState: async ({ pairedState }, use) => use(pairedState),
   baseURL: async ({ demo }, use) => use(demo.origin),

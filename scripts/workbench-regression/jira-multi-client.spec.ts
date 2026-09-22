@@ -1,4 +1,4 @@
-import { test, expect, snapshot, jiraSnapshot, type Demo } from "./fixtures.ts";
+import { test, expect, jiraSnapshot, openWorkbench, snapshot, type Demo } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import * as NodeCrypto from "node:crypto";
 import { readConfig } from "../workbench-demo/environment.mts";
@@ -23,8 +23,8 @@ const jiraConfig = (home: string) => {
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const openJiraDialog = async (page: Page) => {
-  await page.goto("/workbench?workbenchProjectId=demo-jira");
+const openJiraDialog = async (page: Page, demo: Demo) => {
+  await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=demo-jira"));
   await expect(page.getByRole("heading", { name: "Orbit Jira", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Workspace actions" }).click();
   await page.getByRole("menuitem", { name: "Configure Jira sprint mirror", exact: true }).click();
@@ -41,16 +41,18 @@ const sprintCheckbox = (dialog: Awaited<ReturnType<typeof openJiraDialog>>, name
 
 const saveBindingSprints = async ({
   page,
+  demo,
   targetFollow,
   selectedSprintNames,
   createdFutureName,
 }: {
   readonly page: Page;
+  readonly demo: Demo;
   readonly targetFollow: boolean;
   readonly selectedSprintNames: readonly string[];
   readonly createdFutureName?: string;
 }) => {
-  const dialog = await openJiraDialog(page);
+  const dialog = await openJiraDialog(page, demo);
   await dialog.getByRole("button", { name: "Edit sprints and mappings", exact: true }).click();
   const follow = dialog.getByRole("checkbox", {
     name: "Follow selected sprints automatically",
@@ -126,7 +128,7 @@ test.describe("Jira multi-sprint selection and client conflicts @live", () => {
       }
       await client.moveIssuesToSprint(futureSprint.id, [originalIssue.key]);
 
-      const dialog = await openJiraDialog(page);
+      const dialog = await openJiraDialog(page, demo);
       await dialog.getByRole("button", { name: "Edit sprints and mappings", exact: true }).click();
       const follow = dialog.getByRole("checkbox", {
         name: "Follow selected sprints automatically",
@@ -178,6 +180,7 @@ test.describe("Jira multi-sprint selection and client conflicts @live", () => {
 
       await saveBindingSprints({
         page,
+        demo,
         targetFollow: false,
         selectedSprintNames: originalSprintNames,
         createdFutureName: futureSprintName,
@@ -197,7 +200,7 @@ test.describe("Jira multi-sprint selection and client conflicts @live", () => {
       );
       expect(retained?.ticketId).toBe(link.ticketId);
 
-      const dialogAfterDeselect = await openJiraDialog(page);
+      const dialogAfterDeselect = await openJiraDialog(page, demo);
       await dialogAfterDeselect
         .getByRole("button", { name: "Edit sprints and mappings", exact: true })
         .click();
@@ -235,6 +238,7 @@ test.describe("Jira multi-sprint selection and client conflicts @live", () => {
     try {
       await saveBindingSprints({
         page,
+        demo,
         targetFollow: beforeBinding.followActiveSprint,
         selectedSprintNames: originalSprintNames,
         ...(futureSprintName === undefined ? {} : { createdFutureName: futureSprintName }),
@@ -287,8 +291,10 @@ test.describe("Jira multi-sprint selection and client conflicts @live", () => {
     });
     try {
       const secondPage = await secondContext.newPage();
-      const ticketUrl = `/workbench?workbenchProjectId=demo-jira&ticketId=${encodeURIComponent(link.ticketId)}`;
-      await Promise.all([page.goto(ticketUrl), secondPage.goto(ticketUrl)]);
+      const ticketUrl = demo.workbenchUrl(
+        `/workbench?workbenchProjectId=demo-jira&ticketId=${encodeURIComponent(link.ticketId)}`,
+      );
+      await Promise.all([openWorkbench(page, ticketUrl), openWorkbench(secondPage, ticketUrl)]);
       await Promise.all([
         expect(page.getByRole("heading", { name: original.summary, exact: true })).toBeVisible(),
         expect(

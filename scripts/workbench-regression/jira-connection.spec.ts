@@ -1,4 +1,12 @@
-import { test, expect, snapshot, jiraSnapshot } from "./fixtures.ts";
+import {
+  test,
+  expect,
+  jiraSnapshot,
+  openWorkbench,
+  snapshot,
+  type Demo,
+  waitForWorkbench,
+} from "./fixtures.ts";
 import * as Effect from "effect/Effect";
 import type { Page } from "@playwright/test";
 import { readConfig } from "../workbench-demo/environment.mts";
@@ -152,8 +160,11 @@ const routeJiraSync = async (page: import("@playwright/test").Page) => {
   };
 };
 
-const openSyncMenu = async (page: Page, projectId: string) => {
-  await page.goto(`/workbench?workbenchProjectId=${encodeURIComponent(projectId)}`);
+const openSyncMenu = async (page: Page, demo: Demo, projectId: string) => {
+  await openWorkbench(
+    page,
+    demo.workbenchUrl(`/workbench?workbenchProjectId=${encodeURIComponent(projectId)}`),
+  );
   await expect(page.getByRole("button", { name: "Workspace actions" })).toBeVisible();
   await page.getByRole("button", { name: "Workspace actions" }).click();
   await expect(page.getByRole("menuitem", { name: /Sync Jira/ })).toBeVisible();
@@ -182,7 +193,7 @@ test.describe("Jira connection UX @live", () => {
     expect(before.projects.some((project) => project.id === "orbit")).toBe(true);
 
     const syncRoute = await routeJiraSync(page);
-    await page.goto("/workbench?workbenchProjectId=orbit");
+    await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
     await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible();
     await page.getByRole("button", { name: "Add Workspace", exact: true }).click();
     const workspaceDialog = page.getByRole("dialog", { name: /Workspace/ });
@@ -264,6 +275,7 @@ test.describe("Jira connection UX @live", () => {
     await expect(page.getByText(firstImportedIssue.key, { exact: true }).first()).toBeVisible();
 
     await page.reload();
+    await waitForWorkbench(page);
     await expect(page.getByLabel("Jira sync status")).toContainText("Jira synced");
     await expect(page.getByText(firstImportedIssue.key, { exact: true }).first()).toBeVisible();
   });
@@ -273,7 +285,7 @@ test.describe("Jira connection UX @live", () => {
     const binding = jira.bindings.find((candidate) => candidate.projectId === "demo-jira");
     if (!binding) throw new Error("The live demo has no preconnected Jira binding.");
     const syncRoute = await routeJiraSync(page);
-    await openSyncMenu(page, binding.projectId);
+    await openSyncMenu(page, demo, binding.projectId);
     syncRoute.setMode("failure");
     await page.getByRole("menuitem", { name: "Sync Jira", exact: true }).click();
     const status = page.getByRole("status").filter({ hasText: "Jira sync failed for regression." });
@@ -289,7 +301,7 @@ test.describe("Jira connection UX @live", () => {
     const binding = jira.bindings.find((candidate) => candidate.projectId === "demo-jira");
     if (!binding) throw new Error("The live demo has no preconnected Jira binding.");
     const syncRoute = await routeJiraSync(page);
-    await openSyncMenu(page, binding.projectId);
+    await openSyncMenu(page, demo, binding.projectId);
     syncRoute.setMode("empty");
     await page.getByRole("menuitem", { name: "Sync Jira", exact: true }).click();
     await expect(

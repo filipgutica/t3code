@@ -1,4 +1,4 @@
-import { test, expect, snapshot, jiraSnapshot, type Demo } from "./fixtures.ts";
+import { test, expect, jiraSnapshot, openWorkbench, snapshot, type Demo } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import * as NodeCrypto from "node:crypto";
 import { readConfig } from "../workbench-demo/environment.mts";
@@ -37,8 +37,8 @@ const liveJira = async (demo: Demo) => {
   return { client, jira, binding, baselineLinks, todoLinks };
 };
 
-const openJiraDialog = async (page: Page) => {
-  await page.goto("/workbench?workbenchProjectId=demo-jira");
+const openJiraDialog = async (page: Page, demo: Demo) => {
+  await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=demo-jira"));
   await expect(page.getByRole("heading", { name: "Orbit Jira", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Workspace actions" }).click();
   await page.getByRole("menuitem", { name: "Configure Jira sprint mirror", exact: true }).click();
@@ -109,13 +109,13 @@ test.describe("Jira Workbench integration @live", () => {
       workbench.ticketWorkspaces.filter((workspace) => linkedTicketIds.has(workspace.ticketId)),
     ).toHaveLength(0);
 
-    await page.goto("/workbench?workbenchProjectId=demo-jira");
+    await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=demo-jira"));
     await expect(page.getByRole("heading", { name: "Orbit Jira", exact: true })).toBeVisible();
     for (const link of links) {
       await expect(page.getByText(link.issue.key, { exact: true }).first()).toBeVisible();
     }
 
-    const dialog = await openJiraDialog(page);
+    const dialog = await openJiraDialog(page, demo);
     await dialog.getByRole("button", { name: "Edit sprints and mappings", exact: true }).click();
     const sprint = binding.selectedSprints[0]!;
     const sprintCheckbox = dialog
@@ -140,7 +140,7 @@ test.describe("Jira Workbench integration @live", () => {
       .filter((link) => link.bindingId === before.binding.id && link.active)
       .map((link) => link.ticketId);
     try {
-      let dialog = await openJiraDialog(page);
+      let dialog = await openJiraDialog(page, demo);
       await dialog.getByRole("button", { name: "Edit sprints and mappings", exact: true }).click();
       const mirror = dialog.getByRole("checkbox", { name: "Mirror Jira states" });
       await expect(mirror).toBeChecked();
@@ -158,7 +158,7 @@ test.describe("Jira Workbench integration @live", () => {
           .map((link) => link.ticketId),
       ).toEqual(ticketIds);
 
-      dialog = await openJiraDialog(page);
+      dialog = await openJiraDialog(page, demo);
       await dialog.getByRole("button", { name: "Edit sprints and mappings", exact: true }).click();
       await dialog.getByRole("checkbox", { name: "Mirror Jira states" }).check();
       await dialog.getByRole("button", { name: "Save mirror", exact: true }).click();
@@ -171,7 +171,7 @@ test.describe("Jira Workbench integration @live", () => {
       const current = await jiraSnapshot(demo);
       const binding = current.bindings.find((candidate) => candidate.id === before.binding.id);
       if (binding?.boardMode !== before.binding.boardMode) {
-        const dialog = await openJiraDialog(page);
+        const dialog = await openJiraDialog(page, demo);
         await dialog
           .getByRole("button", { name: "Edit sprints and mappings", exact: true })
           .click();
@@ -190,7 +190,7 @@ test.describe("Jira Workbench integration @live", () => {
     const before = await liveJira(demo);
     const beforeWorkbench = await snapshot(demo);
     try {
-      let dialog = await openJiraDialog(page);
+      let dialog = await openJiraDialog(page, demo);
       await dialog.getByRole("button", { name: "Pause mirror", exact: true }).click();
       await expect(
         dialog.getByRole("button", { name: "Resume mirror", exact: true }),
@@ -211,7 +211,7 @@ test.describe("Jira Workbench integration @live", () => {
       ).toBeDisabled();
       await createDialog.getByRole("button", { name: "Cancel", exact: true }).click();
 
-      dialog = await openJiraDialog(page);
+      dialog = await openJiraDialog(page, demo);
       await dialog.getByRole("button", { name: "Resume mirror", exact: true }).click();
       await expect(dialog.getByRole("button", { name: "Pause mirror", exact: true })).toBeVisible();
       await dialog
@@ -223,7 +223,7 @@ test.describe("Jira Workbench integration @live", () => {
       const current = await jiraSnapshot(demo);
       const binding = current.bindings.find((candidate) => candidate.id === before.binding.id);
       if (binding && binding.active !== before.binding.active) {
-        const dialog = await openJiraDialog(page);
+        const dialog = await openJiraDialog(page, demo);
         await dialog
           .getByRole("button", {
             name: before.binding.active ? "Resume mirror" : "Pause mirror",
@@ -254,7 +254,7 @@ test.describe("Jira Workbench integration @live", () => {
     const description = "Created by the live Workbench Jira regression.";
     let key: string | undefined;
     try {
-      await page.goto("/workbench?workbenchProjectId=demo-jira");
+      await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=demo-jira"));
       await page.getByRole("button", { name: "New Ticket", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "Create Ticket", exact: true });
       await dialog.getByPlaceholder("What needs doing?").fill(title);
@@ -311,8 +311,11 @@ test.describe("Jira Workbench integration @live", () => {
     let remoteIssue = original;
     try {
       await client.updateIssue(original.key, { description: remoteDescription });
-      await page.goto(
-        `/workbench?workbenchProjectId=demo-jira&ticketId=${encodeURIComponent(link.ticketId)}`,
+      await openWorkbench(
+        page,
+        demo.workbenchUrl(
+          `/workbench?workbenchProjectId=demo-jira&ticketId=${encodeURIComponent(link.ticketId)}`,
+        ),
       );
       await expect(
         page.getByRole("heading", { name: original.summary, exact: true }),
@@ -386,8 +389,11 @@ test.describe("Jira Workbench integration @live", () => {
     );
     if (!transition) throw new Error(`Jira issue ${issue.key} has no available transition.`);
     try {
-      await page.goto(
-        `/workbench?workbenchProjectId=demo-jira&ticketId=${encodeURIComponent(link.ticketId)}`,
+      await openWorkbench(
+        page,
+        demo.workbenchUrl(
+          `/workbench?workbenchProjectId=demo-jira&ticketId=${encodeURIComponent(link.ticketId)}`,
+        ),
       );
       await expect(page.getByRole("heading", { name: issue.summary, exact: true })).toBeVisible();
       await page
@@ -444,8 +450,11 @@ test.describe("Jira Workbench integration @live", () => {
     const changedDescription = `${issue.description}\n\nJ8 transient remote edit.`;
     try {
       await client.updateIssue(issue.key, { description: changedDescription });
-      await page.goto(
-        `/workbench?workbenchProjectId=demo-jira&ticketId=${encodeURIComponent(link.ticketId)}`,
+      await openWorkbench(
+        page,
+        demo.workbenchUrl(
+          `/workbench?workbenchProjectId=demo-jira&ticketId=${encodeURIComponent(link.ticketId)}`,
+        ),
       );
       await expect(page.getByText("J8 transient remote edit.", { exact: true })).toBeVisible({
         timeout: 30_000,

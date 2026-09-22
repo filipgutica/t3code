@@ -1,8 +1,8 @@
-import { test, expect, snapshot } from "./fixtures.ts";
+import { test, expect, openWorkbench, snapshot, waitForWorkbench } from "./fixtures.ts";
 
 test("W1 W2: create and rename a Workspace without preparing worktrees", async ({ page, demo }) => {
   const before = await snapshot(demo);
-  await page.goto("/workbench?workbenchProjectId=orbit");
+  await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
   await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Add Workspace", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: /Workspace/ });
@@ -27,6 +27,7 @@ test("W1 W2: create and rename a Workspace without preparing worktrees", async (
   await expect(dialog.getByRole("checkbox", { name: /Orbit API/ })).toBeDisabled();
   await dialog.getByRole("button", { name: "Save changes" }).click();
   await page.reload();
+  await waitForWorkbench(page);
   await expect(
     page.getByRole("heading", { name: "Renamed Regression Workspace", exact: true }),
   ).toBeVisible();
@@ -36,7 +37,7 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
   page,
   demo,
 }) => {
-  await page.goto("/workbench?workbenchProjectId=orbit");
+  await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
   await page.getByRole("button", { name: "New Ticket", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Create Ticket", exact: true });
   await dialog.getByPlaceholder("What needs doing?").fill("Regression disposable ticket");
@@ -54,6 +55,7 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
   await page.getByLabel("Description", { exact: true }).fill("Updated full description.");
   await page.getByRole("button", { name: "Save Ticket", exact: true }).click();
   await page.reload();
+  await waitForWorkbench(page);
   await expect(
     page.getByRole("heading", { name: "Edited regression ticket", exact: true }),
   ).toBeVisible();
@@ -72,7 +74,10 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
   expect(ticket.status).toBe("todo");
   await page.getByRole("button", { name: "Ticket actions" }).click();
   await page.getByRole("menuitem", { name: "Archive Ticket", exact: true }).click();
-  await page.goto(`/workbench?workbenchProjectId=orbit&ticketId=${ticket.id}`);
+  await openWorkbench(
+    page,
+    demo.workbenchUrl(`/workbench?workbenchProjectId=orbit&ticketId=${ticket.id}`),
+  );
   await page.getByRole("button", { name: "Ticket actions" }).click();
   await page.getByRole("menuitem", { name: "Restore Ticket", exact: true }).click();
   await page.getByRole("button", { name: "Ticket actions" }).click();
@@ -95,20 +100,29 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
 
 test("W3 W4 X2: direct routes, history and narrow layout retain Ticket ownership", async ({
   page,
+  demo,
 }) => {
-  await page.goto("/workbench?workbenchProjectId=orbit&ticketId=orbit-001");
+  await openWorkbench(
+    page,
+    demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-001"),
+  );
   await expect(
     page.getByRole("heading", { name: "Create the welcome checklist", exact: true }),
   ).toBeVisible();
   await page.reload();
+  await waitForWorkbench(page);
   await expect(
     page.getByRole("heading", { name: "Create the welcome checklist", exact: true }),
   ).toBeVisible();
-  await page.goto("/workbench?workbenchProjectId=beacon&ticketId=beacon-010");
+  await openWorkbench(
+    page,
+    demo.workbenchUrl("/workbench?workbenchProjectId=beacon&ticketId=beacon-010"),
+  );
   await expect(
     page.getByRole("heading", { name: "Write the five-minute quickstart", exact: true }),
   ).toBeVisible();
   await page.goBack();
+  await waitForWorkbench(page);
   await expect(
     page.getByRole("heading", { name: "Create the welcome checklist", exact: true }),
   ).toBeVisible();
