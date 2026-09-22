@@ -1,11 +1,4 @@
-import {
-  test,
-  expect,
-  jiraSnapshot,
-  openWorkbench,
-  snapshot,
-  type Demo,
-} from "./fixtures.ts";
+import { test, expect, jiraSnapshot, openWorkbench, snapshot, type Demo } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import * as NodeCrypto from "node:crypto";
 import { readConfig } from "../workbench-demo/environment.mts";
