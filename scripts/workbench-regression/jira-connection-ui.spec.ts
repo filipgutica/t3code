@@ -1,12 +1,5 @@
 // @effect-diagnostics globalTimers:off globalDate:off - Playwright owns deterministic browser test timing and timestamps.
-import {
-  test,
-  expect,
-  openWorkbench,
-  snapshot,
-  type Demo,
-  waitForWorkbench,
-} from "./fixtures.ts";
+import { test, expect, openWorkbench, snapshot, type Demo, waitForWorkbench } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 

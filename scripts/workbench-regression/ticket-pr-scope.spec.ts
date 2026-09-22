@@ -127,7 +127,10 @@ test("ticket PRs exclude shared checkouts until a workspace is prepared", async 
     });
     server.onMessage((message) => socket.send(message));
   });
-  await openWorkbench(page, demo.workbenchUrl(`/workbench?workbenchProjectId=orbit&ticketId=${ticket.id}`));
+  await openWorkbench(
+    page,
+    demo.workbenchUrl(`/workbench?workbenchProjectId=orbit&ticketId=${ticket.id}`),
+  );
   await expect(page.getByRole("heading", { name: ticket.title, exact: true })).toBeVisible();
   await expect(page.getByText("unrelated-work", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: /^Pull Requests/ })).toHaveCount(0);

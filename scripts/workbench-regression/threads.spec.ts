@@ -21,7 +21,10 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
   page,
   demo,
 }, testInfo) => {
-  await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-004"));
+  await openWorkbench(
+    page,
+    demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-004"),
+  );
   await expect(
     page.getByRole("heading", { name: "Fix focus after creating a project", exact: true }),
   ).toBeVisible();
@@ -243,7 +246,10 @@ test("R1 R3: multi-repository worktrees persist and reset refuses retained Threa
   const before = await snapshot(demo);
   const workspace = before.ticketWorkspaces.find((w) => w.ticketId === "orbit-001");
   expect(workspace).toBeDefined();
-  await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-001"));
+  await openWorkbench(
+    page,
+    demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-001"),
+  );
   await expect(
     page.getByRole("heading", { name: "Create the welcome checklist", exact: true }),
   ).toBeVisible();
