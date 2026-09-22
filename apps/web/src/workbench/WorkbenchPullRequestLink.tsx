@@ -40,11 +40,8 @@ export function WorkbenchPullRequestLink({
   const openChangeRequestLink = useOpenChangeRequestLink(undefined, undefined, setSelection);
   const label =
     pullRequest.title ?? pullRequest.repository ?? `Pull request #${pullRequest.number}`;
-  const presentation = pullRequest.state
-    ? PULL_REQUEST_STATE_PRESENTATION[
-        pullRequest.state === "open" && pullRequest.isDraft ? "draft" : pullRequest.state
-      ]
-    : undefined;
+  const state = pullRequest.state === "open" && pullRequest.isDraft ? "draft" : pullRequest.state;
+  const presentation = state ? PULL_REQUEST_STATE_PRESENTATION[state] : undefined;
   const stateClass = presentation?.toneClassName ?? "text-muted-foreground";
   const PullRequestIcon = presentation?.Icon ?? PullRequestGlyph.pullRequest;
   const openInWorkbench = (event: MouseEvent<HTMLAnchorElement>) => {

@@ -50,10 +50,41 @@ export function WorkbenchSidebarThreadPreview({
   readonly providerEntry: ProviderInstanceEntry | null;
   readonly pullRequests: ReadonlyArray<ThreadPullRequestLink>;
 }) {
+  const visiblePullRequests = visibleThreadPullRequests(pullRequests);
+
+  return (
+    <div className="flex min-w-0 max-w-80 flex-col gap-2 p-[var(--floating-content-inset)] text-left">
+      <div className="min-w-0 wrap-break-word text-xs font-medium leading-tight text-foreground">
+        {thread.title}
+      </div>
+      <WorkbenchSidebarThreadPreviewDetails
+        environment={environment}
+        project={project}
+        providerEntry={providerEntry}
+        shell={shell}
+      />
+      <WorkbenchSidebarThreadPreviewPullRequests
+        pullRequests={pullRequests}
+        visiblePullRequests={visiblePullRequests}
+      />
+    </div>
+  );
+}
+
+function WorkbenchSidebarThreadPreviewDetails({
+  shell,
+  project,
+  environment,
+  providerEntry,
+}: {
+  readonly shell: EnvironmentThreadShell | null;
+  readonly project: EnvironmentProject | null;
+  readonly environment: EnvironmentPresentation | null;
+  readonly providerEntry: ProviderInstanceEntry | null;
+}) {
   const repositoryLabel = resolveWorkbenchSidebarRepositoryLabel(
     project ? { title: project.title, repositoryIdentity: project.repositoryIdentity } : null,
   );
-  const visiblePullRequests = visibleThreadPullRequests(pullRequests);
   const machine = resolveEnvironmentMachineKind(environment?.serverConfig ?? null);
   const selectedModel = shell
     ? providerEntry?.models.find((model) => model.slug === shell.modelSelection.model)
@@ -67,61 +98,64 @@ export function WorkbenchSidebarThreadPreview({
     : null;
 
   return (
-    <div className="flex min-w-0 max-w-80 flex-col gap-2 p-[var(--floating-content-inset)] text-left">
-      <div className="min-w-0 wrap-break-word text-xs font-medium leading-tight text-foreground">
-        {thread.title}
-      </div>
-      <div className="grid gap-1.5 pl-0.5 text-xs text-muted-foreground">
-        {repositoryLabel ? (
-          <PreviewMetaRow
-            icon={
-              <FolderGit2Icon aria-hidden className="size-3 shrink-0 stroke-muted-foreground" />
-            }
-          >
-            {repositoryLabel}
-          </PreviewMetaRow>
-        ) : null}
+    <div className="grid gap-1.5 pl-0.5 text-xs text-muted-foreground">
+      {repositoryLabel ? (
+        <PreviewMetaRow
+          icon={<FolderGit2Icon aria-hidden className="size-3 shrink-0 stroke-muted-foreground" />}
+        >
+          {repositoryLabel}
+        </PreviewMetaRow>
+      ) : null}
+      <PreviewMetaRow
+        icon={
+          <EnvironmentMachineIcon
+            kind={machine}
+            className="size-3 shrink-0 stroke-muted-foreground"
+          />
+        }
+      >
+        {environment?.label ?? "Environment"}
+      </PreviewMetaRow>
+      {shell?.branch ? (
+        <PreviewMetaRow
+          icon={<GitBranchIcon aria-hidden className="size-3 shrink-0 stroke-muted-foreground" />}
+          wrap
+        >
+          {shell.branch}
+        </PreviewMetaRow>
+      ) : null}
+      {shell && modelLabel ? (
         <PreviewMetaRow
           icon={
-            <EnvironmentMachineIcon
-              kind={machine}
-              className="size-3 shrink-0 stroke-muted-foreground"
-            />
+            providerEntry ? (
+              <ProviderInstanceIcon
+                driverKind={providerEntry.driverKind}
+                displayName={providerEntry.displayName}
+                iconClassName="size-3 shrink-0 grayscale opacity-70"
+              />
+            ) : (
+              <BotIcon aria-hidden className="size-3 shrink-0 stroke-muted-foreground" />
+            )
           }
         >
-          {environment?.label ?? "Environment"}
+          {providerLabel} · {modelLabel}
         </PreviewMetaRow>
-        {shell?.branch ? (
-          <PreviewMetaRow
-            icon={<GitBranchIcon aria-hidden className="size-3 shrink-0 stroke-muted-foreground" />}
-            wrap
-          >
-            {shell.branch}
-          </PreviewMetaRow>
-        ) : null}
-        {shell && modelLabel ? (
-          <PreviewMetaRow
-            icon={
-              providerEntry ? (
-                <ProviderInstanceIcon
-                  driverKind={providerEntry.driverKind}
-                  displayName={providerEntry.displayName}
-                  iconClassName="size-3 shrink-0 grayscale opacity-70"
-                />
-              ) : (
-                <BotIcon aria-hidden className="size-3 shrink-0 stroke-muted-foreground" />
-              )
-            }
-          >
-            {providerLabel} · {modelLabel}
-          </PreviewMetaRow>
-        ) : null}
-      </div>
-      {visiblePullRequests.length > 0 ? (
-        <div className="border-border/60 border-t pt-2 pl-0.5 text-xs text-muted-foreground">
-          <ThreadPullRequestsMiniList pullRequests={pullRequests} />
-        </div>
       ) : null}
+    </div>
+  );
+}
+
+function WorkbenchSidebarThreadPreviewPullRequests({
+  pullRequests,
+  visiblePullRequests,
+}: {
+  readonly pullRequests: ReadonlyArray<ThreadPullRequestLink>;
+  readonly visiblePullRequests: ReadonlyArray<ThreadPullRequestLink>;
+}) {
+  if (visiblePullRequests.length === 0) return null;
+  return (
+    <div className="border-border/60 border-t pt-2 pl-0.5 text-xs text-muted-foreground">
+      <ThreadPullRequestsMiniList pullRequests={pullRequests} />
     </div>
   );
 }

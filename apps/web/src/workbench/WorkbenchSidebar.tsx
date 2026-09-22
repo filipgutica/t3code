@@ -109,20 +109,20 @@ export function WorkbenchSidebar({
   );
   const ticketDetailsById = useMemo(
     () =>
-      getWorkbenchSidebarTicketDetails({
-        environmentId,
-        tickets: snapshot?.tickets ?? [],
-        assignments: snapshot?.assignments ?? [],
-        threads: currentThread ? [...threadShells, currentThread] : threadShells,
-        projects: nativeProjects,
-        epics: snapshot?.epics ?? [],
-        issueLinks: jiraQuery.data?.issueLinks ?? [],
-      }),
+      snapshot
+        ? getWorkbenchSidebarTicketDetails({
+            environmentId,
+            tickets: snapshot.tickets,
+            assignments: snapshot.assignments,
+            threads: currentThread ? [...threadShells, currentThread] : threadShells,
+            projects: nativeProjects,
+            epics: snapshot.epics,
+            issueLinks: jiraQuery.data?.issueLinks ?? [],
+          })
+        : new Map<WorkbenchTicketId, WorkbenchSidebarTicketDetails>(),
     [
       environmentId,
-      snapshot?.tickets,
-      snapshot?.assignments,
-      snapshot?.epics,
+      snapshot,
       threadShells,
       currentThread,
       nativeProjects,

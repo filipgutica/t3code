@@ -9,22 +9,38 @@ import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 import type { WorkbenchSidebarTicket } from "./workbenchSidebar.logic";
 import type { WorkbenchSidebarTicketDetails } from "./workbenchSidebarContext.logic";
 
-export function WorkbenchSidebarTicketButton({
+function TicketPullRequestPreview({
+  pullRequests,
+}: {
+  readonly pullRequests: WorkbenchSidebarTicketDetails["pullRequests"];
+}) {
+  return pullRequests.length ? (
+    <div className="flex flex-col gap-1 border-t border-border/60 pt-2">
+      <p className="font-medium text-muted-foreground">Linked from Threads</p>
+      {pullRequests.map(({ pullRequest }) => (
+        <p key={pullRequest.url} className="break-words text-muted-foreground">
+          {pullRequest.repository} #{pullRequest.number}
+          {pullRequest.state
+            ? ` · ${pullRequest.state === "open" && pullRequest.isDraft ? "draft" : pullRequest.state}`
+            : ""}
+          {pullRequest.title ? ` — ${pullRequest.title}` : ""}
+        </p>
+      ))}
+    </div>
+  ) : null;
+}
+
+function TicketPreview({
   ticket,
   details,
-  isActive,
-  onSelect,
+  status,
 }: {
   readonly ticket: WorkbenchSidebarTicket;
   readonly details: WorkbenchSidebarTicketDetails | undefined;
-  readonly isActive: boolean;
-  readonly onSelect: () => void;
+  readonly status: string;
 }) {
-  const Icon = ticket.archivedAt ? ArchiveIcon : details?.kind === "bug" ? BugIcon : BookOpenIcon;
-  const environmentId = details?.environmentId;
   const pullRequests = details?.pullRequests ?? [];
-  const status = details?.statusLabel ?? WORKBENCH_TICKET_STATUS_LABELS[ticket.status];
-  const preview = (
+  return (
     <div className="flex flex-col gap-2 text-xs">
       <p className="font-medium text-foreground break-words">{ticket.title}</p>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-muted-foreground">
@@ -73,22 +89,27 @@ export function WorkbenchSidebarTicketButton({
           </>
         ) : null}
       </dl>
-      {pullRequests.length ? (
-        <div className="flex flex-col gap-1 border-t border-border/60 pt-2">
-          <p className="font-medium text-muted-foreground">Linked from Threads</p>
-          {pullRequests.map(({ pullRequest }) => (
-            <p key={pullRequest.url} className="break-words text-muted-foreground">
-              {pullRequest.repository} #{pullRequest.number}
-              {pullRequest.state
-                ? ` · ${pullRequest.state === "open" && pullRequest.isDraft ? "draft" : pullRequest.state}`
-                : ""}
-              {pullRequest.title ? ` — ${pullRequest.title}` : ""}
-            </p>
-          ))}
-        </div>
-      ) : null}
+      <TicketPullRequestPreview pullRequests={pullRequests} />
     </div>
   );
+}
+
+export function WorkbenchSidebarTicketButton({
+  ticket,
+  details,
+  isActive,
+  onSelect,
+}: {
+  readonly ticket: WorkbenchSidebarTicket;
+  readonly details: WorkbenchSidebarTicketDetails | undefined;
+  readonly isActive: boolean;
+  readonly onSelect: () => void;
+}) {
+  const Icon = ticket.archivedAt ? ArchiveIcon : details?.kind === "bug" ? BugIcon : BookOpenIcon;
+  const environmentId = details?.environmentId;
+  const pullRequests = details?.pullRequests ?? [];
+  const status = details?.statusLabel ?? WORKBENCH_TICKET_STATUS_LABELS[ticket.status];
+
   return (
     <div className="flex min-w-0 flex-1 items-end">
       <SidebarMenuButton
@@ -99,7 +120,7 @@ export function WorkbenchSidebarTicketButton({
         size="lg"
         className="h-auto min-h-12 min-w-0 flex-1 items-start"
         tooltip={{
-          children: preview,
+          children: <TicketPreview ticket={ticket} details={details} status={status} />,
           hidden: false,
           align: "start",
           variant: "glass",
