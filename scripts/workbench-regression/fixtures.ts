@@ -173,7 +173,8 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
           );
           throw error;
         }
-        await use(await context.storageState());
+        // Registered environments live in IndexedDB, alongside the session cookie.
+        await use(await context.storageState({ indexedDB: true }));
       } finally {
         await context.close();
       }
