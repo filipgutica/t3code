@@ -14,8 +14,7 @@ export function WorkbenchTicketKindBadge({ kind }: { kind: WorkbenchTicketKind }
       variant={kind === "bug" ? "error" : "info"}
       className={cn(
         "font-normal",
-        kind === "bug" &&
-          "bg-destructive/5 text-[color-mix(in_oklab,var(--destructive-foreground)_35%,var(--foreground))] dark:bg-destructive/8",
+        kind === "bug" && "bg-destructive/5 text-destructive-foreground dark:bg-destructive/8",
       )}
     >
       <Icon />
@@ -38,7 +37,7 @@ export function WorkbenchJiraIssueKey({
       render={<a href={issue.url} target="_blank" rel="noopener noreferrer" />}
       aria-label={`Open Jira issue ${issue.key}`}
       className={cn(
-        "bg-info/5 font-mono font-normal text-[color-mix(in_oklab,var(--info-foreground)_55%,var(--foreground))] hover:bg-info/10 hover:underline dark:bg-info/8 dark:hover:bg-info/12",
+        "bg-info/5 font-mono font-normal text-info-foreground hover:bg-info/10 hover:underline dark:bg-info/8 dark:hover:bg-info/12",
         className,
       )}
     >

@@ -53,7 +53,7 @@ export function WorkbenchSidebarThreadPreview({
   const visiblePullRequests = visibleThreadPullRequests(pullRequests);
 
   return (
-    <div className="flex min-w-0 max-w-80 flex-col gap-2 p-[var(--floating-content-inset)] text-left">
+    <div className="flex min-w-0 max-w-80 flex-col gap-2 p-(--floating-content-inset) text-left">
       <div className="min-w-0 wrap-break-word text-xs font-medium leading-tight text-foreground">
         {thread.title}
       </div>

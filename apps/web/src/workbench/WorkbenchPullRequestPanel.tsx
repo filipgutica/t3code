@@ -8,7 +8,6 @@ import { useResizableWidth } from "../hooks/useResizableWidth";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isElectron } from "../env";
 import type { ShortcutMatchContext } from "../keybindings";
-import { RIGHT_PANEL_SHEET_CLASS_NAME } from "../rightPanelLayout";
 
 function getShortcutContext(): ShortcutMatchContext {
   return {
@@ -57,7 +56,7 @@ export function WorkbenchPullRequestPanel({
     >
       <SheetPopup
         data-workbench-pull-request-panel=""
-        className={RIGHT_PANEL_SHEET_CLASS_NAME}
+        className="w-[min(42vw,28rem)] min-w-80 max-w-[28rem] max-[760px]:w-[min(88vw,24rem)] max-[760px]:min-w-0 wco:mt-[env(titlebar-area-height)] wco:h-[calc(100%-env(titlebar-area-height))] wco:max-h-[calc(100%-env(titlebar-area-height))]"
         style={{ width, maxWidth, minWidth: 0 }}
         showCloseButton={false}
         transitionDurationMs={0}

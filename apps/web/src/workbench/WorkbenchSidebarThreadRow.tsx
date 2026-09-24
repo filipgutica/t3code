@@ -73,7 +73,7 @@ function WorkbenchSidebarThreadTitle({
       {data.shell?.pinnedAt ? <PinIcon aria-label="Pinned" className="size-3 shrink-0" /> : null}
       {data.snoozed ? <ClockIcon aria-label="Snoozed" className="size-3 shrink-0" /> : null}
       {data.failed ? (
-        <span className="text-[10px] text-red-600 dark:text-red-300">Failed</span>
+        <span className="text-3xs text-destructive">Failed</span>
       ) : data.status ? (
         <ThreadStatusLabel status={{ ...data.status, pulse: false }} />
       ) : null}
@@ -194,7 +194,8 @@ function WorkbenchSidebarThreadRowView({
 }) {
   return (
     <div
-      className={`workbench-sidebar-item-row relative flex min-w-0 items-center rounded-lg ${isActive ? "bg-sidebar-row-selected" : "hover:bg-sidebar-row-hover"}`}
+      data-workbench-sidebar-item-row=""
+      className={`relative flex min-w-0 items-center rounded-lg ${isActive ? "bg-sidebar-row-selected" : "hover:bg-sidebar-row-hover"}`}
       onContextMenu={(event) => {
         event.preventDefault();
         openMenu({ x: event.clientX, y: event.clientY });

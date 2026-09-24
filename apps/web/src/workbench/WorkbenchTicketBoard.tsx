@@ -692,7 +692,7 @@ export function WorkbenchTicketBoard({
                                           </Tooltip>
                                           {summary.statusLabel ? (
                                             <p
-                                              className="text-[11px] text-muted-foreground"
+                                              className="text-2xs text-muted-foreground"
                                               role="status"
                                             >
                                               {summary.statusLabel}
@@ -813,7 +813,7 @@ export function WorkbenchTicketBoard({
         </div>
 
         {tickets.length === 0 && !(groupMode === "epic" && epics.length > 0) ? (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/45 p-6 backdrop-blur-[1px]">
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/45 p-6 backdrop-blur-xs">
             <div className="w-full max-w-sm rounded-xl border border-border bg-background shadow-lg/10">
               <Empty className="min-h-72">
                 <EmptyHeader>

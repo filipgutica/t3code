@@ -51,6 +51,40 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  desktop_smoke:
+    name: Upstream sync desktop smoke
+    if: ${{ github.event_name == 'pull_request' && (startsWith(github.head_ref, 'fix/upstream-sync-') || github.head_ref == 'workbench/upstream-sync') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Setup APT mirrors
+        uses: ./.github/actions/setup-apt-mirrors
+
+      - name: Install browser secret helper build libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev pkg-config
+
+      - name: Build desktop
+        run: |
+          vp run --filter @t3tools/desktop ensure:electron
+          vp run build:desktop
+
+      - name: Smoke test desktop
+        run: xvfb-run -a vp run --filter @t3tools/desktop smoke-test
+
   quality:
     name: Types, unit tests, lint and isolation
     runs-on: ubuntu-24.04

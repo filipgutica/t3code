@@ -134,7 +134,7 @@ function WorkbenchSidebarTicketLabel({
           ) : null}
         </span>
         <span
-          className={`flex min-w-0 items-center gap-1 text-[11px] font-normal text-sidebar-muted-foreground ${hasPullRequests ? "pe-14" : ""}`}
+          className={`flex min-w-0 items-center gap-1 text-2xs font-normal text-sidebar-muted-foreground ${hasPullRequests ? "pe-14" : ""}`}
         >
           <span
             aria-hidden
@@ -222,7 +222,8 @@ export function WorkbenchSidebarTicketButton({
 
   return (
     <div
-      className={`workbench-sidebar-item-row relative flex min-w-0 flex-1 items-end rounded-lg ${isActive ? "bg-sidebar-row-selected" : "hover:bg-sidebar-row-hover"}`}
+      data-workbench-sidebar-item-row=""
+      className={`relative flex min-w-0 flex-1 items-end rounded-lg ${isActive ? "bg-sidebar-row-selected" : "hover:bg-sidebar-row-hover"}`}
     >
       <SidebarMenuButton
         aria-label={ticket.title}
