@@ -2350,7 +2350,7 @@ export function WorkbenchPage({
               >
                 <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-3">
                   <div className="flex min-w-0 basis-full items-center gap-2 sm:basis-auto sm:flex-1">
-                    <h2 className="min-w-0 truncate font-heading text-xl font-semibold">
+                    <h2 className="min-w-0 truncate text-xl font-semibold">
                       {selectedProject.title}
                     </h2>
                     <span className="shrink-0 text-xs text-muted-foreground">

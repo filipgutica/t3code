@@ -240,7 +240,7 @@ export function WorkbenchSidebar({
   return (
     <>
       <SidebarContent className="overflow-x-hidden">
-        <SidebarGroup className="gap-2 p-[var(--sidebar-content-inset)]">
+        <SidebarGroup className="gap-2 p-(--sidebar-content-inset)">
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton onClick={leaveWorkbench}>
@@ -664,7 +664,7 @@ function WorkbenchSidebarDoneTickets({
       <button
         aria-controls={panelId}
         aria-expanded={expanded}
-        className="mx-0.5 flex h-8 w-[calc(100%-0.25rem)] cursor-pointer items-center gap-2 rounded-[var(--control-radius)] px-2 text-left text-xs font-medium text-sidebar-muted-foreground/60 outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="mx-0.5 flex h-8 w-[calc(100%-0.25rem)] cursor-pointer items-center gap-2 rounded-(--control-radius) px-2 text-left text-xs font-medium text-sidebar-muted-foreground/60 outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={onToggle}
         type="button"
       >
@@ -759,7 +759,7 @@ function WorkbenchSidebarDisclosure({
       aria-controls={controls}
       aria-expanded={expanded}
       aria-label={label}
-      className="inline-flex size-7 shrink-0 items-center justify-center rounded-[var(--control-radius)] text-sidebar-muted-foreground outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      className="inline-flex size-7 shrink-0 items-center justify-center rounded-(--control-radius) text-sidebar-muted-foreground outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
       onClick={onToggle}
       type="button"
     >
@@ -801,7 +801,7 @@ function WorkbenchSidebarArchivedTickets({
       <button
         aria-controls={panelId}
         aria-expanded={expanded}
-        className="mx-0.5 flex h-8 w-[calc(100%-0.25rem)] cursor-pointer items-center gap-2 rounded-[var(--control-radius)] px-2 text-left text-xs font-medium text-sidebar-muted-foreground/60 outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="mx-0.5 flex h-8 w-[calc(100%-0.25rem)] cursor-pointer items-center gap-2 rounded-(--control-radius) px-2 text-left text-xs font-medium text-sidebar-muted-foreground/60 outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={onToggle}
         type="button"
       >

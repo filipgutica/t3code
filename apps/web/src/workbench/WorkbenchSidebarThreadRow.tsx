@@ -1,12 +1,13 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { ClockIcon, MessageSquareIcon, PinIcon } from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, MouseEvent, SetStateAction } from "react";
 
 import {
   ThreadPullRequestBadgeControl,
   ThreadStatusLabel,
 } from "../components/ThreadStatusIndicators";
 import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
+import { InlineButton } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar";
 import type { WorkbenchSidebarThread } from "./workbenchSidebar.logic";
@@ -72,7 +73,7 @@ function WorkbenchSidebarThreadTitle({
       {data.shell?.pinnedAt ? <PinIcon aria-label="Pinned" className="size-3 shrink-0" /> : null}
       {data.snoozed ? <ClockIcon aria-label="Snoozed" className="size-3 shrink-0" /> : null}
       {data.failed ? (
-        <span className="text-[10px] text-red-600 dark:text-red-300">Failed</span>
+        <span className="text-3xs text-destructive">Failed</span>
       ) : data.status ? (
         <ThreadStatusLabel status={{ ...data.status, pulse: false }} />
       ) : null}
@@ -155,14 +156,14 @@ function WorkbenchSidebarThreadPrBadge({
   onOpenPullRequestStack,
 }: {
   readonly data: WorkbenchSidebarThreadRowData;
-  readonly onOpenPullRequest: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  readonly onOpenPullRequest: (event: MouseEvent<HTMLElement>) => void;
   readonly onOpenPullRequestStack: () => void;
 }) {
   if (!data.pullRequestBadge) return null;
   return (
     <span className="absolute end-2 bottom-2 z-10 flex items-center">
       <ThreadPullRequestBadgeControl
-        variant="underline"
+        render={<InlineButton />}
         badge={data.pullRequestBadge}
         number={data.currentPullRequest?.number}
         url={data.currentPullRequest?.url}
@@ -188,12 +189,13 @@ function WorkbenchSidebarThreadRowView({
   readonly onOpenThread: (thread: WorkbenchSidebarThread) => void;
   readonly data: WorkbenchSidebarThreadRowData;
   readonly openMenu: (position: { x: number; y: number }) => void;
-  readonly onOpenPullRequest: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  readonly onOpenPullRequest: (event: MouseEvent<HTMLElement>) => void;
   readonly onOpenPullRequestStack: () => void;
 }) {
   return (
     <div
-      className={`workbench-sidebar-item-row relative flex min-w-0 items-center rounded-lg ${isActive ? "bg-sidebar-row-selected" : "hover:bg-sidebar-row-hover"}`}
+      data-workbench-sidebar-item-row=""
+      className={`relative flex min-w-0 items-center rounded-lg ${isActive ? "bg-sidebar-row-selected" : "hover:bg-sidebar-row-hover"}`}
       onContextMenu={(event) => {
         event.preventDefault();
         openMenu({ x: event.clientX, y: event.clientY });

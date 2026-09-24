@@ -87,7 +87,7 @@
     "fallow:audit": "vp run -w workbench:fallow:audit",
     "fallow:health": "vp run -w workbench:fallow:health",
     "fallow:dupes": "vp run -w workbench:fallow:dupes",
-    "quality": "vp run lint && vp run knip && vp run fallow"
+    "quality": "vp run lint && vp run knip && vp run fallow && vp run -w workbench:restyle-ceiling"
   },
   "dependencies": {
     "@t3tools/contracts": "workspace:*",

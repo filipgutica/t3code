@@ -199,7 +199,7 @@ export function WorkbenchEpicDetail({
             <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <Layers3Icon className="size-3.5" /> {workspaceTitle} · Epic
             </p>
-            <h1 className="mt-1 break-words text-balance font-heading text-xl font-semibold leading-tight sm:text-2xl">
+            <h1 className="mt-1 break-words text-balance text-xl font-semibold leading-tight sm:text-2xl">
               {epic.title}
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -1387,7 +1387,7 @@ export function WorkbenchTicketDetail({
           </Button>
           <div className="col-span-2 row-start-2 min-w-0 sm:col-span-1 sm:col-start-2 sm:row-start-1">
             <p className="text-xs font-medium text-muted-foreground">{workspaceTitle} · Ticket</p>
-            <h1 className="mt-1 break-words text-balance font-heading text-xl font-semibold leading-tight sm:text-2xl">
+            <h1 className="mt-1 break-words text-balance text-xl font-semibold leading-tight sm:text-2xl">
               {displayedTitle.trim() || ticket.title}
             </h1>
             <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -2951,7 +2951,7 @@ function WorkbenchThreadMetadataRow({
   if (!modelLabel && !recencyLabel && !actions) return null;
   return (
     <div className="relative z-10 mt-0.5 flex min-w-0 items-center gap-2 ps-9 text-muted-foreground">
-      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px]">
+      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-2xs">
         {modelLabel ? (
           <span className="min-w-0 break-words [overflow-wrap:anywhere]">{modelLabel}</span>
         ) : null}

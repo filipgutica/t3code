@@ -273,7 +273,6 @@ export function WorkbenchStartThreadDialog({
                     lockedProvider={null}
                     instanceEntries={instanceEntries}
                     modelOptionsByInstance={modelOptionsByInstance}
-                    triggerVariant="outline"
                     triggerAriaLabel="Thread provider and model"
                     onInstanceModelChange={handleInstanceModelChange}
                   />
@@ -287,7 +286,6 @@ export function WorkbenchStartThreadDialog({
                     modelOptions={resolvedSelection.options ?? []}
                     allowPromptInjectedEffort={false}
                     planModeEnabled={settings.planModeEnabled}
-                    triggerVariant="outline"
                     onModelOptionsChange={handleModelOptionsChange}
                   />
                 </div>
