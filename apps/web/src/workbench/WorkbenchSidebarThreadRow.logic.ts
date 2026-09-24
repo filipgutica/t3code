@@ -224,7 +224,7 @@ export function useWorkbenchSidebarThreadInteraction({
     filterMenuItems: filterWorkbenchThreadActionMenuItems,
   });
   const handleOpenPullRequest = useCallback(
-    (event: ReactMouseEvent<HTMLAnchorElement>) => {
+    (event: ReactMouseEvent<HTMLElement>) => {
       const url = currentPullRequest?.url;
       if (!url) return;
       const openedInRightPanel = openPrLink(event, url, threadRef);

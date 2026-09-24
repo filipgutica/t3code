@@ -6,6 +6,7 @@ on:
       - packages/workbench/**
       - apps/server/src/workbench/**
       - apps/web/src/workbench/**
+      - apps/web/src/routes/workbench.tsx
       - packages/contracts/**
       - packages/shared/**
       - package.json
@@ -16,6 +17,7 @@ on:
       - knip.jsonc
       - scripts/knip-schemas.ts
       - scripts/workbench-quality.mts
+      - scripts/workbench-restyle-ceiling*
       - scripts/lib/workbench-quality*
       - .github/workflows/workbench-quality.yml
   push:
@@ -25,6 +27,7 @@ on:
       - packages/workbench/**
       - apps/server/src/workbench/**
       - apps/web/src/workbench/**
+      - apps/web/src/routes/workbench.tsx
       - packages/contracts/**
       - packages/shared/**
       - package.json
@@ -35,6 +38,7 @@ on:
       - knip.jsonc
       - scripts/knip-schemas.ts
       - scripts/workbench-quality.mts
+      - scripts/workbench-restyle-ceiling*
       - scripts/lib/workbench-quality*
       - .github/workflows/workbench-quality.yml
   workflow_dispatch:

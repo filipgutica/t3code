@@ -22,7 +22,7 @@ The small upstream integration surface is:
 - `packages/contracts/src/index.ts` and `packages/contracts/src/rpc.ts`;
 - `apps/server/src/auth/RpcAuthorization.ts`, `apps/server/src/server.ts`, and `apps/server/src/ws.ts`;
 - `apps/web/src/components/AppSidebarLayout.tsx` and `apps/web/src/components/sidebar/SidebarChrome.tsx`;
-- `apps/web/src/components/chat/ChatHeader.tsx`;
+- `apps/web/src/components/chat/ChatHeader.tsx` and `OpenInPicker.tsx`;
 - the generated `apps/web/src/routeTree.gen.ts`.
 
 Each Ticket stores a non-empty ordered set of native T3 Project references and one primary Project. The primary Project must belong to the parent Workbench Workspace and must also appear in the Ticket repository set. Existing Tickets migrate to `story` and retain their previous primary Project as their initial repository scope.

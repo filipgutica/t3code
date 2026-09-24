@@ -1,12 +1,13 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { ClockIcon, MessageSquareIcon, PinIcon } from "lucide-react";
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, MouseEvent, SetStateAction } from "react";
 
 import {
   ThreadPullRequestBadgeControl,
   ThreadStatusLabel,
 } from "../components/ThreadStatusIndicators";
 import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
+import { InlineButton } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar";
 import type { WorkbenchSidebarThread } from "./workbenchSidebar.logic";
@@ -155,14 +156,14 @@ function WorkbenchSidebarThreadPrBadge({
   onOpenPullRequestStack,
 }: {
   readonly data: WorkbenchSidebarThreadRowData;
-  readonly onOpenPullRequest: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  readonly onOpenPullRequest: (event: MouseEvent<HTMLElement>) => void;
   readonly onOpenPullRequestStack: () => void;
 }) {
   if (!data.pullRequestBadge) return null;
   return (
     <span className="absolute end-2 bottom-2 z-10 flex items-center">
       <ThreadPullRequestBadgeControl
-        variant="underline"
+        render={<InlineButton />}
         badge={data.pullRequestBadge}
         number={data.currentPullRequest?.number}
         url={data.currentPullRequest?.url}
@@ -188,7 +189,7 @@ function WorkbenchSidebarThreadRowView({
   readonly onOpenThread: (thread: WorkbenchSidebarThread) => void;
   readonly data: WorkbenchSidebarThreadRowData;
   readonly openMenu: (position: { x: number; y: number }) => void;
-  readonly onOpenPullRequest: (event: React.MouseEvent<HTMLAnchorElement>) => void;
+  readonly onOpenPullRequest: (event: MouseEvent<HTMLElement>) => void;
   readonly onOpenPullRequestStack: () => void;
 }) {
   return (

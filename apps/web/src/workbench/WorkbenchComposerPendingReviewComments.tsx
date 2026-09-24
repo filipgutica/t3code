@@ -1,11 +1,6 @@
 import { ChevronDown, MessageCircle, X } from "lucide-react";
 
-import {
-  COMPOSER_INLINE_CHIP_CLASS_NAME,
-  COMPOSER_INLINE_CHIP_DISMISS_BUTTON_CLASS_NAME,
-  COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
-  COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME,
-} from "../components/composerInlineChip";
+import { ContextChip, ContextChipAction, ContextChipLabel } from "../components/ContextChip";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
 import type { ReviewCommentContext } from "../reviewCommentContext";
 import { cn } from "../lib/utils";
@@ -24,14 +19,14 @@ function WorkbenchTicketReviewComment({
 }) {
   const label = `${comment.filePath} ${comment.rangeLabel}`;
   return (
-    <span className={cn(COMPOSER_INLINE_CHIP_CLASS_NAME, "pr-1")}>
+    <ContextChip className="select-none pr-1">
       <Popover>
         <PopoverTrigger
           aria-label={`Inspect context: ${label}`}
           className="inline-flex min-w-0 items-center gap-1 rounded-sm text-left outline-none hover:text-primary focus-visible:ring-1 focus-visible:ring-ring"
         >
-          <MessageCircle className={cn(COMPOSER_INLINE_CHIP_ICON_CLASS_NAME, "size-3.5")} />
-          <span className={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}>{label}</span>
+          <MessageCircle className="size-3.5 shrink-0" />
+          <ContextChipLabel>{label}</ContextChipLabel>
           <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden />
         </PopoverTrigger>
         <PopoverPopup side="top" align="start" className="w-[min(36rem,calc(100vw-2rem))]">
@@ -65,10 +60,9 @@ function WorkbenchTicketReviewComment({
           </div>
         </PopoverPopup>
       </Popover>
-      <button
-        type="button"
+      <ContextChipAction
         aria-label={`Remove comment on ${label}`}
-        className={COMPOSER_INLINE_CHIP_DISMISS_BUTTON_CLASS_NAME}
+        className="text-muted-foreground/72 hover:bg-foreground/6 hover:text-foreground"
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -76,8 +70,8 @@ function WorkbenchTicketReviewComment({
         }}
       >
         <X className="size-3" aria-hidden />
-      </button>
-    </span>
+      </ContextChipAction>
+    </ContextChip>
   );
 }
 

@@ -8,7 +8,7 @@ import {
 } from "./workbench-restyle-ceiling.ts";
 
 describe("workbench-restyle-ceiling", () => {
-  it("keeps Workbench and route integration findings out of the upstream partition", () => {
+  it("counts only Workbench and route integration findings", () => {
     assert.deepStrictEqual(
       classifyRestyleFindings({
         diagnostics: [
@@ -18,29 +18,20 @@ describe("workbench-restyle-ceiling", () => {
           { code: "react(refs)", filename: "apps/web/src/workbench/WorkbenchPage.tsx" },
         ],
       }),
-      { upstream: 1, workbench: 1, workbenchIntegration: 1 },
+      { workbench: 1, workbenchIntegration: 1 },
     );
   });
 
   it("does not let one partition consume another partition's slack", () => {
     assert.isFalse(
       evaluateRestylePartitions({
-        upstream: 1206,
         workbench: WORKBENCH_RESTYLE_CEILING + 1,
         workbenchIntegration: 0,
       }).ok,
     );
     assert.isFalse(
       evaluateRestylePartitions({
-        upstream: 1208,
-        workbench: WORKBENCH_RESTYLE_CEILING,
-        workbenchIntegration: 0,
-      }).ok,
-    );
-    assert.isFalse(
-      evaluateRestylePartitions({
-        upstream: 1207,
-        workbench: WORKBENCH_RESTYLE_CEILING,
+        workbench: 0,
         workbenchIntegration: WORKBENCH_INTEGRATION_RESTYLE_CEILING + 1,
       }).ok,
     );
