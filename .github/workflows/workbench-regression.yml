@@ -49,7 +49,7 @@ jobs:
         working-directory: scripts
         env:
           T3CODE_BUNDLED_DEV: "1"
-        run: vp exec playwright test --config workbench-regression/playwright.config.ts
+        run: vp run workbench:regression
       - name: Upload browser evidence
         if: failure()
         uses: actions/upload-artifact@v4

@@ -82,7 +82,7 @@ jobs:
           T3CODE_BUNDLED_DEV: "1"
           # Native PR discovery needs a user identity; the Actions token has no /user login.
           GH_TOKEN: ${{ secrets.DEMO_CREDENTIALS_TOKEN }}
-        run: vp exec playwright test --config workbench-regression/playwright.config.ts
+        run: vp run workbench:regression
       - name: Preserve rotated Jira credentials
         if: always() && steps.regression.outcome != '' && steps.regression.outcome != 'skipped'
         env:
