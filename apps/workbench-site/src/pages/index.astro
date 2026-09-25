@@ -2,6 +2,7 @@
 import { getImage } from "astro:assets";
 import ProductImage from "../components/ProductImage.astro";
 import ImageLightbox from "../components/ImageLightbox.astro";
+import CommitBranch from "../components/CommitBranch.astro";
 import board from "../assets/screenshots/board.png";
 import ticket from "../assets/screenshots/ticket.png";
 import context from "../assets/screenshots/context.png";
@@ -19,13 +20,13 @@ const videoPoster = await getImage({ src: board, width: 2400, format: "png" });
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    <meta name="theme-color" content="#0b0c0e" />
+    <meta name="theme-color" content="#0f0f11" />
     <link rel="canonical" href={canonical} />
     <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
     <meta property="og:type" content="website" />
@@ -43,108 +44,122 @@ const videoPoster = await getImage({ src: board, width: 2400, format: "png" });
       <nav aria-label="Main navigation">
         <a href={guide}>Guide</a>
         <a href={repository}>GitHub</a>
-        <a class="button small" href={downloads}>Download Workbench</a>
+        <a href={downloads}>Downloads</a>
       </nav>
     </header>
     <main id="main" class="wrap">
-      <section class="hero" aria-labelledby="hero-heading">
-        <div class="hero-copy">
-          <h1 id="hero-heading">Your work, across repositories.</h1>
-          <p class="lead">See what’s to do, in progress, and done. One place for your Tickets, repositories, and agents.</p>
+      <section class="hero" aria-labelledby="hero-heading" data-trace-section>
+        <CommitBranch lane="fork" />
+        <div class="section-body">
+          <div class="hero-copy">
+            <h1 id="hero-heading">Your work, across repositories.</h1>
+            <p class="lead">See what’s to do, in progress, and done. One place for your Tickets, repositories, and agents.</p>
+            <div class="actions">
+              <a class="button" href={downloads}>Download Workbench</a>
+              <a class="text-link" href={guide}>Read the guide <span aria-hidden="true">↗</span></a>
+            </div>
+            <p class="provenance">An independent fork, regularly synced with upstream <a href="https://t3.codes">T3 Code</a>.</p>
+          </div>
+          <figure class="hero-media">
+            <ProductImage src={board} eager alt="Workbench Board with Tickets, repository scope, and linked agent Threads" />
+          </figure>
+        </div>
+      </section>
+
+      <section class="section walkthrough-section" aria-labelledby="walkthrough-heading" data-trace-section>
+        <CommitBranch lane="parallel" />
+        <div class="section-body">
+          <div class="review-heading">
+            <h2 id="walkthrough-heading">From the Board to the work</h2>
+            <p>Open a Ticket to see the context, agents, pull requests, and worktrees behind the work.</p>
+          </div>
+          <figure class="walkthrough-media">
+            <video
+              class="overview-video"
+              controls
+              playsinline
+              preload="none"
+              poster={videoPoster.src}
+              aria-label="Workbench overview: open a Ticket and see its description, linked pull request, and repository worktrees"
+            >
+              <source src={`${base}media/workbench-overview-guided.mp4`} type="video/mp4" />
+              <a href={`${base}media/workbench-overview-guided.mp4`}>Watch the Workbench overview</a>
+            </video>
+            <figcaption>Draft walkthrough · 16 seconds. Recorded in the real Workbench demo.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="split section" aria-labelledby="scope-heading" data-trace-section>
+        <CommitBranch lane="merge" />
+        <div class="section-body">
+          <div class="section-copy">
+            <h2 id="scope-heading">An isolated workspace for every Ticket</h2>
+            <p>A Ticket brings together what needs doing, the repositories involved, and the agents working on it.</p>
+            <p>Start an agent Thread and Workbench prepares a Git worktree for each repository in scope. The Ticket’s context and repository paths come with it.</p>
+            <a class="text-link" href={`${guide}#start-agent-work`}>See how a Ticket becomes a Thread <span aria-hidden="true">↗</span></a>
+          </div>
+          <figure class="media-stage">
+            <ProductImage src={ticket} alt="Workbench Ticket with its description, linked PRs, and prepared API and web worktrees" />
+            <figcaption>One Ticket, with worktrees across all the repositories it touches.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="section review-section graph-main" aria-labelledby="review-heading" data-trace-section>
+        <CommitBranch lane="main" />
+        <div class="section-body">
+          <div class="review-heading">
+            <h2 id="review-heading">Keep the whole job in view</h2>
+            <p>See which agents are working on a Ticket, open their native T3 Threads, and follow pull requests across repositories—all from the same place.</p>
+          </div>
+          <div class="review-media">
+            <figure>
+              <h3>Start with the context attached.</h3>
+              <ProductImage src={context} alt="Native T3 composer with the Ticket goal and acceptance criteria attached as context" />
+              <figcaption>Inspect the context, then send your first message.</figcaption>
+            </figure>
+            <figure>
+              <h3>Bring the results back to the Ticket.</h3>
+              <ProductImage src={ticket} crop={{ x: 3480, y: 1215, width: 1155, height: 1725 }} alt="A linked Orbit API pull request above the prepared Orbit Web and Orbit API worktrees" />
+              <figcaption>Follow pull requests across the repositories involved.</figcaption>
+            </figure>
+          </div>
+          <div class="workflow" aria-label="Workbench workflow">
+            <p><span>01</span><strong>See the work</strong>Track what’s to do, in progress, and done.</p>
+            <p><span>02</span><strong>Give agents context</strong>Start Threads in the Ticket’s prepared workspace.</p>
+            <p><span>03</span><strong>Review the result</strong>Follow the PRs, then mark the Ticket Done.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="split section jira-section" aria-labelledby="jira-heading" data-trace-section>
+        <CommitBranch lane="fork" />
+        <div class="section-body">
+          <div class="section-copy">
+            <h2 id="jira-heading">Your sprint, closer to the code</h2>
+            <p class="lead">Connect Jira, or keep your tickets local.</p>
+            <p>Bring your assigned sprint issues into Workbench. Update descriptions and statuses, with repository scope and agent conversations attached to the work.</p>
+            <a class="text-link" href={`${guide}#connect-jira`}>Explore the Jira workflow <span aria-hidden="true">↗</span></a>
+          </div>
+          <figure class="media-stage">
+            <ProductImage src={jira} alt="Orbit Jira Workspace with sprint issues and their workflow statuses" />
+            <figcaption>Jira is optional. Local Tickets work on their own.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="closing section" aria-labelledby="closing-heading" data-trace-section>
+        <CommitBranch lane="merge" terminal />
+        <div class="section-body">
+          <h2 id="closing-heading">One place to see where the work stands.</h2>
+          <p>Your control center for Tickets, repositories, and agents.<br />Install Workbench alongside official T3 Code, with separate saved data.</p>
           <div class="actions">
             <a class="button" href={downloads}>Download Workbench</a>
             <a class="text-link" href={guide}>Read the guide <span aria-hidden="true">↗</span></a>
           </div>
-          <p class="provenance">An independent fork, regularly synced with upstream <a href="https://t3.codes">T3 Code</a>.</p>
+          <p class="release-note">Signed and notarized for macOS. See the release notes for platform downloads and update details.</p>
         </div>
-        <figure class="hero-media">
-          <ProductImage src={board} eager alt="Workbench Board with Tickets, repository scope, and linked agent Threads" />
-        </figure>
-      </section>
-
-      <section class="section walkthrough-section" aria-labelledby="walkthrough-heading">
-        <div class="review-heading">
-          <p class="section-label"><span>01</span> See it in action</p>
-          <h2 id="walkthrough-heading">From the Board to the work.</h2>
-          <p>Open a Ticket to see the context, agents, pull requests, and worktrees behind the work.</p>
-        </div>
-        <figure class="walkthrough-media">
-          <video
-            class="overview-video"
-            controls
-            playsinline
-            preload="none"
-            poster={videoPoster.src}
-            aria-label="Workbench overview: open a Ticket and see its description, linked pull request, and repository worktrees"
-          >
-            <source src={`${base}media/workbench-overview-guided.mp4`} type="video/mp4" />
-            <a href={`${base}media/workbench-overview-guided.mp4`}>Watch the Workbench overview</a>
-          </video>
-          <figcaption>Draft walkthrough · 16 seconds. Recorded in the real Workbench demo.</figcaption>
-        </figure>
-      </section>
-
-      <section class="split section" aria-labelledby="scope-heading">
-        <div class="section-copy">
-          <p class="section-label"><span>02</span> One Ticket, one workspace</p>
-          <h2 id="scope-heading">An isolated workspace for every Ticket.</h2>
-          <p>A Ticket brings together what needs doing, the repositories involved, and the agents working on it.</p>
-          <p>Start an agent Thread and Workbench prepares a Git worktree for each repository in scope. The Ticket’s context and repository paths come with it.</p>
-          <a class="text-link" href={`${guide}#start-agent-work`}>See how a Ticket becomes a Thread <span aria-hidden="true">↗</span></a>
-        </div>
-        <figure class="media-stage">
-          <ProductImage src={ticket} alt="Workbench Ticket with its description, linked PRs, and prepared API and web worktrees" />
-          <figcaption>One Ticket, with worktrees across all the repositories it touches.</figcaption>
-        </figure>
-      </section>
-
-      <section class="section review-section" aria-labelledby="review-heading">
-        <div class="review-heading">
-          <p class="section-label"><span>03</span> Build and review</p>
-          <h2 id="review-heading">Keep the whole job in view.</h2>
-          <p>See which agents are working on a Ticket, open their native T3 Threads, and follow pull requests across repositories—all from the same place.</p>
-        </div>
-        <div class="review-media">
-          <figure>
-            <h3>Start with the context attached.</h3>
-            <ProductImage src={context} alt="Native T3 composer with the Ticket goal and acceptance criteria attached as context" />
-            <figcaption>Inspect the context, then send your first message.</figcaption>
-          </figure>
-          <figure>
-            <h3>Bring the results back to the Ticket.</h3>
-            <ProductImage src={ticket} crop={{ x: 3480, y: 1215, width: 1155, height: 1725 }} alt="A linked Orbit API pull request above the prepared Orbit Web and Orbit API worktrees" />
-            <figcaption>Follow pull requests across the repositories involved.</figcaption>
-          </figure>
-        </div>
-        <div class="workflow" aria-label="Workbench workflow">
-          <p><span>01</span><strong>See the work</strong>Track what’s to do, in progress, and done.</p>
-          <p><span>02</span><strong>Give agents context</strong>Start Threads in the Ticket’s prepared workspace.</p>
-          <p><span>03</span><strong>Review the result</strong>Follow the PRs, then mark the Ticket Done.</p>
-        </div>
-      </section>
-
-      <section class="split section jira-section" aria-labelledby="jira-heading">
-        <div class="section-copy">
-          <p class="section-label"><span>04</span> Bring your sprint</p>
-          <h2 id="jira-heading">Your sprint, closer to the code.</h2>
-          <p class="lead">Connect Jira, or keep your tickets local.</p>
-          <p>Bring your assigned sprint issues into Workbench. Update descriptions and statuses, with repository scope and agent conversations attached to the work.</p>
-          <a class="text-link" href={`${guide}#connect-jira`}>Explore the Jira workflow <span aria-hidden="true">↗</span></a>
-        </div>
-        <figure class="media-stage">
-          <ProductImage src={jira} alt="Orbit Jira Workspace with sprint issues and their workflow statuses" />
-          <figcaption>Jira is optional. Local Tickets work on their own.</figcaption>
-        </figure>
-      </section>
-
-      <section class="closing section" aria-labelledby="closing-heading">
-        <h2 id="closing-heading">One place to see where the work stands.</h2>
-        <p>Your control center for Tickets, repositories, and agents.<br />Install Workbench alongside official T3 Code, with separate saved data.</p>
-        <div class="actions">
-          <a class="button" href={downloads}>Download Workbench</a>
-          <a class="text-link" href={guide}>Read the guide <span aria-hidden="true">↗</span></a>
-        </div>
-        <p class="release-note">Signed and notarized for macOS. See the release notes for platform downloads and update details.</p>
       </section>
     </main>
     <footer class="site-footer wrap">
@@ -153,5 +168,64 @@ const videoPoster = await getImage({ src: board, width: 2400, format: "png" });
       <a href={repository}>Browse the source <span aria-hidden="true">↗</span></a>
     </footer>
     <ImageLightbox />
+    <script>
+      const sections = [...document.querySelectorAll<HTMLElement>("[data-trace-section]")];
+      const footer = document.querySelector<HTMLElement>(".site-footer");
+
+      if ("IntersectionObserver" in window) {
+        const updateTrace = () => {
+          const focusY = window.innerHeight * 0.5;
+          const enterY = window.innerHeight - Math.floor(window.innerHeight * 0.3);
+          const leaveY = Math.floor(window.innerHeight * 0.15);
+          const nearest = sections.reduce(
+            (nearest, section, index) => {
+              const { top, bottom } = section.getBoundingClientRect();
+              const distance = Math.max(top - focusY, focusY - bottom, 0);
+              return distance < nearest.distance ? { index, distance } : nearest;
+            },
+            { index: 0, distance: Infinity },
+          ).index;
+          const current = footer && footer.getBoundingClientRect().top < window.innerHeight ? sections.length - 1 : nearest;
+
+          sections.forEach((section, index) => {
+            const { top, bottom } = section.getBoundingClientRect();
+            section.classList.toggle("is-current", index === current);
+            section.classList.toggle("trace-before", top > enterY);
+            section.classList.toggle("trace-after", bottom < leaveY);
+          });
+        };
+
+        let observer: IntersectionObserver;
+        let focusObserver: IntersectionObserver;
+        const observeSections = () => {
+          observer?.disconnect();
+          focusObserver?.disconnect();
+          const upperInset = Math.floor(window.innerHeight * 0.15);
+          const lowerInset = Math.floor(window.innerHeight * 0.3);
+          observer = new IntersectionObserver(updateTrace, { rootMargin: `-${upperInset}px 0px -${lowerInset}px 0px` });
+          const focusHeight = 4;
+          const focusTop = Math.floor((window.innerHeight - focusHeight) / 2);
+          const focusBottom = window.innerHeight - focusTop - focusHeight;
+          focusObserver = new IntersectionObserver(updateTrace, {
+            rootMargin: `-${focusTop}px 0px -${focusBottom}px 0px`,
+          });
+          sections.forEach((section) => {
+            observer.observe(section);
+            focusObserver.observe(section);
+          });
+          updateTrace();
+        };
+
+        window.addEventListener("resize", observeSections);
+        if (footer) new IntersectionObserver(updateTrace).observe(footer);
+        const video = document.querySelector<HTMLVideoElement>(".overview-video");
+        const videoSection = video?.closest<HTMLElement>("[data-trace-section]");
+        video?.addEventListener("play", () => videoSection?.classList.add("is-playing"));
+        video?.addEventListener("pause", () => videoSection?.classList.remove("is-playing"));
+        observeSections();
+        document.documentElement.classList.add("trace-ready");
+        requestAnimationFrame(() => document.documentElement.classList.add("trace-motion"));
+      }
+    </script>
   </body>
 </html>
