@@ -28,9 +28,9 @@ const cropStyle = crop
 </a>
 
 <style>
-  .product-image { display: block; overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: #141519; }
+  .product-image { display: block; overflow: hidden; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--surface); }
   img { width: 100%; height: auto; display: block; }
   .cropped { position: relative; }
   .cropped img { position: absolute; width: var(--image-width); max-width: none; left: var(--image-left); top: var(--image-top); }
-  .product-image:hover { border-color: #626b66; }
+  .product-image:hover { border-color: var(--border); }
 </style>
