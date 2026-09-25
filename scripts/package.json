@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit && tsc --noEmit -p workbench-regression/tsconfig.json",
-    "test": "vp test run"
+    "test": "vp test run",
+    "workbench:regression": "playwright test --config workbench-regression/playwright.config.ts"
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
