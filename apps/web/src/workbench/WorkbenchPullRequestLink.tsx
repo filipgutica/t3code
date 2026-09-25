@@ -1,9 +1,20 @@
 import { ExternalLinkIcon } from "lucide-react";
-import { ChangeRequestLinkOpenContext, useOpenChangeRequestLink } from "../lib/openPullRequestLink";
-import type { EnvironmentId, PullRequestRef, PullRequestState } from "@t3tools/contracts";
-import { lazy, Suspense, useState, type MouseEvent } from "react";
+import {
+  ChangeRequestLinkOpenContext,
+  parseChangeRequestUrl,
+  useOpenChangeRequestLink,
+} from "../lib/openPullRequestLink";
+import type {
+  EnvironmentId,
+  ProjectId,
+  PullRequestRef,
+  PullRequestState,
+} from "@t3tools/contracts";
+import { lazy, Suspense, useMemo, useState, type MouseEvent } from "react";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { linkedPullRequestDetailAtom, useSharedPullRequestSummary } from "../state/pullRequests";
+import { useEnvironmentQuery } from "../state/query";
 import {
   PULL_REQUEST_STATE_PRESENTATION,
   PullRequestGlyph,
@@ -17,6 +28,7 @@ const WorkbenchPullRequestPanel = lazy(() =>
 );
 
 export interface WorkbenchPullRequestReference {
+  readonly projectId?: ProjectId;
   readonly number: number;
   readonly url: string;
   readonly title?: string;
@@ -41,7 +53,7 @@ function WorkbenchPullRequestIdentifier({
       className={`inline-flex items-center ${compact ? "gap-0.5" : "gap-1.5"} leading-5 ${stateClass}`}
     >
       <Icon aria-hidden className={`${compact ? "size-3" : "size-3.5"} shrink-0`} />
-      <span className="tabular-nums">{compact ? number : `#${number}`}</span>
+      <span className="tabular-nums">#{number}</span>
     </span>
   );
 }
@@ -60,9 +72,38 @@ export function WorkbenchPullRequestLink({
     reference: PullRequestRef;
   } | null>(null);
   const openChangeRequestLink = useOpenChangeRequestLink(undefined, undefined, setSelection);
+  const reference = useMemo(() => {
+    if (!pullRequest.projectId || !pullRequest.repository) return null;
+    const host = parseChangeRequestUrl(pullRequest.url)?.host;
+    return {
+      projectId: pullRequest.projectId,
+      repository: pullRequest.repository,
+      number: pullRequest.number,
+      ...(host === undefined ? {} : { host }),
+    };
+  }, [pullRequest.projectId, pullRequest.repository, pullRequest.number, pullRequest.url]);
+  const queried = useEnvironmentQuery(
+    pullRequest.state === undefined && reference
+      ? linkedPullRequestDetailAtom({ environmentId, input: reference })
+      : null,
+  );
+  const summary = useSharedPullRequestSummary(
+    environmentId,
+    reference,
+    queried.data,
+    queried.dataUpdatedAt,
+  );
   const label =
     pullRequest.title ?? pullRequest.repository ?? `Pull request #${pullRequest.number}`;
-  const state = pullRequest.state === "open" && pullRequest.isDraft ? "draft" : pullRequest.state;
+  const currentState =
+    pullRequest.state === "merged" || summary?.state === "merged"
+      ? "merged"
+      : (pullRequest.state ?? summary?.state);
+  const isDraft =
+    pullRequest.state === undefined
+      ? (summary?.isDraft ?? pullRequest.isDraft)
+      : pullRequest.isDraft;
+  const state = currentState === "open" && isDraft ? "draft" : currentState;
   const presentation = state ? PULL_REQUEST_STATE_PRESENTATION[state] : undefined;
   const stateClass = presentation?.toneClassName ?? "text-muted-foreground";
   const PullRequestIcon = presentation?.Icon ?? PullRequestGlyph.pullRequest;

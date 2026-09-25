@@ -77,6 +77,29 @@ export function getWorkbenchSidebarExpansionDefaults({
   };
 }
 
+/** Reveals a newly selected route without replacing disclosure choices elsewhere. */
+export function revealWorkbenchSidebarSelection(
+  state: WorkbenchSidebarExpansion,
+  {
+    workspaceId,
+    ticketId,
+    ticketIsDone,
+  }: {
+    readonly workspaceId: WorkbenchProjectId | undefined;
+    readonly ticketId: WorkbenchTicketId | undefined;
+    readonly ticketIsDone: boolean;
+  },
+): WorkbenchSidebarExpansion {
+  if (workspaceId === undefined) return state;
+  if (state.workspaceId !== workspaceId) {
+    return getWorkbenchSidebarExpansionDefaults({ workspaceId, ticketId, ticketIsDone });
+  }
+  if (ticketId && (state.ticketId !== ticketId || state.done !== ticketIsDone)) {
+    return { ...state, ticketId, done: ticketIsDone, archived: false };
+  }
+  return state;
+}
+
 export function reduceWorkbenchSidebarExpansion(
   state: WorkbenchSidebarExpansion,
   action: WorkbenchSidebarExpansionAction,
@@ -128,6 +151,7 @@ export function getWorkbenchSidebarTicketGroups({
   threads,
   selectedTicketId,
   selectedThreadId,
+  includeUnassignedTickets = false,
 }: {
   readonly environmentId: EnvironmentId | null;
   readonly tickets: ReadonlyArray<WorkbenchSidebarTicket>;
@@ -135,6 +159,7 @@ export function getWorkbenchSidebarTicketGroups({
   readonly threads: ReadonlyArray<WorkbenchSidebarThread>;
   readonly selectedTicketId: WorkbenchTicketId | undefined;
   readonly selectedThreadId?: ThreadId | undefined;
+  readonly includeUnassignedTickets?: boolean;
 }): ReadonlyMap<WorkbenchProjectId, WorkbenchSidebarTicketSections> {
   const liveThreadsById = new Map<ThreadId, WorkbenchSidebarThread>();
   if (environmentId !== null) {
@@ -186,7 +211,11 @@ export function getWorkbenchSidebarTicketGroups({
     };
     if (ticket.status === "done" && ticket.archivedAt == null) {
       workspaceTickets.done.push({ ticket, threads: ticketThreads });
-    } else if (ticketThreads.length > 0 || ticket.id === selectedTicketId) {
+    } else if (
+      ticketThreads.length > 0 ||
+      ticket.id === selectedTicketId ||
+      includeUnassignedTickets
+    ) {
       workspaceTickets.active.push({ ticket, threads: ticketThreads });
     }
     if (workspaceTickets.active.length === 0 && workspaceTickets.done.length === 0) continue;
@@ -194,4 +223,62 @@ export function getWorkbenchSidebarTicketGroups({
   }
 
   return groups;
+}
+
+/** Keeps matching rows and the ancestors needed to reach them in the sidebar. */
+export function filterWorkbenchSidebarNavigation({
+  query,
+  projects,
+  ticketGroupsByWorkspace,
+  archivedTicketsByWorkspace,
+  jiraKeysByTicketId,
+}: {
+  readonly query: string;
+  readonly projects: ReadonlyArray<{ readonly id: WorkbenchProjectId; readonly title: string }>;
+  readonly ticketGroupsByWorkspace: ReadonlyMap<WorkbenchProjectId, WorkbenchSidebarTicketSections>;
+  readonly archivedTicketsByWorkspace: ReadonlyMap<
+    WorkbenchProjectId,
+    ReadonlyArray<WorkbenchSidebarTicket>
+  >;
+  readonly jiraKeysByTicketId: ReadonlyMap<WorkbenchTicketId, string>;
+}) {
+  const needle = query.trim().toLocaleLowerCase();
+  const matches = (value: string | undefined) => value?.toLowerCase().includes(needle) ?? false;
+  const visibleProjects: Array<(typeof projects)[number]> = [];
+  const visibleGroups = new Map<WorkbenchProjectId, WorkbenchSidebarTicketSections>();
+  const visibleArchived = new Map<WorkbenchProjectId, ReadonlyArray<WorkbenchSidebarTicket>>();
+  let resultCount = 0;
+
+  for (const project of projects) {
+    const workspaceMatches = matches(project.title);
+    const sections = ticketGroupsByWorkspace.get(project.id) ?? { active: [], done: [] };
+    const filterGroups = (groups: ReadonlyArray<WorkbenchSidebarTicketGroup>) =>
+      groups.flatMap((group) => {
+        const ticketMatches =
+          matches(group.ticket.title) || matches(jiraKeysByTicketId.get(group.ticket.id));
+        const threads = group.threads.filter((thread) => matches(thread.title));
+        if (!ticketMatches && threads.length === 0) return [];
+        resultCount += (ticketMatches ? 1 : 0) + threads.length;
+        return [{ ...group, threads }];
+      });
+    const active = filterGroups(sections.active);
+    const done = filterGroups(sections.done);
+    const archived = (archivedTicketsByWorkspace.get(project.id) ?? []).filter(
+      (ticket) => matches(ticket.title) || matches(jiraKeysByTicketId.get(ticket.id)),
+    );
+    resultCount += archived.length;
+    if (!workspaceMatches && active.length === 0 && done.length === 0 && archived.length === 0)
+      continue;
+    if (workspaceMatches) resultCount += 1;
+    visibleProjects.push(project);
+    visibleGroups.set(project.id, { active, done });
+    if (archived.length > 0) visibleArchived.set(project.id, archived);
+  }
+
+  return {
+    projects: visibleProjects,
+    ticketGroupsByWorkspace: visibleGroups,
+    archivedTicketsByWorkspace: visibleArchived,
+    resultCount,
+  };
 }

@@ -5,6 +5,7 @@ import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
 import { WORKBENCH_TICKET_KIND_LABELS, WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
 import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
+import { useWorkbenchSidebarTicketActionMenu } from "./useWorkbenchSidebarTicketActionMenu";
 import type { WorkbenchSidebarTicket } from "./workbenchSidebar.logic";
 import type { WorkbenchSidebarTicketDetails } from "./workbenchSidebarContext.logic";
 
@@ -116,7 +117,7 @@ function WorkbenchSidebarTicketLabel({
   const kind = details?.kind ?? "story";
   const Icon = ticket.archivedAt ? ArchiveIcon : kind === "bug" ? BugIcon : BookOpenIcon;
   const iconTone = ticket.archivedAt ? "text-sidebar-muted-foreground/60" : TICKET_ICON_TONE[kind];
-  const hasPullRequests = Boolean(details?.environmentId && details.pullRequests.length);
+  const pullRequestCount = details?.environmentId ? details.pullRequests.length : 0;
 
   return (
     <>
@@ -134,7 +135,7 @@ function WorkbenchSidebarTicketLabel({
           ) : null}
         </span>
         <span
-          className={`flex min-w-0 items-center gap-1 text-2xs font-normal text-sidebar-muted-foreground ${hasPullRequests ? "pe-14" : ""}`}
+          className={`flex min-w-0 items-center gap-1 text-2xs font-normal text-sidebar-muted-foreground ${pullRequestCount > 1 ? "pe-20" : pullRequestCount === 1 ? "pe-14" : ""}`}
         >
           <span
             aria-hidden
@@ -182,7 +183,7 @@ function WorkbenchSidebarTicketPrControl({
             }
           >
             <PullRequestGlyph.pullRequest aria-hidden className="size-3 shrink-0" />
-            {pullRequests.length}
+            {pullRequests.length} PRs
           </PopoverTrigger>
           <PopoverPopup
             side="right"
@@ -210,15 +211,23 @@ function WorkbenchSidebarTicketPrControl({
 export function WorkbenchSidebarTicketButton({
   ticket,
   details,
+  jiraOwnershipKnown,
   isActive,
   onSelect,
 }: {
   readonly ticket: WorkbenchSidebarTicket;
   readonly details: WorkbenchSidebarTicketDetails | undefined;
+  readonly jiraOwnershipKnown: boolean;
   readonly isActive: boolean;
   readonly onSelect: () => void;
 }) {
   const status = details?.statusLabel ?? WORKBENCH_TICKET_STATUS_LABELS[ticket.status];
+  const { openMenu } = useWorkbenchSidebarTicketActionMenu({
+    environmentId: details?.environmentId,
+    ticket,
+    issueLink: details?.issueLink ?? null,
+    jiraOwnershipKnown,
+  });
 
   return (
     <div
@@ -230,6 +239,17 @@ export function WorkbenchSidebarTicketButton({
         aria-current={isActive ? "page" : undefined}
         isActive={isActive}
         onClick={onSelect}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          openMenu({ x: event.clientX, y: event.clientY });
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+            event.preventDefault();
+            const bounds = event.currentTarget.getBoundingClientRect();
+            openMenu({ x: bounds.left, y: bounds.bottom });
+          }
+        }}
         size="lg"
         className="h-auto min-h-12 min-w-0 flex-1 items-start"
         tooltip={{
