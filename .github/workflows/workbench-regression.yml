@@ -22,7 +22,11 @@ concurrency:
 
 jobs:
   browser:
-    name: UI flows and Jira lifecycle (simulated services)
+    name: UI flows and Jira lifecycle (simulated services) ${{ matrix.shard }}/3
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -40,21 +44,23 @@ jobs:
         working-directory: scripts
         run: vp exec playwright install --with-deps chromium
       - name: Check regression tooling
+        if: ${{ matrix.shard == 1 }}
         run: |
           vp exec tsc --noEmit -p scripts/workbench-regression/tsconfig.json
           vp lint scripts/workbench-regression --report-unused-disable-directives
       - name: Run Jira lifecycle regressions
+        if: ${{ matrix.shard == 1 }}
         run: vp test run apps/server/src/workbench/jira/JiraLifecycle.integration.test.ts
       - name: Run browser regressions
         working-directory: scripts
         env:
           T3CODE_BUNDLED_DEV: "1"
-        run: vp run workbench:regression
+        run: vp run workbench:regression --shard=${{ matrix.shard }}/3
       - name: Upload browser evidence
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: workbench-regression
+          name: workbench-regression-${{ matrix.shard }}
           path: .test-results/
           include-hidden-files: true
           if-no-files-found: error
@@ -63,7 +69,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: workbench-settlement-ui
+          name: workbench-settlement-ui-${{ matrix.shard }}
           path: .test-results/**/settlement-*.png
           include-hidden-files: true
           if-no-files-found: ignore
