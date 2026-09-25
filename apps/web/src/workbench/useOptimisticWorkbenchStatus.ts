@@ -31,6 +31,15 @@ export interface WorkbenchStatusSucceedInput {
   readonly jiraIssue?: WorkbenchJiraIssueSnapshot;
 }
 
+export interface OptimisticWorkbenchStatus {
+  readonly tickets: ReadonlyArray<WorkbenchTicket>;
+  readonly issueLinks: ReadonlyArray<WorkbenchJiraIssueLink>;
+  readonly pendingTicketIds: ReadonlySet<WorkbenchTicketId>;
+  readonly begin: (input: WorkbenchStatusBeginInput) => WorkbenchStatusOperationToken | false;
+  readonly succeed: (input: WorkbenchStatusSucceedInput) => void;
+  readonly fail: (token: WorkbenchStatusOperationToken) => void;
+}
+
 interface StatusOverlay {
   readonly token: WorkbenchStatusOperationToken;
   readonly ticketId: WorkbenchTicketId;
@@ -130,7 +139,7 @@ export function useOptimisticWorkbenchStatus({
   environmentId,
   tickets,
   issueLinks,
-}: UseOptimisticWorkbenchStatusOptions) {
+}: UseOptimisticWorkbenchStatusOptions): OptimisticWorkbenchStatus {
   const [stored, setStored] = useState<OptimisticStatusState>(() => ({
     environmentId,
     overlaysByTicket: new Map(),

@@ -132,3 +132,39 @@ test("W3 W4 X2: direct routes, history and narrow layout retain Ticket ownership
     true,
   );
 });
+
+test("sidebar Back returns to a native Thread and exits a direct Workbench entry", async ({
+  page,
+  demo,
+}) => {
+  const environmentId = new URL(
+    demo.workbenchUrl("/workbench"),
+    "http://workbench.test",
+  ).searchParams.get("environmentId");
+  if (!environmentId) throw new Error("The demo has no environment ID.");
+  const threadPath = `/${encodeURIComponent(environmentId)}/orbit-001-thread`;
+
+  await page.goto(`${demo.origin}${threadPath}`);
+  await expect(page).toHaveURL(new RegExp(`${threadPath}$`));
+  await page.getByRole("button", { name: "Agent Workbench", exact: true }).click();
+  await waitForWorkbench(page);
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`${threadPath}$`));
+  await expect(page.getByRole("button", { name: "Agent Workbench", exact: true })).toBeVisible();
+
+  await page.goto(`${demo.origin}${demo.workbenchUrl("/workbench?workbenchProjectId=orbit")}`);
+  await waitForWorkbench(page);
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.waitForURL((url) => {
+    const pathSegments = url.pathname.split("/").filter(Boolean);
+    return (
+      url.pathname === "/" ||
+      (pathSegments.length === 3 &&
+        pathSegments[0] === encodeURIComponent(environmentId) &&
+        pathSegments[1] === "draft" &&
+        pathSegments[2] !== "")
+    );
+  });
+  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Agent Workbench", exact: true })).toBeVisible();
+});
