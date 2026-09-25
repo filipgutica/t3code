@@ -109,6 +109,7 @@ const threadMeta = ({ id, cwd, model, turns = [], status = { type: "idle" }, upd
   recencyAt: updatedAt ?? now(),
   cwd,
   modelProvider: "workbench-regression",
+  projectId: null,
   preview: "",
   ephemeral: false,
   historyMode: "legacy",
