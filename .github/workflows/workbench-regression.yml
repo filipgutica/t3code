@@ -22,11 +22,11 @@ concurrency:
 
 jobs:
   browser:
-    name: UI flows and Jira lifecycle (simulated services) ${{ matrix.shard }}/2
+    name: UI flows and Jira lifecycle (simulated services) ${{ matrix.shard }}/3
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -53,7 +53,7 @@ jobs:
         working-directory: scripts
         env:
           T3CODE_BUNDLED_DEV: "1"
-        run: vp run workbench:regression --shard=${{ matrix.shard }}/2
+        run: vp run workbench:regression --shard=${{ matrix.shard }}/3
       - name: Upload browser evidence
         if: failure()
         uses: actions/upload-artifact@v4
