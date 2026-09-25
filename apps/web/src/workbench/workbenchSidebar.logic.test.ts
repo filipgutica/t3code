@@ -8,9 +8,11 @@ import {
 } from "@t3tools/contracts";
 
 import {
+  filterWorkbenchSidebarNavigation,
   getWorkbenchSidebarExpansionDefaults,
   getWorkbenchSidebarTicketGroups,
   reduceWorkbenchSidebarExpansion,
+  revealWorkbenchSidebarSelection,
   type WorkbenchSidebarExpansion,
 } from "./workbenchSidebar.logic";
 
@@ -445,5 +447,123 @@ describe("Workbench sidebar expansion", () => {
       done: true,
       archived: false,
     });
+  });
+
+  it("reveals a newly selected Ticket and leaves workspace-only disclosure state alone", () => {
+    const otherTicketId = WorkbenchTicketId.make("ticket-two");
+    const manuallyClosed = { ...initial, ticketId: null };
+    expect(
+      revealWorkbenchSidebarSelection(manuallyClosed, {
+        workspaceId,
+        ticketId,
+        ticketIsDone: false,
+      }),
+    ).toEqual(initial);
+    expect(
+      revealWorkbenchSidebarSelection(manuallyClosed, {
+        workspaceId,
+        ticketId: undefined,
+        ticketIsDone: false,
+      }),
+    ).toBe(manuallyClosed);
+    expect(
+      revealWorkbenchSidebarSelection(initial, {
+        workspaceId: otherWorkspaceId,
+        ticketId: otherTicketId,
+        ticketIsDone: true,
+      }),
+    ).toEqual({
+      workspaceId: otherWorkspaceId,
+      ticketId: otherTicketId,
+      done: true,
+      archived: false,
+    });
+  });
+});
+
+describe("Workbench sidebar search", () => {
+  const roadmap = { id: workspaceId, title: "Roadmap" };
+  const platform = { id: otherWorkspaceId, title: "Platform" };
+  const activeTicket = { ...ticket("palette"), title: "Update chart palette" };
+  const doneTicket = { ...ticket("finished", workspaceId, "done"), title: "Retire old colors" };
+  const archivedTicket = {
+    ...ticket("archived", otherWorkspaceId),
+    title: "Migrate chart data",
+    archivedAt: "2026-01-01",
+  };
+  const activeThread = thread("active", "Inspect chart tokens");
+  const unrelatedThread = thread("unrelated", "Prepare release");
+  const input = {
+    projects: [roadmap, platform],
+    ticketGroupsByWorkspace: new Map([
+      [
+        workspaceId,
+        {
+          active: [{ ticket: activeTicket, threads: [activeThread, unrelatedThread] }],
+          done: [{ ticket: doneTicket, threads: [] }],
+        },
+      ],
+    ]),
+    archivedTicketsByWorkspace: new Map([[otherWorkspaceId, [archivedTicket]]]),
+    jiraKeysByTicketId: new Map([[activeTicket.id, "MA-5517"]]),
+  };
+
+  it("keeps Workspace and Ticket ancestors for a matching Thread", () => {
+    const result = filterWorkbenchSidebarNavigation({ ...input, query: "chart tokens" });
+    expect(result.projects).toEqual([roadmap]);
+    expect(result.ticketGroupsByWorkspace.get(workspaceId)).toEqual({
+      active: [{ ticket: activeTicket, threads: [activeThread] }],
+      done: [],
+    });
+    expect(result.resultCount).toBe(1);
+  });
+
+  it("counts and shows both a matching Ticket and its matching Thread", () => {
+    const result = filterWorkbenchSidebarNavigation({ ...input, query: "chart" });
+    expect(result.ticketGroupsByWorkspace.get(workspaceId)?.active).toEqual([
+      { ticket: activeTicket, threads: [activeThread] },
+    ]);
+    expect(result.resultCount).toBe(3);
+  });
+
+  it("finds a Jira key, Workspace title, and archived Ticket without leaking unrelated rows", () => {
+    const jira = filterWorkbenchSidebarNavigation({ ...input, query: "ma-5517" });
+    expect(jira.projects).toEqual([roadmap]);
+    expect(jira.ticketGroupsByWorkspace.get(workspaceId)?.active).toEqual([
+      { ticket: activeTicket, threads: [] },
+    ]);
+    expect(jira.resultCount).toBe(1);
+
+    const workspace = filterWorkbenchSidebarNavigation({ ...input, query: "platform" });
+    expect(workspace.projects).toEqual([platform]);
+    expect(workspace.ticketGroupsByWorkspace.get(otherWorkspaceId)).toEqual({
+      active: [],
+      done: [],
+    });
+    expect(workspace.resultCount).toBe(1);
+
+    const archived = filterWorkbenchSidebarNavigation({ ...input, query: "migrate chart" });
+    expect(archived.projects).toEqual([platform]);
+    expect(archived.archivedTicketsByWorkspace.get(otherWorkspaceId)).toEqual([archivedTicket]);
+    expect(archived.resultCount).toBe(1);
+  });
+
+  it("returns no ancestors for a query with no matches", () => {
+    const result = filterWorkbenchSidebarNavigation({ ...input, query: "unmatched" });
+    expect(result.projects).toEqual([]);
+    expect(result.resultCount).toBe(0);
+  });
+
+  it("can include unassigned Tickets in search results", () => {
+    const unassigned = ticket("unassigned");
+    const groups = getWorkbenchSidebarTicketGroups({
+      environmentId,
+      tickets: [unassigned],
+      assignments: [],
+      threads: [],
+      selectedTicketId: undefined,
+      includeUnassignedTickets: true,
+    });
+    expect(groups.get(workspaceId)?.active).toEqual([{ ticket: unassigned, threads: [] }]);
   });
 });

@@ -70,6 +70,9 @@ function WorkbenchSidebarThreadTitle({
       >
         {thread.title}
       </span>
+      {data.unread ? (
+        <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-success" />
+      ) : null}
       {data.shell?.pinnedAt ? <PinIcon aria-label="Pinned" className="size-3 shrink-0" /> : null}
       {data.snoozed ? <ClockIcon aria-label="Snoozed" className="size-3 shrink-0" /> : null}
       {data.failed ? (
@@ -96,7 +99,7 @@ function WorkbenchSidebarThreadNavigation({
 }) {
   return (
     <SidebarMenuButton
-      aria-label={thread.title}
+      aria-label={`${thread.title}${data.unread ? ", unread" : ""}${data.failed ? ", failed" : ""}`}
       aria-current={isActive ? "page" : undefined}
       className="h-auto min-h-12 min-w-0 flex-1 items-stretch"
       isActive={isActive}
