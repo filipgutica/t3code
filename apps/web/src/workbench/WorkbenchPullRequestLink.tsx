@@ -58,6 +58,103 @@ function WorkbenchPullRequestIdentifier({
   );
 }
 
+function resolvedPullRequestState({
+  pullRequest,
+  summary,
+}: {
+  readonly pullRequest: WorkbenchPullRequestReference;
+  readonly summary: ReturnType<typeof useSharedPullRequestSummary>;
+}) {
+  const currentState =
+    pullRequest.state === "merged" || summary?.state === "merged"
+      ? "merged"
+      : (pullRequest.state ?? summary?.state);
+  const isDraft =
+    pullRequest.state === undefined
+      ? (summary?.isDraft ?? pullRequest.isDraft)
+      : pullRequest.isDraft;
+  return currentState === "open" && isDraft ? "draft" : currentState;
+}
+
+function WorkbenchPullRequestAnchor({
+  pullRequest,
+  compact,
+  state,
+  Icon,
+  stateClass,
+  onClick,
+}: {
+  readonly pullRequest: WorkbenchPullRequestReference;
+  readonly compact: boolean;
+  readonly state: ReturnType<typeof resolvedPullRequestState>;
+  readonly Icon: PullRequestGlyphIcon;
+  readonly stateClass: string;
+  readonly onClick: (event: MouseEvent<HTMLAnchorElement>) => void;
+}) {
+  const label =
+    pullRequest.title ?? pullRequest.repository ?? `Pull request #${pullRequest.number}`;
+  return (
+    <a
+      aria-label={`Open pull request #${pullRequest.number}${pullRequest.title ? `: ${pullRequest.title}` : ""} in T3 Code${state ? ` (${state})` : ""}`}
+      className={
+        compact
+          ? "inline-flex shrink-0 rounded text-xs outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          : "flex min-w-0 flex-1 flex-col gap-0.5 rounded-l-lg px-3 py-1.5 text-sm font-medium text-foreground outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring"
+      }
+      href={pullRequest.url}
+      onClick={onClick}
+      rel="noopener noreferrer"
+      target="_blank"
+    >
+      <WorkbenchPullRequestIdentifier
+        Icon={Icon}
+        compact={compact}
+        number={pullRequest.number}
+        stateClass={stateClass}
+      />
+      {!compact ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span className="block min-w-0 truncate font-normal leading-5 text-muted-foreground" />
+            }
+          >
+            {label}
+          </TooltipTrigger>
+          <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
+            {label}
+          </TooltipPopup>
+        </Tooltip>
+      ) : null}
+    </a>
+  );
+}
+
+function WorkbenchPullRequestExternalLink({
+  pullRequest,
+}: {
+  readonly pullRequest: WorkbenchPullRequestReference;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <a
+            aria-label={`Open pull request #${pullRequest.number} in browser`}
+            className="inline-flex w-9 shrink-0 items-center justify-center rounded-r-lg border-l border-border/60 text-muted-foreground outline-none hover:bg-accent/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            href={pullRequest.url}
+            rel="noopener noreferrer"
+            target="_blank"
+          />
+        }
+      >
+        <ExternalLinkIcon aria-hidden className="size-3" />
+      </TooltipTrigger>
+      <TooltipPopup>Open in browser</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 export function WorkbenchPullRequestLink({
   environmentId,
   pullRequest,
@@ -93,17 +190,7 @@ export function WorkbenchPullRequestLink({
     queried.data,
     queried.dataUpdatedAt,
   );
-  const label =
-    pullRequest.title ?? pullRequest.repository ?? `Pull request #${pullRequest.number}`;
-  const currentState =
-    pullRequest.state === "merged" || summary?.state === "merged"
-      ? "merged"
-      : (pullRequest.state ?? summary?.state);
-  const isDraft =
-    pullRequest.state === undefined
-      ? (summary?.isDraft ?? pullRequest.isDraft)
-      : pullRequest.isDraft;
-  const state = currentState === "open" && isDraft ? "draft" : currentState;
+  const state = resolvedPullRequestState({ pullRequest, summary });
   const presentation = state ? PULL_REQUEST_STATE_PRESENTATION[state] : undefined;
   const stateClass = presentation?.toneClassName ?? "text-muted-foreground";
   const PullRequestIcon = presentation?.Icon ?? PullRequestGlyph.pullRequest;
@@ -119,57 +206,15 @@ export function WorkbenchPullRequestLink({
           : "inline-flex w-full min-w-0 items-stretch rounded-lg border border-border/60 bg-background/40"
       }
     >
-      <a
-        aria-label={`Open pull request #${pullRequest.number}${pullRequest.title ? `: ${pullRequest.title}` : ""} in T3 Code${state ? ` (${state})` : ""}`}
-        className={
-          compact
-            ? "inline-flex shrink-0 rounded text-xs outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-            : "flex min-w-0 flex-1 flex-col gap-0.5 rounded-l-lg px-3 py-1.5 text-sm font-medium text-foreground outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring"
-        }
-        href={pullRequest.url}
+      <WorkbenchPullRequestAnchor
+        pullRequest={pullRequest}
+        compact={compact}
+        state={state}
+        Icon={PullRequestIcon}
+        stateClass={stateClass}
         onClick={openInWorkbench}
-        rel="noopener noreferrer"
-        target="_blank"
-      >
-        <WorkbenchPullRequestIdentifier
-          Icon={PullRequestIcon}
-          compact={compact}
-          number={pullRequest.number}
-          stateClass={stateClass}
-        />
-        {!compact ? (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span className="block min-w-0 truncate font-normal leading-5 text-muted-foreground" />
-              }
-            >
-              {label}
-            </TooltipTrigger>
-            <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
-              {label}
-            </TooltipPopup>
-          </Tooltip>
-        ) : null}
-      </a>
-      {!compact ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <a
-                aria-label={`Open pull request #${pullRequest.number} in browser`}
-                className="inline-flex w-9 shrink-0 items-center justify-center rounded-r-lg border-l border-border/60 text-muted-foreground outline-none hover:bg-accent/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                href={pullRequest.url}
-                rel="noopener noreferrer"
-                target="_blank"
-              />
-            }
-          >
-            <ExternalLinkIcon aria-hidden className="size-3" />
-          </TooltipTrigger>
-          <TooltipPopup>Open in browser</TooltipPopup>
-        </Tooltip>
-      ) : null}
+      />
+      {!compact ? <WorkbenchPullRequestExternalLink pullRequest={pullRequest} /> : null}
       {selection ? (
         <ChangeRequestLinkOpenContext value={setSelection}>
           <Suspense fallback={<span role="status">Loading pull request…</span>}>

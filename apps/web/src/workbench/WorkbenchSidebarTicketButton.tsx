@@ -1,4 +1,5 @@
 import { ArchiveIcon, BookOpenIcon, BugIcon, CircleAlertIcon } from "lucide-react";
+import type { KeyboardEvent } from "react";
 
 import { SidebarMenuButton } from "../components/ui/sidebar";
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
@@ -228,6 +229,12 @@ export function WorkbenchSidebarTicketButton({
     issueLink: details?.issueLink ?? null,
     jiraOwnershipKnown,
   });
+  const openKeyboardMenu = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+    event.preventDefault();
+    const bounds = event.currentTarget.getBoundingClientRect();
+    openMenu({ x: bounds.left, y: bounds.bottom });
+  };
 
   return (
     <div
@@ -243,13 +250,7 @@ export function WorkbenchSidebarTicketButton({
           event.preventDefault();
           openMenu({ x: event.clientX, y: event.clientY });
         }}
-        onKeyDown={(event) => {
-          if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-            event.preventDefault();
-            const bounds = event.currentTarget.getBoundingClientRect();
-            openMenu({ x: bounds.left, y: bounds.bottom });
-          }
-        }}
+        onKeyDown={openKeyboardMenu}
         size="lg"
         className="h-auto min-h-12 min-w-0 flex-1 items-start"
         tooltip={{

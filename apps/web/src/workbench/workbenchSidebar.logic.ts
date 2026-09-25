@@ -143,6 +143,72 @@ export function reduceWorkbenchSidebarExpansion(
   }
 }
 
+type SidebarGroupInputs = {
+  readonly environmentId: EnvironmentId | null;
+  readonly tickets: ReadonlyArray<WorkbenchSidebarTicket>;
+  readonly assignments: ReadonlyArray<WorkbenchSidebarAssignment>;
+  readonly threads: ReadonlyArray<WorkbenchSidebarThread>;
+  readonly selectedTicketId: WorkbenchTicketId | undefined;
+  readonly selectedThreadId?: ThreadId | undefined;
+  readonly includeUnassignedTickets?: boolean;
+};
+
+const getVisibleThreadsById = ({
+  environmentId,
+  threads,
+  selectedThreadId,
+}: Pick<SidebarGroupInputs, "environmentId" | "threads" | "selectedThreadId">) => {
+  const liveThreadsById = new Map<ThreadId, WorkbenchSidebarThread>();
+  if (environmentId === null) return liveThreadsById;
+  for (const thread of threads) {
+    if (
+      thread.environmentId !== environmentId ||
+      (thread.archivedAt !== null && thread.id !== selectedThreadId)
+    )
+      continue;
+    liveThreadsById.set(thread.id, thread);
+  }
+  return liveThreadsById;
+};
+
+const getAssignmentsByTicket = ({
+  assignments,
+  liveThreadsById,
+}: {
+  readonly assignments: SidebarGroupInputs["assignments"];
+  readonly liveThreadsById: ReadonlyMap<ThreadId, WorkbenchSidebarThread>;
+}) => {
+  const assignmentsByTicket = new Map<WorkbenchTicketId, WorkbenchAssignment[]>();
+  for (const assignment of assignments) {
+    if (!liveThreadsById.has(assignment.threadId)) continue;
+    const ticketAssignments = assignmentsByTicket.get(assignment.ticketId) ?? [];
+    ticketAssignments.push(assignment);
+    assignmentsByTicket.set(assignment.ticketId, ticketAssignments);
+  }
+  return assignmentsByTicket;
+};
+
+const getTicketThreads = ({
+  ticketAssignments,
+  liveThreadsById,
+}: {
+  readonly ticketAssignments: ReadonlyArray<WorkbenchSidebarAssignment>;
+  readonly liveThreadsById: ReadonlyMap<ThreadId, WorkbenchSidebarThread>;
+}) => {
+  const seenThreadIds = new Set<ThreadId>();
+  return ticketAssignments
+    .toSorted(
+      (left, right) =>
+        right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
+    )
+    .flatMap(({ threadId }) => {
+      const thread = liveThreadsById.get(threadId);
+      if (thread === undefined || seenThreadIds.has(thread.id)) return [];
+      seenThreadIds.add(thread.id);
+      return [thread];
+    });
+};
+
 /** Groups native Threads under one Ticket, retaining its settled history. */
 export function getWorkbenchSidebarTicketGroups({
   environmentId,
@@ -152,36 +218,9 @@ export function getWorkbenchSidebarTicketGroups({
   selectedTicketId,
   selectedThreadId,
   includeUnassignedTickets = false,
-}: {
-  readonly environmentId: EnvironmentId | null;
-  readonly tickets: ReadonlyArray<WorkbenchSidebarTicket>;
-  readonly assignments: ReadonlyArray<WorkbenchSidebarAssignment>;
-  readonly threads: ReadonlyArray<WorkbenchSidebarThread>;
-  readonly selectedTicketId: WorkbenchTicketId | undefined;
-  readonly selectedThreadId?: ThreadId | undefined;
-  readonly includeUnassignedTickets?: boolean;
-}): ReadonlyMap<WorkbenchProjectId, WorkbenchSidebarTicketSections> {
-  const liveThreadsById = new Map<ThreadId, WorkbenchSidebarThread>();
-  if (environmentId !== null) {
-    for (const thread of threads) {
-      if (
-        thread.environmentId !== environmentId ||
-        (thread.archivedAt !== null && thread.id !== selectedThreadId)
-      )
-        continue;
-      liveThreadsById.set(thread.id, thread);
-    }
-  }
-
-  const assignmentsByTicket = new Map<WorkbenchTicketId, WorkbenchAssignment[]>();
-  for (const assignment of assignments) {
-    const thread = liveThreadsById.get(assignment.threadId);
-    if (thread === undefined) continue;
-    const ticketAssignments = assignmentsByTicket.get(assignment.ticketId) ?? [];
-    ticketAssignments.push(assignment);
-    assignmentsByTicket.set(assignment.ticketId, ticketAssignments);
-  }
-
+}: SidebarGroupInputs): ReadonlyMap<WorkbenchProjectId, WorkbenchSidebarTicketSections> {
+  const liveThreadsById = getVisibleThreadsById({ environmentId, threads, selectedThreadId });
+  const assignmentsByTicket = getAssignmentsByTicket({ assignments, liveThreadsById });
   const groups = new Map<
     WorkbenchProjectId,
     {
@@ -192,19 +231,10 @@ export function getWorkbenchSidebarTicketGroups({
   for (const ticket of tickets) {
     if (ticket.archivedAt != null && ticket.id !== selectedTicketId) continue;
 
-    const ticketAssignments = assignmentsByTicket.get(ticket.id) ?? [];
-    const seenThreadIds = new Set<ThreadId>();
-    const ticketThreads = ticketAssignments
-      .toSorted(
-        (left, right) =>
-          right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
-      )
-      .flatMap(({ threadId }) => {
-        const thread = liveThreadsById.get(threadId);
-        if (thread === undefined || seenThreadIds.has(thread.id)) return [];
-        seenThreadIds.add(thread.id);
-        return [thread];
-      });
+    const ticketThreads = getTicketThreads({
+      ticketAssignments: assignmentsByTicket.get(ticket.id) ?? [],
+      liveThreadsById,
+    });
     const workspaceTickets = groups.get(ticket.projectId) ?? {
       active: [],
       done: [],
