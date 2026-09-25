@@ -108,6 +108,9 @@ describe("Done Ticket settlement", () => {
       const threads = [
         makeThread("pin", { settledOverride: "active" }),
         makeThread("settled", { settledOverride: "settled" }),
+        makeThread("auto-settle-disabled", {
+          autoSettleDisabledAt: "2026-08-20T00:00:00.000Z",
+        }),
         makeThread("pending", { hasPendingUserInput: true }),
         makeThread("approval", { hasPendingApprovals: true }),
         makeThread("archived", { archivedAt: "2026-08-21T00:00:00.000Z" }),

@@ -25,6 +25,8 @@ The small upstream integration surface is:
 - `apps/web/src/components/chat/ChatHeader.tsx` and `OpenInPicker.tsx`;
 - the generated `apps/web/src/routeTree.gen.ts`.
 
+The sidebar's utility-page check includes Workbench in the same predicate used to remember the Back destination. Desktop distribution policy lives in `apps/desktop/src/workbench`; its updater behavior tests live there so upstream updater tests can change independently.
+
 Each Ticket stores a non-empty ordered set of native T3 Project references and one primary Project. The primary Project must belong to the parent Workbench Workspace and must also appear in the Ticket repository set. Existing Tickets migrate to `story` and retain their previous primary Project as their initial repository scope.
 
 Epics are Workspace-owned planning records. A Ticket can reference at most one Epic in the same Workspace. Archived Epics remain visible on existing Tickets but cannot receive new Tickets. Board grouping is a UI projection over the same Ticket status columns; it does not introduce a separate workflow state.
