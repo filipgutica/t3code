@@ -312,11 +312,24 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         undefined,
         undefined,
       );
+      const linux = yield* createBuildConfig(
+        "linux",
+        "AppImage",
+        "0.1.0",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
       assert.equal(config.appId, "com.filipgutica.t3code.workbench");
       assert.equal(config.productName, "T3 Code Workbench");
       assert.equal(config.artifactName, "T3-Code-Workbench-${version}-${arch}.${ext}");
       assert.deepInclude(config.mac, {
         protocols: [{ name: "T3 Code Workbench", schemes: ["t3code-workbench"] }],
+      });
+      assert.deepInclude(linux.linux, {
+        target: ["AppImage"],
+        executableName: "t3code-workbench",
       });
       assert.deepStrictEqual(config.publish, [
         {
@@ -760,6 +773,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         iconSize: 120,
         iconTextSize: 12,
       });
+      // A Linux AppImage build also emits the .deb from the same run.
+      assert.deepStrictEqual((linux.linux as Record<string, unknown>).target, ["AppImage", "deb"]);
       // Linux must register the renderer schemes so the generated .desktop
       // entry advertises MimeType=x-scheme-handler/t3code; for OAuth deep links.
       assert.deepStrictEqual((linux.linux as Record<string, unknown>).protocols, [

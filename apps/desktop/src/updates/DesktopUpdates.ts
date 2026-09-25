@@ -252,6 +252,7 @@ function getAutoUpdateDisabledReason(args: {
   isPackaged: boolean;
   platform: NodeJS.Platform;
   appImage?: string | undefined;
+  isDebPackage: boolean;
   disabledByEnv: boolean;
   hasUpdateFeedConfig: boolean;
   isWorkbench: boolean;
@@ -266,8 +267,8 @@ function getAutoUpdateDisabledReason(args: {
   if (args.disabledByEnv) {
     return "Automatic updates are disabled by the T3CODE_DISABLE_AUTO_UPDATE setting.";
   }
-  if (args.platform === "linux" && !args.appImage) {
-    return "Automatic updates on Linux require running the AppImage build.";
+  if (args.platform === "linux" && !args.appImage && !args.isDebPackage) {
+    return "Automatic updates on Linux require the AppImage or the .deb package.";
   }
   if (args.isWorkbench && args.platform === "darwin" && !args.isWorkbenchMacSigned) {
     return "Automatic updates for unsigned T3 Code Workbench macOS builds require manual installation from the GitHub release page.";
@@ -339,6 +340,18 @@ export const make = Effect.gen(function* () {
     ),
   );
 
+  // The .deb carries electron-builder's resources/package-type marker.
+  // electron-updater reads the same file and installs updates with dpkg.
+  const isDebPackage =
+    environment.platform === "linux" && environment.isPackaged
+      ? yield* fileSystem
+          .readFileString(environment.path.join(environment.resourcesPath, "package-type"))
+          .pipe(
+            Effect.map((packageType) => packageType.trim() === "deb"),
+            Effect.orElseSucceed(() => false),
+          )
+      : false;
+
   const hasUpdateFeedConfig = Ref.get(appUpdateYmlConfigRef).pipe(
     Effect.map((appUpdateYmlConfig) => Option.isSome(appUpdateYmlConfig) || config.mockUpdates),
   );
@@ -351,6 +364,7 @@ export const make = Effect.gen(function* () {
         isPackaged: environment.isPackaged,
         platform: environment.platform,
         appImage: Option.getOrUndefined(config.appImagePath),
+        isDebPackage,
         disabledByEnv: config.disableAutoUpdate,
         hasUpdateFeedConfig: hasFeedConfig,
         isWorkbench: isWorkbenchBuild(),

@@ -44,6 +44,9 @@ describe("filterWorkbenchThreadActionMenuItems", () => {
       "rename",
       "regenerate-title",
       "mark-unread",
+      "auto-settle",
+      "auto-settle:enabled",
+      "auto-settle:disabled",
       "copy",
       "copy-path",
       "copy-branch",
@@ -52,23 +55,27 @@ describe("filterWorkbenchThreadActionMenuItems", () => {
   });
 
   it("keeps Workbench lifecycle actions in their reverse state", () => {
-    const ids = flatten(
-      filterWorkbenchThreadActionMenuItems(
-        buildThreadActionMenuItems({
-          ...baseState,
-          isPinned: true,
-          isSettled: true,
-          isSnoozed: true,
-        }),
-      ),
+    const items = filterWorkbenchThreadActionMenuItems(
+      buildThreadActionMenuItems({
+        ...baseState,
+        isPinned: true,
+        isSettled: true,
+        isSnoozed: true,
+        autoSettleEnabled: false,
+      }),
     );
+    const ids = flatten(items);
 
     expect(ids).toContain("unsettle");
     expect(ids).not.toEqual(expect.arrayContaining(["unpin", "unsnooze"]));
+    expect(items.find((item) => item.id === "auto-settle")?.children).toMatchObject([
+      { id: "auto-settle:enabled", checked: false },
+      { id: "auto-settle:disabled", checked: true },
+    ]);
   });
 
   it("removes a leading native separator when lifecycle actions are unavailable", () => {
-    const [first] = filterWorkbenchThreadActionMenuItems(
+    const items = filterWorkbenchThreadActionMenuItems(
       buildThreadActionMenuItems({
         ...baseState,
         supports: {
@@ -81,6 +88,7 @@ describe("filterWorkbenchThreadActionMenuItems", () => {
       }),
     );
 
-    expect(first).toMatchObject({ id: "rename", separatorBefore: false });
+    expect(items[0]).toMatchObject({ id: "rename", separatorBefore: false });
+    expect(flatten(items)).not.toContain("auto-settle");
   });
 });
