@@ -211,6 +211,7 @@ type OpenChangeRequest = (selection: {
 
 /** Keeps links within an embedded PR detail surface on its owning page. */
 const ChangeRequestLinkOpenContext = createContext<OpenChangeRequest | undefined>(undefined);
+export const ChangeRequestLinkOpenProvider = ChangeRequestLinkOpenContext.Provider;
 
 export function useOpenChangeRequestLink(
   threadRef?: ScopedThreadRef,
