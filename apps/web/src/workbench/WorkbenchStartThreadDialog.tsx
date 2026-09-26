@@ -26,18 +26,9 @@ import {
 } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
 
-export function resolveWorkbenchStartThreadSelection(
+function resolveWorkbenchStartThreadSelection(
   entries: ReadonlyArray<ProviderInstanceEntry>,
-  preferred: ModelSelection | null | undefined,
 ): ModelSelection | null {
-  if (preferred) {
-    const preferredEntry = entries.find((entry) => entry.instanceId === preferred.instanceId);
-    // Keep a project's exact model selection, including custom models that are
-    // supplied by settings rather than the provider snapshot. If its instance
-    // disappeared or is disabled, let the user choose from a live instance.
-    if (preferredEntry && isProviderInstancePickerReady(preferredEntry)) return preferred;
-  }
-
   const entry = entries.find(
     (candidate) =>
       isProviderInstancePickerReady(candidate) &&
@@ -90,7 +81,7 @@ export function resolveWorkbenchStartThreadSelectionWithFallback({
       return candidate ?? null;
     }
   }
-  return resolveWorkbenchStartThreadSelection(entries, null);
+  return resolveWorkbenchStartThreadSelection(entries);
 }
 
 const useWorkbenchStartThreadSelection = ({

@@ -102,10 +102,6 @@ export function getWorkbenchTicketSummaryActionLabel(
   return summary?.text?.trim() ? "Regenerate summary" : "Generate summary";
 }
 
-export function isWorkbenchTicketStatus(value: unknown): value is WorkbenchTicketStatus {
-  return WORKBENCH_TICKET_STATUSES.some((status) => status === value);
-}
-
 export function getWorkbenchTicketStatusMoves(
   currentStatus: WorkbenchTicketStatus,
 ): ReadonlyArray<WorkbenchTicketStatus> {
@@ -314,22 +310,6 @@ export function getWorkbenchTicketRepositoryProjectIds(
   return ticket.repositoryProjectIds.length > 0
     ? ticket.repositoryProjectIds
     : [ticket.primaryT3ProjectId];
-}
-
-export function resolveWorkbenchRepositoryOpenCwd({
-  repositoryId,
-  primaryProjectId,
-  repositoryWorkspaceRoot,
-  activeThreadWorktreePath,
-}: {
-  readonly repositoryId: ProjectId;
-  readonly primaryProjectId: ProjectId;
-  readonly repositoryWorkspaceRoot: string;
-  readonly activeThreadWorktreePath: string | null | undefined;
-}): string {
-  return repositoryId === primaryProjectId
-    ? (activeThreadWorktreePath ?? repositoryWorkspaceRoot)
-    : repositoryWorkspaceRoot;
 }
 
 export function isWorkbenchThreadArchived(
