@@ -257,6 +257,35 @@ export const layer = Layer.effect(
       return null;
     });
 
+    const positionNewJiraTicket = Effect.fnUntraced(function* ({
+      input,
+      ticketId,
+      updatedAt,
+    }: {
+      input: Parameters<JiraTicketImporter["Service"]["upsertJiraProjection"]>[0];
+      ticketId: WorkbenchTicketId;
+      updatedAt: string;
+    }) {
+      if (input.mappedStatus === "todo" && !input.issue.flagged) return;
+      const refreshed = yield* workbench.getSnapshot.pipe(
+        Effect.mapError(() => importError("The imported Jira Ticket could not be reloaded.")),
+      );
+      const created = refreshed.tickets.find((ticket) => ticket.id === ticketId);
+      if (created) {
+        yield* updateJiraOwnedTicketFields({
+          id: created.id,
+          expectedRevision: created.revision,
+          status: input.mappedStatus,
+          blocked: input.issue.flagged,
+          updatedAt,
+        }).pipe(
+          Effect.mapError(() =>
+            importError(`Jira issue ${input.issue.key} could not be positioned.`),
+          ),
+        );
+      }
+    });
+
     return JiraTicketImporter.of({
       upsertJiraProjection: (input) =>
         Effect.gen(function* () {
@@ -326,28 +355,8 @@ export const layer = Layer.effect(
               );
             }
           }
-          if (
-            existingTicket === undefined &&
-            (input.mappedStatus !== "todo" || input.issue.flagged)
-          ) {
-            const refreshed = yield* workbench.getSnapshot.pipe(
-              Effect.mapError(() => importError("The imported Jira Ticket could not be reloaded.")),
-            );
-            const created = refreshed.tickets.find((ticket) => ticket.id === ticketId);
-            if (created) {
-              yield* updateJiraOwnedTicketFields({
-                id: created.id,
-                expectedRevision: created.revision,
-                status: input.mappedStatus,
-                blocked: input.issue.flagged,
-                updatedAt,
-              }).pipe(
-                Effect.mapError(() =>
-                  importError(`Jira issue ${input.issue.key} could not be positioned.`),
-                ),
-              );
-            }
-          }
+          if (existingTicket === undefined)
+            yield* positionNewJiraTicket({ input, ticketId, updatedAt });
           if (existingTicket)
             yield* restoreCreationScope({ workbench, ticketId, input, updatedAt });
           yield* recheckPendingTicketSummary({ workbench, ticketId, ticket: existingTicket });

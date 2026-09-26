@@ -23,6 +23,9 @@ export interface WorkbenchSearch {
   readonly jiraOAuthError?: string;
 }
 
+const nonemptySearchText = (value: unknown): value is string =>
+  typeof value === "string" && value.trim().length > 0;
+
 export const parseWorkbenchSearch = (raw: Record<string, unknown>): WorkbenchSearch => {
   // Accept existing links and the standard Jira callback keys only at this boundary.
   const projectId = raw.workbenchProjectId ?? raw.projectId;
@@ -35,9 +38,9 @@ export const parseWorkbenchSearch = (raw: Record<string, unknown>): WorkbenchSea
     ...(isWorkbenchProjectId(projectId) ? { workbenchProjectId: projectId } : {}),
     ...(ticketId ? { ticketId } : isWorkbenchEpicId(raw.epicId) ? { epicId: raw.epicId } : {}),
     ...(raw.create === "workspace" ? { create: "workspace" as const } : {}),
-    ...(typeof code === "string" && code.trim().length > 0 ? { jiraOAuthCode: code } : {}),
-    ...(typeof state === "string" && state.trim().length > 0 ? { jiraOAuthState: state } : {}),
-    ...(typeof error === "string" && error.trim().length > 0 ? { jiraOAuthError: error } : {}),
+    ...(nonemptySearchText(code) ? { jiraOAuthCode: code } : {}),
+    ...(nonemptySearchText(state) ? { jiraOAuthState: state } : {}),
+    ...(nonemptySearchText(error) ? { jiraOAuthError: error } : {}),
   };
 };
 

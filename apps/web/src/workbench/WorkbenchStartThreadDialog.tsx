@@ -26,18 +26,9 @@ import {
 } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
 
-export function resolveWorkbenchStartThreadSelection(
+function resolveWorkbenchStartThreadSelection(
   entries: ReadonlyArray<ProviderInstanceEntry>,
-  preferred: ModelSelection | null | undefined,
 ): ModelSelection | null {
-  if (preferred) {
-    const preferredEntry = entries.find((entry) => entry.instanceId === preferred.instanceId);
-    // Keep a project's exact model selection, including custom models that are
-    // supplied by settings rather than the provider snapshot. If its instance
-    // disappeared or is disabled, let the user choose from a live instance.
-    if (preferredEntry && isProviderInstancePickerReady(preferredEntry)) return preferred;
-  }
-
   const entry = entries.find(
     (candidate) =>
       isProviderInstancePickerReady(candidate) &&
@@ -55,15 +46,14 @@ type WorkbenchModelOption = {
   readonly isUnavailable?: boolean | undefined;
 };
 
-export function isWorkbenchStartThreadSelectionAvailable(
+function isWorkbenchStartThreadSelectionAvailable(
   entries: ReadonlyArray<ProviderInstanceEntry>,
   selection: ModelSelection | null | undefined,
-  modelOptionsByInstance?: ReadonlyMap<ProviderInstanceId, ReadonlyArray<WorkbenchModelOption>>,
+  modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<WorkbenchModelOption>>,
 ): boolean {
   if (!selection || selection.model.length === 0) return false;
   const entry = entries.find((candidate) => candidate.instanceId === selection.instanceId);
   if (!entry || !isProviderInstancePickerReady(entry)) return false;
-  if (!modelOptionsByInstance) return true;
   return (modelOptionsByInstance.get(selection.instanceId) ?? []).some(
     (option) => option.slug === selection.model && option.isUnavailable !== true,
   );
@@ -90,7 +80,7 @@ export function resolveWorkbenchStartThreadSelectionWithFallback({
       return candidate ?? null;
     }
   }
-  return resolveWorkbenchStartThreadSelection(entries, null);
+  return resolveWorkbenchStartThreadSelection(entries);
 }
 
 const useWorkbenchStartThreadSelection = ({
@@ -224,20 +214,14 @@ export function WorkbenchStartThreadDialog({
   const dialogDescription =
     customDescription ??
     "Choose the provider and model. The new Thread opens with ticket context attached; add an optional message and send it when you’re ready.";
-  const {
-    instanceEntries,
-    resolvedSelection,
-    activeEntry,
-    modelOptionsByInstance,
-    selectionAvailable,
-    handleInstanceModelChange,
-    handleModelOptionsChange,
-  } = useWorkbenchStartThreadSelection({
+  const selection = useWorkbenchStartThreadSelection({
     providers,
     settings,
     defaultModelSelection,
     stickyModelSelection,
   });
+
+  const { resolvedSelection, selectionAvailable } = selection;
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -245,12 +229,8 @@ export function WorkbenchStartThreadDialog({
     onStart(resolvedSelection);
   };
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    onOpenChange(nextOpen);
-  };
-
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup>
         <DialogHeader>
           <DialogTitle>{dialogTitle}</DialogTitle>
@@ -258,54 +238,16 @@ export function WorkbenchStartThreadDialog({
         </DialogHeader>
         <DialogPanel>
           <form id="workbench-start-thread" className="space-y-5" onSubmit={submit}>
-            {resolvedSelection && activeEntry ? (
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <p className="text-sm font-medium">Provider and model</p>
-                  <p className="text-xs text-muted-foreground">
-                    This choice is saved on the Thread when it starts.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <ProviderModelPicker
-                    activeInstanceId={resolvedSelection.instanceId}
-                    model={resolvedSelection.model}
-                    lockedProvider={null}
-                    instanceEntries={instanceEntries}
-                    modelOptionsByInstance={modelOptionsByInstance}
-                    triggerAriaLabel="Thread provider and model"
-                    onInstanceModelChange={handleInstanceModelChange}
-                  />
-                  <TraitsPicker
-                    provider={activeEntry.driverKind}
-                    instanceId={resolvedSelection.instanceId}
-                    models={activeEntry.models}
-                    model={resolvedSelection.model}
-                    prompt=""
-                    onPromptChange={() => {}}
-                    modelOptions={resolvedSelection.options ?? []}
-                    allowPromptInjectedEffort={false}
-                    planModeEnabled={settings.planModeEnabled}
-                    onModelOptionsChange={handleModelOptionsChange}
-                  />
-                </div>
-                {!selectionAvailable ? (
-                  <p className="text-sm text-warning-foreground" role="status">
-                    Choose an available provider and model before starting the Thread.
-                  </p>
-                ) : null}
-              </div>
-            ) : (
-              <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                No available Agent providers are connected.
-              </p>
-            )}
+            <WorkbenchStartThreadModelFields
+              selection={selection}
+              planModeEnabled={settings.planModeEnabled}
+            />
           </form>
         </DialogPanel>
         <DialogFooter>
           <Button
             disabled={pending}
-            onClick={() => handleOpenChange(false)}
+            onClick={() => onOpenChange(false)}
             type="button"
             variant="outline"
           >
@@ -321,5 +263,65 @@ export function WorkbenchStartThreadDialog({
         </DialogFooter>
       </DialogPopup>
     </Dialog>
+  );
+}
+
+function WorkbenchStartThreadModelFields({
+  selection,
+  planModeEnabled,
+}: {
+  selection: ReturnType<typeof useWorkbenchStartThreadSelection>;
+  planModeEnabled: boolean;
+}) {
+  const {
+    resolvedSelection,
+    activeEntry,
+    instanceEntries,
+    modelOptionsByInstance,
+    handleInstanceModelChange,
+    handleModelOptionsChange,
+    selectionAvailable,
+  } = selection;
+  return resolvedSelection && activeEntry ? (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <p className="text-sm font-medium">Provider and model</p>
+        <p className="text-xs text-muted-foreground">
+          This choice is saved on the Thread when it starts.
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <ProviderModelPicker
+          activeInstanceId={resolvedSelection.instanceId}
+          model={resolvedSelection.model}
+          lockedProvider={null}
+          instanceEntries={instanceEntries}
+          modelOptionsByInstance={modelOptionsByInstance}
+          triggerAriaLabel="Thread provider and model"
+          onInstanceModelChange={handleInstanceModelChange}
+        />
+        <TraitsPicker
+          provider={activeEntry.driverKind}
+          instanceId={resolvedSelection.instanceId}
+          models={activeEntry.models}
+          model={resolvedSelection.model}
+          prompt=""
+          onPromptChange={() => {}}
+          modelOptions={resolvedSelection.options ?? []}
+          allowPromptInjectedEffort={false}
+          planModeEnabled={planModeEnabled}
+          onModelOptionsChange={handleModelOptionsChange}
+        />
+      </div>
+      {!selectionAvailable ? (
+        <p className="text-sm text-warning-foreground" role="status">
+          Choose an available provider and model before starting the Thread.
+        </p>
+      ) : null}
+    </div>
+  ) : (
+    <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+      No available Agent providers are connected.
+    </p>
   );
 }

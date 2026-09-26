@@ -6,6 +6,9 @@ on:
       - packages/workbench/**
       - apps/server/src/workbench/**
       - apps/web/src/workbench/**
+      - apps/desktop/src/workbench/**
+      - apps/mobile/src/workbench/**
+      - infra/workbench-auth/src/**
       - apps/web/src/routes/workbench.tsx
       - packages/contracts/**
       - packages/shared/**
@@ -27,6 +30,9 @@ on:
       - packages/workbench/**
       - apps/server/src/workbench/**
       - apps/web/src/workbench/**
+      - apps/desktop/src/workbench/**
+      - apps/mobile/src/workbench/**
+      - infra/workbench-auth/src/**
       - apps/web/src/routes/workbench.tsx
       - packages/contracts/**
       - packages/shared/**
@@ -116,7 +122,7 @@ jobs:
       - name: Test Workbench quality gate
         run: vp test run scripts/lib/workbench-quality.test.ts
 
-      - name: Gate new Workbench quality findings
+      - name: Gate Workbench complexity and new duplication
         env:
           FALLOW_AUDIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
         run: vp run --filter @t3tools/workbench fallow:audit

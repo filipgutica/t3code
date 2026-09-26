@@ -1,5 +1,5 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentId, WorkbenchTicketWorkspace } from "@t3tools/contracts";
+import type { EnvironmentId, VcsStatusResult, WorkbenchTicketWorkspace } from "@t3tools/contracts";
 import { CheckIcon, CopyIcon, FolderIcon, GitBranchIcon } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 
@@ -120,6 +120,17 @@ export function WorkbenchCheckoutDirectory({
   );
 }
 
+const checkoutBranchLabel = (status: { error: string | null; data: VcsStatusResult | null }) =>
+  status.error
+    ? "Branch unavailable"
+    : status.data === null
+      ? "Checking branch…"
+      : !status.data.isRepo
+        ? "Not a Git checkout"
+        : status.data.refName === null
+          ? "Detached HEAD"
+          : status.data.refName;
+
 export function WorkbenchCheckoutDetails({
   environmentId,
   cwd,
@@ -133,15 +144,7 @@ export function WorkbenchCheckoutDetails({
   readonly showPullRequest?: boolean;
 }) {
   const status = useEnvironmentQuery(vcsEnvironment.status({ environmentId, input: { cwd } }));
-  const branchLabel = status.error
-    ? "Branch unavailable"
-    : status.data === null
-      ? "Checking branch…"
-      : !status.data.isRepo
-        ? "Not a Git checkout"
-        : status.data.refName === null
-          ? "Detached HEAD"
-          : status.data.refName;
+  const branchLabel = checkoutBranchLabel(status);
   const branchValue = status.error ?? status.data?.refName ?? branchLabel;
   const canCopyBranch =
     status.error === null &&

@@ -10,7 +10,7 @@
     "minOccurrences": 2,
   },
   "health": {
-    // Keep new Workbench functions within Fallow's default complexity budget.
+    // Keep all Workbench production functions within Fallow's default complexity budget.
     "maxCyclomatic": 20,
     "maxCognitive": 15,
   },

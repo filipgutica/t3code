@@ -3,7 +3,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
-import { evaluateWorkbenchQuality } from "./lib/workbench-quality.ts";
+import { evaluateWorkbenchComplexity, evaluateWorkbenchQuality } from "./lib/workbench-quality.ts";
 
 const root = NodePath.resolve(import.meta.dirname, "..");
 const baseRef = NodeProcess.env.FALLOW_AUDIT_BASE ?? "HEAD^";
@@ -12,6 +12,10 @@ const ownedPaths = [
   "apps/server/src/workbench",
   "apps/web/src/workbench",
   "packages/contracts/src/workbench*",
+  "apps/desktop/src/workbench",
+  "apps/mobile/src/workbench",
+  "apps/web/src/routes/workbench.tsx",
+  "infra/workbench-auth/src",
 ];
 
 const diff = NodeChildProcess.execFileSync(
@@ -20,9 +24,26 @@ const diff = NodeChildProcess.execFileSync(
   { cwd: root, encoding: "utf8" },
 );
 
+// Full production complexity is enforced even when no Workbench file changed.
+const health = NodeChildProcess.spawnSync(
+  "fallow",
+  [
+    "--config",
+    "packages/workbench/.fallowrc.jsonc",
+    "health",
+    "--report-only",
+    "--format",
+    "json",
+    "--quiet",
+  ],
+  { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, stdio: ["pipe", "pipe", "inherit"] },
+);
+if (health.error) throw health.error;
+if (health.status !== 0 && health.status !== 1) NodeProcess.exit(health.status ?? 2);
+const complexityFailures = evaluateWorkbenchComplexity(JSON.parse(health.stdout));
+for (const failure of complexityFailures) console.error(failure);
 if (!diff.trim()) {
-  console.log("No Workbench changes to audit.");
-  NodeProcess.exit(0);
+  NodeProcess.exit(complexityFailures.length > 0 ? 1 : 0);
 }
 
 const result = NodeChildProcess.spawnSync(
@@ -55,8 +76,8 @@ if (result.error) throw result.error;
 NodeProcess.stdout.write(result.stdout);
 
 // Audit exit 1 can come from upstream/project-wide findings. This gate owns only
-// new Workbench complexity and clones; the existing package gate owns dead code.
+// new Workbench clones; full complexity was checked above and the package gate owns dead code.
 if (result.status !== 0 && result.status !== 1) NodeProcess.exit(result.status ?? 2);
 const failures = evaluateWorkbenchQuality({ report: JSON.parse(result.stdout), diff });
 for (const failure of failures) console.error(failure);
-NodeProcess.exit(failures.length > 0 ? 1 : 0);
+NodeProcess.exit(failures.length > 0 || complexityFailures.length > 0 ? 1 : 0);

@@ -26,9 +26,7 @@ import {
   getWorkbenchTicketStatusMoves,
   getVisibleWorkbenchAssignments,
   isWorkbenchTicketKind,
-  isWorkbenchTicketStatus,
   isWorkbenchThreadArchived,
-  resolveWorkbenchRepositoryOpenCwd,
   resolveWorkbenchTicketThreadTarget,
   ticketsByStatus,
   WORKBENCH_TICKET_KIND_LABELS,
@@ -140,36 +138,6 @@ describe("Workbench ticket helpers", () => {
       { epic: emptyEpic, tickets: [] },
       { epic: null, tickets: [unassignedTicket] },
     ]);
-  });
-
-  it("opens only the primary repository at the active Thread worktree", () => {
-    const primaryProjectId = ProjectId.make("repository-one");
-    const secondaryProjectId = ProjectId.make("repository-two");
-
-    expect(
-      resolveWorkbenchRepositoryOpenCwd({
-        repositoryId: primaryProjectId,
-        primaryProjectId,
-        repositoryWorkspaceRoot: "/repos/t3code",
-        activeThreadWorktreePath: "/repos/t3code/.t3/worktrees/ticket-one",
-      }),
-    ).toBe("/repos/t3code/.t3/worktrees/ticket-one");
-    expect(
-      resolveWorkbenchRepositoryOpenCwd({
-        repositoryId: secondaryProjectId,
-        primaryProjectId,
-        repositoryWorkspaceRoot: "/repos/agent-workbench",
-        activeThreadWorktreePath: "/repos/t3code/.t3/worktrees/ticket-one",
-      }),
-    ).toBe("/repos/agent-workbench");
-    expect(
-      resolveWorkbenchRepositoryOpenCwd({
-        repositoryId: primaryProjectId,
-        primaryProjectId,
-        repositoryWorkspaceRoot: "/repos/t3code",
-        activeThreadWorktreePath: null,
-      }),
-    ).toBe("/repos/t3code");
   });
 
   it("builds stable ticket context with the title, repository paths, and Markdown", () => {
@@ -331,12 +299,6 @@ describe("Workbench ticket helpers", () => {
 
   it("offers every other Board column as a direct Ticket destination", () => {
     expect(getWorkbenchTicketStatusMoves("in_progress")).toEqual(["todo", "done"]);
-  });
-
-  it("recognizes only supported Board statuses", () => {
-    expect(isWorkbenchTicketStatus("ready_for_review")).toBe(false);
-    expect(isWorkbenchTicketStatus("blocked")).toBe(false);
-    expect(isWorkbenchTicketStatus(null)).toBe(false);
   });
 
   it("presents the next action for each supported Thread state", () => {

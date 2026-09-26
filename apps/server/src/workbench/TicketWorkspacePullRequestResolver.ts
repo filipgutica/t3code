@@ -1,4 +1,9 @@
-import { WorkbenchOperationError } from "@t3tools/contracts";
+import {
+  WorkbenchOperationError,
+  type ThreadId,
+  type ProjectId,
+  type OrchestrationThreadShell,
+} from "@t3tools/contracts";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import {
@@ -14,7 +19,10 @@ import * as Option from "effect/Option";
 
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { PullRequestService } from "../pullRequest/PullRequestService.ts";
-import { SourceControlProviderRegistry } from "../sourceControl/SourceControlProviderRegistry.ts";
+import {
+  type SourceControlProviderHandle,
+  SourceControlProviderRegistry,
+} from "../sourceControl/SourceControlProviderRegistry.ts";
 
 export class TicketWorkspacePullRequestResolver extends Context.Service<
   TicketWorkspacePullRequestResolver,
@@ -27,10 +35,152 @@ const preparationError = (message: string) =>
     message,
   });
 
+const threadCandidateUrls = (thread: OrchestrationThreadShell) => {
+  if (thread.pullRequests.length > 0) {
+    return visibleThreadPullRequests(thread.pullRequests).map((reference) => reference.url);
+  }
+  return [thread.linkedPullRequest, thread.branchPullRequest]
+    .filter((reference) => reference !== null && reference !== undefined)
+    .map((reference) => reference.url);
+};
+
+const validatePullRequestHead = ({
+  request,
+  identity,
+  projectTitle,
+}: {
+  request: import("@t3tools/contracts").ChangeRequest;
+  identity: NonNullable<
+    import("@t3tools/contracts").OrchestrationProjectShell["repositoryIdentity"]
+  >;
+  projectTitle: string;
+}) => {
+  const headRepository = request.headRepositoryNameWithOwner?.toLowerCase();
+  const sameRepository = headRepository
+    ? headRepository === sourceControlRepositorySelector(identity)?.toLowerCase()
+    : request.isCrossRepository === false;
+  if (request.isCrossRepository === true || !sameRepository)
+    return preparationError(
+      `PR #${request.number} for ${projectTitle} has a fork or unknown head repository. Prepare that PR checkout separately; Workbench cannot safely reuse its branch automatically.`,
+    );
+  return null;
+};
+
 export const make = Effect.gen(function* () {
   const projections = yield* ProjectionSnapshotQuery;
   const pullRequests = yield* PullRequestService;
   const providers = yield* SourceControlProviderRegistry;
+
+  const collectThreadCandidates = Effect.fnUntraced(function* ({
+    assignedThreadIds,
+    addCandidate,
+  }: {
+    assignedThreadIds: ReadonlyArray<ThreadId>;
+    addCandidate: (url: string) => void;
+  }) {
+    for (const threadId of assignedThreadIds) {
+      const thread = yield* projections
+        .getThreadShellById(threadId)
+        .pipe(
+          Effect.mapError(() =>
+            preparationError("Could not load a linked Thread's pull requests."),
+          ),
+        );
+      if (
+        Option.isNone(thread) ||
+        thread.value.archivedAt !== null ||
+        thread.value.settledOverride === "settled"
+      )
+        continue;
+      for (const url of threadCandidateUrls(thread.value)) addCandidate(url);
+    }
+  });
+
+  const collectJiraCandidates = Effect.fnUntraced(function* ({
+    projectId,
+    projectTitle,
+    jiraIssueKey,
+    addCandidate,
+  }: {
+    projectId: ProjectId;
+    projectTitle: string;
+    jiraIssueKey: string;
+    addCandidate: (url: string) => void;
+  }) {
+    yield* pullRequests.invalidate({});
+    const result = yield* pullRequests
+      .list({
+        state: "open",
+        involvement: "all",
+        projectIds: [projectId],
+        query: jiraIssueKey,
+        limit: 50,
+      })
+      .pipe(
+        Effect.mapError(() =>
+          preparationError(
+            `Could not search ${projectTitle} for Ticket pull requests. Check the hosting connection and retry.`,
+          ),
+        ),
+      );
+    if (
+      result.errors.length > 0 ||
+      result.providers.some((provider) => provider.searchesOnHost && !provider.configured)
+    )
+      return yield* preparationError(
+        `Could not search all pull requests for ${projectTitle}. Check the hosting connection and retry.`,
+      );
+    if (result.truncated || Object.keys(result.nextCursors).length > 0)
+      return yield* preparationError(
+        `The PR search for ${projectTitle} is incomplete. Narrow the Ticket's linked PRs before preparing its workspace.`,
+      );
+    for (const entry of result.entries) {
+      if (
+        entry.projectId === projectId &&
+        entry.state === "open" &&
+        result.providers.some((provider) => provider.host === entry.host && provider.searchesOnHost)
+      )
+        addCandidate(entry.url);
+    }
+  });
+
+  const inspectOpenCandidates = Effect.fnUntraced(function* ({
+    handle,
+    context,
+    candidates,
+    workspaceRoot,
+    projectTitle,
+    repositoryKey,
+  }: {
+    handle: SourceControlProviderHandle;
+    context: NonNullable<SourceControlProviderHandle["context"]>;
+    candidates: ReadonlyMap<string, string>;
+    workspaceRoot: string;
+    projectTitle: string;
+    repositoryKey: string;
+  }) {
+    const openRequests = [];
+    for (const url of candidates.values()) {
+      const request = yield* handle.provider
+        .getChangeRequest({ cwd: workspaceRoot, context, reference: url })
+        .pipe(
+          Effect.mapError(() =>
+            preparationError(
+              `Could not inspect a linked PR for ${projectTitle}. Check the hosting connection and retry.`,
+            ),
+          ),
+        );
+      if (request.state !== "open") continue;
+      const parsed = parseChangeRequestUrl(request.url);
+      if (
+        !parsed ||
+        canonicalRepositoryKey(`${parsed.host}/${parsed.repository}`) !== repositoryKey
+      )
+        return yield* preparationError(`A linked PR does not belong to ${projectTitle}.`);
+      openRequests.push(request);
+    }
+    return openRequests;
+  });
 
   const resolveOpenPullRequestBranch: TicketWorkspacePullRequestResolver["Service"]["resolveOpenPullRequestBranch"] =
     Effect.fn("TicketWorkspacePullRequestResolver.resolveOpenPullRequestBranch")(function* (input) {
@@ -58,67 +208,16 @@ export const make = Effect.gen(function* () {
         )
           candidates.set(`${repositoryKey}#${parsed.number}`, url);
       };
-      for (const threadId of input.assignedThreadIds) {
-        const thread = yield* projections
-          .getThreadShellById(threadId)
-          .pipe(
-            Effect.mapError(() =>
-              preparationError("Could not load a linked Thread's pull requests."),
-            ),
-          );
-        if (
-          Option.isNone(thread) ||
-          thread.value.archivedAt !== null ||
-          thread.value.settledOverride === "settled"
-        )
-          continue;
-        if (thread.value.pullRequests.length > 0) {
-          for (const reference of visibleThreadPullRequests(thread.value.pullRequests))
-            addCandidate(reference.url);
-        } else {
-          for (const reference of [thread.value.linkedPullRequest, thread.value.branchPullRequest])
-            if (reference) addCandidate(reference.url);
-        }
-      }
+      yield* collectThreadCandidates({ assignedThreadIds: input.assignedThreadIds, addCandidate });
       if (input.jiraIssueKey) {
-        yield* pullRequests.invalidate({});
-        const result = yield* pullRequests
-          .list({
-            state: "open",
-            involvement: "all",
-            projectIds: [input.projectId],
-            query: input.jiraIssueKey,
-            limit: 50,
-          })
-          .pipe(
-            Effect.mapError(() =>
-              preparationError(
-                `Could not search ${project.title} for Ticket pull requests. Check the hosting connection and retry.`,
-              ),
-            ),
-          );
-        if (
-          result.errors.length > 0 ||
-          result.providers.some((provider) => provider.searchesOnHost && !provider.configured)
-        )
-          return yield* preparationError(
-            `Could not search all pull requests for ${project.title}. Check the hosting connection and retry.`,
-          );
-        if (result.truncated || Object.keys(result.nextCursors).length > 0)
-          return yield* preparationError(
-            `The PR search for ${project.title} is incomplete. Narrow the Ticket's linked PRs before preparing its workspace.`,
-          );
-        for (const entry of result.entries) {
-          if (
-            entry.projectId === input.projectId &&
-            entry.state === "open" &&
-            result.providers.some(
-              (provider) => provider.host === entry.host && provider.searchesOnHost,
-            )
-          )
-            addCandidate(entry.url);
-        }
+        yield* collectJiraCandidates({
+          projectId: input.projectId,
+          projectTitle: project.title,
+          jiraIssueKey: input.jiraIssueKey,
+          addCandidate,
+        });
       }
+
       if (candidates.size === 0) return Option.none();
       const handle = yield* providers
         .resolveHandle({ cwd: project.workspaceRoot })
@@ -136,40 +235,22 @@ export const make = Effect.gen(function* () {
         return yield* preparationError(
           `The remote for ${project.title} changed or is unavailable. Refresh the Project before preparing its workspace.`,
         );
-      const openRequests = [];
-      for (const url of candidates.values()) {
-        const request = yield* handle.provider
-          .getChangeRequest({ cwd: project.workspaceRoot, context, reference: url })
-          .pipe(
-            Effect.mapError(() =>
-              preparationError(
-                `Could not inspect a linked PR for ${project.title}. Check the hosting connection and retry.`,
-              ),
-            ),
-          );
-        if (request.state !== "open") continue;
-        const parsed = parseChangeRequestUrl(request.url);
-        if (
-          !parsed ||
-          canonicalRepositoryKey(`${parsed.host}/${parsed.repository}`) !== repositoryKey
-        )
-          return yield* preparationError(`A linked PR does not belong to ${project.title}.`);
-        openRequests.push(request);
-      }
+      const openRequests = yield* inspectOpenCandidates({
+        handle,
+        context,
+        candidates,
+        workspaceRoot: project.workspaceRoot,
+        projectTitle: project.title,
+        repositoryKey,
+      });
       if (openRequests.length === 0) return Option.none();
       if (openRequests.length > 1)
         return yield* preparationError(
           `Multiple open PRs match ${project.title} (${openRequests.map((pr) => `#${pr.number}`).join(", ")}). Resolve the Ticket's PR associations before preparing its workspace.`,
         );
       const request = openRequests[0]!;
-      const headRepository = request.headRepositoryNameWithOwner?.toLowerCase();
-      const sameRepository = headRepository
-        ? headRepository === sourceControlRepositorySelector(identity)?.toLowerCase()
-        : request.isCrossRepository === false;
-      if (request.isCrossRepository === true || !sameRepository)
-        return yield* preparationError(
-          `PR #${request.number} for ${project.title} has a fork or unknown head repository. Prepare that PR checkout separately; Workbench cannot safely reuse its branch automatically.`,
-        );
+      const headError = validatePullRequestHead({ request, identity, projectTitle: project.title });
+      if (headError !== null) return yield* headError;
       return Option.some({ remoteName: context.remoteName, remoteBranch: request.headRefName });
     });
   return TicketWorkspacePullRequestResolver.of({ resolveOpenPullRequestBranch });

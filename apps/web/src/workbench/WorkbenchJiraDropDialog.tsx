@@ -100,48 +100,15 @@ export function WorkbenchJiraDropDialog({
           <DialogDescription>Choose a Jira transition for “{ticket.title}”.</DialogDescription>
         </DialogHeader>
         <DialogPanel className="space-y-3">
-          {error && result === null ? (
-            <div className="space-y-3">
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-              <Button disabled={isPending} onClick={refresh} variant="outline">
-                Retry
-              </Button>
-            </div>
-          ) : result === null ? (
-            <p role="status" className="text-sm text-muted-foreground">
-              Loading Jira transitions…
-            </p>
-          ) : action?.kind === "unavailable" ? (
-            <p
-              role="status"
-              className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
-            >
-              {action.reason}
-            </p>
-          ) : action?.kind === "choose" ? (
-            <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">
-                Choose a transition to move this ticket to {columnTitle}.
-              </p>
-              {action.transitions.map((transition) => (
-                <Button
-                  key={transition.id}
-                  className="w-full justify-start"
-                  onClick={() => selectTransition(transition)}
-                  variant="outline"
-                >
-                  <span className="min-w-0 text-left">
-                    <span className="block truncate">{transition.name}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {transition.to.name}
-                    </span>
-                  </span>
-                </Button>
-              ))}
-            </div>
-          ) : null}
+          <JiraDropOptions
+            error={error}
+            result={result}
+            action={action}
+            isPending={isPending}
+            refresh={refresh}
+            columnTitle={columnTitle}
+            selectTransition={selectTransition}
+          />
         </DialogPanel>
         <DialogFooter>
           <Button onClick={onClose} variant="outline">
@@ -150,5 +117,70 @@ export function WorkbenchJiraDropDialog({
         </DialogFooter>
       </DialogPopup>
     </Dialog>
+  );
+}
+
+function JiraDropOptions({
+  error,
+  result,
+  action,
+  isPending,
+  refresh,
+  columnTitle,
+  selectTransition,
+}: {
+  error: string | null;
+  result: import("@t3tools/contracts").WorkbenchJiraGetTicketTransitionsResult | null;
+  action: ReturnType<typeof getWorkbenchJiraDropAction> | null;
+  isPending: boolean;
+  refresh: () => void;
+  columnTitle: string;
+  selectTransition: (transition: WorkbenchJiraTicketTransition) => void;
+}) {
+  return (
+    <>
+      {error && result === null ? (
+        <div className="space-y-3">
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+          <Button disabled={isPending} onClick={refresh} variant="outline">
+            Retry
+          </Button>
+        </div>
+      ) : result === null ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Loading Jira transitions…
+        </p>
+      ) : action?.kind === "unavailable" ? (
+        <p
+          role="status"
+          className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
+        >
+          {action.reason}
+        </p>
+      ) : action?.kind === "choose" ? (
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Choose a transition to move this ticket to {columnTitle}.
+          </p>
+          {action.transitions.map((transition) => (
+            <Button
+              key={transition.id}
+              className="w-full justify-start"
+              onClick={() => selectTransition(transition)}
+              variant="outline"
+            >
+              <span className="min-w-0 text-left">
+                <span className="block truncate">{transition.name}</span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {transition.to.name}
+                </span>
+              </span>
+            </Button>
+          ))}
+        </div>
+      ) : null}
+    </>
   );
 }

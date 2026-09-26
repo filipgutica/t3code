@@ -2,6 +2,7 @@ import type {
   EnvironmentId,
   WorkbenchJiraIssueLink,
   WorkbenchJiraTicketTransition,
+  WorkbenchJiraGetTicketTransitionsResult,
   WorkbenchTicket,
   WorkbenchTicketStatus,
 } from "@t3tools/contracts";
@@ -76,42 +77,13 @@ export function WorkbenchTicketStatusMenu({
                 </MenuItem>
               </>
             ) : null}
-            {result === null ? (
-              error ? null : (
-                <MenuItem disabled>Loading Jira transitions…</MenuItem>
-              )
-            ) : result.remoteUpdatedAt === null ? (
-              <MenuItem disabled>Refresh Jira before changing status.</MenuItem>
-            ) : result.transitions.length === 0 ? (
-              <MenuItem disabled>No transitions available.</MenuItem>
-            ) : (
-              result.transitions.map((transition) => (
-                <MenuItem
-                  key={transition.id}
-                  disabled={disabled || transition.unavailableReason !== null}
-                  onClick={() =>
-                    onJiraTransition({
-                      ticket,
-                      transitionId: transition.id,
-                      destination: transition.to,
-                      expectedRemoteUpdatedAt: result.remoteUpdatedAt,
-                    })
-                  }
-                >
-                  <span className="min-w-0">
-                    <span className="block">{transition.to.name}</span>
-                    {transition.name !== transition.to.name ? (
-                      <span className="block text-xs text-muted-foreground">{transition.name}</span>
-                    ) : null}
-                    {transition.unavailableReason ? (
-                      <span className="block text-xs text-muted-foreground">
-                        {transition.unavailableReason}
-                      </span>
-                    ) : null}
-                  </span>
-                </MenuItem>
-              ))
-            )}
+            <JiraTransitionOptions
+              result={result}
+              error={error}
+              ticket={ticket}
+              disabled={disabled}
+              onJiraTransition={onJiraTransition}
+            />
             {result !== null && isPending ? (
               <p role="status" className="px-2 py-1 text-xs text-muted-foreground">
                 Refreshing Jira transitions…
@@ -133,5 +105,53 @@ export function WorkbenchTicketStatusMenu({
         ) : null}
       </MenuPopup>
     </Menu>
+  );
+}
+
+function JiraTransitionOptions({
+  result,
+  error,
+  ticket,
+  disabled,
+  onJiraTransition,
+}: Pick<
+  Parameters<typeof WorkbenchTicketStatusMenu>[0],
+  "ticket" | "disabled" | "onJiraTransition"
+> & { result: WorkbenchJiraGetTicketTransitionsResult | null; error: string | null }) {
+  if (result === null)
+    return error ? null : <MenuItem disabled>Loading Jira transitions…</MenuItem>;
+  if (result.remoteUpdatedAt === null)
+    return <MenuItem disabled>Refresh Jira before changing status.</MenuItem>;
+  if (result.transitions.length === 0)
+    return <MenuItem disabled>No transitions available.</MenuItem>;
+  return (
+    <>
+      {result.transitions.map((transition) => (
+        <MenuItem
+          key={transition.id}
+          disabled={disabled || transition.unavailableReason !== null}
+          onClick={() =>
+            onJiraTransition({
+              ticket,
+              transitionId: transition.id,
+              destination: transition.to,
+              expectedRemoteUpdatedAt: result.remoteUpdatedAt,
+            })
+          }
+        >
+          <span className="min-w-0">
+            <span className="block">{transition.to.name}</span>
+            {transition.name !== transition.to.name ? (
+              <span className="block text-xs text-muted-foreground">{transition.name}</span>
+            ) : null}
+            {transition.unavailableReason ? (
+              <span className="block text-xs text-muted-foreground">
+                {transition.unavailableReason}
+              </span>
+            ) : null}
+          </span>
+        </MenuItem>
+      ))}
+    </>
   );
 }

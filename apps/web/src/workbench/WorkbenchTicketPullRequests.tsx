@@ -132,100 +132,146 @@ export function WorkbenchTicketPullRequests({
         ) : null}
       </div>
       <div className="min-h-0 space-y-2 px-3 py-2 xl:overflow-y-auto xl:overscroll-contain">
-        {rows.map(({ pullRequest, threadId, threadTitle, matchesTicket }) => {
-          const repositoryUrl = changeRequestRepositoryUrl(pullRequest.url);
-          return (
-            <div key={pullRequest.url.toLowerCase()} className="min-w-0">
-              <WorkbenchPullRequestLink environmentId={environmentId} pullRequest={pullRequest} />
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1.5 text-xs text-muted-foreground">
-                {repositoryUrl ? (
-                  <a
-                    href={repositoryUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="max-w-full break-words rounded-sm underline-offset-2 outline-none [overflow-wrap:anywhere] hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    {pullRequest.repository}
-                  </a>
-                ) : (
-                  <span className="max-w-full break-words [overflow-wrap:anywhere]">
-                    {pullRequest.repository}
-                  </span>
-                )}
-                {matchesTicket ? <Badge variant="secondary">Mentions {ticketKey}</Badge> : null}
-                {threadId !== null && threadTitle !== null ? (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Badge
-                          render={<button type="button" />}
-                          variant="outline"
-                          size="control"
-                          className="max-w-full shrink"
-                          aria-label={`Open linked Thread: ${threadTitle}`}
-                          onClick={() => onOpenThread(threadId)}
-                        />
-                      }
-                    >
-                      <MessageSquareIcon />
-                      <span className="min-w-0 truncate">Linked Thread</span>
-                    </TooltipTrigger>
-                    <TooltipPopup className="max-w-72 break-words">
-                      Linked through thread: {threadTitle}
-                    </TooltipPopup>
-                  </Tooltip>
-                ) : !matchesTicket ? (
-                  <Badge variant="secondary">Ticket workspace</Badge>
-                ) : null}
-              </div>
-            </div>
-          );
-        })}
-        {search.isPending ? (
-          <p role="status" className="text-xs text-muted-foreground">
-            Searching repositories…
-          </p>
-        ) : null}
-        {checkout.isPending ? (
-          <p role="status" className="text-xs text-muted-foreground">
-            Checking checkout pull requests…
-          </p>
-        ) : null}
-        {checkout.errors.map((error) => (
-          <p role="alert" key={error} className="break-words text-xs text-destructive">
-            {error}
-          </p>
+        {rows.map((row) => (
+          <WorkbenchTicketPullRequestRow
+            key={row.pullRequest.url.toLowerCase()}
+            environmentId={environmentId}
+            ticketKey={ticketKey}
+            row={row}
+            onOpenThread={onOpenThread}
+          />
         ))}
-        {search.error ? (
-          <p role="alert" className="break-words text-xs text-destructive">
-            PR search unavailable: {search.error}
-          </p>
-        ) : null}
-        {search.data?.errors.map((error) => (
-          <p role="alert" key={error.projectId} className="break-words text-xs text-destructive">
-            {error.projectTitle}: {error.message}
-          </p>
-        ))}
-        {unsupported ? (
-          <p className="text-xs text-muted-foreground">
-            Ticket-key search is unavailable for some repository hosts.
-          </p>
-        ) : null}
-        {rows.length === 0 &&
-        !search.isPending &&
-        !checkout.isPending &&
-        checkout.errors.length === 0 &&
-        !search.error &&
-        !unsupported &&
-        search.data?.errors.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No pull requests found.</p>
-        ) : null}
-        {search.data?.truncated ? (
-          <p className="text-xs text-muted-foreground">
-            Showing up to 50 matches per repository. More may be available on the host.
-          </p>
-        ) : null}
+        <WorkbenchPullRequestSearchStatus
+          search={search}
+          checkout={checkout}
+          unsupported={unsupported}
+          hasRows={rows.length > 0}
+        />
       </div>
     </section>
+  );
+}
+
+function WorkbenchTicketPullRequestRow({
+  environmentId,
+  ticketKey,
+  row,
+  onOpenThread,
+}: Pick<
+  Parameters<typeof WorkbenchTicketPullRequests>[0],
+  "environmentId" | "ticketKey" | "onOpenThread"
+> & { row: ReturnType<typeof mergeWorkbenchTicketPullRequests>[number] }) {
+  const { pullRequest, threadId, threadTitle, matchesTicket } = row;
+  const repositoryUrl = changeRequestRepositoryUrl(pullRequest.url);
+  return (
+    <div key={pullRequest.url.toLowerCase()} className="min-w-0">
+      <WorkbenchPullRequestLink environmentId={environmentId} pullRequest={pullRequest} />
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1.5 text-xs text-muted-foreground">
+        {repositoryUrl ? (
+          <a
+            href={repositoryUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="max-w-full break-words rounded-sm underline-offset-2 outline-none [overflow-wrap:anywhere] hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {pullRequest.repository}
+          </a>
+        ) : (
+          <span className="max-w-full break-words [overflow-wrap:anywhere]">
+            {pullRequest.repository}
+          </span>
+        )}
+        {matchesTicket ? <Badge variant="secondary">Mentions {ticketKey}</Badge> : null}
+        {threadId !== null && threadTitle !== null ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Badge
+                  render={<button type="button" />}
+                  variant="outline"
+                  size="control"
+                  className="max-w-full shrink"
+                  aria-label={`Open linked Thread: ${threadTitle}`}
+                  onClick={() => onOpenThread(threadId)}
+                />
+              }
+            >
+              <MessageSquareIcon />
+              <span className="min-w-0 truncate">Linked Thread</span>
+            </TooltipTrigger>
+            <TooltipPopup className="max-w-72 break-words">
+              Linked through thread: {threadTitle}
+            </TooltipPopup>
+          </Tooltip>
+        ) : !matchesTicket ? (
+          <Badge variant="secondary">Ticket workspace</Badge>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function WorkbenchPullRequestSearchStatus({
+  search,
+  checkout,
+  unsupported,
+  hasRows,
+}: {
+  search: ReturnType<typeof usePullRequestList>;
+  checkout: {
+    pullRequests: ReadonlyArray<TicketPullRequestReference>;
+    errors: ReadonlyArray<string>;
+    isPending: boolean;
+  };
+  unsupported: boolean | undefined;
+  hasRows: boolean;
+}) {
+  return (
+    <>
+      {search.isPending ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          Searching repositories…
+        </p>
+      ) : null}
+      {checkout.isPending ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          Checking checkout pull requests…
+        </p>
+      ) : null}
+      {checkout.errors.map((error) => (
+        <p role="alert" key={error} className="break-words text-xs text-destructive">
+          {error}
+        </p>
+      ))}
+      {search.error ? (
+        <p role="alert" className="break-words text-xs text-destructive">
+          PR search unavailable: {search.error}
+        </p>
+      ) : null}
+      {search.data?.errors.map((error) => (
+        <p role="alert" key={error.projectId} className="break-words text-xs text-destructive">
+          {error.projectTitle}: {error.message}
+        </p>
+      ))}
+      {unsupported ? (
+        <p className="text-xs text-muted-foreground">
+          Ticket-key search is unavailable for some repository hosts.
+        </p>
+      ) : null}
+      {!hasRows &&
+      !search.isPending &&
+      !checkout.isPending &&
+      checkout.errors.length === 0 &&
+      !search.error &&
+      !unsupported &&
+      search.data?.errors.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No pull requests found.</p>
+      ) : null}
+      {search.data?.truncated ? (
+        <p className="text-xs text-muted-foreground">
+          Showing up to 50 matches per repository. More may be available on the host.
+        </p>
+      ) : null}
+    </>
   );
 }

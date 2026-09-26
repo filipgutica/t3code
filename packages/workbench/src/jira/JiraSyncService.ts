@@ -119,6 +119,48 @@ export const make = Effect.gen(function* () {
   const syncBinding: JiraSyncServiceShape["syncBinding"] = (input) =>
     withBindingPermit(input.bindingId, syncBindingUnlocked(input));
 
+  const readCoolingDownSyncResult = Effect.fnUntraced(function* ({
+    binding,
+    inMemoryAttemptAt,
+  }: {
+    binding: WorkbenchJiraBinding;
+    inMemoryAttemptAt: number | undefined;
+  }) {
+    const persistedSyncedAt = parseTimestamp(binding.lastSyncedAt);
+    const previousError =
+      persistedSyncedAt !== null &&
+      inMemoryAttemptAt !== undefined &&
+      persistedSyncedAt >= inMemoryAttemptAt
+        ? undefined
+        : (yield* Ref.get(lastAttemptErrors)).get(binding.id);
+    if (binding.lastSyncError !== null || previousError !== undefined) {
+      return yield* (
+        previousError ??
+          syncError(
+            "request_failed",
+            binding.lastSyncError ?? "Jira synchronization is cooling down; try again shortly.",
+          )
+      );
+    }
+    if (binding.lastSyncedAt !== null) {
+      const links = yield* repository
+        .listIssueLinks(binding.id)
+        .pipe(Effect.mapError(repositoryError));
+      return {
+        bindingId: binding.id,
+        syncedAt: binding.lastSyncedAt,
+        activated: 0,
+        updated: 0,
+        deactivated: 0,
+        links,
+      } satisfies WorkbenchJiraSyncResult;
+    }
+    return yield* syncError(
+      "request_failed",
+      "Jira synchronization is cooling down; try again shortly.",
+    );
+  });
+
   const syncBindingUnlocked = Effect.fn("JiraSyncService.syncBindingUnlocked")(function* (
     input: WorkbenchJiraSyncBindingInput,
   ) {
@@ -161,39 +203,7 @@ export const make = Effect.gen(function* () {
           : (parseTimestamp(binding.updatedAt) ?? Number.NEGATIVE_INFINITY),
       );
     if (input.background === true && now - recentAttemptAt < BACKGROUND_SYNC_COOLDOWN_MS) {
-      const persistedSyncedAt = parseTimestamp(binding.lastSyncedAt);
-      const previousError =
-        persistedSyncedAt !== null &&
-        inMemoryAttemptAt !== undefined &&
-        persistedSyncedAt >= inMemoryAttemptAt
-          ? undefined
-          : (yield* Ref.get(lastAttemptErrors)).get(binding.id);
-      if (binding.lastSyncError !== null || previousError !== undefined) {
-        return yield* (
-          previousError ??
-            syncError(
-              "request_failed",
-              binding.lastSyncError ?? "Jira synchronization is cooling down; try again shortly.",
-            )
-        );
-      }
-      if (binding.lastSyncedAt !== null) {
-        const links = yield* repository
-          .listIssueLinks(binding.id)
-          .pipe(Effect.mapError(repositoryError));
-        return {
-          bindingId: binding.id,
-          syncedAt: binding.lastSyncedAt,
-          activated: 0,
-          updated: 0,
-          deactivated: 0,
-          links,
-        } satisfies WorkbenchJiraSyncResult;
-      }
-      return yield* syncError(
-        "request_failed",
-        "Jira synchronization is cooling down; try again shortly.",
-      );
+      return yield* readCoolingDownSyncResult({ binding, inMemoryAttemptAt });
     }
     yield* Ref.update(lastAttemptAt, (attempts) => new Map(attempts).set(binding.id, now));
 
@@ -239,7 +249,13 @@ export const make = Effect.gen(function* () {
         const missingSprintCount = selectedSprints.length - retainedSprints.length;
         observedActiveSprintIdsForError =
           missingSprintCount === 0 ? observedActiveSprintIds : binding.observedActiveSprintIds;
-        if (missingSprintCount > 0) {
+        const resolveFollowedSprints = Effect.fnUntraced(function* () {
+          if (missingSprintCount === 0) {
+            return selectedSprints.map((sprint) => {
+              const activeSprint = activeById.get(sprint.id)!;
+              return { id: activeSprint.id, name: activeSprint.name };
+            });
+          }
           if (binding.observedActiveSprintIds.length === 0) {
             return yield* syncError(
               "invalid_binding",
@@ -260,16 +276,12 @@ export const make = Effect.gen(function* () {
             );
           }
           let replacementIndex = 0;
-          selectedSprints = selectedSprints.map((sprint) => {
+          return selectedSprints.map((sprint) => {
             const replacement = activeById.get(sprint.id) ?? newActiveSprints[replacementIndex++];
             return { id: replacement!.id, name: replacement!.name };
           });
-        } else {
-          selectedSprints = selectedSprints.map((sprint) => {
-            const activeSprint = activeById.get(sprint.id)!;
-            return { id: activeSprint.id, name: activeSprint.name };
-          });
-        }
+        });
+        selectedSprints = yield* resolveFollowedSprints();
       }
 
       const representativeSprint = selectedSprints[0];
@@ -341,39 +353,46 @@ export const make = Effect.gen(function* () {
             { ...creation, ticketId: WorkbenchTicketId.make(creation.ticketId) },
           ]),
       );
-      const issuesById = new Map<string, WorkbenchJiraIssueSnapshot>();
-      for (const selectedSprint of selectedSprints) {
-        const sprintIssues = yield* api.listAssignedSprintIssues({
-          connectionId: effectiveBinding.connectionId,
-          boardId: effectiveBinding.boardId,
-          sprintId: selectedSprint.id,
-        });
-        for (const issue of sprintIssues) {
-          if (!issuesById.has(issue.issueId)) issuesById.set(issue.issueId, issue);
+      const readSelectedSprintIssues = Effect.fnUntraced(function* () {
+        const issuesById = new Map<string, WorkbenchJiraIssueSnapshot>();
+        for (const selectedSprint of selectedSprints) {
+          const sprintIssues = yield* api.listAssignedSprintIssues({
+            connectionId: effectiveBinding.connectionId,
+            boardId: effectiveBinding.boardId,
+            sprintId: selectedSprint.id,
+          });
+          for (const issue of sprintIssues) {
+            if (!issuesById.has(issue.issueId)) issuesById.set(issue.issueId, issue);
+          }
         }
-      }
-      const issues = Array.from(issuesById.values());
+        return Array.from(issuesById.values());
+      });
+      const issues = yield* readSelectedSprintIssues();
+      const preflightIssueImports = Effect.fnUntraced(function* () {
+        const imports = [] as Array<{
+          readonly issue: (typeof issues)[number];
+          readonly mappedStatus: WorkbenchJiraBinding["statusMappings"][number]["workbenchStatus"];
+        }>;
+        for (const issue of issues) {
+          // A remote issue whose local projection was interrupted must remain
+          // out of generic sync until the migration retry confirms its local
+          // revision. Importing it here could overwrite a concurrent edit.
+          if (incompleteCreationIssueIds.has(issue.issueId)) continue;
+          const mappedStatus = effectiveBinding.statusMappings.find(
+            (mapping) => mapping.jiraStatusId === issue.status.id,
+          )?.workbenchStatus;
+          if (mappedStatus === undefined) {
+            return yield* syncError(
+              "status_unmapped",
+              `Jira status ${issue.status.name} is not mapped to a Workbench column.`,
+            );
+          }
+          imports.push({ issue, mappedStatus });
+        }
 
-      const imports = [] as Array<{
-        readonly issue: (typeof issues)[number];
-        readonly mappedStatus: WorkbenchJiraBinding["statusMappings"][number]["workbenchStatus"];
-      }>;
-      for (const issue of issues) {
-        // A remote issue whose local projection was interrupted must remain
-        // out of generic sync until the migration retry confirms its local
-        // revision. Importing it here could overwrite a concurrent edit.
-        if (incompleteCreationIssueIds.has(issue.issueId)) continue;
-        const mappedStatus = effectiveBinding.statusMappings.find(
-          (mapping) => mapping.jiraStatusId === issue.status.id,
-        )?.workbenchStatus;
-        if (mappedStatus === undefined) {
-          return yield* syncError(
-            "status_unmapped",
-            `Jira status ${issue.status.name} is not mapped to a Workbench column.`,
-          );
-        }
-        imports.push({ issue, mappedStatus });
-      }
+        return imports;
+      });
+      const imports = yield* preflightIssueImports();
 
       const syncedAt = DateTime.formatIso(DateTime.makeUnsafe(yield* clock.currentTimeMillis));
       return yield* sql

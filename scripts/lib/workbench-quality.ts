@@ -1,5 +1,5 @@
 const isOwned = (path: string) =>
-  /^(packages\/workbench\/|apps\/(server|web)\/src\/workbench\/|packages\/contracts\/src\/workbench)/.test(
+  /^(packages\/workbench\/|apps\/(server|web|desktop|mobile)\/src\/workbench\/|packages\/contracts\/src\/workbench|apps\/web\/src\/routes\/workbench\.tsx$|infra\/workbench-auth\/src\/)/.test(
     path,
   );
 
@@ -35,6 +35,36 @@ const introduced = (value: unknown): boolean => {
   return value;
 };
 
+// Test fixtures and maintainer tooling are not shipped Workbench production code.
+const isProduction = (path: string) =>
+  isOwned(path) &&
+  !/(?:^|\/)(?:__tests__|test|tests|fixtures|test-support)(?:\/|$)|\.(?:test|spec)\.[cm]?[jt]sx?$/.test(
+    path,
+  );
+
+export const evaluateWorkbenchComplexity = (report: unknown) => {
+  const health = record(report);
+  if (health.kind !== "health") throw new Error("Expected a full Fallow health report");
+  const summary = record(health.summary);
+  if (number(summary.files_analyzed) <= 0 || number(summary.functions_analyzed) <= 0) {
+    throw new Error("Empty Fallow health analysis");
+  }
+  const failures: string[] = [];
+  for (const value of list(health.findings)) {
+    const finding = record(value);
+    const path = text(finding.path);
+    if (!isProduction(path)) continue;
+    const cyclomatic = number(finding.cyclomatic);
+    const cognitive = number(finding.cognitive);
+    if (cyclomatic > 20 || cognitive > 15) {
+      failures.push(
+        `${path}:${number(finding.line)}: complexity ${cyclomatic}/20, cognitive ${cognitive}/15`,
+      );
+    }
+  }
+  return failures;
+};
+
 // Use zero-context hunks so an unrelated upstream clone cannot make an existing
 // Workbench clone fail merely because its file has another edit elsewhere.
 const changedLines = (diff: string) => {
@@ -56,26 +86,9 @@ const changedLines = (diff: string) => {
 
 export const evaluateWorkbenchQuality = ({ report, diff }: { report: unknown; diff: string }) => {
   const audit = record(report);
-  const findings = list(record(audit.complexity).findings);
   const clones = list(record(audit.duplication).clone_groups);
   const changed = changedLines(diff);
   const failures: string[] = [];
-
-  for (const value of findings) {
-    const finding = record(value);
-    const path = text(finding.path);
-    const cyclomatic = number(finding.cyclomatic);
-    const cognitive = number(finding.cognitive);
-    if (
-      introduced(finding.introduced) &&
-      changed.has(path) &&
-      (cyclomatic > 20 || cognitive > 15)
-    ) {
-      failures.push(
-        `${path}:${number(finding.line)}: complexity ${cyclomatic}/20, cognitive ${cognitive}/15`,
-      );
-    }
-  }
 
   for (const value of clones) {
     const clone = record(value);

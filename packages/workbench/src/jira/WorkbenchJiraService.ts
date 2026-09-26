@@ -183,6 +183,42 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  const validateRemoteSprintSelection = Effect.fnUntraced(function* (
+    input: Pick<WorkbenchJiraBinding, "connectionId" | "boardId" | "followActiveSprint"> & {
+      selectedSprints: ReadonlyArray<WorkbenchJiraSelectedSprint>;
+    },
+  ) {
+    let activeSprints: ReadonlyArray<WorkbenchJiraSprint> = [];
+    const sprints = yield* api.listSprints({
+      connectionId: input.connectionId,
+      boardId: input.boardId,
+    });
+    activeSprints = input.followActiveSprint
+      ? sprints.filter((sprint) => sprint.state === "active")
+      : [];
+    const selectedRemoteSprints = input.selectedSprints.map((selectedSprint) =>
+      sprints.find((sprint) => sprint.id === selectedSprint.id),
+    );
+    if (selectedRemoteSprints.some((sprint) => sprint === undefined)) {
+      return yield* operationError("Select Jira sprints from the selected board.");
+    }
+    if (
+      input.followActiveSprint &&
+      selectedRemoteSprints.some((sprint) => sprint?.state !== "active")
+    ) {
+      return yield* operationError(
+        "Select only currently active Jira sprints, or turn off automatic sprint following.",
+      );
+    }
+    return {
+      activeSprints,
+      selectedSprints: selectedRemoteSprints.map((sprint) => ({
+        id: sprint!.id,
+        name: sprint!.name,
+      })),
+    };
+  });
+
   const validateBinding = Effect.fn("WorkbenchJiraService.validateBinding")(function* (input: {
     readonly projectId: WorkbenchJiraBinding["projectId"];
     readonly connectionId: WorkbenchJiraBinding["connectionId"];
@@ -227,10 +263,8 @@ export const make = Effect.gen(function* () {
         "Jira Tickets can only use repositories linked to this Workspace.",
       );
     }
-    if (input.statusMappings.length === 0) {
-      if (input.boardMode === "mapped") {
-        return yield* operationError("Map at least one Jira status to a Workbench column.");
-      }
+    if (input.statusMappings.length === 0 && input.boardMode === "mapped") {
+      return yield* operationError("Map at least one Jira status to a Workbench column.");
     }
     if (input.selectedSprints.length === 0) {
       return yield* operationError("Select at least one Jira sprint.");
@@ -247,36 +281,8 @@ export const make = Effect.gen(function* () {
         return yield* operationError("Each Jira status can be mapped only once.");
       }
     }
-    if (input.verifyRemote) {
-      const sprints = yield* api.listSprints({
-        connectionId: input.connectionId,
-        boardId: input.boardId,
-      });
-      activeSprints = input.followActiveSprint
-        ? sprints.filter((sprint) => sprint.state === "active")
-        : [];
-      const selectedRemoteSprints = input.selectedSprints.map((selectedSprint) =>
-        sprints.find((sprint) => sprint.id === selectedSprint.id),
-      );
-      if (selectedRemoteSprints.some((sprint) => sprint === undefined)) {
-        return yield* operationError("Select Jira sprints from the selected board.");
-      }
-      if (
-        input.followActiveSprint &&
-        selectedRemoteSprints.some((sprint) => sprint?.state !== "active")
-      ) {
-        return yield* operationError(
-          "Select only currently active Jira sprints, or turn off automatic sprint following.",
-        );
-      }
-      return {
-        activeSprints,
-        selectedSprints: selectedRemoteSprints.map((sprint) => ({
-          id: sprint!.id,
-          name: sprint!.name,
-        })),
-      };
-    }
+    if (input.verifyRemote) return yield* validateRemoteSprintSelection(input);
+
     return { activeSprints, selectedSprints: input.selectedSprints };
   });
 
@@ -381,6 +387,11 @@ export const make = Effect.gen(function* () {
           : null;
         const canonicalSelectedSprints = validation.selectedSprints;
         const representativeSprint = canonicalSelectedSprints[0]!;
+        const updatedStatusMappings = () => {
+          if (boardMode !== "mirror_jira") return input.statusMappings;
+          if (configuration === null) return existing.value.statusMappings;
+          return mirrorStatusMappings(configuration);
+        };
         const binding = {
           ...existing.value,
           ...input,
@@ -388,19 +399,13 @@ export const make = Effect.gen(function* () {
           sprintName: representativeSprint.name,
           followActiveSprint,
           selectedSprints: canonicalSelectedSprints,
-          observedActiveSprintIds: followActiveSprint
-            ? verifyRemote
+          observedActiveSprintIds:
+            followActiveSprint && verifyRemote
               ? validation.activeSprints.map((sprint) => sprint.id)
-              : existing.value.observedActiveSprintIds
-            : existing.value.observedActiveSprintIds,
+              : existing.value.observedActiveSprintIds,
           boardMode,
           boardColumns: configuration?.columns ?? existing.value.boardColumns,
-          statusMappings:
-            boardMode === "mirror_jira"
-              ? configuration === null
-                ? existing.value.statusMappings
-                : mirrorStatusMappings(configuration)
-              : input.statusMappings,
+          statusMappings: updatedStatusMappings(),
           // Only a successful migration may clear this flag. A binding edit
           // during an interrupted migration must keep automatic imports gated.
           localMigrationPending:
@@ -413,8 +418,6 @@ export const make = Effect.gen(function* () {
     );
 
   const createTicket: WorkbenchJiraServiceShape["createTicket"] = (input) =>
-    // Existing local Ticket publishing keeps its preflight and identity checks together.
-    // eslint-disable-next-line complexity
     Effect.gen(function* () {
       const bindings = yield* repository.listBindings().pipe(Effect.mapError(repositoryError));
       const matches = bindings.filter((binding) => binding.projectId === input.projectId);
@@ -453,71 +456,78 @@ export const make = Effect.gen(function* () {
           "Select valid linked repositories and a primary repository before creating a Jira Ticket.",
         );
       }
-      let remoteEpicIssueId: string | undefined;
-      if (input.epicId) {
-        const canonicalPrefix = `jira:${binding.id}:epic:`;
-        if (input.epicId.startsWith(canonicalPrefix)) {
-          remoteEpicIssueId = input.epicId.slice(canonicalPrefix.length);
-        } else {
-          const mappedEpic = yield* sql<{ readonly jiraIssueId: string }>`
+      const resolveTicketEpic = Effect.fnUntraced(function* () {
+        let remoteEpicIssueId: string | undefined;
+        if (input.epicId) {
+          const canonicalPrefix = `jira:${binding.id}:epic:`;
+          if (input.epicId.startsWith(canonicalPrefix)) {
+            remoteEpicIssueId = input.epicId.slice(canonicalPrefix.length);
+          } else {
+            const mappedEpic = yield* sql<{ readonly jiraIssueId: string }>`
             SELECT jira_issue_id AS "jiraIssueId"
             FROM workbench_jira_epic_links
             WHERE binding_id = ${binding.id} AND epic_id = ${input.epicId}
             LIMIT 1
           `.pipe(Effect.mapError(repositoryError));
-          remoteEpicIssueId = mappedEpic[0]?.jiraIssueId;
-        }
-        if (
-          remoteEpicIssueId === undefined ||
-          !before.epics.some(
-            (epic) =>
-              epic.id === input.epicId &&
-              epic.projectId === input.projectId &&
-              epic.archivedAt === null,
-          )
-        ) {
-          return yield* operationError(
-            "Select an active Jira Epic from this Workspace before creating the Ticket.",
-          );
-        }
-      }
-      const localTicket = before.tickets.find((ticket) => ticket.id === input.id);
-      if (input.existingLocalTicketRevision !== undefined && localTicket === undefined) {
-        return yield* operationError("The local Ticket no longer exists. Refresh the Workspace.");
-      }
-      if (localTicket) {
-        const creation = yield* sql<{ readonly bindingId: string }>`
-          SELECT binding_id AS "bindingId" FROM workbench_jira_ticket_creations WHERE ticket_id = ${input.id}
-        `.pipe(Effect.mapError(repositoryError));
-        if (creation[0]?.bindingId !== binding.id) {
-          if (input.existingLocalTicketRevision === undefined) {
-            return yield* operationError(
-              "This Ticket ID is already in use. Start a new Ticket creation.",
-            );
-          }
-          const links = yield* Effect.forEach(bindings, (candidate) =>
-            repository.listIssueLinks(candidate.id).pipe(Effect.mapError(repositoryError)),
-          );
-          if (links.some((entries) => entries.some((link) => link.ticketId === input.id))) {
-            return yield* operationError("This Ticket is already managed by Jira.");
+            remoteEpicIssueId = mappedEpic[0]?.jiraIssueId;
           }
           if (
-            localTicket.projectId !== input.projectId ||
-            localTicket.archivedAt !== null ||
-            localTicket.revision !== input.existingLocalTicketRevision ||
-            localTicket.title !== input.title ||
-            localTicket.markdown !== input.markdown ||
-            localTicket.kind !== input.kind ||
-            localTicket.primaryT3ProjectId !== input.primaryT3ProjectId ||
-            localTicket.repositoryProjectIds.length !== repositories.length ||
-            localTicket.repositoryProjectIds.some((id, index) => id !== repositories[index])
+            remoteEpicIssueId === undefined ||
+            !before.epics.some(
+              (epic) =>
+                epic.id === input.epicId &&
+                epic.projectId === input.projectId &&
+                epic.archivedAt === null,
+            )
           ) {
             return yield* operationError(
-              "The local Ticket changed. Refresh before publishing it to Jira.",
+              "Select an active Jira Epic from this Workspace before creating the Ticket.",
             );
           }
         }
-      }
+        return remoteEpicIssueId;
+      });
+      const validateLocalTicketPublication = Effect.fnUntraced(function* () {
+        const localTicket = before.tickets.find((ticket) => ticket.id === input.id);
+        if (input.existingLocalTicketRevision !== undefined && localTicket === undefined) {
+          return yield* operationError("The local Ticket no longer exists. Refresh the Workspace.");
+        }
+        if (localTicket) {
+          const creation = yield* sql<{ readonly bindingId: string }>`
+          SELECT binding_id AS "bindingId" FROM workbench_jira_ticket_creations WHERE ticket_id = ${input.id}
+        `.pipe(Effect.mapError(repositoryError));
+          if (creation[0]?.bindingId !== binding.id) {
+            if (input.existingLocalTicketRevision === undefined) {
+              return yield* operationError(
+                "This Ticket ID is already in use. Start a new Ticket creation.",
+              );
+            }
+            const links = yield* Effect.forEach(bindings, (candidate) =>
+              repository.listIssueLinks(candidate.id).pipe(Effect.mapError(repositoryError)),
+            );
+            if (links.some((entries) => entries.some((link) => link.ticketId === input.id))) {
+              return yield* operationError("This Ticket is already managed by Jira.");
+            }
+            if (
+              localTicket.projectId !== input.projectId ||
+              localTicket.archivedAt !== null ||
+              localTicket.revision !== input.existingLocalTicketRevision ||
+              localTicket.title !== input.title ||
+              localTicket.markdown !== input.markdown ||
+              localTicket.kind !== input.kind ||
+              localTicket.primaryT3ProjectId !== input.primaryT3ProjectId ||
+              localTicket.repositoryProjectIds.length !== repositories.length ||
+              localTicket.repositoryProjectIds.some((id, index) => id !== repositories[index])
+            ) {
+              return yield* operationError(
+                "The local Ticket changed. Refresh before publishing it to Jira.",
+              );
+            }
+          }
+        }
+      });
+      const remoteEpicIssueId = yield* resolveTicketEpic();
+      yield* validateLocalTicketPublication();
       const ticketId = yield* ticketWriter.createTicket({
         ...input,
         binding,
@@ -542,9 +552,7 @@ export const make = Effect.gen(function* () {
       return ticket;
     });
 
-  // Migration intentionally performs one preflight for all selected records before writes.
   const migrateLocalTickets: WorkbenchJiraServiceShape["migrateLocalTickets"] = (input) =>
-    // eslint-disable-next-line complexity
     Effect.gen(function* () {
       const bindingOption = yield* repository
         .getBinding(input.bindingId)
@@ -615,37 +623,42 @@ export const make = Effect.gen(function* () {
       if (input.tickets.length === 0 && requestedEpicItems.length === 0) {
         return yield* operationError("Select at least one local Ticket or Epic to migrate.");
       }
-      const tickets: Array<WorkbenchTicket> = [];
-      for (const requested of input.tickets) {
-        const ticket = snapshot.tickets.find((candidate) => candidate.id === requested.id);
-        if (ticket === undefined) {
-          return yield* operationError(
-            `Local Ticket ${requested.id} no longer exists. Refresh the Workspace and try again.`,
-          );
+      const preflightTickets = Effect.fnUntraced(function* () {
+        const tickets: Array<WorkbenchTicket> = [];
+        for (const requested of input.tickets) {
+          const ticket = snapshot.tickets.find((candidate) => candidate.id === requested.id);
+          if (ticket === undefined) {
+            return yield* operationError(
+              `Local Ticket ${requested.id} no longer exists. Refresh the Workspace and try again.`,
+            );
+          }
+          const completedPublish =
+            input.action === "publish" && completedTicketMigrations.has(ticket.id);
+          if (ticket.revision !== requested.revision && !completedPublish) {
+            return yield* operationError(
+              `Local Ticket ${requested.id} changed. Refresh the Workspace and confirm the migration again.`,
+            );
+          }
+          if (ticket.projectId !== binding.projectId || ticket.archivedAt !== null) {
+            return yield* operationError(
+              `Local Ticket ${requested.id} is not an active Ticket in the connected Workspace.`,
+            );
+          }
+          if (
+            (input.action === "delete" && completedTicketMigrations.has(ticket.id)) ||
+            (managedTicketIds.has(ticket.id) && !completedPublish) ||
+            ticket.id.startsWith("jira:")
+          ) {
+            return yield* operationError(
+              `Ticket ${ticket.id} is already managed by Jira and cannot be migrated as local work.`,
+            );
+          }
+          tickets.push(ticket);
         }
-        const completedPublish =
-          input.action === "publish" && completedTicketMigrations.has(ticket.id);
-        if (ticket.revision !== requested.revision && !completedPublish) {
-          return yield* operationError(
-            `Local Ticket ${requested.id} changed. Refresh the Workspace and confirm the migration again.`,
-          );
-        }
-        if (ticket.projectId !== binding.projectId || ticket.archivedAt !== null) {
-          return yield* operationError(
-            `Local Ticket ${requested.id} is not an active Ticket in the connected Workspace.`,
-          );
-        }
-        if (
-          (input.action === "delete" && completedTicketMigrations.has(ticket.id)) ||
-          (managedTicketIds.has(ticket.id) && !completedPublish) ||
-          ticket.id.startsWith("jira:")
-        ) {
-          return yield* operationError(
-            `Ticket ${ticket.id} is already managed by Jira and cannot be migrated as local work.`,
-          );
-        }
-        tickets.push(ticket);
-      }
+
+        return tickets;
+      });
+      const tickets = yield* preflightTickets();
 
       const requestedEpicIds = requestedEpicItems.map((epic) => epic.id);
       if (new Set(requestedEpicIds).size !== requestedEpicIds.length) {
@@ -665,115 +678,118 @@ export const make = Effect.gen(function* () {
           "Confirm every local Epic used by the selected Tickets before publishing.",
         );
       }
-      const epics: Array<WorkbenchEpic> = [];
-      for (const requested of requestedEpicItems) {
-        const epic = snapshot.epics.find((candidate) => candidate.id === requested.id);
-        if (epic === undefined) {
-          return yield* operationError(
-            `Local Epic ${requested.id} no longer exists. Refresh the Workspace and try again.`,
-          );
+      const preflightEpics = Effect.fnUntraced(function* () {
+        const epics: Array<WorkbenchEpic> = [];
+        for (const requested of requestedEpicItems) {
+          const epic = snapshot.epics.find((candidate) => candidate.id === requested.id);
+          if (epic === undefined) {
+            return yield* operationError(
+              `Local Epic ${requested.id} no longer exists. Refresh the Workspace and try again.`,
+            );
+          }
+          if (epic.updatedAt !== requested.updatedAt) {
+            return yield* operationError(
+              `Local Epic ${requested.id} changed. Refresh the Workspace and confirm the migration again.`,
+            );
+          }
+          if (input.action === "delete" && existingRemoteEpicIssueId(epic.id) !== undefined) {
+            return yield* operationError(
+              `Epic ${epic.id} is already managed by Jira and cannot be deleted as local work.`,
+            );
+          }
+          if (epic.projectId !== binding.projectId || epic.archivedAt !== null) {
+            return yield* operationError(
+              `Local Epic ${requested.id} is not an active Epic in the connected Workspace.`,
+            );
+          }
+          epics.push(epic);
         }
-        if (epic.updatedAt !== requested.updatedAt) {
-          return yield* operationError(
-            `Local Epic ${requested.id} changed. Refresh the Workspace and confirm the migration again.`,
-          );
-        }
-        if (input.action === "delete" && existingRemoteEpicIssueId(epic.id) !== undefined) {
-          return yield* operationError(
-            `Epic ${epic.id} is already managed by Jira and cannot be deleted as local work.`,
-          );
-        }
-        if (epic.projectId !== binding.projectId || epic.archivedAt !== null) {
-          return yield* operationError(
-            `Local Epic ${requested.id} is not an active Epic in the connected Workspace.`,
-          );
-        }
-        epics.push(epic);
-      }
+
+        return epics;
+      });
+      const epics = yield* preflightEpics();
 
       const now = DateTime.formatIso(DateTime.makeUnsafe(yield* clock.currentTimeMillis));
-      if (input.action === "delete") {
-        return yield* sql.withTransaction(
-          Effect.gen(function* () {
-            // Recheck every selected record inside the transaction. The
-            // initial snapshot prevents stale confirmation, while this check
-            // keeps a concurrent edit from producing a partial delete.
-            for (const ticket of tickets) {
-              const currentRows = yield* sql<{
-                readonly projectId: string;
-                readonly revision: number;
-                readonly archivedAt: string | null;
-              }>`
+      const deleteLocalRecords = Effect.fnUntraced(function* () {
+        // Recheck every selected record inside the transaction. The
+        // initial snapshot prevents stale confirmation, while this check
+        // keeps a concurrent edit from producing a partial delete.
+        for (const ticket of tickets) {
+          const currentRows = yield* sql<{
+            readonly projectId: string;
+            readonly revision: number;
+            readonly archivedAt: string | null;
+          }>`
                 SELECT workbench_project_id AS "projectId", revision,
                        archived_at AS "archivedAt"
                 FROM workbench_tickets
                 WHERE ticket_id = ${ticket.id}
                 LIMIT 1
               `;
-              const current = currentRows[0];
-              if (
-                current === undefined ||
-                current.projectId !== binding.projectId ||
-                current.archivedAt !== null ||
-                current.revision !== ticket.revision
-              ) {
-                return yield* operationError(
-                  `Local Ticket ${ticket.id} changed. Refresh the Workspace and confirm the deletion again.`,
-                );
-              }
-            }
+          const current = currentRows[0];
+          if (
+            current === undefined ||
+            current.projectId !== binding.projectId ||
+            current.archivedAt !== null ||
+            current.revision !== ticket.revision
+          ) {
+            return yield* operationError(
+              `Local Ticket ${ticket.id} changed. Refresh the Workspace and confirm the deletion again.`,
+            );
+          }
+        }
 
-            const selectedTicketIds = new Set<string>(tickets.map((ticket) => ticket.id));
-            for (const epic of epics) {
-              const currentRows = yield* sql<{
-                readonly projectId: string;
-                readonly updatedAt: string;
-                readonly archivedAt: string | null;
-              }>`
+        const selectedTicketIds = new Set<string>(tickets.map((ticket) => ticket.id));
+        for (const epic of epics) {
+          const currentRows = yield* sql<{
+            readonly projectId: string;
+            readonly updatedAt: string;
+            readonly archivedAt: string | null;
+          }>`
                 SELECT workbench_project_id AS "projectId", updated_at AS "updatedAt",
                        archived_at AS "archivedAt"
                 FROM workbench_epics
                 WHERE epic_id = ${epic.id}
                 LIMIT 1
               `;
-              const current = currentRows[0];
-              if (
-                current === undefined ||
-                current.projectId !== binding.projectId ||
-                current.archivedAt !== null ||
-                current.updatedAt !== epic.updatedAt
-              ) {
-                return yield* operationError(
-                  `Local Epic ${epic.id} changed. Refresh the Workspace and confirm the deletion again.`,
-                );
-              }
-              const references = yield* sql<{ readonly ticketId: string }>`
+          const current = currentRows[0];
+          if (
+            current === undefined ||
+            current.projectId !== binding.projectId ||
+            current.archivedAt !== null ||
+            current.updatedAt !== epic.updatedAt
+          ) {
+            return yield* operationError(
+              `Local Epic ${epic.id} changed. Refresh the Workspace and confirm the deletion again.`,
+            );
+          }
+          const references = yield* sql<{ readonly ticketId: string }>`
                 SELECT ticket_id AS "ticketId"
                 FROM workbench_tickets
                 WHERE epic_id = ${epic.id} AND deleted_at IS NULL
               `;
-              if (references.some((reference) => !selectedTicketIds.has(reference.ticketId))) {
-                return yield* operationError(
-                  `Local Epic ${epic.id} is still used by another Ticket. Confirm all of its Tickets before deleting it.`,
-                );
-              }
-            }
+          if (references.some((reference) => !selectedTicketIds.has(reference.ticketId))) {
+            return yield* operationError(
+              `Local Epic ${epic.id} is still used by another Ticket. Confirm all of its Tickets before deleting it.`,
+            );
+          }
+        }
 
-            for (const ticket of tickets) {
-              yield* workbench.deleteTicket({
-                ticketId: ticket.id,
-                expectedRevision: ticket.revision,
-                deletedAt: now,
-              });
-              yield* sql`UPDATE workbench_tickets SET epic_id = NULL WHERE ticket_id = ${ticket.id}`;
-            }
-            for (const epic of epics) {
-              // Deleted Tickets retain their history, but cannot keep a removed Epic alive.
-              yield* sql`
+        for (const ticket of tickets) {
+          yield* workbench.deleteTicket({
+            ticketId: ticket.id,
+            expectedRevision: ticket.revision,
+            deletedAt: now,
+          });
+          yield* sql`UPDATE workbench_tickets SET epic_id = NULL WHERE ticket_id = ${ticket.id}`;
+        }
+        for (const epic of epics) {
+          // Deleted Tickets retain their history, but cannot keep a removed Epic alive.
+          yield* sql`
                 UPDATE workbench_tickets SET epic_id = NULL
                 WHERE epic_id = ${epic.id} AND deleted_at IS NOT NULL
               `;
-              const deleted = yield* sql<{ readonly epicId: string }>`
+          const deleted = yield* sql<{ readonly epicId: string }>`
                 DELETE FROM workbench_epics
                 WHERE epic_id = ${epic.id}
                   AND workbench_project_id = ${binding.projectId}
@@ -781,32 +797,58 @@ export const make = Effect.gen(function* () {
                   AND updated_at = ${epic.updatedAt}
                 RETURNING epic_id AS "epicId"
               `;
-              if (deleted.length === 0) {
-                return yield* operationError(
-                  `Local Epic ${epic.id} changed. Refresh the Workspace and confirm the deletion again.`,
-                );
-              }
-            }
-            yield* completeLocalMigration(binding);
-            return {
-              action: input.action,
-              requestedTicketCount: tickets.length,
-              publishedTicketCount: 0,
-              publishedEpicCount: 0,
-              deletedTicketCount: tickets.length,
-              deletedEpicCount: epics.length,
-              ticketIds: tickets.map((ticket) => ticket.id),
-              epicIds: epics.map((epic) => epic.id),
-            } satisfies WorkbenchJiraMigrateLocalTicketsResult;
-          }),
-        );
+          if (deleted.length === 0) {
+            return yield* operationError(
+              `Local Epic ${epic.id} changed. Refresh the Workspace and confirm the deletion again.`,
+            );
+          }
+        }
+        yield* completeLocalMigration(binding);
+        return {
+          action: input.action,
+          requestedTicketCount: tickets.length,
+          publishedTicketCount: 0,
+          publishedEpicCount: 0,
+          deletedTicketCount: tickets.length,
+          deletedEpicCount: epics.length,
+          ticketIds: tickets.map((ticket) => ticket.id),
+          epicIds: epics.map((epic) => epic.id),
+        } satisfies WorkbenchJiraMigrateLocalTicketsResult;
+      });
+      if (input.action === "delete") {
+        return yield* sql.withTransaction(deleteLocalRecords());
       }
+
+      const ensureEpicUnchanged = Effect.fnUntraced(function* ({
+        epic,
+        message,
+      }: {
+        readonly epic: WorkbenchEpic;
+        readonly message: string;
+      }) {
+        const rows = yield* sql<{
+          readonly title: string;
+          readonly markdown: string;
+          readonly updatedAt: string;
+          readonly archivedAt: string | null;
+        }>`
+          SELECT title, markdown, updated_at AS "updatedAt", archived_at AS "archivedAt"
+          FROM workbench_epics WHERE epic_id = ${epic.id} LIMIT 1
+        `;
+        const current = rows[0];
+        if (
+          current === undefined ||
+          current.archivedAt !== null ||
+          current.updatedAt !== epic.updatedAt ||
+          current.title !== epic.title ||
+          current.markdown !== epic.markdown
+        )
+          return yield* operationError(message);
+      });
 
       const publishEpic = (epic: (typeof epics)[number]) =>
         sync.withBindingPermit(
           binding.id,
-          // The publish flow keeps its idempotency, CAS, and post-create checks together.
-          // eslint-disable-next-line complexity
           Effect.gen(function* () {
             const currentBindingOption = yield* repository
               .getBinding(binding.id)
@@ -889,29 +931,10 @@ export const make = Effect.gen(function* () {
             // Metadata preparation can involve remote reads. Re-read the
             // local Epic after those awaits so a concurrent edit cannot be
             // published under the original snapshot's fingerprint.
-            const currentEpicRows = yield* sql<{
-              readonly title: string;
-              readonly markdown: string;
-              readonly updatedAt: string;
-              readonly archivedAt: string | null;
-            }>`
-              SELECT title, markdown, updated_at AS "updatedAt", archived_at AS "archivedAt"
-              FROM workbench_epics
-              WHERE epic_id = ${epic.id}
-              LIMIT 1
-            `;
-            const currentEpic = currentEpicRows[0];
-            if (
-              currentEpic === undefined ||
-              currentEpic.archivedAt !== null ||
-              currentEpic.updatedAt !== epic.updatedAt ||
-              currentEpic.title !== epic.title ||
-              currentEpic.markdown !== epic.markdown
-            ) {
-              return yield* operationError(
-                `Local Epic ${epic.id} changed. Refresh the Workspace and confirm the migration again.`,
-              );
-            }
+            yield* ensureEpicUnchanged({
+              epic,
+              message: `Local Epic ${epic.id} changed. Refresh the Workspace and confirm the migration again.`,
+            });
             yield* sql`
               INSERT OR IGNORE INTO workbench_jira_epic_creations (
                 epic_id, binding_id, title, markdown, request_fingerprint, state, created_at, updated_at
@@ -958,29 +981,10 @@ export const make = Effect.gen(function* () {
             // The local Epic can change while Jira accepts the POST. Refuse
             // to attach that remote issue to a newer local revision; the
             // durable creation row remains available for an explicit retry.
-            const postCreateEpicRows = yield* sql<{
-              readonly title: string;
-              readonly markdown: string;
-              readonly updatedAt: string;
-              readonly archivedAt: string | null;
-            }>`
-              SELECT title, markdown, updated_at AS "updatedAt", archived_at AS "archivedAt"
-              FROM workbench_epics
-              WHERE epic_id = ${epic.id}
-              LIMIT 1
-            `;
-            const postCreateEpic = postCreateEpicRows[0];
-            if (
-              postCreateEpic === undefined ||
-              postCreateEpic.archivedAt !== null ||
-              postCreateEpic.updatedAt !== epic.updatedAt ||
-              postCreateEpic.title !== epic.title ||
-              postCreateEpic.markdown !== epic.markdown
-            ) {
-              return yield* operationError(
-                `Local Epic ${epic.id} changed while Jira was creating it. Refresh the Workspace before retrying.`,
-              );
-            }
+            yield* ensureEpicUnchanged({
+              epic,
+              message: `Local Epic ${epic.id} changed while Jira was creating it. Refresh the Workspace before retrying.`,
+            });
             yield* sql`
               INSERT INTO workbench_jira_epic_links (
                 binding_id, jira_issue_id, jira_issue_key, epic_id
@@ -998,33 +1002,36 @@ export const make = Effect.gen(function* () {
         const remote = yield* publishEpic(epic);
         epicIssues.set(epic.id, remote.id);
       }
-      for (const requested of input.tickets) {
-        const ticket = tickets.find((candidate) => candidate.id === requested.id)!;
-        if (completedTicketMigrations.has(ticket.id)) continue;
-        const remoteEpicIssueId =
-          ticket.epicId === null
-            ? undefined
-            : (epicIssues.get(ticket.epicId) ?? existingRemoteEpicIssueId(ticket.epicId));
-        if (ticket.epicId !== null && remoteEpicIssueId === undefined) {
-          return yield* operationError(
-            `Local Epic ${ticket.epicId} was not published. Retry the migration before importing Jira.`,
-          );
+      const publishTickets = Effect.fnUntraced(function* () {
+        for (const requested of input.tickets) {
+          const ticket = tickets.find((candidate) => candidate.id === requested.id)!;
+          if (completedTicketMigrations.has(ticket.id)) continue;
+          const remoteEpicIssueId =
+            ticket.epicId === null
+              ? undefined
+              : (epicIssues.get(ticket.epicId) ?? existingRemoteEpicIssueId(ticket.epicId));
+          if (ticket.epicId !== null && remoteEpicIssueId === undefined) {
+            return yield* operationError(
+              `Local Epic ${ticket.epicId} was not published. Retry the migration before importing Jira.`,
+            );
+          }
+          yield* ticketWriter.createTicket({
+            id: ticket.id,
+            projectId: ticket.projectId,
+            title: ticket.title,
+            kind: ticket.kind,
+            markdown: ticket.markdown,
+            primaryT3ProjectId: ticket.primaryT3ProjectId,
+            repositoryProjectIds: ticket.repositoryProjectIds,
+            jiraSprintId: binding.sprintId,
+            existingLocalTicketRevision: requested.revision,
+            createdAt: ticket.createdAt,
+            binding,
+            ...(remoteEpicIssueId === undefined ? {} : { remoteEpicIssueId }),
+          });
         }
-        yield* ticketWriter.createTicket({
-          id: ticket.id,
-          projectId: ticket.projectId,
-          title: ticket.title,
-          kind: ticket.kind,
-          markdown: ticket.markdown,
-          primaryT3ProjectId: ticket.primaryT3ProjectId,
-          repositoryProjectIds: ticket.repositoryProjectIds,
-          jiraSprintId: binding.sprintId,
-          existingLocalTicketRevision: requested.revision,
-          createdAt: ticket.createdAt,
-          binding,
-          ...(remoteEpicIssueId === undefined ? {} : { remoteEpicIssueId }),
-        });
-      }
+      });
+      yield* publishTickets();
       yield* completeLocalMigration(binding);
       return {
         action: input.action,
