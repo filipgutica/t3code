@@ -210,7 +210,7 @@ type OpenChangeRequest = (selection: {
 }) => void;
 
 /** Keeps links within an embedded PR detail surface on its owning page. */
-export const ChangeRequestLinkOpenContext = createContext<OpenChangeRequest | undefined>(undefined);
+const ChangeRequestLinkOpenContext = createContext<OpenChangeRequest | undefined>(undefined);
 
 export function useOpenChangeRequestLink(
   threadRef?: ScopedThreadRef,
