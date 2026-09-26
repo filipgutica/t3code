@@ -102,8 +102,10 @@ export function WorkbenchTicketPullRequests({
     return null;
 
   return (
-    <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 xl:min-h-0 xl:flex-1">
-      <div className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2.5">
+    <section
+      className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 xl:min-h-0 xl:flex-1 ${rows.length > 0 ? "[@media(min-height:48rem)]:xl:min-h-48" : ""}`}
+    >
+      <div className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">
             Pull Requests{" "}
@@ -111,10 +113,10 @@ export function WorkbenchTicketPullRequests({
               {rows.length}
             </span>
           </h2>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {canSearch
-              ? `Linked PRs and Workspace repository mentions of ${ticketKey}.`
-              : "From this Ticket’s Threads and prepared workspace."}
+              ? `Linked PRs and ${ticketKey} mentions`
+              : "From Threads and the ticket workspace"}
           </p>
         </div>
         {canSearch ? (
@@ -129,27 +131,27 @@ export function WorkbenchTicketPullRequests({
           </Button>
         ) : null}
       </div>
-      <div className="min-h-0 space-y-2 px-3 py-2.5 xl:overflow-y-auto xl:overscroll-contain">
+      <div className="min-h-0 space-y-2 px-3 py-2 xl:overflow-y-auto xl:overscroll-contain">
         {rows.map(({ pullRequest, threadId, threadTitle, matchesTicket }) => {
           const repositoryUrl = changeRequestRepositoryUrl(pullRequest.url);
           return (
             <div key={pullRequest.url.toLowerCase()} className="min-w-0">
               <WorkbenchPullRequestLink environmentId={environmentId} pullRequest={pullRequest} />
-              <p className="mt-1.5 break-words px-3 text-xs leading-5 text-muted-foreground">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1.5 text-xs text-muted-foreground">
                 {repositoryUrl ? (
                   <a
                     href={repositoryUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="rounded-sm underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                    className="max-w-full break-words rounded-sm underline-offset-2 outline-none [overflow-wrap:anywhere] hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     {pullRequest.repository}
                   </a>
                 ) : (
-                  pullRequest.repository
+                  <span className="max-w-full break-words [overflow-wrap:anywhere]">
+                    {pullRequest.repository}
+                  </span>
                 )}
-              </p>
-              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 px-3 pb-1">
                 {matchesTicket ? <Badge variant="secondary">Mentions {ticketKey}</Badge> : null}
                 {threadId !== null && threadTitle !== null ? (
                   <Tooltip>
