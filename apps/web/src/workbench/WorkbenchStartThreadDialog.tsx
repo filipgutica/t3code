@@ -46,7 +46,7 @@ type WorkbenchModelOption = {
   readonly isUnavailable?: boolean | undefined;
 };
 
-export function isWorkbenchStartThreadSelectionAvailable(
+function isWorkbenchStartThreadSelectionAvailable(
   entries: ReadonlyArray<ProviderInstanceEntry>,
   selection: ModelSelection | null | undefined,
   modelOptionsByInstance?: ReadonlyMap<ProviderInstanceId, ReadonlyArray<WorkbenchModelOption>>,
