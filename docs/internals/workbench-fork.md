@@ -20,7 +20,7 @@ The package shares the server process, database, and release. Native migration i
 The small upstream integration surface is:
 
 - `packages/contracts/src/index.ts` and `packages/contracts/src/rpc.ts`;
-- `apps/server/src/auth/RpcAuthorization.ts`, `apps/server/src/server.ts`, and `apps/server/src/ws.ts`;
+- `apps/server/src/auth/RpcAuthorization.ts` composes the fork-owned permission map from `apps/server/src/workbench/rpcAuthorization.ts`; `apps/server/src/server.ts` and `apps/server/src/ws.ts` compose Workbench services and handlers;
 - `apps/web/src/components/AppSidebarLayout.tsx` and `apps/web/src/components/sidebar/SidebarChrome.tsx`;
 - `apps/web/src/components/chat/ChatHeader.tsx` and `OpenInPicker.tsx`;
 - the generated `apps/web/src/routeTree.gen.ts`.
@@ -45,14 +45,14 @@ The quality command runs package lint, Knip checks for unused files, dependencie
 
 Vite+ lint enforces the ESLint-compatible `eslint/complexity` rule with a maximum of 20 across Workbench source files, without file-specific exceptions.
 
-Fallow health and duplication reports are advisory:
+Fallow health and duplication artifacts support the production quality gate:
 
 ```sh
 vp run --filter @t3tools/workbench fallow:health --output-file /tmp/workbench-health.json
 vp run --filter @t3tools/workbench fallow:dupes --output-file /tmp/workbench-dupes.json
 ```
 
-Health uses report-only mode and duplication has no failure threshold. Tool execution errors still fail. Reports focus on Workbench, but duplicate groups can include matching code outside the package. Some aggregate statistics describe the repository graph and must not be presented as package-only metrics. The workspace omits Fallow's optional TypeScript companion because these scripts use native analysis only; this also preserves the existing tools' TypeScript peer resolution.
+The full production scan enforces cyclomatic complexity at most 20 and cognitive complexity at most 15, including existing violations. The gate covers Workbench package, application adapters and UI, contract modules, route integration, and the auth broker. Tests and maintainer tooling are outside that production scope. Duplication rejects new blocks relative to the selected base. The standalone report commands remain report-only, but tool execution errors fail. Duplicate groups can include matching code outside Workbench; repository aggregate statistics must not be presented as Workbench-only metrics. The workspace omits Fallow's optional TypeScript companion because these scripts use native analysis only; this also preserves the existing tools' TypeScript peer resolution.
 
 `.github/workflows/workbench-quality.yml` runs typecheck, package tests, and quality gates for relevant pull requests and pushes to `main`, or manually. A separate job uploads both advisory reports even when a quality gate fails. The upstream-sync workflow also runs the package gates before verifying the application overlay.
 
