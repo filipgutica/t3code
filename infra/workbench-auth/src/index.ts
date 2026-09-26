@@ -36,6 +36,78 @@ const callSession = ({
     }),
   );
 
+const completeAuthorization = async ({
+  url,
+  env,
+}: {
+  url: URL;
+  env: WorkbenchAuthEnv;
+}): Promise<Response> => {
+  const state = url.searchParams.get("state") ?? "";
+  const parts = state.split(".");
+  if (parts.length !== 2) throw new PublicError("invalid_request", 400);
+  const sessionId = secretField({ body: { sessionId: parts[0] }, name: "sessionId" });
+  const nonce = secretField({ body: { nonce: parts[1] }, name: "nonce" });
+  const denied = url.searchParams.has("error");
+  const result = await callSession({
+    env,
+    sessionId,
+    path: "/callback",
+    body: {
+      nonce,
+      denied,
+      code: url.searchParams.get("code"),
+    },
+  });
+  if (!result.ok)
+    return message(
+      "Jira authorization could not be completed. Return to Workbench and reconnect.",
+      result.status,
+    );
+  return message(
+    denied
+      ? "Jira connection was not completed. Return to Workbench."
+      : "Jira authorization approved. Return to Workbench.",
+  );
+};
+
+const startAuthorization = async ({
+  body,
+  env,
+  config,
+}: {
+  body: Record<string, unknown>;
+  env: WorkbenchAuthEnv;
+  config: ReturnType<typeof configuration>;
+}): Promise<Response> => {
+  const claimChallenge = secretField({ body, name: "claimChallenge" });
+  const sessionId = randomSecret();
+  const nonce = randomSecret();
+  const result = await callSession({
+    env,
+    sessionId,
+    path: "/initialize",
+    body: { sessionId, nonce, claimChallenge },
+  });
+  if (!result.ok) return result;
+  const initialized = await readJson(result);
+  const authorize = new URL("https://auth.atlassian.com/authorize");
+  authorize.search = new URLSearchParams({
+    audience: "api.atlassian.com",
+    client_id: config.clientId,
+    scope: JIRA_SCOPES,
+    redirect_uri: config.callbackUrl,
+    response_type: "code",
+    prompt: "consent",
+    state: `${sessionId}.${nonce}`,
+  }).toString();
+  return json({
+    sessionId,
+    authorizationUrl: authorize.toString(),
+    expiresAt: textField({ body: initialized, name: "expiresAt" }),
+  });
+};
+
 export const handleRequest = async (request: Request, env: WorkbenchAuthEnv): Promise<Response> => {
   try {
     const url = new URL(request.url);
@@ -66,62 +138,12 @@ export const handleRequest = async (request: Request, env: WorkbenchAuthEnv): Pr
     }
 
     if (callback) {
-      const state = url.searchParams.get("state") ?? "";
-      const parts = state.split(".");
-      if (parts.length !== 2) throw new PublicError("invalid_request", 400);
-      const sessionId = secretField({ body: { sessionId: parts[0] }, name: "sessionId" });
-      const nonce = secretField({ body: { nonce: parts[1] }, name: "nonce" });
-      const denied = url.searchParams.has("error");
-      const result = await callSession({
-        env,
-        sessionId,
-        path: "/callback",
-        body: {
-          nonce,
-          denied,
-          code: url.searchParams.get("code"),
-        },
-      });
-      if (!result.ok)
-        return message(
-          "Jira authorization could not be completed. Return to Workbench and reconnect.",
-          result.status,
-        );
-      return message(
-        denied
-          ? "Jira connection was not completed. Return to Workbench."
-          : "Jira authorization approved. Return to Workbench.",
-      );
+      return await completeAuthorization({ url, env });
     }
 
     const body = await readJson(request);
     if (url.pathname === "/jira/start") {
-      const claimChallenge = secretField({ body, name: "claimChallenge" });
-      const sessionId = randomSecret();
-      const nonce = randomSecret();
-      const result = await callSession({
-        env,
-        sessionId,
-        path: "/initialize",
-        body: { sessionId, nonce, claimChallenge },
-      });
-      if (!result.ok) return result;
-      const initialized = await readJson(result);
-      const authorize = new URL("https://auth.atlassian.com/authorize");
-      authorize.search = new URLSearchParams({
-        audience: "api.atlassian.com",
-        client_id: config.clientId,
-        scope: JIRA_SCOPES,
-        redirect_uri: config.callbackUrl,
-        response_type: "code",
-        prompt: "consent",
-        state: `${sessionId}.${nonce}`,
-      }).toString();
-      return json({
-        sessionId,
-        authorizationUrl: authorize.toString(),
-        expiresAt: textField({ body: initialized, name: "expiresAt" }),
-      });
+      return await startAuthorization({ body, env, config });
     }
     if (url.pathname === "/jira/claim") {
       const sessionId = secretField({ body, name: "sessionId" });

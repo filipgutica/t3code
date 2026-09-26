@@ -64,132 +64,24 @@ const isWorkbenchProjectId = Schema.is(WorkbenchProjectId);
 const isWorkbenchTicketId = Schema.is(WorkbenchTicketId);
 const isWorkbenchEpicId = Schema.is(WorkbenchEpicId);
 
-export function WorkbenchSidebar({
+function useWorkbenchSidebarNavigation({
   context,
+  environmentId,
+  selectedWorkspaceId,
+  selectedTicketId,
+  selectedEpicId,
+  isMobile,
+  setOpenMobile,
 }: {
-  readonly context?:
-    | {
-        readonly environmentId: EnvironmentId;
-        readonly threadId: ThreadId;
-        readonly workspaceId: WorkbenchProjectId;
-        readonly ticketId: WorkbenchTicketId;
-      }
-    | undefined;
+  context: Parameters<typeof WorkbenchSidebar>[0]["context"];
+  environmentId: EnvironmentId | null;
+  selectedWorkspaceId: WorkbenchProjectId | undefined;
+  selectedTicketId: WorkbenchTicketId | undefined;
+  selectedEpicId: WorkbenchEpicId | undefined;
+  isMobile: boolean;
+  setOpenMobile: (open: boolean) => void;
 }) {
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const navigate = useNavigate();
-  const search = useSearch({
-    strict: false,
-    select: (value) => ({
-      environmentId: isEnvironmentId(value.environmentId) ? value.environmentId : undefined,
-      workbenchProjectId: isWorkbenchProjectId(value.workbenchProjectId)
-        ? value.workbenchProjectId
-        : undefined,
-      ticketId: isWorkbenchTicketId(value.ticketId) ? value.ticketId : undefined,
-      epicId: isWorkbenchEpicId(value.epicId) ? value.epicId : undefined,
-    }),
-  });
-  const selectedWorkspaceId = context?.workspaceId ?? search.workbenchProjectId;
-  const selectedTicketId = context?.ticketId ?? search.ticketId;
-  const selectedEpicId = context ? undefined : search.epicId;
-  const selectedEnvironmentId = context?.environmentId ?? search.environmentId;
-  const environmentId = selectedEnvironmentId ?? primaryEnvironmentId;
-  const { isMobile, setOpenMobile } = useSidebar();
-  const threadShells = useThreadShells();
-  const currentThread = useThreadDetail(
-    context &&
-      !threadShells.some(
-        (thread) =>
-          thread.environmentId === context.environmentId && thread.id === context.threadId,
-      )
-      ? scopeThreadRef(context.environmentId, context.threadId)
-      : null,
-  );
-  const query = useEnvironmentQuery(
-    environmentId === null ? null : workbenchEnvironment.snapshot({ environmentId, input: {} }),
-  );
-  const snapshot = query.data;
-  const nativeProjects = useProjects();
-  const jiraQuery = useEnvironmentQuery(
-    environmentId === null ? null : workbenchEnvironment.jiraSnapshot({ environmentId, input: {} }),
-  );
-  const ticketDetailsById = useMemo(
-    () =>
-      snapshot
-        ? getWorkbenchSidebarTicketDetails({
-            environmentId,
-            tickets: snapshot.tickets,
-            assignments: snapshot.assignments,
-            threads: currentThread ? [...threadShells, currentThread] : threadShells,
-            projects: nativeProjects,
-            epics: snapshot.epics,
-            issueLinks: jiraQuery.data?.issueLinks ?? [],
-          })
-        : new Map<WorkbenchTicketId, WorkbenchSidebarTicketDetails>(),
-    [
-      environmentId,
-      snapshot,
-      threadShells,
-      currentThread,
-      nativeProjects,
-      jiraQuery.data?.issueLinks,
-    ],
-  );
-  const selectedTicket = snapshot?.tickets.find((ticket) => ticket.id === selectedTicketId);
-  const selectedTicketStatus = selectedTicket?.status;
-  const selectedTicketIsDone =
-    selectedTicketStatus === "done" && selectedTicket?.archivedAt == null;
-  const [sidebarSearch, setSidebarSearch] = useState({ environmentId, query: "" });
-  const sidebarQuery = sidebarSearch.environmentId === environmentId ? sidebarSearch.query : "";
-  const ticketGroupsByWorkspace = useMemo(
-    () =>
-      getWorkbenchSidebarTicketGroups({
-        environmentId,
-        tickets: snapshot?.tickets ?? [],
-        assignments: snapshot?.assignments ?? [],
-        threads:
-          currentThread &&
-          !threadShells.some(
-            (thread) =>
-              thread.environmentId === currentThread.environmentId &&
-              thread.id === currentThread.id,
-          )
-            ? [...threadShells, currentThread]
-            : threadShells,
-        selectedTicketId,
-        selectedThreadId: context?.threadId,
-        includeUnassignedTickets: sidebarQuery.trim().length > 0,
-      }),
-    [
-      environmentId,
-      selectedTicketId,
-      context?.threadId,
-      currentThread,
-      snapshot?.assignments,
-      snapshot?.tickets,
-      threadShells,
-      sidebarQuery,
-    ],
-  );
-  const ticketCountsByWorkspace = useMemo(() => {
-    const counts = new Map<WorkbenchProjectId, number>();
-    for (const ticket of snapshot?.tickets ?? []) {
-      if (ticket.archivedAt != null) continue;
-      counts.set(ticket.projectId, (counts.get(ticket.projectId) ?? 0) + 1);
-    }
-    return counts;
-  }, [snapshot?.tickets]);
-  const archivedTicketsByWorkspace = useMemo(() => {
-    const archived = new Map<WorkbenchProjectId, WorkbenchSidebarTicket[]>();
-    for (const ticket of snapshot?.tickets ?? []) {
-      if (ticket.archivedAt == null || ticket.id === selectedTicketId) continue;
-      const tickets = archived.get(ticket.projectId) ?? [];
-      tickets.push(ticket);
-      archived.set(ticket.projectId, tickets);
-    }
-    return archived;
-  }, [selectedTicketId, snapshot?.tickets]);
-
   const selectWorkspace = (projectId: WorkbenchProjectId) => {
     if (isMobile) setOpenMobile(false);
     void navigate({
@@ -246,6 +138,63 @@ export function WorkbenchSidebar({
     });
   };
 
+  return { selectWorkspace, selectTicket, openThread, leaveWorkbench, addWorkspace };
+}
+
+export function WorkbenchSidebar({
+  context,
+}: {
+  readonly context?:
+    | {
+        readonly environmentId: EnvironmentId;
+        readonly threadId: ThreadId;
+        readonly workspaceId: WorkbenchProjectId;
+        readonly ticketId: WorkbenchTicketId;
+      }
+    | undefined;
+}) {
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const search = useSearch({
+    strict: false,
+    select: (value) => ({
+      environmentId: isEnvironmentId(value.environmentId) ? value.environmentId : undefined,
+      workbenchProjectId: isWorkbenchProjectId(value.workbenchProjectId)
+        ? value.workbenchProjectId
+        : undefined,
+      ticketId: isWorkbenchTicketId(value.ticketId) ? value.ticketId : undefined,
+      epicId: isWorkbenchEpicId(value.epicId) ? value.epicId : undefined,
+    }),
+  });
+  const selectedWorkspaceId = context?.workspaceId ?? search.workbenchProjectId;
+  const selectedTicketId = context?.ticketId ?? search.ticketId;
+  const selectedEpicId = context ? undefined : search.epicId;
+  const selectedEnvironmentId = context?.environmentId ?? search.environmentId;
+  const environmentId = selectedEnvironmentId ?? primaryEnvironmentId;
+  const { isMobile, setOpenMobile } = useSidebar();
+  const {
+    query,
+    snapshot,
+    jiraQuery,
+    ticketDetailsById,
+    selectedTicketIsDone,
+    sidebarQuery,
+    setSidebarSearch,
+    ticketGroupsByWorkspace,
+    ticketCountsByWorkspace,
+    archivedTicketsByWorkspace,
+  } = useWorkbenchSidebarData({ context, environmentId, selectedTicketId });
+
+  const { selectWorkspace, selectTicket, openThread, leaveWorkbench, addWorkspace } =
+    useWorkbenchSidebarNavigation({
+      context,
+      environmentId,
+      selectedWorkspaceId,
+      selectedTicketId,
+      selectedEpicId,
+      isMobile,
+      setOpenMobile,
+    });
+
   return (
     <>
       <SidebarContent className="overflow-x-hidden">
@@ -279,58 +228,40 @@ export function WorkbenchSidebar({
             </Tooltip>
           </div>
 
-          {environmentId === null ? (
-            <p className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground">
-              Connect an environment to view Workbench Workspaces.
-            </p>
-          ) : query.isPending && snapshot === null ? (
-            <div className="space-y-1" aria-label="Loading Workbench Workspaces">
-              <Skeleton className="h-8 w-full" />
-              <Skeleton className="h-8 w-5/6" />
-            </div>
-          ) : query.error && snapshot === null ? (
-            <div className="space-y-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive-foreground">
-              <p className="flex items-start gap-2">
-                <AlertCircleIcon className="mt-0.5 size-3.5 shrink-0" />
-                <span>{query.error}</span>
-              </p>
-              <Button className="w-full" onClick={query.refresh} size="xs" variant="outline">
-                <RefreshCwIcon /> Retry
-              </Button>
-            </div>
-          ) : snapshot?.projects.length === 0 ? (
-            <p className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground">
-              No Workspaces yet. Use Add Workspace above.
-            </p>
-          ) : (
-            <WorkbenchSidebarNavigation
-              key={environmentId ?? "none"}
-              data={{
-                archivedTicketsByWorkspace,
-                jiraOwnershipKnown: jiraQuery.data !== null,
-                projects: snapshot?.projects ?? [],
-                ticketCountsByWorkspace,
-                ticketDetailsById,
-                ticketGroupsByWorkspace,
-              }}
-              selection={{
-                contextThreadId: context?.threadId,
-                selectedEpicId,
-                selectedTicketId,
-                selectedTicketIsDone,
-                selectedWorkspaceId,
-              }}
-              search={{
-                searchQuery: sidebarQuery,
-                onSearchQueryChange: (query) => setSidebarSearch({ environmentId, query }),
-              }}
-              actions={{
-                onOpenThread: openThread,
-                onSelectTicket: selectTicket,
-                onSelectWorkspace: selectWorkspace,
-              }}
-            />
-          )}
+          <WorkbenchSidebarWorkspaceState
+            environmentId={environmentId}
+            query={query}
+            snapshot={snapshot}
+            navigation={
+              <WorkbenchSidebarNavigation
+                key={environmentId ?? "none"}
+                data={{
+                  archivedTicketsByWorkspace,
+                  jiraOwnershipKnown: jiraQuery.data !== null,
+                  projects: snapshot?.projects ?? [],
+                  ticketCountsByWorkspace,
+                  ticketDetailsById,
+                  ticketGroupsByWorkspace,
+                }}
+                selection={{
+                  contextThreadId: context?.threadId,
+                  selectedEpicId,
+                  selectedTicketId,
+                  selectedTicketIsDone,
+                  selectedWorkspaceId,
+                }}
+                search={{
+                  searchQuery: sidebarQuery,
+                  onSearchQueryChange: (query) => setSidebarSearch({ environmentId, query }),
+                }}
+                actions={{
+                  onOpenThread: openThread,
+                  onSelectTicket: selectTicket,
+                  onSelectWorkspace: selectWorkspace,
+                }}
+              />
+            }
+          />
         </SidebarGroup>
       </SidebarContent>
       <SidebarChromeFooter />
@@ -856,8 +787,12 @@ function WorkbenchSidebarTicketGroupRow({
   const ticketExpanded =
     isSearching || (expansion.ticketId === ticket.id && expansion.done === isDone);
   const ticketPanelId = `workbench-sidebar-ticket-${ticket.id}-${isDone ? "done" : "active"}`;
-  const ticketIsDestination =
-    ticket.id === selectedTicketId && contextThreadId === undefined && selectedEpicId === undefined;
+  const ticketIsDestination = isWorkbenchSidebarTicketDestination({
+    ticketId: ticket.id,
+    selectedTicketId,
+    contextThreadId,
+    selectedEpicId,
+  });
 
   return (
     <SidebarMenuItem>
@@ -881,27 +816,15 @@ function WorkbenchSidebarTicketGroupRow({
           onSelect={() => onSelectTicket(workspaceId, ticket.id)}
         />
       </div>
-      {threads.length > 0 ? (
-        <div
-          aria-label={`${ticket.title} Threads`}
-          className="group-data-[collapsible=icon]:hidden"
-          hidden={!ticketExpanded}
-          id={ticketPanelId}
-        >
-          {ticketExpanded ? (
-            <WorkbenchSidebarTicketThreads
-              key={
-                threads.some((thread) => thread.id === contextThreadId) ? contextThreadId : "none"
-              }
-              threads={threads}
-              contextThreadId={contextThreadId}
-              isSearching={isSearching}
-              onOpenThread={onOpenThread}
-              ticket={ticket}
-            />
-          ) : null}
-        </div>
-      ) : null}
+      <WorkbenchSidebarTicketThreadPanel
+        threads={threads}
+        ticket={ticket}
+        ticketExpanded={ticketExpanded}
+        ticketPanelId={ticketPanelId}
+        contextThreadId={contextThreadId}
+        isSearching={isSearching}
+        onOpenThread={onOpenThread}
+      />
     </SidebarMenuItem>
   );
 }
@@ -1122,4 +1045,235 @@ function WorkbenchSidebarArchivedTickets({
       </div>
     </section>
   );
+}
+
+function WorkbenchSidebarTicketThreadPanel({
+  threads,
+  ticket,
+  ticketExpanded,
+  ticketPanelId,
+  contextThreadId,
+  isSearching,
+  onOpenThread,
+}: Pick<
+  Parameters<typeof WorkbenchSidebarTicketThreads>[0],
+  "threads" | "ticket" | "contextThreadId" | "isSearching" | "onOpenThread"
+> & { ticketExpanded: boolean; ticketPanelId: string }) {
+  return (
+    <>
+      {threads.length > 0 ? (
+        <div
+          aria-label={`${ticket.title} Threads`}
+          className="group-data-[collapsible=icon]:hidden"
+          hidden={!ticketExpanded}
+          id={ticketPanelId}
+        >
+          {ticketExpanded ? (
+            <WorkbenchSidebarTicketThreads
+              key={
+                threads.some((thread) => thread.id === contextThreadId) ? contextThreadId : "none"
+              }
+              threads={threads}
+              contextThreadId={contextThreadId}
+              isSearching={isSearching}
+              onOpenThread={onOpenThread}
+              ticket={ticket}
+            />
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function WorkbenchSidebarWorkspaceState({
+  environmentId,
+  query,
+  snapshot,
+  navigation,
+}: {
+  environmentId: EnvironmentId | null;
+  query: { isPending: boolean; error: string | null; refresh: () => void };
+  snapshot: { projects: ReadonlyArray<unknown> } | null;
+  navigation: ReactNode;
+}) {
+  return environmentId === null ? (
+    <p className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground">
+      Connect an environment to view Workbench Workspaces.
+    </p>
+  ) : query.isPending && snapshot === null ? (
+    <div className="space-y-1" aria-label="Loading Workbench Workspaces">
+      <Skeleton className="h-8 w-full" />
+      <Skeleton className="h-8 w-5/6" />
+    </div>
+  ) : query.error && snapshot === null ? (
+    <div className="space-y-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive-foreground">
+      <p className="flex items-start gap-2">
+        <AlertCircleIcon className="mt-0.5 size-3.5 shrink-0" />
+        <span>{query.error}</span>
+      </p>
+      <Button className="w-full" onClick={query.refresh} size="xs" variant="outline">
+        <RefreshCwIcon /> Retry
+      </Button>
+    </div>
+  ) : snapshot?.projects.length === 0 ? (
+    <p className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground">
+      No Workspaces yet. Use Add Workspace above.
+    </p>
+  ) : (
+    navigation
+  );
+}
+
+function getWorkbenchSidebarThreads({
+  currentThread,
+  threadShells,
+}: {
+  currentThread: ReturnType<typeof useThreadDetail>;
+  threadShells: ReturnType<typeof useThreadShells>;
+}) {
+  return currentThread &&
+    !threadShells.some(
+      (thread) =>
+        thread.environmentId === currentThread.environmentId && thread.id === currentThread.id,
+    )
+    ? [...threadShells, currentThread]
+    : threadShells;
+}
+
+function useWorkbenchSidebarData({
+  context,
+  environmentId,
+  selectedTicketId,
+}: {
+  context: Parameters<typeof WorkbenchSidebar>[0]["context"];
+  environmentId: EnvironmentId | null;
+  selectedTicketId: WorkbenchTicketId | undefined;
+}) {
+  const threadShells = useThreadShells();
+  const currentThread = useWorkbenchSidebarCurrentThread({ context, threadShells });
+  const query = useEnvironmentQuery(
+    environmentId === null ? null : workbenchEnvironment.snapshot({ environmentId, input: {} }),
+  );
+  const snapshot = query.data;
+  const nativeProjects = useProjects();
+  const jiraQuery = useEnvironmentQuery(
+    environmentId === null ? null : workbenchEnvironment.jiraSnapshot({ environmentId, input: {} }),
+  );
+  const ticketDetailsById = useMemo(
+    () =>
+      snapshot
+        ? getWorkbenchSidebarTicketDetails({
+            environmentId,
+            tickets: snapshot.tickets,
+            assignments: snapshot.assignments,
+            threads: currentThread ? [...threadShells, currentThread] : threadShells,
+            projects: nativeProjects,
+            epics: snapshot.epics,
+            issueLinks: jiraQuery.data?.issueLinks ?? [],
+          })
+        : new Map<WorkbenchTicketId, WorkbenchSidebarTicketDetails>(),
+    [
+      environmentId,
+      snapshot,
+      threadShells,
+      currentThread,
+      nativeProjects,
+      jiraQuery.data?.issueLinks,
+    ],
+  );
+  const selectedTicket = snapshot?.tickets.find((ticket) => ticket.id === selectedTicketId);
+  const selectedTicketStatus = selectedTicket?.status;
+  const selectedTicketIsDone =
+    selectedTicketStatus === "done" && selectedTicket?.archivedAt == null;
+  const [sidebarSearch, setSidebarSearch] = useState({ environmentId, query: "" });
+  const sidebarQuery = sidebarSearch.environmentId === environmentId ? sidebarSearch.query : "";
+  const ticketGroupsByWorkspace = useMemo(
+    () =>
+      getWorkbenchSidebarTicketGroups({
+        environmentId,
+        tickets: snapshot?.tickets ?? [],
+        assignments: snapshot?.assignments ?? [],
+        threads: getWorkbenchSidebarThreads({ currentThread, threadShells }),
+        selectedTicketId,
+        selectedThreadId: context?.threadId,
+        includeUnassignedTickets: sidebarQuery.trim().length > 0,
+      }),
+    [
+      environmentId,
+      selectedTicketId,
+      context?.threadId,
+      currentThread,
+      snapshot?.assignments,
+      snapshot?.tickets,
+      threadShells,
+      sidebarQuery,
+    ],
+  );
+  const ticketCountsByWorkspace = useMemo(() => {
+    const counts = new Map<WorkbenchProjectId, number>();
+    for (const ticket of snapshot?.tickets ?? []) {
+      if (ticket.archivedAt != null) continue;
+      counts.set(ticket.projectId, (counts.get(ticket.projectId) ?? 0) + 1);
+    }
+    return counts;
+  }, [snapshot?.tickets]);
+  const archivedTicketsByWorkspace = useMemo(() => {
+    const archived = new Map<WorkbenchProjectId, WorkbenchSidebarTicket[]>();
+    for (const ticket of snapshot?.tickets ?? []) {
+      if (ticket.archivedAt == null || ticket.id === selectedTicketId) continue;
+      const tickets = archived.get(ticket.projectId) ?? [];
+      tickets.push(ticket);
+      archived.set(ticket.projectId, tickets);
+    }
+    return archived;
+  }, [selectedTicketId, snapshot?.tickets]);
+
+  return {
+    query,
+    snapshot,
+    jiraQuery,
+    ticketDetailsById,
+    selectedTicketIsDone,
+    sidebarQuery,
+    setSidebarSearch,
+    ticketGroupsByWorkspace,
+    ticketCountsByWorkspace,
+    archivedTicketsByWorkspace,
+  };
+}
+
+function isWorkbenchSidebarTicketDestination({
+  ticketId,
+  selectedTicketId,
+  contextThreadId,
+  selectedEpicId,
+}: {
+  ticketId: WorkbenchTicketId;
+  selectedTicketId: WorkbenchTicketId | undefined;
+  contextThreadId: ThreadId | undefined;
+  selectedEpicId: WorkbenchEpicId | undefined;
+}) {
+  return (
+    ticketId === selectedTicketId && contextThreadId === undefined && selectedEpicId === undefined
+  );
+}
+
+function useWorkbenchSidebarCurrentThread({
+  context,
+  threadShells,
+}: {
+  context: Parameters<typeof WorkbenchSidebar>[0]["context"];
+  threadShells: ReturnType<typeof useThreadShells>;
+}) {
+  const currentThread = useThreadDetail(
+    context &&
+      !threadShells.some(
+        (thread) =>
+          thread.environmentId === context.environmentId && thread.id === context.threadId,
+      )
+      ? scopeThreadRef(context.environmentId, context.threadId)
+      : null,
+  );
+  return currentThread;
 }

@@ -130,33 +130,46 @@ export type StartWorkbenchTicketResult =
       readonly cleanupFailure?: Extract<CommandResult, { readonly _tag: "Failure" }>;
     };
 
+const openExistingWorkbenchThread = async ({
+  input,
+  dependencies,
+}: {
+  input: StartWorkbenchTicketInput;
+  dependencies: StartWorkbenchTicketDependencies;
+}): Promise<StartWorkbenchTicketResult | null> => {
+  dependencies.onStage?.("checking-thread");
+  const target = resolveWorkbenchTicketThreadTarget(
+    input.ticket,
+    input.projects,
+    input.assignment,
+    input.existingThreadIds,
+    input.threadLookupReady,
+  );
+  if (target.state === "open") {
+    dependencies.onStage?.("opening-thread");
+    try {
+      await dependencies.openThread(target.threadId);
+    } catch (cause) {
+      return { state: "navigation-failed", cause };
+    }
+    return { state: "opened", threadId: target.threadId };
+  }
+  if (target.state === "project-unavailable") return { state: "project-unavailable" };
+  if (target.state === "thread-status-unavailable") {
+    return { state: "thread-status-unavailable" };
+  }
+
+  return null;
+};
+
 export async function coordinateWorkbenchTicketStart(
   input: StartWorkbenchTicketInput,
   dependencies: StartWorkbenchTicketDependencies,
   options: StartWorkbenchTicketOptions = {},
 ): Promise<StartWorkbenchTicketResult> {
   if (options.mode === undefined) {
-    dependencies.onStage?.("checking-thread");
-    const target = resolveWorkbenchTicketThreadTarget(
-      input.ticket,
-      input.projects,
-      input.assignment,
-      input.existingThreadIds,
-      input.threadLookupReady,
-    );
-    if (target.state === "open") {
-      dependencies.onStage?.("opening-thread");
-      try {
-        await dependencies.openThread(target.threadId);
-      } catch (cause) {
-        return { state: "navigation-failed", cause };
-      }
-      return { state: "opened", threadId: target.threadId };
-    }
-    if (target.state === "project-unavailable") return { state: "project-unavailable" };
-    if (target.state === "thread-status-unavailable") {
-      return { state: "thread-status-unavailable" };
-    }
+    const existing = await openExistingWorkbenchThread({ input, dependencies });
+    if (existing !== null) return existing;
   }
 
   const project = input.projects.find(
@@ -238,8 +251,27 @@ export async function coordinateWorkbenchTicketStart(
     };
   }
 
+  return attachTicketContextAndOpen({
+    input,
+    dependencies,
+    workspace: workspaceResult.value,
+    threadId,
+  });
+}
+
+const attachTicketContextAndOpen = async ({
+  input,
+  dependencies,
+  workspace,
+  threadId,
+}: {
+  input: StartWorkbenchTicketInput;
+  dependencies: StartWorkbenchTicketDependencies;
+  workspace: import("@t3tools/contracts").WorkbenchTicketWorkspace;
+  threadId: ThreadId;
+}): Promise<StartWorkbenchTicketResult> => {
   const preparedPaths = new Map(
-    workspaceResult.value.repositories
+    workspace.repositories
       .filter((repository) => repository.status === "ready")
       .map((repository) => [repository.projectId, repository.worktreePath]),
   );
@@ -261,4 +293,4 @@ export async function coordinateWorkbenchTicketStart(
     return { state: "navigation-failed", cause };
   }
   return { state: "opened", threadId };
-}
+};

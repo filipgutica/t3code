@@ -641,62 +641,67 @@ export const make = Effect.gen(function* () {
               "persistence_failed",
               "Could not reserve Jira Ticket creation.",
             );
-          let jiraIssueId = creation.jiraIssueId;
-          let jiraIssueKey = creation.jiraIssueKey;
-          if (jiraIssueId === null || jiraIssueKey === null) {
-            if (!prepared)
-              return yield* operationError(
-                "request_failed",
-                "Jira creation metadata is unavailable.",
+          const createRemoteTicket = Effect.fnUntraced(function* () {
+            let jiraIssueId = creation.jiraIssueId;
+            let jiraIssueKey = creation.jiraIssueKey;
+            if (jiraIssueId === null || jiraIssueKey === null) {
+              if (!prepared)
+                return yield* operationError(
+                  "request_failed",
+                  "Jira creation metadata is unavailable.",
+                );
+              // Recheck immediately before POST so a concurrent local edit cannot be overwritten.
+              yield* ensureExistingLocalTicketRevision(input);
+              // Persist before POST: a crash or failed response must never permit a duplicate POST.
+              yield* markCreationUncertain(input.id, input.createdAt).pipe(
+                Effect.mapError(repositoryError),
               );
-            // Recheck immediately before POST so a concurrent local edit cannot be overwritten.
-            yield* ensureExistingLocalTicketRevision(input);
-            // Persist before POST: a crash or failed response must never permit a duplicate POST.
-            yield* markCreationUncertain(input.id, input.createdAt).pipe(
-              Effect.mapError(repositoryError),
-            );
-            const created = yield* api
-              .createIssue({
-                connectionId: input.binding.connectionId,
-                projectKey: input.binding.jiraProjectKey,
-                ticket: input,
-                ...prepared,
-                ...(input.remoteEpicIssueId !== undefined
-                  ? { epicIssueId: input.remoteEpicIssueId }
-                  : input.epicId
-                    ? {
-                        epicIssueId: input.epicId.slice(`jira:${input.binding.id}:epic:`.length),
+              const created = yield* api
+                .createIssue({
+                  connectionId: input.binding.connectionId,
+                  projectKey: input.binding.jiraProjectKey,
+                  ticket: input,
+                  ...prepared,
+                  ...(input.remoteEpicIssueId !== undefined
+                    ? { epicIssueId: input.remoteEpicIssueId }
+                    : input.epicId
+                      ? {
+                          epicIssueId: input.epicId.slice(`jira:${input.binding.id}:epic:`.length),
+                        }
+                      : {}),
+                })
+                .pipe(
+                  Effect.catch((error) =>
+                    Effect.gen(function* () {
+                      if (error.outcome === "rejected") {
+                        yield* sql`DELETE FROM workbench_jira_ticket_creations WHERE ticket_id = ${input.id} AND jira_issue_id IS NULL`.pipe(
+                          Effect.mapError(repositoryError),
+                        );
                       }
-                    : {}),
-              })
-              .pipe(
-                Effect.catch((error) =>
-                  Effect.gen(function* () {
-                    if (error.outcome === "rejected") {
-                      yield* sql`DELETE FROM workbench_jira_ticket_creations WHERE ticket_id = ${input.id} AND jira_issue_id IS NULL`.pipe(
-                        Effect.mapError(repositoryError),
-                      );
-                    }
-                    return yield* operationError("request_failed", error.message);
-                  }),
+                      return yield* operationError("request_failed", error.message);
+                    }),
+                  ),
+                );
+              jiraIssueId = created.id;
+              jiraIssueKey = created.key;
+              yield* markCreationCreated({
+                ticketId: input.id,
+                jiraIssueId,
+                jiraIssueKey,
+                updatedAt: input.createdAt,
+              }).pipe(
+                Effect.mapError(() =>
+                  operationError(
+                    "persistence_failed",
+                    "Jira created the Ticket, but Workbench could not save its resumable creation state.",
+                  ),
                 ),
               );
-            jiraIssueId = created.id;
-            jiraIssueKey = created.key;
-            yield* markCreationCreated({
-              ticketId: input.id,
-              jiraIssueId,
-              jiraIssueKey,
-              updatedAt: input.createdAt,
-            }).pipe(
-              Effect.mapError(() =>
-                operationError(
-                  "persistence_failed",
-                  "Jira created the Ticket, but Workbench could not save its resumable creation state.",
-                ),
-              ),
-            );
-          }
+            }
+
+            return { jiraIssueId, jiraIssueKey };
+          });
+          const { jiraIssueId, jiraIssueKey } = yield* createRemoteTicket();
 
           yield* api.addIssueToSprint({
             connectionId: input.binding.connectionId,

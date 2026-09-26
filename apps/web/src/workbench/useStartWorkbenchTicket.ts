@@ -37,6 +37,58 @@ const commandFailureMessage = (failure: {
     : "The Workbench request failed.";
 };
 
+const reportTicketStartResult = ({
+  result,
+  onError,
+  onRefreshThreadLookup,
+}: {
+  result: Awaited<ReturnType<typeof coordinateWorkbenchTicketStart>>;
+  onError: (message: string | null) => void;
+  onRefreshThreadLookup: () => void;
+}) => {
+  if (result.state === "project-unavailable") {
+    onError("The ticket's T3 Project is no longer available.");
+    return;
+  }
+  if (result.state === "provider-unavailable") {
+    onError("Configure an available Agent provider before starting this ticket.");
+    return;
+  }
+  if (result.state === "thread-status-unavailable") {
+    onError(null);
+    onRefreshThreadLookup();
+    return;
+  }
+  if (result.state === "navigation-failed") {
+    onError(
+      result.cause instanceof Error && result.cause.message.trim().length > 0
+        ? result.cause.message
+        : "The Thread is ready, but Workbench could not open it.",
+    );
+    return;
+  }
+  if (result.state !== "failed") return;
+
+  if (result.cleanupFailure && !isAtomCommandInterrupted(result.cleanupFailure)) {
+    console.warn(
+      "Failed to clean up a Workbench Thread after Assignment creation failed.",
+      squashAtomCommandFailure(result.cleanupFailure),
+    );
+  }
+  if (isAtomCommandInterrupted(result.failure)) return;
+  if (result.stage === "workspace") {
+    onError(
+      `The Ticket repositories could not be prepared. ${commandFailureMessage(result.failure)}`,
+    );
+    return;
+  }
+  onError(
+    result.stage === "thread"
+      ? `The workspace is prepared, but the Thread could not be created. Try Create thread again to reuse it. ${commandFailureMessage(result.failure)}`
+      : commandFailureMessage(result.failure),
+  );
+};
+
 export function useStartWorkbenchTicket({
   environmentId,
   projects,
@@ -121,47 +173,7 @@ export function useStartWorkbenchTicket({
           onPendingChange(null);
         }
 
-        if (result.state === "project-unavailable") {
-          onError("The ticket's T3 Project is no longer available.");
-          return;
-        }
-        if (result.state === "provider-unavailable") {
-          onError("Configure an available Agent provider before starting this ticket.");
-          return;
-        }
-        if (result.state === "thread-status-unavailable") {
-          onError(null);
-          onRefreshThreadLookup();
-          return;
-        }
-        if (result.state === "navigation-failed") {
-          onError(
-            result.cause instanceof Error && result.cause.message.trim().length > 0
-              ? result.cause.message
-              : "The Thread is ready, but Workbench could not open it.",
-          );
-          return;
-        }
-        if (result.state !== "failed") return;
-
-        if (result.cleanupFailure && !isAtomCommandInterrupted(result.cleanupFailure)) {
-          console.warn(
-            "Failed to clean up a Workbench Thread after Assignment creation failed.",
-            squashAtomCommandFailure(result.cleanupFailure),
-          );
-        }
-        if (isAtomCommandInterrupted(result.failure)) return;
-        if (result.stage === "workspace") {
-          onError(
-            `The Ticket repositories could not be prepared. ${commandFailureMessage(result.failure)}`,
-          );
-          return;
-        }
-        onError(
-          result.stage === "thread"
-            ? `The workspace is prepared, but the Thread could not be created. Try Create thread again to reuse it. ${commandFailureMessage(result.failure)}`
-            : commandFailureMessage(result.failure),
-        );
+        reportTicketStartResult({ result, onError, onRefreshThreadLookup });
       })();
     },
     [

@@ -1,5 +1,5 @@
 import { expect, it } from "vite-plus/test";
-import { evaluateWorkbenchQuality } from "./workbench-quality.ts";
+import { evaluateWorkbenchComplexity, evaluateWorkbenchQuality } from "./workbench-quality.ts";
 
 const owned = "apps/web/src/workbench/Example.ts";
 const upstream = "apps/web/src/components/Example.ts";
@@ -26,23 +26,30 @@ const report = (findings: unknown[] = [], clone_groups: unknown[] = []) => ({
   duplication: { clone_groups },
 });
 
-it("allows the complexity limits and fails either newly exceeded limit", () => {
-  expect(evaluateWorkbenchQuality({ report: report([finding()]), diff })).toEqual([]);
+const health = (findings: unknown[] = []) => ({
+  kind: "health",
+  summary: { files_analyzed: 1, functions_analyzed: 1 },
+  findings,
+});
+
+it("allows the limits and rejects existing violations without a changed file", () => {
+  expect(evaluateWorkbenchComplexity(health([finding()]))).toEqual([]);
   for (const violation of [{ cyclomatic: 21 }, { cognitive: 16 }]) {
-    expect(evaluateWorkbenchQuality({ report: report([finding(violation)]), diff })).toHaveLength(
-      1,
-    );
+    expect(
+      evaluateWorkbenchComplexity(health([finding({ ...violation, introduced: false })])),
+    ).toHaveLength(1);
   }
 });
 
-it("keeps inherited complexity and unrelated upstream findings out of the gate", () => {
-  const findings = [
-    finding({ cyclomatic: 50, introduced: false }),
-    finding({ path: upstream, cyclomatic: 50 }),
-  ];
-  expect(
-    evaluateWorkbenchQuality({ report: { ...report(findings), verdict: "fail" }, diff }),
-  ).toEqual([]);
+it("keeps upstream production and Workbench test fixtures out of the complexity gate", () => {
+  for (const path of [
+    upstream,
+    "apps/web/src/workbench/Example.test.tsx",
+    "packages/workbench/src/fixtures/example.ts",
+    "infra/workbench-auth/test/session.test.ts",
+  ]) {
+    expect(evaluateWorkbenchComplexity(health([finding({ path, cyclomatic: 50 })]))).toEqual([]);
+  }
 });
 
 it("fails a new clone touching Workbench even when native audit only warns", () => {
@@ -60,34 +67,36 @@ it("excludes inherited clones and clones outside changed Workbench lines", () =>
   expect(evaluateWorkbenchQuality({ report: report([], clones), diff })).toEqual([]);
 });
 
-it("covers each Workbench owner without including adjacent upstream directories", () => {
+it("covers every shipped Workbench owner including extracted helpers and auth", () => {
   for (const path of [
     "packages/workbench/src/test.ts",
     "apps/server/src/workbench/test.ts",
     owned,
+    "apps/web/src/workbench/extracted/helper.ts",
     "packages/contracts/src/workbenchRpc.ts",
+    "apps/web/src/routes/workbench.tsx",
+    "apps/desktop/src/workbench/updates.ts",
+    "apps/mobile/src/workbench/helper.ts",
+    "infra/workbench-auth/src/session.ts",
   ]) {
-    expect(
-      evaluateWorkbenchQuality({
-        report: report([finding({ path, cyclomatic: 21 })]),
-        diff: diff.replaceAll(owned, path),
-      }),
-    ).toHaveLength(1);
+    expect(evaluateWorkbenchComplexity(health([finding({ path, cognitive: 16 })]))).toHaveLength(1);
   }
-  expect(
-    evaluateWorkbenchQuality({
-      report: report([finding({ path: upstream, cyclomatic: 21 })]),
-      diff: diff.replaceAll(owned, upstream),
-    }),
-  ).toEqual([]);
 });
 
-it("fails closed on missing or malformed analysis and attribution", () => {
+it("fails closed on missing or malformed complexity analysis", () => {
   for (const invalid of [
     {},
-    report([finding({ introduced: undefined })]),
-    report([finding({ cyclomatic: "21" })]),
+    { ...health(), kind: "audit" },
+    { ...health(), summary: { files_analyzed: 0, functions_analyzed: 0 } },
+    { ...health(), findings: null },
+    health([finding({ cyclomatic: "21" })]),
   ]) {
+    expect(() => evaluateWorkbenchComplexity(invalid)).toThrow();
+  }
+});
+
+it("fails closed on missing duplication analysis and attribution", () => {
+  for (const invalid of [{}, report([], [clone({ introduced: undefined })])]) {
     expect(() => evaluateWorkbenchQuality({ report: invalid, diff })).toThrow();
   }
 });

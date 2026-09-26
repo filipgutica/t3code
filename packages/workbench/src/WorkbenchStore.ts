@@ -1643,6 +1643,28 @@ const makeWorkbenchStore = Effect.gen(function* () {
         .pipe(Effect.mapError(workbenchStoreError));
     });
 
+  const ensureNoNativeThreadUsesWorkspace = Effect.fnUntraced(function* ({
+    ticketId,
+  }: {
+    ticketId: WorkbenchTicketId;
+  }) {
+    const repositories = yield* listTicketWorkspaceRepositoriesByTicket({
+      ticketId: ticketId,
+    });
+    for (const repository of repositories) {
+      if (
+        repository.status !== "released" &&
+        (yield* native.hasThreadAtWorktreePath(repository.worktreePath))
+      ) {
+        return yield* new WorkbenchOperationError({
+          code: "ticket_workspace_in_use",
+          message:
+            "The Ticket Workspace cannot be reset while a native Thread still uses one of its worktrees.",
+        });
+      }
+    }
+  });
+
   const claimTicketWorkspaceRelease: WorkbenchStoreShape["claimTicketWorkspaceRelease"] = Effect.fn(
     "WorkbenchStore.claimTicketWorkspaceRelease",
   )(function* (input) {
@@ -1699,21 +1721,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             });
           }
           if (input.requireNoLinkedThreads === true) {
-            const repositories = yield* listTicketWorkspaceRepositoriesByTicket({
-              ticketId: input.ticketId,
-            });
-            for (const repository of repositories) {
-              if (
-                repository.status !== "released" &&
-                (yield* native.hasThreadAtWorktreePath(repository.worktreePath))
-              ) {
-                return yield* new WorkbenchOperationError({
-                  code: "ticket_workspace_in_use",
-                  message:
-                    "The Ticket Workspace cannot be reset while a native Thread still uses one of its worktrees.",
-                });
-              }
-            }
+            yield* ensureNoNativeThreadUsesWorkspace({ ticketId: input.ticketId });
           }
           yield* sql`
             UPDATE workbench_ticket_workspaces

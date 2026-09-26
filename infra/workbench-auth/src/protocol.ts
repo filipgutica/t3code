@@ -202,6 +202,26 @@ export const requestTokens = async ({
   } catch {
     throw new PublicError("upstream_unavailable", 502);
   }
+  return readTokenResponse(response);
+};
+
+// Return only known OAuth error identifiers, never provider descriptions.
+const tokenResponseError = (error: unknown): PublicError => {
+  switch (error) {
+    case "invalid_client":
+      return new PublicError("atlassian_invalid_client", 502);
+    case "invalid_grant":
+      return new PublicError("atlassian_invalid_grant", 502);
+    case "invalid_scope":
+      return new PublicError("atlassian_invalid_scope", 502);
+    case "unauthorized_client":
+      return new PublicError("atlassian_unauthorized_client", 502);
+    default:
+      return new PublicError("authorization_failed", 502);
+  }
+};
+
+const readTokenResponse = async (response: Response): Promise<Tokens> => {
   let body: Record<string, unknown>;
   try {
     body = await readJson(response);
@@ -209,20 +229,9 @@ export const requestTokens = async ({
     throw new PublicError(response.ok ? "invalid_token_response" : "authorization_failed", 502);
   }
   if (!response.ok) {
-    // Return only known OAuth error identifiers, never provider descriptions.
-    switch (body.error) {
-      case "invalid_client":
-        throw new PublicError("atlassian_invalid_client", 502);
-      case "invalid_grant":
-        throw new PublicError("atlassian_invalid_grant", 502);
-      case "invalid_scope":
-        throw new PublicError("atlassian_invalid_scope", 502);
-      case "unauthorized_client":
-        throw new PublicError("atlassian_unauthorized_client", 502);
-      default:
-        throw new PublicError("authorization_failed", 502);
-    }
+    throw tokenResponseError(body.error);
   }
+
   if (typeof body.access_token !== "string" || !body.access_token)
     throw new PublicError("missing_access_token", 502);
   if (typeof body.refresh_token !== "string" || !body.refresh_token)

@@ -80,29 +80,52 @@ export class AuthSession {
   private async handle(request: Request): Promise<Response> {
     const path = new URL(request.url).pathname;
     const body = await readJson(request);
-    if (path === "/initialize") {
-      if (await this.state.storage.get("session")) throw new PublicError("invalid_session", 409);
-      const id = secretField({ body, name: "sessionId" });
-      const challenge = secretField({ body, name: "claimChallenge" });
-      const nonce = secretField({ body, name: "nonce" });
-      const expiresAt = Date.now() + SESSION_TTL_MS;
-      // Set the alarm first: an interrupted initialization must not leave
-      // stored credentials/session metadata without a cleanup deadline.
-      await this.state.storage.setAlarm(expiresAt);
-      await this.state.storage.put<Session>("session", {
-        id,
-        challenge,
-        nonce,
-        expiresAt,
-        status: "pending",
-      });
-      return json({ expiresAt: new Date(expiresAt).toISOString() });
-    }
+    if (path === "/initialize") return this.initialize(body);
 
     const session = await this.state.storage.get<Session>("session");
     if (!session) throw new PublicError("invalid_session", 404);
 
-    // Authenticate before disclosing whether the session expired or completed.
+    await this.authenticate({ path, body, session });
+
+    // An alarm is cleanup, not authorization: enforce expiry on every request.
+    if (session.expiresAt <= Date.now()) {
+      await this.clear();
+      throw new PublicError("session_expired", 410);
+    }
+
+    if (path === "/claim") return this.claim(session);
+    return this.callback({ body, session });
+  }
+
+  private async initialize(body: Record<string, unknown>): Promise<Response> {
+    if (await this.state.storage.get("session")) throw new PublicError("invalid_session", 409);
+    const id = secretField({ body, name: "sessionId" });
+    const challenge = secretField({ body, name: "claimChallenge" });
+    const nonce = secretField({ body, name: "nonce" });
+    const expiresAt = Date.now() + SESSION_TTL_MS;
+    // Set the alarm first: an interrupted initialization must not leave
+    // stored credentials/session metadata without a cleanup deadline.
+    await this.state.storage.setAlarm(expiresAt);
+    await this.state.storage.put<Session>("session", {
+      id,
+      challenge,
+      nonce,
+      expiresAt,
+      status: "pending",
+    });
+    return json({ expiresAt: new Date(expiresAt).toISOString() });
+  }
+
+  // Authenticate before disclosing whether the session expired or completed.
+  private async authenticate({
+    path,
+    body,
+    session,
+  }: {
+    path: string;
+    body: Record<string, unknown>;
+    session: Session;
+  }): Promise<void> {
     if (path === "/claim") {
       const verifier = secretField({ body, name: "verifier" });
       if ((await digest(verifier)) !== session.challenge)
@@ -113,29 +136,31 @@ export class AuthSession {
     } else {
       throw new PublicError("not_found", 404);
     }
+  }
 
-    // An alarm is cleanup, not authorization: enforce expiry on every request.
-    if (session.expiresAt <= Date.now()) {
+  private async claim(session: Session): Promise<Response> {
+    if (session.status === "pending" || session.status === "processing")
+      return json({ status: "pending" }, 202);
+    if (session.status === "failed") {
       await this.clear();
-      throw new PublicError("session_expired", 410);
+      return json({ status: "failed", error: session.failureCode ?? "authorization_failed" });
     }
+    const tokens = await decryptTokens({
+      env: this.env,
+      sessionId: session.id,
+      encrypted: session.encrypted,
+    });
+    await this.clear();
+    return json({ status: "complete", tokens });
+  }
 
-    if (path === "/claim") {
-      if (session.status === "pending" || session.status === "processing")
-        return json({ status: "pending" }, 202);
-      if (session.status === "failed") {
-        await this.clear();
-        return json({ status: "failed", error: session.failureCode ?? "authorization_failed" });
-      }
-      const tokens = await decryptTokens({
-        env: this.env,
-        sessionId: session.id,
-        encrypted: session.encrypted,
-      });
-      await this.clear();
-      return json({ status: "complete", tokens });
-    }
-
+  private async callback({
+    body,
+    session,
+  }: {
+    body: Record<string, unknown>;
+    session: Session;
+  }): Promise<Response> {
     if (session.status !== "pending") throw new PublicError("callback_already_used", 409);
     await this.state.storage.put<Session>("session", { ...session, status: "processing" });
     if (body.denied === true) {
