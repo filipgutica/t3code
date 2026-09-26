@@ -2314,7 +2314,7 @@ export function WorkbenchTicketDetail({
               {!repositoryScopePanelCollapsed ? (
                 <div
                   id="workbench-ticket-repositories"
-                  className="min-h-0 space-y-3 p-3 xl:overflow-y-auto xl:overscroll-contain"
+                  className="min-h-0 space-y-3 px-3 pb-3 pt-1 xl:overflow-y-auto xl:overscroll-contain"
                 >
                   <div className="flex min-w-0 items-start gap-3">
                     <div className="min-w-0 flex-1">
