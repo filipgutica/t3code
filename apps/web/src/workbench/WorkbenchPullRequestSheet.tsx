@@ -1,3 +1,5 @@
+import "./workbenchPullRequestSheet.css";
+
 import { PullRequestDetailPanel } from "../components/pullRequest/PullRequestDetailPanel";
 import { Sheet, SheetPopup, SheetTitle } from "../components/ui/sheet";
 import { isElectron } from "../env";
@@ -34,6 +36,7 @@ export function WorkbenchPullRequestSheet({
     >
       <SheetPopup
         side="right"
+        data-workbench-pull-request-preview=""
         showCloseButton={false}
         transitionDurationMs={active ? durationMs : 0}
         className="w-[min(88vw,48rem)] max-w-none wco:mt-[env(titlebar-area-height)] wco:h-[calc(100%-env(titlebar-area-height))] wco:max-h-[calc(100%-env(titlebar-area-height))]"
