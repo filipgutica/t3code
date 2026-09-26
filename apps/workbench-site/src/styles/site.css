@@ -101,7 +101,10 @@ main.wrap::before {
   stroke-width: 1.5;
   transform-box: fill-box;
   transform-origin: center;
-  transition: fill var(--duration) var(--ease-out), stroke var(--duration) var(--ease-out), transform var(--duration) var(--ease-out);
+  transition:
+    fill var(--duration) var(--ease-out),
+    stroke var(--duration) var(--ease-out),
+    transform var(--duration) var(--ease-out);
 }
 
 .commit-neutral-node {
@@ -440,6 +443,8 @@ figcaption {
   }
 
   html.trace-motion .section-body {
-    transition: opacity var(--duration-section) var(--ease-out), transform var(--duration-section) var(--ease-out);
+    transition:
+      opacity var(--duration-section) var(--ease-out),
+      transform var(--duration-section) var(--ease-out);
   }
 }

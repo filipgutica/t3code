@@ -185,12 +185,13 @@ const videoPoster = await getImage({ src: board, width: 2400, format: "png" });
             },
             { index: 0, distance: Infinity },
           ).index;
-          const current = footer && footer.getBoundingClientRect().top < window.innerHeight ? sections.length - 1 : nearest;
+          const footerVisible = footer && footer.getBoundingClientRect().top < window.innerHeight;
+          const current = footerVisible ? sections.length - 1 : nearest;
 
           sections.forEach((section, index) => {
             const { top, bottom } = section.getBoundingClientRect();
             section.classList.toggle("is-current", index === current);
-            section.classList.toggle("trace-before", top > enterY);
+            section.classList.toggle("trace-before", top > enterY && !(footerVisible && index === current));
             section.classList.toggle("trace-after", bottom < leaveY);
           });
         };
