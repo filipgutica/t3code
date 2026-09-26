@@ -1,0 +1,4 @@
+/* This modal preview covers the thread's fixed controls (50). Docked sheets stay at 46. */
+[data-base-ui-portal]:has([data-workbench-pull-request-preview]) {
+  --z-sheet: 50;
+}

@@ -40,6 +40,7 @@ import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
 import { resolveThreadRouteRef } from "../threadRoutes";
+import { WorkbenchPullRequestPreviewProvider } from "../workbench/WorkbenchPullRequestPreview";
 import { useWorkbenchSidebar } from "../workbench/useWorkbenchSidebar";
 import {
   resolveInitialThreadSidebarWidth,
@@ -217,6 +218,14 @@ function ProjectProjectionRetention() {
 }
 
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
+  return (
+    <WorkbenchPullRequestPreviewProvider>
+      <AppSidebarLayoutContent>{children}</AppSidebarLayoutContent>
+    </WorkbenchPullRequestPreviewProvider>
+  );
+}
+
+function AppSidebarLayoutContent({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =

@@ -10,6 +10,7 @@ import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { act, type ReactNode, type ReactElement, type ComponentProps } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
 
 const { newThread, prepareThread, refresh, Wrapper, Trigger } = vi.hoisted(() => ({
@@ -24,7 +25,7 @@ const { newThread, prepareThread, refresh, Wrapper, Trigger } = vi.hoisted(() =>
     </>
   ),
 }));
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => [] }));
+vi.mock("@effect/atom-react", () => ({ useAtomValue: () => DEFAULT_RESOLVED_KEYBINDINGS }));
 vi.mock("~/state/server", () => ({ primaryServerKeybindingsAtom: {} }));
 vi.mock("~/state/entities", () => ({ useProjects: () => [], useServerConfigs: () => new Map() }));
 vi.mock("~/state/environments", () => ({
@@ -334,5 +335,65 @@ describe.each([
     } else {
       expect(newThread).toHaveBeenCalled();
     }
+  });
+});
+
+describe("copy PR number with a modal open", () => {
+  it.each([
+    ["background panel", true, false, false],
+    ["panel inside the modal", true, true, true],
+    ["no modal", false, false, true],
+  ] as const)("%s", async (_label, modalOpen, ownsModal, shouldCopy) => {
+    const panelNode = {};
+    const modal = { contains: (node: unknown) => ownsModal && node === panelNode };
+    class KeyboardTarget {
+      closest() {
+        return modalOpen ? modal : null;
+      }
+    }
+    vi.stubGlobal("HTMLElement", KeyboardTarget);
+    const listeners: EventListener[] = [];
+    vi.stubGlobal("window", {
+      addEventListener: (type: string, listener: EventListener) => {
+        if (type === "keydown") listeners.push(listener);
+      },
+      removeEventListener: vi.fn(),
+    });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { platform: "MacIntel", clipboard: { writeText } });
+    await act(() => {
+      renderer = create(
+        <PullRequestDetailPanel
+          environmentId={threadRef.environmentId}
+          reference={detail}
+          shortcutsEnabled
+          getShortcutContext={() => ({
+            terminalFocus: false,
+            terminalOpen: false,
+            previewFocus: false,
+            previewOpen: false,
+            isWeb: true,
+            isDesktop: false,
+          })}
+        />,
+        { createNodeMock: () => panelNode },
+      );
+    });
+    const event = new Event("keydown", { cancelable: true });
+    Object.defineProperties(event, {
+      target: { value: new KeyboardTarget() },
+      key: { value: "k" },
+      metaKey: { value: true },
+      ctrlKey: { value: false },
+      shiftKey: { value: true },
+      altKey: { value: false },
+      repeat: { value: false },
+    });
+    await act(() => {
+      for (const listener of listeners) listener(event);
+    });
+    if (shouldCopy) expect(writeText).toHaveBeenCalledWith("#1");
+    else expect(writeText).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(shouldCopy);
   });
 });
