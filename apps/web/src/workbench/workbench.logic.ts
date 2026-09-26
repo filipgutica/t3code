@@ -192,6 +192,10 @@ export function getActiveAssignmentsByTicket({
   readonly archivedThreadIds?: ReadonlySet<ThreadId>;
   readonly workingThreadIds?: ReadonlySet<ThreadId>;
 }): ReadonlyMap<WorkbenchTicketId, WorkbenchAssignment> {
+  const getThreadAvailabilityRank = (threadId: ThreadId) => {
+    if (liveThreadIds?.has(threadId)) return workingThreadIds?.has(threadId) ? 3 : 2;
+    return archivedThreadIds?.has(threadId) ? 1 : 0;
+  };
   const activeAssignments = new Map<WorkbenchTicketId, WorkbenchAssignment>();
   for (const assignment of assignments.toSorted(
     (left, right) =>
@@ -199,23 +203,10 @@ export function getActiveAssignmentsByTicket({
   )) {
     if (assignment.supersededAt !== null) continue;
     const current = activeAssignments.get(assignment.ticketId);
-    const assignmentAvailability = liveThreadIds?.has(assignment.threadId)
-      ? workingThreadIds?.has(assignment.threadId)
-        ? 3
-        : 2
-      : archivedThreadIds?.has(assignment.threadId)
-        ? 1
-        : 0;
-    const currentAvailability = current
-      ? liveThreadIds?.has(current.threadId)
-        ? workingThreadIds?.has(current.threadId)
-          ? 3
-          : 2
-        : archivedThreadIds?.has(current.threadId)
-          ? 1
-          : 0
-      : -1;
-    if (!current || assignmentAvailability > currentAvailability) {
+    if (
+      !current ||
+      getThreadAvailabilityRank(assignment.threadId) > getThreadAvailabilityRank(current.threadId)
+    ) {
       activeAssignments.set(assignment.ticketId, assignment);
     }
   }

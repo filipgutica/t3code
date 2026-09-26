@@ -49,12 +49,11 @@ type WorkbenchModelOption = {
 function isWorkbenchStartThreadSelectionAvailable(
   entries: ReadonlyArray<ProviderInstanceEntry>,
   selection: ModelSelection | null | undefined,
-  modelOptionsByInstance?: ReadonlyMap<ProviderInstanceId, ReadonlyArray<WorkbenchModelOption>>,
+  modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<WorkbenchModelOption>>,
 ): boolean {
   if (!selection || selection.model.length === 0) return false;
   const entry = entries.find((candidate) => candidate.instanceId === selection.instanceId);
   if (!entry || !isProviderInstancePickerReady(entry)) return false;
-  if (!modelOptionsByInstance) return true;
   return (modelOptionsByInstance.get(selection.instanceId) ?? []).some(
     (option) => option.slug === selection.model && option.isUnavailable !== true,
   );
@@ -236,12 +235,8 @@ export function WorkbenchStartThreadDialog({
     onStart(resolvedSelection);
   };
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    onOpenChange(nextOpen);
-  };
-
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogPopup>
         <DialogHeader>
           <DialogTitle>{dialogTitle}</DialogTitle>
@@ -296,7 +291,7 @@ export function WorkbenchStartThreadDialog({
         <DialogFooter>
           <Button
             disabled={pending}
-            onClick={() => handleOpenChange(false)}
+            onClick={() => onOpenChange(false)}
             type="button"
             variant="outline"
           >
