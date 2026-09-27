@@ -90,7 +90,9 @@ https://github.com/user-attachments/assets/ce40598e-5ac8-424d-9038-30ec59ac0e70
 
 ## Edit and organize Tickets
 
-Use Board search to find loaded Tickets by title or Jira key. Open a Ticket and
+Use Board search to find loaded Tickets by title or Jira key, and filter by any
+repository in their scope. Search, repository filtering, grouping, and the selected
+Board column are retained per Workspace when returning from a Ticket. Open a Ticket and
 choose **Edit** to change its title or description. Saved descriptions display
 formatting; imported Jira descriptions are also written to Jira. Board previews
 use a separate summary generated from **Settings → General → Text generation

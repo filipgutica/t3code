@@ -7,6 +7,7 @@ import type {
   WorkbenchJiraLocalEpicMigrationItem,
 } from "@t3tools/contracts";
 import { useMemo, useCallback, useState } from "react";
+import { useWorkbenchBoardView } from "./workbenchBoardViewState";
 import { getAssignmentsForTicket } from "./workbench.logic";
 import {
   getWorkbenchJiraBindingSprints,
@@ -30,7 +31,16 @@ export function useWorkbenchBoardData({
 }) {
   const { projects, snapshot, jiraSnapshot, optimisticStatus } = pageData;
   const { selectedProject, selectedEpic, selectedTicket } = selection;
-  const [boardGroupMode, setBoardGroupMode] = useState<"none" | "epic">("none");
+  const { view, setView } = useWorkbenchBoardView({
+    environmentId,
+    projectId: selectedProject?.id ?? null,
+  });
+  const boardGroupMode = view.groupMode;
+  const setBoardGroupMode = useCallback(
+    (groupMode: "none" | "epic") => setView({ groupMode }),
+    [setView],
+  );
+  const repositoriesReady = snapshot !== null;
   const [jiraBoardFilter, setJiraBoardFilter] = useState<{
     readonly environmentId: EnvironmentId;
     readonly projectId: WorkbenchProjectId;
@@ -61,14 +71,8 @@ export function useWorkbenchBoardData({
     () => projectTickets.filter((ticket) => ticket.epicId === selectedEpic?.id),
     [projectTickets, selectedEpic?.id],
   );
-  const linkedT3Projects = selectedProject
-    ? projects.filter((project) => selectedProject.linkedProjectIds.includes(project.id))
-    : [];
-  const projectEpics = selectedProject
-    ? (snapshot?.epics.filter((epic) => epic.projectId === selectedProject.id) ?? [])
-    : [];
-  const activeProjectEpics = projectEpics.filter((epic) => epic.archivedAt === null);
-  const effectiveBoardGroupMode = projectEpics.length > 0 ? boardGroupMode : "none";
+  const { linkedT3Projects, projectEpics, activeProjectEpics, effectiveBoardGroupMode } =
+    getBoardWorkspaceData({ projects, snapshot, selectedProject, boardGroupMode });
   const { jiraBinding, activeJiraSyncNotice, selectedJiraEpicUrl, jiraSprintLinks } =
     getJiraBoardPresentation({
       environmentId,
@@ -94,22 +98,13 @@ export function useWorkbenchBoardData({
       effectiveBoardGroupMode,
     });
   const jiraOwnershipKnown = jiraSnapshot !== null;
-  const localTicketsForJiraMigration: ReadonlyArray<WorkbenchJiraLocalTicketMigrationItem> =
-    projectTickets
-      .filter((ticket) => !jiraManagedTicketIds.has(ticket.id))
-      .map(({ id, revision }) => ({ id, revision }));
-  const localEpicsForJiraMigration: ReadonlyArray<WorkbenchJiraLocalEpicMigrationItem> =
-    activeProjectEpics
-      .filter(
-        (epic) =>
-          jiraBinding === null ||
-          !isWorkbenchJiraEpic({
-            epicId: epic.id,
-            bindingId: jiraBinding.id,
-            epicLinks: jiraSnapshot?.epicLinks,
-          }),
-      )
-      .map(({ id, updatedAt }) => ({ id, updatedAt }));
+  const { localTicketsForJiraMigration, localEpicsForJiraMigration } = getJiraMigrationCandidates({
+    projectTickets,
+    activeProjectEpics,
+    jiraManagedTicketIds,
+    jiraBinding,
+    jiraSnapshot,
+  });
   const selectedAssignments = selectedTicket
     ? getAssignmentsForTicket(snapshot?.assignments ?? [], selectedTicket.id)
     : [];
@@ -119,6 +114,7 @@ export function useWorkbenchBoardData({
     projectJiraIssueLinks,
     selectedEpicTickets,
     linkedT3Projects,
+    repositoriesReady,
     projectEpics,
     activeProjectEpics,
     jiraBinding,
@@ -138,6 +134,60 @@ export function useWorkbenchBoardData({
     setBoardGroupMode,
     setJiraBoardFilter,
   };
+}
+
+function getBoardWorkspaceData({
+  projects,
+  snapshot,
+  selectedProject,
+  boardGroupMode,
+}: {
+  projects: ReturnType<typeof useWorkbenchPageData>["projects"];
+  snapshot: ReturnType<typeof useWorkbenchPageData>["snapshot"];
+  selectedProject: ReturnType<typeof useWorkbenchPageSelection>["selectedProject"];
+  boardGroupMode: "none" | "epic";
+}) {
+  const linkedT3Projects = selectedProject
+    ? projects.filter((project) => selectedProject.linkedProjectIds.includes(project.id))
+    : [];
+  const projectEpics = selectedProject
+    ? (snapshot?.epics.filter((epic) => epic.projectId === selectedProject.id) ?? [])
+    : [];
+  const activeProjectEpics = projectEpics.filter((epic) => epic.archivedAt === null);
+  const effectiveBoardGroupMode = projectEpics.length > 0 ? boardGroupMode : "none";
+  return { linkedT3Projects, projectEpics, activeProjectEpics, effectiveBoardGroupMode };
+}
+
+function getJiraMigrationCandidates({
+  projectTickets,
+  activeProjectEpics,
+  jiraManagedTicketIds,
+  jiraBinding,
+  jiraSnapshot,
+}: {
+  projectTickets: ReadonlyArray<WorkbenchTicket>;
+  activeProjectEpics: ReadonlyArray<WorkbenchEpic>;
+  jiraManagedTicketIds: ReadonlySet<WorkbenchTicketId>;
+  jiraBinding: ReturnType<typeof getJiraBoardPresentation>["jiraBinding"];
+  jiraSnapshot: ReturnType<typeof useWorkbenchPageData>["jiraSnapshot"];
+}) {
+  const localTicketsForJiraMigration: ReadonlyArray<WorkbenchJiraLocalTicketMigrationItem> =
+    projectTickets
+      .filter((ticket) => !jiraManagedTicketIds.has(ticket.id))
+      .map(({ id, revision }) => ({ id, revision }));
+  const localEpicsForJiraMigration: ReadonlyArray<WorkbenchJiraLocalEpicMigrationItem> =
+    activeProjectEpics
+      .filter(
+        (epic) =>
+          jiraBinding === null ||
+          !isWorkbenchJiraEpic({
+            epicId: epic.id,
+            bindingId: jiraBinding.id,
+            epicLinks: jiraSnapshot?.epicLinks,
+          }),
+      )
+      .map(({ id, updatedAt }) => ({ id, updatedAt }));
+  return { localTicketsForJiraMigration, localEpicsForJiraMigration };
 }
 
 function getJiraBoardPresentation({
