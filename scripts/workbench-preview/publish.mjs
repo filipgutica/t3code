@@ -156,15 +156,18 @@ try {
     throw new Error("Vercel launcher deployment failed; inspect the deployment in your dashboard.");
   }
   const result = JSON.parse(output);
+  // CLI 53 emits a flat deployment in CI and an envelope in agent mode.
+  const hasEnvelope = Object.hasOwn(result, "status");
+  const deployment = hasEnvelope ? result.deployment : result;
   // The CLI serializes Vercel's default preview target as null.
   if (
-    result.status !== "ok" ||
-    result.deployment?.readyState !== "READY" ||
-    !["preview", null].includes(result.deployment?.target) ||
-    typeof result.deployment?.url !== "string"
+    (hasEnvelope && result.status !== "ok") ||
+    deployment?.readyState !== "READY" ||
+    !["preview", null].includes(deployment?.target) ||
+    typeof deployment?.url !== "string"
   )
     throw new Error("Vercel did not return a ready preview deployment; no link published.");
-  const url = new URL(result.deployment.url);
+  const url = new URL(deployment.url);
   if (url.protocol !== "https:" || !url.hostname.endsWith(".vercel.app") || url.pathname !== "/")
     throw new Error("Unexpected launcher deployment URL.");
   const anonymous = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(10_000) });
