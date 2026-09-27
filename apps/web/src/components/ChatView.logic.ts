@@ -3,7 +3,7 @@ import {
   type AssetCreateUrlInput,
   type AssetCreateUrlResult,
   type ChatFileAttachment,
-  type EnvironmentId,
+  EnvironmentId,
   isProviderDriverKind,
   ProjectId,
   type MessageId,
@@ -51,7 +51,7 @@ import type { ReviewCommentContext } from "../reviewCommentContext";
 import type { TimelineEntry } from "../session-logic";
 import type { PreviewMiniPlayerSource } from "../previewMiniPlayerStore";
 import type { DesktopPreviewOverlay } from "../previewStateStore";
-import type { RightPanelSurface } from "../rightPanelStore";
+import type { PullRequestSurface, RightPanelSurface } from "../rightPanelStore";
 import {
   NO_PROVIDER_MODEL_SELECTION,
   resolveSelectableProviderInstanceEntry,
@@ -138,6 +138,18 @@ export function observeProactivePanelUserChoice(
     userActionRevision:
       !sameThread || newTurn ? input.userActionRevision : previous.userActionRevision,
   };
+}
+
+/** Resolves a PR panel's server when it is shown beside a native Thread. */
+export function resolvePullRequestPanelEnvironment(
+  threadEnvironmentId: EnvironmentId,
+  surface: PullRequestSurface,
+) {
+  const environmentId =
+    surface.environmentId === undefined
+      ? threadEnvironmentId
+      : EnvironmentId.make(surface.environmentId);
+  return { environmentId, isThreadEnvironment: environmentId === threadEnvironmentId };
 }
 
 /** Follow a changed server link only when the panel still shows the previous linked PR. */

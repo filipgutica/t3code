@@ -2,6 +2,7 @@ import {
   type WorkbenchLinkedPullRequestThread,
   useOpenWorkbenchPullRequest,
 } from "./WorkbenchPullRequestPreview";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { ExternalLinkIcon } from "lucide-react";
 import { parseChangeRequestUrl, useOpenChangeRequestLink } from "../lib/openPullRequestLink";
 import type { EnvironmentId, ProjectId, PullRequestState } from "@t3tools/contracts";
@@ -157,7 +158,7 @@ export function WorkbenchPullRequestLink({
 }) {
   const openWorkbenchPullRequest = useOpenWorkbenchPullRequest();
   const openChangeRequestLink = useOpenChangeRequestLink(
-    undefined,
+    linkedThread ? scopeThreadRef(environmentId, linkedThread.threadId) : undefined,
     undefined,
     openWorkbenchPullRequest
       ? (selection) =>

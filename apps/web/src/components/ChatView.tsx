@@ -437,6 +437,7 @@ import {
   shouldShowPlanFollowUpPrompt,
   shouldOpenProactivePullRequest,
   shouldRetargetThreadPullRequestPanel,
+  resolvePullRequestPanelEnvironment,
   shouldOpenProactiveTurnDiff,
   shouldRenderPreviewMiniPlayer,
   getStartedThreadModelChangeBlockReason,
@@ -2082,6 +2083,10 @@ export default function ChatView(props: ChatViewProps) {
   const rightPanelControlsAtRoot = rightPanelPresent && !shouldUseRightPanelSheet;
   const renderedRightPanelSurface = rightPanelPresence.value?.activeSurface ?? null;
   const renderedRightPanelSurfaces = rightPanelPresence.value?.surfaces ?? [];
+  const pullRequestPanelEnvironment =
+    activeThreadEnvironmentId !== null && renderedRightPanelSurface?.kind === "pull-request"
+      ? resolvePullRequestPanelEnvironment(activeThreadEnvironmentId, renderedRightPanelSurface)
+      : null;
   const previewMiniPlayerVisible = shouldRenderPreviewMiniPlayer(
     activePreviewMiniPlayer?.source ?? null,
     renderedRightPanelSurface,
@@ -2611,6 +2616,13 @@ export default function ChatView(props: ChatViewProps) {
   });
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
+  const pullRequestPanelServerConfig =
+    pullRequestPanelEnvironment?.isThreadEnvironment === false
+      ? (environmentById.get(pullRequestPanelEnvironment.environmentId)?.serverConfig ?? null)
+      : serverConfig;
+  const pullRequestPanelCapabilityKnown = pullRequestPanelServerConfig !== null;
+  const supportsPanelPullRequests =
+    pullRequestPanelServerConfig?.environment.capabilities.pullRequests === true;
   const attachmentEnvironmentConfig = environmentById.get(environmentId)?.serverConfig ?? null;
   const attachmentUploadsCapabilityKnown = attachmentEnvironmentConfig !== null;
   const supportsQuestionAttachments =
@@ -9687,9 +9699,9 @@ export default function ChatView(props: ChatViewProps) {
           workspaceMutationId={workspaceMutationId}
         />
       </Suspense>
-    ) : renderedRightPanelSurface?.kind === "pull-request" && !pullRequestsCapabilityKnown ? (
+    ) : renderedRightPanelSurface?.kind === "pull-request" && !pullRequestPanelCapabilityKnown ? (
       <PullRequestDetailGhost />
-    ) : renderedRightPanelSurface?.kind === "pull-request" && !supportsPullRequests ? (
+    ) : renderedRightPanelSurface?.kind === "pull-request" && !supportsPanelPullRequests ? (
       <PullRequestsUnavailableState
         title="Pull requests unavailable"
         error="Update this environment's T3 Code server to browse pull requests."
@@ -9705,8 +9717,8 @@ export default function ChatView(props: ChatViewProps) {
         shortcutsEnabled={
           rightPanelOpen && activeRightPanelSurface?.id === renderedRightPanelSurface.id
         }
-        key={`${renderedRightPanelSurface.host ?? ""}:${renderedRightPanelSurface.repository}#${renderedRightPanelSurface.number}`}
-        environmentId={activeThread.environmentId}
+        key={`${pullRequestPanelEnvironment?.environmentId ?? activeThread.environmentId}:${renderedRightPanelSurface.id}`}
+        environmentId={pullRequestPanelEnvironment?.environmentId ?? activeThread.environmentId}
         onSelectPullRequest={(reference) => {
           if (activeThreadRef)
             useRightPanelStore.getState().openPullRequest(activeThreadRef, {
@@ -9714,6 +9726,9 @@ export default function ChatView(props: ChatViewProps) {
               repository: reference.repository,
               number: reference.number,
               ...(reference.host ? { host: reference.host } : {}),
+              ...(renderedRightPanelSurface.environmentId === undefined
+                ? {}
+                : { environmentId: renderedRightPanelSurface.environmentId }),
             });
         }}
         threadRef={activeThreadRef}
@@ -9723,16 +9738,22 @@ export default function ChatView(props: ChatViewProps) {
           repository: renderedRightPanelSurface.repository,
           number: renderedRightPanelSurface.number,
         }}
-        context={pullRequestPanelContext(
-          {
-            projectId: activeThreadMetadata?.projectId ?? null,
-            pullRequests: activeThreadMetadata?.pullRequests,
-            linkedPullRequest: activeThreadMetadata?.linkedPullRequest,
-            branchPullRequest: activeThreadMetadata?.branchPullRequest,
-          },
-          renderedRightPanelSurface,
-        )}
-        composerDraftTarget={composerDraftTarget}
+        context={
+          pullRequestPanelEnvironment?.isThreadEnvironment === false
+            ? "page"
+            : pullRequestPanelContext(
+                {
+                  projectId: activeThreadMetadata?.projectId ?? null,
+                  pullRequests: activeThreadMetadata?.pullRequests,
+                  linkedPullRequest: activeThreadMetadata?.linkedPullRequest,
+                  branchPullRequest: activeThreadMetadata?.branchPullRequest,
+                },
+                renderedRightPanelSurface,
+              )
+        }
+        {...(pullRequestPanelEnvironment?.isThreadEnvironment === false
+          ? {}
+          : { composerDraftTarget })}
         onBack={
           activeThreadRef !== null && pullRequestsSurfaceAvailable && visiblePullRequestCount > 1
             ? addPullRequestsSurface

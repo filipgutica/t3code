@@ -73,8 +73,8 @@ export type RightPanelSurface =
       kind: "pull-request";
       /**
        * Which server the change request was read from. The list spans every connected one, so
-       * two of them can hold the same project id; a panel beside a thread leaves this out and
-       * takes the environment from its own ref.
+       * two of them can hold the same project id. A panel beside a thread uses the Thread's
+       * environment unless a PR selected from another environment sets this explicitly.
        */
       environmentId?: string;
       projectId: string;

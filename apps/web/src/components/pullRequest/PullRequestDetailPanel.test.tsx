@@ -338,6 +338,45 @@ describe.each([
   });
 });
 
+it("prepares a remote PR checkout without writing to the current local Thread", async () => {
+  const remoteEnvironmentId = EnvironmentId.make("env-2");
+  useComposerDraftStore.getState().setPrompt(threadRef, "Keep my local draft");
+  await act(async () => {
+    renderer = create(
+      <PullRequestDetailPanel
+        environmentId={remoteEnvironmentId}
+        reference={detail}
+        context="page"
+        threadRef={threadRef}
+        shortcutsEnabled={false}
+        getShortcutContext={() => ({
+          terminalFocus: false,
+          terminalOpen: false,
+          previewFocus: false,
+          previewOpen: false,
+          isWeb: true,
+          isDesktop: false,
+        })}
+      />,
+    );
+  });
+
+  await click("Fix check");
+
+  expect(newThread).toHaveBeenCalledWith(
+    expect.objectContaining({ environmentId: remoteEnvironmentId }),
+  );
+  expect(prepareThread).toHaveBeenCalledWith(
+    expect.objectContaining({ reference: detail.url, threadId: ThreadId.make("new-thread") }),
+  );
+  expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.prompt).toBe(
+    "Keep my local draft",
+  );
+  expect(useComposerDraftStore.getState().getComposerDraft(newDraftId)?.prompt).toContain(
+    "Fix the failing check",
+  );
+});
+
 describe("copy PR number with a modal open", () => {
   it.each([
     ["background panel", true, false, false],

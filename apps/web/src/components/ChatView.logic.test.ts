@@ -81,6 +81,7 @@ import {
   shouldReleaseTimelineAnchorForToolActivity,
   shouldOpenProactivePullRequest,
   shouldRetargetThreadPullRequestPanel,
+  resolvePullRequestPanelEnvironment,
   shouldOpenProactiveTurnDiff,
   shouldRenderPreviewMiniPlayer,
   shouldShowBranchMismatchBanner,
@@ -312,6 +313,21 @@ describe("proactive panels", () => {
     expect(shouldOpenProactivePullRequest(null, "project:repo:42")).toBe(true);
     expect(shouldOpenProactivePullRequest("project:repo:42", "project:repo:42")).toBe(false);
     expect(shouldOpenProactivePullRequest("project:repo:42", null)).toBe(false);
+  });
+
+  it("uses the selected PR environment beside a Thread, even when project identities collide", () => {
+    const local = EnvironmentId.make("local");
+    const reference = { projectId: "same-project", repository: "acme/repo", number: 42 };
+    expect(
+      resolvePullRequestPanelEnvironment(
+        local,
+        pullRequestSurface({ ...reference, environmentId: "remote" }),
+      ),
+    ).toEqual({ environmentId: EnvironmentId.make("remote"), isThreadEnvironment: false });
+    expect(resolvePullRequestPanelEnvironment(local, pullRequestSurface(reference))).toEqual({
+      environmentId: local,
+      isThreadEnvironment: true,
+    });
   });
 
   it("follows a changed server PR link without replacing an unrelated open panel", () => {
