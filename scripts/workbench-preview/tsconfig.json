@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "types": ["node"],
+    "lib": ["ESNext", "DOM", "esnext.disposable"]
+  },
+  "include": ["*.mts"]
+}
