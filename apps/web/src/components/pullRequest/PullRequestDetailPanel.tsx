@@ -199,6 +199,7 @@ const ACTION_SUCCESS_LABELS: Record<PullRequestAction, string> = {
   "disable-auto-merge": "Auto-merge turned off",
   revert: "Revert pull request opened",
   "approve-workflows": "Workflows approved",
+  "rerun-failed-checks": "Failed workflow reruns requested",
 };
 
 /** Said as the thing that did not happen, rather than as the operation that returned an error. */
@@ -213,10 +214,13 @@ const ACTION_FAILURE_LABELS: Record<PullRequestAction, string> = {
   "disable-auto-merge": "Could not turn off auto-merge",
   revert: "Could not open a revert pull request",
   "approve-workflows": "Could not approve workflows",
+  "rerun-failed-checks": "Could not request every workflow rerun",
 };
 
 /** What to try, for the times the host says only that it refused. */
 const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
+  "rerun-failed-checks":
+    "Check GitHub Actions write permission and that failed runs still belong to the current PR head.",
   merge:
     "The host refused the merge. Check that you have write access, that the checks it requires have passed, and that the branch is not conflicting.",
   ready: "The host refused it. Check that you have write access to this repository.",
@@ -996,6 +1000,7 @@ export function PullRequestDetailPanel({
         title: ACTION_FAILURE_LABELS[action],
         description: readableFailure(failure, hint),
       });
+      if (action === "rerun-failed-checks") void refreshFromHost();
       onActed?.(action, "failed");
       return false;
     }
@@ -2613,6 +2618,24 @@ export function PullRequestDetailPanel({
                     {checksSummary}
                   </span>
                 )}
+                {detail.state === "open" &&
+                checksState === "failing" &&
+                !checksStale &&
+                can("rerun-failed-checks") ? (
+                  <span className="ml-2">
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={actionPending}
+                      onClick={() => void perform("rerun-failed-checks")}
+                    >
+                      <RotateCcwIcon aria-hidden />
+                      {pendingAction === "rerun-failed-checks"
+                        ? "Requesting reruns…"
+                        : "Rerun failed checks"}
+                    </Button>
+                  </span>
+                ) : null}
               </span>
             ) : tab === "timeline" ? (
               <div className="ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">

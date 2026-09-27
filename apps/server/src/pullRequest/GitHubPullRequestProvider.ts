@@ -31,6 +31,7 @@ const CAPABILITIES: PullRequestCapabilities = {
     "disable-auto-merge",
     "revert",
     "approve-workflows",
+    "rerun-failed-checks",
   ],
   mergeMethods: ["merge", "squash", "rebase"],
   updateMethods: ["merge", "rebase"],
@@ -80,6 +81,7 @@ export function gitHubViewerPermissions(access: GitHubViewerAccess): PullRequest
             "disable-auto-merge",
             "revert",
             "approve-workflows",
+            "rerun-failed-checks",
           ] as const)
         : []),
       ...(access.canUpdate ? (["ready", "draft", "close", "reopen"] as const) : []),
@@ -194,7 +196,7 @@ export const make = Effect.gen(function* () {
       provider: "github",
       operation,
       ...gitHubProviderFailure(error),
-      detail: error.detail,
+      detail: error._tag === "GitHubWorkflowRerunError" ? error.message : error.detail,
       cause: error,
     });
 

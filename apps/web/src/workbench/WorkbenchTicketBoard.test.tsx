@@ -8,12 +8,18 @@ import {
   WorkbenchTicketId,
   type WorkbenchTicket,
 } from "@t3tools/contracts";
+import { ToggleGroup } from "../components/ui/toggle-group";
 import { Select } from "../components/ui/select";
 import type { Project } from "../types";
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
 
 vi.mock("../state/query", () => ({
   useEnvironmentQuery: () => ({ data: null, error: null, isPending: false }),
+}));
+vi.mock("../state/pullRequests", () => ({
+  linkedPullRequestDetailAtom: () => null,
+  pullRequestEnvironment: { activity: () => null },
+  useSharedPullRequestSummary: () => null,
 }));
 vi.mock("./state", () => ({ workbenchEnvironment: { jiraGetTicketTransitions: () => null } }));
 
@@ -123,6 +129,30 @@ describe("Workbench Board view", () => {
       "welcome",
     );
     expect(renderer.root.findAllByType("article")).toHaveLength(1);
+  });
+  it("retains attention filters on remount and clears an empty result back to All", () => {
+    const scoped = { ...props, projectId: WorkbenchProjectId.make("attention-remount-workspace") };
+    act(() => {
+      renderer = create(<WorkbenchTicketBoard {...scoped} />);
+    });
+    const control = () =>
+      renderer.root
+        .findAllByType(ToggleGroup)
+        .find((node) => node.props["aria-label"] === "Filter by attention")!;
+    act(() => control().props.onValueChange(["review"]));
+    expect(renderer.root.findAllByType("article")).toHaveLength(0);
+    act(() => renderer.unmount());
+    act(() => {
+      renderer = create(<WorkbenchTicketBoard {...scoped} />);
+    });
+    expect(control().props.value).toEqual(["review"]);
+    expect(renderer.root.findAllByType("article")).toHaveLength(0);
+    const clear = renderer.root
+      .findAllByType("button")
+      .find((button) => button.children.includes("Clear filters"))!;
+    act(() => clear.props.onClick());
+    expect(control().props.value).toEqual(["all"]);
+    expect(renderer.root.findAllByType("article")).toHaveLength(2);
   });
   it("matches secondary repositories, retains the filter while loading, and clears removed repositories", () => {
     const workspaceProps = {

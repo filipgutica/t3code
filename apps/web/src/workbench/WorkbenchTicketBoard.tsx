@@ -1,3 +1,6 @@
+import { WorkbenchAttentionQueries } from "./WorkbenchAttentionQueries";
+import { matchesWorkbenchAttention, type WorkbenchAttentionMode } from "./workbenchAttention.logic";
+import { useWorkbenchAttention } from "./useWorkbenchAttention";
 import {
   DndContext,
   DragOverlay,
@@ -198,12 +201,25 @@ function renderWorkbenchTicketBoard({
       onDragCancel={() => setActiveTicketId(null)}
       onDragEnd={handleDragEnd}
     >
+      {data.attentionMode !== "all" ? (
+        <WorkbenchAttentionQueries
+          key={data.attentionScope}
+          environmentId={environmentId}
+          references={data.attentionReferences}
+          refresh={data.attentionRefresh > 0}
+          onChange={data.setAttentionObservations}
+        />
+      ) : null}
       <section
         aria-label="Ticket board"
         className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
       >
         {renderWorkbenchBoardControls({
           search,
+          attentionMode: data.attentionMode,
+          setAttentionMode: data.setAttentionMode,
+          attentionCoverage: data.attentionCoverage,
+          refreshAttention: data.refreshAttention,
           repositoryId: data.repositoryId,
           setRepositoryId: data.setRepositoryId,
           repositoryProjectIds: props.repositoryProjectIds,
@@ -321,6 +337,8 @@ type WorkbenchBoardContext = Pick<
     WorkbenchTicketId,
     ReturnType<typeof getWorkbenchTicketAgentPresentation>
   >;
+  attentionMode: WorkbenchAttentionMode;
+  attentionReasonsByTicket: ReadonlyMap<WorkbenchTicketId, ReadonlyArray<string>>;
   threadCounts: ReadonlyMap<WorkbenchTicketId, number>;
   epicsById: ReadonlyMap<WorkbenchEpic["id"], WorkbenchEpic>;
 };
@@ -537,6 +555,12 @@ function renderWorkbenchBoardTicket({
             </div>
           </div>
           {renderWorkbenchBoardTicketMetadata(presentation)}
+          {board.attentionMode !== "all" &&
+          (board.attentionReasonsByTicket.get(ticket.id)?.length ?? 0) > 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {board.attentionReasonsByTicket.get(ticket.id)?.join(" · ")}
+            </p>
+          ) : null}
           {renderWorkbenchBoardTicketThreadAction(presentation)}
         </article>
       )}
@@ -586,10 +610,29 @@ function useWorkbenchBoardData({
       setView({ repositoryId: null });
     }
   }, [repositoriesReady, repositoryProjectIds, repositoryId, setView]);
+  const attentionMode = view.attentionMode;
+  const setAttentionMode = (attentionMode: WorkbenchAttentionMode) => setView({ attentionMode });
+  const {
+    attentionRefresh,
+    refreshAttention,
+    attentionReferences,
+    attentionScope,
+    setAttentionObservations,
+    attentionReasonsByTicket,
+    attentionCoverage,
+  } = useWorkbenchAttention({
+    environmentId,
+    projectId,
+    attentionMode,
+    tickets,
+    assignments,
+    threadsById,
+  });
   const visibleTickets = useMemo(
     () =>
       tickets.filter(
         (ticket) =>
+          matchesWorkbenchAttention(attentionMode, attentionReasonsByTicket.get(ticket.id) ?? []) &&
           (repositoryId === null ||
             getWorkbenchTicketRepositoryProjectIds(ticket).includes(repositoryId)) &&
           matchesWorkbenchTicketSearch({
@@ -598,7 +641,14 @@ function useWorkbenchBoardData({
             query: search.query,
           }),
       ),
-    [tickets, jiraIssueLinksByTicketId, search.query, repositoryId],
+    [
+      tickets,
+      jiraIssueLinksByTicketId,
+      search.query,
+      repositoryId,
+      attentionMode,
+      attentionReasonsByTicket,
+    ],
   );
   const visibleTicketIds = useMemo(
     () => new Set(visibleTickets.map((ticket) => ticket.id)),
@@ -670,6 +720,15 @@ function useWorkbenchBoardData({
 
   return {
     search,
+    attentionMode,
+    setAttentionMode,
+    attentionReasonsByTicket,
+    attentionReferences,
+    attentionScope,
+    attentionRefresh,
+    attentionCoverage,
+    refreshAttention,
+    setAttentionObservations,
     repositoryId,
     setRepositoryId,
     visibleTickets,
@@ -1031,7 +1090,74 @@ function WorkbenchBoardRepositoryFilter({
   );
 }
 
+function renderWorkbenchAttentionModeControl(
+  attentionMode: WorkbenchAttentionMode,
+  setAttentionMode: (mode: WorkbenchAttentionMode) => void,
+) {
+  return (
+    <ToggleGroup
+      value={[attentionMode]}
+      onValueChange={(values) => {
+        const mode = values[0];
+        if (mode === "all" || mode === "attention" || mode === "review") setAttentionMode(mode);
+      }}
+      aria-label="Filter by attention"
+    >
+      <Toggle value="all">All</Toggle>
+      <Toggle value="attention">Needs attention</Toggle>
+      <Toggle value="review">Ready for review</Toggle>
+    </ToggleGroup>
+  );
+}
+
+function renderWorkbenchBoardEmptyFilter({
+  search,
+  repositoryId,
+  attentionMode,
+  visibleTickets,
+  setRepositoryId,
+  setAttentionMode,
+}: Pick<
+  ReturnType<typeof useWorkbenchBoardData>,
+  | "search"
+  | "repositoryId"
+  | "attentionMode"
+  | "visibleTickets"
+  | "setRepositoryId"
+  | "setAttentionMode"
+>) {
+  return (
+    <>
+      {" "}
+      {(search.query || repositoryId !== null || attentionMode !== "all") &&
+      visibleTickets.length === 0 ? (
+        <div
+          role="status"
+          className="flex shrink-0 items-center justify-center gap-3 p-4 text-sm text-muted-foreground"
+        >
+          No matching tickets.
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              search.setText("");
+              setRepositoryId(null);
+              setAttentionMode("all");
+            }}
+          >
+            Clear filters
+          </Button>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 function renderWorkbenchBoardControls({
+  attentionMode,
+  setAttentionMode,
+  attentionCoverage,
+  refreshAttention,
   search,
   repositoryId,
   setRepositoryId,
@@ -1044,7 +1170,15 @@ function renderWorkbenchBoardControls({
   setSelectedColumnId,
 }: Pick<
   ReturnType<typeof useWorkbenchBoardData>,
-  "search" | "repositoryId" | "setRepositoryId" | "visibleTickets" | "columns"
+  | "search"
+  | "attentionMode"
+  | "setAttentionMode"
+  | "attentionCoverage"
+  | "refreshAttention"
+  | "repositoryId"
+  | "setRepositoryId"
+  | "visibleTickets"
+  | "columns"
 > &
   Pick<WorkbenchTicketBoardProps, "tickets" | "repositoryProjectIds" | "repositoriesById"> &
   Pick<ReturnType<typeof useWorkbenchBoardDrag>, "visibleColumnId" | "setSelectedColumnId">) {
@@ -1052,6 +1186,7 @@ function renderWorkbenchBoardControls({
     <>
       {" "}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2 sm:px-4">
+        {renderWorkbenchAttentionModeControl(attentionMode, setAttentionMode)}
         <div className="relative min-w-0 flex-1 sm:max-w-xs">
           <SearchIcon
             aria-hidden
@@ -1088,30 +1223,28 @@ function renderWorkbenchBoardControls({
           repositoryProjectIds={repositoryProjectIds}
           repositoriesById={repositoriesById}
         />
-        {search.query || repositoryId !== null ? (
+        {attentionMode !== "all" ? (
+          <span className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
+            {attentionCoverage}
+            <Button variant="ghost" size="xs" onClick={refreshAttention}>
+              Refresh linked PRs
+            </Button>
+          </span>
+        ) : null}
+        {search.query || repositoryId !== null || attentionMode !== "all" ? (
           <span role="status" className="text-xs text-muted-foreground">
             {visibleTickets.length} of {tickets.length} tickets
           </span>
         ) : null}
       </div>
-      {(search.query || repositoryId !== null) && visibleTickets.length === 0 ? (
-        <div
-          role="status"
-          className="flex shrink-0 items-center justify-center gap-3 p-4 text-sm text-muted-foreground"
-        >
-          No matching tickets.
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              search.setText("");
-              setRepositoryId(null);
-            }}
-          >
-            Clear filters
-          </Button>
-        </div>
-      ) : null}
+      {renderWorkbenchBoardEmptyFilter({
+        search,
+        repositoryId,
+        attentionMode,
+        visibleTickets,
+        setRepositoryId,
+        setAttentionMode,
+      })}
       <div className="shrink-0 overflow-x-auto border-b border-border/60 px-3 py-2 md:hidden">
         <ToggleGroup
           aria-label="Board columns"

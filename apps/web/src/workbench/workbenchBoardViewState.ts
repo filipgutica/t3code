@@ -8,6 +8,7 @@ export interface WorkbenchBoardScope {
 }
 
 interface WorkbenchBoardView {
+  readonly attentionMode: "all" | "attention" | "review";
   readonly searchText: string;
   readonly groupMode: "none" | "epic";
   readonly repositoryId: ProjectId | null;
@@ -15,6 +16,7 @@ interface WorkbenchBoardView {
 }
 
 const DEFAULT_VIEW: WorkbenchBoardView = {
+  attentionMode: "all",
   searchText: "",
   groupMode: "none",
   repositoryId: null,
@@ -32,6 +34,7 @@ const useBoardViews = create<{
       const previous = state.views.get(key) ?? DEFAULT_VIEW;
       const next = { ...previous, ...patch };
       if (
+        previous.attentionMode === next.attentionMode &&
         previous.searchText === next.searchText &&
         previous.groupMode === next.groupMode &&
         previous.repositoryId === next.repositoryId &&

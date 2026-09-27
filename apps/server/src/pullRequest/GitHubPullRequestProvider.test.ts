@@ -1,3 +1,4 @@
+import { GitHubWorkflowRerunError } from "./githubWorkflowRerun.ts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -174,6 +175,7 @@ describe("gitHubViewerPermissions", () => {
         "disable-auto-merge",
         "revert",
         "approve-workflows",
+        "rerun-failed-checks",
         "ready",
         "draft",
         "close",
@@ -1017,3 +1019,31 @@ describe("loginAvatarUrl", () => {
     }
   });
 });
+
+it.effect("preserves the accepted rerun count across the native provider boundary", () =>
+  Effect.gen(function* () {
+    const provider = yield* make.pipe(
+      Effect.provide(
+        Layer.mock(GitHubPullRequestCli.GitHubPullRequestCli)({
+          runPullRequestAction: () =>
+            Effect.fail(
+              new GitHubWorkflowRerunError({
+                requestedCount: 1,
+                detail: "Actions write permission denied.",
+              }),
+            ),
+        }),
+      ),
+    );
+    const error = yield* Effect.flip(
+      provider.runAction({
+        cwd: "/w",
+        host: "github.com",
+        repository: "acme/web",
+        number: 7,
+        action: "rerun-failed-checks",
+      }),
+    );
+    expect(error.detail).toBe("Requested 1 workflow rerun. Actions write permission denied.");
+  }),
+);
