@@ -128,6 +128,10 @@ try {
         "vercel@53.1.1",
         "deploy",
         "--yes",
+        "--target",
+        "preview",
+        "--format",
+        "json",
         "--archive=tgz",
         "--token",
         env.VERCEL_TOKEN,
@@ -152,7 +156,16 @@ try {
     // Child-process errors include command arguments, including the deployment token.
     throw new Error("Vercel launcher deployment failed; inspect the deployment in your dashboard.");
   }
-  const url = new URL(output);
+  const result = JSON.parse(output);
+  // The CLI serializes Vercel's default preview target as null.
+  if (
+    result.status !== "ok" ||
+    result.deployment?.readyState !== "READY" ||
+    !["preview", null].includes(result.deployment?.target) ||
+    typeof result.deployment?.url !== "string"
+  )
+    throw new Error("Vercel did not return a ready preview deployment; no link published.");
+  const url = new URL(result.deployment.url);
   if (url.protocol !== "https:" || !url.hostname.endsWith(".vercel.app") || url.pathname !== "/")
     throw new Error("Unexpected launcher deployment URL.");
   const anonymous = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(10_000) });

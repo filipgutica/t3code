@@ -7,7 +7,13 @@ import * as NodePath from "node:path";
 import * as NodeOS from "node:os";
 
 const sha = "a".repeat(40);
-for (const scenario of ["new-content", "identical-content", "deploy-failure", "unprotected-post"]) {
+for (const scenario of [
+  "new-content",
+  "identical-content",
+  "deploy-failure",
+  "unprotected-post",
+  "production-target",
+]) {
   NodeTest.test(
     `publisher ${scenario} preserves the verified bytes and private deployment boundary`,
     async () => {
@@ -22,7 +28,7 @@ for (const scenario of ["new-content", "identical-content", "deploy-failure", "u
         const bin = NodePath.join(root, "bin");
         await NodeFSP.mkdir(bin);
         const command = `#!${process.execPath}
-const NodeFSP=require('node:fs');NodeFSP.appendFileSync(process.env.TEST_LOG,JSON.stringify({command:require('node:path').basename(process.argv[1]),args:process.argv.slice(2)})+'\\n');if(process.argv[1].endsWith('pnpm')){if(process.env.TEST_SCENARIO==='deploy-failure'){process.stderr.write(process.env.VERCEL_TOKEN);process.exit(1);}process.stdout.write('https://private-launcher.vercel.app');}`;
+const NodeFSP=require('node:fs');NodeFSP.appendFileSync(process.env.TEST_LOG,JSON.stringify({command:require('node:path').basename(process.argv[1]),args:process.argv.slice(2)})+'\\n');if(process.argv[1].endsWith('pnpm')){if(process.env.TEST_SCENARIO==='deploy-failure'){process.stderr.write(process.env.VERCEL_TOKEN);process.exit(1);}process.stdout.write(JSON.stringify({status:'ok',deployment:{url:'https://private-launcher.vercel.app',readyState:'READY',target:process.env.TEST_SCENARIO==='production-target'?'production':null}}));}`;
         for (const tool of ["gh", "pnpm"])
           await NodeFSP.writeFile(NodePath.join(bin, tool), command, { mode: 0o700 });
         const preload = NodePath.join(root, "fetch.mjs");
@@ -60,6 +66,11 @@ globalThis.fetch=async(url,options={})=>{const u=String(url);NodeFSP.appendFileS
             NodeAssert.doesNotMatch(error.stderr, /private-test-token/);
             return true;
           });
+        } else if (scenario === "production-target") {
+          NodeAssert.throws(run, (error) => {
+            NodeAssert.match(error.stderr, /ready preview deployment/);
+            return true;
+          });
         } else if (scenario === "unprotected-post") {
           NodeAssert.throws(run, (error) => {
             NodeAssert.match(error.stderr, /anonymous access check/);
@@ -73,6 +84,8 @@ globalThis.fetch=async(url,options={})=>{const u=String(url);NodeFSP.appendFileS
         NodeAssert.equal(uploads.length, scenario === "identical-content" ? 0 : 1);
         if (uploads.length) NodeAssert.equal(NodePath.basename(uploads[0].args[3]), name);
         const deploy = events.find((event) => event.command === "pnpm");
+        NodeAssert.equal(deploy.args[deploy.args.indexOf("--target") + 1], "preview");
+        NodeAssert.equal(deploy.args[deploy.args.indexOf("--format") + 1], "json");
         NodeAssert.ok(deploy.args.includes(`WORKBENCH_PREVIEW_BUNDLE_SHA256=${digest}`));
         NodeAssert.ok(
           deploy.args.some(
@@ -84,7 +97,7 @@ globalThis.fetch=async(url,options={})=>{const u=String(url);NodeFSP.appendFileS
         );
         NodeAssert.equal(
           comments.length,
-          ["deploy-failure", "unprotected-post"].includes(scenario) ? 0 : 1,
+          ["deploy-failure", "unprotected-post", "production-target"].includes(scenario) ? 0 : 1,
         );
         if (comments.length) {
           NodeAssert.ok(
