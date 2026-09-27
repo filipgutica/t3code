@@ -7,7 +7,7 @@ const node = `${prefix}/node-bin/node`;
 const app = `${prefix}/app`;
 const path = `${prefix}/node-bin:/usr/local/bin:/usr/bin:/bin`;
 
-export const readArtifact = (environment: NodeJS.ProcessEnv) => {
+const readArtifact = (environment: NodeJS.ProcessEnv) => {
   const sha = environment.WORKBENCH_PREVIEW_SHA;
   const pr = environment.WORKBENCH_PREVIEW_PR;
   const checksum = environment.WORKBENCH_PREVIEW_BUNDLE_SHA256;

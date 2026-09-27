@@ -7,7 +7,7 @@ const fixture = vi.hoisted(() => ({
   userCommand: vi.fn(),
 }));
 vi.mock("@vercel/sandbox", () => ({ Sandbox: { create: fixture.create } }));
-import { launchPreview, readArtifact } from "./lifecycle.js";
+import { launchPreview } from "./lifecycle.js";
 
 const sha = "a".repeat(40);
 const checksum = "b".repeat(64);
@@ -43,21 +43,16 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 it("pins deployment artifact identity before provisioning and refuses a closed or changed PR", async () => {
-  expect(() =>
-    readArtifact({
-      ...environment,
-      WORKBENCH_PREVIEW_BUNDLE_URL: "https://attacker.invalid/payload",
-    }),
-  ).toThrow("Invalid fixed");
-  expect(() => readArtifact({ ...environment, WORKBENCH_PREVIEW_SHA: "changed" })).toThrow(
-    "Invalid fixed",
-  );
-  expect(() => readArtifact({ ...environment, WORKBENCH_PREVIEW_PR: "0" })).toThrow(
-    "Invalid fixed",
-  );
-  expect(() => readArtifact({ ...environment, WORKBENCH_PREVIEW_BUNDLE_SHA256: "bad" })).toThrow(
-    "Invalid fixed",
-  );
+  for (const invalid of [
+    { WORKBENCH_PREVIEW_BUNDLE_URL: "https://attacker.invalid/payload" },
+    { WORKBENCH_PREVIEW_SHA: "changed" },
+    { WORKBENCH_PREVIEW_PR: "0" },
+    { WORKBENCH_PREVIEW_BUNDLE_SHA256: "bad" },
+  ]) {
+    await expect(launchPreview({ ...environment, ...invalid })).rejects.toThrow("Invalid fixed");
+  }
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(fixture.create).not.toHaveBeenCalled();
   for (const pull of [
     { state: "closed", head: { sha, repo: { full_name: "filipgutica/t3code" } } },
     { state: "open", head: { sha: "c".repeat(40), repo: { full_name: "filipgutica/t3code" } } },
