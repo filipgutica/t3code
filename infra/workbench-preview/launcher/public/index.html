@@ -267,6 +267,41 @@
       #status {
         margin-top: var(--space-4);
       }
+      #startup {
+        display: grid;
+        gap: var(--space-3);
+        margin-top: var(--space-4);
+      }
+      #elapsed {
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+        color: var(--text-muted);
+      }
+      #startup p {
+        margin: 0;
+        font-size: var(--text-sm);
+      }
+      #stages {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      #stages li {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--space-4);
+        padding: var(--space-2) 0;
+        border-bottom: 1px solid var(--border-subtle);
+        color: var(--text-muted);
+      }
+      #stages li[aria-current="step"] {
+        color: var(--text);
+        font-weight: var(--weight-medium);
+      }
+      .step-state {
+        font-size: var(--text-sm);
+        white-space: nowrap;
+      }
     </style>
   </head>
   <body>
@@ -283,31 +318,143 @@
       </p>
       <button id="open" type="button">Open demo</button>
       <p id="status" role="status" aria-live="polite"></p>
+      <div id="startup" hidden>
+        <ol id="stages" aria-label="Demo startup stages">
+          <li data-stage="checking">
+            <span>Check preview</span><span class="step-state">Waiting</span>
+          </li>
+          <li data-stage="creating">
+            <span>Create environment</span><span class="step-state">Waiting</span>
+          </li>
+          <li data-stage="preparing">
+            <span>Prepare runtime</span><span class="step-state">Waiting</span>
+          </li>
+          <li data-stage="starting">
+            <span>Start Workbench</span><span class="step-state">Waiting</span>
+          </li>
+          <li data-stage="pairing">
+            <span>Pair browser</span><span class="step-state">Waiting</span>
+          </li>
+        </ol>
+        <span id="elapsed" aria-live="off">Elapsed 0:00</span>
+        <p id="startup-note">
+          Keep this tab open; you’ll connect automatically when the demo is ready.
+        </p>
+      </div>
     </main>
     <script>
       const button = document.querySelector("#open");
       const status = document.querySelector("#status");
+      const startup = document.querySelector("#startup");
+      const elapsed = document.querySelector("#elapsed");
+      const note = document.querySelector("#startup-note");
+      const steps = Array.from(document.querySelectorAll("#stages li"));
+      const messages = {
+        checking: "Checking this preview…",
+        creating: "Creating your environment…",
+        preparing: "Downloading and preparing the runtime…",
+        starting: "Starting Workbench and loading demo data…",
+        pairing: "Pairing your browser…",
+      };
       button.addEventListener("click", async () => {
         button.disabled = true;
-        status.textContent = "Starting a fresh demo. This can take up to four minutes.";
+        button.textContent = "Preparing demo…";
+        startup.hidden = false;
+        note.hidden = false;
+        elapsed.textContent = "Elapsed 0:00";
+        status.textContent = "Waiting for startup updates…";
+        note.textContent =
+          "Keep this tab open; you’ll connect automatically when the demo is ready.";
+        let currentStep = -1;
+        for (const step of steps) {
+          step.removeAttribute("aria-current");
+          step.querySelector(".step-state").textContent = "Waiting";
+        }
+        const startedAt = performance.now();
+        const timer = setInterval(() => {
+          const seconds = Math.floor((performance.now() - startedAt) / 1000);
+          elapsed.textContent = `Elapsed ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+          const message =
+            seconds >= 240
+              ? "Startup is taking longer than expected. Still waiting for the server to finish."
+              : seconds >= 90
+                ? "Startup is still in progress. Keep this tab open; you’ll connect automatically."
+                : note.textContent;
+          if (note.textContent !== message) note.textContent = message;
+        }, 1000);
         try {
           const response = await fetch("/api/launch", {
             method: "POST",
             credentials: "same-origin",
             cache: "no-store",
+            headers: { Accept: "application/x-ndjson" },
           });
-          const result = await response.json();
           if (response.status === 409) {
             status.textContent =
               "This preview is out of date or its PR has closed. Open the latest demo link from the PR.";
             button.disabled = false;
             return;
           }
-          if (!response.ok || typeof result.pairingUrl !== "string") throw new Error();
-          window.location.replace(result.pairingUrl);
+          if (!response.ok || !response.body) throw new Error();
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          let ready = false;
+          try {
+            while (!ready) {
+              const { value, done } = await reader.read();
+              buffer += decoder.decode(value, { stream: !done });
+              let newline;
+              while ((newline = buffer.indexOf("\n")) !== -1) {
+                const line = buffer.slice(0, newline);
+                buffer = buffer.slice(newline + 1);
+                if (!line.trim()) continue;
+                const update = JSON.parse(line);
+                if (update.error === "revision-changed") {
+                  status.textContent =
+                    "This preview is out of date or its PR has closed. Open the latest demo link from the PR.";
+                  if (currentStep >= 0)
+                    steps[currentStep].querySelector(".step-state").textContent = "Unavailable";
+                  button.disabled = false;
+                  return;
+                }
+                if (update.error) throw new Error();
+                if (typeof update.stage === "string") {
+                  const index = steps.findIndex((step) => step.dataset.stage === update.stage);
+                  if (index < currentStep || index < 0) throw new Error();
+                  currentStep = index;
+                  for (const [position, step] of steps.entries()) {
+                    step.querySelector(".step-state").textContent =
+                      position < index ? "Done" : position === index ? "In progress" : "Waiting";
+                    if (position === index) step.setAttribute("aria-current", "step");
+                    else step.removeAttribute("aria-current");
+                  }
+                  status.textContent = messages[update.stage];
+                } else if (typeof update.pairingUrl === "string") {
+                  ready = true;
+                  for (const step of steps) {
+                    step.removeAttribute("aria-current");
+                    step.querySelector(".step-state").textContent = "Done";
+                  }
+                  status.textContent = "Demo ready. Connecting…";
+                  window.location.replace(update.pairingUrl);
+                  break;
+                } else throw new Error();
+              }
+              if (done && !ready) throw new Error();
+            }
+          } finally {
+            await reader.cancel();
+          }
         } catch {
           status.textContent = "The demo could not start. Try again.";
           button.disabled = false;
+          if (currentStep >= 0)
+            steps[currentStep].querySelector(".step-state").textContent = "Failed";
+        } finally {
+          clearInterval(timer);
+          note.hidden = true;
+          button.textContent = "Open demo";
         }
       });
     </script>

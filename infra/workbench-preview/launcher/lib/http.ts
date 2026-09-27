@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetch:off - Native Vercel HTTP boundary and local contract test are independent of the application runtime.
 import type * as NodeHttp from "node:http";
+import type { LaunchStage } from "./lifecycle.js";
 
 export const handleLaunch = async ({
   request,
@@ -10,7 +11,9 @@ export const handleLaunch = async ({
   request: NodeHttp.IncomingMessage;
   response: NodeHttp.ServerResponse;
   environment: NodeJS.ProcessEnv;
-  launch: () => Promise<{ pairingUrl: string } | { unavailable: "revision-changed" }>;
+  launch: (options: {
+    onProgress?: (stage: LaunchStage) => void;
+  }) => Promise<{ pairingUrl: string } | { unavailable: "revision-changed" }>;
 }) => {
   response.setHeader("Cache-Control", "no-store");
   response.setHeader("Content-Type", "application/json");
@@ -30,8 +33,28 @@ export const handleLaunch = async ({
   for await (const chunk of request) {
     if (chunk.length > 0) return reply(400, "Launch parameters are not accepted.");
   }
+  const streaming = request.headers.accept
+    ?.split(",")
+    .some((mediaType) => mediaType.trim().split(";")[0] === "application/x-ndjson");
+  if (streaming) {
+    response.setHeader("Content-Type", "application/x-ndjson");
+    // A broken socket is handled locally; the next stage throws into sandbox cleanup.
+    response.once("error", () => response.destroy());
+  }
+  const writeRecord = (record: { stage: LaunchStage } | { error: string }) => {
+    if (response.destroyed) throw new Error("Preview client disconnected.");
+    response.write(JSON.stringify(record) + "\n");
+    response.flushHeaders();
+  };
   try {
-    const result = await launch();
+    const result = await launch(streaming ? { onProgress: (stage) => writeRecord({ stage }) } : {});
+    if (streaming) {
+      if (response.destroyed) return;
+      response.end(
+        JSON.stringify("unavailable" in result ? { error: "revision-changed" } : result) + "\n",
+      );
+      return;
+    }
     if ("unavailable" in result)
       return reply(
         409,
@@ -41,6 +64,11 @@ export const handleLaunch = async ({
     response.end(JSON.stringify(result));
   } catch {
     // Provider errors may contain command output or private credentials. Never echo them.
+    if (response.destroyed) return;
+    if (streaming) {
+      response.end(JSON.stringify({ error: "startup-failed" }) + "\n");
+      return;
+    }
     reply(502, "The demo could not start. Try again.");
   }
 };

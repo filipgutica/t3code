@@ -40,8 +40,17 @@ const output=cp.execFileSync('${node}',['${app}/apps/server/dist/bin.mjs','pair'
 const token=output.match(/^Token: ([^\\s]+)$/m)?.[1];if(!token)process.exit(1);process.stdout.write(token);
 `;
 
-export const launchPreview = async (environment: NodeJS.ProcessEnv) => {
+export type LaunchStage = "checking" | "creating" | "preparing" | "starting" | "pairing";
+
+export const launchPreview = async ({
+  environment,
+  onProgress,
+}: {
+  environment: NodeJS.ProcessEnv;
+  onProgress?: (stage: LaunchStage) => void;
+}) => {
   const artifact = readArtifact(environment);
+  onProgress?.("checking");
   const source = await fetch(
     `https://api.github.com/repos/filipgutica/t3code/pulls/${artifact.pr}`,
     {
@@ -75,6 +84,7 @@ export const launchPreview = async (environment: NodeJS.ProcessEnv) => {
     pull.head.repo.full_name !== "filipgutica/t3code"
   )
     return { unavailable: "revision-changed" as const };
+  onProgress?.("creating");
   const sandbox = await Sandbox.create({
     image: "vercel/sandbox/node:24",
     persistent: false,
@@ -85,6 +95,7 @@ export const launchPreview = async (environment: NodeJS.ProcessEnv) => {
   });
   let successful = false;
   try {
+    onProgress?.("preparing");
     const user = await sandbox.createUser("node");
     const provision = await sandbox.runCommand({
       cmd: "node",
@@ -101,6 +112,7 @@ export const launchPreview = async (environment: NodeJS.ProcessEnv) => {
       timeoutMs: 100_000,
     });
     if (provision.exitCode !== 0) throw new Error("Preview provisioning failed.");
+    onProgress?.("starting");
     const startup = await user.runCommand({
       cmd: node,
       args: [`${app}/scripts/workbench-preview/start.mts`],
@@ -123,6 +135,7 @@ export const launchPreview = async (environment: NodeJS.ProcessEnv) => {
     } finally {
       controller.abort();
     }
+    onProgress?.("pairing");
     const paired = await user.runCommand({
       cmd: node,
       args: ["-e", pairingScript],

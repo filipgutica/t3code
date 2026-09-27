@@ -11,6 +11,7 @@ export default async function launch(
     request,
     response,
     environment: process.env,
-    launch: () => launchPreview(process.env),
+    launch: ({ onProgress }) =>
+      launchPreview({ environment: process.env, ...(onProgress ? { onProgress } : {}) }),
   });
 }
