@@ -1109,6 +1109,9 @@ function WorkbenchTicketDetailController({
             <WorkbenchTicketPullRequests
               onOpenThread={onOpenAssignedThread}
               environmentId={environmentId}
+              ticketId={ticket.id}
+              assignments={activeAssignments}
+              threadsById={threadsById}
               ticketKey={jiraIssueLink?.issue.key ?? null}
               workspaceRepositoryProjectIds={linkedProjects.map((project) => project.id)}
               pullRequests={associatedPullRequests}
