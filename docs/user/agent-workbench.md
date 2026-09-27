@@ -50,6 +50,10 @@ Creating a Thread does not start an agent turn. Workbench prepares one Git
 worktree per selected repository and opens the Thread in the primary repository's
 worktree. The context chip includes the Ticket description and repository paths.
 
+After changing the Ticket, use **Attach current Ticket context** in an existing
+Thread to stage its saved requirements and current checkout paths. Review the
+context chip and send when ready; attaching context does not send a message.
+
 ![Ticket context containing the description, acceptance criteria, and paths to both repository worktrees.](./media/workbench/ticket-context.png)
 
 Use **New Thread** for another conversation on the same Ticket. Use **Link existing

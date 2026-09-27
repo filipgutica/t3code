@@ -1,11 +1,16 @@
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
-import { BlocksIcon, TicketIcon } from "lucide-react";
+import { BlocksIcon, TicketIcon, RefreshCwIcon } from "lucide-react";
 
 import {
   WorkspaceBreadcrumbItem,
   WorkspaceBreadcrumbSeparator,
 } from "../components/WorkspaceBreadcrumb";
+import { Button } from "../components/ui/button";
+import { toastManager } from "../components/ui/toast";
+import { useProjects, useThreadShell } from "../state/entities";
+import { attachWorkbenchTicketContext } from "./attachWorkbenchTicketContext";
 import { Badge } from "../components/ui/badge";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
@@ -19,6 +24,8 @@ export function WorkbenchThreadBreadcrumb({
   readonly threadId: ThreadId;
 }) {
   const { data } = useEnvironmentQuery(workbenchEnvironment.snapshot({ environmentId, input: {} }));
+  const projects = useProjects();
+  const thread = useThreadShell(scopeThreadRef(environmentId, threadId));
   const context = getWorkbenchContextForThread(data ?? null, threadId);
   if (!context) return null;
   const { ticket, workspace: project } = context;
@@ -67,6 +74,34 @@ export function WorkbenchThreadBreadcrumb({
             {WORKBENCH_TICKET_STATUS_LABELS[ticket.status]}
           </Badge>
         </Link>
+      </WorkspaceBreadcrumbItem>
+      <WorkspaceBreadcrumbItem>
+        <Button
+          aria-label="Attach current Ticket context"
+          title="Attach current Ticket context"
+          variant="ghost"
+          size="icon-sm"
+          disabled={thread === null}
+          onClick={() => {
+            if (thread === null) return;
+            attachWorkbenchTicketContext({
+              environmentId,
+              thread,
+              ticket,
+              projects: projects.filter((candidate) => candidate.environmentId === environmentId),
+              repositories:
+                data?.ticketWorkspaces.find((workspace) => workspace.ticketId === ticket.id)
+                  ?.repositories ?? [],
+            });
+            toastManager.add({
+              type: "success",
+              title: "Ticket context attached",
+              description: "Review it in the composer before sending.",
+            });
+          }}
+        >
+          <RefreshCwIcon />
+        </Button>
       </WorkspaceBreadcrumbItem>
       <WorkspaceBreadcrumbSeparator />
     </>
