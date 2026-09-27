@@ -80,6 +80,11 @@ the Ticket progress from the Ticket or Board card menu when the work is accepted
 For Jira Tickets, Workbench attempts an available Jira transition first; if it
 fails, the Thread continues and its work log shows a warning.
 
+Use **Needs attention** on the Board to find waiting Threads, work ready for review,
+failed PR checks, and unresolved PR conversations. **Ready for review** narrows the
+view to completed agent work awaiting review. PR inspection covers explicitly
+linked PRs; the Board shows incomplete or unavailable coverage and lets you refresh.
+
 The Ticket's **Pull Requests** section collects PRs reported by linked Threads and
 prepared worktrees. For Jira Tickets, it also searches linked repositories for the
 issue key. To attach a PR yourself, choose **Link PR** from the Ticket, select a
@@ -88,6 +93,11 @@ PR URL when browsing is unavailable or the PR is not listed. A number such as `#
 refers to the selected Thread's repository. Link PR needs a live assigned Thread and
 a project with a supported Git remote in the same environment. You can also use
 **Link pull request to thread** in the native Thread's command palette.
+
+For a GitHub PR with failing checks, open its native PR panel and choose **Rerun
+failed checks** to request failed-job reruns for its current head. This requires
+GitHub Actions write permission. A successful request does not mean the checks
+have passed; refresh the PR to follow the results.
 
 ![One Ticket showing pull requests from Orbit Web and Orbit API, alongside its Thread and prepared repository worktrees.](./media/workbench/pull-requests.png)
 

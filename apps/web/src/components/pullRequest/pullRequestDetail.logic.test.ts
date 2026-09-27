@@ -1518,7 +1518,10 @@ describe("which actions need the host read again after they run", () => {
     // test until somebody decides which side of the diff it belongs on.
     expect(PullRequestAction.literals.map(pullRequestActionNeedsHostRefresh)).toEqual(
       PullRequestAction.literals.map(
-        (action) => action === "update-branch" || action === "approve-workflows",
+        (action) =>
+          action === "update-branch" ||
+          action === "approve-workflows" ||
+          action === "rerun-failed-checks",
       ),
     );
   });

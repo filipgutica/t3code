@@ -278,6 +278,8 @@ const VERDICT_LABELS: Record<PullRequestReviewVerdict, string> = {
  * else; the other four are also the author's to take, whatever access they have.
  */
 const ACTION_ACCESS_REFUSALS: Record<PullRequestAction, string> = {
+  "rerun-failed-checks":
+    "You need repository write access and GitHub Actions write permission to rerun failed jobs.",
   merge: "You need write access on this repository to merge.",
   ready:
     "You need write access on this repository, or to have opened this change request, to mark it ready for review.",
@@ -1975,7 +1977,7 @@ export const make = Effect.gen(function* () {
                 // Once the authorized provider action starts, a failure may leave partial
                 // remote updates. Validation and permission failures above changed nothing.
                 Effect.ensuring(
-                  input.stackNumber === undefined
+                  input.stackNumber === undefined && input.action !== "rerun-failed-checks"
                     ? Effect.void
                     : refreshAfterTurn(project.project.id),
                 ),
@@ -3166,6 +3168,16 @@ export const make = Effect.gen(function* () {
     yield* readCache.invalidate(refScope(ref));
     const repository = yield* runAction(input).pipe(
       Effect.ensuring(readCache.invalidate(refScope(ref))),
+      // Several reruns can be accepted before a later one fails. Refresh readers on either outcome.
+      Effect.tapError(() =>
+        input.action !== "rerun-failed-checks"
+          ? Effect.void
+          : Effect.gen(function* () {
+              bumpRefEpoch(ref);
+              listingsEpoch = ++epochCounter;
+              yield* SubscriptionRef.set(pullRequestRefreshes, listingsEpoch);
+            }),
+      ),
     );
     bumpRefEpoch({ ...ref, repository });
     listingsEpoch = ++epochCounter;

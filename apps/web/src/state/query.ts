@@ -8,6 +8,7 @@ const EMPTY_ASYNC_RESULT_ATOM = Atom.make(AsyncResult.initial<never, never>(fals
 );
 
 export interface EnvironmentQueryView<A> {
+  readonly resultIdentity: object;
   readonly data: A | null;
   readonly dataUpdatedAt: number | null;
   readonly error: string | null;
@@ -30,6 +31,7 @@ export function useEnvironmentQuery<A, E>(
   const result = useAtomValue(selectedAtom);
   const refresh = useAtomRefresh(selectedAtom);
   return {
+    resultIdentity: result,
     data: Option.getOrNull(AsyncResult.value(result)),
     dataUpdatedAt: result._tag === "Success" ? result.timestamp : null,
     error: result._tag === "Failure" ? formatEnvironmentQueryError(result.cause) : null,
