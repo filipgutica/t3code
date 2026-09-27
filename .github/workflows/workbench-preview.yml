@@ -1,96 +1,14 @@
 name: Workbench PR preview
-
-# Controller and launcher come from main. PR code runs only in the credential-free build job.
 on:
-  pull_request_target:
-    types: [opened, reopened, synchronize, closed]
   workflow_dispatch:
-    inputs:
-      pull_request:
-        description: Pull request number to preview
-        required: true
-        type: string
-
 permissions:
   contents: read
-
-concurrency:
-  group: workbench-preview-${{ github.event.pull_request.number || inputs.pull_request }}
-  cancel-in-progress: true
-
 jobs:
-  select:
-    if: vars.WORKBENCH_PREVIEWS_ENABLED == 'true'
-    runs-on: ubuntu-24.04
-    outputs:
-      number: ${{ steps.select.outputs.number }}
-      sha: ${{ steps.select.outputs.sha }}
-      closed: ${{ steps.select.outputs.closed }}
-      controller: ${{ steps.select.outputs.controller }}
-    steps:
-      - id: select
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const number = Number(context.payload.pull_request?.number ?? context.payload.inputs?.pull_request);
-            if (!Number.isSafeInteger(number) || number <= 0) throw new Error('Invalid PR number');
-            const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: number });
-            if (pr.head.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}` || pr.user.login !== context.repo.owner) {
-              throw new Error('Only repository-owner PRs from this repository may create demos');
-            }
-            if (!/^[a-f0-9]{40}$/.test(pr.head.sha)) throw new Error('Invalid PR revision');
-            const { data: main } = await github.rest.repos.getBranch({ ...context.repo, branch: 'main' });
-            core.setOutput('controller', main.commit.sha);
-            core.setOutput('number', String(number));
-            core.setOutput('sha', pr.head.sha);
-            core.setOutput('closed', String(pr.state !== 'open'));
-  build:
-    needs: select
-    if: needs.select.outputs.closed == 'false'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.select.outputs.controller }}
-          path: controller
-          persist-credentials: false
-      - uses: actions/checkout@v6
-        with:
-          ref: ${{ needs.select.outputs.sha }}
-          path: source
-          persist-credentials: false
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "24.13.1"
-      - name: Apply reviewed preview tooling
-        run: |
-          cp -R controller/scripts/workbench-preview source/scripts/
-          cp controller/scripts/workbench-demo/local.mts source/scripts/workbench-demo/local.mts
-      - name: Build exact PR without integration credentials
-        working-directory: source
-        run: docker build --platform linux/amd64 -f scripts/workbench-preview/Dockerfile -t workbench-preview:local .
-      - name: Exercise real native service and crash recovery
-        run: node controller/scripts/workbench-preview/smoke.mjs
-      - name: Export installed Linux runtime
-        run: node controller/scripts/workbench-preview/bundle.mjs workbench-preview:local /tmp/workbench-preview.tar.gz
-      - name: Verify the exported runtime bundle
-        run: node controller/scripts/workbench-preview/smoke.mjs workbench-preview:local /tmp/workbench-preview.tar.gz
-      - uses: actions/upload-artifact@v7
-        with:
-          name: workbench-preview-${{ needs.select.outputs.sha }}
-          path: /tmp/workbench-preview.tar.gz
-          retention-days: 1
-          compression-level: 0
-  publish:
-    needs: [select, build]
+  diagnose:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
+      actions: read
       contents: write
       pull-requests: write
     env:
@@ -98,17 +16,19 @@ jobs:
       VERCEL_TOKEN: ${{ secrets.WORKBENCH_PREVIEW_VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.WORKBENCH_PREVIEW_VERCEL_TEAM_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.WORKBENCH_PREVIEW_VERCEL_PROJECT_ID }}
-      PREVIEW_REPO: ${{ github.repository }}
-      PREVIEW_PR: ${{ needs.select.outputs.number }}
-      PREVIEW_SHA: ${{ needs.select.outputs.sha }}
+      PREVIEW_REPO: filipgutica/t3code
+      PREVIEW_PR: "71"
+      PREVIEW_SHA: 1619c69e5cdb95c1a5bb7ecb34d125c7aec2d334
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.select.outputs.controller }}
+          ref: a2c333a5c095ebb9b483a26fe814c521362fa295
           persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
-          name: workbench-preview-${{ needs.select.outputs.sha }}
+          github-token: ${{ github.token }}
+          run-id: 36333486788
+          name: workbench-preview-1619c69e5cdb95c1a5bb7ecb34d125c7aec2d334
           path: /tmp/preview-artifact
       - uses: actions/setup-node@v6
         with:
@@ -116,23 +36,39 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: "11.10.0"
-      - name: Publish bundle and protected launcher from main
-        run: node scripts/workbench-preview/publish.mjs /tmp/preview-artifact/workbench-preview.tar.gz
-  retire:
-    needs: select
-    if: needs.select.outputs.closed == 'true'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/github-script@v8
-        with:
-          script: |
-            const prefix = `pr-${Number('${{ needs.select.outputs.number }}')}-`;
-            let release;
-            try { release = (await github.rest.repos.getReleaseByTag({ ...context.repo, tag: 'workbench-preview-builds' })).data; }
-            catch (error) { if (error.status === 404) return; throw error; }
-            const assets = await github.paginate(github.rest.repos.listReleaseAssets, { ...context.repo, release_id: release.id });
-            for (const asset of assets) if (asset.name.startsWith(prefix)) {
-              await github.rest.repos.deleteReleaseAsset({ ...context.repo, asset_id: asset.id });
+      - name: Inspect approved-token API status only
+        run: |
+          node --input-type=module <<'JS'
+          const headers = {Authorization: `Bearer ${process.env.VERCEL_TOKEN}`};
+          for (const [label, path] of [['user', '/v2/user'], ['team', `/teams/${process.env.VERCEL_ORG_ID}`]]) {
+            const response = await fetch(`https://api.vercel.com${path}`, {headers, signal: AbortSignal.timeout(10000)});
+            console.log(`${label} API status: ${response.status}`);
+          }
+          JS
+      - name: Diagnose reviewed publisher with redacted child output
+        run: |
+          cat > /tmp/workbench-publisher-diagnostic.mjs <<'JS'
+          import * as childProcess from 'node:child_process';
+          import {syncBuiltinESMExports} from 'node:module';
+          const execute = childProcess.execFileSync;
+          const redact = text => {
+            let result = text;
+            for (const secret of [process.env.VERCEL_TOKEN, process.env.GH_TOKEN, process.env.VERCEL_ORG_ID, process.env.VERCEL_PROJECT_ID]) {
+              if (secret) result = result.replaceAll(secret, '[REDACTED]');
             }
+            return result.slice(0, 5000);
+          };
+          childProcess.default.execFileSync = (...args) => {
+            try { return execute(...args); }
+            catch (error) {
+              if (args[0] === 'pnpm') {
+                console.error('Vercel child exit status:', error.status);
+                // Never stringify the error: its command field contains --token.
+                console.error(redact([error.stdout, error.stderr].map(output => output?.toString() ?? '').join('\n')));
+              }
+              throw error;
+            }
+          };
+          syncBuiltinESMExports();
+          JS
+          node --import=/tmp/workbench-publisher-diagnostic.mjs scripts/workbench-preview/publish.mjs /tmp/preview-artifact/workbench-preview.tar.gz
