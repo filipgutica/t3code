@@ -28,14 +28,14 @@ const nativeThreadRoute = async (home: string, threadId: string): Promise<string
 /** Open the thread's linked-PR surface through the same launcher a user sees. */
 const openLinkedPullRequests = async (page: Page, home: string, threadId: string) => {
   const route = await nativeThreadRoute(home, threadId);
-  // Cold navigation must authenticate and load the native Thread before panel interactions.
+  // Cold navigation must authenticate and load the native shell before panel interactions.
   await Promise.all([
     page.waitForResponse(
       (response) => {
         const url = new URL(response.url());
         return (
           url.origin === new URL(page.url()).origin &&
-          url.pathname === `/api/orchestration/threads/${encodeURIComponent(threadId)}` &&
+          url.pathname === "/api/orchestration/shell" &&
           response.request().method() === "GET" &&
           response.status() === 200
         );
