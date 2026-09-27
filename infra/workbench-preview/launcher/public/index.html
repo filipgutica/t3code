@@ -297,6 +297,12 @@
             cache: "no-store",
           });
           const result = await response.json();
+          if (response.status === 409) {
+            status.textContent =
+              "This preview is out of date or its PR has closed. Open the latest demo link from the PR.";
+            button.disabled = false;
+            return;
+          }
           if (!response.ok || typeof result.pairingUrl !== "string") throw new Error();
           window.location.replace(result.pairingUrl);
         } catch {

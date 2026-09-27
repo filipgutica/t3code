@@ -4,7 +4,9 @@ import { expect, it, vi } from "vite-plus/test";
 import { handleLaunch } from "./http.js";
 
 it("denies unsafe requests before provisioning and returns only a private uncached pairing response", async () => {
-  const launch = vi.fn(async () => ({ pairingUrl: "https://demo.vercel.run/pair#token=private" }));
+  const launch = vi.fn<() => Promise<{ pairingUrl: string } | { unavailable: "revision-changed" }>>(
+    async () => ({ pairingUrl: "https://demo.vercel.run/pair#token=private" }),
+  );
   const environment = { VERCEL_ENV: "preview", VERCEL_URL: "launcher.vercel.app" };
   const server = NodeHttp.createServer((request, response) => {
     void handleLaunch({ request, response, environment, launch });
@@ -47,6 +49,13 @@ it("denies unsafe requests before provisioning and returns only a private uncach
     expect(success.headers.get("cache-control")).toBe("no-store");
     expect(await success.json()).toEqual({
       pairingUrl: "https://demo.vercel.run/pair#token=private",
+    });
+    launch.mockResolvedValueOnce({ unavailable: "revision-changed" });
+    const stale = await fetch(url, { method: "POST", headers });
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toEqual({
+      error:
+        "This preview is out of date or its PR has closed. Open the latest demo link from the PR.",
     });
     launch.mockRejectedValueOnce(new Error("private-sdk-token"));
     const failure = await fetch(url, { method: "POST", headers });

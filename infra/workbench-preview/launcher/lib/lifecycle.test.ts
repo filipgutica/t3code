@@ -53,13 +53,17 @@ it("pins deployment artifact identity before provisioning and refuses a closed o
   }
   expect(fetchMock).not.toHaveBeenCalled();
   expect(fixture.create).not.toHaveBeenCalled();
+  for (const status of [200, 429, 503]) {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({}), { status }));
+    await expect(launchPreview(environment)).rejects.toThrow("Could not verify");
+  }
   for (const pull of [
     { state: "closed", head: { sha, repo: { full_name: "filipgutica/t3code" } } },
     { state: "open", head: { sha: "c".repeat(40), repo: { full_name: "filipgutica/t3code" } } },
     { state: "open", head: { sha, repo: { full_name: "other/fork" } } },
   ]) {
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(pull)));
-    await expect(launchPreview(environment)).rejects.toThrow("open trusted");
+    await expect(launchPreview(environment)).resolves.toEqual({ unavailable: "revision-changed" });
   }
   expect(fixture.create).not.toHaveBeenCalled();
 });

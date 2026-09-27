@@ -10,7 +10,7 @@ export const handleLaunch = async ({
   request: NodeHttp.IncomingMessage;
   response: NodeHttp.ServerResponse;
   environment: NodeJS.ProcessEnv;
-  launch: () => Promise<{ pairingUrl: string }>;
+  launch: () => Promise<{ pairingUrl: string } | { unavailable: "revision-changed" }>;
 }) => {
   response.setHeader("Cache-Control", "no-store");
   response.setHeader("Content-Type", "application/json");
@@ -32,6 +32,11 @@ export const handleLaunch = async ({
   }
   try {
     const result = await launch();
+    if ("unavailable" in result)
+      return reply(
+        409,
+        "This preview is out of date or its PR has closed. Open the latest demo link from the PR.",
+      );
     response.statusCode = 200;
     response.end(JSON.stringify(result));
   } catch {

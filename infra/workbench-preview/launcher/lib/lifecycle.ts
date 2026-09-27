@@ -55,19 +55,26 @@ export const launchPreview = async (environment: NodeJS.ProcessEnv) => {
     typeof pull !== "object" ||
     pull === null ||
     !("state" in pull) ||
-    pull.state !== "open" ||
+    typeof pull.state !== "string" ||
+    !["open", "closed"].includes(pull.state) ||
     !("head" in pull) ||
     typeof pull.head !== "object" ||
     pull.head === null ||
     !("sha" in pull.head) ||
-    pull.head.sha !== artifact.sha ||
+    typeof pull.head.sha !== "string" ||
     !("repo" in pull.head) ||
     typeof pull.head.repo !== "object" ||
     pull.head.repo === null ||
     !("full_name" in pull.head.repo) ||
+    typeof pull.head.repo.full_name !== "string"
+  )
+    throw new Error("Could not verify the preview pull request.");
+  if (
+    pull.state !== "open" ||
+    pull.head.sha !== artifact.sha ||
     pull.head.repo.full_name !== "filipgutica/t3code"
   )
-    throw new Error("This preview no longer matches an open trusted pull request.");
+    return { unavailable: "revision-changed" as const };
   const sandbox = await Sandbox.create({
     image: "vercel/sandbox/node:24",
     persistent: false,
