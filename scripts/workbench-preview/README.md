@@ -37,6 +37,8 @@ Connect a test Jira site through Workbench's existing **Connect Jira** flow. A c
 
 The preview pins OpenCode and selects `opencode/big-pickle` for turns and small model tasks. Other providers are disabled initially and no paid fallback is configured. [OpenCode lists Big Pickle as free and says submitted data may be used for model improvement](https://opencode.ai/docs/zen/#privacy). Use synthetic content; configure an approved provider before sending confidential data. Model availability and terms can change.
 
+Hosted verification succeeded for a native Thread turn, but the free model rejected automatic Ticket summaries. Summaries may be unavailable in these demos; choose an approved provider if you need them.
+
 ## Local verification
 
 From the repository root:
