@@ -17,7 +17,7 @@ export interface WorkbenchSearch {
   readonly workbenchProjectId?: WorkbenchProjectId;
   readonly ticketId?: WorkbenchTicketId;
   readonly epicId?: WorkbenchEpicId;
-  readonly create?: "workspace";
+  readonly create?: "workspace" | "ticket";
   readonly jiraOAuthCode?: string;
   readonly jiraOAuthState?: string;
   readonly jiraOAuthError?: string;
@@ -37,7 +37,7 @@ export const parseWorkbenchSearch = (raw: Record<string, unknown>): WorkbenchSea
     ...(isEnvironmentId(raw.environmentId) ? { environmentId: raw.environmentId } : {}),
     ...(isWorkbenchProjectId(projectId) ? { workbenchProjectId: projectId } : {}),
     ...(ticketId ? { ticketId } : isWorkbenchEpicId(raw.epicId) ? { epicId: raw.epicId } : {}),
-    ...(raw.create === "workspace" ? { create: "workspace" as const } : {}),
+    ...(raw.create === "workspace" || raw.create === "ticket" ? { create: raw.create } : {}),
     ...(nonemptySearchText(code) ? { jiraOAuthCode: code } : {}),
     ...(nonemptySearchText(state) ? { jiraOAuthState: state } : {}),
     ...(nonemptySearchText(error) ? { jiraOAuthError: error } : {}),

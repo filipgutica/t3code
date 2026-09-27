@@ -1,5 +1,7 @@
 "use client";
 
+import { useWorkbenchCommandPaletteActions } from "../workbench/useWorkbenchCommandPaletteActions";
+
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
@@ -728,6 +730,10 @@ function OpenCommandPaletteDialog(props: {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
   const projects = useProjects();
+  const workbenchActions = useWorkbenchCommandPaletteActions({
+    thread: activeThread,
+    draftEnvironmentId: activeDraftThread?.environmentId,
+  });
   const referenceThreadRef =
     pathname === "/pull-requests"
       ? environments.some(
@@ -2088,6 +2094,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
+  actionItems.push(...workbenchActions);
   const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
   const settingsSearchItems: CommandPaletteActionItem[] = searchSettings(
     deferredQuery,
