@@ -10,6 +10,9 @@ const sha = "a".repeat(40);
 for (const scenario of [
   "new-content",
   "team-scoped-token",
+  "ci-output",
+  "ci-pending",
+  "agent-error",
   "identical-content",
   "deploy-failure",
   "unprotected-post",
@@ -31,7 +34,7 @@ for (const scenario of [
         const bin = NodePath.join(root, "bin");
         await NodeFSP.mkdir(bin);
         const command = `#!${process.execPath}
-const NodeFSP=require('node:fs');NodeFSP.appendFileSync(process.env.TEST_LOG,JSON.stringify({command:require('node:path').basename(process.argv[1]),args:process.argv.slice(2)})+'\\n');if(process.argv[1].endsWith('pnpm')){if(process.env.TEST_SCENARIO==='team-scoped-token'&&process.argv.includes('--scope')){process.stderr.write('scope-not-accessible: account lookup denied');process.exit(1);}if(process.env.TEST_SCENARIO==='deploy-failure'){process.stderr.write(process.env.VERCEL_TOKEN);process.exit(1);}process.stdout.write(JSON.stringify({status:'ok',deployment:{url:'https://private-launcher.vercel.app',readyState:'READY',target:process.env.TEST_SCENARIO==='production-target'?'production':null}}));}`;
+const NodeFSP=require('node:fs');NodeFSP.appendFileSync(process.env.TEST_LOG,JSON.stringify({command:require('node:path').basename(process.argv[1]),args:process.argv.slice(2)})+'\\n');if(process.argv[1].endsWith('pnpm')){if(process.env.TEST_SCENARIO==='team-scoped-token'&&process.argv.includes('--scope')){process.stderr.write('scope-not-accessible: account lookup denied');process.exit(1);}if(process.env.TEST_SCENARIO==='deploy-failure'){process.stderr.write(process.env.VERCEL_TOKEN);process.exit(1);}const deployment={url:'https://private-launcher.vercel.app',readyState:process.env.TEST_SCENARIO==='ci-pending'?'BUILDING':'READY',target:process.env.TEST_SCENARIO==='production-target'?'production':null};process.stdout.write(JSON.stringify(process.env.TEST_SCENARIO.startsWith('ci-')?deployment:{status:process.env.TEST_SCENARIO==='agent-error'?'error':'ok',deployment}));}`;
         for (const tool of ["gh", "pnpm"])
           await NodeFSP.writeFile(NodePath.join(bin, tool), command, { mode: 0o700 });
         const preload = NodePath.join(root, "fetch.mjs");
@@ -69,7 +72,7 @@ globalThis.fetch=async(url,options={})=>{const u=String(url);NodeFSP.appendFileS
             NodeAssert.doesNotMatch(error.stderr, /private-test-token/);
             return true;
           });
-        } else if (scenario === "production-target") {
+        } else if (["production-target", "ci-pending", "agent-error"].includes(scenario)) {
           NodeAssert.throws(run, (error) => {
             NodeAssert.match(error.stderr, /ready preview deployment/);
             return true;
@@ -104,6 +107,8 @@ globalThis.fetch=async(url,options={})=>{const u=String(url);NodeFSP.appendFileS
             "deploy-failure",
             "unprotected-post",
             "production-target",
+            "ci-pending",
+            "agent-error",
             "untrusted-redirect",
           ].includes(scenario)
             ? 0
