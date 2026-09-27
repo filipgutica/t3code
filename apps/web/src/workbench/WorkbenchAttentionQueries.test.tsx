@@ -13,6 +13,7 @@ const state = vi.hoisted(() => ({
   pending: new Set<number>(),
   errors: new Set<number>(),
   failed: new Set<number>(),
+  closed: new Set<number>(),
   updatedAt: 1,
   resultIdentity: {},
 }));
@@ -49,7 +50,7 @@ vi.mock("../state/query", () => ({
       data: complete
         ? kind === "summary"
           ? {
-              state: "open",
+              state: state.closed.has(number) ? "closed" : "open",
               checksState: state.failed.has(number) ? "failing" : "passing",
               reviewDecision: "approved",
             }
@@ -77,6 +78,7 @@ beforeEach(() => {
   state.errors.clear();
   state.pending.clear();
   state.failed.clear();
+  state.closed.clear();
   state.updatedAt = 1;
   state.resultIdentity = {};
 });
@@ -134,49 +136,56 @@ it("bounds native reads to three PRs, progresses completed batches, and unsubscr
   expect(state.active.size).toBe(0);
 });
 
-it("routes both native reads by URL host and holds cached batches until fresh refresh results", () => {
-  state.completed.add(1);
-  const onChange = vi.fn();
-  const refs = [
-    {
-      ...references[0]!,
-      repository: "fork/other",
-      url: "https://github.enterprise.test/fork/other/pull/1",
-    },
-  ];
-  const render = () => (
-    <WorkbenchAttentionQueries
-      environmentId={environmentId}
-      references={refs}
-      refresh
-      onChange={onChange}
-    />
-  );
-  act(() => {
-    renderer = create(render());
-  });
-  expect(state.active.size).toBe(2);
-  expect(onChange.mock.lastCall![0].values().next().value.reasons).toEqual([
-    "PR attention loading",
-  ]);
-  expect(
-    state.targets.every(
-      (target) =>
-        target.input.host === "github.enterprise.test" && target.input.repository === "fork/other",
-    ),
-  ).toBe(true);
-  state.resultIdentity = {};
-  state.pending.add(1);
-  act(() => renderer.update(render()));
-  expect(state.active.size).toBe(2);
-  state.pending.clear();
-  state.failed.add(1);
-  state.resultIdentity = {};
-  state.updatedAt = 2;
-  act(() => renderer.update(render()));
-  expect(onChange.mock.lastCall![0].values().next().value.reasons).toEqual(["Failed PR checks"]);
-  expect(state.active.size).toBe(0);
-});
+it.each(["open", "closed"] as const)(
+  "routes native reads by URL host and holds a cached %s PR until fresh refresh results",
+  (cachedState) => {
+    state.completed.add(1);
+    if (cachedState === "closed") state.closed.add(1);
+    const onChange = vi.fn();
+    const refs = [
+      {
+        ...references[0]!,
+        state: "open" as const,
+        repository: "fork/other",
+        url: "https://github.enterprise.test/fork/other/pull/1",
+      },
+    ];
+    const render = () => (
+      <WorkbenchAttentionQueries
+        environmentId={environmentId}
+        references={refs}
+        refresh
+        onChange={onChange}
+      />
+    );
+    act(() => {
+      renderer = create(render());
+    });
+    expect(state.active.size).toBe(2);
+    expect(onChange.mock.lastCall![0].values().next().value.reasons).toEqual([
+      "PR attention loading",
+    ]);
+    expect(
+      state.targets.every(
+        (target) =>
+          target.input.host === "github.enterprise.test" &&
+          target.input.repository === "fork/other",
+      ),
+    ).toBe(true);
+    state.resultIdentity = {};
+    state.pending.add(1);
+    act(() => renderer.update(render()));
+    expect(state.active.size).toBe(2);
+    state.pending.clear();
+    state.closed.clear();
+    state.failed.add(1);
+    state.resultIdentity = {};
+    state.updatedAt = 2;
+    act(() => renderer.update(render()));
+    expect(onChange.mock.lastCall![0].values().next().value.reasons).toEqual(["Failed PR checks"]);
+    expect(state.active.size).toBe(0);
+  },
+);
 
 it("keeps a cached failed read subscribed until its retry settles and recovers coverage", () => {
   state.completed.add(1);

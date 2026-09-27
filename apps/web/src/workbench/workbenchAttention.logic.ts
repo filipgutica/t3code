@@ -62,11 +62,12 @@ type AttentionInput = {
 const isTerminalPullRequest = ({
   reference,
   summary,
-}: Pick<AttentionInput, "reference" | "summary">) =>
+  loading,
+}: Pick<AttentionInput, "reference" | "summary" | "loading">) =>
   reference.state === "merged" ||
   reference.state === "closed" ||
   summary?.state === "merged" ||
-  summary?.state === "closed";
+  (summary?.state === "closed" && !loading);
 const hasUnknownCoverage = ({ summary, activity }: Pick<AttentionInput, "summary" | "activity">) =>
   summary === null ||
   summary.checksState === undefined ||
@@ -97,7 +98,7 @@ export const getWorkbenchPullRequestAttention = ({
   loading,
   error,
 }: AttentionInput): WorkbenchPullRequestAttention => {
-  if (isTerminalPullRequest({ reference, summary }))
+  if (isTerminalPullRequest({ reference, summary, loading }))
     return { reasons: [], inspected: true, terminal: true };
   const reasons: string[] = [];
   if (
