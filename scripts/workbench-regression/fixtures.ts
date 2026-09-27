@@ -193,6 +193,15 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
     { scope: "worker", timeout: 120_000 },
   ],
   storageState: async ({ pairedState }, use) => use(pairedState),
+  page: async ({ page, demo }, use) => {
+    // Stored pairing credentials do not initialize a fresh browser context.
+    // Establish the seeded client before testing navigation and PR interactions.
+    await page.goto(`${demo.origin}${demo.workbenchUrl("/workbench?workbenchProjectId=orbit")}`);
+    await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await use(page);
+  },
   baseURL: async ({ demo }, use) => use(demo.origin),
 });
 
