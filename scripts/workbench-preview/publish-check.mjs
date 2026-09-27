@@ -9,6 +9,7 @@ import * as NodeOS from "node:os";
 const sha = "a".repeat(40);
 for (const scenario of [
   "new-content",
+  "team-scoped-token",
   "identical-content",
   "deploy-failure",
   "unprotected-post",
@@ -30,7 +31,7 @@ for (const scenario of [
         const bin = NodePath.join(root, "bin");
         await NodeFSP.mkdir(bin);
         const command = `#!${process.execPath}
-const NodeFSP=require('node:fs');NodeFSP.appendFileSync(process.env.TEST_LOG,JSON.stringify({command:require('node:path').basename(process.argv[1]),args:process.argv.slice(2)})+'\\n');if(process.argv[1].endsWith('pnpm')){if(process.env.TEST_SCENARIO==='deploy-failure'){process.stderr.write(process.env.VERCEL_TOKEN);process.exit(1);}process.stdout.write(JSON.stringify({status:'ok',deployment:{url:'https://private-launcher.vercel.app',readyState:'READY',target:process.env.TEST_SCENARIO==='production-target'?'production':null}}));}`;
+const NodeFSP=require('node:fs');NodeFSP.appendFileSync(process.env.TEST_LOG,JSON.stringify({command:require('node:path').basename(process.argv[1]),args:process.argv.slice(2)})+'\\n');if(process.argv[1].endsWith('pnpm')){if(process.env.TEST_SCENARIO==='team-scoped-token'&&process.argv.includes('--scope')){process.stderr.write('scope-not-accessible: account lookup denied');process.exit(1);}if(process.env.TEST_SCENARIO==='deploy-failure'){process.stderr.write(process.env.VERCEL_TOKEN);process.exit(1);}process.stdout.write(JSON.stringify({status:'ok',deployment:{url:'https://private-launcher.vercel.app',readyState:'READY',target:process.env.TEST_SCENARIO==='production-target'?'production':null}}));}`;
         for (const tool of ["gh", "pnpm"])
           await NodeFSP.writeFile(NodePath.join(bin, tool), command, { mode: 0o700 });
         const preload = NodePath.join(root, "fetch.mjs");

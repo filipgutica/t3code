@@ -133,10 +133,9 @@ try {
         "--format",
         "json",
         "--archive=tgz",
+        // Explicit team/project environment IDs avoid account discovery with team-only tokens.
         "--token",
         env.VERCEL_TOKEN,
-        "--scope",
-        env.VERCEL_ORG_ID,
         "--env",
         `WORKBENCH_PREVIEW_PR=${env.PREVIEW_PR}`,
         "--env",
