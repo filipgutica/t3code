@@ -133,7 +133,9 @@ test("ticket PRs exclude shared checkouts until a workspace is prepared", async 
   );
   await expect(page.getByRole("heading", { name: ticket.title, exact: true })).toBeVisible();
   await expect(page.getByText("unrelated-work", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: /^Pull Requests/ })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Pull Requests 0", exact: true })).toBeVisible();
+  await expect(page.getByText("No pull requests found.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Unrelated shared checkout change", { exact: true })).toHaveCount(0);
 
   prepared = true;
   await page.reload();
