@@ -175,7 +175,24 @@ try {
     redirect: "manual",
     signal: AbortSignal.timeout(10_000),
   });
-  if (![401, 403].includes(anonymous.status) || ![401, 403].includes(anonymousLaunch.status))
+  const deniesAnonymous = (response, destination) => {
+    if ([401, 403].includes(response.status)) return true;
+    if (response.status !== 302) return false;
+    try {
+      const login = new URL(response.headers.get("location"));
+      return (
+        login.origin === "https://vercel.com" &&
+        login.pathname === "/sso-api" &&
+        login.searchParams.get("url") === destination.toString()
+      );
+    } catch {
+      return false;
+    }
+  };
+  if (
+    !deniesAnonymous(anonymous, url) ||
+    !deniesAnonymous(anonymousLaunch, new URL("/api/launch", url))
+  )
     throw new Error("Launcher failed its anonymous access check; no link published.");
   const marker = "<!-- workbench-sandbox-preview -->";
   const body = `${marker}\n### Workbench demo\n\n[Open the private 20-minute demo](${url}) for ${env.PREVIEW_SHA.slice(0, 7)}. Sign in to Vercel, then choose **Open demo**. Each launch starts fresh; Jira is disconnected.\n\nExpired? Return to this link and launch again. Use synthetic content with the free OpenCode model.`;

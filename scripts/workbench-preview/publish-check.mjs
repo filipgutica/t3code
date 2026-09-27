@@ -13,6 +13,8 @@ for (const scenario of [
   "deploy-failure",
   "unprotected-post",
   "production-target",
+  "sso-redirect",
+  "untrusted-redirect",
 ]) {
   NodeTest.test(
     `publisher ${scenario} preserves the verified bytes and private deployment boundary`,
@@ -35,7 +37,7 @@ const NodeFSP=require('node:fs');NodeFSP.appendFileSync(process.env.TEST_LOG,JSO
         await NodeFSP.writeFile(
           preload,
           `import NodeFSP from 'node:fs';
-globalThis.fetch=async(url,options={})=>{const u=String(url);NodeFSP.appendFileSync(process.env.TEST_LOG,JSON.stringify({url:u,method:options.method??'GET',body:options.body})+'\\n');let data={};let status=200;if(u.includes('/pulls/'))data={state:'open',head:{sha:'${sha}',repo:{full_name:'filipgutica/t3code'}},user:{login:'filipgutica'}};else if(u.includes('api.vercel.com'))data={ssoProtection:{deploymentType:'all'}};else if(u.includes('/releases/tags/'))data={assets:[{id:10,name:process.env.TEST_SCENARIO==='identical-content'?'${name}':'pr-71-${sha}-'+'b'.repeat(64)+'.tar.gz',digest:'sha256:'+(process.env.TEST_SCENARIO==='identical-content'?'${digest}':'b'.repeat(64))}]};else if(u.includes('private-launcher.vercel.app'))status=process.env.TEST_SCENARIO==='unprotected-post'&&options.method==='POST'?200:401;else if(u.includes('/comments'))data=[];else if(options.method==='DELETE')status=204;return new Response(status===204?null:JSON.stringify(data),{status});};`,
+globalThis.fetch=async(url,options={})=>{const u=String(url);NodeFSP.appendFileSync(process.env.TEST_LOG,JSON.stringify({url:u,method:options.method??'GET',body:options.body})+'\\n');let data={};let status=200;if(u.includes('/pulls/'))data={state:'open',head:{sha:'${sha}',repo:{full_name:'filipgutica/t3code'}},user:{login:'filipgutica'}};else if(u.includes('api.vercel.com'))data={ssoProtection:{deploymentType:'all'}};else if(u.includes('/releases/tags/'))data={assets:[{id:10,name:process.env.TEST_SCENARIO==='identical-content'?'${name}':'pr-71-${sha}-'+'b'.repeat(64)+'.tar.gz',digest:'sha256:'+(process.env.TEST_SCENARIO==='identical-content'?'${digest}':'b'.repeat(64))}]};else if(u.includes('private-launcher.vercel.app'))status=process.env.TEST_SCENARIO==='unprotected-post'&&options.method==='POST'?200:401;else if(u.includes('/comments'))data=[];else if(options.method==='DELETE')status=204;let headers={};if(u.includes('private-launcher.vercel.app')&&['sso-redirect','untrusted-redirect'].includes(process.env.TEST_SCENARIO)){status=302;headers.Location=(process.env.TEST_SCENARIO==='sso-redirect'?'https://vercel.com':'https://attacker.invalid')+'/sso-api?url='+encodeURIComponent(u)+'&nonce=fixture';}return new Response(status===204?null:JSON.stringify(data),{status,headers});};`,
         );
         const environment = {
           PATH:
@@ -71,7 +73,7 @@ globalThis.fetch=async(url,options={})=>{const u=String(url);NodeFSP.appendFileS
             NodeAssert.match(error.stderr, /ready preview deployment/);
             return true;
           });
-        } else if (scenario === "unprotected-post") {
+        } else if (["unprotected-post", "untrusted-redirect"].includes(scenario)) {
           NodeAssert.throws(run, (error) => {
             NodeAssert.match(error.stderr, /anonymous access check/);
             return true;
@@ -97,7 +99,14 @@ globalThis.fetch=async(url,options={})=>{const u=String(url);NodeFSP.appendFileS
         );
         NodeAssert.equal(
           comments.length,
-          ["deploy-failure", "unprotected-post", "production-target"].includes(scenario) ? 0 : 1,
+          [
+            "deploy-failure",
+            "unprotected-post",
+            "production-target",
+            "untrusted-redirect",
+          ].includes(scenario)
+            ? 0
+            : 1,
         );
         if (comments.length) {
           NodeAssert.ok(
