@@ -12,6 +12,7 @@ import {
   ORCHESTRATION_WS_METHODS,
   type OrchestrationShellSnapshot,
   type ClientOrchestrationCommand,
+  type ModelSelection,
 } from "../../packages/contracts/src/orchestration.ts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 import type {
@@ -116,6 +117,7 @@ const ASSIGNED_THREADS = [
 
 export interface LocalDemoOptions {
   readonly home: string;
+  readonly modelSelection?: ModelSelection;
   /** Local server WebSocket URL. Omit to prepare only local Git repositories. */
   readonly wsUrl?: string;
   /** Optional bearer token used to mint a fresh one-time WebSocket ticket per RPC socket. */
@@ -427,6 +429,7 @@ const seedWorkbench = async (
     readonly token?: string | undefined;
     readonly now: () => string;
     readonly prepareWorkspaces: boolean;
+    readonly modelSelection?: ModelSelection;
   },
 ): Promise<void> => {
   const existing = await runRpc(options.wsUrl, options.token, (client) =>
@@ -586,7 +589,10 @@ const seedWorkbench = async (
         threadId,
         projectId: ProjectId.make(thread.projectId),
         title: thread.title,
-        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+        modelSelection: options.modelSelection ?? {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.4",
+        },
         runtimeMode: DEFAULT_RUNTIME_MODE,
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         branch,
@@ -675,6 +681,7 @@ export const setupLocal = async (options: LocalDemoOptions): Promise<LocalDemoMa
       token: options.token,
       now,
       prepareWorkspaces,
+      ...(options.modelSelection ? { modelSelection: options.modelSelection } : {}),
     });
   }
   const manifest: LocalDemoManifest = {

@@ -1,0 +1,50 @@
+name: Workbench preview checks
+
+on:
+  pull_request:
+    paths:
+      - "scripts/workbench-preview/**"
+      - "infra/workbench-preview/**"
+      - "scripts/workbench-demo/local.mts"
+      - ".github/workflows/workbench-preview*.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24.13.1"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "11.10.0"
+      - name: Install focused workspace dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: pnpm --filter @t3tools/monorepo --filter @t3tools/scripts... --filter @t3tools/contracts install --frozen-lockfile
+      - name: Install isolated launcher dependencies
+        working-directory: infra/workbench-preview/launcher
+        run: pnpm install --ignore-workspace --frozen-lockfile --ignore-scripts
+      - name: Check preview contracts and launcher behavior
+        run: |
+          pnpm exec vp test run scripts/workbench-preview/config.test.mts infra/workbench-preview/launcher/lib/http.test.ts infra/workbench-preview/launcher/lib/lifecycle.test.ts infra/workbench-preview/launcher/lib/provision.test.ts
+          node --test scripts/workbench-preview/publish-check.mjs
+          pnpm exec tsc --noEmit -p scripts/workbench-preview/tsconfig.json
+          pnpm exec tsc --noEmit -p infra/workbench-preview/launcher/tsconfig.json
+      - name: Build Linux runtime without publication credentials
+        run: docker build --platform linux/amd64 -f scripts/workbench-preview/Dockerfile -t workbench-preview:local .
+      - name: Export and verify native service, pairing and crash recovery
+        run: |
+          node scripts/workbench-preview/bundle.mjs workbench-preview:local /tmp/workbench-preview.tar.gz
+          node scripts/workbench-preview/smoke.mjs workbench-preview:local /tmp/workbench-preview.tar.gz
