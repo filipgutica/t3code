@@ -27,7 +27,23 @@ const nativeThreadRoute = async (home: string, threadId: string): Promise<string
 
 /** Open the thread's linked-PR surface through the same launcher a user sees. */
 const openLinkedPullRequests = async (page: Page, home: string, threadId: string) => {
-  await page.goto(await nativeThreadRoute(home, threadId));
+  const route = await nativeThreadRoute(home, threadId);
+  // Cold navigation must authenticate and load the native Thread before panel interactions.
+  await Promise.all([
+    page.waitForResponse(
+      (response) => {
+        const url = new URL(response.url());
+        return (
+          url.origin === new URL(page.url()).origin &&
+          url.pathname === `/api/orchestration/threads/${encodeURIComponent(threadId)}` &&
+          response.request().method() === "GET" &&
+          response.status() === 200
+        );
+      },
+      { timeout: 30_000 },
+    ),
+    page.goto(route),
+  ]);
   await expect(page.getByRole("button", { name: "Toggle right panel" })).toBeVisible();
   await page.getByRole("button", { name: "Toggle right panel" }).click();
   await page.getByRole("button", { name: /^Linked pull requests/ }).click();
