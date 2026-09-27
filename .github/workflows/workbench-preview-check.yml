@@ -48,3 +48,9 @@ jobs:
         run: |
           node scripts/workbench-preview/bundle.mjs workbench-preview:local /tmp/workbench-preview.tar.gz
           node scripts/workbench-preview/smoke.mjs workbench-preview:local /tmp/workbench-preview.tar.gz
+      - uses: actions/upload-artifact@v7
+        with:
+          name: workbench-preview-validation-${{ github.event.pull_request.head.sha }}
+          path: /tmp/workbench-preview.tar.gz
+          retention-days: 1
+          compression-level: 0
