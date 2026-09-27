@@ -171,6 +171,7 @@ function WorkbenchSidebarTicketPrControl({
           compact
           environmentId={environmentId}
           pullRequest={pullRequests[0].pullRequest}
+          linkedThread={{ threadId: pullRequests[0].threadId, title: pullRequests[0].threadTitle }}
         />
       ) : (
         <Popover>
@@ -194,11 +195,12 @@ function WorkbenchSidebarTicketPrControl({
           >
             <div className="flex flex-col gap-2">
               <p className="text-xs font-medium">Linked from Threads</p>
-              {pullRequests.map(({ pullRequest }) => (
+              {pullRequests.map(({ pullRequest, threadId, threadTitle }) => (
                 <WorkbenchPullRequestLink
                   key={pullRequest.url}
                   environmentId={environmentId}
                   pullRequest={pullRequest}
+                  linkedThread={{ threadId, title: threadTitle }}
                 />
               ))}
             </div>

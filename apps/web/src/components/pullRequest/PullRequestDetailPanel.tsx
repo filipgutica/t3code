@@ -725,8 +725,15 @@ export function PullRequestDetailPanel({
         description: error.message,
       }),
   });
+  const panelRootRef = useRef<HTMLDivElement | null>(null);
   const copyFromShortcut = useEffectEvent((event: KeyboardEvent) => {
     if (!shortcutsEnabled || event.defaultPrevented || isCommandPaletteOpen()) return;
+    const modal =
+      event.target instanceof HTMLElement
+        ? event.target.closest('[role="dialog"], [aria-modal="true"]')
+        : null;
+    // A foreground modal owns the shortcut; panels behind it must not claim the same key.
+    if (modal && (!panelRootRef.current || !modal.contains(panelRootRef.current))) return;
     const command = resolveShortcutCommand(event, keybindings, {
       context: getShortcutContext(),
     });
@@ -1625,32 +1632,34 @@ export function PullRequestDetailPanel({
   // and let the richer detail read replace the remaining placeholders in place.
   if (detailQuery.isPending && !detail) {
     return (
-      <PullRequestDetailGhost
-        seed={matchingListEntry}
-        summary={sharedSummary}
-        checkoutCommand={checkoutCommand}
-        onCheckoutError={onCheckoutCommandError}
-        number={reference.number}
-        tabs={visibleTabs}
-        activeTab={tab}
-        {...(onBack ? { onBack } : {})}
-        {...(onClose ? { onClose } : {})}
-        actions={
-          handoffSummary ? (
-            <TooltipProvider delay={150} closeDelay={150} timeout={400}>
-              {checkoutControl}
-              {handoffSummary.state === "open" && handoffSummary.mergeability === "conflicting"
-                ? resolveConflictsControl
-                : null}
-            </TooltipProvider>
-          ) : undefined
-        }
-      />
+      <div ref={panelRootRef} className="flex h-full min-h-0 flex-col">
+        <PullRequestDetailGhost
+          seed={matchingListEntry}
+          summary={sharedSummary}
+          checkoutCommand={checkoutCommand}
+          onCheckoutError={onCheckoutCommandError}
+          number={reference.number}
+          tabs={visibleTabs}
+          activeTab={tab}
+          {...(onBack ? { onBack } : {})}
+          {...(onClose ? { onClose } : {})}
+          actions={
+            handoffSummary ? (
+              <TooltipProvider delay={150} closeDelay={150} timeout={400}>
+                {checkoutControl}
+                {handoffSummary.state === "open" && handoffSummary.mergeability === "conflicting"
+                  ? resolveConflictsControl
+                  : null}
+              </TooltipProvider>
+            ) : undefined
+          }
+        />
+      </div>
     );
   }
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col bg-background">
+    <div ref={panelRootRef} className="relative flex h-full min-h-0 w-full flex-col bg-background">
       {threadPickerOpen && detail ? (
         <PullRequestThreadLinks
           key={`${environmentId}:${detail.url}`}

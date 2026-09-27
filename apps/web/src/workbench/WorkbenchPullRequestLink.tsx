@@ -1,3 +1,7 @@
+import {
+  type WorkbenchLinkedPullRequestThread,
+  useOpenWorkbenchPullRequest,
+} from "./WorkbenchPullRequestPreview";
 import { ExternalLinkIcon } from "lucide-react";
 import { parseChangeRequestUrl, useOpenChangeRequestLink } from "../lib/openPullRequestLink";
 import type { EnvironmentId, ProjectId, PullRequestState } from "@t3tools/contracts";
@@ -144,12 +148,22 @@ export function WorkbenchPullRequestLink({
   environmentId,
   pullRequest,
   compact = false,
+  linkedThread,
 }: {
   readonly environmentId: EnvironmentId;
   readonly pullRequest: WorkbenchPullRequestReference;
   readonly compact?: boolean;
+  readonly linkedThread?: WorkbenchLinkedPullRequestThread | undefined;
 }) {
-  const openChangeRequestLink = useOpenChangeRequestLink();
+  const openWorkbenchPullRequest = useOpenWorkbenchPullRequest();
+  const openChangeRequestLink = useOpenChangeRequestLink(
+    undefined,
+    undefined,
+    openWorkbenchPullRequest
+      ? (selection) =>
+          openWorkbenchPullRequest({ ...selection, ...(linkedThread ? { linkedThread } : {}) })
+      : undefined,
+  );
   const reference = useMemo(() => {
     if (!pullRequest.projectId || !pullRequest.repository) return null;
     const host = parseChangeRequestUrl(pullRequest.url)?.host;

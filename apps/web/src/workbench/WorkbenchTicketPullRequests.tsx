@@ -165,7 +165,15 @@ function WorkbenchTicketPullRequestRow({
   const repositoryUrl = changeRequestRepositoryUrl(pullRequest.url);
   return (
     <div key={pullRequest.url.toLowerCase()} className="min-w-0">
-      <WorkbenchPullRequestLink environmentId={environmentId} pullRequest={pullRequest} />
+      <WorkbenchPullRequestLink
+        environmentId={environmentId}
+        pullRequest={pullRequest}
+        linkedThread={
+          threadId !== null && threadTitle !== null
+            ? { threadId, title: threadTitle, onOpen: () => onOpenThread(threadId) }
+            : undefined
+        }
+      />
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1.5 text-xs text-muted-foreground">
         {repositoryUrl ? (
           <a

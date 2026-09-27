@@ -1,0 +1,79 @@
+import { ChangeRequestLinkOpenProvider } from "../lib/openPullRequestLink";
+import type { EnvironmentId, PullRequestRef, ThreadId } from "@t3tools/contracts";
+import {
+  createContext,
+  lazy,
+  Suspense,
+  useContext,
+  useState,
+  useCallback,
+  type ReactNode,
+} from "react";
+
+import { useLocation } from "@tanstack/react-router";
+
+export interface WorkbenchLinkedPullRequestThread {
+  readonly threadId: ThreadId;
+  readonly title: string;
+  readonly onOpen?: () => void;
+}
+
+export interface WorkbenchPullRequestSelection {
+  readonly environmentId: EnvironmentId;
+  readonly reference: PullRequestRef;
+  readonly linkedThread?: WorkbenchLinkedPullRequestThread;
+}
+
+const WorkbenchPullRequestSheet = lazy(() =>
+  import("./WorkbenchPullRequestSheet").then((module) => ({
+    default: module.WorkbenchPullRequestSheet,
+  })),
+);
+const OpenWorkbenchPullRequestContext = createContext<
+  ((selection: WorkbenchPullRequestSelection) => void) | undefined
+>(undefined);
+
+export const useOpenWorkbenchPullRequest = () => useContext(OpenWorkbenchPullRequestContext);
+
+/** Owns the preview above transient sidebar menus and the selected ticket. */
+export function WorkbenchPullRequestPreviewProvider({ children }: { children: ReactNode }) {
+  const { href } = useLocation();
+  const [selection, setSelection] = useState<WorkbenchPullRequestSelection | null>(null);
+  const [openedHref, setOpenedHref] = useState(href);
+  if (openedHref !== href) {
+    setOpenedHref(href);
+    setSelection(null);
+  }
+  const openSelection = useCallback((next: WorkbenchPullRequestSelection) => {
+    setSelection((current) => ({
+      ...next,
+      ...(next.linkedThread
+        ? {}
+        : current?.linkedThread &&
+            current.environmentId === next.environmentId &&
+            current.reference.projectId === next.reference.projectId &&
+            current.reference.host?.toLowerCase() === next.reference.host?.toLowerCase() &&
+            current.reference.repository.toLowerCase() ===
+              next.reference.repository.toLowerCase() &&
+            current.reference.number === next.reference.number
+          ? { linkedThread: current.linkedThread }
+          : {}),
+    }));
+  }, []);
+  return (
+    <OpenWorkbenchPullRequestContext value={openSelection}>
+      {children}
+      {selection ? (
+        <ChangeRequestLinkOpenProvider value={openSelection}>
+          <Suspense fallback={null}>
+            <WorkbenchPullRequestSheet
+              selection={selection}
+              onSelect={openSelection}
+              onClose={() => setSelection(null)}
+            />
+          </Suspense>
+        </ChangeRequestLinkOpenProvider>
+      ) : null}
+    </OpenWorkbenchPullRequestContext>
+  );
+}
