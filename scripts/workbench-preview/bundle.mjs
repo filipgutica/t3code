@@ -17,6 +17,7 @@ const child = NodeChildProcess.spawn(
     [
       "mkdir -p /tmp/workbench-bundle/node-bin",
       "cp /usr/local/bin/node /tmp/workbench-bundle/node-bin/node",
+      "cp /usr/local/bin/gh /tmp/workbench-bundle/node-bin/gh",
       "cp -a /usr/local/lib/node_modules/opencode-ai /tmp/workbench-bundle/opencode",
       "ln -s ../opencode/bin/opencode.exe /tmp/workbench-bundle/node-bin/opencode",
       "tar --exclude=app/node_modules/.tmp -czf - -C / app -C /tmp/workbench-bundle node-bin opencode",

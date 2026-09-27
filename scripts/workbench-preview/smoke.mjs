@@ -26,7 +26,15 @@ const docker = (...args) => {
 };
 let created = false;
 try {
-  const launch = ["create", "--name", name, "--publish", "127.0.0.1::8080"];
+  const launch = [
+    "create",
+    "--name",
+    name,
+    "--publish",
+    "127.0.0.1::8080",
+    "--env",
+    "GH_TOKEN=preview-smoke-ambient-credential",
+  ];
   if (bundle) launch.push("--user", "root", "--entrypoint", "sh");
   launch.push(image);
   if (bundle)
@@ -132,6 +140,37 @@ try {
     `${application}/apps/server/dist/bin.mjs`,
   );
   NodeAssert.ok(Number(runtimeUid) > 0, "Native server runs as an unprivileged user");
+  const github = JSON.parse(
+    docker(
+      "exec",
+      "--user",
+      "node",
+      name,
+      "node",
+      "--input-type=module",
+      "-e",
+      "import fs from 'node:fs';import cp from 'node:child_process';const target=process.argv[1];let environment;for(const pid of fs.readdirSync('/proc').filter(x=>/^[0-9]+$/.test(x))){try{const argv=fs.readFileSync('/proc/'+pid+'/cmdline','utf8').split(String.fromCharCode(0));if(argv.includes(target)&&argv.includes('serve'))environment=Object.fromEntries(fs.readFileSync('/proc/'+pid+'/environ','utf8').split(String.fromCharCode(0)).filter(Boolean).map(entry=>{const index=entry.indexOf('=');return [entry.slice(0,index),entry.slice(index+1)];}));}catch{}}if(!environment)throw Error('Native runtime environment unavailable');const version=cp.spawnSync('gh',['--version'],{env:environment,encoding:'utf8',timeout:5000});const auth=cp.spawnSync('gh',['auth','status','--hostname','github.com'],{env:environment,encoding:'utf8',timeout:5000});const location=cp.spawnSync('sh',['-c','command -v gh'],{env:environment,encoding:'utf8',timeout:5000});console.log(JSON.stringify({location:location.stdout?.trim(),version:version.stdout?.split(String.fromCharCode(10))[0],versionStatus:version.status,authStatus:auth.status,hasCredentials:['GH_TOKEN','GITHUB_TOKEN','GH_ENTERPRISE_TOKEN','GITHUB_ENTERPRISE_TOKEN'].some(key=>Boolean(environment[key]))}));",
+      `${application}/apps/server/dist/bin.mjs`,
+    ),
+  );
+  NodeAssert.equal(github.versionStatus, 0, "GitHub CLI is executable on the native runtime PATH");
+  NodeAssert.equal(
+    github.location,
+    bundle ? "/opt/workbench-preview/node-bin/gh" : "/usr/local/bin/gh",
+    "Runtime resolves the intended installed GitHub CLI",
+  );
+  NodeAssert.match(github.version, /^gh version 2\.101\.0 /, "GitHub CLI is the pinned release");
+  NodeAssert.equal(
+    github.hasCredentials,
+    false,
+    "Native runtime does not inherit ambient GitHub credentials",
+  );
+  NodeAssert.equal(
+    github.authStatus,
+    1,
+    "GitHub CLI starts unauthenticated in the fresh native home",
+  );
+
   const pairing = docker(
     "exec",
     name,
@@ -210,7 +249,7 @@ try {
     "Old reviewer sessions cannot access replacement state",
   );
   console.log(
-    "Preview container smoke passed: seeded native state, disconnected Jira, pairing, HTTP/WebSocket denial, and crash recovery without retained credentials.",
+    "Preview container smoke passed: seeded native state, disconnected Jira, pinned unauthenticated GitHub CLI, pairing, HTTP/WebSocket denial, and crash recovery without retained credentials.",
   );
 } finally {
   if (created) docker("rm", "--force", name);

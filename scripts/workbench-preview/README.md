@@ -31,6 +31,10 @@ Sessions use `persistent: false`, no snapshots or drives, one vCPU and a 20-minu
 
 Standard Sandbox images provide the host runtime; no custom image is stored on Vercel. GitHub Actions builds consume GitHub's own allowances. Build artifacts expire after one day, and the workflow uses standard GitHub-hosted runners. This is quota-limited hosting, not unlimited free capacity.
 
+## Optional GitHub
+
+GitHub PR details and checks require authentication even for public repositories. In the demo's native terminal, run `gh auth login` with your own account, then clone or add a supported GitHub repository through the existing project flow. The preview includes a pinned GitHub CLI but no GitHub credentials. Rerunning failed CI also requires Actions write permission. Use a test repository: writes to GitHub remain after the demo expires.
+
 ## Optional Jira and OpenCode
 
 Connect a test Jira site through Workbench's existing **Connect Jira** flow. A connection belongs to the whole demo environment and is available to its agents. Expiring the demo removes locally stored grants but does not revoke Atlassian app authorization or undo Jira writes. No maintainer Jira account is preloaded.
