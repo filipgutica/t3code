@@ -912,6 +912,7 @@ function WorkbenchTicketDetailController({
     dirty,
     summary,
     summaryHeaderLabel,
+    summaryFailedEmpty,
     hasUnsavedChanges,
     cancelEditing,
     startEditing,
@@ -1024,8 +1025,9 @@ function WorkbenchTicketDetailController({
           <div className="min-w-0 space-y-4 xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:gap-4 xl:space-y-0">
             {error ? <WorkbenchInlineError message={error} /> : null}
             <WorkbenchTicketSummaryPanel
-              key={`${ticket.id}:${summary.error && !summary.hasText ? "failed" : "available"}`}
+              key={`${ticket.id}:${summaryFailedEmpty}`}
               summaryHeaderLabel={summaryHeaderLabel}
+              initiallyCollapsed={summaryFailedEmpty}
               hasUnsavedChanges={hasUnsavedChanges}
               summary={summary}
               ticket={ticket}
@@ -1722,8 +1724,50 @@ function WorkbenchTicketHeader({
   );
 }
 
+function WorkbenchTicketSummaryHeading({
+  summary,
+  summaryHeaderLabel,
+  hasUnsavedChanges,
+}: {
+  summary: ReturnType<typeof getWorkbenchTicketSummaryPresentation>;
+  summaryHeaderLabel: string | null;
+  hasUnsavedChanges: boolean;
+}) {
+  return (
+    <span className="min-w-0">
+      <span className="flex items-center gap-1.5">
+        <span
+          id="workbench-ticket-generated-summary"
+          role="heading"
+          aria-level={2}
+          className="text-sm font-semibold"
+        >
+          Generated summary
+        </span>
+        {summary.error ? (
+          <CircleAlertIcon aria-hidden className="size-4 shrink-0 text-warning-foreground" />
+        ) : null}
+      </span>
+      {summaryHeaderLabel ? (
+        <span
+          className={`block truncate text-xs ${summary.error ? "text-warning-foreground" : "text-muted-foreground"}`}
+          role="status"
+        >
+          {summaryHeaderLabel}
+        </span>
+      ) : null}
+      {hasUnsavedChanges ? (
+        <span className="block truncate text-xs text-warning-foreground" role="status">
+          Save changes to update summary.
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function WorkbenchTicketSummaryPanel({
   summaryHeaderLabel,
+  initiallyCollapsed,
   hasUnsavedChanges,
   summary,
   ticket,
@@ -1733,6 +1777,7 @@ function WorkbenchTicketSummaryPanel({
   onRegenerateSummary,
 }: {
   summaryHeaderLabel: string | null;
+  initiallyCollapsed: boolean;
   hasUnsavedChanges: boolean;
   summary: ReturnType<typeof getWorkbenchTicketSummaryPresentation>;
   ticket: WorkbenchTicket;
@@ -1741,9 +1786,7 @@ function WorkbenchTicketSummaryPanel({
   isArchived: boolean;
   onRegenerateSummary: (ticket: WorkbenchTicket) => void;
 }) {
-  const [summaryPanelCollapsed, setSummaryPanelCollapsed] = useState(
-    Boolean(summary.error && !summary.hasText),
-  );
+  const [summaryPanelCollapsed, setSummaryPanelCollapsed] = useState(initiallyCollapsed);
   return (
     <section
       aria-labelledby="workbench-ticket-generated-summary"
@@ -1762,34 +1805,11 @@ function WorkbenchTicketSummaryPanel({
             aria-hidden
             className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform ${summaryPanelCollapsed ? "" : "rotate-180"}`}
           />
-          <span className="min-w-0">
-            <span className="flex items-center gap-1.5">
-              <span
-                id="workbench-ticket-generated-summary"
-                role="heading"
-                aria-level={2}
-                className="text-sm font-semibold"
-              >
-                Generated summary
-              </span>
-              {summary.error ? (
-                <CircleAlertIcon aria-hidden className="size-4 shrink-0 text-warning-foreground" />
-              ) : null}
-            </span>
-            {summaryHeaderLabel ? (
-              <span
-                className={`block truncate text-xs ${summary.error ? "text-warning-foreground" : "text-muted-foreground"}`}
-                role="status"
-              >
-                {summaryHeaderLabel}
-              </span>
-            ) : null}
-            {hasUnsavedChanges ? (
-              <span className="block truncate text-xs text-warning-foreground" role="status">
-                Save changes to update summary.
-              </span>
-            ) : null}
-          </span>
+          <WorkbenchTicketSummaryHeading
+            summary={summary}
+            summaryHeaderLabel={summaryHeaderLabel}
+            hasUnsavedChanges={hasUnsavedChanges}
+          />
         </button>
       </div>
       {!summaryPanelCollapsed ? (
@@ -4871,6 +4891,7 @@ function useWorkbenchTicketDraftEditor({
     dirty,
     summary,
     summaryHeaderLabel,
+    summaryFailedEmpty,
     hasUnsavedChanges,
   } = getWorkbenchTicketDraftPresentation({ ticket, jiraIssueLink, jiraFieldsManaged, draft });
   useEffect(() => {
@@ -4905,6 +4926,7 @@ function useWorkbenchTicketDraftEditor({
     dirty,
     summary,
     summaryHeaderLabel,
+    summaryFailedEmpty,
     hasUnsavedChanges,
     cancelEditing,
     startEditing,
@@ -5437,10 +5459,10 @@ function getWorkbenchTicketDraftPresentation({
     ((!jiraFieldsManaged && draft.title !== projectedContent.title) ||
       draft.markdown !== projectedContent.markdown);
   const summary = getWorkbenchTicketSummaryPresentation(ticket.generatedSummary);
-  const summaryHeaderLabel =
-    summary.error && !summary.hasText
-      ? "Summary generation failed"
-      : (summary.statusLabel ?? (!summary.hasText ? summary.text : null));
+  const summaryFailedEmpty = Boolean(summary.error && !summary.hasText);
+  const summaryHeaderLabel = summaryFailedEmpty
+    ? "Summary generation failed"
+    : (summary.statusLabel ?? (!summary.hasText ? summary.text : null));
   const hasUnsavedChanges = dirty;
 
   return {
@@ -5453,6 +5475,7 @@ function getWorkbenchTicketDraftPresentation({
     dirty,
     summary,
     summaryHeaderLabel,
+    summaryFailedEmpty,
     hasUnsavedChanges,
   };
 }

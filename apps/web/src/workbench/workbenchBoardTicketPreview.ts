@@ -7,6 +7,25 @@ import { resolveWorkbenchTicketContent } from "./workbenchJira.logic";
 const MAX_EXCERPT_LENGTH = 180;
 const MAX_DESCRIPTION_SCAN_LENGTH = 4_000;
 
+function plainTextExcerptLine(line: string): string {
+  if (/^#{1,6}\s/.test(line) || /^[|:\s-]+$/.test(line)) return "";
+  return line
+    .replace(/^(?:[-*+] |\d+[.)] )(?:\[[ xX]\] )?/, "")
+    .replace(/^>\s*/, "")
+    .replace(/!?\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/<[^>]+>/g, "")
+    .replace(/[*_~`]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncateDescriptionExcerpt(text: string): string {
+  if (text.length <= MAX_EXCERPT_LENGTH) return text;
+  const cut = text.slice(0, MAX_EXCERPT_LENGTH);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${cut.slice(0, lastSpace >= 120 ? lastSpace : MAX_EXCERPT_LENGTH).trimEnd()}…`;
+}
+
 function descriptionExcerpt(markdown: string): string {
   const parts: string[] = [];
   let length = 0;
@@ -17,25 +36,14 @@ function descriptionExcerpt(markdown: string): string {
       inCodeFence = !inCodeFence;
       continue;
     }
-    if (inCodeFence || /^#{1,6}\s/.test(line) || /^[|:\s-]+$/.test(line)) continue;
-    const text = line
-      .replace(/^(?:[-*+] |\d+[.)] )(?:\[[ xX]\] )?/, "")
-      .replace(/^>\s*/, "")
-      .replace(/!?\[([^\]]+)\]\([^)]*\)/g, "$1")
-      .replace(/<[^>]+>/g, "")
-      .replace(/[*_~`]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
+    if (inCodeFence) continue;
+    const text = plainTextExcerptLine(line);
     if (!text) continue;
     parts.push(text);
     length += text.length + 1;
     if (length > MAX_EXCERPT_LENGTH) break;
   }
-  const text = parts.join(" ");
-  if (text.length <= MAX_EXCERPT_LENGTH) return text;
-  const cut = text.slice(0, MAX_EXCERPT_LENGTH);
-  const lastSpace = cut.lastIndexOf(" ");
-  return `${cut.slice(0, lastSpace >= 120 ? lastSpace : MAX_EXCERPT_LENGTH).trimEnd()}…`;
+  return truncateDescriptionExcerpt(parts.join(" "));
 }
 
 export function getWorkbenchBoardTicketPreview({
