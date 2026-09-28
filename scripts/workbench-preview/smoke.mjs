@@ -131,7 +131,18 @@ try {
     );
   NodeAssert.equal(counts.jira, 0, "Preview starts without a connected Jira account");
   NodeAssert.equal(
-    docker("exec", name, "git", "-C", `${home}/projects/orbit-web`, "remote", "get-url", "origin"),
+    docker(
+      "exec",
+      "--user",
+      "node",
+      name,
+      "git",
+      "-C",
+      `${home}/projects/orbit-web`,
+      "remote",
+      "get-url",
+      "origin",
+    ),
     "https://github.com/filipgutica/workbench-demo-orbit-web.git",
     "The assigned Orbit Ticket has a real GitHub repository for Link PR review",
   );
