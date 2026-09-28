@@ -2,6 +2,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   ProjectId,
   ProviderInstanceId,
+  TextGenerationError,
   type ModelSelection,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -27,6 +28,60 @@ const ticket = {
 };
 
 describe("TicketSummaryHost", () => {
+  it.effect("explains the free OpenCode rejection without masking other generation errors", () =>
+    Effect.gen(function* () {
+      let detail =
+        "Error from provider (Console): OpenCode's free tier can only be used from within OpenCode";
+      yield* Effect.gen(function* () {
+        const host = yield* TicketSummaryHost;
+        const rejected = yield* Effect.flip(host.generate(ticket));
+        expect(rejected.message).toBe(
+          "The free OpenCode model can't generate this summary. Your Ticket is saved and Thread chat still works. If you connect another provider, select it in Settings → General and retry.",
+        );
+
+        detail = "Provider timed out.";
+        const unrelated = yield* Effect.flip(host.generate(ticket));
+        expect(unrelated.message).toBe(
+          "Provider timed out. Check Settings → General → Text generation model, then regenerate the summary.",
+        );
+      }).pipe(
+        Effect.provide(
+          ticketSummaryHostLayer.pipe(
+            Layer.provide(
+              Layer.mock(ProjectionSnapshotQuery)({
+                getProjectShellById: (id) =>
+                  Effect.succeed(
+                    Option.some({
+                      id,
+                      title: "Primary",
+                      workspaceRoot: "/repos/primary",
+                      defaultModelSelection: null,
+                      scripts: [],
+                      createdAt: "2026-09-07T10:00:00.000Z",
+                      updatedAt: "2026-09-07T10:00:00.000Z",
+                    }),
+                  ),
+              }),
+            ),
+            Layer.provide(
+              Layer.mock(ServerSettingsService)({
+                getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+              }),
+            ),
+            Layer.provide(
+              Layer.mock(TextGeneration)({
+                generateTicketSummary: () =>
+                  Effect.fail(
+                    new TextGenerationError({ operation: "generateTicketSummary", detail }),
+                  ),
+              }),
+            ),
+          ),
+        ),
+      );
+    }),
+  );
+
   it.effect(
     "uses the current text generation selection and the primary repository for each job",
     () =>

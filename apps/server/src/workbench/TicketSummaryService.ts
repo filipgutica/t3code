@@ -11,6 +11,9 @@ import { TextGeneration, layer as textGenerationLayer } from "../textGeneration/
 
 export { TicketSummaryService } from "@t3tools/workbench/TicketSummaryService";
 
+const OPEN_CODE_FREE_TIER_REJECTION =
+  "Error from provider (Console): OpenCode's free tier can only be used from within OpenCode";
+
 export const ticketSummaryHostLayer = Layer.effect(
   TicketSummaryHost,
   Effect.gen(function* () {
@@ -58,7 +61,10 @@ export const ticketSummaryHostLayer = Layer.effect(
               (error) =>
                 new WorkbenchOperationError({
                   code: "ticket_summary_generation_failed",
-                  message: `${error.detail} Check Settings → General → Text generation model, then regenerate the summary.`,
+                  message:
+                    error.detail === OPEN_CODE_FREE_TIER_REJECTION
+                      ? "The free OpenCode model can't generate this summary. Your Ticket is saved and Thread chat still works. If you connect another provider, select it in Settings → General and retry."
+                      : `${error.detail} Check Settings → General → Text generation model, then regenerate the summary.`,
                 }),
             ),
           );
