@@ -9,7 +9,7 @@ Review the completed change against the fork's ownership and upstream maintenanc
 
 ## Pin the subject
 
-Verify the repository, remotes, dirty state, and exact base/head or working-tree scope. Keep unrelated edits outside the review. Read [workbench-fork.md](../../../docs/internals/workbench-fork.md) for authoritative ownership and sync rules.
+Verify the repository, remotes, dirty state, and exact base/head or working-tree scope. Keep unrelated edits outside the review. Read [workbench-fork.md](../../../docs/internals/workbench-fork.md) for isolation and sync rules, and [workbench-architecture.md](../../../docs/internals/workbench-architecture.md) for module ownership. For persistence or native record changes, also read [workbench-data-model.md](../../../docs/internals/workbench-data-model.md).
 
 Before a PR is opened, review the intended committed range. Before merge, verify the remote PR's current base/head and current required checks. Reuse earlier review evidence only when its scope remains current; review new commits and refresh evidence affected by base or upstream movement.
 

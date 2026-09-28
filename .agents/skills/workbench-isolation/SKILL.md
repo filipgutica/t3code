@@ -9,7 +9,7 @@ Keep Workbench changes easy to carry through upstream T3 updates. Apply this pos
 
 ## Choose the owner before editing
 
-Read the relevant sections of [workbench-fork.md](../../../docs/internals/workbench-fork.md). That document owns the architecture and integration boundaries; live code and types establish the available extension points.
+Read [workbench-fork.md](../../../docs/internals/workbench-fork.md) for isolation and upstream-sync constraints, and [workbench-architecture.md](../../../docs/internals/workbench-architecture.md) for module ownership. For persistence or native record changes, also read [workbench-data-model.md](../../../docs/internals/workbench-data-model.md). Live code and types establish the available extension points.
 
 Trace the affected native behavior and its Workbench callers. Prefer, in order:
 

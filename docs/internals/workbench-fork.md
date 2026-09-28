@@ -1,39 +1,24 @@
 # Maintaining the Agent Workbench fork
 
-The fork is an upstream-first T3 Code product with an isolated Workbench overlay. Upstream changes enter the product branch through verified merge pull requests.
+The fork keeps T3 Code as the owner of execution and adds Workbench planning in an isolated overlay. Upstream changes enter the product branch through verified merge pull requests. Start with [Workbench architecture](workbench-architecture.md) for module boundaries and request flow, or [Workbench data model](workbench-data-model.md) for storage ownership.
 
-## Ownership
+## Isolation boundary
 
-- T3 Code owns Projects, Threads, provider sessions, workspaces, Git, terminals, diffs, checkpoints, permissions, and updates.
-- Workbench owns Workbench Workspaces, Epics, Ticket types and repository scope, statuses, blocked state, Ticket Workspaces, and Assignment history.
-- Workbench records reference native `ProjectId` and `ThreadId` values. They do not duplicate T3 records.
-- Workbench storage is per server environment. Cross-environment Workspace boards are intentionally deferred.
+| Source                                    | Ownership rule                                                                                                                                           |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/workbench`                      | Own Workbench domain rules, schema, persistence, Ticket Workspace lifecycle, and Jira logic. Do not import applications, including through test helpers. |
+| `apps/server/src/workbench`               | Adapt Workbench to native Project and Thread projections, Git, configuration, credentials, authorization, and server composition.                        |
+| `apps/web/src/workbench`                  | Compose the React Workbench UI. Keep native T3 Threads as the conversation experience.                                                                   |
+| Workbench modules in `packages/contracts` | Own wire schemas and RPC contracts. Keep shared T3 integrations thin.                                                                                    |
+| `apps/desktop/src/workbench`              | Own fork distribution policy; do not point Workbench at the upstream updater.                                                                            |
 
-The product UI calls the planning container a **Workbench Workspace** so it is distinct from a native T3 Project. Existing `WorkbenchProject` contract names, RPC methods, database tables, and stored IDs remain unchanged for compatibility.
+Workbench stores references to native `ProjectId` and `ThreadId` values rather than copying T3 records. Its package shares the server process and database with T3, but owns a separate `workbench_schema_migrations` ledger. Server adapters supply native reads and host effects through typed services. Native reads that participate in Workbench writes must use the caller's SQL client and transaction; a separate connection or preloaded snapshot can break writer-lock ordering and ownership checks. [Architecture](workbench-architecture.md) and [data model](workbench-data-model.md) explain the boundary.
 
-Workbench core, persistence, schema initialization, workspace lifecycle rules, and Jira logic live in the private `packages/workbench` package. Server adapters and composition stay in `apps/server/src/workbench`; React UI stays in `apps/web/src/workbench`, and wire schemas stay in `packages/contracts/src`. The schema initializer and `workbench_schema_migrations` ledger remain fork-owned and do not consume numbers from T3's migration ledger.
+Before changing an upstream-owned file, check whether a Workbench adapter or extension point can own the behavior. Keep any remaining integration small and preserve behavior outside Workbench. [Ticket lifecycle](workbench-ticket-lifecycle.md), [Jira mirrors](workbench-jira-mirror.md), and [Jira OAuth custody](workbench-jira-oauth.md) describe the fork-owned behavior that crosses native or external boundaries.
 
-The package must not depend on either application, including through test helpers. Its typecheck checks the compiler's resolved source graph and the reachable workspace dependency graph. Server adapters supply native Project/Thread reads, Git operations, configuration, and credential storage through typed Effect services. Native persistence reads must use the same SQL client and caller transaction as Workbench writes. Do not replace these reads with a separate runtime, connection, or preloaded snapshot: writer-lock ordering and ownership checks depend on that transaction.
+## Package checks
 
-The package shares the server process, database, and release. Native migration integration tests stay in the server; independent package tests use package-owned fixtures.
-
-The small upstream integration surface is:
-
-- `packages/contracts/src/index.ts` and `packages/contracts/src/rpc.ts`;
-- `apps/server/src/auth/RpcAuthorization.ts` composes the fork-owned permission map from `apps/server/src/workbench/rpcAuthorization.ts`; `apps/server/src/server.ts` and `apps/server/src/ws.ts` compose Workbench services and handlers;
-- `apps/web/src/components/AppSidebarLayout.tsx` and `apps/web/src/components/sidebar/SidebarChrome.tsx`;
-- `apps/web/src/components/chat/ChatHeader.tsx` and `OpenInPicker.tsx`;
-- the generated `apps/web/src/routeTree.gen.ts`.
-
-The sidebar's utility-page check includes Workbench in the same predicate used to remember the Back destination. Desktop distribution policy lives in `apps/desktop/src/workbench`; its updater behavior tests live there so upstream updater tests can change independently.
-
-Each Ticket stores a non-empty ordered set of native T3 Project references and one primary Project. The primary Project must belong to the parent Workbench Workspace and must also appear in the Ticket repository set. Existing Tickets migrate to `story` and retain their previous primary Project as their initial repository scope.
-
-Epics are Workspace-owned planning records. A Ticket can reference at most one Epic in the same Workspace. Archived Epics remain visible on existing Tickets but cannot receive new Tickets. Board grouping is a UI projection over the same Ticket status columns; it does not introduce a separate workflow state.
-
-## Package quality checks
-
-Run the isolated workspace checks from the repository root:
+Run the focused checks from the repository root when their scope applies:
 
 ```sh
 vp run --filter @t3tools/workbench typecheck
@@ -41,95 +26,35 @@ vp run --filter @t3tools/workbench test
 vp run workbench:quality
 ```
 
-The quality command runs package lint, Knip checks for unused files, dependencies, and exports, and Fallow dead-code analysis. The package also exposes `lint`, `knip`, and `fallow` scripts individually. Knip and Fallow run from the repository root with a Workbench workspace filter so they can resolve server consumers. Fallow checks entry-point exports; unused types are excluded to match the existing Knip policy for exported contract types.
+The typecheck includes the [package boundary check](../../packages/workbench/check-boundary.mjs). The [quality workflow](../../.github/workflows/workbench-quality.yml) runs the package checks and production quality gates. Tests for native migration integration stay in the server; independent package tests use package-owned fixtures. Read the current scripts and workflow for their exact gates rather than treating this page as a second configuration source.
 
-Vite+ lint enforces the ESLint-compatible `eslint/complexity` rule with a maximum of 20 across Workbench source files, without file-specific exceptions.
+## Upstream sync
 
-Fallow health and duplication artifacts support the production quality gate:
-
-```sh
-vp run --filter @t3tools/workbench fallow:health --output-file /tmp/workbench-health.json
-vp run --filter @t3tools/workbench fallow:dupes --output-file /tmp/workbench-dupes.json
-```
-
-The full production scan enforces cyclomatic complexity at most 20 and cognitive complexity at most 15, including existing violations. The gate covers Workbench package, application adapters and UI, contract modules, route integration, and the auth broker. Tests and maintainer tooling are outside that production scope. Duplication rejects new blocks relative to the selected base. The standalone report commands remain report-only, but tool execution errors fail. Duplicate groups can include matching code outside Workbench; repository aggregate statistics must not be presented as Workbench-only metrics. The workspace omits Fallow's optional TypeScript companion because these scripts use native analysis only; this also preserves the existing tools' TypeScript peer resolution.
-
-`.github/workflows/workbench-quality.yml` runs typecheck, package tests, and quality gates for relevant pull requests and pushes to `main`, or manually. A separate job uploads both advisory reports even when a quality gate fails. The upstream-sync workflow also runs the package gates before verifying the application overlay.
-
-## Ticket Workspaces
-
-Creating a Ticket Thread prepares a Workbench branch and one Git worktree per selected repository. Preparation reuses intact worktrees and creates only newly selected repositories. Ownership is checked against the source repository and exact worktree path; the initial branch is not a branch constraint. Preparation reconciles each repository’s current branch before creating a native Thread. Missing, unregistered, or detached worktrees stop preparation without automatic cleanup. Repository selection can change after Threads exist; removed repositories retain their worktrees, and changing the primary repository does not move existing Threads. Each repository records the preparation attempt that created it, so rollback and interrupted-attempt recovery can distinguish new worktrees from retained ones. Normal release never forces removal of user work.
-
-The server serializes preparation and release per Ticket and uses server time for recovery. Repository edits are rejected during preparation or release. A preparation left incomplete for five minutes after a server interruption is reconciled on retry. Recovery preserves retained worktrees and checks whether live Threads use the current attempt before removing its partial worktrees. Release atomically claims a `releasing` state before filesystem changes. Assignment creation and replacement reject preparing or releasing Workspaces, and release tolerates a worktree already removed before persistence completed.
-
-The native T3 Thread is created in the primary repository worktree and records that branch and path. Secondary repository worktrees are durable Ticket context and can be opened through T3's preferred-editor action. They are not added as provider writable roots, which keeps provider contracts and native Thread semantics unchanged.
-
-Snapshot fields retain decoding defaults for older servers. Ticket edits, archive actions, and deletion require a server-controlled revision; revisionless writes from older clients are rejected. Update the client and server together before editing Tickets. Drafts retain the revision they started from so a background refresh cannot conceal a conflicting edit.
-
-Native Thread creation must succeed before the Assignment is inserted. Creating an Assignment does not change Ticket progress. The client attaches Ticket context to the composer draft and waits for the user to send. If Assignment persistence fails, the UI asks T3 to delete the newly created orphan Thread. Once the Assignment exists, its Thread is durable history: a failed first turn does not delete either record. The server also rejects Assignments whose Thread is missing, deleted, or does not belong to the Ticket's primary T3 Project.
-
-Each Ticket can have several active Assignments; each native Thread belongs to one Workbench Assignment. An archived active Thread is restored through T3's native unarchive command before navigation. If an active Thread was deleted, Start replacement atomically supersedes only that Assignment and inserts a new one after checking that no other client changed it. Superseded Assignments and their native Thread IDs remain available for Ticket history and backlinks; archived historical Threads can also be restored from the Ticket.
-
-## Jira sprint mirrors
-
-Jira domain and synchronization logic live under `packages/workbench/src/jira`; HTTP, configuration, credential storage, and composition adapters stay under `apps/server/src/workbench/jira`. Refresh credentials stay in the environment's T3 secret store.
-
-Ordinary local development and CI use the deployed OAuth broker. The worker owns the Atlassian client secret, registered callback, code exchange, and refresh. Each T3 environment stores its own grant and calls Jira directly. Local ports therefore do not require Atlassian callback registration. Set `T3_WORKBENCH_JIRA_BROKER_URL` for unbundled development and leave `T3_WORKBENCH_JIRA_CLIENT_ID` and `T3_WORKBENCH_JIRA_CLIENT_SECRET` empty. See the [demo setup](../../scripts/workbench-demo/README.md#set-up-once).
-
-Direct OAuth remains available for an independently managed Atlassian app or authentication development. It requires both client credentials on the server and the scopes in `JiraOAuthClient.ts`. Register the exact web origin plus `/workbench`, or the desktop server origin plus `/oauth/workbench/jira/callback`. Read actual ports from the running environment. Web authorization returns to the same paired browser session; desktop authorization asks the user to return to the app.
-
-Authorization state is consumed before exchanging the code. If exchange or persistence fails afterward, start a new connection attempt rather than retrying the callback. Reconnecting the same site preserves its connection ID and existing bindings.
-
-One Jira binding connects a Workbench Workspace to one Jira board and one or more selected sprints; the board can span Jira projects. The binding also owns explicit Jira-status-to-Workbench-status mappings and a default primary/non-empty repository scope for newly imported Tickets. Manual sync, visible online clients refreshing roughly every 16 seconds, and a five-minute server fallback use Jira's enhanced token-paginated sprint endpoint and request only issues assigned to the authenticated Jira user. Binding edits and syncs are serialized per binding so pausing or reconfiguration cannot be overwritten by an in-flight refresh. Pausing disables those syncs without discarding the binding, imported issue links, or Jira field ownership.
-
-Jira owns imported summary, description, issue type, Epic, flagged state, sprint membership, rank, and mapped Board status. The mirrored description is stored as Ticket Markdown and supplies the Agent prompt. Workbench owns repository scope, Ticket Workspaces, Assignments, and native Threads. The general Ticket update path preserves Jira-owned fields. Description and progress edits use the dedicated Jira write command, which writes remotely before projecting the result locally. Assignment creation does not advance a Jira status. A sync validates the full incoming status set before applying all Ticket, Epic, issue-link, and binding-metadata changes in one transaction. Reconciliation preserves stable local Ticket IDs and marks issues inactive when they leave the selected sprints; it never deletes local delivery history. OAuth refresh is single-flight for connections sharing a rotating credential, and a reconnect repoints all returned sites atomically before superseded secrets are removed. Jira writes use the same per-binding lock as refresh, verify current sprint assignment and the expected remote update time, and use available workflow transitions for progress changes. OAuth requests include `write:jira-work`; existing read-only grants need reconnection.
-
-## Branch and remotes
-
-The fork's `main` branch is the long-lived Workbench product branch in `filipgutica/t3code`. In this clone, `origin` points to `filipgutica/t3code` and `upstream` points to `pingdotgg/t3code`. Scheduled workflows use the fork's default branch as the product branch.
-
-Before merging upstream locally:
+The fork's `main` in `filipgutica/t3code` is the long-lived product branch. In this clone, `origin` points to the fork and `upstream` to `pingdotgg/t3code`. Preview a sync before merging:
 
 ```sh
 git fetch upstream main
 node scripts/workbench-upstream-sync.ts --product main --upstream upstream/main
 ```
 
-The command is read-only. It reports ahead/behind counts, files changed by both sides since their merge base, and whether Git can synthesize a clean merge tree.
+The preview is read-only. It reports ancestry, files changed on both sides, and merge-tree conflicts. The [sync workflow](../../.github/workflows/workbench-upstream-sync.yml) builds and checks a candidate merge, then opens or updates a PR against the fork's current base. Its write step publishes only the verified two-parent merge commit after checking the exact base and head. A PR created by `GITHUB_TOKEN` does not start another workflow run, so the sync workflow's focused gates are its verification boundary.
 
-`.github/workflows/workbench-upstream-sync.yml` runs the same preview hourly, at minute 17. When upstream has new commits, a read-only job merges `upstream/main` and regenerates the lockfile. It installs with the lockfile frozen, runs the focused Workbench suite, builds the desktop app, runs its smoke test, and exercises the planning, Ticket Workspace, native Thread, and Ticket breadcrumb browser lifecycle. A Git bundle transfers the verified two-parent merge commit, including any lockfile correction, to a separate write-capable job. That job opens or updates one PR against the fork's default branch, validates the exact base and head, fetches GitHub's conflict-checked PR merge commit, and publishes that commit with an ordinary non-force update. Git rejects the update if the product branch advances with content outside the verified merge ancestry, while branch protection can still refuse the update; the sync PR remains available for review. Because a `GITHUB_TOKEN`-created PR does not start another workflow run, the sync job's focused gates are the verification boundary.
+```mermaid
+flowchart LR
+    A[Fetch upstream] --> B[Preview and resolve]
+    B --> C[Verify candidate merge]
+    C --> D[Open sync PR]
+    D --> E[Merge commit]
+    E --> F[Check upstream ancestry]
+```
 
-If a sync PR needs manual review, merge it with **Create a merge commit** or `gh pr merge --merge`. Squash and rebase merges discard the upstream ancestry, causing later syncs to revisit already-integrated changes. Set `SYNCED_UPSTREAM_SHA` to the exact upstream commit recorded by the sync. After merging, fetch the product branch and verify ancestry:
+Merge an upstream-sync PR with **Create a merge commit** or `gh pr merge --merge`. Squash and rebase discard upstream ancestry and make later syncs revisit already-integrated changes. After merging, use the exact upstream SHA recorded by that sync:
 
 ```sh
 git fetch origin main
 git merge-base --is-ancestor "$SYNCED_UPSTREAM_SHA" origin/main
 ```
 
-An exit code of zero confirms that upstream ancestry was preserved. Use the recorded sync SHA, not the latest `upstream/main`, which may have advanced.
+Exit code zero confirms that the recorded upstream commit is an ancestor of the product branch. Do not substitute the latest `upstream/main`, which may have advanced. Accept a sync only after resolving every non-generated conflict and checking Workbench contracts, store, authorization, relevant UI behavior, application typechecks, and the desktop smoke test. The [sync workflow](../../.github/workflows/workbench-upstream-sync.yml) owns the current gate list. Treat any new edit outside Workbench-owned directories as an ongoing upstream maintenance cost.
 
-Release the fork from `main` using a separate fork-owned distribution channel. Do not point Workbench builds at T3 Code's upstream updater: upstream releases do not contain the overlay.
-
-## Sync acceptance
-
-An upstream sync is acceptable when:
-
-1. the merge preview is clean or every conflict has an explicit Workbench-vs-upstream resolution;
-2. Workbench contracts, store tests, authorization tests, and UI logic tests pass;
-3. contracts, server, and web typechecks pass;
-4. the desktop smoke test passes;
-5. the automated sync lifecycle creates or updates the sync PR, publishes the exact GitHub conflict-checked two-parent merge commit, and leaves the product branch unchanged when the base, head, or checks are stale; the browser lane covers Workspace and Ticket creation, native Thread start, and return through the Ticket breadcrumb, with a maintainer's manual desktop pass as an optional additional check.
-
-Treat new edits outside Workbench-owned directories as maintenance cost. Prefer an adapter or Workbench-owned module before adding another upstream integration file.
-
-## Ticket progress and agent activity
-
-Ticket progress uses `todo`, `in_progress`, and `done`. The fork-owned schema migration converts legacy `ready_for_review` Ticket rows and Jira status mappings to `in_progress`. Agent activity is derived in the Workbench UI from the native Thread shell; it is not a second persisted agent lifecycle. Pending approvals/input, actionable plans, and failed/interrupted work surface a needs-input label; running/background work surfaces Working; a completed turn surfaces Ready for review. Jira flagged state remains an independent decoration.
-
-Jira bindings default to following their selected sprints. Each five-minute sync retains selected sprints that are active and replaces closed selections only when the newly active candidate set is unambiguous. The binding's persisted `observedActiveSprintIds` exclude already-running parallel sprints. Older bindings with no observation history require a selection when a configured sprint disappears. Missing or ambiguous replacements preserve the entire last successful snapshot and expose a sync message. A pinned binding retains its configured selection. Successful rollover updates sprint metadata, projections, and issue links atomically, preserving local Ticket IDs and native Thread history.
-
-Bindings can map Jira states to the canonical progress values or mirror Jira board columns. Mirrored columns are server-owned snapshots of Jira configuration; canonical progress remains available for Epic completion and local Tickets. Local Tickets appear in the matching progress column, with a fallback column when Jira has no corresponding one. Mirror mode refreshes configuration during sync; mapped mode requires explicit mapping for new Jira statuses.
-
-Jira bindings store `selectedSprints` as the sprint selection. Older bindings fall back to `sprintId` and `sprintName`; those fields remain the first selected sprint for compatibility. Sync reads assigned issues for every selected board sprint, deduplicates by Jira issue ID, and commits selection metadata, projections, and issue links in one transaction. The Jira project used to discover the board does not filter its imported issues.
-
-The primary Board action prefers live Threads, then archived Threads, then missing Threads, choosing the newest Assignment within each group; Ticket detail lists all active Threads and retains unavailable and historical links. New Thread creation carries an explicit provider instance, model, and options. Every new Thread opens with Ticket context attached to its composer and waits for the user to send. Workbench uses native Thread deletion with worktree preservation because the Ticket Workspace owns the shared repository worktrees.
+Release the fork from its `main` through a separate fork-owned distribution channel. Upstream releases do not contain the Workbench overlay.
