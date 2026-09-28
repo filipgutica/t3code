@@ -14,6 +14,45 @@ Workbench authorizes Jira for a selected T3 environment. That environment keeps 
 
 [Explicit direct credentials take precedence](../../packages/workbench/src/jira/JiraAuthService.ts) when both modes are configured for a new authorization. A stored grant records its `authMode`, so an existing broker grant still uses the broker for refresh. The server's configuration supplies the current broker URL; the grant does not pin the URL that created it.
 
+## Authorization and grant handoff
+
+```mermaid
+sequenceDiagram
+    participant Client as Workbench client
+    participant T3 as Selected T3 environment
+    participant Broker as OAuth broker
+    participant Atlassian
+    participant Store as T3 secret store
+    alt Direct OAuth
+        Client->>T3: Begin authorization
+        T3-->>Client: Atlassian URL and local state
+        Client->>Atlassian: Authorize
+        alt Web callback
+            Atlassian-->>Client: Code at /workbench
+            Client->>T3: Complete RPC with code and state
+        else Desktop callback
+            Atlassian->>T3: Code at /oauth/workbench/jira/callback
+        end
+        T3->>Atlassian: Exchange code with client credentials
+        Atlassian-->>T3: Grant
+    else Broker OAuth
+        Client->>T3: Begin authorization
+        T3->>Broker: Start session with verifier challenge
+        Broker-->>T3: Atlassian URL and session ID
+        T3-->>Client: URL and local state
+        Client->>Atlassian: Authorize
+        Atlassian->>Broker: Code at /oauth/jira/callback
+        Broker->>Atlassian: Exchange code with broker secret
+        Atlassian-->>Broker: Grant
+        Client->>T3: Poll claim RPC with local state
+        T3->>Broker: Claim with verifier
+        Broker-->>T3: Grant
+    end
+    T3->>Store: Persist grant
+```
+
+The broker's session is temporary. After either path, the selected T3 environment owns the durable grant and makes routine Jira API calls.
+
 ## Pending authorization
 
 T3 creates a random local state and stores a pending record in its secret store. Direct mode stores the redirect URI and a ten-minute expiry. Completion checks the state, exact redirect URI, mode, and expiry. It removes the pending record before exchanging the code. Web then removes the callback parameters from the Workbench URL; desktop completes at the server's HTTP callback.
