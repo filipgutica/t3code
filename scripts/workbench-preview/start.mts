@@ -5,6 +5,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeNet from "node:net";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeTimersPromises from "node:timers/promises";
+import * as NodeUtil from "node:util";
 import { setupLocal } from "../workbench-demo/local.mts";
 import { preparePreview, PREVIEW_MODEL_SELECTION, resetPreviewState } from "./config.mts";
 import {
@@ -17,6 +18,8 @@ const stateDirectory = "/var/lib/workbench-preview";
 await resetPreviewState(stateDirectory);
 const preview = await preparePreview(process.env, stateDirectory);
 const repositoryRoot = NodePath.resolve(import.meta.dirname, "../..");
+const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
+const orbitWebRemote = "https://github.com/filipgutica/workbench-demo-orbit-web.git";
 let shuttingDown = false;
 let running: ReturnType<typeof launchNativeServer> | undefined;
 
@@ -148,11 +151,19 @@ try {
     typeof result.access_token !== "string"
   )
     throw new Error("Private preview bootstrap returned no access token.");
+  const orbitWebPath = NodePath.join(preview.t3Home, "projects", "orbit-web");
+  await NodeFSP.mkdir(NodePath.dirname(orbitWebPath), { recursive: true });
+  await execFile("git", ["clone", "--depth", "1", orbitWebRemote, orbitWebPath], {
+    cwd: preview.home,
+    env: { ...preview.environment, GIT_TERMINAL_PROMPT: "0" },
+    timeout: 30_000,
+  });
   await setupLocal({
     home: preview.t3Home,
     wsUrl: `ws://127.0.0.1:${port}/ws`,
     token: result.access_token,
     localOriginDirectory: NodePath.join(preview.home, "git-remotes"),
+    repositoryRemotes: { "orbit-web": orbitWebRemote },
     modelSelection: PREVIEW_MODEL_SELECTION,
   });
   running.child.kill("SIGTERM");

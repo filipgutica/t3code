@@ -12,7 +12,7 @@ RUN case "$TARGETARCH" in \
 
 FROM node:24.13.1-bookworm-slim AS build
 RUN apt-get update && apt-get install -y --no-install-recommends git python3 make g++ ca-certificates && rm -rf /var/lib/apt/lists/*
-RUN npm install --global pnpm@11.10.0 opencode-ai@1.18.32
+RUN npm install --global pnpm@11.10.0 opencode-ai@1.18.33
 WORKDIR /app
 COPY . .
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
