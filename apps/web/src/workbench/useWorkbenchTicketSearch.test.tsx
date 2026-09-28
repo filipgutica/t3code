@@ -1,3 +1,4 @@
+import { EnvironmentId, WorkbenchProjectId } from "@t3tools/contracts";
 import { act, useLayoutEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -17,8 +18,15 @@ describe("Workbench ticket search", () => {
 
   let renderer: ReactTestRenderer | undefined;
   let search: ReturnType<typeof useWorkbenchTicketSearch>;
-  function Harness() {
-    const current = useWorkbenchTicketSearch();
+  function Harness({
+    projectId = WorkbenchProjectId.make("search-workspace"),
+  }: {
+    projectId?: WorkbenchProjectId;
+  }) {
+    const current = useWorkbenchTicketSearch({
+      environmentId: EnvironmentId.make("search-test"),
+      projectId,
+    });
     useLayoutEffect(() => {
       search = current;
     });
@@ -30,6 +38,7 @@ describe("Workbench ticket search", () => {
     act(() => {
       renderer = create(<Harness />);
     });
+    act(() => search.setText(""));
   });
   afterEach(() => {
     act(() => renderer?.unmount());
@@ -58,6 +67,20 @@ describe("Workbench ticket search", () => {
     expect(search.query).toBe("jira");
     act(() => search.setText("   "));
     expect(search.query).toBe("");
+  });
+  it("cancels a pending search when switching workspaces without leaking the query", () => {
+    act(() => search.setText("login"));
+    act(() =>
+      renderer?.update(<Harness projectId={WorkbenchProjectId.make("another-search-workspace")} />),
+    );
+    expect(search.text).toBe("");
+    expect(search.query).toBe("");
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => vi.advanceTimersByTime(200));
+    expect(search.query).toBe("");
+    act(() => renderer?.update(<Harness />));
+    expect(search.text).toBe("login");
+    expect(search.query).toBe("login");
   });
   it("cancels pending filtering when the board unmounts", () => {
     act(() => search.setText("login"));

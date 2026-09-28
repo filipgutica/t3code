@@ -36,7 +36,7 @@ import {
   SearchIcon,
   XIcon,
 } from "lucide-react";
-import { useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useEnvironmentQuery } from "../state/query";
@@ -53,6 +53,14 @@ import { resolveThreadStatusPill } from "../components/Sidebar.logic";
 import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 import { matchesWorkbenchTicketSearch, useWorkbenchTicketSearch } from "./useWorkbenchTicketSearch";
+import { useWorkbenchBoardView } from "./workbenchBoardViewState";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "../components/ui/select";
 import { Button } from "../components/ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
 import { ToggleGroup, Toggle } from "../components/ui/toggle-group";
@@ -108,6 +116,8 @@ type WorkbenchTicketBoardProps = {
   readonly jiraIssueLinksByTicketId: ReadonlyMap<WorkbenchTicketId, WorkbenchJiraIssueLink>;
   readonly activeJiraTicketIds: ReadonlySet<WorkbenchTicketId>;
   readonly selectedTicketId: WorkbenchTicketId | null;
+  readonly repositoryProjectIds: ReadonlyArray<ProjectId>;
+  readonly repositoriesReady: boolean;
   readonly repositoriesById: ReadonlyMap<ProjectId, Project>;
   readonly assignmentsByTicket: ReadonlyMap<WorkbenchTicketId, WorkbenchAssignment>;
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
@@ -194,6 +204,10 @@ function renderWorkbenchTicketBoard({
       >
         {renderWorkbenchBoardControls({
           search,
+          repositoryId: data.repositoryId,
+          setRepositoryId: data.setRepositoryId,
+          repositoryProjectIds: props.repositoryProjectIds,
+          repositoriesById: props.repositoriesById,
           visibleTickets,
           tickets,
           columns,
@@ -225,7 +239,10 @@ function renderWorkbenchTicketBoard({
           </div>
         </div>
 
-        {tickets.length === 0 && !(groupMode === "epic" && epics.length > 0) ? (
+        {tickets.length === 0 &&
+        !search.query &&
+        data.repositoryId === null &&
+        !(groupMode === "epic" && epics.length > 0) ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/45 p-6 backdrop-blur-xs">
             <div className="w-full max-w-sm rounded-xl border border-border bg-background shadow-lg/10">
               <Empty className="min-h-72">
@@ -528,6 +545,10 @@ function renderWorkbenchBoardTicket({
 }
 
 function useWorkbenchBoardData({
+  environmentId,
+  projectId,
+  repositoryProjectIds,
+  repositoriesReady,
   tickets,
   jiraIssueLinksByTicketId,
   assignments,
@@ -538,6 +559,10 @@ function useWorkbenchBoardData({
   epics,
 }: Pick<
   WorkbenchTicketBoardProps,
+  | "environmentId"
+  | "projectId"
+  | "repositoryProjectIds"
+  | "repositoriesReady"
   | "tickets"
   | "jiraIssueLinksByTicketId"
   | "assignments"
@@ -547,17 +572,33 @@ function useWorkbenchBoardData({
   | "groupMode"
   | "epics"
 >) {
-  const search = useWorkbenchTicketSearch();
+  const scope = { environmentId, projectId };
+  const search = useWorkbenchTicketSearch(scope);
+  const { view, setView } = useWorkbenchBoardView(scope);
+  const repositoryId = view.repositoryId;
+  const setRepositoryId = (repositoryId: ProjectId | null) => setView({ repositoryId });
+  useEffect(() => {
+    if (
+      repositoriesReady &&
+      repositoryId !== null &&
+      !repositoryProjectIds.includes(repositoryId)
+    ) {
+      setView({ repositoryId: null });
+    }
+  }, [repositoriesReady, repositoryProjectIds, repositoryId, setView]);
   const visibleTickets = useMemo(
     () =>
-      tickets.filter((ticket) =>
-        matchesWorkbenchTicketSearch({
-          title: ticket.title,
-          jiraKey: jiraIssueLinksByTicketId.get(ticket.id)?.issue.key,
-          query: search.query,
-        }),
+      tickets.filter(
+        (ticket) =>
+          (repositoryId === null ||
+            getWorkbenchTicketRepositoryProjectIds(ticket).includes(repositoryId)) &&
+          matchesWorkbenchTicketSearch({
+            title: ticket.title,
+            jiraKey: jiraIssueLinksByTicketId.get(ticket.id)?.issue.key,
+            query: search.query,
+          }),
       ),
-    [tickets, jiraIssueLinksByTicketId, search.query],
+    [tickets, jiraIssueLinksByTicketId, search.query, repositoryId],
   );
   const visibleTicketIds = useMemo(
     () => new Set(visibleTickets.map((ticket) => ticket.id)),
@@ -620,15 +661,17 @@ function useWorkbenchBoardData({
     () =>
       groupMode === "epic"
         ? groupWorkbenchTicketsByEpic(visibleTickets, epics).filter(
-            (lane) => !search.query || lane.tickets.length > 0,
+            (lane) => (!search.query && repositoryId === null) || lane.tickets.length > 0,
           )
         : [{ epic: null, tickets: visibleTickets }],
-    [epics, groupMode, visibleTickets, search.query],
+    [epics, groupMode, visibleTickets, search.query, repositoryId],
   );
   const epicsById = useMemo(() => new Map(epics.map((epic) => [epic.id, epic])), [epics]);
 
   return {
     search,
+    repositoryId,
+    setRepositoryId,
     visibleTickets,
     agentStatesByTicket,
     threadCounts,
@@ -806,6 +849,7 @@ function renderWorkbenchBoardTicketThreadAction(
 }
 
 function useWorkbenchBoardDrag({
+  projectId,
   environmentId,
   tickets,
   jiraIssueLinksByTicketId,
@@ -817,6 +861,7 @@ function useWorkbenchBoardDrag({
   swimlanes,
 }: Pick<
   WorkbenchTicketBoardProps,
+  | "projectId"
   | "environmentId"
   | "tickets"
   | "jiraIssueLinksByTicketId"
@@ -826,7 +871,9 @@ function useWorkbenchBoardDrag({
   | "onMove"
 > &
   Pick<ReturnType<typeof useWorkbenchBoardData>, "columns" | "swimlanes">) {
-  const [selectedColumnId, setSelectedColumnId] = useState<string | null>(null);
+  const { view, setView } = useWorkbenchBoardView({ environmentId, projectId });
+  const selectedColumnId = view.mobileColumnId;
+  const setSelectedColumnId = (mobileColumnId: string) => setView({ mobileColumnId });
   const visibleColumnId = columns.some((column) => column.id === selectedColumnId)
     ? selectedColumnId
     : columns[0]?.id;
@@ -947,15 +994,62 @@ function renderWorkbenchBoardTicketThreadStatus(
   );
 }
 
+function WorkbenchBoardRepositoryFilter({
+  repositoryId,
+  setRepositoryId,
+  repositoryProjectIds,
+  repositoriesById,
+}: Pick<ReturnType<typeof useWorkbenchBoardData>, "repositoryId" | "setRepositoryId"> &
+  Pick<WorkbenchTicketBoardProps, "repositoryProjectIds" | "repositoriesById">) {
+  return (
+    <div className="w-48 max-w-full">
+      <Select
+        value={repositoryId ?? "all-repositories"}
+        onValueChange={(value) => {
+          const repositoryId = repositoryProjectIds.find((candidate) => candidate === value);
+          setRepositoryId(repositoryId ?? null);
+        }}
+      >
+        <SelectTrigger aria-label="Filter by repository" size="sm">
+          <SelectValue>
+            {repositoryId === null
+              ? "All repositories"
+              : (repositoriesById.get(repositoryId)?.title ?? "Repository unavailable")}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectPopup>
+          <SelectItem value="all-repositories">All repositories</SelectItem>
+          {repositoryProjectIds.map((repositoryId) => (
+            <SelectItem
+              key={repositoryId}
+              value={repositoryId}
+              disabled={!repositoriesById.has(repositoryId)}
+            >
+              {repositoriesById.get(repositoryId)?.title ?? "Repository unavailable"}
+            </SelectItem>
+          ))}
+        </SelectPopup>
+      </Select>
+    </div>
+  );
+}
+
 function renderWorkbenchBoardControls({
   search,
+  repositoryId,
+  setRepositoryId,
+  repositoryProjectIds,
+  repositoriesById,
   visibleTickets,
   tickets,
   columns,
   visibleColumnId,
   setSelectedColumnId,
-}: Pick<ReturnType<typeof useWorkbenchBoardData>, "search" | "visibleTickets" | "columns"> &
-  Pick<WorkbenchTicketBoardProps, "tickets"> &
+}: Pick<
+  ReturnType<typeof useWorkbenchBoardData>,
+  "search" | "repositoryId" | "setRepositoryId" | "visibleTickets" | "columns"
+> &
+  Pick<WorkbenchTicketBoardProps, "tickets" | "repositoryProjectIds" | "repositoriesById"> &
   Pick<ReturnType<typeof useWorkbenchBoardDrag>, "visibleColumnId" | "setSelectedColumnId">) {
   return (
     <>
@@ -991,20 +1085,33 @@ function renderWorkbenchBoardControls({
             </Button>
           ) : null}
         </div>
-        {search.query ? (
+        <WorkbenchBoardRepositoryFilter
+          repositoryId={repositoryId}
+          setRepositoryId={setRepositoryId}
+          repositoryProjectIds={repositoryProjectIds}
+          repositoriesById={repositoriesById}
+        />
+        {search.query || repositoryId !== null ? (
           <span role="status" className="text-xs text-muted-foreground">
             {visibleTickets.length} of {tickets.length} tickets
           </span>
         ) : null}
       </div>
-      {search.query && visibleTickets.length === 0 ? (
+      {(search.query || repositoryId !== null) && visibleTickets.length === 0 ? (
         <div
           role="status"
           className="flex shrink-0 items-center justify-center gap-3 p-4 text-sm text-muted-foreground"
         >
           No matching tickets.
-          <Button variant="outline" size="sm" onClick={() => search.setText("")}>
-            Clear search
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              search.setText("");
+              setRepositoryId(null);
+            }}
+          >
+            Clear filters
           </Button>
         </div>
       ) : null}

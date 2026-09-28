@@ -709,6 +709,7 @@ function WorkbenchPageBoard(
     boardTickets,
     boardEpics,
     boardGroupModeForView,
+    repositoriesReady,
   } = boardData;
   const { changeTicket, changeJiraTransition, ticketForBoardAction, regenerateSummary } =
     ticketActions;
@@ -750,6 +751,8 @@ function WorkbenchPageBoard(
           activeJiraTicketIds={activeJiraTicketIds}
           selectedTicketId={null}
           repositoriesById={repositoriesById}
+          repositoryProjectIds={selectedProject.linkedProjectIds}
+          repositoriesReady={repositoriesReady}
           assignmentsByTicket={assignmentsByTicket}
           assignments={snapshot?.assignments ?? []}
           threadsById={threadsById}

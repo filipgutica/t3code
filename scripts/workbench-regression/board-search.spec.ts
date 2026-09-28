@@ -1,6 +1,6 @@
 import { test, expect, openWorkbench, snapshot } from "./fixtures.ts";
 
-test("local board search filters titles, clears, and resets between Workspaces", async ({
+test("local board search filters titles, clears, and remembers each Workspace", async ({
   page,
   demo,
 }) => {
@@ -20,7 +20,7 @@ test("local board search filters titles, clears, and resets between Workspaces",
   await search.fill("no-such-ticket-search");
   await expect(board.getByRole("status").filter({ hasText: "No matching tickets." })).toBeVisible();
   await expect(board.locator("article")).toHaveCount(0);
-  await board.getByRole("button", { name: "Clear search", exact: true }).click();
+  await board.getByRole("button", { name: "Clear filters", exact: true }).click();
   await expect(search).toHaveValue("");
   await expect(board.locator("article")).toHaveCount(count);
 
@@ -38,6 +38,12 @@ test("local board search filters titles, clears, and resets between Workspaces",
   await page.getByRole("button", { name: "Beacon 7", exact: true }).click();
   await expect(search).toHaveValue("");
   await expect(board.locator("article").first()).toBeVisible();
+  await page.getByRole("button", { name: "Orbit 8", exact: true }).click();
+  await expect(search).toHaveValue("welcome");
+  await expect(board.locator("article")).toHaveCount(1);
+  await expect(
+    board.getByRole("heading", { name: "Create the welcome checklist", exact: true }),
+  ).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(search).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
