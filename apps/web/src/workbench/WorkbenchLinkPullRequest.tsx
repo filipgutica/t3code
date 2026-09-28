@@ -5,6 +5,7 @@ import type {
   WorkbenchAssignment,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
+import { InfoIcon } from "lucide-react";
 import { useId, useState } from "react";
 
 import { openLinkPullRequestDialog } from "../components/pullRequest/LinkPullRequestDialog";
@@ -26,6 +27,7 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { usePullRequestLinking } from "../hooks/usePullRequestLinking";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { useEnvironment } from "../state/environments";
 
 export function WorkbenchLinkPullRequest({
@@ -50,6 +52,7 @@ export function WorkbenchLinkPullRequest({
     connected: environment?.connection.phase === "connected",
     unsupported: linking.mode === "unsupported",
     hasThreads: eligibleThreads.length > 0,
+    canLinkAny: linking.canLinkAny,
   });
   const threadLabel = (thread: EnvironmentThreadShell) =>
     `${thread.title} · ${thread.branch ?? "source checkout"} · ${thread.id}`;
@@ -62,7 +65,7 @@ export function WorkbenchLinkPullRequest({
 
   return (
     <>
-      <div className="flex max-w-64 flex-col items-end gap-1">
+      <div className="flex items-center gap-1">
         <Button
           variant="outline"
           size="sm"
@@ -81,9 +84,26 @@ export function WorkbenchLinkPullRequest({
           Link PR
         </Button>
         {unavailable ? (
-          <p id={descriptionId} role="status" className="text-right text-xs text-muted-foreground">
-            {unavailable}
-          </p>
+          <>
+            <p id={descriptionId} role="status" className="sr-only">
+              {unavailable}
+            </p>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Why Link PR is unavailable"
+                  />
+                }
+              >
+                <InfoIcon aria-hidden className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup side="bottom">{unavailable}</TooltipPopup>
+            </Tooltip>
+          </>
         ) : null}
       </div>
       {choosing ? (
@@ -174,13 +194,18 @@ function getUnavailableReason({
   connected,
   unsupported,
   hasThreads,
+  canLinkAny,
 }: {
   connected: boolean;
   unsupported: boolean;
   hasThreads: boolean;
+  canLinkAny: boolean;
 }) {
   if (!connected) return "Connect to this environment to link a PR.";
   if (unsupported) return "This environment does not support PR linking.";
-  if (!hasThreads) return "Create or attach a live Thread to link a PR.";
+  if (!hasThreads)
+    return "Create or attach a live Thread to this Ticket. PR links belong to Threads.";
+  if (!canLinkAny)
+    return "Add a project with a supported Git remote to this environment before linking a PR.";
   return null;
 }

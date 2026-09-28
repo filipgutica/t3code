@@ -109,7 +109,10 @@ export function resolveLinkPullRequestInput(input: {
   const webUrl = input.project.webUrl(number);
   const webReference = webUrl === null ? null : parseChangeRequestUrl(webUrl);
   if (webUrl === null || webReference === null) {
-    return { error: "Paste a full URL; this project's host has no known pull request URL." };
+    return {
+      error:
+        "This Thread's repository has no supported PR URL. Paste a full URL from a connected host.",
+    };
   }
   return {
     link: { ...webReference, url: webUrl },
@@ -214,9 +217,11 @@ function LinkPullRequestDialog({
             placeholder="Pull request URL or #42"
             value={reference}
             onChange={(event) => {
-              setDirty(true);
+              setDirty(false);
+              setSubmitError(null);
               setReference(event.target.value);
             }}
+            onBlur={() => setDirty(true)}
             onKeyDown={(event) => {
               if (event.key !== "Enter") return;
               event.preventDefault();

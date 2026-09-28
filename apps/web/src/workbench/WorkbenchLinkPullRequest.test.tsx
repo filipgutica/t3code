@@ -14,12 +14,17 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import { Select } from "../components/ui/select";
 import { WorkbenchLinkPullRequest } from "./WorkbenchLinkPullRequest";
 
-const observed = vi.hoisted(() => ({ open: vi.fn(), mode: "multiple", phase: "connected" }));
+const observed = vi.hoisted(() => ({
+  open: vi.fn(),
+  mode: "multiple",
+  phase: "connected",
+  canLinkAny: true,
+}));
 vi.mock("../components/pullRequest/LinkPullRequestDialog", () => ({
   openLinkPullRequestDialog: observed.open,
 }));
 vi.mock("../hooks/usePullRequestLinking", () => ({
-  usePullRequestLinking: () => ({ mode: observed.mode }),
+  usePullRequestLinking: () => ({ mode: observed.mode, canLinkAny: observed.canLinkAny }),
 }));
 vi.mock("../state/environments", () => ({
   useEnvironment: () => ({ connection: { phase: observed.phase } }),
@@ -34,6 +39,19 @@ vi.mock("../components/ui/dialog", () => {
     DialogDescription: Container,
     DialogPanel: Container,
     DialogFooter: Container,
+  };
+});
+vi.mock("../components/ui/tooltip", () => {
+  const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
+  return {
+    Tooltip: Container,
+    TooltipTrigger: ({ children, render }: { children?: ReactNode; render?: ReactNode }) => (
+      <>
+        {render}
+        {children}
+      </>
+    ),
+    TooltipPopup: ({ children }: { children?: ReactNode }) => <div role="tooltip">{children}</div>,
   };
 });
 vi.mock("../components/ui/select", () => ({
@@ -93,6 +111,7 @@ describe("Ticket PR linking", () => {
     observed.open.mockClear();
     observed.mode = "multiple";
     observed.phase = "connected";
+    observed.canLinkAny = true;
   });
   afterEach(() => {
     act(() => renderer?.unmount());
@@ -146,11 +165,12 @@ describe("Ticket PR linking", () => {
     act(() => button(renderer, "Continue").props.onClick());
     expect(observed.open).toHaveBeenCalledExactlyOnceWith({ environmentId, threadId: two.id });
   });
-  it.each(["missing", "archived", "settled", "foreign", "unsupported", "offline"])(
+  it.each(["missing", "archived", "settled", "foreign", "unsupported", "offline", "no-host"])(
     "explains why linking is unavailable for %s",
     (reason) => {
       if (reason === "unsupported") observed.mode = "unsupported";
       if (reason === "offline") observed.phase = "offline";
+      if (reason === "no-host") observed.canLinkAny = false;
       const target =
         reason === "archived"
           ? { ...one, archivedAt: "2026-09-27T00:00:00.000Z" }
@@ -168,7 +188,16 @@ describe("Ticket PR linking", () => {
         );
       });
       expect(button(renderer, "Link PR").props.disabled).toBe(true);
-      expect(renderer.root.findAllByProps({ role: "status" }).length).toBeGreaterThan(0);
+      expect(renderer.root.findAllByProps({ role: "tooltip" }).length).toBeGreaterThan(0);
+      expect(
+        renderer.root
+          .findAllByType("button")
+          .filter((node) => node.props["aria-label"] === "Why Link PR is unavailable"),
+      ).toHaveLength(1);
+      if (reason === "no-host")
+        expect(renderer.root.findByProps({ role: "tooltip" }).children.join("")).toContain(
+          "supported Git remote",
+        );
       expect(observed.open).not.toHaveBeenCalled();
     },
   );
