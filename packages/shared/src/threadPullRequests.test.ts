@@ -242,6 +242,28 @@ describe("legacyLinkedPullRequestOf", () => {
   it("does not guess when the project identity is unavailable", () => {
     expect(legacyLinkedPullRequestOf([link(7)], "project-1" as never, null)).toBeNull();
   });
+  it("omits the legacy link when the Thread has a local Git remote", () => {
+    const localIdentity = {
+      canonicalKey: "/tmp/orbit-web",
+      displayName: "orbit-web",
+      locator: {
+        ...identity.locator,
+        remoteUrl: "/tmp/orbit-web.git",
+      },
+    };
+    expect(
+      legacyLinkedPullRequestOf(
+        [
+          link(7, {
+            repository: "filipgutica/workbench-demo-orbit-web",
+            url: "https://github.com/filipgutica/workbench-demo-orbit-web/pull/7",
+          }),
+        ],
+        ProjectId.make("project-1"),
+        localIdentity,
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("resolveThreadPullRequestChains", () => {
