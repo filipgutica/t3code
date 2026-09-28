@@ -72,7 +72,7 @@ Each Ticket can have several active Assignments; each native Thread belongs to o
 
 ## Jira sprint mirrors
 
-Jira domain and synchronization logic live under `packages/workbench/src/jira`; HTTP, configuration, credential storage, and composition adapters stay under `apps/server/src/workbench/jira`. Refresh credentials stay in the environment's T3 secret store.
+Jira domain and synchronization logic live under `packages/workbench/src/jira`; HTTP, configuration, credential storage, and composition adapters stay under `apps/server/src/workbench/jira`. Refresh credentials stay in the environment's T3 secret store. See [Jira OAuth credential custody](workbench-jira-oauth.md) for the direct and broker trust boundaries, token storage, and refresh lifecycle.
 
 Ordinary local development and CI use the deployed OAuth broker. The worker owns the Atlassian client secret, registered callback, code exchange, and refresh. Each T3 environment stores its own grant and calls Jira directly. Local ports therefore do not require Atlassian callback registration. Set `T3_WORKBENCH_JIRA_BROKER_URL` for unbundled development and leave `T3_WORKBENCH_JIRA_CLIENT_ID` and `T3_WORKBENCH_JIRA_CLIENT_SECRET` empty. See the [demo setup](../../scripts/workbench-demo/README.md#set-up-once).
 
