@@ -4,13 +4,13 @@ Workbench authorizes Jira for a selected T3 environment. That environment keeps 
 
 ## Trust boundaries
 
-| Material | Direct OAuth | Broker OAuth |
-| --- | --- | --- |
-| Atlassian client secret | The T3 server reads `T3_WORKBENCH_JIRA_CLIENT_SECRET` from its process environment. | The broker Worker reads `ATLASSIAN_CLIENT_SECRET` from its environment. T3 does not receive it. |
-| Authorization code | Web receives it at `/workbench` and sends it to T3 through an authorized RPC. Desktop receives it at the selected T3 server's `/oauth/workbench/jira/callback`. | The broker receives it at `/oauth/jira/callback` and exchanges it with Atlassian. |
-| Access and refresh tokens | T3 exchanges the code and stores the grant. | The broker holds the exchange result briefly; T3 claims and stores the grant. |
-| Refresh | T3 sends its refresh token and client credentials to Atlassian. | T3 sends its refresh token to the broker; the broker uses its client credentials with Atlassian and returns replacement tokens. |
-| Routine Jira API calls | T3 calls Jira directly. | T3 calls Jira directly; the broker is outside this path. |
+| Material                  | Direct OAuth                                                                                                                                                    | Broker OAuth                                                                                                                    |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Atlassian client secret   | The T3 server reads `T3_WORKBENCH_JIRA_CLIENT_SECRET` from its process environment.                                                                             | The broker Worker reads `ATLASSIAN_CLIENT_SECRET` from its environment. T3 does not receive it.                                 |
+| Authorization code        | Web receives it at `/workbench` and sends it to T3 through an authorized RPC. Desktop receives it at the selected T3 server's `/oauth/workbench/jira/callback`. | The broker receives it at `/oauth/jira/callback` and exchanges it with Atlassian.                                               |
+| Access and refresh tokens | T3 exchanges the code and stores the grant.                                                                                                                     | The broker holds the exchange result briefly; T3 claims and stores the grant.                                                   |
+| Refresh                   | T3 sends its refresh token and client credentials to Atlassian.                                                                                                 | T3 sends its refresh token to the broker; the broker uses its client credentials with Atlassian and returns replacement tokens. |
+| Routine Jira API calls    | T3 calls Jira directly.                                                                                                                                         | T3 calls Jira directly; the broker is outside this path.                                                                        |
 
 [Explicit direct credentials take precedence](../../packages/workbench/src/jira/JiraAuthService.ts) when both modes are configured for a new authorization. A stored grant records its `authMode`, so an existing broker grant still uses the broker for refresh. The server's configuration supplies the current broker URL; the grant does not pin the URL that created it.
 
