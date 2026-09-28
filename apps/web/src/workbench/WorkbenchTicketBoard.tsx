@@ -83,10 +83,10 @@ import {
   getWorkbenchTicketAgentPresentation,
   getWorkbenchTicketRepositoryProjectIds,
   getWorkbenchTicketSummaryActionLabel,
-  getWorkbenchTicketSummaryPresentation,
   groupWorkbenchTicketsByEpic,
   isWorkbenchThreadArchived,
 } from "./workbench.logic";
+import { getWorkbenchBoardTicketPreview } from "./workbenchBoardTicketPreview";
 import { WorkbenchJiraIssueKey, WorkbenchTicketKindBadge } from "./WorkbenchTicketMetadata";
 import { getWorkbenchBoardColumns, orderWorkbenchTicketsByJiraRank } from "./workbenchJira.logic";
 
@@ -681,7 +681,10 @@ function getWorkbenchBoardTicketPresentation({
   const additionalRepositoryCount = getWorkbenchTicketRepositoryProjectIds(ticket).length - 1;
   const epic = ticket.epicId ? epicsById.get(ticket.epicId) : undefined;
   const jiraIssueLink = jiraIssueLinksByTicketId.get(ticket.id);
-  const summary = getWorkbenchTicketSummaryPresentation(ticket.generatedSummary);
+  const summary = getWorkbenchBoardTicketPreview({
+    ticket,
+    ...(jiraIssueLink ? { jiraIssue: jiraIssueLink.issue } : {}),
+  });
 
   return {
     ticket,
@@ -732,7 +735,7 @@ function renderWorkbenchBoardTicketMetadata(
             <button
               type="button"
               onClick={() => onSelect(projectId, ticket.id)}
-              aria-label={`Ticket summary: ${summary.text}`}
+              aria-label={`Ticket ${summary.source === "description" ? "description" : "summary"}: ${summary.text}`}
               className="relative z-10 line-clamp-2 cursor-pointer break-words text-left text-xs text-foreground/80 outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
               tabIndex={0}
             />

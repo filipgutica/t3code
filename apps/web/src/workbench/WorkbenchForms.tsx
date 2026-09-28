@@ -859,8 +859,6 @@ function WorkbenchTicketDetailController({
     setDeleteConfirmationOpen,
     resetConfirmationOpen,
     setResetConfirmationOpen,
-    summaryPanelCollapsed,
-    setSummaryPanelCollapsed,
     threadPanelCollapsed,
     setThreadPanelCollapsed,
     settledThreadsCollapsed,
@@ -1026,10 +1024,9 @@ function WorkbenchTicketDetailController({
           <div className="min-w-0 space-y-4 xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:gap-4 xl:space-y-0">
             {error ? <WorkbenchInlineError message={error} /> : null}
             <WorkbenchTicketSummaryPanel
-              summaryPanelCollapsed={summaryPanelCollapsed}
+              key={`${ticket.id}:${summary.error && !summary.hasText ? "failed" : "available"}`}
               summaryHeaderLabel={summaryHeaderLabel}
               hasUnsavedChanges={hasUnsavedChanges}
-              setSummaryPanelCollapsed={setSummaryPanelCollapsed}
               summary={summary}
               ticket={ticket}
               displayedTitle={displayedTitle}
@@ -1726,10 +1723,8 @@ function WorkbenchTicketHeader({
 }
 
 function WorkbenchTicketSummaryPanel({
-  summaryPanelCollapsed,
   summaryHeaderLabel,
   hasUnsavedChanges,
-  setSummaryPanelCollapsed,
   summary,
   ticket,
   displayedTitle,
@@ -1737,10 +1732,8 @@ function WorkbenchTicketSummaryPanel({
   isArchived,
   onRegenerateSummary,
 }: {
-  summaryPanelCollapsed: boolean;
   summaryHeaderLabel: string | null;
   hasUnsavedChanges: boolean;
-  setSummaryPanelCollapsed: Dispatch<SetStateAction<boolean>>;
   summary: ReturnType<typeof getWorkbenchTicketSummaryPresentation>;
   ticket: WorkbenchTicket;
   displayedTitle: string;
@@ -1748,6 +1741,9 @@ function WorkbenchTicketSummaryPanel({
   isArchived: boolean;
   onRegenerateSummary: (ticket: WorkbenchTicket) => void;
 }) {
+  const [summaryPanelCollapsed, setSummaryPanelCollapsed] = useState(
+    Boolean(summary.error && !summary.hasText),
+  );
   return (
     <section
       aria-labelledby="workbench-ticket-generated-summary"
@@ -1767,13 +1763,18 @@ function WorkbenchTicketSummaryPanel({
             className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform ${summaryPanelCollapsed ? "" : "rotate-180"}`}
           />
           <span className="min-w-0">
-            <span
-              id="workbench-ticket-generated-summary"
-              role="heading"
-              aria-level={2}
-              className="block text-sm font-semibold"
-            >
-              Generated summary
+            <span className="flex items-center gap-1.5">
+              <span
+                id="workbench-ticket-generated-summary"
+                role="heading"
+                aria-level={2}
+                className="text-sm font-semibold"
+              >
+                Generated summary
+              </span>
+              {summary.error ? (
+                <CircleAlertIcon aria-hidden className="size-4 shrink-0 text-warning-foreground" />
+              ) : null}
             </span>
             {summaryHeaderLabel ? (
               <span
@@ -5067,7 +5068,6 @@ function useWorkbenchTicketSettlement(environmentId: EnvironmentId) {
 function useWorkbenchTicketDetailPanels() {
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false);
   const [resetConfirmationOpen, setResetConfirmationOpen] = useState(false);
-  const [summaryPanelCollapsed, setSummaryPanelCollapsed] = useState(false);
   const [threadPanelCollapsed, setThreadPanelCollapsed] = useState(false);
   const [settledThreadsCollapsed, setSettledThreadsCollapsed] = useState(true);
   const [detailsPanelCollapsed, setDetailsPanelCollapsed] = useState(false);
@@ -5080,8 +5080,6 @@ function useWorkbenchTicketDetailPanels() {
     setDeleteConfirmationOpen,
     resetConfirmationOpen,
     setResetConfirmationOpen,
-    summaryPanelCollapsed,
-    setSummaryPanelCollapsed,
     threadPanelCollapsed,
     setThreadPanelCollapsed,
     settledThreadsCollapsed,
@@ -5440,7 +5438,9 @@ function getWorkbenchTicketDraftPresentation({
       draft.markdown !== projectedContent.markdown);
   const summary = getWorkbenchTicketSummaryPresentation(ticket.generatedSummary);
   const summaryHeaderLabel =
-    summary.statusLabel ?? summary.error ?? (!summary.hasText ? summary.text : null);
+    summary.error && !summary.hasText
+      ? "Summary generation failed"
+      : (summary.statusLabel ?? (!summary.hasText ? summary.text : null));
   const hasUnsavedChanges = dirty;
 
   return {
