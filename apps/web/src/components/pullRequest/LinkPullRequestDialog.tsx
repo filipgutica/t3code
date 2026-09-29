@@ -302,10 +302,10 @@ function LinkPullRequestDialog({
                   {resolved.link.host}/{resolved.link.repository} #{resolved.link.number}
                 </p>
               ) : null}
-              {validation ? <p className="text-destructive text-xs">{validation}</p> : null}
               <Button type="button" variant="ghost" size="sm" onClick={() => setManual(false)}>
                 Browse pull requests
               </Button>
+              {validation ? <p className="text-destructive text-xs">{validation}</p> : null}
             </>
           ) : (
             <>
