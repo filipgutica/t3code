@@ -21,6 +21,8 @@
         "setup-worktree.ts",
         // Docker and Vercel Sandbox invoke the disposable preview runtime directly.
         "workbench-preview/start.mts",
+        // Disposable startup invokes this credential-free CLI adapter by filename.
+        "workbench-demo/gh-attention.mjs",
       ],
     },
     "apps/server": {
