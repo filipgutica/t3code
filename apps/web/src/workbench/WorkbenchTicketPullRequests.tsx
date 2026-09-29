@@ -1,5 +1,11 @@
 import { useAtomValue } from "@effect/atom-react";
-import { EnvironmentId, ProjectId, type ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  type ThreadId,
+  type WorkbenchAssignment,
+  type WorkbenchTicketId,
+} from "@t3tools/contracts";
 import { changeRequestRepositoryUrl } from "@t3tools/shared/changeRequestUrl";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -12,6 +18,8 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip"
 import { usePullRequestList } from "../state/pullRequests";
 import { formatEnvironmentQueryError } from "../state/query";
 import { vcsEnvironment } from "../state/vcs";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { WorkbenchLinkPullRequest } from "./WorkbenchLinkPullRequest";
 import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 import {
   mergeWorkbenchTicketPullRequests,
@@ -47,6 +55,9 @@ const ticketCheckoutPullRequests = Atom.family((key: string) => {
 
 export function WorkbenchTicketPullRequests({
   environmentId,
+  ticketId,
+  assignments,
+  threadsById,
   ticketKey,
   workspaceRepositoryProjectIds,
   pullRequests,
@@ -54,6 +65,9 @@ export function WorkbenchTicketPullRequests({
   onOpenThread,
 }: {
   readonly environmentId: EnvironmentId;
+  readonly ticketId: WorkbenchTicketId;
+  readonly assignments: ReadonlyArray<WorkbenchAssignment>;
+  readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   readonly ticketKey: string | null;
   readonly workspaceRepositoryProjectIds: ReadonlyArray<ProjectId>;
   readonly pullRequests: ReadonlyArray<WorkbenchTicketPullRequest>;
@@ -98,9 +112,6 @@ export function WorkbenchTicketPullRequests({
   });
   const unsupported = search.data?.providers.some((provider) => !provider.searchesOnHost);
 
-  if (!canSearch && rows.length === 0 && !checkout.isPending && checkout.errors.length === 0)
-    return null;
-
   return (
     <section
       className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 xl:min-h-0 xl:flex-1 ${rows.length > 0 ? "[@media(min-height:48rem)]:xl:min-h-48" : ""}`}
@@ -119,17 +130,26 @@ export function WorkbenchTicketPullRequests({
               : "From Threads and the ticket workspace"}
           </p>
         </div>
-        {canSearch ? (
-          <Button
-            aria-label="Refresh ticket pull requests"
-            size="icon-sm"
-            variant="ghost"
-            disabled={search.isPending}
-            onClick={() => search.refresh()}
-          >
-            <RefreshCwIcon />
-          </Button>
-        ) : null}
+        <div className="flex shrink-0 items-start gap-2">
+          <WorkbenchLinkPullRequest
+            key={`${environmentId}:${ticketId}`}
+            environmentId={environmentId}
+            ticketId={ticketId}
+            assignments={assignments}
+            threadsById={threadsById}
+          />
+          {canSearch ? (
+            <Button
+              aria-label="Refresh ticket pull requests"
+              size="icon-sm"
+              variant="ghost"
+              disabled={search.isPending}
+              onClick={() => search.refresh()}
+            >
+              <RefreshCwIcon />
+            </Button>
+          ) : null}
+        </div>
       </div>
       <div className="min-h-0 space-y-2 px-3 py-2 xl:overflow-y-auto xl:overscroll-contain">
         {rows.map((row) => (
@@ -272,7 +292,7 @@ function WorkbenchPullRequestSearchStatus({
       checkout.errors.length === 0 &&
       !search.error &&
       !unsupported &&
-      search.data?.errors.length === 0 ? (
+      (search.data?.errors.length ?? 0) === 0 ? (
         <p className="text-xs text-muted-foreground">No pull requests found.</p>
       ) : null}
       {search.data?.truncated ? (

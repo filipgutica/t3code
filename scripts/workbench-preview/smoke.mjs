@@ -130,6 +130,22 @@ try {
       "Seeded native Threads use the free preview provider",
     );
   NodeAssert.equal(counts.jira, 0, "Preview starts without a connected Jira account");
+  NodeAssert.equal(
+    docker(
+      "exec",
+      "--user",
+      "node",
+      name,
+      "git",
+      "-C",
+      `${home}/projects/orbit-web`,
+      "remote",
+      "get-url",
+      "origin",
+    ),
+    "https://github.com/filipgutica/workbench-demo-orbit-web.git",
+    "The assigned Orbit Ticket has a real GitHub repository for Link PR review",
+  );
   const runtimeUid = docker(
     "exec",
     name,
@@ -149,7 +165,7 @@ try {
       "node",
       "--input-type=module",
       "-e",
-      "import fs from 'node:fs';import cp from 'node:child_process';const target=process.argv[1];let environment;for(const pid of fs.readdirSync('/proc').filter(x=>/^[0-9]+$/.test(x))){try{const argv=fs.readFileSync('/proc/'+pid+'/cmdline','utf8').split(String.fromCharCode(0));if(argv.includes(target)&&argv.includes('serve'))environment=Object.fromEntries(fs.readFileSync('/proc/'+pid+'/environ','utf8').split(String.fromCharCode(0)).filter(Boolean).map(entry=>{const index=entry.indexOf('=');return [entry.slice(0,index),entry.slice(index+1)];}));}catch{}}if(!environment)throw Error('Native runtime environment unavailable');const version=cp.spawnSync('gh',['--version'],{env:environment,encoding:'utf8',timeout:5000});const auth=cp.spawnSync('gh',['auth','status','--hostname','github.com'],{env:environment,encoding:'utf8',timeout:5000});const location=cp.spawnSync('sh',['-c','command -v gh'],{env:environment,encoding:'utf8',timeout:5000});console.log(JSON.stringify({location:location.stdout?.trim(),version:version.stdout?.split(String.fromCharCode(10))[0],versionStatus:version.status,authStatus:auth.status,hasCredentials:['GH_TOKEN','GITHUB_TOKEN','GH_ENTERPRISE_TOKEN','GITHUB_ENTERPRISE_TOKEN'].some(key=>Boolean(environment[key]))}));",
+      "import fs from 'node:fs';import cp from 'node:child_process';const target=process.argv[1];let environment;for(const pid of fs.readdirSync('/proc').filter(x=>/^[0-9]+$/.test(x))){try{const argv=fs.readFileSync('/proc/'+pid+'/cmdline','utf8').split(String.fromCharCode(0));if(argv.includes(target)&&argv.includes('serve'))environment=Object.fromEntries(fs.readFileSync('/proc/'+pid+'/environ','utf8').split(String.fromCharCode(0)).filter(Boolean).map(entry=>{const index=entry.indexOf('=');return [entry.slice(0,index),entry.slice(index+1)];}));}catch{}}if(!environment)throw Error('Native runtime environment unavailable');const version=cp.spawnSync('gh',['--version'],{env:environment,encoding:'utf8',timeout:5000});const auth=cp.spawnSync('gh',['auth','status','--hostname','github.com'],{env:environment,encoding:'utf8',timeout:5000});const location=cp.spawnSync('sh',['-c','command -v gh'],{env:environment,encoding:'utf8',timeout:5000});const openCode=cp.spawnSync('opencode',['--version'],{env:environment,encoding:'utf8',timeout:4000});console.log(JSON.stringify({location:location.stdout?.trim(),version:version.stdout?.split(String.fromCharCode(10))[0],versionStatus:version.status,authStatus:auth.status,openCodeVersion:openCode.stdout?.trim(),openCodeStatus:openCode.status,hasCredentials:['GH_TOKEN','GITHUB_TOKEN','GH_ENTERPRISE_TOKEN','GITHUB_ENTERPRISE_TOKEN'].some(key=>Boolean(environment[key]))}));",
       `${application}/apps/server/dist/bin.mjs`,
     ),
   );
@@ -170,6 +186,12 @@ try {
     1,
     "GitHub CLI starts unauthenticated in the fresh native home",
   );
+  NodeAssert.equal(
+    github.openCodeStatus,
+    0,
+    "OpenCode responds within the native four-second probe",
+  );
+  NodeAssert.equal(github.openCodeVersion, "1.18.33", "Preview uses the pinned OpenCode release");
 
   const pairing = docker(
     "exec",

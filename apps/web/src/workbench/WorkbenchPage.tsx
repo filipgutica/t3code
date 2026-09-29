@@ -2,6 +2,7 @@ import { useWorkbenchPageEnvironment } from "./useWorkbenchPageEnvironment";
 import { useWorkbenchPageJira } from "./useWorkbenchPageJira";
 import { useWorkbenchPageTicketWorkflow } from "./useWorkbenchPageTicketWorkflow";
 
+import { LinkPullRequestDialogHost } from "../components/pullRequest/LinkPullRequestDialog";
 import { WorkbenchPageView } from "./WorkbenchPageView";
 import { useWorkbenchPageDialogs } from "./useWorkbenchPageDialogs";
 
@@ -124,23 +125,26 @@ export function WorkbenchPage({
   });
 
   return (
-    <WorkbenchPageView
-      environmentId={environmentId}
-      createWorkspace={createWorkspace}
-      jiraDialogOpen={jiraDialogOpen}
-      error={error}
-      pendingAction={pendingAction}
-      setError={setError}
-      beginJiraAuthFlow={beginJiraAuthFlow}
-      openJiraDialog={openJiraDialog}
-      handleJiraDialogOpenChange={handleJiraDialogOpenChange}
-      pageData={pageData}
-      selection={selection}
-      jiraBindings={jiraBindings}
-      dialogs={dialogs}
-      boardData={boardData}
-      ticketActions={ticketActions}
-      threadActions={threadActions}
-    />
+    <>
+      <LinkPullRequestDialogHost />
+      <WorkbenchPageView
+        environmentId={environmentId}
+        createWorkspace={createWorkspace}
+        jiraDialogOpen={jiraDialogOpen}
+        error={error}
+        pendingAction={pendingAction}
+        setError={setError}
+        beginJiraAuthFlow={beginJiraAuthFlow}
+        openJiraDialog={openJiraDialog}
+        handleJiraDialogOpenChange={handleJiraDialogOpenChange}
+        pageData={pageData}
+        selection={selection}
+        jiraBindings={jiraBindings}
+        dialogs={dialogs}
+        boardData={boardData}
+        ticketActions={ticketActions}
+        threadActions={threadActions}
+      />
+    </>
   );
 }

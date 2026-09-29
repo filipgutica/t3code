@@ -77,10 +77,12 @@ fails, the Thread continues and its work log shows a warning.
 
 The Ticket's **Pull Requests** section collects PRs reported by linked Threads and
 prepared worktrees. For Jira Tickets, it also searches linked repositories for the
-issue key. To attach a PR yourself, open the Thread, open the command palette with
-**⌘K** on macOS or **Ctrl+K** on Windows and Linux, choose **Link pull request to
-thread**, and paste the full PR URL. A number such as `#42` refers to the Thread's
-repository.
+issue key. To attach a PR yourself, choose **Link PR** from the Ticket, select a
+Thread if prompted, then choose a listed PR or search by title. You can paste a full
+PR URL when browsing is unavailable or the PR is not listed. A number such as `#42`
+refers to the selected Thread's repository. Link PR needs a live assigned Thread and
+a project with a supported Git remote in the same environment. You can also use
+**Link pull request to thread** in the native Thread's command palette.
 
 ![One Ticket showing pull requests from Orbit Web and Orbit API, alongside its Thread and prepared repository worktrees.](./media/workbench/pull-requests.png)
 

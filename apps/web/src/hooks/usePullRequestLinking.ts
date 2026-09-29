@@ -1,11 +1,15 @@
 import { useMemo } from "react";
-import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
+import {
+  canonicalRepositoryKey,
+  sourceControlRepositorySelector,
+} from "@t3tools/shared/sourceControl";
 import type {
   EnvironmentId,
   ScopedThreadRef,
   ThreadLinkedPullRequest,
   ThreadPullRequestLink,
 } from "@t3tools/contracts";
+import { changeRequestUrlFor } from "@t3tools/shared/changeRequestUrl";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -52,6 +56,28 @@ export function usePullRequestLinking(environmentId: EnvironmentId | null | unde
         ) !== undefined
       );
     };
+    const canLinkAny =
+      mode !== "unsupported" &&
+      environmentProjects.some((project) => {
+        const identity = project.repositoryIdentity;
+        if (!identity?.provider) return false;
+        const canonical = canonicalRepositoryKey(identity.canonicalKey.toLowerCase());
+        const separator = canonical.indexOf("/");
+        if (separator < 0) return false;
+        const host = canonical.slice(0, separator);
+        const repository = canonical.slice(separator + 1);
+        const url =
+          identity.provider === "forgejo" && identity.webUrl
+            ? `${identity.webUrl.replace(/\/$/, "")}/pulls/1`
+            : changeRequestUrlFor(
+                identity.provider === "unknown" ? "gitlab" : identity.provider,
+                host,
+                repository,
+                1,
+                identity.locator.remoteUrl,
+              );
+        return url !== null && canLink(url);
+      });
     const isLinked = (
       thread: {
         readonly pullRequests?: readonly ThreadPullRequestLink[];
@@ -99,6 +125,6 @@ export function usePullRequestLinking(environmentId: EnvironmentId | null | unde
         throw squashAtomCommandFailure(result);
       }
     };
-    return { mode, canLink, isLinked, changeLink };
+    return { mode, canLink, canLinkAny, isLinked, changeLink };
   }, [capabilities, environmentId, link, mode, projects, unlink, updateMetadata]);
 }
