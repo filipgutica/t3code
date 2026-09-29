@@ -256,6 +256,27 @@ const usePullRequestListsQuery = createMergedEnvironmentQuery(
   pullRequestEnvironment.list,
 );
 
+const usePullRequestNumberQuery = createMergedEnvironmentQuery(
+  "web-pull-requests:number-search",
+  linkedPullRequestDetailAtom,
+);
+
+/** Read an exact PR number in each distinct repository supplied by the picker. */
+export function usePullRequestNumberSearch(
+  targets: ReadonlyArray<EnvironmentQueryTarget<PullRequestRef>>,
+): {
+  readonly summaries: ReadonlyArray<PullRequestSummary>;
+  readonly error: string | null;
+  readonly isPending: boolean;
+} {
+  const query = usePullRequestNumberQuery(targets);
+  return {
+    summaries: query.values.map(([, summary]) => summary),
+    error: query.error,
+    isPending: query.isPending,
+  };
+}
+
 const usePullRequestStatsQuery = createMergedEnvironmentQuery(
   "web-pull-requests:list-stats",
   pullRequestEnvironment.listStats,

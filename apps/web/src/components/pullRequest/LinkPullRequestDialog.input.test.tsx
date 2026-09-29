@@ -8,8 +8,41 @@ const threadRef = {
   threadId: ThreadId.make("thread-1"),
 };
 const projectId = ProjectId.make("project-1");
+const otherProjectId = ProjectId.make("project-2");
+const duplicateProjectId = ProjectId.make("project-3");
 const observed = vi.hoisted(() => ({
   changeLink: vi.fn(async () => undefined),
+  numberSearch: vi.fn(
+    (targets: ReadonlyArray<{ input: { repository: string; number: number } }>) => ({
+      summaries: targets.flatMap(({ input }) =>
+        input.number !== 42
+          ? []
+          : input.repository === "acme/web"
+            ? [
+                {
+                  url: "https://github.com/acme/web/pull/42",
+                  title: "Fix sign in",
+                  number: 42,
+                  state: "closed",
+                  isDraft: false,
+                },
+              ]
+            : input.repository === "acme/api"
+              ? [
+                  {
+                    url: "https://github.com/acme/api/pull/42",
+                    title: "Repair retries",
+                    number: 42,
+                    state: "open",
+                    isDraft: false,
+                  },
+                ]
+              : [],
+      ),
+      isPending: false,
+      error: "A repository did not return this PR.",
+    }),
+  ),
   list: {
     data: {
       entries: [
@@ -19,6 +52,15 @@ const observed = vi.hoisted(() => ({
           number: 7,
           title: "Add onboarding",
           url: "https://github.com/acme/web/pull/7",
+          state: "open",
+          isDraft: false,
+        },
+        {
+          host: "github.com",
+          repository: "acme/web",
+          number: 142,
+          title: "Fix 42 edge cases",
+          url: "https://github.com/acme/web/pull/142",
           state: "open",
           isDraft: false,
         },
@@ -33,13 +75,44 @@ const observed = vi.hoisted(() => ({
   },
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => threadRef }));
-vi.mock("~/state/pullRequests", () => ({ usePullRequestList: () => observed.list }));
+vi.mock("~/state/pullRequests", () => ({
+  usePullRequestList: () => observed.list,
+  usePullRequestNumberSearch: observed.numberSearch,
+}));
 vi.mock("~/state/queries", () => ({ useDebouncedValue: (value: string) => value }));
 vi.mock("~/state/entities", () => ({
   useThreadShell: () => ({ projectId, title: "A ticket Thread", pullRequests: [] }),
   useProjects: () => [
     {
       id: projectId,
+      environmentId: threadRef.environmentId,
+      repositoryIdentity: {
+        canonicalKey: "github.com/acme/web",
+        locator: {
+          source: "git-remote",
+          remoteName: "origin",
+          remoteUrl: "https://github.com/acme/web.git",
+        },
+        provider: "github",
+        displayName: "acme/web",
+      },
+    },
+    {
+      id: otherProjectId,
+      environmentId: threadRef.environmentId,
+      repositoryIdentity: {
+        canonicalKey: "github.com/acme/api",
+        locator: {
+          source: "git-remote",
+          remoteName: "origin",
+          remoteUrl: "https://github.com/acme/api.git",
+        },
+        provider: "github",
+        displayName: "acme/api",
+      },
+    },
+    {
+      id: duplicateProjectId,
       environmentId: threadRef.environmentId,
       repositoryIdentity: {
         canonicalKey: "github.com/acme/web",
@@ -92,6 +165,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("window", { requestAnimationFrame: vi.fn(), cancelAnimationFrame: vi.fn() });
   observed.changeLink.mockClear();
+  observed.numberSearch.mockClear();
 });
 afterEach(() => {
   act(() => renderer?.unmount());
@@ -168,6 +242,45 @@ it("links a pull request URL pasted into search", async () => {
     threadRef,
     "https://github.com/acme/web/pull/42",
     true,
+  );
+});
+
+it.each(["42", "#42"])("finds exact PR number %s across repositories", async (term) => {
+  act(() => {
+    renderer = create(<LinkPullRequestDialogHost />);
+  });
+  act(() => renderer.root.findByType("input").props.onChange({ target: { value: term } }));
+  const options = renderer.root
+    .findAllByType("button")
+    .filter((node) => node.props["aria-label"]?.startsWith("Select github.com/acme/"));
+  expect(options.map((node) => node.props["aria-label"])).toEqual([
+    "Select github.com/acme/web #42: Fix sign in",
+    "Select github.com/acme/api #42: Repair retries",
+  ]);
+  expect(renderer.root.findAllByType("p").map((node) => node.children.join(""))).toContain(
+    "Some repositories returned no PR or could not be checked. Paste a URL if yours is missing.",
+  );
+  act(() => options[1]!.props.onClick());
+  const link = renderer.root
+    .findAllByType("button")
+    .find((node) => node.children.includes("Link"))!;
+  await act(async () => {
+    await link.props.onClick();
+  });
+  expect(observed.changeLink).toHaveBeenCalledExactlyOnceWith(
+    threadRef,
+    "https://github.com/acme/api/pull/42",
+    true,
+  );
+});
+
+it("does not claim an unresolved PR number is absent", () => {
+  act(() => {
+    renderer = create(<LinkPullRequestDialogHost />);
+  });
+  act(() => renderer.root.findByType("input").props.onChange({ target: { value: "#99" } }));
+  expect(renderer.root.findAllByType("p").map((node) => node.children.join(""))).toContain(
+    "No PR #99 returned. A repository may have no match or be unavailable; check the Git host connection or paste a URL.",
   );
 });
 

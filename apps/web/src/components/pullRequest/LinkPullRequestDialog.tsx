@@ -2,8 +2,13 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import { changeRequestUrlFor as changeRequestWebUrl } from "@t3tools/shared/changeRequestUrl";
 export { changeRequestUrlFor as changeRequestWebUrl } from "@t3tools/shared/changeRequestUrl";
 import {
+  canonicalRepositoryKey,
+  sourceControlRepositorySelector,
+} from "@t3tools/shared/sourceControl";
+import {
   pullRequestHostOf,
   type PullRequestListEntry,
+  type PullRequestRef,
   type ScopedThreadRef,
   type SourceControlProviderKind,
 } from "@t3tools/contracts";
@@ -14,7 +19,7 @@ import { parseChangeRequestUrl } from "~/lib/openPullRequestLink";
 import { parsePullRequestReference } from "~/pullRequestReference";
 import { useProjects, useThreadShell } from "~/state/entities";
 import { useDebouncedValue } from "~/state/queries";
-import { usePullRequestList } from "~/state/pullRequests";
+import { usePullRequestList, usePullRequestNumberSearch } from "~/state/pullRequests";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { Atom } from "effect/unstable/reactivity";
@@ -125,7 +130,12 @@ export function resolveLinkPullRequestInput(input: {
 
 /** Hosts without text search return a recent page; narrow those rows locally without claiming
  * the page contains every match. The URL path remains available for older PRs. */
-function matchesCandidate(entry: PullRequestListEntry, query: string): boolean {
+type LinkCandidate = Pick<
+  PullRequestListEntry,
+  "host" | "repository" | "number" | "title" | "url" | "state" | "isDraft"
+>;
+
+function matchesCandidate(entry: LinkCandidate, query: string): boolean {
   const needle = query.toLowerCase();
   return (
     entry.title.toLowerCase().includes(needle) ||
@@ -181,17 +191,49 @@ function LinkPullRequestDialog({
   const linking = usePullRequestLinking(threadRef.environmentId);
   const normalizedQuery = query.trim().replace(/^#(?=\d+$)/, "");
   const sentQuery = useDebouncedValue(normalizedQuery, 300);
-  const search = usePullRequestList([
-    {
-      environmentId: threadRef.environmentId,
-      input: {
-        state: sentQuery ? "all" : "open",
-        involvement: "all",
-        limit: 50,
-        ...(sentQuery ? { query: sentQuery } : {}),
-      },
-    },
-  ]);
+  const parsedNumber = /^\d+$/u.test(sentQuery) ? Number(sentQuery) : null;
+  const number =
+    parsedNumber !== null && Number.isSafeInteger(parsedNumber) && parsedNumber > 0
+      ? parsedNumber
+      : null;
+  const numberTargets = useMemo(() => {
+    if (number === null) return [];
+    const seen = new Set<string>();
+    const targets: Array<{
+      environmentId: typeof threadRef.environmentId;
+      input: PullRequestRef;
+    }> = [];
+    for (const project of environmentProjects) {
+      const identity = project.repositoryIdentity;
+      if (!identity || identity.provider === "unknown") continue;
+      const repository = sourceControlRepositorySelector(identity);
+      if (repository === null) continue;
+      const key = canonicalRepositoryKey(identity.canonicalKey.toLowerCase());
+      if (seen.has(key)) continue;
+      seen.add(key);
+      targets.push({
+        environmentId: threadRef.environmentId,
+        input: { projectId: project.id, repository, number },
+      });
+    }
+    return targets;
+  }, [environmentProjects, number, threadRef.environmentId]);
+  const numberSearch = usePullRequestNumberSearch(numberTargets);
+  const search = usePullRequestList(
+    number === null
+      ? [
+          {
+            environmentId: threadRef.environmentId,
+            input: {
+              state: sentQuery ? "all" : "open",
+              involvement: "all",
+              limit: 50,
+              ...(sentQuery ? { query: sentQuery } : {}),
+            },
+          },
+        ]
+      : [],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -210,24 +252,49 @@ function LinkPullRequestDialog({
       }),
     [linking, ownProject, reference],
   );
-  const candidates = (search.data?.entries ?? []).filter((entry) => {
-    if (!linking.canLink(entry.url)) return false;
-    if (!sentQuery) return true;
-    const hostSearches = search.data?.providers.some(
-      (provider) => provider.host === entry.host && provider.searchesOnHost,
-    );
-    return hostSearches || matchesCandidate(entry, sentQuery);
-  });
-  const visibleCandidates = candidates.slice(0, 50);
+  const candidates: ReadonlyArray<LinkCandidate> =
+    number === null
+      ? (search.data?.entries ?? []).filter((entry) => {
+          if (!linking.canLink(entry.url)) return false;
+          if (!sentQuery) return true;
+          const hostSearches = search.data?.providers.some(
+            (provider) => provider.host === entry.host && provider.searchesOnHost,
+          );
+          return hostSearches || matchesCandidate(entry, sentQuery);
+        })
+      : numberSearch.summaries.flatMap((summary) => {
+          const reference = parseChangeRequestUrl(summary.url);
+          return reference !== null && linking.canLink(summary.url)
+            ? [
+                {
+                  ...reference,
+                  title: summary.title,
+                  url: summary.url,
+                  state: summary.state,
+                  isDraft: summary.isDraft === true,
+                },
+              ]
+            : [];
+        });
+  const visibleCandidates = number === null ? candidates.slice(0, 50) : candidates;
   const unavailableProvider = search.data?.providers.find((provider) => !provider.configured);
-  const discoveryError = search.error
-    ? "Could not browse pull requests here. Check the Git host connection in this environment, or paste a PR URL."
-    : unavailableProvider
-      ? `${unavailableProvider.host}: ${unavailableProvider.detail ?? "Pull requests cannot be browsed on this host."}`
-      : search.data?.errors[0]
-        ? `Could not read ${search.data.errors[0].projectTitle}: ${search.data.errors[0].message}`
-        : null;
-  const searching = normalizedQuery !== sentQuery || (search.isPending && search.data === null);
+  const discoveryError =
+    number !== null
+      ? numberSearch.error === null
+        ? null
+        : candidates.length > 0
+          ? "Some repositories returned no PR or could not be checked. Paste a URL if yours is missing."
+          : `No PR #${number} returned. A repository may have no match or be unavailable; check the Git host connection or paste a URL.`
+      : search.error
+        ? "Could not browse pull requests here. Check the Git host connection in this environment, or paste a PR URL."
+        : unavailableProvider
+          ? `${unavailableProvider.host}: ${unavailableProvider.detail ?? "Pull requests cannot be browsed on this host."}`
+          : search.data?.errors[0]
+            ? `Could not read ${search.data.errors[0].projectTitle}: ${search.data.errors[0].message}`
+            : null;
+  const searching =
+    normalizedQuery !== sentQuery ||
+    (number === null ? search.isPending && search.data === null : numberSearch.isPending);
   const selectedLink = manual
     ? resolved !== null && "link" in resolved
       ? resolved.link.url
@@ -326,7 +393,7 @@ function LinkPullRequestDialog({
                   id={searchId}
                   ref={searchRef}
                   type="search"
-                  placeholder="Search PR titles or paste a URL"
+                  placeholder="Search titles or PR numbers, or paste a URL"
                   value={query}
                   onChange={(event) => {
                     const value = event.target.value;
@@ -383,7 +450,9 @@ function LinkPullRequestDialog({
                   <p role="status" className="p-3 text-sm text-muted-foreground">
                     {discoveryError ??
                       (sentQuery
-                        ? "No matching pull requests found."
+                        ? number === null
+                          ? "No matching pull requests found."
+                          : `No pull request #${number} found in this environment.`
                         : "No open pull requests found in this environment.")}
                   </p>
                 )}
@@ -393,7 +462,9 @@ function LinkPullRequestDialog({
                   {discoveryError}
                 </p>
               ) : null}
-              {!searching && (search.data?.truncated || candidates.length > 50) ? (
+              {!searching &&
+              number === null &&
+              (search.data?.truncated || candidates.length > 50) ? (
                 <p className="text-xs text-muted-foreground">
                   More pull requests may be available. Paste a URL if yours is not shown.
                 </p>
