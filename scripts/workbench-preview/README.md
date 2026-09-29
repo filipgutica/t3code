@@ -21,7 +21,7 @@ The deployment job refuses projects without All Deployments protection and check
 
 ## Build and lifecycle
 
-The workflow uses reviewed infrastructure from `main`. It builds the exact PR revision without deployment credentials, exercises the native service, and exports installed Linux code. A separate job publishes a revision- and checksum-addressed bundle to the repository's `workbench-preview-builds` prerelease and deploys the launcher from `main`. Only the repository owner's PRs from this repository are eligible.
+The workflow keeps build configuration, export, publication and the protected launcher on `main`. Runtime startup, fixtures and smoke checks follow the exact PR revision inside the credential-free build. Both the image and exported Linux bundle exercise the native service. A separate job publishes a revision- and checksum-addressed bundle to the repository's `workbench-preview-builds` prerelease and deploys the launcher from `main`. Only the repository owner's PRs from this repository are eligible.
 
 Code bundles are public downloads in this already-public repository. They contain compiled code and open-source dependencies, not integration grants or runtime state. This distribution avoids Vercel Container Registry's separate storage charge. Launcher access and native environment operations remain private. Treat PR code as executable code you trust before using it with a connected service.
 
@@ -31,9 +31,15 @@ Sessions use `persistent: false`, no snapshots or drives, one vCPU and a 20-minu
 
 Standard Sandbox images provide the host runtime; no custom image is stored on Vercel. GitHub Actions builds consume GitHub's own allowances. Build artifacts expire after one day, and the workflow uses standard GitHub-hosted runners. This is quota-limited hosting, not unlimited free capacity.
 
-## Optional GitHub
+## Synthetic attention inspections
 
-GitHub PR details and checks require authentication even for public repositories. In the demo's native terminal, run `gh auth login` with your own account, then clone or add a supported GitHub repository through the existing project flow. The preview includes a pinned GitHub CLI but no GitHub credentials. Rerunning failed CI also requires Actions write permission. Use a test repository: writes to GitHub remain after the demo expires.
+Fresh previews include the labelled [attention fixture guide](../workbench-demo/README.md#private-preview-attention-fixtures).
+The native GitHub reader uses a disposable executable adapter for fictional PRs
+901–905, so inspection needs no credentials. The adapter reports no real login,
+never forwards commands, and refuses writes including failed-check reruns with a
+synthetic notice. The pinned real GitHub CLI remains installed, but the preview's
+private PATH selects the adapter. Use a separate expendable environment with real
+credentials and Actions write permission to verify an actual GitHub rerun.
 
 ## Optional Jira and OpenCode
 

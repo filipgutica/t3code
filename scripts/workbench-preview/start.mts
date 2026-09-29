@@ -7,6 +7,11 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeTimersPromises from "node:timers/promises";
 import * as NodeUtil from "node:util";
 import { setupLocal } from "../workbench-demo/local.mts";
+import {
+  installAttentionGitHubAdapter,
+  seedAttentionRecords,
+  seedAttentionOutcomes,
+} from "../workbench-demo/attention.mts";
 import { preparePreview, PREVIEW_MODEL_SELECTION, resetPreviewState } from "./config.mts";
 import {
   AuthAccessTokenType,
@@ -17,6 +22,7 @@ import {
 const stateDirectory = "/var/lib/workbench-preview";
 await resetPreviewState(stateDirectory);
 const preview = await preparePreview(process.env, stateDirectory);
+preview.environment = await installAttentionGitHubAdapter(preview.home, preview.environment);
 const repositoryRoot = NodePath.resolve(import.meta.dirname, "../..");
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 const orbitWebRemote = "https://github.com/filipgutica/workbench-demo-orbit-web.git";
@@ -166,8 +172,15 @@ try {
     repositoryRemotes: { "orbit-web": orbitWebRemote },
     modelSelection: PREVIEW_MODEL_SELECTION,
   });
+  await seedAttentionRecords({
+    home: preview.t3Home,
+    wsUrl: `ws://127.0.0.1:${port}/ws`,
+    token: result.access_token,
+    modelSelection: PREVIEW_MODEL_SELECTION,
+  });
   running.child.kill("SIGTERM");
   await running.exited;
+  await seedAttentionOutcomes(preview.t3Home);
   if (!shuttingDown) {
     // Public readiness cannot succeed until native fixture receipts have completed.
     running = launchNativeServer(preview.port, "0.0.0.0");
