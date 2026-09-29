@@ -221,7 +221,7 @@ function LinkPullRequestDialog({
   const visibleCandidates = candidates.slice(0, 50);
   const unavailableProvider = search.data?.providers.find((provider) => !provider.configured);
   const discoveryError = search.error
-    ? "Could not browse pull requests here. Check the Git host connection, or paste a URL."
+    ? "Could not browse pull requests here. Check the Git host connection in this environment, or paste a PR URL."
     : unavailableProvider
       ? `${unavailableProvider.host}: ${unavailableProvider.detail ?? "Pull requests cannot be browsed on this host."}`
       : search.data?.errors[0]
@@ -326,12 +326,19 @@ function LinkPullRequestDialog({
                   id={searchId}
                   ref={searchRef}
                   type="search"
-                  placeholder="Search PR titles"
+                  placeholder="Search PR titles or paste a URL"
                   value={query}
                   onChange={(event) => {
-                    setQuery(event.target.value.slice(0, 200));
+                    const value = event.target.value;
                     setSelectedUrl(null);
                     setSubmitError(null);
+                    if (parseChangeRequestUrl(value.trim()) !== null) {
+                      setReference(value.trim());
+                      setDirty(true);
+                      setManual(true);
+                      return;
+                    }
+                    setQuery(value.slice(0, 200));
                   }}
                 />
               </div>

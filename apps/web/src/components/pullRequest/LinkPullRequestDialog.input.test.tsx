@@ -57,7 +57,7 @@ vi.mock("~/state/entities", () => ({
 vi.mock("~/hooks/usePullRequestLinking", () => ({
   usePullRequestLinking: () => ({
     mode: "multiple",
-    canLink: () => true,
+    canLink: (url: string) => url.startsWith("https://github.com/acme/"),
     isLinked: () => false,
     changeLink: observed.changeLink,
   }),
@@ -145,5 +145,42 @@ it("links a discovered PR to the selected Thread", async () => {
     threadRef,
     "https://github.com/acme/web/pull/7",
     true,
+  );
+});
+
+it("links a pull request URL pasted into search", async () => {
+  act(() => {
+    renderer = create(<LinkPullRequestDialogHost />);
+  });
+  act(() =>
+    renderer.root.findByType("input").props.onChange({
+      target: { value: "https://github.com/acme/web/pull/42" },
+    }),
+  );
+  const link = renderer.root
+    .findAllByType("button")
+    .find((node) => node.children.includes("Link"))!;
+  expect(link.props.disabled).toBe(false);
+  await act(async () => {
+    await link.props.onClick();
+  });
+  expect(observed.changeLink).toHaveBeenCalledExactlyOnceWith(
+    threadRef,
+    "https://github.com/acme/web/pull/42",
+    true,
+  );
+});
+
+it("explains why a pasted URL cannot be linked from this environment", () => {
+  act(() => {
+    renderer = create(<LinkPullRequestDialogHost />);
+  });
+  act(() =>
+    renderer.root.findByType("input").props.onChange({
+      target: { value: "https://github.com/other/repo/pull/1" },
+    }),
+  );
+  expect(renderer.root.findAllByType("p").map((node) => node.children.join(""))).toContain(
+    "No project in this environment can read github.com/other/repo.",
   );
 });
