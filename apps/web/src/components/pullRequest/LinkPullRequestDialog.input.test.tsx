@@ -111,13 +111,13 @@ it("waits for blur before showing an incomplete PR reference error", () => {
   const input = renderer.root.findByType("input");
   const messages = () => renderer.root.findAllByType("p").map((node) => node.children.join(""));
 
-  act(() => input.props.onBlur());
-  expect(messages()).not.toContain("Paste a pull request URL or enter 123 / #123.");
+  act(() => input.props.onBlur({ relatedTarget: {} }));
+  expect(messages()).not.toContain("Use a pull request URL, 123, or #123.");
 
   act(() => input.props.onChange({ target: { value: "#" } }));
   expect(messages()).not.toContain("Use a pull request URL, 123, or #123.");
 
-  act(() => input.props.onBlur());
+  act(() => input.props.onBlur({ relatedTarget: {} }));
   expect(messages()).toContain("Use a pull request URL, 123, or #123.");
 
   act(() => input.props.onChange({ target: { value: "#42" } }));

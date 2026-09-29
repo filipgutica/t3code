@@ -144,6 +144,7 @@ function LinkPullRequestDialog({
   const searchId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const browseButtonRef = useRef<HTMLButtonElement>(null);
   const [manual, setManual] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
@@ -290,7 +291,9 @@ function LinkPullRequestDialog({
                   setSubmitError(null);
                   setReference(event.target.value);
                 }}
-                onBlur={() => setDirty(true)}
+                onBlur={(event) => {
+                  if (event.relatedTarget !== browseButtonRef.current) setDirty(true);
+                }}
                 onKeyDown={(event) => {
                   if (event.key !== "Enter") return;
                   event.preventDefault();
@@ -302,7 +305,13 @@ function LinkPullRequestDialog({
                   {resolved.link.host}/{resolved.link.repository} #{resolved.link.number}
                 </p>
               ) : null}
-              <Button type="button" variant="ghost" size="sm" onClick={() => setManual(false)}>
+              <Button
+                ref={browseButtonRef}
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setManual(false)}
+              >
                 Browse pull requests
               </Button>
               {validation ? <p className="text-destructive text-xs">{validation}</p> : null}
