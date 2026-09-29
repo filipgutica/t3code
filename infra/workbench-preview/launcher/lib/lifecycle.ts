@@ -85,6 +85,7 @@ export const launchPreview = async ({
   )
     return { unavailable: "revision-changed" as const };
   onProgress?.("creating");
+  const createdAt = Date.now();
   const sandbox = await Sandbox.create({
     image: "vercel/sandbox/node:24",
     persistent: false,
@@ -148,7 +149,10 @@ export const launchPreview = async ({
     const pairingUrl = new URL("/pair", sandbox.domain(8080));
     pairingUrl.hash = new URLSearchParams([["token", token]]).toString();
     successful = true;
-    return { pairingUrl: pairingUrl.toString() };
+    return {
+      pairingUrl: pairingUrl.toString(),
+      expiresAt: sandbox.expiresAt?.getTime() ?? createdAt + 20 * 60_000,
+    };
   } finally {
     if (!successful) await sandbox.stop({ signal: AbortSignal.timeout(10_000) });
   }

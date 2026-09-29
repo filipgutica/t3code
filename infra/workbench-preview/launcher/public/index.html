@@ -264,6 +264,19 @@
         opacity: 0.6;
         cursor: wait;
       }
+      #actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+      }
+      button.secondary {
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--text);
+      }
+      button.secondary:hover {
+        background: var(--surface-hover);
+      }
       #status {
         margin-top: var(--space-4);
       }
@@ -308,15 +321,22 @@
     <main>
       <h1>Workbench preview</h1>
       <p>
-        Open a fresh demo with synthetic Tickets and native Threads. Local demo state is discarded
-        after 20 minutes. Changes to connected services remain.
+        Open a demo with synthetic Tickets and native Threads. Reopen this page to resume this
+        browser's demo while it is running. Local state is discarded after 20 minutes; changes to
+        connected services remain.
       </p>
       <p>
         The free OpenCode model may use submitted content for model improvement. Use synthetic data.
         Jira is optional: connect a test site through Workbench, or choose an approved provider
         before sending confidential content.
       </p>
-      <button id="open" type="button">Open demo</button>
+      <div id="actions">
+        <button id="open" type="button">Open demo</button>
+        <button id="fresh" class="secondary" type="button" hidden>Start new demo</button>
+      </div>
+      <p id="resume-note" hidden>
+        This browser has a recent demo. If it has stopped, return here and start a new one.
+      </p>
       <p id="status" role="status" aria-live="polite"></p>
       <div id="startup" hidden>
         <ol id="stages" aria-label="Demo startup stages">
@@ -344,6 +364,8 @@
     </main>
     <script>
       const button = document.querySelector("#open");
+      const fresh = document.querySelector("#fresh");
+      const resumeNote = document.querySelector("#resume-note");
       const status = document.querySelector("#status");
       const startup = document.querySelector("#startup");
       const elapsed = document.querySelector("#elapsed");
@@ -356,8 +378,39 @@
         starting: "Starting Workbench and loading demo data…",
         pairing: "Pairing your browser…",
       };
-      button.addEventListener("click", async () => {
+      const demoKey = "workbench-preview-active-demo-v1";
+      const demoOrigin = (value) => {
+        try {
+          const url = new URL(value);
+          return url.protocol === "https:" && /^sb-[a-z0-9]+\.vercel\.run$/.test(url.hostname)
+            ? url.origin
+            : null;
+        } catch {
+          return null;
+        }
+      };
+      const activeDemo = () => {
+        try {
+          const record = JSON.parse(localStorage.getItem(demoKey) ?? "null");
+          const origin = typeof record?.origin === "string" ? demoOrigin(record.origin) : null;
+          return origin === record?.origin &&
+            Number.isFinite(record.expiresAt) &&
+            record.expiresAt > Date.now()
+            ? origin
+            : null;
+        } catch {
+          return null;
+        }
+      };
+      const showActions = () => {
+        const running = activeDemo() !== null;
+        button.textContent = running ? "Resume demo" : "Open demo";
+        fresh.hidden = !running;
+        resumeNote.hidden = !running;
+      };
+      const startDemo = async () => {
         button.disabled = true;
+        fresh.disabled = true;
         button.textContent = "Preparing demo…";
         startup.hidden = false;
         note.hidden = false;
@@ -392,7 +445,6 @@
           if (response.status === 409) {
             status.textContent =
               "This preview is out of date or its PR has closed. Open the latest demo link from the PR.";
-            button.disabled = false;
             return;
           }
           if (!response.ok || !response.body) throw new Error();
@@ -415,7 +467,6 @@
                     "This preview is out of date or its PR has closed. Open the latest demo link from the PR.";
                   if (currentStep >= 0)
                     steps[currentStep].querySelector(".step-state").textContent = "Unavailable";
-                  button.disabled = false;
                   return;
                 }
                 if (update.error) throw new Error();
@@ -437,6 +488,21 @@
                     step.querySelector(".step-state").textContent = "Done";
                   }
                   status.textContent = "Demo ready. Connecting…";
+                  const origin = demoOrigin(update.pairingUrl);
+                  if (
+                    origin &&
+                    Number.isFinite(update.expiresAt) &&
+                    update.expiresAt > Date.now()
+                  ) {
+                    try {
+                      localStorage.setItem(
+                        demoKey,
+                        JSON.stringify({ origin, expiresAt: update.expiresAt }),
+                      );
+                    } catch {
+                      // Storage may be disabled; the fresh demo still works.
+                    }
+                  }
                   window.location.replace(update.pairingUrl);
                   break;
                 } else throw new Error();
@@ -454,9 +520,23 @@
         } finally {
           clearInterval(timer);
           note.hidden = true;
-          button.textContent = "Open demo";
+          button.disabled = false;
+          fresh.disabled = false;
+          showActions();
         }
+      };
+      button.addEventListener("click", () => {
+        const running = activeDemo();
+        if (running) {
+          window.location.replace(running);
+          return;
+        }
+        void startDemo();
       });
+      fresh.addEventListener("click", () => {
+        void startDemo();
+      });
+      showActions();
     </script>
   </body>
 </html>

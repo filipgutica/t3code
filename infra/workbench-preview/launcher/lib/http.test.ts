@@ -5,9 +5,12 @@ import { handleLaunch } from "./http.js";
 import type { LaunchStage } from "./lifecycle.js";
 
 it("denies unsafe requests before provisioning and returns only a private uncached pairing response", async () => {
-  const launch = vi.fn<() => Promise<{ pairingUrl: string } | { unavailable: "revision-changed" }>>(
-    async () => ({ pairingUrl: "https://demo.vercel.run/pair#token=private" }),
-  );
+  const launch = vi.fn<
+    () => Promise<{ pairingUrl: string; expiresAt: number } | { unavailable: "revision-changed" }>
+  >(async () => ({
+    pairingUrl: "https://demo.vercel.run/pair#token=private",
+    expiresAt: 1893456000000,
+  }));
   const environment = { VERCEL_ENV: "preview", VERCEL_URL: "launcher.vercel.app" };
   const server = NodeHttp.createServer((request, response) => {
     void handleLaunch({ request, response, environment, launch });
@@ -50,6 +53,7 @@ it("denies unsafe requests before provisioning and returns only a private uncach
     expect(success.headers.get("cache-control")).toBe("no-store");
     expect(await success.json()).toEqual({
       pairingUrl: "https://demo.vercel.run/pair#token=private",
+      expiresAt: 1893456000000,
     });
     launch.mockResolvedValueOnce({ unavailable: "revision-changed" });
     const stale = await fetch(url, { method: "POST", headers: { Origin: headers.Origin } });
@@ -76,12 +80,14 @@ it("streams a real stage while launch is pending and keeps pairing and safe erro
   const launch = vi.fn(
     async (options?: {
       onProgress?: (stage: LaunchStage) => void;
-    }): Promise<{ pairingUrl: string } | { unavailable: "revision-changed" }> => {
+    }): Promise<
+      { pairingUrl: string; expiresAt: number } | { unavailable: "revision-changed" }
+    > => {
       if (!options?.onProgress) throw new Error("Streaming progress was not supplied");
       options.onProgress("checking");
       await completion.promise;
       completed = true;
-      return { pairingUrl: "https://demo.vercel.run/pair#token=private" };
+      return { pairingUrl: "https://demo.vercel.run/pair#token=private", expiresAt: 1893456000000 };
     },
   );
   const server = NodeHttp.createServer((request, response) => {
@@ -122,7 +128,9 @@ it("streams a real stage while launch is pending and keeps pairing and safe erro
       if (chunk.done) break;
       final += new TextDecoder().decode(chunk.value);
     }
-    expect(final).toBe('{"pairingUrl":"https://demo.vercel.run/pair#token=private"}\n');
+    expect(final).toBe(
+      '{"pairingUrl":"https://demo.vercel.run/pair#token=private","expiresAt":1893456000000}\n',
+    );
     launch.mockImplementationOnce(async (progress) => {
       progress?.onProgress?.("checking");
       throw new Error("private-sdk-credential");

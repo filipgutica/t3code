@@ -13,7 +13,7 @@ export const handleLaunch = async ({
   environment: NodeJS.ProcessEnv;
   launch: (options: {
     onProgress?: (stage: LaunchStage) => void;
-  }) => Promise<{ pairingUrl: string } | { unavailable: "revision-changed" }>;
+  }) => Promise<{ pairingUrl: string; expiresAt: number } | { unavailable: "revision-changed" }>;
 }) => {
   response.setHeader("Cache-Control", "no-store");
   response.setHeader("Content-Type", "application/json");
