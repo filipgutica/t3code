@@ -5,7 +5,9 @@ import {
   type EnvironmentId,
   type WorkbenchEpic,
 } from "@t3tools/contracts";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import { parseWorkbenchSearch } from "./workbenchSearch";
 import { useAtomCommand } from "../state/use-atom-command";
 import { randomUUID } from "../lib/utils";
 import { workbenchEnvironment } from "./state";
@@ -47,11 +49,39 @@ export function useWorkbenchPageDialogs({
   const createEpic = useAtomCommand(workbenchEnvironment.createEpic, { reportFailure: false });
   const updateEpic = useAtomCommand(workbenchEnvironment.updateEpic, { reportFailure: false });
   const createTicket = useAtomCommand(workbenchEnvironment.createTicket, { reportFailure: false });
+  const location = useLocation();
+  const navigate = useNavigate();
+  const consumedTicketIntent = useRef<string | null>(null);
   const [editWorkspaceOpen, setEditWorkspaceOpen] = useState(false);
   const [ticketDialogOpen, setTicketDialogOpen] = useState(false);
   const [ticketDialogEpicId, setTicketDialogEpicId] = useState<WorkbenchEpicId | null>(null);
   const [epicDialogOpen, setEpicDialogOpen] = useState(false);
   const epicCreatedRef = useRef<((epicId: WorkbenchEpicId) => void) | null>(null);
+  useEffect(() => {
+    const search = parseWorkbenchSearch(location.search);
+    if (search.create !== "ticket") {
+      consumedTicketIntent.current = null;
+      return;
+    }
+    if (
+      !selectedProject ||
+      environmentId === null ||
+      search.environmentId !== environmentId ||
+      search.workbenchProjectId !== selectedProject.id ||
+      consumedTicketIntent.current === location.href
+    )
+      return;
+    consumedTicketIntent.current = location.href;
+    setError(null);
+    setTicketDialogEpicId(null);
+    setTicketDialogOpen(true);
+    // Consume before the dialog can close, so navigation or reload cannot reopen it.
+    void navigate({
+      to: "/workbench",
+      search: parseWorkbenchSearch({ ...location.search, create: null }),
+      replace: true,
+    });
+  }, [environmentId, selectedProject, location.href, location.search, navigate, setError]);
   const submitProject = async (title: string, linkedProjectIds: ReadonlyArray<ProjectId>) => {
     if (environmentId === null) return false;
     setPendingAction("create-project");
