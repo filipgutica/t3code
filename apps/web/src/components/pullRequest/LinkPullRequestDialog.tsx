@@ -1,16 +1,20 @@
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { changeRequestUrlFor as changeRequestWebUrl } from "@t3tools/shared/changeRequestUrl";
 export { changeRequestUrlFor as changeRequestWebUrl } from "@t3tools/shared/changeRequestUrl";
 import {
   pullRequestHostOf,
+  type PullRequestListEntry,
   type ScopedThreadRef,
   type SourceControlProviderKind,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { parseChangeRequestUrl } from "~/lib/openPullRequestLink";
 import { parsePullRequestReference } from "~/pullRequestReference";
 import { useProjects, useThreadShell } from "~/state/entities";
+import { useDebouncedValue } from "~/state/queries";
+import { usePullRequestList } from "~/state/pullRequests";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { Atom } from "effect/unstable/reactivity";
@@ -43,8 +47,7 @@ export function openLinkPullRequestDialog(threadRef: ScopedThreadRef): void {
 interface LinkPullRequestDialogProps {
   open: boolean;
   threadRef: ScopedThreadRef;
-  /** The thread's own project: bare numbers resolve against its repository. */
-  projectId: string | null;
+  thread: EnvironmentThreadShell | null;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -56,9 +59,10 @@ export function LinkPullRequestDialogHost() {
   if (threadRef === null || linking.mode === "unsupported") return null;
   return (
     <LinkPullRequestDialog
+      key={`${threadRef.environmentId}:${threadRef.threadId}`}
       open
       threadRef={threadRef}
-      projectId={thread?.projectId ?? null}
+      thread={thread}
       onOpenChange={(open) => {
         if (!open) appAtomRegistry.set(linkPullRequestDialogThreadAtom, null);
       }}
@@ -119,23 +123,41 @@ export function resolveLinkPullRequestInput(input: {
   };
 }
 
+/** Hosts without text search return a recent page; narrow those rows locally without claiming
+ * the page contains every match. The URL path remains available for older PRs. */
+function matchesCandidate(entry: PullRequestListEntry, query: string): boolean {
+  const needle = query.toLowerCase();
+  return (
+    entry.title.toLowerCase().includes(needle) ||
+    entry.repository.toLowerCase().includes(needle) ||
+    entry.host.toLowerCase().includes(needle) ||
+    String(entry.number).includes(needle)
+  );
+}
+
 function LinkPullRequestDialog({
   open,
   threadRef,
-  projectId,
+  thread,
   onOpenChange,
 }: LinkPullRequestDialogProps) {
+  const searchId = useId();
+  const searchRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [manual, setManual] = useState(false);
+  const [query, setQuery] = useState("");
+  const [selectedUrl, setSelectedUrl] = useState<string | null>(null);
   const [reference, setReference] = useState("");
   const [dirty, setDirty] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
   const projects = useProjects();
   const environmentProjects = useMemo(
     () => projects.filter((project) => project.environmentId === threadRef.environmentId),
     [projects, threadRef.environmentId],
   );
   const ownProject = useMemo(() => {
-    const project = environmentProjects.find((candidate) => candidate.id === projectId);
+    const project = environmentProjects.find((candidate) => candidate.id === thread?.projectId);
     const identity = project?.repositoryIdentity;
     if (!project || !identity) return null;
     const repository =
@@ -152,36 +174,71 @@ function LinkPullRequestDialog({
           ? `${identity.webUrl.replace(/\/+$/, "")}/pulls/${number}`
           : changeRequestWebUrl(kind, host, repository, number, identity.locator.remoteUrl),
     };
-  }, [environmentProjects, projectId]);
+  }, [environmentProjects, thread?.projectId]);
+  const ownUrl = ownProject?.webUrl(1);
+  const supportsBareNumber = ownUrl != null && parseChangeRequestUrl(ownUrl) !== null;
   const linking = usePullRequestLinking(threadRef.environmentId);
-  const [pending, setPending] = useState(false);
+  const normalizedQuery = query.trim().replace(/^#(?=\d+$)/, "");
+  const sentQuery = useDebouncedValue(normalizedQuery, 300);
+  const search = usePullRequestList([
+    {
+      environmentId: threadRef.environmentId,
+      input: {
+        state: sentQuery ? "all" : "open",
+        involvement: "all",
+        limit: 50,
+        ...(sentQuery ? { query: sentQuery } : {}),
+      },
+    },
+  ]);
 
   useEffect(() => {
     if (!open) return;
-    setReference("");
-    setDirty(false);
-    setSubmitError(null);
-    const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
+    const frame = window.requestAnimationFrame(() =>
+      (manual ? inputRef : searchRef).current?.focus(),
+    );
     return () => window.cancelAnimationFrame(frame);
-  }, [open]);
+  }, [manual, open]);
 
   const resolved = useMemo(
     () =>
       resolveLinkPullRequestInput({
         reference,
         project: ownProject,
-        hasProject: (reference) => linking.canLink(reference.url),
+        hasProject: (candidate) => linking.canLink(candidate.url),
       }),
     [linking, ownProject, reference],
   );
-
+  const candidates = (search.data?.entries ?? []).filter((entry) => {
+    if (!linking.canLink(entry.url)) return false;
+    if (!sentQuery) return true;
+    const hostSearches = search.data?.providers.some(
+      (provider) => provider.host === entry.host && provider.searchesOnHost,
+    );
+    return hostSearches || matchesCandidate(entry, sentQuery);
+  });
+  const visibleCandidates = candidates.slice(0, 50);
+  const unavailableProvider = search.data?.providers.find((provider) => !provider.configured);
+  const discoveryError =
+    search.error ??
+    (unavailableProvider
+      ? `${unavailableProvider.host}: ${unavailableProvider.detail ?? "Pull requests cannot be browsed on this host."}`
+      : search.data?.errors[0]
+        ? `Could not read ${search.data.errors[0].projectTitle}: ${search.data.errors[0].message}`
+        : null);
+  const searching = normalizedQuery !== sentQuery || (search.isPending && search.data === null);
+  const selectedLink = manual
+    ? resolved !== null && "link" in resolved
+      ? resolved.link.url
+      : null
+    : selectedUrl;
   const submit = useCallback(async () => {
-    setDirty(true);
-    if (resolved === null || "error" in resolved) return;
+    if (manual) setDirty(true);
+    if (selectedLink === null || pending) return;
     setSubmitError(null);
     setPending(true);
     try {
-      await linking.changeLink(threadRef, resolved.link.url, true);
+      await linking.changeLink(threadRef, selectedLink, true);
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : "Could not link the pull request.");
       return;
@@ -189,17 +246,22 @@ function LinkPullRequestDialog({
       setPending(false);
     }
     onOpenChange(false);
-  }, [linking, onOpenChange, resolved, threadRef]);
+  }, [linking, manual, onOpenChange, pending, selectedLink, threadRef]);
 
-  const validation = !dirty
-    ? null
-    : reference.trim().length === 0
-      ? "Paste a pull request URL or enter 123 / #123."
-      : resolved === null
-        ? "Use a pull request URL, 123, or #123."
-        : "error" in resolved
-          ? resolved.error
-          : null;
+  const validation =
+    !manual || !dirty
+      ? null
+      : reference.trim().length === 0
+        ? supportsBareNumber
+          ? "Paste a pull request URL or enter 123 / #123."
+          : "Paste a pull request URL."
+        : resolved === null
+          ? supportsBareNumber
+            ? "Use a pull request URL, 123, or #123."
+            : "Use a pull request URL."
+          : "error" in resolved
+            ? resolved.error
+            : null;
 
   return (
     <Dialog open={open} onOpenChange={(next) => (pending ? undefined : onOpenChange(next))}>
@@ -207,34 +269,138 @@ function LinkPullRequestDialog({
         <DialogHeader>
           <DialogTitle>Link pull request</DialogTitle>
           <DialogDescription>
-            Attach a pull request to this thread. A full URL can point at any repository on a host
-            this environment has a project for.
+            {thread?.title
+              ? `Choose a pull request to link to the Thread “${thread.title}”.`
+              : "Choose a pull request to link to this Thread."}
           </DialogDescription>
         </DialogHeader>
         <DialogPanel>
-          <Input
-            ref={inputRef}
-            placeholder="Pull request URL or #42"
-            value={reference}
-            onChange={(event) => {
-              setDirty(false);
-              setSubmitError(null);
-              setReference(event.target.value);
-            }}
-            onBlur={() => setDirty(true)}
-            onKeyDown={(event) => {
-              if (event.key !== "Enter") return;
-              event.preventDefault();
-              void submit();
-            }}
-          />
-          {resolved !== null && "link" in resolved ? (
-            <p className="truncate text-muted-foreground text-xs">
-              {resolved.link.host}/{resolved.link.repository} #{resolved.link.number}
+          {manual ? (
+            <>
+              <p className="text-sm text-muted-foreground">
+                {supportsBareNumber
+                  ? "A number uses this Thread’s repository. A full URL can use any connected host."
+                  : "This Thread has no hosted PR URL. Paste a full URL from a connected host."}
+              </p>
+              <Input
+                ref={inputRef}
+                aria-label="Pull request URL or number"
+                placeholder={supportsBareNumber ? "Pull request URL or #42" : "Pull request URL"}
+                value={reference}
+                onChange={(event) => {
+                  setDirty(false);
+                  setSubmitError(null);
+                  setReference(event.target.value);
+                }}
+                onBlur={() => setDirty(true)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
+                  event.preventDefault();
+                  void submit();
+                }}
+              />
+              {resolved !== null && "link" in resolved ? (
+                <p className="truncate text-muted-foreground text-xs">
+                  {resolved.link.host}/{resolved.link.repository} #{resolved.link.number}
+                </p>
+              ) : null}
+              {validation ? <p className="text-destructive text-xs">{validation}</p> : null}
+              <Button type="button" variant="ghost" size="sm" onClick={() => setManual(false)}>
+                Browse pull requests
+              </Button>
+            </>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <label htmlFor={searchId} className="text-sm font-medium">
+                  Search pull requests
+                </label>
+                <Input
+                  id={searchId}
+                  ref={searchRef}
+                  type="search"
+                  placeholder="Search PR titles"
+                  value={query}
+                  onChange={(event) => {
+                    setQuery(event.target.value.slice(0, 200));
+                    setSelectedUrl(null);
+                    setSubmitError(null);
+                  }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">From projects in this environment</p>
+              <div
+                role="group"
+                aria-label="Available pull requests"
+                className="max-h-64 overflow-y-auto rounded-md border border-border/60"
+              >
+                {searching ? (
+                  <p role="status" className="p-3 text-sm text-muted-foreground">
+                    {sentQuery ? "Searching pull requests…" : "Loading pull requests…"}
+                  </p>
+                ) : visibleCandidates.length > 0 ? (
+                  <ul>
+                    {visibleCandidates.map((entry) => {
+                      const linked = linking.isLinked(thread, entry.url);
+                      return (
+                        <li
+                          key={`${entry.host}/${entry.repository}#${entry.number}`}
+                          className="border-b border-border/50 last:border-b-0"
+                        >
+                          <button
+                            type="button"
+                            aria-label={`${linked ? "Already linked" : "Select"} ${entry.host}/${entry.repository} #${entry.number}: ${entry.title}`}
+                            aria-pressed={selectedUrl === entry.url}
+                            disabled={linked || pending}
+                            onClick={() => setSelectedUrl(entry.url)}
+                            className="flex w-full flex-col gap-1 px-3 py-2 text-left text-sm outline-none hover:bg-accent aria-pressed:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-64"
+                          >
+                            <span className="w-full truncate">{entry.title}</span>
+                            <span className="w-full truncate text-xs text-muted-foreground">
+                              {entry.host}/{entry.repository} #{entry.number} ·{" "}
+                              {linked ? "Linked" : entry.isDraft ? "Draft" : entry.state}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <p role="status" className="p-3 text-sm text-muted-foreground">
+                    {discoveryError ??
+                      (sentQuery
+                        ? "No matching pull requests found."
+                        : "No open pull requests found in this environment.")}
+                  </p>
+                )}
+              </div>
+              {!searching && visibleCandidates.length > 0 && discoveryError ? (
+                <p role="status" className="text-xs text-muted-foreground">
+                  {discoveryError}
+                </p>
+              ) : null}
+              {!searching && (search.data?.truncated || candidates.length > 50) ? (
+                <p className="text-xs text-muted-foreground">
+                  More pull requests may be available. Paste a URL if yours is not shown.
+                </p>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSelectedUrl(null);
+                  setManual(true);
+                }}
+              >
+                Paste a URL
+              </Button>
+            </>
+          )}
+          {submitError ? (
+            <p role="alert" className="text-destructive text-xs">
+              {submitError}
             </p>
-          ) : null}
-          {(validation ?? submitError) ? (
-            <p className="text-destructive text-xs">{validation ?? submitError}</p>
           ) : null}
         </DialogPanel>
         <DialogFooter>
@@ -251,7 +417,7 @@ function LinkPullRequestDialog({
             type="button"
             size="sm"
             onClick={() => void submit()}
-            disabled={pending || resolved === null || "error" in resolved}
+            disabled={pending || selectedLink === null}
           >
             {pending ? "Linking..." : "Link"}
           </Button>
