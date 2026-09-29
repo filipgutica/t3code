@@ -11,6 +11,7 @@ import { launchPreview } from "./lifecycle.js";
 
 const sha = "a".repeat(40);
 const checksum = "b".repeat(64);
+const expiresAt = new Date("2030-01-01T00:00:00.000Z");
 const environment = {
   WORKBENCH_PREVIEW_SHA: sha,
   WORKBENCH_PREVIEW_PR: "71",
@@ -29,6 +30,7 @@ beforeEach(() => {
   fixture.stop.mockResolvedValue(undefined);
   fixture.provision.mockResolvedValue({ exitCode: 0 });
   fixture.create.mockResolvedValue({
+    expiresAt,
     stop: fixture.stop,
     runCommand: fixture.provision,
     createUser: async () => ({ runCommand: fixture.userCommand }),
@@ -97,7 +99,10 @@ it("returns native fragment pairing without host credentials and leaves success 
   const result = await launchPreview({
     environment: { ...environment, VERCEL_OIDC_TOKEN: "host-private" },
   });
-  expect(result).toEqual({ pairingUrl: "https://demo.vercel.run/pair#token=native-token" });
+  expect(result).toEqual({
+    pairingUrl: "https://demo.vercel.run/pair#token=native-token",
+    expiresAt: expiresAt.getTime(),
+  });
   expect(fixture.create.mock.calls[0]?.[0]).toMatchObject({
     persistent: false,
     timeout: 1200000,
@@ -143,6 +148,7 @@ it("advances stages only after provisioning and readiness finish, then mints the
   readiness.resolve({ exitCode: 0 });
   await expect(result).resolves.toEqual({
     pairingUrl: "https://demo.vercel.run/pair#token=native-token",
+    expiresAt: expiresAt.getTime(),
   });
   expect(currentStage).toBe("pairing");
   expect(fixture.userCommand).toHaveBeenCalledTimes(3);

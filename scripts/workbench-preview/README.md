@@ -1,8 +1,8 @@
 # Private Workbench PR demos on Vercel
 
-Open a PR's demo link, sign in to Vercel, and choose **Open demo**. The launcher starts a fresh environment with synthetic Tickets, repositories and native Threads. Native pairing happens automatically. The environment stops after 20 minutes; return to the launcher to start another session.
+Open a PR's demo link, sign in to Vercel, and choose **Open demo**. The launcher starts an environment with synthetic Tickets, repositories and native Threads. Native pairing happens automatically. Reopening the same link in the same browser resumes that environment while it is running; **Start new demo** makes a fresh one. The environment stops after 20 minutes; return to the launcher to start another session.
 
-Each launch has its own filesystem and Jira connections. Jira starts disconnected. Local demo state is discarded at expiry; writes to Jira or other connected services remain.
+Each fresh demo has its own filesystem and Jira connections. Jira starts disconnected. Local demo state is discarded at expiry; writes to Jira or other connected services remain.
 
 ## One-time setup
 
@@ -27,7 +27,7 @@ Code bundles are public downloads in this already-public repository. They contai
 
 The launcher binds the PR number, revision, bundle URL and SHA-256 checksum at deployment. It refuses a closed PR or a changed head, verifies the checksum before extracting the bundle in a fresh Sandbox, and never passes its Vercel credentials to the runtime. It uses the existing native CLI to mint a one-use pairing credential and returns it privately to the browser. Never put a pairing URL or code in a PR comment or screenshot.
 
-Sessions use `persistent: false`, no snapshots or drives, one vCPU and a 20-minute timeout. Failed startup stops its Sandbox. Closing a PR deletes its published bundles; already-running sessions expire within their original 20-minute limit. Old launcher links fail after the PR head changes or closes. The workflow retains one code bundle per open PR.
+Sessions use `persistent: false`, no snapshots or drives, one vCPU and a 20-minute timeout. Failed startup stops its Sandbox. Closing a PR deletes its published bundles; already-running sessions expire within their original 20-minute limit. Old launcher links cannot start a fresh demo after the PR head changes or closes. A browser can still resume its already-running demo until expiry. The workflow retains one code bundle per open PR.
 
 Standard Sandbox images provide the host runtime; no custom image is stored on Vercel. GitHub Actions builds consume GitHub's own allowances. Build artifacts expire after one day, and the workflow uses standard GitHub-hosted runners. This is quota-limited hosting, not unlimited free capacity.
 
