@@ -219,13 +219,13 @@ function LinkPullRequestDialog({
   });
   const visibleCandidates = candidates.slice(0, 50);
   const unavailableProvider = search.data?.providers.find((provider) => !provider.configured);
-  const discoveryError =
-    search.error ??
-    (unavailableProvider
+  const discoveryError = search.error
+    ? "Could not browse pull requests here. Check the Git host connection, or paste a URL."
+    : unavailableProvider
       ? `${unavailableProvider.host}: ${unavailableProvider.detail ?? "Pull requests cannot be browsed on this host."}`
       : search.data?.errors[0]
         ? `Could not read ${search.data.errors[0].projectTitle}: ${search.data.errors[0].message}`
-        : null);
+        : null;
   const searching = normalizedQuery !== sentQuery || (search.isPending && search.data === null);
   const selectedLink = manual
     ? resolved !== null && "link" in resolved
@@ -252,9 +252,7 @@ function LinkPullRequestDialog({
     !manual || !dirty
       ? null
       : reference.trim().length === 0
-        ? supportsBareNumber
-          ? "Paste a pull request URL or enter 123 / #123."
-          : "Paste a pull request URL."
+        ? null
         : resolved === null
           ? supportsBareNumber
             ? "Use a pull request URL, 123, or #123."
