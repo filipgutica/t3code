@@ -156,8 +156,10 @@ export function legacyLinkedPullRequestOf(
   projectId: ThreadLinkedPullRequest["projectId"],
   identity: RepositoryIdentity | null | undefined,
 ): ThreadLinkedPullRequest | null {
-  if (!identity?.provider) return null;
+  if (!identity) return null;
+  // A local-path remote has no host segment and no provider, so there is no host to match.
   const host = pullRequestHostOf(identity, identity.provider as SourceControlProviderKind);
+  if (typeof host !== "string") return null;
   const repository = sourceControlRepositorySelector(identity);
   if (repository === null) return null;
   const azureKey =
