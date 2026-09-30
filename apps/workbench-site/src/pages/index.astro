@@ -52,20 +52,33 @@ const tools = [
     <meta property="og:image" content={new URL(shareImage.src, Astro.site)} />
     <meta property="og:image:alt" content="T3 Code Workbench Board showing Tickets across workflow statuses." />
     <meta name="twitter:card" content="summary_large_image" />
+    <noscript><style is:global>html .appearance[hidden] { display: none !important; }</style></noscript>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
-    <div class="family-bar wrap">
+    <div class="site-layout">
+    <aside class="family-bar" aria-label="Tool navigation">
       <nav class="family" aria-label="Tools">
         {tools.map((tool) => <a href={tool.href}>{tool.name}</a>)}
         <a href={base} aria-current="page">workbench</a>
       </nav>
-      <div class="segmented" role="group" aria-label="Color theme" hidden>
-        <button type="button" data-theme-choice="system" aria-pressed="true">System</button>
-        <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
-        <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
-      </div>
-    </div>
+      <nav class="section-nav" aria-label="On this page">
+        <a href="#hero-heading">Overview</a>
+        <a href="#walkthrough-heading">Walkthrough</a>
+        <a href="#scope-heading">Workspaces</a>
+        <a href="#jira-heading">Jira</a>
+      </nav>
+      <div class="appearance" hidden>
+          <span class="appearance-label">Appearance</span>
+          <div class="theme-switch" role="group" aria-label="Color theme" data-choice="system">
+            <button type="button" data-theme-choice="light" aria-pressed="false" aria-label="Light theme" title="Light"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></button>
+<button type="button" data-theme-choice="system" aria-pressed="true" aria-label="System theme" title="System"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></svg></button>
+<button type="button" data-theme-choice="dark" aria-pressed="false" aria-label="Dark theme" title="Dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 13.5A9 9 0 0 1 10.5 3a9 9 0 1 0 10 10.5Z"/></svg></button>
+          </div>
+          <span class="theme-choice-label" data-theme-label>System</span>
+        </div>
+    </aside>
+    <div class="site-content">
     <header class="site-header wrap">
       <a class="brand" href={base} aria-label="T3 Code Workbench home">T3 Code <span>Workbench</span></a>
       <nav aria-label="Main navigation">
@@ -199,11 +212,15 @@ const tools = [
         {tools.map((tool) => <a href={tool.href}>{tool.name}</a>)}
       </nav>
     </footer>
+    </div>
+    </div>
     <ImageLightbox />
     <script>
       // System follows the OS. The choice is remembered when storage works, and shared with the other tool sites.
       const root = document.documentElement;
       const buttons = document.querySelectorAll<HTMLButtonElement>("[data-theme-choice]");
+      const switcher = document.querySelector<HTMLElement>(".theme-switch");
+      const themeLabel = document.querySelector<HTMLElement>("[data-theme-label]");
       const systemDark = matchMedia("(prefers-color-scheme: dark)");
       const systemButton = document.querySelector<HTMLButtonElement>('[data-theme-choice="system"]');
       const describeSystem = () => {
@@ -213,6 +230,8 @@ const tools = [
         if (choice === "system") root.removeAttribute("data-theme");
         else root.dataset.theme = choice;
         buttons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.themeChoice === choice)));
+        if (switcher) switcher.dataset.choice = choice;
+        if (themeLabel) themeLabel.textContent = choice[0].toUpperCase() + choice.slice(1);
       };
       let saved = "system";
       try {
@@ -223,8 +242,8 @@ const tools = [
       setTheme(["system", "light", "dark"].includes(saved) ? saved : "system");
       describeSystem();
       systemDark.addEventListener("change", describeSystem);
-      const switcher = document.querySelector<HTMLElement>(".segmented");
-      if (switcher) switcher.hidden = false;
+      const appearance = document.querySelector<HTMLElement>(".appearance");
+      if (appearance) appearance.hidden = false;
       buttons.forEach((button) =>
         button.addEventListener("click", () => {
           const choice = button.dataset.themeChoice ?? "system";
@@ -244,8 +263,6 @@ const tools = [
       if ("IntersectionObserver" in window) {
         const updateTrace = () => {
           const focusY = window.innerHeight * 0.5;
-          const enterY = window.innerHeight - Math.floor(window.innerHeight * 0.3);
-          const leaveY = Math.floor(window.innerHeight * 0.15);
           const nearest = sections.reduce(
             (nearest, section, index) => {
               const { top, bottom } = section.getBoundingClientRect();
@@ -258,10 +275,7 @@ const tools = [
           const current = footerVisible ? sections.length - 1 : nearest;
 
           sections.forEach((section, index) => {
-            const { top, bottom } = section.getBoundingClientRect();
             section.classList.toggle("is-current", index === current);
-            section.classList.toggle("trace-before", top > enterY && !(footerVisible && index === current));
-            section.classList.toggle("trace-after", bottom < leaveY);
           });
         };
 
@@ -289,13 +303,31 @@ const tools = [
 
         window.addEventListener("resize", observeSections);
         if (footer) new IntersectionObserver(updateTrace).observe(footer);
-        const video = document.querySelector<HTMLVideoElement>(".overview-video");
-        const videoSection = video?.closest<HTMLElement>("[data-trace-section]");
-        video?.addEventListener("play", () => videoSection?.classList.add("is-playing"));
-        video?.addEventListener("pause", () => videoSection?.classList.remove("is-playing"));
         observeSections();
-        document.documentElement.classList.add("trace-ready");
-        requestAnimationFrame(() => document.documentElement.classList.add("trace-motion"));
+      }
+    </script>
+    <script>
+      const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+      if ("IntersectionObserver" in window && !reducedMotion.matches) {
+        const blocks = [...document.querySelectorAll<HTMLElement>("[data-trace-section]:not(.hero) > .section-body")];
+        const reveal = (block: Element) => block.classList.remove("reveal-pending");
+        const observer = new IntersectionObserver((entries) => {
+          entries.forEach(({ target, isIntersecting }) => {
+            if (!isIntersecting) return;
+            reveal(target);
+            observer.unobserve(target);
+          });
+        });
+        blocks.forEach((block) => {
+          if (block.getBoundingClientRect().top < innerHeight) return;
+          block.classList.add("scroll-reveal", "reveal-pending");
+          observer.observe(block);
+        });
+        reducedMotion.addEventListener("change", ({ matches }) => {
+          if (!matches) return;
+          blocks.forEach(reveal);
+          observer.disconnect();
+        });
       }
     </script>
   </body>
