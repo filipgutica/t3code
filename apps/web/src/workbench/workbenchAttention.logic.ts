@@ -130,6 +130,48 @@ const coverageReason = ({
         ? "PR attention unknown"
         : null;
 
+const pullRequestSummarySignals = ({
+  reference,
+  summary,
+}: Pick<AttentionInput, "reference" | "summary">) => {
+  const signals: WorkbenchPullRequestAttentionKind[] = [];
+  if (
+    (summary?.checksState === undefined ? reference.checksState : summary.checksState) === "failing"
+  )
+    signals.push("failed-checks");
+  if (
+    (summary?.reviewDecision === undefined ? reference.reviewDecision : summary.reviewDecision) ===
+    "changes-requested"
+  )
+    signals.push("changes-requested");
+  return signals;
+};
+
+const pullRequestInspection = ({
+  summary,
+  activity,
+  loading,
+  error,
+}: Pick<AttentionInput, "summary" | "activity" | "loading" | "error">) => {
+  const unknown = hasUnknownCoverage({ summary, activity });
+  const inspectionStatus: WorkbenchInspectionStatus = loading
+    ? "loading"
+    : error
+      ? "unavailable"
+      : unknown
+        ? "incomplete"
+        : "complete";
+  return {
+    statusReason: coverageReason({ loading, error, unknown }),
+    activityComplete: !loading && !error && activity !== null && !activity.commentsTruncated,
+    checksKnown: !loading && summary !== null && summary.checksState !== undefined,
+    reviewDecisionKnown: !loading && summary !== null && summary.reviewDecision !== undefined,
+    inspectionStatus,
+    inspected: !error && !loading && !unknown,
+    terminal: !loading && (error || (summary !== null && activity !== null)),
+  };
+};
+
 export const getWorkbenchPullRequestAttention = ({
   reference,
   summary,
@@ -150,29 +192,17 @@ export const getWorkbenchPullRequestAttention = ({
       inspected: true,
       terminal: true,
     };
-  const reasons: string[] = [];
-  const signalKinds: WorkbenchPullRequestAttentionKind[] = [];
-  if (
-    (summary?.checksState === undefined ? reference.checksState : summary.checksState) === "failing"
-  ) {
-    reasons.push(pullRequestReasonLabels["failed-checks"]);
-    signalKinds.push("failed-checks");
-  }
-  if (
-    (summary?.reviewDecision === undefined ? reference.reviewDecision : summary.reviewDecision) ===
-    "changes-requested"
-  ) {
-    reasons.push(pullRequestReasonLabels["changes-requested"]);
-    signalKinds.push("changes-requested");
-  }
+  const signalKinds = pullRequestSummarySignals({ reference, summary });
   const unresolvedReviewThreads =
     activity?.reviewThreads.filter((thread) => !thread.isResolved) ?? [];
-  if (unresolvedReviewThreads.length > 0) {
-    reasons.push(pullRequestReasonLabels["unresolved-feedback"]);
-    signalKinds.push("unresolved-feedback");
-  }
-  const unknown = hasUnknownCoverage({ summary, activity });
-  const statusReason = coverageReason({ loading, error, unknown });
+  if (unresolvedReviewThreads.length > 0) signalKinds.push("unresolved-feedback");
+  const reasons: string[] = signalKinds.map((kind) => pullRequestReasonLabels[kind]);
+  const { statusReason, ...inspection } = pullRequestInspection({
+    summary,
+    activity,
+    loading,
+    error,
+  });
   if (statusReason) reasons.push(statusReason);
   return {
     reasons,
@@ -181,18 +211,7 @@ export const getWorkbenchPullRequestAttention = ({
     resolvedReviewThreadIds:
       activity?.reviewThreads.filter((thread) => thread.isResolved).map((thread) => thread.id) ??
       [],
-    activityComplete: !loading && !error && activity !== null && !activity.commentsTruncated,
-    checksKnown: !loading && summary !== null && summary.checksState !== undefined,
-    reviewDecisionKnown: !loading && summary !== null && summary.reviewDecision !== undefined,
-    inspectionStatus: loading
-      ? "loading"
-      : error
-        ? "unavailable"
-        : unknown
-          ? "incomplete"
-          : "complete",
-    inspected: !error && !loading && !unknown,
-    terminal: !loading && (error || (summary !== null && activity !== null)),
+    ...inspection,
   };
 };
 

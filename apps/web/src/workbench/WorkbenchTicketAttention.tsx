@@ -34,6 +34,68 @@ const labels = {
   "unresolved-feedback": "Unresolved feedback",
 } as const;
 
+const signalIcons = {
+  waiting: MessageSquareIcon,
+  "review-ready": CheckCheckIcon,
+  "failed-checks": CircleAlertIcon,
+  "changes-requested": CircleAlertIcon,
+  "unresolved-feedback": MessageSquareIcon,
+} as const;
+const actionDescriptions = {
+  waiting: "Open Thread to respond",
+  "review-ready": "Open Thread to inspect completed work",
+  "failed-checks": "View checks, logs, and rerun options",
+  "changes-requested": "View the requested changes",
+} as const;
+
+function AttentionSignalItem({
+  signal,
+  onOpenSignal,
+}: {
+  signal: WorkbenchAttentionSignal;
+  onOpenSignal: (signal: WorkbenchAttentionSignal, reviewThreadId?: string) => void;
+}) {
+  const Icon = signalIcons[signal.kind];
+  const discussions =
+    signal.source.type === "pull-request" && signal.kind === "unresolved-feedback"
+      ? signal.unresolvedReviewThreads
+      : [];
+  return (
+    <div>
+      <button
+        type="button"
+        className="flex w-full cursor-pointer items-start gap-2 rounded-md p-2 text-left text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+        onClick={() => onOpenSignal(signal, discussions[0]?.id)}
+      >
+        <Icon aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
+        <span className="min-w-0 flex-1">
+          <span className="block font-medium">{labels[signal.kind]}</span>
+          <span className="block text-2xs text-muted-foreground">
+            {signal.kind === "unresolved-feedback"
+              ? `${discussions.length} unresolved ${discussions.length === 1 ? "discussion" : "discussions"} · Open feedback`
+              : actionDescriptions[signal.kind]}
+          </span>
+        </span>
+        <ArrowRightIcon aria-hidden className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+      </button>
+      {discussions.length > 1
+        ? discussions.map((thread) => (
+            <button
+              key={thread.id}
+              type="button"
+              className="block w-full cursor-pointer truncate rounded-md py-1 pl-7 pr-2 text-left text-2xs text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+              onClick={() => onOpenSignal(signal, thread.id)}
+            >
+              {thread.path}
+              {thread.line ? `:${thread.line}` : ""} ·{" "}
+              {thread.comments[0]?.body ?? "Review discussion"}
+            </button>
+          ))
+        : null}
+    </div>
+  );
+}
+
 function AttentionItems({
   environmentId,
   signals,
@@ -105,61 +167,9 @@ function AttentionItems({
                 ? `Thread · ${source.threadTitle}`
                 : `PR #${source.row.pullRequest.number} · ${source.row.pullRequest.repository}`}
             </p>
-            {group.map((signal) => {
-              const Icon =
-                signal.kind === "waiting" || signal.kind === "unresolved-feedback"
-                  ? MessageSquareIcon
-                  : signal.kind === "review-ready"
-                    ? CheckCheckIcon
-                    : CircleAlertIcon;
-              const discussions =
-                signal.source.type === "pull-request" && signal.kind === "unresolved-feedback"
-                  ? signal.unresolvedReviewThreads
-                  : [];
-              return (
-                <div key={signal.kind}>
-                  <button
-                    type="button"
-                    className="flex w-full cursor-pointer items-start gap-2 rounded-md p-2 text-left text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-                    onClick={() => openSignal(signal, discussions[0]?.id)}
-                  >
-                    <Icon aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-medium">{labels[signal.kind]}</span>
-                      <span className="block text-2xs text-muted-foreground">
-                        {signal.kind === "waiting"
-                          ? "Open Thread to respond"
-                          : signal.kind === "review-ready"
-                            ? "Open Thread to inspect completed work"
-                            : signal.kind === "failed-checks"
-                              ? "View checks, logs, and rerun options"
-                              : signal.kind === "changes-requested"
-                                ? "View the requested changes"
-                                : `${discussions.length} unresolved ${discussions.length === 1 ? "discussion" : "discussions"} · Open feedback`}
-                      </span>
-                    </span>
-                    <ArrowRightIcon
-                      aria-hidden
-                      className="mt-0.5 size-3 shrink-0 text-muted-foreground"
-                    />
-                  </button>
-                  {discussions.length > 1
-                    ? discussions.map((thread) => (
-                        <button
-                          key={thread.id}
-                          type="button"
-                          className="block w-full cursor-pointer truncate rounded-md py-1 pl-7 pr-2 text-left text-2xs text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-                          onClick={() => openSignal(signal, thread.id)}
-                        >
-                          {thread.path}
-                          {thread.line ? `:${thread.line}` : ""} ·{" "}
-                          {thread.comments[0]?.body ?? "Review discussion"}
-                        </button>
-                      ))
-                    : null}
-                </div>
-              );
-            })}
+            {group.map((signal) => (
+              <AttentionSignalItem key={signal.kind} signal={signal} onOpenSignal={openSignal} />
+            ))}
           </div>
         );
       })}
