@@ -30,6 +30,7 @@ import {
 } from "~/lib/composerContextRecords";
 import type { TerminalContextDraft } from "~/lib/terminalContext";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
+import { isWorkbenchTicketReviewComment } from "~/workbench/workbenchTicketContext";
 import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTerminalContexts";
 import {
   createContextPresentationRegistry,
@@ -95,9 +96,7 @@ export const ComposerContextRecordsContext = createContext<ComposerDraftContextR
 export function isWorkbenchTicketContextRecord(
   record: ComposerDraftContextRecord | undefined,
 ): boolean {
-  return (
-    record?.kind === "review-comment" && record.record.sectionId.startsWith("workbench-ticket:")
-  );
+  return record?.kind === "review-comment" && isWorkbenchTicketReviewComment(record.record);
 }
 
 export function composerContextRecordsFromDraft(input: {
