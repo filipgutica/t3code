@@ -43,6 +43,21 @@ describe("Codex desktop handoff", () => {
       returnUrl: input.returnUrl,
     });
   });
+  it.each([false, true])("returns from Workbench desktop in development: %s", (development) => {
+    const scheme = development ? "t3code-workbench-dev" : "t3code-workbench";
+    const workbenchInput = {
+      ...input,
+      returnUrl: `${scheme}://app/settings/providers?instanceId=work-codex`,
+    };
+    const handoff = codexAuthHandoffUrl(workbenchInput, development, "t3code-workbench");
+    expect(new URL(handoff).protocol).toBe(`${scheme}:`);
+    expect(readCodexAuthHandoff(handoff, development, "t3code-workbench")).toEqual(workbenchInput);
+    expect(readCodexAuthHandoff(handoff, development)).toBeUndefined();
+    expect(readCodexAuthDelivery(codexAuthDeliveryUrl(workbenchInput, callbackUrl))).toMatchObject({
+      returnUrl: workbenchInput.returnUrl,
+      callbackUrl,
+    });
+  });
   it("rejects other handlers, schemes, arbitrary return sites, and non-OpenAI authorization", () => {
     const link = codexAuthHandoffUrl(input);
     expect(readCodexAuthHandoff(link, true)).toBeUndefined();

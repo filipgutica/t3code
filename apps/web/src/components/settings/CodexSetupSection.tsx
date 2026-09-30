@@ -615,6 +615,7 @@ function ManagedCodexSetup({
             flowId: auth.flowId,
           },
           import.meta.env.DEV,
+          import.meta.env.VITE_T3CODE_WORKBENCH_BUILD ? "t3code-workbench" : "t3code",
         )
       : null;
   const waitingControl = (
