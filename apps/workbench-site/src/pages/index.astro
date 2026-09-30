@@ -16,29 +16,79 @@ const title = "T3 Code Workbench — Your work, across repositories";
 const description = "A control center for work across repositories. Track Tickets, agent Threads, pull requests, and isolated worktrees together. Jira optional.";
 const base = import.meta.env.BASE_URL;
 const canonical = new URL(base, Astro.site);
-const videoPoster = await getImage({ src: board, width: 2400, format: "png" });
+const videoPoster = await getImage({ src: board, width: 1600, format: "webp", quality: 85 });
+const shareImage = await getImage({ src: board, width: 1200, format: "jpeg", quality: 85 });
+const tools = [
+  { name: "annoterm", href: "https://filipgutica.github.io/annoterm/" },
+  { name: "wtree", href: "https://filipgutica.github.io/wtree/" },
+  { name: "devps", href: "https://filipgutica.github.io/devps/" },
+];
 ---
 
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    <meta name="theme-color" content="#0f0f11" />
+    <meta name="theme-color" content="#fcfcfd" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f0f11" media="(prefers-color-scheme: dark)" />
+    <script is:inline>
+      try {
+        const theme = localStorage.getItem("tool-site-theme");
+        if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+      } catch {
+        /* The system theme works without storage. */
+      }
+    </script>
     <link rel="canonical" href={canonical} />
     <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
-    <meta property="og:image" content={new URL(videoPoster.src, Astro.site)} />
+    <meta property="og:image" content={new URL(shareImage.src, Astro.site)} />
     <meta property="og:image:alt" content="T3 Code Workbench Board showing Tickets across workflow statuses." />
     <meta name="twitter:card" content="summary_large_image" />
+    <noscript><style is:global>html .appearance[hidden] { display: none !important; } html .menu-toggle { display: flex; }</style></noscript>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
+    <div class="site-layout">
+    <aside class="family-bar" aria-label="Tool navigation">
+      <details class="site-menu" data-site-menu>
+        <summary class="menu-toggle" aria-controls="site-menu-links">
+          <svg class="menu-open-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          <svg class="menu-close-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg>
+          Menu
+        </summary>
+        <div class="nav-content" id="site-menu-links">
+      <nav class="family" aria-label="Tools">
+        {tools.map((tool) => <a href={tool.href}>{tool.name}</a>)}
+        <a href={base} aria-current="page">workbench</a>
+      </nav>
+      <nav class="section-nav" aria-label="On this page">
+        <a href="#hero-heading">Overview</a>
+        <a href="#walkthrough-heading">Walkthrough</a>
+        <a href="#scope-heading">Workspaces</a>
+        <a href="#jira-heading">Jira</a>
+      </nav>
+      <div class="appearance" hidden>
+          <span class="appearance-label">Appearance</span>
+          <div class="theme-switch" role="group" aria-label="Color theme" data-choice="system">
+            <button type="button" data-theme-choice="light" aria-pressed="false" aria-label="Light theme" title="Light"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></button>
+<button type="button" data-theme-choice="system" aria-pressed="true" aria-label="System theme" title="System"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></svg></button>
+<button type="button" data-theme-choice="dark" aria-pressed="false" aria-label="Dark theme" title="Dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 13.5A9 9 0 0 1 10.5 3a9 9 0 1 0 10 10.5Z"/></svg></button>
+          </div>
+          <span class="theme-choice-label" data-theme-label>System</span>
+        </div>
+        </div>
+      </details>
+      <script is:inline>document.querySelector("[data-site-menu]").open = !matchMedia("(max-width: 800px)").matches;</script>
+    </aside>
+    <div class="site-content">
     <header class="site-header wrap">
       <a class="brand" href={base} aria-label="T3 Code Workbench home">T3 Code <span>Workbench</span></a>
       <nav aria-label="Main navigation">
@@ -62,6 +112,7 @@ const videoPoster = await getImage({ src: board, width: 2400, format: "png" });
           </div>
           <figure class="hero-media">
             <ProductImage src={board} eager alt="Workbench Board with Tickets, repository scope, and linked agent Threads" />
+            <figcaption>A sample Workspace with demo Tickets.</figcaption>
           </figure>
         </div>
       </section>
@@ -158,7 +209,7 @@ const videoPoster = await getImage({ src: board, width: 2400, format: "png" });
             <a class="button" href={downloads}>Download Workbench</a>
             <a class="text-link" href={guide}>Read the guide <span aria-hidden="true">↗</span></a>
           </div>
-          <p class="release-note">Signed and notarized for macOS. See the release notes for platform downloads and update details.</p>
+          <p class="release-note">macOS builds are signed and notarized. Windows and Linux builds are unsigned. See the release notes for downloads and update details.</p>
         </div>
       </section>
     </main>
@@ -166,8 +217,139 @@ const videoPoster = await getImage({ src: board, width: 2400, format: "png" });
       <a class="brand" href={base}>T3 Code <span>Workbench</span></a>
       <p>Built on <a href="https://github.com/pingdotgg/t3code">T3 Code</a>. An independent, open-source fork.</p>
       <a href={repository}>Browse the source <span aria-hidden="true">↗</span></a>
+      <nav class="footer-tools" aria-label="More from Filip">
+        <span>Also from Filip</span>
+        {tools.map((tool) => <a href={tool.href}>{tool.name}</a>)}
+      </nav>
     </footer>
+    </div>
+    </div>
+    <dialog class="menu-drawer" id="site-menu-drawer" aria-labelledby="drawer-title">
+      <div class="drawer-head">
+        <span id="drawer-title">Navigation</span>
+        <button class="drawer-close" type="button" aria-label="Close menu" autofocus>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg>
+        </button>
+      </div>
+    </dialog>
     <ImageLightbox />
+    <script>
+      /* Mobile modal drawer; the same navigation stays in the desktop rail. */
+      const menuRoot = document.documentElement;
+      const siteMenu = document.querySelector<HTMLDetailsElement>("[data-site-menu]");
+      const menuToggle = siteMenu?.querySelector<HTMLElement>("summary");
+      const menuContent = siteMenu?.querySelector<HTMLElement>(".nav-content");
+      const menuDrawer = document.querySelector<HTMLDialogElement>("#site-menu-drawer");
+      if (siteMenu && menuToggle && menuContent && menuDrawer) {
+        const mobileMenu = matchMedia("(max-width: 800px)");
+        let menuFocus = document.activeElement instanceof HTMLElement && siteMenu.contains(document.activeElement) ? document.activeElement : null;
+        const closeMenu = () => {
+          menuDrawer.close();
+          menuRoot.classList.remove("menu-open");
+          siteMenu.open = !mobileMenu.matches;
+        };
+        const syncMenu = () => {
+          const focused = menuFocus;
+          if (menuDrawer.open) closeMenu();
+          if (mobileMenu.matches) {
+            menuDrawer.append(menuContent);
+            menuToggle.setAttribute("aria-controls", menuDrawer.id);
+            menuToggle.setAttribute("aria-haspopup", "dialog");
+          } else {
+            siteMenu.append(menuContent);
+            menuToggle.setAttribute("aria-controls", menuContent.id);
+            menuToggle.removeAttribute("aria-haspopup");
+          }
+          siteMenu.open = !mobileMenu.matches;
+          if (!focused) return;
+          if (mobileMenu.matches) menuToggle.focus();
+          else if (menuContent.contains(focused)) focused.focus();
+          else menuContent.querySelector<HTMLAnchorElement>("a")?.focus();
+        };
+        syncMenu();
+        mobileMenu.addEventListener("change", syncMenu);
+        menuToggle.addEventListener("click", (event) => {
+          if (!mobileMenu.matches) return;
+          event.preventDefault();
+          siteMenu.open = true;
+          menuRoot.classList.add("menu-open");
+          menuDrawer.showModal();
+        });
+        menuDrawer.querySelector(".drawer-close")?.addEventListener("click", closeMenu);
+        menuDrawer.addEventListener("cancel", (event) => {
+          event.preventDefault();
+          closeMenu();
+        });
+        menuDrawer.addEventListener("close", () => {
+          if (!menuDrawer.open) closeMenu();
+        });
+        menuDrawer.addEventListener("click", (event) => {
+          if (!(event.target instanceof Element)) return;
+          if (event.target === menuDrawer) {
+            const { left, right, top, bottom } = menuDrawer.getBoundingClientRect();
+            if (event.clientX < left || event.clientX > right || event.clientY < top || event.clientY > bottom) closeMenu();
+            return;
+          }
+          const link = event.target.closest("a");
+          if (link) {
+            closeMenu();
+            if (!link.getAttribute("href")?.startsWith("#")) return;
+            const target = document.getElementById(link.hash.slice(1));
+            if (!target) return;
+            target.tabIndex = -1;
+            target.focus({ preventScroll: true });
+          }
+        });
+        document.addEventListener("pointerdown", (event) => {
+          if (!(event.target instanceof Node) || siteMenu.contains(event.target) || menuDrawer.contains(event.target)) return;
+          menuFocus = null;
+        });
+        document.addEventListener("focusin", (event) => {
+          menuFocus = event.target instanceof HTMLElement && (siteMenu.contains(event.target) || menuDrawer.contains(event.target)) ? event.target : null;
+        });
+      }
+    </script>
+    <script>
+      // System follows the OS. The choice is remembered when storage works, and shared with the other tool sites.
+      const root = document.documentElement;
+      const buttons = document.querySelectorAll<HTMLButtonElement>("[data-theme-choice]");
+      const switcher = document.querySelector<HTMLElement>(".theme-switch");
+      const themeLabel = document.querySelector<HTMLElement>("[data-theme-label]");
+      const systemDark = matchMedia("(prefers-color-scheme: dark)");
+      const systemButton = document.querySelector<HTMLButtonElement>('[data-theme-choice="system"]');
+      const describeSystem = () => {
+        if (systemButton) systemButton.title = `Follows your system: currently ${systemDark.matches ? "dark" : "light"}`;
+      };
+      const setTheme = (choice: string) => {
+        if (choice === "system") root.removeAttribute("data-theme");
+        else root.dataset.theme = choice;
+        buttons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.themeChoice === choice)));
+        if (switcher) switcher.dataset.choice = choice;
+        if (themeLabel) themeLabel.textContent = choice[0].toUpperCase() + choice.slice(1);
+      };
+      let saved = "system";
+      try {
+        saved = localStorage.getItem("tool-site-theme") || "system";
+      } catch {
+        /* The system theme works without storage. */
+      }
+      setTheme(["system", "light", "dark"].includes(saved) ? saved : "system");
+      describeSystem();
+      systemDark.addEventListener("change", describeSystem);
+      const appearance = document.querySelector<HTMLElement>(".appearance");
+      if (appearance) appearance.hidden = false;
+      buttons.forEach((button) =>
+        button.addEventListener("click", () => {
+          const choice = button.dataset.themeChoice ?? "system";
+          setTheme(choice);
+          try {
+            localStorage.setItem("tool-site-theme", choice);
+          } catch {
+            /* Keep the selected theme for this visit. */
+          }
+        }),
+      );
+    </script>
     <script>
       const sections = [...document.querySelectorAll<HTMLElement>("[data-trace-section]")];
       const footer = document.querySelector<HTMLElement>(".site-footer");
@@ -175,8 +357,8 @@ const videoPoster = await getImage({ src: board, width: 2400, format: "png" });
       if ("IntersectionObserver" in window) {
         const updateTrace = () => {
           const focusY = window.innerHeight * 0.5;
-          const enterY = window.innerHeight - Math.floor(window.innerHeight * 0.3);
-          const leaveY = Math.floor(window.innerHeight * 0.15);
+          const enterY = window.innerHeight * 0.7;
+          const leaveY = window.innerHeight * 0.15;
           const nearest = sections.reduce(
             (nearest, section, index) => {
               const { top, bottom } = section.getBoundingClientRect();
@@ -205,8 +387,9 @@ const videoPoster = await getImage({ src: board, width: 2400, format: "png" });
           const lowerInset = Math.floor(window.innerHeight * 0.3);
           observer = new IntersectionObserver(updateTrace, { rootMargin: `-${upperInset}px 0px -${lowerInset}px 0px` });
           const focusHeight = 4;
-          const focusTop = Math.floor((window.innerHeight - focusHeight) / 2);
-          const focusBottom = window.innerHeight - focusTop - focusHeight;
+          // Clamp so a tiny or zero-height viewport cannot produce a negative inset ("--2px" is an invalid rootMargin).
+          const focusTop = Math.max(0, Math.floor((window.innerHeight - focusHeight) / 2));
+          const focusBottom = Math.max(0, window.innerHeight - focusTop - focusHeight);
           focusObserver = new IntersectionObserver(updateTrace, {
             rootMargin: `-${focusTop}px 0px -${focusBottom}px 0px`,
           });
@@ -223,6 +406,7 @@ const videoPoster = await getImage({ src: board, width: 2400, format: "png" });
         const videoSection = video?.closest<HTMLElement>("[data-trace-section]");
         video?.addEventListener("play", () => videoSection?.classList.add("is-playing"));
         video?.addEventListener("pause", () => videoSection?.classList.remove("is-playing"));
+        video?.addEventListener("ended", () => videoSection?.classList.remove("is-playing"));
         observeSections();
         document.documentElement.classList.add("trace-ready");
         requestAnimationFrame(() => document.documentElement.classList.add("trace-motion"));

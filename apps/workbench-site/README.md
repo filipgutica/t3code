@@ -13,8 +13,11 @@ vp run --filter @t3tools/workbench-site build
 vp run --filter @t3tools/workbench-site preview
 ```
 
-Open the printed origin at `/t3code/`. The site imports lossless screenshots from `src/assets/screenshots`; Astro
-produces responsive PNG images during the build. Keep the source screenshots free of pairing URLs and private data.
+Open the printed origin at `/t3code/`. The site imports lossless PNG screenshots from `src/assets/screenshots`; Astro
+produces responsive WebP images during the build, and the full-size link opens the original PNG. Keep the source
+screenshots free of pairing URLs and private data.
+
+The theme switch shares its `tool-site-theme` setting with the annoterm, wtree, and devps sites, which are served from the same origin.
 
 ## Publish
 
