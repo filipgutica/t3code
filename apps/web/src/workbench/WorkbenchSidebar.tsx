@@ -22,6 +22,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
+import { useWorkbenchSidebarFilters } from "./workbenchSidebarFilterState";
 
 import { WorkbenchSidebarTicketButton } from "./WorkbenchSidebarTicketButton";
 import {
@@ -1260,24 +1261,6 @@ function getWorkbenchSidebarThreads({
     )
     ? [...threadShells, currentThread]
     : threadShells;
-}
-
-function useWorkbenchSidebarFilters(environmentId: EnvironmentId | null) {
-  const [sidebarFilters, setSidebarFilters] = useState({
-    environmentId,
-    query: "",
-    onlyActionable: false,
-  });
-  const currentFilters =
-    sidebarFilters.environmentId === environmentId
-      ? sidebarFilters
-      : { environmentId, query: "", onlyActionable: false };
-  const sidebarQuery = currentFilters.query;
-  const onlyActionable = currentFilters.onlyActionable;
-  const setSidebarSearch = (query: string) => setSidebarFilters({ ...currentFilters, query });
-  const setOnlyActionable = (value: boolean) =>
-    setSidebarFilters({ ...currentFilters, onlyActionable: value });
-  return { sidebarQuery, onlyActionable, setSidebarSearch, setOnlyActionable };
 }
 
 function useWorkbenchSidebarData({
