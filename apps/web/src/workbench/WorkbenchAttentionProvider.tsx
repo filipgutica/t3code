@@ -84,7 +84,6 @@ function WorkbenchEnvironmentAttention({
   const attention = useWorkbenchAttention({
     environmentId,
     projectId: snapshot?.projects[0]?.id ?? null,
-    attentionMode: "all",
     tickets,
     assignments: snapshot?.assignments ?? emptyAssignments,
     threadsById,

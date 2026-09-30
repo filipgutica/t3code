@@ -610,15 +610,8 @@ function useWorkbenchBoardData({
   }, [repositoriesReady, repositoryProjectIds, repositoryId, setView]);
   const attentionMode = view.attentionMode;
   const setAttentionMode = (attentionMode: WorkbenchAttentionMode) => setView({ attentionMode });
-  const {
-    attentionRefresh,
-    refreshAttention,
-    attentionReferences,
-    attentionScope,
-    setAttentionObservations,
-    attentionReasonsByTicket,
-    attentionCoverage,
-  } = useWorkbenchAttentionData();
+  const { refreshAttention, attentionReasonsByTicket, attentionCoverage } =
+    useWorkbenchAttentionData();
   const visibleTickets = useMemo(
     () =>
       tickets.filter(
@@ -714,12 +707,8 @@ function useWorkbenchBoardData({
     attentionMode,
     setAttentionMode,
     attentionReasonsByTicket,
-    attentionReferences,
-    attentionScope,
-    attentionRefresh,
     attentionCoverage,
     refreshAttention,
-    setAttentionObservations,
     repositoryId,
     setRepositoryId,
     visibleTickets,

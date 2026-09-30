@@ -17,7 +17,6 @@ import {
   mergeWorkbenchPullRequestAttention,
   workbenchAttentionIdentity,
   workbenchThreadAttentionReasons,
-  type WorkbenchAttentionMode,
   type WorkbenchAttentionSignal,
   type WorkbenchAttentionInspection,
   type WorkbenchPullRequestAttention,
@@ -49,7 +48,6 @@ export function useWorkbenchAttention({
 }: {
   readonly environmentId: EnvironmentId | null;
   readonly projectId: WorkbenchProjectId | null;
-  readonly attentionMode: WorkbenchAttentionMode;
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
   readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;

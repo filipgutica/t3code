@@ -99,9 +99,7 @@ export const rerunFailedGitHubWorkflowJobs = Effect.fn(
       return yield* refuse(
         "GitHub returned a truncated or invalid response; no further reruns requested.",
       );
-    return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(
-      result.stdout,
-    ).pipe(
+    return yield* decodeJson(result.stdout).pipe(
       Effect.mapError(() => refuse("GitHub returned malformed JSON; no further reruns requested.")),
     );
   });

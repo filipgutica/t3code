@@ -94,7 +94,7 @@ function AttentionSignalItem({
             <button
               key={thread.id}
               type="button"
-              className="block w-full cursor-pointer truncate rounded-md py-1 pl-7 pr-2 text-left text-2xs text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+              className="block w-full cursor-pointer whitespace-normal break-words rounded-md py-1 pl-7 pr-2 text-left text-2xs text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
               onClick={() => onOpenSignal(signal, thread.id)}
             >
               {thread.path}
@@ -173,7 +173,7 @@ function AttentionItems({
         const source = group[0]!.source;
         return (
           <div key={key} className="flex min-w-0 flex-col gap-1">
-            <p className="truncate text-2xs font-medium text-muted-foreground">
+            <p className="break-words text-2xs font-medium text-muted-foreground">
               {source.type === "thread"
                 ? `Thread · ${source.threadTitle}`
                 : `PR #${source.row.pullRequest.number} · ${source.row.pullRequest.repository}`}
