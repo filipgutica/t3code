@@ -19,7 +19,7 @@ import {
   useWorkbenchAttentionData,
 } from "./WorkbenchAttentionProvider";
 import { resolveThreadRouteRef } from "../threadRoutes";
-import { useRightPanelStore } from "../rightPanelStore";
+import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanelStore";
 
 export interface WorkbenchLinkedPullRequestThread {
   readonly threadId: ThreadId;
@@ -58,6 +58,22 @@ function WorkbenchPullRequestPreview({ children }: { children: ReactNode }) {
   const { href } = useLocation();
   const { refreshAttention } = useWorkbenchAttentionData();
   const routeThreadRef = useParams({ strict: false, select: resolveThreadRouteRef });
+  const dockedPullRequestKey = useRightPanelStore((state) => {
+    const surface = selectActiveRightPanelSurface(state.byThreadKey, routeThreadRef);
+    return surface?.kind === "pull-request" && routeThreadRef
+      ? JSON.stringify([routeThreadRef.environmentId, routeThreadRef.threadId, surface.id])
+      : null;
+  });
+  const previousDockedPullRequestKey = useRef(dockedPullRequestKey);
+  useEffect(() => {
+    if (
+      previousDockedPullRequestKey.current !== null &&
+      previousDockedPullRequestKey.current !== dockedPullRequestKey
+    ) {
+      refreshAttention();
+    }
+    previousDockedPullRequestKey.current = dockedPullRequestKey;
+  }, [dockedPullRequestKey, refreshAttention]);
   const [selection, setSelection] = useState<WorkbenchPullRequestSelection | null>(null);
   const [openedHref, setOpenedHref] = useState(href);
   const wasOpen = useRef(false);
@@ -72,7 +88,9 @@ function WorkbenchPullRequestPreview({ children }: { children: ReactNode }) {
   }
   const openSelection = useCallback(
     (next: WorkbenchPullRequestSelection) => {
-      if (routeThreadRef) {
+      // Focused attention destinations retain the sheet's focus and close-refresh lifecycle.
+      if (routeThreadRef && next.focus === undefined) {
+        setSelection(null);
         useRightPanelStore.getState().openPullRequest(routeThreadRef, {
           projectId: next.reference.projectId,
           repository: next.reference.repository,

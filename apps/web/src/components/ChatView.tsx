@@ -4780,11 +4780,12 @@ export default function ChatView(props: ChatViewProps) {
     };
     const followSelectedPullRequest =
       previousPullRequest?.threadKey === activeThreadKey &&
-      shouldRetargetThreadPullRequestPanel(
-        previousPullRequest.reference,
-        linkedThreadPullRequest,
-        openSurface,
-      );
+      shouldRetargetThreadPullRequestPanel({
+        previous: previousPullRequest.reference,
+        current: linkedThreadPullRequest,
+        surface: openSurface,
+        threadEnvironmentId: activeThreadRef.environmentId,
+      });
     // Following the selected linked PR does not open an unrelated panel, so it
     // remains available with proactive panels off. It still respects a later choice.
     if (followSelectedPullRequest && linkedThreadPullRequest !== null) {

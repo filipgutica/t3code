@@ -153,12 +153,22 @@ export function resolvePullRequestPanelEnvironment(
 }
 
 /** Follow a changed server link only when the panel still shows the previous linked PR. */
-export function shouldRetargetThreadPullRequestPanel(
-  previous: ThreadLinkedPullRequest | null,
-  current: ThreadLinkedPullRequest | null,
-  surface: RightPanelSurface | null,
-): boolean {
+export function shouldRetargetThreadPullRequestPanel({
+  previous,
+  current,
+  surface,
+  threadEnvironmentId,
+}: {
+  previous: ThreadLinkedPullRequest | null;
+  current: ThreadLinkedPullRequest | null;
+  surface: RightPanelSurface | null;
+  threadEnvironmentId: EnvironmentId;
+}): boolean {
   if (previous === null || current === null || surface?.kind !== "pull-request") return false;
+  if (
+    resolvePullRequestPanelEnvironment(threadEnvironmentId, surface).isThreadEnvironment === false
+  )
+    return false;
   const previousRepository = previous.repository.toLowerCase();
   return (
     (previous.projectId !== current.projectId ||
