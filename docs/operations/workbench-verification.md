@@ -24,6 +24,11 @@ CI does not run every row for every PR. For example, a change
 confined to `scripts/workbench-preview/` triggers preview checks and an eligible
 owner's PR preview, but not browser regression.
 
+The separate [hosted web preview](../../.github/workflows/web-preview.yml) runs
+for same-repository PRs labelled `preview:web`. It deploys only the web client:
+open the exact URL from its PR comment and pair a reachable T3 server. The
+private Workbench PR demo instead launches a temporary Sandbox with seeded state.
+
 The [hosted browser smoke](../../scripts/workbench-preview/README.md#hosted-browser-smoke)
 is a separate manual check. It covers protected launch, automatic pairing, a
 rendered seed, and one persisted Board write after reload. It does not cover
