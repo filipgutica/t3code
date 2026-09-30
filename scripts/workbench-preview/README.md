@@ -1,5 +1,8 @@
 # Private Workbench PR demos on Vercel
 
+See [Workbench verification](../../docs/operations/workbench-verification.md)
+for the relationship between local regressions, preview smoke, and hosted checks.
+
 Open a PR's demo link, sign in to Vercel, and choose **Open demo**. The launcher starts an environment with synthetic Tickets, repositories and native Threads. Native pairing happens automatically. Reopening the same link in the same browser resumes that environment while it is running; **Start new demo** makes a fresh one. The environment stops after 20 minutes; return to the launcher to start another session.
 
 Each fresh demo has its own filesystem and Jira connections. Jira starts disconnected. Local demo state is discarded at expiry; writes to Jira or other connected services remain.
@@ -21,7 +24,7 @@ The deployment job refuses projects without All Deployments protection and check
 
 ## Build and lifecycle
 
-The workflow keeps build configuration, export, publication and the protected launcher on `main`. Runtime startup, fixtures and smoke checks follow the exact PR revision inside the credential-free build. Both the image and exported Linux bundle exercise the native service. A separate job publishes a revision- and checksum-addressed bundle to the repository's `workbench-preview-builds` prerelease and deploys the launcher from `main`. Only the repository owner's PRs from this repository are eligible.
+The workflow builds application code and demo fixtures from the selected PR head. It uses `Dockerfile`, `Dockerfile.dockerignore`, and `config.mts` from the selected `main` controller commit. Runtime `start.mts` and native `smoke.mjs` come from the PR; bundle export, publication, and the protected launcher come from that controller commit. The PR code runs in a build job without integration credentials. Both the image and exported Linux bundle exercise the native service. A separate job publishes a revision- and checksum-addressed bundle to the repository's `workbench-preview-builds` prerelease and deploys the launcher from `main`. Only the repository owner's PRs from this repository are eligible.
 
 Code bundles are public downloads in this already-public repository. They contain compiled code and open-source dependencies, not integration grants or runtime state. This distribution avoids Vercel Container Registry's separate storage charge. Launcher access and native environment operations remain private. Treat PR code as executable code you trust before using it with a connected service.
 
@@ -69,3 +72,24 @@ pnpm install --ignore-workspace --frozen-lockfile --ignore-scripts
 ```
 
 A local smoke does not prove Vercel routing, managed-image compatibility, deployment protection or Sandbox expiry. Before enabling the feature stack, verify the hosted flow: anonymous launch denial, seeded Board at the selected revision, automatic pairing, a free OpenCode turn, isolated state between launches, and a fresh session after expiry.
+
+## Hosted browser smoke
+
+Use a browser with access to the protected Vercel deployment. Confirm that the PR
+head matches the application revision in the preview comment. Open the launcher
+and choose **Open demo**. The browser should reach a native T3 page without
+typing a pairing code. Open **Agent Workbench** and confirm that Orbit and Beacon
+contain their seeded Tickets.
+
+On Beacon, move **Write the five-minute quickstart** from Todo to In Progress.
+Wait for the saving state to finish, reload, and confirm that the Ticket remains
+in In Progress. Restore it to Todo. Record the PR revision, controller revision,
+browser, and observed result; capture only a Board screenshot without a pairing
+URL or code. This checks protected launch, pairing, rendered seed data, and one
+persisted Workbench write in one Sandbox. It does not check expiry, separate
+launch isolation, Jira, or provider execution.
+
+The Actions jobs cannot run this browser path with the current All Deployments
+Vercel Authentication policy: they have no reviewer login session, and the
+publisher rejects protection bypasses. Keep the hosted pass explicit instead of
+counting the local Docker smoke as browser coverage.

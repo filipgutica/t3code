@@ -1,5 +1,8 @@
 # Workbench regression suite
 
+See [Workbench verification](../../docs/operations/workbench-verification.md)
+to see when CI runs each lane and what each result proves.
+
 Run browser regressions against an isolated Orbit/Beacon demo:
 
 ```sh

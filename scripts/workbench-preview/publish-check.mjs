@@ -57,6 +57,7 @@ globalThis.fetch=async(url,options={})=>{const u=String(url);NodeFSP.appendFileS
           PREVIEW_REPO: "filipgutica/t3code",
           PREVIEW_PR: "71",
           PREVIEW_SHA: sha,
+          PREVIEW_CONTROLLER_SHA: "c".repeat(40),
           TEST_LOG: log,
           TEST_SCENARIO: scenario,
         };
@@ -123,6 +124,9 @@ globalThis.fetch=async(url,options={})=>{const u=String(url);NodeFSP.appendFileS
             ),
           );
           NodeAssert.doesNotMatch(comments[0].body, /private-test-token|token=/);
+          const posted = JSON.parse(comments[0].body).body;
+          NodeAssert.match(posted, new RegExp("PR `" + sha + "`"));
+          NodeAssert.match(posted, /main `c{40}`/);
         }
       } finally {
         await NodeFSP.rm(root, { recursive: true, force: true });
