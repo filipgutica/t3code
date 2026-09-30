@@ -36,6 +36,13 @@ vi.mock("./ui/tooltip", async () => {
 });
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
+vi.mock("../assets/assetUrls", () => ({
+  useAssetUrlRefresh: () => vi.fn(),
+  useAssetUrlState: (environmentId: EnvironmentId) => ({
+    _tag: "Success",
+    url: `https://${environmentId}.test/private-image.png`,
+  }),
+}));
 vi.mock("../state/session", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../state/session")>()),
   usePreparedConnection: () => ({ _tag: "Loading" }),
@@ -77,6 +84,46 @@ vi.mock("../editorPreferences", () => ({
 }));
 
 describe("Markdown pull request links beside a Thread", () => {
+  it.each([
+    { label: "foreign PR content", explicitEnvironment: "remote", expectedEnvironment: "remote" },
+    {
+      label: "ordinary Thread content",
+      explicitEnvironment: undefined,
+      expectedEnvironment: "local",
+    },
+  ])(
+    "loads private GitHub images from $label environment",
+    async ({ explicitEnvironment, expectedEnvironment }) => {
+      vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+      const localThread = scopeThreadRef(EnvironmentId.make("local"), ThreadId.make("reading"));
+      let renderer: ReactTestRenderer | undefined;
+      try {
+        await act(() => {
+          renderer = create(
+            <ChatMarkdown
+              cwd="/workspace/repo"
+              threadRef={localThread}
+              environmentId={
+                explicitEnvironment === undefined
+                  ? undefined
+                  : EnvironmentId.make(explicitEnvironment)
+              }
+              text="![private](https://github.com/user-attachments/assets/2f8c1a90-1b2c-4d5e-8f90-abcdef123456)"
+              githubMedia
+            />,
+          );
+        });
+        expect(renderer!.root.findByType("img").props.src).toBe(
+          `https://${expectedEnvironment}.test/private-image.png`,
+        );
+      } finally {
+        await act(() => renderer?.unmount());
+        vi.clearAllMocks();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
+
   it.each([
     { label: "foreign PR content", explicitEnvironment: "remote", expectedEnvironment: "remote" },
     {

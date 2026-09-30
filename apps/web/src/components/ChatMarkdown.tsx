@@ -3141,7 +3141,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const {
       expandMedia,
       cwd,
-      environmentId,
+      pullRequestEnvironmentId,
       githubMedia,
       imageBaseDir,
       threadRef,
@@ -3178,13 +3178,13 @@ const CHAT_MARKDOWN_COMPONENTS = {
     if (
       githubMedia &&
       cwd !== undefined &&
-      environmentId !== null &&
+      pullRequestEnvironmentId !== null &&
       directUri !== null &&
       githubMediaUrl !== null
     ) {
       return (
         <ChatMarkdownAssetImage
-          environmentId={environmentId}
+          environmentId={pullRequestEnvironmentId}
           resource={{ _tag: "github-media", cwd, url: githubMediaUrl }}
           alt={altText}
           kind={kind}
