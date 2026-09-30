@@ -31,6 +31,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
+import type { PullRequestDetailFocus } from "./PullRequestDetailPanel";
 import { areAllDiffFilesCollapsed } from "~/lib/diffCollapse";
 import { pullRequestFindingKey, type PullRequestFinding } from "./pullRequestDetail.logic";
 import { canEditPullRequestComment } from "./pullRequestEditing.logic";
@@ -203,6 +204,9 @@ function PullRequestCodeTab({
   onAddToAgentSelection,
   onRefresh,
   refreshToken = 0,
+  focus,
+  reviewPending = false,
+  reviewError = null,
 }: {
   environmentId: EnvironmentId;
   reference: PullRequestRef;
@@ -219,6 +223,9 @@ function PullRequestCodeTab({
   onRefresh: () => void;
   /** Bumped by the panel's refresh button: drop the accumulated pages and re-read the diff. */
   refreshToken?: number;
+  focus?: Extract<PullRequestDetailFocus, { readonly kind: "review-thread" }> | undefined;
+  reviewPending?: boolean;
+  reviewError?: string | null;
 }) {
   const { resolvedTheme } = useTheme();
   const settings = useClientSettings();
@@ -255,8 +262,21 @@ function PullRequestCodeTab({
   }>({ key: "", cursor: null, slices: NO_SLICES });
   const parseCache = useRef(new Map<string, RenderablePatch>());
   const [viewer, setViewer] = useState<CodeViewHandle<ReviewAnnotationGroup> | null>(null);
+  const focusedReviewRef = useRef<HTMLElement | null>(null);
 
   const referenceKey = pullRequestReviewKey(reference);
+  const focusedThreads = useMemo(
+    () =>
+      focus ? detail.reviewThreads.filter((thread) => thread.id === focus.reviewThreadId) : [],
+    [detail.reviewThreads, focus],
+  );
+  const focusedThreadIds = useMemo(
+    () => new Set(focusedThreads.map((thread) => thread.id)),
+    [focusedThreads],
+  );
+  useEffect(() => {
+    if (focus && focusedReviewRef.current) focusedReviewRef.current.scrollTop = 0;
+  }, [focus, referenceKey]);
   const commit = selectedCommitOid;
   // One commit's own changes and the whole change are two different diffs, paged separately, so
   // everything below is keyed by both.
@@ -277,14 +297,16 @@ function PullRequestCodeTab({
   const loadedSlices = sliceState.key === scopeKey ? sliceState.slices : NO_SLICES;
   const cursor = sliceState.key === scopeKey ? sliceState.cursor : null;
   const diffQuery = useEnvironmentQuery(
-    pullRequestEnvironment.diff({
-      environmentId,
-      input: {
-        ...reference,
-        ...(cursor === null ? {} : { cursor }),
-        ...(commit === null ? {} : { commit }),
-      },
-    }),
+    detail.capabilities.diff
+      ? pullRequestEnvironment.diff({
+          environmentId,
+          input: {
+            ...reference,
+            ...(cursor === null ? {} : { cursor }),
+            ...(commit === null ? {} : { commit }),
+          },
+        })
+      : null,
   );
   // Each answer is kept as its own slice. Concatenating the patches and re-parsing the growing
   // text would cost more with every slice, which is the wall the slicing exists to remove.
@@ -434,9 +456,9 @@ function PullRequestCodeTab({
     if (appliedRefreshToken.current === refreshToken) return;
     appliedRefreshToken.current = refreshToken;
     setSliceState({ key: scopeKey, cursor: null, slices: NO_SLICES });
-    refreshFirstDiffPage();
+    if (detail.capabilities.diff) refreshFirstDiffPage();
     refreshFilesViewed();
-  }, [refreshToken, scopeKey, refreshFirstDiffPage, refreshFilesViewed]);
+  }, [refreshToken, scopeKey, refreshFirstDiffPage, refreshFilesViewed, detail.capabilities.diff]);
   const nextCursor = loadedSlices.at(-1)?.nextCursor ?? null;
   // What a slice withheld: the host declining to inline part of it, or a patch the viewer could
   // not structure and so dropped. Neither says anything about there being more to fetch.
@@ -495,6 +517,7 @@ function PullRequestCodeTab({
         };
 
         for (const thread of detail.reviewThreads) {
+          if (focusedThreadIds.has(thread.id)) continue;
           if (thread.path !== path || thread.line === null) continue;
           if (!placedThreadIds.has(thread.id)) continue;
           groupAt(thread.side, thread.line).threads.push(thread);
@@ -555,7 +578,15 @@ function PullRequestCodeTab({
           ),
         };
       }),
-    [commit, detail.reviewThreads, draft, files, pendingComments, placedThreadIds],
+    [
+      commit,
+      detail.reviewThreads,
+      draft,
+      files,
+      pendingComments,
+      placedThreadIds,
+      focusedThreadIds,
+    ],
   );
 
   const items = useMemo<CodeViewDiffItem<ReviewAnnotationGroup>[]>(
@@ -924,6 +955,7 @@ function PullRequestCodeTab({
         environmentId={environmentId}
         reference={reference}
         pending={threadPending}
+        defaultExpanded={focusedThreadIds.has(thread.id) || !thread.isResolved}
         fixPending={pendingFinding === pullRequestFindingKey({ kind: "thread", thread })}
         fixLabel={fixFindingLabel}
         {...(onFixFinding ? { onFix: () => onFixFinding({ kind: "thread", thread }) } : {})}
@@ -987,6 +1019,7 @@ function PullRequestCodeTab({
       runThreadCommand,
       setThreadResolution,
       threadPending,
+      focusedThreadIds,
       updateComment,
     ],
   );
@@ -1324,12 +1357,59 @@ function PullRequestCodeTab({
   );
   // The toolbar rides above every branch below, not just the one with a patch in it: a commit
   // whose diff is empty or unreadable still needs the scope dropdown that got the reader there.
+  const focusedReview = focus ? (
+    <section
+      ref={focusedReviewRef}
+      aria-label="Review conversation"
+      className="max-h-[50%] shrink-0 overflow-auto border-b border-border/60 px-4 py-3"
+    >
+      <h2 className="mb-2 text-xs font-medium text-muted-foreground">Review conversation</h2>
+      {reviewError && focusedThreads.length > 0 ? (
+        <p className="mb-2 text-xs text-muted-foreground">
+          Review conversations could not be refreshed: {reviewError}
+        </p>
+      ) : null}
+      {focusedThreads.length > 0 ? (
+        <div className="space-y-3">
+          {focusedThreads.map((thread) => (
+            <div key={thread.id}>
+              <p className="mb-1 text-xs text-muted-foreground">
+                {thread.path}
+                {thread.line === null ? "" : `:${thread.line}`}
+              </p>
+              {renderThreadCard(thread)}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          {reviewPending
+            ? "Loading review conversations..."
+            : reviewError
+              ? `Review conversations could not be loaded: ${reviewError}`
+              : "This review conversation is not available in the current inspection. Refresh or open the pull request on the host to find it."}
+        </p>
+      )}
+    </section>
+  ) : null;
   const withToolbar = (body: ReactNode) => (
     <div className="flex h-full min-h-0 flex-col">
       {toolbar}
+      {focusedReview}
       <div className="min-h-0 flex-1 overflow-auto">{body}</div>
     </div>
   );
+
+  if (!detail.capabilities.diff) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        {focusedReview}
+        <p className="px-4 py-5 text-sm text-muted-foreground">
+          This host does not provide a pull request diff.
+        </p>
+      </div>
+    );
+  }
 
   // Under the toolbar rather than in place of it, so choosing a commit does not take the
   // dropdown that was just used off the screen while its diff loads.
@@ -1376,7 +1456,9 @@ function PullRequestCodeTab({
     );
   }
 
-  const orphanThreads = detail.reviewThreads.filter((thread) => !placedThreadIds.has(thread.id));
+  const orphanThreads = detail.reviewThreads.filter(
+    (thread) => !placedThreadIds.has(thread.id) && !focusedThreadIds.has(thread.id),
+  );
   // A file carrying five stranded conversations should read as that file once rather than as
   // five copies of its path.
   const orphanFiles = new Map<string, PullRequestReviewThread[]>();
@@ -1404,6 +1486,7 @@ function PullRequestCodeTab({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {toolbar}
+      {focusedReview}
       {/* Above the code, closed, and counted: these belong to the change rather than to any
             line of it, and in the stream they read as cards dropped into the patch. */}
       {orphanFiles.size > 0 ? (

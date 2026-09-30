@@ -25,7 +25,7 @@ export interface WorkbenchTicketPullRequest {
 }
 
 export type TicketPullRequestReference = ThreadLinkedPullRequest &
-  Partial<Pick<PullRequestListEntry, "title" | "state">> & {
+  Partial<Pick<PullRequestListEntry, "title" | "state" | "checksState" | "reviewDecision">> & {
     readonly isDraft?: boolean | undefined;
   };
 
@@ -73,12 +73,39 @@ export const mergeWorkbenchTicketPullRequests = ({
   return [...rows.values()];
 };
 
+const getThreadPullRequestReferences = (
+  thread: WorkbenchPullRequestThread,
+  includeBranchPullRequest: boolean,
+) => {
+  return thread.pullRequests.length > 0
+    ? visibleThreadPullRequests(thread.pullRequests).map(
+        ({ repository, number, url, snapshot }) => ({
+          projectId: thread.projectId,
+          repository,
+          number,
+          url,
+          ...(snapshot
+            ? {
+                title: snapshot.title,
+                state: snapshot.state,
+                isDraft: snapshot.isDraft,
+                checksState: snapshot.checksState,
+                reviewDecision: snapshot.reviewDecision,
+              }
+            : {}),
+        }),
+      )
+    : [thread.linkedPullRequest, ...(includeBranchPullRequest ? [thread.branchPullRequest] : [])];
+};
+
 /** Collect the distinct PR references carried by the Ticket's visible Threads. */
 export function getWorkbenchTicketPullRequests({
   assignments,
   threadsById,
   archivedThreadsById,
+  includeBranchPullRequest = true,
 }: {
+  readonly includeBranchPullRequest?: boolean;
   readonly assignments: ReadonlyArray<Pick<WorkbenchAssignment, "threadId">>;
   readonly threadsById: ReadonlyMap<ThreadId, WorkbenchPullRequestThread>;
   readonly archivedThreadsById: ReadonlyMap<ThreadId, WorkbenchPullRequestThread>;
@@ -89,20 +116,7 @@ export function getWorkbenchTicketPullRequests({
     const thread =
       threadsById.get(assignment.threadId) ?? archivedThreadsById.get(assignment.threadId);
     if (thread === undefined) continue;
-    const references =
-      thread.pullRequests.length > 0
-        ? visibleThreadPullRequests(thread.pullRequests).map(
-            ({ repository, number, url, snapshot }) => ({
-              projectId: thread.projectId,
-              repository,
-              number,
-              url,
-              ...(snapshot
-                ? { title: snapshot.title, state: snapshot.state, isDraft: snapshot.isDraft }
-                : {}),
-            }),
-          )
-        : [thread.linkedPullRequest, thread.branchPullRequest];
+    const references = getThreadPullRequestReferences(thread, includeBranchPullRequest);
     for (const pullRequest of references) {
       if (pullRequest == null) continue;
       const identity = threadPullRequestKeyOf(legacyThreadPullRequestKey(pullRequest));

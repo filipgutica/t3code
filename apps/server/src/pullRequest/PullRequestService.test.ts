@@ -1337,6 +1337,60 @@ it.effect("refuses an action the host never claimed it could run", () =>
   }),
 );
 
+it.effect("refreshes native readers after a partially accepted failed-check rerun", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      let reads = 0;
+      const original = fakeProvider("github");
+      const service = yield* makeService({
+        projects: [
+          project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" }),
+        ],
+        providers: [
+          fakeProvider("github", {
+            capabilities: { ...original.capabilities, actions: ["rerun-failed-checks"] },
+            getViewerPermissions: () =>
+              Effect.succeed({
+                actions: ["rerun-failed-checks"],
+                comment: false,
+                resolve: false,
+                verdicts: [],
+                requestReviewers: false,
+              }),
+            getChangeRequestPreview: () =>
+              Effect.sync(() => {
+                reads++;
+                return changeRequest(1, "2026-07-02T00:00:00Z");
+              }),
+            runAction: () =>
+              Effect.fail(
+                new PullRequestProviderError({
+                  provider: "github",
+                  operation: "runAction",
+                  reason: "failed",
+                  detail: "Requested 1 workflow rerun. Actions write permission denied.",
+                }),
+              ),
+          }),
+        ],
+      });
+      const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+      yield* service.preview(reference);
+      const reader = yield* Stream.runHead(service.subscribeRefreshes).pipe(
+        Effect.forkChild({ startImmediately: true }),
+      );
+      const failure = yield* Effect.flip(
+        service.runAction({ ...reference, action: "rerun-failed-checks" }),
+      );
+      assert.include(failure.message, "Requested 1 workflow rerun");
+      const refresh = yield* Fiber.join(reader).pipe(Effect.map(Option.getOrThrow));
+      assert.isAbove(refresh, 0);
+      yield* service.preview(reference);
+      assert.strictEqual(reads, 2);
+    }),
+  ),
+);
+
 it.effect("publishes a merge for immediate settlement only after host confirmation", () =>
   Effect.scoped(
     Effect.gen(function* () {

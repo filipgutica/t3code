@@ -253,6 +253,8 @@ describe("Workbench Ticket pull request references", () => {
             headBranch: "remote-setup",
             baseBranch: "main",
             isDraft: true,
+            checksState: "failing",
+            reviewDecision: "changes-requested",
             updatedAt: null,
             syncedAt: "2026-09-17T00:00:00.000Z",
           },
@@ -273,12 +275,30 @@ describe("Workbench Ticket pull request references", () => {
           state: "open",
           isDraft: true,
           title: "Add remote database setup",
+          checksState: "failing",
+          reviewDecision: "changes-requested",
         },
         threadId: linkedThread.id,
         threadTitle: "Database setup",
         matchesTicket: false,
       },
     ]);
+  });
+
+  it("attention collects explicit native links without discovering the Thread branch", () => {
+    const nativeThread = thread({
+      id: "linked-and-branch",
+      linkedPullRequest: pullRequest(7),
+      branchPullRequest: pullRequest(8),
+    });
+    expect(
+      getWorkbenchTicketPullRequests({
+        assignments: [{ threadId: nativeThread.id }],
+        threadsById: new Map([[nativeThread.id, nativeThread]]),
+        archivedThreadsById: new Map(),
+        includeBranchPullRequest: false,
+      }).map((row) => row.pullRequest.number),
+    ).toEqual([7]);
   });
 
   it("collects visible multi-repository links and falls back to legacy fields", () => {

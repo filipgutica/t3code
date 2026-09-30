@@ -165,15 +165,46 @@ try {
       "node",
       "--input-type=module",
       "-e",
-      "import fs from 'node:fs';import cp from 'node:child_process';const target=process.argv[1];let environment;for(const pid of fs.readdirSync('/proc').filter(x=>/^[0-9]+$/.test(x))){try{const argv=fs.readFileSync('/proc/'+pid+'/cmdline','utf8').split(String.fromCharCode(0));if(argv.includes(target)&&argv.includes('serve'))environment=Object.fromEntries(fs.readFileSync('/proc/'+pid+'/environ','utf8').split(String.fromCharCode(0)).filter(Boolean).map(entry=>{const index=entry.indexOf('=');return [entry.slice(0,index),entry.slice(index+1)];}));}catch{}}if(!environment)throw Error('Native runtime environment unavailable');const version=cp.spawnSync('gh',['--version'],{env:environment,encoding:'utf8',timeout:5000});const auth=cp.spawnSync('gh',['auth','status','--hostname','github.com'],{env:environment,encoding:'utf8',timeout:5000});const location=cp.spawnSync('sh',['-c','command -v gh'],{env:environment,encoding:'utf8',timeout:5000});const openCode=cp.spawnSync('opencode',['--version'],{env:environment,encoding:'utf8',timeout:4000});console.log(JSON.stringify({location:location.stdout?.trim(),version:version.stdout?.split(String.fromCharCode(10))[0],versionStatus:version.status,authStatus:auth.status,openCodeVersion:openCode.stdout?.trim(),openCodeStatus:openCode.status,hasCredentials:['GH_TOKEN','GITHUB_TOKEN','GH_ENTERPRISE_TOKEN','GITHUB_ENTERPRISE_TOKEN'].some(key=>Boolean(environment[key]))}));",
+      `import fs from 'node:fs';
+       import cp from 'node:child_process';
+       const target = process.argv[1];
+       const installedGh = process.argv[2];
+       let environment;
+       for (const pid of fs.readdirSync('/proc').filter(x => /^[0-9]+$/.test(x))) {
+         try {
+           const argv = fs.readFileSync('/proc/' + pid + '/cmdline', 'utf8').split(String.fromCharCode(0));
+           if (argv.includes(target) && argv.includes('serve'))
+             environment = Object.fromEntries(fs.readFileSync('/proc/' + pid + '/environ', 'utf8')
+               .split(String.fromCharCode(0)).filter(Boolean).map(entry => {
+                 const index = entry.indexOf('='); return [entry.slice(0, index), entry.slice(index + 1)];
+               }));
+         } catch {}
+       }
+       if (!environment) throw Error('Native runtime environment unavailable');
+       const run = (command, args, timeout = 5000) => cp.spawnSync(command, args,
+         {env: environment, encoding: 'utf8', timeout});
+       const version = run(installedGh, ['--version']);
+       const auth = run(installedGh, ['auth', 'status', '--hostname', 'github.com']);
+       const location = run('sh', ['-c', 'command -v gh']);
+       const read = run('gh', ['pr', 'view', '901', '--repo', 'workbench-synthetic/attention-fixtures']);
+       const write = run('gh', ['api', '--method', 'POST', 'repos/workbench-synthetic/attention-fixtures/actions/runs/1/rerun-failed-jobs']);
+       const openCode = run('opencode', ['--version'], 4000);
+       console.log(JSON.stringify({location: location.stdout?.trim(),
+         version: version.stdout?.split(String.fromCharCode(10))[0], versionStatus: version.status,
+         authStatus: auth.status, readStatus: read.status, read: read.stdout,
+         writeStatus: write.status, writeError: write.stderr,
+         openCodeVersion: openCode.stdout?.trim(), openCodeStatus: openCode.status,
+         hasCredentials: ['GH_TOKEN','GITHUB_TOKEN','GH_ENTERPRISE_TOKEN','GITHUB_ENTERPRISE_TOKEN']
+           .some(key => Boolean(environment[key]))}));`,
       `${application}/apps/server/dist/bin.mjs`,
+      bundle ? "/opt/workbench-preview/node-bin/gh" : "/usr/local/bin/gh",
     ),
   );
-  NodeAssert.equal(github.versionStatus, 0, "GitHub CLI is executable on the native runtime PATH");
+  NodeAssert.equal(github.versionStatus, 0, "Installed GitHub CLI remains executable");
   NodeAssert.equal(
     github.location,
-    bundle ? "/opt/workbench-preview/node-bin/gh" : "/usr/local/bin/gh",
-    "Runtime resolves the intended installed GitHub CLI",
+    `${NodePath.posix.dirname(home)}/attention-bin/gh`,
+    "Native runtime resolves only its disposable synthetic inspection adapter",
   );
   NodeAssert.match(github.version, /^gh version 2\.101\.0 /, "GitHub CLI is the pinned release");
   NodeAssert.equal(
@@ -184,8 +215,14 @@ try {
   NodeAssert.equal(
     github.authStatus,
     1,
-    "GitHub CLI starts unauthenticated in the fresh native home",
+    "Installed real GitHub CLI starts unauthenticated in the fresh native home",
   );
+  NodeAssert.equal(github.readStatus, 0, "Synthetic inspection is available without credentials");
+  const synthetic = JSON.parse(github.read);
+  NodeAssert.match(synthetic.title, /^\[Synthetic attention\]/);
+  NodeAssert.equal(synthetic.statusCheckRollup[0].conclusion, "FAILURE");
+  NodeAssert.equal(github.writeStatus, 1, "Synthetic reruns refuse the write");
+  NodeAssert.match(github.writeError, /no GitHub request was sent/);
   NodeAssert.equal(
     github.openCodeStatus,
     0,

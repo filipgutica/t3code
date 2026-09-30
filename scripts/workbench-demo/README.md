@@ -45,6 +45,82 @@ profile when switching Jira projects, boards, or sprints: set `DEMO_HOME` for se
 and run, or pass `--home PATH` to `run.sh`.
 Keep profiles outside temporary folders and private: `config.env` contains secrets.
 
+## Private-preview attention fixtures
+
+Every fresh private PR preview automatically seeds the **Synthetic attention
+fixtures** Epic in Orbit. Ticket and Thread titles start with `[Synthetic
+attention]`. No provider ran: interrupted/completed turn outcomes are labelled,
+projection-only demo data written while the seeding server is stopped.
+
+| Ticket name after the prefix   | Needs attention | Ready for review | Expected reason after inspection                                        |
+| ------------------------------ | --------------- | ---------------- | ----------------------------------------------------------------------- |
+| Waiting Thread                 | Yes             | No               | Waiting for input                                                       |
+| Review-ready work              | Yes             | Yes              | Ready for review                                                        |
+| Failed PR checks               | Yes             | No               | Failed PR checks                                                        |
+| Unresolved PR feedback         | Yes             | No               | Failed PR checks · PR changes requested · Unresolved PR feedback        |
+| Clean Ticket                   | No              | No               | None                                                                    |
+| Excluded settled Thread        | No              | No               | Settled Thread is excluded despite its interrupted outcome              |
+| Excluded archived Thread       | No              | No               | Archived Thread is excluded despite its interrupted outcome             |
+| Excluded superseded Thread     | No              | No               | Interrupted historical assignment is excluded; replacement is clean     |
+| Non-primary Thread needs input | Yes             | No               | Waiting for input from the older assignment; newest assignment is clean |
+| PR inspection unavailable      | No              | No               | Inspection unavailable; no confirmed action                             |
+| PR inspection incomplete       | No              | No               | Inspection incomplete; no confirmed action                              |
+| Slow PR inspection             | No              | No               | Loading coverage, then a complete clean inspection                      |
+
+In **All**, waiting, review-ready, failed-check, and non-primary Thread fixtures
+each show a bell with **1**. Unresolved PR feedback shows **3**: failed checks on
+PR 901, changes requested on PR 902, and unresolved feedback on PR 902.
+Clean and excluded fixtures have no bell. The count
+represents actionable signals per source, not unread notifications. Opening a
+popover does not clear attention.
+
+The feedback Ticket has two active Threads: the original links PRs **901 and
+902**, and the **shared PR assignment** links PR **902** again. Its two PR sources
+remain distinct; sharing PR 902 does not duplicate its signals. PR 902 contains
+two unresolved discussions, in `synthetic.txt` and `src/invitations.ts`, with
+separate questions and destinations, plus one requested-changes review.
+PR 901 contains two failed checks (**API tests** and **Web tests**) in the same
+synthetic **Attention CI** workflow. These checks share one failed-check signal.
+Turn on the sidebar's bell filter to compare both feedback assignments: both
+remain visible because they link PR 902, while only the original also links
+the failed PR 901. The sidebar filter includes the five confirmed-action Tickets;
+inspection-only examples stay out, with a coverage note when inspection is incomplete.
+The newest clean assignment on **Non-primary Thread needs input** still has no
+PR links or attention; only its older Thread needs input.
+
+Click a bell on the Board or sidebar. Check the source and reason, then open its
+Thread, failed checks, requested changes, or exact review discussion. The Ticket
+header has the same popover. Its **Needs attention** section, above Agent Threads,
+keeps the same actions visible and can be collapsed.
+
+Select **Needs attention**: expect five confirmed-action Tickets, each with a
+bell. The separate environment inspection line shows three of five linked PRs
+fully inspected; two deliberately remain unavailable/incomplete. Use the
+**Refresh linked PRs** icon to repeat inspection and confirm it finishes. Loading
+or uncertain coverage alone does not add a Ticket to either attention filter.
+In **All**, open the unavailable/incomplete examples: their **PR inspection**
+section explains the status and offers **Refresh**. Known actions remain visible
+while refreshing their PR inspection.
+Select **Ready for review** to isolate the review-ready Ticket. Navigate away and
+back to check filter persistence. Search for `no-matching-synthetic-ticket`, then
+use **Clear filters** to restore All.
+Search for an excluded Ticket in All and inspect
+its Thread history or settled section to confirm why it was omitted.
+
+The hosted demo has one environment. Other-environment exclusion is covered by
+`workbenchAttention.logic.test.ts`; a foreign environment cannot honestly be
+seeded as a local native Thread. This fixture does not claim a multi-environment
+runtime verification.
+
+Synthetic PRs 901–905 belong to the fictional
+`workbench-synthetic/attention-fixtures` repository. A credential-free executable
+adapter supplies only their allowlisted inspection data; it never forwards a
+command to GitHub. On Failed PR checks, open the PR and choose **Rerun failed
+checks**: expect a clearly labelled refusal and no success claim. Verify a real
+GitHub rerun separately with an expendable failing PR and Actions write permission.
+Normal local `run.sh` demos continue to use real GitHub CLI and configured remotes;
+the synthetic adapter is installed only by private-preview startup.
+
 ## Troubleshooting
 
 - **Jira authorization fails:** check the signed-in Atlassian account and its site

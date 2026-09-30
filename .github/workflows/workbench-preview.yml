@@ -67,19 +67,22 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: "24.13.1"
-      - name: Apply reviewed preview tooling
+      - name: Apply reviewed preview build tooling
         run: |
-          cp -R controller/scripts/workbench-preview source/scripts/
-          cp controller/scripts/workbench-demo/local.mts source/scripts/workbench-demo/local.mts
+          # Runtime startup and demo fixtures follow the exact PR head inside the credential-free VM.
+          # Keep build/configuration/export/publication on main; runtime smoke follows its fixtures.
+          for file in Dockerfile Dockerfile.dockerignore config.mts; do
+            cp "controller/scripts/workbench-preview/$file" "source/scripts/workbench-preview/$file"
+          done
       - name: Build exact PR without integration credentials
         working-directory: source
         run: docker build --platform linux/amd64 -f scripts/workbench-preview/Dockerfile -t workbench-preview:local .
       - name: Exercise real native service and crash recovery
-        run: node controller/scripts/workbench-preview/smoke.mjs
+        run: node source/scripts/workbench-preview/smoke.mjs
       - name: Export installed Linux runtime
         run: node controller/scripts/workbench-preview/bundle.mjs workbench-preview:local /tmp/workbench-preview.tar.gz
       - name: Verify the exported runtime bundle
-        run: node controller/scripts/workbench-preview/smoke.mjs workbench-preview:local /tmp/workbench-preview.tar.gz
+        run: node source/scripts/workbench-preview/smoke.mjs workbench-preview:local /tmp/workbench-preview.tar.gz
       - uses: actions/upload-artifact@v7
         with:
           name: workbench-preview-${{ needs.select.outputs.sha }}

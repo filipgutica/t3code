@@ -9,6 +9,8 @@ import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 import { useWorkbenchSidebarTicketActionMenu } from "./useWorkbenchSidebarTicketActionMenu";
 import type { WorkbenchSidebarTicket } from "./workbenchSidebar.logic";
 import type { WorkbenchSidebarTicketDetails } from "./workbenchSidebarContext.logic";
+import { useWorkbenchAttentionData } from "./WorkbenchAttentionProvider";
+import { WorkbenchTicketAttentionBadge } from "./WorkbenchTicketAttention";
 
 function TicketPullRequestPreview({
   pullRequests,
@@ -119,6 +121,8 @@ function WorkbenchSidebarTicketLabel({
   const Icon = ticket.archivedAt ? ArchiveIcon : kind === "bug" ? BugIcon : BookOpenIcon;
   const iconTone = ticket.archivedAt ? "text-sidebar-muted-foreground/60" : TICKET_ICON_TONE[kind];
   const pullRequestCount = details?.environmentId ? details.pullRequests.length : 0;
+  const { attentionSignalsByTicket } = useWorkbenchAttentionData();
+  const hasAttention = (attentionSignalsByTicket.get(ticket.id)?.length ?? 0) > 0;
 
   return (
     <>
@@ -126,7 +130,7 @@ function WorkbenchSidebarTicketLabel({
         <Icon className="size-3.5" />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="flex min-w-0 items-center gap-1">
+        <span className={`flex min-w-0 items-center gap-1 ${hasAttention ? "pe-6" : ""}`}>
           <span className="min-w-0 flex-1 truncate">{ticket.title}</span>
           {details?.attentionLabel ? (
             <CircleAlertIcon
@@ -265,6 +269,17 @@ export function WorkbenchSidebarTicketButton({
       >
         <WorkbenchSidebarTicketLabel ticket={ticket} details={details} status={status} />
       </SidebarMenuButton>
+      {details?.environmentId ? (
+        <div className="absolute end-2 top-2 z-10">
+          <WorkbenchTicketAttentionBadge
+            environmentId={details.environmentId}
+            ticketId={ticket.id}
+            ticketTitle={ticket.title}
+            side="right"
+            compact
+          />
+        </div>
+      ) : null}
       <WorkbenchSidebarTicketPrControl ticket={ticket} details={details} />
     </div>
   );

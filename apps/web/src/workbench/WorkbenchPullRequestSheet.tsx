@@ -85,6 +85,7 @@ export function WorkbenchPullRequestSheet({
           key={`${selection.environmentId}:${selection.reference.host}:${selection.reference.repository}:${selection.reference.number}`}
           environmentId={selection.environmentId}
           reference={selection.reference}
+          focus={selection.focus}
           context={isLinkedThreadOpen ? "thread" : "page"}
           threadRef={threadRef}
           {...(threadRef ? { composerDraftTarget: threadRef } : {})}

@@ -14,9 +14,13 @@ const { navigate, location } = vi.hoisted(() => ({
 
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => navigate,
-  useLocation: () => location,
+  useLocation: () => ({ ...location, pathname: location.href.split("?")[0] }),
+  useSearch: () => ({}),
+  useParams: () => null,
 }));
+const emptyThreadShells: never[] = [];
 vi.mock("../state/entities", () => ({
+  useThreadShells: () => emptyThreadShells,
   useProjects: () => [
     {
       id: ProjectId.make("other-repo"),

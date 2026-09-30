@@ -1,3 +1,7 @@
+import {
+  rerunFailedGitHubWorkflowJobs,
+  type GitHubWorkflowRerunError,
+} from "./githubWorkflowRerun.ts";
 import { runGitHubStackAction, type GitHubStackActionError } from "./githubStackActions.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -359,6 +363,7 @@ export class GitHubWorkflowApprovalHeadChangedError extends Schema.TaggedError<G
 }
 
 export type GitHubPullRequestCliError =
+  | GitHubWorkflowRerunError
   | GitHubStackActionError
   | GitHubCli.GitHubCliError
   | GitHubPullRequestReadError
@@ -1081,6 +1086,7 @@ function actionArgs(
       throw new Error("Revert requires a GraphQL mutation");
     // Handled separately because it may approve several workflow runs rather than mutate the
     // pull request itself.
+    case "rerun-failed-checks":
     case "approve-workflows":
       throw new Error("Workflow approval requires run discovery");
   }
@@ -2537,6 +2543,12 @@ export const make = Effect.gen(function* () {
         return runGitHubStackAction({ ...input, stackNumber: input.stackNumber }).pipe(
           Effect.provideService(GitHubCli.GitHubCli, github),
         );
+      if (input.action === "rerun-failed-checks") {
+        return rerunFailedGitHubWorkflowJobs({
+          ...input,
+          execute: (request) => github.execute(request),
+        });
+      }
       if (input.action === "revert") {
         return pullRequestNodeId({ ...input, operation: "revertPullRequest" }).pipe(
           Effect.flatMap((pullRequestId) =>
