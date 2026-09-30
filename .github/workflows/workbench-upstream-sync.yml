@@ -118,6 +118,7 @@ jobs:
           vp run --filter @t3tools/web typecheck
           vp run --filter @t3tools/desktop typecheck
           vp run --filter @t3tools/scripts typecheck
+          vp exec tsc --noEmit -p scripts/workbench-regression/tsconfig.json
           vp run --filter @t3tools/desktop ensure:electron
           vp run build:desktop
           xvfb-run -a vp run --filter @t3tools/desktop smoke-test
@@ -133,7 +134,7 @@ jobs:
         env:
           T3CODE_BUNDLED_DEV: "1"
         run: >-
-          vp run workbench:regression
+          vp exec playwright test --config workbench-regression/playwright.config.ts
           planning.spec.ts
           threads.spec.ts
           ticket-workspace.spec.ts

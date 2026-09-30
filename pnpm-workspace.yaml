@@ -98,8 +98,6 @@ minimumReleaseAgeExclude:
   - cn@0.3.2
 
 overrides:
-  # Workbench uses Fallow's native analysis only; omit its optional TypeScript companion.
-  "fallow>fallow-type-aware": "-"
   # Keep jsdom's optional peer consistent so Vite+ has one test-runner instance.
   "@exodus/bytes>@noble/hashes": "1.8.0"
   # Earlier React Navigation declarations create a circular type alias in TypeScript 7.
@@ -166,6 +164,8 @@ overrides:
   tailwindcss: "catalog:"
   vite: "catalog:"
   yaml: "catalog:"
+  # Workbench uses Fallow's native analysis only; omit its optional TypeScript companion.
+  "fallow>fallow-type-aware": "-"
 
 packageExtensions:
   "@clerk/expo@*":

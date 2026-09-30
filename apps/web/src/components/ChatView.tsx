@@ -1,4 +1,3 @@
-import { resolveWorkbenchReviewCommentTitle } from "../workbench/workbenchComposerTitle";
 import { isChatGptUsageLimitError } from "@t3tools/shared/usageLimits";
 import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
@@ -334,6 +333,7 @@ import {
 } from "../queuedMessageStore";
 import { sendQueuedMessage } from "./chat/sendQueuedMessage";
 import { type ReviewCommentContext } from "../reviewCommentContext";
+import { resolveWorkbenchReviewCommentTitle } from "../workbench/workbenchComposerTitle";
 import { environmentCatalog } from "../connection/catalog";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useEnvironmentDisconnectDelay } from "../hooks/useEnvironmentDisconnectDelay";

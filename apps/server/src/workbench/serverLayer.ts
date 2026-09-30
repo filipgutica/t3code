@@ -1,6 +1,7 @@
 import * as Layer from "effect/Layer";
 
 import { layerConfig as SqlitePersistenceLayerLive } from "../persistence/Layers/Sqlite.ts";
+import * as WorkbenchOrchestrationReactor from "./OrchestrationReactor.ts";
 import * as TicketSettlement from "./TicketSettlement.ts";
 import * as TicketExecutionReactor from "./TicketExecutionReactor.ts";
 import * as TicketSummaryService from "./TicketSummaryService.ts";
@@ -32,7 +33,11 @@ const TicketSettlementLayerLive = TicketSettlement.layer.pipe(
   Layer.provide(WorkbenchStoreLayerLive),
 );
 
-export const WorkbenchReactorsLayerLive = Layer.empty.pipe(
+const WorkbenchReactorsLayerLive = Layer.empty.pipe(
   Layer.provideMerge(TicketExecutionReactorLayerLive),
   Layer.provideMerge(TicketSettlementLayerLive),
+);
+
+export const WorkbenchRuntimeReactorLayerLive = WorkbenchOrchestrationReactor.layer.pipe(
+  Layer.provideMerge(WorkbenchReactorsLayerLive),
 );

@@ -234,7 +234,7 @@ function WorkbenchSidebarThreadPrBadge({
         number={data.currentPullRequest?.number}
         url={data.currentPullRequest?.url}
         status={data.pullRequestIndicator}
-        onOpenStack={onOpenPullRequestStack}
+        onOpenList={onOpenPullRequestStack}
         onOpenPullRequest={onOpenPullRequest}
       />
     </span>

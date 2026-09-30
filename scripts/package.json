@@ -3,9 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit && tsc --noEmit -p workbench-regression/tsconfig.json",
-    "test": "vp test run --config ../vite.config.ts --dir .",
-    "workbench:regression": "playwright test --config workbench-regression/playwright.config.ts"
+    "typecheck": "tsc --noEmit",
+    "test": "vp test run --config ../vite.config.ts --dir ."
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
