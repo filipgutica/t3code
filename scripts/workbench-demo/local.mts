@@ -69,46 +69,173 @@ const EPICS = [
 
 type TicketStatus = "todo" | "in_progress" | "done";
 
-const TICKETS = [
-  ["orbit", "orbit-onboarding", "Create the welcome checklist", "orbit-web", "in_progress"],
-  ["orbit", "orbit-onboarding", "Save onboarding progress", "orbit-api", "todo"],
-  ["orbit", "orbit-onboarding", "Add helpful empty states", "orbit-web", "done"],
-  ["orbit", "orbit-onboarding", "Fix focus after creating a project", "orbit-web", "todo"],
-  ["orbit", "orbit-teams", "Invite teammates by email", "orbit-web", "in_progress"],
-  ["orbit", "orbit-teams", "Expire unused invitation links", "orbit-api", "todo"],
-  ["orbit", "orbit-teams", "Add a team settings page", "orbit-web", "todo"],
-  ["orbit", "orbit-teams", "Validate invitation addresses", "orbit-api", "done"],
-  ["beacon", "beacon-first", "Build an interactive setup command", "beacon-cli", "in_progress"],
-  ["beacon", "beacon-first", "Write the five-minute quickstart", "beacon-docs", "todo"],
-  ["beacon", "beacon-first", "Make CLI errors actionable", "beacon-cli", "done"],
-  ["beacon", "beacon-first", "Document configuration examples", "beacon-docs", "todo"],
-  ["beacon", "beacon-reliable", "Retry temporary connection failures", "beacon-cli", "todo"],
-  ["beacon", "beacon-reliable", "Add structured JSON output", "beacon-cli", "in_progress"],
-  ["beacon", "beacon-reliable", "Explain exit codes for CI", "beacon-docs", "done"],
-  ["beacon", "beacon-reliable", "Retire the old configuration example", "beacon-docs", "done"],
-] as const satisfies ReadonlyArray<readonly [string, string, string, string, TicketStatus]>;
+type TicketFixture = {
+  id: string;
+  projectId: string;
+  epicId: string | null;
+  title: string;
+  primaryProjectId: string;
+  status: TicketStatus;
+  kind?: "story" | "bug";
+  repositoryProjectIds?: readonly string[];
+  archived?: boolean;
+};
+
+const TICKETS: readonly TicketFixture[] = [
+  {
+    id: "orbit-001",
+    projectId: "orbit",
+    epicId: "orbit-onboarding",
+    title: "Create the welcome checklist",
+    primaryProjectId: "orbit-web",
+    status: "in_progress",
+    repositoryProjectIds: ["orbit-web", "orbit-api"],
+  },
+  {
+    id: "orbit-002",
+    projectId: "orbit",
+    epicId: "orbit-onboarding",
+    title: "Save onboarding progress",
+    primaryProjectId: "orbit-api",
+    status: "todo",
+  },
+  {
+    id: "orbit-003",
+    projectId: "orbit",
+    epicId: "orbit-onboarding",
+    title: "Add helpful empty states",
+    primaryProjectId: "orbit-web",
+    status: "done",
+  },
+  {
+    id: "orbit-004",
+    projectId: "orbit",
+    epicId: null,
+    title: "Fix focus after creating a project",
+    primaryProjectId: "orbit-web",
+    status: "todo",
+    kind: "bug",
+  },
+  {
+    id: "orbit-005",
+    projectId: "orbit",
+    epicId: "orbit-teams",
+    title: "Invite teammates by email",
+    primaryProjectId: "orbit-web",
+    status: "in_progress",
+  },
+  {
+    id: "orbit-006",
+    projectId: "orbit",
+    epicId: "orbit-teams",
+    title: "Expire unused invitation links",
+    primaryProjectId: "orbit-api",
+    status: "todo",
+  },
+  {
+    id: "orbit-007",
+    projectId: "orbit",
+    epicId: "orbit-teams",
+    title: "Add a team settings page",
+    primaryProjectId: "orbit-web",
+    status: "todo",
+  },
+  {
+    id: "orbit-008",
+    projectId: "orbit",
+    epicId: "orbit-teams",
+    title: "Validate invitation addresses",
+    primaryProjectId: "orbit-api",
+    status: "done",
+  },
+  {
+    id: "beacon-009",
+    projectId: "beacon",
+    epicId: "beacon-first",
+    title: "Build an interactive setup command",
+    primaryProjectId: "beacon-cli",
+    status: "in_progress",
+  },
+  {
+    id: "beacon-010",
+    projectId: "beacon",
+    epicId: "beacon-first",
+    title: "Write the five-minute quickstart",
+    primaryProjectId: "beacon-docs",
+    status: "todo",
+  },
+  {
+    id: "beacon-011",
+    projectId: "beacon",
+    epicId: "beacon-first",
+    title: "Make CLI errors actionable",
+    primaryProjectId: "beacon-cli",
+    status: "done",
+  },
+  {
+    id: "beacon-012",
+    projectId: "beacon",
+    epicId: "beacon-first",
+    title: "Document configuration examples",
+    primaryProjectId: "beacon-docs",
+    status: "todo",
+  },
+  {
+    id: "beacon-013",
+    projectId: "beacon",
+    epicId: "beacon-reliable",
+    title: "Retry temporary connection failures",
+    primaryProjectId: "beacon-cli",
+    status: "todo",
+  },
+  {
+    id: "beacon-014",
+    projectId: "beacon",
+    epicId: "beacon-reliable",
+    title: "Add structured JSON output",
+    primaryProjectId: "beacon-cli",
+    status: "in_progress",
+  },
+  {
+    id: "beacon-015",
+    projectId: "beacon",
+    epicId: "beacon-reliable",
+    title: "Explain exit codes for CI",
+    primaryProjectId: "beacon-docs",
+    status: "done",
+  },
+  {
+    id: "beacon-016",
+    projectId: "beacon",
+    epicId: "beacon-reliable",
+    title: "Retire the old configuration example",
+    primaryProjectId: "beacon-docs",
+    status: "done",
+    archived: true,
+  },
+];
 
 const ASSIGNED_THREADS = [
   {
-    ticketIndex: 0,
+    ticketId: "orbit-001",
     projectId: "orbit-web",
     id: "orbit-001-thread",
     title: "Create the welcome checklist",
   },
   {
-    ticketIndex: 4,
+    ticketId: "orbit-005",
     projectId: "orbit-web",
     id: "orbit-005-thread",
     title: "Invite teammates by email",
   },
   {
-    ticketIndex: 8,
+    ticketId: "beacon-009",
     projectId: "beacon-cli",
     id: "beacon-009-thread",
     title: "Build an interactive setup command",
   },
   {
-    ticketIndex: 13,
+    ticketId: "beacon-014",
     projectId: "beacon-cli",
     id: "beacon-014-thread",
     title: "Add structured JSON output",
@@ -491,8 +618,8 @@ const seedWorkbench = async (
     client[WORKBENCH_WS_METHODS.workbenchGetSnapshot]({}),
   );
   const ticketById = new Map(afterEpics.tickets.map((ticket) => [ticket.id, ticket]));
-  for (const [index, [projectId, epicId, title, primaryProjectId]] of TICKETS.entries()) {
-    const ticketId = WorkbenchTicketId.make(`${projectId}-${String(index + 1).padStart(3, "0")}`);
+  for (const fixture of TICKETS) {
+    const ticketId = WorkbenchTicketId.make(fixture.id);
     if (ticketById.has(ticketId)) continue;
     const criteria = [
       "Keep the happy path clear.",
@@ -502,16 +629,15 @@ const seedWorkbench = async (
     await runRpc(options.wsUrl, options.token, (client) =>
       client[WORKBENCH_WS_METHODS.workbenchCreateTicket]({
         id: WorkbenchTicketId.make(ticketId),
-        projectId: WorkbenchProjectId.make(projectId),
-        epicId: index === 3 ? null : WorkbenchEpicId.make(epicId),
-        title,
-        kind: title.startsWith("Fix ") ? "bug" : "story",
-        markdown: `## Goal\n\n${title} so the next step is clear and reliable.\n\n## Acceptance criteria\n\n${criteria.map((item) => `- [ ] ${item}`).join("\n")}`,
-        primaryT3ProjectId: ProjectId.make(primaryProjectId),
-        repositoryProjectIds:
-          index === 0
-            ? [ProjectId.make("orbit-web"), ProjectId.make("orbit-api")]
-            : [ProjectId.make(primaryProjectId)],
+        projectId: WorkbenchProjectId.make(fixture.projectId),
+        epicId: fixture.epicId === null ? null : WorkbenchEpicId.make(fixture.epicId),
+        title: fixture.title,
+        kind: fixture.kind ?? "story",
+        markdown: `## Goal\n\n${fixture.title} so the next step is clear and reliable.\n\n## Acceptance criteria\n\n${criteria.map((item) => `- [ ] ${item}`).join("\n")}`,
+        primaryT3ProjectId: ProjectId.make(fixture.primaryProjectId),
+        repositoryProjectIds: (fixture.repositoryProjectIds ?? [fixture.primaryProjectId]).map(
+          (id) => ProjectId.make(id),
+        ),
         createdAt: timestamp,
       }),
     );
@@ -521,17 +647,16 @@ const seedWorkbench = async (
     client[WORKBENCH_WS_METHODS.workbenchGetSnapshot]({}),
   );
   const ticketState = new Map(afterTickets.tickets.map((ticket) => [ticket.id, ticket]));
-  for (const [index, [, , , , status]] of TICKETS.entries()) {
-    const ticketId = WorkbenchTicketId.make(
-      `${TICKETS[index]![0]}-${String(index + 1).padStart(3, "0")}`,
-    );
+  for (const fixture of TICKETS) {
+    const ticketId = WorkbenchTicketId.make(fixture.id);
     const ticket = ticketState.get(ticketId);
-    if (ticket === undefined || ticket.status === status || ticketById.has(ticketId)) continue;
+    if (ticket === undefined || ticket.status === fixture.status || ticketById.has(ticketId))
+      continue;
     await runRpc(options.wsUrl, options.token, (client) =>
       client[WORKBENCH_WS_METHODS.workbenchUpdateTicket]({
         id: WorkbenchTicketId.make(ticket.id),
         expectedRevision: ticket.revision,
-        status,
+        status: fixture.status,
         updatedAt: timestamp,
       }),
     );
@@ -540,14 +665,15 @@ const seedWorkbench = async (
   const afterStatuses = await runRpc(options.wsUrl, options.token, (client) =>
     client[WORKBENCH_WS_METHODS.workbenchGetSnapshot]({}),
   );
-  const archivedTicket = afterStatuses.tickets.find(
-    (ticket) => ticket.id === WorkbenchTicketId.make("beacon-016"),
-  );
-  if (
-    archivedTicket !== undefined &&
-    archivedTicket.archivedAt === null &&
-    !ticketById.has(archivedTicket.id)
-  ) {
+  for (const fixture of TICKETS) {
+    if (!fixture.archived) continue;
+    const archivedTicket = afterStatuses.tickets.find((ticket) => ticket.id === fixture.id);
+    if (
+      archivedTicket === undefined ||
+      archivedTicket.archivedAt !== null ||
+      ticketById.has(archivedTicket.id)
+    )
+      continue;
     await runRpc(options.wsUrl, options.token, (client) =>
       client[WORKBENCH_WS_METHODS.workbenchArchiveTicket]({
         ticketId: WorkbenchTicketId.make(archivedTicket.id),
@@ -609,9 +735,7 @@ const seedWorkbench = async (
     assignmentSnapshot.assignments.map((assignment) => assignment.ticketId),
   );
   for (const thread of ASSIGNED_THREADS) {
-    const ticketId = WorkbenchTicketId.make(
-      `${TICKETS[thread.ticketIndex]![0]}-${String(thread.ticketIndex + 1).padStart(3, "0")}`,
-    );
+    const ticketId = WorkbenchTicketId.make(thread.ticketId);
     if (assignedTicketIds.has(ticketId)) continue;
     await waitForAssignment(options.wsUrl, options.token, {
       id: WorkbenchAssignmentId.make(`workbench-demo-${ticketId}-assignment`),
@@ -626,9 +750,7 @@ const seedWorkbench = async (
       client[WORKBENCH_WS_METHODS.workbenchGetSnapshot]({}),
     );
     for (const thread of ASSIGNED_THREADS) {
-      const ticketId = WorkbenchTicketId.make(
-        `${TICKETS[thread.ticketIndex]![0]}-${String(thread.ticketIndex + 1).padStart(3, "0")}`,
-      );
+      const ticketId = WorkbenchTicketId.make(thread.ticketId);
       const workspace = ready.ticketWorkspaces.find((candidate) => candidate.ticketId === ticketId);
       if (workspace?.status === "ready") continue;
       await runRpc(options.wsUrl, options.token, (client) =>
@@ -693,9 +815,7 @@ export const setupLocal = async (options: LocalDemoOptions): Promise<LocalDemoMa
     })),
     workbenchProjects: WORKBENCH_PROJECTS.map((project) => project.id),
     epics: EPICS.map((epic) => epic.id),
-    tickets: TICKETS.map(
-      ([projectId], index) => `${projectId}-${String(index + 1).padStart(3, "0")}`,
-    ),
+    tickets: TICKETS.map((ticket) => ticket.id),
     assignedThreads: ASSIGNED_THREADS.map((thread) => thread.id),
   };
   await NodeFSP.writeFile(manifestPath(home), `${JSON.stringify(manifest, null, 2)}\n`, {
@@ -726,7 +846,7 @@ export const verifyLocal = async (
   if (
     manifest.version !== DEMO_VERSION ||
     manifest.home !== home ||
-    manifest.projects.length !== 4 ||
+    manifest.projects.length !== LOCAL_DEMO_REPOSITORIES.length ||
     manifest.projects.some(
       (project) =>
         !LOCAL_DEMO_REPOSITORIES.some((repo) => repo.id === project.id) ||
@@ -743,7 +863,7 @@ export const verifyLocal = async (
       ),
     ),
   ).then((counts) => counts.reduce((total, count) => total + count, 0));
-  if (repositoryHeadCount !== 4)
+  if (repositoryHeadCount !== LOCAL_DEMO_REPOSITORIES.length)
     throw new Error("One or more demo Git repositories has no valid HEAD.");
   let workbench: LocalDemoVerification["workbench"];
   if (options.wsUrl !== undefined) {
@@ -753,11 +873,7 @@ export const verifyLocal = async (
     for (const [label, expected, actual] of [
       ["workspaces", WORKBENCH_PROJECTS.map((p) => p.id), snapshot.projects.map((p) => p.id)],
       ["epics", EPICS.map((p) => p.id), snapshot.epics.map((p) => p.id)],
-      [
-        "tickets",
-        TICKETS.map(([p], index) => `${p}-${String(index + 1).padStart(3, "0")}`),
-        snapshot.tickets.map((p) => p.id),
-      ],
+      ["tickets", TICKETS.map((ticket) => ticket.id), snapshot.tickets.map((p) => p.id)],
       [
         "assignments",
         ASSIGNED_THREADS.map((p) => p.id),
@@ -767,12 +883,15 @@ export const verifyLocal = async (
       const missing = expected.filter((id) => !actual.some((actualId) => actualId === id));
       if (missing.length) throw new Error(`Missing demo ${label}: ${missing.join(", ")}`);
     }
-    for (const [index, [projectId, , , , status]] of TICKETS.entries()) {
-      const id = `${projectId}-${String(index + 1).padStart(3, "0")}`;
-      const ticket = snapshot.tickets.find((item) => item.id === id);
-      if (ticket?.status !== status || (id === "beacon-016" && !ticket.archivedAt))
+    for (const fixture of TICKETS) {
+      const ticket = snapshot.tickets.find((item) => item.id === fixture.id);
+      if (
+        ticket === undefined ||
+        ticket.status !== fixture.status ||
+        Boolean(ticket.archivedAt) !== Boolean(fixture.archived)
+      )
         throw new Error(
-          `Demo ticket state has changed: ${id}; reset locally to restore the scenario.`,
+          `Demo ticket state has changed: ${fixture.id}; reset locally to restore the scenario.`,
         );
     }
     if (
@@ -800,7 +919,12 @@ export const verifyLocal = async (
     manifest,
     repositoryCount: manifest.projects.length,
     repositoryHeadCount,
-    expectedWorkbenchCounts: { projects: 2, epics: 4, tickets: 16, assignments: 4 },
+    expectedWorkbenchCounts: {
+      projects: WORKBENCH_PROJECTS.length,
+      epics: EPICS.length,
+      tickets: TICKETS.length,
+      assignments: ASSIGNED_THREADS.length,
+    },
   };
   return workbench === undefined ? result : { ...result, workbench };
 };

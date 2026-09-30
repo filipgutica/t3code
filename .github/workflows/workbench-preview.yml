@@ -104,6 +104,7 @@ jobs:
       PREVIEW_REPO: ${{ github.repository }}
       PREVIEW_PR: ${{ needs.select.outputs.number }}
       PREVIEW_SHA: ${{ needs.select.outputs.sha }}
+      PREVIEW_CONTROLLER_SHA: ${{ needs.select.outputs.controller }}
     steps:
       - uses: actions/checkout@v6
         with:

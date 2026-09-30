@@ -45,6 +45,20 @@ profile when switching Jira projects, boards, or sprints: set `DEMO_HOME` for se
 and run, or pass `--home PATH` to `run.sh`.
 Keep profiles outside temporary folders and private: `config.env` contains secrets.
 
+## Update synthetic local data
+
+Edit the repository, Workspace, Epic, Ticket, and assigned Thread fixtures in
+[`local.mts`](local.mts). Each Ticket has an explicit stable ID; assigned Threads
+refer to that ID. Keep an existing ID when changing a title or moving a fixture
+row, because browser regressions and prepared worktrees refer to those IDs.
+`setupLocal` writes records through the native RPC path, and `verifyLocal` checks
+the resulting snapshot and Git worktrees. Run the focused demo tests and a
+browser scenario that uses the changed fixture before relying on it in a preview.
+
+The additional attention scenarios for private PR previews live in
+[`attention.mts`](attention.mts). They are labelled synthetic and use a read-only
+GitHub adapter; ordinary demo runs do not seed them.
+
 ## Private-preview attention fixtures
 
 Every fresh private PR preview automatically seeds the **Synthetic attention

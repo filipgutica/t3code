@@ -14,13 +14,15 @@ const required = [
   "PREVIEW_REPO",
   "PREVIEW_PR",
   "PREVIEW_SHA",
+  "PREVIEW_CONTROLLER_SHA",
 ];
 if (required.some((key) => !env[key]))
   throw new Error("Configure the dedicated Workbench preview project and GitHub secrets first.");
 if (
   env.PREVIEW_REPO !== "filipgutica/t3code" ||
   !/^[1-9][0-9]*$/.test(env.PREVIEW_PR) ||
-  !/^[a-f0-9]{40}$/.test(env.PREVIEW_SHA)
+  !/^[a-f0-9]{40}$/.test(env.PREVIEW_SHA) ||
+  !/^[a-f0-9]{40}$/.test(env.PREVIEW_CONTROLLER_SHA)
 )
   throw new Error("Invalid preview identity.");
 const request = async (url, token, options = {}) => {
@@ -197,7 +199,7 @@ try {
   )
     throw new Error("Launcher failed its anonymous access check; no link published.");
   const marker = "<!-- workbench-sandbox-preview -->";
-  const body = `${marker}\n### Workbench demo\n\n[Open the private 20-minute demo](${url}) for ${env.PREVIEW_SHA.slice(0, 7)}. Sign in to Vercel, then choose **Open demo**. Reopening this link in the same browser resumes its running demo; **Start new demo** creates a fresh one. Jira starts disconnected.\n\nExpired? Return to this link and launch again. Use synthetic content with the free OpenCode model.`;
+  const body = `${marker}\n### Workbench demo\n\n[Open the private 20-minute demo](${url}). Sign in to Vercel, then choose **Open demo**. Reopening this link in the same browser resumes its running demo; **Start new demo** creates a fresh one. Jira starts disconnected.\n\nApplication, runtime startup, fixtures, and native smoke: PR \`${env.PREVIEW_SHA}\`. Dockerfile, build configuration, bundle export, publisher, and protected launcher: main \`${env.PREVIEW_CONTROLLER_SHA}\`.\n\nExpired? Return to this link and launch again. Use synthetic content with the free OpenCode model.`;
   const comments = await request(
     `https://api.github.com/repos/${env.PREVIEW_REPO}/issues/${env.PREVIEW_PR}/comments?per_page=100`,
     env.GH_TOKEN,
