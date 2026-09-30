@@ -396,13 +396,13 @@ function WorkbenchSidebarFilters({
                 aria-pressed={onlyActionable}
                 onClick={() => onOnlyActionableChange(!onlyActionable)}
                 size="icon-xs"
-                variant="ghost-muted"
+                variant={onlyActionable ? "accent-soft" : "ghost-muted"}
               />
             }
           >
             <span aria-hidden className="relative inline-flex">
               <BellIcon />
-              {onlyActionable ? (
+              {!onlyActionable && actionableTicketCount > 0 ? (
                 <span className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-primary ring-2 ring-sidebar" />
               ) : null}
             </span>
@@ -516,10 +516,9 @@ function WorkbenchSidebarNavigation({
         : projects,
     [onlyActionable, projects, prioritizedGroups],
   );
-  const actionableTicketCount = [...prioritizedGroups.values()].reduce(
-    (count, sections) => count + sections.active.length,
-    0,
-  );
+  const actionableTicketCount = [...attentionSignalsByTicket.values()].filter(
+    (signals) => signals.length > 0,
+  ).length;
   const incompleteInspection = [...attentionInspectionsByTicket.values()].some((inspections) =>
     inspections.some((inspection) => inspection.status !== "complete"),
   );
