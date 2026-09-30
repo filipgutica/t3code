@@ -357,6 +357,8 @@ const tools = [
       if ("IntersectionObserver" in window) {
         const updateTrace = () => {
           const focusY = window.innerHeight * 0.5;
+          const enterY = window.innerHeight * 0.7;
+          const leaveY = window.innerHeight * 0.15;
           const nearest = sections.reduce(
             (nearest, section, index) => {
               const { top, bottom } = section.getBoundingClientRect();
@@ -369,7 +371,10 @@ const tools = [
           const current = footerVisible ? sections.length - 1 : nearest;
 
           sections.forEach((section, index) => {
+            const { top, bottom } = section.getBoundingClientRect();
             section.classList.toggle("is-current", index === current);
+            section.classList.toggle("trace-before", top > enterY && !(footerVisible && index === current));
+            section.classList.toggle("trace-after", bottom < leaveY);
           });
         };
 
@@ -397,31 +402,14 @@ const tools = [
 
         window.addEventListener("resize", observeSections);
         if (footer) new IntersectionObserver(updateTrace).observe(footer);
+        const video = document.querySelector<HTMLVideoElement>(".overview-video");
+        const videoSection = video?.closest<HTMLElement>("[data-trace-section]");
+        video?.addEventListener("play", () => videoSection?.classList.add("is-playing"));
+        video?.addEventListener("pause", () => videoSection?.classList.remove("is-playing"));
+        video?.addEventListener("ended", () => videoSection?.classList.remove("is-playing"));
         observeSections();
-      }
-    </script>
-    <script>
-      const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
-      if ("IntersectionObserver" in window && !reducedMotion.matches) {
-        const blocks = [...document.querySelectorAll<HTMLElement>("[data-trace-section]:not(.hero) > .section-body")];
-        const reveal = (block: Element) => block.classList.remove("reveal-pending");
-        const observer = new IntersectionObserver((entries) => {
-          entries.forEach(({ target, isIntersecting }) => {
-            if (!isIntersecting) return;
-            reveal(target);
-            observer.unobserve(target);
-          });
-        });
-        blocks.forEach((block) => {
-          if (block.getBoundingClientRect().top < innerHeight) return;
-          block.classList.add("scroll-reveal", "reveal-pending");
-          observer.observe(block);
-        });
-        reducedMotion.addEventListener("change", ({ matches }) => {
-          if (!matches) return;
-          blocks.forEach(reveal);
-          observer.disconnect();
-        });
+        document.documentElement.classList.add("trace-ready");
+        requestAnimationFrame(() => document.documentElement.classList.add("trace-motion"));
       }
     </script>
   </body>

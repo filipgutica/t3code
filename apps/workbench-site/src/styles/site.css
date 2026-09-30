@@ -605,6 +605,11 @@ figcaption {
     padding-right: 0;
   }
 
+  .section-body,
+  .graph-main > .section-body {
+    transform-origin: right center;
+  }
+
   .site-header {
     flex-wrap: wrap;
     padding-block: var(--space-3);
@@ -733,19 +738,28 @@ html.menu-open {
   }
 }
 
-/* One reveal per documentation block; graph nodes keep tracking the current section. */
+/* Panels unfold from their graph node each time they enter the reading area. */
 @media (prefers-reduced-motion: no-preference) {
-  .scroll-reveal {
+  html.trace-motion .section-body {
     transition:
-      opacity var(--duration-reveal) var(--ease-out),
-      transform var(--duration-reveal) var(--ease-out);
+      opacity var(--duration-section) var(--ease-out),
+      transform var(--duration-section) var(--ease-panel);
   }
-  .scroll-reveal.reveal-pending {
+  html.trace-ready .trace-before > .section-body {
     opacity: 0;
-    transform: translateY(var(--space-2));
+    transform: translateY(var(--space-3)) scale(0.08, 0.18);
   }
-  .scroll-reveal:focus-within {
+  html.trace-ready .trace-after > .section-body {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--space-3))) scale(0.08, 0.18);
+  }
+  html.trace-motion :is(.trace-before, .trace-after) > .section-body {
+    transition-duration: var(--duration-fast), var(--duration);
+    transition-timing-function: var(--ease-out);
+  }
+  html.trace-ready [data-trace-section]:is(:focus-within, .is-playing) > .section-body {
     opacity: 1;
     transform: none;
+    transition-duration: 0s;
   }
 }
