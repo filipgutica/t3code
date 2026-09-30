@@ -14,7 +14,8 @@ import {
   TagIcon,
   UsersIcon,
 } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { PullRequestDetailFocus } from "./PullRequestDetailPanel";
 
 import { useAtomCommand } from "~/state/use-atom-command";
 import { pullRequestEnvironment } from "~/state/pullRequests";
@@ -287,6 +288,7 @@ function Section({
   keepMounted = false,
   actions,
   children,
+  reveal,
 }: {
   title: string;
   defaultOpen?: boolean;
@@ -294,9 +296,20 @@ function Section({
   /** Heading controls stay separate from the collapse trigger so they remain independently usable. */
   actions?: ReactNode;
   children: ReactNode;
+  reveal?: PullRequestDetailFocus | undefined;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const headingRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!reveal) return;
+    setOpen(true);
+    const heading = headingRef.current;
+    const scroller = heading?.closest<HTMLElement>("[data-pull-request-summary-scroll]");
+    if (heading && scroller) {
+      scroller.scrollTop +=
+        heading.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    }
+  }, [reveal]);
   const setOpenWithScrollAnchor = (nextOpen: boolean) => {
     if (!nextOpen) {
       const heading = headingRef.current;
@@ -468,6 +481,7 @@ export function PullRequestSummaryTab({
   onFixFinding,
   onRefresh,
   onRefreshChecks = onRefresh,
+  focus,
 }: {
   environmentId: EnvironmentId;
   threadRef: ScopedThreadRef | null;
@@ -483,6 +497,7 @@ export function PullRequestSummaryTab({
   onFixFinding?: (finding: PullRequestFinding) => void;
   onRefresh: () => void;
   onRefreshChecks?: () => void;
+  focus?: PullRequestDetailFocus | undefined;
 }) {
   // Keyed by the pull request, so opening another one starts at the end of its conversation
   // rather than wherever the last one had been read back to.
@@ -503,16 +518,40 @@ export function PullRequestSummaryTab({
   const activeComments: PullRequestComment[] = [];
   const finishedComments: PullRequestComment[] = [];
   const botComments: PullRequestComment[] = [];
+  const reviewOutcomes = latestPullRequestReviewOutcomes(detail.comments, detail.commits);
+  const focusedReviewIds = new Set(
+    focus?.kind === "review"
+      ? detail.comments
+          .filter((comment) =>
+            reviewOutcomes.some(
+              (entry) =>
+                entry.outcome === "changes-requested" &&
+                entry.key === (comment.author?.login ?? `ghost:${comment.id}`) &&
+                entry.at === comment.createdAt &&
+                pullRequestReviewOutcome(comment.reviewState) === "changes-requested",
+            ),
+          )
+          .map((comment) => comment.id)
+      : [],
+  );
   for (const comment of detail.comments) {
     const finished =
       threadByCommentId.get(comment.id)?.isResolved ||
       pullRequestReviewOutcome(comment.reviewState) === "dismissed";
     const bot = comment.author?.isBot === true || comment.author?.login.endsWith("[bot]");
-    (finished ? finishedComments : bot ? botComments : activeComments).push(comment);
+    (finished
+      ? finishedComments
+      : bot && !focusedReviewIds.has(comment.id)
+        ? botComments
+        : activeComments
+    ).push(comment);
   }
   // Windowed by recency regardless of display order: expanding always reaches further back in
   // time, whether the newest comment currently reads first or last.
-  const recentComments = activeComments.slice(Math.max(0, activeComments.length - shownComments));
+  const recentComments = activeComments.filter(
+    (comment, index) =>
+      index >= activeComments.length - shownComments || focusedReviewIds.has(comment.id),
+  );
   const hiddenCommentCount = activeComments.length - recentComments.length;
   const recentBotComments = botComments.slice(Math.max(0, botComments.length - shownBotComments));
   const hiddenBotCommentCount = botComments.length - recentBotComments.length;
@@ -532,7 +571,6 @@ export function PullRequestSummaryTab({
     ) : null;
   // Read from the whole conversation, not the window shown below it: a verdict older than the
   // visible comments still stands.
-  const reviewOutcomes = latestPullRequestReviewOutcomes(detail.comments, detail.commits);
   // Hosts do not promise one casing for a login across two fields of the same response, and
   // none of them lets `Octocat` and `octocat` be two people — so matching on the literal string
   // would show one reviewer twice and drop the verdict off both.
@@ -859,7 +897,12 @@ export function PullRequestSummaryTab({
         </div>
       </Section>
 
-      <Section key={`checks:${detail.url}`} title="Checks" defaultOpen={false}>
+      <Section
+        key={`checks:${detail.url}`}
+        title="Checks"
+        defaultOpen={false}
+        reveal={focus?.kind === "checks" ? focus : undefined}
+      >
         {checksStale ? (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>Check details are out of date.</span>
@@ -919,6 +962,7 @@ export function PullRequestSummaryTab({
 
       <Section
         title={`Comments (${detail.commentCount})`}
+        reveal={focus?.kind === "review" ? focus : undefined}
         actions={
           <Button
             size="xs"

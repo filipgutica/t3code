@@ -77,6 +77,20 @@ const check = (number) => ({
   detailsUrl: `https://github.com/${repository}/pull/${number}`,
   completedAt: at,
 });
+const reviews = (number) =>
+  number === 902
+    ? [
+        {
+          id: "synthetic-requested-changes-902",
+          author: { login: "synthetic-reviewer" },
+          state: "CHANGES_REQUESTED",
+          body: "[Synthetic requested changes] Add an empty-response regression test before requesting another review.",
+          submittedAt: at,
+          url: `https://github.com/${repository}/pull/902#pullrequestreview-synthetic`,
+          reactionGroups: [],
+        },
+      ]
+    : [];
 const pr = (number) => ({
   number,
   title: title(number),
@@ -100,7 +114,7 @@ const pr = (number) => ({
   changedFiles: 1,
   statusCheckRollup: [check(number)],
   reviewRequests: [],
-  latestReviews: [],
+  latestReviews: reviews(number),
   labels: [],
   viewerCanUpdate: true,
   viewerDidAuthor: true,
@@ -132,7 +146,7 @@ if (args[0] === "pr") {
     );
     process.exit(0);
   }
-  output({ ...pr(number), comments: [], reviews: [], commits: [] });
+  output({ ...pr(number), comments: [], reviews: reviews(number), commits: [] });
   process.exit(0);
 }
 if (args[0] !== "api" || !args.includes("graphql"))
@@ -157,7 +171,7 @@ if (query.includes("PullRequestSummaries")) {
     data[entry[1]] = {
       pullRequest: {
         ...pr(number),
-        latestReviews: { nodes: [] },
+        latestReviews: { nodes: reviews(number) },
         labels: { nodes: [] },
         reviewRequests: { nodes: [] },
         commits: {
@@ -213,8 +227,8 @@ if (query.includes("reviewThreads(first:")) {
       pageInfo: { hasNextPage: false, endCursor: null },
     },
     reviewRequests: { nodes: [] },
-    latestReviews: { nodes: [] },
-    reviews: { nodes: [] },
+    latestReviews: { nodes: reviews(number) },
+    reviews: { nodes: reviews(number) },
     comments: { nodes: [] },
     commits: { nodes: [] },
   };

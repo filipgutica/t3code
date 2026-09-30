@@ -2,6 +2,8 @@ import type {
   EnvironmentId,
   PullRequestActivity,
   PullRequestSummary,
+  PullRequestReviewThread,
+  ThreadId,
   WorkbenchAssignment,
 } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
@@ -9,11 +11,50 @@ import {
   legacyThreadPullRequestKey,
   threadPullRequestKeyOf,
 } from "@t3tools/shared/threadPullRequests";
-import type { TicketPullRequestReference } from "./workbenchPullRequests.logic";
+import type {
+  TicketPullRequestReference,
+  WorkbenchTicketPullRequest,
+} from "./workbenchPullRequests.logic";
 
 export type WorkbenchAttentionMode = "all" | "attention" | "review";
+export type WorkbenchPullRequestAttentionKind =
+  | "failed-checks"
+  | "changes-requested"
+  | "unresolved-feedback";
+const pullRequestReasonLabels = {
+  "failed-checks": "Failed PR checks",
+  "changes-requested": "PR changes requested",
+  "unresolved-feedback": "Unresolved PR feedback",
+} as const;
+export type WorkbenchInspectionStatus = "loading" | "unavailable" | "incomplete" | "complete";
+export type WorkbenchAttentionSignal =
+  | {
+      readonly kind: "waiting" | "review-ready";
+      readonly source: {
+        readonly type: "thread";
+        readonly threadId: ThreadId;
+        readonly threadTitle: string;
+      };
+    }
+  | {
+      readonly kind: WorkbenchPullRequestAttentionKind;
+      readonly source: { readonly type: "pull-request"; readonly row: WorkbenchTicketPullRequest };
+      readonly unresolvedReviewThreads: ReadonlyArray<PullRequestReviewThread>;
+    };
+export interface WorkbenchAttentionInspection {
+  readonly row: WorkbenchTicketPullRequest;
+  readonly status: WorkbenchInspectionStatus;
+  readonly inspected: boolean;
+}
 export interface WorkbenchPullRequestAttention {
   readonly reasons: ReadonlyArray<string>;
+  readonly signalKinds: ReadonlyArray<WorkbenchPullRequestAttentionKind>;
+  readonly unresolvedReviewThreads: ReadonlyArray<PullRequestReviewThread>;
+  readonly resolvedReviewThreadIds: ReadonlyArray<string>;
+  readonly activityComplete: boolean;
+  readonly checksKnown: boolean;
+  readonly reviewDecisionKnown: boolean;
+  readonly inspectionStatus: WorkbenchInspectionStatus;
   readonly inspected: boolean;
   readonly terminal: boolean;
 }
@@ -33,7 +74,7 @@ export const activeWorkbenchAttentionAssignments = ({
     WorkbenchAssignment["threadId"],
     Pick<EnvironmentThreadShell, "environmentId" | "archivedAt" | "settledOverride">
   >;
-  readonly environmentId: EnvironmentId;
+  readonly environmentId: EnvironmentId | null;
 }) =>
   assignments.filter((assignment) => {
     const thread = threadsById.get(assignment.threadId);
@@ -51,9 +92,7 @@ type AttentionInput = {
   readonly reference: TicketPullRequestReference;
   readonly summary: Pick<PullRequestSummary, "state" | "checksState" | "reviewDecision"> | null;
   readonly activity: {
-    readonly reviewThreads: ReadonlyArray<
-      Pick<PullRequestActivity["reviewThreads"][number], "isResolved" | "isOutdated">
-    >;
+    readonly reviewThreads: PullRequestActivity["reviewThreads"];
     readonly commentsTruncated: boolean;
   } | null;
   readonly loading: boolean;
@@ -99,26 +138,102 @@ export const getWorkbenchPullRequestAttention = ({
   error,
 }: AttentionInput): WorkbenchPullRequestAttention => {
   if (isTerminalPullRequest({ reference, summary, loading }))
-    return { reasons: [], inspected: true, terminal: true };
+    return {
+      reasons: [],
+      signalKinds: [],
+      unresolvedReviewThreads: [],
+      resolvedReviewThreadIds: [],
+      activityComplete: true,
+      checksKnown: true,
+      reviewDecisionKnown: true,
+      inspectionStatus: "complete",
+      inspected: true,
+      terminal: true,
+    };
   const reasons: string[] = [];
+  const signalKinds: WorkbenchPullRequestAttentionKind[] = [];
   if (
     (summary?.checksState === undefined ? reference.checksState : summary.checksState) === "failing"
-  )
-    reasons.push("Failed PR checks");
+  ) {
+    reasons.push(pullRequestReasonLabels["failed-checks"]);
+    signalKinds.push("failed-checks");
+  }
   if (
     (summary?.reviewDecision === undefined ? reference.reviewDecision : summary.reviewDecision) ===
     "changes-requested"
-  )
-    reasons.push("PR changes requested");
-  if (activity?.reviewThreads.some((thread) => !thread.isResolved))
-    reasons.push("Unresolved PR feedback");
+  ) {
+    reasons.push(pullRequestReasonLabels["changes-requested"]);
+    signalKinds.push("changes-requested");
+  }
+  const unresolvedReviewThreads =
+    activity?.reviewThreads.filter((thread) => !thread.isResolved) ?? [];
+  if (unresolvedReviewThreads.length > 0) {
+    reasons.push(pullRequestReasonLabels["unresolved-feedback"]);
+    signalKinds.push("unresolved-feedback");
+  }
   const unknown = hasUnknownCoverage({ summary, activity });
   const statusReason = coverageReason({ loading, error, unknown });
   if (statusReason) reasons.push(statusReason);
   return {
     reasons,
+    signalKinds,
+    unresolvedReviewThreads,
+    resolvedReviewThreadIds:
+      activity?.reviewThreads.filter((thread) => thread.isResolved).map((thread) => thread.id) ??
+      [],
+    activityComplete: !loading && !error && activity !== null && !activity.commentsTruncated,
+    checksKnown: !loading && summary !== null && summary.checksState !== undefined,
+    reviewDecisionKnown: !loading && summary !== null && summary.reviewDecision !== undefined,
+    inspectionStatus: loading
+      ? "loading"
+      : error
+        ? "unavailable"
+        : unknown
+          ? "incomplete"
+          : "complete",
     inspected: !error && !loading && !unknown,
     terminal: !loading && (error || (summary !== null && activity !== null)),
+  };
+};
+
+/** An incomplete page can resolve returned discussions, but cannot resolve omitted ones. */
+export const mergeWorkbenchPullRequestAttention = ({
+  previous,
+  next,
+}: {
+  readonly previous: WorkbenchPullRequestAttention | undefined;
+  readonly next: WorkbenchPullRequestAttention;
+}): WorkbenchPullRequestAttention => {
+  if (!previous) return next;
+  const discussions = new Map(
+    (next.activityComplete ? [] : previous.unresolvedReviewThreads).map((thread) => [
+      thread.id,
+      thread,
+    ]),
+  );
+  for (const thread of next.unresolvedReviewThreads) discussions.set(thread.id, thread);
+  for (const id of next.resolvedReviewThreadIds) discussions.delete(id);
+  const unresolvedReviewThreads = [...discussions.values()];
+  const signalKinds: WorkbenchPullRequestAttentionKind[] = [];
+  if (
+    next.signalKinds.includes("failed-checks") ||
+    (!next.checksKnown && previous.signalKinds.includes("failed-checks"))
+  )
+    signalKinds.push("failed-checks");
+  if (
+    next.signalKinds.includes("changes-requested") ||
+    (!next.reviewDecisionKnown && previous.signalKinds.includes("changes-requested"))
+  )
+    signalKinds.push("changes-requested");
+  if (unresolvedReviewThreads.length > 0) signalKinds.push("unresolved-feedback");
+  return {
+    ...next,
+    signalKinds,
+    unresolvedReviewThreads,
+    reasons: [
+      ...signalKinds.map((kind) => pullRequestReasonLabels[kind]),
+      ...next.reasons.filter((reason) => reason.startsWith("PR attention ")),
+    ],
   };
 };
 

@@ -7,10 +7,17 @@ import {
   useContext,
   useState,
   useCallback,
+  useEffect,
+  useRef,
   type ReactNode,
 } from "react";
 
 import { useLocation } from "@tanstack/react-router";
+import type { PullRequestDetailFocus } from "../components/pullRequest/PullRequestDetailPanel";
+import {
+  WorkbenchAttentionProvider,
+  useWorkbenchAttentionData,
+} from "./WorkbenchAttentionProvider";
 
 export interface WorkbenchLinkedPullRequestThread {
   readonly threadId: ThreadId;
@@ -22,6 +29,7 @@ export interface WorkbenchPullRequestSelection {
   readonly environmentId: EnvironmentId;
   readonly reference: PullRequestRef;
   readonly linkedThread?: WorkbenchLinkedPullRequestThread;
+  readonly focus?: PullRequestDetailFocus;
 }
 
 const WorkbenchPullRequestSheet = lazy(() =>
@@ -37,9 +45,24 @@ export const useOpenWorkbenchPullRequest = () => useContext(OpenWorkbenchPullReq
 
 /** Owns the preview above transient sidebar menus and the selected ticket. */
 export function WorkbenchPullRequestPreviewProvider({ children }: { children: ReactNode }) {
+  return (
+    <WorkbenchAttentionProvider>
+      <WorkbenchPullRequestPreview>{children}</WorkbenchPullRequestPreview>
+    </WorkbenchAttentionProvider>
+  );
+}
+
+function WorkbenchPullRequestPreview({ children }: { children: ReactNode }) {
   const { href } = useLocation();
+  const { refreshAttention } = useWorkbenchAttentionData();
   const [selection, setSelection] = useState<WorkbenchPullRequestSelection | null>(null);
   const [openedHref, setOpenedHref] = useState(href);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    const open = selection !== null;
+    if (wasOpen.current && !open) refreshAttention();
+    wasOpen.current = open;
+  }, [selection, refreshAttention]);
   if (openedHref !== href) {
     setOpenedHref(href);
     setSelection(null);
@@ -69,7 +92,9 @@ export function WorkbenchPullRequestPreviewProvider({ children }: { children: Re
             <WorkbenchPullRequestSheet
               selection={selection}
               onSelect={openSelection}
-              onClose={() => setSelection(null)}
+              onClose={() => {
+                setSelection(null);
+              }}
             />
           </Suspense>
         </ChangeRequestLinkOpenProvider>

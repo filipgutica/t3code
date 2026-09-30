@@ -1,6 +1,6 @@
-import { WorkbenchAttentionQueries } from "./WorkbenchAttentionQueries";
 import { matchesWorkbenchAttention, type WorkbenchAttentionMode } from "./workbenchAttention.logic";
-import { useWorkbenchAttention } from "./useWorkbenchAttention";
+import { useWorkbenchAttentionData } from "./WorkbenchAttentionProvider";
+import { WorkbenchTicketAttentionBadge } from "./WorkbenchTicketAttention";
 import {
   DndContext,
   DragOverlay,
@@ -201,15 +201,6 @@ function renderWorkbenchTicketBoard({
       onDragCancel={() => setActiveTicketId(null)}
       onDragEnd={handleDragEnd}
     >
-      {data.attentionMode !== "all" ? (
-        <WorkbenchAttentionQueries
-          key={data.attentionScope}
-          environmentId={environmentId}
-          references={data.attentionReferences}
-          refresh={data.attentionRefresh > 0}
-          onChange={data.setAttentionObservations}
-        />
-      ) : null}
       <section
         aria-label="Ticket board"
         className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
@@ -467,6 +458,7 @@ function renderWorkbenchBoardTicket({
     onMove,
     onJiraTransition,
     onRegenerateSummary,
+    onOpenThread,
     dragDisabled,
   } = board;
   const presentation = getWorkbenchBoardTicketPresentation({ ticket, board });
@@ -526,6 +518,12 @@ function renderWorkbenchBoardTicket({
               data-workbench-no-drag=""
               className="relative z-10 flex min-w-0 shrink-0 items-center gap-1"
             >
+              <WorkbenchTicketAttentionBadge
+                environmentId={environmentId}
+                ticketId={ticket.id}
+                ticketTitle={ticket.title}
+                onOpenThread={(threadId) => onOpenThread(ticket, threadId)}
+              />
               <WorkbenchTicketStatusMenu
                 key={`${environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
                 environmentId={environmentId}
@@ -620,14 +618,7 @@ function useWorkbenchBoardData({
     setAttentionObservations,
     attentionReasonsByTicket,
     attentionCoverage,
-  } = useWorkbenchAttention({
-    environmentId,
-    projectId,
-    attentionMode,
-    tickets,
-    assignments,
-    threadsById,
-  });
+  } = useWorkbenchAttentionData();
   const visibleTickets = useMemo(
     () =>
       tickets.filter(

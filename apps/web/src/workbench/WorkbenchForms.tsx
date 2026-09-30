@@ -1,4 +1,8 @@
 import { WorkbenchRepositorySelectOptions } from "./WorkbenchRepositorySelectOptions";
+import {
+  WorkbenchTicketAttentionBadge,
+  WorkbenchTicketAttentionPanel,
+} from "./WorkbenchTicketAttention";
 import { Select as SelectPrimitive } from "@base-ui/react/select";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -1056,6 +1060,12 @@ function WorkbenchTicketDetailController({
           </div>
 
           <aside className="flex min-w-0 flex-col gap-3 xl:h-full xl:min-h-0 xl:overflow-hidden">
+            <WorkbenchTicketAttentionPanel
+              environmentId={environmentId}
+              ticketId={ticket.id}
+              ticketTitle={ticket.title}
+              onOpenThread={onOpenAssignedThread}
+            />
             <WorkbenchTicketThreadsPanel
               expansion={{ threadPanelCollapsed: threadPanelCollapsed }}
               actions={{
@@ -4483,6 +4493,11 @@ function WorkbenchTicketHeading({
       </h1>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <WorkbenchTicketKindBadge kind={ticket.kind} />
+        <WorkbenchTicketAttentionBadge
+          environmentId={environmentId}
+          ticketId={ticket.id}
+          ticketTitle={ticket.title}
+        />
         {jiraIssueLink ? <WorkbenchJiraIssueKey issue={jiraIssueLink.issue} /> : null}
         {isArchived ? <Badge variant="outline">Archived</Badge> : null}
         <WorkbenchTicketStatusMenu

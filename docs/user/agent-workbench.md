@@ -85,6 +85,11 @@ failed PR checks, and unresolved PR conversations. **Ready for review** narrows 
 view to completed agent work awaiting review. PR inspection covers explicitly
 linked PRs; the Board shows incomplete or unavailable coverage and lets you refresh.
 
+Click a Ticket's attention bell to see each reason and open its Thread, failed
+checks, requested changes, or unresolved discussion. The Ticket page keeps these
+actions in its **Needs attention** section. Counts represent actionable signals,
+not unread messages; opening the list does not clear them.
+
 The Ticket's **Pull Requests** section collects PRs reported by linked Threads and
 prepared worktrees. For Jira Tickets, it also searches linked repositories for the
 issue key. To attach a PR yourself, choose **Link PR** from the Ticket, select a

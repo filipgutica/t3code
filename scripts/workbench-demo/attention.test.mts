@@ -5,6 +5,7 @@ import * as NodePath from "node:path";
 import { expect, it } from "vite-plus/test";
 import * as Result from "effect/Result";
 import {
+  decodePullRequestActivityJson,
   decodePullRequestCoreJson,
   decodePullRequestSummariesJson,
   decodeReviewThreadsJson,
@@ -46,7 +47,7 @@ it("delivers failed checks, unresolved feedback and incomplete coverage through 
     throw new Error("Native summary decoder rejected the synthetic adapter");
   expect(summaries.success.get(0)?.checksState).toBe("failing");
   expect(summaries.success.get(1)?.reviewDecision).toBe("changes-requested");
-  const activity = JSON.parse(
+  const activity = decodePullRequestActivityJson(
     await execute([
       "pr",
       "view",
@@ -57,7 +58,19 @@ it("delivers failed checks, unresolved feedback and incomplete coverage through 
       "author,comments,reviews,commits",
     ]),
   );
-  expect(activity.title).toMatch(/^\[Synthetic attention\]/);
+  expect(Result.isSuccess(activity)).toBe(true);
+  if (!Result.isSuccess(activity))
+    throw new Error("Native activity decoder rejected the synthetic review");
+  expect(activity.success.comments).toEqual([
+    expect.objectContaining({
+      kind: "review",
+      author: expect.objectContaining({ login: "synthetic-reviewer" }),
+      reviewState: "CHANGES_REQUESTED",
+      body: expect.stringMatching(
+        /\[Synthetic requested changes\].*empty-response regression test/,
+      ),
+    }),
+  ]);
   const core = decodePullRequestCoreJson(await read(901, PULL_REQUEST_CORE_GRAPHQL_QUERY));
   expect(Result.isSuccess(core)).toBe(true);
   if (!Result.isSuccess(core))
@@ -68,7 +81,14 @@ it("delivers failed checks, unresolved feedback and incomplete coverage through 
   expect(Result.isSuccess(feedback)).toBe(true);
   if (!Result.isSuccess(feedback))
     throw new Error("Native activity decoder rejected the synthetic adapter");
+  expect(feedback.success.threads).toHaveLength(1);
   expect(feedback.success.threads[0]?.thread.isResolved).toBe(false);
+  expect(feedback.success.threads[0]?.thread.comments[0]?.body).toMatch(
+    /\[Synthetic unresolved feedback\].*empty response/,
+  );
+  expect(feedback.success.reviewers).toEqual([
+    expect.objectContaining({ login: "synthetic-reviewer" }),
+  ]);
   const incomplete = decodeReviewThreadsJson(await read(904, REVIEW_THREADS_GRAPHQL_QUERY));
   expect(Result.isSuccess(incomplete)).toBe(true);
   if (!Result.isSuccess(incomplete))

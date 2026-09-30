@@ -42,7 +42,15 @@ export function WorkbenchAttentionQueries({
         if (
           existing?.inspected === next.inspected &&
           existing.terminal === next.terminal &&
-          existing.reasons.join("|") === next.reasons.join("|")
+          existing.reasons.join("|") === next.reasons.join("|") &&
+          existing.inspectionStatus === next.inspectionStatus &&
+          existing.activityComplete === next.activityComplete &&
+          existing.checksKnown === next.checksKnown &&
+          existing.reviewDecisionKnown === next.reviewDecisionKnown &&
+          JSON.stringify(existing.resolvedReviewThreadIds) ===
+            JSON.stringify(next.resolvedReviewThreadIds) &&
+          JSON.stringify(existing.unresolvedReviewThreads) ===
+            JSON.stringify(next.unresolvedReviewThreads)
         )
           return previous;
         return new Map(previous).set(key, next);

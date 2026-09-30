@@ -1,5 +1,5 @@
 import { EnvironmentId, ProjectId, type PullRequestDetailView } from "@t3tools/contracts";
-import { act, type ReactNode } from "react";
+import { act, type ReactNode, type ComponentProps } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
@@ -76,7 +76,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function render(value = detail) {
+function render(value = detail, focus?: ComponentProps<typeof PullRequestSummaryTab>["focus"]) {
   return (
     <PullRequestSummaryTab
       environmentId={EnvironmentId.make("environment")}
@@ -86,9 +86,28 @@ function render(value = detail) {
       activityPending={false}
       activityError={null}
       onRefresh={() => {}}
+      focus={focus}
     />
   );
 }
+
+it("reveals checks on a focus request and lets the reader collapse them again", () => {
+  act(() => {
+    renderer = create(render());
+  });
+  expect(heading("Checks").props["aria-expanded"]).toBe(false);
+  const focus = { kind: "checks" } as const;
+  act(() => renderer.update(render(detail, focus)));
+  expect(heading("Checks").props["aria-expanded"]).toBe(true);
+  expect(
+    renderer.root.findAllByType("span").some((span) => span.children.includes("Unit tests")),
+  ).toBe(true);
+  click("Checks");
+  act(() => renderer.update(render(detail, focus)));
+  expect(heading("Checks").props["aria-expanded"]).toBe(false);
+  act(() => renderer.update(render(detail, { kind: "checks" })));
+  expect(heading("Checks").props["aria-expanded"]).toBe(true);
+});
 
 function heading(title: string) {
   const section = renderer.root
@@ -125,6 +144,38 @@ it("toggles checks from their heading and resets sections for another pull reque
   );
   expect(heading("Checks").props["aria-expanded"]).toBe(false);
   expect(heading("Description").props["aria-expanded"]).toBe(true);
+});
+
+it("reveals the current requested-change review outside the recent window and bot groups", () => {
+  const value: PullRequestDetailView = {
+    ...detail,
+    commentCount: 13,
+    comments: Array.from({ length: 13 }, (_, index) => ({
+      id: `comment-${index}`,
+      kind: index === 0 ? "review" : "issue-comment",
+      author: {
+        login: index === 0 ? "review-bot" : "human",
+        name: null,
+        avatarUrl: null,
+        isBot: index === 0,
+      },
+      body: index === 0 ? "Please fix the retry handling" : `Conversation ${index}`,
+      createdAt: `2026-09-01T00:00:${String(index).padStart(2, "0")}Z`,
+      url: null,
+      path: null,
+      reviewState: index === 0 ? "CHANGES_REQUESTED" : null,
+    })),
+  };
+  act(() => {
+    renderer = create(render(value));
+  });
+  expect(renderer.root.findAllByType("p").map((p) => p.children.join(""))).not.toContain(
+    "Please fix the retry handling",
+  );
+  act(() => renderer.update(render(value, { kind: "review" })));
+  expect(renderer.root.findAllByType("p").map((p) => p.children.join(""))).toContain(
+    "Please fix the retry handling",
+  );
 });
 
 it("keeps an unsaved description when collapsed and reopened", () => {

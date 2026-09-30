@@ -1,7 +1,7 @@
 import { act, useEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, type PullRequestReviewThread } from "@t3tools/contracts";
 import { WorkbenchAttentionQueries } from "./WorkbenchAttentionQueries";
 
 const state = vi.hoisted(() => ({
@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   closed: new Set<number>(),
   updatedAt: 1,
   resultIdentity: {},
+  reviewThreads: [] as PullRequestReviewThread[],
 }));
 vi.mock("../state/pullRequests", () => ({
   linkedPullRequestDetailAtom: ({
@@ -54,7 +55,7 @@ vi.mock("../state/query", () => ({
               checksState: state.failed.has(number) ? "failing" : "passing",
               reviewDecision: "approved",
             }
-          : { reviewThreads: [], commentsTruncated: false }
+          : { reviewThreads: state.reviewThreads, commentsTruncated: false }
         : null,
       dataUpdatedAt: complete ? state.updatedAt : null,
       error: state.errors.has(number) ? "Native PR read failed" : null,
@@ -81,6 +82,7 @@ beforeEach(() => {
   state.closed.clear();
   state.updatedAt = 1;
   state.resultIdentity = {};
+  state.reviewThreads = [];
 });
 afterEach(() => act(() => renderer?.unmount()));
 const references = Array.from({ length: 7 }, (_, index) => ({
@@ -240,4 +242,52 @@ it("settles a fast same-error retry even when React never renders pending", () =
   expect(result.reasons).toEqual(["PR attention unavailable"]);
   expect(result.terminal).toBe(true);
   expect(state.active.size).toBe(0);
+});
+
+it("publishes changed discussion details and resolved targets while inspection is still loading", () => {
+  state.completed.add(1);
+  state.pending.add(1);
+  const first: PullRequestReviewThread = {
+    id: "feedback-one",
+    path: "src/invitations.ts",
+    line: 12,
+    side: "right",
+    isResolved: false,
+    isOutdated: false,
+    comments: [],
+  };
+  state.reviewThreads = [first];
+  const onChange = vi.fn();
+  const render = () => (
+    <WorkbenchAttentionQueries
+      environmentId={environmentId}
+      references={[references[0]!]}
+      refresh={false}
+      onChange={onChange}
+    />
+  );
+  act(() => {
+    renderer = create(render());
+  });
+  const second = { ...first, id: "feedback-two", path: "src/settings.ts", line: 23 };
+  state.reviewThreads = [first, second];
+  act(() => renderer.update(render()));
+  const result = onChange.mock.lastCall![0].values().next().value;
+  expect(result.signalKinds).toEqual(["unresolved-feedback"]);
+  expect(result.unresolvedReviewThreads).toEqual([first, second]);
+  expect(result.inspectionStatus).toBe("loading");
+  state.reviewThreads = [
+    { ...first, isResolved: true },
+    { ...second, isResolved: true },
+  ];
+  act(() => renderer.update(render()));
+  expect(onChange.mock.lastCall![0].values().next().value.resolvedReviewThreadIds).toEqual([
+    first.id,
+    second.id,
+  ]);
+  state.reviewThreads = [{ ...first, isResolved: true }];
+  act(() => renderer.update(render()));
+  expect(onChange.mock.lastCall![0].values().next().value.resolvedReviewThreadIds).toEqual([
+    first.id,
+  ]);
 });

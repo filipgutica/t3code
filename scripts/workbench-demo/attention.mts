@@ -98,7 +98,7 @@ export const seedAttentionRecords = async ({
           commandId: CommandId.make(id + "-create"),
           threadId: id,
           projectId,
-          title: `[Synthetic attention] ${fixture.title}`,
+          title: `[Synthetic attention] ${fixture.title}${id === threadId ? "" : " — newest clean assignment"}`,
           modelSelection,
           runtimeMode: DEFAULT_RUNTIME_MODE,
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -223,12 +223,19 @@ export const seedAttentionOutcomes = async (home: string) => {
           id,
         );
       }
+      const sampleContext =
+        fixture.id === "waiting" || fixture.id === "multiple"
+          ? "\n\n[Synthetic waiting question] Should invitation links expire after 24 hours or 7 days? Choose one before continuing."
+          : fixture.id === "review"
+            ? "\n\n[Synthetic review summary] Example outcomes to review: valid invitations show the next step, empty or malformed addresses show a useful error, and expired links offer a recovery action. This is sample review context only; no provider ran and no actual code diff exists."
+            : "";
       db.prepare(
         "INSERT INTO projection_thread_messages (message_id, thread_id, role, text, is_streaming, created_at, updated_at) VALUES (?, ?, 'assistant', ?, 0, ?, ?)",
       ).run(
         id + "-label",
         id,
-        "[Synthetic attention fixture] No provider ran. Turn outcomes and PR inspections are simulated; rerun requests are refused. See the fixture guide.",
+        "[Synthetic attention fixture] No provider ran. Turn outcomes and PR inspections are simulated; rerun requests are refused. See the fixture guide." +
+          sampleContext,
         timestamp,
         timestamp,
       );

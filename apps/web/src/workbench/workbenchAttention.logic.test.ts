@@ -6,6 +6,7 @@ import {
   WorkbenchAssignmentId,
   WorkbenchTicketId,
   type WorkbenchAssignment,
+  type PullRequestReviewThread,
 } from "@t3tools/contracts";
 import {
   activeWorkbenchAttentionAssignments,
@@ -29,6 +30,15 @@ const cleanSummary = {
   reviewDecision: "approved" as const,
 };
 const activity = { commentsTruncated: false, reviewThreads: [] };
+const reviewThread = (id: string, isResolved = false): PullRequestReviewThread => ({
+  id,
+  path: "src/settings.ts",
+  line: 12,
+  side: "right",
+  isResolved,
+  isOutdated: false,
+  comments: [],
+});
 const evaluate = (
   overrides: Partial<Parameters<typeof getWorkbenchPullRequestAttention>[0]> = {},
 ) =>
@@ -105,12 +115,15 @@ describe("Workbench attention from active native Threads and linked PRs", () => 
     expect(
       evaluate({
         summary: { ...cleanSummary, checksState: "failing", reviewDecision: "changes-requested" },
-        activity: { ...activity, reviewThreads: [{ isResolved: false, isOutdated: true }] },
+        activity: {
+          ...activity,
+          reviewThreads: [{ ...reviewThread("outdated"), isOutdated: true }],
+        },
       }).reasons,
     ).toEqual(["Failed PR checks", "PR changes requested", "Unresolved PR feedback"]);
     expect(
       evaluate({
-        activity: { ...activity, reviewThreads: [{ isResolved: true, isOutdated: false }] },
+        activity: { ...activity, reviewThreads: [reviewThread("resolved", true)] },
       }).reasons,
     ).toEqual([]);
     expect(
@@ -132,6 +145,29 @@ describe("Workbench attention from active native Threads and linked PRs", () => 
     expect(failed.reasons).toEqual(["Failed PR checks", "PR attention unavailable"]);
     expect(failed.inspected).toBe(false);
     expect(matchesWorkbenchAttention("attention", failed.reasons)).toBe(true);
+  });
+  it("counts each actionable PR reason once and preserves unresolved native discussion targets", () => {
+    const first = reviewThread("discussion-one");
+    const second = { ...reviewThread("discussion-two"), isOutdated: true };
+    const result = evaluate({
+      summary: { ...cleanSummary, checksState: "failing", reviewDecision: "changes-requested" },
+      activity: {
+        commentsTruncated: true,
+        reviewThreads: [first, second, reviewThread("resolved", true)],
+      },
+      error: true,
+    });
+    expect(result.signalKinds).toEqual([
+      "failed-checks",
+      "changes-requested",
+      "unresolved-feedback",
+    ]);
+    expect(result.unresolvedReviewThreads).toEqual([first, second]);
+    expect(result.inspectionStatus).toBe("unavailable");
+    expect(evaluate({ loading: true }).signalKinds).toEqual([]);
+    expect(evaluate({ activity: { ...activity, commentsTruncated: true } }).inspectionStatus).toBe(
+      "incomplete",
+    );
   });
   it("excludes merged/closed references even with stale failing observations", () => {
     for (const state of ["merged", "closed"] as const)
