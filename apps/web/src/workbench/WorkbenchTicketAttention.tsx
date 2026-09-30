@@ -191,7 +191,7 @@ function AttentionItems({
 
 /** The count represents source-specific actionable signals, never unread notifications. */
 export function WorkbenchTicketAttentionBadge(
-  props: TicketAttentionProps & { side?: "bottom" | "right" },
+  props: TicketAttentionProps & { side?: "bottom" | "right"; compact?: boolean },
 ) {
   const { attentionSignalsByTicket, attentionInspectionsByTicket } = useWorkbenchAttentionData();
   const signals = attentionSignalsByTicket.get(props.ticketId) ?? [];
@@ -202,14 +202,14 @@ export function WorkbenchTicketAttentionBadge(
       <PopoverTrigger
         render={
           <Button
-            size="micro"
-            variant="warning-outline"
+            size={props.compact ? "icon-micro" : "micro"}
+            variant={props.compact ? "ghost" : "warning-outline"}
             aria-label={`${signals.length} attention ${signals.length === 1 ? "item" : "items"} for ${props.ticketTitle}`}
           />
         }
       >
-        <BellIcon aria-hidden />
-        {signals.length}
+        <BellIcon aria-hidden className={props.compact ? "text-warning" : undefined} />
+        {props.compact ? null : signals.length}
       </PopoverTrigger>
       <PopoverPopup width="md" padding="compact" side={props.side ?? "bottom"} align="end">
         <div className="mb-3 flex flex-col gap-1 border-b pb-3">

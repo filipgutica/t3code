@@ -130,7 +130,7 @@ function WorkbenchSidebarTicketLabel({
         <Icon className="size-3.5" />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className={`flex min-w-0 items-center gap-1 ${hasAttention ? "pe-12" : ""}`}>
+        <span className={`flex min-w-0 items-center gap-1 ${hasAttention ? "pe-6" : ""}`}>
           <span className="min-w-0 flex-1 truncate">{ticket.title}</span>
           {details?.attentionLabel ? (
             <CircleAlertIcon
@@ -276,6 +276,7 @@ export function WorkbenchSidebarTicketButton({
             ticketId={ticket.id}
             ticketTitle={ticket.title}
             side="right"
+            compact
           />
         </div>
       ) : null}
