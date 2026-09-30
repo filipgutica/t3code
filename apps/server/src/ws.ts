@@ -159,11 +159,11 @@ import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as UsageService from "./usage/UsageService.ts";
-import * as WorkbenchStore from "./workbench/WorkbenchStore.ts";
-import * as TicketWorkspaceService from "./workbench/TicketWorkspaceService.ts";
-import * as TicketSummaryService from "./workbench/TicketSummaryService.ts";
-import * as WorkbenchJiraService from "./workbench/jira/WorkbenchJiraService.ts";
-import { makeWorkbenchRpcHandlers } from "./workbench/workbenchRpcHandlers.ts";
+import {
+  acquireWorkbenchRpcServices,
+  makeWorkbenchRpcHandlers,
+  type WorkbenchRpcServices,
+} from "./workbench/workbenchRpcHandlers.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import { listLinkedPullRequestThreads } from "./pullRequest/linkedThreads.ts";
@@ -507,10 +507,7 @@ const makeWsRpcLayer = (
   clientOrigin: OrchestrationClientOrigin,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
-  workbench: WorkbenchStore.WorkbenchStore["Service"],
-  ticketWorkspaces: TicketWorkspaceService.TicketWorkspaceService["Service"],
-  workbenchJira: WorkbenchJiraService.WorkbenchJiraService["Service"],
-  ticketSummaries: TicketSummaryService.TicketSummaryService["Service"],
+  workbenchRpcServices: WorkbenchRpcServices,
 ) =>
   WsRpcGroup.toLayer(
     Effect.gen(function* () {
@@ -737,10 +734,7 @@ const makeWsRpcLayer = (
         );
       const workbenchRpcHandlers = makeWorkbenchRpcHandlers({
         observeRpcEffect,
-        workbench,
-        ticketWorkspaces,
-        workbenchJira,
-        ticketSummaries,
+        ...workbenchRpcServices,
       });
       const toDispatchCommandError = (cause: unknown, fallbackMessage: string) =>
         isOrchestrationDispatchCommandError(cause)
@@ -4067,10 +4061,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
         ),
     });
     const pullRequests = yield* PullRequestService.PullRequestService;
-    const workbench = yield* WorkbenchStore.WorkbenchStore;
-    const ticketWorkspaces = yield* TicketWorkspaceService.TicketWorkspaceService;
-    const workbenchJira = yield* WorkbenchJiraService.WorkbenchJiraService;
-    const ticketSummaries = yield* TicketSummaryService.TicketSummaryService;
+    const workbenchRpcServices = yield* acquireWorkbenchRpcServices;
     const sql = yield* SqlClient.SqlClient;
     return HttpRouter.add(
       "GET",
@@ -4110,10 +4101,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
               clientOrigin,
               clientAnalyticsProps,
               previewAutomationBroker,
-              workbench,
-              ticketWorkspaces,
-              workbenchJira,
-              ticketSummaries,
+              workbenchRpcServices,
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),

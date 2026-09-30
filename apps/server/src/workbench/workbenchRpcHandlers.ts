@@ -19,19 +19,34 @@ type ObserveRpcEffect = <A, E, R>(
 
 type WorkbenchRpcHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof WorkbenchRpcGroup>>;
 
+export type WorkbenchRpcServices = {
+  readonly workbench: WorkbenchStore.WorkbenchStore["Service"];
+  readonly ticketWorkspaces: TicketWorkspaceService.TicketWorkspaceService["Service"];
+  readonly workbenchJira: WorkbenchJiraService.WorkbenchJiraService["Service"];
+  readonly ticketSummaries: TicketSummaryService.TicketSummaryService["Service"];
+};
+
+export const acquireWorkbenchRpcServices = Effect.gen(function* () {
+  const workbench = yield* WorkbenchStore.WorkbenchStore;
+  const ticketWorkspaces = yield* TicketWorkspaceService.TicketWorkspaceService;
+  const workbenchJira = yield* WorkbenchJiraService.WorkbenchJiraService;
+  const ticketSummaries = yield* TicketSummaryService.TicketSummaryService;
+
+  return {
+    workbench,
+    ticketWorkspaces,
+    workbenchJira,
+    ticketSummaries,
+  } satisfies WorkbenchRpcServices;
+});
+
 export const makeWorkbenchRpcHandlers = ({
   observeRpcEffect,
   workbench,
   ticketWorkspaces,
   workbenchJira,
   ticketSummaries,
-}: {
-  readonly observeRpcEffect: ObserveRpcEffect;
-  readonly workbench: WorkbenchStore.WorkbenchStore["Service"];
-  readonly ticketWorkspaces: TicketWorkspaceService.TicketWorkspaceService["Service"];
-  readonly workbenchJira: WorkbenchJiraService.WorkbenchJiraService["Service"];
-  readonly ticketSummaries: TicketSummaryService.TicketSummaryService["Service"];
-}) =>
+}: WorkbenchRpcServices & { readonly observeRpcEffect: ObserveRpcEffect }) =>
   ({
     [WORKBENCH_WS_METHODS.workbenchGetSnapshot]: (_input) =>
       observeRpcEffect(WORKBENCH_WS_METHODS.workbenchGetSnapshot, workbench.getSnapshot, {
