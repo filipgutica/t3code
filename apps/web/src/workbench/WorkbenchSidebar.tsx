@@ -12,6 +12,7 @@ import * as Schema from "effect/Schema";
 import {
   AlertCircleIcon,
   ArrowLeftIcon,
+  BellIcon,
   BlocksIcon,
   ChevronDownIcon,
   ChevronRightIcon,
@@ -28,6 +29,11 @@ import {
   type WorkbenchSidebarTicketDetails,
 } from "./workbenchSidebarContext.logic";
 import { WorkbenchSidebarThreadRow } from "./WorkbenchSidebarThreadRow";
+import { useWorkbenchAttentionData } from "./WorkbenchAttentionProvider";
+import {
+  getWorkbenchSidebarActionableThreadIds,
+  prioritizeWorkbenchSidebarAttention,
+} from "./workbenchSidebarAttention.logic";
 import "./WorkbenchSidebarRows.css";
 import { SidebarChromeFooter } from "../components/sidebar/SidebarChrome";
 import { Button } from "../components/ui/button";
@@ -179,6 +185,9 @@ export function WorkbenchSidebar({
     selectedTicketIsDone,
     sidebarQuery,
     setSidebarSearch,
+    onlyActionable,
+    setOnlyActionable,
+    actionableThreadIdsByTicket,
     ticketGroupsByWorkspace,
     ticketCountsByWorkspace,
     archivedTicketsByWorkspace,
@@ -242,6 +251,7 @@ export function WorkbenchSidebar({
                   ticketCountsByWorkspace,
                   ticketDetailsById,
                   ticketGroupsByWorkspace,
+                  actionableThreadIdsByTicket,
                 }}
                 selection={{
                   contextThreadId: context?.threadId,
@@ -252,7 +262,9 @@ export function WorkbenchSidebar({
                 }}
                 search={{
                   searchQuery: sidebarQuery,
-                  onSearchQueryChange: (query) => setSidebarSearch({ environmentId, query }),
+                  onSearchQueryChange: setSidebarSearch,
+                  onlyActionable,
+                  onOnlyActionableChange: setOnlyActionable,
                 }}
                 actions={{
                   onOpenThread: openThread,
@@ -286,6 +298,9 @@ type WorkbenchSidebarNavigationFields = {
   readonly projects: ReadonlyArray<Pick<WorkbenchProject, "id" | "title">>;
   readonly searchQuery: string;
   readonly onSearchQueryChange: (query: string) => void;
+  readonly onlyActionable: boolean;
+  readonly onOnlyActionableChange: (value: boolean) => void;
+  readonly actionableThreadIdsByTicket: ReadonlyMap<WorkbenchTicketId, ReadonlySet<ThreadId>>;
   readonly selectedEpicId: WorkbenchEpicId | undefined;
   readonly selectedTicketId: WorkbenchTicketId | undefined;
   readonly selectedTicketIsDone: boolean;
@@ -303,6 +318,7 @@ type WorkbenchSidebarNavigationProps = {
     | "ticketCountsByWorkspace"
     | "ticketDetailsById"
     | "ticketGroupsByWorkspace"
+    | "actionableThreadIdsByTicket"
   >;
   readonly selection: Pick<
     WorkbenchSidebarNavigationFields,
@@ -312,12 +328,105 @@ type WorkbenchSidebarNavigationProps = {
     | "selectedTicketIsDone"
     | "selectedWorkspaceId"
   >;
-  readonly search: Pick<WorkbenchSidebarNavigationFields, "searchQuery" | "onSearchQueryChange">;
+  readonly search: Pick<
+    WorkbenchSidebarNavigationFields,
+    "searchQuery" | "onSearchQueryChange" | "onlyActionable" | "onOnlyActionableChange"
+  >;
   readonly actions: Pick<
     WorkbenchSidebarNavigationFields,
     "onOpenThread" | "onSelectTicket" | "onSelectWorkspace"
   >;
 };
+
+const getWorkbenchSidebarFilterLabel = ({
+  isSearching,
+  resultCount,
+  actionableTicketCount,
+}: {
+  isSearching: boolean;
+  resultCount: number;
+  actionableTicketCount: number;
+}) => {
+  if (isSearching) {
+    if (resultCount === 0) return "No Workbench results";
+    return `${resultCount} ${resultCount === 1 ? "result" : "results"}`;
+  }
+  if (actionableTicketCount === 0) return "No confirmed actions";
+  return `${actionableTicketCount} actionable ${actionableTicketCount === 1 ? "Ticket" : "Tickets"}`;
+};
+
+function WorkbenchSidebarFilters({
+  search,
+  resultCount,
+  actionableTicketCount,
+  incompleteInspection,
+  attentionCoverage,
+}: {
+  search: WorkbenchSidebarNavigationProps["search"];
+  resultCount: number;
+  actionableTicketCount: number;
+  incompleteInspection: boolean;
+  attentionCoverage: string;
+}) {
+  const { searchQuery, onSearchQueryChange, onlyActionable, onOnlyActionableChange } = search;
+  const isSearching = searchQuery.trim().length > 0;
+  return (
+    <>
+      <div className="flex items-center gap-1 px-1">
+        <Input
+          aria-label="Search Workbench sidebar"
+          onChange={(event) => onSearchQueryChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && searchQuery) {
+              event.stopPropagation();
+              onSearchQueryChange("");
+            }
+          }}
+          placeholder="Search Workbench…"
+          size="compact"
+          type="search"
+          value={searchQuery}
+        />
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                aria-label="Show actionable Tickets and Threads"
+                aria-pressed={onlyActionable}
+                onClick={() => onOnlyActionableChange(!onlyActionable)}
+                size="icon-xs"
+                variant={onlyActionable ? "warning-outline" : "ghost"}
+              />
+            }
+          >
+            <BellIcon />
+          </TooltipTrigger>
+          <TooltipPopup side="right">Show only confirmed actions</TooltipPopup>
+        </Tooltip>
+        {searchQuery ? (
+          <Button
+            aria-label="Clear Workbench search"
+            onClick={() => onSearchQueryChange("")}
+            size="icon-xs"
+            variant="ghost"
+          >
+            <XIcon />
+          </Button>
+        ) : null}
+      </div>
+      {isSearching || onlyActionable ? (
+        <p aria-live="polite" className="px-2 text-xs text-sidebar-muted-foreground">
+          {getWorkbenchSidebarFilterLabel({ isSearching, resultCount, actionableTicketCount })}
+        </p>
+      ) : null}
+      {onlyActionable && incompleteInspection ? (
+        <p role="status" className="px-2 text-xs text-sidebar-muted-foreground">
+          {attentionCoverage}. Some actions may be missing.
+        </p>
+      ) : null}
+    </>
+  );
+}
 
 function WorkbenchSidebarNavigation({
   data,
@@ -332,6 +441,7 @@ function WorkbenchSidebarNavigation({
     projects,
     ticketCountsByWorkspace,
     ticketGroupsByWorkspace,
+    actionableThreadIdsByTicket,
   } = data;
   const {
     contextThreadId,
@@ -340,7 +450,9 @@ function WorkbenchSidebarNavigation({
     selectedTicketIsDone,
     selectedWorkspaceId,
   } = routeSelection;
-  const { searchQuery, onSearchQueryChange } = search;
+  const { searchQuery, onlyActionable } = search;
+  const { attentionSignalsByTicket, attentionInspectionsByTicket, attentionCoverage } =
+    useWorkbenchAttentionData();
   const { onOpenThread, onSelectTicket, onSelectWorkspace } = actions;
   const selectionKey = JSON.stringify([
     selectedWorkspaceId ?? "none",
@@ -376,6 +488,35 @@ function WorkbenchSidebarNavigation({
   const toggleExpansion = (action: WorkbenchSidebarExpansionAction) =>
     setExpansion((state) => reduceWorkbenchSidebarExpansion(state, action));
   const isSearching = searchQuery.trim().length > 0;
+  const prioritizedGroups = useMemo(
+    () =>
+      prioritizeWorkbenchSidebarAttention({
+        ticketGroupsByWorkspace,
+        attentionSignalsByTicket,
+        actionableThreadIdsByTicket,
+        onlyActionable,
+      }),
+    [
+      ticketGroupsByWorkspace,
+      attentionSignalsByTicket,
+      actionableThreadIdsByTicket,
+      onlyActionable,
+    ],
+  );
+  const actionableProjects = useMemo(
+    () =>
+      onlyActionable
+        ? projects.filter((project) => (prioritizedGroups.get(project.id)?.active.length ?? 0) > 0)
+        : projects,
+    [onlyActionable, projects, prioritizedGroups],
+  );
+  const actionableTicketCount = [...prioritizedGroups.values()].reduce(
+    (count, sections) => count + sections.active.length,
+    0,
+  );
+  const incompleteInspection = [...attentionInspectionsByTicket.values()].some((inspections) =>
+    inspections.some((inspection) => inspection.status !== "complete"),
+  );
   const jiraKeysByTicketId = useMemo(
     () =>
       new Map(
@@ -390,62 +531,42 @@ function WorkbenchSidebarNavigation({
       isSearching
         ? filterWorkbenchSidebarNavigation({
             query: searchQuery,
-            projects,
-            ticketGroupsByWorkspace,
-            archivedTicketsByWorkspace,
+            projects: actionableProjects,
+            ticketGroupsByWorkspace: prioritizedGroups,
+            archivedTicketsByWorkspace: onlyActionable ? new Map() : archivedTicketsByWorkspace,
             jiraKeysByTicketId,
           })
         : {
-            projects,
-            ticketGroupsByWorkspace,
-            archivedTicketsByWorkspace,
+            projects: actionableProjects,
+            ticketGroupsByWorkspace: prioritizedGroups,
+            archivedTicketsByWorkspace: onlyActionable ? new Map() : archivedTicketsByWorkspace,
             resultCount: 0,
           },
     [
       isSearching,
       searchQuery,
-      projects,
-      ticketGroupsByWorkspace,
+      actionableProjects,
+      prioritizedGroups,
+      onlyActionable,
       archivedTicketsByWorkspace,
       jiraKeysByTicketId,
     ],
   );
+  const visibleTicketCounts = onlyActionable
+    ? new Map(
+        [...filtered.ticketGroupsByWorkspace].map(([id, sections]) => [id, sections.active.length]),
+      )
+    : ticketCountsByWorkspace;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-1 px-1">
-        <Input
-          aria-label="Search Workbench sidebar"
-          onChange={(event) => onSearchQueryChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape" && searchQuery) {
-              event.stopPropagation();
-              onSearchQueryChange("");
-            }
-          }}
-          placeholder="Search Workbench…"
-          size="compact"
-          type="search"
-          value={searchQuery}
-        />
-        {searchQuery ? (
-          <Button
-            aria-label="Clear Workbench search"
-            onClick={() => onSearchQueryChange("")}
-            size="icon-xs"
-            variant="ghost"
-          >
-            <XIcon />
-          </Button>
-        ) : null}
-      </div>
-      {isSearching ? (
-        <p aria-live="polite" className="px-2 text-xs text-sidebar-muted-foreground">
-          {filtered.resultCount === 0
-            ? "No Workbench results"
-            : `${filtered.resultCount} ${filtered.resultCount === 1 ? "result" : "results"}`}
-        </p>
-      ) : null}
+      <WorkbenchSidebarFilters
+        search={search}
+        resultCount={filtered.resultCount}
+        actionableTicketCount={actionableTicketCount}
+        incompleteInspection={incompleteInspection}
+        attentionCoverage={attentionCoverage}
+      />
       <SidebarMenu aria-label="Workbench Workspaces" className="ps-px">
         {filtered.projects.map((workspace) => (
           <WorkbenchSidebarWorkspaceRow
@@ -454,7 +575,7 @@ function WorkbenchSidebarNavigation({
             ticketSections={filtered.ticketGroupsByWorkspace.get(workspace.id)}
             archivedTickets={filtered.archivedTicketsByWorkspace.get(workspace.id) ?? []}
             expansion={expansion}
-            isSearching={isSearching}
+            isSearching={isSearching || onlyActionable}
             onToggle={toggleExpansion}
             navigation={{
               contextThreadId,
@@ -465,7 +586,7 @@ function WorkbenchSidebarNavigation({
               selectedEpicId,
               selectedTicketId,
               selectedWorkspaceId,
-              ticketCountsByWorkspace,
+              ticketCountsByWorkspace: visibleTicketCounts,
               ticketDetailsById,
             }}
           />
@@ -752,7 +873,7 @@ function WorkbenchSidebarTicketGroups({
           expansion={expansion}
           isSearching={isSearching}
           group={group}
-          isDone={isDone}
+          isDone={isDone || (group.ticket.status === "done" && group.ticket.archivedAt == null)}
           key={group.ticket.id}
           onOpenThread={onOpenThread}
           onSelectTicket={onSelectTicket}
@@ -1141,6 +1262,24 @@ function getWorkbenchSidebarThreads({
     : threadShells;
 }
 
+function useWorkbenchSidebarFilters(environmentId: EnvironmentId | null) {
+  const [sidebarFilters, setSidebarFilters] = useState({
+    environmentId,
+    query: "",
+    onlyActionable: false,
+  });
+  const currentFilters =
+    sidebarFilters.environmentId === environmentId
+      ? sidebarFilters
+      : { environmentId, query: "", onlyActionable: false };
+  const sidebarQuery = currentFilters.query;
+  const onlyActionable = currentFilters.onlyActionable;
+  const setSidebarSearch = (query: string) => setSidebarFilters({ ...currentFilters, query });
+  const setOnlyActionable = (value: boolean) =>
+    setSidebarFilters({ ...currentFilters, onlyActionable: value });
+  return { sidebarQuery, onlyActionable, setSidebarSearch, setOnlyActionable };
+}
+
 function useWorkbenchSidebarData({
   context,
   environmentId,
@@ -1186,8 +1325,19 @@ function useWorkbenchSidebarData({
   const selectedTicketStatus = selectedTicket?.status;
   const selectedTicketIsDone =
     selectedTicketStatus === "done" && selectedTicket?.archivedAt == null;
-  const [sidebarSearch, setSidebarSearch] = useState({ environmentId, query: "" });
-  const sidebarQuery = sidebarSearch.environmentId === environmentId ? sidebarSearch.query : "";
+  const { attentionSignalsByTicket } = useWorkbenchAttentionData();
+  const { sidebarQuery, onlyActionable, setSidebarSearch, setOnlyActionable } =
+    useWorkbenchSidebarFilters(environmentId);
+  const actionableThreadIdsByTicket = useMemo(
+    () =>
+      getWorkbenchSidebarActionableThreadIds({
+        environmentId,
+        assignments: snapshot?.assignments ?? [],
+        threads: getWorkbenchSidebarThreads({ currentThread, threadShells }),
+        attentionSignalsByTicket,
+      }),
+    [environmentId, snapshot?.assignments, currentThread, threadShells, attentionSignalsByTicket],
+  );
   const ticketGroupsByWorkspace = useMemo(
     () =>
       getWorkbenchSidebarTicketGroups({
@@ -1197,7 +1347,7 @@ function useWorkbenchSidebarData({
         threads: getWorkbenchSidebarThreads({ currentThread, threadShells }),
         selectedTicketId,
         selectedThreadId: context?.threadId,
-        includeUnassignedTickets: sidebarQuery.trim().length > 0,
+        includeUnassignedTickets: sidebarQuery.trim().length > 0 || onlyActionable,
       }),
     [
       environmentId,
@@ -1208,6 +1358,7 @@ function useWorkbenchSidebarData({
       snapshot?.tickets,
       threadShells,
       sidebarQuery,
+      onlyActionable,
     ],
   );
   const ticketCountsByWorkspace = useMemo(() => {
@@ -1237,6 +1388,9 @@ function useWorkbenchSidebarData({
     selectedTicketIsDone,
     sidebarQuery,
     setSidebarSearch,
+    onlyActionable,
+    setOnlyActionable,
+    actionableThreadIdsByTicket,
     ticketGroupsByWorkspace,
     ticketCountsByWorkspace,
     archivedTicketsByWorkspace,

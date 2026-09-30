@@ -70,13 +70,16 @@ if (/\bmutation\b/.test(query))
   refuse("Writes and failed-check reruns are disabled for synthetic PRs");
 const title = (number) =>
   `[Synthetic attention] ${{ 901: "Failed PR checks", 902: "Unresolved PR feedback", 903: "Inspection unavailable", 904: "Inspection incomplete", 905: "Slow inspection" }[number]}`;
-const check = (number) => ({
-  name: "[Synthetic attention] demo-check",
-  status: "COMPLETED",
-  conclusion: number === 901 ? "FAILURE" : "SUCCESS",
-  detailsUrl: `https://github.com/${repository}/pull/${number}`,
-  completedAt: at,
-});
+const checks = (number) =>
+  (number === 901 ? ["API tests", "Web tests"] : ["demo-check"]).map((name) => ({
+    name: `[Synthetic attention] ${name}`,
+    workflowName: "[Synthetic attention] Attention CI",
+    checkSuite: { workflowRun: { workflow: { name: "[Synthetic attention] Attention CI" } } },
+    status: "COMPLETED",
+    conclusion: number === 901 ? "FAILURE" : "SUCCESS",
+    detailsUrl: `https://github.com/${repository}/pull/${number}`,
+    completedAt: at,
+  }));
 const reviews = (number) =>
   number === 902
     ? [
@@ -109,10 +112,10 @@ const pr = (number) => ({
   mergedAt: null,
   closedAt: null,
   body: "Synthetic inspection data. No GitHub request is sent; reruns and all other writes are refused.",
-  additions: 1,
+  additions: number === 902 ? 2 : 1,
   deletions: 0,
-  changedFiles: 1,
-  statusCheckRollup: [check(number)],
+  changedFiles: number === 902 ? 2 : 1,
+  statusCheckRollup: checks(number),
   reviewRequests: [],
   latestReviews: reviews(number),
   labels: [],
@@ -142,7 +145,10 @@ if (args[0] === "pr") {
   await validate(number);
   if (args[1] === "diff") {
     console.log(
-      "diff --git a/synthetic.txt b/synthetic.txt\nnew file mode 100644\n--- /dev/null\n+++ b/synthetic.txt\n@@ -0,0 +1 @@\n+Synthetic demo inspection only",
+      "diff --git a/synthetic.txt b/synthetic.txt\nnew file mode 100644\n--- /dev/null\n+++ b/synthetic.txt\n@@ -0,0 +1 @@\n+Synthetic demo inspection only" +
+        (number === 902
+          ? "\ndiff --git a/src/invitations.ts b/src/invitations.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/invitations.ts\n@@ -0,0 +1 @@\n+// Synthetic example: invitation expiry requires a decision."
+          : ""),
     );
     process.exit(0);
   }
@@ -222,6 +228,30 @@ if (query.includes("reviewThreads(first:")) {
                   },
                 },
               },
+              ...(number === 902
+                ? [
+                    {
+                      id: "synthetic-thread-902-expiry",
+                      isResolved: false,
+                      isOutdated: false,
+                      path: "src/invitations.ts",
+                      line: 1,
+                      diffSide: "RIGHT",
+                      comments: {
+                        nodes: [
+                          {
+                            ...comment,
+                            id: "synthetic-feedback-expiry",
+                            body: "[Synthetic unresolved feedback] Verify invitation expiry after 24 hours and show a recovery action for an expired link.",
+                            url: `https://github.com/${repository}/pull/902#discussion_r2`,
+                          },
+                        ],
+                        totalCount: 1,
+                        pageInfo: { hasNextPage: false, endCursor: null },
+                      },
+                    },
+                  ]
+                : []),
             ]
           : [],
       pageInfo: { hasNextPage: false, endCursor: null },
@@ -242,7 +272,7 @@ if (query.includes("reviewThreads(first:")) {
         {
           commit: {
             statusCheckRollup: {
-              contexts: { nodes: [check(number)], pageInfo: { hasNextPage: false } },
+              contexts: { nodes: checks(number), pageInfo: { hasNextPage: false } },
             },
           },
         },

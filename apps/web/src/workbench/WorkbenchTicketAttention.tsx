@@ -60,24 +60,35 @@ function AttentionSignalItem({
     signal.source.type === "pull-request" && signal.kind === "unresolved-feedback"
       ? signal.unresolvedReviewThreads
       : [];
+  const content = (
+    <>
+      <Icon aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
+      <span className="min-w-0 flex-1">
+        <span className="block font-medium">{labels[signal.kind]}</span>
+        <span className="block text-2xs text-muted-foreground">
+          {signal.kind === "unresolved-feedback"
+            ? `${discussions.length} unresolved ${discussions.length === 1 ? "discussion · Open feedback" : "discussions · Choose a discussion"}`
+            : actionDescriptions[signal.kind]}
+        </span>
+      </span>
+      {discussions.length <= 1 ? (
+        <ArrowRightIcon aria-hidden className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+      ) : null}
+    </>
+  );
   return (
     <div>
-      <button
-        type="button"
-        className="flex w-full cursor-pointer items-start gap-2 rounded-md p-2 text-left text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-        onClick={() => onOpenSignal(signal, discussions[0]?.id)}
-      >
-        <Icon aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
-        <span className="min-w-0 flex-1">
-          <span className="block font-medium">{labels[signal.kind]}</span>
-          <span className="block text-2xs text-muted-foreground">
-            {signal.kind === "unresolved-feedback"
-              ? `${discussions.length} unresolved ${discussions.length === 1 ? "discussion" : "discussions"} · Open feedback`
-              : actionDescriptions[signal.kind]}
-          </span>
-        </span>
-        <ArrowRightIcon aria-hidden className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
-      </button>
+      {discussions.length > 1 ? (
+        <div className="flex items-start gap-2 p-2 text-xs">{content}</div>
+      ) : (
+        <button
+          type="button"
+          className="flex w-full cursor-pointer items-start gap-2 rounded-md p-2 text-left text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+          onClick={() => onOpenSignal(signal, discussions[0]?.id)}
+        >
+          {content}
+        </button>
+      )}
       {discussions.length > 1
         ? discussions.map((thread) => (
             <button
@@ -216,12 +227,14 @@ export function WorkbenchTicketAttentionBadge(
           <PopoverTitle>Needs your attention</PopoverTitle>
           <p className="truncate text-2xs text-muted-foreground">{props.ticketTitle}</p>
         </div>
-        <AttentionItems
-          {...props}
-          signals={signals}
-          inspections={attentionInspectionsByTicket.get(props.ticketId) ?? []}
-          onNavigate={() => setOpen(false)}
-        />
+        <div className="max-h-80 overflow-y-auto">
+          <AttentionItems
+            {...props}
+            signals={signals}
+            inspections={attentionInspectionsByTicket.get(props.ticketId) ?? []}
+            onNavigate={() => setOpen(false)}
+          />
+        </div>
       </PopoverPopup>
     </Popover>
   );

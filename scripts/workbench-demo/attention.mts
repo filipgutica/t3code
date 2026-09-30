@@ -98,7 +98,7 @@ export const seedAttentionRecords = async ({
           commandId: CommandId.make(id + "-create"),
           threadId: id,
           projectId,
-          title: `[Synthetic attention] ${fixture.title}${id === threadId ? "" : " — newest clean assignment"}`,
+          title: `[Synthetic attention] ${fixture.title}${id === threadId ? "" : id.endsWith("-newest-clean") ? " — newest clean assignment" : " — shared PR assignment"}`,
           modelSelection,
           runtimeMode: DEFAULT_RUNTIME_MODE,
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -138,6 +138,35 @@ export const seedAttentionRecords = async ({
           source: "manual",
         }),
       );
+    if (fixture.id === "feedback") {
+      const sharedThreadId = ThreadId.make(threadId + "-shared-pr");
+      const later = new Date(Date.parse(timestamp) + 1000).toISOString();
+      await createThread(sharedThreadId, later);
+      await runRpc(wsUrl, token, (client) =>
+        client[WORKBENCH_WS_METHODS.workbenchCreateAssignment]({
+          id: WorkbenchAssignmentId.make(sharedThreadId + "-assignment"),
+          ticketId,
+          threadId: sharedThreadId,
+          createdAt: later,
+        }),
+      );
+      for (const [targetId, number] of [
+        [threadId, 901],
+        [sharedThreadId, 902],
+      ] as const)
+        await runRpc(wsUrl, token, (client) =>
+          dispatch(client, {
+            type: "thread.pull-request.link",
+            commandId: CommandId.make(targetId + "-pr-" + number),
+            threadId: targetId,
+            host: "github.com",
+            repository,
+            number,
+            url: `https://github.com/${repository}/pull/${number}`,
+            source: "manual",
+          }),
+        );
+    }
     if (fixture.id === "settled" || fixture.id === "archived")
       await runRpc(wsUrl, token, (client) =>
         dispatch(client, {

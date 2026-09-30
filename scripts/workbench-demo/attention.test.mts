@@ -75,16 +75,26 @@ it("delivers failed checks, unresolved feedback and incomplete coverage through 
   expect(Result.isSuccess(core)).toBe(true);
   if (!Result.isSuccess(core))
     throw new Error("Native detail decoder rejected the synthetic adapter");
-  expect(core.success.checks[0]?.status).toBe("failure");
+  expect(core.success.checks.map((check) => check.status)).toEqual(["failure", "failure"]);
+  expect(new Set(core.success.checks.map((check) => check.name)).size).toBe(2);
   expect(core.success.title).toMatch(/^\[Synthetic attention\]/);
   const feedback = decodeReviewThreadsJson(await read(902, REVIEW_THREADS_GRAPHQL_QUERY));
   expect(Result.isSuccess(feedback)).toBe(true);
   if (!Result.isSuccess(feedback))
     throw new Error("Native activity decoder rejected the synthetic adapter");
-  expect(feedback.success.threads).toHaveLength(1);
+  expect(feedback.success.threads).toHaveLength(2);
+  expect(new Set(feedback.success.threads.map(({ thread }) => thread.id)).size).toBe(2);
+  expect(feedback.success.threads.map(({ thread }) => thread.path)).toEqual([
+    "synthetic.txt",
+    "src/invitations.ts",
+  ]);
+  expect(feedback.success.threads.every(({ thread }) => !thread.isResolved)).toBe(true);
   expect(feedback.success.threads[0]?.thread.isResolved).toBe(false);
   expect(feedback.success.threads[0]?.thread.comments[0]?.body).toMatch(
     /\[Synthetic unresolved feedback\].*empty response/,
+  );
+  expect(feedback.success.threads[1]?.thread.comments[0]?.body).toMatch(
+    /\[Synthetic unresolved feedback\].*expiry.*24 hours/,
   );
   expect(feedback.success.reviewers).toEqual([
     expect.objectContaining({ login: "synthetic-reviewer" }),
