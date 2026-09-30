@@ -1,5 +1,9 @@
 @import "./tokens.css";
 
+:root {
+  --text-headline: 28px;
+}
+
 html {
   scroll-padding-top: var(--space-6);
 }
@@ -135,6 +139,68 @@ main.wrap::before {
   transform: scale(1.2);
 }
 
+/* The same tool switcher and theme control as the annoterm, wtree, and devps sites. */
+.family-bar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding-block: var(--space-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+nav.family {
+  gap: 0 var(--space-1);
+}
+
+nav.family a {
+  padding-inline: var(--space-3);
+  font-family: var(--font-mono);
+  line-height: 1;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+nav.family a[aria-current="page"] {
+  color: var(--text);
+  font-weight: var(--weight-semibold);
+  box-shadow: inset 0 -2px 0 var(--accent);
+  border-radius: 0;
+}
+
+.segmented {
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--surface-hover);
+}
+
+.segmented button {
+  min-height: var(--control-md);
+  padding-inline: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: var(--weight-medium) var(--text-xs) / 1 var(--font-sans);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.segmented button:hover {
+  color: var(--text);
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--border-subtle);
+}
+
 .site-header {
   display: flex;
   align-items: center;
@@ -180,7 +246,7 @@ nav a:hover {
 }
 
 .hero {
-  padding-block: var(--space-12);
+  padding-block: var(--space-16) var(--space-12);
 }
 
 .hero > .section-body {
@@ -203,13 +269,23 @@ nav a:hover {
   gap: var(--space-4);
 }
 
+/* Larger headings for this page only. The tool sites use the same idea with their own scale. */
 h1 {
-  max-width: var(--measure);
-  font-size: var(--text-2xl);
+  max-width: 14ch;
+  font-size: clamp(2.5rem, 6vw, 4.25rem);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
 }
 
 h2 {
+  font-size: var(--text-headline);
+  letter-spacing: -0.025em;
+}
+
+.hero-copy .lead {
+  max-width: 34ch;
   font-size: var(--text-xl);
+  line-height: var(--leading-tight);
 }
 
 h3 {
@@ -382,6 +458,21 @@ figcaption {
 
 .site-footer .brand {
   font-size: var(--text-sm);
+}
+
+.footer-tools {
+  flex-basis: 100%;
+  gap: 0 var(--space-4);
+  font-size: var(--text-xs);
+}
+
+.footer-tools span {
+  color: var(--text-faint);
+}
+
+.footer-tools a {
+  min-height: var(--control-md);
+  font-family: var(--font-mono);
 }
 
 .skip-link {
