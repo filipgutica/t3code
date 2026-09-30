@@ -185,7 +185,7 @@ function WorkbenchSidebarThreadPrBadge({
               <button
                 type="button"
                 className={`inline-flex shrink-0 cursor-pointer items-center gap-0.5 whitespace-nowrap text-xs tabular-nums hover:underline focus-visible:outline-2 focus-visible:outline-ring ${presentation.toneClassName}`}
-                aria-label={`Show ${pullRequests.length} linked pull requests for ${thread.title}`}
+                aria-label={`Show linked pull requests for ${thread.title}: ${presentation.label}`}
               />
             }
           >

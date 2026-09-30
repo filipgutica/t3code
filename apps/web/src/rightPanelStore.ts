@@ -492,6 +492,15 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           ) {
             return state;
           }
+          const activeSurface = selectActiveRightPanelSurface(state.byThreadKey, ref);
+          if (
+            surface.kind !== "diff" &&
+            activeSurface?.kind === "pull-request" &&
+            activeSurface.environmentId !== undefined &&
+            activeSurface.environmentId !== ref.environmentId
+          ) {
+            return state;
+          }
           // A linked PR takes priority over a completed-turn diff. Manual actions
           // always apply, and later user choices reject both proactive requests.
           if (
