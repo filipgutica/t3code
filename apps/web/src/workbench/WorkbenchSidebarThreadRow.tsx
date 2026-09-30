@@ -1,6 +1,6 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { ClockIcon, MessageSquareIcon, PinIcon } from "lucide-react";
-import type { Dispatch, MouseEvent, SetStateAction } from "react";
+import { useState, type Dispatch, type MouseEvent, type SetStateAction } from "react";
 
 import {
   ThreadPullRequestBadgeControl,
@@ -168,6 +168,7 @@ function WorkbenchSidebarThreadPrBadge({
   readonly onOpenPullRequestStack: () => void;
   readonly thread: WorkbenchSidebarThread;
 }) {
+  const [chooserOpen, setChooserOpen] = useState(false);
   if (!data.pullRequestBadge) return null;
   const pullRequests = visibleThreadPullRequests(data.pullRequests);
   const presentation = resolveThreadPullRequestBadgePresentation({
@@ -179,7 +180,7 @@ function WorkbenchSidebarThreadPrBadge({
   if (pullRequests.length > 1 && presentation) {
     return (
       <span className="absolute end-2 bottom-2 z-10 flex items-center">
-        <Popover>
+        <Popover open={chooserOpen} onOpenChange={setChooserOpen}>
           <PopoverTrigger
             render={
               <button
@@ -205,6 +206,7 @@ function WorkbenchSidebarThreadPrBadge({
                   key={pullRequest.url}
                   environmentId={thread.environmentId}
                   linkedThread={{ threadId: thread.id, title: thread.title }}
+                  onSelect={() => setChooserOpen(false)}
                   pullRequest={{
                     ...pullRequest,
                     ...(data.shell ? { projectId: data.shell.projectId } : {}),

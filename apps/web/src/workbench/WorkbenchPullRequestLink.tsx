@@ -150,11 +150,13 @@ export function WorkbenchPullRequestLink({
   pullRequest,
   compact = false,
   linkedThread,
+  onSelect,
 }: {
   readonly environmentId: EnvironmentId;
   readonly pullRequest: WorkbenchPullRequestReference;
   readonly compact?: boolean;
   readonly linkedThread?: WorkbenchLinkedPullRequestThread | undefined;
+  readonly onSelect?: () => void;
 }) {
   const openWorkbenchPullRequest = useOpenWorkbenchPullRequest();
   const openChangeRequestLink = useOpenChangeRequestLink(
@@ -191,7 +193,7 @@ export function WorkbenchPullRequestLink({
   const stateClass = presentation?.toneClassName ?? "text-muted-foreground";
   const PullRequestIcon = presentation?.Icon ?? PullRequestGlyph.pullRequest;
   const openInWorkbench = (event: MouseEvent<HTMLAnchorElement>) => {
-    openChangeRequestLink(event, pullRequest.url, undefined, environmentId);
+    if (openChangeRequestLink(event, pullRequest.url, undefined, environmentId)) onSelect?.();
   };
 
   return (
