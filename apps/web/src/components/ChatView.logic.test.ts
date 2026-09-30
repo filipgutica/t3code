@@ -81,6 +81,7 @@ import {
   shouldReleaseTimelineAnchorForToolActivity,
   shouldOpenProactivePullRequest,
   shouldRetargetThreadPullRequestPanel,
+  resolvePullRequestPanelEnvironment,
   shouldOpenProactiveTurnDiff,
   shouldRenderPreviewMiniPlayer,
   shouldShowBranchMismatchBanner,
@@ -314,6 +315,21 @@ describe("proactive panels", () => {
     expect(shouldOpenProactivePullRequest("project:repo:42", null)).toBe(false);
   });
 
+  it("uses the selected PR environment beside a Thread, even when project identities collide", () => {
+    const local = EnvironmentId.make("local");
+    const reference = { projectId: "same-project", repository: "acme/repo", number: 42 };
+    expect(
+      resolvePullRequestPanelEnvironment(
+        local,
+        pullRequestSurface({ ...reference, environmentId: "remote" }),
+      ),
+    ).toEqual({ environmentId: EnvironmentId.make("remote"), isThreadEnvironment: false });
+    expect(resolvePullRequestPanelEnvironment(local, pullRequestSurface(reference))).toEqual({
+      environmentId: local,
+      isThreadEnvironment: true,
+    });
+  });
+
   it("follows a changed server PR link without replacing an unrelated open panel", () => {
     const previous = {
       projectId: ProjectId.make("project-1"),
@@ -334,14 +350,22 @@ describe("proactive panels", () => {
       number: previous.number,
     } satisfies RightPanelSurface;
 
-    expect(shouldRetargetThreadPullRequestPanel(previous, current, surface)).toBe(true);
-    expect(shouldRetargetThreadPullRequestPanel(previous, previous, surface)).toBe(false);
-    expect(shouldRetargetThreadPullRequestPanel(previous, null, surface)).toBe(false);
+    const threadEnvironmentId = EnvironmentId.make("local");
+    const retarget = (next: typeof current | null, selected: RightPanelSurface = surface) =>
+      shouldRetargetThreadPullRequestPanel({
+        previous,
+        current: next,
+        surface: selected,
+        threadEnvironmentId,
+      });
+    expect(retarget(current)).toBe(true);
+    expect(retarget(current, { ...surface, environmentId: "local" })).toBe(true);
+    expect(retarget(current, { ...surface, environmentId: "remote" })).toBe(false);
+    expect(retarget(previous)).toBe(false);
+    expect(retarget(null)).toBe(false);
+    expect(retarget(current, { ...surface, number: 99 })).toBe(false);
     expect(
-      shouldRetargetThreadPullRequestPanel(previous, current, { ...surface, number: 99 }),
-    ).toBe(false);
-    expect(
-      shouldRetargetThreadPullRequestPanel(previous, current, {
+      retarget(current, {
         ...surface,
         projectId: "another-project",
       }),

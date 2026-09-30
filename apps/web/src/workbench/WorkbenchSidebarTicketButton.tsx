@@ -1,5 +1,5 @@
 import { ArchiveIcon, BookOpenIcon, BugIcon, CircleAlertIcon } from "lucide-react";
-import type { KeyboardEvent } from "react";
+import { useState, type KeyboardEvent } from "react";
 
 import { SidebarMenuButton } from "../components/ui/sidebar";
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
@@ -164,6 +164,7 @@ function WorkbenchSidebarTicketPrControl({
   readonly ticket: WorkbenchSidebarTicket;
   readonly details: WorkbenchSidebarTicketDetails | undefined;
 }) {
+  const [chooserOpen, setChooserOpen] = useState(false);
   const environmentId = details?.environmentId;
   const pullRequests = details?.pullRequests ?? [];
   if (!environmentId || pullRequests.length === 0) return null;
@@ -178,7 +179,7 @@ function WorkbenchSidebarTicketPrControl({
           linkedThread={{ threadId: pullRequests[0].threadId, title: pullRequests[0].threadTitle }}
         />
       ) : (
-        <Popover>
+        <Popover open={chooserOpen} onOpenChange={setChooserOpen}>
           <PopoverTrigger
             render={
               <button
@@ -205,6 +206,7 @@ function WorkbenchSidebarTicketPrControl({
                   environmentId={environmentId}
                   pullRequest={pullRequest}
                   linkedThread={{ threadId, title: threadTitle }}
+                  onSelect={() => setChooserOpen(false)}
                 />
               ))}
             </div>

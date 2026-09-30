@@ -73,8 +73,8 @@ export type RightPanelSurface =
       kind: "pull-request";
       /**
        * Which server the change request was read from. The list spans every connected one, so
-       * two of them can hold the same project id; a panel beside a thread leaves this out and
-       * takes the environment from its own ref.
+       * two of them can hold the same project id. A panel beside a thread uses the Thread's
+       * environment unless a PR selected from another environment sets this explicitly.
        */
       environmentId?: string;
       projectId: string;
@@ -489,6 +489,15 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           const threadKey = scopedThreadKey(ref);
           if (
             (state.userActionRevisionByThreadKey[threadKey] ?? 0) !== expectedUserActionRevision
+          ) {
+            return state;
+          }
+          const activeSurface = selectActiveRightPanelSurface(state.byThreadKey, ref);
+          if (
+            surface.kind !== "diff" &&
+            activeSurface?.kind === "pull-request" &&
+            activeSurface.environmentId !== undefined &&
+            activeSurface.environmentId !== ref.environmentId
           ) {
             return state;
           }

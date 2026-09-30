@@ -1,11 +1,15 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { ClockIcon, MessageSquareIcon, PinIcon } from "lucide-react";
-import type { Dispatch, MouseEvent, SetStateAction } from "react";
+import { useState, type Dispatch, type MouseEvent, type SetStateAction } from "react";
 
 import {
   ThreadPullRequestBadgeControl,
   ThreadStatusLabel,
+  resolveThreadPullRequestBadgePresentation,
 } from "../components/ThreadStatusIndicators";
+import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
+import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
+import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
 import { InlineButton } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -154,6 +158,7 @@ function WorkbenchSidebarThreadNavigation({
 }
 
 function WorkbenchSidebarThreadPrBadge({
+  thread,
   data,
   onOpenPullRequest,
   onOpenPullRequestStack,
@@ -161,8 +166,66 @@ function WorkbenchSidebarThreadPrBadge({
   readonly data: WorkbenchSidebarThreadRowData;
   readonly onOpenPullRequest: (event: MouseEvent<HTMLElement>) => void;
   readonly onOpenPullRequestStack: () => void;
+  readonly thread: WorkbenchSidebarThread;
 }) {
+  const [chooserOpen, setChooserOpen] = useState(false);
   if (!data.pullRequestBadge) return null;
+  const pullRequests = visibleThreadPullRequests(data.pullRequests);
+  const presentation = resolveThreadPullRequestBadgePresentation({
+    badge: data.pullRequestBadge,
+    number: data.currentPullRequest?.number,
+    url: data.currentPullRequest?.url,
+    status: data.pullRequestIndicator,
+  });
+  if (pullRequests.length > 1 && presentation) {
+    return (
+      <span className="absolute end-2 bottom-2 z-10 flex items-center">
+        <Popover open={chooserOpen} onOpenChange={setChooserOpen}>
+          <PopoverTrigger
+            render={
+              <button
+                type="button"
+                className={`inline-flex shrink-0 cursor-pointer items-center gap-0.5 whitespace-nowrap text-xs tabular-nums hover:underline focus-visible:outline-2 focus-visible:outline-ring ${presentation.toneClassName}`}
+                aria-label={`Show linked pull requests for ${thread.title}: ${presentation.label}`}
+              />
+            }
+          >
+            <presentation.Icon aria-hidden className="size-3 shrink-0" />
+            {presentation.text}
+          </PopoverTrigger>
+          <PopoverPopup
+            side="right"
+            align="start"
+            className="w-72 max-h-[min(32rem,80vh)] overflow-y-auto"
+            aria-label={`Linked pull requests for ${thread.title}`}
+          >
+            <div className="flex flex-col gap-2">
+              <p className="text-xs font-medium">Linked from Thread</p>
+              {pullRequests.map((pullRequest) => (
+                <WorkbenchPullRequestLink
+                  key={pullRequest.url}
+                  environmentId={thread.environmentId}
+                  linkedThread={{ threadId: thread.id, title: thread.title }}
+                  onSelect={() => setChooserOpen(false)}
+                  pullRequest={{
+                    ...pullRequest,
+                    ...(data.shell ? { projectId: data.shell.projectId } : {}),
+                    ...(pullRequest.snapshot
+                      ? {
+                          title: pullRequest.snapshot.title,
+                          state: pullRequest.snapshot.state,
+                          isDraft: pullRequest.snapshot.isDraft,
+                        }
+                      : {}),
+                  }}
+                />
+              ))}
+            </div>
+          </PopoverPopup>
+        </Popover>
+      </span>
+    );
+  }
   return (
     <span className="absolute end-2 bottom-2 z-10 flex items-center">
       <ThreadPullRequestBadgeControl
@@ -212,6 +275,7 @@ function WorkbenchSidebarThreadRowView({
         thread={thread}
       />
       <WorkbenchSidebarThreadPrBadge
+        thread={thread}
         data={data}
         onOpenPullRequest={onOpenPullRequest}
         onOpenPullRequestStack={onOpenPullRequestStack}

@@ -2326,6 +2326,7 @@ function useChatMarkdownState({
   });
   const pullRequestLinking = usePullRequestLinking(threadRef?.environmentId);
   const environmentId = threadRef?.environmentId ?? explicitEnvironmentId ?? null;
+  const pullRequestEnvironmentId = explicitEnvironmentId ?? threadRef?.environmentId ?? null;
   const remoteOpen = useRemoteOpenResolution(environmentId);
   const canUseShellActions = canUseMarkdownFileShellActions(
     environmentId,
@@ -2376,6 +2377,9 @@ function useChatMarkdownState({
     [createAssetUrl, cwd, expandMedia, preparedConnection, threadRef],
   );
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
+  const pullRequestServerConfig = useAtomValue(
+    serverEnvironment.configValueAtom(pullRequestEnvironmentId),
+  );
   const projects = useProjects();
   const availableEditors = serverConfig?.availableEditors ?? [];
   const [preferredEditor] = usePreferredEditor(availableEditors);
@@ -2712,7 +2716,8 @@ function useChatMarkdownState({
       linkedThreadPullRequestFor,
       resolveThreadPullRequest,
       resolvedTheme,
-      serverConfig,
+      pullRequestEnvironmentId,
+      pullRequestServerConfig,
       skills,
       text,
       threadRef,
@@ -2743,7 +2748,8 @@ function useChatMarkdownState({
       linkedThreadPullRequestFor,
       resolveThreadPullRequest,
       resolvedTheme,
-      serverConfig,
+      pullRequestEnvironmentId,
+      pullRequestServerConfig,
       skills,
       text,
       threadRef,
@@ -2874,7 +2880,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
   a: function MarkdownAnchor({ node, href, children, title: _title, ...props }) {
     const {
       cwd,
-      environmentId,
+      pullRequestEnvironmentId,
       imageBaseDir,
       markdownFileLinkMetaByHref,
       threadRef,
@@ -2886,7 +2892,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       projects,
       linkedThreadPullRequestFor,
       resolveThreadPullRequest,
-      serverConfig,
+      pullRequestServerConfig,
       updateThreadPullRequestLink,
       fileLinkChip,
       renderContextReference,
@@ -2924,9 +2930,10 @@ const CHAT_MARKDOWN_COMPONENTS = {
         confirmBeforeOpen && href ? pullRequestCandidateUrlFromReferenceAutolink(href) : href;
       const pullRequestPreviewTarget = pullRequestCandidateUrl
         ? resolvePullRequestPreviewTarget({
-            environmentId,
+            environmentId: pullRequestEnvironmentId,
             projects,
-            pullRequestsEnabled: serverConfig?.environment.capabilities.pullRequests === true,
+            pullRequestsEnabled:
+              pullRequestServerConfig?.environment.capabilities.pullRequests === true,
             url: pullRequestCandidateUrl,
           })
         : null;
@@ -2974,7 +2981,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
             // the panel it opens offers the browser as one of its actions.
             if (
               !href ||
-              openChangeRequestLink(event, href, undefined, environmentId ?? undefined)
+              openChangeRequestLink(event, href, undefined, pullRequestEnvironmentId ?? undefined)
             ) {
               return;
             }
@@ -3086,7 +3093,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
                 },
                 targetUrl,
                 undefined,
-                environmentId ?? undefined,
+                pullRequestEnvironmentId ?? undefined,
               )
             }
             onOpenFallback={openDeferredMarkdownLink}
@@ -3134,7 +3141,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const {
       expandMedia,
       cwd,
-      environmentId,
+      pullRequestEnvironmentId,
       githubMedia,
       imageBaseDir,
       threadRef,
@@ -3171,13 +3178,13 @@ const CHAT_MARKDOWN_COMPONENTS = {
     if (
       githubMedia &&
       cwd !== undefined &&
-      environmentId !== null &&
+      pullRequestEnvironmentId !== null &&
       directUri !== null &&
       githubMediaUrl !== null
     ) {
       return (
         <ChatMarkdownAssetImage
-          environmentId={environmentId}
+          environmentId={pullRequestEnvironmentId}
           resource={{ _tag: "github-media", cwd, url: githubMediaUrl }}
           alt={altText}
           kind={kind}

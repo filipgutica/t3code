@@ -12,12 +12,14 @@ import {
   type ReactNode,
 } from "react";
 
-import { useLocation } from "@tanstack/react-router";
+import { useLocation, useParams } from "@tanstack/react-router";
 import type { PullRequestDetailFocus } from "../components/pullRequest/PullRequestDetailPanel";
 import {
   WorkbenchAttentionProvider,
   useWorkbenchAttentionData,
 } from "./WorkbenchAttentionProvider";
+import { resolveThreadRouteRef } from "../threadRoutes";
+import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanelStore";
 
 export interface WorkbenchLinkedPullRequestThread {
   readonly threadId: ThreadId;
@@ -55,6 +57,23 @@ export function WorkbenchPullRequestPreviewProvider({ children }: { children: Re
 function WorkbenchPullRequestPreview({ children }: { children: ReactNode }) {
   const { href } = useLocation();
   const { refreshAttention } = useWorkbenchAttentionData();
+  const routeThreadRef = useParams({ strict: false, select: resolveThreadRouteRef });
+  const dockedPullRequestKey = useRightPanelStore((state) => {
+    const surface = selectActiveRightPanelSurface(state.byThreadKey, routeThreadRef);
+    return surface?.kind === "pull-request" && routeThreadRef
+      ? JSON.stringify([routeThreadRef.environmentId, routeThreadRef.threadId, surface.id])
+      : null;
+  });
+  const previousDockedPullRequestKey = useRef(dockedPullRequestKey);
+  useEffect(() => {
+    if (
+      previousDockedPullRequestKey.current !== null &&
+      previousDockedPullRequestKey.current !== dockedPullRequestKey
+    ) {
+      refreshAttention();
+    }
+    previousDockedPullRequestKey.current = dockedPullRequestKey;
+  }, [dockedPullRequestKey, refreshAttention]);
   const [selection, setSelection] = useState<WorkbenchPullRequestSelection | null>(null);
   const [openedHref, setOpenedHref] = useState(href);
   const wasOpen = useRef(false);
@@ -67,22 +86,39 @@ function WorkbenchPullRequestPreview({ children }: { children: ReactNode }) {
     setOpenedHref(href);
     setSelection(null);
   }
-  const openSelection = useCallback((next: WorkbenchPullRequestSelection) => {
-    setSelection((current) => ({
-      ...next,
-      ...(next.linkedThread
-        ? {}
-        : current?.linkedThread &&
-            current.environmentId === next.environmentId &&
-            current.reference.projectId === next.reference.projectId &&
-            current.reference.host?.toLowerCase() === next.reference.host?.toLowerCase() &&
-            current.reference.repository.toLowerCase() ===
-              next.reference.repository.toLowerCase() &&
-            current.reference.number === next.reference.number
-          ? { linkedThread: current.linkedThread }
-          : {}),
-    }));
-  }, []);
+  const openSelection = useCallback(
+    (next: WorkbenchPullRequestSelection) => {
+      // Focused attention destinations retain the sheet's focus and close-refresh lifecycle.
+      if (routeThreadRef && next.focus === undefined) {
+        setSelection(null);
+        useRightPanelStore.getState().openPullRequest(routeThreadRef, {
+          projectId: next.reference.projectId,
+          repository: next.reference.repository,
+          number: next.reference.number,
+          ...(next.reference.host === undefined ? {} : { host: next.reference.host }),
+          ...(routeThreadRef.environmentId === next.environmentId
+            ? {}
+            : { environmentId: next.environmentId }),
+        });
+        return;
+      }
+      setSelection((current) => ({
+        ...next,
+        ...(next.linkedThread
+          ? {}
+          : current?.linkedThread &&
+              current.environmentId === next.environmentId &&
+              current.reference.projectId === next.reference.projectId &&
+              current.reference.host?.toLowerCase() === next.reference.host?.toLowerCase() &&
+              current.reference.repository.toLowerCase() ===
+                next.reference.repository.toLowerCase() &&
+              current.reference.number === next.reference.number
+            ? { linkedThread: current.linkedThread }
+            : {}),
+      }));
+    },
+    [routeThreadRef],
+  );
   return (
     <OpenWorkbenchPullRequestContext value={openSelection}>
       {children}

@@ -191,6 +191,29 @@ describe("rightPanelStore", () => {
     expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("diff");
   });
 
+  it.each([
+    { name: "pull request", surface: linkedPullRequest },
+    { name: "pull request list", surface: { id: "pull-requests", kind: "pull-requests" } as const },
+  ])("keeps a foreign pull request active across later local $name updates", ({ surface }) => {
+    const store = useRightPanelStore.getState();
+    store.openPullRequest(refA, {
+      environmentId: "env-2",
+      projectId: "project-a",
+      repository: "pingdotgg/t3code",
+      number: 41,
+    });
+    const foreignSurface = selectActiveRightPanelSurface(
+      useRightPanelStore.getState().byThreadKey,
+      refA,
+    );
+    const nextTurnRevision = store.getUserActionRevision(refA);
+
+    expect(store.openProactive(refA, surface, nextTurnRevision)).toBe(false);
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toBe(
+      foreignSurface,
+    );
+  });
+
   it("keeps manual choices scoped to their thread and environment", () => {
     const otherEnvironment = scopeThreadRef("env-2" as EnvironmentId, refA.threadId);
     const store = useRightPanelStore.getState();
