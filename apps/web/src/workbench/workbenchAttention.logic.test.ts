@@ -71,9 +71,10 @@ describe("Workbench attention from active native Threads and linked PRs", () => 
       }),
     ]);
     expect(reasons).toEqual(["Ready for review", "Waiting for input"]);
-    expect(matchesWorkbenchAttention("review", reasons)).toBe(true);
-    expect(matchesWorkbenchAttention("attention", reasons)).toBe(true);
-    expect(matchesWorkbenchAttention("review", ["Waiting for input"])).toBe(false);
+    const signals = [{ kind: "review-ready" }, { kind: "waiting" }] as const;
+    expect(matchesWorkbenchAttention("review", signals)).toBe(true);
+    expect(matchesWorkbenchAttention("attention", signals)).toBe(true);
+    expect(matchesWorkbenchAttention("review", [{ kind: "waiting" }])).toBe(false);
   });
   it("excludes superseded, settled, archived, missing and foreign-environment assignments", () => {
     const assignment = (id: string, supersededAt: string | null = null): WorkbenchAssignment => ({
@@ -144,7 +145,12 @@ describe("Workbench attention from active native Threads and linked PRs", () => 
     const failed = evaluate({ summary: { ...cleanSummary, checksState: "failing" }, error: true });
     expect(failed.reasons).toEqual(["Failed PR checks", "PR attention unavailable"]);
     expect(failed.inspected).toBe(false);
-    expect(matchesWorkbenchAttention("attention", failed.reasons)).toBe(true);
+    expect(
+      matchesWorkbenchAttention(
+        "attention",
+        failed.signalKinds.map((kind) => ({ kind })),
+      ),
+    ).toBe(true);
   });
   it("counts each actionable PR reason once and preserves unresolved native discussion targets", () => {
     const first = reviewThread("discussion-one");

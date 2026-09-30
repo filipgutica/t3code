@@ -36,6 +36,7 @@ import {
   LoaderCircleIcon,
   MoreHorizontalIcon,
   PlusIcon,
+  RefreshCwIcon,
   SearchIcon,
   XIcon,
 } from "lucide-react";
@@ -210,6 +211,7 @@ function renderWorkbenchTicketBoard({
           attentionMode: data.attentionMode,
           setAttentionMode: data.setAttentionMode,
           attentionCoverage: data.attentionCoverage,
+          incompleteInspection: data.incompleteInspection,
           refreshAttention: data.refreshAttention,
           repositoryId: data.repositoryId,
           setRepositoryId: data.setRepositoryId,
@@ -610,13 +612,25 @@ function useWorkbenchBoardData({
   }, [repositoriesReady, repositoryProjectIds, repositoryId, setView]);
   const attentionMode = view.attentionMode;
   const setAttentionMode = (attentionMode: WorkbenchAttentionMode) => setView({ attentionMode });
-  const { refreshAttention, attentionReasonsByTicket, attentionCoverage } =
-    useWorkbenchAttentionData();
+  const {
+    refreshAttention,
+    attentionReasonsByTicket,
+    attentionSignalsByTicket,
+    attentionInspectionsByTicket,
+    attentionCoverage,
+  } = useWorkbenchAttentionData();
+  const incompleteInspection = useMemo(
+    () =>
+      [...attentionInspectionsByTicket.values()].some((rows) =>
+        rows.some((row) => row.status !== "complete"),
+      ),
+    [attentionInspectionsByTicket],
+  );
   const visibleTickets = useMemo(
     () =>
       tickets.filter(
         (ticket) =>
-          matchesWorkbenchAttention(attentionMode, attentionReasonsByTicket.get(ticket.id) ?? []) &&
+          matchesWorkbenchAttention(attentionMode, attentionSignalsByTicket.get(ticket.id) ?? []) &&
           (repositoryId === null ||
             getWorkbenchTicketRepositoryProjectIds(ticket).includes(repositoryId)) &&
           matchesWorkbenchTicketSearch({
@@ -631,7 +645,7 @@ function useWorkbenchBoardData({
       search.query,
       repositoryId,
       attentionMode,
-      attentionReasonsByTicket,
+      attentionSignalsByTicket,
     ],
   );
   const visibleTicketIds = useMemo(
@@ -708,6 +722,7 @@ function useWorkbenchBoardData({
     setAttentionMode,
     attentionReasonsByTicket,
     attentionCoverage,
+    incompleteInspection,
     refreshAttention,
     repositoryId,
     setRepositoryId,
@@ -1136,10 +1151,64 @@ function renderWorkbenchBoardEmptyFilter({
   );
 }
 
+function renderWorkbenchBoardStatus({
+  attentionMode,
+  attentionCoverage,
+  incompleteInspection,
+  refreshAttention,
+  search,
+  repositoryId,
+  visibleTickets,
+  tickets,
+}: Pick<
+  ReturnType<typeof useWorkbenchBoardData>,
+  | "search"
+  | "attentionMode"
+  | "attentionCoverage"
+  | "incompleteInspection"
+  | "refreshAttention"
+  | "repositoryId"
+  | "visibleTickets"
+> &
+  Pick<WorkbenchTicketBoardProps, "tickets">) {
+  if (!search.query && repositoryId === null && attentionMode === "all") return null;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-2xs text-muted-foreground">
+      {attentionMode !== "all" ? (
+        <div className="flex min-w-0 items-center gap-1">
+          <span role="status">
+            Environment: {attentionCoverage}
+            {incompleteInspection ? ". Some actions may be missing." : ""}
+          </span>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  aria-label="Refresh linked PRs"
+                  variant="ghost"
+                  size="icon-micro"
+                  onClick={refreshAttention}
+                />
+              }
+            >
+              <RefreshCwIcon aria-hidden className="size-3" />
+            </TooltipTrigger>
+            <TooltipPopup>Refresh linked PRs</TooltipPopup>
+          </Tooltip>
+        </div>
+      ) : null}
+      <span role="status" className="ml-auto tabular-nums">
+        {visibleTickets.length} of {tickets.length} tickets
+      </span>
+    </div>
+  );
+}
+
 function renderWorkbenchBoardControls({
   attentionMode,
   setAttentionMode,
   attentionCoverage,
+  incompleteInspection,
   refreshAttention,
   search,
   repositoryId,
@@ -1157,6 +1226,7 @@ function renderWorkbenchBoardControls({
   | "attentionMode"
   | "setAttentionMode"
   | "attentionCoverage"
+  | "incompleteInspection"
   | "refreshAttention"
   | "repositoryId"
   | "setRepositoryId"
@@ -1168,57 +1238,56 @@ function renderWorkbenchBoardControls({
   return (
     <>
       {" "}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2 sm:px-4">
-        {renderWorkbenchAttentionModeControl(attentionMode, setAttentionMode)}
-        <div className="relative min-w-0 flex-1 sm:max-w-xs">
-          <SearchIcon
-            aria-hidden
-            className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+      <div className="flex shrink-0 flex-col gap-2 border-b border-border/60 px-3 py-2 sm:px-4">
+        <div className="flex flex-wrap items-center gap-2">
+          {renderWorkbenchAttentionModeControl(attentionMode, setAttentionMode)}
+          <div className="relative min-w-40 max-w-full flex-1 sm:max-w-xs">
+            <SearchIcon
+              aria-hidden
+              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              aria-label="Search tickets"
+              placeholder="Search by title or Jira key…"
+              value={search.text}
+              onChange={(event) => search.setText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.stopPropagation();
+                  search.setText("");
+                }
+              }}
+              className="pr-9 pl-9"
+            />
+            {search.text ? (
+              <Button
+                aria-label="Clear ticket search"
+                variant="ghost"
+                size="icon-xs"
+                className="absolute top-1/2 right-1 -translate-y-1/2"
+                onClick={() => search.setText("")}
+              >
+                <XIcon />
+              </Button>
+            ) : null}
+          </div>
+          <WorkbenchBoardRepositoryFilter
+            repositoryId={repositoryId}
+            setRepositoryId={setRepositoryId}
+            repositoryProjectIds={repositoryProjectIds}
+            repositoriesById={repositoriesById}
           />
-          <Input
-            aria-label="Search tickets"
-            placeholder="Search by title or Jira key…"
-            value={search.text}
-            onChange={(event) => search.setText(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.stopPropagation();
-                search.setText("");
-              }
-            }}
-            className="pr-9 pl-9"
-          />
-          {search.text ? (
-            <Button
-              aria-label="Clear ticket search"
-              variant="ghost"
-              size="icon-xs"
-              className="absolute top-1/2 right-1 -translate-y-1/2"
-              onClick={() => search.setText("")}
-            >
-              <XIcon />
-            </Button>
-          ) : null}
         </div>
-        <WorkbenchBoardRepositoryFilter
-          repositoryId={repositoryId}
-          setRepositoryId={setRepositoryId}
-          repositoryProjectIds={repositoryProjectIds}
-          repositoriesById={repositoriesById}
-        />
-        {attentionMode !== "all" ? (
-          <span className="flex items-center gap-2 text-xs text-muted-foreground" role="status">
-            {attentionCoverage}
-            <Button variant="ghost" size="xs" onClick={refreshAttention}>
-              Refresh linked PRs
-            </Button>
-          </span>
-        ) : null}
-        {search.query || repositoryId !== null || attentionMode !== "all" ? (
-          <span role="status" className="text-xs text-muted-foreground">
-            {visibleTickets.length} of {tickets.length} tickets
-          </span>
-        ) : null}
+        {renderWorkbenchBoardStatus({
+          attentionMode,
+          attentionCoverage,
+          incompleteInspection,
+          refreshAttention,
+          search,
+          repositoryId,
+          visibleTickets,
+          tickets,
+        })}
       </div>
       {renderWorkbenchBoardEmptyFilter({
         search,

@@ -219,7 +219,7 @@ export function WorkbenchTicketAttentionBadge(
           />
         }
       >
-        <BellIcon aria-hidden className={props.compact ? "text-warning" : undefined} />
+        <BellIcon aria-hidden className={props.compact ? "size-3 text-warning" : undefined} />
         {props.compact ? null : signals.length}
       </PopoverTrigger>
       <PopoverPopup width="md" padding="compact" side={props.side ?? "bottom"} align="end">
@@ -252,8 +252,12 @@ export function WorkbenchTicketAttentionPanel(props: TicketAttentionProps) {
       <Collapsible defaultOpen>
         <div className="flex items-center justify-between gap-2 px-3 py-3">
           <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-2 text-left text-xs font-semibold">
-            <BellIcon aria-hidden className="size-3.5 text-warning" />
-            Needs attention
+            {signals.length ? (
+              <BellIcon aria-hidden className="size-3.5 text-warning" />
+            ) : (
+              <CircleAlertIcon aria-hidden className="size-3.5 text-muted-foreground" />
+            )}
+            {signals.length ? "Needs attention" : "PR inspection"}
             {signals.length ? <span className="text-warning">{signals.length}</span> : null}
             <ChevronDownIcon
               aria-hidden

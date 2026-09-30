@@ -63,9 +63,9 @@ projection-only demo data written while the seeding server is stopped.
 | Excluded archived Thread       | No              | No               | Archived Thread is excluded despite its interrupted outcome             |
 | Excluded superseded Thread     | No              | No               | Interrupted historical assignment is excluded; replacement is clean     |
 | Non-primary Thread needs input | Yes             | No               | Waiting for input from the older assignment; newest assignment is clean |
-| PR inspection unavailable      | Yes             | No               | PR attention unavailable                                                |
-| PR inspection incomplete       | Yes             | No               | PR attention unknown; review comments are intentionally truncated       |
-| Slow PR inspection             | Initially       | No               | PR attention loading, then disappears after a complete clean inspection |
+| PR inspection unavailable      | No              | No               | Inspection unavailable; no confirmed action                             |
+| PR inspection incomplete       | No              | No               | Inspection incomplete; no confirmed action                              |
+| Slow PR inspection             | No              | No               | Loading coverage, then a complete clean inspection                      |
 
 In **All**, waiting, review-ready, failed-check, and non-primary Thread fixtures
 each show a bell with **1**. Unresolved PR feedback shows **3**: failed checks on
@@ -93,11 +93,14 @@ Thread, failed checks, requested changes, or exact review discussion. The Ticket
 header has the same popover. Its **Needs attention** section, above Agent Threads,
 keeps the same actions visible and can be collapsed.
 
-Select **Needs attention**, wait for the finite slow inspection, and check these
-memberships and reasons. Five linked PRs are inspected; three are complete and
-two deliberately remain unavailable/incomplete. These coverage warnings do not
-increase the bell count. Open their Tickets to see the inspection status.
-Use **Refresh linked PRs** to repeat inspection and confirm it finishes.
+Select **Needs attention**: expect five confirmed-action Tickets, each with a
+bell. The separate environment inspection line shows three of five linked PRs
+fully inspected; two deliberately remain unavailable/incomplete. Use the
+**Refresh linked PRs** icon to repeat inspection and confirm it finishes. Loading
+or uncertain coverage alone does not add a Ticket to either attention filter.
+In **All**, open the unavailable/incomplete examples: their **PR inspection**
+section explains the status and offers **Refresh**. Known actions remain visible
+while refreshing their PR inspection.
 Select **Ready for review** to isolate the review-ready Ticket. Navigate away and
 back to check filter persistence. Search for `no-matching-synthetic-ticket`, then
 use **Clear filters** to restore All.

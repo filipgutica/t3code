@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import {
   EnvironmentId,
   ProjectId,
+  ThreadId,
   WorkbenchProjectId,
   WorkbenchTicketId,
   type WorkbenchTicket,
@@ -12,6 +13,7 @@ import { ToggleGroup } from "../components/ui/toggle-group";
 import { Select } from "../components/ui/select";
 import type { Project } from "../types";
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
+import * as attentionProvider from "./WorkbenchAttentionProvider";
 
 vi.mock("../state/query", () => ({
   useEnvironmentQuery: () => ({ data: null, error: null, isPending: false }),
@@ -109,6 +111,7 @@ describe("Workbench Board view", () => {
     act(() => renderer?.unmount());
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
   it("keeps the search and matching Tickets when returning from Ticket detail", () => {
     act(() => {
@@ -153,6 +156,80 @@ describe("Workbench Board view", () => {
     act(() => clear.props.onClick());
     expect(control().props.value).toEqual(["all"]);
     expect(renderer.root.findAllByType("article")).toHaveLength(2);
+  });
+  it("shows confirmed actions with bells and excludes inspection-only Tickets", () => {
+    const waiting = ticket("Waiting for input");
+    const unavailable = ticket("PR inspection unavailable");
+    const reference = {
+      projectId: ProjectId.make("repo"),
+      repository: "acme/web",
+      number: 7,
+      url: "https://github.com/acme/web/pull/7",
+    };
+    vi.spyOn(attentionProvider, "useWorkbenchAttentionData").mockReturnValue({
+      attentionRefresh: 0,
+      refreshAttention: vi.fn(),
+      attentionReferences: [reference],
+      attentionScope: "confirmed-actions-board",
+      setAttentionObservations: vi.fn(),
+      attentionReasonsByTicket: new Map([
+        [waiting.id, ["Waiting for input"]],
+        [unavailable.id, ["PR attention unavailable"]],
+      ]),
+      attentionSignalsByTicket: new Map([
+        [
+          waiting.id,
+          [
+            {
+              kind: "waiting",
+              source: {
+                type: "thread",
+                threadId: ThreadId.make("waiting"),
+                threadTitle: waiting.title,
+              },
+            },
+          ],
+        ],
+      ]),
+      attentionInspectionsByTicket: new Map([
+        [
+          unavailable.id,
+          [
+            {
+              row: {
+                threadId: ThreadId.make("unavailable"),
+                threadTitle: unavailable.title,
+                pullRequest: reference,
+              },
+              status: "unavailable",
+              inspected: false,
+            },
+          ],
+        ],
+      ]),
+      attentionCoverage: "0 of 1 linked PRs inspected",
+    });
+    act(() => {
+      renderer = create(
+        <WorkbenchTicketBoard
+          {...props}
+          projectId={WorkbenchProjectId.make("confirmed-actions-board")}
+          tickets={[waiting, unavailable]}
+        />,
+      );
+    });
+    expect(renderer.root.findAllByType("article")).toHaveLength(2);
+    const control = renderer.root
+      .findAllByType(ToggleGroup)
+      .find((node) => node.props["aria-label"] === "Filter by attention")!;
+    act(() => control.props.onValueChange(["attention"]));
+    expect(renderer.root.findAllByType("h3").map((node) => node.children.join(""))).toEqual([
+      waiting.title,
+    ]);
+    expect(
+      renderer.root.findAllByProps({ "aria-label": "1 attention item for Waiting for input" })
+        .length,
+    ).toBeGreaterThan(0);
   });
   it("matches secondary repositories, retains the filter while loading, and clears removed repositories", () => {
     const workspaceProps = {

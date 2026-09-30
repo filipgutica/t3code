@@ -401,7 +401,7 @@ function WorkbenchSidebarFilters({
             }
           >
             <span aria-hidden className="relative inline-flex">
-              <BellIcon />
+              <BellIcon className="size-3" />
               {!onlyActionable && actionableTicketCount > 0 ? (
                 <span className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-primary ring-2 ring-sidebar" />
               ) : null}

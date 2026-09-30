@@ -258,9 +258,12 @@ export const mergeWorkbenchPullRequestAttention = ({
 
 export const matchesWorkbenchAttention = (
   mode: WorkbenchAttentionMode,
-  reasons: ReadonlyArray<string>,
+  signals: ReadonlyArray<Pick<WorkbenchAttentionSignal, "kind">>,
 ) =>
-  mode === "all" || (mode === "review" ? reasons.includes("Ready for review") : reasons.length > 0);
+  mode === "all" ||
+  (mode === "review"
+    ? signals.some((signal) => signal.kind === "review-ready")
+    : signals.length > 0);
 
 export const workbenchThreadAttentionReasons = (
   presentations: ReadonlyArray<{ readonly label: string } | null>,
