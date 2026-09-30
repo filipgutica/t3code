@@ -396,11 +396,16 @@ function WorkbenchSidebarFilters({
                 aria-pressed={onlyActionable}
                 onClick={() => onOnlyActionableChange(!onlyActionable)}
                 size="icon-xs"
-                variant={onlyActionable ? "warning-outline" : "ghost"}
+                variant="ghost-muted"
               />
             }
           >
-            <BellIcon />
+            <span aria-hidden className="relative inline-flex">
+              <BellIcon />
+              {onlyActionable ? (
+                <span className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-primary ring-2 ring-sidebar" />
+              ) : null}
+            </span>
           </TooltipTrigger>
           <TooltipPopup side="right">Show only confirmed actions</TooltipPopup>
         </Tooltip>
