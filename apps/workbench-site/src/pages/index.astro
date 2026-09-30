@@ -52,12 +52,19 @@ const tools = [
     <meta property="og:image" content={new URL(shareImage.src, Astro.site)} />
     <meta property="og:image:alt" content="T3 Code Workbench Board showing Tickets across workflow statuses." />
     <meta name="twitter:card" content="summary_large_image" />
-    <noscript><style is:global>html .appearance[hidden] { display: none !important; }</style></noscript>
+    <noscript><style is:global>html .appearance[hidden] { display: none !important; } html .menu-toggle { display: flex; }</style></noscript>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
     <div class="site-layout">
     <aside class="family-bar" aria-label="Tool navigation">
+      <details class="site-menu" data-site-menu>
+        <summary class="menu-toggle" aria-controls="site-menu-links">
+          <svg class="menu-open-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          <svg class="menu-close-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg>
+          Menu
+        </summary>
+        <div class="nav-content" id="site-menu-links">
       <nav class="family" aria-label="Tools">
         {tools.map((tool) => <a href={tool.href}>{tool.name}</a>)}
         <a href={base} aria-current="page">workbench</a>
@@ -77,6 +84,9 @@ const tools = [
           </div>
           <span class="theme-choice-label" data-theme-label>System</span>
         </div>
+        </div>
+      </details>
+      <script is:inline>document.querySelector("[data-site-menu]").open = !matchMedia("(max-width: 800px)").matches;</script>
     </aside>
     <div class="site-content">
     <header class="site-header wrap">
@@ -215,6 +225,50 @@ const tools = [
     </div>
     </div>
     <ImageLightbox />
+    <script>
+      /* Native disclosure on phones; the full rail stays open on desktop. */
+      const siteMenu = document.querySelector<HTMLDetailsElement>("[data-site-menu]");
+      const menuToggle = siteMenu?.querySelector<HTMLElement>("summary");
+      if (siteMenu && menuToggle) {
+        const mobileMenu = matchMedia("(max-width: 800px)");
+        let menuFocus = siteMenu.contains(document.activeElement) ? document.activeElement : null;
+        const syncMenu = () => {
+          const focused = menuFocus;
+          siteMenu.open = !mobileMenu.matches;
+          if (!focused) return;
+          if (mobileMenu.matches) menuToggle.focus();
+          else if (focused === menuToggle) siteMenu.querySelector<HTMLAnchorElement>("a")?.focus();
+        };
+        syncMenu();
+        mobileMenu.addEventListener("change", syncMenu);
+        siteMenu.addEventListener("keydown", (event) => {
+          if (event.key !== "Escape" || !mobileMenu.matches || !siteMenu.open) return;
+          event.preventDefault();
+          siteMenu.open = false;
+          menuToggle.focus();
+        });
+        siteMenu.addEventListener("click", (event) => {
+          if (!mobileMenu.matches || !(event.target instanceof Element)) return;
+          const link = event.target.closest("a");
+          if (!link) return;
+          siteMenu.open = false;
+          if (!link.getAttribute("href")?.startsWith("#")) return;
+          const target = document.getElementById(link.hash.slice(1));
+          if (!target) return;
+          target.tabIndex = -1;
+          target.focus({ preventScroll: true });
+        });
+        document.addEventListener("pointerdown", (event) => {
+          if (!(event.target instanceof Node) || siteMenu.contains(event.target)) return;
+          menuFocus = null;
+          if (mobileMenu.matches) siteMenu.open = false;
+        });
+        document.addEventListener("focusin", (event) => {
+          menuFocus = event.target instanceof Element && siteMenu.contains(event.target) ? event.target : null;
+          if (mobileMenu.matches && !menuFocus) siteMenu.open = false;
+        });
+      }
+    </script>
     <script>
       // System follows the OS. The choice is remembered when storage works, and shared with the other tool sites.
       const root = document.documentElement;
