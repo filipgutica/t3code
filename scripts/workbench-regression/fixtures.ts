@@ -89,6 +89,12 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
           JSON.stringify({ jiraBaseline: baseline }),
           { mode: 0o600 },
         );
+      } else {
+        await NodeFSP.writeFile(
+          NodePath.join(home, "config.env"),
+          "T3_WORKBENCH_JIRA_CLIENT_ID=\nT3_WORKBENCH_JIRA_CLIENT_SECRET=\nT3_WORKBENCH_JIRA_VAULT=\n",
+          { mode: 0o600 },
+        );
       }
       const server = live
         ? await resetToBaseline({
