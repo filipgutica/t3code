@@ -25,13 +25,11 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
-  buildTicketSummaryPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
   sanitizeCommitSubject,
   sanitizePrTitle,
-  sanitizeTicketSummary,
   sanitizeThreadTitle,
 } from "./TextGenerationUtils.ts";
 
@@ -123,7 +121,7 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
 
   const runAntigravityJson = Effect.fn("AntigravityTextGeneration.runJson")(
     function* <S extends Schema.Top>(input: {
-      readonly operation: keyof TextGeneration.TextGeneration["Service"];
+      readonly operation: string;
       readonly prompt: string;
       readonly outputSchema: S;
       readonly modelSelection: ModelSelection;
@@ -407,21 +405,14 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
       };
     });
 
-  const generateTicketSummary: TextGeneration.TextGeneration["Service"]["generateTicketSummary"] =
-    Effect.fn("AntigravityTextGeneration.generateTicketSummary")(function* (input) {
-      const generated = yield* runAntigravityJson({
-        operation: "generateTicketSummary",
-        ...buildTicketSummaryPrompt(input),
-        modelSelection: input.modelSelection,
-      });
-      const summary = sanitizeTicketSummary(generated.summary);
-      if (!summary) {
-        return yield* new TextGenerationError({
-          operation: "generateTicketSummary",
-          detail: "Antigravity returned an empty ticket summary.",
-        });
-      }
-      return { summary };
+  const generateStructured: TextGeneration.TextGeneration["Service"]["generateStructured"] = (
+    input,
+  ) =>
+    runAntigravityJson({
+      operation: input.operation,
+      prompt: input.prompt,
+      outputSchema: Schema.toType(input.outputSchema),
+      modelSelection: input.modelSelection,
     });
 
   return {
@@ -429,6 +420,6 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
-    generateTicketSummary,
+    generateStructured,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

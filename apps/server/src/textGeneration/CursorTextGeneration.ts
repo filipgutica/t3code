@@ -15,13 +15,11 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
-  buildTicketSummaryPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
   sanitizeCommitSubject,
   sanitizePrTitle,
-  sanitizeTicketSummary,
   sanitizeThreadTitle,
 } from "./TextGenerationUtils.ts";
 import {
@@ -52,12 +50,7 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
     outputSchemaJson,
     modelSelection,
   }: {
-    operation:
-      | "generateCommitMessage"
-      | "generatePrContent"
-      | "generateBranchName"
-      | "generateThreadTitle"
-      | "generateTicketSummary";
+    operation: string;
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -264,25 +257,15 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
-  const generateTicketSummary: TextGeneration.TextGeneration["Service"]["generateTicketSummary"] =
-    Effect.fn("CursorTextGeneration.generateTicketSummary")(function* (input) {
-      const { prompt, outputSchema } = buildTicketSummaryPrompt(input);
-      const generated = yield* runCursorJson({
-        operation: "generateTicketSummary",
-        cwd: input.cwd,
-        prompt,
-        outputSchemaJson: outputSchema,
-        modelSelection: input.modelSelection,
-      });
-
-      const summary = sanitizeTicketSummary(generated.summary);
-      if (!summary) {
-        return yield* new TextGenerationError({
-          operation: "generateTicketSummary",
-          detail: "Cursor Agent returned an empty ticket summary.",
-        });
-      }
-      return { summary };
+  const generateStructured: TextGeneration.TextGeneration["Service"]["generateStructured"] = (
+    input,
+  ) =>
+    runCursorJson({
+      operation: input.operation,
+      cwd: input.cwd,
+      prompt: input.prompt,
+      outputSchemaJson: Schema.toType(input.outputSchema),
+      modelSelection: input.modelSelection,
     });
 
   return {
@@ -290,6 +273,6 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
-    generateTicketSummary,
+    generateStructured,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

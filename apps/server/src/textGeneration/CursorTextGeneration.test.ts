@@ -224,7 +224,7 @@ it.layer(CursorTextGenerationTestLayer)("CursorTextGeneration", (it) => {
     ),
   );
 
-  it.effect("generates and bounds ticket summaries through Cursor ACP", () =>
+  it.effect("generates structured JSON through Cursor ACP", () =>
     withFakeAcpAgent(
       {
         T3_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
@@ -234,16 +234,15 @@ it.layer(CursorTextGenerationTestLayer)("CursorTextGeneration", (it) => {
       },
       (textGeneration) =>
         Effect.gen(function* () {
-          const generated = yield* textGeneration.generateTicketSummary({
+          const generated = yield* textGeneration.generateStructured({
+            operation: "generateExample",
             cwd: process.cwd(),
-            title: "Validate analytics fields",
-            description:
-              "Reject unsupported metric and dimension combinations before provider calls.",
+            prompt: "Summarize the supplied content.",
+            outputSchema: Schema.Struct({ summary: Schema.String }),
             modelSelection: createModelSelection(ProviderInstanceId.make("cursor"), "composer-2"),
           });
 
           expect(generated.summary).toContain("Improve request validation");
-          expect(generated.summary.length).toBeLessThanOrEqual(500);
         }),
     ),
   );

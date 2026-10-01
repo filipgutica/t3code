@@ -24,14 +24,12 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
-  buildTicketSummaryPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
   normalizeCliError,
   sanitizeCommitSubject,
   sanitizePrTitle,
-  sanitizeTicketSummary,
   sanitizeThreadTitle,
   toJsonSchemaObject,
 } from "./TextGenerationUtils.ts";
@@ -100,12 +98,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     );
 
   const encodeJsonForOperation = (
-    operation:
-      | "generateCommitMessage"
-      | "generatePrContent"
-      | "generateBranchName"
-      | "generateThreadTitle"
-      | "generateTicketSummary",
+    operation: string,
     value: unknown,
     detail: string,
   ): Effect.Effect<string, TextGenerationError> =>
@@ -131,12 +124,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     outputSchemaJson,
     modelSelection,
   }: {
-    operation:
-      | "generateCommitMessage"
-      | "generatePrContent"
-      | "generateBranchName"
-      | "generateThreadTitle"
-      | "generateTicketSummary";
+    operation: string;
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -414,25 +402,15 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       };
     });
 
-  const generateTicketSummary: TextGeneration.TextGeneration["Service"]["generateTicketSummary"] =
-    Effect.fn("ClaudeTextGeneration.generateTicketSummary")(function* (input) {
-      const { prompt, outputSchema } = buildTicketSummaryPrompt(input);
-      const generated = yield* runClaudeJson({
-        operation: "generateTicketSummary",
-        cwd: input.cwd,
-        prompt,
-        outputSchemaJson: outputSchema,
-        modelSelection: input.modelSelection,
-      });
-
-      const summary = sanitizeTicketSummary(generated.summary);
-      if (!summary) {
-        return yield* new TextGenerationError({
-          operation: "generateTicketSummary",
-          detail: "Claude returned an empty ticket summary.",
-        });
-      }
-      return { summary };
+  const generateStructured: TextGeneration.TextGeneration["Service"]["generateStructured"] = (
+    input,
+  ) =>
+    runClaudeJson({
+      operation: input.operation,
+      cwd: input.cwd,
+      prompt: input.prompt,
+      outputSchemaJson: Schema.toType(input.outputSchema),
+      modelSelection: input.modelSelection,
     });
 
   return {
@@ -440,6 +418,6 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
-    generateTicketSummary,
+    generateStructured,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

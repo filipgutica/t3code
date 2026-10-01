@@ -1,6 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as Schema from "effect/Schema";
 import type { ChatAttachment, ModelSelection, ProviderInstanceId } from "@t3tools/contracts";
 import { TextGenerationError } from "@t3tools/contracts";
 
@@ -75,16 +76,12 @@ export interface ThreadTitleGenerationResult {
   needsRefinement?: boolean | undefined;
 }
 
-export interface TicketSummaryGenerationInput {
-  cwd: string;
-  title: string;
-  description: string;
-  /** What model and provider to use for generation. */
-  modelSelection: ModelSelection;
-}
-
-export interface TicketSummaryGenerationResult {
-  summary: string;
+export interface StructuredGenerationInput<A extends Record<string, unknown>> {
+  readonly operation: string;
+  readonly cwd: string;
+  readonly prompt: string;
+  readonly outputSchema: Schema.Codec<A, unknown>;
+  readonly modelSelection: ModelSelection;
 }
 
 /**
@@ -119,23 +116,16 @@ export class TextGeneration extends Context.Service<
       input: ThreadTitleGenerationInput,
     ) => Effect.Effect<ThreadTitleGenerationResult, TextGenerationError>;
 
-    /** Generate a concise summary from a ticket title and description. */
-    readonly generateTicketSummary: (
-      input: TicketSummaryGenerationInput,
-    ) => Effect.Effect<TicketSummaryGenerationResult, TextGenerationError>;
+    /** Generate schema-validated JSON for a short, caller-owned prompt. */
+    readonly generateStructured: <A extends Record<string, unknown>>(
+      input: StructuredGenerationInput<A>,
+    ) => Effect.Effect<A, TextGenerationError>;
   }
 >()("t3/textGeneration/TextGeneration") {}
 
-type TextGenerationOp =
-  | "generateCommitMessage"
-  | "generatePrContent"
-  | "generateBranchName"
-  | "generateThreadTitle"
-  | "generateTicketSummary";
-
 const resolveInstance = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
-  operation: TextGenerationOp,
+  operation: string,
   instanceId: ProviderInstanceId,
 ): Effect.Effect<ProviderInstance["textGeneration"], TextGenerationError> =>
   registry.getInstance(instanceId).pipe(
@@ -184,9 +174,9 @@ export const make = Effect.gen(function* () {
           }),
         ),
       ),
-    generateTicketSummary: (input) =>
-      resolveInstance(registry, "generateTicketSummary", input.modelSelection.instanceId).pipe(
-        Effect.flatMap((textGeneration) => textGeneration.generateTicketSummary(input)),
+    generateStructured: (input) =>
+      resolveInstance(registry, input.operation, input.modelSelection.instanceId).pipe(
+        Effect.flatMap((textGeneration) => textGeneration.generateStructured(input)),
       ),
   });
 });

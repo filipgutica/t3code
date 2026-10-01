@@ -11,14 +11,13 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
-import {
-  TextGeneration,
-  type TicketSummaryGenerationInput,
-} from "../textGeneration/TextGeneration.ts";
+import { TextGeneration } from "../textGeneration/TextGeneration.ts";
 import { ticketSummaryHostLayer } from "./TicketSummaryService.ts";
+import { buildTicketSummaryPrompt } from "./ticketSummaryText.ts";
 
 const projectId = ProjectId.make("summary-primary");
 const ticket = {
@@ -30,7 +29,7 @@ const ticket = {
 describe("TicketSummaryHost", () => {
   it.effect("explains the free OpenCode rejection without masking other generation errors", () =>
     Effect.gen(function* () {
-      let detail =
+      let detail: string | null =
         "Error from provider (Console): OpenCode's free tier can only be used from within OpenCode";
       yield* Effect.gen(function* () {
         const host = yield* TicketSummaryHost;
@@ -43,6 +42,12 @@ describe("TicketSummaryHost", () => {
         const unrelated = yield* Effect.flip(host.generate(ticket));
         expect(unrelated.message).toBe(
           "Provider timed out. Check Settings → General → Text generation model, then regenerate the summary.",
+        );
+
+        detail = null;
+        const empty = yield* Effect.flip(host.generate(ticket));
+        expect(empty.message).toBe(
+          "The model returned an empty ticket summary. Check Settings → General → Text generation model, then regenerate the summary.",
         );
       }).pipe(
         Effect.provide(
@@ -70,10 +75,14 @@ describe("TicketSummaryHost", () => {
             ),
             Layer.provide(
               Layer.mock(TextGeneration)({
-                generateTicketSummary: () =>
-                  Effect.fail(
-                    new TextGenerationError({ operation: "generateTicketSummary", detail }),
-                  ),
+                generateStructured: (input) =>
+                  detail
+                    ? Effect.fail(
+                        new TextGenerationError({ operation: "generateTicketSummary", detail }),
+                      )
+                    : Schema.decodeUnknownEffect(input.outputSchema)({ summary: "  \n " }).pipe(
+                        Effect.orDie,
+                      ),
               }),
             ),
           ),
@@ -89,7 +98,12 @@ describe("TicketSummaryHost", () => {
         const first = createModelSelection(ProviderInstanceId.make("writer-one"), "model-one");
         const second = createModelSelection(ProviderInstanceId.make("writer-two"), "model-two");
         let selection: ModelSelection = first;
-        const calls: TicketSummaryGenerationInput[] = [];
+        const calls: Array<{
+          operation: string;
+          cwd: string;
+          prompt: string;
+          modelSelection: ModelSelection;
+        }> = [];
         yield* Effect.gen(function* () {
           const host = yield* TicketSummaryHost;
           expect(yield* host.generate(ticket)).toBe("A generated summary.");
@@ -98,8 +112,11 @@ describe("TicketSummaryHost", () => {
           expect(calls).toEqual(
             [first, second].map((modelSelection) => ({
               cwd: "/repos/primary",
-              title: ticket.title,
-              description: ticket.markdown,
+              operation: "generateTicketSummary",
+              prompt: buildTicketSummaryPrompt({
+                title: ticket.title,
+                description: ticket.markdown,
+              }).prompt,
               modelSelection,
             })),
           );
@@ -132,11 +149,21 @@ describe("TicketSummaryHost", () => {
               ),
               Layer.provide(
                 Layer.mock(TextGeneration)({
-                  generateTicketSummary: (input) =>
+                  generateStructured: (input) =>
                     Effect.sync(() => {
-                      calls.push(input);
-                      return { summary: "A generated summary." };
-                    }),
+                      calls.push({
+                        operation: input.operation,
+                        cwd: input.cwd,
+                        prompt: input.prompt,
+                        modelSelection: input.modelSelection,
+                      });
+                    }).pipe(
+                      Effect.andThen(
+                        Schema.decodeUnknownEffect(input.outputSchema)({
+                          summary: "## Summary\nA generated summary. https://example.com/details",
+                        }).pipe(Effect.orDie),
+                      ),
+                    ),
                 }),
               ),
             ),
