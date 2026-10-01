@@ -18,6 +18,9 @@ env:
 
 jobs:
   verify:
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     outputs:
@@ -49,6 +52,17 @@ jobs:
             echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Require fork CI ownership
+        if: steps.pending.outputs.needed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          state="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml" --jq .state)"
+          if [[ "$state" != "disabled_manually" ]]; then
+            echo "Upstream CI must be disabled in this fork; Workbench CI owns its runner policy." >&2
+            exit 1
+          fi
+
       - name: Setup Node for merge preview
         if: steps.pending.outputs.needed == 'true'
         uses: actions/setup-node@v6
@@ -78,6 +92,10 @@ jobs:
             git add pnpm-lock.yaml
           fi
 
+      - name: Regenerate fork CI from the merged upstream workflow
+        if: steps.pending.outputs.needed == 'true'
+        run: node scripts/workbench-ci.ts
+
       - name: Setup Vite+
         if: steps.pending.outputs.needed == 'true'
         uses: voidzero-dev/setup-vp@v1
@@ -91,7 +109,7 @@ jobs:
         run: |
           vp install --lockfile-only --no-frozen-lockfile
           vp install --frozen-lockfile
-          git add pnpm-lock.yaml
+          git add pnpm-lock.yaml .github/workflows/workbench-ci.yml .github/workflows/workbench-thread-transfer-report.yml
           git commit --no-edit
 
       - name: Setup APT mirrors
@@ -107,12 +125,13 @@ jobs:
       - name: Verify Workbench overlay
         if: steps.pending.outputs.needed == 'true'
         run: |
+          node scripts/workbench-ci.ts --check
           vp lint --report-unused-disable-directives
           vp fmt --check
           vp run --filter @t3tools/workbench typecheck
           vp run --filter @t3tools/workbench test
           vp run --filter @t3tools/workbench quality
-          vp test run packages/contracts/src/workbench.test.ts apps/server/src/workbench apps/server/src/auth/RpcAuthorization.test.ts apps/server/src/orchestration/ThreadSettlementReactor.test.ts apps/web/src/workbench apps/desktop/src/updates/DesktopUpdates.test.ts apps/desktop/src/workbench scripts/workbench-upstream-sync.test.ts scripts/workbench-upstream-sync-merge.test.ts
+          vp test run packages/contracts/src/workbench.test.ts apps/server/src/workbench apps/server/src/auth/RpcAuthorization.test.ts apps/server/src/orchestration/ThreadSettlementReactor.test.ts apps/web/src/workbench apps/desktop/src/updates/DesktopUpdates.test.ts apps/desktop/src/workbench scripts/workbench-upstream-sync.test.ts scripts/workbench-upstream-sync-merge.test.ts scripts/workbench-ci.test.ts
           vp run --filter @t3tools/contracts typecheck
           vp run --filter t3 typecheck
           vp run --filter @t3tools/web typecheck

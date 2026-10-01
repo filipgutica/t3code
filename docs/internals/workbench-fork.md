@@ -28,6 +28,14 @@ vp run workbench:quality
 
 The typecheck includes the [package boundary check](../../packages/workbench/check-boundary.mjs). The [quality workflow](../../.github/workflows/workbench-quality.yml) runs the package checks and production quality gates. Tests for native migration integration stay in the server; independent package tests use package-owned fixtures. Read the current scripts and workflow for their exact gates rather than treating this page as a second configuration source.
 
+## CI ownership
+
+Keep `.github/workflows/ci.yml` and `thread-transfer-report.yml` identical to the upstream versions integrated into the product. [The generator](../../scripts/workbench-ci.ts) derives `workbench-ci.yml` with GitHub runners and fork execution limits while retaining upstream jobs and their checks. It derives the report workflow with a `Workbench CI` subscription, retaining the trusted publisher. Regenerate both after merging upstream; the sync workflow does this before committing its candidate. Unsupported upstream runner or workflow structures stop generation for review.
+
+For the initial cutover, finish local verification, then disable the upstream **CI** workflow through GitHub's repository settings **before publishing the branch that restores its upstream runner configuration**. Confirm **Workbench CI** passes on the PR's current head before merging, and replace any required `Check` rule with `Workbench Check` without weakening branch protection. If verification fails, the existing main-branch CI can be re-enabled while it still uses GitHub runners. The generated report workflow starts receiving runs once it is on the default branch; its first main run establishes a new baseline.
+
+The disabled CI setting lives outside Git and must remain disabled: retaining the file preserves upstream ownership, but enabling it after cutover would queue Blacksmith jobs in this fork. Generated job names have a `Workbench` prefix to avoid ambiguous checks. Keep Workbench quality, regression, preview, and release workflows separate.
+
 ## Upstream sync
 
 The fork's `main` in `filipgutica/t3code` is the long-lived product branch. In this clone, `origin` points to the fork and `upstream` to `pingdotgg/t3code`. Preview a sync before merging:
