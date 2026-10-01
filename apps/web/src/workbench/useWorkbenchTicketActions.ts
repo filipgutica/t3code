@@ -21,6 +21,12 @@ import {
 import type { useOptimisticWorkbenchStatus } from "./useOptimisticWorkbenchStatus";
 import type { useWorkbenchJiraBindings } from "./useWorkbenchJiraBindings";
 import type { WorkbenchJiraTransitionSelection } from "./WorkbenchTicketStatusMenu";
+import {
+  getWorkbenchRepositoryScope,
+  isWorkbenchRepositoryScopeEqual,
+  type WorkbenchRepositoryScope,
+  type WorkbenchRepositoryScopeDraft,
+} from "./workbenchRepositoryScope";
 
 type WorkbenchTicketPatch = Partial<
   Pick<
@@ -97,6 +103,115 @@ export function useWorkbenchTicketActions({
   });
   const [workspacePreparationFailure, setWorkspacePreparationFailure] =
     useState<WorkbenchTicketId | null>(null);
+  const [scopeDraft, setScopeDraft] = useState<WorkbenchRepositoryScopeDraft | null>(null);
+  const repositoryScopeDraft = scopeDraft?.environmentId === environmentId ? scopeDraft : null;
+  const editRepositories = ({ ticket, prepare }: { ticket: WorkbenchTicket; prepare: boolean }) => {
+    if (environmentId === null || pendingAction !== null) return;
+    setError(null);
+    setScopeDraft((current) => ({
+      environmentId,
+      ticket:
+        current?.environmentId === environmentId && current.ticket.id === ticket.id
+          ? current.ticket
+          : ticket,
+      value:
+        current?.environmentId === environmentId && current.ticket.id === ticket.id
+          ? current.value
+          : getWorkbenchRepositoryScope(ticket),
+      prepare,
+    }));
+  };
+  const changeRepositoryScope = (value: WorkbenchRepositoryScope) => {
+    setScopeDraft((current) =>
+      current?.environmentId === environmentId ? { ...current, value } : current,
+    );
+  };
+  const cancelRepositoryScope = () => {
+    if (pendingAction !== null) return;
+    setScopeDraft(null);
+    setError(null);
+  };
+  const clearRepositoryScope = () => setScopeDraft(null);
+  const acceptSavedRepositoryScope = (ticket: WorkbenchTicket) => {
+    setScopeDraft((current) =>
+      current?.environmentId === environmentId && current.ticket.id === ticket.id
+        ? {
+            ...current,
+            ticket,
+            value: getWorkbenchRepositoryScope(ticket),
+            prepare: true,
+          }
+        : current,
+    );
+  };
+  const saveRepositories = async () => {
+    const draft = repositoryScopeDraft;
+    if (environmentId === null || draft === null || pendingAction !== null) return false;
+    const latestTicket = snapshot?.tickets.find((ticket) => ticket.id === draft.ticket.id);
+    if (
+      !latestTicket ||
+      latestTicket.archivedAt != null ||
+      latestTicket.revision !== draft.ticket.revision
+    ) {
+      setError(
+        "This Ticket changed. Cancel repository edits and review its current choices before saving.",
+      );
+      return false;
+    }
+    const workspace = snapshot?.ticketWorkspaces.find(
+      (candidate) => candidate.ticketId === draft.ticket.id,
+    );
+    if (workspace?.status === "preparing" || workspace?.status === "releasing") return false;
+    setPendingAction(`update-repositories:${draft.ticket.id}`);
+    setError(null);
+    let savedTicket = draft.ticket;
+    const changed = !isWorkbenchRepositoryScopeEqual(draft.ticket, draft.value);
+    try {
+      if (changed) {
+        const saved = await updateTicket({
+          environmentId,
+          input: {
+            id: draft.ticket.id,
+            expectedRevision: draft.ticket.revision,
+            ...draft.value,
+            updatedAt: new Date().toISOString(),
+          },
+        });
+        if (reportWorkbenchCommandFailure(saved, setError)) {
+          refreshWorkbenchSnapshot();
+          return false;
+        }
+        savedTicket = saved.value;
+      }
+      if (draft.prepare || (changed && workspace?.status === "ready")) {
+        setWorkspacePreparationFailure(null);
+        setPendingAction(`prepare-workspace:${draft.ticket.id}`);
+        const prepared = await prepareTicketWorkspace({
+          environmentId,
+          input: { ticketId: savedTicket.id, requestedAt: new Date().toISOString() },
+        });
+        if (
+          reportWorkbenchCommandFailure(prepared, (message) =>
+            setError(`Repository choices saved. Workspace preparation failed: ${message}`),
+          )
+        ) {
+          setWorkspacePreparationFailure(savedTicket.id);
+          setScopeDraft({
+            ...draft,
+            ticket: savedTicket,
+            value: getWorkbenchRepositoryScope(savedTicket),
+            prepare: true,
+          });
+          refreshWorkbenchSnapshot();
+          return false;
+        }
+      }
+      setScopeDraft(null);
+      return true;
+    } finally {
+      setPendingAction(null);
+    }
+  };
   const updateTicketFields = async (
     ticket: WorkbenchTicket,
     patch: WorkbenchTicketPatch,
@@ -350,24 +465,6 @@ export function useWorkbenchTicketActions({
     return true;
   };
 
-  const prepareWorkspace = async (ticket: WorkbenchTicket) => {
-    if (environmentId === null || pendingAction !== null) return false;
-    setWorkspacePreparationFailure(null);
-    setPendingAction(`prepare-workspace:${ticket.id}`);
-    setError(null);
-    const result = await prepareTicketWorkspace({
-      environmentId,
-      input: { ticketId: ticket.id, requestedAt: new Date().toISOString() },
-    });
-    setPendingAction(null);
-    if (reportWorkbenchCommandFailure(result, setError)) {
-      setWorkspacePreparationFailure(ticket.id);
-      refreshWorkbenchSnapshot();
-      return false;
-    }
-    return true;
-  };
-
   const resetTicketWorkspace = async (ticket: WorkbenchTicket) => {
     if (environmentId === null || pendingAction !== null) return false;
     setPendingAction(`reset-workspace:${ticket.id}`);
@@ -437,12 +534,18 @@ export function useWorkbenchTicketActions({
   };
 
   return {
+    repositoryScopeDraft,
+    editRepositories,
+    changeRepositoryScope,
+    cancelRepositoryScope,
+    clearRepositoryScope,
+    acceptSavedRepositoryScope,
+    saveRepositories,
     workspacePreparationFailure,
     changeTicket,
     changeJiraTransition,
     setTicketArchived,
     removeTicket,
-    prepareWorkspace,
     resetTicketWorkspace,
     ticketForBoardAction,
     saveTicketContent,

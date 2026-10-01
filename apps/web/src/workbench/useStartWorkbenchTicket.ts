@@ -76,6 +76,12 @@ const reportTicketStartResult = ({
     );
   }
   if (isAtomCommandInterrupted(result.failure)) return;
+  if (result.stage === "repositories") {
+    onError(
+      `Repository choices could not be saved. Review the Ticket workspace and try again. ${commandFailureMessage(result.failure)}`,
+    );
+    return;
+  }
   if (result.stage === "workspace") {
     onError(
       `The Ticket repositories could not be prepared. ${commandFailureMessage(result.failure)}`,
@@ -112,6 +118,7 @@ export function useStartWorkbenchTicket({
   readonly onPendingChange: (action: string | null) => void;
   readonly onError: (message: string | null) => void;
 }) {
+  const updateTicket = useAtomCommand(workbenchEnvironment.updateTicket, { reportFailure: false });
   const createAssignment = useAtomCommand(workbenchEnvironment.createAssignment, {
     reportFailure: false,
   });
@@ -125,56 +132,56 @@ export function useStartWorkbenchTicket({
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
 
   return useCallback(
-    (ticket: WorkbenchTicket, options?: StartWorkbenchTicketOptions) => {
+    async (ticket: WorkbenchTicket, options?: StartWorkbenchTicketOptions) => {
       if (environmentId === null) return;
-      void (async () => {
-        onPendingChange(`start:${ticket.id}:checking-thread`);
-        onError(null);
-        let result: Awaited<ReturnType<typeof coordinateWorkbenchTicketStart>>;
-        try {
-          result = await coordinateWorkbenchTicketStart(
-            {
-              environmentId,
-              ticket,
-              projects,
-              assignment: options?.assignment ?? assignmentsByTicket.get(ticket.id),
-              existingThreadIds,
-              threadLookupReady,
-            },
-            {
-              prepareTicketWorkspace,
-              createThread,
-              createAssignment,
-              replaceAssignment,
-              deleteThread,
-              addReviewComment: (threadRef, comment) =>
-                useComposerDraftStore.getState().addReviewComment(threadRef, comment),
-              waitForThread: (threadId) =>
-                waitForWorkbenchThread(scopeThreadRef(environmentId, threadId)),
-              openThread: onOpenAssignedThread,
-              resolveModelSelection: (project) =>
-                resolveDefaultProviderModelSelection(providers, project.defaultModelSelection),
-              makeThreadId: newThreadId,
-              makeAssignmentId: () => WorkbenchAssignmentId.make(randomUUID()),
-              now: () => new Date().toISOString(),
-              onStage: (stage: WorkbenchTicketStartStage) =>
-                onPendingChange(`start:${ticket.id}:${stage}`),
-            },
-            options,
-          );
-        } catch (cause) {
-          onError(
-            cause instanceof Error && cause.message.trim().length > 0
-              ? cause.message
-              : "The Workbench request failed unexpectedly.",
-          );
-          return;
-        } finally {
-          onPendingChange(null);
-        }
+      onPendingChange(`start:${ticket.id}:checking-thread`);
+      onError(null);
+      let result: Awaited<ReturnType<typeof coordinateWorkbenchTicketStart>>;
+      try {
+        result = await coordinateWorkbenchTicketStart(
+          {
+            environmentId,
+            ticket,
+            projects,
+            assignment: options?.assignment ?? assignmentsByTicket.get(ticket.id),
+            existingThreadIds,
+            threadLookupReady,
+          },
+          {
+            updateTicket,
+            prepareTicketWorkspace,
+            createThread,
+            createAssignment,
+            replaceAssignment,
+            deleteThread,
+            addReviewComment: (threadRef, comment) =>
+              useComposerDraftStore.getState().addReviewComment(threadRef, comment),
+            waitForThread: (threadId) =>
+              waitForWorkbenchThread(scopeThreadRef(environmentId, threadId)),
+            openThread: onOpenAssignedThread,
+            resolveModelSelection: (project) =>
+              resolveDefaultProviderModelSelection(providers, project.defaultModelSelection),
+            makeThreadId: newThreadId,
+            makeAssignmentId: () => WorkbenchAssignmentId.make(randomUUID()),
+            now: () => new Date().toISOString(),
+            onStage: (stage: WorkbenchTicketStartStage) =>
+              onPendingChange(`start:${ticket.id}:${stage}`),
+          },
+          options,
+        );
+      } catch (cause) {
+        onError(
+          cause instanceof Error && cause.message.trim().length > 0
+            ? cause.message
+            : "The Workbench request failed unexpectedly.",
+        );
+        return;
+      } finally {
+        onPendingChange(null);
+      }
 
-        reportTicketStartResult({ result, onError, onRefreshThreadLookup });
-      })();
+      reportTicketStartResult({ result, onError, onRefreshThreadLookup });
+      return result;
     },
     [
       assignmentsByTicket,
@@ -189,6 +196,7 @@ export function useStartWorkbenchTicket({
       onRefreshThreadLookup,
       prepareTicketWorkspace,
       projects,
+      updateTicket,
       providers,
       replaceAssignment,
       threadLookupReady,

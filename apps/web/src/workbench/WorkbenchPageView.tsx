@@ -496,17 +496,16 @@ function WorkbenchPageTicketDetail(
     changeJiraTransition,
     setTicketArchived,
     removeTicket,
-    prepareWorkspace,
     resetTicketWorkspace,
     saveTicketContent,
     regenerateSummary,
   } = ticketActions;
   const {
-    setStartThreadRequest,
     setAttachThreadTicket,
     openAssignedThread,
     requestTicketThread,
     requestNewThread,
+    requestReplacementThread,
     deleteAssignedThread,
     unlinkThread,
   } = threadActions;
@@ -521,6 +520,11 @@ function WorkbenchPageTicketDetail(
       ticketWorkspace={snapshot?.ticketWorkspaces.find(
         (workspace) => workspace.ticketId === selectedTicket.id,
       )}
+      repositoryScopeDraft={ticketActions.repositoryScopeDraft}
+      onEditRepositories={ticketActions.editRepositories}
+      onRepositoryScopeChange={ticketActions.changeRepositoryScope}
+      onCancelRepositories={ticketActions.cancelRepositoryScope}
+      onSaveRepositories={ticketActions.saveRepositories}
       linkedProjects={linkedT3Projects}
       epics={projectEpics}
       jiraIssueLink={jiraIssueLinksByTicketId.get(selectedTicket.id) ?? null}
@@ -577,8 +581,7 @@ function WorkbenchPageTicketDetail(
         void deleteAssignedThread(threadId);
       }}
       onReplaceThread={(ticket, previousThreadId) => {
-        setError(null);
-        setStartThreadRequest({ ticket, mode: "replace", previousThreadId });
+        requestReplacementThread({ ticket, previousThreadId });
       }}
       onArchive={setTicketArchived}
       onDelete={removeTicket}
@@ -587,7 +590,6 @@ function WorkbenchPageTicketDetail(
         pendingAction === `prepare-workspace:${selectedTicket.id}` ||
         pendingAction === `start:${selectedTicket.id}:preparing-workspace`
       }
-      onPrepareWorkspace={prepareWorkspace}
       onResetWorkspace={resetTicketWorkspace}
     />
   );
@@ -964,13 +966,27 @@ function WorkbenchPageThreadDialogs(
     setAttachThreadTicket,
     attachExistingThread,
     startSelectedThread,
+    editStartThreadRepositories,
   } = threadActions;
   const pending = pendingAction !== null;
   return (
     <>
-      {startThreadRequest && environmentId ? (
+      {startThreadRequest && environmentId && startThreadRequest.environmentId === environmentId ? (
         <WorkbenchStartThreadDialog
+          key={`${environmentId}:${startThreadRequest.ticket.id}:${startThreadRequest.reviewVersion ?? 0}`}
           open
+          ticket={startThreadRequest.ticket}
+          projects={pageData.projects.filter((project) =>
+            snapshot?.projects
+              .find((workspace) => workspace.id === startThreadRequest.ticket.projectId)
+              ?.linkedProjectIds.includes(project.id),
+          )}
+          workspace={snapshot?.ticketWorkspaces.find(
+            (workspace) => workspace.ticketId === startThreadRequest.ticket.id,
+          )}
+          initialRepositoryScope={startThreadRequest.repositoryScope}
+          onEditRepositories={editStartThreadRepositories}
+          error={error}
           environmentId={environmentId}
           providers={providers}
           defaultModelSelection={
@@ -982,7 +998,9 @@ function WorkbenchPageThreadDialogs(
           onOpenChange={(open) => {
             if (!open) setStartThreadRequest(null);
           }}
-          onStart={startSelectedThread}
+          onStart={(input) => {
+            void startSelectedThread(input);
+          }}
         />
       ) : null}
       {attachThreadTicket ? (

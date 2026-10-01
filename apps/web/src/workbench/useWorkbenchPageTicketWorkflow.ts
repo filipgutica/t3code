@@ -70,6 +70,16 @@ export function useWorkbenchPageTicketWorkflow({
     setPendingAction,
     setError,
     ticketForBoardAction,
+    repositoryScopeDraft: ticketActions.repositoryScopeDraft,
+    clearRepositoryScope: ticketActions.clearRepositoryScope,
+    acceptSavedRepositoryScope: ticketActions.acceptSavedRepositoryScope,
+    onEditRepositories: (ticket) => {
+      ticketActions.editRepositories({ ticket, prepare: false });
+      selection.setSelectedProjectId(ticket.projectId);
+      selection.setSelectedTicketId(ticket.id);
+      selection.setSelectedEpicId(null);
+      void selection.updateRouteSelection(ticket.projectId, ticket.id);
+    },
   });
   const { requestNewThread } = threadActions;
 

@@ -13,6 +13,7 @@ import type {
   WorkbenchPrepareTicketWorkspaceInput,
   WorkbenchTicket,
   WorkbenchTicketWorkspace,
+  WorkbenchUpdateTicketInput,
 } from "@t3tools/contracts";
 import { DEFAULT_RUNTIME_MODE } from "@t3tools/contracts";
 
@@ -20,6 +21,10 @@ import type { ComposerThreadTarget } from "../composerDraftStore";
 import type { ReviewCommentContext } from "../reviewCommentContext";
 import { DEFAULT_INTERACTION_MODE } from "../types";
 import { buildTicketReviewComment, resolveWorkbenchTicketThreadTarget } from "./workbench.logic";
+import {
+  isWorkbenchRepositoryScopeEqual,
+  type WorkbenchRepositoryScope,
+} from "./workbenchRepositoryScope";
 
 type CommandResult = AtomCommandResult<unknown, unknown>;
 type PrepareWorkspaceResult = AtomCommandResult<WorkbenchTicketWorkspace, unknown>;
@@ -40,6 +45,7 @@ interface StartWorkbenchTicketInput {
 
 export type WorkbenchTicketStartStage =
   | "checking-thread"
+  | "saving-repositories"
   | "preparing-workspace"
   | "creating-thread"
   | "linking-thread"
@@ -48,6 +54,7 @@ export type WorkbenchTicketStartStage =
 
 const WORKBENCH_TICKET_START_STAGE_LABELS: Record<WorkbenchTicketStartStage, string> = {
   "checking-thread": "Checking for an existing Thread…",
+  "saving-repositories": "Saving repositories…",
   "preparing-workspace": "Preparing repositories…",
   "creating-thread": "Creating Thread…",
   "linking-thread": "Linking Thread to Ticket…",
@@ -86,9 +93,13 @@ export interface StartWorkbenchTicketOptions {
   readonly assignment?: WorkbenchAssignment;
   readonly modelSelection?: ModelSelection;
   readonly previousThreadId?: ThreadId;
+  readonly repositoryScope?: WorkbenchRepositoryScope;
 }
 
 interface StartWorkbenchTicketDependencies {
+  readonly updateTicket: (
+    input: EnvironmentCommandInput<WorkbenchUpdateTicketInput>,
+  ) => Promise<AtomCommandResult<WorkbenchTicket, unknown>>;
   readonly prepareTicketWorkspace: (
     input: EnvironmentCommandInput<WorkbenchPrepareTicketWorkspaceInput>,
   ) => Promise<PrepareWorkspaceResult>;
@@ -125,7 +136,8 @@ export type StartWorkbenchTicketResult =
   | { readonly state: "thread-status-unavailable" }
   | {
       readonly state: "failed";
-      readonly stage: "workspace" | "thread" | "assignment";
+      readonly stage: "repositories" | "workspace" | "thread" | "assignment";
+      readonly ticket?: WorkbenchTicket;
       readonly failure: Extract<CommandResult, { readonly _tag: "Failure" }>;
       readonly cleanupFailure?: Extract<CommandResult, { readonly _tag: "Failure" }>;
     };
@@ -154,7 +166,6 @@ const openExistingWorkbenchThread = async ({
     }
     return { state: "opened", threadId: target.threadId };
   }
-  if (target.state === "project-unavailable") return { state: "project-unavailable" };
   if (target.state === "thread-status-unavailable") {
     return { state: "thread-status-unavailable" };
   }
@@ -163,13 +174,32 @@ const openExistingWorkbenchThread = async ({
 };
 
 export async function coordinateWorkbenchTicketStart(
-  input: StartWorkbenchTicketInput,
+  originalInput: StartWorkbenchTicketInput,
   dependencies: StartWorkbenchTicketDependencies,
   options: StartWorkbenchTicketOptions = {},
 ): Promise<StartWorkbenchTicketResult> {
+  let input = originalInput;
   if (options.mode === undefined) {
     const existing = await openExistingWorkbenchThread({ input, dependencies });
     if (existing !== null) return existing;
+  }
+
+  if (
+    options.repositoryScope &&
+    !isWorkbenchRepositoryScopeEqual(input.ticket, options.repositoryScope)
+  ) {
+    dependencies.onStage?.("saving-repositories");
+    const saved = await dependencies.updateTicket({
+      environmentId: input.environmentId,
+      input: {
+        id: input.ticket.id,
+        expectedRevision: input.ticket.revision,
+        ...options.repositoryScope,
+        updatedAt: dependencies.now(),
+      },
+    });
+    if (saved._tag === "Failure") return { state: "failed", stage: "repositories", failure: saved };
+    input = { ...input, ticket: saved.value };
   }
 
   const project = input.projects.find(
@@ -188,13 +218,23 @@ export async function coordinateWorkbenchTicketStart(
     input: { ticketId: input.ticket.id, requestedAt: createdAt },
   });
   if (workspaceResult._tag === "Failure") {
-    return { state: "failed", stage: "workspace", failure: workspaceResult };
+    return { state: "failed", stage: "workspace", failure: workspaceResult, ticket: input.ticket };
   }
   const primaryWorkspace = workspaceResult.value.repositories.find(
     (repository) => repository.isPrimary && repository.status === "ready",
   );
-  if (!primaryWorkspace) {
-    throw new Error("The prepared Ticket Workspace has no ready primary repository.");
+  if (
+    !primaryWorkspace ||
+    primaryWorkspace.projectId !== input.ticket.primaryT3ProjectId ||
+    !input.ticket.repositoryProjectIds.every((id) =>
+      workspaceResult.value.repositories.some(
+        (repository) => repository.projectId === id && repository.status === "ready",
+      ),
+    )
+  ) {
+    throw new Error(
+      "The prepared Ticket Workspace does not match the reviewed repositories. Review the Ticket workspace and try again.",
+    );
   }
   dependencies.onStage?.("creating-thread");
   const threadResult = await dependencies.createThread({
@@ -212,7 +252,7 @@ export async function coordinateWorkbenchTicketStart(
     },
   });
   if (threadResult._tag === "Failure") {
-    return { state: "failed", stage: "thread", failure: threadResult };
+    return { state: "failed", stage: "thread", failure: threadResult, ticket: input.ticket };
   }
 
   const previousThreadId = options.previousThreadId ?? input.assignment?.threadId;
@@ -246,6 +286,7 @@ export async function coordinateWorkbenchTicketStart(
     return {
       state: "failed",
       stage: "assignment",
+      ticket: input.ticket,
       failure: assignmentResult,
       ...(cleanupResult._tag === "Failure" ? { cleanupFailure: cleanupResult } : {}),
     };
