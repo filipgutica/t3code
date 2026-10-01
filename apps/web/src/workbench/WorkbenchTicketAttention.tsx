@@ -206,6 +206,31 @@ function AttentionItems({
   );
 }
 
+function AttentionBell({
+  compact,
+  hasFailedChecks,
+}: {
+  compact: boolean;
+  hasFailedChecks: boolean;
+}) {
+  return (
+    <span aria-hidden className="relative inline-flex">
+      <BellIcon
+        className={
+          compact
+            ? `size-3 ${hasFailedChecks ? "text-warning" : "text-muted-foreground"}`
+            : undefined
+        }
+      />
+      {!hasFailedChecks ? (
+        <span
+          className={`absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-primary ring-2 ${compact ? "ring-sidebar" : "ring-popover"}`}
+        />
+      ) : null}
+    </span>
+  );
+}
+
 /** Thread notifications clear on a visit; PR feedback remains until its source resolves. */
 export function WorkbenchTicketAttentionBadge(
   props: TicketAttentionProps & { side?: "bottom" | "right"; compact?: boolean },
@@ -226,20 +251,7 @@ export function WorkbenchTicketAttentionBadge(
           />
         }
       >
-        <span aria-hidden className="relative inline-flex">
-          <BellIcon
-            className={
-              props.compact
-                ? `size-3 ${hasFailedChecks ? "text-warning" : "text-muted-foreground"}`
-                : undefined
-            }
-          />
-          {!hasFailedChecks ? (
-            <span
-              className={`absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-primary ring-2 ${props.compact ? "ring-sidebar" : "ring-popover"}`}
-            />
-          ) : null}
-        </span>
+        <AttentionBell compact={!!props.compact} hasFailedChecks={hasFailedChecks} />
         {props.compact ? null : signals.length}
       </PopoverTrigger>
       <PopoverPopup width="md" padding="compact" side={props.side ?? "bottom"} align="end">

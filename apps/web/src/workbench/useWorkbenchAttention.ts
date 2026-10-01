@@ -46,27 +46,21 @@ const pendingObservation = (
   resolvedReviewThreadIds: [],
 });
 
-export function useWorkbenchAttention({
+type PendingRequestsByThread = ReadonlyMap<ThreadId, ReturnType<typeof derivePendingRequests>>;
+
+const useWorkbenchThreadNotifications = ({
   environmentId,
-  projectId,
   tickets,
-  assignments,
+  activeAssignments,
   threadsById,
   activeThreadRef,
 }: {
   readonly environmentId: EnvironmentId | null;
-  readonly projectId: WorkbenchProjectId | null;
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
-  readonly assignments: ReadonlyArray<WorkbenchAssignment>;
+  readonly activeAssignments: ReadonlyArray<WorkbenchAssignment>;
   readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   readonly activeThreadRef: ScopedThreadRef | null;
-}) {
-  const [attentionRefresh, setAttentionRefresh] = useState(0);
-  const refreshAttention = () => setAttentionRefresh((previous) => previous + 1);
-  const activeAssignments = useMemo(
-    () => activeWorkbenchAttentionAssignments({ assignments, threadsById, environmentId }),
-    [assignments, threadsById, environmentId],
-  );
+}) => {
   const pendingThreadIds = useMemo(() => {
     const ticketIds = new Set(tickets.map((ticket) => ticket.id));
     const ids = new Set(
@@ -118,6 +112,89 @@ export function useWorkbenchAttention({
       markThreadVisited(scopedThreadKey(activeThreadRef), activeNotificationAt);
     }
   }, [activeThreadRef, activeNotificationAt, markThreadVisited]);
+  return { pendingRequestsByThread, visitedByThread };
+};
+
+const getTicketThreadAttention = ({
+  ticket,
+  assignments,
+  threadsById,
+  pendingRequestsByThread,
+  visitedByThread,
+  activeThreadRef,
+}: {
+  readonly ticket: WorkbenchTicket;
+  readonly assignments: ReadonlyArray<WorkbenchAssignment>;
+  readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
+  readonly pendingRequestsByThread: PendingRequestsByThread;
+  readonly visitedByThread: Readonly<Record<string, string>>;
+  readonly activeThreadRef: ScopedThreadRef | null;
+}) => {
+  const signals: WorkbenchAttentionSignal[] = [];
+  const threadIds = new Set<ThreadId>();
+  const reasons = new Set<string>();
+  for (const assignment of assignments) {
+    const thread = threadsById.get(assignment.threadId);
+    if (!thread || threadIds.has(thread.id)) continue;
+    threadIds.add(thread.id);
+    const nativeLabel = resolveThreadStatusPill({ thread })?.label;
+    const presentation = getWorkbenchAgentPresentation({
+      nativeLabel,
+      sessionStatus: thread.session?.status,
+      turnState: thread.latestTurn?.state,
+      settledOverride: thread.settledOverride,
+      ticketStatus: ticket.status,
+    });
+    const notification = getWorkbenchThreadNotification({
+      nativeLabel,
+      turnState: thread.latestTurn?.state,
+      completedAt: thread.latestTurn?.completedAt,
+      pendingRequests: pendingRequestsByThread.get(thread.id),
+      lastVisitedAt:
+        visitedByThread[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))],
+    });
+    const isOpen =
+      activeThreadRef?.environmentId === thread.environmentId &&
+      activeThreadRef.threadId === thread.id;
+    if (notification && !isOpen) {
+      signals.push({
+        kind: notification.kind,
+        source: { type: "thread", threadId: thread.id, threadTitle: thread.title },
+      });
+      if (presentation) reasons.add(presentation.label);
+    }
+  }
+  return { signals, reasons };
+};
+
+export function useWorkbenchAttention({
+  environmentId,
+  projectId,
+  tickets,
+  assignments,
+  threadsById,
+  activeThreadRef,
+}: {
+  readonly environmentId: EnvironmentId | null;
+  readonly projectId: WorkbenchProjectId | null;
+  readonly tickets: ReadonlyArray<WorkbenchTicket>;
+  readonly assignments: ReadonlyArray<WorkbenchAssignment>;
+  readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
+  readonly activeThreadRef: ScopedThreadRef | null;
+}) {
+  const [attentionRefresh, setAttentionRefresh] = useState(0);
+  const refreshAttention = () => setAttentionRefresh((previous) => previous + 1);
+  const activeAssignments = useMemo(
+    () => activeWorkbenchAttentionAssignments({ assignments, threadsById, environmentId }),
+    [assignments, threadsById, environmentId],
+  );
+  const { pendingRequestsByThread, visitedByThread } = useWorkbenchThreadNotifications({
+    environmentId,
+    tickets,
+    activeAssignments,
+    threadsById,
+    activeThreadRef,
+  });
   const assignmentsByTicket = useMemo(() => {
     const groups = new Map<WorkbenchTicketId, WorkbenchAssignment[]>();
     for (const assignment of activeAssignments) {
@@ -237,41 +314,15 @@ export function useWorkbenchAttention({
     () =>
       new Map(
         tickets.map((ticket) => {
-          const signals: WorkbenchAttentionSignal[] = [];
+          const { signals, reasons } = getTicketThreadAttention({
+            ticket,
+            assignments: assignmentsByTicket.get(ticket.id) ?? [],
+            threadsById,
+            pendingRequestsByThread,
+            visitedByThread,
+            activeThreadRef,
+          });
           const inspections: WorkbenchAttentionInspection[] = [];
-          const threadIds = new Set<ThreadId>();
-          const reasons = new Set<string>();
-          for (const assignment of assignmentsByTicket.get(ticket.id) ?? []) {
-            const thread = threadsById.get(assignment.threadId);
-            if (!thread || threadIds.has(thread.id)) continue;
-            threadIds.add(thread.id);
-            const nativeLabel = resolveThreadStatusPill({ thread })?.label;
-            const presentation = getWorkbenchAgentPresentation({
-              nativeLabel,
-              sessionStatus: thread.session?.status,
-              turnState: thread.latestTurn?.state,
-              settledOverride: thread.settledOverride,
-              ticketStatus: ticket.status,
-            });
-            const notification = getWorkbenchThreadNotification({
-              nativeLabel,
-              turnState: thread.latestTurn?.state,
-              completedAt: thread.latestTurn?.completedAt,
-              pendingRequests: pendingRequestsByThread.get(thread.id),
-              lastVisitedAt:
-                visitedByThread[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))],
-            });
-            const isOpen =
-              activeThreadRef?.environmentId === thread.environmentId &&
-              activeThreadRef.threadId === thread.id;
-            if (notification && !isOpen) {
-              signals.push({
-                kind: notification.kind,
-                source: { type: "thread", threadId: thread.id, threadTitle: thread.title },
-              });
-              if (presentation) reasons.add(presentation.label);
-            }
-          }
           for (const row of attentionReferencesByTicket.get(ticket.id) ?? []) {
             if (environmentId === null) continue;
             const reference = row.pullRequest;
