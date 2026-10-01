@@ -9,6 +9,12 @@ import { withDemoAccess } from "./access.mts";
 import { requireHome, setupHome } from "./environment.mts";
 import { exportJiraAuth, importJiraAuth } from "./jira-auth.mts";
 import { launchDemo } from "./launch.mts";
+import {
+  installAttentionGitHubAdapter,
+  seedAttentionOutcomes,
+  seedAttentionRecords,
+} from "./attention.mts";
+import { readDemoModelSelection } from "./local.mts";
 import { stopDemo } from "./lifecycle.mts";
 import { resetToBaseline } from "./reset-to-baseline.mts";
 import { verifyDemoJira } from "./integrations.mts";
@@ -233,6 +239,7 @@ export const startDisposableDemo = async (input: {
     server = await resetToBaseline({
       home: runHome,
       remoteApply: false,
+      linkPullRequests: false,
       oauthBundle,
       configure: async () => {
         // resetToBaseline archives the run home, so persist the recovery marker
@@ -245,6 +252,16 @@ export const startDisposableDemo = async (input: {
         await writeLockPhase(sourceHome, runHome, "running");
       },
     });
+    await server.stop();
+    const attentionEnv = await installAttentionGitHubAdapter(runHome, process.env);
+    server = await launchDemo({ home: runHome, env: attentionEnv });
+    const modelSelection = await readDemoModelSelection(runHome);
+    await withDemoAccess(runHome, (access) =>
+      seedAttentionRecords({ home: runHome, ...access, modelSelection }),
+    );
+    await server.stop();
+    await seedAttentionOutcomes(runHome);
+    server = await launchDemo({ home: runHome, env: attentionEnv });
     // resetToBaseline syncs Jira when the complete baseline is present; verify the live grant too.
     if (sourceJira.issues.length === 0) throw new Error("The saved Jira baseline has no issues.");
     await verifyJira(runHome);

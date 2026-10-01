@@ -34,6 +34,7 @@ export const hasJiraConnection = (home: string) => {
 export const resetToBaseline = async (input: {
   home: string;
   remoteApply: boolean;
+  linkPullRequests?: boolean;
   oauthBundle?: JiraAuthBundle;
   configure?: (home: string) => Promise<void>;
   onAuthImported?: (home: string) => Promise<void>;
@@ -94,7 +95,7 @@ export const resetToBaseline = async (input: {
         prepareWorkspaces: true,
       }),
     );
-    if (repositories.length) {
+    if (repositories.length && input.linkPullRequests !== false) {
       const inspected = await inspectGitHub({ repositories });
       if (inspected.missing.length)
         throw new Error(`Cannot access demo repositories: ${inspected.missing.join(", ")}`);

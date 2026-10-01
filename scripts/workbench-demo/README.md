@@ -1,7 +1,7 @@
 # Workbench demo
 
-Run the current checkout with fresh Tickets, repositories, native Threads, linked
-PRs, and connected Jira:
+Run the current checkout with fresh Tickets, repositories, native Threads,
+synthetic linked PRs, and connected Jira:
 
 ```sh
 bash scripts/workbench-demo/run.sh
@@ -55,13 +55,13 @@ row, because browser regressions and prepared worktrees refer to those IDs.
 the resulting snapshot and Git worktrees. Run the focused demo tests and a
 browser scenario that uses the changed fixture before relying on it in a preview.
 
-The additional attention scenarios for private PR previews live in
-[`attention.mts`](attention.mts). They are labelled synthetic and use a read-only
-GitHub adapter; ordinary demo runs do not seed them.
+The shared attention scenarios live in [`attention.mts`](attention.mts). Both
+local runs and private PR previews seed them. They are labelled synthetic and
+use a read-only GitHub adapter.
 
-## Private-preview attention fixtures
+## Attention fixtures
 
-Every fresh private PR preview automatically seeds the **Synthetic attention
+Every fresh local run and private PR preview seeds the **Synthetic attention
 fixtures** Epic in Orbit. Ticket and Thread titles start with `[Synthetic
 attention]`. No provider ran: interrupted/completed turn outcomes are labelled,
 projection-only demo data written while the seeding server is stopped.
@@ -132,8 +132,10 @@ adapter supplies only their allowlisted inspection data; it never forwards a
 command to GitHub. On Failed PR checks, open the PR and choose **Rerun failed
 checks**: expect a clearly labelled refusal and no success claim. Verify a real
 GitHub rerun separately with an expendable failing PR and Actions write permission.
-Normal local `run.sh` demos continue to use real GitHub CLI and configured remotes;
-the synthetic adapter is installed only by private-preview startup.
+Local `run.sh` uses the same adapter for PR inspection and does not link the
+configured repositories' real PRs. Setup and maintenance still use the real
+GitHub CLI for those repositories; the disposable run keeps their code and
+remotes.
 
 ## Troubleshooting
 

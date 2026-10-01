@@ -32,7 +32,9 @@ function hydratePosixPath(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): vo
   const launchctlPath = platform === "darwin" && !shellPath ? readPathFromLaunchctl() : undefined;
   const mergedPath = mergePathEntries(shellPath ?? launchctlPath, env.PATH, platform);
   if (mergedPath) {
-    env.PATH = mergedPath;
+    env.PATH = env.T3CODE_PATH_PREPEND
+      ? mergePathEntries(env.T3CODE_PATH_PREPEND, mergedPath, platform)
+      : mergedPath;
   }
 }
 

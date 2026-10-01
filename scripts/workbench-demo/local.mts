@@ -5,11 +5,13 @@ import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
 
 import { CommandId, ProjectId, ThreadId } from "../../packages/contracts/src/baseSchemas.ts";
+import { DEFAULT_MODEL } from "../../packages/contracts/src/model.ts";
 import { ProviderInstanceId } from "../../packages/contracts/src/providerInstance.ts";
 import {
   DEFAULT_RUNTIME_MODE,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   ORCHESTRATION_WS_METHODS,
+  ModelSelection as ModelSelectionSchema,
   type OrchestrationShellSnapshot,
   type ClientOrchestrationCommand,
   type ModelSelection,
@@ -38,6 +40,29 @@ const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 const DEMO_VERSION = 1;
 const DEMO_AUTHOR = "Workbench Demo";
 const DEMO_EMAIL = "workbench-demo@example.invalid";
+const FALLBACK_MODEL_SELECTION: ModelSelection = {
+  instanceId: ProviderInstanceId.make("codex"),
+  model: DEFAULT_MODEL,
+};
+
+export const readDemoModelSelection = async (home: string): Promise<ModelSelection> => {
+  const settingsPath = NodePath.join(home, "userdata", "settings.json");
+  const text = await NodeFSP.readFile(settingsPath, "utf8").catch((error: unknown) => {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  });
+  if (text === null) return FALLBACK_MODEL_SELECTION;
+  const settings: unknown = JSON.parse(text);
+  if (
+    typeof settings !== "object" ||
+    settings === null ||
+    !("defaultModelSelection" in settings) ||
+    settings.defaultModelSelection === null ||
+    settings.defaultModelSelection === undefined
+  )
+    return FALLBACK_MODEL_SELECTION;
+  return Schema.decodeUnknownPromise(ModelSelectionSchema)(settings.defaultModelSelection);
+};
 
 export const LOCAL_DEMO_REPOSITORIES = [
   { id: "orbit-web", title: "Orbit Web", description: "Customer portal and onboarding." },
@@ -556,7 +581,7 @@ const seedWorkbench = async (
     readonly token?: string | undefined;
     readonly now: () => string;
     readonly prepareWorkspaces: boolean;
-    readonly modelSelection?: ModelSelection;
+    readonly modelSelection: ModelSelection;
   },
 ): Promise<void> => {
   const existing = await runRpc(options.wsUrl, options.token, (client) =>
@@ -715,10 +740,7 @@ const seedWorkbench = async (
         threadId,
         projectId: ProjectId.make(thread.projectId),
         title: thread.title,
-        modelSelection: options.modelSelection ?? {
-          instanceId: ProviderInstanceId.make("codex"),
-          model: "gpt-5.4",
-        },
+        modelSelection: options.modelSelection,
         runtimeMode: DEFAULT_RUNTIME_MODE,
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         branch,
@@ -803,7 +825,7 @@ export const setupLocal = async (options: LocalDemoOptions): Promise<LocalDemoMa
       token: options.token,
       now,
       prepareWorkspaces,
-      ...(options.modelSelection ? { modelSelection: options.modelSelection } : {}),
+      modelSelection: options.modelSelection ?? (await readDemoModelSelection(home)),
     });
   }
   const manifest: LocalDemoManifest = {
