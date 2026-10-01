@@ -173,34 +173,74 @@ const openExistingWorkbenchThread = async ({
   return null;
 };
 
+const getPreparedPrimaryRepository = ({
+  ticket,
+  workspace,
+}: {
+  ticket: WorkbenchTicket;
+  workspace: WorkbenchTicketWorkspace;
+}) => {
+  const primary = workspace.repositories.find(
+    (repository) => repository.isPrimary && repository.status === "ready",
+  );
+  const selectedRepositoriesReady = ticket.repositoryProjectIds.every((id) =>
+    workspace.repositories.some(
+      (repository) => repository.projectId === id && repository.status === "ready",
+    ),
+  );
+  if (!primary || primary.projectId !== ticket.primaryT3ProjectId || !selectedRepositoriesReady) {
+    throw new Error(
+      "The prepared Ticket Workspace does not match the reviewed repositories. Review the Ticket workspace and try again.",
+    );
+  }
+  return primary;
+};
+
+const saveReviewedRepositoryScope = async ({
+  input,
+  dependencies,
+  repositoryScope,
+}: {
+  input: StartWorkbenchTicketInput;
+  dependencies: StartWorkbenchTicketDependencies;
+  repositoryScope: WorkbenchRepositoryScope | undefined;
+}) => {
+  if (!repositoryScope || isWorkbenchRepositoryScopeEqual(input.ticket, repositoryScope)) {
+    return { state: "saved", ticket: input.ticket } as const;
+  }
+  dependencies.onStage?.("saving-repositories");
+  const saved = await dependencies.updateTicket({
+    environmentId: input.environmentId,
+    input: {
+      id: input.ticket.id,
+      expectedRevision: input.ticket.revision,
+      ...repositoryScope,
+      updatedAt: dependencies.now(),
+    },
+  });
+  if (saved._tag === "Failure") {
+    return { state: "failed", stage: "repositories", failure: saved } as const;
+  }
+  return { state: "saved", ticket: saved.value } as const;
+};
+
 export async function coordinateWorkbenchTicketStart(
   originalInput: StartWorkbenchTicketInput,
   dependencies: StartWorkbenchTicketDependencies,
   options: StartWorkbenchTicketOptions = {},
 ): Promise<StartWorkbenchTicketResult> {
-  let input = originalInput;
   if (options.mode === undefined) {
-    const existing = await openExistingWorkbenchThread({ input, dependencies });
+    const existing = await openExistingWorkbenchThread({ input: originalInput, dependencies });
     if (existing !== null) return existing;
   }
 
-  if (
-    options.repositoryScope &&
-    !isWorkbenchRepositoryScopeEqual(input.ticket, options.repositoryScope)
-  ) {
-    dependencies.onStage?.("saving-repositories");
-    const saved = await dependencies.updateTicket({
-      environmentId: input.environmentId,
-      input: {
-        id: input.ticket.id,
-        expectedRevision: input.ticket.revision,
-        ...options.repositoryScope,
-        updatedAt: dependencies.now(),
-      },
-    });
-    if (saved._tag === "Failure") return { state: "failed", stage: "repositories", failure: saved };
-    input = { ...input, ticket: saved.value };
-  }
+  const saved = await saveReviewedRepositoryScope({
+    input: originalInput,
+    dependencies,
+    repositoryScope: options.repositoryScope,
+  });
+  if (saved.state === "failed") return saved;
+  const input = { ...originalInput, ticket: saved.ticket };
 
   const project = input.projects.find(
     (candidate) => candidate.id === input.ticket.primaryT3ProjectId,
@@ -220,22 +260,10 @@ export async function coordinateWorkbenchTicketStart(
   if (workspaceResult._tag === "Failure") {
     return { state: "failed", stage: "workspace", failure: workspaceResult, ticket: input.ticket };
   }
-  const primaryWorkspace = workspaceResult.value.repositories.find(
-    (repository) => repository.isPrimary && repository.status === "ready",
-  );
-  if (
-    !primaryWorkspace ||
-    primaryWorkspace.projectId !== input.ticket.primaryT3ProjectId ||
-    !input.ticket.repositoryProjectIds.every((id) =>
-      workspaceResult.value.repositories.some(
-        (repository) => repository.projectId === id && repository.status === "ready",
-      ),
-    )
-  ) {
-    throw new Error(
-      "The prepared Ticket Workspace does not match the reviewed repositories. Review the Ticket workspace and try again.",
-    );
-  }
+  const primaryWorkspace = getPreparedPrimaryRepository({
+    ticket: input.ticket,
+    workspace: workspaceResult.value,
+  });
   dependencies.onStage?.("creating-thread");
   const threadResult = await dependencies.createThread({
     environmentId: input.environmentId,

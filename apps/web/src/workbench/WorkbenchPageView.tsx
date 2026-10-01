@@ -975,26 +975,27 @@ function WorkbenchPageThreadDialogs(
         <WorkbenchStartThreadDialog
           key={`${environmentId}:${startThreadRequest.ticket.id}:${startThreadRequest.reviewVersion ?? 0}`}
           open
-          ticket={startThreadRequest.ticket}
-          projects={pageData.projects.filter((project) =>
-            snapshot?.projects
-              .find((workspace) => workspace.id === startThreadRequest.ticket.projectId)
-              ?.linkedProjectIds.includes(project.id),
-          )}
-          workspace={snapshot?.ticketWorkspaces.find(
-            (workspace) => workspace.ticketId === startThreadRequest.ticket.id,
-          )}
-          initialRepositoryScope={startThreadRequest.repositoryScope}
+          request={{
+            ticket: startThreadRequest.ticket,
+            projects: pageData.projects.filter((project) =>
+              snapshot?.projects
+                .find((workspace) => workspace.id === startThreadRequest.ticket.projectId)
+                ?.linkedProjectIds.includes(project.id),
+            ),
+            workspace: snapshot?.ticketWorkspaces.find(
+              (workspace) => workspace.ticketId === startThreadRequest.ticket.id,
+            ),
+            initialRepositoryScope: startThreadRequest.repositoryScope,
+            environmentId,
+            defaultModelSelection:
+              repositoriesById.get(startThreadRequest.ticket.primaryT3ProjectId)
+                ?.defaultModelSelection ?? null,
+            additional: startThreadRequest.mode === "additional",
+          }}
           onEditRepositories={editStartThreadRepositories}
           error={error}
-          environmentId={environmentId}
           providers={providers}
-          defaultModelSelection={
-            repositoriesById.get(startThreadRequest.ticket.primaryT3ProjectId)
-              ?.defaultModelSelection ?? null
-          }
           pending={pending}
-          additional={startThreadRequest.mode === "additional"}
           onOpenChange={(open) => {
             if (!open) setStartThreadRequest(null);
           }}

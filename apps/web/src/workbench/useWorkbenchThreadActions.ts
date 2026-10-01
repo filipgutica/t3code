@@ -18,6 +18,7 @@ import { workbenchEnvironment } from "./state";
 import { failureMessage, reportWorkbenchCommandFailure } from "./workbenchPageCommands";
 import { openWorkbenchAssignedThread as openAssignedThreadWithRestore } from "./openWorkbenchAssignedThread";
 import { useStartWorkbenchTicket } from "./useStartWorkbenchTicket";
+import type { StartWorkbenchTicketOptions } from "./startWorkbenchTicket";
 import { isWorkbenchThreadArchived } from "./workbench.logic";
 import type { useWorkbenchPageData } from "./useWorkbenchPageData";
 import {
@@ -27,6 +28,49 @@ import {
   type WorkbenchRepositoryScope,
   type WorkbenchRepositoryScopeDraft,
 } from "./workbenchRepositoryScope";
+
+type WorkbenchStartThreadRequest = {
+  environmentId: EnvironmentId;
+  ticket: WorkbenchTicket;
+  repositoryScope?: WorkbenchRepositoryScope;
+  reviewVersion?: number;
+  assignment?: WorkbenchAssignment;
+  mode?: "additional" | "replace";
+  previousThreadId?: ThreadId;
+};
+
+const getWorkbenchThreadStartOptions = ({
+  request,
+  modelSelection,
+  repositoryScope,
+  assignments,
+  existingThreadIds,
+}: {
+  request: WorkbenchStartThreadRequest;
+  modelSelection: ModelSelection;
+  repositoryScope: WorkbenchRepositoryScope | undefined;
+  assignments: readonly WorkbenchAssignment[];
+  existingThreadIds: ReadonlySet<ThreadId>;
+}): StartWorkbenchTicketOptions => {
+  const hasOtherThread = assignments.some(
+    (assignment) =>
+      assignment.ticketId === request.ticket.id &&
+      assignment.supersededAt === null &&
+      assignment.threadId !== request.previousThreadId &&
+      existingThreadIds.has(assignment.threadId),
+  );
+  return {
+    ...(request.assignment ? { assignment: request.assignment } : {}),
+    modelSelection,
+    ...(repositoryScope ? { repositoryScope } : {}),
+    ...(request.mode === "replace"
+      ? { mode: "replace" as const }
+      : hasOtherThread
+        ? { mode: "additional" as const }
+        : {}),
+    ...(request.previousThreadId ? { previousThreadId: request.previousThreadId } : {}),
+  };
+};
 
 export function useWorkbenchThreadActions({
   environmentId,
@@ -74,15 +118,9 @@ export function useWorkbenchThreadActions({
     reportFailure: false,
   });
   const { confirmAndDeleteThread } = useThreadActions();
-  const [startThreadRequest, setStartThreadRequest] = useState<{
-    environmentId: EnvironmentId;
-    ticket: WorkbenchTicket;
-    repositoryScope?: WorkbenchRepositoryScope;
-    reviewVersion?: number;
-    assignment?: WorkbenchAssignment;
-    mode?: "additional" | "replace";
-    previousThreadId?: ThreadId;
-  } | null>(null);
+  const [startThreadRequest, setStartThreadRequest] = useState<WorkbenchStartThreadRequest | null>(
+    null,
+  );
   const [attachThreadTicket, setAttachThreadTicket] = useState<WorkbenchTicket | null>(null);
 
   const openAssignedThread = useCallback(
@@ -267,6 +305,35 @@ export function useWorkbenchThreadActions({
     await openAssignedThread(threadId);
   };
 
+  const getReviewedStartThreadTicket = (request: WorkbenchStartThreadRequest) => {
+    const ticket = snapshot?.tickets.find((candidate) => candidate.id === request.ticket.id);
+    if (!ticket || ticket.archivedAt != null) {
+      setError("This Ticket is no longer available for a new Thread.");
+      setStartThreadRequest(null);
+      return null;
+    }
+    if (ticket.revision !== request.ticket.revision) {
+      setError(
+        "This Ticket changed. Review its current repository choices before creating a Thread.",
+      );
+      setStartThreadRequest({
+        ...request,
+        ticket,
+        repositoryScope: getWorkbenchRepositoryScope(ticket),
+        reviewVersion: (request.reviewVersion ?? 0) + 1,
+      });
+      return null;
+    }
+    const workspace = snapshot?.ticketWorkspaces.find(
+      (candidate) => candidate.ticketId === ticket.id,
+    );
+    if (workspace?.status === "preparing" || workspace?.status === "releasing") {
+      setError("Wait for workspace preparation or release to finish before creating a Thread.");
+      return null;
+    }
+    return ticket;
+  };
+
   const startSelectedThread = async ({
     modelSelection,
     repositoryScope,
@@ -280,52 +347,18 @@ export function useWorkbenchThreadActions({
       startThreadRequest.environmentId !== environmentId
     )
       return;
-    const ticket = snapshot?.tickets.find(
-      (candidate) => candidate.id === startThreadRequest.ticket.id,
-    );
-    if (!ticket || ticket.archivedAt != null) {
-      setError("This Ticket is no longer available for a new Thread.");
-      setStartThreadRequest(null);
-      return;
-    }
     const request = startThreadRequest;
-    if (ticket.revision !== request.ticket.revision) {
-      setError(
-        "This Ticket changed. Review its current repository choices before creating a Thread.",
-      );
-      setStartThreadRequest({
-        ...request,
-        ticket,
-        repositoryScope: getWorkbenchRepositoryScope(ticket),
-        reviewVersion: (request.reviewVersion ?? 0) + 1,
-      });
-      return;
-    }
-    const workspace = snapshot?.ticketWorkspaces.find(
-      (candidate) => candidate.ticketId === ticket.id,
+    if (getReviewedStartThreadTicket(request) === null) return;
+    const result = await openTicketThread(
+      ticketForBoardAction(request.ticket),
+      getWorkbenchThreadStartOptions({
+        request,
+        modelSelection,
+        repositoryScope,
+        assignments: snapshot?.assignments ?? [],
+        existingThreadIds,
+      }),
     );
-    if (workspace?.status === "preparing" || workspace?.status === "releasing") {
-      setError("Wait for workspace preparation or release to finish before creating a Thread.");
-      return;
-    }
-    const hasOtherThread = (snapshot?.assignments ?? []).some(
-      (assignment) =>
-        assignment.ticketId === ticket.id &&
-        assignment.supersededAt === null &&
-        assignment.threadId !== request.previousThreadId &&
-        existingThreadIds.has(assignment.threadId),
-    );
-    const result = await openTicketThread(ticketForBoardAction(request.ticket), {
-      ...(request.assignment ? { assignment: request.assignment } : {}),
-      modelSelection,
-      ...(repositoryScope ? { repositoryScope } : {}),
-      ...(request.mode === "replace"
-        ? { mode: "replace" as const }
-        : hasOtherThread
-          ? { mode: "additional" as const }
-          : {}),
-      ...(request.previousThreadId ? { previousThreadId: request.previousThreadId } : {}),
-    });
     if (result?.state === "opened" || result?.state === "navigation-failed") {
       setStartThreadRequest(null);
       clearRepositoryScope();

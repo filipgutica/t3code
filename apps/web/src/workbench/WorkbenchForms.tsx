@@ -1379,53 +1379,9 @@ function WorkbenchTicketRepositoryRow({
   readonly canOpen: boolean;
 }) {
   const { repository, openInCwd } = entry;
-  const repositoryTitle = repository?.title ?? "Repository unavailable";
-  const statusLabel =
-    entry.workspaceRepository?.status === "failed"
-      ? "Preparation failed"
-      : entry.workspaceRepository?.status === "pending"
-        ? "Pending preparation"
-        : entry.workspaceRepository?.status === "released"
-          ? "Released"
-          : entry.workspaceRepository === undefined
-            ? "Not prepared"
-            : null;
   return (
     <div className="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1 py-2 text-sm">
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          {openInCwd ? (
-            <WorkbenchCheckoutDirectory
-              cwd={openInCwd}
-              icon={
-                <FolderGit2Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              }
-              value={repositoryTitle}
-              valueClassName="line-clamp-2 break-words font-medium [overflow-wrap:anywhere]"
-            />
-          ) : (
-            <span className="flex min-w-0 items-center gap-1.5">
-              <FolderGit2Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              <span className="line-clamp-2 break-words font-medium [overflow-wrap:anywhere]">
-                {repositoryTitle}
-              </span>
-            </span>
-          )}
-          {entry.isPrimary && !isRetained ? (
-            <Badge size="default" variant="outline">
-              Primary
-            </Badge>
-          ) : null}
-          {statusLabel ? (
-            <Badge
-              size="sm"
-              variant={entry.workspaceRepository?.status === "failed" ? "warning" : "outline"}
-            >
-              {statusLabel}
-            </Badge>
-          ) : null}
-        </div>
-      </div>
+      <WorkbenchTicketRepositoryIdentity entry={entry} isRetained={isRetained} />
       {repository && !isArchived && canOpen && openInCwd ? (
         <OpenInPicker
           environmentId={repository.environmentId}
@@ -1452,6 +1408,74 @@ function WorkbenchTicketRepositoryRow({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function WorkbenchTicketRepositoryIdentity({
+  entry,
+  isRetained,
+}: {
+  readonly entry: WorkbenchTicketRepositoryEntry;
+  readonly isRetained: boolean;
+}) {
+  const repositoryTitle = entry.repository?.title ?? "Repository unavailable";
+  return (
+    <div className="min-w-0 flex-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        {entry.openInCwd ? (
+          <WorkbenchCheckoutDirectory
+            cwd={entry.openInCwd}
+            icon={<FolderGit2Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
+            value={repositoryTitle}
+            valueClassName="line-clamp-2 break-words font-medium [overflow-wrap:anywhere]"
+          />
+        ) : (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <FolderGit2Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+            <span className="line-clamp-2 break-words font-medium [overflow-wrap:anywhere]">
+              {repositoryTitle}
+            </span>
+          </span>
+        )}
+        {entry.isPrimary && !isRetained ? (
+          <Badge size="default" variant="outline">
+            Primary
+          </Badge>
+        ) : null}
+        <WorkbenchTicketRepositoryStatus repository={entry.workspaceRepository} />
+      </div>
+    </div>
+  );
+}
+
+function getWorkbenchTicketRepositoryStatusLabel(
+  repository: WorkbenchTicketRepositoryEntry["workspaceRepository"],
+) {
+  switch (repository?.status) {
+    case "failed":
+      return "Preparation failed";
+    case "pending":
+      return "Pending preparation";
+    case "released":
+      return "Released";
+    case "ready":
+      return null;
+    default:
+      return "Not prepared";
+  }
+}
+
+function WorkbenchTicketRepositoryStatus({
+  repository,
+}: {
+  readonly repository: WorkbenchTicketRepositoryEntry["workspaceRepository"];
+}) {
+  const label = getWorkbenchTicketRepositoryStatusLabel(repository);
+  if (label === null) return null;
+  return (
+    <Badge size="sm" variant={repository?.status === "failed" ? "warning" : "outline"}>
+      {label}
+    </Badge>
   );
 }
 
@@ -2373,13 +2397,7 @@ type WorkbenchTicketWorkspacePanelProps = Pick<
   activeAssignments: ReadonlyArray<WorkbenchAssignment>;
   setResetConfirmationOpen: Dispatch<SetStateAction<boolean>>;
 };
-function WorkbenchTicketWorkspacePanel({
-  expansion,
-  presentation,
-  actions,
-  records,
-  context,
-}: {
+type WorkbenchTicketWorkspacePanelInput = {
   expansion: Pick<
     WorkbenchTicketWorkspacePanelProps,
     "repositoryScopePanelCollapsed" | "advancedWorkspaceSettingsCollapsed"
@@ -2419,24 +2437,27 @@ function WorkbenchTicketWorkspacePanel({
     WorkbenchTicketWorkspacePanelProps,
     "environmentId" | "keybindings" | "availableEditors" | "linkedProjects"
   >;
-}) {
+};
+
+function WorkbenchTicketWorkspacePanel({
+  expansion,
+  presentation,
+  actions,
+  records,
+  context,
+}: WorkbenchTicketWorkspacePanelInput) {
   const { repositoryScopePanelCollapsed, advancedWorkspaceSettingsCollapsed } = expansion;
   const {
-    workspaceStatusLabel,
-    workspaceIsReady,
     workspaceIsPreparing,
     pending,
     preparationPending,
     isArchived,
     repositoryScopeLocked,
-    workspacePreparationActionLabel,
     workspaceHasSelectedRepositories,
   } = presentation;
   const {
     onEditRepositories,
     onRepositoryScopeChange,
-    onCancelRepositories,
-    onSaveRepositories,
     setRepositoryScopePanelCollapsed,
     setAdvancedWorkspaceSettingsCollapsed,
     setResetConfirmationOpen,
@@ -2465,128 +2486,29 @@ function WorkbenchTicketWorkspacePanel({
     <section
       className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 ${collapsed ? "" : "xl:min-h-0 xl:flex-1"}`}
     >
-      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border/50 px-3 py-2.5">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <h2 className="text-sm font-semibold">Ticket workspace</h2>
-          <Badge
-            size="sm"
-            variant={
-              workspaceStatusLabel === "Preparation failed" ||
-              workspaceStatusLabel === "Needs preparation"
-                ? "warning"
-                : "outline"
-            }
-          >
-            {workspaceStatusLabel}
-          </Badge>
-        </div>
-        <div className="flex flex-wrap items-center gap-1">
-          {draft ? (
-            <>
-              <Button
-                disabled={disabled}
-                onClick={onCancelRepositories}
-                size="xs"
-                type="button"
-                variant="ghost"
-              >
-                Cancel
-              </Button>
-              <Button
-                aria-busy={pending || preparationPending || workspaceIsPreparing}
-                disabled={
-                  disabled ||
-                  !isWorkbenchRepositoryScopeValid({ scope: draft.value, projects: linkedProjects })
-                }
-                onClick={() => {
-                  void onSaveRepositories();
-                }}
-                size="xs"
-                type="button"
-              >
-                {preparationPending
-                  ? "Preparing workspace…"
-                  : draft.prepare
-                    ? workspacePreparationActionLabel
-                    : "Save changes"}
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                disabled={disabled}
-                onClick={() => openRepositoryReview(false)}
-                size="xs"
-                type="button"
-                variant="ghost"
-              >
-                <PencilIcon /> Edit repositories
-              </Button>
-              {!workspaceIsReady ? (
-                <Button
-                  aria-busy={workspaceIsPreparing || pending}
-                  disabled={disabled}
-                  onClick={() => openRepositoryReview(true)}
-                  size="xs"
-                  type="button"
-                  variant="outline"
-                >
-                  <FolderGit2Icon /> {workspacePreparationActionLabel}
-                </Button>
-              ) : null}
-              <Button
-                aria-controls="workbench-ticket-repositories"
-                aria-expanded={!collapsed}
-                aria-label={collapsed ? "Expand Ticket workspace" : "Collapse Ticket workspace"}
-                onClick={() => setRepositoryScopePanelCollapsed((value) => !value)}
-                size="icon-xs"
-                type="button"
-                variant="ghost"
-              >
-                <ChevronDownIcon className={collapsed ? "" : "rotate-180"} />
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
+      <WorkbenchTicketWorkspaceHeader
+        presentation={presentation}
+        actions={actions}
+        draft={draft}
+        linkedProjects={linkedProjects}
+        disabled={disabled}
+        collapsed={collapsed}
+        openRepositoryReview={openRepositoryReview}
+      />
       {!collapsed ? (
         <div
           id="workbench-ticket-repositories"
           className="min-h-0 space-y-3 px-3 pb-3 pt-2 xl:overflow-y-auto xl:overscroll-contain"
         >
           {draft ? (
-            <div className="space-y-3">
-              <p className="text-xs text-muted-foreground">
-                {draft.prepare
-                  ? "Review the primary and additional repositories before preparing this workspace."
-                  : "Save repository choices together. Existing threads keep their working directories and context."}
-              </p>
-              <WorkbenchRepositoryScopeFields
-                projects={linkedProjects}
-                value={draft.value}
-                onChange={onRepositoryScopeChange}
-                disabled={disabled}
-                idPrefix={`ticket-workspace-${ticket.id}`}
-              />
-              {repositories.some((entry) => entry.workspaceRepository?.status === "failed") ? (
-                <div className="divide-y divide-border/50 border-t border-border/50 pt-2">
-                  {repositories
-                    .filter((entry) => entry.workspaceRepository?.status === "failed")
-                    .map((entry) => (
-                      <WorkbenchTicketRepositoryRow
-                        key={entry.id}
-                        environmentId={environmentId}
-                        entry={entry}
-                        keybindings={keybindings}
-                        availableEditors={availableEditors}
-                        isArchived={isArchived}
-                        isRetained={false}
-                        canOpen={false}
-                      />
-                    ))}
-                </div>
-              ) : null}
-            </div>
+            <WorkbenchTicketWorkspaceRepositoryEditor
+              draft={draft}
+              repositories={repositories}
+              context={context}
+              isArchived={isArchived}
+              disabled={disabled}
+              onRepositoryScopeChange={onRepositoryScopeChange}
+            />
           ) : (
             <WorkbenchTicketWorkspaceRepositories
               repositories={repositories}
@@ -2625,6 +2547,213 @@ function WorkbenchTicketWorkspacePanel({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function WorkbenchTicketWorkspaceHeader({
+  presentation,
+  actions,
+  draft,
+  linkedProjects,
+  disabled,
+  collapsed,
+  openRepositoryReview,
+}: Pick<WorkbenchTicketWorkspacePanelInput, "presentation" | "actions"> & {
+  readonly draft: WorkbenchRepositoryScopeDraft | null;
+  readonly linkedProjects: ReadonlyArray<Project>;
+  readonly disabled: boolean;
+  readonly collapsed: boolean;
+  readonly openRepositoryReview: (prepare: boolean) => void;
+}) {
+  const { workspaceStatusLabel } = presentation;
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border/50 px-3 py-2.5">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <h2 className="text-sm font-semibold">Ticket workspace</h2>
+        <Badge
+          size="sm"
+          variant={
+            workspaceStatusLabel === "Preparation failed" ||
+            workspaceStatusLabel === "Needs preparation"
+              ? "warning"
+              : "outline"
+          }
+        >
+          {workspaceStatusLabel}
+        </Badge>
+      </div>
+      <div className="flex flex-wrap items-center gap-1">
+        {draft ? (
+          <WorkbenchTicketWorkspaceReviewActions
+            draft={draft}
+            presentation={presentation}
+            actions={actions}
+            disabled={disabled}
+            linkedProjects={linkedProjects}
+          />
+        ) : (
+          <WorkbenchTicketWorkspaceBrowseActions
+            presentation={presentation}
+            setRepositoryScopePanelCollapsed={actions.setRepositoryScopePanelCollapsed}
+            disabled={disabled}
+            collapsed={collapsed}
+            openRepositoryReview={openRepositoryReview}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WorkbenchTicketWorkspaceReviewActions({
+  draft,
+  presentation,
+  actions,
+  disabled,
+  linkedProjects,
+}: Pick<WorkbenchTicketWorkspacePanelInput, "presentation" | "actions"> & {
+  readonly draft: WorkbenchRepositoryScopeDraft;
+  readonly disabled: boolean;
+  readonly linkedProjects: ReadonlyArray<Project>;
+}) {
+  const { pending, preparationPending, workspaceIsPreparing, workspacePreparationActionLabel } =
+    presentation;
+  return (
+    <>
+      <Button
+        disabled={disabled}
+        onClick={actions.onCancelRepositories}
+        size="xs"
+        type="button"
+        variant="ghost"
+      >
+        Cancel
+      </Button>
+      <Button
+        aria-busy={pending || preparationPending || workspaceIsPreparing}
+        disabled={
+          disabled ||
+          !isWorkbenchRepositoryScopeValid({ scope: draft.value, projects: linkedProjects })
+        }
+        onClick={() => {
+          void actions.onSaveRepositories();
+        }}
+        size="xs"
+        type="button"
+      >
+        {preparationPending
+          ? "Preparing workspace…"
+          : draft.prepare
+            ? workspacePreparationActionLabel
+            : "Save changes"}
+      </Button>
+    </>
+  );
+}
+
+function WorkbenchTicketWorkspaceBrowseActions({
+  presentation,
+  setRepositoryScopePanelCollapsed,
+  disabled,
+  collapsed,
+  openRepositoryReview,
+}: Pick<WorkbenchTicketWorkspacePanelInput, "presentation"> & {
+  readonly setRepositoryScopePanelCollapsed: Dispatch<SetStateAction<boolean>>;
+  readonly disabled: boolean;
+  readonly collapsed: boolean;
+  readonly openRepositoryReview: (prepare: boolean) => void;
+}) {
+  const { workspaceIsReady, workspaceIsPreparing, pending, workspacePreparationActionLabel } =
+    presentation;
+  return (
+    <>
+      <Button
+        disabled={disabled}
+        onClick={() => openRepositoryReview(false)}
+        size="xs"
+        type="button"
+        variant="ghost"
+      >
+        <PencilIcon /> Edit repositories
+      </Button>
+      {!workspaceIsReady ? (
+        <Button
+          aria-busy={workspaceIsPreparing || pending}
+          disabled={disabled}
+          onClick={() => openRepositoryReview(true)}
+          size="xs"
+          type="button"
+          variant="outline"
+        >
+          <FolderGit2Icon /> {workspacePreparationActionLabel}
+        </Button>
+      ) : null}
+      <Button
+        aria-controls="workbench-ticket-repositories"
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? "Expand Ticket workspace" : "Collapse Ticket workspace"}
+        onClick={() => setRepositoryScopePanelCollapsed((value) => !value)}
+        size="icon-xs"
+        type="button"
+        variant="ghost"
+      >
+        <ChevronDownIcon className={collapsed ? "" : "rotate-180"} />
+      </Button>
+    </>
+  );
+}
+
+function WorkbenchTicketWorkspaceRepositoryEditor({
+  draft,
+  repositories,
+  context,
+  isArchived,
+  disabled,
+  onRepositoryScopeChange,
+}: Pick<WorkbenchTicketWorkspacePanelInput, "context"> &
+  Pick<
+    WorkbenchTicketWorkspacePanelProps,
+    "repositories" | "isArchived" | "onRepositoryScopeChange"
+  > & {
+    readonly draft: WorkbenchRepositoryScopeDraft;
+    readonly disabled: boolean;
+  }) {
+  const { environmentId, keybindings, availableEditors, linkedProjects } = context;
+  const ticket = draft.ticket;
+  const failedRepositories = repositories.filter(
+    (entry) => entry.workspaceRepository?.status === "failed",
+  );
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        {draft.prepare
+          ? "Review the primary and additional repositories before preparing this workspace."
+          : "Save repository choices together. Existing threads keep their working directories and context."}
+      </p>
+      <WorkbenchRepositoryScopeFields
+        projects={linkedProjects}
+        value={draft.value}
+        onChange={onRepositoryScopeChange}
+        disabled={disabled}
+        idPrefix={`ticket-workspace-${ticket.id}`}
+      />
+      {failedRepositories.length > 0 ? (
+        <div className="divide-y divide-border/50 border-t border-border/50 pt-2">
+          {failedRepositories.map((entry) => (
+            <WorkbenchTicketRepositoryRow
+              key={entry.id}
+              environmentId={environmentId}
+              entry={entry}
+              keybindings={keybindings}
+              availableEditors={availableEditors}
+              isArchived={isArchived}
+              isRetained={false}
+              canOpen={false}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
