@@ -1,4 +1,4 @@
-import { WorkbenchOperationError } from "@t3tools/contracts";
+import { TextGenerationError, WorkbenchOperationError } from "@t3tools/contracts";
 import { TicketSummaryHost } from "@t3tools/workbench/TicketSummaryHost";
 import { TicketSummaryServiceLive as serviceLayer } from "@t3tools/workbench/TicketSummaryService";
 import * as Effect from "effect/Effect";
@@ -8,6 +8,7 @@ import * as Option from "effect/Option";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { TextGeneration, layer as textGenerationLayer } from "../textGeneration/TextGeneration.ts";
+import { buildTicketSummaryPrompt, sanitizeTicketSummary } from "./ticketSummaryText.ts";
 
 export { TicketSummaryService } from "@t3tools/workbench/TicketSummaryService";
 
@@ -49,14 +50,28 @@ export const ticketSummaryHostLayer = Layer.effect(
               }),
           ),
         );
-        const result = yield* textGeneration
-          .generateTicketSummary({
+        const { prompt, outputSchema } = buildTicketSummaryPrompt({
+          title: ticket.title,
+          description: ticket.markdown,
+        });
+        const summary = yield* textGeneration
+          .generateStructured({
+            operation: "generateTicketSummary",
             cwd: project.value.workspaceRoot,
-            title: ticket.title,
-            description: ticket.markdown,
+            prompt,
+            outputSchema,
             modelSelection: currentSettings.textGenerationModelSelection,
           })
           .pipe(
+            Effect.map((result) => sanitizeTicketSummary(result.summary)),
+            Effect.filterOrFail(
+              (result) => result.length > 0,
+              () =>
+                new TextGenerationError({
+                  operation: "generateTicketSummary",
+                  detail: "The model returned an empty ticket summary.",
+                }),
+            ),
             Effect.mapError(
               (error) =>
                 new WorkbenchOperationError({
@@ -68,7 +83,7 @@ export const ticketSummaryHostLayer = Layer.effect(
                 }),
             ),
           );
-        return result.summary;
+        return summary;
       }),
     });
   }),

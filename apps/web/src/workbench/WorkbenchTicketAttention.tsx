@@ -6,7 +6,7 @@ import {
   BellIcon,
   ChevronDownIcon,
   MessageSquareIcon,
-  CheckCheckIcon,
+  CircleHelpIcon,
   CircleAlertIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -28,7 +28,8 @@ type TicketAttentionProps = {
 };
 const labels = {
   waiting: "Waiting for your input",
-  "review-ready": "Ready for your review",
+  question: "Waiting for your answer",
+  reply: "Agent replied",
   "failed-checks": "Failed checks",
   "changes-requested": "Changes requested",
   "unresolved-feedback": "Unresolved feedback",
@@ -36,14 +37,16 @@ const labels = {
 
 const signalIcons = {
   waiting: MessageSquareIcon,
-  "review-ready": CheckCheckIcon,
+  question: CircleHelpIcon,
+  reply: MessageSquareIcon,
   "failed-checks": CircleAlertIcon,
-  "changes-requested": CircleAlertIcon,
+  "changes-requested": MessageSquareIcon,
   "unresolved-feedback": MessageSquareIcon,
 } as const;
 const actionDescriptions = {
   waiting: "Open Thread to respond",
-  "review-ready": "Open Thread to inspect completed work",
+  question: "Open Thread to answer the question",
+  reply: "Open Thread to read the reply",
   "failed-checks": "View checks, logs, and rerun options",
   "changes-requested": "View the requested changes",
 } as const;
@@ -62,7 +65,10 @@ function AttentionSignalItem({
       : [];
   const content = (
     <>
-      <Icon aria-hidden className="mt-0.5 size-3.5 shrink-0 text-warning" />
+      <Icon
+        aria-hidden
+        className={`mt-0.5 size-3.5 shrink-0 ${signal.kind === "failed-checks" ? "text-warning" : "text-muted-foreground"}`}
+      />
       <span className="min-w-0 flex-1">
         <span className="block font-medium">{labels[signal.kind]}</span>
         <span className="block text-2xs text-muted-foreground">
@@ -200,13 +206,39 @@ function AttentionItems({
   );
 }
 
-/** The count represents source-specific actionable signals, never unread notifications. */
+function AttentionBell({
+  compact,
+  hasFailedChecks,
+}: {
+  compact: boolean;
+  hasFailedChecks: boolean;
+}) {
+  return (
+    <span aria-hidden className="relative inline-flex">
+      <BellIcon
+        className={
+          compact
+            ? `size-3 ${hasFailedChecks ? "text-warning" : "text-muted-foreground"}`
+            : undefined
+        }
+      />
+      {!hasFailedChecks ? (
+        <span
+          className={`absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-primary ring-2 ${compact ? "ring-sidebar" : "ring-popover"}`}
+        />
+      ) : null}
+    </span>
+  );
+}
+
+/** Thread notifications clear on a visit; PR feedback remains until its source resolves. */
 export function WorkbenchTicketAttentionBadge(
   props: TicketAttentionProps & { side?: "bottom" | "right"; compact?: boolean },
 ) {
   const { attentionSignalsByTicket, attentionInspectionsByTicket } = useWorkbenchAttentionData();
   const signals = attentionSignalsByTicket.get(props.ticketId) ?? [];
   const [open, setOpen] = useState(false);
+  const hasFailedChecks = signals.some((signal) => signal.kind === "failed-checks");
   if (signals.length === 0) return null;
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -214,12 +246,12 @@ export function WorkbenchTicketAttentionBadge(
         render={
           <Button
             size={props.compact ? "icon-micro" : "micro"}
-            variant={props.compact ? "ghost" : "warning-outline"}
+            variant={props.compact ? "ghost" : hasFailedChecks ? "warning-outline" : "outline"}
             aria-label={`${signals.length} attention ${signals.length === 1 ? "item" : "items"} for ${props.ticketTitle}`}
           />
         }
       >
-        <BellIcon aria-hidden className={props.compact ? "size-3 text-warning" : undefined} />
+        <AttentionBell compact={!!props.compact} hasFailedChecks={hasFailedChecks} />
         {props.compact ? null : signals.length}
       </PopoverTrigger>
       <PopoverPopup width="md" padding="compact" side={props.side ?? "bottom"} align="end">
@@ -253,12 +285,14 @@ export function WorkbenchTicketAttentionPanel(props: TicketAttentionProps) {
         <div className="flex items-center justify-between gap-2 px-3 py-3">
           <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-2 text-left text-xs font-semibold">
             {signals.length ? (
-              <BellIcon aria-hidden className="size-3.5 text-warning" />
+              <BellIcon aria-hidden className="size-3.5 text-muted-foreground" />
             ) : (
               <CircleAlertIcon aria-hidden className="size-3.5 text-muted-foreground" />
             )}
             {signals.length ? "Needs attention" : "PR inspection"}
-            {signals.length ? <span className="text-warning">{signals.length}</span> : null}
+            {signals.length ? (
+              <span className="text-muted-foreground">{signals.length}</span>
+            ) : null}
             <ChevronDownIcon
               aria-hidden
               className="ml-auto size-3.5 text-muted-foreground group-data-[panel-open]:rotate-180"

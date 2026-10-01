@@ -310,12 +310,12 @@ function createTextGeneration(
       Effect.succeed({
         title: "Update workflow",
       }),
-    generateTicketSummary: () => Effect.succeed({ summary: "Update the workflow." }),
+    generateStructured: () => Effect.die("generateStructured is not used by GitManager"),
     ...overrides,
   };
 
   return {
-    generateTicketSummary: (input) => implementation.generateTicketSummary(input),
+    generateStructured: (input) => implementation.generateStructured(input),
     generateCommitMessage: (input) =>
       implementation.generateCommitMessage(input).pipe(
         Effect.mapError(

@@ -429,7 +429,7 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
     ),
   );
 
-  it.effect("disables tools and configured MCP servers for ticket summaries", () =>
+  it.effect("disables tools and configured MCP servers for structured generation", () =>
     withFakeClaudeEnv(
       {
         output: JSON.stringify({
@@ -440,15 +440,15 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
         }),
         argsMustContain:
           "--tools  --disable-slash-commands --strict-mcp-config --permission-mode dontAsk",
-        stdinMustContain: "Ticket title (untrusted data):",
+        stdinMustContain: "Summarize the supplied content.",
       },
       (textGeneration) =>
         Effect.gen(function* () {
-          const generated = yield* textGeneration.generateTicketSummary({
+          const generated = yield* textGeneration.generateStructured({
+            operation: "generateExample",
             cwd: process.cwd(),
-            title: "Validate analytics dimensions",
-            description:
-              "Reject unsupported metric and dimension combinations before provider calls.",
+            prompt: "Summarize the supplied content.",
+            outputSchema: Schema.Struct({ summary: Schema.String }),
             modelSelection: {
               instanceId: ProviderInstanceId.make("claudeAgent"),
               model: SYNTHETIC_CLAUDE_STANDARD_MODEL,

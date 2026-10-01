@@ -172,7 +172,7 @@ it.each([false, true])(
       ])
       .set(doneAction.id, [
         {
-          kind: "review-ready",
+          kind: "reply",
           source: { type: "thread", threadId: doneThread.id, threadTitle: doneThread.title },
         },
       ])

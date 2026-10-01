@@ -6,13 +6,37 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeUtil from "node:util";
 
 import { assert, it } from "@effect/vitest";
+import { ProviderInstanceId } from "../../packages/contracts/src/providerInstance.ts";
 
-import { LOCAL_DEMO_REPOSITORIES, setupLocal, verifyLocal } from "./local.mts";
+import {
+  LOCAL_DEMO_REPOSITORIES,
+  readDemoModelSelection,
+  setupLocal,
+  verifyLocal,
+} from "./local.mts";
 
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 
 const git = async (cwd: string, args: ReadonlyArray<string>): Promise<string> =>
   (await execFile("git", args, { cwd })).stdout.trim();
+
+it("reads the saved demo provider selection", async () => {
+  const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-workbench-demo-"));
+  try {
+    await NodeFSP.mkdir(NodePath.join(home, "userdata"));
+    await NodeFSP.writeFile(
+      NodePath.join(home, "userdata", "settings.json"),
+      JSON.stringify({ defaultModelSelection: { instanceId: "claudeAgent", model: "sonnet" } }),
+    );
+
+    assert.deepStrictEqual(await readDemoModelSelection(home), {
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "sonnet",
+    });
+  } finally {
+    await NodeFSP.rm(home, { recursive: true, force: true });
+  }
+});
 
 it("creates an idempotent local repository fixture", async () => {
   const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-workbench-demo-"));

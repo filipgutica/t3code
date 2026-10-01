@@ -34,7 +34,7 @@ const fixtures = [
   { id: "loading", title: "Slow PR inspection", pr: 905 },
 ] as const;
 
-/** Installed only in a disposable, credential-free preview. It never forwards to real gh. */
+/** Installed only in disposable demos. It never forwards to real gh. */
 export const installAttentionGitHubAdapter = async (
   home: string,
   environment: NodeJS.ProcessEnv,
@@ -47,7 +47,11 @@ export const installAttentionGitHubAdapter = async (
     `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(NodePath.join(import.meta.dirname, "gh-attention.mjs"))} "$@"\n`,
     { mode: 0o700 },
   );
-  return { ...environment, PATH: `${bin}${NodePath.delimiter}${environment.PATH ?? ""}` };
+  return {
+    ...environment,
+    PATH: `${bin}${NodePath.delimiter}${environment.PATH ?? ""}`,
+    T3CODE_PATH_PREPEND: bin,
+  };
 };
 
 /** Native RPC receipts create all records; provider outcomes are seeded offline afterwards. */

@@ -1,5 +1,5 @@
 import * as NodeOS from "node:os";
-import { isWorkbenchBuild, WORKBENCH_DISTRIBUTION } from "../workbench/distribution.ts";
+import { getWorkbenchWslHomeOverride } from "../workbench/distribution.ts";
 
 import { parsePersistedServerObservabilitySettings } from "@t3tools/shared/serverSettings";
 import * as Context from "effect/Context";
@@ -631,10 +631,10 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
     mode: "desktop" as const,
     noBrowser: true,
     port: input.port,
-    ...(isWorkbenchBuild() ? { t3Home: `~/${WORKBENCH_DISTRIBUTION.homeDirectoryName}` } : {}),
-    // Omit t3Home so the Linux backend uses its own home dir instead of
-    // the Windows-side baseDir (which would be a /mnt/c path and share
-    // the SQLite file with the primary).
+    ...getWorkbenchWslHomeOverride(),
+    // The Linux backend uses its own home instead of the Windows-side baseDir
+    // (a /mnt/c path shared with the primary). Workbench uses a separate
+    // Linux home from upstream T3 Code.
     host: wslBindHost,
     desktopBootstrapToken: input.bootstrapToken,
     // PortSchema rejects 0, so when tailscale serve is disabled we still

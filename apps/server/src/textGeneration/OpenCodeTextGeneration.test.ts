@@ -507,7 +507,7 @@ it.layer(OpenCodeTextGenerationTestLayer)("OpenCodeTextGeneration", (it) => {
     ),
   );
 
-  it.effect("generates a bounded ticket summary without attaching files", () =>
+  it.effect("generates structured JSON without attaching files", () =>
     withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (textGeneration) =>
       Effect.gen(function* () {
         runtimeMock.state.promptResult = {
@@ -521,11 +521,11 @@ it.layer(OpenCodeTextGenerationTestLayer)("OpenCodeTextGeneration", (it) => {
           },
         };
 
-        const result = yield* textGeneration.generateTicketSummary({
+        const result = yield* textGeneration.generateStructured({
+          operation: "generateExample",
           cwd: process.cwd(),
-          title: "Validate analytics fields",
-          description:
-            "Reject unsupported metric and dimension combinations before provider calls.",
+          prompt: "Summarize the supplied content.",
+          outputSchema: Schema.Struct({ summary: Schema.String }),
           modelSelection: DEFAULT_TEST_MODEL_SELECTION,
         });
 

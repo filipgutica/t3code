@@ -1,8 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
-  lazy,
-  Suspense,
   useEffect,
   useState,
   useSyncExternalStore,
@@ -41,7 +39,7 @@ import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
 import { resolveThreadRouteRef } from "../threadRoutes";
 import { WorkbenchPullRequestPreviewProvider } from "../workbench/WorkbenchPullRequestPreview";
-import { useWorkbenchSidebar } from "../workbench/useWorkbenchSidebar";
+import { WorkbenchSidebarSlot } from "../workbench/WorkbenchSidebarSlot";
 import {
   resolveInitialThreadSidebarWidth,
   resolveThreadSidebarMaximumWidth,
@@ -60,12 +58,6 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "var(--desktop-window-controls-inset, 90px)";
-
-const WorkbenchSidebar = lazy(() =>
-  import("../workbench/WorkbenchSidebar").then((module) => ({
-    default: module.WorkbenchSidebar,
-  })),
-);
 
 function subscribeToViewportWidth(onChange: () => void): () => void {
   window.addEventListener("resize", onChange);
@@ -240,7 +232,6 @@ function AppSidebarLayoutContent({ children }: { children: ReactNode }) {
   // Settings routes show the settings nav in place of whichever thread
   // sidebar is active.
   const pathname = useLocation({ select: (location) => location.pathname });
-  const { isOnWorkbench, context: workbenchSidebarContext } = useWorkbenchSidebar(pathname);
   const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
@@ -340,17 +331,10 @@ function AppSidebarLayoutContent({ children }: { children: ReactNode }) {
               <SidebarChromeHeader isElectron={isElectron} />
               <SettingsSidebarNav pathname={pathname} />
             </>
-          ) : isOnWorkbench ? (
-            <>
-              <SidebarChromeHeader isElectron={isElectron} />
-              <Suspense fallback={null}>
-                <WorkbenchSidebar context={workbenchSidebarContext} />
-              </Suspense>
-            </>
-          ) : legacySidebarEnabled ? (
-            <LegacyThreadSidebar />
           ) : (
-            <ThreadSidebar />
+            <WorkbenchSidebarSlot pathname={pathname} isElectron={isElectron}>
+              {legacySidebarEnabled ? <LegacyThreadSidebar /> : <ThreadSidebar />}
+            </WorkbenchSidebarSlot>
           )}
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>

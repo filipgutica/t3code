@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
+import * as Schema from "effect/Schema";
 import { describe, expect } from "vite-plus/test";
 
 import { ProviderInstanceId } from "@t3tools/contracts";
@@ -24,8 +25,7 @@ const makeStubTextGeneration = (
     generatePrContent: () => Effect.die("generatePrContent stub not configured for this test"),
     generateBranchName: () => Effect.die("generateBranchName stub not configured for this test"),
     generateThreadTitle: () => Effect.die("generateThreadTitle stub not configured for this test"),
-    generateTicketSummary: () =>
-      Effect.die("generateTicketSummary stub not configured for this test"),
+    generateStructured: () => Effect.die("generateStructured stub not configured for this test"),
     ...overrides,
   });
 
@@ -179,16 +179,18 @@ describe("TextGeneration.make", () => {
     }),
   );
 
-  it.effect("delegates ticket summaries to the selected provider instance", () =>
+  it.effect("delegates structured generation to the selected provider instance", () =>
     Effect.gen(function* () {
       const instanceId = ProviderInstanceId.make("codex_personal");
-      const calls: Array<{ title: string; description: string }> = [];
+      const calls: Array<{ operation: string; prompt: string }> = [];
       const instance = makeStubInstance(
         instanceId,
         makeStubTextGeneration({
-          generateTicketSummary: (input) => {
-            calls.push({ title: input.title, description: input.description });
-            return Effect.succeed({ summary: "A concise ticket summary." });
+          generateStructured: (input) => {
+            calls.push({ operation: input.operation, prompt: input.prompt });
+            return Schema.decodeUnknownEffect(input.outputSchema)({
+              summary: "A concise result.",
+            }).pipe(Effect.orDie);
           },
         }),
       );
@@ -204,18 +206,19 @@ describe("TextGeneration.make", () => {
         ),
       );
 
-      const result = yield* tg.generateTicketSummary({
+      const result = yield* tg.generateStructured({
+        operation: "generateExample",
         cwd: process.cwd(),
-        title: "Validate request fields",
-        description: "Reject unsupported field combinations before provider calls.",
+        prompt: "Summarize the example.",
+        outputSchema: Schema.Struct({ summary: Schema.String }),
         modelSelection: createModelSelection(instanceId, "gpt-5"),
       });
 
-      expect(result).toEqual({ summary: "A concise ticket summary." });
+      expect(result).toEqual({ summary: "A concise result." });
       expect(calls).toEqual([
         {
-          title: "Validate request fields",
-          description: "Reject unsupported field combinations before provider calls.",
+          operation: "generateExample",
+          prompt: "Summarize the example.",
         },
       ]);
     }),

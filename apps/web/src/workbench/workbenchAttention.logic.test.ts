@@ -12,10 +12,9 @@ import {
   activeWorkbenchAttentionAssignments,
   getWorkbenchPullRequestAttention,
   matchesWorkbenchAttention,
-  workbenchThreadAttentionReasons,
+  getWorkbenchThreadNotification,
   workbenchAttentionIdentity,
 } from "./workbenchAttention.logic";
-import { getWorkbenchAgentPresentation } from "./workbench.logic";
 
 const environmentId = EnvironmentId.make("attention-local");
 const reference = {
@@ -52,29 +51,74 @@ const evaluate = (
   });
 
 describe("Workbench attention from active native Threads and linked PRs", () => {
-  it("keeps ready work visible when another active Thread is working", () => {
-    const reasons = workbenchThreadAttentionReasons([
-      getWorkbenchAgentPresentation({
-        nativeLabel: "Working",
-        sessionStatus: "running",
-        turnState: "running",
+  it("acknowledges replies without claiming task completion and notifies for a later reply", () => {
+    const firstReplyAt = "2026-10-01T00:01:00Z";
+    const reply = { nativeLabel: null, turnState: "completed", completedAt: firstReplyAt };
+    expect(getWorkbenchThreadNotification(reply)).toEqual({
+      kind: "reply",
+      occurredAt: firstReplyAt,
+    });
+    expect(getWorkbenchThreadNotification({ ...reply, lastVisitedAt: firstReplyAt })).toBeNull();
+    expect(
+      getWorkbenchThreadNotification({
+        ...reply,
+        completedAt: "2026-10-01T00:02:00Z",
+        lastVisitedAt: firstReplyAt,
+      })?.kind,
+    ).toBe("reply");
+    expect(getWorkbenchThreadNotification({ ...reply, nativeLabel: "Working" })).toBeNull();
+    expect(matchesWorkbenchAttention("replies", [{ kind: "reply" }])).toBe(true);
+    expect(matchesWorkbenchAttention("replies", [{ kind: "question" }])).toBe(false);
+  });
+  it("acknowledges each pending question separately, including another question in the same turn", () => {
+    const firstQuestionAt = "2026-10-01T00:01:00Z";
+    const secondQuestionAt = "2026-10-01T00:02:00Z";
+    const waiting = {
+      nativeLabel: "Awaiting Input",
+      turnState: "running",
+      completedAt: null,
+      pendingRequests: { approvals: [], userInputs: [{ createdAt: firstQuestionAt }] },
+    };
+    expect(getWorkbenchThreadNotification(waiting)).toEqual({
+      kind: "question",
+      occurredAt: firstQuestionAt,
+    });
+    expect(
+      getWorkbenchThreadNotification({ ...waiting, lastVisitedAt: firstQuestionAt }),
+    ).toBeNull();
+    const next = {
+      ...waiting,
+      pendingRequests: {
+        approvals: [],
+        userInputs: [{ createdAt: firstQuestionAt }, { createdAt: secondQuestionAt }],
+      },
+    };
+    expect(getWorkbenchThreadNotification({ ...next, lastVisitedAt: firstQuestionAt })).toEqual({
+      kind: "question",
+      occurredAt: secondQuestionAt,
+    });
+    expect(getWorkbenchThreadNotification({ ...next, lastVisitedAt: secondQuestionAt })).toBeNull();
+    expect(getWorkbenchThreadNotification({ ...waiting, pendingRequests: undefined })).toBeNull();
+    expect(
+      getWorkbenchThreadNotification({
+        ...waiting,
+        pendingRequests: { approvals: [], userInputs: [] },
       }),
-      getWorkbenchAgentPresentation({
-        nativeLabel: null,
-        sessionStatus: "ready",
-        turnState: "completed",
-      }),
-      getWorkbenchAgentPresentation({
-        nativeLabel: "Pending Approval",
-        sessionStatus: "ready",
-        turnState: "running",
-      }),
-    ]);
-    expect(reasons).toEqual(["Ready for review", "Waiting for input"]);
-    const signals = [{ kind: "review-ready" }, { kind: "waiting" }] as const;
-    expect(matchesWorkbenchAttention("review", signals)).toBe(true);
-    expect(matchesWorkbenchAttention("attention", signals)).toBe(true);
-    expect(matchesWorkbenchAttention("review", [{ kind: "waiting" }])).toBe(false);
+    ).toBeNull();
+  });
+  it("acknowledges approvals and interrupted turns without treating them as questions", () => {
+    const createdAt = "2026-10-01T00:01:00Z";
+    const approval = {
+      nativeLabel: "Pending Approval",
+      turnState: "running",
+      completedAt: null,
+      pendingRequests: { approvals: [{ createdAt }], userInputs: [] },
+    };
+    expect(getWorkbenchThreadNotification(approval)?.kind).toBe("waiting");
+    expect(getWorkbenchThreadNotification({ ...approval, lastVisitedAt: createdAt })).toBeNull();
+    const interrupted = { nativeLabel: null, turnState: "interrupted", completedAt: createdAt };
+    expect(getWorkbenchThreadNotification(interrupted)?.kind).toBe("waiting");
+    expect(getWorkbenchThreadNotification({ ...interrupted, lastVisitedAt: createdAt })).toBeNull();
   });
   it("excludes superseded, settled, archived, missing and foreign-environment assignments", () => {
     const assignment = (id: string, supersededAt: string | null = null): WorkbenchAssignment => ({

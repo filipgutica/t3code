@@ -17,13 +17,11 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
-  buildTicketSummaryPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
   sanitizeCommitSubject,
   sanitizePrTitle,
-  sanitizeTicketSummary,
   sanitizeThreadTitle,
 } from "./TextGenerationUtils.ts";
 import {
@@ -52,12 +50,7 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
     outputSchemaJson,
     modelSelection,
   }: {
-    operation:
-      | "generateCommitMessage"
-      | "generatePrContent"
-      | "generateBranchName"
-      | "generateThreadTitle"
-      | "generateTicketSummary";
+    operation: string;
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
@@ -266,25 +259,15 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
-  const generateTicketSummary: TextGeneration.TextGeneration["Service"]["generateTicketSummary"] =
-    Effect.fn("GrokTextGeneration.generateTicketSummary")(function* (input) {
-      const { prompt, outputSchema } = buildTicketSummaryPrompt(input);
-      const generated = yield* runGrokJson({
-        operation: "generateTicketSummary",
-        cwd: input.cwd,
-        prompt,
-        outputSchemaJson: outputSchema,
-        modelSelection: input.modelSelection,
-      });
-
-      const summary = sanitizeTicketSummary(generated.summary);
-      if (!summary) {
-        return yield* new TextGenerationError({
-          operation: "generateTicketSummary",
-          detail: "Grok Agent returned an empty ticket summary.",
-        });
-      }
-      return { summary };
+  const generateStructured: TextGeneration.TextGeneration["Service"]["generateStructured"] = (
+    input,
+  ) =>
+    runGrokJson({
+      operation: input.operation,
+      cwd: input.cwd,
+      prompt: input.prompt,
+      outputSchemaJson: Schema.toType(input.outputSchema),
+      modelSelection: input.modelSelection,
     });
 
   return {
@@ -292,6 +275,6 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
-    generateTicketSummary,
+    generateStructured,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

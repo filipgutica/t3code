@@ -18,26 +18,18 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
-  buildTicketSummaryPrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
   sanitizeCommitSubject,
   sanitizePrTitle,
-  sanitizeTicketSummary,
   sanitizeThreadTitle,
 } from "./TextGenerationUtils.ts";
 import * as OpenCodeRuntime from "../provider/opencodeRuntime.ts";
 import * as OpenCodeServerOwner from "../provider/OpenCodeServerOwner.ts";
 
-const OpenCodeTextGenerationOperation = Schema.Literals([
-  "generateCommitMessage",
-  "generatePrContent",
-  "generateBranchName",
-  "generateThreadTitle",
-  "generateTicketSummary",
-]);
+const OpenCodeTextGenerationOperation = Schema.String;
 
 type OpenCodeTextGenerationOperation = typeof OpenCodeTextGenerationOperation.Type;
 
@@ -456,26 +448,16 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
       };
     });
 
-  const generateTicketSummary: TextGeneration.TextGeneration["Service"]["generateTicketSummary"] =
-    Effect.fn("OpenCodeTextGeneration.generateTicketSummary")(function* (input) {
-      const { prompt, outputSchema } = buildTicketSummaryPrompt(input);
-      const generated = yield* runOpenCodeJson({
-        operation: "generateTicketSummary",
-        cwd: input.cwd,
-        prompt,
-        outputSchemaJson: outputSchema,
-        modelSelection: input.modelSelection,
-        attachments: [],
-      });
-
-      const summary = sanitizeTicketSummary(generated.summary);
-      if (!summary) {
-        return yield* new TextGenerationError({
-          operation: "generateTicketSummary",
-          detail: "OpenCode returned an empty ticket summary.",
-        });
-      }
-      return { summary };
+  const generateStructured: TextGeneration.TextGeneration["Service"]["generateStructured"] = (
+    input,
+  ) =>
+    runOpenCodeJson({
+      operation: input.operation,
+      cwd: input.cwd,
+      prompt: input.prompt,
+      outputSchemaJson: Schema.toType(input.outputSchema),
+      modelSelection: input.modelSelection,
+      attachments: [],
     });
 
   return {
@@ -483,6 +465,6 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
-    generateTicketSummary,
+    generateStructured,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

@@ -335,7 +335,7 @@ it.layer(NodeServices.layer)("AntigravityTextGeneration", (it) => {
       }).pipe(Effect.scoped),
   );
 
-  it.effect("generates a bounded ticket summary without using the project workspace", () =>
+  it.effect("generates structured JSON without using the project workspace", () =>
     Effect.gen(function* () {
       const fixture = yield* makeFixture({
         outputs: [
@@ -343,19 +343,19 @@ it.layer(NodeServices.layer)("AntigravityTextGeneration", (it) => {
         ],
       });
 
-      const result = yield* fixture.textGeneration.generateTicketSummary({
+      const result = yield* fixture.textGeneration.generateStructured({
+        operation: "generateExample",
         cwd: fixture.projectDirectory,
-        title: "Validate analytics fields",
-        description: "Reject unsupported metric and dimension combinations before provider calls.",
+        prompt: "Summarize the supplied content.",
+        outputSchema: Schema.Struct({ summary: Schema.String }),
         modelSelection,
       });
 
       expect(result.summary).toContain("Improve request validation");
-      expect(result.summary.length).toBeLessThanOrEqual(500);
       expect(fixture.state.workspaces).not.toContain(fixture.projectDirectory);
       expect(fixture.state.prompts[0]?.prompt[0]).toMatchObject({
         type: "text",
-        text: expect.stringContaining("Ticket title (untrusted data):"),
+        text: expect.stringContaining("Summarize the supplied content."),
       });
       yield* fixture.assertCleaned;
     }).pipe(Effect.scoped),

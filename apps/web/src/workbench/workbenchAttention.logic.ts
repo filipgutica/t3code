@@ -6,6 +6,7 @@ import type {
   ThreadId,
   WorkbenchAssignment,
 } from "@t3tools/contracts";
+import type { PendingApproval, PendingUserInput } from "@t3tools/client-runtime/pending-requests";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import {
   legacyThreadPullRequestKey,
@@ -16,7 +17,7 @@ import type {
   WorkbenchTicketPullRequest,
 } from "./workbenchPullRequests.logic";
 
-export type WorkbenchAttentionMode = "all" | "attention" | "review";
+export type WorkbenchAttentionMode = "all" | "attention" | "replies";
 export type WorkbenchPullRequestAttentionKind =
   | "failed-checks"
   | "changes-requested"
@@ -29,7 +30,7 @@ const pullRequestReasonLabels = {
 export type WorkbenchInspectionStatus = "loading" | "unavailable" | "incomplete" | "complete";
 export type WorkbenchAttentionSignal =
   | {
-      readonly kind: "waiting" | "review-ready";
+      readonly kind: "waiting" | "question" | "reply";
       readonly source: {
         readonly type: "thread";
         readonly threadId: ThreadId;
@@ -261,18 +262,49 @@ export const matchesWorkbenchAttention = (
   signals: ReadonlyArray<Pick<WorkbenchAttentionSignal, "kind">>,
 ) =>
   mode === "all" ||
-  (mode === "review"
-    ? signals.some((signal) => signal.kind === "review-ready")
-    : signals.length > 0);
+  (mode === "replies" ? signals.some((signal) => signal.kind === "reply") : signals.length > 0);
 
-export const workbenchThreadAttentionReasons = (
-  presentations: ReadonlyArray<{ readonly label: string } | null>,
-) => [
-  ...new Set(
-    presentations.flatMap((presentation) =>
-      presentation?.label === "Ready for review" || presentation?.label === "Waiting for input"
-        ? [presentation.label]
-        : [],
-    ),
-  ),
-];
+/** A visit acknowledges a reply or request, without resolving the native request itself. */
+export const getWorkbenchThreadNotification = ({
+  nativeLabel,
+  turnState,
+  completedAt,
+  pendingRequests,
+  lastVisitedAt,
+}: {
+  readonly nativeLabel: string | null | undefined;
+  readonly turnState: string | null | undefined;
+  readonly completedAt: string | null | undefined;
+  readonly pendingRequests?:
+    | {
+        readonly approvals: ReadonlyArray<Pick<PendingApproval, "createdAt">>;
+        readonly userInputs: ReadonlyArray<Pick<PendingUserInput, "createdAt">>;
+      }
+    | undefined;
+  readonly lastVisitedAt?: string | undefined;
+}) => {
+  let kind: "waiting" | "question" | "reply";
+  let occurredAt: string | null | undefined;
+  if (nativeLabel === "Awaiting Input") {
+    kind = "question";
+    occurredAt = pendingRequests?.userInputs.at(-1)?.createdAt;
+  } else if (nativeLabel === "Pending Approval") {
+    kind = "waiting";
+    occurredAt = pendingRequests?.approvals.at(-1)?.createdAt;
+  } else if (
+    nativeLabel === "Working" ||
+    nativeLabel === "Connecting" ||
+    nativeLabel === "Monitoring"
+  ) {
+    return null;
+  } else if (nativeLabel === "Plan Ready" || turnState === "interrupted" || turnState === "error") {
+    kind = "waiting";
+    occurredAt = completedAt;
+  } else if (turnState === "completed") {
+    kind = "reply";
+    occurredAt = completedAt;
+  } else return null;
+  if (!occurredAt || !Number.isFinite(Date.parse(occurredAt))) return null;
+  if (lastVisitedAt && Date.parse(lastVisitedAt) >= Date.parse(occurredAt)) return null;
+  return { kind, occurredAt };
+};

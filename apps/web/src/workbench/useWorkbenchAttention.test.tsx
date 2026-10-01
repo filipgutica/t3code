@@ -1,8 +1,17 @@
+import { RegistryContext } from "@effect/atom-react";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import * as Atom from "effect/unstable/reactivity/Atom";
+import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
+import { useUiStateStore } from "../uiStateStore";
 import { act, useEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import {
   EnvironmentId,
+  EventId,
+  ApprovalRequestId,
+  type ScopedThreadRef,
+  type OrchestrationThreadActivity,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -21,6 +30,51 @@ import {
   workbenchAttentionIdentity,
 } from "./workbenchAttention.logic";
 
+vi.mock("../state/threads", () => ({
+  environmentThreadDetails: {
+    activitiesAtom: (ref: ScopedThreadRef) => activitiesAtom(scopedThreadKey(ref)),
+  },
+}));
+const requestAt = "2026-09-29T00:01:00.000Z";
+const question = (id: string, createdAt = requestAt): OrchestrationThreadActivity => ({
+  id: EventId.make(id),
+  tone: "info",
+  kind: "user-input.requested",
+  summary: "Question",
+  payload: {
+    requestId: ApprovalRequestId.make(id),
+    questions: [
+      {
+        id: "question",
+        header: "Choice",
+        question: "Which option?",
+        options: [{ label: "One" }],
+      },
+    ],
+  },
+  turnId: null,
+  createdAt,
+});
+const activitiesAtom = Atom.family((key: string) =>
+  Atom.make<ReadonlyArray<OrchestrationThreadActivity>>(
+    key.endsWith(":waiting")
+      ? [question("first-question")]
+      : key.endsWith(":other-waiting")
+        ? [
+            {
+              id: EventId.make("approval"),
+              tone: "approval",
+              kind: "approval.requested",
+              summary: "Approval",
+              payload: { requestId: ApprovalRequestId.make("approval"), requestKind: "command" },
+              turnId: null,
+              createdAt: requestAt,
+            },
+          ]
+        : [],
+  ),
+);
+let registry: AtomRegistry.AtomRegistry;
 const environmentId = EnvironmentId.make("source-attention");
 const projectId = WorkbenchProjectId.make("workspace");
 const ticket: WorkbenchTicket = {
@@ -93,12 +147,14 @@ const assignments: WorkbenchAssignment[] = [...threadsById.values()].map((row) =
 assignments.push({ ...assignments[1]!, id: WorkbenchAssignmentId.make("duplicate-assignment") });
 let result: ReturnType<typeof useWorkbenchAttention>;
 let renderer: ReactTestRenderer;
-function Harness({
+function AttentionHarness({
   environment = environmentId,
   threads = threadsById,
+  activeThreadRef = null,
 }: {
   environment?: EnvironmentId;
   threads?: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
+  activeThreadRef?: ScopedThreadRef | null;
 }) {
   const attention = useWorkbenchAttention({
     environmentId: environment,
@@ -106,14 +162,30 @@ function Harness({
     tickets: [ticket],
     assignments,
     threadsById: threads,
+    activeThreadRef,
   });
   useEffect(() => {
     result = attention;
   }, [attention]);
   return null;
 }
-beforeEach(() => vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true));
-afterEach(() => act(() => renderer?.unmount()));
+function Harness(props: Parameters<typeof AttentionHarness>[0]) {
+  return (
+    <RegistryContext.Provider value={registry}>
+      <AttentionHarness {...props} />
+    </RegistryContext.Provider>
+  );
+}
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  useUiStateStore.setState({ threadLastVisitedAtById: {} });
+  registry = AtomRegistry.make();
+});
+afterEach(() => {
+  act(() => renderer?.unmount());
+  registry.dispose();
+  vi.unstubAllGlobals();
+});
 
 it("retains omitted unresolved discussions during partial reads and retires only confirmed resolutions", () => {
   act(() => {
@@ -217,7 +289,7 @@ it("preserves each eligible Thread source and deduplicates shared PR reasons ind
     ),
   );
   expect(result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind)).toEqual([
-    "waiting",
+    "question",
     "waiting",
     "failed-checks",
     "changes-requested",
@@ -459,4 +531,48 @@ it("keeps inspection across equivalent rerenders and known attention while expli
   expect(result.attentionSignalsByTicket.get(ticket.id)).toEqual([]);
   expect(result.attentionInspectionsByTicket.get(ticket.id)).toEqual([]);
   expect(result.attentionCoverage).toBe("0 of 0 linked PRs inspected");
+});
+
+it("clears an opened question notification and reacts to a new request rather than metadata", async () => {
+  const waitingRef = scopeThreadRef(environmentId, waiting.id);
+  const waitingKey = scopedThreadKey(waitingRef);
+  const threadSignals = () =>
+    result.attentionSignalsByTicket
+      .get(ticket.id)
+      ?.filter(
+        (signal) => signal.source.type === "thread" && signal.source.threadId === waiting.id,
+      );
+  await act(async () => {
+    renderer = create(<Harness />);
+  });
+  expect(threadSignals()?.map((signal) => signal.kind)).toEqual(["question"]);
+  await act(async () => renderer.update(<Harness activeThreadRef={waitingRef} />));
+  expect(threadSignals()).toEqual([]);
+  expect(useUiStateStore.getState().threadLastVisitedAtById[waitingKey]).toBe(requestAt);
+  await act(async () => renderer.update(<Harness />));
+  const renamed = new Map(threadsById).set(waiting.id, {
+    ...waiting,
+    title: "Renamed",
+    updatedAt: "2026-09-29T00:02:00.000Z",
+  });
+  await act(async () => renderer.update(<Harness threads={renamed} />));
+  expect(threadSignals()).toEqual([]);
+  const secondAt = "2026-09-29T00:03:00.000Z";
+  await act(async () =>
+    registry.set(activitiesAtom(waitingKey), [
+      question("first-question"),
+      question("second-question", secondAt),
+    ]),
+  );
+  expect(threadSignals()?.map((signal) => signal.kind)).toEqual(["question"]);
+  // A same-ID Thread in another environment cannot acknowledge this request.
+  await act(async () =>
+    renderer.update(
+      <Harness activeThreadRef={scopeThreadRef(EnvironmentId.make("remote"), waiting.id)} />,
+    ),
+  );
+  expect(threadSignals()?.map((signal) => signal.kind)).toEqual(["question"]);
+  await act(async () => renderer.update(<Harness activeThreadRef={waitingRef} />));
+  expect(threadSignals()).toEqual([]);
+  expect(useUiStateStore.getState().threadLastVisitedAtById[waitingKey]).toBe(secondAt);
 });

@@ -8,7 +8,7 @@ export interface WorkbenchBoardScope {
 }
 
 interface WorkbenchBoardView {
-  readonly attentionMode: "all" | "attention" | "review";
+  readonly attentionMode: "all" | "attention" | "replies";
   readonly searchText: string;
   readonly groupMode: "none" | "epic";
   readonly repositoryId: ProjectId | null;
