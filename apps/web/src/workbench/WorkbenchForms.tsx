@@ -1,3 +1,9 @@
+import { WorkbenchRepositoryScopeFields } from "./WorkbenchRepositoryScopeFields";
+import {
+  isWorkbenchRepositoryScopeValid,
+  type WorkbenchRepositoryScope,
+  type WorkbenchRepositoryScopeDraft,
+} from "./workbenchRepositoryScope";
 import { WorkbenchRepositorySelectOptions } from "./WorkbenchRepositorySelectOptions";
 import {
   WorkbenchTicketAttentionBadge,
@@ -624,7 +630,7 @@ export function WorkbenchTicketDialog({
   );
 }
 
-type WorkbenchTicketDetailProps = {
+export type WorkbenchTicketDetailProps = {
   readonly environmentId: EnvironmentId;
   readonly workspaceTitle: string;
   readonly ticket: WorkbenchTicket;
@@ -683,7 +689,17 @@ type WorkbenchTicketDetailProps = {
   readonly onReplaceThread: (ticket: WorkbenchTicket, previousThreadId: ThreadId) => void;
   readonly onArchive: (ticket: WorkbenchTicket, archivedAt: string | null) => Promise<boolean>;
   readonly onDelete: (ticket: WorkbenchTicket) => Promise<boolean>;
-  readonly onPrepareWorkspace: (ticket: WorkbenchTicket) => Promise<boolean>;
+  readonly repositoryScopeDraft: WorkbenchRepositoryScopeDraft | null;
+  readonly onEditRepositories: ({
+    ticket,
+    prepare,
+  }: {
+    ticket: WorkbenchTicket;
+    prepare: boolean;
+  }) => void;
+  readonly onRepositoryScopeChange: (value: WorkbenchRepositoryScope) => void;
+  readonly onCancelRepositories: () => void;
+  readonly onSaveRepositories: () => Promise<boolean>;
   readonly onResetWorkspace: (ticket: WorkbenchTicket) => Promise<boolean>;
   readonly lifecycleActionsEnabled: boolean;
 };
@@ -715,6 +731,7 @@ export function WorkbenchTicketDetail(props: WorkbenchTicketDetailProps) {
         linkedProjects: props.linkedProjects,
         preparationFailed: props.preparationFailed,
         preparationPending: props.preparationPending,
+        repositoryScopeDraft: props.repositoryScopeDraft,
       }}
       actions={{
         onRefreshJira: props.onRefreshJira,
@@ -734,7 +751,10 @@ export function WorkbenchTicketDetail(props: WorkbenchTicketDetailProps) {
         onReplaceThread: props.onReplaceThread,
         onArchive: props.onArchive,
         onDelete: props.onDelete,
-        onPrepareWorkspace: props.onPrepareWorkspace,
+        onEditRepositories: props.onEditRepositories,
+        onRepositoryScopeChange: props.onRepositoryScopeChange,
+        onCancelRepositories: props.onCancelRepositories,
+        onSaveRepositories: props.onSaveRepositories,
         onResetWorkspace: props.onResetWorkspace,
       }}
       threads={{
@@ -778,7 +798,11 @@ function WorkbenchTicketDetailController({
   >;
   workspace: Pick<
     WorkbenchTicketDetailProps,
-    "ticketWorkspace" | "linkedProjects" | "preparationFailed" | "preparationPending"
+    | "ticketWorkspace"
+    | "linkedProjects"
+    | "preparationFailed"
+    | "preparationPending"
+    | "repositoryScopeDraft"
   >;
   actions: Pick<
     WorkbenchTicketDetailProps,
@@ -799,7 +823,10 @@ function WorkbenchTicketDetailController({
     | "onReplaceThread"
     | "onArchive"
     | "onDelete"
-    | "onPrepareWorkspace"
+    | "onEditRepositories"
+    | "onRepositoryScopeChange"
+    | "onCancelRepositories"
+    | "onSaveRepositories"
     | "onResetWorkspace"
   >;
   threads: Pick<
@@ -827,7 +854,13 @@ function WorkbenchTicketDetailController({
     error,
     lifecycleActionsEnabled,
   } = content;
-  const { ticketWorkspace, linkedProjects, preparationFailed, preparationPending } = workspace;
+  const {
+    ticketWorkspace,
+    linkedProjects,
+    preparationFailed,
+    preparationPending,
+    repositoryScopeDraft,
+  } = workspace;
   const {
     onRefreshJira,
     onBack,
@@ -846,7 +879,10 @@ function WorkbenchTicketDetailController({
     onReplaceThread,
     onArchive,
     onDelete,
-    onPrepareWorkspace,
+    onEditRepositories,
+    onRepositoryScopeChange,
+    onCancelRepositories,
+    onSaveRepositories,
     onResetWorkspace,
   } = actions;
   const { assignments, threadActionPending, threadActionLabel } = threads;
@@ -871,8 +907,6 @@ function WorkbenchTicketDetailController({
     setDetailsPanelCollapsed,
     repositoryScopePanelCollapsed,
     setRepositoryScopePanelCollapsed,
-    repositoryScopeEditorCollapsed,
-    setRepositoryScopeEditorCollapsed,
     advancedWorkspaceSettingsCollapsed,
     setAdvancedWorkspaceSettingsCollapsed,
   } = useWorkbenchTicketDetailPanels();
@@ -930,7 +964,6 @@ function WorkbenchTicketDetailController({
         : "No Thread");
   const {
     repositoryScopeLocked,
-    selectedRepositoryProjectIds,
     workspaceHasSelectedRepositories,
     workspaceIsReady,
     workspaceIsPreparing,
@@ -1138,7 +1171,6 @@ function WorkbenchTicketDetailController({
               expansion={{
                 repositoryScopePanelCollapsed: repositoryScopePanelCollapsed,
                 advancedWorkspaceSettingsCollapsed: advancedWorkspaceSettingsCollapsed,
-                repositoryScopeEditorCollapsed: repositoryScopeEditorCollapsed,
               }}
               presentation={{
                 workspaceStatusLabel: workspaceStatusLabel,
@@ -1152,12 +1184,13 @@ function WorkbenchTicketDetailController({
                 workspaceHasSelectedRepositories: workspaceHasSelectedRepositories,
               }}
               actions={{
-                onPrepareWorkspace: onPrepareWorkspace,
+                onEditRepositories,
+                onRepositoryScopeChange,
+                onCancelRepositories,
+                onSaveRepositories,
                 setRepositoryScopePanelCollapsed: setRepositoryScopePanelCollapsed,
                 setAdvancedWorkspaceSettingsCollapsed: setAdvancedWorkspaceSettingsCollapsed,
                 setResetConfirmationOpen: setResetConfirmationOpen,
-                setRepositoryScopeEditorCollapsed: setRepositoryScopeEditorCollapsed,
-                onUpdate: onUpdate,
               }}
               records={{
                 ticket: ticket,
@@ -1165,8 +1198,7 @@ function WorkbenchTicketDetailController({
                 ticketWorkspace: ticketWorkspace,
                 retainedRepositories: retainedRepositories,
                 activeAssignments: activeAssignments,
-                selectedRepositoryProjectIds: selectedRepositoryProjectIds,
-                actionableTicket: actionableTicket,
+                repositoryScopeDraft,
               }}
               context={{
                 environmentId: environmentId,
@@ -1326,6 +1358,7 @@ type WorkbenchTicketRepositoryEntry = {
   readonly isPrimary: boolean;
   readonly repository: Project | undefined;
   readonly openInCwd: string | null;
+  readonly workspaceRepository: WorkbenchTicketWorkspace["repositories"][number] | undefined;
 };
 
 function WorkbenchTicketRepositoryRow({
@@ -1346,40 +1379,9 @@ function WorkbenchTicketRepositoryRow({
   readonly canOpen: boolean;
 }) {
   const { repository, openInCwd } = entry;
-  const repositoryTitle = repository?.title ?? "Repository unavailable";
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 py-1 text-sm">
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          {openInCwd ? (
-            <WorkbenchCheckoutDirectory
-              cwd={openInCwd}
-              icon={
-                <FolderGit2Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              }
-              value={repositoryTitle}
-              valueClassName="line-clamp-2 break-words font-medium [overflow-wrap:anywhere]"
-            />
-          ) : (
-            <span className="flex min-w-0 items-center gap-1.5">
-              <FolderGit2Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              <span className="line-clamp-2 break-words font-medium [overflow-wrap:anywhere]">
-                {repositoryTitle}
-              </span>
-            </span>
-          )}
-          {entry.isPrimary && !isRetained ? (
-            <Badge size="default" variant="outline">
-              Primary
-            </Badge>
-          ) : null}
-          {isRetained ? (
-            <Badge size="sm" variant="outline">
-              Retained · outside ticket context
-            </Badge>
-          ) : null}
-        </div>
-      </div>
+    <div className="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1 py-2 text-sm">
+      <WorkbenchTicketRepositoryIdentity entry={entry} isRetained={isRetained} />
       {repository && !isArchived && canOpen && openInCwd ? (
         <OpenInPicker
           environmentId={repository.environmentId}
@@ -1389,6 +1391,11 @@ function WorkbenchTicketRepositoryRow({
           compact
           enableShortcut={false}
         />
+      ) : null}
+      {entry.workspaceRepository?.errorMessage ? (
+        <p className="min-w-0 basis-full break-words text-xs text-destructive" role="alert">
+          {entry.workspaceRepository.errorMessage}
+        </p>
       ) : null}
       {openInCwd ? (
         <div className="min-w-0 basis-full">
@@ -1401,6 +1408,74 @@ function WorkbenchTicketRepositoryRow({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function WorkbenchTicketRepositoryIdentity({
+  entry,
+  isRetained,
+}: {
+  readonly entry: WorkbenchTicketRepositoryEntry;
+  readonly isRetained: boolean;
+}) {
+  const repositoryTitle = entry.repository?.title ?? "Repository unavailable";
+  return (
+    <div className="min-w-0 flex-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        {entry.openInCwd ? (
+          <WorkbenchCheckoutDirectory
+            cwd={entry.openInCwd}
+            icon={<FolderGit2Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
+            value={repositoryTitle}
+            valueClassName="line-clamp-2 break-words font-medium [overflow-wrap:anywhere]"
+          />
+        ) : (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <FolderGit2Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+            <span className="line-clamp-2 break-words font-medium [overflow-wrap:anywhere]">
+              {repositoryTitle}
+            </span>
+          </span>
+        )}
+        {entry.isPrimary && !isRetained ? (
+          <Badge size="default" variant="outline">
+            Primary
+          </Badge>
+        ) : null}
+        <WorkbenchTicketRepositoryStatus repository={entry.workspaceRepository} />
+      </div>
+    </div>
+  );
+}
+
+function getWorkbenchTicketRepositoryStatusLabel(
+  repository: WorkbenchTicketRepositoryEntry["workspaceRepository"],
+) {
+  switch (repository?.status) {
+    case "failed":
+      return "Preparation failed";
+    case "pending":
+      return "Pending preparation";
+    case "released":
+      return "Released";
+    case "ready":
+      return null;
+    default:
+      return "Not prepared";
+  }
+}
+
+function WorkbenchTicketRepositoryStatus({
+  repository,
+}: {
+  readonly repository: WorkbenchTicketRepositoryEntry["workspaceRepository"];
+}) {
+  const label = getWorkbenchTicketRepositoryStatusLabel(repository);
+  if (label === null) return null;
+  return (
+    <Badge size="sm" variant={repository?.status === "failed" ? "warning" : "outline"}>
+      {label}
+    </Badge>
   );
 }
 
@@ -2280,7 +2355,22 @@ function WorkbenchTicketThreadsPanel({
   );
 }
 
-type WorkbenchTicketWorkspacePanelProps = {
+type WorkbenchTicketWorkspacePanelProps = Pick<
+  WorkbenchTicketDetailProps,
+  | "environmentId"
+  | "keybindings"
+  | "availableEditors"
+  | "ticketWorkspace"
+  | "linkedProjects"
+  | "ticket"
+  | "pending"
+  | "preparationPending"
+  | "repositoryScopeDraft"
+  | "onEditRepositories"
+  | "onRepositoryScopeChange"
+  | "onCancelRepositories"
+  | "onSaveRepositories"
+> & {
   repositoryScopePanelCollapsed: boolean;
   workspaceStatusLabel:
     | "Preparing"
@@ -2292,62 +2382,25 @@ type WorkbenchTicketWorkspacePanelProps = {
     | "Needs preparation";
   workspaceIsReady: boolean;
   workspaceIsPreparing: boolean;
-  pending: boolean;
-  preparationPending: boolean;
   isArchived: boolean;
   repositoryScopeLocked: boolean;
-  onPrepareWorkspace: (ticket: WorkbenchTicket) => Promise<boolean>;
-  ticket: WorkbenchTicket;
   workspacePreparationActionLabel:
     | "Preparing workspace…"
     | "Retry preparation"
     | "Prepare workspace";
   setRepositoryScopePanelCollapsed: Dispatch<SetStateAction<boolean>>;
   repositories: ReadonlyArray<WorkbenchTicketRepositoryEntry>;
-  environmentId: EnvironmentId;
-  keybindings: ResolvedKeybindingsConfig;
-  availableEditors: ReadonlyArray<EditorId>;
-  ticketWorkspace: WorkbenchTicketWorkspace | undefined;
   retainedRepositories: ReadonlyArray<WorkbenchTicketRepositoryEntry>;
   workspaceHasSelectedRepositories: boolean;
   advancedWorkspaceSettingsCollapsed: boolean;
   setAdvancedWorkspaceSettingsCollapsed: Dispatch<SetStateAction<boolean>>;
   activeAssignments: ReadonlyArray<WorkbenchAssignment>;
   setResetConfirmationOpen: Dispatch<SetStateAction<boolean>>;
-  repositoryScopeEditorCollapsed: boolean;
-  setRepositoryScopeEditorCollapsed: Dispatch<SetStateAction<boolean>>;
-  linkedProjects: ReadonlyArray<Project>;
-  selectedRepositoryProjectIds: ReadonlyArray<ProjectId>;
-  onUpdate: (
-    ticket: WorkbenchTicket,
-    patch: Partial<
-      Pick<
-        WorkbenchTicket,
-        | "title"
-        | "markdown"
-        | "kind"
-        | "epicId"
-        | "repositoryProjectIds"
-        | "primaryT3ProjectId"
-        | "status"
-        | "blocked"
-      >
-    >,
-  ) => void;
-  actionableTicket: WorkbenchTicket;
 };
-function WorkbenchTicketWorkspacePanel({
-  expansion,
-  presentation,
-  actions,
-  records,
-  context,
-}: {
+type WorkbenchTicketWorkspacePanelInput = {
   expansion: Pick<
     WorkbenchTicketWorkspacePanelProps,
-    | "repositoryScopePanelCollapsed"
-    | "advancedWorkspaceSettingsCollapsed"
-    | "repositoryScopeEditorCollapsed"
+    "repositoryScopePanelCollapsed" | "advancedWorkspaceSettingsCollapsed"
   >;
   presentation: Pick<
     WorkbenchTicketWorkspacePanelProps,
@@ -2363,12 +2416,13 @@ function WorkbenchTicketWorkspacePanel({
   >;
   actions: Pick<
     WorkbenchTicketWorkspacePanelProps,
-    | "onPrepareWorkspace"
+    | "onEditRepositories"
+    | "onRepositoryScopeChange"
+    | "onCancelRepositories"
+    | "onSaveRepositories"
     | "setRepositoryScopePanelCollapsed"
     | "setAdvancedWorkspaceSettingsCollapsed"
     | "setResetConfirmationOpen"
-    | "setRepositoryScopeEditorCollapsed"
-    | "onUpdate"
   >;
   records: Pick<
     WorkbenchTicketWorkspacePanelProps,
@@ -2377,37 +2431,36 @@ function WorkbenchTicketWorkspacePanel({
     | "ticketWorkspace"
     | "retainedRepositories"
     | "activeAssignments"
-    | "selectedRepositoryProjectIds"
-    | "actionableTicket"
+    | "repositoryScopeDraft"
   >;
   context: Pick<
     WorkbenchTicketWorkspacePanelProps,
     "environmentId" | "keybindings" | "availableEditors" | "linkedProjects"
   >;
-}) {
+};
+
+function WorkbenchTicketWorkspacePanel({
+  expansion,
+  presentation,
+  actions,
+  records,
+  context,
+}: WorkbenchTicketWorkspacePanelInput) {
+  const { repositoryScopePanelCollapsed, advancedWorkspaceSettingsCollapsed } = expansion;
   const {
-    repositoryScopePanelCollapsed,
-    advancedWorkspaceSettingsCollapsed,
-    repositoryScopeEditorCollapsed,
-  } = expansion;
-  const {
-    workspaceStatusLabel,
-    workspaceIsReady,
     workspaceIsPreparing,
     pending,
     preparationPending,
     isArchived,
     repositoryScopeLocked,
-    workspacePreparationActionLabel,
     workspaceHasSelectedRepositories,
   } = presentation;
   const {
-    onPrepareWorkspace,
+    onEditRepositories,
+    onRepositoryScopeChange,
     setRepositoryScopePanelCollapsed,
     setAdvancedWorkspaceSettingsCollapsed,
     setResetConfirmationOpen,
-    setRepositoryScopeEditorCollapsed,
-    onUpdate,
   } = actions;
   const {
     ticket,
@@ -2415,82 +2468,82 @@ function WorkbenchTicketWorkspacePanel({
     ticketWorkspace,
     retainedRepositories,
     activeAssignments,
-    selectedRepositoryProjectIds,
-    actionableTicket,
+    repositoryScopeDraft,
   } = records;
   const { environmentId, keybindings, availableEditors, linkedProjects } = context;
+  const draft =
+    repositoryScopeDraft?.ticket.id === ticket.id &&
+    repositoryScopeDraft.environmentId === environmentId
+      ? repositoryScopeDraft
+      : null;
+  const collapsed = repositoryScopePanelCollapsed && draft === null;
+  const disabled = pending || preparationPending || isArchived || repositoryScopeLocked;
+  const openRepositoryReview = (prepare: boolean) => {
+    setRepositoryScopePanelCollapsed(false);
+    onEditRepositories({ ticket, prepare });
+  };
   return (
     <section
-      className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 ${repositoryScopePanelCollapsed ? "" : "xl:min-h-0 xl:flex-1"}`}
+      className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 ${collapsed ? "" : draft ? "xl:min-h-0 xl:flex-[2]" : "xl:min-h-0 xl:flex-1"}`}
     >
       <WorkbenchTicketWorkspaceHeader
-        workspaceStatusLabel={workspaceStatusLabel}
-        workspaceIsReady={workspaceIsReady}
-        workspaceIsPreparing={workspaceIsPreparing}
-        pending={pending}
-        preparationPending={preparationPending}
-        isArchived={isArchived}
-        repositoryScopeLocked={repositoryScopeLocked}
-        onPrepareWorkspace={onPrepareWorkspace}
-        ticket={ticket}
-        workspacePreparationActionLabel={workspacePreparationActionLabel}
-        repositoryScopePanelCollapsed={repositoryScopePanelCollapsed}
-        setRepositoryScopePanelCollapsed={setRepositoryScopePanelCollapsed}
+        presentation={presentation}
+        actions={actions}
+        draft={draft}
+        linkedProjects={linkedProjects}
+        disabled={disabled}
+        collapsed={collapsed}
+        openRepositoryReview={openRepositoryReview}
       />
-      {!repositoryScopePanelCollapsed ? (
+      {!collapsed ? (
         <div
           id="workbench-ticket-repositories"
-          className="min-h-0 space-y-3 px-3 pb-3 pt-1 xl:overflow-y-auto xl:overscroll-contain"
+          className="min-h-0 space-y-3 px-3 pb-3 pt-2 xl:overflow-y-auto xl:overscroll-contain"
         >
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="min-w-0 flex-1">
-              <WorkbenchTicketWorkspaceRepositories
-                repositories={repositories}
-                environmentId={environmentId}
-                keybindings={keybindings}
-                availableEditors={availableEditors}
-                isArchived={isArchived}
-                ticketWorkspace={ticketWorkspace}
-                workspaceIsPreparing={workspaceIsPreparing}
-                retainedRepositories={retainedRepositories}
-              />
-              <p className="mt-2 text-xs text-muted-foreground">
-                {getWorkbenchWorkspaceDescription({
-                  workspaceIsPreparing,
-                  ticketWorkspace,
-                  workspaceHasSelectedRepositories,
-                })}
-              </p>
-              {ticketWorkspace?.errorMessage ? (
-                <p className="mt-2 break-words text-xs text-destructive" role="alert">
-                  {ticketWorkspace.errorMessage}
-                </p>
-              ) : null}
-              {ticketWorkspace ? (
-                <WorkbenchTicketAdvancedWorkspace
-                  advancedWorkspaceSettingsCollapsed={advancedWorkspaceSettingsCollapsed}
-                  setAdvancedWorkspaceSettingsCollapsed={setAdvancedWorkspaceSettingsCollapsed}
-                  activeAssignments={activeAssignments}
-                  ticketWorkspace={ticketWorkspace}
-                  pending={pending}
-                  isArchived={isArchived}
-                  setResetConfirmationOpen={setResetConfirmationOpen}
-                />
-              ) : null}
-            </div>
-          </div>
-          <WorkbenchTicketRepositoryScope
-            repositoryScopeEditorCollapsed={repositoryScopeEditorCollapsed}
-            setRepositoryScopeEditorCollapsed={setRepositoryScopeEditorCollapsed}
-            repositoryScopeLocked={repositoryScopeLocked}
-            linkedProjects={linkedProjects}
-            selectedRepositoryProjectIds={selectedRepositoryProjectIds}
-            pending={pending}
-            isArchived={isArchived}
-            ticket={ticket}
-            onUpdate={onUpdate}
-            actionableTicket={actionableTicket}
-          />
+          {draft ? (
+            <WorkbenchTicketWorkspaceRepositoryEditor
+              draft={draft}
+              repositories={repositories}
+              context={context}
+              isArchived={isArchived}
+              disabled={disabled}
+              onRepositoryScopeChange={onRepositoryScopeChange}
+            />
+          ) : (
+            <WorkbenchTicketWorkspaceRepositories
+              repositories={repositories}
+              environmentId={environmentId}
+              keybindings={keybindings}
+              availableEditors={availableEditors}
+              isArchived={isArchived}
+              ticketWorkspace={ticketWorkspace}
+              workspaceIsPreparing={workspaceIsPreparing}
+              retainedRepositories={retainedRepositories}
+            />
+          )}
+          <p className="text-xs text-muted-foreground">
+            {getWorkbenchWorkspaceDescription({
+              workspaceIsPreparing,
+              ticketWorkspace,
+              workspaceHasSelectedRepositories,
+            })}
+          </p>
+          {ticketWorkspace?.errorMessage ? (
+            <p className="break-words text-xs text-destructive" role="alert">
+              {ticketWorkspace.errorMessage}
+            </p>
+          ) : null}
+          {ticketWorkspace ? (
+            <WorkbenchTicketAdvancedWorkspace
+              advancedWorkspaceSettingsCollapsed={advancedWorkspaceSettingsCollapsed}
+              setAdvancedWorkspaceSettingsCollapsed={setAdvancedWorkspaceSettingsCollapsed}
+              activeAssignments={activeAssignments}
+              ticketWorkspace={ticketWorkspace}
+              pending={pending}
+              isArchived={isArchived}
+              setResetConfirmationOpen={setResetConfirmationOpen}
+            />
+          ) : null}
         </div>
       ) : null}
     </section>
@@ -2498,35 +2551,23 @@ function WorkbenchTicketWorkspacePanel({
 }
 
 function WorkbenchTicketWorkspaceHeader({
-  workspaceStatusLabel,
-  workspaceIsReady,
-  workspaceIsPreparing,
-  pending,
-  preparationPending,
-  isArchived,
-  repositoryScopeLocked,
-  onPrepareWorkspace,
-  ticket,
-  workspacePreparationActionLabel,
-  repositoryScopePanelCollapsed,
-  setRepositoryScopePanelCollapsed,
-}: Pick<
-  WorkbenchTicketWorkspacePanelProps,
-  | "workspaceStatusLabel"
-  | "workspaceIsReady"
-  | "workspaceIsPreparing"
-  | "pending"
-  | "preparationPending"
-  | "isArchived"
-  | "repositoryScopeLocked"
-  | "onPrepareWorkspace"
-  | "ticket"
-  | "workspacePreparationActionLabel"
-  | "repositoryScopePanelCollapsed"
-  | "setRepositoryScopePanelCollapsed"
->) {
+  presentation,
+  actions,
+  draft,
+  linkedProjects,
+  disabled,
+  collapsed,
+  openRepositoryReview,
+}: Pick<WorkbenchTicketWorkspacePanelInput, "presentation" | "actions"> & {
+  readonly draft: WorkbenchRepositoryScopeDraft | null;
+  readonly linkedProjects: ReadonlyArray<Project>;
+  readonly disabled: boolean;
+  readonly collapsed: boolean;
+  readonly openRepositoryReview: (prepare: boolean) => void;
+}) {
+  const { workspaceStatusLabel } = presentation;
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-border/50 px-3 py-2.5">
+    <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border/50 px-3 py-2.5">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <h2 className="text-sm font-semibold">Ticket workspace</h2>
         <Badge
@@ -2541,183 +2582,176 @@ function WorkbenchTicketWorkspaceHeader({
           {workspaceStatusLabel}
         </Badge>
       </div>
-      <div className="flex shrink-0 items-center gap-1">
-        {!workspaceIsReady ? (
-          <Button
-            aria-busy={workspaceIsPreparing || pending}
-            disabled={pending || preparationPending || isArchived || repositoryScopeLocked}
-            onClick={() => {
-              void onPrepareWorkspace(ticket);
-            }}
-            size="xs"
-            type="button"
-            variant="outline"
-          >
-            <FolderGit2Icon />
-            {workspacePreparationActionLabel}
-          </Button>
-        ) : null}
-        <Button
-          aria-controls="workbench-ticket-repositories"
-          aria-expanded={!repositoryScopePanelCollapsed}
-          aria-label={
-            repositoryScopePanelCollapsed ? "Expand Ticket workspace" : "Collapse Ticket workspace"
-          }
-          onClick={() => setRepositoryScopePanelCollapsed((collapsed) => !collapsed)}
-          size="icon-xs"
-          type="button"
-          variant="ghost"
-        >
-          <ChevronDownIcon className={repositoryScopePanelCollapsed ? "" : "rotate-180"} />
-        </Button>
+      <div className="flex flex-wrap items-center gap-1">
+        {draft ? (
+          <WorkbenchTicketWorkspaceReviewActions
+            draft={draft}
+            presentation={presentation}
+            actions={actions}
+            disabled={disabled}
+            linkedProjects={linkedProjects}
+          />
+        ) : (
+          <WorkbenchTicketWorkspaceBrowseActions
+            presentation={presentation}
+            setRepositoryScopePanelCollapsed={actions.setRepositoryScopePanelCollapsed}
+            disabled={disabled}
+            collapsed={collapsed}
+            openRepositoryReview={openRepositoryReview}
+          />
+        )}
       </div>
     </div>
   );
 }
 
-function WorkbenchTicketRepositoryScope({
-  repositoryScopeEditorCollapsed,
-  setRepositoryScopeEditorCollapsed,
-  repositoryScopeLocked,
+function WorkbenchTicketWorkspaceReviewActions({
+  draft,
+  presentation,
+  actions,
+  disabled,
   linkedProjects,
-  selectedRepositoryProjectIds,
-  pending,
-  isArchived,
-  ticket,
-  onUpdate,
-  actionableTicket,
-}: Pick<
-  WorkbenchTicketWorkspacePanelProps,
-  | "repositoryScopeEditorCollapsed"
-  | "setRepositoryScopeEditorCollapsed"
-  | "repositoryScopeLocked"
-  | "linkedProjects"
-  | "selectedRepositoryProjectIds"
-  | "pending"
-  | "isArchived"
-  | "ticket"
-  | "onUpdate"
-  | "actionableTicket"
->) {
+}: Pick<WorkbenchTicketWorkspacePanelInput, "presentation" | "actions"> & {
+  readonly draft: WorkbenchRepositoryScopeDraft;
+  readonly disabled: boolean;
+  readonly linkedProjects: ReadonlyArray<Project>;
+}) {
+  const { pending, preparationPending, workspaceIsPreparing, workspacePreparationActionLabel } =
+    presentation;
   return (
-    <div className="border-t border-border pt-4">
-      <div className="flex items-start justify-between gap-3">
-        <h3
-          id="workbench-ticket-repository-scope-heading"
-          className="text-xs font-medium text-muted-foreground"
-        >
-          Edit repository scope
-        </h3>
+    <>
+      <Button
+        disabled={disabled}
+        onClick={actions.onCancelRepositories}
+        size="xs"
+        type="button"
+        variant="ghost"
+      >
+        Cancel
+      </Button>
+      <Button
+        aria-busy={pending || preparationPending || workspaceIsPreparing}
+        disabled={
+          disabled ||
+          !isWorkbenchRepositoryScopeValid({ scope: draft.value, projects: linkedProjects })
+        }
+        onClick={() => {
+          void actions.onSaveRepositories();
+        }}
+        size="xs"
+        type="button"
+      >
+        {preparationPending
+          ? "Preparing workspace…"
+          : draft.prepare
+            ? workspacePreparationActionLabel
+            : "Save changes"}
+      </Button>
+    </>
+  );
+}
+
+function WorkbenchTicketWorkspaceBrowseActions({
+  presentation,
+  setRepositoryScopePanelCollapsed,
+  disabled,
+  collapsed,
+  openRepositoryReview,
+}: Pick<WorkbenchTicketWorkspacePanelInput, "presentation"> & {
+  readonly setRepositoryScopePanelCollapsed: Dispatch<SetStateAction<boolean>>;
+  readonly disabled: boolean;
+  readonly collapsed: boolean;
+  readonly openRepositoryReview: (prepare: boolean) => void;
+}) {
+  const { workspaceIsReady, workspaceIsPreparing, pending, workspacePreparationActionLabel } =
+    presentation;
+  return (
+    <>
+      <Button
+        disabled={disabled}
+        onClick={() => openRepositoryReview(false)}
+        size="xs"
+        type="button"
+        variant="ghost"
+      >
+        <PencilIcon /> Edit repositories
+      </Button>
+      {!workspaceIsReady ? (
         <Button
-          aria-controls="workbench-ticket-repository-scope-editor"
-          aria-expanded={!repositoryScopeEditorCollapsed}
-          aria-label={
-            repositoryScopeEditorCollapsed
-              ? "Expand Edit repository scope"
-              : "Collapse Edit repository scope"
-          }
-          onClick={() => setRepositoryScopeEditorCollapsed((collapsed) => !collapsed)}
-          size="icon-xs"
-          title={
-            repositoryScopeEditorCollapsed
-              ? "Expand Edit repository scope"
-              : "Collapse Edit repository scope"
-          }
+          aria-busy={workspaceIsPreparing || pending}
+          disabled={disabled}
+          onClick={() => openRepositoryReview(true)}
+          size="xs"
           type="button"
-          variant="ghost"
+          variant="outline"
         >
-          <ChevronDownIcon className={repositoryScopeEditorCollapsed ? "" : "rotate-180"} />
+          <FolderGit2Icon /> {workspacePreparationActionLabel}
         </Button>
-      </div>
-      {!repositoryScopeEditorCollapsed ? (
-        <fieldset
-          id="workbench-ticket-repository-scope-editor"
-          className="mt-3 space-y-2"
-          aria-labelledby="workbench-ticket-repository-scope-heading"
-        >
-          <legend className="sr-only">Edit repository scope</legend>
-          {repositoryScopeLocked ? (
-            <p className="text-xs text-muted-foreground">
-              Wait for workspace preparation or release to finish before changing repositories.
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Choose repository context for new Threads. Existing Threads stay unchanged.
-            </p>
-          )}
-          {linkedProjects.map((repository) => {
-            const checked = selectedRepositoryProjectIds.includes(repository.id);
-            return (
-              <label key={repository.id} className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={checked}
-                  disabled={
-                    pending ||
-                    isArchived ||
-                    repositoryScopeLocked ||
-                    (checked && selectedRepositoryProjectIds.length === 1)
-                  }
-                  onCheckedChange={(nextChecked) => {
-                    const nextRepositoryProjectIds = nextChecked
-                      ? [...selectedRepositoryProjectIds, repository.id]
-                      : selectedRepositoryProjectIds.filter((id) => id !== repository.id);
-                    const primaryT3ProjectId = nextRepositoryProjectIds.includes(
-                      ticket.primaryT3ProjectId,
-                    )
-                      ? ticket.primaryT3ProjectId
-                      : nextRepositoryProjectIds[0];
-                    if (primaryT3ProjectId === undefined) return;
-                    onUpdate(actionableTicket, {
-                      repositoryProjectIds: nextRepositoryProjectIds,
-                      primaryT3ProjectId,
-                    });
-                  }}
-                />
-                <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
-                  {repository.title}
-                </span>
-              </label>
-            );
-          })}
-          <Label htmlFor={`primary-repository-${ticket.id}`}>Primary repository</Label>
-          <p
-            id={`primary-repository-description-${ticket.id}`}
-            className="text-xs text-muted-foreground"
-          >
-            Where new Threads start.
-          </p>
-          <Select
-            disabled={pending || isArchived || repositoryScopeLocked}
-            value={ticket.primaryT3ProjectId}
-            onValueChange={(value) => {
-              if (value) {
-                onUpdate(actionableTicket, {
-                  primaryT3ProjectId: ProjectId.make(value),
-                });
-              }
-            }}
-          >
-            <SelectTrigger
-              id={`primary-repository-${ticket.id}`}
-              aria-label="Primary repository"
-              aria-describedby={`primary-repository-description-${ticket.id}`}
-            >
-              <SelectValue>
-                {linkedProjects.find((repository) => repository.id === ticket.primaryT3ProjectId)
-                  ?.title ?? "Select primary repository"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup>
-              {linkedProjects
-                .filter((repository) => selectedRepositoryProjectIds.includes(repository.id))
-                .map((repository) => (
-                  <SelectItem key={repository.id} value={repository.id}>
-                    {repository.title}
-                  </SelectItem>
-                ))}
-            </SelectPopup>
-          </Select>
-        </fieldset>
+      ) : null}
+      <Button
+        aria-controls="workbench-ticket-repositories"
+        aria-expanded={!collapsed}
+        aria-label={collapsed ? "Expand Ticket workspace" : "Collapse Ticket workspace"}
+        onClick={() => setRepositoryScopePanelCollapsed((value) => !value)}
+        size="icon-xs"
+        type="button"
+        variant="ghost"
+      >
+        <ChevronDownIcon className={collapsed ? "" : "rotate-180"} />
+      </Button>
+    </>
+  );
+}
+
+function WorkbenchTicketWorkspaceRepositoryEditor({
+  draft,
+  repositories,
+  context,
+  isArchived,
+  disabled,
+  onRepositoryScopeChange,
+}: Pick<WorkbenchTicketWorkspacePanelInput, "context"> &
+  Pick<
+    WorkbenchTicketWorkspacePanelProps,
+    "repositories" | "isArchived" | "onRepositoryScopeChange"
+  > & {
+    readonly draft: WorkbenchRepositoryScopeDraft;
+    readonly disabled: boolean;
+  }) {
+  const { environmentId, keybindings, availableEditors, linkedProjects } = context;
+  const ticket = draft.ticket;
+  const failedRepositories = repositories.filter(
+    (entry) => entry.workspaceRepository?.status === "failed",
+  );
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        {draft.prepare
+          ? "Review the primary and additional repositories before preparing this workspace."
+          : "Save repository choices together. Existing threads keep their working directories and context."}
+      </p>
+      <WorkbenchRepositoryScopeFields
+        projects={linkedProjects}
+        value={draft.value}
+        onChange={onRepositoryScopeChange}
+        disabled={disabled}
+        idPrefix={`ticket-workspace-${ticket.id}`}
+      />
+      {failedRepositories.length > 0 ? (
+        <div className="divide-y divide-border/50 border-t border-border/50 pt-2">
+          {failedRepositories.map((entry) => (
+            <WorkbenchTicketRepositoryRow
+              key={entry.id}
+              environmentId={environmentId}
+              entry={entry}
+              keybindings={keybindings}
+              availableEditors={availableEditors}
+              isArchived={isArchived}
+              isRetained={false}
+              canOpen={false}
+            />
+          ))}
+        </div>
       ) : null}
     </div>
   );
@@ -2833,35 +2867,44 @@ function WorkbenchTicketWorkspaceRepositories({
   | "retainedRepositories"
 >) {
   return (
-    <div className="space-y-1">
-      {repositories.map((entry) => (
-        <WorkbenchTicketRepositoryRow
-          key={entry.id}
-          environmentId={environmentId}
-          entry={entry}
-          keybindings={keybindings}
-          availableEditors={availableEditors}
-          isArchived={isArchived}
-          isRetained={false}
-          canOpen={ticketWorkspace?.status === "ready" && !workspaceIsPreparing}
-        />
-      ))}
+    <div className="divide-y divide-border/50">
+      {[...repositories]
+        .sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary))
+        .map((entry) => (
+          <WorkbenchTicketRepositoryRow
+            key={entry.id}
+            environmentId={environmentId}
+            entry={entry}
+            keybindings={keybindings}
+            availableEditors={availableEditors}
+            isArchived={isArchived}
+            isRetained={false}
+            canOpen={ticketWorkspace?.status === "ready" && !workspaceIsPreparing}
+          />
+        ))}
       {retainedRepositories.length > 0 ? (
-        <div className="mt-3 border-t border-border/60 pt-2">
-          <p className="mb-1 text-xs font-medium text-muted-foreground">Retained worktrees</p>
-          {retainedRepositories.map((entry) => (
-            <WorkbenchTicketRepositoryRow
-              key={entry.id}
-              environmentId={environmentId}
-              entry={entry}
-              keybindings={keybindings}
-              availableEditors={availableEditors}
-              isArchived={isArchived}
-              isRetained
-              canOpen={ticketWorkspace?.status === "ready" && !workspaceIsPreparing}
-            />
-          ))}
-        </div>
+        <details className="pt-2">
+          <summary className="cursor-pointer text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-ring">
+            Retained worktrees ({retainedRepositories.length})
+          </summary>
+          <p className="py-2 text-xs text-muted-foreground">
+            Kept for existing threads. Excluded from new thread context.
+          </p>
+          <div className="divide-y divide-border/50">
+            {retainedRepositories.map((entry) => (
+              <WorkbenchTicketRepositoryRow
+                key={entry.id}
+                environmentId={environmentId}
+                entry={entry}
+                keybindings={keybindings}
+                availableEditors={availableEditors}
+                isArchived={isArchived}
+                isRetained
+                canOpen={ticketWorkspace?.status === "ready" && !workspaceIsPreparing}
+              />
+            ))}
+          </div>
+        </details>
       ) : null}
     </div>
   );
@@ -2877,11 +2920,11 @@ function getWorkbenchWorkspaceDescription({
 >) {
   if (workspaceIsPreparing) return "Preparing the selected repositories.";
   if (ticketWorkspace === undefined)
-    return "Prepare a workspace to work in your editor, or create a Thread to prepare it automatically.";
+    return "Review repositories and prepare a workspace for your editor or first thread.";
   if (ticketWorkspace.status === "ready" && !workspaceHasSelectedRepositories)
     return "Repository selection changed. Prepare the workspace to add the missing repositories; existing worktrees stay available.";
   if (ticketWorkspace.status === "released")
-    return "No active worktrees. Prepare a workspace for your editor, or create a Thread to prepare it automatically.";
+    return "No active worktrees. Review repositories before preparing a workspace or creating a thread.";
   if (ticketWorkspace.status === "failed")
     return "Preparation failed. Retry preparation after resolving the reported repository error.";
   if (ticketWorkspace.status === "releasing") return "Removing prepared worktrees.";
@@ -5041,14 +5084,17 @@ function getWorkbenchDetailWorkspace({
         : "Prepare workspace";
   const repositories = selectedRepositoryProjectIds.map((id) => {
     const repository = linkedProjects.find((project) => project.id === id);
-    const preparedRepository = ticketWorkspace?.repositories.find(
-      (candidate) => candidate.projectId === id && candidate.status === "ready",
+    const workspaceRepository = ticketWorkspace?.repositories.find(
+      (candidate) => candidate.projectId === id,
     );
+    const preparedRepository =
+      workspaceRepository?.status === "ready" ? workspaceRepository : undefined;
     return {
       id,
       repository,
       openInCwd: preparedRepository?.worktreePath ?? null,
       isPrimary: id === ticket.primaryT3ProjectId,
+      workspaceRepository,
     };
   });
   const retainedRepositories = (ticketWorkspace?.repositories ?? [])
@@ -5061,6 +5107,7 @@ function getWorkbenchDetailWorkspace({
       repository: linkedProjects.find((project) => project.id === workspaceRepository.projectId),
       openInCwd: workspaceRepository.worktreePath,
       isPrimary: workspaceRepository.isPrimary,
+      workspaceRepository,
     }));
   return {
     repositoryScopeLocked,
@@ -5112,7 +5159,6 @@ function useWorkbenchTicketDetailPanels() {
   const [settledThreadsCollapsed, setSettledThreadsCollapsed] = useState(true);
   const [detailsPanelCollapsed, setDetailsPanelCollapsed] = useState(false);
   const [repositoryScopePanelCollapsed, setRepositoryScopePanelCollapsed] = useState(false);
-  const [repositoryScopeEditorCollapsed, setRepositoryScopeEditorCollapsed] = useState(true);
   const [advancedWorkspaceSettingsCollapsed, setAdvancedWorkspaceSettingsCollapsed] =
     useState(true);
   return {
@@ -5128,8 +5174,6 @@ function useWorkbenchTicketDetailPanels() {
     setDetailsPanelCollapsed,
     repositoryScopePanelCollapsed,
     setRepositoryScopePanelCollapsed,
-    repositoryScopeEditorCollapsed,
-    setRepositoryScopeEditorCollapsed,
     advancedWorkspaceSettingsCollapsed,
     setAdvancedWorkspaceSettingsCollapsed,
   };

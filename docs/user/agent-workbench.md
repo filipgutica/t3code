@@ -38,17 +38,19 @@ Watch: create a Ticket, prepare worktrees, and inspect Thread context (38 second
 
 https://github.com/user-attachments/assets/3dff743f-5ced-4834-89bf-3238ca090607
 
-1. Open a Ticket and review **Ticket workspace**, including the repository scope
-   and **Primary repository**.
-2. Choose **Prepare workspace** if you want to create worktrees before opening a
-   conversation. **Create Thread** prepares missing worktrees automatically.
-3. Choose **Create Thread**, select a provider and model, and review the Ticket
-   context chip in the native Thread composer.
+1. Open a Ticket and choose **Create Thread**.
+2. If the workspace is not prepared, review the primary and additional repositories.
+   Select a provider and model, then choose **Create workspace and thread**.
+   Prepared workspaces show the repositories that the new Thread will reuse.
+3. Review the Ticket context chip in the native Thread composer.
 4. Add instructions and send the message.
 
 Creating a Thread does not start an agent turn. Workbench prepares one Git
 worktree per selected repository and opens the Thread in the primary repository's
 worktree. The context chip includes the Ticket description and repository paths.
+
+To prepare worktrees before opening a conversation, choose **Prepare workspace**
+in **Ticket workspace**, review the repositories, and confirm.
 
 After changing the Ticket, use **Attach current Ticket context** in an existing
 Thread to stage its saved requirements and current checkout paths. Review the
@@ -131,6 +133,11 @@ native Threads and repository worktrees. Imported Jira Tickets cannot be archive
 or deleted locally.
 
 ## Manage repositories and worktrees
+
+Choose **Edit repositories** in **Ticket workspace** to change the primary or
+additional repositories. Changes stay local until you choose **Save changes**;
+**Cancel** restores the saved choices. Adding repositories to a prepared workspace
+prepares their worktrees together after saving.
 
 Threads using the same Ticket worktree share its files, branch, and uncommitted
 changes. Existing Threads keep their working directory and sent context when the

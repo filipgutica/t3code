@@ -16,10 +16,13 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   await expect(
     page.getByRole("heading", { name: "Add a team settings page", exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("Not prepared", { exact: true })).toBeVisible();
+  await expect(page.getByText("Not prepared", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Choose editor", exact: true })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("unprepared.png"), fullPage: true });
   const before = await snapshot(demo);
+  await page.getByRole("button", { name: "Prepare workspace", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Primary repository" })).toBeVisible();
+  expect((await snapshot(demo)).ticketWorkspaces).toEqual(before.ticketWorkspaces);
   await page.getByRole("button", { name: "Prepare workspace", exact: true }).click();
   await expect(page.getByText("Ready", { exact: true }).first()).toBeVisible();
   const prepared = await snapshot(demo);
@@ -32,11 +35,20 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   const original = workspace.repositories[0]!;
   const marker = NodePath.join(original.worktreePath, "retained-work.txt");
   await NodeFSP.writeFile(marker, "Keep this local work.\n");
-  await page.getByRole("button", { name: "Expand Edit repository scope", exact: true }).click();
+  await page.getByRole("button", { name: "Edit repositories", exact: true }).click();
   await page.getByRole("checkbox", { name: "Orbit API", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "Orbit API", exact: true })).toBeChecked();
+  const staged = await snapshot(demo);
+  expect(staged.ticketWorkspaces).toEqual(prepared.ticketWorkspaces);
+  expect(staged.tickets.find((ticket) => ticket.id === "orbit-007")).toEqual(
+    prepared.tickets.find((ticket) => ticket.id === "orbit-007"),
+  );
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Edit repositories", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: "Orbit API", exact: true })).not.toBeChecked();
+  await page.getByRole("checkbox", { name: "Orbit API", exact: true }).click();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByRole("button", { name: "Choose editor", exact: true })).toHaveCount(2);
-  await expect(page.getByRole("checkbox", { name: "Orbit Web", exact: true })).toBeEnabled();
   const extended = (await snapshot(demo)).ticketWorkspaces.find(
     (candidate) => candidate.ticketId === "orbit-007",
   )!;
@@ -45,14 +57,25 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
     extended.repositories.find((repository) => repository.projectId === original.projectId)
       ?.worktreePath,
   ).toBe(original.worktreePath);
+  await page.getByRole("button", { name: "Edit repositories", exact: true }).click();
+  await page.getByRole("combobox", { name: "Primary repository" }).click();
+  await page.getByRole("option", { name: "Orbit API", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: "Orbit Web", exact: true })).toBeChecked();
   await page.getByRole("checkbox", { name: "Orbit Web", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "Orbit Web", exact: true })).not.toBeChecked();
-  await expect(page.getByText(/Retained.*outside ticket context/)).toBeVisible();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByText("Retained worktrees (1)", { exact: true })).toBeVisible();
+  await page.getByText("Retained worktrees (1)", { exact: true }).click();
+  await expect(
+    page.getByText("Kept for existing threads. Excluded from new thread context."),
+  ).toBeVisible();
   expect(await NodeFSP.readFile(marker, "utf8")).toBe("Keep this local work.\n");
+  await page.getByRole("button", { name: "Edit repositories", exact: true }).click();
   await page.getByRole("checkbox", { name: "Orbit Web", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "Orbit Web", exact: true })).toBeChecked();
-  await expect(page.getByText(/Retained.*outside ticket context/)).not.toBeVisible();
-  await expect(page.getByRole("checkbox", { name: "Orbit Web", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Save changes", exact: true }).click();
+  await expect(page.getByText("Retained worktrees (1)", { exact: true })).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Choose editor", exact: true })).toHaveCount(2);
   const restored = (await snapshot(demo)).ticketWorkspaces.find(
     (candidate) => candidate.ticketId === "orbit-007",
   )!;
@@ -100,7 +123,7 @@ test("unlink preserves a native thread and its workspace, and permits relinking"
     .click();
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Create Thread", exact: true })
+    .getByRole("button", { name: "Create workspace and thread", exact: true })
     .click();
   await expect(page).toHaveURL(
     (url) => url.pathname !== "/workbench" && url.searchParams.get("workbench") === "true",
@@ -212,12 +235,14 @@ test("standalone preparation shows progress immediately and retries a failed req
     demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-003"),
   );
   await page.getByRole("button", { name: "Prepare workspace", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Primary repository" })).toBeVisible();
+  await page.getByRole("button", { name: "Prepare workspace", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Preparing workspace…", exact: true }),
   ).toBeDisabled();
   await expect(page.getByText("Preparing", { exact: true })).toBeVisible();
   failure.resolve();
-  await expect(page.getByText("Preparation failed for regression.", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Preparation failed for regression\./).last()).toBeVisible();
   await expect(page.getByRole("button", { name: "Retry preparation", exact: true })).toBeEnabled();
   await page.getByRole("button", { name: "Retry preparation", exact: true }).click();
   await expect(page.getByText("Ready", { exact: true }).first()).toBeVisible();

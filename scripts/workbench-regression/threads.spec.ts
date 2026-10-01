@@ -37,7 +37,7 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
     .click();
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Create Thread", exact: true })
+    .getByRole("button", { name: "Create workspace and thread", exact: true })
     .click();
   await expect(page).toHaveURL(
     (url) => url.pathname !== "/workbench" && url.searchParams.get("workbench") === "true",

@@ -87,6 +87,7 @@ const preparedWorkspace = {
 
 function makeDependencies(events: string[], comments: ReviewCommentContext[] = []) {
   return {
+    updateTicket: async () => AsyncResult.success(ticket),
     prepareTicketWorkspace: async () => {
       events.push("prepare-workspace");
       return AsyncResult.success(preparedWorkspace);
@@ -134,6 +135,125 @@ function startInput(assignment?: WorkbenchAssignment) {
 }
 
 describe("coordinateWorkbenchTicketStart", () => {
+  it("recovers an unavailable saved primary through the reviewed repository scope", async () => {
+    const replacementId = ProjectId.make("replacement-repository");
+    const replacementProject = { ...project, id: replacementId };
+    const reviewedScope = {
+      primaryT3ProjectId: replacementId,
+      repositoryProjectIds: [replacementId],
+    };
+    const events: string[] = [];
+    const result = await coordinateWorkbenchTicketStart(
+      { ...startInput(), projects: [replacementProject] },
+      {
+        ...makeDependencies(events),
+        updateTicket: async () => {
+          events.push("save-repositories");
+          return AsyncResult.success({ ...ticket, ...reviewedScope, revision: 1 });
+        },
+        prepareTicketWorkspace: async () => {
+          events.push("prepare-workspace");
+          return AsyncResult.success({
+            ...preparedWorkspace,
+            repositories: [{ ...preparedWorkspace.repositories[0]!, projectId: replacementId }],
+          });
+        },
+        createThread: async ({ input }) => {
+          expect(input.projectId).toBe(replacementId);
+          events.push("create-thread");
+          return success;
+        },
+      },
+      { modelSelection, repositoryScope: reviewedScope },
+    );
+    expect(result).toEqual({ state: "opened", threadId });
+    expect(events.slice(0, 3)).toEqual(["save-repositories", "prepare-workspace", "create-thread"]);
+  });
+
+  it("saves reviewed repositories before preparing and uses the selected primary for the Thread and context", async () => {
+    const secondaryId = ProjectId.make("repository-two");
+    const secondaryProject = {
+      ...project,
+      id: secondaryId,
+      title: "API",
+      workspaceRoot: "/repos/api",
+    };
+    const reviewedScope = {
+      primaryT3ProjectId: secondaryId,
+      repositoryProjectIds: [projectId, secondaryId],
+    };
+    const savedTicket = { ...ticket, ...reviewedScope, revision: 1 };
+    const workspace: WorkbenchTicketWorkspace = {
+      ...preparedWorkspace,
+      repositories: [
+        { ...preparedWorkspace.repositories[0]!, isPrimary: false },
+        {
+          ...preparedWorkspace.repositories[0]!,
+          projectId: secondaryId,
+          isPrimary: true,
+          sourcePath: "/repos/api",
+          worktreePath: "/worktrees/ticket-one/api",
+        },
+      ],
+    };
+    const events: string[] = [];
+    const comments: ReviewCommentContext[] = [];
+    let createdThreadInput: unknown;
+    await coordinateWorkbenchTicketStart(
+      { ...startInput(), projects: [project, secondaryProject] },
+      {
+        ...makeDependencies(events, comments),
+        updateTicket: async ({ input }) => {
+          expect(input).toMatchObject({
+            id: ticket.id,
+            expectedRevision: ticket.revision,
+            ...reviewedScope,
+          });
+          events.push("save-repositories");
+          return AsyncResult.success(savedTicket);
+        },
+        prepareTicketWorkspace: async () => {
+          events.push("prepare-workspace");
+          return AsyncResult.success(workspace);
+        },
+        createThread: async ({ input }) => {
+          createdThreadInput = input;
+          return success;
+        },
+      },
+      { modelSelection, repositoryScope: reviewedScope },
+    );
+    expect(events.slice(0, 2)).toEqual(["save-repositories", "prepare-workspace"]);
+    expect(createdThreadInput).toMatchObject({
+      projectId: secondaryId,
+      worktreePath: "/worktrees/ticket-one/api",
+    });
+    expect(comments[0]?.diff).toContain("API (primary) — /worktrees/ticket-one/api");
+    expect(comments[0]?.diff).toContain("T3 Code — /worktrees/ticket-one/t3code");
+  });
+
+  it("does not prepare repositories or create a Thread when the reviewed scope cannot be saved", async () => {
+    const events: string[] = [];
+    const result = await coordinateWorkbenchTicketStart(
+      startInput(),
+      {
+        ...makeDependencies(events),
+        updateTicket: async () => {
+          events.push("save-repositories");
+          return AsyncResult.failure<WorkbenchTicket, string>(Cause.fail("revision conflict"));
+        },
+      },
+      {
+        modelSelection,
+        repositoryScope: {
+          primaryT3ProjectId: projectId,
+          repositoryProjectIds: [projectId, ProjectId.make("repository-two")],
+        },
+      },
+    );
+    expect(result).toMatchObject({ state: "failed", stage: "repositories" });
+    expect(events).toEqual(["save-repositories"]);
+  });
   it("reports visible progress while creating a new Thread", async () => {
     const stages: string[] = [];
 

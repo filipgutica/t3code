@@ -1,4 +1,10 @@
-import type { EnvironmentId, ModelSelection, ServerProvider } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ModelSelection,
+  ServerProvider,
+  WorkbenchTicket,
+  WorkbenchTicketWorkspace,
+} from "@t3tools/contracts";
 import { ProviderInstanceId } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { useMemo, useState, type FormEvent } from "react";
@@ -25,6 +31,15 @@ import {
   DialogTitle,
 } from "../components/ui/dialog";
 import { Button } from "../components/ui/button";
+import { Badge } from "../components/ui/badge";
+import type { Project } from "../types";
+import { WorkbenchRepositoryScopeFields } from "./WorkbenchRepositoryScopeFields";
+import {
+  getWorkbenchRepositoryScope,
+  isWorkbenchRepositoryScopeValid,
+  isWorkbenchTicketWorkspaceReady,
+  type WorkbenchRepositoryScope,
+} from "./workbenchRepositoryScope";
 
 function resolveWorkbenchStartThreadSelection(
   entries: ReadonlyArray<ProviderInstanceEntry>,
@@ -178,31 +193,73 @@ const useWorkbenchStartThreadSelection = ({
   };
 };
 
-export function WorkbenchStartThreadDialog({
-  open,
-  onOpenChange,
-  environmentId,
-  providers,
-  defaultModelSelection,
-  pending,
-  onStart,
-  additional = false,
-  title: customTitle,
-  description: customDescription,
-  startLabel = "Create Thread",
-}: {
-  readonly open: boolean;
-  readonly onOpenChange: (open: boolean) => void;
+type WorkbenchStartThreadDialogRequest = {
   readonly environmentId: EnvironmentId;
-  readonly providers: ReadonlyArray<ServerProvider>;
   readonly defaultModelSelection: ModelSelection | null;
-  readonly pending: boolean;
-  readonly onStart: (selection: ModelSelection) => void;
+  readonly ticket: WorkbenchTicket;
+  readonly projects: ReadonlyArray<Project>;
+  readonly workspace: WorkbenchTicketWorkspace | undefined;
+  readonly initialRepositoryScope: WorkbenchRepositoryScope | undefined;
   readonly additional?: boolean;
   readonly title?: string;
   readonly description?: string;
   readonly startLabel?: string;
+};
+
+const getWorkbenchStartThreadDefaultSelection = ({
+  projects,
+  scope,
+  workspaceReady,
+  defaultModelSelection,
+}: {
+  projects: readonly Project[];
+  scope: WorkbenchRepositoryScope;
+  workspaceReady: boolean;
+  defaultModelSelection: ModelSelection | null;
+}) =>
+  projects.find((project) => project.id === scope.primaryT3ProjectId)?.defaultModelSelection ??
+  (workspaceReady ? defaultModelSelection : null);
+
+export function WorkbenchStartThreadDialog({
+  open,
+  onOpenChange,
+  providers,
+  request,
+  pending,
+  onStart,
+  onEditRepositories,
+  error,
+}: {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  readonly providers: ReadonlyArray<ServerProvider>;
+  readonly request: WorkbenchStartThreadDialogRequest;
+  readonly pending: boolean;
+  readonly onStart: (input: {
+    modelSelection: ModelSelection;
+    repositoryScope?: WorkbenchRepositoryScope;
+  }) => void;
+  readonly onEditRepositories: () => void;
+  readonly error: string | null;
 }) {
+  const {
+    environmentId,
+    defaultModelSelection,
+    ticket,
+    projects,
+    workspace,
+    initialRepositoryScope,
+    additional = false,
+    title: customTitle,
+    description: customDescription,
+    startLabel = "Create Thread",
+  } = request;
+  const [repositoryScope, setRepositoryScope] = useState(
+    initialRepositoryScope ?? getWorkbenchRepositoryScope(ticket),
+  );
+  const workspaceReady = isWorkbenchTicketWorkspaceReady({ ticket, workspace });
+  const workspaceLocked = workspace?.status === "preparing" || workspace?.status === "releasing";
+  const scopeValid = isWorkbenchRepositoryScopeValid({ scope: repositoryScope, projects });
   const settings = useEnvironmentSettings(environmentId);
   const stickyModelSelection = useComposerDraftStore((store) =>
     store.stickyActiveProvider === null
@@ -217,7 +274,12 @@ export function WorkbenchStartThreadDialog({
   const selection = useWorkbenchStartThreadSelection({
     providers,
     settings,
-    defaultModelSelection,
+    defaultModelSelection: getWorkbenchStartThreadDefaultSelection({
+      projects,
+      scope: repositoryScope,
+      workspaceReady,
+      defaultModelSelection,
+    }),
     stickyModelSelection,
   });
 
@@ -225,12 +287,24 @@ export function WorkbenchStartThreadDialog({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (pending || !selectionAvailable || resolvedSelection === null) return;
-    onStart(resolvedSelection);
+    if (
+      pending ||
+      workspaceLocked ||
+      !scopeValid ||
+      !selectionAvailable ||
+      resolvedSelection === null
+    )
+      return;
+    onStart({ modelSelection: resolvedSelection, ...(!workspaceReady ? { repositoryScope } : {}) });
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!pending) onOpenChange(nextOpen);
+      }}
+    >
       <DialogPopup>
         <DialogHeader>
           <DialogTitle>{dialogTitle}</DialogTitle>
@@ -238,31 +312,139 @@ export function WorkbenchStartThreadDialog({
         </DialogHeader>
         <DialogPanel>
           <form id="workbench-start-thread" className="space-y-5" onSubmit={submit}>
+            <WorkbenchStartThreadWorkspaceReview
+              ticket={ticket}
+              projects={projects}
+              scope={repositoryScope}
+              onScopeChange={setRepositoryScope}
+              ready={workspaceReady}
+              locked={workspaceLocked}
+              pending={pending}
+              onEditRepositories={onEditRepositories}
+            />
+            {error ? (
+              <p role="alert" className="break-words text-sm text-destructive">
+                {error}
+              </p>
+            ) : null}
             <WorkbenchStartThreadModelFields
               selection={selection}
               planModeEnabled={settings.planModeEnabled}
             />
           </form>
         </DialogPanel>
-        <DialogFooter>
-          <Button
-            disabled={pending}
-            onClick={() => onOpenChange(false)}
-            type="button"
-            variant="outline"
-          >
-            Cancel
-          </Button>
-          <Button
-            disabled={pending || !selectionAvailable}
-            form="workbench-start-thread"
-            type="submit"
-          >
-            {startLabel}
-          </Button>
-        </DialogFooter>
+        <WorkbenchStartThreadFooter
+          pending={pending}
+          disabled={pending || workspaceLocked || !scopeValid || !selectionAvailable}
+          workspaceReady={workspaceReady}
+          startLabel={startLabel}
+          onCancel={() => onOpenChange(false)}
+        />
       </DialogPopup>
     </Dialog>
+  );
+}
+
+function WorkbenchStartThreadFooter({
+  pending,
+  disabled,
+  workspaceReady,
+  startLabel,
+  onCancel,
+}: {
+  pending: boolean;
+  disabled: boolean;
+  workspaceReady: boolean;
+  startLabel: string;
+  onCancel: () => void;
+}) {
+  return (
+    <DialogFooter>
+      <Button disabled={pending} onClick={onCancel} type="button" variant="outline">
+        Cancel
+      </Button>
+      <Button disabled={disabled} form="workbench-start-thread" type="submit">
+        {pending
+          ? "Preparing thread…"
+          : workspaceReady
+            ? startLabel
+            : "Create workspace and thread"}
+      </Button>
+    </DialogFooter>
+  );
+}
+
+function WorkbenchStartThreadWorkspaceReview({
+  ticket,
+  projects,
+  scope,
+  onScopeChange,
+  ready,
+  locked,
+  pending,
+  onEditRepositories,
+}: {
+  ticket: WorkbenchTicket;
+  projects: readonly Project[];
+  scope: WorkbenchRepositoryScope;
+  onScopeChange: (scope: WorkbenchRepositoryScope) => void;
+  ready: boolean;
+  locked: boolean;
+  pending: boolean;
+  onEditRepositories: () => void;
+}) {
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">Ticket workspace</p>
+        {ready ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            disabled={pending}
+            onClick={onEditRepositories}
+          >
+            Edit repositories
+          </Button>
+        ) : null}
+      </div>
+      {ready ? (
+        <div className="space-y-2">
+          {[
+            ticket.primaryT3ProjectId,
+            ...ticket.repositoryProjectIds.filter((id) => id !== ticket.primaryT3ProjectId),
+          ].map((id) => (
+            <div key={id} className="flex min-w-0 items-center gap-2 text-sm">
+              <span className="min-w-0 break-words">
+                {projects.find((project) => project.id === id)?.title ?? "Repository unavailable"}
+              </span>
+              {id === ticket.primaryT3ProjectId ? (
+                <Badge size="sm" variant="outline">
+                  Primary
+                </Badge>
+              ) : null}
+            </div>
+          ))}
+          <p className="text-xs text-muted-foreground">
+            This thread reuses the ticket’s prepared worktrees.
+          </p>
+        </div>
+      ) : (
+        <WorkbenchRepositoryScopeFields
+          projects={projects}
+          value={scope}
+          onChange={onScopeChange}
+          disabled={pending || locked}
+          idPrefix={`start-thread-${ticket.id}`}
+        />
+      )}
+      {locked ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          Wait for workspace preparation or release to finish.
+        </p>
+      ) : null}
+    </section>
   );
 }
 
