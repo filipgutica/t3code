@@ -580,7 +580,7 @@ function WorkbenchSidebarNavigation({
             ticketSections={filtered.ticketGroupsByWorkspace.get(workspace.id)}
             archivedTickets={filtered.archivedTicketsByWorkspace.get(workspace.id) ?? []}
             expansion={expansion}
-            isSearching={isSearching || onlyActionable}
+            isSearching={isSearching}
             onToggle={toggleExpansion}
             navigation={{
               contextThreadId,

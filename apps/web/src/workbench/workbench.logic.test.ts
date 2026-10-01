@@ -405,10 +405,10 @@ describe("Workbench ticket helpers", () => {
       turnState: "completed",
     };
     expect(getWorkbenchTicketAgentPresentation([working, blocked])?.label).toBe(
-      "Waiting for input",
+      "Waiting for your answer",
     );
     expect(getWorkbenchTicketAgentPresentation([blocked, working])?.label).toBe(
-      "Waiting for input",
+      "Waiting for your answer",
     );
     expect(getWorkbenchTicketAgentPresentation([working])?.label).toBe("Working");
   });
@@ -708,13 +708,16 @@ describe("Workbench agent activity", () => {
         getWorkbenchAgentPresentation({ ...idle, nativeLabel, turnState: "completed" })?.label,
       ).toBe("Working");
     }
-    for (const nativeLabel of ["Pending Approval", "Awaiting Input", "Plan Ready"]) {
+    for (const nativeLabel of ["Pending Approval", "Plan Ready"]) {
       expect(
         getWorkbenchAgentPresentation({ ...idle, nativeLabel, sessionStatus: "running" })?.label,
       ).toBe("Waiting for input");
     }
+    expect(getWorkbenchAgentPresentation({ ...idle, nativeLabel: "Awaiting Input" })?.label).toBe(
+      "Waiting for your answer",
+    );
     expect(getWorkbenchAgentPresentation({ ...idle, turnState: "completed" })?.label).toBe(
-      "Ready for review",
+      "Agent replied",
     );
     expect(getWorkbenchAgentPresentation({ ...idle, turnState: "interrupted" })?.label).toBe(
       "Waiting for input",

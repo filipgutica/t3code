@@ -427,15 +427,12 @@ export function getWorkbenchAgentPresentation({
 }) {
   const needsInput = {
     label: "Waiting for input",
-    dotClass: "bg-warning",
-    colorClass: "text-warning-foreground",
+    dotClass: "bg-info",
+    colorClass: "text-info-foreground",
   } as const;
-  if (
-    nativeLabel === "Pending Approval" ||
-    nativeLabel === "Awaiting Input" ||
-    nativeLabel === "Plan Ready"
-  )
-    return needsInput;
+  if (nativeLabel === "Awaiting Input")
+    return { ...needsInput, label: "Waiting for your answer" } as const;
+  if (nativeLabel === "Pending Approval" || nativeLabel === "Plan Ready") return needsInput;
   if (nativeLabel === "Working" || nativeLabel === "Connecting" || nativeLabel === "Monitoring") {
     return { label: "Working", dotClass: "bg-info", colorClass: "text-info-foreground" } as const;
   }
@@ -455,9 +452,9 @@ export function getWorkbenchAgentPresentation({
     } as const;
   if (turnState === "completed")
     return {
-      label: "Ready for review",
-      dotClass: "bg-success",
-      colorClass: "text-success-foreground",
+      label: "Agent replied",
+      dotClass: "bg-info",
+      colorClass: "text-info-foreground",
     } as const;
   return null;
 }
@@ -467,9 +464,10 @@ export function getWorkbenchTicketAgentPresentation(
 ) {
   const states = threads.map(getWorkbenchAgentPresentation);
   return (
+    states.find((state) => state?.label === "Waiting for your answer") ??
     states.find((state) => state?.label === "Waiting for input") ??
     states.find((state) => state?.label === "Working") ??
-    states.find((state) => state?.label === "Ready for review") ??
+    states.find((state) => state?.label === "Agent replied") ??
     states.find((state) => state?.label === "Completed") ??
     states.find((state) => state?.label === "Settled") ??
     null

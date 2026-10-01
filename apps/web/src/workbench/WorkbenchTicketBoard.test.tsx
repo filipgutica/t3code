@@ -142,13 +142,13 @@ describe("Workbench Board view", () => {
       renderer.root
         .findAllByType(ToggleGroup)
         .find((node) => node.props["aria-label"] === "Filter by attention")!;
-    act(() => control().props.onValueChange(["review"]));
+    act(() => control().props.onValueChange(["replies"]));
     expect(renderer.root.findAllByType("article")).toHaveLength(0);
     act(() => renderer.unmount());
     act(() => {
       renderer = create(<WorkbenchTicketBoard {...scoped} />);
     });
-    expect(control().props.value).toEqual(["review"]);
+    expect(control().props.value).toEqual(["replies"]);
     expect(renderer.root.findAllByType("article")).toHaveLength(0);
     const clear = renderer.root
       .findAllByType("button")

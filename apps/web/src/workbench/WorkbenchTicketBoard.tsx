@@ -1097,13 +1097,13 @@ function renderWorkbenchAttentionModeControl(
       value={[attentionMode]}
       onValueChange={(values) => {
         const mode = values[0];
-        if (mode === "all" || mode === "attention" || mode === "review") setAttentionMode(mode);
+        if (mode === "all" || mode === "attention" || mode === "replies") setAttentionMode(mode);
       }}
       aria-label="Filter by attention"
     >
       <Toggle value="all">All</Toggle>
       <Toggle value="attention">Needs attention</Toggle>
-      <Toggle value="review">Ready for review</Toggle>
+      <Toggle value="replies">Agent replies</Toggle>
     </ToggleGroup>
   );
 }
