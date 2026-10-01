@@ -23,6 +23,8 @@
         "workbench-preview/start.mts",
         // Disposable startup invokes this credential-free CLI adapter by filename.
         "workbench-demo/gh-attention.mjs",
+        // CI invokes the Workbench browser suite through Playwright's config path.
+        "workbench-regression/playwright.config.ts",
       ],
     },
     "apps/server": {
