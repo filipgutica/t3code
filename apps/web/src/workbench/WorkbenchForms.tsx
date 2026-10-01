@@ -2504,7 +2504,11 @@ function WorkbenchTicketWorkspacePanel({
                 size="xs"
                 type="button"
               >
-                {draft.prepare ? "Prepare workspace" : "Save changes"}
+                {preparationPending
+                  ? "Preparing workspace…"
+                  : draft.prepare
+                    ? workspacePreparationActionLabel
+                    : "Save changes"}
               </Button>
             </>
           ) : (

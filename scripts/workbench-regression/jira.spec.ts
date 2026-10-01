@@ -402,7 +402,7 @@ test.describe("Jira Workbench integration @live", () => {
         .click();
       await page
         .getByRole("dialog")
-        .getByRole("button", { name: "Create Thread", exact: true })
+        .getByRole("button", { name: "Create workspace and thread", exact: true })
         .click();
       await expect(page).toHaveURL(
         (url) => url.pathname !== "/workbench" && url.searchParams.get("workbench") === "true",
