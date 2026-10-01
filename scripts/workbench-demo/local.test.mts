@@ -6,6 +6,7 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeUtil from "node:util";
 
 import { assert, it } from "@effect/vitest";
+import { ProviderInstanceId } from "../../packages/contracts/src/providerInstance.ts";
 
 import {
   LOCAL_DEMO_REPOSITORIES,
@@ -29,7 +30,7 @@ it("reads the saved demo provider selection", async () => {
     );
 
     assert.deepStrictEqual(await readDemoModelSelection(home), {
-      instanceId: "claudeAgent",
+      instanceId: ProviderInstanceId.make("claudeAgent"),
       model: "sonnet",
     });
   } finally {
