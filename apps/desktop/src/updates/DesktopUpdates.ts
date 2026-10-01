@@ -28,10 +28,13 @@ import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
-import { isWorkbenchBuild, isWorkbenchMacSigned } from "../workbench/distribution.ts";
+import {
+  getWorkbenchAutoUpdateDisabledReason,
+  getWorkbenchUpdateFeed,
+  resolveDesktopUpdateChannel,
+} from "../workbench/updates.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import { WorkbenchGithubProvider } from "../electron/WorkbenchGithubProvider.ts";
 import * as IpcChannels from "../ipc/channels.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
@@ -255,8 +258,6 @@ function getAutoUpdateDisabledReason(args: {
   isDebPackage: boolean;
   disabledByEnv: boolean;
   hasUpdateFeedConfig: boolean;
-  isWorkbench: boolean;
-  isWorkbenchMacSigned: boolean;
 }): string | null {
   if (!args.hasUpdateFeedConfig) {
     return "Automatic updates are not available because no update feed is configured.";
@@ -270,10 +271,7 @@ function getAutoUpdateDisabledReason(args: {
   if (args.platform === "linux" && !args.appImage && !args.isDebPackage) {
     return "Automatic updates on Linux require the AppImage or the .deb package.";
   }
-  if (args.isWorkbench && args.platform === "darwin" && !args.isWorkbenchMacSigned) {
-    return "Automatic updates for unsigned T3 Code Workbench macOS builds require manual installation from the GitHub release page.";
-  }
-  return null;
+  return getWorkbenchAutoUpdateDisabledReason(args.platform);
 }
 
 function isArm64HostRunningIntelBuild(runtimeInfo: DesktopRuntimeInfo): boolean {
@@ -367,8 +365,6 @@ export const make = Effect.gen(function* () {
         isDebPackage,
         disabledByEnv: config.disableAutoUpdate,
         hasUpdateFeedConfig: hasFeedConfig,
-        isWorkbench: isWorkbenchBuild(),
-        isWorkbenchMacSigned: isWorkbenchMacSigned(),
       }),
     );
   });
@@ -929,16 +925,13 @@ export const make = Effect.gen(function* () {
           provider: "generic",
           url: `http://localhost:${config.mockUpdateServerPort}`,
         } as ElectronUpdater.ElectronUpdaterFeedUrl);
-      } else if (isWorkbenchBuild()) {
-        yield* electronUpdater.setFeedURL({
-          provider: "custom",
-          updateProvider: WorkbenchGithubProvider,
-          channel: "latest",
-        } as ElectronUpdater.ElectronUpdaterFeedUrl);
+      } else {
+        const workbenchFeed = getWorkbenchUpdateFeed();
+        if (workbenchFeed) yield* electronUpdater.setFeedURL(workbenchFeed);
       }
 
       const settings = yield* desktopSettings.get;
-      const updateChannel = isWorkbenchBuild() ? ("latest" as const) : settings.updateChannel;
+      const updateChannel = resolveDesktopUpdateChannel(settings.updateChannel);
       const enabled = yield* shouldEnableAutoUpdates;
       yield* setState(createBaseUpdateState(updateChannel, enabled, environment));
       if (!enabled) {
@@ -987,7 +980,7 @@ export const make = Effect.gen(function* () {
     setChannel: Effect.fn("desktop.updates.setChannel")(function* (
       nextChannel: DesktopUpdateChannel,
     ) {
-      const resolvedChannel = isWorkbenchBuild() ? ("latest" as const) : nextChannel;
+      const resolvedChannel = resolveDesktopUpdateChannel(nextChannel);
       yield* Effect.annotateCurrentSpan({ channel: resolvedChannel });
       const activeAction = yield* tryStartChannelChange;
       if (Option.isSome(activeAction)) {

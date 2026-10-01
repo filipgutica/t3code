@@ -18,3 +18,14 @@ export const WORKBENCH_DISTRIBUTION =
   typeof __T3CODE_WORKBENCH_DISTRIBUTION__ === "undefined"
     ? desktopPackageJson.workbenchDistribution
     : __T3CODE_WORKBENCH_DISTRIBUTION__;
+
+export const getWorkbenchDistribution = () => (isWorkbenchBuild() ? WORKBENCH_DISTRIBUTION : null);
+
+export const getWorkbenchDesktopScheme = (isDevelopment: boolean): string | null =>
+  isWorkbenchBuild() ? `${WORKBENCH_DISTRIBUTION.scheme}${isDevelopment ? "-dev" : ""}` : null;
+
+export const getWorkbenchCodexAuthScheme = (): "t3code-workbench" | null =>
+  isWorkbenchBuild() ? "t3code-workbench" : null;
+
+export const getWorkbenchWslHomeOverride = (): { t3Home?: string } =>
+  isWorkbenchBuild() ? { t3Home: `~/${WORKBENCH_DISTRIBUTION.homeDirectoryName}` } : {};

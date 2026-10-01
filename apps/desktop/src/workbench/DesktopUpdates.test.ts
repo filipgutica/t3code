@@ -7,10 +7,29 @@ import * as Option from "effect/Option";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
+import { WorkbenchGithubProvider } from "../electron/WorkbenchGithubProvider.ts";
 import { flushCallbacks, makeHarness } from "../updates/updatesTestHarness.ts";
 
 describe("Workbench DesktopUpdates", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it.effect("configures the Workbench release feed outside mock update mode", () => {
+    vi.stubGlobal("__T3CODE_WORKBENCH_BUILD__", true);
+    const harness = makeHarness({ env: { T3CODE_DESKTOP_MOCK_UPDATES: "false" } });
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        const [feed] = harness.feedUrls();
+        if (!feed || typeof feed !== "object" || !("updateProvider" in feed)) {
+          assert.fail("Workbench update provider is missing");
+        }
+        assert.equal(feed.provider, "custom");
+        assert.equal(feed.channel, "latest");
+        assert.isTrue(Object.is(feed.updateProvider, WorkbenchGithubProvider));
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
 
   it.effect("does not check or install updates in unsigned Workbench Mac builds", () => {
     vi.stubGlobal("__T3CODE_WORKBENCH_BUILD__", true);

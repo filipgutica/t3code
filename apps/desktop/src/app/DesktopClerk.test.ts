@@ -7,7 +7,7 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import { beforeEach, vi } from "vite-plus/test";
+import { afterEach, beforeEach, vi } from "vite-plus/test";
 
 const { createClerkBridgeMock, storageAdapter, storageMock } = vi.hoisted(() => ({
   createClerkBridgeMock: vi.fn(),
@@ -261,9 +261,15 @@ it.effect(
   },
 );
 
-for (const entry of ["startup", "open-url"] as const) {
-  it.effect(`receives hosted web sign-in through the desktop ${entry} handler`, () =>
+for (const [desktopScheme, entry] of [
+  ["t3code", "startup"],
+  ["t3code", "open-url"],
+  ["t3code-workbench", "startup"],
+  ["t3code-workbench", "open-url"],
+] as const) {
+  it.effect(`receives hosted web sign-in through the ${desktopScheme} ${entry} handler`, () =>
     Effect.gen(function* () {
+      vi.stubGlobal("__T3CODE_WORKBENCH_BUILD__", desktopScheme === "t3code-workbench");
       storageMock.mockReturnValue(storageAdapter);
       createClerkBridgeMock.mockReturnValue({ cleanup: vi.fn(), isPrimaryInstance: true });
       const port = yield* Effect.promise(async () => {
@@ -290,7 +296,7 @@ for (const entry of ["startup", "open-url"] as const) {
         instanceId: ProviderInstanceId.make("work"),
         flowId: "flow-one",
       };
-      const link = codexAuthHandoffUrl(request, true);
+      const link = codexAuthHandoffUrl(request, true, desktopScheme);
       const delivered = Promise.withResolvers<string>();
       const shell = ElectronShell.ElectronShell.of({
         openExternal: (value) =>
@@ -342,3 +348,5 @@ for (const entry of ["startup", "open-url"] as const) {
     }).pipe(Effect.scoped),
   );
 }
+
+afterEach(() => vi.unstubAllGlobals());

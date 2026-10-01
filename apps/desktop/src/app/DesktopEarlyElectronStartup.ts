@@ -1,7 +1,7 @@
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { isWorkbenchBuild, WORKBENCH_DISTRIBUTION } from "../workbench/distribution.ts";
+import { getWorkbenchDistribution } from "../workbench/distribution.ts";
 
 import {
   DEFAULT_LINUX_PASSWORD_STORE,
@@ -33,11 +33,8 @@ export interface EarlyLinuxElectronOptions {
 }
 
 export const resolveLinuxDesktopEntryName = (isDevelopment: boolean): string =>
-  isWorkbenchBuild()
-    ? WORKBENCH_DISTRIBUTION.desktopEntryName
-    : isDevelopment
-      ? "com.t3tools.T3Code.Development.desktop"
-      : "com.t3tools.T3Code.desktop";
+  getWorkbenchDistribution()?.desktopEntryName ??
+  (isDevelopment ? "com.t3tools.T3Code.Development.desktop" : "com.t3tools.T3Code.desktop");
 
 const trimNonEmpty = (value: string | undefined): string | null => {
   const trimmed = value?.trim();
@@ -93,11 +90,8 @@ export function resolveEarlyLinuxElectronOptions(
   const isDevelopment = isDevelopmentEnvironment(input.env);
   return {
     isDevelopment,
-    linuxWmClass: isWorkbenchBuild()
-      ? WORKBENCH_DISTRIBUTION.executableName
-      : isDevelopment
-        ? "t3code-dev"
-        : "t3code",
+    linuxWmClass:
+      getWorkbenchDistribution()?.executableName ?? (isDevelopment ? "t3code-dev" : "t3code"),
     linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
     passwordStore: resolveLinuxPasswordStoreSwitch({
       preference,
