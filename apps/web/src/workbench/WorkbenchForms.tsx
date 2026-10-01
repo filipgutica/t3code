@@ -2484,7 +2484,7 @@ function WorkbenchTicketWorkspacePanel({
   };
   return (
     <section
-      className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 ${collapsed ? "" : "xl:min-h-0 xl:flex-1"}`}
+      className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 ${collapsed ? "" : draft ? "xl:min-h-0 xl:flex-[2]" : "xl:min-h-0 xl:flex-1"}`}
     >
       <WorkbenchTicketWorkspaceHeader
         presentation={presentation}
