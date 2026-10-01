@@ -23,6 +23,8 @@
         "workbench-preview/start.mts",
         // Disposable startup invokes this credential-free CLI adapter by filename.
         "workbench-demo/gh-attention.mjs",
+        // CI invokes the Workbench browser suite through Playwright's config path.
+        "workbench-regression/playwright.config.ts",
       ],
     },
     "apps/server": {
@@ -61,6 +63,8 @@
       "ignoreDependencies": ["playwright-core", "electron-builder"],
     },
     "apps/web": {
+      // Vitest loads this through the per-file @vitest-environment directive.
+      "ignoreDependencies": ["jsdom"],
       // Worktree setup (scripts/setup-worktree.ts) runs this directly.
       "entry": ["scripts/warm-dep-cache.ts"],
       // UI component modules are copied and adapted as cohesive sets. Keep their

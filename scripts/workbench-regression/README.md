@@ -8,7 +8,7 @@ Run browser regressions against an isolated Orbit/Beacon demo:
 ```sh
 cd scripts
 vp exec playwright install chromium
-vp run workbench:regression
+vp exec playwright test --config workbench-regression/playwright.config.ts
 ```
 
 The fixture uses the same reset implementation as the demo wizard. It creates a
