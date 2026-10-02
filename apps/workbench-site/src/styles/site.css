@@ -459,7 +459,7 @@ figcaption,
 .hero-media,
 .media-stage,
 .review-media figure,
-.walkthrough-media {
+.screenshot-walkthrough {
   min-width: 0;
 }
 
@@ -486,17 +486,52 @@ figcaption {
   gap: var(--space-8);
 }
 
-.walkthrough-media {
-  width: 100%;
+.screenshot-walkthrough {
+  display: grid;
+  gap: var(--space-6);
 }
 
-.overview-video {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: var(--surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+.walkthrough-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.walkthrough-tabs button {
+  min-width: var(--control-lg);
+  min-height: var(--control-lg);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: var(--weight-medium) var(--text-sm) / var(--leading) var(--font-sans);
+  cursor: pointer;
+}
+
+.walkthrough-tabs button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.walkthrough-tabs button[aria-selected="true"] {
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.walkthrough-frame {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.walkthrough-frame figcaption {
+  margin-top: 0;
+}
+
+.review-heading > .walkthrough-note {
+  font-size: var(--text-xs);
 }
 
 .review-media {
@@ -757,7 +792,7 @@ html.menu-open {
     transition-duration: var(--duration-fast), var(--duration);
     transition-timing-function: var(--ease-out);
   }
-  html.trace-ready [data-trace-section]:is(:focus-within, .is-playing) > .section-body {
+  html.trace-ready [data-trace-section]:focus-within > .section-body {
     opacity: 1;
     transform: none;
     transition-duration: 0s;

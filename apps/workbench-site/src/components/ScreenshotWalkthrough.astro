@@ -1,0 +1,75 @@
+---
+import type { ImageMetadata } from "astro";
+import ProductImage from "./ProductImage.astro";
+
+interface Props {
+  steps: {
+    id: string;
+    tab: string;
+    title: string;
+    src: ImageMetadata;
+    alt: string;
+    caption: string;
+  }[];
+}
+
+const { steps } = Astro.props;
+---
+
+<div class="screenshot-walkthrough" data-screenshot-walkthrough>
+  <div class="walkthrough-tabs" data-walkthrough-tabs aria-label="Ticket workflow screenshots" hidden></div>
+  {steps.map((step) => (
+    <figure class="walkthrough-frame" id={`walkthrough-${step.id}`} data-walkthrough-frame data-tab={step.tab}>
+      <h3>{step.title}</h3>
+      <ProductImage src={step.src} alt={step.alt} />
+      <figcaption>{step.caption}</figcaption>
+    </figure>
+  ))}
+</div>
+
+<script>
+  // Every screenshot stays visible until the tab controls are ready.
+  document.querySelectorAll<HTMLElement>("[data-screenshot-walkthrough]").forEach((walkthrough) => {
+    const frames = [...walkthrough.querySelectorAll<HTMLElement>("[data-walkthrough-frame]")];
+    const list = walkthrough.querySelector<HTMLElement>("[data-walkthrough-tabs]");
+    if (!list || frames.length < 2) return;
+
+    const select = (active: number, focus: boolean) => {
+      tabs.forEach((tab, index) => {
+        const selected = index === active;
+        tab.setAttribute("aria-selected", String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+        frames[index].hidden = !selected;
+      });
+      if (focus) tabs[active].focus();
+    };
+
+    const tabs = frames.map((frame, index) => {
+      const tab = document.createElement("button");
+      tab.type = "button";
+      tab.setAttribute("role", "tab");
+      tab.id = `${frame.id}-tab`;
+      tab.textContent = frame.dataset.tab ?? "";
+      tab.setAttribute("aria-controls", frame.id);
+      frame.setAttribute("role", "tabpanel");
+      frame.setAttribute("aria-labelledby", tab.id);
+      list.append(tab);
+      tab.addEventListener("click", () => select(index, false));
+      tab.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+          event.preventDefault();
+          const direction = event.key === "ArrowRight" ? 1 : -1;
+          select((index + direction + frames.length) % frames.length, true);
+        } else if (event.key === "Home" || event.key === "End") {
+          event.preventDefault();
+          select(event.key === "Home" ? 0 : frames.length - 1, true);
+        }
+      });
+      return tab;
+    });
+
+    list.setAttribute("role", "tablist");
+    select(0, false);
+    list.hidden = false;
+  });
+</script>
