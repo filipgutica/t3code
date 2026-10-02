@@ -135,6 +135,61 @@ main.wrap::before {
   transform: scale(1.2);
 }
 
+.commit-reach {
+  fill: var(--accent);
+  opacity: 0;
+  transform: scaleX(0);
+  transform-box: fill-box;
+  transform-origin: right;
+}
+
+.is-current .commit-reach {
+  opacity: 1;
+  transform: none;
+}
+
+.trace-packet {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .trace-arriving .commit-reach {
+    animation: commit-reach var(--duration-section) var(--ease-out);
+  }
+  .trace-arriving .commit-node {
+    animation: commit-settle var(--duration-section) var(--ease-out);
+  }
+  @keyframes commit-reach {
+    from {
+      opacity: 0;
+      transform: scaleX(0);
+    }
+    to {
+      opacity: 1;
+      transform: scaleX(1);
+    }
+  }
+  @keyframes commit-settle {
+    0% {
+      transform: scale(0.9);
+    }
+    60% {
+      transform: scale(1.35);
+    }
+    100% {
+      transform: scale(1.2);
+    }
+  }
+}
+
 /* The tool navigation stays quiet, with appearance controls at its foot. */
 .site-layout {
   display: grid;
@@ -491,6 +546,7 @@ figcaption {
 }
 
 .walkthrough-tabs {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
@@ -517,6 +573,184 @@ figcaption {
 .walkthrough-tabs button[aria-selected="true"] {
   color: var(--text);
   box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.walkthrough-tabs.is-ready button[aria-selected="true"] {
+  box-shadow: none;
+}
+
+.walkthrough-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 2px;
+  background: var(--accent);
+  transform-origin: left top;
+  pointer-events: none;
+}
+
+.walkthrough-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.walkthrough-signal {
+  flex: none;
+  width: var(--graph-rail);
+  height: var(--space-8);
+  overflow: visible;
+  fill: var(--bg);
+  stroke: var(--text-faint);
+  stroke-width: 1.5;
+}
+
+.walkthrough-signal path {
+  fill: none;
+  stroke: var(--border);
+}
+
+.signal-packet {
+  fill: var(--accent);
+  stroke: none;
+  opacity: 0;
+}
+
+.signal-ring {
+  fill: none;
+  stroke: var(--accent);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .is-switching .signal-packet--first {
+    animation: signal-handoff var(--duration-section) var(--ease-out);
+  }
+  [data-motion="fork"].is-switching .signal-packet--first {
+    animation-name: signal-fork-upper;
+  }
+  [data-motion="fork"].is-switching .signal-packet--second {
+    animation: signal-fork-lower var(--duration-section) var(--ease-out);
+  }
+  [data-motion="merge"].is-switching .signal-packet--first {
+    animation-name: signal-merge-upper;
+  }
+  [data-motion="merge"].is-switching .signal-packet--second {
+    animation: signal-merge-lower var(--duration-section) var(--ease-out);
+  }
+  [data-motion="notify"].is-switching .signal-ring {
+    animation: signal-notify var(--duration-section) var(--ease-out) var(--duration-fast);
+  }
+  @keyframes signal-handoff {
+    0% {
+      opacity: 0;
+      transform: translate(8px, 16px);
+    }
+    15% {
+      opacity: 1;
+    }
+    85% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translate(88px, 16px);
+    }
+  }
+  @keyframes signal-fork-upper {
+    0% {
+      opacity: 0;
+      transform: translate(8px, 16px);
+    }
+    15% {
+      opacity: 1;
+      transform: translate(24px, 16px);
+    }
+    50% {
+      transform: translate(48px, 8px);
+    }
+    85% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translate(88px, 8px);
+    }
+  }
+  @keyframes signal-fork-lower {
+    0% {
+      opacity: 0;
+      transform: translate(8px, 16px);
+    }
+    15% {
+      opacity: 1;
+      transform: translate(24px, 16px);
+    }
+    50% {
+      transform: translate(48px, 24px);
+    }
+    85% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translate(88px, 24px);
+    }
+  }
+  @keyframes signal-merge-upper {
+    0% {
+      opacity: 0;
+      transform: translate(8px, 8px);
+    }
+    15% {
+      opacity: 1;
+      transform: translate(24px, 8px);
+    }
+    50% {
+      transform: translate(48px, 16px);
+    }
+    85% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translate(88px, 16px);
+    }
+  }
+  @keyframes signal-merge-lower {
+    0% {
+      opacity: 0;
+      transform: translate(8px, 24px);
+    }
+    15% {
+      opacity: 1;
+      transform: translate(24px, 24px);
+    }
+    50% {
+      transform: translate(48px, 16px);
+    }
+    85% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      transform: translate(88px, 16px);
+    }
+  }
+  @keyframes signal-notify {
+    from {
+      opacity: 0.8;
+      transform: scale(0.6);
+    }
+    to {
+      opacity: 0;
+      transform: scale(2);
+    }
+  }
 }
 
 .walkthrough-frame {
@@ -610,7 +844,8 @@ figcaption {
 
 @media (max-width: 800px) {
   main.wrap::before,
-  .commit-branch {
+  .commit-branch,
+  .trace-packet {
     display: none;
   }
 
@@ -632,6 +867,11 @@ figcaption {
   .hero-copy,
   .workspace-details {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .walkthrough-signal {
+    width: var(--space-16);
+    height: var(--space-6);
   }
 
   .hero-copy .actions {

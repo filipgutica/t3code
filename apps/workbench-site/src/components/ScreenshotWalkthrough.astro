@@ -19,8 +19,20 @@ const { steps } = Astro.props;
 <div class="screenshot-walkthrough" data-screenshot-walkthrough>
   <div class="walkthrough-tabs" data-walkthrough-tabs aria-label="Ticket workflow screenshots" hidden></div>
   {steps.map((step) => (
-    <figure class="walkthrough-frame" id={`walkthrough-${step.id}`} data-walkthrough-frame data-tab={step.tab}>
-      <h3>{step.title}</h3>
+    <figure class="walkthrough-frame" id={`walkthrough-${step.id}`} data-walkthrough-frame data-tab={step.tab} data-motion={step.id === "workspace" ? "fork" : step.id === "pull-request" ? "merge" : step.id === "notifications" ? "notify" : "handoff"}>
+      <div class="walkthrough-heading">
+        <h3>{step.title}</h3>
+        <svg class="walkthrough-signal" viewBox="0 0 96 32" aria-hidden="true" focusable="false">
+          {step.id === "workspace" ? <path d="M8 16 H24 C36 16 36 8 48 8 H88 M24 16 C36 16 36 24 48 24 H88" /> : step.id === "pull-request" ? <path d="M8 8 H24 C36 8 36 16 48 16 H88 M8 24 H24 C36 24 36 16 48 16" /> : <path d="M8 16 H88" />}
+          <circle class="signal-start" cx="8" cy={step.id === "pull-request" ? 8 : 16} r="3" />
+          <circle class="signal-end" cx="88" cy={step.id === "workspace" ? 8 : 16} r="3" />
+          {step.id === "workspace" && <circle cx="88" cy="24" r="3" />}
+          {step.id === "pull-request" && <circle cx="8" cy="24" r="3" />}
+          <circle class="signal-packet signal-packet--first" cx="0" cy="0" r="3" />
+          <circle class="signal-packet signal-packet--second" cx="0" cy="0" r="3" />
+          <circle class="signal-ring" cx="88" cy="16" r="5" />
+        </svg>
+      </div>
       <ProductImage
         src={step.src}
         alt={step.alt}
@@ -38,13 +50,48 @@ const { steps } = Astro.props;
     const list = walkthrough.querySelector<HTMLElement>("[data-walkthrough-tabs]");
     if (!list || frames.length < 2) return;
 
+    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+    const tokens = getComputedStyle(walkthrough);
+    const durationToken = tokens.getPropertyValue("--duration-walkthrough").trim();
+    const duration = parseFloat(durationToken) * (durationToken.endsWith("ms") ? 1 : 1000);
+    const easing = tokens.getPropertyValue("--ease-out").trim();
+    const indicator = document.createElement("span");
+    indicator.className = "walkthrough-indicator";
+    indicator.setAttribute("aria-hidden", "true");
+    let activeIndex = 0;
+    let ready = false;
+
+    const positionIndicator = (animate: boolean) => {
+      const tab = tabs[activeIndex];
+      const previous = getComputedStyle(indicator).transform;
+      const next = `translate(${tab.offsetLeft}px, ${tab.offsetTop + tab.offsetHeight - 2}px) scaleX(${tab.offsetWidth})`;
+      indicator.getAnimations().forEach((animation) => animation.cancel());
+      indicator.style.transform = next;
+      if (animate && !reducedMotion.matches) {
+        indicator.animate([{ transform: previous }, { transform: next }], { duration, easing });
+      }
+    };
+
     const select = (active: number, focus: boolean) => {
+      const changed = ready && active !== activeIndex;
+      const direction = active > activeIndex ? 1 : -1;
+      activeIndex = active;
       tabs.forEach((tab, index) => {
         const selected = index === active;
         tab.setAttribute("aria-selected", String(selected));
         tab.tabIndex = selected ? 0 : -1;
         frames[index].hidden = !selected;
+        frames[index].classList.remove("is-switching");
+        frames[index].querySelector("[data-product-image]")?.getAnimations().forEach((animation) => animation.cancel());
       });
+      positionIndicator(changed);
+      if (changed && !reducedMotion.matches) {
+        frames[active].classList.add("is-switching");
+        frames[active].querySelector("[data-product-image]")?.animate(
+          [{ opacity: 0.6, transform: `translateX(${direction * parseFloat(tokens.getPropertyValue("--space-3"))}px)` }, { opacity: 1, transform: "none" }],
+          { duration, easing },
+        );
+      }
       if (focus) tabs[active].focus();
     };
 
@@ -73,7 +120,18 @@ const { steps } = Astro.props;
     });
 
     list.setAttribute("role", "tablist");
-    select(0, false);
+    list.append(indicator);
     list.hidden = false;
+    select(0, false);
+    list.classList.add("is-ready");
+    ready = true;
+    new ResizeObserver(() => positionIndicator(false)).observe(list);
+    reducedMotion.addEventListener("change", () => {
+      indicator.getAnimations().forEach((animation) => animation.cancel());
+      frames.forEach((frame) => {
+        frame.classList.remove("is-switching");
+        frame.querySelector("[data-product-image]")?.getAnimations().forEach((animation) => animation.cancel());
+      });
+    });
   });
 </script>
