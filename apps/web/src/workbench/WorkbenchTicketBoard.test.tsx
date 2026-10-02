@@ -77,6 +77,7 @@ const props: ComponentProps<typeof WorkbenchTicketBoard> = {
   epics: [],
   groupMode: "none",
   mirrorColumns: null,
+  jiraConnected: false,
   jiraStatusMappings: [],
   jiraIssueLinksByTicketId: new Map(),
   activeJiraTicketIds: new Set(),

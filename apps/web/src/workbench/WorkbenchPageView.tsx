@@ -773,6 +773,7 @@ function WorkbenchPageBoard(
           }}
           key={`${selectedProject.id}:${jiraBinding?.boardMode ?? "mapped"}`}
           mirrorColumns={jiraBinding?.boardMode === "mirror_jira" ? jiraBinding.boardColumns : null}
+          jiraConnected={jiraBinding !== null}
           jiraStatusMappings={jiraBinding?.statusMappings ?? []}
           projectId={selectedProject.id}
           tickets={boardTickets}

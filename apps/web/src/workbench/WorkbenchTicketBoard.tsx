@@ -113,6 +113,7 @@ type WorkbenchTicketBoardProps = {
   readonly onJiraTransition: (selection: WorkbenchJiraTransitionSelection) => void;
   readonly projectId: WorkbenchProjectId;
   readonly mirrorColumns: ReadonlyArray<WorkbenchJiraBoardColumn> | null;
+  readonly jiraConnected: boolean;
   readonly jiraStatusMappings: ReadonlyArray<WorkbenchJiraStatusMapping>;
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
@@ -208,6 +209,7 @@ function renderWorkbenchTicketBoard({
       >
         {renderWorkbenchBoardControls({
           search,
+          jiraConnected: props.jiraConnected,
           attentionMode: data.attentionMode,
           setAttentionMode: data.setAttentionMode,
           attentionCoverage: data.attentionCoverage,
@@ -1205,6 +1207,7 @@ function renderWorkbenchBoardStatus({
 }
 
 function renderWorkbenchBoardControls({
+  jiraConnected,
   attentionMode,
   setAttentionMode,
   attentionCoverage,
@@ -1233,7 +1236,10 @@ function renderWorkbenchBoardControls({
   | "visibleTickets"
   | "columns"
 > &
-  Pick<WorkbenchTicketBoardProps, "tickets" | "repositoryProjectIds" | "repositoriesById"> &
+  Pick<
+    WorkbenchTicketBoardProps,
+    "jiraConnected" | "tickets" | "repositoryProjectIds" | "repositoriesById"
+  > &
   Pick<ReturnType<typeof useWorkbenchBoardDrag>, "visibleColumnId" | "setSelectedColumnId">) {
   return (
     <>
@@ -1248,7 +1254,7 @@ function renderWorkbenchBoardControls({
             />
             <Input
               aria-label="Search tickets"
-              placeholder="Search by title or Jira key…"
+              placeholder={jiraConnected ? "Search by title or Jira key…" : "Search by title…"}
               value={search.text}
               onChange={(event) => search.setText(event.target.value)}
               onKeyDown={(event) => {
