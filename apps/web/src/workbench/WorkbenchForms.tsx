@@ -2597,20 +2597,35 @@ function WorkbenchTicketWorkspaceHeader({
 }) {
   const { workspaceStatusLabel } = presentation;
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <h2 className="text-sm font-semibold">Ticket workspace</h2>
-        <Badge
-          size="sm"
-          variant={
-            workspaceStatusLabel === "Preparation failed" ||
-            workspaceStatusLabel === "Needs preparation"
-              ? "warning"
-              : "outline"
-          }
-        >
-          {workspaceStatusLabel}
-        </Badge>
+    <div className="space-y-2 px-4 py-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-h-6 min-w-0 flex-1 flex-wrap items-center gap-2">
+          <h2 className="text-sm font-semibold">Ticket workspace</h2>
+          <Badge
+            size="sm"
+            variant={
+              workspaceStatusLabel === "Preparation failed" ||
+              workspaceStatusLabel === "Needs preparation"
+                ? "warning"
+                : "outline"
+            }
+          >
+            {workspaceStatusLabel}
+          </Badge>
+        </div>
+        {!draft ? (
+          <Button
+            aria-controls="workbench-ticket-repositories"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand Ticket workspace" : "Collapse Ticket workspace"}
+            onClick={() => actions.setRepositoryScopePanelCollapsed((value) => !value)}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            <ChevronDownIcon className={collapsed ? "" : "rotate-180"} />
+          </Button>
+        ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-1">
         {draft ? (
@@ -2624,9 +2639,7 @@ function WorkbenchTicketWorkspaceHeader({
         ) : (
           <WorkbenchTicketWorkspaceBrowseActions
             presentation={presentation}
-            setRepositoryScopePanelCollapsed={actions.setRepositoryScopePanelCollapsed}
             disabled={disabled}
-            collapsed={collapsed}
             openRepositoryReview={openRepositoryReview}
           />
         )}
@@ -2683,14 +2696,10 @@ function WorkbenchTicketWorkspaceReviewActions({
 
 function WorkbenchTicketWorkspaceBrowseActions({
   presentation,
-  setRepositoryScopePanelCollapsed,
   disabled,
-  collapsed,
   openRepositoryReview,
 }: Pick<WorkbenchTicketWorkspacePanelInput, "presentation"> & {
-  readonly setRepositoryScopePanelCollapsed: Dispatch<SetStateAction<boolean>>;
   readonly disabled: boolean;
-  readonly collapsed: boolean;
   readonly openRepositoryReview: (prepare: boolean) => void;
 }) {
   const { workspaceIsReady, workspaceIsPreparing, pending, workspacePreparationActionLabel } =
@@ -2718,17 +2727,6 @@ function WorkbenchTicketWorkspaceBrowseActions({
           <FolderGit2Icon /> {workspacePreparationActionLabel}
         </Button>
       ) : null}
-      <Button
-        aria-controls="workbench-ticket-repositories"
-        aria-expanded={!collapsed}
-        aria-label={collapsed ? "Expand Ticket workspace" : "Collapse Ticket workspace"}
-        onClick={() => setRepositoryScopePanelCollapsed((value) => !value)}
-        size="icon-xs"
-        type="button"
-        variant="ghost"
-      >
-        <ChevronDownIcon className={collapsed ? "" : "rotate-180"} />
-      </Button>
     </>
   );
 }
@@ -2968,7 +2966,7 @@ function WorkbenchTicketJiraDetails({
   ticket,
 }: Pick<WorkbenchTicketDetailsPanelProps, "epics" | "linkedEpicId" | "onOpenEpic" | "ticket">) {
   return (
-    <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 p-4 text-sm">
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 px-4 pb-4 text-sm">
       <dt className="text-muted-foreground">Type</dt>
       <dd className="min-w-0 break-words text-right font-medium [overflow-wrap:anywhere]">
         {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
@@ -3011,7 +3009,7 @@ function WorkbenchTicketLocalDetails({
   | "actionableTicket"
 >) {
   return (
-    <div className="space-y-3 p-4">
+    <div className="space-y-3 px-4 pb-4">
       <div className="space-y-1.5">
         <Label>Ticket type</Label>
         <Select
