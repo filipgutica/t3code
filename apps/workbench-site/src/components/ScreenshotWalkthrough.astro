@@ -21,7 +21,11 @@ const { steps } = Astro.props;
   {steps.map((step) => (
     <figure class="walkthrough-frame" id={`walkthrough-${step.id}`} data-walkthrough-frame data-tab={step.tab}>
       <h3>{step.title}</h3>
-      <ProductImage src={step.src} alt={step.alt} />
+      <ProductImage
+        src={step.src}
+        alt={step.alt}
+        sizes="(max-width: 800px) calc(100vw - 32px), (max-width: 1344px) calc(100vw - 320px), 1024px"
+      />
       <figcaption>{step.caption}</figcaption>
     </figure>
   ))}

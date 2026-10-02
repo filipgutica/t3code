@@ -6,10 +6,11 @@ interface Props {
   src: ImageMetadata;
   alt: string;
   eager?: boolean;
+  sizes?: string;
   crop?: { x: number; y: number; width: number; height: number };
 }
 
-const { src, alt, eager = false, crop } = Astro.props;
+const { src, alt, eager = false, sizes, crop } = Astro.props;
 const cropStyle = crop
   ? `aspect-ratio:${crop.width}/${crop.height};--image-width:${src.width / crop.width * 100}%;--image-left:${-crop.x / crop.width * 100}%;--image-top:${-crop.y / crop.height * 100}%;`
   : undefined;
@@ -20,7 +21,7 @@ const cropStyle = crop
     src={src}
     alt={alt}
     widths={[480, 800, 1200, 1600, 2400].filter((width) => width < src.width).concat(src.width)}
-    sizes={crop ? `${Math.ceil(src.width / crop.width * 650)}px` : eager ? "(max-width: 1376px) 94vw, 1280px" : "(max-width: 700px) 92vw, (max-width: 1050px) 50vw, 700px"}
+    sizes={sizes ?? (crop ? `${Math.ceil(src.width / crop.width * 650)}px` : eager ? "(max-width: 1376px) 94vw, 1280px" : "(max-width: 700px) 92vw, (max-width: 1050px) 50vw, 700px")}
     format="webp"
     quality={90}
     loading={eager ? "eager" : "lazy"}

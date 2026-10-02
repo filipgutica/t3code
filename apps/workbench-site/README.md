@@ -13,10 +13,11 @@ vp run --filter @t3tools/workbench-site build
 vp run --filter @t3tools/workbench-site preview
 ```
 
-Open the printed origin at `/t3code/`. The site imports JPEG screenshots from
+Open the printed origin at `/t3code/`. The site imports PNG screenshots from
 `src/assets/screenshots`; Astro produces responsive WebP images during the build,
-and the full-size link opens the original JPEG. Keep source screenshots free of
-pairing URLs and private data.
+and the full-size link opens the original PNG. Capture at twice the intended
+display width so text stays clear on Retina displays. Keep source screenshots
+free of pairing URLs and private data.
 
 The walkthrough follows a Ticket through its prepared workspace, native Thread,
 linked pull request, and notifications, with Jira as an optional final step.

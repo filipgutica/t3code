@@ -10,7 +10,7 @@ An independent fork of [T3 Code](https://github.com/pingdotgg/t3code) that adds 
 - **Start implementation:** create native Threads with Ticket context and Git worktrees for the selected repositories.
 - **Connect Jira:** mirror your assigned sprint issues, edit descriptions, and update Jira statuses from Workbench.
 
-![Workbench Board with repository context, attention filters, and Tickets across workflow statuses.](./docs/user/media/workbench/board.jpg)
+![Workbench Board with repository context, attention filters, and Tickets across workflow statuses.](./docs/user/media/workbench/board.png)
 
 Follow a Ticket through [prepared worktrees and a native Thread](./docs/user/agent-workbench.md#start-agent-work), then [review pull requests and attention items](./docs/user/agent-workbench.md#follow-progress-and-review-results). The walkthrough uses screenshots from a fictional demo.
 

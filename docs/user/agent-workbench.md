@@ -8,7 +8,7 @@ Workbench is available in the web and desktop clients. Jira is optional. Each T3
 environment has its own Workspaces and Tickets, so records do not appear across
 environments. There is no dedicated Workbench mobile interface yet.
 
-![Beacon Board with Tickets across Todo, In Progress, and Done, plus attention, search, repository, and grouping controls.](./media/workbench/board.jpg)
+![Beacon Board with Tickets across Todo, In Progress, and Done, plus attention, search, repository, and grouping controls.](./media/workbench/board.png)
 
 The screenshots use fictional Orbit and Beacon projects in an isolated demo.
 Prepared Git worktrees are real. Conversation outcomes and PR inspection data
@@ -35,7 +35,7 @@ repositories when the work spans several codebases. Use **Edit Workspace** to
 rename a Workspace or change its repository list; existing Tickets and Threads
 keep their scope.
 
-![A Ticket with a long description, linked Threads, and prepared repository worktrees.](./media/workbench/ticket.jpg)
+![A Ticket with a long description and two linked Threads.](./media/workbench/ticket.png)
 
 ## Start agent work
 
@@ -53,13 +53,13 @@ worktree. The context chip includes the Ticket description and repository paths.
 To prepare worktrees before opening a conversation, choose **Prepare workspace**
 in **Ticket workspace**, review the repositories, and confirm.
 
-![A prepared Ticket workspace with worktrees for Orbit Web (primary) and Orbit API.](./media/workbench/workspace.jpg)
+![A prepared Ticket workspace with worktrees for Orbit Web (primary) and Orbit API.](./media/workbench/workspace.png)
 
 After changing the Ticket, use **Attach current Ticket context** in an existing
 Thread to stage its saved requirements and current checkout paths. Review the
 context chip and send when ready; attaching context does not send a message.
 
-![A native Thread with the Ticket context attached, ready for a first message.](./media/workbench/thread.jpg)
+![A native Thread with the Ticket context attached, ready for a first message.](./media/workbench/thread.png)
 
 Use **Create Thread** for another conversation on the same Ticket. Use **Link existing
 Thread** to add an unassigned native conversation, or **Unlink Thread from Ticket**
@@ -99,7 +99,7 @@ Opening a Thread acknowledges its notification. An unanswered question stays
 **Waiting for input** until you respond. PR actions remain until the checks or review
 feedback are resolved.
 
-![A Ticket's attention list separating waiting Threads, failed checks, requested changes, and unresolved PR discussions.](./media/workbench/notifications.jpg)
+![A Ticket's attention list showing waiting Threads, requested changes, and unresolved PR discussions.](./media/workbench/notifications.png)
 
 The Ticket's **Pull Requests** section collects PRs reported by linked Threads and
 prepared worktrees. For Jira Tickets, it also searches linked repositories for the
@@ -115,7 +115,7 @@ failed checks** to request failed-job reruns for its current head. This requires
 GitHub Actions write permission. A successful request does not mean the checks
 have passed; refresh the PR to follow the results.
 
-![A linked PR opened beside its Ticket, with its state, checks, and review controls visible.](./media/workbench/pull-request.jpg)
+![A linked PR opened beside its Ticket, with its summary and failing checks visible.](./media/workbench/pull-request.png)
 
 ## Edit and organize Tickets
 
@@ -177,7 +177,7 @@ or delete them before importing. Deleting requires an exact-count confirmation;
 native Agent Threads remain in history. Save the configuration to start the first
 sync.
 
-![Orbit Jira Board showing its Jira board name, selected sprint, sync status, and imported Tickets.](./media/workbench/jira.jpg)
+![Orbit Jira Board showing its Jira board name, selected sprint, sync status, and imported Tickets.](./media/workbench/jira.png)
 
 Use **Sync Jira** for an immediate refresh. Jira controls issue descriptions,
 status, Epic relationships, and sprint membership. Workbench controls repository
