@@ -36,9 +36,9 @@ Standard Sandbox images provide the host runtime; no custom image is stored on V
 
 ## Synthetic attention inspections
 
-Fresh previews include the labelled [attention fixture guide](../workbench-demo/README.md#private-preview-attention-fixtures).
+Fresh previews include the labelled [attention fixture guide](../workbench-demo/README.md#attention-fixtures).
 The native GitHub reader uses a disposable executable adapter for fictional PRs
-901–905, so inspection needs no credentials. The adapter reports no real login,
+901–906 across two synthetic repositories, so inspection needs no credentials. The adapter reports no real login,
 never forwards commands, and refuses writes including failed-check reruns with a
 synthetic notice. The pinned real GitHub CLI remains installed, but the preview's
 private PATH selects the adapter. Use a separate expendable environment with real

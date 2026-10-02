@@ -767,6 +767,12 @@ export function WorkbenchTicketDetail(props: WorkbenchTicketDetailProps) {
     />
   );
 }
+const focusWorkbenchTicketPane = (pane: HTMLElement | null) => {
+  if (!pane) return;
+  pane.scrollIntoView({ block: "start" });
+  pane.focus({ preventScroll: true });
+};
+
 function WorkbenchTicketDetailController({
   context,
   content,
@@ -997,7 +1003,7 @@ function WorkbenchTicketDetailController({
   const canOpenThread = !isArchived || assignment !== undefined;
 
   return (
-    <article className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [&_[data-slot=button]>svg]:mx-0">
+    <article className="@container/ticket flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [&_[data-slot=button]>svg]:mx-0">
       <WorkbenchTicketHeader
         actions={{
           onBack: onBack,
@@ -1034,8 +1040,36 @@ function WorkbenchTicketDetailController({
         context={{ environmentId: environmentId }}
       />
 
+      <nav
+        aria-label="Ticket sections"
+        className="flex shrink-0 items-center gap-1 border-b border-border/60 px-4 py-1 @min-[40rem]/ticket:px-6 @min-[64rem]/ticket:hidden"
+      >
+        <Button
+          aria-controls="workbench-ticket-reading"
+          size="xs"
+          type="button"
+          variant="ghost"
+          onClick={() =>
+            focusWorkbenchTicketPane(document.getElementById("workbench-ticket-reading"))
+          }
+        >
+          Description
+        </Button>
+        <Button
+          aria-controls="workbench-ticket-activity"
+          size="xs"
+          type="button"
+          variant="ghost"
+          onClick={() =>
+            focusWorkbenchTicketPane(document.getElementById("workbench-ticket-activity"))
+          }
+        >
+          Activity
+        </Button>
+      </nav>
+
       <form
-        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6 xl:overflow-y-hidden [&_[data-slot=button]>svg]:mx-0"
+        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 @min-[40rem]/ticket:p-6 @min-[64rem]/ticket:overflow-hidden [&_[data-slot=button]>svg]:mx-0"
         onSubmit={(event) => {
           event.preventDefault();
           if (!editing || !draft) return;
@@ -1058,21 +1092,15 @@ function WorkbenchTicketDetailController({
           })();
         }}
       >
-        <div className="mx-auto grid min-h-0 min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-4 xl:h-full xl:grid-cols-[minmax(0,1fr)_24rem]">
-          <div className="min-w-0 space-y-4 xl:flex xl:h-full xl:min-h-0 xl:flex-col xl:gap-4 xl:space-y-0">
+        <div className="mx-auto grid min-h-0 min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-6 @min-[64rem]/ticket:h-full @min-[64rem]/ticket:grid-cols-[minmax(0,1fr)_22rem] @min-[64rem]/ticket:items-stretch @min-[64rem]/ticket:gap-8">
+          <div
+            id="workbench-ticket-reading"
+            role="region"
+            aria-label="Ticket description and summary"
+            tabIndex={0}
+            className="min-h-0 min-w-0 scroll-mt-4 space-y-6 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring @min-[40rem]/ticket:scroll-mt-6 @min-[64rem]/ticket:overflow-y-auto @min-[64rem]/ticket:overscroll-y-contain @min-[64rem]/ticket:pr-2 @min-[64rem]/ticket:pb-2"
+          >
             {error ? <WorkbenchInlineError message={error} /> : null}
-            <WorkbenchTicketSummaryPanel
-              key={`${ticket.id}:${summaryFailedEmpty}`}
-              summaryHeaderLabel={summaryHeaderLabel}
-              initiallyCollapsed={summaryFailedEmpty}
-              hasUnsavedChanges={hasUnsavedChanges}
-              summary={summary}
-              ticket={ticket}
-              displayedTitle={displayedTitle}
-              pending={pending}
-              isArchived={isArchived}
-              onRegenerateSummary={onRegenerateSummary}
-            />
             <WorkbenchTicketDescriptionPanel
               presentation={{
                 jiraFieldsManaged: jiraFieldsManaged,
@@ -1090,9 +1118,26 @@ function WorkbenchTicketDetailController({
               context={{ environmentId: environmentId }}
               records={{ ticket: ticket }}
             />
+            <WorkbenchTicketSummaryPanel
+              key={`${ticket.id}:${summaryFailedEmpty}`}
+              summaryHeaderLabel={summaryHeaderLabel}
+              initiallyCollapsed={summaryFailedEmpty}
+              hasUnsavedChanges={hasUnsavedChanges}
+              summary={summary}
+              ticket={ticket}
+              displayedTitle={displayedTitle}
+              pending={pending}
+              isArchived={isArchived}
+              onRegenerateSummary={onRegenerateSummary}
+            />
           </div>
 
-          <aside className="flex min-w-0 flex-col gap-3 xl:h-full xl:min-h-0 xl:overflow-hidden">
+          <aside
+            id="workbench-ticket-activity"
+            aria-label="Ticket activity"
+            tabIndex={0}
+            className="flex min-h-0 min-w-0 scroll-mt-4 flex-col gap-6 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring @min-[40rem]/ticket:scroll-mt-6 @min-[64rem]/ticket:overflow-y-auto @min-[64rem]/ticket:overscroll-y-contain @min-[64rem]/ticket:pr-2 @min-[64rem]/ticket:pb-2"
+          >
             <WorkbenchTicketAttentionPanel
               environmentId={environmentId}
               ticketId={ticket.id}
@@ -1297,10 +1342,8 @@ function WorkbenchTicketDetailsPanel({
   const { onCreateEpic, onOpenEpic, onToggle, onUpdate } = actions;
   const { ticket, actionableTicket } = records;
   return (
-    <section
-      className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 ${collapsed ? "" : "xl:min-h-0 xl:flex-1"}`}
-    >
-      <div className="flex items-start justify-between gap-3 border-b border-border/50 px-3 py-2.5">
+    <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/30">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">Details</h2>
         </div>
@@ -1323,10 +1366,7 @@ function WorkbenchTicketDetailsPanel({
         </Button>
       </div>
       {!collapsed ? (
-        <div
-          id="workbench-ticket-details"
-          className="min-h-0 xl:overflow-y-auto xl:overscroll-contain"
-        >
+        <div id="workbench-ticket-details" className="min-w-0">
           {jiraFieldsManaged ? (
             <WorkbenchTicketJiraDetails
               epics={epics}
@@ -1757,9 +1797,9 @@ function WorkbenchTicketHeader({
   return (
     <WorkspacePageHeader
       electron={isElectron}
-      className="h-auto items-start border-b border-border py-3"
+      className="h-auto items-start border-b border-border py-4"
     >
-      <div className="mx-auto grid w-full min-w-0 max-w-6xl grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
+      <div className="mx-auto grid w-full min-w-0 max-w-6xl grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 @min-[48rem]/ticket:grid-cols-[auto_minmax(0,1fr)_auto]">
         <Button aria-label="Back to Board" onClick={onBack} size="sm" variant="ghost">
           <ArrowLeftIcon data-icon="inline-start" />
           Board
@@ -1828,7 +1868,7 @@ function WorkbenchTicketSummaryHeading({
           id="workbench-ticket-generated-summary"
           role="heading"
           aria-level={2}
-          className="text-sm font-semibold"
+          className="text-sm font-medium text-muted-foreground"
         >
           Generated summary
         </span>
@@ -1878,7 +1918,7 @@ function WorkbenchTicketSummaryPanel({
   return (
     <section
       aria-labelledby="workbench-ticket-generated-summary"
-      className="shrink-0 rounded-xl border border-border/60 bg-card/40"
+      className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/30"
     >
       <div className="px-4 py-3">
         <button
@@ -1973,14 +2013,14 @@ function WorkbenchTicketDescriptionPanel({
   const { environmentId } = context;
   const { ticket } = records;
   return (
-    <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 xl:min-h-0 xl:flex-1">
+    <section className="flex min-w-0 flex-col rounded-xl border border-border/60 bg-card/40">
       <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-sm font-semibold">Description</h2>
           <p className="text-xs text-muted-foreground">
             {jiraFieldsManaged
               ? "Synced with Jira; edits update the mirrored issue."
-              : "Intent, constraints, and acceptance criteria for this work."}
+              : "Goal, constraints, and acceptance criteria."}
           </p>
         </div>
         {!editing && !isArchived ? (
@@ -1997,7 +2037,7 @@ function WorkbenchTicketDescriptionPanel({
       </div>
       {editing && draft ? (
         <>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+          <div className="min-w-0 space-y-4 p-4">
             <div className="space-y-1.5">
               <Label htmlFor="edit-workbench-ticket-title">Title</Label>
               <Input
@@ -2047,7 +2087,7 @@ function WorkbenchTicketDescriptionPanel({
           </div>
         </>
       ) : (
-        <div className="min-h-40 min-w-0 p-4 xl:min-h-0 xl:flex-1 xl:overflow-y-auto xl:overscroll-contain">
+        <div className="min-h-40 min-w-0 p-4 @min-[40rem]/ticket:p-5">
           <WorkbenchDescription markdown={displayedMarkdown} jira={jiraFieldsManaged} />
         </div>
       )}
@@ -2205,10 +2245,8 @@ function WorkbenchTicketThreadsPanel({
     historicalAssignments,
   } = records;
   return (
-    <section
-      className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 ${threadPanelCollapsed ? "" : "xl:min-h-0 xl:flex-[1.25]"}`}
-    >
-      <div className="flex items-start justify-between gap-3 border-b border-border/50 px-3 py-2">
+    <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/30">
+      <div className="flex items-center justify-between gap-3 px-4 py-3">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">Agent Threads</h2>
         </div>
@@ -2227,10 +2265,7 @@ function WorkbenchTicketThreadsPanel({
       </div>
       {!threadPanelCollapsed ? (
         <>
-          <div
-            id="workbench-ticket-agent-threads"
-            className="min-h-0 xl:flex-1 xl:overflow-y-auto xl:overscroll-contain"
-          >
+          <div id="workbench-ticket-agent-threads" className="min-w-0">
             {canOpenThread ? (
               <WorkbenchTicketPrimaryThread
                 context={{
@@ -2268,7 +2303,7 @@ function WorkbenchTicketThreadsPanel({
                 }}
               />
             ) : (
-              <p className="p-3 text-sm text-muted-foreground">
+              <p className="px-4 pb-3 text-sm text-muted-foreground">
                 This archived Ticket has no Thread.
               </p>
             )}
@@ -2483,9 +2518,7 @@ function WorkbenchTicketWorkspacePanel({
     onEditRepositories({ ticket, prepare });
   };
   return (
-    <section
-      className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 ${collapsed ? "" : draft ? "xl:min-h-0 xl:flex-[2]" : "xl:min-h-0 xl:flex-1"}`}
-    >
+    <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/30">
       <WorkbenchTicketWorkspaceHeader
         presentation={presentation}
         actions={actions}
@@ -2496,10 +2529,7 @@ function WorkbenchTicketWorkspacePanel({
         openRepositoryReview={openRepositoryReview}
       />
       {!collapsed ? (
-        <div
-          id="workbench-ticket-repositories"
-          className="min-h-0 space-y-3 px-3 pb-3 pt-2 xl:overflow-y-auto xl:overscroll-contain"
-        >
+        <div id="workbench-ticket-repositories" className="min-w-0 space-y-3 px-4 pb-4">
           {draft ? (
             <WorkbenchTicketWorkspaceRepositoryEditor
               draft={draft}
@@ -2567,20 +2597,35 @@ function WorkbenchTicketWorkspaceHeader({
 }) {
   const { workspaceStatusLabel } = presentation;
   return (
-    <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border/50 px-3 py-2.5">
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <h2 className="text-sm font-semibold">Ticket workspace</h2>
-        <Badge
-          size="sm"
-          variant={
-            workspaceStatusLabel === "Preparation failed" ||
-            workspaceStatusLabel === "Needs preparation"
-              ? "warning"
-              : "outline"
-          }
-        >
-          {workspaceStatusLabel}
-        </Badge>
+    <div className="space-y-2 px-4 py-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-h-6 min-w-0 flex-1 flex-wrap items-center gap-2">
+          <h2 className="text-sm font-semibold">Ticket workspace</h2>
+          <Badge
+            size="sm"
+            variant={
+              workspaceStatusLabel === "Preparation failed" ||
+              workspaceStatusLabel === "Needs preparation"
+                ? "warning"
+                : "outline"
+            }
+          >
+            {workspaceStatusLabel}
+          </Badge>
+        </div>
+        {!draft ? (
+          <Button
+            aria-controls="workbench-ticket-repositories"
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expand Ticket workspace" : "Collapse Ticket workspace"}
+            onClick={() => actions.setRepositoryScopePanelCollapsed((value) => !value)}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          >
+            <ChevronDownIcon className={collapsed ? "" : "rotate-180"} />
+          </Button>
+        ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-1">
         {draft ? (
@@ -2594,9 +2639,7 @@ function WorkbenchTicketWorkspaceHeader({
         ) : (
           <WorkbenchTicketWorkspaceBrowseActions
             presentation={presentation}
-            setRepositoryScopePanelCollapsed={actions.setRepositoryScopePanelCollapsed}
             disabled={disabled}
-            collapsed={collapsed}
             openRepositoryReview={openRepositoryReview}
           />
         )}
@@ -2653,14 +2696,10 @@ function WorkbenchTicketWorkspaceReviewActions({
 
 function WorkbenchTicketWorkspaceBrowseActions({
   presentation,
-  setRepositoryScopePanelCollapsed,
   disabled,
-  collapsed,
   openRepositoryReview,
 }: Pick<WorkbenchTicketWorkspacePanelInput, "presentation"> & {
-  readonly setRepositoryScopePanelCollapsed: Dispatch<SetStateAction<boolean>>;
   readonly disabled: boolean;
-  readonly collapsed: boolean;
   readonly openRepositoryReview: (prepare: boolean) => void;
 }) {
   const { workspaceIsReady, workspaceIsPreparing, pending, workspacePreparationActionLabel } =
@@ -2688,17 +2727,6 @@ function WorkbenchTicketWorkspaceBrowseActions({
           <FolderGit2Icon /> {workspacePreparationActionLabel}
         </Button>
       ) : null}
-      <Button
-        aria-controls="workbench-ticket-repositories"
-        aria-expanded={!collapsed}
-        aria-label={collapsed ? "Expand Ticket workspace" : "Collapse Ticket workspace"}
-        onClick={() => setRepositoryScopePanelCollapsed((value) => !value)}
-        size="icon-xs"
-        type="button"
-        variant="ghost"
-      >
-        <ChevronDownIcon className={collapsed ? "" : "rotate-180"} />
-      </Button>
     </>
   );
 }
@@ -2938,7 +2966,7 @@ function WorkbenchTicketJiraDetails({
   ticket,
 }: Pick<WorkbenchTicketDetailsPanelProps, "epics" | "linkedEpicId" | "onOpenEpic" | "ticket">) {
   return (
-    <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 p-3 text-sm">
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 px-4 pb-4 text-sm">
       <dt className="text-muted-foreground">Type</dt>
       <dd className="min-w-0 break-words text-right font-medium [overflow-wrap:anywhere]">
         {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
@@ -2981,7 +3009,7 @@ function WorkbenchTicketLocalDetails({
   | "actionableTicket"
 >) {
   return (
-    <div className="space-y-3 p-3">
+    <div className="space-y-3 px-4 pb-4">
       <div className="space-y-1.5">
         <Label>Ticket type</Label>
         <Select
@@ -3152,8 +3180,8 @@ function WorkbenchTicketPrimaryThread({
     onDeleteThread,
   } = actions;
   return (
-    <div className="border-b border-border/60 px-3 py-1.5">
-      <div className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-2.5 py-1.5 hover:bg-muted/45 focus-within:bg-muted/45">
+    <div className="px-2 pb-2">
+      <div className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-2 py-2 hover:bg-muted/45 focus-within:bg-muted/45">
         <WorkbenchThreadOpenButton
           providerKind={threadProviderKind(displayedThread)}
           ariaLabel={`${
@@ -3303,8 +3331,8 @@ function WorkbenchTicketOtherThreads({
     onReplaceThread,
   } = actions;
   return (
-    <div className="border-t border-border px-3 py-2.5">
-      <p className="mb-2 text-xs font-medium text-muted-foreground">Other active Threads</p>
+    <div className="border-t border-border/60 px-2 py-3">
+      <p className="mb-2 px-2 text-xs font-medium text-muted-foreground">Other active Threads</p>
       <div className="space-y-1">
         {activeAssignments
           .filter((activeAssignment) => activeAssignment.id !== assignment?.id)
@@ -3375,7 +3403,7 @@ function WorkbenchTicketSettledThreads({
 >) {
   return (
     <section className="border-t border-border/60">
-      <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-3 px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
           <h3 className="text-xs font-semibold">Settled Threads</h3>
           <Badge size="sm" variant="secondary">
@@ -3398,7 +3426,7 @@ function WorkbenchTicketSettledThreads({
         </Button>
       </div>
       {!settledThreadsCollapsed ? (
-        <div id="workbench-ticket-settled-threads" className="space-y-1 px-3 pb-2.5">
+        <div id="workbench-ticket-settled-threads" className="space-y-1 px-2 pb-3">
           {settledAssignments.map((settledAssignment) => (
             <WorkbenchTicketSettledThreadRow
               key={settledAssignment.id}
@@ -3455,8 +3483,8 @@ function WorkbenchTicketHistoricalThreads({
   | "historicalAssignments"
 >) {
   return (
-    <div className="border-t border-border px-3 py-2.5">
-      <p className="mb-2 text-xs font-medium text-muted-foreground">Thread history</p>
+    <div className="border-t border-border/60 px-2 py-3">
+      <p className="mb-2 px-2 text-xs font-medium text-muted-foreground">Thread history</p>
       <div className="space-y-1">
         {historicalAssignments.map((historicalAssignment) => (
           <WorkbenchTicketHistoricalThreadRow
@@ -3583,7 +3611,7 @@ function WorkbenchTicketActiveThreadRow({
   return (
     <div
       key={activeAssignment.id}
-      className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45"
+      className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-2 py-2 hover:bg-muted/45 focus-within:bg-muted/45"
     >
       <WorkbenchThreadOpenButton
         providerKind={threadProviderKind(displayedActiveThread)}
@@ -3707,7 +3735,7 @@ function WorkbenchTicketHistoricalThreadRow({
   return (
     <div
       key={historicalAssignment.id}
-      className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45"
+      className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-2 py-2 hover:bg-muted/45 focus-within:bg-muted/45"
     >
       <WorkbenchThreadOpenButton
         providerKind={threadProviderKind(displayedHistoricalThread)}
@@ -3774,7 +3802,7 @@ function WorkbenchTicketSettledThreadRow({
   return (
     <div
       key={settledAssignment.id}
-      className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-3 py-2 hover:bg-muted/45 focus-within:bg-muted/45"
+      className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-2 py-2 hover:bg-muted/45 focus-within:bg-muted/45"
     >
       <WorkbenchThreadOpenButton
         providerKind={threadProviderKind(settledThread)}
@@ -4446,12 +4474,9 @@ function WorkbenchTicketSummaryContent({
   | "onRegenerateSummary"
 >) {
   return (
-    <div
-      id="workbench-ticket-generated-summary-content"
-      className="max-h-48 overflow-y-auto border-t border-border/50 px-4 py-3"
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+    <div id="workbench-ticket-generated-summary-content" className="px-4 pb-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1 basis-48">
           <p className="text-sm leading-relaxed text-muted-foreground">{summary.text}</p>
           {summary.error ? (
             <p className="mt-1 break-words text-xs text-warning-foreground" role="status">
@@ -4529,9 +4554,9 @@ function WorkbenchTicketHeading({
   const { environmentId } = context;
   const { onUpdate, onJiraTransition, onRefreshJira } = actions;
   return (
-    <div className="col-span-2 row-start-2 min-w-0 sm:col-span-1 sm:col-start-2 sm:row-start-1">
+    <div className="col-span-2 row-start-2 min-w-0 @min-[48rem]/ticket:col-span-1 @min-[48rem]/ticket:col-start-2 @min-[48rem]/ticket:row-start-1">
       <p className="text-xs font-medium text-muted-foreground">{workspaceTitle} · Ticket</p>
-      <h1 className="mt-1 break-words text-balance text-xl font-semibold leading-tight sm:text-2xl">
+      <h1 className="mt-1 text-xl font-semibold leading-snug [overflow-wrap:anywhere]">
         {displayedTitle.trim() || ticket.title}
       </h1>
       <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -4650,7 +4675,7 @@ function WorkbenchTicketHeaderActions({
     setDeleteConfirmationOpen,
   } = actions;
   return (
-    <div className="col-start-2 row-start-1 flex min-w-0 flex-wrap justify-end gap-2 sm:col-start-3">
+    <div className="col-start-2 row-start-1 flex min-w-0 flex-wrap justify-end gap-2 @min-[48rem]/ticket:col-start-3">
       {canOpenThread ? (
         <>
           {threadActionPending ? (
@@ -5312,7 +5337,7 @@ function WorkbenchTicketThreadCreationActions({
   "onNewThread" | "onAttachThread" | "pending" | "isArchived" | "ticket"
 >) {
   return (
-    <div className="flex shrink-0 flex-wrap gap-2 border-t border-border px-3 py-2">
+    <div className="flex flex-wrap gap-2 border-t border-border/60 px-4 py-3">
       <Button
         disabled={pending || isArchived}
         onClick={() => onNewThread(ticket)}

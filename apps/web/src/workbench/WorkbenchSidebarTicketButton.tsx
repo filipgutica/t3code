@@ -125,12 +125,12 @@ function WorkbenchSidebarTicketLabel({
   const hasAttention = (attentionSignalsByTicket.get(ticket.id)?.length ?? 0) > 0;
 
   return (
-    <>
-      <span aria-hidden className={`mt-0.5 size-3.5 shrink-0 ${iconTone}`}>
-        <Icon className="size-3.5" />
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className={`flex min-w-0 items-center gap-1 ${hasAttention ? "pe-6" : ""}`}>
+    <span className="flex min-w-0 flex-1 flex-col gap-1">
+      <span className="flex min-w-0 items-start gap-2">
+        <span aria-hidden className={`mt-0.5 size-3.5 shrink-0 ${iconTone}`}>
+          <Icon className="size-3.5" />
+        </span>
+        <span className={`flex min-w-0 flex-1 items-center gap-1 ${hasAttention ? "pe-6" : ""}`}>
           <span className="min-w-0 flex-1 truncate">{ticket.title}</span>
           {details?.attentionLabel ? (
             <CircleAlertIcon
@@ -139,21 +139,21 @@ function WorkbenchSidebarTicketLabel({
             />
           ) : null}
         </span>
-        <span
-          className={`flex min-w-0 items-center gap-1 text-2xs font-normal text-sidebar-muted-foreground ${pullRequestCount > 1 ? "pe-20" : pullRequestCount === 1 ? "pe-14" : ""}`}
-        >
-          <span
-            aria-hidden
-            className={`size-1.5 shrink-0 rounded-full ${TICKET_STATUS_DOT_TONE[ticket.status]}`}
-          />
-          {details?.issueLink ? (
-            <span className="min-w-0 truncate font-mono">{details.issueLink.issue.key}</span>
-          ) : null}
-          {details?.issueLink ? <span aria-hidden>·</span> : null}
-          <span className="truncate">{status}</span>
-        </span>
       </span>
-    </>
+      <span
+        className={`flex min-w-0 items-center gap-1 text-2xs font-normal text-sidebar-muted-foreground ${pullRequestCount > 1 ? "pe-20" : pullRequestCount === 1 ? "pe-14" : ""}`}
+      >
+        <span
+          aria-hidden
+          className={`size-1.5 shrink-0 rounded-full ${TICKET_STATUS_DOT_TONE[ticket.status]}`}
+        />
+        {details?.issueLink ? (
+          <span className="min-w-0 truncate font-mono">{details.issueLink.issue.key}</span>
+        ) : null}
+        {details?.issueLink ? <span aria-hidden>·</span> : null}
+        <span className="truncate">{status}</span>
+      </span>
+    </span>
   );
 }
 
@@ -170,7 +170,7 @@ function WorkbenchSidebarTicketPrControl({
   if (!environmentId || pullRequests.length === 0) return null;
 
   return (
-    <div className="absolute end-2 bottom-2 z-10">
+    <div className="absolute end-2 bottom-2 z-10 flex h-4 items-center">
       {pullRequests.length === 1 && pullRequests[0] ? (
         <WorkbenchPullRequestLink
           compact

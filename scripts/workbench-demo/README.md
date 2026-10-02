@@ -66,24 +66,25 @@ fixtures** Epic in Orbit. Ticket and Thread titles start with `[Synthetic
 attention]`. No provider ran: interrupted/completed turn outcomes are labelled,
 projection-only demo data written while the seeding server is stopped.
 
-| Ticket name after the prefix   | Needs attention | Agent replies | Expected reason after inspection                                        |
-| ------------------------------ | --------------- | ------------- | ----------------------------------------------------------------------- |
-| Waiting Thread                 | Yes             | No            | Waiting for input                                                       |
-| Review-ready work              | Yes             | Yes           | Agent replied                                                           |
-| Failed PR checks               | Yes             | No            | Failed PR checks                                                        |
-| Unresolved PR feedback         | Yes             | No            | Failed PR checks · PR changes requested · Unresolved PR feedback        |
-| Clean Ticket                   | No              | No            | None                                                                    |
-| Excluded settled Thread        | No              | No            | Settled Thread is excluded despite its interrupted outcome              |
-| Excluded archived Thread       | No              | No            | Archived Thread is excluded despite its interrupted outcome             |
-| Excluded superseded Thread     | No              | No            | Interrupted historical assignment is excluded; replacement is clean     |
-| Non-primary Thread needs input | Yes             | No            | Waiting for input from the older assignment; newest assignment is clean |
-| PR inspection unavailable      | No              | No            | Inspection unavailable; no confirmed action                             |
-| PR inspection incomplete       | No              | No            | Inspection incomplete; no confirmed action                              |
-| Slow PR inspection             | No              | No            | Loading coverage, then a complete clean inspection                      |
+| Ticket name after the prefix   | Needs attention | Agent replies | Expected reason after inspection                                                       |
+| ------------------------------ | --------------- | ------------- | -------------------------------------------------------------------------------------- |
+| Waiting Thread                 | Yes             | No            | Waiting for input                                                                      |
+| Review-ready work              | Yes             | Yes           | Agent replied                                                                          |
+| Failed PR checks               | Yes             | No            | Failed PR checks                                                                       |
+| Unresolved PR feedback         | Yes             | No            | Two waiting Threads · Failed PR checks · PR changes requested · Unresolved PR feedback |
+| Clean Ticket                   | No              | No            | None                                                                                   |
+| Excluded settled Thread        | No              | No            | Settled Thread is excluded despite its interrupted outcome                             |
+| Excluded archived Thread       | No              | No            | Archived Thread is excluded despite its interrupted outcome                            |
+| Excluded superseded Thread     | No              | No            | Interrupted historical assignment is excluded; replacement is clean                    |
+| Non-primary Thread needs input | Yes             | No            | Waiting for input from the older assignment; newest assignment is clean                |
+| PR inspection unavailable      | No              | No            | Inspection unavailable; no confirmed action                                            |
+| PR inspection incomplete       | No              | No            | Inspection incomplete; no confirmed action                                             |
+| Slow PR inspection             | No              | No            | Loading coverage, then a complete clean inspection                                     |
 
 Before visiting their Threads, waiting, reply, failed-check, and non-primary Thread
-fixtures each show a bell with **1** in **All**. Unresolved PR feedback shows **3**: failed checks on
-PR 901, changes requested on PR 902, and unresolved feedback on PR 902.
+fixtures each show a bell with **1** in **All**. Unresolved PR feedback shows **5**:
+two unanswered native Thread questions, failed checks on PR 901, changes requested
+on PR 902, and unresolved feedback on PR 902.
 Clean and excluded fixtures have no bell. The count combines unacknowledged
 Thread notifications and unresolved PR actions. Opening a popover does not clear
 attention. Visiting a Thread clears its notification; an unanswered question
@@ -93,16 +94,22 @@ Ordinary notifications use a neutral bell with an accent dot; failed checks use
 a yellow warning. The sidebar filter shows its accent dot only when actions exist
 and the filter is off.
 
-The feedback Ticket has two active Threads: the original links PRs **901 and
-902**, and the **shared PR assignment** links PR **902** again. Its two PR sources
-remain distinct; sharing PR 902 does not duplicate its signals. PR 902 contains
+The feedback Ticket (`synthetic-attention-feedback`) has a long Markdown
+description, scopes **Orbit Web and Orbit API**, and has three active native
+Threads, all belonging to the Ticket's primary **Orbit Web** Project. The original
+links PRs **901 and 902**; the **shared PR assignment** links
+PR **902** again. Both have separately seeded interrupted outcomes and unanswered
+questions. The **API contract review** Thread links the clean PR **906** in
+`workbench-synthetic/attention-api`. Its three PR identities remain distinct;
+sharing PR 902 does not duplicate its signals. PR 902 contains
 two unresolved discussions, in `synthetic.txt` and `src/invitations.ts`, with
 separate questions and destinations, plus one requested-changes review.
 PR 901 contains two failed checks (**API tests** and **Web tests**) in the same
 synthetic **Attention CI** workflow. These checks share one failed-check signal.
 Turn on the sidebar's bell filter to compare both feedback assignments: both
-remain visible because they link PR 902, while only the original also links
-the failed PR 901. The sidebar filter includes the five confirmed-action Tickets;
+remain visible because they link PR 902 and have unanswered questions, while only
+the original also links the failed PR 901. The clean API assignment is excluded
+from that filter. The sidebar filter includes the five confirmed-action Tickets;
 inspection-only examples stay out, with a coverage note when inspection is incomplete.
 Workspace and Ticket chevrons still collapse and expand while this filter is on.
 Text search expands matching groups until the search is cleared.
@@ -115,7 +122,7 @@ header has the same popover. Its **Needs attention** section, above Agent Thread
 keeps the same actions visible and can be collapsed.
 
 Before acknowledging any Thread notifications, select **Needs attention**:
-expect five confirmed-action Tickets, each with a bell. The separate environment inspection line shows three of five linked PRs
+expect five confirmed-action Tickets, each with a bell. The separate environment inspection line shows four of six linked PRs
 fully inspected; two deliberately remain unavailable/incomplete. Use the
 **Refresh linked PRs** icon to repeat inspection and confirm it finishes. Loading
 or uncertain coverage alone does not add a Ticket to either attention filter.
@@ -135,7 +142,8 @@ seeded as a local native Thread. This fixture does not claim a multi-environment
 runtime verification.
 
 Synthetic PRs 901–905 belong to the fictional
-`workbench-synthetic/attention-fixtures` repository. A credential-free executable
+`workbench-synthetic/attention-fixtures` repository; PR 906 belongs to the separate
+fictional `workbench-synthetic/attention-api` repository. A credential-free executable
 adapter supplies only their allowlisted inspection data; it never forwards a
 command to GitHub. On Failed PR checks, open the PR and choose **Rerun failed
 checks**: expect a clearly labelled refusal and no success claim. Verify a real
@@ -144,6 +152,12 @@ Local `run.sh` uses the same adapter for PR inspection and does not link the
 configured repositories' real PRs. Setup and maintenance still use the real
 GitHub CLI for those repositories; the disposable run keeps their code and
 remotes.
+
+For long-description visual checks, use `orbit-001` (**Create the welcome checklist**)
+or `beacon-009` (**Build an interactive setup command**). Both keep their original
+Ticket IDs and assignments and contain explicitly labelled synthetic specifications
+with paragraphs, headings, bullets, checklists, a table, fenced code, links, and long
+inline values. Local runs and private previews consume these same fixtures.
 
 ## Troubleshooting
 

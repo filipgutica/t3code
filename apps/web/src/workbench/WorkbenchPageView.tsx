@@ -68,7 +68,7 @@ import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
 import { WorkbenchJiraDialog } from "./WorkbenchJiraDialog";
-import { isWorkbenchJiraEpic } from "./workbenchJira.logic";
+import { getWorkbenchJiraBindingSprints, isWorkbenchJiraEpic } from "./workbenchJira.logic";
 
 type WorkbenchPageViewProps = {
   readonly environmentId: EnvironmentId | null;
@@ -160,18 +160,22 @@ function WorkbenchBoardHeader(
       className="h-auto min-h-20 items-start border-b border-border py-3"
     >
       <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 basis-full items-center gap-2 sm:basis-auto sm:flex-1">
-          <h2 className="min-w-0 truncate text-xl font-semibold">{selectedProject.title}</h2>
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {showJiraImportedOnly
-              ? `${boardTickets.length} imported tickets`
-              : `${projectTickets.length} tickets`}
-          </span>
-          {jiraBinding && !jiraBinding.active ? <Badge variant="outline">Jira paused</Badge> : null}
-          {jiraBinding ? (
-            <span className="truncate text-xs text-muted-foreground" aria-label="Jira sync status">
-              {jiraBindingStatusLabel(jiraBinding, jiraPendingAction)}
+        <div className="flex min-w-0 basis-full flex-col gap-1 sm:basis-auto sm:flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h2 className="max-w-full min-w-0 truncate text-xl font-semibold">
+              {selectedProject.title}
+            </h2>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {showJiraImportedOnly
+                ? `${boardTickets.length} imported tickets`
+                : `${projectTickets.length} tickets`}
             </span>
+            {jiraBinding && !jiraBinding.active ? (
+              <Badge variant="outline">Jira paused</Badge>
+            ) : null}
+          </div>
+          {jiraBinding ? (
+            <WorkbenchJiraBoardContext binding={jiraBinding} pendingAction={jiraPendingAction} />
           ) : null}
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -268,6 +272,34 @@ function WorkbenchBoardHeader(
         </div>
       </div>
     </WorkspacePageHeader>
+  );
+}
+
+function WorkbenchJiraBoardContext({
+  binding,
+  pendingAction,
+}: {
+  binding: NonNullable<ReturnType<typeof useWorkbenchBoardData>["jiraBinding"]>;
+  pendingAction: ReturnType<typeof useWorkbenchJiraBindings>["jiraPendingAction"];
+}) {
+  const sprints = getWorkbenchJiraBindingSprints(binding);
+  const sprintScope = binding.followActiveSprint ? "Following active" : "Selected";
+  return (
+    <div
+      aria-label="Jira sync context"
+      className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground"
+    >
+      <span className="min-w-0 break-words [overflow-wrap:anywhere]">
+        Jira board: {binding.boardName}
+      </span>
+      <span className="min-w-0 break-words [overflow-wrap:anywhere]">
+        {sprintScope} sprint{sprints.length === 1 ? "" : "s"}:{" "}
+        {sprints.map((sprint) => sprint.name).join(", ")}
+      </span>
+      <span aria-label="Jira sync status" className="break-words">
+        {jiraBindingStatusLabel(binding, pendingAction)}
+      </span>
+    </div>
   );
 }
 
@@ -380,9 +412,7 @@ function WorkbenchBoardToolbar(props: Pick<WorkbenchPageViewProps, "boardData">)
   } = boardData;
 
   return (
-    <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-4 text-sm sm:px-5">
-      <LayoutDashboardIcon className="size-4 text-muted-foreground" />
-      <span className="font-semibold">Board</span>
+    <div className="flex flex-wrap items-center gap-2 text-sm">
       {showJiraImportedOnly ? (
         <Button
           aria-label="Show all Workbench tickets"
@@ -405,7 +435,7 @@ function WorkbenchBoardToolbar(props: Pick<WorkbenchPageViewProps, "boardData">)
         </Badge>
       ) : null}
       {boardEpics.length > 0 ? (
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex items-center gap-2">
           <span className="hidden text-xs text-muted-foreground sm:inline">Group</span>
           <ToggleGroup
             aria-label="Group Board tickets"
@@ -727,8 +757,6 @@ function WorkbenchPageBoard(
       <WorkbenchBoardErrors {...props} />
 
       <div className="flex min-h-0 flex-1 flex-col">
-        <WorkbenchBoardToolbar {...props} />
-
         {jiraBinding?.lastSyncError ? (
           <p
             role="status"
@@ -744,11 +772,13 @@ function WorkbenchPageBoard(
           }}
           key={`${selectedProject.id}:${jiraBinding?.boardMode ?? "mapped"}`}
           mirrorColumns={jiraBinding?.boardMode === "mirror_jira" ? jiraBinding.boardColumns : null}
+          jiraConnected={jiraBinding !== null}
           jiraStatusMappings={jiraBinding?.statusMappings ?? []}
           projectId={selectedProject.id}
           tickets={boardTickets}
           epics={boardEpics}
           groupMode={boardGroupModeForView}
+          viewControls={<WorkbenchBoardToolbar boardData={boardData} />}
           jiraIssueLinksByTicketId={jiraIssueLinksByTicketId}
           activeJiraTicketIds={activeJiraTicketIds}
           selectedTicketId={null}

@@ -133,14 +133,16 @@ test("ticket PRs exclude shared checkouts until a workspace is prepared", async 
   );
   await expect(page.getByRole("heading", { name: ticket.title, exact: true })).toBeVisible();
   await expect(page.getByText("unrelated-work", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Pull Requests 0", exact: true })).toBeVisible();
-  await expect(page.getByText("No pull requests found.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Pull requests 0", exact: true })).toBeVisible();
+  await expect(
+    page.getByText("No pull requests found for this ticket.", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByText("Unrelated shared checkout change", { exact: true })).toHaveCount(0);
 
   prepared = true;
   await page.reload();
   await waitForWorkbench(page);
-  await expect(page.getByRole("heading", { name: /^Pull Requests/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Pull requests/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Ticket workspace", exact: true })).toBeVisible();
   await expect(page.getByText("Ticket workspace change", { exact: true })).toBeVisible();
   await expect(page.getByText("Unrelated shared checkout change", { exact: true })).toHaveCount(0);
@@ -342,9 +344,9 @@ test("ticket PR discovery includes other Workspace repositories without changing
     demo.workbenchUrl(`/workbench?workbenchProjectId=${workspace.id}&ticketId=${ticket.id}`),
   );
   await expect(page.getByRole("heading", { name: ticket.title, exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Pull Requests/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Pull requests/ })).toBeVisible();
   await expect(page.getByText("Searching repositories…", { exact: true })).toHaveCount(0);
-  await page.getByRole("heading", { name: /^Pull Requests/ }).scrollIntoViewIfNeeded();
+  await page.getByRole("heading", { name: /^Pull requests/ }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("ticket-pr-discovery.png") });
   await expect(page.getByText("Fix request scoping [DEMO-5191]", { exact: true })).toBeVisible();
   const threadBadge = page.getByRole("button", {

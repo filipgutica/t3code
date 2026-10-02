@@ -5,6 +5,8 @@ import * as NodeTimersPromises from "node:timers/promises";
 
 const args = process.argv.slice(2);
 const repository = "workbench-synthetic/attention-fixtures";
+const apiRepository = "workbench-synthetic/attention-api";
+const repositoryForPullRequest = (number) => (number === 906 ? apiRepository : repository);
 const viewer = "synthetic-demo-viewer";
 const at = "2026-09-29T12:00:00.000Z";
 const output = (value) => process.stdout.write(JSON.stringify(value) + "\n");
@@ -69,7 +71,7 @@ if (args.includes("--input")) {
 if (/\bmutation\b/.test(query))
   refuse("Writes and failed-check reruns are disabled for synthetic PRs");
 const title = (number) =>
-  `[Synthetic attention] ${{ 901: "Failed PR checks", 902: "Unresolved PR feedback", 903: "Inspection unavailable", 904: "Inspection incomplete", 905: "Slow inspection" }[number]}`;
+  `[Synthetic attention] ${{ 901: "Failed PR checks", 902: "Unresolved PR feedback", 903: "Inspection unavailable", 904: "Inspection incomplete", 905: "Slow inspection", 906: "Verify invitation expiry and empty-response recovery across the API contract" }[number]}`;
 const checks = (number) =>
   (number === 901 ? ["API tests", "Web tests"] : ["demo-check"]).map((name) => ({
     name: `[Synthetic attention] ${name}`,
@@ -77,7 +79,7 @@ const checks = (number) =>
     checkSuite: { workflowRun: { workflow: { name: "[Synthetic attention] Attention CI" } } },
     status: "COMPLETED",
     conclusion: number === 901 ? "FAILURE" : "SUCCESS",
-    detailsUrl: `https://github.com/${repository}/pull/${number}`,
+    detailsUrl: `https://github.com/${repositoryForPullRequest(number)}/pull/${number}`,
     completedAt: at,
   }));
 const reviews = (number) =>
@@ -97,7 +99,7 @@ const reviews = (number) =>
 const pr = (number) => ({
   number,
   title: title(number),
-  url: `https://github.com/${repository}/pull/${number}`,
+  url: `https://github.com/${repositoryForPullRequest(number)}/pull/${number}`,
   state: "OPEN",
   isDraft: false,
   headRefName: `synthetic/${number}`,
@@ -124,24 +126,26 @@ const pr = (number) => ({
   viewerCanUpdateBranch: true,
   baseRef: { compare: { behindBy: 0 } },
 });
+const validateRepository = (number, selectedRepository) => {
+  if (![901, 902, 903, 904, 905, 906].includes(number))
+    refuse("PR is outside the fixture allowlist");
+  if (selectedRepository !== repositoryForPullRequest(number))
+    refuse("Repository is outside the fixture allowlist");
+};
 const validate = async (number) => {
-  if (![901, 902, 903, 904, 905].includes(number)) refuse("PR is outside the fixture allowlist");
   if (number === 903) refuse("PR inspection is deliberately unavailable");
   if (number === 905) await NodeTimersPromises.setTimeout(2200);
 };
 if (args[0] === "pr") {
-  const selectedRepo = flag("--repo") ?? flag("-R");
-  if (
-    selectedRepo !== repository &&
-    selectedRepo !== `github.com/${repository}` &&
-    selectedRepo !== `https://github.com/${repository}`
-  )
+  const selectedRepo = (flag("--repo") ?? flag("-R"))?.replace(/^(?:https:\/\/)?github\.com\//, "");
+  if (![repository, apiRepository].includes(selectedRepo))
     refuse("Repository is outside the fixture allowlist");
   if (args[1] === "list") {
     output([]);
     process.exit(0);
   }
   const number = Number(args[2]);
+  validateRepository(number, selectedRepo);
   await validate(number);
   if (args[1] === "diff") {
     console.log(
@@ -164,11 +168,11 @@ if (query.includes("PullRequestSummaries")) {
       /(s\d+): repository\(owner: "([^"]+)", name: "([^"]+)"\) \{ pullRequest\(number: (\d+)\)/g,
     ),
   ];
-  if (!entries.length || entries.some((entry) => `${entry[2]}/${entry[3]}` !== repository))
-    refuse("Repository is outside the fixture allowlist");
+  if (!entries.length) refuse("Repository is outside the fixture allowlist");
   const data = { rateLimit: budget };
   for (const entry of entries) {
     const number = Number(entry[4]);
+    validateRepository(number, `${entry[2]}/${entry[3]}`);
     if (number === 903) {
       data[entry[1]] = { pullRequest: null };
       continue;
@@ -191,9 +195,8 @@ if (query.includes("PullRequestSummaries")) {
   output({ data });
   process.exit(0);
 }
-if (`${variables.owner}/${variables.name}` !== repository)
-  refuse("Repository is outside the fixture allowlist");
 const number = Number(variables.number);
+validateRepository(number, `${variables.owner}/${variables.name}`);
 await validate(number);
 let pullRequest = pr(number);
 if (query.includes("reviewThreads(first:")) {

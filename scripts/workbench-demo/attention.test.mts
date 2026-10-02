@@ -33,13 +33,19 @@ const read = async (number: number, query: string) =>
     `query=${query}`,
   ]);
 
-it("delivers failed checks, unresolved feedback and incomplete coverage through the native GitHub decoding contract", async () => {
+it("delivers failed checks, unresolved feedback, a separate API repository and incomplete coverage through the native GitHub decoding contract", async () => {
   const summaries = decodePullRequestSummariesJson(
     await execute([
       "api",
       "graphql",
       "-f",
-      `query=${buildPullRequestSummariesGraphQlQuery([901, 902].map((number) => ({ repository: "workbench-synthetic/attention-fixtures", number })))}`,
+      `query=${buildPullRequestSummariesGraphQlQuery([
+        ...[901, 902].map((number) => ({
+          repository: "workbench-synthetic/attention-fixtures",
+          number,
+        })),
+        { repository: "workbench-synthetic/attention-api", number: 906 },
+      ])}`,
     ]),
   );
   expect(Result.isSuccess(summaries)).toBe(true);
@@ -47,6 +53,14 @@ it("delivers failed checks, unresolved feedback and incomplete coverage through 
     throw new Error("Native summary decoder rejected the synthetic adapter");
   expect(summaries.success.get(0)?.checksState).toBe("failing");
   expect(summaries.success.get(1)?.reviewDecision).toBe("changes-requested");
+  expect(summaries.success.get(2)).toEqual(
+    expect.objectContaining({
+      number: 906,
+      url: "https://github.com/workbench-synthetic/attention-api/pull/906",
+      checksState: "passing",
+      reviewDecision: null,
+    }),
+  );
   const activity = decodePullRequestActivityJson(
     await execute([
       "pr",
@@ -126,6 +140,8 @@ it("refuses GitHub writes, unrelated identities and deliberately unavailable ins
     ["api", "graphql", "-f", "query=mutation { closePullRequest }"],
     ["pr", "merge", "901", "--repo", "workbench-synthetic/attention-fixtures"],
     ["pr", "view", "75", "--repo", "filipgutica/t3code"],
+    ["pr", "view", "906", "--repo", "workbench-synthetic/attention-fixtures"],
+    ["pr", "view", "901", "--repo", "workbench-synthetic/attention-api"],
     ["pr", "view", "903", "--repo", "workbench-synthetic/attention-fixtures"],
   ])
     await expect(execute(args)).rejects.toThrow(/\[Synthetic demo\].*no GitHub request was sent/);

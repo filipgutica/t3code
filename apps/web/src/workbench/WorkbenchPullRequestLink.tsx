@@ -89,24 +89,18 @@ function WorkbenchPullRequestAnchor({
       className={
         compact
           ? "inline-flex shrink-0 rounded text-xs outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-          : "flex min-w-0 flex-1 flex-col gap-0.5 rounded-l-lg px-3 py-1.5 text-sm font-medium text-foreground outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring"
+          : "flex min-w-0 flex-1 flex-col gap-1 rounded-lg px-2 py-2 text-sm font-medium text-foreground outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring"
       }
       href={pullRequest.url}
       onClick={onClick}
       rel="noopener noreferrer"
       target="_blank"
     >
-      <WorkbenchPullRequestIdentifier
-        Icon={Icon}
-        compact={compact}
-        number={pullRequest.number}
-        stateClass={stateClass}
-      />
       {!compact ? (
         <Tooltip>
           <TooltipTrigger
             render={
-              <span className="block min-w-0 truncate font-normal leading-5 text-muted-foreground" />
+              <span className="line-clamp-2 min-w-0 break-words leading-5 [overflow-wrap:anywhere]" />
             }
           >
             {label}
@@ -116,6 +110,26 @@ function WorkbenchPullRequestAnchor({
           </TooltipPopup>
         </Tooltip>
       ) : null}
+      {compact ? (
+        <WorkbenchPullRequestIdentifier
+          Icon={Icon}
+          compact
+          number={pullRequest.number}
+          stateClass={stateClass}
+        />
+      ) : (
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-normal leading-5">
+          <WorkbenchPullRequestIdentifier
+            Icon={Icon}
+            compact={false}
+            number={pullRequest.number}
+            stateClass={stateClass}
+          />
+          {state ? (
+            <span className={stateClass}>{PULL_REQUEST_STATE_PRESENTATION[state].label}</span>
+          ) : null}
+        </span>
+      )}
     </a>
   );
 }
@@ -131,7 +145,7 @@ function WorkbenchPullRequestExternalLink({
         render={
           <a
             aria-label={`Open pull request #${pullRequest.number} in browser`}
-            className="inline-flex w-9 shrink-0 items-center justify-center rounded-r-lg border-l border-border/60 text-muted-foreground outline-none hover:bg-accent/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex min-h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none hover:bg-accent/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
             href={pullRequest.url}
             rel="noopener noreferrer"
             target="_blank"
@@ -199,9 +213,7 @@ export function WorkbenchPullRequestLink({
   return (
     <span
       className={
-        compact
-          ? "inline-flex shrink-0"
-          : "inline-flex w-full min-w-0 items-stretch rounded-lg border border-border/60 bg-background/40"
+        compact ? "inline-flex shrink-0" : "inline-flex w-full min-w-0 items-stretch gap-1"
       }
     >
       <WorkbenchPullRequestAnchor
