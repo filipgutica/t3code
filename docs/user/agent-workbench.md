@@ -8,10 +8,13 @@ Workbench is available in the web and desktop clients. Jira is optional. Each T3
 environment has its own Workspaces and Tickets, so records do not appear across
 environments. There is no dedicated Workbench mobile interface yet.
 
-![Orbit Workspace with Tickets across Todo, In Progress, and Done, and repository context on each card.](./media/workbench/board.png)
+![Beacon Board with Tickets across Todo, In Progress, and Done, plus attention, search, repository, and grouping controls.](./media/workbench/board.png)
 
-The examples use fictional Orbit and Beacon projects in an isolated demo
-environment. The repository worktrees and linked demo pull requests are real.
+The screenshots use fictional Orbit and Beacon projects in an isolated demo.
+Prepared Git worktrees are real. Conversation outcomes and PR inspection data
+are sample states, not evidence that an agent completed the work.
+
+For a tabbed overview, open the [screenshot walkthrough](https://filipgutica.github.io/t3code/#walkthrough-heading).
 
 ## Create a Workspace and Ticket
 
@@ -32,11 +35,9 @@ repositories when the work spans several codebases. Use **Edit Workspace** to
 rename a Workspace or change its repository list; existing Tickets and Threads
 keep their scope.
 
+![A Ticket with a long description and two linked Threads.](./media/workbench/ticket.png)
+
 ## Start agent work
-
-Watch: create a Ticket, prepare worktrees, and inspect Thread context (38 seconds).
-
-https://github.com/user-attachments/assets/3dff743f-5ced-4834-89bf-3238ca090607
 
 1. Open a Ticket and choose **Create Thread**.
 2. If the workspace is not prepared, review the primary and additional repositories.
@@ -52,13 +53,15 @@ worktree. The context chip includes the Ticket description and repository paths.
 To prepare worktrees before opening a conversation, choose **Prepare workspace**
 in **Ticket workspace**, review the repositories, and confirm.
 
+![A prepared Ticket workspace with worktrees for Orbit Web (primary) and Orbit API.](./media/workbench/workspace.png)
+
 After changing the Ticket, use **Attach current Ticket context** in an existing
 Thread to stage its saved requirements and current checkout paths. Review the
 context chip and send when ready; attaching context does not send a message.
 
-![Ticket context containing the description, acceptance criteria, and paths to both repository worktrees.](./media/workbench/ticket-context.png)
+![A native Thread with the Ticket context attached, ready for a first message.](./media/workbench/thread.png)
 
-Use **New Thread** for another conversation on the same Ticket. Use **Link existing
+Use **Create Thread** for another conversation on the same Ticket. Use **Link existing
 Thread** to add an unassigned native conversation, or **Unlink Thread from Ticket**
 to remove the association without deleting it. **Settle** moves a conversation out
 of the active group; **Thread history** keeps earlier conversations available.
@@ -72,9 +75,9 @@ Ticket** for the current Workspace, and **Back to Ticket** from a linked Thread.
 
 Ticket progress and agent activity describe different states:
 
-| Ticket progress          | Agent activity                               |
-| ------------------------ | -------------------------------------------- |
-| To Do, In Progress, Done | Waiting for input, Working, Ready for review |
+| Ticket progress          | Agent activity                            |
+| ------------------------ | ----------------------------------------- |
+| To Do, In Progress, Done | Waiting for input, Working, Agent replied |
 
 When a linked Thread starts a turn, a To Do Ticket moves to In Progress. **A
 completed agent turn does not mark the Ticket Done.** Review the result, then set
@@ -83,7 +86,7 @@ For Jira Tickets, Workbench attempts an available Jira transition first; if it
 fails, the Thread continues and its work log shows a warning.
 
 Use **Needs attention** on the Board to find waiting Threads, work ready for review,
-failed PR checks, and unresolved PR conversations. **Ready for review** narrows the
+failed PR checks, and unresolved PR conversations. **Agent replies** narrows the
 view to completed agent work awaiting review. PR inspection covers explicitly
 linked PRs; the Board shows incomplete or unavailable coverage and lets you refresh.
 
@@ -91,6 +94,12 @@ Click a Ticket's attention bell to see each reason and open its Thread, failed
 checks, requested changes, or unresolved discussion. The Ticket page keeps these
 actions in its **Needs attention** section. Counts represent actionable signals,
 not unread messages; opening the list does not clear them.
+
+Opening a Thread acknowledges its notification. An unanswered question stays
+**Waiting for input** until you respond. PR actions remain until the checks or review
+feedback are resolved.
+
+![A Ticket's attention list showing waiting Threads, requested changes, and unresolved PR discussions.](./media/workbench/notifications.png)
 
 The Ticket's **Pull Requests** section collects PRs reported by linked Threads and
 prepared worktrees. For Jira Tickets, it also searches linked repositories for the
@@ -106,20 +115,16 @@ failed checks** to request failed-job reruns for its current head. This requires
 GitHub Actions write permission. A successful request does not mean the checks
 have passed; refresh the PR to follow the results.
 
-![One Ticket showing pull requests from Orbit Web and Orbit API, alongside its Thread and prepared repository worktrees.](./media/workbench/pull-requests.png)
-
-Watch: link a pull request and review it from the Ticket (36 seconds).
-
-https://github.com/user-attachments/assets/ce40598e-5ac8-424d-9038-30ec59ac0e70
+![A linked PR opened beside its Ticket, with its summary and failing checks visible.](./media/workbench/pull-request.png)
 
 ## Edit and organize Tickets
 
-Use Board search to find loaded Tickets by title or Jira key, and filter by any
-repository in their scope. Search, repository filtering, grouping, and the selected
-Board column are retained per Workspace when returning from a Ticket. Open a Ticket and
-choose **Edit** to change its title or description. Saved descriptions display
-formatting; imported Jira descriptions are also written to Jira. Board previews
-use a separate summary generated from **Settings → General → Text generation
+Use Board search to find loaded Tickets by title, or by Jira key on connected
+Boards. Filter by any repository in their scope. Search, repository filtering,
+grouping, and the selected Board column are retained per Workspace when returning
+from a Ticket. Open a Ticket and choose **Edit** to change its title or description.
+Saved descriptions display formatting; imported Jira descriptions are also written
+to Jira. Board previews use a separate summary generated from **Settings → General → Text generation
 model**. Regenerate it from the Ticket menu when needed; the summary does not
 replace the full description sent to the agent.
 
@@ -172,17 +177,13 @@ or delete them before importing. Deleting requires an exact-count confirmation;
 native Agent Threads remain in history. Save the configuration to start the first
 sync.
 
-![Orbit Workspace showing imported Jira issues alongside local Tickets, with To Do, In Progress, In Review, and Done columns.](./media/workbench/jira-board.png)
+![Orbit Jira Board showing its Jira board name, selected sprint, sync status, and imported Tickets.](./media/workbench/jira.png)
 
 Use **Sync Jira** for an immediate refresh. Jira controls issue descriptions,
 status, Epic relationships, and sprint membership. Workbench controls repository
 selection, Ticket worktrees, linked Threads, and generated summaries. Changes made
 in Jira appear on the next successful sync; issues that leave the selected sprints
 leave the active Board but remain in Workbench history.
-
-Watch: sync Jira and open an imported Ticket (26 seconds).
-
-https://github.com/user-attachments/assets/1915ccb3-b67e-44bd-8e28-5258573a30fc
 
 **New Ticket** in a Jira-linked Workspace creates an issue in the configured Jira
 project and assigns it to the connected account. If access expires, choose

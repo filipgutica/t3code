@@ -16,11 +16,18 @@
   if (dialog && image && title) {
     let opener: HTMLAnchorElement | null = null;
 
+    const sizeImage = () => {
+      const width = Number(opener?.dataset.imageWidth);
+      // Keep one source pixel per screen pixel instead of stretching text on Retina displays.
+      if (width > 0) image.style.width = `${width / window.devicePixelRatio}px`;
+    };
+
     document.querySelectorAll<HTMLAnchorElement>("[data-product-image]").forEach((link) => {
       link.addEventListener("click", (event) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         event.preventDefault();
         opener = link;
+        sizeImage();
         image.src = link.href;
         image.alt = link.querySelector("img")?.alt ?? "Product screenshot";
         title.textContent = image.alt;
@@ -34,6 +41,9 @@
     dialog.addEventListener("close", () => {
       opener?.focus({ preventScroll: true });
       image.removeAttribute("src");
+    });
+    window.addEventListener("resize", () => {
+      if (dialog.open) sizeImage();
     });
   }
 </script>

@@ -99,6 +99,7 @@
   --duration-fast: 120ms;
   --duration: 180ms;
   --duration-section: 420ms;
+  --duration-walkthrough: 220ms;
   --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --ease-panel: cubic-bezier(0.16, 1.1, 0.3, 1);
 

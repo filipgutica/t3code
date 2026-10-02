@@ -4,11 +4,15 @@
 
 An independent fork of [T3 Code](https://github.com/pingdotgg/t3code) that adds planning across repositories while keeping native T3 Threads for agent conversations.
 
-**[Download the latest Workbench preview](https://github.com/filipgutica/t3code/releases)** · **[Workbench user guide](./docs/user/agent-workbench.md)**
+**[Download the latest Workbench preview](https://github.com/filipgutica/t3code/releases)** · **[Workbench user guide](./docs/user/agent-workbench.md)** · **[Screenshot walkthrough](https://filipgutica.github.io/t3code/#walkthrough-heading)**
 
 - **Plan work:** group repositories into Workspaces, organize Tickets into Epics, and track progress.
 - **Start implementation:** create native Threads with Ticket context and Git worktrees for the selected repositories.
 - **Connect Jira:** mirror your assigned sprint issues, edit descriptions, and update Jira statuses from Workbench.
+
+![Workbench Board with repository context, attention filters, and Tickets across workflow statuses.](./docs/user/media/workbench/board.png)
+
+Follow a Ticket through [prepared worktrees and a native Thread](./docs/user/agent-workbench.md#start-agent-work), then [review pull requests and attention items](./docs/user/agent-workbench.md#follow-progress-and-review-results). The walkthrough uses screenshots from a fictional demo.
 
 Workbench is available in the web and desktop clients. Jira is optional; local Tickets work without a connection. The desktop previews include the hosted Jira connection: choose **Connect Jira** in a Workspace and authorize access on Atlassian's website.
 

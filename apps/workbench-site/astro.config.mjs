@@ -5,5 +5,6 @@ export default defineConfig({
   base: "/t3code",
   output: "static",
   trailingSlash: "always",
+  image: { service: { config: { webp: { lossless: true } } } },
   server: { port: 4175 },
 });
