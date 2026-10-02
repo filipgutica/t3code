@@ -2,3 +2,8 @@
 [data-base-ui-portal]:has([data-workbench-pull-request-preview]) {
   --z-sheet: 50;
 }
+
+/* Native drag hit-testing ignores z-index and can intercept the preview's controls. */
+body:has([data-workbench-pull-request-preview]) .drag-region {
+  -webkit-app-region: no-drag;
+}

@@ -113,24 +113,22 @@ export function WorkbenchTicketPullRequests({
   const unsupported = search.data?.providers.some((provider) => !provider.searchesOnHost);
 
   return (
-    <section
-      className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40 xl:min-h-0 xl:flex-1 ${rows.length > 0 ? "[@media(min-height:48rem)]:xl:min-h-48" : ""}`}
-    >
-      <div className="flex items-center justify-between gap-3 border-b border-border/50 px-3 py-2">
+    <section className="flex min-w-0 flex-col border-t border-border/60">
+      <div className="flex items-center justify-between gap-3 px-4 py-3">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">
-            Pull Requests{" "}
+            Pull requests{" "}
             <span className="ml-1 font-normal tabular-nums text-muted-foreground">
               {rows.length}
             </span>
           </h2>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
             {canSearch
               ? `Linked PRs and ${ticketKey} mentions`
-              : "From Threads and the ticket workspace"}
+              : "Linked through threads or the ticket workspace"}
           </p>
         </div>
-        <div className="flex shrink-0 items-start gap-2">
+        <div className="flex shrink-0 items-center gap-1">
           <WorkbenchLinkPullRequest
             key={`${environmentId}:${ticketId}`}
             environmentId={environmentId}
@@ -151,16 +149,20 @@ export function WorkbenchTicketPullRequests({
           ) : null}
         </div>
       </div>
-      <div className="min-h-0 space-y-2 px-3 py-2 xl:overflow-y-auto xl:overscroll-contain">
-        {rows.map((row) => (
-          <WorkbenchTicketPullRequestRow
-            key={row.pullRequest.url.toLowerCase()}
-            environmentId={environmentId}
-            ticketKey={ticketKey}
-            row={row}
-            onOpenThread={onOpenThread}
-          />
-        ))}
+      <div className="min-w-0 space-y-3 px-4 pb-4">
+        {rows.length > 0 ? (
+          <div className="divide-y divide-border/50">
+            {rows.map((row) => (
+              <WorkbenchTicketPullRequestRow
+                key={row.pullRequest.url.toLowerCase()}
+                environmentId={environmentId}
+                ticketKey={ticketKey}
+                row={row}
+                onOpenThread={onOpenThread}
+              />
+            ))}
+          </div>
+        ) : null}
         <WorkbenchPullRequestSearchStatus
           search={search}
           checkout={checkout}
@@ -184,7 +186,7 @@ function WorkbenchTicketPullRequestRow({
   const { pullRequest, threadId, threadTitle, matchesTicket } = row;
   const repositoryUrl = changeRequestRepositoryUrl(pullRequest.url);
   return (
-    <div key={pullRequest.url.toLowerCase()} className="min-w-0">
+    <div key={pullRequest.url.toLowerCase()} className="min-w-0 py-3 first:pt-0 last:pb-0">
       <WorkbenchPullRequestLink
         environmentId={environmentId}
         pullRequest={pullRequest}
@@ -194,7 +196,7 @@ function WorkbenchTicketPullRequestRow({
             : undefined
         }
       />
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1.5 text-xs text-muted-foreground">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-2 pt-1 text-xs leading-5 text-muted-foreground">
         {repositoryUrl ? (
           <a
             href={repositoryUrl}
@@ -225,7 +227,7 @@ function WorkbenchTicketPullRequestRow({
               }
             >
               <MessageSquareIcon />
-              <span className="min-w-0 truncate">Linked Thread</span>
+              <span className="min-w-0 truncate">Linked thread</span>
             </TooltipTrigger>
             <TooltipPopup className="max-w-72 break-words">
               Linked through thread: {threadTitle}
@@ -257,32 +259,43 @@ function WorkbenchPullRequestSearchStatus({
   return (
     <>
       {search.isPending ? (
-        <p role="status" className="text-xs text-muted-foreground">
+        <p role="status" className="text-xs leading-5 text-muted-foreground">
           Searching repositories…
         </p>
       ) : null}
       {checkout.isPending ? (
-        <p role="status" className="text-xs text-muted-foreground">
-          Checking checkout pull requests…
+        <p role="status" className="text-xs leading-5 text-muted-foreground">
+          Checking ticket workspace pull requests…
         </p>
       ) : null}
       {checkout.errors.map((error) => (
-        <p role="alert" key={error} className="break-words text-xs text-destructive">
+        <p
+          role="alert"
+          key={error}
+          className="break-words text-xs leading-5 text-destructive [overflow-wrap:anywhere]"
+        >
           {error}
         </p>
       ))}
       {search.error ? (
-        <p role="alert" className="break-words text-xs text-destructive">
+        <p
+          role="alert"
+          className="break-words text-xs leading-5 text-destructive [overflow-wrap:anywhere]"
+        >
           PR search unavailable: {search.error}
         </p>
       ) : null}
       {search.data?.errors.map((error) => (
-        <p role="alert" key={error.projectId} className="break-words text-xs text-destructive">
+        <p
+          role="alert"
+          key={error.projectId}
+          className="break-words text-xs leading-5 text-destructive [overflow-wrap:anywhere]"
+        >
           {error.projectTitle}: {error.message}
         </p>
       ))}
       {unsupported ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs leading-5 text-muted-foreground">
           Ticket-key search is unavailable for some repository hosts.
         </p>
       ) : null}
@@ -293,10 +306,12 @@ function WorkbenchPullRequestSearchStatus({
       !search.error &&
       !unsupported &&
       (search.data?.errors.length ?? 0) === 0 ? (
-        <p className="text-xs text-muted-foreground">No pull requests found.</p>
+        <p className="text-xs leading-5 text-muted-foreground">
+          No pull requests found for this ticket.
+        </p>
       ) : null}
       {search.data?.truncated ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs leading-5 text-muted-foreground">
           Showing up to 50 matches per repository. More may be available on the host.
         </p>
       ) : null}

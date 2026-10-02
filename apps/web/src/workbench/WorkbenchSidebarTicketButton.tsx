@@ -170,7 +170,7 @@ function WorkbenchSidebarTicketPrControl({
   if (!environmentId || pullRequests.length === 0) return null;
 
   return (
-    <div className="absolute end-2 bottom-2 z-10">
+    <div className="absolute end-2 bottom-2 z-10 flex h-4 items-center">
       {pullRequests.length === 1 && pullRequests[0] ? (
         <WorkbenchPullRequestLink
           compact

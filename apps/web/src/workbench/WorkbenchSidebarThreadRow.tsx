@@ -227,7 +227,7 @@ function WorkbenchSidebarThreadPrBadge({
     );
   }
   return (
-    <span className="absolute end-2 bottom-2 z-10 flex items-center">
+    <span className="absolute end-2 bottom-2 z-10 flex h-4 items-center">
       <ThreadPullRequestBadgeControl
         render={<InlineButton />}
         badge={data.pullRequestBadge}
