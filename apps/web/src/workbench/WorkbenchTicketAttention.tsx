@@ -280,16 +280,13 @@ export function WorkbenchTicketAttentionPanel(props: TicketAttentionProps) {
   if (!signals.length && inspections.every((inspection) => inspection.status === "complete"))
     return null;
   return (
-    <div className="shrink-0 overflow-hidden rounded-xl border border-border/70 bg-card/30">
+    <div className="shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/30">
       <Collapsible defaultOpen>
-        <div className="flex items-center justify-between gap-2 px-3 py-3">
-          <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-2 text-left text-xs font-semibold">
-            {signals.length ? (
-              <BellIcon aria-hidden className="size-3.5 text-muted-foreground" />
-            ) : (
-              <CircleAlertIcon aria-hidden className="size-3.5 text-muted-foreground" />
-            )}
-            {signals.length ? "Needs attention" : "PR inspection"}
+        <div className="flex items-center justify-between gap-2 px-4 py-3">
+          <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-semibold">
+            <span role="heading" aria-level={2}>
+              {signals.length ? "Needs attention" : "PR inspection"}
+            </span>
             {signals.length ? (
               <span className="text-muted-foreground">{signals.length}</span>
             ) : null}
@@ -303,7 +300,7 @@ export function WorkbenchTicketAttentionPanel(props: TicketAttentionProps) {
           </Button>
         </div>
         <CollapsiblePanel>
-          <div className="max-h-80 overflow-y-auto border-t px-3 py-3">
+          <div className="border-t border-border/50 px-4 py-3">
             <AttentionItems {...props} signals={signals} inspections={inspections} />
           </div>
         </CollapsiblePanel>

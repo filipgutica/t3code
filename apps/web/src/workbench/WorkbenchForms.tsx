@@ -767,6 +767,12 @@ export function WorkbenchTicketDetail(props: WorkbenchTicketDetailProps) {
     />
   );
 }
+const focusWorkbenchTicketPane = (pane: HTMLElement | null) => {
+  if (!pane) return;
+  pane.scrollIntoView({ block: "start" });
+  pane.focus({ preventScroll: true });
+};
+
 function WorkbenchTicketDetailController({
   context,
   content,
@@ -1034,8 +1040,36 @@ function WorkbenchTicketDetailController({
         context={{ environmentId: environmentId }}
       />
 
+      <nav
+        aria-label="Ticket sections"
+        className="flex shrink-0 items-center gap-1 border-b border-border/60 px-4 py-1 @min-[40rem]/ticket:px-6 @min-[64rem]/ticket:hidden"
+      >
+        <Button
+          aria-controls="workbench-ticket-reading"
+          size="xs"
+          type="button"
+          variant="ghost"
+          onClick={() =>
+            focusWorkbenchTicketPane(document.getElementById("workbench-ticket-reading"))
+          }
+        >
+          Description
+        </Button>
+        <Button
+          aria-controls="workbench-ticket-activity"
+          size="xs"
+          type="button"
+          variant="ghost"
+          onClick={() =>
+            focusWorkbenchTicketPane(document.getElementById("workbench-ticket-activity"))
+          }
+        >
+          Activity
+        </Button>
+      </nav>
+
       <form
-        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 @min-[40rem]/ticket:p-6 [&_[data-slot=button]>svg]:mx-0"
+        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 @min-[40rem]/ticket:p-6 @min-[64rem]/ticket:overflow-hidden [&_[data-slot=button]>svg]:mx-0"
         onSubmit={(event) => {
           event.preventDefault();
           if (!editing || !draft) return;
@@ -1058,8 +1092,14 @@ function WorkbenchTicketDetailController({
           })();
         }}
       >
-        <div className="mx-auto grid min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-6 @min-[64rem]/ticket:grid-cols-[minmax(0,1fr)_22rem] @min-[64rem]/ticket:gap-8">
-          <div className="min-w-0 space-y-6">
+        <div className="mx-auto grid min-h-0 min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-6 @min-[64rem]/ticket:h-full @min-[64rem]/ticket:grid-cols-[minmax(0,1fr)_22rem] @min-[64rem]/ticket:items-stretch @min-[64rem]/ticket:gap-8">
+          <div
+            id="workbench-ticket-reading"
+            role="region"
+            aria-label="Ticket description and summary"
+            tabIndex={0}
+            className="min-h-0 min-w-0 scroll-mt-4 space-y-6 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring @min-[40rem]/ticket:scroll-mt-6 @min-[64rem]/ticket:overflow-y-auto @min-[64rem]/ticket:overscroll-y-contain @min-[64rem]/ticket:pr-2 @min-[64rem]/ticket:pb-2"
+          >
             {error ? <WorkbenchInlineError message={error} /> : null}
             <WorkbenchTicketDescriptionPanel
               presentation={{
@@ -1092,7 +1132,12 @@ function WorkbenchTicketDetailController({
             />
           </div>
 
-          <aside className="flex min-w-0 flex-col gap-6">
+          <aside
+            id="workbench-ticket-activity"
+            aria-label="Ticket activity"
+            tabIndex={0}
+            className="flex min-h-0 min-w-0 scroll-mt-4 flex-col gap-6 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring @min-[40rem]/ticket:scroll-mt-6 @min-[64rem]/ticket:overflow-y-auto @min-[64rem]/ticket:overscroll-y-contain @min-[64rem]/ticket:pr-2 @min-[64rem]/ticket:pb-2"
+          >
             <WorkbenchTicketAttentionPanel
               environmentId={environmentId}
               ticketId={ticket.id}
@@ -1297,7 +1342,7 @@ function WorkbenchTicketDetailsPanel({
   const { onCreateEpic, onOpenEpic, onToggle, onUpdate } = actions;
   const { ticket, actionableTicket } = records;
   return (
-    <section className="min-w-0 border-t border-border/60">
+    <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/30">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">Details</h2>
@@ -1873,7 +1918,7 @@ function WorkbenchTicketSummaryPanel({
   return (
     <section
       aria-labelledby="workbench-ticket-generated-summary"
-      className="min-w-0 border-t border-border/60"
+      className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/30"
     >
       <div className="px-4 py-3">
         <button
@@ -2200,7 +2245,7 @@ function WorkbenchTicketThreadsPanel({
     historicalAssignments,
   } = records;
   return (
-    <section className="min-w-0 border-t border-border/60">
+    <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/30">
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">Agent Threads</h2>
@@ -2473,7 +2518,7 @@ function WorkbenchTicketWorkspacePanel({
     onEditRepositories({ ticket, prepare });
   };
   return (
-    <section className="min-w-0 border-t border-border/60">
+    <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/30">
       <WorkbenchTicketWorkspaceHeader
         presentation={presentation}
         actions={actions}

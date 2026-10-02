@@ -113,7 +113,7 @@ export function WorkbenchTicketPullRequests({
   const unsupported = search.data?.providers.some((provider) => !provider.searchesOnHost);
 
   return (
-    <section className="flex min-w-0 flex-col border-t border-border/60">
+    <section className="flex min-w-0 shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/30">
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <div className="min-w-0">
           <h2 className="text-sm font-semibold">
