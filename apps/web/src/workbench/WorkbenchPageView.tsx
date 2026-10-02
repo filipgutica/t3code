@@ -179,7 +179,6 @@ function WorkbenchBoardHeader(
           ) : null}
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <WorkbenchBoardToolbar boardData={boardData} />
           <Popover>
             <PopoverTrigger render={<Button size="sm" variant="outline" />}>
               <FolderGit2Icon data-icon="inline-start" />
@@ -779,6 +778,7 @@ function WorkbenchPageBoard(
           tickets={boardTickets}
           epics={boardEpics}
           groupMode={boardGroupModeForView}
+          viewControls={<WorkbenchBoardToolbar boardData={boardData} />}
           jiraIssueLinksByTicketId={jiraIssueLinksByTicketId}
           activeJiraTicketIds={activeJiraTicketIds}
           selectedTicketId={null}

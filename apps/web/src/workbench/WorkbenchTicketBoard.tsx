@@ -40,7 +40,7 @@ import {
   SearchIcon,
   XIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useEnvironmentQuery } from "../state/query";
@@ -118,6 +118,7 @@ type WorkbenchTicketBoardProps = {
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
   readonly groupMode: "none" | "epic";
+  readonly viewControls: ReactNode;
   readonly jiraIssueLinksByTicketId: ReadonlyMap<WorkbenchTicketId, WorkbenchJiraIssueLink>;
   readonly activeJiraTicketIds: ReadonlySet<WorkbenchTicketId>;
   readonly selectedTicketId: WorkbenchTicketId | null;
@@ -210,6 +211,7 @@ function renderWorkbenchTicketBoard({
         {renderWorkbenchBoardControls({
           search,
           jiraConnected: props.jiraConnected,
+          viewControls: props.viewControls,
           attentionMode: data.attentionMode,
           setAttentionMode: data.setAttentionMode,
           attentionCoverage: data.attentionCoverage,
@@ -225,56 +227,61 @@ function renderWorkbenchTicketBoard({
           visibleColumnId,
           setSelectedColumnId,
         })}
-        <div className="min-h-0 min-w-0 flex-1 overflow-auto p-3 sm:p-4 md:pt-0">
-          <div
-            style={boardStyle}
-            className="flex min-w-0 flex-col gap-3 md:min-w-[calc(var(--board-column-count)*18rem+(var(--board-column-count)-1)*0.75rem)]"
-          >
-            <div className="sticky top-0 z-10 -mx-3 hidden grid-flow-col auto-cols-[minmax(18rem,1fr)] gap-3 border-b border-border/60 bg-background px-3 py-1 shadow-sm sm:-mx-4 sm:px-4 md:grid">
-              {columns.map((column) => (
-                <div key={column.id} className="flex min-w-0 items-center gap-2 px-2 py-2">
-                  <span
-                    aria-hidden
-                    className={cn("size-2 shrink-0 rounded-full", STATUS_DOT_CLASS[column.status])}
-                  />
-                  <h2 className="min-w-0 flex-1 break-words text-sm font-semibold">
-                    {column.title}
-                  </h2>
-                  <span className="text-xs text-muted-foreground tabular-nums">
-                    {column.tickets.length}
-                  </span>
-                </div>
-              ))}
+        <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+          <div className="h-full overflow-auto p-3 sm:p-4 md:pt-0">
+            <div
+              style={boardStyle}
+              className="flex min-w-0 flex-col gap-3 md:min-w-[calc(var(--board-column-count)*18rem+(var(--board-column-count)-1)*0.75rem)]"
+            >
+              <div className="sticky top-0 z-10 -mx-3 hidden grid-flow-col auto-cols-[minmax(18rem,1fr)] gap-3 border-b border-border/60 bg-background px-3 py-1 shadow-sm sm:-mx-4 sm:px-4 md:grid">
+                {columns.map((column) => (
+                  <div key={column.id} className="flex min-w-0 items-center gap-2 px-2 py-2">
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "size-2 shrink-0 rounded-full",
+                        STATUS_DOT_CLASS[column.status],
+                      )}
+                    />
+                    <h2 className="min-w-0 flex-1 break-words text-sm font-semibold">
+                      {column.title}
+                    </h2>
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {column.tickets.length}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {swimlanes.map((swimlane) => renderWorkbenchBoardSwimlane({ swimlane, board }))}
             </div>
-            {swimlanes.map((swimlane) => renderWorkbenchBoardSwimlane({ swimlane, board }))}
           </div>
-        </div>
 
-        {tickets.length === 0 &&
-        !search.query &&
-        data.repositoryId === null &&
-        !(groupMode === "epic" && epics.length > 0) ? (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/45 p-6 backdrop-blur-xs">
-            <div className="w-full max-w-sm rounded-xl border border-border bg-background shadow-lg/10">
-              <Empty className="min-h-72">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <LayoutDashboardIcon />
-                  </EmptyMedia>
-                  <EmptyTitle>Plan the first piece of work</EmptyTitle>
-                  <EmptyDescription>
-                    Tickets keep delivery context, status, and the native Agent Thread connected.
-                  </EmptyDescription>
-                </EmptyHeader>
-                <EmptyContent>
-                  <Button onClick={onCreateTicket}>
-                    <PlusIcon /> Create Ticket
-                  </Button>
-                </EmptyContent>
-              </Empty>
+          {tickets.length === 0 &&
+          !search.query &&
+          data.repositoryId === null &&
+          !(groupMode === "epic" && epics.length > 0) ? (
+            <div className="absolute inset-0 z-10 flex flex-col items-center overflow-auto bg-background/45 p-6 backdrop-blur-xs">
+              <div className="my-auto w-full max-w-sm shrink-0 rounded-xl border border-border bg-background shadow-lg/10">
+                <Empty className="min-h-72">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <LayoutDashboardIcon />
+                    </EmptyMedia>
+                    <EmptyTitle>Plan the first piece of work</EmptyTitle>
+                    <EmptyDescription>
+                      Tickets keep delivery context, status, and the native Agent Thread connected.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <Button onClick={onCreateTicket}>
+                      <PlusIcon /> Create Ticket
+                    </Button>
+                  </EmptyContent>
+                </Empty>
+              </div>
             </div>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </section>
       <DragOverlay dropAnimation={null}>
         {activeTicket ? (
@@ -776,8 +783,10 @@ function getWorkbenchBoardTicketPresentation({
   const threadActionLabel =
     getWorkbenchTicketStartProgressLabel(pendingAction, ticket.id) ??
     (threadActionPending ? thread.pendingActionLabel : null);
-  const repository = repositoriesById.get(ticket.primaryT3ProjectId);
-  const additionalRepositoryCount = getWorkbenchTicketRepositoryProjectIds(ticket).length - 1;
+  const repositories = getWorkbenchTicketRepositoryProjectIds(ticket).map((id) => ({
+    id,
+    title: repositoriesById.get(id)?.title ?? "Repository unavailable",
+  }));
   const epic = ticket.epicId ? epicsById.get(ticket.epicId) : undefined;
   const jiraIssueLink = jiraIssueLinksByTicketId.get(ticket.id);
   const summary = getWorkbenchBoardTicketPreview({
@@ -794,8 +803,7 @@ function getWorkbenchBoardTicketPresentation({
     thread,
     threadActionPending,
     threadActionLabel,
-    repository,
-    additionalRepositoryCount,
+    repositories,
     epic,
     jiraIssueLink,
     summary,
@@ -805,9 +813,8 @@ function getWorkbenchBoardTicketPresentation({
 function renderWorkbenchBoardTicketMetadata(
   presentation: ReturnType<typeof getWorkbenchBoardTicketPresentation>,
 ) {
-  const { ticket, board, repository, additionalRepositoryCount, epic, jiraIssueLink, summary } =
-    presentation;
-  const { pendingTicketIds, groupMode, onSelect, projectId, repositoriesById } = board;
+  const { ticket, board, repositories, epic, jiraIssueLink, summary } = presentation;
+  const { pendingTicketIds, groupMode, onSelect, projectId } = board;
   return (
     <div className="mt-2 flex min-w-0 flex-col gap-2 text-xs text-muted-foreground">
       {pendingTicketIds.has(ticket.id) ? <span role="status">Saving status…</span> : null}
@@ -857,20 +864,38 @@ function renderWorkbenchBoardTicketMetadata(
             <button
               type="button"
               onClick={() => onSelect(projectId, ticket.id)}
-              className="relative z-10 flex min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={`Repositories for ${ticket.title}: ${repositories.map(({ id, title }) => `${title}${id === ticket.primaryT3ProjectId ? " (primary)" : ""}`).join(", ")}. Open ticket`}
+              className="relative z-10 flex min-w-0 max-w-full cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 self-start rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           }
         >
-          <FolderGit2Icon className="size-3.5 shrink-0" />
-          <span className="truncate">{repository?.title ?? "Repository unavailable"}</span>
-          {additionalRepositoryCount > 0 ? (
-            <span className="shrink-0">+{additionalRepositoryCount}</span>
+          {repositories.slice(0, 2).map(({ id, title }) => (
+            <span key={id} className="flex min-w-0 max-w-full items-center gap-1.5">
+              <FolderGit2Icon className="size-3.5 shrink-0" />
+              <span className="truncate">{title}</span>
+            </span>
+          ))}
+          {repositories.length > 2 ? (
+            <span className="shrink-0">+{repositories.length - 2}</span>
           ) : null}
         </TooltipTrigger>
-        <TooltipPopup>
-          {getWorkbenchTicketRepositoryProjectIds(ticket)
-            .map((id) => repositoriesById.get(id)?.title ?? "Repository unavailable")
-            .join(", ")}
+        <TooltipPopup align="start" side="bottom" variant="glass">
+          <div className="space-y-2 py-1">
+            <p className="font-medium">Ticket repositories</p>
+            <div className="space-y-1.5">
+              {repositories.map(({ id, title }) => (
+                <div key={id} className="flex items-start gap-2">
+                  <FolderGit2Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1">{title}</span>
+                  {id === ticket.primaryT3ProjectId ? (
+                    <Badge size="sm" variant="outline">
+                      Primary
+                    </Badge>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
         </TooltipPopup>
       </Tooltip>
     </div>
@@ -1206,8 +1231,48 @@ function renderWorkbenchBoardStatus({
   );
 }
 
+function renderWorkbenchBoardSearch({
+  jiraConnected,
+  search,
+}: Pick<WorkbenchTicketBoardProps, "jiraConnected"> &
+  Pick<ReturnType<typeof useWorkbenchBoardData>, "search">) {
+  return (
+    <div className="relative min-w-40 max-w-full flex-1 sm:max-w-xs">
+      <SearchIcon
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+      />
+      <Input
+        aria-label="Search tickets"
+        placeholder={jiraConnected ? "Search by title or Jira key…" : "Search by title…"}
+        value={search.text}
+        onChange={(event) => search.setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            search.setText("");
+          }
+        }}
+        className="pr-9 pl-9"
+      />
+      {search.text ? (
+        <Button
+          aria-label="Clear ticket search"
+          variant="ghost"
+          size="icon-xs"
+          className="absolute top-1/2 right-1 -translate-y-1/2"
+          onClick={() => search.setText("")}
+        >
+          <XIcon />
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 function renderWorkbenchBoardControls({
   jiraConnected,
+  viewControls,
   attentionMode,
   setAttentionMode,
   attentionCoverage,
@@ -1238,51 +1303,27 @@ function renderWorkbenchBoardControls({
 > &
   Pick<
     WorkbenchTicketBoardProps,
-    "jiraConnected" | "tickets" | "repositoryProjectIds" | "repositoriesById"
+    "jiraConnected" | "viewControls" | "tickets" | "repositoryProjectIds" | "repositoriesById"
   > &
   Pick<ReturnType<typeof useWorkbenchBoardDrag>, "visibleColumnId" | "setSelectedColumnId">) {
   return (
     <>
       {" "}
       <div className="flex shrink-0 flex-col gap-2 border-b border-border/60 px-3 py-2 sm:px-4">
-        <div className="flex flex-wrap items-center gap-2">
+        <div
+          aria-label="Board filters and grouping"
+          className="flex flex-wrap items-center gap-2"
+          role="group"
+        >
           {renderWorkbenchAttentionModeControl(attentionMode, setAttentionMode)}
-          <div className="relative min-w-40 max-w-full flex-1 sm:max-w-xs">
-            <SearchIcon
-              aria-hidden
-              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-            />
-            <Input
-              aria-label="Search tickets"
-              placeholder={jiraConnected ? "Search by title or Jira key…" : "Search by title…"}
-              value={search.text}
-              onChange={(event) => search.setText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  event.stopPropagation();
-                  search.setText("");
-                }
-              }}
-              className="pr-9 pl-9"
-            />
-            {search.text ? (
-              <Button
-                aria-label="Clear ticket search"
-                variant="ghost"
-                size="icon-xs"
-                className="absolute top-1/2 right-1 -translate-y-1/2"
-                onClick={() => search.setText("")}
-              >
-                <XIcon />
-              </Button>
-            ) : null}
-          </div>
+          {renderWorkbenchBoardSearch({ jiraConnected, search })}
           <WorkbenchBoardRepositoryFilter
             repositoryId={repositoryId}
             setRepositoryId={setRepositoryId}
             repositoryProjectIds={repositoryProjectIds}
             repositoriesById={repositoriesById}
           />
+          {viewControls}
         </div>
         {renderWorkbenchBoardStatus({
           attentionMode,

@@ -76,6 +76,7 @@ const props: ComponentProps<typeof WorkbenchTicketBoard> = {
   tickets: [ticket("Welcome"), ticket("Billing")],
   epics: [],
   groupMode: "none",
+  viewControls: null,
   mirrorColumns: null,
   jiraConnected: false,
   jiraStatusMappings: [],
