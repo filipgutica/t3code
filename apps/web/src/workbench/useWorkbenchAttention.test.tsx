@@ -1,3 +1,8 @@
+import type {
+  PendingThreadRequests,
+  ThreadPendingUserInput,
+} from "@t3tools/client-runtime/state/thread-requests";
+import { makeThreadFixture } from "../test-fixtures";
 import { RegistryContext } from "@effect/atom-react";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import * as Atom from "effect/unstable/reactivity/Atom";
@@ -8,10 +13,8 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import {
   EnvironmentId,
-  EventId,
-  ApprovalRequestId,
+  RuntimeRequestId,
   type ScopedThreadRef,
-  type OrchestrationThreadActivity,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -32,47 +35,39 @@ import {
 
 vi.mock("../state/threads", () => ({
   environmentThreadDetails: {
-    activitiesAtom: (ref: ScopedThreadRef) => activitiesAtom(scopedThreadKey(ref)),
+    pendingRequestsAtom: (ref: ScopedThreadRef) => requestsAtom(scopedThreadKey(ref)),
   },
 }));
 const requestAt = "2026-09-29T00:01:00.000Z";
-const question = (id: string, createdAt = requestAt): OrchestrationThreadActivity => ({
-  id: EventId.make(id),
-  tone: "info",
-  kind: "user-input.requested",
-  summary: "Question",
-  payload: {
-    requestId: ApprovalRequestId.make(id),
-    questions: [
-      {
-        id: "question",
-        header: "Choice",
-        question: "Which option?",
-        options: [{ label: "One" }],
-      },
-    ],
-  },
-  turnId: null,
+const question = (id: string, createdAt = requestAt): ThreadPendingUserInput => ({
+  requestId: RuntimeRequestId.make(id),
   createdAt,
+  questions: [
+    {
+      id: "question",
+      header: "Choice",
+      question: "Which option?",
+      options: [{ label: "One", description: "First option" }],
+      multiSelect: false,
+    },
+  ],
+  responseCapability: "live",
+  dismissible: false,
 });
-const activitiesAtom = Atom.family((key: string) =>
-  Atom.make<ReadonlyArray<OrchestrationThreadActivity>>(
-    key.endsWith(":waiting")
-      ? [question("first-question")]
-      : key.endsWith(":other-waiting")
-        ? [
-            {
-              id: EventId.make("approval"),
-              tone: "approval",
-              kind: "approval.requested",
-              summary: "Approval",
-              payload: { requestId: ApprovalRequestId.make("approval"), requestKind: "command" },
-              turnId: null,
-              createdAt: requestAt,
-            },
-          ]
-        : [],
-  ),
+const requestsAtom = Atom.family((key: string) =>
+  Atom.make<PendingThreadRequests>({
+    approvals: key.endsWith(":other-waiting")
+      ? [
+          {
+            requestId: RuntimeRequestId.make("approval"),
+            requestKind: "command",
+            createdAt: requestAt,
+            responseCapability: "live",
+          },
+        ]
+      : [],
+    userInputs: key.endsWith(":waiting") ? [question("first-question")] : [],
+  }),
 );
 let registry: AtomRegistry.AtomRegistry;
 const environmentId = EnvironmentId.make("source-attention");
@@ -92,29 +87,30 @@ const ticket: WorkbenchTicket = {
   createdAt: "2026-09-29T00:00:00.000Z",
   updatedAt: "2026-09-29T00:00:00.000Z",
 };
-const thread = (id: string): EnvironmentThreadShell => ({
-  id: ThreadId.make(id),
-  environmentId,
-  projectId: ProjectId.make("repo"),
-  title: id,
-  modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
-  runtimeMode: "full-access",
-  interactionMode: "default",
-  branch: null,
-  worktreePath: null,
-  createdAt: "2026-09-29T00:00:00.000Z",
-  updatedAt: "2026-09-29T00:00:00.000Z",
-  latestTurn: null,
-  session: null,
-  pullRequests: [],
-  archivedAt: null,
-  settledOverride: null,
-  settledAt: null,
-  latestUserMessageAt: null,
-  hasPendingApprovals: false,
-  hasPendingUserInput: false,
-  hasActionableProposedPlan: false,
-});
+const thread = (id: string): EnvironmentThreadShell =>
+  makeThreadFixture({
+    id: ThreadId.make(id),
+    environmentId,
+    projectId: ProjectId.make("repo"),
+    title: id,
+    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    branch: null,
+    worktreePath: null,
+    createdAt: "2026-09-29T00:00:00.000Z",
+    updatedAt: "2026-09-29T00:00:00.000Z",
+    latestRun: null,
+    runtime: null,
+    pullRequests: [],
+    archivedAt: null,
+    settledOverride: null,
+    settledAt: null,
+    latestUserMessageAt: null,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    hasActionableProposedPlan: false,
+  });
 const reference = {
   projectId: ProjectId.make("repo"),
   repository: "acme/web",
@@ -559,10 +555,10 @@ it("clears an opened question notification and reacts to a new request rather th
   expect(threadSignals()).toEqual([]);
   const secondAt = "2026-09-29T00:03:00.000Z";
   await act(async () =>
-    registry.set(activitiesAtom(waitingKey), [
-      question("first-question"),
-      question("second-question", secondAt),
-    ]),
+    registry.set(requestsAtom(waitingKey), {
+      approvals: [],
+      userInputs: [question("first-question"), question("second-question", secondAt)],
+    }),
   );
   expect(threadSignals()?.map((signal) => signal.kind)).toEqual(["question"]);
   // A same-ID Thread in another environment cannot acknowledge this request.

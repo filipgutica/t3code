@@ -52,7 +52,7 @@ export const verifyDemoPullRequests = async ({
   const linked = new Set(
     shell.threads
       .filter((thread) => ["orbit-001-thread", "orbit-005-thread"].includes(thread.id))
-      .flatMap((thread) => thread.pullRequests.map((pr) => pr.url)),
+      .flatMap((thread) => (thread.pullRequests ?? []).map((pr) => pr.url)),
   );
   if (urls.some((url) => !linked.has(url)))
     throw new Error("Not all selected PRs were linked to native demo Threads.");

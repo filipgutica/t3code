@@ -1,10 +1,9 @@
+import { nativeThreadShell, seedNativeThread } from "./testing/nativeThreads.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DEFAULT_SERVER_SETTINGS,
   GitCommandError,
-  type OrchestrationThreadShell,
   ProjectId,
-  ProviderInstanceId,
   TextGenerationError,
   ThreadId,
   type VcsStatusLocalResult,
@@ -26,7 +25,8 @@ import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerConfig from "../config.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
+import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProviderRegistry from "../provider/Services/ProviderRegistry.ts";
 import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -164,18 +164,13 @@ const seedReadyTicketWorkspace = Effect.gen(function* () {
 });
 
 const seedActiveAssignment = Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient;
-  yield* sql`
-    INSERT INTO projection_threads (
-      thread_id, project_id, title, model_selection_json, runtime_mode,
-      interaction_mode, pending_approval_count, pending_user_input_count,
-      has_actionable_proposed_plan, created_at, updated_at, deleted_at
-    ) VALUES (
-      ${activeThreadId}, ${primaryProjectId}, 'Active work',
-      '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default',
-      0, 0, 0, ${createdAt}, ${createdAt}, NULL
-    )
-  `;
+  yield* seedNativeThread({
+    threadId: activeThreadId,
+    projectId: primaryProjectId,
+    title: "Active work",
+    createdAt: createdAt,
+    deletedAt: null,
+  });
   const store = yield* WorkbenchStore;
   yield* store.createAssignment({
     id: WorkbenchAssignmentId.make("assignment-active"),
@@ -274,8 +269,8 @@ const makeTestLayer = ({
   const configLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
     prefix: "t3-ticket-workspace-test-",
   }).pipe(Layer.provide(NodeServices.layer));
-  const projectionLayer = Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
-    getProjectShellById: (projectId) => {
+  const projectLayer = Layer.mock(ProjectStoreV2)({
+    getShell: (projectId) => {
       events.push(`project:${projectId}`);
       if (projectId === primaryProjectId) {
         return Effect.succeed(
@@ -299,35 +294,19 @@ const makeTestLayer = ({
       }
       return Effect.succeed(Option.none());
     },
-    getThreadShellById: (threadId) =>
+  });
+  const threadLayer = Layer.mock(ThreadManagementService)({
+    getThreadShell: (threadId) =>
       Effect.succeed(
         liveThreadIds?.has(threadId)
-          ? Option.some({
-              id: threadId,
+          ? nativeThreadShell({
+              threadId,
               projectId: primaryProjectId,
               title: "Active work",
-              modelSelection: {
-                instanceId: ProviderInstanceId.make("codex"),
-                model: "gpt-5-codex",
-              },
-              runtimeMode: "full-access",
-              interactionMode: "default",
-              branch: null,
-              worktreePath: liveThreadWorktreePaths?.get(threadId) ?? null,
-              pullRequests: [],
-              latestTurn: null,
               createdAt,
-              updatedAt: createdAt,
-              archivedAt: null,
-              settledOverride: null,
-              settledAt: null,
-              session: null,
-              latestUserMessageAt: null,
-              hasPendingApprovals: false,
-              hasPendingUserInput: false,
-              hasActionableProposedPlan: false,
-            } satisfies OrchestrationThreadShell)
-          : Option.none(),
+              worktreePath: liveThreadWorktreePaths?.get(threadId) ?? null,
+            })
+          : null,
       ),
   });
   const gitLayer = Layer.mock(GitWorkflowService.GitWorkflowService)({
@@ -506,7 +485,8 @@ const makeTestLayer = ({
       Layer.mergeAll(
         configLayer,
         gitLayer,
-        projectionLayer,
+        projectLayer,
+        threadLayer,
         Layer.mock(TicketWorkspacePullRequestResolver)({
           resolveOpenPullRequestBranch: ({ projectId }) => {
             resolveOpenPullRequestBranchCalls?.push(projectId);
@@ -721,8 +701,8 @@ describe("TicketWorkspaceService", () => {
       yield* seedActiveAssignment;
       const sql = yield* SqlClient.SqlClient;
       yield* sql`
-        UPDATE projection_threads
-        SET deleted_at = '2026-09-03T12:01:00.000Z'
+        UPDATE orchestration_v2_projection_threads
+        SET deleted_at = '2026-09-03T12:01:00.000Z', payload_json = json_set(payload_json, '$.deletedAt', '2026-09-03T12:01:00.000Z')
         WHERE thread_id = ${activeThreadId}
       `;
       const service = yield* TicketWorkspaceService;
@@ -1527,18 +1507,13 @@ describe("TicketWorkspaceService", () => {
       yield* seedTicket;
       const service = yield* TicketWorkspaceService;
       yield* service.prepare({ ticketId, requestedAt: createdAt });
-      const sql = yield* SqlClient.SqlClient;
-      yield* sql`
-        INSERT INTO projection_threads (
-          thread_id, project_id, title, model_selection_json, runtime_mode,
-          interaction_mode, pending_approval_count, pending_user_input_count,
-          has_actionable_proposed_plan, created_at, updated_at, deleted_at
-        ) VALUES (
-          'thread-active', ${primaryProjectId}, 'Active work',
-          '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default',
-          0, 0, 0, ${createdAt}, ${createdAt}, NULL
-        )
-      `;
+      yield* seedNativeThread({
+        threadId: "thread-active",
+        projectId: primaryProjectId,
+        title: "Active work",
+        createdAt: createdAt,
+        deletedAt: null,
+      });
       const store = yield* WorkbenchStore;
       yield* store.createAssignment({
         id: WorkbenchAssignmentId.make("assignment-active"),
@@ -1565,8 +1540,8 @@ describe("TicketWorkspaceService", () => {
       yield* seedActiveAssignment;
       const sql = yield* SqlClient.SqlClient;
       yield* sql`
-        UPDATE projection_threads
-        SET archived_at = ${createdAt}
+        UPDATE orchestration_v2_projection_threads
+        SET archived_at = ${createdAt}, payload_json = json_set(payload_json, '$.archivedAt', ${createdAt})
         WHERE thread_id = ${activeThreadId}
       `;
       yield* sql`
@@ -1684,19 +1659,15 @@ describe("TicketWorkspaceService", () => {
           ],
           claimedAt: "2026-09-03T11:00:00.000Z",
         });
-        const sql = yield* SqlClient.SqlClient;
-        yield* sql`
-        INSERT INTO projection_threads (
-          thread_id, project_id, title, model_selection_json, runtime_mode,
-          interaction_mode, pending_approval_count, pending_user_input_count,
-          has_actionable_proposed_plan, worktree_path, created_at, updated_at,
-          archived_at, deleted_at
-        ) VALUES (
-          'thread-unlinked-archived', ${primaryProjectId}, 'Archived work', '{}',
-          'full-access', 'default', 0, 0, 0, ${primaryWorktreePath},
-          ${createdAt}, ${createdAt}, ${createdAt}, NULL
-        )
-      `;
+        yield* seedNativeThread({
+          threadId: "thread-unlinked-archived",
+          projectId: primaryProjectId,
+          title: "Archived work",
+          createdAt: createdAt,
+          worktreePath: primaryWorktreePath,
+          archivedAt: createdAt,
+          deletedAt: null,
+        });
         const service = yield* TicketWorkspaceService;
 
         const error = yield* Effect.flip(service.prepare({ ticketId, requestedAt: createdAt }));
@@ -1745,8 +1716,8 @@ describe("TicketWorkspaceService", () => {
       });
       const sql = yield* SqlClient.SqlClient;
       yield* sql`
-        UPDATE projection_threads
-        SET deleted_at = '2026-09-03T12:01:00.000Z'
+        UPDATE orchestration_v2_projection_threads
+        SET deleted_at = '2026-09-03T12:01:00.000Z', payload_json = json_set(payload_json, '$.deletedAt', '2026-09-03T12:01:00.000Z')
         WHERE thread_id = ${activeThreadId}
       `;
       const service = yield* TicketWorkspaceService;
@@ -1958,16 +1929,13 @@ describe("TicketWorkspaceService", () => {
       const store = yield* WorkbenchStore;
       storeForCleanup = store;
       const sql = yield* SqlClient.SqlClient;
-      yield* sql`
-        INSERT INTO projection_threads (
-          thread_id, project_id, title, model_selection_json, runtime_mode,
-          interaction_mode, pending_approval_count, pending_user_input_count,
-          has_actionable_proposed_plan, created_at, updated_at, deleted_at
-        ) VALUES (
-          'failed-recovery-race-thread', ${primaryProjectId}, 'Recovery race', '{}',
-          'full-access', 'default', 0, 0, 0, ${createdAt}, ${createdAt}, NULL
-        )
-      `;
+      yield* seedNativeThread({
+        threadId: "failed-recovery-race-thread",
+        projectId: primaryProjectId,
+        title: "Recovery race",
+        createdAt: createdAt,
+        deletedAt: null,
+      });
       yield* sql`
         UPDATE workbench_ticket_workspaces
         SET attempt_id = ${attemptId}, status = 'failed', updated_at = ${createdAt}
@@ -2027,18 +1995,13 @@ describe("TicketWorkspaceService", () => {
       yield* seedTicket;
       const store = yield* WorkbenchStore;
       yield* seedActiveAssignment;
-      const sql = yield* SqlClient.SqlClient;
-      yield* sql`
-        INSERT INTO projection_threads (
-          thread_id, project_id, title, model_selection_json, runtime_mode,
-          interaction_mode, pending_approval_count, pending_user_input_count,
-          has_actionable_proposed_plan, created_at, updated_at, deleted_at
-        ) VALUES (
-          ${secondThreadId}, ${primaryProjectId}, 'Second active work',
-          '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default',
-          0, 0, 0, ${createdAt}, ${createdAt}, NULL
-        )
-      `;
+      yield* seedNativeThread({
+        threadId: secondThreadId,
+        projectId: primaryProjectId,
+        title: "Second active work",
+        createdAt: createdAt,
+        deletedAt: null,
+      });
       yield* store.createAssignment({
         id: WorkbenchAssignmentId.make("assignment-live-second"),
         ticketId,

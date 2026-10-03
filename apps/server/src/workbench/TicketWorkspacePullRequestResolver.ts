@@ -2,7 +2,7 @@ import {
   WorkbenchOperationError,
   type ThreadId,
   type ProjectId,
-  type OrchestrationThreadShell,
+  type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
@@ -17,7 +17,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
+import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
 import { PullRequestService } from "../pullRequest/PullRequestService.ts";
 import {
   type SourceControlProviderHandle,
@@ -35,9 +36,9 @@ const preparationError = (message: string) =>
     message,
   });
 
-const threadCandidateUrls = (thread: OrchestrationThreadShell) => {
-  if (thread.pullRequests.length > 0) {
-    return visibleThreadPullRequests(thread.pullRequests).map((reference) => reference.url);
+const threadCandidateUrls = (thread: OrchestrationV2ThreadShell) => {
+  if ((thread.pullRequests?.length ?? 0) > 0) {
+    return visibleThreadPullRequests(thread.pullRequests ?? []).map((reference) => reference.url);
   }
   return [thread.linkedPullRequest, thread.branchPullRequest]
     .filter((reference) => reference !== null && reference !== undefined)
@@ -67,7 +68,8 @@ const validatePullRequestHead = ({
 };
 
 export const make = Effect.gen(function* () {
-  const projections = yield* ProjectionSnapshotQuery;
+  const projects = yield* ProjectStoreV2;
+  const threads = yield* ThreadManagementService;
   const pullRequests = yield* PullRequestService;
   const providers = yield* SourceControlProviderRegistry;
 
@@ -79,20 +81,16 @@ export const make = Effect.gen(function* () {
     addCandidate: (url: string) => void;
   }) {
     for (const threadId of assignedThreadIds) {
-      const thread = yield* projections
-        .getThreadShellById(threadId)
+      const thread = yield* threads
+        .getThreadShell(threadId)
         .pipe(
           Effect.mapError(() =>
             preparationError("Could not load a linked Thread's pull requests."),
           ),
         );
-      if (
-        Option.isNone(thread) ||
-        thread.value.archivedAt !== null ||
-        thread.value.settledOverride === "settled"
-      )
+      if (thread === null || thread.archivedAt !== null || thread.settledOverride === "settled")
         continue;
-      for (const url of threadCandidateUrls(thread.value)) addCandidate(url);
+      for (const url of threadCandidateUrls(thread)) addCandidate(url);
     }
   });
 
@@ -185,8 +183,8 @@ export const make = Effect.gen(function* () {
   const resolveOpenPullRequestBranch: TicketWorkspacePullRequestResolver["Service"]["resolveOpenPullRequestBranch"] =
     Effect.fn("TicketWorkspacePullRequestResolver.resolveOpenPullRequestBranch")(function* (input) {
       if (!input.jiraIssueKey && input.assignedThreadIds.length === 0) return Option.none();
-      const projectOption = yield* projections
-        .getProjectShellById(input.projectId)
+      const projectOption = yield* projects
+        .getShell(input.projectId)
         .pipe(
           Effect.mapError(() =>
             preparationError("Could not load the Ticket repository for PR discovery."),

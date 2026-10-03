@@ -29,3 +29,11 @@ export const getWorkbenchCodexAuthScheme = (): "t3code-workbench" | null =>
 
 export const getWorkbenchWslHomeOverride = (): { t3Home?: string } =>
   isWorkbenchBuild() ? { t3Home: `~/${WORKBENCH_DISTRIBUTION.homeDirectoryName}` } : {};
+
+/** Match native V2 profile separation while retaining the fork's own credential source. */
+export const getWorkbenchDesktopProfileNames = (isDevelopment: boolean) => {
+  const distribution = getWorkbenchDistribution();
+  if (distribution === null) return null;
+  const legacy = distribution.executableName;
+  return { current: isDevelopment ? legacy : `${legacy}-v2`, legacy, fallback: legacy };
+};

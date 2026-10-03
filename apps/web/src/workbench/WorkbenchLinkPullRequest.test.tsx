@@ -1,3 +1,4 @@
+import { makeThreadFixture } from "../test-fixtures";
 import { act, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -63,29 +64,30 @@ vi.mock("../components/ui/select", () => ({
 }));
 const environmentId = EnvironmentId.make("local-link-test");
 const ticketId = WorkbenchTicketId.make("link-ticket");
-const thread = (id: string): EnvironmentThreadShell => ({
-  id: ThreadId.make(id),
-  environmentId,
-  projectId: ProjectId.make("repo"),
-  title: id,
-  modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
-  runtimeMode: "full-access",
-  interactionMode: "default",
-  branch: null,
-  worktreePath: null,
-  createdAt: "2026-09-27T00:00:00.000Z",
-  updatedAt: "2026-09-27T00:00:00.000Z",
-  latestTurn: null,
-  session: null,
-  pullRequests: [],
-  archivedAt: null,
-  settledOverride: null,
-  settledAt: null,
-  latestUserMessageAt: null,
-  hasPendingApprovals: false,
-  hasPendingUserInput: false,
-  hasActionableProposedPlan: false,
-});
+const thread = (id: string): EnvironmentThreadShell =>
+  makeThreadFixture({
+    id: ThreadId.make(id),
+    environmentId,
+    projectId: ProjectId.make("repo"),
+    title: id,
+    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    branch: null,
+    worktreePath: null,
+    createdAt: "2026-09-27T00:00:00.000Z",
+    updatedAt: "2026-09-27T00:00:00.000Z",
+    latestRun: null,
+    runtime: null,
+    pullRequests: [],
+    archivedAt: null,
+    settledOverride: null,
+    settledAt: null,
+    latestUserMessageAt: null,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    hasActionableProposedPlan: false,
+  });
 const assignment = (id: string): WorkbenchAssignment => ({
   id: WorkbenchAssignmentId.make(id),
   ticketId,

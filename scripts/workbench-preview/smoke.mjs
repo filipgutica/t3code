@@ -74,12 +74,16 @@ try {
     "Built web client is served",
   );
   NodeAssert.equal(
-    (await fetch(`${origin}/api/orchestration/snapshot`, { signal: AbortSignal.timeout(5000) }))
-      .status,
+    (
+      await fetch(`${origin}/api/orchestration/shell`, {
+        signal: AbortSignal.timeout(5000),
+        headers: { "x-t3-orchestration-protocol": "2" },
+      })
+    ).status,
     401,
   );
   const rejectedUpgrade = await new Promise((resolve, reject) => {
-    const request = NodeHttp.request(`${origin}/ws`, {
+    const request = NodeHttp.request(`${origin}/ws?orchestrationProtocol=2`, {
       headers: {
         Connection: "Upgrade",
         Upgrade: "websocket",
@@ -115,10 +119,11 @@ try {
       "node",
       "--input-type=module",
       "-e",
-      "import {DatabaseSync} from 'node:sqlite';const db=new DatabaseSync(process.argv[1]+'/userdata/state.sqlite',{readOnly:true});console.log(JSON.stringify({tickets:db.prepare('SELECT COUNT(*) AS count FROM workbench_tickets').get().count,selections:db.prepare('SELECT model_selection_json FROM projection_threads').all().map(x=>JSON.parse(x.model_selection_json)),jira:db.prepare('SELECT COUNT(*) AS count FROM workbench_jira_connections').get().count}));db.close();",
+      "import fs from 'node:fs';import {DatabaseSync} from 'node:sqlite';const userdata=process.argv[1]+'/userdata/';const v2=fs.existsSync(userdata+'statev2.sqlite');const db=new DatabaseSync(userdata+(v2?'statev2.sqlite':'state.sqlite'),{readOnly:true});console.log(JSON.stringify({v2,tickets:db.prepare('SELECT COUNT(*) AS count FROM workbench_tickets').get().count,selections:db.prepare(v2?'SELECT payload_json FROM orchestration_v2_projection_threads':'SELECT model_selection_json FROM projection_threads').all().map(x=>v2?JSON.parse(x.payload_json).modelSelection:JSON.parse(x.model_selection_json)),jira:db.prepare('SELECT COUNT(*) AS count FROM workbench_jira_connections').get().count}));db.close();",
       home,
     ),
   );
+  NodeAssert.equal(counts.v2, true, "Preview seeds the active V2 database");
   NodeAssert.ok(
     counts.tickets > 0 && counts.selections.length > 0,
     "Native fixture receipts finish before public readiness",
@@ -256,15 +261,44 @@ try {
   });
   NodeAssert.equal(exchange.status, 200, "Reviewer pairing works on the native production service");
   const { access_token: token } = await exchange.json();
-  NodeAssert.equal(
-    (
-      await fetch(`${origin}/api/orchestration/snapshot`, {
-        signal: AbortSignal.timeout(5000),
-        headers: { Authorization: `Bearer ${token}` },
-      })
-    ).status,
-    200,
-  );
+  const headers = { Authorization: `Bearer ${token}`, "x-t3-orchestration-protocol": "2" };
+  const shellResponse = await fetch(`${origin}/api/orchestration/shell`, {
+    signal: AbortSignal.timeout(5000),
+    headers,
+  });
+  NodeAssert.equal(shellResponse.status, 200);
+  const shell = await shellResponse.json();
+  for (const expected of [
+    {
+      id: "synthetic-attention-feedback",
+      status: "interrupted",
+      question: "Should invitation links expire after 24 hours or 7 days?",
+    },
+    {
+      id: "synthetic-attention-feedback-shared-pr",
+      status: "interrupted",
+      question:
+        "Should an empty invitation response preserve the entered address and offer a retry?",
+    },
+    { id: "synthetic-attention-feedback-api", status: "idle", question: null },
+  ]) {
+    const thread = shell.threads.find((candidate) => candidate.id === expected.id);
+    NodeAssert.ok(thread, "Restart retains each attention Thread");
+    NodeAssert.equal(thread.status, expected.status, "Restart retains native attention outcomes");
+    if (expected.question === null) continue;
+    const response = await fetch(`${origin}/api/orchestration/threads/${expected.id}`, {
+      signal: AbortSignal.timeout(5000),
+      headers,
+    });
+    NodeAssert.equal(response.status, 200);
+    const { projection } = await response.json();
+    NodeAssert.ok(
+      projection.turnItems.some(
+        (item) => item.type === "assistant_message" && item.text.includes(expected.question),
+      ),
+      "Restart retains each unanswered question in the native visible timeline",
+    );
+  }
   // SIGKILL skips finally: replacement startup must erase previous credential files itself.
   docker(
     "exec",
@@ -299,9 +333,9 @@ try {
   );
   NodeAssert.equal(
     (
-      await fetch(`${origin}/api/orchestration/snapshot`, {
+      await fetch(`${origin}/api/orchestration/shell`, {
         signal: AbortSignal.timeout(5000),
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, "x-t3-orchestration-protocol": "2" },
       })
     ).status,
     401,

@@ -1,12 +1,7 @@
+import { makeThreadFixture } from "../test-fixtures";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import {
-  EnvironmentId,
-  OrchestrationThreadShell,
-  ProjectId,
-  ProviderInstanceId,
-  ThreadId,
-} from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -22,31 +17,14 @@ const threadRef = scopeThreadRef(
   EnvironmentId.make("ticket-environment"),
   ThreadId.make("ticket-thread"),
 );
-const shell: EnvironmentThreadShell = {
-  ...OrchestrationThreadShell.make({
-    id: threadRef.threadId,
-    projectId: ProjectId.make("ticket-project"),
-    title: "Ticket Thread",
-    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    archivedAt: null,
-    settledOverride: null,
-    settledAt: null,
-    branch: "workbench/ticket",
-    worktreePath: "/worktrees/ticket",
-    pullRequests: [],
-    latestTurn: null,
-    session: null,
-    createdAt: "2026-09-08T04:00:00.000Z",
-    updatedAt: "2026-09-08T04:00:00.000Z",
-    latestUserMessageAt: null,
-    hasPendingApprovals: false,
-    hasPendingUserInput: false,
-    hasActionableProposedPlan: false,
-  }),
+const shell = makeThreadFixture({
+  id: threadRef.threadId,
   environmentId: threadRef.environmentId,
-};
+  projectId: ProjectId.make("ticket-project"),
+  title: "Ticket Thread",
+  branch: "workbench/ticket",
+  worktreePath: "/worktrees/ticket",
+});
 const shellAtom = Atom.make<EnvironmentThreadShell | null>(null);
 const otherShellAtom = Atom.make<EnvironmentThreadShell | null>(null);
 

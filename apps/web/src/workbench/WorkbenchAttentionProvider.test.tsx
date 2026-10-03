@@ -1,3 +1,5 @@
+import type { PendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
+import { makeThreadFixture } from "../test-fixtures";
 import { act, useState } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
@@ -7,12 +9,10 @@ import {
   ThreadId,
   ProjectId,
   ProviderInstanceId,
-  EventId,
-  ApprovalRequestId,
+  RuntimeRequestId,
   WorkbenchTicketId,
   WorkbenchAssignmentId,
   type ScopedThreadRef,
-  type OrchestrationThreadActivity,
   type WorkbenchAssignment,
 } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
@@ -52,28 +52,28 @@ vi.mock("./state", () => ({ workbenchEnvironment: { snapshot: () => null } }));
 vi.mock("./WorkbenchAttentionQueries", () => ({ WorkbenchAttentionQueries: () => null }));
 
 const requestAt = "2026-09-29T00:01:00.000Z";
-const question: OrchestrationThreadActivity = {
-  id: EventId.make("question"),
-  tone: "info",
-  kind: "user-input.requested",
-  summary: "Question",
-  payload: {
-    requestId: ApprovalRequestId.make("question"),
-    questions: [
-      {
-        id: "choice",
-        header: "Choice",
-        question: "Which option?",
-        options: [{ label: "One" }],
-      },
-    ],
-  },
-  turnId: null,
-  createdAt: requestAt,
-};
-const activities = Atom.make<ReadonlyArray<OrchestrationThreadActivity>>([question]);
+const requests = Atom.make<PendingThreadRequests>({
+  approvals: [],
+  userInputs: [
+    {
+      requestId: RuntimeRequestId.make("question"),
+      createdAt: requestAt,
+      questions: [
+        {
+          id: "choice",
+          header: "Choice",
+          question: "Which option?",
+          options: [{ label: "One", description: "First option" }],
+          multiSelect: false,
+        },
+      ],
+      responseCapability: "live",
+      dismissible: false,
+    },
+  ],
+});
 vi.mock("../state/threads", () => ({
-  environmentThreadDetails: { activitiesAtom: () => activities },
+  environmentThreadDetails: { pendingRequestsAtom: () => requests },
 }));
 let registry: AtomRegistry.AtomRegistry;
 let renderer: ReactTestRenderer;
@@ -127,29 +127,31 @@ it("acknowledges a plain native route only after its visible active Ticket assig
   state.route = scopeThreadRef(environmentId, id);
   state.active = false;
   state.ready = false;
-  shells.push({
-    environmentId,
-    id,
-    projectId: ProjectId.make("repo"),
-    title: "Question",
-    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
-    runtimeMode: "full-access",
-    interactionMode: "default",
-    branch: null,
-    worktreePath: null,
-    createdAt: requestAt,
-    updatedAt: requestAt,
-    latestTurn: null,
-    session: null,
-    pullRequests: [],
-    archivedAt: null,
-    settledOverride: null,
-    settledAt: null,
-    latestUserMessageAt: null,
-    hasPendingApprovals: false,
-    hasPendingUserInput: true,
-    hasActionableProposedPlan: false,
-  });
+  shells.push(
+    makeThreadFixture({
+      environmentId,
+      id,
+      projectId: ProjectId.make("repo"),
+      title: "Question",
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdAt: requestAt,
+      updatedAt: requestAt,
+      latestRun: null,
+      runtime: null,
+      pullRequests: [],
+      archivedAt: null,
+      settledOverride: null,
+      settledAt: null,
+      latestUserMessageAt: null,
+      hasPendingApprovals: false,
+      hasPendingUserInput: true,
+      hasActionableProposedPlan: false,
+    }),
+  );
   const key = scopedThreadKey(state.route);
   const page = () => (
     <RegistryContext.Provider value={registry}>

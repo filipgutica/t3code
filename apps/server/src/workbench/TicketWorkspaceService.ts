@@ -3,10 +3,12 @@ import { TicketWorkspaceHost } from "@t3tools/workbench/TicketWorkspaceHost";
 import { TicketWorkspaceServiceLive as serviceLayer } from "@t3tools/workbench/TicketWorkspaceService";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
 import { ServerConfig } from "../config.ts";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
+import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
 import {
   TicketWorkspacePullRequestResolver,
   TicketWorkspacePullRequestResolverLive,
@@ -18,7 +20,8 @@ export const ticketWorkspaceHostLayer = Layer.effect(
   TicketWorkspaceHost,
   Effect.gen(function* () {
     const git = yield* GitWorkflowService;
-    const projections = yield* ProjectionSnapshotQuery;
+    const projects = yield* ProjectStoreV2;
+    const threads = yield* ThreadManagementService;
     const pullRequestResolver = yield* TicketWorkspacePullRequestResolver;
     const { worktreesDir } = yield* ServerConfig;
     return TicketWorkspaceHost.of({
@@ -34,7 +37,7 @@ export const ticketWorkspaceHostLayer = Layer.effect(
       },
       projections: {
         getProjectShellById: (id) =>
-          projections.getProjectShellById(id).pipe(
+          projects.getShell(id).pipe(
             Effect.mapError(
               () =>
                 new WorkbenchOperationError({
@@ -44,7 +47,8 @@ export const ticketWorkspaceHostLayer = Layer.effect(
             ),
           ),
         getThreadShellById: (id) =>
-          projections.getThreadShellById(id).pipe(
+          threads.getThreadShell(id).pipe(
+            Effect.map(Option.fromNullishOr),
             Effect.mapError(
               () =>
                 new WorkbenchOperationError({

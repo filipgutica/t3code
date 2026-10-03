@@ -3,20 +3,22 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-  TurnId,
+  RunId,
+  RuntimeRequestId,
   WorkbenchTicketId,
-  type OrchestrationCommand,
-  type OrchestrationThreadShell,
+  type OrchestrationV2ServerCommand,
+  type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as DateTime from "effect/DateTime";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import { WorkbenchSnapshot } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { WorkbenchStore } from "./WorkbenchStore.ts";
-import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { OrchestratorV2 } from "../orchestration-v2/Orchestrator.ts";
+import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
 import { TestClock } from "effect/testing";
 import { layer, settleDoneTicketThreads } from "./TicketSettlement.ts";
 
@@ -34,37 +36,46 @@ const settleSnapshot = (
 const decodeSnapshot = Schema.decodeUnknownSync(WorkbenchSnapshot);
 
 const ticketId = WorkbenchTicketId.make("done-ticket");
+const at = DateTime.makeUnsafe;
 const makeThread = (
   id: string,
-  overrides: Partial<OrchestrationThreadShell> = {},
-): OrchestrationThreadShell => ({
+  overrides: Partial<OrchestrationV2ThreadShell> = {},
+): OrchestrationV2ThreadShell => ({
   id: ThreadId.make(id),
   projectId: ProjectId.make("project"),
   title: id,
+  providerInstanceId: ProviderInstanceId.make("codex"),
   modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
   runtimeMode: "full-access",
   interactionMode: "default",
   branch: null,
   worktreePath: null,
   pullRequests: [],
-  createdAt: "2026-08-01T00:00:00.000Z",
-  updatedAt: "2026-08-20T00:00:00.000Z",
+  createdBy: "user",
+  creationSource: "web",
+  lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: ThreadId.make(id) },
+  forkedFrom: null,
+  activeProviderThreadId: null,
+  latestRunId: RunId.make("run"),
+  activeRunId: null,
+  status: "completed",
+  latestRunRequestedAt: at("2026-08-20T00:00:00.000Z"),
+  latestRunStartedAt: at("2026-08-20T00:00:00.000Z"),
+  latestRunCompletedAt: at("2026-08-20T00:01:00.000Z"),
+  latestVisibleMessage: null,
+  pendingRuntimeRequest: null,
+  pendingBackgroundTasks: [],
+  providerInstanceHistory: [],
+  itemCount: 0,
+  visibleItemCount: 0,
+  createdAt: at("2026-08-01T00:00:00.000Z"),
+  updatedAt: at("2026-08-20T00:00:00.000Z"),
   archivedAt: null,
   settledOverride: null,
   settledAt: null,
-  session: null,
-  latestUserMessageAt: "2026-08-20T00:00:00.000Z",
-  hasPendingApprovals: false,
-  hasPendingUserInput: false,
+  deletedAt: null,
+  latestUserMessageAt: at("2026-08-20T00:00:00.000Z"),
   hasActionableProposedPlan: false,
-  latestTurn: {
-    turnId: TurnId.make("turn"),
-    state: "completed",
-    requestedAt: "2026-08-20T00:00:00.000Z",
-    startedAt: "2026-08-20T00:00:00.000Z",
-    completedAt: "2026-08-20T00:01:00.000Z",
-    assistantMessageId: null,
-  },
   ...overrides,
 });
 
@@ -72,7 +83,7 @@ describe("Done Ticket settlement", () => {
   it.effect("settles every completed active assignment from an existing Done Ticket", () =>
     Effect.gen(function* () {
       const threads = [makeThread("first"), makeThread("second")];
-      const commands: Array<OrchestrationCommand> = [];
+      const commands: Array<OrchestrationV2ServerCommand> = [];
       yield* settleSnapshot({
         tickets: [{ id: ticketId, status: "done", archivedAt: null }],
         assignments: threads.map((thread) => ({
@@ -82,14 +93,14 @@ describe("Done Ticket settlement", () => {
         })),
         snapshot: {
           snapshotSequence: 7,
-          projects: [],
+          schemaVersion: 1,
+          archivedThreads: [],
           threads,
-          updatedAt: "2026-08-20T00:01:00.000Z",
         },
         dispatch: (command) =>
           Effect.sync(() => {
             commands.push(command);
-            return { sequence: 8 };
+            return { sequence: 8, storedEvents: [] };
           }),
       });
       assert.deepEqual(
@@ -98,8 +109,8 @@ describe("Done Ticket settlement", () => {
       );
       for (const command of commands) {
         if (command.type !== "thread.auto-settle") throw new Error("Unexpected command");
-        assert.strictEqual(command.snapshotSequence, 7);
-        assert.strictEqual(command.settledAt, "2026-08-20T00:01:00.000Z");
+        assert.strictEqual(DateTime.formatIso(command.snapshotAt), "2026-08-20T00:00:00.000Z");
+        assert.strictEqual(DateTime.formatIso(command.settledAt!), "2026-08-20T00:01:00.000Z");
       }
     }),
   );
@@ -107,17 +118,35 @@ describe("Done Ticket settlement", () => {
     Effect.gen(function* () {
       const threads = [
         makeThread("pin", { settledOverride: "active" }),
+        makeThread("pinned", { pinnedAt: at("2026-08-20T00:00:00.000Z") }),
+        makeThread("background", {
+          pendingBackgroundTasks: [{ kind: "command", taskId: "build", description: "Build" }],
+        }),
         makeThread("settled", { settledOverride: "settled" }),
         makeThread("auto-settle-disabled", {
-          autoSettleDisabledAt: "2026-08-20T00:00:00.000Z",
+          autoSettleDisabledAt: at("2026-08-20T00:00:00.000Z"),
         }),
-        makeThread("pending", { hasPendingUserInput: true }),
-        makeThread("approval", { hasPendingApprovals: true }),
-        makeThread("archived", { archivedAt: "2026-08-21T00:00:00.000Z" }),
-        makeThread("unfinished", { latestTurn: null }),
+        makeThread("pending", {
+          pendingRuntimeRequest: {
+            id: RuntimeRequestId.make("input"),
+            kind: "user_input",
+            createdAt: at("2026-08-20T00:00:00.000Z"),
+          },
+        }),
+        makeThread("approval", {
+          pendingRuntimeRequest: {
+            id: RuntimeRequestId.make("approval"),
+            kind: "permission",
+            createdAt: at("2026-08-20T00:00:00.000Z"),
+          },
+        }),
+        makeThread("archived", { archivedAt: at("2026-08-21T00:00:00.000Z") }),
+        makeThread("unfinished", { latestRunCompletedAt: null }),
+        makeThread("plan", { hasActionableProposedPlan: true }),
+        makeThread("failed", { status: "failed" }),
         makeThread("superseded"),
       ];
-      const commands: Array<OrchestrationCommand> = [];
+      const commands: Array<OrchestrationV2ServerCommand> = [];
       yield* settleSnapshot({
         tickets: [{ id: ticketId, status: "done", archivedAt: null }],
         assignments: threads.map((thread) => ({
@@ -127,14 +156,14 @@ describe("Done Ticket settlement", () => {
         })),
         snapshot: {
           snapshotSequence: 7,
-          projects: [],
+          schemaVersion: 1,
+          archivedThreads: [],
           threads,
-          updatedAt: "2026-08-20T00:01:00.000Z",
         },
         dispatch: (command) =>
           Effect.sync(() => {
             commands.push(command);
-            return { sequence: 8 };
+            return { sequence: 8, storedEvents: [] };
           }),
       });
       assert.deepEqual(commands, []);
@@ -145,19 +174,19 @@ describe("Done Ticket settlement", () => {
     () =>
       Effect.gen(function* () {
         const thread = makeThread("status-change");
-        const commands: Array<OrchestrationCommand> = [];
+        const commands: Array<OrchestrationV2ServerCommand> = [];
         const input = {
           assignments: [{ ticketId, threadId: thread.id, supersededAt: null }],
           snapshot: {
             snapshotSequence: 7,
-            projects: [],
+            schemaVersion: 1,
+            archivedThreads: [],
             threads: [thread],
-            updatedAt: "2026-08-20T00:01:00.000Z",
           },
-          dispatch: (command: OrchestrationCommand) =>
+          dispatch: (command: OrchestrationV2ServerCommand) =>
             Effect.sync(() => {
               commands.push(command);
-              return { sequence: 8 };
+              return { sequence: 8, storedEvents: [] };
             }),
         };
         yield* settleSnapshot({
@@ -186,19 +215,11 @@ describe("Done Ticket settlement", () => {
       yield* TestClock.setTime(Date.parse("2026-08-20T00:02:00.000Z"));
       const threads = [
         makeThread("running", {
-          session: {
-            threadId: ThreadId.make("running"),
-            status: "running",
-            providerName: "codex",
-            runtimeMode: "full-access",
-            activeTurnId: TurnId.make("next"),
-            lastError: null,
-            updatedAt: "2026-08-20T00:01:00.000Z",
-          },
+          activityRunStatus: "running",
         }),
-        makeThread("queued", { latestUserMessageAt: "2026-08-20T00:02:00.000Z" }),
+        makeThread("queued", { latestUserMessageAt: at("2026-08-20T00:02:00.000Z") }),
       ];
-      const commands: Array<OrchestrationCommand> = [];
+      const commands: Array<OrchestrationV2ServerCommand> = [];
       yield* settleSnapshot({
         tickets: [{ id: ticketId, status: "done", archivedAt: null }],
         assignments: threads.map((thread) => ({
@@ -208,14 +229,14 @@ describe("Done Ticket settlement", () => {
         })),
         snapshot: {
           snapshotSequence: 7,
-          projects: [],
+          schemaVersion: 1,
+          archivedThreads: [],
           threads,
-          updatedAt: "2026-08-20T00:01:00.000Z",
         },
         dispatch: (command) =>
           Effect.sync(() => {
             commands.push(command);
-            return { sequence: 8 };
+            return { sequence: 8, storedEvents: [] };
           }),
       });
       assert.deepEqual(commands, []);
@@ -236,35 +257,35 @@ describe("Done Ticket settlement", () => {
             status: index === 0 ? "done" : "todo",
             blocked: false,
             archivedAt: null,
-            createdAt: thread.createdAt,
-            updatedAt: thread.updatedAt,
+            createdAt: DateTime.formatIso(thread.createdAt),
+            updatedAt: DateTime.formatIso(thread.updatedAt),
           })),
           assignments: threads.map((thread, index) => ({
             id: `assignment-${index}`,
             ticketId: `ticket-${index}`,
             threadId: thread.id,
-            createdAt: thread.createdAt,
+            createdAt: DateTime.formatIso(thread.createdAt),
             supersededAt: null,
           })),
         });
         const current = yield* Ref.make(snapshot);
-        const commands = yield* Queue.unbounded<OrchestrationCommand>();
+        const commands = yield* Queue.unbounded<OrchestrationV2ServerCommand>();
         const testLayer = layer.pipe(
           Layer.provide(
             Layer.mergeAll(
               Layer.mock(WorkbenchStore, { getSnapshot: Ref.get(current) }),
-              Layer.mock(ProjectionSnapshotQuery, {
+              Layer.mock(ThreadManagementService, {
                 getShellSnapshot: () =>
                   Effect.succeed({
                     snapshotSequence: 7,
-                    projects: [],
+                    schemaVersion: 1,
+                    archivedThreads: [],
                     threads,
-                    updatedAt: "2026-08-20T00:01:00.000Z",
                   }),
               }),
-              Layer.mock(OrchestrationEngineService, {
+              Layer.mock(OrchestratorV2, {
                 dispatch: (command) =>
-                  Queue.offer(commands, command).pipe(Effect.as({ sequence: 8 })),
+                  Queue.offer(commands, command).pipe(Effect.as({ sequence: 8, storedEvents: [] })),
               }),
             ),
           ),
@@ -295,20 +316,20 @@ describe("Done Ticket settlement", () => {
       const thread = makeThread("reopened");
       const tickets = [{ id: ticketId, status: "done" as const, archivedAt: null }];
       const assignments = [{ ticketId, threadId: thread.id, supersededAt: null }];
-      const commands: Array<OrchestrationCommand> = [];
+      const commands: Array<OrchestrationV2ServerCommand> = [];
       const input = {
         tickets,
         assignments,
         snapshot: {
           snapshotSequence: 7,
-          projects: [],
+          schemaVersion: 1,
+          archivedThreads: [],
           threads: [thread],
-          updatedAt: thread.updatedAt,
         },
-        dispatch: (command: OrchestrationCommand) =>
+        dispatch: (command: OrchestrationV2ServerCommand) =>
           Effect.sync(() => {
             commands.push(command);
-            return { sequence: 8 };
+            return { sequence: 8, storedEvents: [] };
           }),
       };
       yield* settleDoneTicketThreads({
@@ -322,7 +343,7 @@ describe("Done Ticket settlement", () => {
         ...input,
         readCurrentWorkbench: Effect.succeed({
           tickets,
-          assignments: [{ ...assignments[0]!, supersededAt: thread.updatedAt }],
+          assignments: [{ ...assignments[0]!, supersededAt: DateTime.formatIso(thread.updatedAt) }],
         }),
       });
       assert.deepEqual(commands, []);

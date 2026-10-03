@@ -71,7 +71,7 @@ import {
 } from "./WorkbenchTicketStatusMenu";
 
 import { resolveThreadStatusPill } from "../components/Sidebar.logic";
-import { PROVIDER_ICON_BY_PROVIDER } from "../components/chat/providerIconUtils";
+import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
 import { deriveProviderInstanceEntries } from "../providerInstances";
 import { serverEnvironment } from "../state/server";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
@@ -897,7 +897,7 @@ function WorkbenchTicketDetailController({
   const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
   const providerEntries = deriveProviderInstanceEntries(providers ?? []);
   const threadProviderKind = (thread: EnvironmentThreadShell | undefined) => {
-    const instanceId = thread?.session?.providerInstanceId ?? thread?.modelSelection.instanceId;
+    const instanceId = thread?.runtime?.providerInstanceId ?? thread?.modelSelection.instanceId;
     return providerEntries.find((entry) => entry.instanceId === instanceId)?.driverKind;
   };
   const {
@@ -1587,7 +1587,6 @@ function WorkbenchThreadOpenButton({
   readonly statusDotClassName: string | undefined;
   readonly title: string;
 }) {
-  const ThreadIcon = (providerKind && PROVIDER_ICON_BY_PROVIDER[providerKind]) || BotIcon;
   return (
     <div className="min-w-0 flex-1 basis-full">
       <button
@@ -1598,7 +1597,16 @@ function WorkbenchThreadOpenButton({
         type="button"
       >
         <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted">
-          <ThreadIcon aria-hidden className="size-3.5 text-muted-foreground" />
+          {providerKind ? (
+            <ProviderInstanceIcon
+              driverKind={providerKind}
+              displayName={providerKind}
+              iconClassName="size-3.5"
+              badgeContent="none"
+            />
+          ) : (
+            <BotIcon aria-hidden className="size-3.5 text-muted-foreground" />
+          )}
         </span>
         <span className="min-w-0 flex-1">
           <WorkbenchThreadTitle
@@ -4756,8 +4764,8 @@ function getWorkbenchActiveThreadRow({
         nativeLabel: resolveThreadStatusPill({
           thread: liveThread,
         })?.label,
-        sessionStatus: liveThread.session?.status,
-        turnState: liveThread.latestTurn?.state,
+        runtimeStatus: liveThread.runtime?.status,
+        runStatus: liveThread.latestRun?.status,
         settledOverride: liveThread.settledOverride,
         ticketStatus: ticket.status,
       })
@@ -4810,8 +4818,8 @@ function getWorkbenchHistoricalThreadRow({
         nativeLabel: resolveThreadStatusPill({
           thread: displayedHistoricalThread,
         })?.label,
-        sessionStatus: displayedHistoricalThread.session?.status,
-        turnState: displayedHistoricalThread.latestTurn?.state,
+        runtimeStatus: displayedHistoricalThread.runtime?.status,
+        runStatus: displayedHistoricalThread.latestRun?.status,
         settledOverride: displayedHistoricalThread.settledOverride,
         ticketStatus: ticket.status,
       })
@@ -5223,13 +5231,13 @@ function getWorkbenchDetailThread({
   const nativeStatus = nativeThread
     ? getWorkbenchAgentPresentation({
         nativeLabel: resolveThreadStatusPill({ thread: nativeThread })?.label,
-        sessionStatus: nativeThread.session?.status,
-        turnState: nativeThread.latestTurn?.state,
+        runtimeStatus: nativeThread.runtime?.status,
+        runStatus: nativeThread.latestRun?.status,
         settledOverride: nativeThread.settledOverride,
         ticketStatus: ticket.status,
       })
     : null;
-  const nativeThreadFailed = nativeThread?.session?.status === "error";
+  const nativeThreadFailed = nativeThread?.runtime?.status === "failed";
   const thread = getWorkbenchThreadPresentation(
     assignment !== undefined,
     nativeThread !== undefined,

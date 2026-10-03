@@ -67,6 +67,12 @@ export const setupHome = (input: string) => {
   );
   return home;
 };
+/** Prefer the migrated database; the legacy file remains the recovery source. */
+export const demoDatabasePath = (home: string): string => {
+  const migrated = NodePath.join(home, "userdata", "statev2.sqlite");
+  return NodeFS.existsSync(migrated) ? migrated : NodePath.join(home, "userdata", "state.sqlite");
+};
+
 export const readConfig = (home: string) =>
   NodeFS.existsSync(NodePath.join(home, "config.env"))
     ? NodeUtil.parseEnv(NodeFS.readFileSync(NodePath.join(home, "config.env"), "utf8"))

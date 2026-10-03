@@ -1,3 +1,4 @@
+import { makeThreadFixture } from "../test-fixtures";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import {
@@ -80,7 +81,7 @@ const snapshot: WorkbenchSnapshot = {
   ticketWorkspaces: [],
 };
 const shells: EnvironmentThreadShell[] = [
-  {
+  makeThreadFixture({
     id: threadId,
     environmentId,
     projectId,
@@ -92,8 +93,8 @@ const shells: EnvironmentThreadShell[] = [
     worktreePath: null,
     createdAt: timestamp,
     updatedAt: timestamp,
-    latestTurn: null,
-    session: null,
+    latestRun: null,
+    runtime: null,
     pullRequests: [],
     linkedPullRequest: reference,
     archivedAt: null,
@@ -103,7 +104,7 @@ const shells: EnvironmentThreadShell[] = [
     hasPendingApprovals: false,
     hasPendingUserInput: false,
     hasActionableProposedPlan: false,
-  },
+  }),
 ];
 vi.mock("@tanstack/react-router", () => ({
   useLocation: () => ({

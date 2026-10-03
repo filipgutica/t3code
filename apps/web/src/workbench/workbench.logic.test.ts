@@ -398,11 +398,11 @@ describe("Workbench ticket helpers", () => {
   });
 
   it("surfaces a sibling Thread needing input before another Thread's activity", () => {
-    const working = { nativeLabel: "Working", sessionStatus: "running", turnState: "running" };
+    const working = { nativeLabel: "Working", runtimeStatus: "running", runStatus: "running" };
     const blocked = {
       nativeLabel: "Awaiting Input",
-      sessionStatus: "ready",
-      turnState: "completed",
+      runtimeStatus: "ready",
+      runStatus: "completed",
     };
     expect(getWorkbenchTicketAgentPresentation([working, blocked])?.label).toBe(
       "Waiting for your answer",
@@ -659,14 +659,14 @@ describe("Workbench ticket helpers", () => {
 });
 
 describe("Workbench agent activity", () => {
-  const idle = { nativeLabel: null, sessionStatus: null, turnState: null };
+  const idle = { nativeLabel: null, runtimeStatus: null, runStatus: null };
   it("shows native settlement independently of the last turn", () => {
     expect(
-      getWorkbenchAgentPresentation({ ...idle, turnState: "completed", ticketStatus: "done" })
+      getWorkbenchAgentPresentation({ ...idle, runStatus: "completed", ticketStatus: "done" })
         ?.label,
     ).toBe("Completed");
     expect(
-      getWorkbenchAgentPresentation({ ...idle, turnState: "completed", settledOverride: "settled" })
+      getWorkbenchAgentPresentation({ ...idle, runStatus: "completed", settledOverride: "settled" })
         ?.label,
     ).toBe("Settled");
     expect(getWorkbenchAgentPresentation({ ...idle, settledOverride: "settled" })?.label).toBe(
@@ -675,7 +675,7 @@ describe("Workbench agent activity", () => {
     expect(
       getWorkbenchAgentPresentation({
         ...idle,
-        turnState: "interrupted",
+        runStatus: "interrupted",
         settledOverride: "settled",
       })?.label,
     ).toBe("Settled");
@@ -698,32 +698,32 @@ describe("Workbench agent activity", () => {
         ?.label,
     ).toBe("Working");
     expect(
-      getWorkbenchAgentPresentation({ ...idle, turnState: "error", ticketStatus: "done" })?.label,
+      getWorkbenchAgentPresentation({ ...idle, runStatus: "failed", ticketStatus: "done" })?.label,
     ).toBe("Waiting for input");
   });
   it("normalizes native activity independently of Ticket progress", () => {
     expect(getWorkbenchAgentPresentation(idle)).toBeNull();
     for (const nativeLabel of ["Working", "Connecting", "Monitoring"]) {
       expect(
-        getWorkbenchAgentPresentation({ ...idle, nativeLabel, turnState: "completed" })?.label,
+        getWorkbenchAgentPresentation({ ...idle, nativeLabel, runStatus: "completed" })?.label,
       ).toBe("Working");
     }
     for (const nativeLabel of ["Pending Approval", "Plan Ready"]) {
       expect(
-        getWorkbenchAgentPresentation({ ...idle, nativeLabel, sessionStatus: "running" })?.label,
+        getWorkbenchAgentPresentation({ ...idle, nativeLabel, runtimeStatus: "running" })?.label,
       ).toBe("Waiting for input");
     }
     expect(getWorkbenchAgentPresentation({ ...idle, nativeLabel: "Awaiting Input" })?.label).toBe(
       "Waiting for your answer",
     );
-    expect(getWorkbenchAgentPresentation({ ...idle, turnState: "completed" })?.label).toBe(
+    expect(getWorkbenchAgentPresentation({ ...idle, runStatus: "completed" })?.label).toBe(
       "Agent replied",
     );
-    expect(getWorkbenchAgentPresentation({ ...idle, turnState: "interrupted" })?.label).toBe(
+    expect(getWorkbenchAgentPresentation({ ...idle, runStatus: "interrupted" })?.label).toBe(
       "Waiting for input",
     );
     expect(
-      getWorkbenchAgentPresentation({ ...idle, sessionStatus: "error", turnState: "completed" })
+      getWorkbenchAgentPresentation({ ...idle, runtimeStatus: "failed", runStatus: "completed" })
         ?.label,
     ).toBe("Waiting for input");
   });

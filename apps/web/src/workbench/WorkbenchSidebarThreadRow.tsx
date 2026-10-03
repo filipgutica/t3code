@@ -231,6 +231,7 @@ function WorkbenchSidebarThreadPrBadge({
       <ThreadPullRequestBadgeControl
         render={<InlineButton />}
         badge={data.pullRequestBadge}
+        pullRequests={data.pullRequests}
         number={data.currentPullRequest?.number}
         url={data.currentPullRequest?.url}
         status={data.pullRequestIndicator}

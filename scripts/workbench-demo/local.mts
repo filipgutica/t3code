@@ -10,12 +10,20 @@ import { ProviderInstanceId } from "../../packages/contracts/src/providerInstanc
 import {
   DEFAULT_RUNTIME_MODE,
   DEFAULT_PROVIDER_INTERACTION_MODE,
-  ORCHESTRATION_WS_METHODS,
+} from "../../packages/contracts/src/providerPolicy.ts";
+import {
   ModelSelection as ModelSelectionSchema,
-  type OrchestrationShellSnapshot,
-  type ClientOrchestrationCommand,
   type ModelSelection,
-} from "../../packages/contracts/src/orchestration.ts";
+} from "../../packages/contracts/src/modelSelection.ts";
+import {
+  ORCHESTRATION_V2_WS_METHODS,
+  type OrchestrationV2ShellSnapshot,
+  type OrchestrationV2Command,
+} from "../../packages/contracts/src/orchestrationV2.ts";
+import {
+  ORCHESTRATION_PROTOCOL_QUERY_PARAM,
+  ORCHESTRATION_PROTOCOL_VERSION_TEXT,
+} from "../../packages/contracts/src/environment.ts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 import type {
   WorkbenchCreateAssignmentInput,
@@ -27,7 +35,7 @@ import {
   WorkbenchProjectId,
   WorkbenchTicketId,
 } from "../../packages/contracts/src/workbench.ts";
-import { WsRpcGroup } from "../../packages/contracts/src/rpc.ts";
+import { WS_METHODS, WsRpcGroup } from "../../packages/contracts/src/rpc.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Layer from "effect/Layer";
@@ -45,6 +53,8 @@ const FALLBACK_MODEL_SELECTION: ModelSelection = {
   model: DEFAULT_MODEL,
 };
 
+const decodeModelSelection = Schema.decodeUnknownPromise(ModelSelectionSchema);
+
 export const readDemoModelSelection = async (home: string): Promise<ModelSelection> => {
   const settingsPath = NodePath.join(home, "userdata", "settings.json");
   const text = await NodeFSP.readFile(settingsPath, "utf8").catch((error: unknown) => {
@@ -61,7 +71,7 @@ export const readDemoModelSelection = async (home: string): Promise<ModelSelecti
     settings.defaultModelSelection === undefined
   )
     return FALLBACK_MODEL_SELECTION;
-  return Schema.decodeUnknownPromise(ModelSelectionSchema)(settings.defaultModelSelection);
+  return decodeModelSelection(settings.defaultModelSelection);
 };
 
 export const LOCAL_DEMO_REPOSITORIES = [
@@ -592,6 +602,7 @@ const normalizeWsUrl = (value: string): string => {
   const url = new URL(value);
   if (url.protocol === "http:") url.protocol = "ws:";
   if (url.protocol === "https:") url.protocol = "wss:";
+  url.searchParams.set(ORCHESTRATION_PROTOCOL_QUERY_PARAM, ORCHESTRATION_PROTOCOL_VERSION_TEXT);
   return url.toString();
 };
 
@@ -658,13 +669,15 @@ export const runRpc = async <A, E>(
   );
 };
 
-export const dispatch = (client: LocalRpcClient, command: ClientOrchestrationCommand) =>
+export const dispatch = (client: LocalRpcClient, command: OrchestrationV2Command) =>
   Effect.gen(function* () {
-    const receipt = yield* client[ORCHESTRATION_WS_METHODS.dispatchCommand](command);
-    yield* client[ORCHESTRATION_WS_METHODS.subscribeShell]({
-      afterSequence: Math.max(0, receipt.sequence - 1),
+    const receipt = yield* client[ORCHESTRATION_V2_WS_METHODS.dispatchCommand](command);
+    yield* client[ORCHESTRATION_V2_WS_METHODS.subscribeShell]({
+      afterSequence: receipt.sequence,
+      requestCompletionMarker: true,
     }).pipe(
-      Stream.filter((item) => "sequence" in item && item.sequence >= receipt.sequence),
+      // The receipt is an application-event cursor. Some commands produce no shell delta.
+      Stream.filter((item) => item.kind === "synchronized"),
       Stream.take(1),
       Stream.runDrain,
     );
@@ -674,9 +687,9 @@ export const dispatch = (client: LocalRpcClient, command: ClientOrchestrationCom
 export const readShellSnapshot = async (
   wsUrl: string,
   token: string | undefined,
-): Promise<OrchestrationShellSnapshot> => {
+): Promise<OrchestrationV2ShellSnapshot> => {
   const items = await runRpc(wsUrl, token, (client) =>
-    client[ORCHESTRATION_WS_METHODS.subscribeShell]({
+    client[ORCHESTRATION_V2_WS_METHODS.subscribeShell]({
       requestCompletionMarker: true,
     }).pipe(Stream.take(1), Stream.runCollect),
   );
@@ -716,19 +729,18 @@ const seedWorkbench = async (
   for (const repository of LOCAL_DEMO_REPOSITORIES) {
     if (t3ProjectIds.has(ProjectId.make(repository.id))) continue;
     await runRpc(options.wsUrl, options.token, (client) =>
-      dispatch(client, {
+      client[WS_METHODS.projectsMutate]({
         type: "project.create",
         commandId: CommandId.make(`workbench-demo-project-${repository.id}`),
         projectId: ProjectId.make(repository.id),
         title: repository.title,
         workspaceRoot: NodePath.join(options.home, "projects", repository.id),
         createWorkspaceRootIfMissing: false,
-        createdAt: timestamp,
       }),
     );
   }
-  // Project creation is event-backed. Reading a fresh shell snapshot here is
-  // the completion receipt that makes linked Workbench project creation safe.
+  // Project mutations commit before returning. Refresh their canonical IDs before
+  // creating Workbench records that reference the native projects.
   await readShellSnapshot(options.wsUrl, options.token);
 
   const projectIds = new Set(existing.projects.map((project) => project.id));
@@ -869,7 +881,8 @@ const seedWorkbench = async (
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         branch,
         worktreePath,
-        createdAt: timestamp,
+        createdBy: "user",
+        creationSource: "server",
       }),
     );
   }

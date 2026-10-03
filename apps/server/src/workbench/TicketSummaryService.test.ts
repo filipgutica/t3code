@@ -13,7 +13,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { TextGeneration } from "../textGeneration/TextGeneration.ts";
 import { ticketSummaryHostLayer } from "./TicketSummaryService.ts";
@@ -53,8 +53,8 @@ describe("TicketSummaryHost", () => {
         Effect.provide(
           ticketSummaryHostLayer.pipe(
             Layer.provide(
-              Layer.mock(ProjectionSnapshotQuery)({
-                getProjectShellById: (id) =>
+              Layer.mock(ProjectStoreV2)({
+                getShell: (id) =>
                   Effect.succeed(
                     Option.some({
                       id,
@@ -124,8 +124,8 @@ describe("TicketSummaryHost", () => {
           Effect.provide(
             ticketSummaryHostLayer.pipe(
               Layer.provide(
-                Layer.mock(ProjectionSnapshotQuery)({
-                  getProjectShellById: (id) =>
+                Layer.mock(ProjectStoreV2)({
+                  getShell: (id) =>
                     Effect.succeed(
                       Option.some({
                         id,

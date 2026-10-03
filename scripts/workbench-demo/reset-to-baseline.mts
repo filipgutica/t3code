@@ -4,7 +4,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
 import { applyBaselineReset, planBaselineReset } from "./baseline.mts";
-import { readConfig, requireHome } from "./environment.mts";
+import { demoDatabasePath, readConfig, requireHome } from "./environment.mts";
 import { exportJiraAuth, importJiraAuth, type JiraAuthBundle } from "./jira-auth.mts";
 import { launchDemo } from "./launch.mts";
 import { stopDemo } from "./lifecycle.mts";
@@ -15,7 +15,7 @@ import { inspectGitHub } from "./remotes.mts";
 import { DEMO_REPOSITORIES } from "./repositories.mts";
 
 export const hasJiraConnection = (home: string) => {
-  const file = NodePath.join(home, "userdata", "state.sqlite");
+  const file = demoDatabasePath(home);
   if (!NodeFS.existsSync(file)) return false;
   const db = new NodeSqlite.DatabaseSync(file, { readOnly: true });
   try {

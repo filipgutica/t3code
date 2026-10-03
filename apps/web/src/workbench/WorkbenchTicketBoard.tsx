@@ -674,8 +674,8 @@ function useWorkbenchBoardData({
       const group = states.get(assignment.ticketId) ?? [];
       group.push({
         nativeLabel: resolveThreadStatusPill({ thread })?.label,
-        sessionStatus: thread.session?.status,
-        turnState: thread.latestTurn?.state,
+        runtimeStatus: thread.runtime?.status,
+        runStatus: thread.latestRun?.status,
         settledOverride: thread.settledOverride,
         ticketStatus: ticketsById.get(assignment.ticketId)?.status,
       });
@@ -769,7 +769,7 @@ function getWorkbenchBoardTicketPresentation({
       ? archivedThreadsById.get(assignment.threadId)
       : undefined;
   const nativeStatus = agentStatesByTicket.get(ticket.id) ?? null;
-  const nativeThreadFailed = nativeThread?.session?.status === "error";
+  const nativeThreadFailed = nativeThread?.runtime?.status === "failed";
   const thread = getWorkbenchThreadPresentation(
     assignment !== undefined,
     nativeThread !== undefined,

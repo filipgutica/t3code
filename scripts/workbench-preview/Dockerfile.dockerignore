@@ -27,6 +27,7 @@
 !oxlint-plugin-t3code/
 !oxlint-plugin-t3code/**
 **/node_modules
+**/.fallow
 **/dist
 **/dist-*
 **/.git

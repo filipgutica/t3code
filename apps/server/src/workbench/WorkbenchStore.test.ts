@@ -1,3 +1,4 @@
+import { seedNativeThread } from "./testing/nativeThreads.ts";
 import {
   ProjectId,
   ThreadId,
@@ -188,16 +189,13 @@ describe("WorkbenchStore", () => {
         createdAt,
       });
       for (const threadId of ["guard-thread-1", "guard-thread-2", "guard-thread-3"]) {
-        yield* sql`
-          INSERT INTO projection_threads (
-            thread_id, project_id, title, model_selection_json, runtime_mode,
-            interaction_mode, pending_approval_count, pending_user_input_count,
-            has_actionable_proposed_plan, created_at, updated_at, deleted_at
-          ) VALUES (
-            ${threadId}, ${projectId}, ${threadId}, '{}', 'full-access',
-            'default', 0, 0, 0, ${createdAt}, ${createdAt}, NULL
-          )
-        `;
+        yield* seedNativeThread({
+          threadId: threadId,
+          projectId: projectId,
+          title: threadId,
+          createdAt: createdAt,
+          deletedAt: null,
+        });
       }
       yield* store.createAssignment({
         id: WorkbenchAssignmentId.make("guard-assignment-1"),
@@ -305,16 +303,14 @@ describe("WorkbenchStore", () => {
           repositoryProjectIds: [projectId],
           createdAt,
         });
-        yield* sql`
-        INSERT INTO projection_threads (
-          thread_id, project_id, title, model_selection_json, runtime_mode,
-          interaction_mode, pending_approval_count, pending_user_input_count,
-          has_actionable_proposed_plan, worktree_path, created_at, updated_at, deleted_at
-        ) VALUES (
-          ${threadId}, ${projectId}, 'Unlink thread', '{}', 'full-access',
-          'default', 0, 0, 0, ${worktreePath}, ${createdAt}, ${createdAt}, NULL
-        )
-      `;
+        yield* seedNativeThread({
+          threadId: threadId,
+          projectId: projectId,
+          title: "Unlink thread",
+          createdAt: createdAt,
+          worktreePath: worktreePath,
+          deletedAt: null,
+        });
         yield* store.createAssignment({
           id: WorkbenchAssignmentId.make("unlink-assignment-1"),
           ticketId,
@@ -381,8 +377,8 @@ describe("WorkbenchStore", () => {
         yield* store.unlinkAssignment({ ticketId, threadId });
 
         yield* sql`
-        UPDATE projection_threads
-        SET archived_at = '2026-09-05T12:03:00.000Z'
+        UPDATE orchestration_v2_projection_threads
+        SET archived_at = '2026-09-05T12:03:00.000Z', payload_json = json_set(payload_json, '$.archivedAt', '2026-09-05T12:03:00.000Z')
         WHERE thread_id = ${threadId}
       `;
 
@@ -821,16 +817,13 @@ describe("WorkbenchStore", () => {
         attemptId: initialAttemptId,
         completedAt: createdAt,
       });
-      yield* sql`
-        INSERT INTO projection_threads (
-          thread_id, project_id, title, model_selection_json, runtime_mode,
-          interaction_mode, pending_approval_count, pending_user_input_count,
-          has_actionable_proposed_plan, created_at, updated_at, deleted_at
-        ) VALUES (
-          'scope-thread', ${primaryProjectId}, 'Scope thread', '{}',
-          'full-access', 'default', 0, 0, 0, ${createdAt}, ${createdAt}, NULL
-        )
-      `;
+      yield* seedNativeThread({
+        threadId: "scope-thread",
+        projectId: primaryProjectId,
+        title: "Scope thread",
+        createdAt: createdAt,
+        deletedAt: null,
+      });
       yield* store.createAssignment({
         id: WorkbenchAssignmentId.make("scope-assignment"),
         ticketId,
@@ -998,35 +991,13 @@ describe("WorkbenchStore", () => {
         blocked: false,
         updatedAt: "2026-09-03T12:01:00.000Z",
       });
-      yield* sql`
-        INSERT INTO projection_threads (
-          thread_id,
-          project_id,
-          title,
-          model_selection_json,
-          runtime_mode,
-          interaction_mode,
-          pending_approval_count,
-          pending_user_input_count,
-          has_actionable_proposed_plan,
-          created_at,
-          updated_at,
-          deleted_at
-        ) VALUES (
-          'thread-1',
-          ${secondaryProjectId},
-          'Create the first Ticket flow',
-          '{"provider":"codex","model":"gpt-5-codex"}',
-          'full-access',
-          'default',
-          0,
-          0,
-          0,
-          ${createdAt},
-          ${createdAt},
-          NULL
-        )
-      `;
+      yield* seedNativeThread({
+        threadId: "thread-1",
+        projectId: secondaryProjectId,
+        title: "Create the first Ticket flow",
+        createdAt: createdAt,
+        deletedAt: null,
+      });
       yield* store.createAssignment({
         id: WorkbenchAssignmentId.make("assignment-1"),
         ticketId,
@@ -1047,35 +1018,13 @@ describe("WorkbenchStore", () => {
         blocked: false,
         updatedAt: "2026-09-03T12:02:15.000Z",
       });
-      yield* sql`
-        INSERT INTO projection_threads (
-          thread_id,
-          project_id,
-          title,
-          model_selection_json,
-          runtime_mode,
-          interaction_mode,
-          pending_approval_count,
-          pending_user_input_count,
-          has_actionable_proposed_plan,
-          created_at,
-          updated_at,
-          deleted_at
-        ) VALUES (
-          'thread-2',
-          ${secondaryProjectId},
-          'Duplicate start attempt',
-          '{"provider":"codex","model":"gpt-5-codex"}',
-          'full-access',
-          'default',
-          0,
-          0,
-          0,
-          ${createdAt},
-          ${createdAt},
-          NULL
-        )
-      `;
+      yield* seedNativeThread({
+        threadId: "thread-2",
+        projectId: secondaryProjectId,
+        title: "Duplicate start attempt",
+        createdAt: createdAt,
+        deletedAt: null,
+      });
       yield* store.createAssignment({
         id: WorkbenchAssignmentId.make("assignment-2"),
         ticketId,
@@ -1090,35 +1039,13 @@ describe("WorkbenchStore", () => {
           createdAt: "2026-09-03T12:03:30.000Z",
         }),
       );
-      yield* sql`
-        INSERT INTO projection_threads (
-          thread_id,
-          project_id,
-          title,
-          model_selection_json,
-          runtime_mode,
-          interaction_mode,
-          pending_approval_count,
-          pending_user_input_count,
-          has_actionable_proposed_plan,
-          created_at,
-          updated_at,
-          deleted_at
-        ) VALUES (
-          'thread-3',
-          ${secondaryProjectId},
-          'Replacement Thread',
-          '{"provider":"codex","model":"gpt-5-codex"}',
-          'full-access',
-          'default',
-          0,
-          0,
-          0,
-          ${createdAt},
-          ${createdAt},
-          NULL
-        )
-      `;
+      yield* seedNativeThread({
+        threadId: "thread-3",
+        projectId: secondaryProjectId,
+        title: "Replacement Thread",
+        createdAt: createdAt,
+        deletedAt: null,
+      });
       yield* store.replaceAssignment({
         ticketId,
         previousThreadId: ThreadId.make("thread-1"),
@@ -1253,17 +1180,13 @@ describe("WorkbenchStore", () => {
         repositoryProjectIds: [primaryProjectId],
         createdAt,
       });
-      yield* sql`
-        INSERT INTO projection_threads (
-          thread_id, project_id, title, model_selection_json, runtime_mode,
-          interaction_mode, pending_approval_count, pending_user_input_count,
-          has_actionable_proposed_plan, created_at, updated_at, deleted_at
-        ) VALUES (
-          ${threadId}, ${primaryProjectId}, 'Race-safe Thread',
-          '{"provider":"codex","model":"gpt-5-codex"}', 'full-access',
-          'default', 0, 0, 0, ${createdAt}, ${createdAt}, NULL
-        )
-      `;
+      yield* seedNativeThread({
+        threadId: threadId,
+        projectId: primaryProjectId,
+        title: "Race-safe Thread",
+        createdAt: createdAt,
+        deletedAt: null,
+      });
 
       const [updateResult, assignmentResult] = yield* Effect.all(
         [
@@ -1616,17 +1539,13 @@ describe("WorkbenchStore", () => {
         repositoryProjectIds: [repositoryId],
         createdAt,
       });
-      yield* sql`
-        INSERT INTO projection_threads (
-          thread_id, project_id, title, model_selection_json, runtime_mode,
-          interaction_mode, pending_approval_count, pending_user_input_count,
-          has_actionable_proposed_plan, created_at, updated_at, deleted_at
-        ) VALUES (
-          ${threadId}, ${repositoryId}, 'Jira Todo',
-          '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default',
-          0, 0, 0, ${createdAt}, ${createdAt}, NULL
-        )
-      `;
+      yield* seedNativeThread({
+        threadId: threadId,
+        projectId: repositoryId,
+        title: "Jira Todo",
+        createdAt: createdAt,
+        deletedAt: null,
+      });
 
       yield* store.createAssignment({
         id: WorkbenchAssignmentId.make("jira-assignment"),
@@ -1671,17 +1590,13 @@ describe("WorkbenchStore", () => {
         repositoryProjectIds: [projectId],
         createdAt,
       });
-      yield* sql`
-        INSERT INTO projection_threads (
-          thread_id, project_id, title, model_selection_json, runtime_mode,
-          interaction_mode, pending_approval_count, pending_user_input_count,
-          has_actionable_proposed_plan, created_at, updated_at, deleted_at
-        ) VALUES (
-          ${threadId}, ${projectId}, 'Race release',
-          '{"provider":"codex","model":"gpt-5-codex"}', 'full-access', 'default',
-          0, 0, 0, ${createdAt}, ${createdAt}, NULL
-        )
-      `;
+      yield* seedNativeThread({
+        threadId: threadId,
+        projectId: projectId,
+        title: "Race release",
+        createdAt: createdAt,
+        deletedAt: null,
+      });
       yield* store.claimTicketWorkspace({
         ticketId,
         attemptId,
@@ -1766,16 +1681,13 @@ describe("WorkbenchStore", () => {
                 ${createdAt}, ${createdAt}, NULL
               )
             `;
-            yield* sql`
-              INSERT INTO projection_threads (
-                thread_id, project_id, title, model_selection_json, runtime_mode,
-                interaction_mode, pending_approval_count, pending_user_input_count,
-                has_actionable_proposed_plan, created_at, updated_at, deleted_at
-              ) VALUES (
-                ${threadId}, ${projectId}, 'Outer transaction', '{}', 'full-access',
-                'default', 0, 0, 0, ${createdAt}, ${createdAt}, NULL
-              )
-            `;
+            yield* seedNativeThread({
+              threadId: threadId,
+              projectId: projectId,
+              title: "Outer transaction",
+              createdAt: createdAt,
+              deletedAt: null,
+            });
             yield* store.createProject({
               id: workspaceId,
               title: "Outer Transaction Workspace",
@@ -1811,7 +1723,7 @@ describe("WorkbenchStore", () => {
       `;
       const nativeThreads = yield* sql<{ readonly count: number }>`
         SELECT COUNT(*) AS count
-        FROM projection_threads
+        FROM orchestration_v2_projection_threads
         WHERE thread_id = ${threadId}
       `;
       const workbenchProjects = yield* sql<{ readonly count: number }>`
@@ -1876,17 +1788,20 @@ describe("WorkbenchStore", () => {
         primaryT3ProjectId: projectId,
         createdAt,
       });
-      yield* sql`
-        INSERT INTO projection_threads (
-          thread_id, project_id, title, model_selection_json, runtime_mode,
-          interaction_mode, pending_approval_count, pending_user_input_count,
-          has_actionable_proposed_plan, created_at, updated_at, deleted_at
-        ) VALUES
-          ('deleted-assignment-thread', ${projectId}, 'Deleted', '{}', 'full-access',
-            'default', 0, 0, 0, ${createdAt}, ${createdAt}, ${createdAt}),
-          ('live-assignment-thread', ${projectId}, 'Live', '{}', 'full-access',
-            'default', 0, 0, 0, ${createdAt}, ${createdAt}, NULL)
-      `;
+      yield* seedNativeThread({
+        threadId: "deleted-assignment-thread",
+        projectId: projectId,
+        title: "Deleted",
+        createdAt: createdAt,
+        deletedAt: createdAt,
+      });
+      yield* seedNativeThread({
+        threadId: "live-assignment-thread",
+        projectId: projectId,
+        title: "Live",
+        createdAt: createdAt,
+        deletedAt: null,
+      });
       yield* sql`
         INSERT INTO workbench_assignments (
           assignment_id, ticket_id, thread_id, created_at, superseded_at
@@ -2009,16 +1924,13 @@ describe("WorkbenchStore", () => {
         updatedAt: restoredAt,
       });
 
-      yield* sql`
-        INSERT INTO projection_threads (
-          thread_id, project_id, title, model_selection_json, runtime_mode,
-          interaction_mode, pending_approval_count, pending_user_input_count,
-          has_actionable_proposed_plan, created_at, updated_at, deleted_at
-        ) VALUES (
-          'ticket-lifecycle-thread', ${projectId}, 'Lifecycle thread', '{}',
-          'full-access', 'default', 0, 0, 0, ${createdAt}, ${createdAt}, NULL
-        )
-      `;
+      yield* seedNativeThread({
+        threadId: "ticket-lifecycle-thread",
+        projectId: projectId,
+        title: "Lifecycle thread",
+        createdAt: createdAt,
+        deletedAt: null,
+      });
       yield* store.createAssignment({
         id: WorkbenchAssignmentId.make("ticket-lifecycle-assignment"),
         ticketId: localTicketId,
@@ -2111,7 +2023,7 @@ describe("WorkbenchStore", () => {
       );
       const nativeRows = yield* sql<{ readonly count: number }>`
         SELECT COUNT(*) AS count
-        FROM projection_threads
+        FROM orchestration_v2_projection_threads
         WHERE thread_id = 'ticket-lifecycle-thread'
       `;
       const worktreeRows = yield* sql<{ readonly count: number }>`

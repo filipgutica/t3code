@@ -6,8 +6,10 @@ import { CommandId, ProjectId, ThreadId } from "../../packages/contracts/src/bas
 import {
   DEFAULT_RUNTIME_MODE,
   DEFAULT_PROVIDER_INTERACTION_MODE,
-  type ModelSelection,
-} from "../../packages/contracts/src/orchestration.ts";
+} from "../../packages/contracts/src/providerPolicy.ts";
+import type { ModelSelection } from "../../packages/contracts/src/modelSelection.ts";
+import { demoDatabasePath } from "./environment.mts";
+import { insertVisualMessage, readVisualThread, seedVisualRun } from "./native-projections.mts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 import {
   WorkbenchAssignmentId,
@@ -173,7 +175,7 @@ export const seedAttentionRecords = async ({
             : "Synthetic attention fixture. Thread outcomes and linked PR inspections are simulated. No provider ran. GitHub writes, including reruns, are refused by the demo adapter.",
       }),
     );
-    const createThread = async (id: ThreadId, createdAt: string) => {
+    const createThread = async (id: ThreadId) => {
       await runRpc(wsUrl, token, (client) =>
         dispatch(client, {
           type: "thread.create",
@@ -186,7 +188,8 @@ export const seedAttentionRecords = async ({
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
           branch: null,
           worktreePath: null,
-          createdAt,
+          createdBy: "user",
+          creationSource: "server",
         }),
       );
       await runRpc(wsUrl, token, (client) =>
@@ -198,7 +201,7 @@ export const seedAttentionRecords = async ({
         }),
       );
     };
-    await createThread(threadId, timestamp);
+    await createThread(threadId);
     await runRpc(wsUrl, token, (client) =>
       client[WORKBENCH_WS_METHODS.workbenchCreateAssignment]({
         id: WorkbenchAssignmentId.make(threadId + "-assignment"),
@@ -223,7 +226,7 @@ export const seedAttentionRecords = async ({
     if (fixture.id === "feedback") {
       const sharedThreadId = ThreadId.make(threadId + "-shared-pr");
       const later = new Date(Date.parse(timestamp) + 1000).toISOString();
-      await createThread(sharedThreadId, later);
+      await createThread(sharedThreadId);
       await runRpc(wsUrl, token, (client) =>
         client[WORKBENCH_WS_METHODS.workbenchCreateAssignment]({
           id: WorkbenchAssignmentId.make(sharedThreadId + "-assignment"),
@@ -250,7 +253,7 @@ export const seedAttentionRecords = async ({
         );
       const apiThreadId = ThreadId.make(threadId + "-api");
       const apiCreatedAt = new Date(Date.parse(timestamp) + 2000).toISOString();
-      await createThread(apiThreadId, apiCreatedAt);
+      await createThread(apiThreadId);
       await runRpc(wsUrl, token, (client) =>
         client[WORKBENCH_WS_METHODS.workbenchCreateAssignment]({
           id: WorkbenchAssignmentId.make(apiThreadId + "-assignment"),
@@ -283,7 +286,7 @@ export const seedAttentionRecords = async ({
     if (fixture.id === "superseded" || fixture.id === "multiple") {
       const nextThreadId = ThreadId.make(threadId + "-newest-clean");
       const later = new Date(Date.parse(timestamp) + 1000).toISOString();
-      await createThread(nextThreadId, later);
+      await createThread(nextThreadId);
       if (fixture.id === "superseded")
         await runRpc(wsUrl, token, (client) =>
           client[WORKBENCH_WS_METHODS.workbenchReplaceAssignment]({
@@ -338,21 +341,13 @@ const seedAttentionFixtureTurn = ({
   threadId: string;
   timestamp: string;
 }) => {
-  const turn = threadId + "-turn";
-  db.prepare(
-    "INSERT INTO projection_turns (thread_id, turn_id, state, requested_at, started_at, completed_at, checkpoint_files_json) VALUES (?, ?, ?, ?, ?, ?, '[]')",
-  ).run(
+  seedVisualRun({
+    db,
     threadId,
-    turn,
-    "state" in fixture ? fixture.state : "interrupted",
+    runId: threadId + "-turn",
+    status: "state" in fixture ? fixture.state : "interrupted",
     timestamp,
-    timestamp,
-    timestamp,
-  );
-  db.prepare("UPDATE projection_threads SET latest_turn_id = ? WHERE thread_id = ?").run(
-    turn,
-    threadId,
-  );
+  });
 };
 
 const seedAttentionFixtureOutcome = ({
@@ -365,30 +360,28 @@ const seedAttentionFixtureOutcome = ({
   timestamp: string;
 }) => {
   const id = prefix + fixture.id;
-  if (!db.prepare("SELECT thread_id FROM projection_threads WHERE thread_id = ?").get(id))
-    throw new Error("Synthetic attention native Thread is missing: " + id);
+  readVisualThread({ db, threadId: id });
   for (const threadId of attentionNotificationThreadIds(fixture))
     seedAttentionFixtureTurn({ db, fixture, threadId, timestamp });
-  db.prepare(
-    "INSERT INTO projection_thread_messages (message_id, thread_id, role, text, is_streaming, created_at, updated_at) VALUES (?, ?, 'assistant', ?, 0, ?, ?)",
-  ).run(
-    id + "-label",
-    id,
-    "[Synthetic attention fixture] No provider ran. Turn outcomes and PR inspections are simulated; rerun requests are refused. See the fixture guide." +
+  insertVisualMessage({
+    db,
+    messageId: id + "-label",
+    threadId: id,
+    role: "assistant",
+    text:
+      "[Synthetic attention fixture] No provider ran. Turn outcomes and PR inspections are simulated; rerun requests are refused. See the fixture guide." +
       attentionFixtureContext(fixture),
     timestamp,
-    timestamp,
-  );
+  });
   if (fixture.id === "feedback")
-    db.prepare(
-      "INSERT INTO projection_thread_messages (message_id, thread_id, role, text, is_streaming, created_at, updated_at) VALUES (?, ?, 'assistant', ?, 0, ?, ?)",
-    ).run(
-      id + "-shared-pr-label",
-      id + "-shared-pr",
-      "[Synthetic attention fixture] No provider ran. [Synthetic waiting question] Should an empty invitation response preserve the entered address and offer a retry? Confirm the intended recovery before continuing.",
+    insertVisualMessage({
+      db,
+      messageId: id + "-shared-pr-label",
+      threadId: id + "-shared-pr",
+      role: "assistant",
+      text: "[Synthetic attention fixture] No provider ran. [Synthetic waiting question] Should an empty invitation response preserve the entered address and offer a retry? Confirm the intended recovery before continuing.",
       timestamp,
-      timestamp,
-    );
+    });
 };
 
 /** Projection-only outcomes, called after the seeding server has exited. Never an event history. */
@@ -418,7 +411,7 @@ export const seedAttentionOutcomes = async (home: string) => {
     }
     if (active) throw new Error("Stop the demo server before seeding synthetic outcomes.");
   }
-  const db = new NodeSqlite.DatabaseSync(NodePath.join(home, "userdata", "state.sqlite"));
+  const db = new NodeSqlite.DatabaseSync(demoDatabasePath(home));
   const timestamp = new Date().toISOString();
   try {
     db.exec("BEGIN IMMEDIATE");

@@ -1,28 +1,49 @@
 import {
   CommandId,
-  CorrelationId,
   EventId,
-  type OrchestrationCommand,
-  type OrchestrationEvent,
+  type OrchestrationV2DomainEvent,
+  type OrchestrationV2StoredEvent,
   type WorkbenchSnapshot,
   WorkbenchProjectId,
   WorkbenchAssignmentId,
   ProjectId,
   WorkbenchTicketId,
   ThreadId,
-  TurnId,
+  RunId,
+  NodeId,
+  MessageId,
+  ProviderInstanceId,
+  OrchestrationV2ThreadShell,
   WorkbenchOperationError,
   WorkbenchJiraOperationError,
 } from "@t3tools/contracts";
 import { it as effectIt } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
+import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import { describe, expect } from "vite-plus/test";
 
-import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
+import { OrchestratorV2 } from "../orchestration-v2/Orchestrator.ts";
+import { EventSinkV2, layer as eventSinkLayer } from "../orchestration-v2/EventSink.ts";
+import { layer as eventStoreLayer } from "../orchestration-v2/EventStore.ts";
+import {
+  ProjectionStoreV2,
+  layer as projectionLayer,
+} from "../orchestration-v2/ProjectionStore.ts";
+import {
+  CommandReceiptStoreV2,
+  layer as receiptsLayer,
+} from "../orchestration-v2/CommandReceiptStore.ts";
+import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import { ServerActivation } from "../serverActivation.ts";
+import { layer as runtimeLayer } from "./OrchestrationReactor.ts";
+import { seedNativeThread } from "./testing/nativeThreads.ts";
 import { WorkbenchJiraService } from "./jira/WorkbenchJiraService.ts";
 import { WorkbenchStore } from "./WorkbenchStore.ts";
 import { TicketExecutionReactor, layer } from "./TicketExecutionReactor.ts";
@@ -30,36 +51,80 @@ import { TicketExecutionReactor, layer } from "./TicketExecutionReactor.ts";
 const THREAD_ID = ThreadId.make("execution-reactor-thread");
 const TICKET_ID = WorkbenchTicketId.make("execution-reactor-ticket");
 const PROJECT_ID = WorkbenchProjectId.make("execution-reactor-project");
-const TURN_ONE = TurnId.make("execution-reactor-turn-1");
-const TURN_TWO = TurnId.make("execution-reactor-turn-2");
+const RUN_ONE = RunId.make("execution-reactor-turn-1");
+const RUN_TWO = RunId.make("execution-reactor-turn-2");
 const NOW = "2026-09-08T10:00:00.000Z";
 
-const sessionEvent = (
+const rootShell = Schema.decodeUnknownSync(OrchestrationV2ThreadShell)({
+  id: THREAD_ID,
+  projectId: "t3-project",
+  title: "Execution",
+  providerInstanceId: "codex",
+  modelSelection: { instanceId: "codex", model: "default" },
+  runtimeMode: "full-access",
+  interactionMode: "default",
+  branch: null,
+  worktreePath: null,
+  lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: THREAD_ID },
+  forkedFrom: null,
+  activeProviderThreadId: null,
+  latestRunId: null,
+  activeRunId: null,
+  status: "idle",
+  pendingRuntimeRequest: null,
+  latestVisibleMessage: null,
+  latestUserMessageAt: null,
+  hasActionableProposedPlan: false,
+  itemCount: 0,
+  visibleItemCount: 0,
+  createdAt: DateTime.makeUnsafe(NOW),
+  updatedAt: DateTime.makeUnsafe(NOW),
+  archivedAt: null,
+  settledOverride: null,
+  settledAt: null,
+  deletedAt: null,
+  createdBy: "user",
+  creationSource: "web",
+});
+
+const runEvent = (
   sequence: number,
-  turnId: TurnId,
-): Extract<OrchestrationEvent, { type: "thread.session-set" }> => ({
+  runId: RunId,
+): OrchestrationV2StoredEvent & {
+  event: Extract<OrchestrationV2DomainEvent, { type: "run.updated" }>;
+} => ({
   sequence,
-  eventId: EventId.make(`execution-reactor-event-${sequence}`),
-  aggregateKind: "thread",
-  aggregateId: THREAD_ID,
-  type: "thread.session-set",
-  occurredAt: NOW,
   commandId: CommandId.make(`execution-reactor-command-${sequence}`),
-  causationEventId: null,
-  correlationId: CorrelationId.make(`execution-reactor-command-${sequence}`),
-  metadata: {},
-  payload: {
+  event: {
+    id: EventId.make(`execution-reactor-event-${sequence}`),
     threadId: THREAD_ID,
-    session: {
+    type: "run.updated",
+    occurredAt: DateTime.makeUnsafe(NOW),
+    payload: {
+      id: runId,
       threadId: THREAD_ID,
+      ordinal: runId === RUN_ONE ? 1 : 2,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "default" },
+      providerThreadId: null,
+      userMessageId: MessageId.make(`user-${runId}`),
+      rootNodeId: NodeId.make(`root-${runId}`),
+      activeAttemptId: null,
       status: "running",
-      providerName: "test",
-      runtimeMode: "full-access",
-      activeTurnId: turnId,
-      lastError: null,
-      updatedAt: NOW,
+      requestedAt: DateTime.makeUnsafe(NOW),
+      startedAt: DateTime.makeUnsafe(NOW),
+      completedAt: null,
+      checkpointId: null,
+      contextHandoffId: null,
     },
   },
+});
+
+const shellSnapshot = Effect.succeed({
+  schemaVersion: 1,
+  snapshotSequence: 0,
+  threads: [rootShell],
+  archivedThreads: [],
 });
 
 const snapshot: WorkbenchSnapshot = {
@@ -97,16 +162,114 @@ const snapshot: WorkbenchSnapshot = {
   ticketWorkspaces: [],
 };
 
+const committedFailure = ({
+  commandId,
+  threadId,
+  commandType,
+  acceptedAt,
+}: Parameters<EventSinkV2["Service"]["commitCommand"]>[0]) => ({
+  receipt: {
+    commandId,
+    threadId,
+    commandType,
+    acceptedAt,
+    resultSequence: 0,
+    status: "accepted" as const,
+    error: null,
+  },
+  storedEvents: [],
+  committed: true,
+  cancelledEffectCount: 0,
+});
+
 const emptyJira = {
   startTicketExecution: () => Effect.die("unexpected Jira execution"),
 } satisfies Partial<WorkbenchJiraService["Service"]>;
 
 describe("TicketExecutionReactor", () => {
+  effectIt.effect("catches activation events and preserves a native failure item on replay", () =>
+    Effect.gen(function* () {
+      const starts = yield* Ref.make(0);
+      const stores = Layer.mergeAll(eventStoreLayer, projectionLayer, receiptsLayer).pipe(
+        Layer.provideMerge(SqlitePersistenceMemory),
+      );
+      const persistence = eventSinkLayer.pipe(Layer.provideMerge(stores));
+      const execution = layer.pipe(
+        Layer.provide(
+          Layer.mock(WorkbenchStore)({
+            getSnapshot: Effect.succeed(snapshot),
+            startTicketExecution: () =>
+              Ref.updateAndGet(starts, (count) => count + 1).pipe(
+                Effect.flatMap((count) =>
+                  Effect.fail(
+                    new WorkbenchOperationError({
+                      code: "persistence_failed",
+                      message: `transition failure ${count}`,
+                    }),
+                  ),
+                ),
+              ),
+          }),
+        ),
+        Layer.provide(Layer.mock(WorkbenchJiraService)(emptyJira)),
+        Layer.provide(
+          Layer.mock(OrchestratorV2)({
+            getShellSnapshot: () => shellSnapshot,
+            getThreadShell: () => Effect.succeed(rootShell),
+          }),
+        ),
+      );
+      const runtime = runtimeLayer.pipe(Layer.provideMerge(execution));
+      yield* Effect.gen(function* () {
+        const sink = yield* EventSinkV2;
+        const projections = yield* ProjectionStoreV2;
+        const receipts = yield* CommandReceiptStoreV2;
+        yield* seedNativeThread({
+          threadId: THREAD_ID,
+          projectId: "t3-project",
+          createdAt: NOW,
+        });
+        const activation = yield* Deferred.make<void>();
+        yield* Effect.gen(function* () {
+          const reactor = yield* TicketExecutionReactor;
+          // The native run starts after layer construction while the overlay is parked.
+          const stored = yield* sink.write({ events: [runEvent(1, RUN_ONE).event] });
+          expect(yield* Ref.get(starts)).toBe(0);
+          yield* Deferred.succeed(activation, undefined);
+          yield* reactor.drainThrough(stored[0]!.sequence);
+        }).pipe(
+          Effect.provide(runtime),
+          Effect.provideService(ServerActivation, Deferred.await(activation)),
+          Effect.scoped,
+        );
+        const original = (yield* projections.getThreadProjection(THREAD_ID)).turnItems;
+        expect(original).toHaveLength(1);
+        expect(original[0]?.type).toBe("error");
+        if (original[0]?.type === "error") {
+          expect(original[0].failure.message).toContain("transition failure 1");
+          expect(original[0].runId).toBe(RUN_ONE);
+        }
+        const commandId = CommandId.make(`workbench:ticket-execution-failed:${RUN_ONE}`);
+        const originalReceipt = yield* receipts.getByCommandId(commandId);
+        expect(Option.isSome(originalReceipt)).toBe(true);
+        // A restarted subscriber replays the same run with a different failure.
+        yield* Effect.gen(function* () {
+          const reactor = yield* TicketExecutionReactor;
+          yield* reactor.drainThrough(1);
+        }).pipe(Effect.provide(runtime), Effect.scoped);
+        expect(yield* Ref.get(starts)).toBe(2);
+        expect((yield* projections.getThreadProjection(THREAD_ID)).turnItems).toEqual(original);
+        expect(yield* receipts.getByCommandId(commandId)).toEqual(originalReceipt);
+        expect(yield* sink.readByCommandId({ commandId }).pipe(Stream.runCollect)).toHaveLength(1);
+      }).pipe(Effect.provide(persistence), Effect.scoped);
+    }),
+  );
+
   effectIt.effect(
     "ignores events without active execution and tickets outside active todo work",
     () =>
       Effect.gen(function* () {
-        const running = sessionEvent(1, TURN_ONE);
+        const running = runEvent(1, RUN_ONE);
         const ticket = snapshot.tickets[0]!;
         const assignment = snapshot.assignments[0]!;
         const cases = [
@@ -114,9 +277,9 @@ describe("TicketExecutionReactor", () => {
             snapshot,
             event: {
               ...running,
-              payload: {
-                ...running.payload,
-                session: { ...running.payload.session, status: "starting" as const },
+              event: {
+                ...running.event,
+                payload: { ...running.event.payload, status: "starting" as const },
               },
             },
           },
@@ -124,9 +287,9 @@ describe("TicketExecutionReactor", () => {
             snapshot,
             event: {
               ...running,
-              payload: {
-                ...running.payload,
-                session: { ...running.payload.session, status: "ready" as const },
+              event: {
+                ...running.event,
+                payload: { ...running.event.payload, status: "queued" as const },
               },
             },
           },
@@ -134,12 +297,14 @@ describe("TicketExecutionReactor", () => {
             snapshot,
             event: {
               ...running,
-              payload: {
-                ...running.payload,
-                session: { ...running.payload.session, activeTurnId: null },
-              },
+              event: { ...running.event, payload: { ...running.event.payload, startedAt: null } },
             },
           },
+          {
+            snapshot,
+            event: { ...running, event: { ...running.event, nodeId: NodeId.make("child-node") } },
+          },
+          { snapshot, event: running, child: true },
           { snapshot: { ...snapshot, assignments: [] }, event: running },
           {
             snapshot: { ...snapshot, assignments: [{ ...assignment, supersededAt: NOW }] },
@@ -156,13 +321,13 @@ describe("TicketExecutionReactor", () => {
           },
         ];
         for (const testCase of cases) {
-          const events = yield* PubSub.unbounded<OrchestrationEvent>();
+          const events = yield* Queue.unbounded<OrchestrationV2StoredEvent>();
           const starts = yield* Ref.make(0);
           const warnings = yield* Ref.make(0);
           yield* Effect.gen(function* () {
             const reactor = yield* TicketExecutionReactor;
             yield* reactor.start();
-            yield* PubSub.publish(events, testCase.event);
+            yield* Queue.offer(events, testCase.event);
             yield* reactor.drainThrough(1);
             expect(yield* Ref.get(starts)).toBe(0);
             expect(yield* Ref.get(warnings)).toBe(0);
@@ -178,13 +343,29 @@ describe("TicketExecutionReactor", () => {
                 ),
                 Layer.provide(Layer.mock(WorkbenchJiraService)(emptyJira)),
                 Layer.provide(
-                  Layer.mock(OrchestrationEngineService)({
-                    latestSequence: Effect.succeed(0),
-                    subscribeDomainEvents: PubSub.subscribe(events).pipe(
-                      Effect.map(Stream.fromSubscription),
-                    ),
-                    dispatch: () =>
-                      Ref.update(warnings, (n) => n + 1).pipe(Effect.as({ sequence: 2 })),
+                  Layer.mock(EventSinkV2)({
+                    stream: () => Stream.fromQueue(events),
+                    commitCommand: (input) =>
+                      Ref.update(warnings, (n) => n + 1).pipe(Effect.as(committedFailure(input))),
+                  }),
+                ),
+                Layer.provide(
+                  Layer.mock(OrchestratorV2)({
+                    getShellSnapshot: () => shellSnapshot,
+                    getThreadShell: () =>
+                      Effect.succeed(
+                        "child" in testCase
+                          ? {
+                              ...rootShell,
+                              lineage: {
+                                ...rootShell.lineage,
+                                parentThreadId: ThreadId.make("parent"),
+                                relationshipToParent: "subagent" as const,
+                              },
+                            }
+                          : rootShell,
+                      ),
+                    streamStoredEventsFrom: () => Stream.fromQueue(events),
                   }),
                 ),
               ),
@@ -197,12 +378,12 @@ describe("TicketExecutionReactor", () => {
 
   effectIt.effect("uses persisted Jira ownership instead of guessing from the ticket ID", () =>
     Effect.gen(function* () {
-      const events = yield* PubSub.unbounded<OrchestrationEvent>();
+      const events = yield* Queue.unbounded<OrchestrationV2StoredEvent>();
       const transitioned = yield* Ref.make<ReadonlyArray<string>>([]);
       yield* Effect.gen(function* () {
         const reactor = yield* TicketExecutionReactor;
         yield* reactor.start();
-        yield* PubSub.publish(events, sessionEvent(1, TURN_ONE));
+        yield* Queue.offer(events, runEvent(1, RUN_ONE));
         yield* reactor.drainThrough(1);
         expect(yield* Ref.get(transitioned)).toEqual([TICKET_ID]);
       }).pipe(
@@ -236,12 +417,16 @@ describe("TicketExecutionReactor", () => {
               }),
             ),
             Layer.provide(
-              Layer.mock(OrchestrationEngineService)({
-                latestSequence: Effect.succeed(0),
-                subscribeDomainEvents: PubSub.subscribe(events).pipe(
-                  Effect.map(Stream.fromSubscription),
-                ),
-                dispatch: () => Effect.succeed({ sequence: 2 }),
+              Layer.mock(EventSinkV2)({
+                stream: () => Stream.fromQueue(events),
+                commitCommand: (input) => Effect.succeed(committedFailure(input)),
+              }),
+            ),
+            Layer.provide(
+              Layer.mock(OrchestratorV2)({
+                getShellSnapshot: () => shellSnapshot,
+                getThreadShell: () => Effect.succeed(rootShell),
+                streamStoredEventsFrom: () => Stream.fromQueue(events),
               }),
             ),
           ),
@@ -253,9 +438,9 @@ describe("TicketExecutionReactor", () => {
 
   effectIt.effect("reports a failed transition and retries on the next turn", () =>
     Effect.gen(function* () {
-      const domainEvents = yield* PubSub.unbounded<OrchestrationEvent>();
+      const domainEvents = yield* Queue.unbounded<OrchestrationV2StoredEvent>();
       const starts = yield* Ref.make(0);
-      const commands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
+      const recorded = yield* Ref.make<ReadonlyArray<OrchestrationV2DomainEvent>>([]);
       const workbench = {
         getSnapshot: Effect.succeed(snapshot),
         startTicketExecution: () =>
@@ -271,41 +456,46 @@ describe("TicketExecutionReactor", () => {
           }),
       } satisfies Partial<WorkbenchStore["Service"]>;
       const engine = {
-        latestSequence: Effect.succeed(0),
-        subscribeDomainEvents: PubSub.subscribe(domainEvents).pipe(
-          Effect.map(Stream.fromSubscription),
-        ),
-        dispatch: (command: OrchestrationCommand) =>
-          Ref.update(commands, (recorded) => [...recorded, command]).pipe(
-            Effect.as({ sequence: 100 }),
-          ),
-      } satisfies Partial<OrchestrationEngineService["Service"]>;
+        getShellSnapshot: () => shellSnapshot,
+        getThreadShell: () => Effect.succeed(rootShell),
+        streamStoredEventsFrom: () => Stream.fromQueue(domainEvents),
+      } satisfies Partial<OrchestratorV2["Service"]>;
       const testLayer = layer.pipe(
         Layer.provide(Layer.mock(WorkbenchStore)(workbench)),
         Layer.provide(Layer.mock(WorkbenchJiraService)(emptyJira)),
-        Layer.provide(Layer.mock(OrchestrationEngineService)(engine)),
+        Layer.provide(Layer.mock(OrchestratorV2)(engine)),
+        Layer.provide(
+          Layer.mock(EventSinkV2)({
+            stream: () => Stream.fromQueue(domainEvents),
+            commitCommand: (input) =>
+              Ref.update(recorded, (old) => [...old, ...input.events]).pipe(
+                Effect.as(committedFailure(input)),
+              ),
+          }),
+        ),
       );
 
       yield* Effect.scoped(
         Effect.gen(function* () {
           const reactor = yield* TicketExecutionReactor;
           yield* reactor.start();
-          yield* PubSub.publish(domainEvents, sessionEvent(1, TURN_ONE));
+          yield* Queue.offer(domainEvents, runEvent(1, RUN_ONE));
           yield* reactor.drainThrough(1);
 
-          const failedCommands = yield* Ref.get(commands);
+          const failedCommands = yield* Ref.get(recorded);
           expect(yield* Ref.get(starts)).toBe(1);
           expect(failedCommands).toHaveLength(1);
           const failureCommand = failedCommands[0];
-          expect(failureCommand?.type).toBe("thread.activity.append");
-          if (failureCommand?.type === "thread.activity.append") {
-            expect(failureCommand.activity.tone).toBe("error");
+          expect(failureCommand?.type).toBe("turn-item.updated");
+          if (failureCommand?.type === "turn-item.updated") {
+            expect(failureCommand.payload.type).toBe("error");
+            expect(failureCommand.payload.runId).toBe(RUN_ONE);
           }
 
-          yield* PubSub.publish(domainEvents, sessionEvent(2, TURN_TWO));
+          yield* Queue.offer(domainEvents, runEvent(2, RUN_TWO));
           yield* reactor.drainThrough(2);
           expect(yield* Ref.get(starts)).toBe(2);
-          expect(yield* Ref.get(commands)).toHaveLength(1);
+          expect(yield* Ref.get(recorded)).toHaveLength(1);
         }),
       ).pipe(Effect.provide(testLayer));
     }),
@@ -313,7 +503,7 @@ describe("TicketExecutionReactor", () => {
 
   effectIt.effect("does not process repeated running events for the same turn", () =>
     Effect.gen(function* () {
-      const domainEvents = yield* PubSub.unbounded<OrchestrationEvent>();
+      const domainEvents = yield* Queue.unbounded<OrchestrationV2StoredEvent>();
       const starts = yield* Ref.make(0);
       const workbench = {
         getSnapshot: Effect.succeed(snapshot),
@@ -323,24 +513,28 @@ describe("TicketExecutionReactor", () => {
           ),
       } satisfies Partial<WorkbenchStore["Service"]>;
       const engine = {
-        latestSequence: Effect.succeed(0),
-        subscribeDomainEvents: PubSub.subscribe(domainEvents).pipe(
-          Effect.map(Stream.fromSubscription),
-        ),
-        dispatch: () => Effect.succeed({ sequence: 100 }),
-      } satisfies Partial<OrchestrationEngineService["Service"]>;
+        getShellSnapshot: () => shellSnapshot,
+        getThreadShell: () => Effect.succeed(rootShell),
+        streamStoredEventsFrom: () => Stream.fromQueue(domainEvents),
+      } satisfies Partial<OrchestratorV2["Service"]>;
       const testLayer = layer.pipe(
         Layer.provide(Layer.mock(WorkbenchStore)(workbench)),
         Layer.provide(Layer.mock(WorkbenchJiraService)(emptyJira)),
-        Layer.provide(Layer.mock(OrchestrationEngineService)(engine)),
+        Layer.provide(Layer.mock(OrchestratorV2)(engine)),
+        Layer.provide(
+          Layer.mock(EventSinkV2)({
+            stream: () => Stream.fromQueue(domainEvents),
+            commitCommand: (input) => Effect.succeed(committedFailure(input)),
+          }),
+        ),
       );
 
       yield* Effect.scoped(
         Effect.gen(function* () {
           const reactor = yield* TicketExecutionReactor;
           yield* reactor.start();
-          yield* PubSub.publish(domainEvents, sessionEvent(3, TURN_ONE));
-          yield* PubSub.publish(domainEvents, sessionEvent(4, TURN_ONE));
+          yield* Queue.offer(domainEvents, runEvent(3, RUN_ONE));
+          yield* Queue.offer(domainEvents, runEvent(4, RUN_ONE));
           yield* reactor.drainThrough(4);
           expect(yield* Ref.get(starts)).toBe(1);
         }),

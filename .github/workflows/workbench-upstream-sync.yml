@@ -131,7 +131,7 @@ jobs:
           vp run --filter @t3tools/workbench typecheck
           vp run --filter @t3tools/workbench test
           vp run --filter @t3tools/workbench quality
-          vp test run packages/contracts/src/workbench.test.ts apps/server/src/workbench apps/server/src/auth/RpcAuthorization.test.ts apps/server/src/orchestration/ThreadSettlementReactor.test.ts apps/web/src/workbench apps/desktop/src/updates/DesktopUpdates.test.ts apps/desktop/src/workbench scripts/workbench-upstream-sync.test.ts scripts/workbench-upstream-sync-merge.test.ts scripts/workbench-ci.test.ts
+          vp test run packages/contracts/src/workbench.test.ts apps/server/src/workbench apps/server/src/auth/RpcAuthorization.test.ts apps/server/src/storageCleanup.test.ts apps/server/src/http.test.ts apps/web/src/workbench apps/desktop/src/updates/DesktopUpdates.test.ts apps/desktop/src/workbench scripts/workbench-upstream-sync.test.ts scripts/workbench-upstream-sync-merge.test.ts scripts/workbench-ci.test.ts
           vp run --filter @t3tools/contracts typecheck
           vp run --filter t3 typecheck
           vp run --filter @t3tools/web typecheck
