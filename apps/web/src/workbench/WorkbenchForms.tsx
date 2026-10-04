@@ -110,6 +110,7 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
+import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -2049,21 +2050,17 @@ function WorkbenchTicketDescriptionPanel({
                 <p className="text-xs text-muted-foreground">Summary is managed by Jira.</p>
               ) : null}
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-workbench-ticket-context">Description</Label>
-              <Textarea
-                id="edit-workbench-ticket-context"
-                className="min-h-72"
-                placeholder="Goal, constraints, and acceptance criteria…"
-                value={draft.markdown}
-                onChange={(event) => {
-                  setDraft(environmentId, ticket.id, {
-                    ...draft,
-                    markdown: event.currentTarget.value,
-                  });
-                }}
-              />
-            </div>
+            <WorkbenchTicketDescriptionEditor
+              key={`${environmentId}:${ticket.id}`}
+              markdown={draft.markdown}
+              jira={jiraFieldsManaged}
+              onChange={(markdown) => {
+                setDraft(environmentId, ticket.id, {
+                  ...draft,
+                  markdown,
+                });
+              }}
+            />
           </div>
           <div className="flex shrink-0 justify-end gap-2 border-t border-border p-4">
             <Button disabled={pending} onClick={cancelEditing} type="button" variant="outline">
@@ -2085,6 +2082,63 @@ function WorkbenchTicketDescriptionPanel({
         </div>
       )}
     </section>
+  );
+}
+
+function WorkbenchTicketDescriptionEditor({
+  markdown,
+  jira,
+  onChange,
+}: {
+  markdown: string;
+  jira: boolean;
+  onChange: (markdown: string) => void;
+}) {
+  const [preview, setPreview] = useState(false);
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Label htmlFor="edit-workbench-ticket-context">Description</Label>
+        <ToggleGroup
+          aria-label="Ticket description editor mode"
+          variant="segmented"
+          value={[preview ? "preview" : "write"]}
+          onValueChange={(next) => {
+            const mode = next[0];
+            if (mode === "write" || mode === "preview") setPreview(mode === "preview");
+          }}
+        >
+          <Toggle value="write" type="button">
+            Write
+          </Toggle>
+          <Toggle value="preview" type="button">
+            Preview
+          </Toggle>
+        </ToggleGroup>
+      </div>
+      <div hidden={preview}>
+        <Textarea
+          id="edit-workbench-ticket-context"
+          className="min-h-72"
+          placeholder="Goal, constraints, and acceptance criteria…"
+          value={markdown}
+          onChange={(event) => onChange(event.currentTarget.value)}
+        />
+      </div>
+      {preview ? (
+        <div
+          role="region"
+          aria-label="Description preview"
+          className="min-h-72 min-w-0 rounded-lg border border-border/60 p-3"
+        >
+          {markdown.trim() ? (
+            <WorkbenchDescription markdown={markdown} jira={jira} />
+          ) : (
+            <p className="text-xs text-muted-foreground">Nothing to preview.</p>
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

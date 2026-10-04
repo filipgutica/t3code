@@ -485,6 +485,11 @@ it("keeps inspection across equivalent rerenders and known attention while expli
   act(() => {
     renderer = create(<Harness />);
   });
+  expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]).toMatchObject({
+    status: "loading",
+    displayStatus: "loading",
+    inspected: false,
+  });
   const scope = result.attentionScope;
   const observations = new Map([
     [
@@ -507,11 +512,36 @@ it("keeps inspection across equivalent rerenders and known attention while expli
   act(() => result.refreshAttention());
   expect(result.attentionScope).not.toBe(scope);
   expect(result.attentionCoverage).toBe("0 of 1 linked PRs inspected");
-  expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.status).toBe("loading");
+  expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]).toMatchObject({
+    status: "loading",
+    displayStatus: "complete",
+    inspected: false,
+  });
   expect(result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind)).toContain(
     "failed-checks",
   );
   act(() => result.setAttentionObservations(new Map()));
+  act(() =>
+    result.setAttentionObservations(
+      new Map([
+        [
+          workbenchAttentionIdentity(environmentId, reference),
+          getWorkbenchPullRequestAttention({
+            reference,
+            summary: null,
+            activity: null,
+            loading: true,
+            error: false,
+          }),
+        ],
+      ]),
+    ),
+  );
+  expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]).toMatchObject({
+    status: "loading",
+    displayStatus: "complete",
+    inspected: false,
+  });
   expect(result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind)).toContain(
     "failed-checks",
   );
@@ -535,6 +565,15 @@ it("keeps inspection across equivalent rerenders and known attention while expli
     "failed-checks",
   );
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.status).toBe("unavailable");
+  expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.displayStatus).toBe(
+    "unavailable",
+  );
+  act(() => result.refreshAttention());
+  expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]).toMatchObject({
+    status: "loading",
+    displayStatus: "unavailable",
+    inspected: false,
+  });
   act(() =>
     result.setAttentionObservations(
       new Map([

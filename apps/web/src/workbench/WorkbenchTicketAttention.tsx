@@ -227,8 +227,8 @@ function AttentionItems({
         );
       })}
       {inspections
-        .filter((inspection) => inspection.status !== "complete")
-        .map(({ row, status }) => (
+        .filter((inspection) => inspection.displayStatus !== "complete")
+        .map(({ row, displayStatus: status }) => (
           <p key={row.pullRequest.url} role="status" className="text-2xs text-muted-foreground">
             {getWorkbenchAttentionSourceLabel({ type: "pull-request", row })}:{" "}
             {status === "loading"
@@ -310,8 +310,9 @@ export function WorkbenchTicketAttentionPanel(props: TicketAttentionProps) {
     useWorkbenchAttentionData();
   const signals = attentionSignalsByTicket.get(props.ticketId) ?? [];
   const inspections = attentionInspectionsByTicket.get(props.ticketId) ?? [];
+  const loading = inspections.some((inspection) => inspection.status === "loading");
   const firstSignal = groupWorkbenchAttentionSignals(signals)[0]?.signals[0];
-  if (!signals.length && inspections.every((inspection) => inspection.status === "complete"))
+  if (!signals.length && inspections.every((inspection) => inspection.displayStatus === "complete"))
     return null;
   return (
     <div className="shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/30">
@@ -332,6 +333,8 @@ export function WorkbenchTicketAttentionPanel(props: TicketAttentionProps) {
           <Button
             aria-label="Refresh ticket attention"
             title="Refresh ticket attention"
+            aria-busy={loading}
+            disabled={loading}
             size="icon-xs"
             variant="outline"
             onClick={refreshAttention}

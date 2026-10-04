@@ -106,6 +106,7 @@ export const getWorkbenchAttentionSourceLabel = (source: WorkbenchAttentionSigna
 export interface WorkbenchAttentionInspection {
   readonly row: WorkbenchTicketPullRequest;
   readonly status: WorkbenchInspectionStatus;
+  readonly displayStatus: WorkbenchInspectionStatus;
   readonly inspected: boolean;
 }
 export interface WorkbenchPullRequestAttention {
@@ -118,6 +119,7 @@ export interface WorkbenchPullRequestAttention {
   readonly checksKnown: boolean;
   readonly reviewDecisionKnown: boolean;
   readonly inspectionStatus: WorkbenchInspectionStatus;
+  readonly displayInspectionStatus: WorkbenchInspectionStatus;
   readonly inspected: boolean;
   readonly terminal: boolean;
 }
@@ -262,6 +264,7 @@ export const getWorkbenchPullRequestAttention = ({
       checksKnown: true,
       reviewDecisionKnown: true,
       inspectionStatus: "complete",
+      displayInspectionStatus: "complete",
       inspected: true,
       terminal: true,
     };
@@ -285,6 +288,7 @@ export const getWorkbenchPullRequestAttention = ({
     resolvedReviewThreadIds:
       activity?.reviewThreads.filter((thread) => thread.isResolved).map((thread) => thread.id) ??
       [],
+    displayInspectionStatus: inspection.inspectionStatus,
     ...inspection,
   };
 };
@@ -321,6 +325,10 @@ export const mergeWorkbenchPullRequestAttention = ({
   if (unresolvedReviewThreads.length > 0) signalKinds.push("unresolved-feedback");
   return {
     ...next,
+    displayInspectionStatus:
+      next.inspectionStatus === "loading"
+        ? previous.displayInspectionStatus
+        : next.displayInspectionStatus,
     pullRequestTitle: next.pullRequestTitle ?? previous.pullRequestTitle,
     signalKinds,
     unresolvedReviewThreads,

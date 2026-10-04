@@ -354,6 +354,7 @@ export function useWorkbenchAttention({
               inspections.push({
                 row: observedRow,
                 status: observation.inspectionStatus,
+                displayStatus: observation.displayInspectionStatus,
                 inspected: observation.inspected,
               });
             }

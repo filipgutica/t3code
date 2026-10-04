@@ -205,6 +205,7 @@ describe("Workbench Board view", () => {
                 pullRequest: reference,
               },
               status: "unavailable",
+              displayStatus: "unavailable",
               inspected: false,
             },
           ],
