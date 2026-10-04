@@ -82,7 +82,15 @@ const makeThread = (
 describe("Done Ticket settlement", () => {
   it.effect("settles every completed active assignment from an existing Done Ticket", () =>
     Effect.gen(function* () {
-      const threads = [makeThread("first"), makeThread("second")];
+      const threads = [
+        makeThread("first"),
+        makeThread("second"),
+        makeThread("dev-server", {
+          pendingBackgroundTasks: [
+            { kind: "command", taskId: "dev", description: "vp run dev --share" },
+          ],
+        }),
+      ];
       const commands: Array<OrchestrationV2ServerCommand> = [];
       yield* settleSnapshot({
         tickets: [{ id: ticketId, status: "done", archivedAt: null }],
@@ -105,7 +113,13 @@ describe("Done Ticket settlement", () => {
       });
       assert.deepEqual(
         commands.map((command) => command.type),
-        ["thread.auto-settle", "thread.auto-settle"],
+        ["thread.auto-settle", "thread.auto-settle", "thread.auto-settle"],
+      );
+      assert.deepEqual(
+        commands
+          .filter((command) => command.type === "thread.auto-settle")
+          .map((command) => command.threadId),
+        threads.map((thread) => thread.id),
       );
       for (const command of commands) {
         if (command.type !== "thread.auto-settle") throw new Error("Unexpected command");
@@ -120,7 +134,7 @@ describe("Done Ticket settlement", () => {
         makeThread("pin", { settledOverride: "active" }),
         makeThread("pinned", { pinnedAt: at("2026-08-20T00:00:00.000Z") }),
         makeThread("background", {
-          pendingBackgroundTasks: [{ kind: "command", taskId: "build", description: "Build" }],
+          pendingBackgroundTasks: [{ kind: "subagent", taskId: "review", description: "Review" }],
         }),
         makeThread("settled", { settledOverride: "settled" }),
         makeThread("auto-settle-disabled", {

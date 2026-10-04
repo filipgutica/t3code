@@ -303,92 +303,90 @@ it.effect(
   },
 );
 
-for (const [desktopScheme, entry] of [
+it.effect.each([
   ["t3code", "startup"],
   ["t3code", "open-url"],
   ["t3code-workbench", "startup"],
   ["t3code-workbench", "open-url"],
-] as const) {
-  it.effect(`receives hosted web sign-in through the ${desktopScheme} ${entry} handler`, () =>
-    Effect.gen(function* () {
-      vi.stubGlobal("__T3CODE_WORKBENCH_BUILD__", desktopScheme === "t3code-workbench");
-      storageMock.mockReturnValue(storageAdapter);
-      createClerkBridgeMock.mockReturnValue({ cleanup: vi.fn(), isPrimaryInstance: true });
-      const port = yield* Effect.promise(async () => {
-        const server = NodeHttp.createServer();
-        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-        const address = server.address();
-        if (!address || typeof address === "string") throw new Error("address");
-        await new Promise<void>((resolve) => server.close(() => resolve()));
-        return address.port;
-      });
-      const authorize = new URL("https://auth.openai.com/api/accounts/authorize");
-      authorize.search = new URLSearchParams({
-        client_id: "dynamic_agent_client",
-        response_type: "code",
-        redirect_uri: `http://127.0.0.1:${port}/auth/callback`,
-        state: "a".repeat(43),
-        code_challenge_method: "S256",
-        code_challenge: "b".repeat(43),
-      }).toString();
-      const request = {
-        authorizationUrl: authorize.toString(),
-        returnUrl: "https://app.t3.codes/welcome#agents:remote-one",
-        environmentId: EnvironmentId.make("remote-one"),
-        instanceId: ProviderInstanceId.make("work"),
-        flowId: "flow-one",
-      };
-      const link = codexAuthHandoffUrl(request, true, desktopScheme);
-      const delivered = Promise.withResolvers<string>();
-      const shell = ElectronShell.ElectronShell.of({
-        openExternal: (value) =>
-          Effect.promise(async () => {
-            const url = new URL(String(value));
-            const callback = new URL(url.searchParams.get("redirect_uri")!);
-            callback.search = new URLSearchParams({
-              state: url.searchParams.get("state")!,
-              code: "test-code",
-              client_id: "oaiapp_test",
-            }).toString();
-            const response = await fetch(callback, { redirect: "manual" });
-            delivered.resolve(response.headers.get("location")!);
-            return true;
-          }),
-        openSystemSettings: () => Effect.succeed(false),
-        copyText: () => Effect.void,
-      });
-      const listeners = new Map<string, (...args: unknown[]) => void>();
-      const electronApp = {
-        whenReady: Effect.void,
-        on: (name: string, listener: (...args: unknown[]) => void) =>
-          Effect.sync(() => {
-            listeners.set(name, listener);
-          }),
-      } as unknown as ElectronApp.ElectronApp["Service"];
-      yield* Effect.gen(function* () {
-        const clerk = yield* DesktopClerk.DesktopClerk;
-        yield* clerk.configure;
-        if (entry === "open-url") {
-          const event = { preventDefault: vi.fn() };
-          listeners.get("open-url")!(event, link);
-          assert.strictEqual(event.preventDefault.mock.calls.length, 1);
-        }
-        const delivery = readCodexAuthDelivery(yield* Effect.promise(() => delivered.promise));
-        assert.strictEqual(delivery?.environmentId, request.environmentId);
-        assert.strictEqual(delivery?.instanceId, request.instanceId);
-        assert.strictEqual(delivery?.flowId, request.flowId);
-        assert.strictEqual(delivery?.returnUrl, request.returnUrl);
-      }).pipe(
-        Effect.provide(makeDesktopClerkLayer(true, [], "darwin", undefined, shell)),
-        Effect.provideService(HostProcessArguments, entry === "startup" ? ["t3", link] : ["t3"]),
-        Effect.provideService(ElectronApp.ElectronApp, electronApp),
-        Effect.provideService(
-          ElectronWindow.ElectronWindow,
-          {} as ElectronWindow.ElectronWindow["Service"],
-        ),
-      );
-    }).pipe(Effect.scoped),
-  );
-}
+] as const)("receives hosted web sign-in through the %s %s handler", ([desktopScheme, entry]) =>
+  Effect.gen(function* () {
+    vi.stubGlobal("__T3CODE_WORKBENCH_BUILD__", desktopScheme === "t3code-workbench");
+    storageMock.mockReturnValue(storageAdapter);
+    createClerkBridgeMock.mockReturnValue({ cleanup: vi.fn(), isPrimaryInstance: true });
+    const port = yield* Effect.promise(async () => {
+      const server = NodeHttp.createServer();
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("address");
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      return address.port;
+    });
+    const authorize = new URL("https://auth.openai.com/api/accounts/authorize");
+    authorize.search = new URLSearchParams({
+      client_id: "dynamic_agent_client",
+      response_type: "code",
+      redirect_uri: `http://127.0.0.1:${port}/auth/callback`,
+      state: "a".repeat(43),
+      code_challenge_method: "S256",
+      code_challenge: "b".repeat(43),
+    }).toString();
+    const request = {
+      authorizationUrl: authorize.toString(),
+      returnUrl: "https://app.t3.codes/welcome#agents:remote-one",
+      environmentId: EnvironmentId.make("remote-one"),
+      instanceId: ProviderInstanceId.make("work"),
+      flowId: "flow-one",
+    };
+    const link = codexAuthHandoffUrl(request, true, desktopScheme);
+    const delivered = Promise.withResolvers<string>();
+    const shell = ElectronShell.ElectronShell.of({
+      openExternal: (value) =>
+        Effect.promise(async () => {
+          const url = new URL(String(value));
+          const callback = new URL(url.searchParams.get("redirect_uri")!);
+          callback.search = new URLSearchParams({
+            state: url.searchParams.get("state")!,
+            code: "test-code",
+            client_id: "oaiapp_test",
+          }).toString();
+          const response = await fetch(callback, { redirect: "manual" });
+          delivered.resolve(response.headers.get("location")!);
+          return true;
+        }),
+      openSystemSettings: () => Effect.succeed(false),
+      copyText: () => Effect.void,
+    });
+    const listeners = new Map<string, (...args: unknown[]) => void>();
+    const electronApp = {
+      whenReady: Effect.void,
+      on: (name: string, listener: (...args: unknown[]) => void) =>
+        Effect.sync(() => {
+          listeners.set(name, listener);
+        }),
+    } as unknown as ElectronApp.ElectronApp["Service"];
+    yield* Effect.gen(function* () {
+      const clerk = yield* DesktopClerk.DesktopClerk;
+      yield* clerk.configure;
+      if (entry === "open-url") {
+        const event = { preventDefault: vi.fn() };
+        listeners.get("open-url")!(event, link);
+        assert.strictEqual(event.preventDefault.mock.calls.length, 1);
+      }
+      const delivery = readCodexAuthDelivery(yield* Effect.promise(() => delivered.promise));
+      assert.strictEqual(delivery?.environmentId, request.environmentId);
+      assert.strictEqual(delivery?.instanceId, request.instanceId);
+      assert.strictEqual(delivery?.flowId, request.flowId);
+      assert.strictEqual(delivery?.returnUrl, request.returnUrl);
+    }).pipe(
+      Effect.provide(makeDesktopClerkLayer(true, [], "darwin", undefined, shell)),
+      Effect.provideService(HostProcessArguments, entry === "startup" ? ["t3", link] : ["t3"]),
+      Effect.provideService(ElectronApp.ElectronApp, electronApp),
+      Effect.provideService(
+        ElectronWindow.ElectronWindow,
+        {} as ElectronWindow.ElectronWindow["Service"],
+      ),
+    );
+  }).pipe(Effect.scoped),
+);
 
 afterEach(() => vi.unstubAllGlobals());
