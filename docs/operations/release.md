@@ -2,6 +2,8 @@
 
 > For maintainers. Using T3 Code? See [docs/user](../user/).
 
+In the Workbench fork, the upstream release, relay deployment, and macOS preview workflows below are retained in [`.github/upstream-workflows`](../../.github/upstream-workflows) and do not run. Use the [Workbench release procedure](workbench-release.md) for fork packages. The remaining instructions describe the upstream T3 distribution.
+
 This document covers the unified release workflow for stable and nightly desktop releases.
 
 ## What the workflow does

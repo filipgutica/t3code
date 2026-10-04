@@ -117,6 +117,8 @@ one of those outputs changed, and `T3CODE_RELAY_CLIENT_CONFIG_ENV` redirects it 
 
 ### Deployment CI
 
+In the Workbench fork, `deploy-relay.yml` is retained in [`.github/upstream-workflows`](../../.github/upstream-workflows/deploy-relay.yml), outside GitHub's active workflow directory. Workbench pushes do not deploy a relay. The following setup applies to the upstream deployment.
+
 The relay is versioned separately from client releases. `.github/workflows/deploy-relay.yml` deploys
 the shared Alchemy `prod` stage on every push to `main`. Stable and nightly release builds both
 resolve their static public config from the same
