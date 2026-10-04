@@ -19,7 +19,11 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
+import * as ChildProcess from "effect/unstable/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import * as Result from "effect/Result";
+import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -28,7 +32,10 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
 import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProviderRegistry from "../provider/Services/ProviderRegistry.ts";
-import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
+import {
+  makeSqlitePersistenceLive,
+  SqlitePersistenceMemory,
+} from "../persistence/Layers/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import type { BranchNameGenerationInput } from "../textGeneration/TextGeneration.ts";
@@ -41,6 +48,7 @@ import {
   TicketWorkspaceServiceLive,
 } from "@t3tools/workbench/TicketWorkspaceService";
 import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
+import { TicketWorkspaceHost } from "@t3tools/workbench/TicketWorkspaceHost";
 
 const createdAt = "2026-09-03T12:00:00.000Z";
 const primaryProjectId = ProjectId.make("project-primary");
@@ -512,6 +520,180 @@ const makeTestLayer = ({
   );
 };
 
+const makePersistentWorkspaceFixture = Effect.gen(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-workspace-restart-" });
+  const repositories = [primaryProjectId, secondaryProjectId].map((projectId, index) => ({
+    projectId,
+    sourcePath: path.join(directory, `repository-${index}`),
+    worktreePath: path.join(directory, `checkout-${index}`),
+  }));
+  const git = Effect.fnUntraced(
+    function* (cwd: string, args: ReadonlyArray<string>) {
+      const handle = yield* spawner.spawn(ChildProcess.make("git", ["-C", cwd, ...args]));
+      const [output, errors, exitCode] = yield* Effect.all(
+        [
+          Stream.mkString(Stream.decodeText(handle.stdout)),
+          Stream.mkString(Stream.decodeText(handle.stderr)),
+          handle.exitCode,
+        ],
+        { concurrency: "unbounded" },
+      );
+      if (exitCode !== 0)
+        return yield* Effect.die(new Error(`git ${args.join(" ")} exited ${exitCode}: ${errors}`));
+      return output.trim();
+    },
+    Effect.scoped,
+    Effect.orDie,
+  );
+  for (const repository of repositories) {
+    yield* fileSystem.makeDirectory(repository.sourcePath);
+    yield* git(repository.sourcePath, ["init", "-b", "main"]);
+    yield* fileSystem.writeFileString(
+      path.join(repository.sourcePath, ".gitignore"),
+      "ignored.txt\n",
+    );
+    yield* git(repository.sourcePath, ["add", ".gitignore"]);
+    yield* git(repository.sourcePath, [
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "-m",
+      "initial",
+    ]);
+    yield* git(repository.sourcePath, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    yield* git(repository.sourcePath, [
+      "worktree",
+      "add",
+      "-b",
+      ticketWorkspaceBranchName(ticketId),
+      repository.worktreePath,
+    ]);
+  }
+  const removals: Array<string> = [];
+  const persistence = makeSqlitePersistenceLive(path.join(directory, "state.sqlite")).pipe(
+    Layer.provide(NodeServices.layer),
+  );
+  const storeLayer = WorkbenchStoreLive.pipe(
+    Layer.provideMerge(persistence),
+    Layer.provide(
+      Layer.mock(GitWorkflowService.GitWorkflowService, {
+        isRepository: () => Effect.succeed(true),
+      }),
+    ),
+  );
+  const hostLayer = Layer.succeed(
+    TicketWorkspaceHost,
+    TicketWorkspaceHost.of({
+      worktreesDir: path.join(directory, "worktrees"),
+      resolveOpenPullRequestBranch: () => Effect.succeed(Option.none()),
+      projections: {
+        getProjectShellById: (id) =>
+          Effect.succeed(
+            Option.fromNullishOr(repositories.find((repository) => repository.projectId === id)),
+          ).pipe(
+            Effect.map(
+              Option.map((repository) => ({
+                title: repository.projectId,
+                workspaceRoot: repository.sourcePath,
+              })),
+            ),
+          ),
+        getThreadShellById: () => Effect.succeed(Option.none()),
+      },
+      git: {
+        invalidateLocalStatus: () => Effect.void,
+        fetchRemoteTrackingBranch: () => Effect.void,
+        localStatus: ({ cwd }) =>
+          Effect.gen(function* () {
+            return {
+              isRepo: true,
+              hasPrimaryRemote: false,
+              isDefaultRef: false,
+              refName: yield* git(cwd, ["branch", "--show-current"]),
+              hasWorkingTreeChanges: (yield* git(cwd, ["status", "--porcelain"])).length > 0,
+              workingTree: { files: [], insertions: 0, deletions: 0 },
+            };
+          }),
+        listRefs: ({ cwd }) =>
+          Effect.gen(function* () {
+            const worktrees = (yield* git(cwd, ["worktree", "list", "--porcelain"]))
+              .split("\n\n")
+              .flatMap((entry) => {
+                const lines = entry.split("\n");
+                const path = lines.find((line) => line.startsWith("worktree "))?.slice(9);
+                const name = lines.find((line) => line.startsWith("branch refs/heads/"))?.slice(18);
+                return path && name
+                  ? [
+                      {
+                        name,
+                        current: path === cwd,
+                        isDefault: name === "main",
+                        worktreePath: path,
+                      },
+                    ]
+                  : [];
+              });
+            return {
+              refs: (yield* git(cwd, ["for-each-ref", "--format=%(refname:short)", "refs/heads"]))
+                .split("\n")
+                .map((name) => ({
+                  name,
+                  current: worktrees.some((worktree) => worktree.name === name && worktree.current),
+                  isDefault: name === "main",
+                  worktreePath:
+                    worktrees.find((worktree) => worktree.name === name)?.worktreePath ?? null,
+                })),
+              isRepo: true,
+              hasPrimaryRemote: false,
+              nextCursor: null,
+              totalCount: 2,
+            };
+          }),
+        createWorktree: (input) =>
+          Effect.gen(function* () {
+            if (!input.path) throw new Error("Expected an explicit worktree path.");
+            yield* git(input.cwd, [
+              "worktree",
+              "add",
+              ...(input.newRefName ? ["-b", input.newRefName] : []),
+              input.path,
+              input.refName,
+            ]);
+            return { worktree: { path: input.path, refName: input.newRefName ?? input.refName } };
+          }),
+        removeWorktree: ({ cwd, path, force }) =>
+          Effect.gen(function* () {
+            expect(force).not.toBe(true);
+            yield* git(cwd, ["worktree", "remove", path]);
+            removals.push(path);
+          }),
+      },
+    }),
+  );
+  const layer = TicketWorkspaceServiceLive.pipe(
+    Layer.provideMerge(storeLayer),
+    Layer.provide(hostLayer),
+    Layer.provide(NodeServices.layer),
+  );
+  const seed = Effect.gen(function* () {
+    yield* seedTicket;
+    const sql = yield* SqlClient.SqlClient;
+    for (const repository of repositories) {
+      yield* sql`UPDATE projection_projects SET workspace_root = ${repository.sourcePath} WHERE project_id = ${repository.projectId}`;
+    }
+    yield* seedReadyTicketWorkspace;
+    for (const repository of repositories) {
+      yield* sql`UPDATE workbench_ticket_workspace_repositories SET source_path = ${repository.sourcePath}, worktree_path = ${repository.worktreePath} WHERE ticket_id = ${ticketId} AND t3_project_id = ${repository.projectId}`;
+    }
+  });
+  return { directory, repositories, git, layer, seed, removals, fileSystem, path };
+});
+
 describe("TicketWorkspaceService", () => {
   it("sanitizes naming metadata before using it as a path segment", () => {
     expect(
@@ -916,6 +1098,215 @@ describe("TicketWorkspaceService", () => {
       ),
     );
   });
+
+  it.effect.each([{ archivedAt: null }, { archivedAt: createdAt }])(
+    "preserves a restarted partial release acquired by a native owner (archivedAt=$archivedAt)",
+    ({ archivedAt }) => {
+      return Effect.gen(function* () {
+        const fixture = yield* makePersistentWorkspaceFixture;
+        const { fileSystem, path } = fixture;
+        const primary = fixture.repositories[0]!;
+        const secondary = fixture.repositories[1]!;
+        const ignoredFile = path.join(secondary.worktreePath, "ignored.txt");
+
+        yield* Effect.gen(function* () {
+          yield* fixture.seed;
+          const store = yield* WorkbenchStore;
+          yield* store.claimTicketWorkspaceRelease({
+            ticketId,
+            attemptId: WorkbenchTicketWorkspaceAttemptId.make("ready-attempt"),
+            claimedAt: createdAt,
+            requireActiveTicket: true,
+            requireNoLinkedThreads: true,
+          });
+          yield* fixture.git(primary.sourcePath, ["worktree", "remove", primary.worktreePath]);
+          yield* store.releaseTicketWorkspaceRepository({
+            ticketId,
+            attemptId: WorkbenchTicketWorkspaceAttemptId.make("ready-attempt"),
+            projectId: primaryProjectId,
+            releasedAt: createdAt,
+          });
+          yield* seedNativeThread({
+            threadId: activeThreadId,
+            projectId: secondaryProjectId,
+            createdAt,
+            worktreePath: secondary.worktreePath,
+            archivedAt,
+          });
+          yield* fileSystem.writeFileString(ignoredFile, "native owner local data");
+        }).pipe(Effect.provide(fixture.layer));
+
+        yield* Effect.gen(function* () {
+          const service = yield* TicketWorkspaceService;
+          const store = yield* WorkbenchStore;
+          const ordinaryError = yield* Effect.flip(
+            service.release({ ticketId, releasedAt: createdAt }),
+          );
+          expect(ordinaryError.code).toBe("ticket_workspace_in_use");
+          const recoveryError = yield* Effect.flip(
+            service.prepare({ ticketId, requestedAt: createdAt }),
+          );
+          expect(recoveryError.code).toBe("ticket_workspace_in_use");
+          expect(yield* fileSystem.readFileString(ignoredFile)).toBe("native owner local data");
+          expect(yield* fileSystem.exists(primary.worktreePath)).toBe(false);
+          expect(fixture.removals).toEqual([]);
+          const workspace = Option.getOrThrow(yield* store.getTicketWorkspace(ticketId));
+          expect(workspace.status).toBe("releasing");
+          expect(workspace.repositories.map((repository) => repository.status)).toEqual([
+            "released",
+            "ready",
+          ]);
+
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`UPDATE orchestration_v2_projection_threads SET deleted_at = ${createdAt} WHERE thread_id = ${activeThreadId}`;
+          const released = yield* service.release({ ticketId, releasedAt: createdAt });
+          expect(released.status).toBe("released");
+          expect(fixture.removals).toEqual([secondary.worktreePath]);
+        }).pipe(Effect.provide(fixture.layer));
+      }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
+    },
+  );
+
+  it.effect.each([false, true])(
+    "removes retained deleted-Ticket repositories after reopening persistence (partial=%s)",
+    (partial) => {
+      return Effect.gen(function* () {
+        const fixture = yield* makePersistentWorkspaceFixture;
+        const { fileSystem } = fixture;
+
+        yield* Effect.gen(function* () {
+          yield* fixture.seed;
+          const store = yield* WorkbenchStore;
+          yield* store.deleteTicket({ ticketId, expectedRevision: 0, deletedAt: createdAt });
+          expect(
+            (yield* Effect.forEach(fixture.repositories, (repository) =>
+              fileSystem.exists(repository.worktreePath),
+            )).every(Boolean),
+          ).toBe(true);
+          if (partial) {
+            yield* store.claimTicketWorkspaceRelease({
+              ticketId,
+              attemptId: WorkbenchTicketWorkspaceAttemptId.make("ready-attempt"),
+              claimedAt: createdAt,
+              requireDeletedTicket: true,
+              requireNoLinkedThreads: true,
+            });
+            const primary = fixture.repositories[0]!;
+            yield* fixture.git(primary.sourcePath, ["worktree", "remove", primary.worktreePath]);
+            yield* store.releaseTicketWorkspaceRepository({
+              ticketId,
+              attemptId: WorkbenchTicketWorkspaceAttemptId.make("ready-attempt"),
+              projectId: primaryProjectId,
+              releasedAt: createdAt,
+            });
+          }
+        }).pipe(Effect.provide(fixture.layer));
+        yield* Effect.gen(function* () {
+          const store = yield* WorkbenchStore;
+          const service = yield* TicketWorkspaceService;
+          const snapshot = yield* store.getSnapshot;
+          expect(snapshot.tickets).toEqual([]);
+          expect(snapshot.ticketWorkspaces.map((workspace) => workspace.ticketId)).toEqual([
+            ticketId,
+          ]);
+          const ordinaryError = yield* Effect.flip(
+            service.release({ ticketId, releasedAt: createdAt }),
+          );
+          expect(ordinaryError.code).toBe("ticket_not_found");
+          const released = yield* service.release({
+            ticketId,
+            releasedAt: createdAt,
+            retained: true,
+          });
+          expect(released.status).toBe("released");
+          expect(
+            released.repositories.every((repository) => repository.status === "released"),
+          ).toBe(true);
+          expect(
+            (yield* Effect.forEach(fixture.repositories, (repository) =>
+              fileSystem.exists(repository.worktreePath),
+            )).every((exists) => !exists),
+          ).toBe(true);
+          expect(fixture.removals).toEqual(
+            fixture.repositories
+              .filter((_, index) => !partial || index > 0)
+              .map((repository) => repository.worktreePath),
+          );
+        }).pipe(Effect.provide(fixture.layer));
+        yield* Effect.gen(function* () {
+          const store = yield* WorkbenchStore;
+          expect(Option.getOrThrow(yield* store.getTicketWorkspace(ticketId)).status).toBe(
+            "released",
+          );
+        }).pipe(Effect.provide(fixture.layer));
+      }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
+    },
+  );
+
+  it.effect.each(["owned", "dirty", "detached", "active", "preparing"] as const)(
+    "rejects retained cleanup of a %s Workspace without removing any repository",
+    (state) => {
+      return Effect.gen(function* () {
+        const fixture = yield* makePersistentWorkspaceFixture;
+        const { fileSystem, path } = fixture;
+        const secondary = fixture.repositories[1]!;
+
+        yield* Effect.gen(function* () {
+          yield* fixture.seed;
+          const store = yield* WorkbenchStore;
+          const sql = yield* SqlClient.SqlClient;
+          if (state !== "active")
+            yield* store.deleteTicket({ ticketId, expectedRevision: 0, deletedAt: createdAt });
+          if (state === "owned")
+            yield* seedNativeThread({
+              threadId: activeThreadId,
+              projectId: secondaryProjectId,
+              createdAt,
+              worktreePath: secondary.worktreePath,
+              archivedAt: createdAt,
+            });
+          if (state === "preparing")
+            yield* sql`UPDATE workbench_ticket_workspaces SET status = 'preparing' WHERE ticket_id = ${ticketId}`;
+          if (state === "dirty")
+            yield* fileSystem.writeFileString(
+              path.join(secondary.worktreePath, "local.txt"),
+              "keep local changes",
+            );
+          if (state === "detached")
+            yield* fixture.git(secondary.worktreePath, ["checkout", "--detach"]);
+        }).pipe(Effect.provide(fixture.layer));
+        yield* Effect.gen(function* () {
+          const service = yield* TicketWorkspaceService;
+          const store = yield* WorkbenchStore;
+          const error = yield* Effect.flip(
+            service.release({ ticketId, releasedAt: createdAt, retained: true }),
+          );
+          expect(error.code).toBe(
+            state === "owned"
+              ? "ticket_workspace_in_use"
+              : state === "active"
+                ? "ticket_changed"
+                : state === "preparing"
+                  ? "ticket_workspace_preparation_in_progress"
+                  : "ticket_workspace_preparation_failed",
+          );
+          expect(fixture.removals).toEqual([]);
+          expect(
+            (yield* Effect.forEach(fixture.repositories, (repository) =>
+              fileSystem.exists(repository.worktreePath),
+            )).every(Boolean),
+          ).toBe(true);
+          expect(Option.getOrThrow(yield* store.getTicketWorkspace(ticketId)).status).toBe(
+            state === "preparing" ? "preparing" : "ready",
+          );
+          if (state === "dirty")
+            expect(
+              yield* fileSystem.readFileString(path.join(secondary.worktreePath, "local.txt")),
+            ).toBe("keep local changes");
+        }).pipe(Effect.provide(fixture.layer));
+      }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
+    },
+  );
 
   it.effect("retries a reset after a transient worktree removal failure", () => {
     const events: Array<string> = [];

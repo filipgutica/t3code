@@ -1,4 +1,6 @@
 import {
+  RunId,
+  WorkbenchAssignmentId,
   ProjectId,
   WorkbenchJiraBindingId,
   WorkbenchJiraConnectionId,
@@ -16,8 +18,18 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Layer from "effect/Layer";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import { WorkbenchStore, WorkbenchStoreLive } from "@t3tools/workbench/WorkbenchStore";
+import { WorkbenchNativeAccess } from "@t3tools/workbench/WorkbenchNativeAccess";
+import { layer as importerLayer } from "../../../../../packages/workbench/src/jira/JiraTicketImporter.ts";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+
+import { ensureWorkbenchSchema } from "../../../../../packages/workbench/src/WorkbenchSchema.ts";
 
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import { JiraApi, JiraIssueCreateError } from "@t3tools/workbench/jira/JiraApi";
@@ -147,6 +159,7 @@ const updateBindingChanges = [
 ] as const satisfies ReadonlyArray<readonly [string, WorkbenchJiraBinding]>;
 
 const makeHarness = (options?: {
+  readonly importer?: JiraTicketImporter["Service"];
   readonly transitions?: ReadonlyArray<{
     readonly id: string;
     readonly name: string;
@@ -205,7 +218,7 @@ const makeHarness = (options?: {
     const preflightGate = yield* Deferred.make<void>();
     const sql = yield* SqlClient.SqlClient;
     yield* sql`
-      CREATE TABLE workbench_jira_ticket_creations (
+      CREATE TABLE IF NOT EXISTS workbench_jira_ticket_creations (
         ticket_id TEXT PRIMARY KEY,
         binding_id TEXT NOT NULL,
         title TEXT NOT NULL,
@@ -327,24 +340,26 @@ const makeHarness = (options?: {
         }),
       syncBinding: () => Effect.die("unexpected sync"),
     });
-    const importer = JiraTicketImporter.of({
-      upsertJiraProjection: (input) =>
-        options?.failImport
-          ? Effect.fail(
-              new WorkbenchJiraOperationError({
-                code: "persistence_failed",
-                message: "The local Ticket could not be saved.",
-              }),
-            )
-          : Ref.update(imported, (current) => [
-              ...current,
-              {
-                issue: input.issue,
-                mappedStatus: input.mappedStatus,
-                repositoryProjectIds: input.repositoryProjectIds,
-              },
-            ]).pipe(Effect.as(input.existingTicketId!)),
-    });
+    const importer =
+      options?.importer ??
+      JiraTicketImporter.of({
+        upsertJiraProjection: (input) =>
+          options?.failImport
+            ? Effect.fail(
+                new WorkbenchJiraOperationError({
+                  code: "persistence_failed",
+                  message: "The local Ticket could not be saved.",
+                }),
+              )
+            : Ref.update(imported, (current) => [
+                ...current,
+                {
+                  issue: input.issue,
+                  mappedStatus: input.mappedStatus,
+                  repositoryProjectIds: input.repositoryProjectIds,
+                },
+              ]).pipe(Effect.as(input.existingTicketId!)),
+      });
     const http = HttpClient.make((request) => {
       const body =
         request.body._tag === "Uint8Array"
@@ -438,6 +453,22 @@ const runWithHarness = <A, E, R>(
     const harness = yield* makeHarness(options);
     return yield* effect(harness);
   });
+
+const execution = {
+  runId: RunId.make("jira-execution-run"),
+  assignmentId: WorkbenchAssignmentId.make("jira-execution-assignment"),
+  sequence: 10,
+  readbackOnly: true,
+};
+const seedExecution = Effect.gen(function* () {
+  yield* ensureWorkbenchSchema;
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`INSERT INTO workbench_projects (project_id, title, created_at, updated_at) VALUES ('workspace-1', 'Jira', ${issueUpdatedAt}, ${issueUpdatedAt})`;
+  yield* sql`INSERT INTO workbench_project_links (workbench_project_id, t3_project_id, position) VALUES ('workspace-1', 'project-1', 0)`;
+  yield* sql`INSERT INTO workbench_tickets (ticket_id, workbench_project_id, title, markdown, primary_t3_project_id, status, blocked, created_at, updated_at) VALUES (${ticketId}, 'workspace-1', 'Execution', '', 'project-1', 'todo', 0, ${issueUpdatedAt}, ${issueUpdatedAt})`;
+  yield* sql`INSERT INTO workbench_assignments (assignment_id, ticket_id, thread_id, created_at) VALUES (${execution.assignmentId}, ${ticketId}, 'jira-thread', ${issueUpdatedAt})`;
+  yield* sql`INSERT INTO workbench_execution_runs (run_id, sequence, ticket_id, assignment_id, started_at, state) VALUES (${execution.runId}, ${execution.sequence}, ${ticketId}, ${execution.assignmentId}, ${issueUpdatedAt}, 'uncertain')`;
+});
 
 describe("JiraTicketWriteService", () => {
   it.effect("serializes same Ticket IDs across different Jira destinations", () =>
@@ -864,6 +895,116 @@ describe("JiraTicketWriteService", () => {
         assert.strictEqual(links[0]?.issue.description, "Updated description");
       }),
     ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect(
+    "commits a real Jira projection with its execution acknowledgement before service completion and preserves it on reopening",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const directory = yield* fs.makeTempDirectoryScoped({
+          prefix: "workbench-jira-execution-",
+        });
+        const filename = path.join(directory, "state.sqlite");
+        const storeLayer = WorkbenchStoreLive.pipe(
+          Layer.provide(
+            Layer.mock(WorkbenchNativeAccess)({ executionSequence: Effect.succeed(0) }),
+          ),
+        );
+        const lifecycle = Layer.mergeAll(
+          storeLayer,
+          importerLayer.pipe(Layer.provide(storeLayer)),
+        ).pipe(Layer.provideMerge(NodeSqliteClient.layer({ filename })));
+        yield* Effect.gen(function* () {
+          const importer = yield* JiraTicketImporter;
+          const store = yield* WorkbenchStore;
+          yield* runWithHarness(
+            (harness) =>
+              Effect.gen(function* () {
+                yield* seedExecution;
+                // The execution service's later completion method is deliberately never called.
+                yield* harness.service.startTicketExecution({ ticketId, execution });
+                assert.strictEqual((yield* store.getSnapshot).tickets[0]?.status, "in_progress");
+                assert.deepStrictEqual(yield* store.pendingTicketExecutions, []);
+                assert.deepStrictEqual(harness.requests, []);
+              }),
+            { importer, initialStatus: { id: "2", name: "In Progress" } },
+          );
+        }).pipe(Effect.provide(lifecycle), Effect.scoped);
+        yield* Effect.gen(function* () {
+          const store = yield* WorkbenchStore;
+          assert.strictEqual((yield* store.getSnapshot).tickets[0]?.status, "in_progress");
+          assert.deepStrictEqual(yield* store.pendingTicketExecutions, []);
+        }).pipe(Effect.provide(lifecycle), Effect.scoped);
+      }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+  );
+
+  it.effect(
+    "reconciles a possibly successful execution request through readback without repeating a Jira POST",
+    () =>
+      runWithHarness(
+        (harness) =>
+          Effect.gen(function* () {
+            yield* seedExecution;
+            const result = yield* harness.service.startTicketExecution({ ticketId, execution });
+            assert.strictEqual(result.status.id, "2");
+            assert.deepStrictEqual(
+              harness.requests.map((request) => request.method),
+              [],
+            );
+            assert.strictEqual((yield* Ref.get(harness.imported))[0]?.mappedStatus, "in_progress");
+          }),
+        { initialStatus: { id: "2", name: "In Progress" } },
+      ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect("leaves an interrupted execution uncertain when Jira has returned to Todo", () =>
+    runWithHarness((harness) =>
+      Effect.gen(function* () {
+        yield* seedExecution;
+        const error = yield* Effect.flip(
+          harness.service.startTicketExecution({ ticketId, execution }),
+        );
+        assert.strictEqual(error.code, "request_failed");
+        assert.match(error.message, /will not repeat it automatically/);
+        assert.deepStrictEqual(harness.requests, []);
+        assert.deepStrictEqual(yield* Ref.get(harness.imported), []);
+        const sql = yield* SqlClient.SqlClient;
+        const pending = yield* sql<{
+          readonly state: string;
+        }>`SELECT state FROM workbench_execution_runs WHERE run_id = ${execution.runId}`;
+        assert.strictEqual(pending[0]?.state, "uncertain");
+      }),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+  );
+
+  it.effect(
+    "refuses Jira execution after its assignment changes or an explicit reset boundary advances",
+    () =>
+      Effect.gen(function* () {
+        for (const guard of ["assignment", "reset"] as const) {
+          yield* runWithHarness((harness) =>
+            Effect.gen(function* () {
+              yield* seedExecution;
+              const sql = yield* SqlClient.SqlClient;
+              if (guard === "assignment")
+                yield* sql`UPDATE workbench_assignments SET superseded_at = ${issueUpdatedAt} WHERE assignment_id = ${execution.assignmentId}`;
+              else
+                yield* sql`UPDATE workbench_tickets SET execution_after_sequence = 10 WHERE ticket_id = ${ticketId}`;
+              const error = yield* Effect.flip(
+                harness.service.startTicketExecution({
+                  ticketId,
+                  execution: { ...execution, readbackOnly: false },
+                }),
+              );
+              assert.strictEqual(error.code, "invalid_binding");
+              assert.deepStrictEqual(harness.requests, []);
+              assert.deepStrictEqual(yield* Ref.get(harness.imported), []);
+            }),
+          ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory));
+        }
+      }),
   );
 
   it.effect("starts execution by transitioning a fresh Jira todo and storing its readback", () =>

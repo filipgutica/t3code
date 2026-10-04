@@ -3,12 +3,15 @@ import {
   EventId,
   TurnItemId,
   type OrchestrationV2StoredEvent,
+  type RunId,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -23,11 +26,11 @@ import {
   layer as ticketExecutionLayer,
 } from "@t3tools/workbench/TicketExecutionService";
 
-type RunEvent = Extract<
-  OrchestrationV2StoredEvent["event"],
-  { type: "run.created" | "run.updated" }
->;
-type ExecutionEvent = { readonly sequence: number; readonly event: RunEvent };
+type ExecutionFailure = {
+  readonly runId: RunId;
+  readonly threadId: ThreadId;
+  readonly startedAt: string;
+};
 
 export interface TicketExecutionReactorShape {
   readonly start: () => Effect.Effect<void, never, Scope.Scope>;
@@ -45,28 +48,29 @@ const make = Effect.gen(function* () {
   const tickets = yield* TicketExecutionService;
   const sink = yield* EventSinkV2;
 
-  const appendFailureActivity = ({ event }: ExecutionEvent, cause: Cause.Cause<unknown>) => {
-    const identity = `workbench:ticket-execution-failed:${event.payload.id}`;
+  const appendFailureActivity = (execution: ExecutionFailure, cause: Cause.Cause<unknown>) => {
+    const occurredAt = DateTime.makeUnsafe(execution.startedAt);
+    const identity = `workbench:ticket-execution-failed:${execution.runId}`;
     return sink
       .commitCommand({
         commandId: CommandId.make(identity),
-        threadId: event.threadId,
+        threadId: execution.threadId,
         commandType: "workbench.ticket-execution-failed",
-        acceptedAt: event.occurredAt,
+        acceptedAt: occurredAt,
         effects: [],
         events: [
           {
             id: EventId.make(identity),
             type: "turn-item.updated",
-            threadId: event.threadId,
-            runId: event.payload.id,
-            occurredAt: event.occurredAt,
+            threadId: execution.threadId,
+            runId: execution.runId,
+            occurredAt: occurredAt,
             payload: {
               id: TurnItemId.make(identity),
-              threadId: event.threadId,
-              runId: event.payload.id,
-              nodeId: event.payload.rootNodeId,
-              providerThreadId: event.payload.providerThreadId,
+              threadId: execution.threadId,
+              runId: execution.runId,
+              nodeId: null,
+              providerThreadId: null,
               providerTurnId: null,
               nativeItemRef: null,
               parentItemId: null,
@@ -81,9 +85,9 @@ const make = Effect.gen(function* () {
                 class: "unknown",
                 retryable: true,
               }),
-              startedAt: event.occurredAt,
-              completedAt: event.occurredAt,
-              updatedAt: event.occurredAt,
+              startedAt: occurredAt,
+              completedAt: occurredAt,
+              updatedAt: occurredAt,
             },
           },
         ],
@@ -94,61 +98,109 @@ const make = Effect.gen(function* () {
           Cause.hasInterruptsOnly(activityCause)
             ? Effect.interrupt
             : Effect.logWarning("Ticket execution failure activity could not be recorded", {
-                threadId: event.threadId,
+                threadId: execution.threadId,
                 cause: Cause.pretty(activityCause),
               }),
         ),
       );
   };
 
-  const processEventSafely = (execution: ExecutionEvent) =>
+  let halted = false;
+  const processEventSafely = (stored: OrchestrationV2StoredEvent) =>
     Effect.gen(function* () {
-      const { event } = execution;
+      if (halted) return;
+      const event = stored.event;
+      const running =
+        (event.type === "run.created" || event.type === "run.updated") &&
+        event.payload.status === "running" &&
+        event.payload.startedAt !== null &&
+        (event.nodeId === undefined || event.nodeId === event.payload.rootNodeId);
+      if (!running) return;
       const thread = yield* orchestrationEngine.getThreadShell(event.threadId);
       if (thread === null || thread.lineage.parentThreadId !== null) return;
-      yield* tickets.start({
-        threadId: event.threadId,
-        startedAt: DateTime.formatIso(event.payload.startedAt ?? event.occurredAt),
+      const pending = yield* tickets.consume({
+        sequence: stored.sequence,
+        run: {
+          id: event.payload.id,
+          threadId: event.threadId,
+          startedAt: DateTime.formatIso(event.payload.startedAt ?? event.occurredAt),
+        },
       });
+      if (pending !== null)
+        yield* tickets
+          .resume(pending)
+          .pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.interrupt
+                : appendFailureActivity(pending, cause),
+            ),
+          );
     }).pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause) ? Effect.interrupt : appendFailureActivity(execution, cause),
-      ),
+      Effect.catchCause((cause) => {
+        const event = stored.event;
+        if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
+        // Local consumption did not commit; later acknowledgements must not skip this event.
+        halted = true;
+        if (event.type === "run.created" || event.type === "run.updated") {
+          return appendFailureActivity(
+            {
+              runId: event.payload.id,
+              threadId: event.threadId,
+              startedAt: DateTime.formatIso(event.occurredAt),
+            },
+            cause,
+          );
+        }
+        return Effect.logWarning("Ticket execution consumption stopped; restart to retry", {
+          cause: Cause.pretty(cause),
+        });
+      }),
     );
-
   const worker = yield* makeDrainableWorker(processEventSafely);
+  const ready = yield* Deferred.make<void>();
   const seenSequence = yield* SubscriptionRef.make(0);
   const noteSeen = (sequence: number) =>
     SubscriptionRef.update(seenSequence, (seen) => Math.max(seen, sequence));
-  const processedTurns = new Map<string, number>();
-
   const start: TicketExecutionReactorShape["start"] = Effect.fn("TicketExecutionReactor.start")(
     function* () {
-      const { snapshotSequence } = yield* orchestrationEngine.getShellSnapshot().pipe(Effect.orDie);
-      yield* noteSeen(snapshotSequence);
-      // Capture before activation, then replay from that cursor and tail live
-      // events, so native startup producers cannot outrun this subscription.
-      const events = sink.stream({
-        afterSequence: snapshotSequence,
-      });
+      const sequence = yield* tickets.initialize.pipe(Effect.orDie);
+      yield* noteSeen(sequence);
+      const events = sink.stream({ afterSequence: sequence });
       yield* forkParked(
-        Stream.runForEach(events, (stored) => {
-          const event = stored.event;
-          if (event.type === "thread.deleted") processedTurns.delete(event.threadId);
-          if (event.type !== "run.created" && event.type !== "run.updated")
-            return noteSeen(stored.sequence);
-          const isNewRun =
-            event.payload.status === "running" &&
-            event.payload.startedAt !== null &&
-            (event.nodeId === undefined || event.nodeId === event.payload.rootNodeId) &&
-            event.payload.ordinal > (processedTurns.get(event.threadId) ?? 0);
-          if (isNewRun) processedTurns.set(event.threadId, event.payload.ordinal);
-          return (
-            isNewRun ? worker.enqueue({ sequence: stored.sequence, event }) : Effect.void
-          ).pipe(Effect.andThen(noteSeen(stored.sequence)));
+        Effect.gen(function* () {
+          // Obligations survive independently of the contiguous local event cursor.
+          yield* Effect.gen(function* () {
+            const pending = yield* tickets.pending;
+            for (const run of pending) {
+              yield* tickets
+                .resume(run)
+                .pipe(
+                  Effect.catchCause((cause) =>
+                    Cause.hasInterruptsOnly(cause)
+                      ? Effect.interrupt
+                      : appendFailureActivity(run, cause),
+                  ),
+                );
+            }
+          }).pipe(Effect.ensuring(Deferred.succeed(ready, undefined)));
+          yield* Stream.runForEach(events, (stored) => {
+            const event = stored.event;
+            const relevant =
+              (event.type === "run.created" || event.type === "run.updated") &&
+              event.payload.status === "running" &&
+              event.payload.startedAt !== null &&
+              (event.nodeId === undefined || event.nodeId === event.payload.rootNodeId);
+            // Ordinary native activity does not write Workbench state. The last relevant acknowledgement is a safe replay prefix.
+            return (relevant ? worker.enqueue(stored) : Effect.void).pipe(
+              Effect.andThen(noteSeen(stored.sequence)),
+            );
+          });
         }).pipe(
           Effect.catchCause((cause) =>
-            Effect.logWarning("Ticket execution event stream failed", { cause }),
+            Cause.hasInterruptsOnly(cause)
+              ? Effect.interrupt
+              : Effect.logWarning("Ticket execution event stream failed", { cause }),
           ),
         ),
       );
@@ -158,6 +210,7 @@ const make = Effect.gen(function* () {
   const drainThrough: TicketExecutionReactorShape["drainThrough"] = Effect.fn(
     "TicketExecutionReactor.drainThrough",
   )(function* (target) {
+    yield* Deferred.await(ready);
     yield* SubscriptionRef.changes(seenSequence).pipe(
       Stream.filter((seen) => seen >= target),
       Stream.runHead,
@@ -167,7 +220,7 @@ const make = Effect.gen(function* () {
 
   return {
     start,
-    drain: worker.drain,
+    drain: Deferred.await(ready).pipe(Effect.andThen(worker.drain)),
     drainThrough,
   } satisfies TicketExecutionReactorShape;
 });

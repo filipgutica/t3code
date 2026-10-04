@@ -1,5 +1,7 @@
 import {
   WorkbenchJiraOperationError,
+  type RunId,
+  type WorkbenchAssignmentId,
   type WorkbenchCreateTicketInput,
   type WorkbenchJiraBinding,
   type WorkbenchJiraGetTicketTransitionsInput,
@@ -200,7 +202,14 @@ export interface JiraTicketWriteServiceShape {
   ) => Effect.Effect<WorkbenchJiraIssueSnapshot, WorkbenchJiraOperationError>;
   /** Starts execution only after a fresh Jira todo status is transitioned and read back. */
   readonly startTicketExecution: (
-    input: WorkbenchJiraGetTicketTransitionsInput,
+    input: WorkbenchJiraGetTicketTransitionsInput & {
+      readonly execution?: {
+        readonly runId: RunId;
+        readonly assignmentId: WorkbenchAssignmentId;
+        readonly sequence: number;
+        readonly readbackOnly: boolean;
+      };
+    },
   ) => Effect.Effect<WorkbenchJiraIssueSnapshot, WorkbenchJiraOperationError>;
 }
 
@@ -495,10 +504,16 @@ export const make = Effect.gen(function* () {
     readonly issue: WorkbenchJiraIssueSnapshot;
     readonly mappedStatus: WorkbenchTicketStatus;
     readonly syncedAt: string;
+    readonly execution?: Parameters<
+      JiraTicketWriteServiceShape["startTicketExecution"]
+    >[0]["execution"];
   }) =>
     sql
       .withTransaction(
         Effect.gen(function* () {
+          if (input.execution !== undefined) {
+            yield* requireExecutionCurrent(input.managed.link.ticketId, input.execution);
+          }
           yield* importer.upsertJiraProjection({
             binding: input.managed.binding,
             existingTicketId: input.managed.link.ticketId,
@@ -530,6 +545,10 @@ export const make = Effect.gen(function* () {
               ),
             )
             .pipe(Effect.mapError(repositoryError));
+          if (input.execution !== undefined) {
+            // Projection and acknowledgement commit together, including interrupted remote requests.
+            yield* sql`UPDATE workbench_execution_runs SET state = 'done' WHERE run_id = ${input.execution.runId}`;
+          }
         }),
       )
       .pipe(
@@ -1035,6 +1054,31 @@ export const make = Effect.gen(function* () {
       );
     });
 
+  const requireExecutionCurrent = (
+    ticketId: WorkbenchJiraGetTicketTransitionsInput["ticketId"],
+    execution: NonNullable<
+      Parameters<JiraTicketWriteServiceShape["startTicketExecution"]>[0]["execution"]
+    >,
+  ) =>
+    sql`SELECT r.run_id FROM workbench_execution_runs r
+      JOIN workbench_assignments a ON a.assignment_id = r.assignment_id
+      JOIN workbench_tickets t ON t.ticket_id = a.ticket_id
+      WHERE r.run_id = ${execution.runId} AND r.state IN ('pending', 'uncertain')
+        AND r.assignment_id = ${execution.assignmentId} AND r.sequence = ${execution.sequence}
+        AND t.ticket_id = ${ticketId} AND t.deleted_at IS NULL AND t.archived_at IS NULL
+        AND t.status = 'todo' AND a.superseded_at IS NULL
+        AND t.execution_after_sequence < r.sequence AND a.execution_after_sequence < r.sequence`.pipe(
+      Effect.mapError(repositoryError),
+      Effect.flatMap((rows) =>
+        rows.length > 0
+          ? Effect.void
+          : operationError(
+              "invalid_binding",
+              "The Ticket execution assignment or status changed. Refresh the Ticket before starting another turn.",
+            ),
+      ),
+    );
+
   const startTicketExecution: JiraTicketWriteServiceShape["startTicketExecution"] = (input) =>
     Effect.gen(function* () {
       const initial = yield* findManagedIssue(input.ticketId);
@@ -1052,6 +1096,8 @@ export const make = Effect.gen(function* () {
               "The Jira Ticket link changed while execution was starting. Refresh Jira before trying again.",
             );
           }
+          if (input.execution !== undefined)
+            yield* requireExecutionCurrent(input.ticketId, input.execution);
           const current = yield* readAssignedIssue(managed);
           const currentMappedStatus = managed.binding.statusMappings.find(
             (mapping) => mapping.jiraStatusId === current.status.id,
@@ -1074,8 +1120,15 @@ export const make = Effect.gen(function* () {
               issue: current,
               mappedStatus: currentMappedStatus,
               syncedAt,
+              execution: input.execution,
             });
             return current;
+          }
+          if (input.execution?.readbackOnly === true) {
+            return yield* operationError(
+              "request_failed",
+              "The previous execution status request may have reached Jira, but the issue is Todo now. Workbench will not repeat it automatically. Refresh Jira and start a new turn when ready.",
+            );
           }
           if (current.remoteUpdatedAt === null) {
             return yield* operationError(
@@ -1107,6 +1160,8 @@ export const make = Effect.gen(function* () {
             status: "in_progress",
             transitionId: undefined,
           });
+          if (input.execution !== undefined)
+            yield* requireExecutionCurrent(input.ticketId, input.execution);
           yield* applyTransition({
             issueId: current.issueId,
             accessToken: transition.accessToken,
@@ -1141,6 +1196,7 @@ export const make = Effect.gen(function* () {
             issue: refreshed,
             mappedStatus: validatedStatus,
             syncedAt,
+            execution: input.execution,
           });
           return refreshed;
         }),

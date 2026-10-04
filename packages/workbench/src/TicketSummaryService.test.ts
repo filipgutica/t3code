@@ -28,6 +28,8 @@ const storeLayer = WorkbenchStoreLive.pipe(
       isProjectRepository: () => Effect.succeed(true),
       findThread: () => Effect.succeed(Option.none()),
       hasThreadAtWorktreePath: () => Effect.succeed(false),
+      executionSequence: Effect.succeed(0),
+      startedExecutionRunIds: Effect.succeed([]),
     }),
   ),
   Layer.provide(NodeSqliteClient.layer({ filename: ":memory:" })),

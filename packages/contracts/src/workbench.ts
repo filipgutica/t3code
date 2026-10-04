@@ -302,6 +302,7 @@ export type WorkbenchPrepareTicketWorkspaceInput = typeof WorkbenchPrepareTicket
 export const WorkbenchReleaseTicketWorkspaceInput = Schema.Struct({
   ticketId: WorkbenchTicketId,
   releasedAt: IsoDateTime,
+  retained: Schema.optional(Schema.Boolean),
 });
 export type WorkbenchReleaseTicketWorkspaceInput = typeof WorkbenchReleaseTicketWorkspaceInput.Type;
 
