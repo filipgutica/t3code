@@ -32,6 +32,7 @@ import {
   type WorkbenchUpdateEpicInput,
   type WorkbenchUpdateProjectInput,
   type WorkbenchUpdateTicketInput,
+  type WorkbenchTicketStatus,
 } from "@t3tools/contracts";
 import * as NodeCrypto from "node:crypto";
 import * as Context from "effect/Context";
@@ -1687,6 +1688,27 @@ const makeWorkbenchStore = Effect.gen(function* () {
     }
   });
 
+  const requireDeletedWorkspaceTicket = Effect.fnUntraced(function* (ticketId: WorkbenchTicketId) {
+    const tickets = yield* sql<{ deletedAt: string | null }>`
+      SELECT deleted_at AS "deletedAt"
+      FROM workbench_tickets
+      WHERE ticket_id = ${ticketId}
+    `;
+    const ticket = tickets[0];
+    if (ticket === undefined) {
+      return yield* new WorkbenchOperationError({
+        code: "ticket_not_found",
+        message: "The Workbench Ticket does not exist.",
+      });
+    }
+    if (ticket.deletedAt === null) {
+      return yield* new WorkbenchOperationError({
+        code: "ticket_changed",
+        message: "Only a deleted Ticket's retained Workspace can be removed.",
+      });
+    }
+  });
+
   const claimTicketWorkspaceRelease: WorkbenchStoreShape["claimTicketWorkspaceRelease"] = Effect.fn(
     "WorkbenchStore.claimTicketWorkspaceRelease",
   )(function* (input) {
@@ -1714,24 +1736,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             }
           }
           if (input.requireDeletedTicket === true) {
-            const tickets = yield* sql<{ deletedAt: string | null }>`
-              SELECT deleted_at AS "deletedAt"
-              FROM workbench_tickets
-              WHERE ticket_id = ${input.ticketId}
-            `;
-            const ticket = tickets[0];
-            if (ticket === undefined) {
-              return yield* new WorkbenchOperationError({
-                code: "ticket_not_found",
-                message: "The Workbench Ticket does not exist.",
-              });
-            }
-            if (ticket.deletedAt === null) {
-              return yield* new WorkbenchOperationError({
-                code: "ticket_changed",
-                message: "Only a deleted Ticket's retained Workspace can be removed.",
-              });
-            }
+            yield* requireDeletedWorkspaceTicket(input.ticketId);
           }
           if (input.expectedRevision !== undefined) {
             yield* requireTicketRevision({
@@ -2194,6 +2199,21 @@ const makeWorkbenchStore = Effect.gen(function* () {
     };
   };
 
+  const recordLocalExecutionReset = Effect.fnUntraced(function* ({
+    ticketId,
+    status,
+    jiraManaged,
+  }: {
+    ticketId: WorkbenchTicketId;
+    status: WorkbenchTicketStatus | undefined;
+    jiraManaged: boolean;
+  }) {
+    if (!jiraManaged && status === "todo") {
+      const sequence = yield* native.executionSequence;
+      yield* sql`UPDATE workbench_tickets SET execution_after_sequence = ${sequence} WHERE ticket_id = ${ticketId}`;
+    }
+  });
+
   const updateTicket: WorkbenchStoreShape["updateTicket"] = Effect.fn(
     "WorkbenchStore.updateTicket",
   )(function* (input) {
@@ -2260,10 +2280,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "Ticket repository scope cannot change while its Workspace is changing.",
             });
           }
-          if (!jiraManaged && input.status === "todo") {
-            const sequence = yield* native.executionSequence;
-            yield* sql`UPDATE workbench_tickets SET execution_after_sequence = ${sequence} WHERE ticket_id = ${input.id}`;
-          }
+          yield* recordLocalExecutionReset({
+            ticketId: input.id,
+            status: input.status,
+            jiraManaged,
+          });
           const contentChanged = title !== current.title || markdown !== current.markdown;
           const summary = summaryUpdate({ row: current, contentChanged });
           yield* sql`
@@ -2464,6 +2485,22 @@ const makeWorkbenchStore = Effect.gen(function* () {
       Effect.mapError(workbenchStoreError),
     );
 
+  const recordJiraExecutionReset = Effect.fnUntraced(function* ({
+    ticketId,
+    status,
+  }: {
+    ticketId: WorkbenchTicketId;
+    status: WorkbenchTicketStatus;
+  }) {
+    if (status === "todo") {
+      const sequence = yield* native.executionSequence;
+      yield* sql`
+        UPDATE workbench_tickets SET execution_after_sequence = ${sequence}
+        WHERE ticket_id = ${ticketId} AND status <> 'todo'
+      `;
+    }
+  });
+
   const updateJiraTicketFields: WorkbenchStoreShape["updateJiraTicketFields"] = Effect.fn(
     "WorkbenchStore.updateJiraTicketFields",
   )(function* (input) {
@@ -2508,13 +2545,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               contentChanged: false,
             };
           }
-          if (status === "todo") {
-            const sequence = yield* native.executionSequence;
-            yield* sql`
-              UPDATE workbench_tickets SET execution_after_sequence = ${sequence}
-              WHERE ticket_id = ${input.id} AND status <> 'todo'
-            `;
-          }
+          yield* recordJiraExecutionReset({ ticketId: input.id, status });
           const contentChanged = title !== current.title || markdown !== current.markdown;
           const summary = summaryUpdate({ row: current, contentChanged });
 
