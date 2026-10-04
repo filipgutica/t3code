@@ -9,6 +9,10 @@ events for eligible owner PRs, including docs-only updates.
 
 ## CI coverage and triggers
 
+[Workbench CI](../../.github/workflows/workbench-ci.yml) checks every PR and `main` push, including the native server, web, desktop build, shared packages, and release smoke checks. Its generated `Workbench Check` result retains the upstream gates. The package boundary/typecheck, desktop smoke for upstream syncs, browser regressions, and private preview checks below remain separate.
+
+Upstream-only mobile delivery and fingerprint checks, relay deployment, release trains, macOS preview publication, and Cursor hygiene are archived outside GitHub's workflow directory. They do not queue runs in this fork. [CI ownership](../internals/workbench-fork.md#ci-ownership) explains the retained sources and upstream-sync review requirement.
+
 | Check                                                                        | When it starts                                                                                                                 | What a pass establishes                                                                                    | Boundary                                                          |
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | [Workbench quality](../../.github/workflows/workbench-quality.yml)           | PR or `main` push with Workbench, package, or quality-tool changes; manual dispatch                                            | Package typecheck and boundary, tests, and quality gates pass. Upstream-sync PRs also get a desktop smoke. | No Workbench browser journey or hosted preview                    |
@@ -28,6 +32,8 @@ The separate [hosted web preview](../../.github/workflows/web-preview.yml) runs
 for same-repository PRs labelled `preview:web`. It deploys only the web client:
 open the exact URL from its PR comment and pair a reachable T3 server. The
 private Workbench PR demo instead launches a temporary Sandbox with seeded state.
+
+[Workbench Pages](../../.github/workflows/workbench-pages.yml) checks the static showcase when its inputs change and deploys it after a matching `main` push. [Workbench desktop release](../../.github/workflows/workbench-release.yml) remains manual, with build-only and draft-release modes. Issue labels, PR size, contributor vouching, and Workbench thread-transfer reports remain active repository tooling.
 
 The [hosted browser smoke](../../scripts/workbench-preview/README.md#hosted-browser-smoke)
 is a separate manual check. It covers protected launch, automatic pairing, a

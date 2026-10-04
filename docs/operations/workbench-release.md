@@ -12,7 +12,7 @@ Merging a pull request updates `main` without creating a release. Verified
 upstream syncs update `main` automatically after their focused gates and
 conflict-checked base update; a stale or protected update remains an open PR
 for manual review.
-The inherited upstream release workflow skips this fork.
+The inherited upstream release workflow is archived outside GitHub's active workflow directory.
 
 Enter a commit SHA from `main` in **commit_sha** to release that checkpoint. For
 a merged PR, use its merge commit, not a commit from its feature branch. Leave
@@ -41,8 +41,7 @@ start. A signing or notarization failure fails the release rather than falling
 back to unsigned output.
 
 Review the draft and publish it manually. Only published releases become
-update candidates. The tag is `workbench-vX.Y.Z`, so it does not trigger the
-upstream-compatible `v*` release workflow.
+update candidates. Workbench uses the independent `workbench-vX.Y.Z` tag namespace.
 
 ## Updates
 
