@@ -10,7 +10,7 @@ import {
   decodePullRequestSummariesJson,
   decodeReviewThreadsJson,
   buildPullRequestSummariesGraphQlQuery,
-  PULL_REQUEST_CORE_GRAPHQL_QUERY,
+  pullRequestCoreGraphQlQuery,
   REVIEW_THREADS_GRAPHQL_QUERY,
 } from "../../apps/server/src/pullRequest/gitHubPullRequestJson.ts";
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
@@ -85,7 +85,9 @@ it("delivers failed checks, unresolved feedback, a separate API repository and i
       ),
     }),
   ]);
-  const core = decodePullRequestCoreJson(await read(901, PULL_REQUEST_CORE_GRAPHQL_QUERY));
+  const core = decodePullRequestCoreJson(
+    await read(901, pullRequestCoreGraphQlQuery("github.com")),
+  );
   expect(Result.isSuccess(core)).toBe(true);
   if (!Result.isSuccess(core))
     throw new Error("Native detail decoder rejected the synthetic adapter");

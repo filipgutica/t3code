@@ -737,42 +737,56 @@ test.describe("Jira connection UI contract", () => {
     expect(syncIndex).toBeGreaterThan(migrateTags[1] ?? -1);
   });
 
-  for (const recoveryReadFails of [false, true]) {
-    test(`recovers a committed local deletion after a lost response${recoveryReadFails ? " and reconnect" : ""}`, async ({
-      page,
-      demo,
-    }) => {
-      const route = await routeMockJira(page);
-      const workspaceId = await createWorkspace(page, demo, "Deterministic Jira Lost Response");
-      await seedLocalEpicAndTicket(page, demo, workspaceId);
-      const dialog = await connectJira(page);
-      await dialog.getByRole("radio", { name: /Delete local data/ }).click();
-      route.setMigrationMode("lost-response");
-      route.setRecoveryReadFailure(recoveryReadFails);
-      await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
+  const recoverCommittedLocalDeletion = async ({
+    page,
+    demo,
+    recoveryReadFails,
+  }: {
+    page: Page;
+    demo: Demo;
+    recoveryReadFails: boolean;
+  }) => {
+    const route = await routeMockJira(page);
+    const workspaceId = await createWorkspace(page, demo, "Deterministic Jira Lost Response");
+    await seedLocalEpicAndTicket(page, demo, workspaceId);
+    const dialog = await connectJira(page);
+    await dialog.getByRole("radio", { name: /Delete local data/ }).click();
+    route.setMigrationMode("lost-response");
+    route.setRecoveryReadFailure(recoveryReadFails);
+    await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Delete and import", exact: true })
+      .click();
+    if (recoveryReadFails) {
+      await expect(dialog.getByRole("alert")).toContainText(
+        "Migration response was lost after committing.",
+      );
+      await expect.poll(route.getFailedSnapshotCount).toBeGreaterThan(0);
+      route.setRecoveryReadFailure(false);
+      await dialog.getByRole("button", { name: "Save mirror", exact: true }).click();
       await page
         .getByRole("alertdialog")
         .getByRole("button", { name: "Delete and import", exact: true })
         .click();
-      if (recoveryReadFails) {
-        await expect(dialog.getByRole("alert")).toContainText(
-          "Migration response was lost after committing.",
-        );
-        await expect.poll(route.getFailedSnapshotCount).toBeGreaterThan(0);
-        route.setRecoveryReadFailure(false);
-        await dialog.getByRole("button", { name: "Save mirror", exact: true }).click();
-        await page
-          .getByRole("alertdialog")
-          .getByRole("button", { name: "Delete and import", exact: true })
-          .click();
-      }
-      await expect(dialog).not.toBeVisible();
-      await expect(
-        page.getByRole("status").filter({ hasText: /Synced \d+ Jira tickets?/i }),
-      ).toBeVisible();
-      expect(route.getBindingCreateCount()).toBe(1);
-      expect(route.getMigrationRequests()).toHaveLength(1);
-      expect(route.getSyncRequestCount()).toBe(1);
-    });
-  }
+    }
+    await expect(dialog).not.toBeVisible();
+    await expect(
+      page.getByRole("status").filter({ hasText: /Synced \d+ Jira tickets?/i }),
+    ).toBeVisible();
+    expect(route.getBindingCreateCount()).toBe(1);
+    expect(route.getMigrationRequests()).toHaveLength(1);
+    expect(route.getSyncRequestCount()).toBe(1);
+  };
+
+  test("recovers a committed local deletion after a lost response", async ({ page, demo }) => {
+    await recoverCommittedLocalDeletion({ page, demo, recoveryReadFails: false });
+  });
+
+  test("recovers a committed local deletion after a lost response and reconnect", async ({
+    page,
+    demo,
+  }) => {
+    await recoverCommittedLocalDeletion({ page, demo, recoveryReadFails: true });
+  });
 });
