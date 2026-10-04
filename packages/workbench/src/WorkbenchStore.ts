@@ -1,4 +1,5 @@
 import {
+  RunId,
   WorkbenchAssignment,
   WorkbenchAssignmentId,
   WorkbenchEpic,
@@ -279,14 +280,22 @@ export interface WorkbenchCompleteTicketWorkspaceInput {
   readonly completedAt: string;
 }
 
-export interface WorkbenchStartTicketExecutionInput {
+export interface WorkbenchExecutionRun {
+  readonly runId: RunId;
+  readonly threadId: ThreadId;
+  readonly sequence: number;
   readonly ticketId: WorkbenchTicketId;
+  readonly assignmentId: WorkbenchAssignmentId;
   readonly startedAt: IsoDateTime;
+  readonly state: "pending" | "uncertain";
 }
-
-export interface WorkbenchStartTicketExecutionResult {
-  readonly ticket: WorkbenchTicket;
-  readonly changed: boolean;
+export interface WorkbenchConsumeTicketExecutionInput {
+  readonly sequence: number;
+  readonly run: {
+    readonly id: RunId;
+    readonly threadId: ThreadId;
+    readonly startedAt: IsoDateTime;
+  };
 }
 
 export interface WorkbenchTicketWorkspaceRepositoryState {
@@ -300,6 +309,8 @@ export interface WorkbenchClaimTicketWorkspaceReleaseInput {
   readonly attemptId: WorkbenchTicketWorkspaceAttemptId;
   readonly claimedAt: string;
   readonly requireActiveTicket?: boolean;
+  /** Retained cleanup requires a persisted Ticket tombstone. */
+  readonly requireDeletedTicket?: boolean;
   /** Explicit reset refuses every still-live linked native Thread. */
   readonly requireNoLinkedThreads?: boolean;
   readonly expectedRevision?: number;
@@ -337,10 +348,21 @@ interface WorkbenchStoreShape {
   readonly updateTicket: (
     input: WorkbenchUpdateTicketInput,
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
-  /** Atomically advances a locally owned todo Ticket when its Thread starts executing. */
-  readonly startTicketExecution: (
-    input: WorkbenchStartTicketExecutionInput,
-  ) => Effect.Effect<WorkbenchStartTicketExecutionResult, WorkbenchOperationError>;
+  readonly initializeTicketExecution: Effect.Effect<number, WorkbenchOperationError>;
+  readonly consumeTicketExecution: (
+    input: WorkbenchConsumeTicketExecutionInput,
+  ) => Effect.Effect<WorkbenchExecutionRun | null, WorkbenchOperationError>;
+  readonly pendingTicketExecutions: Effect.Effect<
+    ReadonlyArray<WorkbenchExecutionRun>,
+    WorkbenchOperationError
+  >;
+  /** Record uncertainty before the Jira request. Interrupted requests may only be read back. */
+  readonly beginTicketExecutionJira: (
+    runId: RunId,
+  ) => Effect.Effect<"start" | "resume" | "skip", WorkbenchOperationError>;
+  readonly completeTicketExecutionJira: (
+    runId: RunId,
+  ) => Effect.Effect<void, WorkbenchOperationError>;
   readonly updateJiraTicketFields: (
     input: WorkbenchUpdateJiraTicketFieldsInput,
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
@@ -1691,6 +1713,26 @@ const makeWorkbenchStore = Effect.gen(function* () {
               });
             }
           }
+          if (input.requireDeletedTicket === true) {
+            const tickets = yield* sql<{ deletedAt: string | null }>`
+              SELECT deleted_at AS "deletedAt"
+              FROM workbench_tickets
+              WHERE ticket_id = ${input.ticketId}
+            `;
+            const ticket = tickets[0];
+            if (ticket === undefined) {
+              return yield* new WorkbenchOperationError({
+                code: "ticket_not_found",
+                message: "The Workbench Ticket does not exist.",
+              });
+            }
+            if (ticket.deletedAt === null) {
+              return yield* new WorkbenchOperationError({
+                code: "ticket_changed",
+                message: "Only a deleted Ticket's retained Workspace can be removed.",
+              });
+            }
+          }
           if (input.expectedRevision !== undefined) {
             yield* requireTicketRevision({
               ticketId: input.ticketId,
@@ -2218,6 +2260,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "Ticket repository scope cannot change while its Workspace is changing.",
             });
           }
+          if (!jiraManaged && input.status === "todo") {
+            const sequence = yield* native.executionSequence;
+            yield* sql`UPDATE workbench_tickets SET execution_after_sequence = ${sequence} WHERE ticket_id = ${input.id}`;
+          }
           const contentChanged = title !== current.title || markdown !== current.markdown;
           const summary = summaryUpdate({ row: current, contentChanged });
           yield* sql`
@@ -2295,83 +2341,128 @@ const makeWorkbenchStore = Effect.gen(function* () {
     return ticket;
   });
 
-  const startTicketExecution: WorkbenchStoreShape["startTicketExecution"] = Effect.fn(
-    "WorkbenchStore.startTicketExecution",
-  )(function* (input) {
-    const result = yield* sql
+  const ExecutionRunRow = Schema.Struct({
+    runId: RunId,
+    threadId: ThreadId,
+    sequence: Schema.Number,
+    ticketId: WorkbenchTicketId,
+    assignmentId: WorkbenchAssignmentId,
+    startedAt: IsoDateTime,
+    state: Schema.Literals(["pending", "uncertain"]),
+  });
+  const pendingTicketExecutions = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ExecutionRunRow,
+    execute:
+      () => sql`SELECT run_id AS "runId", thread_id AS "threadId", sequence, ticket_id AS "ticketId",
+      assignment_id AS "assignmentId", started_at AS "startedAt", state
+      FROM workbench_execution_runs WHERE state IN ('pending', 'uncertain') ORDER BY sequence`,
+  })(undefined).pipe(Effect.mapError(workbenchStoreError));
+
+  const initializeTicketExecution = sql
+    .withTransaction(
+      Effect.gen(function* () {
+        // Acquire the SQLite writer before the high-water and run baseline reads.
+        yield* sql`UPDATE workbench_execution_cursor SET sequence = sequence WHERE singleton = 1`;
+        const existing = yield* sql<{
+          readonly sequence: number;
+        }>`SELECT sequence FROM workbench_execution_cursor WHERE singleton = 1`;
+        if (existing[0] !== undefined) return existing[0].sequence;
+        const sequence = yield* native.executionSequence;
+        const started = yield* native.startedExecutionRunIds;
+        for (const id of started) {
+          yield* sql`INSERT OR IGNORE INTO workbench_execution_runs (run_id, sequence, state) VALUES (${id}, ${sequence}, 'done')`;
+        }
+        yield* sql`INSERT INTO workbench_execution_cursor (singleton, sequence) VALUES (1, ${sequence})`;
+        return sequence;
+      }),
+    )
+    .pipe(Effect.mapError(workbenchStoreError));
+
+  const consumeTicketExecution: WorkbenchStoreShape["consumeTicketExecution"] = (input) =>
+    sql
       .withTransaction(
         Effect.gen(function* () {
-          const current = yield* lockAndFindTicket({
-            ticketId: input.ticketId,
-            activeOnly: true,
-          });
-          if (Option.isNone(current)) {
+          yield* sql`UPDATE workbench_execution_cursor SET sequence = sequence WHERE singleton = 1`;
+          const cursor = yield* sql<{
+            readonly sequence: number;
+          }>`SELECT sequence FROM workbench_execution_cursor WHERE singleton = 1`;
+          if (cursor[0] === undefined)
             return yield* new WorkbenchOperationError({
-              code: "ticket_not_found",
-              message: "The Workbench Ticket does not exist.",
+              code: "persistence_failed",
+              message: "Ticket execution consumption has not been initialized.",
             });
+          if (input.sequence <= cursor[0].sequence) return null;
+          let pending: WorkbenchExecutionRun | null = null;
+          const run = input.run;
+          const prior =
+            yield* sql`SELECT run_id FROM workbench_execution_runs WHERE run_id = ${run.id}`;
+          if (prior.length === 0) {
+            const assignments = yield* sql<{
+              readonly id: WorkbenchAssignmentId;
+              readonly ticketId: WorkbenchTicketId;
+            }>`
+          SELECT a.assignment_id AS id, a.ticket_id AS "ticketId" FROM workbench_assignments a
+          JOIN workbench_tickets t ON t.ticket_id = a.ticket_id
+          WHERE a.thread_id = ${run.threadId} AND a.superseded_at IS NULL
+            AND t.deleted_at IS NULL AND t.archived_at IS NULL AND t.status = 'todo'
+            AND a.execution_after_sequence < ${input.sequence}
+            AND t.execution_after_sequence < ${input.sequence}`;
+            const assignment = assignments[0];
+            if (assignment !== undefined) {
+              if (yield* isJiraManagedTicket(assignment.ticketId)) {
+                pending = {
+                  runId: run.id,
+                  threadId: run.threadId,
+                  sequence: input.sequence,
+                  ticketId: assignment.ticketId,
+                  assignmentId: assignment.id,
+                  startedAt: run.startedAt,
+                  state: "pending",
+                };
+              } else {
+                yield* sql`UPDATE workbench_tickets SET status = 'in_progress', revision = revision + 1,
+              updated_at = MAX(updated_at, ${run.startedAt}) WHERE ticket_id = ${assignment.ticketId}`;
+              }
+            }
+            yield* sql`INSERT INTO workbench_execution_runs (run_id, thread_id, sequence, ticket_id, assignment_id, started_at, state)
+          VALUES (${run.id}, ${run.threadId}, ${input.sequence}, ${assignment?.ticketId ?? null}, ${assignment?.id ?? null}, ${run.startedAt}, ${pending === null ? "done" : "pending"})`;
           }
-          if (current.value.archivedAt !== null) {
-            return yield* new WorkbenchOperationError({
-              code: "ticket_archived",
-              message: "Archived Workbench Tickets cannot start execution.",
-            });
-          }
-          if (yield* isJiraManagedTicket(input.ticketId)) {
-            return yield* new WorkbenchOperationError({
-              code: "jira_managed_ticket",
-              message: "Jira-managed Tickets must be transitioned through Jira.",
-            });
-          }
-          const repositories = yield* listTicketRepositoryRowsByTicket({
-            ticketId: input.ticketId,
-          });
-          const repositoryProjectIds =
-            repositories.length > 0
-              ? repositories.map((repository) => repository.repositoryProjectId)
-              : [current.value.primaryT3ProjectId];
-          if (current.value.status !== "todo") {
-            return {
-              ticket: ticketFromRow(current.value, repositoryProjectIds),
-              changed: false,
-            };
-          }
-          const updated = yield* sql<{ readonly updatedAt: string }>`
-            UPDATE workbench_tickets
-            SET
-              status = 'in_progress',
-              revision = revision + 1,
-              updated_at = MAX(updated_at, ${input.startedAt})
-            WHERE ticket_id = ${input.ticketId}
-              AND deleted_at IS NULL
-              AND status = 'todo'
-            RETURNING updated_at AS "updatedAt"
-          `;
-          const persisted = updated[0];
-          if (persisted === undefined) {
-            return yield* new WorkbenchOperationError({
-              code: "ticket_changed",
-              message: "The Workbench Ticket changed before execution could start.",
-            });
-          }
-          return {
-            ticket: ticketFromRow(
-              {
-                ...current.value,
-                status: "in_progress",
-                revision: current.value.revision + 1,
-                updatedAt: persisted.updatedAt,
-              },
-              repositoryProjectIds,
-            ),
-            changed: true,
-          };
+          // Every preceding event was applied or its Jira obligation was persisted in this lane.
+          yield* sql`UPDATE workbench_execution_cursor SET sequence = ${input.sequence} WHERE singleton = 1`;
+          return pending;
         }),
       )
       .pipe(Effect.mapError(workbenchStoreError));
-    if (result.changed) yield* publishTicketChange(result.ticket.id);
-    return result;
-  });
+
+  const beginTicketExecutionJira: WorkbenchStoreShape["beginTicketExecutionJira"] = (runId) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* sql`UPDATE workbench_execution_runs SET state = state WHERE run_id = ${runId}`;
+          const current = yield* sql<{
+            readonly state: "pending" | "uncertain";
+          }>`SELECT r.state FROM workbench_execution_runs r
+      JOIN workbench_assignments a ON a.assignment_id = r.assignment_id
+      JOIN workbench_tickets t ON t.ticket_id = a.ticket_id
+      WHERE r.run_id = ${runId} AND r.state IN ('pending', 'uncertain')
+        AND a.superseded_at IS NULL AND t.deleted_at IS NULL AND t.archived_at IS NULL
+        AND t.status = 'todo' AND a.execution_after_sequence < r.sequence AND t.execution_after_sequence < r.sequence`;
+          if (current[0] === undefined) {
+            yield* sql`UPDATE workbench_execution_runs SET state = 'done' WHERE run_id = ${runId}`;
+            return "skip";
+          }
+          if (current[0].state === "uncertain") return "resume";
+          yield* sql`UPDATE workbench_execution_runs SET state = 'uncertain' WHERE run_id = ${runId}`;
+          return "start";
+        }),
+      )
+      .pipe(Effect.mapError(workbenchStoreError));
+  const completeTicketExecutionJira: WorkbenchStoreShape["completeTicketExecutionJira"] = (runId) =>
+    sql`UPDATE workbench_execution_runs SET state = 'done' WHERE run_id = ${runId}`.pipe(
+      Effect.asVoid,
+      Effect.mapError(workbenchStoreError),
+    );
 
   const updateJiraTicketFields: WorkbenchStoreShape["updateJiraTicketFields"] = Effect.fn(
     "WorkbenchStore.updateJiraTicketFields",
@@ -2416,6 +2507,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
               ),
               contentChanged: false,
             };
+          }
+          if (status === "todo") {
+            const sequence = yield* native.executionSequence;
+            yield* sql`
+              UPDATE workbench_tickets SET execution_after_sequence = ${sequence}
+              WHERE ticket_id = ${input.id} AND status <> 'todo'
+            `;
           }
           const contentChanged = title !== current.title || markdown !== current.markdown;
           const summary = summaryUpdate({ row: current, contentChanged });
@@ -2827,8 +2925,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
             threadId: input.threadId,
           });
           yield* sql`
-            INSERT INTO workbench_assignments (assignment_id, ticket_id, thread_id, created_at)
-            VALUES (${input.id}, ${input.ticketId}, ${input.threadId}, ${input.createdAt})
+            INSERT INTO workbench_assignments (assignment_id, ticket_id, thread_id, created_at, execution_after_sequence)
+            VALUES (${input.id}, ${input.ticketId}, ${input.threadId}, ${input.createdAt}, ${yield* native.executionSequence})
           `;
           return WorkbenchAssignment.make({ ...input, supersededAt: null });
         }),
@@ -2938,13 +3036,15 @@ const makeWorkbenchStore = Effect.gen(function* () {
               ticket_id,
               thread_id,
               created_at,
-              superseded_at
+              superseded_at,
+              execution_after_sequence
             ) VALUES (
               ${replacement.id},
               ${replacement.ticketId},
               ${replacement.threadId},
               ${replacement.createdAt},
-              NULL
+              NULL,
+              ${yield* native.executionSequence}
             )
           `;
           return replacement;
@@ -2966,7 +3066,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
     archiveEpic,
     createTicket,
     updateTicket,
-    startTicketExecution,
+    initializeTicketExecution,
+    consumeTicketExecution,
+    pendingTicketExecutions,
+    beginTicketExecutionJira,
+    completeTicketExecutionJira,
     updateJiraTicketFields,
     requestTicketSummary,
     completeTicketSummary,

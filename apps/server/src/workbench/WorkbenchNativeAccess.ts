@@ -1,4 +1,4 @@
-import { ProjectId, ThreadId, WorkbenchOperationError } from "@t3tools/contracts";
+import { RunId, ProjectId, ThreadId, WorkbenchOperationError } from "@t3tools/contracts";
 import { WorkbenchNativeAccess } from "@t3tools/workbench/WorkbenchNativeAccess";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -88,6 +88,22 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
   );
 
   return WorkbenchNativeAccess.of({
+    executionSequence: sql<{ readonly sequence: number }>`
+      SELECT COALESCE(MAX(sequence), 0) AS sequence FROM orchestration_events
+      WHERE application_event_version = 2 AND aggregate_kind = 'thread'
+    `.pipe(
+      Effect.map((rows) => rows[0]!.sequence),
+      Effect.mapError(persistenceError),
+    ),
+    startedExecutionRunIds: SqlSchema.findAll({
+      Request: Schema.Void,
+      Result: Schema.Struct({ id: RunId }),
+      execute: () => sql`SELECT run_id AS id FROM orchestration_v2_projection_runs
+        WHERE json_extract(payload_json, '$.startedAt') IS NOT NULL`,
+    })(undefined).pipe(
+      Effect.map((rows) => rows.map((row) => row.id)),
+      Effect.mapError(persistenceError),
+    ),
     findProject,
     isProjectRepository,
     findThread,

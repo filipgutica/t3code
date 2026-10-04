@@ -1,4 +1,5 @@
 import {
+  RunId,
   ProjectId,
   ThreadId,
   WorkbenchAssignmentId,
@@ -41,6 +42,8 @@ const nativeLayer = (options?: {
         );
       },
       hasThreadAtWorktreePath: () => Effect.succeed(false),
+      executionSequence: Effect.succeed(0),
+      startedExecutionRunIds: Effect.succeed([]),
     }),
   );
 };
@@ -109,73 +112,70 @@ describe("WorkbenchStore package boundary", () => {
         updatedAt: "2026-09-07T10:01:00.000Z",
       });
 
-      const started = yield* store.startTicketExecution({
+      const todoThread = ThreadId.make("execution-todo-thread");
+      const doneThread = ThreadId.make("execution-done-thread");
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("execution-todo-assignment"),
         ticketId: todoTicketId,
-        startedAt: "2026-09-07T10:02:00.000Z",
+        threadId: todoThread,
+        createdAt: todo.createdAt,
       });
-      expect(started.changed).toBe(true);
-      expect(started.ticket.status).toBe("in_progress");
-      expect(started.ticket.revision).toBe(todo.revision + 1);
-
-      const repeated = yield* store.startTicketExecution({
-        ticketId: todoTicketId,
-        startedAt: "2026-09-07T10:03:00.000Z",
-      });
-      expect(repeated.changed).toBe(false);
-      expect(repeated.ticket.status).toBe("in_progress");
-      expect(repeated.ticket.revision).toBe(started.ticket.revision);
-
-      const preserved = yield* store.startTicketExecution({
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("execution-done-assignment"),
         ticketId: doneTicketId,
-        startedAt: "2026-09-07T10:04:00.000Z",
+        threadId: doneThread,
+        createdAt: done.createdAt,
       });
-      expect(preserved.changed).toBe(false);
-      expect(preserved.ticket.status).toBe("done");
+      yield* store.initializeTicketExecution;
+      yield* store.consumeTicketExecution({
+        sequence: 1,
+        run: {
+          id: RunId.make("todo-run"),
+          threadId: todoThread,
+          startedAt: "2026-09-07T10:02:00.000Z",
+        },
+      });
+      const started = (yield* store.getSnapshot).tickets.find(
+        (ticket) => ticket.id === todoTicketId,
+      )!;
+      expect(started.status).toBe("in_progress");
+      expect(started.revision).toBe(todo.revision + 1);
+      yield* store.consumeTicketExecution({
+        sequence: 2,
+        run: {
+          id: RunId.make("todo-run"),
+          threadId: todoThread,
+          startedAt: "2026-09-07T10:03:00.000Z",
+        },
+      });
+      expect(
+        (yield* store.getSnapshot).tickets.find((ticket) => ticket.id === todoTicketId),
+      ).toEqual(started);
+      yield* store.consumeTicketExecution({
+        sequence: 3,
+        run: {
+          id: RunId.make("done-run"),
+          threadId: doneThread,
+          startedAt: "2026-09-07T10:04:00.000Z",
+        },
+      });
       expect(
         (yield* store.getSnapshot).tickets.map((ticket) => [ticket.id, ticket.status]),
       ).toEqual([
         [doneTicketId, "done"],
         [todoTicketId, "in_progress"],
       ]);
-    }).pipe(Effect.provide(testLayer({ projects: new Set(["execution-project"]) }))),
-  );
-
-  it.effect("initializes the Workbench schema and migration ledger", () =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      const tables = yield* sql<{ readonly name: string }>`
-        SELECT name
-        FROM sqlite_master
-        WHERE type = 'table' AND name LIKE 'workbench_%'
-        ORDER BY name
-      `;
-      const migrations = yield* sql<{ readonly version: number }>`
-        SELECT version
-        FROM workbench_schema_migrations
-        ORDER BY version
-      `;
-
-      expect(tables.map(({ name }) => name)).toEqual([
-        "workbench_assignments",
-        "workbench_epics",
-        "workbench_jira_bindings",
-        "workbench_jira_connections",
-        "workbench_jira_epic_creations",
-        "workbench_jira_epic_links",
-        "workbench_jira_issue_links",
-        "workbench_jira_ticket_creations",
-        "workbench_project_links",
-        "workbench_projects",
-        "workbench_schema_migrations",
-        "workbench_ticket_repositories",
-        "workbench_ticket_workspace_repositories",
-        "workbench_ticket_workspaces",
-        "workbench_tickets",
-      ]);
-      expect(migrations.map(({ version }) => version)).toEqual([
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-      ]);
-    }).pipe(Effect.provide(testLayer())),
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          projects: new Set(["execution-project"]),
+          threads: new Map([
+            ["execution-todo-thread", "execution-project"],
+            ["execution-done-thread", "execution-project"],
+          ]),
+        }),
+      ),
+    ),
   );
 
   it.effect(

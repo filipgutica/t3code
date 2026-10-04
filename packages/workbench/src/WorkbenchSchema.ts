@@ -687,6 +687,24 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
     CREATE INDEX IF NOT EXISTS idx_workbench_jira_issue_links_ticket
     ON workbench_jira_issue_links(ticket_id, active)
   `;
+  yield* sql.withTransaction(
+    Effect.gen(function* () {
+      const applied =
+        yield* sql`SELECT version FROM workbench_schema_migrations WHERE version = 15`;
+      if (applied.length > 0) return;
+      yield* sql`ALTER TABLE workbench_tickets ADD COLUMN execution_after_sequence INTEGER NOT NULL DEFAULT 0`;
+      yield* sql`ALTER TABLE workbench_assignments ADD COLUMN execution_after_sequence INTEGER NOT NULL DEFAULT 0`;
+      yield* sql`CREATE TABLE workbench_execution_cursor (
+      singleton INTEGER PRIMARY KEY CHECK (singleton = 1), sequence INTEGER NOT NULL
+    )`;
+      yield* sql`CREATE TABLE workbench_execution_runs (
+      run_id TEXT PRIMARY KEY, sequence INTEGER NOT NULL, thread_id TEXT, ticket_id TEXT,
+      assignment_id TEXT, started_at TEXT, state TEXT NOT NULL
+        CHECK (state IN ('done', 'pending', 'uncertain'))
+    )`;
+      yield* sql`INSERT INTO workbench_schema_migrations (version) VALUES (15)`;
+    }),
+  );
   yield* sql`
     INSERT OR IGNORE INTO workbench_schema_migrations (version)
     VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13), (14)

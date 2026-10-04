@@ -1,4 +1,4 @@
-import { ProjectId, ThreadId, WorkbenchOperationError } from "@t3tools/contracts";
+import { RunId, ProjectId, ThreadId, WorkbenchOperationError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Option from "effect/Option";
@@ -7,6 +7,9 @@ import type * as Option from "effect/Option";
 export class WorkbenchNativeAccess extends Context.Service<
   WorkbenchNativeAccess,
   {
+    /** Read through the caller's SQL transaction to establish a durable execution boundary. */
+    readonly executionSequence: Effect.Effect<number, WorkbenchOperationError>;
+    readonly startedExecutionRunIds: Effect.Effect<ReadonlyArray<RunId>, WorkbenchOperationError>;
     readonly findProject: (
       projectId: ProjectId,
     ) => Effect.Effect<Option.Option<{ readonly id: ProjectId }>, WorkbenchOperationError>;

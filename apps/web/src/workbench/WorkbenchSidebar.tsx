@@ -25,6 +25,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useWorkbenchSidebarFilters } from "./workbenchSidebarFilterState";
 
 import { WorkbenchSidebarTicketButton } from "./WorkbenchSidebarTicketButton";
+import { WorkbenchRetainedWorktrees } from "./WorkbenchRetainedWorktrees";
 import {
   getWorkbenchSidebarTicketDetails,
   type WorkbenchSidebarTicketDetails,
@@ -237,6 +238,16 @@ export function WorkbenchSidebar({
               <TooltipPopup side="right">Add Workspace</TooltipPopup>
             </Tooltip>
           </div>
+
+          {environmentId && snapshot ? (
+            <div className="px-2">
+              <WorkbenchRetainedWorktrees
+                key={environmentId}
+                environmentId={environmentId}
+                snapshot={snapshot}
+              />
+            </div>
+          ) : null}
 
           <WorkbenchSidebarWorkspaceState
             environmentId={environmentId}

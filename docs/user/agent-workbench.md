@@ -160,6 +160,10 @@ Threads. Unlink Threads working elsewhere. Commit or preserve local changes, the
 workspace → Advanced workspace settings → Remove prepared worktrees** and confirm.
 The reset removes worktrees but keeps the Ticket, branches, and commits.
 
+After deleting a Ticket, open **Retained worktrees** in the Workbench sidebar to
+remove its kept worktrees. Review the listed repository paths, choose **Remove**,
+and confirm. The same Thread ownership and local-change checks apply.
+
 ## Connect Jira
 
 A Workspace can import issues assigned to the connected Jira user from a board and

@@ -56,6 +56,7 @@ import {
 } from "./startWorkbenchTicket";
 
 import { WorkbenchJiraTransitionsPreloader } from "./WorkbenchJiraTransitionsPreloader";
+import { WorkbenchQueryError } from "./WorkbenchQueryError";
 
 import {
   WorkbenchTicketDetail,
@@ -105,25 +106,6 @@ function WorkbenchLoading() {
         ))}
       </div>
     </div>
-  );
-}
-
-function WorkbenchRefreshError({ message, onRetry }: { message: string; onRetry: () => void }) {
-  return (
-    <Empty className="h-full">
-      <EmptyHeader>
-        <EmptyMedia variant="icon">
-          <AlertCircleIcon />
-        </EmptyMedia>
-        <EmptyTitle>Workbench couldn&apos;t refresh</EmptyTitle>
-        <EmptyDescription>{message}</EmptyDescription>
-      </EmptyHeader>
-      <EmptyContent>
-        <Button onClick={onRetry} variant="outline">
-          <RefreshCwIcon /> Retry
-        </Button>
-      </EmptyContent>
-    </Empty>
   );
 }
 
@@ -1162,11 +1144,10 @@ function WorkbenchPageContent(
       </Empty>
     );
   if (query.isPending && snapshot === null) return <WorkbenchLoading />;
-  if (jiraSnapshot === null && jiraQuery.error)
-    return <WorkbenchRefreshError message={jiraQuery.error} onRetry={jiraQuery.refresh} />;
+  if (snapshot === null && query.error) return <WorkbenchQueryError query={query} />;
+  if (jiraSnapshot === null && jiraQuery.error) return <WorkbenchQueryError query={jiraQuery} />;
   if (jiraSnapshot === null) return <WorkbenchLoading />;
-  if (awaitingSelectedProject && query.error)
-    return <WorkbenchRefreshError message={query.error} onRetry={query.refresh} />;
+  if (awaitingSelectedProject && query.error) return <WorkbenchQueryError query={query} />;
   if (awaitingSelectedProject) return <WorkbenchLoading />;
   if (selectedProject === null) return <WorkbenchPageNoWorkspace {...props} />;
   return <WorkbenchPageWorkspace {...props} />;

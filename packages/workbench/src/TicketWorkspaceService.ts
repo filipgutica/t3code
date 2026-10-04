@@ -588,7 +588,15 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       if (workspace.status === "ready") {
         return yield* handleReadyWorkspace({ workspace, ticket, snapshot });
       } else if (workspace.status === "releasing") {
-        yield* releaseClaimedWorkspace({ workspace, releasedAt: operationAt });
+        const releasing = yield* store.claimTicketWorkspaceRelease({
+          ticketId: workspace.ticketId,
+          attemptId: workspace.attemptId,
+          claimedAt: operationAt,
+          requireActiveTicket: true,
+          requireNoLinkedThreads: true,
+          expectedRevision: ticket.revision,
+        });
+        yield* releaseClaimedWorkspace({ workspace: releasing, releasedAt: operationAt });
       } else if (workspace.status === "preparing") {
         yield* recoverPreparingWorkspace({
           workspace,
@@ -1185,19 +1193,19 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     }
     const snapshot = yield* store.getSnapshot;
     const ticket = snapshot.tickets.find((candidate) => candidate.id === input.ticketId);
-    if (ticket === undefined) {
+    if (ticket === undefined && input.retained !== true) {
       return yield* new WorkbenchOperationError({
         code: "ticket_not_found",
         message: "The Workbench Ticket does not exist.",
       });
     }
-    if (ticket.archivedAt !== undefined && ticket.archivedAt !== null) {
+    if (ticket?.archivedAt !== undefined && ticket.archivedAt !== null) {
       return yield* new WorkbenchOperationError({
         code: "ticket_archived",
         message: "Archived Workbench Tickets cannot release a Workspace.",
       });
     }
-    if (existing.value.status === "released") return existing.value;
+    if (existing.value.status === "released" && input.retained !== true) return existing.value;
     if (existing.value.status === "preparing") {
       return yield* new WorkbenchOperationError({
         code: "ticket_workspace_preparation_in_progress",
@@ -1212,7 +1220,8 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       ticketId: existing.value.ticketId,
       attemptId: existing.value.attemptId,
       claimedAt: operationAt,
-      requireActiveTicket: true,
+      requireActiveTicket: input.retained !== true,
+      requireDeletedTicket: input.retained === true,
       requireNoLinkedThreads: true,
     });
     return yield* releaseClaimedWorkspace({ workspace: releasing, releasedAt: operationAt });
