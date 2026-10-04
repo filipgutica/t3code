@@ -36,6 +36,10 @@ For the initial cutover, finish local verification, then disable the upstream **
 
 The disabled CI setting lives outside Git and must remain disabled: retaining the file preserves upstream ownership, but enabling it after cutover would queue Blacksmith jobs in this fork. Generated job names have a `Workbench` prefix to avoid ambiguous checks. Keep Workbench quality, regression, preview, and release workflows separate.
 
+Inherited automatic workflows for mobile, the production relay, upstream releases, upstream macOS previews, and Cursor hygiene live in [`.github/upstream-workflows`](../../.github/upstream-workflows). GitHub does not discover that directory. Their YAML contents are retained unchanged so Git can carry upstream edits through the renames. Review new or restored files under `.github/workflows` during every upstream sync; a new upstream workflow is not automatically appropriate for this fork.
+
+Keep the documented opt-in web preview, manual diagnostic and screenshot tools, and reusable release helpers in the active directory. These do not start unrelated builds on ordinary Workbench pushes. Workbench CI retains the upstream native checks, including changed-file detection for mobile static analysis; it does not publish mobile builds or updates. Restoring an archived workflow requires a separate decision about its triggers, runner, distribution identity, and deployment authority.
+
 ## Upstream sync
 
 The fork's `main` in `filipgutica/t3code` is the long-lived product branch. In this clone, `origin` points to the fork and `upstream` to `pingdotgg/t3code`. Preview a sync before merging:
