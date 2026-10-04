@@ -87,6 +87,18 @@ describe("Workbench auth protocol", () => {
     expect(() =>
       secretField({ body: { claimChallenge: `${challenge}= ` }, name: "claimChallenge" }),
     ).toThrowError();
+    expect(() =>
+      secretField({
+        body: { claimChallenge: `${challenge.slice(0, 42)}!` },
+        name: "claimChallenge",
+      }),
+    ).toThrowError();
+    expect(() =>
+      secretField({
+        body: { claimChallenge: `${challenge.slice(0, 42)}B` },
+        name: "claimChallenge",
+      }),
+    ).toThrowError();
   });
 
   it("binds encrypted handoffs to their session id", async () => {

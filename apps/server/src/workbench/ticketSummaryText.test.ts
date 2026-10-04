@@ -50,6 +50,8 @@ describe("sanitizeTicketSummary", () => {
     expect(summary.length).toBeLessThanOrEqual(500);
     expect(summary.split(/\s+/g).length).toBeLessThanOrEqual(45);
     expect(summary).toMatch(/\.\.\.$/);
+    expect(sanitizeTicketSummary("x".repeat(500))).toBe("x".repeat(500));
+    expect(sanitizeTicketSummary("x".repeat(501))).toBe(`${"x".repeat(497)}...`);
     expect(sanitizeTicketSummary("   ")).toBe("");
   });
 });
