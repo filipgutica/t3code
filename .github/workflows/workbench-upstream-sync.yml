@@ -59,7 +59,7 @@ jobs:
         run: |
           state="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml" --jq .state)"
           if [[ "$state" != "disabled_manually" ]]; then
-            echo "Upstream CI must be disabled in this fork; Workbench CI owns its runner policy." >&2
+            echo "Upstream CI must be disabled in this fork; Workbench owns its focused checks." >&2
             exit 1
           fi
 
@@ -92,9 +92,9 @@ jobs:
             git add pnpm-lock.yaml
           fi
 
-      - name: Regenerate fork CI from the merged upstream workflow
+      - name: Review remaining fork ownership and regenerate focused CI
         if: steps.pending.outputs.needed == 'true'
-        run: node scripts/workbench-ci.ts
+        run: node scripts/workbench-ci.ts --upstream upstream/main
 
       - name: Setup Vite+
         if: steps.pending.outputs.needed == 'true'
@@ -109,7 +109,7 @@ jobs:
         run: |
           vp install --lockfile-only --no-frozen-lockfile
           vp install --frozen-lockfile
-          git add pnpm-lock.yaml .github/workflows/workbench-ci.yml .github/workflows/workbench-thread-transfer-report.yml
+          git add pnpm-lock.yaml .github/workflows/workbench-ci.yml scripts/workbench-ci-scope.json
           git commit --no-edit
 
       - name: Setup APT mirrors
@@ -126,20 +126,14 @@ jobs:
         if: steps.pending.outputs.needed == 'true'
         run: |
           node scripts/workbench-ci.ts --check
-          vp lint --report-unused-disable-directives
-          vp fmt --check
-          vp run --filter @t3tools/workbench typecheck
-          vp run --filter @t3tools/workbench test
-          vp run --filter @t3tools/workbench quality
-          vp test run packages/contracts/src/workbench.test.ts apps/server/src/workbench apps/server/src/auth/RpcAuthorization.test.ts apps/server/src/storageCleanup.test.ts apps/server/src/http.test.ts apps/web/src/workbench apps/desktop/src/updates/DesktopUpdates.test.ts apps/desktop/src/workbench scripts/workbench-upstream-sync.test.ts scripts/workbench-upstream-sync-merge.test.ts scripts/workbench-ci.test.ts
-          vp run --filter @t3tools/contracts typecheck
-          vp run --filter t3 typecheck
-          vp run --filter @t3tools/web typecheck
-          vp run --filter @t3tools/desktop typecheck
-          vp run --filter @t3tools/scripts typecheck
-          vp exec tsc --noEmit -p scripts/workbench-regression/tsconfig.json
+          node scripts/workbench-ci.ts --lint
           vp run --filter @t3tools/desktop ensure:electron
-          vp run build:desktop
+          node scripts/workbench-ci.ts --typecheck
+          node scripts/workbench-ci.ts --run-tests
+          node scripts/workbench-ci.ts --packaging
+          vp run --filter @t3tools/workbench quality
+          vp exec tsc --noEmit -p scripts/workbench-regression/tsconfig.json
+          T3CODE_WORKBENCH_BUILD=1 vp run build:desktop
           xvfb-run -a vp run --filter @t3tools/desktop smoke-test
 
       - name: Install Chromium for Workbench lifecycle

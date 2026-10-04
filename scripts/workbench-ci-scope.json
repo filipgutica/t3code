@@ -1,0 +1,294 @@
+{
+  "upstreamBase": "c5bc98db03ef048e2d88010876b2b3e474ecfd90",
+  "groups": [
+    {
+      "name": "Workbench domain, adapters, UI and contracts",
+      "paths": [
+        "packages/workbench/",
+        "apps/server/src/workbench/",
+        "apps/web/src/workbench/",
+        "apps/desktop/src/workbench/",
+        "apps/web/src/routes/workbench.tsx",
+        "packages/contracts/src/workbench"
+      ],
+      "tests": [
+        "packages/workbench/src/",
+        "apps/server/src/workbench/",
+        "apps/web/src/workbench/",
+        "apps/desktop/src/workbench/",
+        "packages/contracts/src/workbench*"
+      ],
+      "verification": ["unit", "typecheck", "browser", "boundary"]
+    },
+    {
+      "name": "Native execution and server integration",
+      "paths": [
+        "apps/server/src/auth/RpcAuthorization.ts",
+        "apps/server/src/background/HostPowerMonitor.ts",
+        "apps/server/src/git/GitManager.ts",
+        "apps/server/src/git/GitWorkflowService.ts",
+        "apps/server/src/http.ts",
+        "apps/server/src/orchestration-v2/Orchestrator.ts",
+        "apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts",
+        "apps/server/src/orchestration-v2/PullRequestWatchReactor.ts",
+        "apps/server/src/orchestration-v2/RestartContinuation.ts",
+        "apps/server/src/os-jank.ts",
+        "apps/server/src/provider/Drivers/AcpRegistryDriver.ts",
+        "apps/server/src/provider/Drivers/CodexManagedProvider.ts",
+        "apps/server/src/provider/Drivers/OpenCodeDriver.ts",
+        "apps/server/src/provider/providerCompatibility.ts",
+        "apps/server/src/pullRequest/AzureDevOpsPullRequestCli.ts",
+        "apps/server/src/pullRequest/GitHubPullRequestCli.ts",
+        "apps/server/src/pullRequest/GitHubPullRequestProvider.ts",
+        "apps/server/src/pullRequest/GitLabPullRequestCli.ts",
+        "apps/server/src/pullRequest/PullRequestProvider.ts",
+        "apps/server/src/pullRequest/PullRequestService.ts",
+        "apps/server/src/pullRequest/gitHubPullRequestJson.ts",
+        "apps/server/src/pullRequest/githubWorkflowRerun.ts",
+        "apps/server/src/resourceTelemetry/NativeTelemetryClient.ts",
+        "apps/server/src/server.ts",
+        "apps/server/src/storageCleanup.ts",
+        "apps/server/src/textGeneration/AntigravityTextGeneration.ts",
+        "apps/server/src/textGeneration/ClaudeTextGeneration.ts",
+        "apps/server/src/textGeneration/CodexTextGeneration.ts",
+        "apps/server/src/textGeneration/CursorTextGeneration.ts",
+        "apps/server/src/textGeneration/GrokTextGeneration.ts",
+        "apps/server/src/textGeneration/OpenCodeTextGeneration.ts",
+        "apps/server/src/textGeneration/PiTextGeneration.ts",
+        "apps/server/src/textGeneration/TextGeneration.ts",
+        "apps/server/src/vcs/GitVcsDriver.ts",
+        "apps/server/src/vcs/GitVcsDriverCore.ts",
+        "apps/server/src/workspace/WorkspaceCleanupPolicy.ts",
+        "apps/server/src/ws.ts",
+        "apps/server/vite.config.ts"
+      ],
+      "tests": [
+        "apps/server/src/auth/RpcAuthorization.test.ts",
+        "apps/server/src/background/HostPowerMonitor.test.ts",
+        "apps/server/src/git/GitManager.test.ts",
+        "apps/server/src/git/GitWorkflowService.test.ts",
+        "apps/server/src/http.test.ts",
+        "apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.regression.test.ts",
+        "apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts",
+        "apps/server/src/orchestration-v2/RestartContinuation.test.ts",
+        "apps/server/src/orchestration-v2/runtimeLayer.test.ts",
+        "apps/server/src/orchestration-v2/testkit/OrchestratorReplayRestartBackgroundNote.integration.test.ts",
+        "apps/server/src/os-jank.test.ts",
+        "apps/server/src/provider/Drivers/AcpRegistryDriver.test.ts",
+        "apps/server/src/provider/Drivers/OpenCodeDriver.test.ts",
+        "apps/server/src/provider/providerCompatibility.test.ts",
+        "apps/server/src/pullRequest/AzureDevOpsPullRequestCli.test.ts",
+        "apps/server/src/pullRequest/GitHubPullRequestCli.test.ts",
+        "apps/server/src/pullRequest/GitHubPullRequestProvider.test.ts",
+        "apps/server/src/pullRequest/GitLabPullRequestCli.test.ts",
+        "apps/server/src/pullRequest/PullRequestService.test.ts",
+        "apps/server/src/pullRequest/gitHubPullRequestJson.test.ts",
+        "apps/server/src/pullRequest/githubWorkflowRerun.test.ts",
+        "apps/server/src/resourceTelemetry/NativeTelemetryClient.test.ts",
+        "apps/server/src/storageCleanup.test.ts",
+        "apps/server/src/textGeneration/AntigravityTextGeneration.test.ts",
+        "apps/server/src/textGeneration/ClaudeTextGeneration.test.ts",
+        "apps/server/src/textGeneration/CodexTextGeneration.test.ts",
+        "apps/server/src/textGeneration/CursorTextGeneration.test.ts",
+        "apps/server/src/textGeneration/GrokTextGeneration.test.ts",
+        "apps/server/src/textGeneration/OpenCodeTextGeneration.test.ts",
+        "apps/server/src/textGeneration/TextGeneration.test.ts",
+        "apps/server/src/vcs/GitVcsDriver.test.ts",
+        "apps/server/src/vcs/GitVcsDriverCore.test.ts",
+        "apps/server/src/ws.test.ts"
+      ],
+      "verification": ["unit", "typecheck"]
+    },
+    {
+      "name": "Native web composition and PR/thread/settings entry points",
+      "paths": [
+        "apps/web/src/components/AppSidebarLayout.tsx",
+        "apps/web/src/components/ChatMarkdown.tsx",
+        "apps/web/src/components/ChatView.logic.ts",
+        "apps/web/src/components/ChatView.tsx",
+        "apps/web/src/components/CommandPalette.tsx",
+        "apps/web/src/components/ThreadRouteView.tsx",
+        "apps/web/src/components/chat/ChatComposer.tsx",
+        "apps/web/src/components/chat/ChatHeader.tsx",
+        "apps/web/src/components/chat/OpenInPicker.tsx",
+        "apps/web/src/components/composerContextPresentation.tsx",
+        "apps/web/src/components/pullRequest/LinkPullRequestDialog.tsx",
+        "apps/web/src/components/pullRequest/PullRequestCodeTab.tsx",
+        "apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx",
+        "apps/web/src/components/pullRequest/PullRequestReviewAnnotation.tsx",
+        "apps/web/src/components/pullRequest/PullRequestSummaryTab.tsx",
+        "apps/web/src/components/pullRequest/pullRequestDetail.logic.ts",
+        "apps/web/src/components/pullRequest/usePullRequestActions.ts",
+        "apps/web/src/components/settings/CodexSetupSection.tsx",
+        "apps/web/src/components/settings/SettingsPanels.tsx",
+        "apps/web/src/components/settings/settingsSearch.ts",
+        "apps/web/src/components/sidebar/SidebarChrome.tsx",
+        "apps/web/src/components/sidebar/mainAppLocation.ts",
+        "apps/web/src/components/ui/button.tsx",
+        "apps/web/src/hooks/usePullRequestLinking.ts",
+        "apps/web/src/hooks/useThreadActionMenu.ts",
+        "apps/web/src/hooks/useThreadActions.ts",
+        "apps/web/src/index.css",
+        "apps/web/src/lib/openPullRequestLink.ts",
+        "apps/web/src/rightPanelStore.ts",
+        "apps/web/src/routeTree.gen.ts",
+        "apps/web/src/routes/_chat.$environmentId.$threadId.tsx",
+        "apps/web/src/state/pullRequests.ts",
+        "apps/web/src/state/query.ts",
+        "apps/web/src/vite-env.d.ts",
+        "apps/web/vite.config.ts"
+      ],
+      "tests": [
+        "apps/web/src/components/ChatMarkdown.pull-request-environment.test.tsx",
+        "apps/web/src/components/ChatMarkdown.test.tsx",
+        "apps/web/src/components/ChatView.logic.test.ts",
+        "apps/web/src/components/CommandPalette.logic.test.ts",
+        "apps/web/src/components/chat/ChatHeader.test.ts",
+        "apps/web/src/components/chat/OpenInPicker.test.ts",
+        "apps/web/src/components/composerContextPresentation.test.ts",
+        "apps/web/src/components/pullRequest/PullRequestCodeTab.test.tsx",
+        "apps/web/src/components/pullRequest/PullRequestDetailPanel.test.tsx",
+        "apps/web/src/components/pullRequest/PullRequestSummaryTab.test.tsx",
+        "apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts",
+        "apps/web/src/components/settings/SettingsPanels.logic.test.ts",
+        "apps/web/src/components/settings/settingsSearch.test.ts",
+        "apps/web/src/hooks/usePullRequestLinking.test.tsx",
+        "apps/web/src/hooks/useThreadActions.test.ts",
+        "apps/web/src/hooks/useThreadActions.undo.test.ts",
+        "apps/web/src/lib/openPullRequestLink.test.ts",
+        "apps/web/src/rightPanelStore.test.ts",
+        "apps/web/src/state/pullRequests.test.ts"
+      ],
+      "verification": ["unit", "typecheck", "browser"]
+    },
+    {
+      "name": "Desktop identity, auth, backend and updates",
+      "paths": [
+        "apps/desktop/scripts/smoke-test.mjs",
+        "apps/desktop/src/app/DesktopClerk.ts",
+        "apps/desktop/src/app/DesktopEarlyElectronStartup.ts",
+        "apps/desktop/src/app/DesktopEnvironment.ts",
+        "apps/desktop/src/app/DesktopStatePaths.ts",
+        "apps/desktop/src/app/DesktopUserData.ts",
+        "apps/desktop/src/backend/DesktopBackendConfiguration.ts",
+        "apps/desktop/src/electron/ElectronProtocol.ts",
+        "apps/desktop/src/electron/WorkbenchGithubProvider.ts",
+        "apps/desktop/src/updates/DesktopUpdates.ts",
+        "apps/desktop/vite.config.ts"
+      ],
+      "tests": [
+        "apps/desktop/src/app/DesktopClerk.test.ts",
+        "apps/desktop/src/app/DesktopEarlyElectronStartup.test.ts",
+        "apps/desktop/src/app/DesktopEnvironment.test.ts",
+        "apps/desktop/src/app/DesktopUserData.test.ts",
+        "apps/desktop/src/backend/DesktopBackendConfiguration.test.ts",
+        "apps/desktop/src/electron/ElectronProtocol.test.ts",
+        "apps/desktop/src/electron/WorkbenchGithubProvider.test.ts",
+        "apps/desktop/src/updates/DesktopUpdates.test.ts"
+      ],
+      "verification": ["unit", "typecheck", "build"]
+    },
+    {
+      "name": "Shared wire contracts",
+      "paths": [
+        "packages/contracts/src/index.ts",
+        "packages/contracts/src/pullRequest.ts",
+        "packages/contracts/src/rpc.ts"
+      ],
+      "tests": ["packages/contracts/src/pullRequest.test.ts", "packages/contracts/src/rpc.test.ts"],
+      "verification": ["unit", "typecheck"]
+    },
+    {
+      "name": "Shared auth and SQLite",
+      "paths": [
+        "packages/shared/src/codexAuthHandoff.ts",
+        "packages/shared/src/nodeSqliteClient.ts",
+        "packages/shared/src/providerAuthReturnUrl.ts"
+      ],
+      "tests": [
+        "packages/shared/src/codexAuthHandoff.test.ts",
+        "packages/shared/src/nodeSqliteClient.test.ts",
+        "packages/shared/src/providerAuthReturnUrl.test.ts"
+      ],
+      "verification": ["unit", "typecheck"]
+    },
+    {
+      "name": "RPC transport compatibility",
+      "paths": ["packages/client-runtime/src/errors/transport.ts"],
+      "tests": [
+        "packages/client-runtime/src/errors/transport.test.ts",
+        "packages/client-runtime/src/rpc/session.test.ts"
+      ],
+      "verification": ["unit", "typecheck"]
+    },
+    {
+      "name": "Workbench auth broker",
+      "paths": ["infra/workbench-auth/"],
+      "tests": ["infra/workbench-auth/test/"],
+      "verification": ["unit", "typecheck"]
+    },
+    {
+      "name": "Workbench tooling",
+      "paths": ["scripts/workbench-", "scripts/lib/workbench-"],
+      "tests": ["scripts/workbench-*", "scripts/lib/workbench-*"],
+      "verification": ["unit", "typecheck"]
+    },
+    {
+      "name": "Preview launcher",
+      "paths": ["infra/workbench-preview/"],
+      "tests": [],
+      "verification": ["workbench-preview-check"]
+    },
+    {
+      "name": "Static showcase",
+      "paths": ["apps/workbench-site/"],
+      "tests": [],
+      "verification": ["workbench-pages"]
+    },
+    {
+      "name": "Packaging and local launcher",
+      "paths": [
+        "scripts/build-desktop-artifact.ts",
+        "scripts/dev-runner.ts",
+        "scripts/release-smoke.ts"
+      ],
+      "tests": ["scripts/build-desktop-artifact.test.ts", "scripts/dev-runner.test.ts"],
+      "verification": ["unit", "typecheck", "packaging"]
+    },
+    {
+      "name": "Dependency and build configuration",
+      "paths": ["vite.config.ts", "patches/"],
+      "tests": [],
+      "verification": ["typecheck", "unit", "build"]
+    }
+  ],
+  "packages": {
+    "packages/workbench": "@t3tools/workbench",
+    "apps/server": "t3",
+    "apps/web": "@t3tools/web",
+    "apps/desktop": "@t3tools/desktop",
+    "packages/contracts": "@t3tools/contracts",
+    "packages/shared": "@t3tools/shared",
+    "packages/client-runtime": "@t3tools/client-runtime",
+    "infra/workbench-auth": "t3code-workbench-auth",
+    "scripts": "@t3tools/scripts"
+  },
+  "packagingTests": [
+    "scripts/build-desktop-artifact.test.ts",
+    "scripts/update-release-package-versions.test.ts",
+    "scripts/merge-update-manifests.test.ts"
+  ],
+  "packagingPaths": [
+    ".github/workflows/workbench-release.yml",
+    "apps/desktop/",
+    "scripts/build-desktop-artifact.ts",
+    "scripts/build-cli-archive.ts",
+    "scripts/smoke-cli-archive.ts",
+    "scripts/update-release-package-versions.ts",
+    "scripts/merge-update-manifests.ts",
+    "scripts/release-smoke.ts",
+    "package.json",
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml"
+  ]
+}
