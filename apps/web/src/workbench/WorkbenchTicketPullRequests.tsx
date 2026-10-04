@@ -10,7 +10,8 @@ import { changeRequestRepositoryUrl } from "@t3tools/shared/changeRequestUrl";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { MessageSquareIcon, RefreshCwIcon } from "lucide-react";
+import { ChevronDownIcon, MessageSquareIcon, RefreshCwIcon } from "lucide-react";
+import { useId, useState } from "react";
 
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -78,6 +79,8 @@ export function WorkbenchTicketPullRequests({
     readonly cwd: string;
   }>;
 }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const contentId = useId();
   const checkout = useAtomValue(
     ticketCheckoutPullRequests(JSON.stringify({ environmentId, checkouts })),
   );
@@ -147,9 +150,24 @@ export function WorkbenchTicketPullRequests({
               <RefreshCwIcon />
             </Button>
           ) : null}
+          <Button
+            aria-controls={contentId}
+            aria-expanded={!collapsed}
+            aria-label="Toggle pull requests"
+            onClick={() => setCollapsed((value) => !value)}
+            size="icon-xs"
+            title="Toggle pull requests"
+            type="button"
+            variant="ghost"
+          >
+            <ChevronDownIcon
+              data-expanded={!collapsed}
+              className="data-[expanded=true]:rotate-180"
+            />
+          </Button>
         </div>
       </div>
-      <div className="min-w-0 space-y-3 px-4 pb-4">
+      <div id={contentId} hidden={collapsed} className="min-w-0 space-y-3 px-4 pb-4">
         {rows.length > 0 ? (
           <div className="divide-y divide-border/50">
             {rows.map((row) => (
