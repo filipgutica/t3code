@@ -4426,7 +4426,8 @@ it.effect(
               return Effect.succeed({
                 comments: [],
                 commentCount: 0,
-                commentsTruncated: false,
+                commentsTruncated: true,
+                reviewThreadsTruncated: true,
                 reviewThreads: [],
                 commits: [],
               });
@@ -4450,10 +4451,14 @@ it.effect(
         },
       ]);
 
-      yield* Effect.all([service.activity(reference), service.activity(reference)], {
-        concurrency: 2,
-      });
+      const activities = yield* Effect.all(
+        [service.activity(reference), service.activity(reference)],
+        {
+          concurrency: 2,
+        },
+      );
       assert.strictEqual(activityCalls, 1);
+      assert.isTrue(activities.every((activity) => activity.reviewThreadsTruncated === true));
 
       yield* service.invalidate({ reference });
       yield* service.activity(reference);
