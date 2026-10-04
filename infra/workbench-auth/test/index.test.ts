@@ -4,6 +4,7 @@ import { handleRequest, type WorkbenchAuthEnv } from "../src/index.ts";
 
 const challenge = "AQ".repeat(22).slice(0, 43);
 const sessionId = "Ag".repeat(22).slice(0, 43);
+const nonce = "AB".repeat(22).slice(0, 43);
 const verifier = "Aw".repeat(22).slice(0, 43);
 
 const makeEnvironment = (sessionStub: {
@@ -104,26 +105,34 @@ describe("Workbench Jira auth Worker", () => {
     expect(sessionStub.fetch).not.toHaveBeenCalled();
   });
 
-  it("does not expose callback query parameters in its response", async () => {
-    const sessionStub = {
-      fetch: vi.fn(async () => Response.json({ error: "invalid_callback" }, { status: 400 })),
-    };
-    const env = makeEnvironment(sessionStub);
+  it.each([
+    { state: sessionId, sessionCalls: 0 },
+    { state: `${sessionId}.${nonce}`, sessionCalls: 1 },
+  ])(
+    "does not expose callback query parameters in its response ($sessionCalls session calls)",
+    async ({ state, sessionCalls }) => {
+      const sessionStub = {
+        fetch: vi.fn(async () => Response.json({ error: "invalid_callback" }, { status: 400 })),
+      };
+      const env = makeEnvironment(sessionStub);
 
-    const response = await handleRequest(
-      new Request(
-        `https://workbench-auth.example.workers.dev/oauth/jira/callback?error=access_denied&state=${sessionId}&code=private-code`,
-      ),
-      env,
-    );
+      const response = await handleRequest(
+        new Request(
+          `https://workbench-auth.example.workers.dev/oauth/jira/callback?error=access_denied&state=${state}&code=private-code`,
+        ),
+        env,
+      );
 
-    expect(response.status).toBe(400);
-    expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
-    const body = await response.text();
-    expect(body).not.toContain("private-code");
-    expect(body).not.toContain(sessionId);
-  });
+      expect(response.status).toBe(400);
+      expect(sessionStub.fetch).toHaveBeenCalledTimes(sessionCalls);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+      const body = await response.text();
+      expect(body).not.toContain("private-code");
+      expect(body).not.toContain(sessionId);
+      expect(body).not.toContain(nonce);
+    },
+  );
 
   it("keeps an invalid claim opaque and does not return session state", async () => {
     const sessionStub = {
