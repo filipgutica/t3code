@@ -74,7 +74,7 @@ function resolveProviderEntry(
   return (
     providers.find(
       (entry) =>
-        entry.instanceId === (shell.session?.providerInstanceId ?? shell.modelSelection.instanceId),
+        entry.instanceId === (shell.runtime?.providerInstanceId ?? shell.modelSelection.instanceId),
     ) ?? null
   );
 }

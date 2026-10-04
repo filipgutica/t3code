@@ -165,6 +165,6 @@ test("sidebar Back returns to a native Thread and exits a direct Workbench entry
         pathSegments[2] !== "")
     );
   });
-  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Submit message", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Agent Workbench", exact: true })).toBeVisible();
 });

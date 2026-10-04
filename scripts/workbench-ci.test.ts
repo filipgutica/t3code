@@ -31,6 +31,12 @@ jobs:
     steps:
       - run: vp run --parallel --concurrency-limit 4 --filter app test
         timeout-minutes: 5
+  transfer-report:
+    name: Transfer report artifact
+    needs: test
+    runs-on: ubuntu-24.04
+    steps:
+      - run: node transfer-report.mjs
   native_gate:
     name: Native Gate
     runs-on: blacksmith-6vcpu-macos-26
@@ -114,6 +120,10 @@ it("keeps native gates and detects upstream changes before accepting fork CI", (
     assert.include(
       first,
       "run: vp run --parallel --concurrency-limit 1 --filter app test\n        timeout-minutes: 5",
+    );
+    assert.include(
+      first,
+      "  transfer-report:\n    name: Workbench Transfer report artifact\n    needs: test\n    runs-on: ubuntu-24.04\n    steps:\n      - run: node transfer-report.mjs\n",
     );
     assert.equal(NodeFS.readFileSync(input, "utf8"), source);
 

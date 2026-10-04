@@ -90,7 +90,7 @@ function WorkbenchSidebarThreadPreviewDetails({
     ? providerEntry?.models.find((model) => model.slug === shell.modelSelection.model)
     : undefined;
   const providerLabel =
-    providerEntry?.displayName ?? shell?.session?.providerName ?? shell?.modelSelection.instanceId;
+    providerEntry?.displayName ?? shell?.runtime?.providerName ?? shell?.modelSelection.instanceId;
   const modelLabel = shell
     ? selectedModel
       ? getTriggerDisplayModelLabel(selectedModel)

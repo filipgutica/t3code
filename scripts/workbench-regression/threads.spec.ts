@@ -51,7 +51,7 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
   await editor.pressSequentially(
     "Do not edit files or run commands. Reply exactly: Workbench regression passed.",
   );
-  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await page.getByRole("button", { name: "Submit message", exact: true }).click();
   await expect(page.getByText("Workbench regression passed.", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Stop generation", exact: true }),
@@ -73,8 +73,25 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
   ).toBe(true);
   expect(complete.tickets.find((t) => t.id === "orbit-004")?.status).toBe("in_progress");
   expect(complete.assignments.filter((a) => a.ticketId === "orbit-004")).toHaveLength(1);
+  const workspaceBreadcrumb = page.getByRole("link", {
+    name: "Back to Workspace Orbit Board",
+    exact: true,
+  });
+  const ticketBreadcrumb = page.getByRole("link", {
+    name: "Back to Ticket Fix focus after creating a project in Workspace Orbit",
+    exact: true,
+  });
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await expect(workspaceBreadcrumb).toBeVisible();
+  await expect(ticketBreadcrumb).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(workspaceBreadcrumb).not.toBeVisible();
+  await expect(ticketBreadcrumb).toBeVisible();
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await expect(workspaceBreadcrumb).toBeVisible();
   await page.reload();
   await waitForWorkbench(page);
+  await expect(workspaceBreadcrumb).toBeVisible();
   await expect(page.getByText("Workbench regression passed.", { exact: true })).toBeVisible();
   await expect(
     page.getByText("Fix focus after creating a project", { exact: true }).first(),

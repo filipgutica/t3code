@@ -1,3 +1,4 @@
+import { seedNativeThread } from "../testing/nativeThreads.ts";
 import {
   ProjectId,
   ThreadId,
@@ -78,17 +79,13 @@ describe("JiraTicketImporter", () => {
         repositoryProjectIds: [primaryProjectId, firstProjectId],
         createdAt,
       });
-      yield* sql`
-        INSERT INTO projection_threads (
-          thread_id, project_id, title, model_selection_json, runtime_mode,
-          interaction_mode, pending_approval_count, pending_user_input_count,
-          has_actionable_proposed_plan, created_at, updated_at, deleted_at
-        ) VALUES (
-          ${threadId}, ${primaryProjectId}, 'Assigned Agent Thread',
-          '{"provider":"codex","model":"gpt-5-codex"}', 'full-access',
-          'default', 0, 0, 0, ${createdAt}, ${createdAt}, NULL
-        )
-      `;
+      yield* seedNativeThread({
+        threadId: threadId,
+        projectId: primaryProjectId,
+        title: "Assigned Agent Thread",
+        createdAt: createdAt,
+        deletedAt: null,
+      });
       yield* workbench.createAssignment({ id: assignmentId, ticketId, threadId, createdAt });
 
       const binding: WorkbenchJiraBinding = {

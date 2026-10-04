@@ -413,7 +413,7 @@ test.describe("Jira Workbench integration @live", () => {
       await editor.pressSequentially(
         "Do not edit files or run commands. Reply exactly: Workbench regression passed.",
       );
-      await page.getByRole("button", { name: "Send message", exact: true }).click();
+      await page.getByRole("button", { name: "Submit message", exact: true }).click();
       await expect(page.getByText("Workbench regression passed.", { exact: true })).toBeVisible();
       await expect(
         page.getByRole("button", { name: "Stop generation", exact: true }),

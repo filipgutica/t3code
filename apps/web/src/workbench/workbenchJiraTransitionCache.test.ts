@@ -74,7 +74,7 @@ function makeTestRuntime() {
     const session = yield* SubscriptionRef.make<Option.Option<RpcSession.RpcSession>>(
       Option.some(connectionSession),
     );
-    const supervisor = EnvironmentSupervisor.of({
+    const supervisor = EnvironmentSupervisor.EnvironmentSupervisor.of({
       target: new PrimaryConnectionTarget({
         environmentId: EnvironmentId.make("jira-transition-cache-runtime"),
         label: "Jira transition cache test",
@@ -87,8 +87,8 @@ function makeTestRuntime() {
       connect: Effect.void,
       disconnect: Effect.void,
       retryNow: Effect.void,
-    } satisfies EnvironmentSupervisor["Service"]);
-    const registry: EnvironmentRegistry["Service"] = {
+    } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
+    const registry: EnvironmentRegistry.EnvironmentRegistry["Service"] = {
       entries: yield* SubscriptionRef.make<ReadonlyMap<EnvironmentId, ConnectionCatalogEntry>>(
         new Map(),
       ),
@@ -106,14 +106,14 @@ function makeTestRuntime() {
       state: (_environmentId: EnvironmentId) => Effect.succeed(connectionState),
       stateChanges: (_environmentId: EnvironmentId) => SubscriptionRef.changes(state),
       run: (_environmentId, effect) =>
-        Effect.provideService(effect, EnvironmentSupervisor, supervisor),
+        Effect.provideService(effect, EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
       runStream: (_environmentId, stream) =>
-        Stream.provideService(stream, EnvironmentSupervisor, supervisor),
+        Stream.provideService(stream, EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
       followStream: (_environmentId, stream) =>
-        Stream.provideService(stream, EnvironmentSupervisor, supervisor),
+        Stream.provideService(stream, EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
     };
 
-    return Atom.runtime(Layer.succeed(EnvironmentRegistry, registry));
+    return Atom.runtime(Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, registry));
   });
 }
 

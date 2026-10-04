@@ -1,4 +1,4 @@
-import { ORCHESTRATION_WS_METHODS } from "../../packages/contracts/src/orchestration.ts";
+import { ORCHESTRATION_V2_WS_METHODS } from "../../packages/contracts/src/orchestrationV2.ts";
 import { test, expect, snapshot, openWorkbench, waitForWorkbench } from "./fixtures.ts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 import { WS_METHODS } from "../../packages/contracts/src/rpc.ts";
@@ -193,7 +193,7 @@ test("ticket PR discovery includes other Workspace repositories without changing
             exit: { _tag: "Success", value },
           }),
         );
-      if (request.tag === ORCHESTRATION_WS_METHODS.subscribeShell) {
+      if (request.tag === ORCHESTRATION_V2_WS_METHODS.subscribeShell) {
         socket.send(
           JSON.stringify({
             _tag: "Chunk",

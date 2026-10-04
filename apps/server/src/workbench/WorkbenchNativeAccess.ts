@@ -41,7 +41,7 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
     Result: NativeThreadRow,
     execute: ({ threadId }) => sql`
       SELECT thread_id AS "id", project_id AS "projectId"
-      FROM projection_threads
+      FROM orchestration_v2_projection_threads
       WHERE thread_id = ${threadId}
         AND deleted_at IS NULL
     `,
@@ -51,8 +51,8 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
     Result: Schema.Struct({ id: ThreadId }),
     execute: ({ worktreePath }) => sql`
       SELECT thread_id AS "id"
-      FROM projection_threads
-      WHERE worktree_path = ${worktreePath}
+      FROM orchestration_v2_projection_threads
+      WHERE json_extract(payload_json, '$.worktreePath') = ${worktreePath}
         AND deleted_at IS NULL
       LIMIT 1
     `,

@@ -1,6 +1,7 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { useMemo } from "react";
+import { presentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { useThreadShells } from "../state/entities";
 
 import { useArchivedThreadSnapshots } from "../lib/archivedThreadsState";
@@ -43,7 +44,7 @@ export function useWorkbenchThreadLookup({
         archivedSnapshots.flatMap(({ environmentId: archivedEnvironmentId, snapshot }) =>
           snapshot.threads.map((thread) => [
             thread.id,
-            { ...thread, environmentId: archivedEnvironmentId },
+            presentThreadShell(archivedEnvironmentId, thread),
           ]),
         ),
       ),

@@ -1,6 +1,7 @@
 import { test, expect, openWorkbench, snapshot } from "./fixtures.ts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
-import { ORCHESTRATION_WS_METHODS } from "../../packages/contracts/src/orchestration.ts";
+import { ORCHESTRATION_V2_WS_METHODS } from "../../packages/contracts/src/orchestrationV2.ts";
+import { RunId } from "../../packages/contracts/src/baseSchemas.ts";
 
 test("board shortcut opens the working Thread rather than the newer idle Thread", async ({
   page,
@@ -61,7 +62,7 @@ test("board shortcut opens the working Thread rather than the newer idle Thread"
         );
         return;
       }
-      if (payload.tag === ORCHESTRATION_WS_METHODS.subscribeShell) {
+      if (payload.tag === ORCHESTRATION_V2_WS_METHODS.subscribeShell) {
         socket.send(
           JSON.stringify({
             _tag: "Chunk",
@@ -75,11 +76,18 @@ test("board shortcut opens the working Thread rather than the newer idle Thread"
                     thread.id === working.id || thread.id === idle.id
                       ? {
                           ...thread,
-                          session: null,
-                          hasPendingApprovals: false,
-                          hasPendingUserInput: false,
+                          status: thread.id === working.id ? "running" : "idle",
+                          latestRunId:
+                            thread.id === working.id
+                              ? RunId.make("shortcut-working-run")
+                              : thread.latestRunId,
+                          activeRunId:
+                            thread.id === working.id ? RunId.make("shortcut-working-run") : null,
+                          activityRunStatus: thread.id === working.id ? "running" : null,
+                          activityRunStartedAt: thread.id === working.id ? thread.updatedAt : null,
+                          pendingRuntimeRequest: null,
+                          pendingBackgroundTasks: [],
                           hasActionableProposedPlan: false,
-                          backgroundLiveness: thread.id === working.id ? "working" : null,
                         }
                       : thread,
                   ),

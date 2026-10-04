@@ -53,7 +53,7 @@ const evaluate = (
 describe("Workbench attention from active native Threads and linked PRs", () => {
   it("acknowledges replies without claiming task completion and notifies for a later reply", () => {
     const firstReplyAt = "2026-10-01T00:01:00Z";
-    const reply = { nativeLabel: null, turnState: "completed", completedAt: firstReplyAt };
+    const reply = { nativeLabel: null, runStatus: "completed", completedAt: firstReplyAt };
     expect(getWorkbenchThreadNotification(reply)).toEqual({
       kind: "reply",
       occurredAt: firstReplyAt,
@@ -75,7 +75,7 @@ describe("Workbench attention from active native Threads and linked PRs", () => 
     const secondQuestionAt = "2026-10-01T00:02:00Z";
     const waiting = {
       nativeLabel: "Awaiting Input",
-      turnState: "running",
+      runStatus: "running",
       completedAt: null,
       pendingRequests: { approvals: [], userInputs: [{ createdAt: firstQuestionAt }] },
     };
@@ -110,13 +110,13 @@ describe("Workbench attention from active native Threads and linked PRs", () => 
     const createdAt = "2026-10-01T00:01:00Z";
     const approval = {
       nativeLabel: "Pending Approval",
-      turnState: "running",
+      runStatus: "running",
       completedAt: null,
       pendingRequests: { approvals: [{ createdAt }], userInputs: [] },
     };
     expect(getWorkbenchThreadNotification(approval)?.kind).toBe("waiting");
     expect(getWorkbenchThreadNotification({ ...approval, lastVisitedAt: createdAt })).toBeNull();
-    const interrupted = { nativeLabel: null, turnState: "interrupted", completedAt: createdAt };
+    const interrupted = { nativeLabel: null, runStatus: "interrupted", completedAt: createdAt };
     expect(getWorkbenchThreadNotification(interrupted)?.kind).toBe("waiting");
     expect(getWorkbenchThreadNotification({ ...interrupted, lastVisitedAt: createdAt })).toBeNull();
   });

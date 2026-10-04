@@ -9,7 +9,7 @@ import type {
 } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { useAtomValue } from "@effect/atom-react";
-import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
+import type { PendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { Atom } from "effect/unstable/reactivity";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -46,7 +46,7 @@ const pendingObservation = (
   resolvedReviewThreadIds: [],
 });
 
-type PendingRequestsByThread = ReadonlyMap<ThreadId, ReturnType<typeof derivePendingRequests>>;
+type PendingRequestsByThread = ReadonlyMap<ThreadId, PendingThreadRequests>;
 
 const useWorkbenchThreadNotifications = ({
   environmentId,
@@ -79,13 +79,13 @@ const useWorkbenchThreadNotifications = ({
     useMemo(
       () =>
         Atom.make((get) => {
-          const requests = new Map<ThreadId, ReturnType<typeof derivePendingRequests>>();
+          const requests = new Map<ThreadId, PendingThreadRequests>();
           if (environmentId === null) return requests;
           for (const id of pendingThreadIds) {
-            const activities = get(
-              environmentThreadDetails.activitiesAtom(scopeThreadRef(environmentId, id)),
+            const pending = get(
+              environmentThreadDetails.pendingRequestsAtom(scopeThreadRef(environmentId, id)),
             );
-            requests.set(id, derivePendingRequests(activities));
+            if (pending !== null) requests.set(id, pending);
           }
           return requests;
         }).pipe(Atom.setIdleTTL(0)),
@@ -101,8 +101,8 @@ const useWorkbenchThreadNotifications = ({
   const activeNotification = activeThread
     ? getWorkbenchThreadNotification({
         nativeLabel: resolveThreadStatusPill({ thread: activeThread })?.label,
-        turnState: activeThread.latestTurn?.state,
-        completedAt: activeThread.latestTurn?.completedAt,
+        runStatus: activeThread.latestRun?.status,
+        completedAt: activeThread.latestRun?.completedAt,
         pendingRequests: pendingRequestsByThread.get(activeThread.id),
       })
     : null;
@@ -140,15 +140,15 @@ const getTicketThreadAttention = ({
     const nativeLabel = resolveThreadStatusPill({ thread })?.label;
     const presentation = getWorkbenchAgentPresentation({
       nativeLabel,
-      sessionStatus: thread.session?.status,
-      turnState: thread.latestTurn?.state,
+      runtimeStatus: thread.runtime?.status,
+      runStatus: thread.latestRun?.status,
       settledOverride: thread.settledOverride,
       ticketStatus: ticket.status,
     });
     const notification = getWorkbenchThreadNotification({
       nativeLabel,
-      turnState: thread.latestTurn?.state,
-      completedAt: thread.latestTurn?.completedAt,
+      runStatus: thread.latestRun?.status,
+      completedAt: thread.latestRun?.completedAt,
       pendingRequests: pendingRequestsByThread.get(thread.id),
       lastVisitedAt:
         visitedByThread[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))],

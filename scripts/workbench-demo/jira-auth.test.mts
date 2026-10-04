@@ -48,10 +48,18 @@ const bundle: JiraAuthBundle = {
   credentials: [credential],
 };
 
-const makeDatabase = async (home: string, rows: readonly (typeof connection)[] = []) => {
+const makeDatabase = async ({
+  home,
+  rows = [],
+  filename = "state.sqlite",
+}: {
+  home: string;
+  rows?: readonly (Omit<typeof connection, "siteName"> & { siteName: string })[];
+  filename?: string;
+}) => {
   const stateDirectory = NodePath.join(home, "userdata");
   await NodeFSP.mkdir(stateDirectory, { recursive: true });
-  const database = new NodeSqlite.DatabaseSync(NodePath.join(stateDirectory, "state.sqlite"));
+  const database = new NodeSqlite.DatabaseSync(NodePath.join(stateDirectory, filename));
   database.exec(`
     CREATE TABLE workbench_jira_connections (
       connection_id TEXT PRIMARY KEY,
@@ -115,7 +123,7 @@ test("exports referenced credentials without exposing pending OAuth state", asyn
   const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "jira-auth-export-"));
   try {
     const home = setupHome(NodePath.join(root, "source"));
-    await makeDatabase(home, [connection]);
+    await makeDatabase({ home, rows: [connection] });
     await NodeFSP.mkdir(NodePath.dirname(secretPath(home, credential.id)), { mode: 0o700 });
     await NodeFSP.writeFile(secretPath(home, credential.id), JSON.stringify(credential.value), {
       mode: 0o600,
@@ -131,7 +139,7 @@ test("imports a bundle idempotently and restores the secret file", async () => {
   const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "jira-auth-import-"));
   try {
     const home = setupHome(NodePath.join(root, "destination"));
-    await makeDatabase(home);
+    await makeDatabase({ home });
     const encoded = encodeJiraAuthBundle(bundle);
     NodeAssert.deepEqual(await importJiraAuth({ home, bundle: encoded }), {
       connections: 1,
@@ -171,7 +179,7 @@ test("refuses malformed bundles and a running demo before writing", async () => 
   const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "jira-auth-safety-"));
   try {
     const home = setupHome(NodePath.join(root, "destination"));
-    await makeDatabase(home);
+    await makeDatabase({ home });
     NodeAssert.throws(
       () => decodeJiraAuthBundle(JSON.stringify({ version: 1 })),
       /Invalid Jira auth bundle/,
@@ -190,6 +198,47 @@ test("refuses malformed bundles and a running demo before writing", async () => 
     await NodeAssert.rejects(importJiraAuth({ home, bundle }), /Stop the demo server/);
     await NodeAssert.rejects(exportJiraAuth({ home }), /Stop the demo server/);
     NodeAssert.equal(NodeFS.existsSync(secretPath(home, credential.id)), false);
+  } finally {
+    await NodeFSP.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("exports and restores refreshed auth from V2 while preserving the legacy recovery database", async () => {
+  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "jira-auth-v2-"));
+  try {
+    const home = setupHome(NodePath.join(root, "source"));
+    await makeDatabase({ home, rows: [connection] });
+    await makeDatabase({
+      home,
+      rows: [{ ...connection, siteName: "Refreshed Jira" }],
+      filename: "statev2.sqlite",
+    });
+    await NodeFSP.mkdir(NodePath.dirname(secretPath(home, credential.id)), { mode: 0o700 });
+    await NodeFSP.writeFile(secretPath(home, credential.id), JSON.stringify(credential.value), {
+      mode: 0o600,
+    });
+    const exported = await exportJiraAuth({ home });
+    NodeAssert.equal(exported.connections[0]?.siteName, "Refreshed Jira");
+    await importJiraAuth({
+      home,
+      bundle: { ...bundle, connections: [{ ...connection, siteName: "Restored Jira" }] },
+    });
+    for (const [filename, siteName] of [
+      ["state.sqlite", "Orbit Jira"],
+      ["statev2.sqlite", "Restored Jira"],
+    ] as const) {
+      const database = new NodeSqlite.DatabaseSync(NodePath.join(home, "userdata", filename), {
+        readOnly: true,
+      });
+      try {
+        NodeAssert.equal(
+          database.prepare("SELECT site_name FROM workbench_jira_connections").get()?.site_name,
+          siteName,
+        );
+      } finally {
+        database.close();
+      }
+    }
   } finally {
     await NodeFSP.rm(root, { recursive: true, force: true });
   }

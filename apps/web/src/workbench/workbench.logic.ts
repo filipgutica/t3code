@@ -1,5 +1,5 @@
 import type {
-  OrchestrationThreadShell,
+  OrchestrationV2ThreadShell,
   ProjectId,
   ThreadId,
   WorkbenchAssignment,
@@ -231,10 +231,10 @@ export function getWorkbenchTicketThreadSections({
   archivedThreadsById,
 }: {
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
-  readonly threadsById: ReadonlyMap<ThreadId, Pick<OrchestrationThreadShell, "settledOverride">>;
+  readonly threadsById: ReadonlyMap<ThreadId, Pick<OrchestrationV2ThreadShell, "settledOverride">>;
   readonly archivedThreadsById: ReadonlyMap<
     ThreadId,
-    Pick<OrchestrationThreadShell, "settledOverride">
+    Pick<OrchestrationV2ThreadShell, "settledOverride">
   >;
 }): WorkbenchTicketThreadSections {
   const active: WorkbenchAssignment[] = [];
@@ -414,14 +414,14 @@ export function ticketsByStatus<Ticket extends Pick<WorkbenchTicket, "status">>(
 /** Normalize native Thread presentation without maintaining another agent lifecycle. */
 export function getWorkbenchAgentPresentation({
   nativeLabel,
-  sessionStatus,
-  turnState,
+  runtimeStatus,
+  runStatus,
   settledOverride,
   ticketStatus,
 }: {
   readonly nativeLabel: string | null | undefined;
-  readonly sessionStatus: string | null | undefined;
-  readonly turnState: string | null | undefined;
+  readonly runtimeStatus: string | null | undefined;
+  readonly runStatus: string | null | undefined;
   readonly settledOverride?: "settled" | "active" | null;
   readonly ticketStatus?: WorkbenchTicketStatus | undefined;
 }) {
@@ -442,15 +442,15 @@ export function getWorkbenchAgentPresentation({
       dotClass: "bg-muted-foreground/60",
       colorClass: "text-muted-foreground",
     } as const;
-  if (sessionStatus === "error" || turnState === "error" || turnState === "interrupted")
+  if (runtimeStatus === "failed" || runStatus === "failed" || runStatus === "interrupted")
     return needsInput;
-  if (turnState === "completed" && ticketStatus === "done")
+  if (runStatus === "completed" && ticketStatus === "done")
     return {
       label: "Completed",
       dotClass: "bg-muted-foreground/60",
       colorClass: "text-muted-foreground",
     } as const;
-  if (turnState === "completed")
+  if (runStatus === "completed")
     return {
       label: "Agent replied",
       dotClass: "bg-info",

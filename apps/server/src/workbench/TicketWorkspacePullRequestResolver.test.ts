@@ -1,12 +1,11 @@
+import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "@effect/vitest";
 import {
   ProjectId,
-  ProviderInstanceId,
-  ThreadId,
   SourceControlProviderError,
   type ChangeRequest,
   type OrchestrationProjectShell,
-  type OrchestrationThreadShell,
+  type OrchestrationV2ThreadShell,
   type PullRequestListEntry,
   type PullRequestListInput,
   type PullRequestListResult,
@@ -15,7 +14,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
+import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
+import { nativeThreadShell } from "./testing/nativeThreads.ts";
 import { PullRequestService } from "../pullRequest/PullRequestService.ts";
 import { SourceControlProvider } from "../sourceControl/SourceControlProvider.ts";
 import { SourceControlProviderRegistry } from "../sourceControl/SourceControlProviderRegistry.ts";
@@ -75,16 +76,9 @@ const summary = (number: number, patch: Partial<ChangeRequest> = {}): ChangeRequ
 });
 const thread = (
   number: number,
-  patch: Partial<OrchestrationThreadShell> = {},
-): OrchestrationThreadShell => ({
-  id: ThreadId.make(`thread-${number}`),
-  projectId,
-  title: "Ticket work",
-  modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" },
-  runtimeMode: "full-access",
-  interactionMode: "default",
-  branch: null,
-  worktreePath: null,
+  patch: Partial<OrchestrationV2ThreadShell> = {},
+): OrchestrationV2ThreadShell => ({
+  ...nativeThreadShell({ threadId: `thread-${number}`, projectId, createdAt: timestamp }),
   pullRequests: [
     {
       host: "github.com",
@@ -97,24 +91,13 @@ const thread = (
       stack: null,
     },
   ],
-  latestTurn: null,
-  createdAt: timestamp,
-  updatedAt: timestamp,
-  archivedAt: null,
-  settledOverride: null,
-  settledAt: null,
-  session: null,
-  latestUserMessageAt: null,
-  hasPendingApprovals: false,
-  hasPendingUserInput: false,
-  hasActionableProposedPlan: false,
   ...patch,
 });
 
 const resolve = (
   options: {
     entries?: PullRequestListEntry[];
-    threads?: OrchestrationThreadShell[];
+    threads?: OrchestrationV2ThreadShell[];
     summaries?: ChangeRequest[];
     jiraIssueKey?: string | null;
     resultPatch?: Partial<PullRequestListResult>;
@@ -138,12 +121,10 @@ const resolve = (
       ),
       Effect.provide(
         Layer.mergeAll(
-          Layer.mock(ProjectionSnapshotQuery)({
-            getProjectShellById: () => Effect.succeedSome(project),
-            getThreadShellById: (id) =>
-              Effect.succeed(
-                Option.fromNullishOr((options.threads ?? []).find((value) => value.id === id)),
-              ),
+          Layer.mock(ProjectStoreV2)({ getShell: () => Effect.succeedSome(project) }),
+          Layer.mock(ThreadManagementService)({
+            getThreadShell: (id) =>
+              Effect.succeed((options.threads ?? []).find((value) => value.id === id) ?? null),
           }),
           Layer.mock(PullRequestService)({
             invalidate: () =>
@@ -275,10 +256,10 @@ describe("Ticket workspace PR resolution", () => {
           entries: [entry(4, "example/other")],
           threads: [
             thread(1, { settledOverride: "settled" }),
-            thread(2, { archivedAt: timestamp }),
+            thread(2, { archivedAt: DateTime.makeUnsafe(timestamp) }),
             {
               ...dismissed,
-              pullRequests: dismissed.pullRequests.map((value) => ({
+              pullRequests: (dismissed.pullRequests ?? []).map((value) => ({
                 ...value,
                 source: "stack-dismissed",
               })),

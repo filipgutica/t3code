@@ -1,3 +1,4 @@
+import { seedNativeThread } from "../testing/nativeThreads.ts";
 import {
   ProjectId,
   ThreadId,
@@ -153,17 +154,13 @@ const seedState = (binding: WorkbenchJiraBinding) =>
         (${primaryProjectId}, 'Primary repository', '/repos/primary', '[]', ${createdAt}, ${createdAt}, NULL),
         (${secondaryProjectId}, 'Secondary repository', '/repos/secondary', '[]', ${createdAt}, ${createdAt}, NULL)
     `;
-    yield* sql`
-      INSERT INTO projection_threads (
-        thread_id, project_id, title, model_selection_json, runtime_mode,
-        interaction_mode, pending_approval_count, pending_user_input_count,
-        has_actionable_proposed_plan, created_at, updated_at, deleted_at
-      ) VALUES (
-        ${threadId}, ${primaryProjectId}, 'Lifecycle thread',
-        '{"provider":"codex","model":"gpt-5-codex"}', 'full-access',
-        'default', 0, 0, 0, ${createdAt}, ${createdAt}, NULL
-      )
-    `;
+    yield* seedNativeThread({
+      threadId: threadId,
+      projectId: primaryProjectId,
+      title: "Lifecycle thread",
+      createdAt: createdAt,
+      deletedAt: null,
+    });
     yield* workbench.createProject({
       id: workspaceId,
       title: "Jira lifecycle workspace",

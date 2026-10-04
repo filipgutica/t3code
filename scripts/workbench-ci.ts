@@ -3,6 +3,7 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
 const runners = new Map([
+  ["ubuntu-24.04", "ubuntu-24.04"],
   ["blacksmith-2vcpu-ubuntu-2404", "ubuntu-24.04"],
   ["blacksmith-4vcpu-ubuntu-2404", "ubuntu-24.04"],
   ["blacksmith-8vcpu-ubuntu-2404", "ubuntu-24.04"],
@@ -59,16 +60,18 @@ const generateCI = (source: string) => {
           return replacement;
         },
       });
-      body = updateJobField({
-        body,
-        field: "timeout-minutes",
-        transform: (timeout) => {
-          if (timeout !== "5" && timeout !== "10") {
-            throw new Error(`Unsupported upstream CI job timeout: ${timeout}`);
-          }
-          return timeout === "10" ? "30" : timeout;
-        },
-      });
+      // The artifact consumer uses the platform default timeout upstream.
+      if (id !== "transfer-report" || /^    timeout-minutes:/m.test(body))
+        body = updateJobField({
+          body,
+          field: "timeout-minutes",
+          transform: (timeout) => {
+            if (timeout !== "5" && timeout !== "10") {
+              throw new Error(`Unsupported upstream CI job timeout: ${timeout}`);
+            }
+            return timeout === "10" ? "30" : timeout;
+          },
+        });
       body = updateJobField({
         body,
         field: "name",

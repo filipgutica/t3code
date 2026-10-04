@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { TextGeneration, layer as textGenerationLayer } from "../textGeneration/TextGeneration.ts";
 import { buildTicketSummaryPrompt, sanitizeTicketSummary } from "./ticketSummaryText.ts";
@@ -18,12 +18,12 @@ const OPEN_CODE_FREE_TIER_REJECTION =
 export const ticketSummaryHostLayer = Layer.effect(
   TicketSummaryHost,
   Effect.gen(function* () {
-    const projections = yield* ProjectionSnapshotQuery;
+    const projections = yield* ProjectStoreV2;
     const settings = yield* ServerSettingsService;
     const textGeneration = yield* TextGeneration;
     return TicketSummaryHost.of({
       generate: Effect.fn("TicketSummaryHost.generate")(function* (ticket) {
-        const project = yield* projections.getProjectShellById(ticket.primaryT3ProjectId).pipe(
+        const project = yield* projections.getShell(ticket.primaryT3ProjectId).pipe(
           Effect.mapError(
             () =>
               new WorkbenchOperationError({

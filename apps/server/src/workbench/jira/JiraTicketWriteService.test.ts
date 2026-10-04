@@ -787,8 +787,9 @@ describe("JiraTicketWriteService", () => {
     ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
   );
 
-  for (const [change, bindingAfterPermit] of updateBindingChanges) {
-    it.effect(`rejects an update after ${change} changes while waiting`, () =>
+  it.effect.each(updateBindingChanges)(
+    "rejects an update after %s changes while waiting",
+    ([_change, bindingAfterPermit]) =>
       runWithHarness(
         (harness) =>
           Effect.gen(function* () {
@@ -805,8 +806,7 @@ describe("JiraTicketWriteService", () => {
           }),
         { bindingAfterPermit },
       ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
-    );
-  }
+  );
 
   it.effect(
     "allows an edit after a refresh renames and materializes the same sprint selection",

@@ -6,7 +6,10 @@ import type {
   ThreadId,
   WorkbenchAssignment,
 } from "@t3tools/contracts";
-import type { PendingApproval, PendingUserInput } from "@t3tools/client-runtime/pending-requests";
+import type {
+  ThreadPendingApproval,
+  ThreadPendingUserInput,
+} from "@t3tools/client-runtime/state/thread-requests";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import {
   legacyThreadPullRequestKey,
@@ -267,18 +270,18 @@ export const matchesWorkbenchAttention = (
 /** A visit acknowledges a reply or request, without resolving the native request itself. */
 export const getWorkbenchThreadNotification = ({
   nativeLabel,
-  turnState,
+  runStatus,
   completedAt,
   pendingRequests,
   lastVisitedAt,
 }: {
   readonly nativeLabel: string | null | undefined;
-  readonly turnState: string | null | undefined;
+  readonly runStatus: string | null | undefined;
   readonly completedAt: string | null | undefined;
   readonly pendingRequests?:
     | {
-        readonly approvals: ReadonlyArray<Pick<PendingApproval, "createdAt">>;
-        readonly userInputs: ReadonlyArray<Pick<PendingUserInput, "createdAt">>;
+        readonly approvals: ReadonlyArray<Pick<ThreadPendingApproval, "createdAt">>;
+        readonly userInputs: ReadonlyArray<Pick<ThreadPendingUserInput, "createdAt">>;
       }
     | undefined;
   readonly lastVisitedAt?: string | undefined;
@@ -297,10 +300,14 @@ export const getWorkbenchThreadNotification = ({
     nativeLabel === "Monitoring"
   ) {
     return null;
-  } else if (nativeLabel === "Plan Ready" || turnState === "interrupted" || turnState === "error") {
+  } else if (
+    nativeLabel === "Plan Ready" ||
+    runStatus === "interrupted" ||
+    runStatus === "failed"
+  ) {
     kind = "waiting";
     occurredAt = completedAt;
-  } else if (turnState === "completed") {
+  } else if (runStatus === "completed") {
     kind = "reply";
     occurredAt = completedAt;
   } else return null;

@@ -56,7 +56,7 @@ const requireDemoLinks = async (demo: Demo) => {
   const links = thread?.pullRequests ?? [];
   const second = shell.threads
     .filter((candidate) => ["orbit-001-thread", "orbit-005-thread"].includes(candidate.id))
-    .flatMap((candidate) => candidate.pullRequests)
+    .flatMap((candidate) => candidate.pullRequests ?? [])
     .find((link) => link.url !== links[0]?.url);
   if (links.length === 0 || !second) {
     throw new Error("The live demo needs two distinct PRs across the seeded Orbit Threads.");
@@ -88,7 +88,7 @@ const setLink = async ({
   const exists =
     shell.threads
       .find((thread) => thread.id === "orbit-001-thread")
-      ?.pullRequests.some((candidate) => candidate.url === link.url) ?? false;
+      ?.pullRequests?.some((candidate) => candidate.url === link.url) ?? false;
   if (exists === linked) return;
   await demo.rpc((client) =>
     dispatch(client, {

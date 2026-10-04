@@ -304,9 +304,8 @@ describe("coordinateWorkbenchTicketStart", () => {
       openThread: async () => {
         openedRouteState = resolveThreadRouteRenderState({
           bootstrapComplete: true,
-          serverThreadShellExists: shellExists,
-          serverThreadDetailExists: false,
-          serverThreadDetailDeleted: false,
+          serverThreadExists: shellExists,
+          serverThreadDeleted: false,
           draftThreadExists: false,
         });
       },
@@ -326,7 +325,7 @@ describe("coordinateWorkbenchTicketStart", () => {
       resolveShellReady();
       await start;
     }
-    expect(openedRouteState).toBe("loading");
+    expect(openedRouteState).toBe("ready");
   });
 
   it("replaces the requested missing link with ticket context without sending a prompt", async () => {

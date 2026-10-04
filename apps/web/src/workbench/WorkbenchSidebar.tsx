@@ -50,7 +50,7 @@ import {
 import { Skeleton } from "../components/ui/skeleton";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { usePrimaryEnvironmentId } from "../state/environments";
-import { useProjects, useThreadDetail, useThreadShells } from "../state/entities";
+import { useProjects, useThreadShell, useThreadShells } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
 import {
@@ -1255,7 +1255,7 @@ function getWorkbenchSidebarThreads({
   currentThread,
   threadShells,
 }: {
-  currentThread: ReturnType<typeof useThreadDetail>;
+  currentThread: ReturnType<typeof useThreadShell>;
   threadShells: ReturnType<typeof useThreadShells>;
 }) {
   return currentThread &&
@@ -1407,7 +1407,7 @@ function useWorkbenchSidebarCurrentThread({
   context: Parameters<typeof WorkbenchSidebar>[0]["context"];
   threadShells: ReturnType<typeof useThreadShells>;
 }) {
-  const currentThread = useThreadDetail(
+  const currentThread = useThreadShell(
     context &&
       !threadShells.some(
         (thread) =>

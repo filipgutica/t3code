@@ -1,3 +1,4 @@
+import { makeThreadFixture } from "../test-fixtures";
 import { expect, it } from "vite-plus/test";
 import {
   EnvironmentId,
@@ -29,29 +30,30 @@ const reference = {
   number: 7,
   url: "https://github.com/acme/web/pull/7",
 };
-const thread = (id: string): EnvironmentThreadShell => ({
-  id: ThreadId.make(id),
-  environmentId,
-  projectId: ProjectId.make("repo"),
-  title: id,
-  modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
-  runtimeMode: "full-access",
-  interactionMode: "default",
-  branch: null,
-  worktreePath: null,
-  createdAt: "2026-09-30T00:00:00.000Z",
-  updatedAt: "2026-09-30T00:00:00.000Z",
-  latestTurn: null,
-  session: null,
-  pullRequests: [],
-  archivedAt: null,
-  settledOverride: null,
-  settledAt: null,
-  latestUserMessageAt: null,
-  hasPendingApprovals: false,
-  hasPendingUserInput: false,
-  hasActionableProposedPlan: false,
-});
+const thread = (id: string): EnvironmentThreadShell =>
+  makeThreadFixture({
+    id: ThreadId.make(id),
+    environmentId,
+    projectId: ProjectId.make("repo"),
+    title: id,
+    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" },
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    branch: null,
+    worktreePath: null,
+    createdAt: "2026-09-30T00:00:00.000Z",
+    updatedAt: "2026-09-30T00:00:00.000Z",
+    latestRun: null,
+    runtime: null,
+    pullRequests: [],
+    archivedAt: null,
+    settledOverride: null,
+    settledAt: null,
+    latestUserMessageAt: null,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    hasActionableProposedPlan: false,
+  });
 const sharedOne = { ...thread("shared-one"), linkedPullRequest: reference };
 const sharedTwo = {
   ...thread("shared-two"),

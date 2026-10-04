@@ -1,6 +1,6 @@
 import {
   CommandId,
-  type OrchestrationShellSnapshot,
+  type OrchestrationV2ThreadShellSnapshot,
   type WorkbenchAssignment,
   type WorkbenchTicket,
   type WorkbenchOperationError,
@@ -11,12 +11,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 
-import {
-  OrchestrationEngineService,
-  type OrchestrationEngineShape,
-} from "../orchestration/Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { isAutoSettlementCandidate } from "../orchestration/ThreadSettlementPolicy.ts";
+import { OrchestratorV2, type OrchestratorV2Shape } from "../orchestration-v2/Orchestrator.ts";
+import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
+import { isAutoSettlementCandidate } from "../orchestration-v2/ThreadSettlementService.ts";
 import { forkParked } from "../serverActivation.ts";
 import { WorkbenchStore } from "./WorkbenchStore.ts";
 
@@ -39,8 +36,8 @@ export const settleDoneTicketThreads = Effect.fn("Workbench.settleDoneTicketThre
     SettlementWorkbenchSnapshot,
     WorkbenchOperationError
   >;
-  readonly snapshot: OrchestrationShellSnapshot;
-  readonly dispatch: OrchestrationEngineShape["dispatch"];
+  readonly snapshot: OrchestrationV2ThreadShellSnapshot;
+  readonly dispatch: OrchestratorV2Shape["dispatch"];
 }) {
   const doneTicketIds = new Set(
     tickets
@@ -54,13 +51,12 @@ export const settleDoneTicketThreads = Effect.fn("Workbench.settleDoneTicketThre
       )
       .map((assignment) => assignment.threadId),
   );
-  const now = DateTime.formatIso(yield* DateTime.now);
+  const now = DateTime.toEpochMillis(yield* DateTime.now);
   for (const thread of snapshot.threads) {
     if (
       !threadIds.has(thread.id) ||
-      thread.latestTurn?.state !== "completed" ||
-      thread.latestTurn.completedAt === null ||
-      thread.session?.status === "error" ||
+      thread.status !== "completed" ||
+      thread.latestRunCompletedAt == null ||
       thread.hasActionableProposedPlan ||
       !isAutoSettlementCandidate(thread, now)
     )
@@ -85,11 +81,11 @@ export const settleDoneTicketThreads = Effect.fn("Workbench.settleDoneTicketThre
     yield* dispatch({
       type: "thread.auto-settle",
       commandId: CommandId.make(
-        `server:workbench-settle:${thread.id}:${snapshot.snapshotSequence}`,
+        `server:workbench-settle:${thread.id}:${DateTime.toEpochMillis(thread.updatedAt)}`,
       ),
       threadId: thread.id,
-      snapshotSequence: snapshot.snapshotSequence,
-      settledAt: thread.latestTurn.completedAt,
+      snapshotAt: thread.updatedAt,
+      settledAt: thread.latestRunCompletedAt,
     }).pipe(
       Effect.catchCause((cause) =>
         Cause.hasInterruptsOnly(cause)
@@ -108,8 +104,8 @@ export const settleDoneTicketThreads = Effect.fn("Workbench.settleDoneTicketThre
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const workbench = yield* WorkbenchStore;
-    const snapshots = yield* ProjectionSnapshotQuery;
-    const engine = yield* OrchestrationEngineService;
+    const snapshots = yield* ThreadManagementService;
+    const engine = yield* OrchestratorV2;
     const reconcile = Effect.gen(function* () {
       const workbenchSnapshot = yield* workbench.getSnapshot;
       if (

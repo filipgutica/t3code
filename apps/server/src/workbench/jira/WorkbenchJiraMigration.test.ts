@@ -232,51 +232,49 @@ describe("WorkbenchJiraService local migration", () => {
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
-  for (const change of ["paused", "connection", "project"] as const) {
-    it.effect(
-      `refuses Epic publication when the binding is ${change} before acquiring its permit`,
-      () =>
-        Effect.gen(function* () {
-          const sql = yield* SqlClient.SqlClient;
-          const creates = yield* Ref.make(0);
-          const writer = JiraTicketWriteService.of({
-            createTicket: () => Effect.die("unexpected Jira Ticket creation"),
-            getTicketTransitions: () => Effect.die("unexpected Jira transition lookup"),
-            updateTicket: () => Effect.die("unexpected Jira Ticket write"),
-            startTicketExecution: () => Effect.die("unexpected Jira execution"),
-          });
-          const current = yield* Ref.make(binding);
-          const service = yield* makeService({
-            writer,
-            creates,
-            repository: {
-              ...makeRepository(),
-              getBinding: () => Ref.get(current).pipe(Effect.map(Option.some)),
-            },
-            beforeBindingPermit: Ref.set(current, {
-              ...binding,
-              ...(change === "paused"
-                ? { active: false }
-                : change === "connection"
-                  ? { connectionId: WorkbenchJiraConnectionId.make("connection-2") }
-                  : { jiraProjectKey: "OTHER" }),
-            }),
-          });
-          const { epic } = yield* seedLocalData;
-          const error = yield* Effect.flip(
-            service.migrateLocalTickets({
-              bindingId: binding.id,
-              action: "publish",
-              tickets: [],
-              epics: [{ id: epic.id, updatedAt: epic.updatedAt }],
-            }),
-          );
-          expect(error.code).toBe(change === "paused" ? "binding_inactive" : "invalid_binding");
-          expect(yield* Ref.get(creates)).toBe(0);
-          expect(yield* sql`SELECT * FROM workbench_jira_epic_creations`).toEqual([]);
-        }).pipe(Effect.scoped, Effect.provide(TestLayer)),
-    );
-  }
+  it.effect.each(["paused", "connection", "project"] as const)(
+    "refuses Epic publication when the binding is %s before acquiring its permit",
+    (change) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const creates = yield* Ref.make(0);
+        const writer = JiraTicketWriteService.of({
+          createTicket: () => Effect.die("unexpected Jira Ticket creation"),
+          getTicketTransitions: () => Effect.die("unexpected Jira transition lookup"),
+          updateTicket: () => Effect.die("unexpected Jira Ticket write"),
+          startTicketExecution: () => Effect.die("unexpected Jira execution"),
+        });
+        const current = yield* Ref.make(binding);
+        const service = yield* makeService({
+          writer,
+          creates,
+          repository: {
+            ...makeRepository(),
+            getBinding: () => Ref.get(current).pipe(Effect.map(Option.some)),
+          },
+          beforeBindingPermit: Ref.set(current, {
+            ...binding,
+            ...(change === "paused"
+              ? { active: false }
+              : change === "connection"
+                ? { connectionId: WorkbenchJiraConnectionId.make("connection-2") }
+                : { jiraProjectKey: "OTHER" }),
+          }),
+        });
+        const { epic } = yield* seedLocalData;
+        const error = yield* Effect.flip(
+          service.migrateLocalTickets({
+            bindingId: binding.id,
+            action: "publish",
+            tickets: [],
+            epics: [{ id: epic.id, updatedAt: epic.updatedAt }],
+          }),
+        );
+        expect(error.code).toBe(change === "paused" ? "binding_inactive" : "invalid_binding");
+        expect(yield* Ref.get(creates)).toBe(0);
+        expect(yield* sql`SELECT * FROM workbench_jira_epic_creations`).toEqual([]);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
 
   it.effect("rolls back earlier local deletes when a later Ticket revision conflicts", () =>
     Effect.gen(function* () {

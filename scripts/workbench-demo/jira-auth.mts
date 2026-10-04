@@ -5,12 +5,12 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
 
-import { requireHome } from "./environment.mts";
+import { demoDatabasePath, requireHome } from "./environment.mts";
 
 const BUNDLE_VERSION = 1 as const;
 const authConnectionTable = "workbench_jira_connections";
 const authStateDirectory = (home: string) => NodePath.join(home, "userdata");
-const authDatabasePath = (home: string) => NodePath.join(authStateDirectory(home), "state.sqlite");
+const authDatabasePath = demoDatabasePath;
 const authSecretsDirectory = (home: string) => NodePath.join(authStateDirectory(home), "secrets");
 const credentialPath = (home: string, credentialId: string) =>
   NodePath.join(authSecretsDirectory(home), `workbench-jira-credential-${credentialId}.bin`);
