@@ -184,6 +184,7 @@ describe("Workbench Board view", () => {
           [
             {
               kind: "waiting",
+              cause: "approval",
               source: {
                 type: "thread",
                 threadId: ThreadId.make("waiting"),

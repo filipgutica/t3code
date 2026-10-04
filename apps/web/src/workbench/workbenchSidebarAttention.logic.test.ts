@@ -97,7 +97,10 @@ const signals: WorkbenchAttentionSignal[] = [
     },
     unresolvedReviewThreads: [],
   },
-  { kind: "waiting", source: { type: "thread", threadId: waiting.id, threadTitle: waiting.title } },
+  {
+    kind: "question",
+    source: { type: "thread", threadId: waiting.id, threadTitle: waiting.title },
+  },
 ];
 const attentionSignalsByTicket = new Map([[ticketId, signals]]);
 const actionableThreadIdsByTicket = () =>
@@ -169,6 +172,7 @@ it.each([false, true])(
       .set(second.id, [
         {
           kind: "waiting",
+          cause: "approval",
           source: { type: "thread", threadId: secondThread.id, threadTitle: secondThread.title },
         },
       ])

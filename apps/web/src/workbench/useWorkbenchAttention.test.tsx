@@ -217,6 +217,7 @@ it("retains omitted unresolved discussions during partial reads and retires only
     );
   const known = {
     summary: {
+      title: "Keep invitation claims",
       state: "open" as const,
       checksState: "failing" as const,
       reviewDecision: "changes-requested" as const,
@@ -239,8 +240,24 @@ it("retains omitted unresolved discussions during partial reads and retires only
       ?.filter((signal) => signal.source.type === "pull-request")
       .map((signal) => signal.kind),
   ).toEqual(["unresolved-feedback"]);
+  publish({
+    reference: { ...reference, title: "Older Thread title" },
+    summary: null,
+    activity: null,
+  });
+  const feedbackSource = result.attentionSignalsByTicket
+    .get(ticket.id)
+    ?.find((signal) => signal.kind === "unresolved-feedback")?.source;
+  expect(
+    feedbackSource?.type === "pull-request" ? feedbackSource.row.pullRequest.title : null,
+  ).toBe("Keep invitation claims");
   publish({ activity: { commentsTruncated: true, reviewThreads: [] } });
   expect(feedback()).toEqual([first, second]);
+  publish({
+    activity: { commentsTruncated: false, reviewThreadsTruncated: true, reviewThreads: [] },
+  });
+  expect(feedback()).toEqual([first, second]);
+  expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.status).toBe("incomplete");
   publish({
     activity: { commentsTruncated: true, reviewThreads: [{ ...first, isResolved: true }] },
   });
@@ -267,6 +284,12 @@ it("preserves each eligible Thread source and deduplicates shared PR reasons ind
     { type: "thread", threadId: waiting.id, threadTitle: waiting.title },
     { type: "thread", threadId: otherWaiting.id, threadTitle: otherWaiting.title },
   ]);
+  expect(
+    result.attentionSignalsByTicket.get(ticket.id)?.find((signal) => signal.kind === "waiting"),
+  ).toMatchObject({
+    kind: "waiting",
+    cause: "approval",
+  });
   const pr = result.attentionReferences[0]!;
   act(() =>
     result.setAttentionObservations(
@@ -275,7 +298,12 @@ it("preserves each eligible Thread source and deduplicates shared PR reasons ind
           workbenchAttentionIdentity(environmentId, pr),
           getWorkbenchPullRequestAttention({
             reference: pr,
-            summary: { state: "open", checksState: "failing", reviewDecision: "changes-requested" },
+            summary: {
+              title: "Keep invitation claims",
+              state: "open",
+              checksState: "failing",
+              reviewDecision: "changes-requested",
+            },
             activity: { commentsTruncated: false, reviewThreads: [] },
             loading: false,
             error: true,
@@ -298,11 +326,19 @@ it("preserves each eligible Thread source and deduplicates shared PR reasons ind
   ).toEqual([
     {
       type: "pull-request",
-      row: { threadId: waiting.id, threadTitle: waiting.title, pullRequest: reference },
+      row: {
+        threadId: waiting.id,
+        threadTitle: waiting.title,
+        pullRequest: { ...reference, title: "Keep invitation claims" },
+      },
     },
     {
       type: "pull-request",
-      row: { threadId: waiting.id, threadTitle: waiting.title, pullRequest: reference },
+      row: {
+        threadId: waiting.id,
+        threadTitle: waiting.title,
+        pullRequest: { ...reference, title: "Keep invitation claims" },
+      },
     },
   ]);
   expect(

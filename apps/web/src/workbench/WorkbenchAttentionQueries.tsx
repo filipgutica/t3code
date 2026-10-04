@@ -41,6 +41,7 @@ export function WorkbenchAttentionQueries({
         const existing = previous.get(key);
         if (
           existing?.inspected === next.inspected &&
+          existing.pullRequestTitle === next.pullRequestTitle &&
           existing.terminal === next.terminal &&
           existing.reasons.join("|") === next.reasons.join("|") &&
           existing.inspectionStatus === next.inspectionStatus &&

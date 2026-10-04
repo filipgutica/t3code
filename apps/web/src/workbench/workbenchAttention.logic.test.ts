@@ -13,6 +13,8 @@ import {
   getWorkbenchPullRequestAttention,
   matchesWorkbenchAttention,
   getWorkbenchThreadNotification,
+  groupWorkbenchAttentionSignals,
+  type WorkbenchAttentionSignal,
   workbenchAttentionIdentity,
 } from "./workbenchAttention.logic";
 
@@ -106,7 +108,7 @@ describe("Workbench attention from active native Threads and linked PRs", () => 
       }),
     ).toBeNull();
   });
-  it("acknowledges approvals and interrupted turns without treating them as questions", () => {
+  it("retains the cause of approvals, plans, failed and interrupted runs until a visit", () => {
     const createdAt = "2026-10-01T00:01:00Z";
     const approval = {
       nativeLabel: "Pending Approval",
@@ -114,11 +116,84 @@ describe("Workbench attention from active native Threads and linked PRs", () => 
       completedAt: null,
       pendingRequests: { approvals: [{ createdAt }], userInputs: [] },
     };
-    expect(getWorkbenchThreadNotification(approval)?.kind).toBe("waiting");
+    expect(getWorkbenchThreadNotification(approval)).toEqual({
+      kind: "waiting",
+      cause: "approval",
+      occurredAt: createdAt,
+    });
     expect(getWorkbenchThreadNotification({ ...approval, lastVisitedAt: createdAt })).toBeNull();
-    const interrupted = { nativeLabel: null, runStatus: "interrupted", completedAt: createdAt };
-    expect(getWorkbenchThreadNotification(interrupted)?.kind).toBe("waiting");
-    expect(getWorkbenchThreadNotification({ ...interrupted, lastVisitedAt: createdAt })).toBeNull();
+    for (const [nativeLabel, runStatus, cause] of [
+      ["Plan Ready", "completed", "plan"],
+      [null, "failed", "failed"],
+      [null, "interrupted", "interrupted"],
+    ] as const) {
+      const run = { nativeLabel, runStatus, completedAt: createdAt };
+      expect(getWorkbenchThreadNotification(run)).toEqual({
+        kind: "waiting",
+        cause,
+        occurredAt: createdAt,
+      });
+      expect(getWorkbenchThreadNotification({ ...run, lastVisitedAt: createdAt })).toBeNull();
+    }
+  });
+  it("orders source groups by urgent action while preserving ties, signal counts and every discussion", () => {
+    const threadSignal = (id: string, kind: "question" | "reply"): WorkbenchAttentionSignal => ({
+      kind,
+      source: { type: "thread", threadId: ThreadId.make(id), threadTitle: id },
+    });
+    const prSource = {
+      type: "pull-request" as const,
+      row: {
+        threadId: ThreadId.make("pr-thread"),
+        threadTitle: "PR Thread",
+        pullRequest: reference,
+      },
+    };
+    const discussions = Array.from({ length: 6 }, (_, i) => reviewThread(`discussion-${i + 1}`));
+    const signals: WorkbenchAttentionSignal[] = [
+      threadSignal("reply", "reply"),
+      { kind: "unresolved-feedback", source: prSource, unresolvedReviewThreads: discussions },
+      {
+        kind: "waiting",
+        cause: "failed",
+        source: {
+          type: "thread",
+          threadId: ThreadId.make("failed-run"),
+          threadTitle: "Failed run",
+        },
+      },
+      threadSignal("question-one", "question"),
+      { kind: "failed-checks", source: prSource, unresolvedReviewThreads: discussions },
+      threadSignal("question-two", "question"),
+      { kind: "changes-requested", source: prSource, unresolvedReviewThreads: discussions },
+    ];
+    const groups = groupWorkbenchAttentionSignals(signals);
+    expect(groups.map((group) => group.key)).toEqual([
+      "thread:question-one",
+      "thread:question-two",
+      "thread:failed-run",
+      reference.url,
+      "thread:reply",
+    ]);
+    expect(groups.flatMap((group) => group.signals).length).toBe(7);
+    expect(groups[3]?.signals.map((signal) => signal.kind)).toEqual([
+      "failed-checks",
+      "changes-requested",
+      "unresolved-feedback",
+    ]);
+    const feedback = groups[3]?.signals.find((signal) => signal.kind === "unresolved-feedback");
+    expect(
+      feedback?.kind === "unresolved-feedback"
+        ? feedback.unresolvedReviewThreads.map((thread) => thread.id)
+        : [],
+    ).toEqual([
+      "discussion-1",
+      "discussion-2",
+      "discussion-3",
+      "discussion-4",
+      "discussion-5",
+      "discussion-6",
+    ]);
   });
   it("excludes superseded, settled, archived, missing and foreign-environment assignments", () => {
     const assignment = (id: string, supersededAt: string | null = null): WorkbenchAssignment => ({

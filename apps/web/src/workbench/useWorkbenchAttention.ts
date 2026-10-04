@@ -16,12 +16,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { environmentThreadDetails } from "../state/threads";
 import { useUiStateStore } from "../uiStateStore";
 import { resolveThreadStatusPill } from "../components/Sidebar.logic";
-import { getWorkbenchAgentPresentation } from "./workbench.logic";
-import { getWorkbenchTicketPullRequests } from "./workbenchPullRequests.logic";
+import {
+  getWorkbenchTicketPullRequests,
+  type WorkbenchTicketPullRequest,
+} from "./workbenchPullRequests.logic";
 import {
   activeWorkbenchAttentionAssignments,
   getWorkbenchPullRequestAttention,
   getWorkbenchThreadNotification,
+  getWorkbenchAttentionSignalLabel,
   mergeWorkbenchPullRequestAttention,
   workbenchAttentionIdentity,
   type WorkbenchAttentionSignal,
@@ -47,6 +50,15 @@ const pendingObservation = (
 });
 
 type PendingRequestsByThread = ReadonlyMap<ThreadId, PendingThreadRequests>;
+
+const getObservedPullRequestRow = ({
+  row,
+  pullRequestTitle,
+}: {
+  row: WorkbenchTicketPullRequest;
+  pullRequestTitle: string | undefined;
+}) =>
+  pullRequestTitle ? { ...row, pullRequest: { ...row.pullRequest, title: pullRequestTitle } } : row;
 
 const useWorkbenchThreadNotifications = ({
   environmentId,
@@ -116,14 +128,12 @@ const useWorkbenchThreadNotifications = ({
 };
 
 const getTicketThreadAttention = ({
-  ticket,
   assignments,
   threadsById,
   pendingRequestsByThread,
   visitedByThread,
   activeThreadRef,
 }: {
-  readonly ticket: WorkbenchTicket;
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
   readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   readonly pendingRequestsByThread: PendingRequestsByThread;
@@ -138,13 +148,6 @@ const getTicketThreadAttention = ({
     if (!thread || threadIds.has(thread.id)) continue;
     threadIds.add(thread.id);
     const nativeLabel = resolveThreadStatusPill({ thread })?.label;
-    const presentation = getWorkbenchAgentPresentation({
-      nativeLabel,
-      runtimeStatus: thread.runtime?.status,
-      runStatus: thread.latestRun?.status,
-      settledOverride: thread.settledOverride,
-      ticketStatus: ticket.status,
-    });
     const notification = getWorkbenchThreadNotification({
       nativeLabel,
       runStatus: thread.latestRun?.status,
@@ -157,11 +160,12 @@ const getTicketThreadAttention = ({
       activeThreadRef?.environmentId === thread.environmentId &&
       activeThreadRef.threadId === thread.id;
     if (notification && !isOpen) {
-      signals.push({
-        kind: notification.kind,
+      const signal: WorkbenchAttentionSignal = {
+        ...notification,
         source: { type: "thread", threadId: thread.id, threadTitle: thread.title },
-      });
-      if (presentation) reasons.add(presentation.label);
+      };
+      signals.push(signal);
+      reasons.add(getWorkbenchAttentionSignalLabel(signal));
     }
   }
   return { signals, reasons };
@@ -315,7 +319,6 @@ export function useWorkbenchAttention({
       new Map(
         tickets.map((ticket) => {
           const { signals, reasons } = getTicketThreadAttention({
-            ticket,
             assignments: assignmentsByTicket.get(ticket.id) ?? [],
             threadsById,
             pendingRequestsByThread,
@@ -336,16 +339,20 @@ export function useWorkbenchAttention({
                 error: false,
               });
             observation.reasons.forEach((reason) => reasons.add(reason));
+            const observedRow = getObservedPullRequestRow({
+              row,
+              pullRequestTitle: observation.pullRequestTitle,
+            });
             for (const kind of observation.signalKinds) {
               signals.push({
                 kind,
-                source: { type: "pull-request", row },
+                source: { type: "pull-request", row: observedRow },
                 unresolvedReviewThreads: observation.unresolvedReviewThreads,
               });
             }
             if (reference.state !== "closed" && reference.state !== "merged") {
               inspections.push({
-                row,
+                row: observedRow,
                 status: observation.inspectionStatus,
                 inspected: observation.inspected,
               });

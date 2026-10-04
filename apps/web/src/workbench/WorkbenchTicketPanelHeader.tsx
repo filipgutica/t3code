@@ -34,7 +34,10 @@ export function WorkbenchTicketPanelHeader({
     <div className="flex items-start gap-2 px-4 py-3">
       <div className="min-w-0 flex-1">
         {heading ?? (
-          <h2 aria-label={label} className="text-sm font-semibold leading-6">
+          <h2
+            aria-label={count === undefined ? title : `${title} ${count}`}
+            className="text-sm font-semibold leading-6"
+          >
             {title}
             {count !== undefined ? (
               <span className="ml-2 font-normal tabular-nums text-muted-foreground">{count}</span>

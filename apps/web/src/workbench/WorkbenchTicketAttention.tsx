@@ -1,5 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
-import type { EnvironmentId, ThreadId, WorkbenchTicketId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  PullRequestReviewThread,
+  ThreadId,
+  WorkbenchTicketId,
+} from "@t3tools/contracts";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import {
   ArrowRightIcon,
@@ -18,9 +23,12 @@ import {
   WorkbenchTicketPanelHeader,
   useWorkbenchTicketPanelCollapsed,
 } from "./WorkbenchTicketPanelHeader";
-import type {
-  WorkbenchAttentionSignal,
-  WorkbenchAttentionInspection,
+import {
+  groupWorkbenchAttentionSignals,
+  getWorkbenchAttentionSignalLabel,
+  getWorkbenchAttentionSourceLabel,
+  type WorkbenchAttentionSignal,
+  type WorkbenchAttentionInspection,
 } from "./workbenchAttention.logic";
 
 type TicketAttentionProps = {
@@ -29,15 +37,6 @@ type TicketAttentionProps = {
   ticketTitle: string;
   onOpenThread?: (threadId: ThreadId) => void;
 };
-const labels = {
-  waiting: "Waiting for your input",
-  question: "Waiting for your answer",
-  reply: "Agent replied",
-  "failed-checks": "Failed checks",
-  "changes-requested": "Changes requested",
-  "unresolved-feedback": "Unresolved feedback",
-} as const;
-
 const signalIcons = {
   waiting: MessageSquareIcon,
   question: CircleHelpIcon,
@@ -47,12 +46,60 @@ const signalIcons = {
   "unresolved-feedback": MessageSquareIcon,
 } as const;
 const actionDescriptions = {
-  waiting: "Open Thread to respond",
   question: "Open Thread to answer the question",
   reply: "Open Thread to read the reply",
   "failed-checks": "View checks, logs, and rerun options",
   "changes-requested": "View the requested changes",
 } as const;
+const waitingActionDescriptions = {
+  approval: "Open Thread to review the approval",
+  plan: "Open Thread to review the plan",
+  failed: "Open Thread to inspect the failed run",
+  interrupted: "Open Thread to review the interrupted run",
+} as const;
+
+const getAttentionActionDescription = (signal: WorkbenchAttentionSignal) => {
+  switch (signal.kind) {
+    case "unresolved-feedback": {
+      const count = signal.unresolvedReviewThreads.length;
+      return `${count} ${count === 1 ? "discussion" : "discussions"}`;
+    }
+    case "waiting":
+      return waitingActionDescriptions[signal.cause];
+    default:
+      return actionDescriptions[signal.kind];
+  }
+};
+
+function AttentionDiscussionButton({
+  thread,
+  sourceLabel,
+  onOpen,
+}: {
+  thread: PullRequestReviewThread;
+  sourceLabel: string;
+  onOpen: () => void;
+}) {
+  const descriptionId = useId();
+  const location = `${thread.path}${thread.line ? `:${thread.line}` : ""}`;
+  return (
+    <button
+      type="button"
+      aria-label={`Open review discussion at ${location}, ${sourceLabel}`}
+      aria-describedby={descriptionId}
+      className="flex w-full cursor-pointer items-start gap-2 rounded-md py-1 pl-7 pr-2 text-left text-2xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+      onClick={onOpen}
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block break-words font-mono text-muted-foreground">{location}</span>
+        <span id={descriptionId} className="mt-0.5 line-clamp-2 whitespace-normal break-words">
+          {thread.comments[0]?.body ?? "Review discussion"}
+        </span>
+      </span>
+      <ArrowRightIcon aria-hidden className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+    </button>
+  );
+}
 
 function AttentionSignalItem({
   signal,
@@ -61,57 +108,52 @@ function AttentionSignalItem({
   signal: WorkbenchAttentionSignal;
   onOpenSignal: (signal: WorkbenchAttentionSignal, reviewThreadId?: string) => void;
 }) {
-  const Icon = signalIcons[signal.kind];
+  const failedRun = signal.kind === "waiting" && signal.cause === "failed";
+  const Icon = failedRun ? CircleAlertIcon : signalIcons[signal.kind];
+  const label = getWorkbenchAttentionSignalLabel(signal);
+  const sourceLabel = getWorkbenchAttentionSourceLabel(signal.source);
   const discussions =
     signal.source.type === "pull-request" && signal.kind === "unresolved-feedback"
       ? signal.unresolvedReviewThreads
       : [];
+  const actionDescription = getAttentionActionDescription(signal);
   const content = (
     <>
       <Icon
         aria-hidden
-        className={`mt-0.5 size-3.5 shrink-0 ${signal.kind === "failed-checks" ? "text-warning" : "text-muted-foreground"}`}
+        className={`mt-0.5 size-3.5 shrink-0 ${signal.kind === "failed-checks" || failedRun ? "text-warning" : "text-muted-foreground"}`}
       />
       <span className="min-w-0 flex-1">
-        <span className="block font-medium">{labels[signal.kind]}</span>
-        <span className="block text-2xs text-muted-foreground">
-          {signal.kind === "unresolved-feedback"
-            ? `${discussions.length} unresolved ${discussions.length === 1 ? "discussion · Open feedback" : "discussions · Choose a discussion"}`
-            : actionDescriptions[signal.kind]}
-        </span>
+        <span className="block font-medium">{label}</span>
+        <span className="block text-2xs text-muted-foreground">{actionDescription}</span>
       </span>
-      {discussions.length <= 1 ? (
+      {discussions.length === 0 ? (
         <ArrowRightIcon aria-hidden className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
       ) : null}
     </>
   );
   return (
     <div>
-      {discussions.length > 1 ? (
+      {discussions.length > 0 ? (
         <div className="flex items-start gap-2 p-2 text-xs">{content}</div>
       ) : (
         <button
           type="button"
+          aria-label={`${label}. ${actionDescription}. ${sourceLabel}`}
           className="flex w-full cursor-pointer items-start gap-2 rounded-md p-2 text-left text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-          onClick={() => onOpenSignal(signal, discussions[0]?.id)}
+          onClick={() => onOpenSignal(signal)}
         >
           {content}
         </button>
       )}
-      {discussions.length > 1
-        ? discussions.map((thread) => (
-            <button
-              key={thread.id}
-              type="button"
-              className="block w-full cursor-pointer whitespace-normal break-words rounded-md py-1 pl-7 pr-2 text-left text-2xs text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-              onClick={() => onOpenSignal(signal, thread.id)}
-            >
-              {thread.path}
-              {thread.line ? `:${thread.line}` : ""} ·{" "}
-              {thread.comments[0]?.body ?? "Review discussion"}
-            </button>
-          ))
-        : null}
+      {discussions.map((thread) => (
+        <AttentionDiscussionButton
+          key={thread.id}
+          thread={thread}
+          sourceLabel={sourceLabel}
+          onOpen={() => onOpenSignal(signal, thread.id)}
+        />
+      ))}
     </div>
   );
 }
@@ -139,14 +181,7 @@ function AttentionItems({
         search: { workbench: true },
       });
   };
-  const groups = new Map<string, WorkbenchAttentionSignal[]>();
-  for (const signal of signals) {
-    const key =
-      signal.source.type === "thread"
-        ? `thread:${signal.source.threadId}`
-        : signal.source.row.pullRequest.url;
-    groups.set(key, [...(groups.get(key) ?? []), signal]);
-  }
+  const groups = groupWorkbenchAttentionSignals(signals);
   const openSignal = (signal: WorkbenchAttentionSignal, reviewThreadId?: string) => {
     if (signal.source.type === "thread") {
       openThread(signal.source.threadId);
@@ -178,14 +213,12 @@ function AttentionItems({
   };
   return (
     <div className="flex flex-col gap-3">
-      {[...groups].map(([key, group]) => {
+      {groups.map(({ key, signals: group }) => {
         const source = group[0]!.source;
         return (
           <div key={key} className="flex min-w-0 flex-col gap-1">
             <p className="break-words text-2xs font-medium text-muted-foreground">
-              {source.type === "thread"
-                ? `Thread · ${source.threadTitle}`
-                : `PR #${source.row.pullRequest.number} · ${source.row.pullRequest.repository}`}
+              {getWorkbenchAttentionSourceLabel(source)}
             </p>
             {group.map((signal) => (
               <AttentionSignalItem key={signal.kind} signal={signal} onOpenSignal={openSignal} />
@@ -197,7 +230,7 @@ function AttentionItems({
         .filter((inspection) => inspection.status !== "complete")
         .map(({ row, status }) => (
           <p key={row.pullRequest.url} role="status" className="text-2xs text-muted-foreground">
-            PR #{row.pullRequest.number}:{" "}
+            {getWorkbenchAttentionSourceLabel({ type: "pull-request", row })}:{" "}
             {status === "loading"
               ? "Inspecting attention…"
               : status === "unavailable"
@@ -209,23 +242,15 @@ function AttentionItems({
   );
 }
 
-function AttentionBell({
-  compact,
-  hasFailedChecks,
-}: {
-  compact: boolean;
-  hasFailedChecks: boolean;
-}) {
+function AttentionBell({ compact, hasFailures }: { compact: boolean; hasFailures: boolean }) {
   return (
     <span aria-hidden className="relative inline-flex">
       <BellIcon
         className={
-          compact
-            ? `size-3 ${hasFailedChecks ? "text-warning" : "text-muted-foreground"}`
-            : undefined
+          compact ? `size-3 ${hasFailures ? "text-warning" : "text-muted-foreground"}` : undefined
         }
       />
-      {!hasFailedChecks ? (
+      {!hasFailures ? (
         <span
           className={`absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-primary ring-2 ${compact ? "ring-sidebar" : "ring-popover"}`}
         />
@@ -241,7 +266,10 @@ export function WorkbenchTicketAttentionBadge(
   const { attentionSignalsByTicket, attentionInspectionsByTicket } = useWorkbenchAttentionData();
   const signals = attentionSignalsByTicket.get(props.ticketId) ?? [];
   const [open, setOpen] = useState(false);
-  const hasFailedChecks = signals.some((signal) => signal.kind === "failed-checks");
+  const hasFailures = signals.some(
+    (signal) =>
+      signal.kind === "failed-checks" || (signal.kind === "waiting" && signal.cause === "failed"),
+  );
   if (signals.length === 0) return null;
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -249,12 +277,12 @@ export function WorkbenchTicketAttentionBadge(
         render={
           <Button
             size={props.compact ? "icon-micro" : "micro"}
-            variant={props.compact ? "ghost" : hasFailedChecks ? "warning-outline" : "outline"}
+            variant={props.compact ? "ghost" : hasFailures ? "warning-outline" : "outline"}
             aria-label={`${signals.length} attention ${signals.length === 1 ? "item" : "items"} for ${props.ticketTitle}`}
           />
         }
       >
-        <AttentionBell compact={!!props.compact} hasFailedChecks={hasFailedChecks} />
+        <AttentionBell compact={!!props.compact} hasFailures={hasFailures} />
         {props.compact ? null : signals.length}
       </PopoverTrigger>
       <PopoverPopup width="md" padding="compact" side={props.side ?? "bottom"} align="end">
@@ -282,6 +310,7 @@ export function WorkbenchTicketAttentionPanel(props: TicketAttentionProps) {
     useWorkbenchAttentionData();
   const signals = attentionSignalsByTicket.get(props.ticketId) ?? [];
   const inspections = attentionInspectionsByTicket.get(props.ticketId) ?? [];
+  const firstSignal = groupWorkbenchAttentionSignals(signals)[0]?.signals[0];
   if (!signals.length && inspections.every((inspection) => inspection.status === "complete"))
     return null;
   return (
@@ -289,7 +318,13 @@ export function WorkbenchTicketAttentionPanel(props: TicketAttentionProps) {
       <WorkbenchTicketPanelHeader
         title={signals.length ? "Needs attention" : "PR inspection"}
         count={signals.length || undefined}
-        description={collapsed && signals[0] ? attentionSignalSummary(signals[0]) : undefined}
+        description={
+          collapsed && firstSignal ? (
+            <span className="block whitespace-normal break-words">
+              {attentionSignalSummary(firstSignal)}
+            </span>
+          ) : undefined
+        }
         collapsed={collapsed}
         onToggle={() => setCollapsed((value) => !value)}
         contentId={contentId}
@@ -313,10 +348,5 @@ export function WorkbenchTicketAttentionPanel(props: TicketAttentionProps) {
 }
 
 function attentionSignalSummary(signal: WorkbenchAttentionSignal) {
-  const source = signal.source;
-  const sourceLabel =
-    source.type === "thread"
-      ? source.threadTitle
-      : `PR #${source.row.pullRequest.number} · ${source.row.threadTitle}`;
-  return `${labels[signal.kind]} · ${sourceLabel}`;
+  return `${getWorkbenchAttentionSignalLabel(signal)} · ${getWorkbenchAttentionSourceLabel(signal.source)}`;
 }

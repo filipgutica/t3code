@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   failed: new Set<number>(),
   closed: new Set<number>(),
   updatedAt: 1,
+  title: "Invite reviewers",
   resultIdentity: {},
   reviewThreads: [] as PullRequestReviewThread[],
 }));
@@ -51,6 +52,7 @@ vi.mock("../state/query", () => ({
       data: complete
         ? kind === "summary"
           ? {
+              title: state.title,
               state: state.closed.has(number) ? "closed" : "open",
               checksState: state.failed.has(number) ? "failing" : "passing",
               reviewDecision: "approved",
@@ -81,6 +83,7 @@ beforeEach(() => {
   state.failed.clear();
   state.closed.clear();
   state.updatedAt = 1;
+  state.title = "Invite reviewers";
   state.resultIdentity = {};
   state.reviewThreads = [];
 });
@@ -244,7 +247,7 @@ it("settles a fast same-error retry even when React never renders pending", () =
   expect(state.active.size).toBe(0);
 });
 
-it("publishes changed discussion details and resolved targets while inspection is still loading", () => {
+it("publishes title changes, discussion details and resolved targets while inspection is still loading", () => {
   state.completed.add(1);
   state.pending.add(1);
   const first: PullRequestReviewThread = {
@@ -269,6 +272,11 @@ it("publishes changed discussion details and resolved targets while inspection i
   act(() => {
     renderer = create(render());
   });
+  state.title = "Keep invitation claims";
+  act(() => renderer.update(render()));
+  expect(onChange.mock.lastCall![0].values().next().value.pullRequestTitle).toBe(
+    "Keep invitation claims",
+  );
   const second = { ...first, id: "feedback-two", path: "src/settings.ts", line: 23 };
   state.reviewThreads = [first, second];
   act(() => renderer.update(render()));
