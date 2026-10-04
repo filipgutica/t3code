@@ -22,6 +22,10 @@ describe("Ticket Pull Requests section", () => {
   });
   it("keeps PR linking discoverable on a local Ticket without PRs or a Jira key", () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal(
+      "window",
+      Object.assign(new EventTarget(), { localStorage: { getItem: () => null } }),
+    );
     act(() => {
       renderer = create(
         <WorkbenchTicketPullRequests

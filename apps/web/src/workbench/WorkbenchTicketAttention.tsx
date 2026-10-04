@@ -4,17 +4,20 @@ import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import {
   ArrowRightIcon,
   BellIcon,
-  ChevronDownIcon,
   MessageSquareIcon,
   CircleHelpIcon,
   CircleAlertIcon,
+  RefreshCwIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Button } from "../components/ui/button";
-import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
 import { useWorkbenchAttentionData } from "./WorkbenchAttentionProvider";
 import { useOpenWorkbenchPullRequest } from "./WorkbenchPullRequestPreview";
+import {
+  WorkbenchTicketPanelHeader,
+  useWorkbenchTicketPanelCollapsed,
+} from "./WorkbenchTicketPanelHeader";
 import type {
   WorkbenchAttentionSignal,
   WorkbenchAttentionInspection,
@@ -273,6 +276,8 @@ export function WorkbenchTicketAttentionBadge(
 }
 
 export function WorkbenchTicketAttentionPanel(props: TicketAttentionProps) {
+  const [collapsed, setCollapsed] = useWorkbenchTicketPanelCollapsed("attention");
+  const contentId = useId();
   const { attentionSignalsByTicket, attentionInspectionsByTicket, refreshAttention } =
     useWorkbenchAttentionData();
   const signals = attentionSignalsByTicket.get(props.ticketId) ?? [];
@@ -281,30 +286,37 @@ export function WorkbenchTicketAttentionPanel(props: TicketAttentionProps) {
     return null;
   return (
     <div className="shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/30">
-      <Collapsible defaultOpen>
-        <div className="flex items-center justify-between gap-2 px-4 py-3">
-          <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-semibold">
-            <span role="heading" aria-level={2}>
-              {signals.length ? "Needs attention" : "PR inspection"}
-            </span>
-            {signals.length ? (
-              <span className="text-muted-foreground">{signals.length}</span>
-            ) : null}
-            <ChevronDownIcon
-              aria-hidden
-              className="ml-auto size-3.5 text-muted-foreground group-data-[panel-open]:rotate-180"
-            />
-          </CollapsibleTrigger>
-          <Button size="micro" variant="ghost" onClick={refreshAttention}>
-            Refresh
+      <WorkbenchTicketPanelHeader
+        title={signals.length ? "Needs attention" : "PR inspection"}
+        count={signals.length || undefined}
+        description={collapsed && signals[0] ? attentionSignalSummary(signals[0]) : undefined}
+        collapsed={collapsed}
+        onToggle={() => setCollapsed((value) => !value)}
+        contentId={contentId}
+        actions={
+          <Button
+            aria-label="Refresh ticket attention"
+            title="Refresh ticket attention"
+            size="icon-xs"
+            variant="outline"
+            onClick={refreshAttention}
+          >
+            <RefreshCwIcon />
           </Button>
-        </div>
-        <CollapsiblePanel>
-          <div className="border-t border-border/50 px-4 py-3">
-            <AttentionItems {...props} signals={signals} inspections={inspections} />
-          </div>
-        </CollapsiblePanel>
-      </Collapsible>
+        }
+      />
+      <div id={contentId} hidden={collapsed} className="border-t border-border/50 px-4 py-3">
+        <AttentionItems {...props} signals={signals} inspections={inspections} />
+      </div>
     </div>
   );
+}
+
+function attentionSignalSummary(signal: WorkbenchAttentionSignal) {
+  const source = signal.source;
+  const sourceLabel =
+    source.type === "thread"
+      ? source.threadTitle
+      : `PR #${source.row.pullRequest.number} · ${source.row.threadTitle}`;
+  return `${labels[signal.kind]} · ${sourceLabel}`;
 }
