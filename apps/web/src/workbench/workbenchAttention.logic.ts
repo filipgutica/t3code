@@ -31,26 +31,86 @@ const pullRequestReasonLabels = {
   "unresolved-feedback": "Unresolved PR feedback",
 } as const;
 export type WorkbenchInspectionStatus = "loading" | "unavailable" | "incomplete" | "complete";
+type WorkbenchThreadWaitingCause = "approval" | "plan" | "failed" | "interrupted";
+type WorkbenchThreadNotification =
+  | { readonly kind: "waiting"; readonly cause: WorkbenchThreadWaitingCause }
+  | { readonly kind: "question" | "reply" };
 export type WorkbenchAttentionSignal =
-  | {
-      readonly kind: "waiting" | "question" | "reply";
+  | (WorkbenchThreadNotification & {
       readonly source: {
         readonly type: "thread";
         readonly threadId: ThreadId;
         readonly threadTitle: string;
       };
-    }
+    })
   | {
       readonly kind: WorkbenchPullRequestAttentionKind;
       readonly source: { readonly type: "pull-request"; readonly row: WorkbenchTicketPullRequest };
       readonly unresolvedReviewThreads: ReadonlyArray<PullRequestReviewThread>;
     };
+
+/** Groups keep the source's related actions together. */
+export const groupWorkbenchAttentionSignals = (
+  signals: ReadonlyArray<WorkbenchAttentionSignal>,
+) => {
+  const groups = new Map<string, WorkbenchAttentionSignal[]>();
+  for (const signal of signals.toSorted(
+    (left, right) => attentionPriority(left) - attentionPriority(right),
+  )) {
+    const key =
+      signal.source.type === "thread"
+        ? `thread:${signal.source.threadId}`
+        : signal.source.row.pullRequest.url;
+    const group = groups.get(key) ?? [];
+    group.push(signal);
+    groups.set(key, group);
+  }
+  return [...groups].map(([key, group]) => ({ key, signals: group }));
+};
+
+const attentionPriority = (signal: WorkbenchAttentionSignal) => {
+  if (signal.kind === "waiting")
+    return signal.cause === "failed" || signal.cause === "interrupted" ? 1 : 0;
+  return {
+    question: 0,
+    "failed-checks": 1,
+    "changes-requested": 2,
+    "unresolved-feedback": 3,
+    reply: 4,
+  }[signal.kind];
+};
+
+const waitingLabels = {
+  approval: "Approval needed",
+  plan: "Plan ready for review",
+  failed: "Agent run failed",
+  interrupted: "Agent run interrupted",
+} as const;
+const signalLabels = {
+  question: "Waiting for your answer",
+  reply: "Agent replied",
+  "failed-checks": "Failed checks",
+  "changes-requested": "Changes requested",
+  "unresolved-feedback": "Unresolved feedback",
+} as const;
+
+export const getWorkbenchAttentionSignalLabel = (signal: WorkbenchAttentionSignal) =>
+  signal.kind === "waiting" ? waitingLabels[signal.cause] : signalLabels[signal.kind];
+
+export const getWorkbenchAttentionSourceLabel = (source: WorkbenchAttentionSignal["source"]) => {
+  if (source.type === "thread") return `Thread · ${source.threadTitle}`;
+  const reference = source.row.pullRequest;
+  const title = reference.title === reference.repository ? undefined : reference.title;
+  return [`PR #${reference.number}`, title, reference.repository].filter(Boolean).join(" · ");
+};
 export interface WorkbenchAttentionInspection {
   readonly row: WorkbenchTicketPullRequest;
   readonly status: WorkbenchInspectionStatus;
+  readonly displayStatus: WorkbenchInspectionStatus;
   readonly inspected: boolean;
 }
 export interface WorkbenchPullRequestAttention {
+  readonly pullRequestTitle?: string | undefined;
   readonly reasons: ReadonlyArray<string>;
   readonly signalKinds: ReadonlyArray<WorkbenchPullRequestAttentionKind>;
   readonly unresolvedReviewThreads: ReadonlyArray<PullRequestReviewThread>;
@@ -59,6 +119,7 @@ export interface WorkbenchPullRequestAttention {
   readonly checksKnown: boolean;
   readonly reviewDecisionKnown: boolean;
   readonly inspectionStatus: WorkbenchInspectionStatus;
+  readonly displayInspectionStatus: WorkbenchInspectionStatus;
   readonly inspected: boolean;
   readonly terminal: boolean;
 }
@@ -94,11 +155,14 @@ export const activeWorkbenchAttentionAssignments = ({
 /** Native activity reports resolution, including outdated discussions; unread is unrelated. */
 type AttentionInput = {
   readonly reference: TicketPullRequestReference;
-  readonly summary: Pick<PullRequestSummary, "state" | "checksState" | "reviewDecision"> | null;
-  readonly activity: {
-    readonly reviewThreads: PullRequestActivity["reviewThreads"];
-    readonly commentsTruncated: boolean;
-  } | null;
+  readonly summary:
+    | (Pick<PullRequestSummary, "state" | "checksState" | "reviewDecision"> &
+        Partial<Pick<PullRequestSummary, "title">>)
+    | null;
+  readonly activity: Pick<
+    PullRequestActivity,
+    "reviewThreads" | "commentsTruncated" | "reviewThreadsTruncated"
+  > | null;
   readonly loading: boolean;
   readonly error: boolean;
 };
@@ -116,7 +180,8 @@ const hasUnknownCoverage = ({ summary, activity }: Pick<AttentionInput, "summary
   summary.checksState === undefined ||
   summary.reviewDecision === undefined ||
   activity === null ||
-  activity.commentsTruncated;
+  activity.commentsTruncated ||
+  activity.reviewThreadsTruncated === true;
 const coverageReason = ({
   loading,
   error,
@@ -167,7 +232,12 @@ const pullRequestInspection = ({
         : "complete";
   return {
     statusReason: coverageReason({ loading, error, unknown }),
-    activityComplete: !loading && !error && activity !== null && !activity.commentsTruncated,
+    activityComplete:
+      !loading &&
+      !error &&
+      activity !== null &&
+      !activity.commentsTruncated &&
+      !activity.reviewThreadsTruncated,
     checksKnown: !loading && summary !== null && summary.checksState !== undefined,
     reviewDecisionKnown: !loading && summary !== null && summary.reviewDecision !== undefined,
     inspectionStatus,
@@ -185,6 +255,7 @@ export const getWorkbenchPullRequestAttention = ({
 }: AttentionInput): WorkbenchPullRequestAttention => {
   if (isTerminalPullRequest({ reference, summary, loading }))
     return {
+      pullRequestTitle: summary?.title,
       reasons: [],
       signalKinds: [],
       unresolvedReviewThreads: [],
@@ -193,6 +264,7 @@ export const getWorkbenchPullRequestAttention = ({
       checksKnown: true,
       reviewDecisionKnown: true,
       inspectionStatus: "complete",
+      displayInspectionStatus: "complete",
       inspected: true,
       terminal: true,
     };
@@ -209,12 +281,14 @@ export const getWorkbenchPullRequestAttention = ({
   });
   if (statusReason) reasons.push(statusReason);
   return {
+    pullRequestTitle: summary?.title,
     reasons,
     signalKinds,
     unresolvedReviewThreads,
     resolvedReviewThreadIds:
       activity?.reviewThreads.filter((thread) => thread.isResolved).map((thread) => thread.id) ??
       [],
+    displayInspectionStatus: inspection.inspectionStatus,
     ...inspection,
   };
 };
@@ -251,6 +325,11 @@ export const mergeWorkbenchPullRequestAttention = ({
   if (unresolvedReviewThreads.length > 0) signalKinds.push("unresolved-feedback");
   return {
     ...next,
+    displayInspectionStatus:
+      next.inspectionStatus === "loading"
+        ? previous.displayInspectionStatus
+        : next.displayInspectionStatus,
+    pullRequestTitle: next.pullRequestTitle ?? previous.pullRequestTitle,
     signalKinds,
     unresolvedReviewThreads,
     reasons: [
@@ -286,13 +365,13 @@ export const getWorkbenchThreadNotification = ({
     | undefined;
   readonly lastVisitedAt?: string | undefined;
 }) => {
-  let kind: "waiting" | "question" | "reply";
+  let notification: WorkbenchThreadNotification;
   let occurredAt: string | null | undefined;
   if (nativeLabel === "Awaiting Input") {
-    kind = "question";
+    notification = { kind: "question" };
     occurredAt = pendingRequests?.userInputs.at(-1)?.createdAt;
   } else if (nativeLabel === "Pending Approval") {
-    kind = "waiting";
+    notification = { kind: "waiting", cause: "approval" };
     occurredAt = pendingRequests?.approvals.at(-1)?.createdAt;
   } else if (
     nativeLabel === "Working" ||
@@ -300,18 +379,17 @@ export const getWorkbenchThreadNotification = ({
     nativeLabel === "Monitoring"
   ) {
     return null;
-  } else if (
-    nativeLabel === "Plan Ready" ||
-    runStatus === "interrupted" ||
-    runStatus === "failed"
-  ) {
-    kind = "waiting";
+  } else if (nativeLabel === "Plan Ready") {
+    notification = { kind: "waiting", cause: "plan" };
+    occurredAt = completedAt;
+  } else if (runStatus === "interrupted" || runStatus === "failed") {
+    notification = { kind: "waiting", cause: runStatus };
     occurredAt = completedAt;
   } else if (runStatus === "completed") {
-    kind = "reply";
+    notification = { kind: "reply" };
     occurredAt = completedAt;
   } else return null;
   if (!occurredAt || !Number.isFinite(Date.parse(occurredAt))) return null;
   if (lastVisitedAt && Date.parse(lastVisitedAt) >= Date.parse(occurredAt)) return null;
-  return { kind, occurredAt };
+  return { ...notification, occurredAt };
 };

@@ -11,6 +11,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { MessageSquareIcon, RefreshCwIcon } from "lucide-react";
+import { useId } from "react";
 
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -21,6 +22,10 @@ import { vcsEnvironment } from "../state/vcs";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { WorkbenchLinkPullRequest } from "./WorkbenchLinkPullRequest";
 import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
+import {
+  WorkbenchTicketPanelHeader,
+  useWorkbenchTicketPanelCollapsed,
+} from "./WorkbenchTicketPanelHeader";
 import {
   mergeWorkbenchTicketPullRequests,
   type TicketPullRequestReference,
@@ -78,6 +83,8 @@ export function WorkbenchTicketPullRequests({
     readonly cwd: string;
   }>;
 }) {
+  const [collapsed, setCollapsed] = useWorkbenchTicketPanelCollapsed("pull-requests");
+  const contentId = useId();
   const checkout = useAtomValue(
     ticketCheckoutPullRequests(JSON.stringify({ environmentId, checkouts })),
   );
@@ -114,42 +121,42 @@ export function WorkbenchTicketPullRequests({
 
   return (
     <section className="flex min-w-0 shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/30">
-      <div className="flex items-center justify-between gap-3 px-4 py-3">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold">
-            Pull requests{" "}
-            <span className="ml-1 font-normal tabular-nums text-muted-foreground">
-              {rows.length}
-            </span>
-          </h2>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            {canSearch
-              ? `Linked PRs and ${ticketKey} mentions`
-              : "Linked through threads or the ticket workspace"}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <WorkbenchLinkPullRequest
-            key={`${environmentId}:${ticketId}`}
-            environmentId={environmentId}
-            ticketId={ticketId}
-            assignments={assignments}
-            threadsById={threadsById}
-          />
-          {canSearch ? (
-            <Button
-              aria-label="Refresh ticket pull requests"
-              size="icon-sm"
-              variant="ghost"
-              disabled={search.isPending}
-              onClick={() => search.refresh()}
-            >
-              <RefreshCwIcon />
-            </Button>
-          ) : null}
-        </div>
-      </div>
-      <div className="min-w-0 space-y-3 px-4 pb-4">
+      <WorkbenchTicketPanelHeader
+        title="Pull requests"
+        count={rows.length}
+        description={
+          canSearch
+            ? `Linked PRs and ${ticketKey} mentions`
+            : "Linked through threads or the ticket workspace"
+        }
+        collapsed={collapsed}
+        onToggle={() => setCollapsed((value) => !value)}
+        contentId={contentId}
+        actions={
+          <>
+            <WorkbenchLinkPullRequest
+              key={`${environmentId}:${ticketId}`}
+              environmentId={environmentId}
+              ticketId={ticketId}
+              assignments={assignments}
+              threadsById={threadsById}
+            />
+            {canSearch ? (
+              <Button
+                aria-label="Refresh ticket pull requests"
+                title="Refresh ticket pull requests"
+                size="icon-xs"
+                variant="outline"
+                disabled={search.isPending}
+                onClick={() => search.refresh()}
+              >
+                <RefreshCwIcon />
+              </Button>
+            ) : null}
+          </>
+        }
+      />
+      <div id={contentId} hidden={collapsed} className="min-w-0 space-y-3 px-4 pb-4">
         {rows.length > 0 ? (
           <div className="divide-y divide-border/50">
             {rows.map((row) => (
@@ -184,7 +191,6 @@ function WorkbenchTicketPullRequestRow({
   "environmentId" | "ticketKey" | "onOpenThread"
 > & { row: ReturnType<typeof mergeWorkbenchTicketPullRequests>[number] }) {
   const { pullRequest, threadId, threadTitle, matchesTicket } = row;
-  const repositoryUrl = changeRequestRepositoryUrl(pullRequest.url);
   return (
     <div key={pullRequest.url.toLowerCase()} className="min-w-0 py-3 first:pt-0 last:pb-0">
       <WorkbenchPullRequestLink
@@ -197,20 +203,7 @@ function WorkbenchTicketPullRequestRow({
         }
       />
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-2 pt-1 text-xs leading-5 text-muted-foreground">
-        {repositoryUrl ? (
-          <a
-            href={repositoryUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="max-w-full break-words rounded-sm underline-offset-2 outline-none [overflow-wrap:anywhere] hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {pullRequest.repository}
-          </a>
-        ) : (
-          <span className="max-w-full break-words [overflow-wrap:anywhere]">
-            {pullRequest.repository}
-          </span>
-        )}
+        <WorkbenchTicketPullRequestRepository pullRequest={pullRequest} />
         {matchesTicket ? <Badge variant="secondary">Mentions {ticketKey}</Badge> : null}
         {threadId !== null && threadTitle !== null ? (
           <Tooltip>
@@ -227,7 +220,7 @@ function WorkbenchTicketPullRequestRow({
               }
             >
               <MessageSquareIcon />
-              <span className="min-w-0 truncate">Linked thread</span>
+              <span className="min-w-0 truncate">{threadTitle}</span>
             </TooltipTrigger>
             <TooltipPopup className="max-w-72 break-words">
               Linked through thread: {threadTitle}
@@ -238,6 +231,29 @@ function WorkbenchTicketPullRequestRow({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function WorkbenchTicketPullRequestRepository({
+  pullRequest,
+}: {
+  pullRequest: ReturnType<typeof mergeWorkbenchTicketPullRequests>[number]["pullRequest"];
+}) {
+  if (pullRequest.title === undefined || pullRequest.title === pullRequest.repository) return null;
+  const repositoryUrl = changeRequestRepositoryUrl(pullRequest.url);
+  return repositoryUrl ? (
+    <a
+      href={repositoryUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="max-w-full break-words rounded-sm underline-offset-2 outline-none [overflow-wrap:anywhere] hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {pullRequest.repository}
+    </a>
+  ) : (
+    <span className="max-w-full break-words [overflow-wrap:anywhere]">
+      {pullRequest.repository}
+    </span>
   );
 }
 

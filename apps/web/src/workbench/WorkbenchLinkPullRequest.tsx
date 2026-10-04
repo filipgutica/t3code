@@ -68,7 +68,7 @@ export function WorkbenchLinkPullRequest({
       <div className="flex items-center gap-1">
         <Button
           variant="outline"
-          size="sm"
+          size="xs"
           disabled={unavailable !== null}
           aria-describedby={unavailable ? descriptionId : undefined}
           onClick={() => {
