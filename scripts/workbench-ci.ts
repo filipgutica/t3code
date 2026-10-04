@@ -360,7 +360,7 @@ try {
       process.stdout.write(`${JSON.stringify(Object.fromEntries(tests), null, 2)}\n`);
     } else if (command === "--run-tests") {
       for (const [name, files] of tests) {
-        console.log(`${name}: ${files.length} owned/integration test files`);
+        process.stdout.write(`${name}: ${files.length} owned/integration test files\n`);
         run("vp", ["run", "--filter", name, "test", ...files]);
       }
     } else if (command === "--typecheck") {
