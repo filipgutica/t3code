@@ -4,8 +4,10 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { assert, it } from "@effect/vitest";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 const envFiles = [".env", NodePath.join("infra", "relay", ".env")];
+const windows = HostProcessPlatform.defaultValue() === "win32";
 
 it.each(["real file", "directory", "missing", "broken symlink", "main checkout", "symlink source"])(
   "setup preserves env files and only replaces links: %s",
@@ -27,8 +29,8 @@ it.each(["real file", "directory", "missing", "broken symlink", "main checkout",
       NodeFS.mkdirSync(NodePath.dirname(warmScript), { recursive: true });
       NodeFS.writeFileSync(warmScript, "process.exit(0);\n");
       NodeFS.writeFileSync(
-        NodePath.join(bin, process.platform === "win32" ? "vp.cmd" : "vp"),
-        process.platform === "win32" ? "@exit /b 0\r\n" : "#!/bin/sh\nexit 0\n",
+        NodePath.join(bin, windows ? "vp.cmd" : "vp"),
+        windows ? "@exit /b 0\r\n" : "#!/bin/sh\nexit 0\n",
         { mode: 0o755 },
       );
       for (const file of envFiles) {
