@@ -950,7 +950,7 @@ html.menu-open {
   gap: var(--space-4);
 }
 .menu-drawer::backdrop {
-  background: color-mix(in srgb, var(--text) 35%, transparent);
+  background: var(--scrim);
 }
 .drawer-head {
   display: flex;
@@ -981,10 +981,19 @@ html.menu-open {
   width: var(--space-4);
   height: var(--space-4);
 }
+.menu-drawer :focus-visible {
+  box-shadow: none;
+}
 .menu-drawer .nav-content {
   flex: 1;
   min-height: 0;
+  gap: var(--space-4);
   overflow-y: auto;
+}
+.menu-drawer .section-nav {
+  gap: 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
 }
 @starting-style {
   .menu-drawer[open] {
