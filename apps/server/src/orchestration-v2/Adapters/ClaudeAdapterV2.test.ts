@@ -126,6 +126,7 @@ function makeClaudeTestTurnInput(input: {
   readonly text: string;
   readonly attachments: ProviderAdapterV2TurnInput["message"]["attachments"];
   readonly providerTurnOrdinal?: number;
+  readonly nativeThreadHasTurns?: boolean;
   readonly messageCreatedBy?: ProviderAdapterV2TurnInput["message"]["createdBy"];
   readonly messageCreationSource?: ProviderAdapterV2TurnInput["message"]["creationSource"];
   readonly modelSelection?: ModelSelection;
@@ -137,6 +138,9 @@ function makeClaudeTestTurnInput(input: {
     runId: RunId.make(`run-${input.attemptId}`),
     runOrdinal: 1,
     providerTurnOrdinal: input.providerTurnOrdinal ?? 1,
+    ...(input.nativeThreadHasTurns === undefined
+      ? {}
+      : { nativeThreadHasTurns: input.nativeThreadHasTurns }),
     attemptId: input.attemptId,
     rootNodeId: NodeId.make(`node-${input.attemptId}`),
     providerThread: input.providerThread,
@@ -867,6 +871,20 @@ describe("ClaudeAdapterV2 context usage", () => {
 });
 
 describe("ClaudeAdapterV2 session permissions", () => {
+  it("keeps explicit user refusals classified as user_reject", () => {
+    const result = ClaudeAdapterV2.permissionResultFromDecision({
+      toolName: "Bash",
+      decision: "decline",
+      toolInput: { command: "make" },
+      toolUseID: "denied-build",
+    });
+    assert.equal(result.behavior, "deny");
+    if (result.behavior !== "deny") return;
+    assert.equal(result.decisionClassification, "user_reject");
+    assert.equal(result.message, "User declined tool execution.");
+    assert.equal(result.interrupt, undefined);
+  });
+
   it("forces suggested permission updates to session scope", () => {
     const result = ClaudeAdapterV2.permissionResultFromDecision({
       toolName: "Bash",
@@ -1783,7 +1801,7 @@ describe("ClaudeAdapterV2 native fork", () => {
 });
 
 describe("ClaudeAdapterV2 native session identity", () => {
-  const openTurnWithOrdinal = (providerTurnOrdinal: number) =>
+  const openTurnWithOrdinal = (providerTurnOrdinal: number, nativeThreadHasTurns?: boolean) =>
     Effect.scoped(
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
@@ -1842,6 +1860,7 @@ describe("ClaudeAdapterV2 native session identity", () => {
             text: "Respond with identity ok",
             attachments: [],
             providerTurnOrdinal,
+            ...(nativeThreadHasTurns === undefined ? {} : { nativeThreadHasTurns }),
           }),
         );
         return openedQueries;
@@ -1866,6 +1885,14 @@ describe("ClaudeAdapterV2 native session identity", () => {
         assert.equal(openedQueries[0]?.options.resume, "native-session-identity");
         assert.equal(openedQueries[0]?.options.sessionId, undefined);
       }),
+  );
+
+  it.effect("creates a fresh native session despite earlier provider-thread turns", () =>
+    Effect.gen(function* () {
+      const openedQueries = yield* openTurnWithOrdinal(4, false);
+      assert.equal(openedQueries[0]?.options.sessionId, "native-session-identity");
+      assert.equal(openedQueries[0]?.options.resume, undefined);
+    }),
   );
 });
 
@@ -2298,6 +2325,77 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         );
         for (const item of latest.values()) assert.notInclude(item.text, "secret-signature");
       }).pipe(Effect.scoped, Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+  );
+
+  it.effect.each(["cancelled", "denied", "permission_denied", undefined])(
+    "preserves native tool non-execution metadata %s without inferring a denial from text",
+    (kind) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const harness = yield* makeWakeHarness;
+          yield* harness.runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: yield* DateTime.now,
+              attemptId: RunAttemptId.make("attempt-tool-non-execution"),
+              text: "Run the tool.",
+              attachments: [],
+            }),
+          );
+          // Same error text can describe a cancellation or a real refusal.
+          // Each result must use its own metadata, even in a multi-result frame.
+          yield* harness.offerAndWait(
+            claudeSdkFrame({
+              type: "user",
+              uuid: "tool-non-execution",
+              session_id: WAKE_NATIVE_SESSION,
+              parent_tool_use_id: null,
+              message: {
+                role: "user",
+                content: [
+                  {
+                    type: "tool_result",
+                    tool_use_id: "tool-error",
+                    is_error: true,
+                    content: "STOP and wait for the user.",
+                  },
+                  { type: "tool_result", tool_use_id: "tool-ok", is_error: false, content: "OK" },
+                ],
+              },
+              ...(kind === undefined
+                ? {}
+                : {
+                    tool_result_meta: [
+                      { id: "tool-error", non_execution_kind: kind },
+                      { id: "tool-ok", non_execution_kind: null },
+                    ],
+                  }),
+            }),
+          );
+          yield* Queue.offer(
+            harness.sdkMessages,
+            makeResultFrame({ uuid: "result-non-execution", result: "Done" }),
+          );
+          yield* Queue.take(harness.terminalReceipts);
+          const items = harness.events.flatMap((event) =>
+            event.type === "turn_item.updated" && event.turnItem.type === "dynamic_tool"
+              ? [event.turnItem]
+              : [],
+          );
+          const failed = items.findLast((item) => item.nativeItemRef?.nativeId === "tool-error")!;
+          assert.equal(failed.status, kind === "cancelled" ? "cancelled" : "failed");
+          assert.equal(failed.toolNonExecutionKind, kind);
+          const ok = items.findLast((item) => item.nativeItemRef?.nativeId === "tool-ok")!;
+          assert.equal(ok.status, "completed");
+          assert.equal(ok.toolNonExecutionKind, undefined);
+          const node = harness.events.findLast(
+            (event) =>
+              event.type === "node.updated" && event.node.nativeItemRef?.nativeId === "tool-error",
+          );
+          assert.equal(node?.type === "node.updated" ? node.node.status : undefined, failed.status);
+        }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+      ),
   );
 
   it.effect.each(
@@ -7425,7 +7523,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
   );
 
   it.effect(
-    "keeps the process and its roster when a model change meets a running background shell",
+    "reuses Normal and keeps a background shell alive when Fast or a model change is refused",
     () =>
       Effect.scoped(
         Effect.gen(function* () {
@@ -7434,9 +7532,23 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
             prefix: "t3-claude-v2-replace-open-fail-",
           });
+          const normal = {
+            instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
+            model: "claude-opus-5-5",
+          } satisfies ModelSelection;
           let openCount = 0;
+          let openedOptions: ClaudeAdapterV2.ClaudeAgentSdkQueryOptions | undefined;
+          const offeredMessages: Array<SDKUserMessage> = [];
           const processQueues: Array<Queue.Queue<SDKMessage>> = [];
+          const processedMessages = new WeakMap<SDKMessage, Deferred.Deferred<void>>();
+          const offerAndWait = Effect.fnUntraced(function* (message: SDKMessage) {
+            const processed = yield* Deferred.make<void>();
+            processedMessages.set(message, processed);
+            yield* Queue.offer(processQueues[0]!, message);
+            yield* Deferred.await(processed);
+          });
           const events: Array<ProviderAdapterV2Event> = [];
+          const terminalReceipts = yield* Queue.unbounded<void>();
           const adapter = ClaudeAdapterV2.makeClaudeAdapterV2({
             instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
             settings: DEFAULT_CLAUDE_SETTINGS,
@@ -7450,8 +7562,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             },
             queryRunner: {
               allocateSessionId: Effect.succeed(WAKE_NATIVE_SESSION),
-              open: () => {
+              open: (input) => {
                 openCount += 1;
+                openedOptions = input.options;
                 if (openCount === 2) {
                   return Effect.fail(
                     new ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerError({
@@ -7464,8 +7577,26 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   const sdkMessages = yield* Queue.unbounded<SDKMessage>();
                   processQueues.push(sdkMessages);
                   return {
-                    messages: Stream.fromQueue(sdkMessages),
-                    offer: () => Effect.void,
+                    messages: Stream.fromQueue(sdkMessages).pipe(
+                      Stream.flatMap((message) =>
+                        Stream.make(message).pipe(
+                          Stream.concat(
+                            Stream.fromEffect(
+                              Effect.suspend(() => {
+                                const processed = processedMessages.get(message);
+                                return processed === undefined
+                                  ? Effect.void
+                                  : Deferred.succeed(processed, undefined);
+                              }),
+                            ).pipe(Stream.drain),
+                          ),
+                        ),
+                      ),
+                    ),
+                    offer: (message) =>
+                      Effect.sync(() => {
+                        offeredMessages.push(message);
+                      }),
                     setModel: () => Effect.void,
                     setPermissionMode: () => Effect.void,
                     interrupt: Effect.void,
@@ -7482,19 +7613,25 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           const runtime = yield* adapter.openSession({
             threadId,
             providerSessionId: ProviderSessionId.make("provider-session-claude-replace-open-fail"),
-            modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+            modelSelection: normal,
             runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
           });
           const providerThread = yield* runtime.ensureThread({
             threadId,
-            modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+            modelSelection: normal,
             runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
           });
           yield* runtime.events.pipe(
             Stream.runForEach((event) =>
               Effect.sync(() => {
                 events.push(event);
-              }),
+              }).pipe(
+                Effect.andThen(
+                  event.type === "turn.terminal"
+                    ? Queue.offer(terminalReceipts, undefined)
+                    : Effect.void,
+                ),
+              ),
             ),
             Effect.forkScoped,
           );
@@ -7514,15 +7651,62 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               attemptId: RunAttemptId.make("attempt-claude-replace-open-fail-a"),
               text: "Run the build in the background.",
               attachments: [],
+              modelSelection: normal,
             }),
           );
           assert.equal(processQueues.length, 1);
-          yield* Queue.offer(processQueues[0]!, wakeTaskStarted);
-          yield* Queue.offer(processQueues[0]!, turnOneResult);
-          yield* awaitUntil(
-            () => events.some((event) => event.type === "turn.terminal"),
-            "first turn terminal",
+          yield* offerAndWait(wakeTaskStarted);
+          yield* offerAndWait(turnOneResult);
+          yield* Queue.take(terminalReceipts);
+          assert.equal(events.filter((event) => event.type === "turn.terminal").length, 1);
+          assert.isTrue(yield* hasPendingBackgroundWork);
+          const originalOptions = openedOptions;
+
+          yield* runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId,
+              providerThread,
+              now,
+              attemptId: RunAttemptId.make("attempt-claude-normal-background"),
+              text: "Continue in Normal mode.",
+              attachments: [],
+              providerTurnOrdinal: 2,
+              modelSelection: { ...normal, options: [{ id: "fastMode", value: false }] },
+            }),
           );
+          assert.strictEqual(openedOptions, originalOptions);
+          assert.equal(openCount, 1);
+          assert.lengthOf(offeredMessages, 2);
+          yield* offerAndWait(
+            makeResultFrame({ uuid: "normal-background-result", result: "Normal turn finished." }),
+          );
+          yield* Queue.take(terminalReceipts);
+          assert.equal(events.filter((event) => event.type === "turn.terminal").length, 2);
+
+          const refusedFast = yield* runtime
+            .startTurn(
+              makeClaudeTestTurnInput({
+                threadId,
+                providerThread,
+                now,
+                attemptId: RunAttemptId.make("attempt-claude-fast-background"),
+                text: "Switch to Fast mode.",
+                attachments: [],
+                providerTurnOrdinal: 3,
+                modelSelection: { ...normal, options: [{ id: "fastMode", value: true }] },
+              }),
+            )
+            .pipe(Effect.result);
+          assert.equal(refusedFast._tag, "Failure");
+          if (refusedFast._tag === "Failure") {
+            assert.instanceOf(
+              refusedFast.failure.cause,
+              ClaudeAdapterV2.ClaudeBackgroundWorkBlocksQueryReplacementError,
+            );
+          }
+          assert.strictEqual(openedOptions, originalOptions);
+          assert.equal(openCount, 1);
+          assert.lengthOf(offeredMessages, 2);
           assert.isTrue(yield* hasPendingBackgroundWork);
 
           const alternateModel = {
@@ -7538,7 +7722,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 attemptId: RunAttemptId.make("attempt-claude-replace-open-fail-b"),
                 text: "Replace process but fail open.",
                 attachments: [],
-                providerTurnOrdinal: 2,
+                providerTurnOrdinal: 4,
                 modelSelection: alternateModel,
               }),
             )
@@ -7547,6 +7731,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           // The shell runs in the first process, so it is never closed and
           // no replacement is opened.
           assert.equal(openCount, 1);
+          assert.strictEqual(openedOptions, originalOptions);
+          assert.lengthOf(offeredMessages, 2);
           assert.isTrue(yield* hasPendingBackgroundWork);
         }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
       ),
