@@ -15,13 +15,16 @@ import "../styles/site.css";
 
 const repository = "https://github.com/filipgutica/t3code";
 const guide = `${repository}/blob/main/docs/user/agent-workbench.md`;
-const downloads = `${repository}/releases`;
+const downloads = `${repository}/releases/latest`;
 const title = "T3 Code Workbench | Your work, across repositories";
 const description = "A control center for work across repositories. Track Tickets, agent Threads, pull requests, and isolated worktrees together. Jira optional.";
 const base = import.meta.env.BASE_URL;
 const canonical = new URL(base, Astro.site);
 const shareImage = await getImage({ src: board, width: 1200, format: "jpeg", quality: 85 });
 const screenshotSizes = "(max-width: 800px) calc(100vw - 32px), (max-width: 1344px) calc(100vw - 320px), 1024px";
+const workspaceCrop = { x: 48, y: 683, width: 1932, height: 720 };
+const workspaceImageScale = workspace.width / workspaceCrop.width;
+const workspaceCropSizes = `(max-width: 800px) calc(${100 * workspaceImageScale}vw - ${32 * workspaceImageScale}px), (max-width: 1344px) calc(${100 * workspaceImageScale}vw - ${320 * workspaceImageScale}px), ${workspace.width / 2}px`;
 const walkthrough = [
   {
     id: "ticket",
@@ -44,16 +47,16 @@ const walkthrough = [
     tab: "Thread",
     title: "Open a native T3 Thread",
     src: thread,
-    alt: "New native T3 Thread with Ticket context attached to the composer",
-    caption: "The prepared workspace and Ticket context are ready. Creating the Thread does not send a message or start an agent turn.",
+    alt: "Native T3 Thread with Ticket context attached to the composer",
+    caption: "Ticket context is attached to the composer. Send a message when you are ready to start an agent turn.",
   },
   {
     id: "pull-request",
     tab: "Pull request",
     title: "Review the linked pull request",
     src: pullRequest,
-    alt: "Native pull request panel beside the Ticket showing its summary and failing checks",
-    caption: "Open the linked pull request beside the Ticket to inspect its summary and checks.",
+    alt: "Native pull request panel over a demo Ticket showing its summary and failing checks",
+    caption: "A second demo Ticket shows linked pull request checks and review feedback.",
   },
   {
     id: "notifications",
@@ -61,7 +64,7 @@ const walkthrough = [
     title: "See what needs attention",
     src: notifications,
     alt: "Ticket Needs attention list with five signals from Threads and linked pull requests",
-    caption: "The Ticket’s Needs attention list links to Threads, review feedback, and failed checks.",
+    caption: "The same demo Ticket’s Needs attention list links to Threads, review feedback, and failed checks.",
   },
   {
     id: "jira",
@@ -159,6 +162,7 @@ const tools = [
             <div class="hero-summary">
               <h1 id="hero-heading">Your work, across repositories.</h1>
               <p class="lead">Tickets, isolated worktrees, native T3 Threads, and pull requests together across the repositories you work in.</p>
+              <p class="provenance">An independent fork, regularly synced with upstream <a href="https://t3.codes">T3 Code</a>.</p>
             </div>
             <div class="actions">
               <a class="button" href={downloads}>Download Workbench</a>
@@ -166,10 +170,9 @@ const tools = [
             </div>
           </div>
           <figure class="hero-media">
-            <ProductImage src={board} eager sizes={screenshotSizes} alt="Workbench Board with Tickets, repository scope, and linked agent Threads" />
-            <figcaption>A demo Workbench Workspace with Tickets across workflow statuses.</figcaption>
+            <ProductImage src={board} eager sizes={screenshotSizes} alt="Orbit Workbench Board with Tickets spanning Orbit Web and Orbit API across workflow statuses" />
+            <figcaption>A demo Orbit Workspace, with Tickets spanning Orbit Web and Orbit API.</figcaption>
           </figure>
-          <p class="provenance">An independent fork, regularly synced with upstream <a href="https://t3.codes">T3 Code</a>.</p>
         </div>
       </section>
 
@@ -178,7 +181,7 @@ const tools = [
         <div class="section-body">
           <div class="review-heading">
             <h2 id="walkthrough-heading">From Ticket to review</h2>
-            <p>Step through a Ticket, its prepared workspace, native Thread, pull request, and notifications. Jira is optional.</p>
+            <p>Explore Tickets, prepared workspaces, native Threads, pull requests, and notifications. Jira is optional.</p>
             <p class="walkthrough-note">Open screenshots to view them at full size. Captured in the Workbench demo; PR feedback and outcomes are illustrative.</p>
           </div>
           <ScreenshotWalkthrough steps={walkthrough} />
@@ -192,8 +195,8 @@ const tools = [
             <h2 id="scope-heading">Give every Ticket its own workspace</h2>
             <p>Prepare one isolated Git worktree per repository. Then open a native T3 Thread with the Ticket’s context and repository paths attached.</p>
           </div>
-          <figure class="media-stage">
-            <ProductImage src={workspace} sizes={screenshotSizes} alt="Prepared Ticket workspace with worktrees for its repository scope" />
+          <figure class="media-stage" style={`max-width: ${workspaceCrop.width / 2}px;`}>
+            <ProductImage src={workspace} crop={workspaceCrop} sizes={workspaceCropSizes} alt="Prepared Ticket workspace with worktrees for Orbit Web and Orbit API" />
             <figcaption>One Ticket, with worktrees across all the repositories it touches.</figcaption>
           </figure>
           <div class="workspace-details">
@@ -214,12 +217,12 @@ const tools = [
         <CommitBranch lane="main" />
         <div class="section-body">
           <div class="review-heading">
-            <h2 id="review-heading">Review the pull request beside the Ticket</h2>
-            <p>Open linked pull requests across repositories. Inspect checks and review feedback while keeping the original goal in view.</p>
+            <h2 id="review-heading">Review linked pull requests</h2>
+            <p>Open linked pull requests across repositories. Inspect checks and review feedback without leaving the Ticket.</p>
           </div>
           <figure class="media-stage">
-            <ProductImage src={pullRequest} sizes={screenshotSizes} alt="Native pull request panel beside the Ticket showing its summary and failing checks" />
-            <figcaption>The Ticket stays visible beside the native pull request panel. Demo PR feedback and outcomes are illustrative.</figcaption>
+            <ProductImage src={pullRequest} sizes={screenshotSizes} alt="Native pull request panel over a demo Ticket showing its summary and failing checks" />
+            <figcaption>The native pull request panel opens over the Ticket. Demo PR feedback and outcomes are illustrative.</figcaption>
           </figure>
         </div>
       </section>
