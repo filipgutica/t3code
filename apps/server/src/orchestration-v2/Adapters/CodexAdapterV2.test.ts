@@ -3962,7 +3962,8 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     });
   };
 
-  it.effect.each(backgroundStopCases)(
+  // Stop owns a real deadline; let failed termination reach it instead of freezing retries.
+  it.live.each(backgroundStopCases)(
     "stops a command after root completion when termination returns %s",
     (terminated) => {
       const stillRunning = terminated === "still_running";

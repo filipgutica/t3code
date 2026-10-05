@@ -23,15 +23,24 @@
     {
       "name": "Native execution and server integration",
       "paths": [
+        "apps/server/src/assets/AssetAccess.ts",
         "apps/server/src/auth/RpcAuthorization.ts",
         "apps/server/src/background/HostPowerMonitor.ts",
+        "apps/server/src/claudeModelOptions.ts",
         "apps/server/src/git/GitManager.ts",
         "apps/server/src/git/GitWorkflowService.ts",
         "apps/server/src/http.ts",
+        "apps/server/src/mcp/toolkits/pullRequests/tools.ts",
+        "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts",
+        "apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts",
         "apps/server/src/orchestration-v2/Orchestrator.ts",
+        "apps/server/src/orchestration-v2/ProviderAdapter.ts",
         "apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts",
+        "apps/server/src/orchestration-v2/ProviderTurnStartService.ts",
         "apps/server/src/orchestration-v2/PullRequestWatchReactor.ts",
         "apps/server/src/orchestration-v2/RestartContinuation.ts",
+        "apps/server/src/orchestration-v2/RunExecutionService.ts",
+        "apps/server/src/orchestration-v2/SubagentProjection.ts",
         "apps/server/src/os-jank.ts",
         "apps/server/src/provider/Drivers/AcpRegistryDriver.ts",
         "apps/server/src/provider/Drivers/CodexManagedProvider.ts",
@@ -46,6 +55,7 @@
         "apps/server/src/pullRequest/gitHubPullRequestJson.ts",
         "apps/server/src/pullRequest/githubWorkflowRerun.ts",
         "apps/server/src/resourceTelemetry/NativeTelemetryClient.ts",
+        "apps/server/src/scheduledTasks/ScheduledTaskService.ts",
         "apps/server/src/server.ts",
         "apps/server/src/storageCleanup.ts",
         "apps/server/src/textGeneration/AntigravityTextGeneration.ts",
@@ -63,16 +73,26 @@
         "apps/server/vite.config.ts"
       ],
       "tests": [
+        "apps/server/src/assets/AssetAccess.test.ts",
         "apps/server/src/auth/RpcAuthorization.test.ts",
         "apps/server/src/background/HostPowerMonitor.test.ts",
+        "apps/server/src/claudeModelOptions.test.ts",
         "apps/server/src/git/GitManager.test.ts",
         "apps/server/src/git/GitWorkflowService.test.ts",
         "apps/server/src/http.test.ts",
+        "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.test.ts",
+        "apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts",
+        "apps/server/src/orchestration-v2/BackgroundWorkStop.integration.test.ts",
+        "apps/server/src/orchestration-v2/ClaudeAutomaticDelivery.integration.test.ts",
+        "apps/server/src/orchestration-v2/Orchestrator.control-reads.test.ts",
         "apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.regression.test.ts",
         "apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.test.ts",
         "apps/server/src/orchestration-v2/RestartContinuation.test.ts",
+        "apps/server/src/orchestration-v2/SteeringCompletion.integration.test.ts",
+        "apps/server/src/orchestration-v2/SubagentProjection.test.ts",
         "apps/server/src/orchestration-v2/runtimeLayer.test.ts",
         "apps/server/src/orchestration-v2/testkit/OrchestratorReplayRestartBackgroundNote.integration.test.ts",
+        "apps/server/src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts",
         "apps/server/src/os-jank.test.ts",
         "apps/server/src/provider/Drivers/AcpRegistryDriver.test.ts",
         "apps/server/src/provider/Drivers/OpenCodeDriver.test.ts",
@@ -85,6 +105,9 @@
         "apps/server/src/pullRequest/gitHubPullRequestJson.test.ts",
         "apps/server/src/pullRequest/githubWorkflowRerun.test.ts",
         "apps/server/src/resourceTelemetry/NativeTelemetryClient.test.ts",
+        "apps/server/src/scheduledTasks/Schedule.test.ts",
+        "apps/server/src/scheduledTasks/ScheduledTaskService.schedule.test.ts",
+        "apps/server/src/scheduledTasks/ScheduledTaskService.test.ts",
         "apps/server/src/storageCleanup.test.ts",
         "apps/server/src/textGeneration/AntigravityTextGeneration.test.ts",
         "apps/server/src/textGeneration/ClaudeTextGeneration.test.ts",
@@ -192,10 +215,15 @@
       "name": "Shared wire contracts",
       "paths": [
         "packages/contracts/src/index.ts",
+        "packages/contracts/src/orchestrationV2.ts",
         "packages/contracts/src/pullRequest.ts",
         "packages/contracts/src/rpc.ts"
       ],
-      "tests": ["packages/contracts/src/pullRequest.test.ts", "packages/contracts/src/rpc.test.ts"],
+      "tests": [
+        "packages/contracts/src/orchestrationV2.test.ts",
+        "packages/contracts/src/pullRequest.test.ts",
+        "packages/contracts/src/rpc.test.ts"
+      ],
       "verification": ["unit", "typecheck"]
     },
     {
@@ -254,6 +282,12 @@
       ],
       "tests": ["scripts/build-desktop-artifact.test.ts", "scripts/dev-runner.test.ts"],
       "verification": ["unit", "typecheck", "packaging"]
+    },
+    {
+      "name": "Workspace setup",
+      "paths": ["scripts/setup-worktree.ts"],
+      "tests": ["scripts/setup-worktree.test.ts"],
+      "verification": ["unit", "typecheck"]
     },
     {
       "name": "Dependency and build configuration",
