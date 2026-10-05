@@ -19,7 +19,7 @@ const { steps } = Astro.props;
 <div class="screenshot-walkthrough" data-screenshot-walkthrough>
   <div class="walkthrough-tabs" data-walkthrough-tabs aria-label="Ticket workflow screenshots" hidden></div>
   {steps.map((step) => (
-    <figure class="walkthrough-frame" id={`walkthrough-${step.id}`} data-walkthrough-frame data-tab={step.tab} data-motion={step.id === "workspace" ? "fork" : step.id === "pull-request" ? "merge" : step.id === "notifications" ? "notify" : "handoff"}>
+    <figure class="walkthrough-frame" style={`max-width: ${step.src.width / 2}px;`} id={`walkthrough-${step.id}`} data-walkthrough-frame data-tab={step.tab} data-motion={step.id === "workspace" ? "fork" : step.id === "pull-request" ? "merge" : step.id === "notifications" ? "notify" : "handoff"}>
       <div class="walkthrough-heading">
         <h3>{step.title}</h3>
         <svg class="walkthrough-signal" viewBox="0 0 96 32" aria-hidden="true" focusable="false">
