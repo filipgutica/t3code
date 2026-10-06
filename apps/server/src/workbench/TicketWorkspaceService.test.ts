@@ -29,10 +29,7 @@ import * as ServerConfig from "../config.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
 import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
-import {
-  layerFromPath as makeSqlitePersistenceLive,
-  layerMemory as SqlitePersistenceMemory,
-} from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { ticketWorkspaceHostLayer } from "./TicketWorkspaceService.ts";
 import { TicketWorkspacePullRequestResolver } from "./TicketWorkspacePullRequestResolver.ts";
 import {
@@ -259,7 +256,7 @@ const makeTestLayer = ({
     isRepository: () => Effect.succeed(true),
   });
   const storeLayer = WorkbenchStoreLive.pipe(
-    Layer.provideMerge(SqlitePersistenceMemory),
+    Layer.provideMerge(SqlitePersistence.layerMemory),
     Layer.provideMerge(storeGitLayer),
   );
   const configLayer = ServerConfig.layerTest(process.cwd(), {
@@ -553,7 +550,7 @@ const makePersistentWorkspaceFixture = Effect.gen(function* () {
     ]);
   }
   const removals: Array<string> = [];
-  const persistence = makeSqlitePersistenceLive(path.join(directory, "state.sqlite")).pipe(
+  const persistence = SqlitePersistence.layerFromPath(path.join(directory, "state.sqlite")).pipe(
     Layer.provide(NodeServices.layer),
   );
   const storeLayer = WorkbenchStoreLive.pipe(

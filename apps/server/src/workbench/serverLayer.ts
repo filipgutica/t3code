@@ -1,6 +1,6 @@
 import * as Layer from "effect/Layer";
 
-import { layerConfig as SqlitePersistenceLayerLive } from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as WorkbenchOrchestrationReactor from "./OrchestrationReactor.ts";
 import * as TicketSettlement from "./TicketSettlement.ts";
 import * as TicketExecutionReactor from "./TicketExecutionReactor.ts";
@@ -10,10 +10,10 @@ import * as WorkbenchStore from "./WorkbenchStore.ts";
 import * as WorkbenchJiraService from "./jira/WorkbenchJiraService.ts";
 
 const WorkbenchStoreLayerLive = WorkbenchStore.WorkbenchStoreLive.pipe(
-  Layer.provide(SqlitePersistenceLayerLive),
+  Layer.provide(SqlitePersistence.layerConfig),
 );
 const WorkbenchJiraLayerLive = WorkbenchJiraService.layerLive.pipe(
-  Layer.provide(SqlitePersistenceLayerLive),
+  Layer.provide(SqlitePersistence.layerConfig),
   Layer.provide(WorkbenchStoreLayerLive),
 );
 

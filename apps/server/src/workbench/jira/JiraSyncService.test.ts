@@ -18,7 +18,7 @@ import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
 import { JiraApi } from "@t3tools/workbench/jira/JiraApi";
@@ -64,7 +64,7 @@ const binding: WorkbenchJiraBinding = {
 
 const ImporterIntegrationLayer = jiraTicketImporterLayer.pipe(
   Layer.provideMerge(WorkbenchStoreLive),
-  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(
     Layer.mock(GitWorkflowService.GitWorkflowService, {
       isRepository: () => Effect.succeed(true),
@@ -72,7 +72,7 @@ const ImporterIntegrationLayer = jiraTicketImporterLayer.pipe(
   ),
 );
 const TestLayer = WorkbenchStoreLive.pipe(
-  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(
     Layer.mock(GitWorkflowService.GitWorkflowService, {
       isRepository: () => Effect.succeed(true),
@@ -371,7 +371,7 @@ describe("JiraSyncService", () => {
         ["10001", "10002"],
       );
       assert.deepStrictEqual(savedBinding.selectedSprints, multiBinding.selectedSprints);
-    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("defers an interrupted Ticket creation until its migration resumes", () =>
@@ -477,7 +477,7 @@ describe("JiraSyncService", () => {
         WHERE ticket_id = ${existingTicketId}
       `;
       assert.strictEqual(saved[0]?.resultTicketId, existingTicketId);
-    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("keeps the prior snapshot when one replacement sprint cannot be fetched", () =>
@@ -606,7 +606,7 @@ describe("JiraSyncService", () => {
         { id: 7, name: "MA Sprint" },
         { id: 18, name: "DATAP Sprint Renamed" },
       ]);
-    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("preserves existing Ticket identity and deactivates issues no longer assigned", () =>
@@ -672,7 +672,7 @@ describe("JiraSyncService", () => {
       assert.strictEqual(links[0]?.issue.summary, "Updated from Jira");
       assert.isFalse(links[1]?.active ?? true);
       assert.isNotNull(savedBinding.lastSyncedAt);
-    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("serializes concurrent synchronization for the same binding", () =>
@@ -732,7 +732,7 @@ describe("JiraSyncService", () => {
       yield* Fiber.join(first);
       yield* Fiber.join(second);
       assert.strictEqual(yield* Ref.get(apiCallCount), 2);
-    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("collapses concurrent background synchronization for the same binding", () =>
@@ -760,7 +760,7 @@ describe("JiraSyncService", () => {
       yield* TestClock.adjust("5 seconds");
       yield* harness.service.syncBinding({ bindingId, background: true });
       assert.strictEqual(harness.getRequestCount(), 2);
-    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistenceMemory, TestClock.layer()))),
+    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistence.layerMemory, TestClock.layer()))),
   );
 
   it.effect("returns the persisted result during the background cooldown", () =>
@@ -780,7 +780,7 @@ describe("JiraSyncService", () => {
       yield* TestClock.adjust("15 seconds");
       yield* harness.service.syncBinding({ bindingId, background: true });
       assert.strictEqual(harness.getRequestCount(), 2);
-    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistenceMemory, TestClock.layer()))),
+    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistence.layerMemory, TestClock.layer()))),
   );
 
   it.effect("lets manual synchronization bypass the background cooldown", () =>
@@ -791,7 +791,7 @@ describe("JiraSyncService", () => {
       yield* harness.service.syncBinding({ bindingId, background: true });
 
       assert.strictEqual(harness.getRequestCount(), 2);
-    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistenceMemory, TestClock.layer()))),
+    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistence.layerMemory, TestClock.layer()))),
   );
 
   it.effect("throttles repeated background failures without clearing the saved error", () =>
@@ -817,7 +817,7 @@ describe("JiraSyncService", () => {
       yield* harness.service.syncBinding({ bindingId, background: true });
       assert.strictEqual(harness.getRequestCount(), 3);
       assert.isNull(harness.getBinding().lastSyncError);
-    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistenceMemory, TestClock.layer()))),
+    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistence.layerMemory, TestClock.layer()))),
   );
 
   it.effect("rejects background synchronization for a paused binding", () =>
@@ -829,7 +829,7 @@ describe("JiraSyncService", () => {
 
       assert.strictEqual(error.code, "binding_inactive");
       assert.strictEqual(harness.getRequestCount(), 0);
-    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistenceMemory, TestClock.layer()))),
+    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistence.layerMemory, TestClock.layer()))),
   );
 
   it.effect("holds binding updates until an in-flight synchronization completes", () =>
@@ -895,7 +895,7 @@ describe("JiraSyncService", () => {
       yield* Fiber.join(syncFiber);
       yield* Fiber.join(updateFiber);
       assert.isTrue(yield* Ref.get(updateRan));
-    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("validates every Jira status before importing any projections", () =>
@@ -947,7 +947,7 @@ describe("JiraSyncService", () => {
 
       assert.strictEqual(error.code, "status_unmapped");
       assert.strictEqual(yield* Ref.get(importCount), 0);
-    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("rolls back projection writes when a later import fails", () =>
@@ -1176,7 +1176,7 @@ describe("JiraSyncService", () => {
         { name: "Working", statusIds: ["2"], done: false },
         { name: "Done", statusIds: ["3"], done: true },
       ]);
-    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("remembers newly observed parallel sprints after a failed sync", () =>
@@ -1265,7 +1265,7 @@ describe("JiraSyncService", () => {
       assert.isTrue(secondError.message.includes("no new active sprint"));
       assert.strictEqual(issueReadCount, 1);
       assert.deepStrictEqual(savedBinding.observedActiveSprintIds, [7, 8, 9]);
-    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("records an actionable waiting error without changing the snapshot", () =>
@@ -1329,7 +1329,7 @@ describe("JiraSyncService", () => {
       assert.isTrue(error.message.includes("no active sprint"));
       assert.isFalse(issueRead);
       assert.isTrue(savedBinding.lastSyncError?.includes("no active sprint") ?? false);
-    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("records an actionable error when multiple sprints are active", () =>
@@ -1403,6 +1403,6 @@ describe("JiraSyncService", () => {
       assert.strictEqual(ambiguousError.code, "invalid_binding");
       assert.isTrue(ambiguousError.message.includes("Multiple new active Jira sprints"));
       assert.isTrue(savedBinding.lastSyncError?.includes("Multiple new active") ?? false);
-    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
   );
 });

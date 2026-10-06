@@ -43,7 +43,7 @@ export const openWorkbench = async (page: Page, url: string) => {
 export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
   // Playwright requires an explicit destructuring pattern for fixture dependencies.
   demo: [
-    // eslint-disable-next-line no-empty-pattern
+    // eslint-disable-next-line no-empty-pattern -- Playwright discovers fixture dependencies from explicit destructuring.
     async ({}, use) => {
       const live = process.env.WORKBENCH_REGRESSION_LIVE === "1";
       const home = setupHome(
