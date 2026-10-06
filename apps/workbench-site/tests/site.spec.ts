@@ -58,7 +58,7 @@ const atReadingTop = async (page: Page, id: string) =>
         ),
     )
     .toBeLessThan(2);
-for (const width of [320, 390, 768, 801, 1280]) {
+[320, 390, 768, 801, 1280].forEach((width) => {
   test(`responsive content and optimized screenshots at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await load(page);
@@ -92,7 +92,7 @@ for (const width of [320, 390, 768, 801, 1280]) {
       "https://filipgutica.github.io/ui/",
     );
   });
-}
+});
 test("section anchors, active state, and history retain native scrolling", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await load(page);

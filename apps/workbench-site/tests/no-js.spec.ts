@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-for (const width of [320, 390, 768, 801, 1280]) {
+[320, 390, 768, 801, 1280].forEach((width) => {
   test(`static content and original screenshots at ${width}px without JavaScript`, async ({
     page,
   }) => {
@@ -25,7 +25,7 @@ for (const width of [320, 390, 768, 801, 1280]) {
     await expect(page.locator("#review-heading")).toBeInViewport();
     await expect(page.getByRole("button", { name: /theme$/ })).toHaveCount(0);
   });
-}
+});
 test("static deep links reach content after all screenshot panels", async ({ page }) => {
   await page.goto("/t3code/#scope-heading");
   await expect(page.locator("#scope-heading")).toBeInViewport();
