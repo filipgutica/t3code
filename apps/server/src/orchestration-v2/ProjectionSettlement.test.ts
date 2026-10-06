@@ -525,5 +525,6 @@ it.effect("shell failure lookups stay on the thread's own turn items", () =>
     const secretLookups = plan.filter((row) => row.detail.startsWith("SEARCH secret "));
     assert.lengthOf(secretLookups, 1);
     assert.include(secretLookups[0]!.detail, "turn_items_thread_run_idx");
+    assert.include(secretLookups[0]!.detail, "(thread_id=? AND run_id=?)");
   }).pipe(Effect.provide(layerSql)),
 );
