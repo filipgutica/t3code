@@ -18,7 +18,7 @@ import {
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { RegistryContext } from "@effect/atom-react";
-import { Atom, AtomRegistry } from "effect/unstable/reactivity";
+import { Atom, AtomRegistry } from "effect/reactivity";
 import { useUiStateStore } from "../uiStateStore";
 import { WorkbenchAttentionProvider } from "./WorkbenchAttentionProvider";
 

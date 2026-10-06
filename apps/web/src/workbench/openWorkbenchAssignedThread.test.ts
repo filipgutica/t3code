@@ -1,6 +1,6 @@
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { describe, expect, it } from "vite-plus/test";
 
 import { openWorkbenchAssignedThread } from "./openWorkbenchAssignedThread";

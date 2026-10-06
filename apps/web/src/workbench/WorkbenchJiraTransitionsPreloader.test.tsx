@@ -7,8 +7,8 @@ import {
   type WorkbenchJiraGetTicketTransitionsResult,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as Atom from "effect/unstable/reactivity/Atom";
-import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
+import * as Atom from "effect/reactivity/Atom";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
@@ -58,7 +58,7 @@ describe("WorkbenchJiraTransitionsPreloader", () => {
     const atoms = new Map<
       string,
       Atom.Atom<
-        import("effect/unstable/reactivity/AsyncResult").AsyncResult<WorkbenchJiraGetTicketTransitionsResult>
+        import("effect/reactivity/AsyncResult").AsyncResult<WorkbenchJiraGetTicketTransitionsResult>
       >
     >();
     mocked.query.mockImplementation(({ input }: { input: { ticketId: string } }) => {

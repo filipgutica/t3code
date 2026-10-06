@@ -26,12 +26,12 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { WorkbenchStore, WorkbenchStoreLive } from "@t3tools/workbench/WorkbenchStore";
 import { WorkbenchNativeAccess } from "@t3tools/workbench/WorkbenchNativeAccess";
 import { layer as importerLayer } from "../../../../../packages/workbench/src/jira/JiraTicketImporter.ts";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { HttpClient, HttpClientResponse } from "effect/http";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { ensureWorkbenchSchema } from "../../../../../packages/workbench/src/WorkbenchSchema.ts";
 
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import { JiraApi, JiraIssueCreateError } from "@t3tools/workbench/jira/JiraApi";
 import { JiraAuthService } from "@t3tools/workbench/jira/JiraAuthService";
 import { JiraSyncService } from "@t3tools/workbench/jira/JiraSyncService";

@@ -18,11 +18,11 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import * as ChildProcess from "effect/unstable/process/ChildProcess";
-import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import * as ChildProcess from "effect/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerConfig from "../config.ts";
@@ -30,8 +30,8 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
 import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
 import {
-  makeSqlitePersistenceLive,
-  SqlitePersistenceMemory,
+  layerFromPath as makeSqlitePersistenceLive,
+  layerMemory as SqlitePersistenceMemory,
 } from "../persistence/Layers/Sqlite.ts";
 import { ticketWorkspaceHostLayer } from "./TicketWorkspaceService.ts";
 import { TicketWorkspacePullRequestResolver } from "./TicketWorkspacePullRequestResolver.ts";
@@ -262,7 +262,7 @@ const makeTestLayer = ({
     Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provideMerge(storeGitLayer),
   );
-  const configLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
+  const configLayer = ServerConfig.layerTest(process.cwd(), {
     prefix: "t3-ticket-workspace-test-",
   }).pipe(Layer.provide(NodeServices.layer));
   const projectLayer = Layer.mock(ProjectStoreV2)({

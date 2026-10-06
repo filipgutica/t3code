@@ -10,7 +10,7 @@ import {
 import { act, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { WorkbenchRetainedWorktrees } from "./WorkbenchRetainedWorktrees";
 import { WorkbenchSidebar } from "./WorkbenchSidebar";

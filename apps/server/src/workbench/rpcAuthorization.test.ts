@@ -8,9 +8,12 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as RpcTest from "effect/unstable/rpc/RpcTest";
+import * as RpcTest from "effect/rpc/RpcTest";
 
-import { RPC_REQUIRED_SCOPES, rpcScopeAuthorizationLayer } from "../auth/RpcAuthorization.ts";
+import {
+  RPC_REQUIRED_SCOPES,
+  layer as rpcScopeAuthorizationLayer,
+} from "../auth/RpcAuthorization.ts";
 
 describe("Workbench RPC authorization", () => {
   it.effect("enforces mutation scopes after merging native RPCs", () =>

@@ -5,8 +5,8 @@ import type {
 import { makeThreadFixture } from "../test-fixtures";
 import { RegistryContext } from "@effect/atom-react";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import * as Atom from "effect/unstable/reactivity/Atom";
-import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
+import * as Atom from "effect/reactivity/Atom";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { useUiStateStore } from "../uiStateStore";
 import { act, useEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";

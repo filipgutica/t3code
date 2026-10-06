@@ -11,8 +11,8 @@ import {
   TrimmedString,
 } from "./baseSchemas.ts";
 
-const makeWorkbenchId = <Brand extends string>(brand: Brand) =>
-  TrimmedNonEmptyString.pipe(Schema.brand(brand));
+const makeWorkbenchId = <Brand extends string>(brand: Parameters<typeof Schema.brand<Brand>>[0]) =>
+  TrimmedNonEmptyString.pipe(Schema.brand<Brand>(brand));
 
 export const WorkbenchProjectId = makeWorkbenchId("WorkbenchProjectId");
 export type WorkbenchProjectId = typeof WorkbenchProjectId.Type;

@@ -1,6 +1,6 @@
 import { RegistryContext } from "@effect/atom-react";
 import type { EnvironmentId, WorkbenchJiraIssueLink } from "@t3tools/contracts";
-import * as Atom from "effect/unstable/reactivity/Atom";
+import * as Atom from "effect/reactivity/Atom";
 import { useContext, useEffect, useLayoutEffect, useRef } from "react";
 
 import { workbenchEnvironment } from "./state";

@@ -16,8 +16,8 @@ import {
   WorkbenchTicketStatus,
 } from "./workbench.ts";
 
-const makeJiraId = <Brand extends string>(brand: Brand) =>
-  TrimmedNonEmptyString.pipe(Schema.brand(brand));
+const makeJiraId = <Brand extends string>(brand: Parameters<typeof Schema.brand<Brand>>[0]) =>
+  TrimmedNonEmptyString.pipe(Schema.brand<Brand>(brand));
 
 export const WorkbenchJiraConnectionId = makeJiraId("WorkbenchJiraConnectionId");
 export type WorkbenchJiraConnectionId = typeof WorkbenchJiraConnectionId.Type;

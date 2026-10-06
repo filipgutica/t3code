@@ -22,7 +22,7 @@ import { useDebouncedValue } from "~/state/queries";
 import { usePullRequestList, usePullRequestNumberSearch } from "~/state/pullRequests";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 import { Button } from "../ui/button";
 import {
   Dialog,
