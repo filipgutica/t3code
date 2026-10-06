@@ -16,7 +16,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { JiraApi } from "./JiraApi.ts";
 import { reconcileJiraIssueLinks, type JiraIssueImport } from "./JiraReconciliation.ts";

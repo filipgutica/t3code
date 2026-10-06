@@ -13,15 +13,15 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
 import { layerSql, WorkbenchJiraRepository } from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 
 const TestLayer = Layer.merge(WorkbenchStoreLive, layerSql).pipe(
-  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(
     Layer.mock(GitWorkflowService.GitWorkflowService, {
       isRepository: () => Effect.succeed(true),

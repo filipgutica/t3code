@@ -7,7 +7,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import * as JiraApi from "./JiraApi.ts";
 import { JiraAuthService } from "./JiraAuthService.ts";

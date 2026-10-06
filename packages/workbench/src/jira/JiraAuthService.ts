@@ -14,7 +14,7 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -117,7 +117,7 @@ export const make = Effect.gen(function* () {
   );
 
   const randomState = crypto.randomBytes(24).pipe(
-    Effect.map(Encoding.encodeBase64Url),
+    Effect.map(Base64Url.encode),
     Effect.mapError(() =>
       operationError("authorization_failed", "A Jira authorization state could not be created."),
     ),
@@ -228,7 +228,7 @@ export const make = Effect.gen(function* () {
             "The Jira authorization broker is unavailable in this server build.",
           );
         }
-        const verifier = Encoding.encodeBase64Url(
+        const verifier = Base64Url.encode(
           yield* crypto
             .randomBytes(32)
             .pipe(
@@ -240,7 +240,7 @@ export const make = Effect.gen(function* () {
               ),
             ),
         );
-        const challenge = Encoding.encodeBase64Url(
+        const challenge = Base64Url.encode(
           yield* crypto
             .digest("SHA-256", new TextEncoder().encode(verifier))
             .pipe(

@@ -1,0 +1,12 @@
+# The vendored Alchemy tree contains Git links; root metadata lets Git inspect
+# them during checkout credential cleanup. Reference repositories stay uninitialized.
+[submodule ".repos/alchemy-effect/submodules/distilled"]
+	path = .repos/alchemy-effect/submodules/distilled
+	url = https://github.com/alchemy-run/distilled.git
+	update = none
+	ignore = all
+[submodule ".repos/alchemy-effect/submodules/floci"]
+	path = .repos/alchemy-effect/submodules/floci
+	url = https://github.com/alchemy-run/floci.git
+	update = none
+	ignore = all

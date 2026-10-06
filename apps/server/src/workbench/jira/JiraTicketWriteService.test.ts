@@ -26,12 +26,12 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { WorkbenchStore, WorkbenchStoreLive } from "@t3tools/workbench/WorkbenchStore";
 import { WorkbenchNativeAccess } from "@t3tools/workbench/WorkbenchNativeAccess";
 import { layer as importerLayer } from "../../../../../packages/workbench/src/jira/JiraTicketImporter.ts";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { HttpClient, HttpClientResponse } from "effect/http";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { ensureWorkbenchSchema } from "../../../../../packages/workbench/src/WorkbenchSchema.ts";
 
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import { JiraApi, JiraIssueCreateError } from "@t3tools/workbench/jira/JiraApi";
 import { JiraAuthService } from "@t3tools/workbench/jira/JiraAuthService";
 import { JiraSyncService } from "@t3tools/workbench/jira/JiraSyncService";
@@ -515,7 +515,7 @@ describe("JiraTicketWriteService", () => {
         bindings: [makeBinding(), makeOtherBinding()],
         gatePreflight: true,
       },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("creates a Jira issue once and resumes the local link on retry", () =>
@@ -542,7 +542,7 @@ describe("JiraTicketWriteService", () => {
         assert.strictEqual(yield* Ref.get(harness.createCalls), 1);
         assert.strictEqual((yield* Ref.get(harness.imported)).length, 1);
       }),
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("checks the confirmed local revision before resuming a completed creation", () =>
@@ -571,7 +571,7 @@ describe("JiraTicketWriteService", () => {
         assert.isTrue(error.message.includes("local Ticket changed"));
         assert.strictEqual(yield* Ref.get(h.createCalls), 1);
       }),
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("does not retry an unconfirmed Jira creation", () =>
@@ -598,7 +598,7 @@ describe("JiraTicketWriteService", () => {
           assert.strictEqual(yield* Ref.get(harness.createCalls), 1);
         }),
       { failCreate: true },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   const creationInput = {
@@ -625,7 +625,7 @@ describe("JiraTicketWriteService", () => {
           assert.deepStrictEqual(yield* Ref.get(harness.reconciledIssueIds), [["10001"]]);
         }),
       { staleSprintSearch: true },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("allows creation after a refresh changes only binding metadata", () =>
@@ -638,7 +638,7 @@ describe("JiraTicketWriteService", () => {
           assert.strictEqual(yield* Ref.get(harness.createCalls), 1);
         }),
       { bindingAfterPermit: metadataOnlyBinding },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("does not POST again after a defect interrupts the first creation", () =>
@@ -651,7 +651,7 @@ describe("JiraTicketWriteService", () => {
           assert.strictEqual(yield* Ref.get(h.createCalls), 1);
         }),
       { crashCreate: true },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("allows corrected input after a definitive Jira rejection", () =>
@@ -665,7 +665,7 @@ describe("JiraTicketWriteService", () => {
           assert.strictEqual(yield* Ref.get(h.createCalls), 2);
         }),
       { failCreate: true, rejectedCreate: true },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("does not reserve creation when metadata fails", () =>
@@ -678,7 +678,7 @@ describe("JiraTicketWriteService", () => {
           assert.deepStrictEqual(yield* sql`SELECT * FROM workbench_jira_ticket_creations`, []);
         }),
       { failPreflight: true },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("requires creation permissions before any Jira write", () =>
@@ -690,7 +690,7 @@ describe("JiraTicketWriteService", () => {
           assert.strictEqual(yield* Ref.get(h.createCalls), 0);
         }),
       { creationScopes: false },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("adopts the Ticket identity already imported by sync", () =>
@@ -700,7 +700,7 @@ describe("JiraTicketWriteService", () => {
         assert.strictEqual(result, ticketId);
         assert.strictEqual((yield* Ref.get(h.linksRef)).length, 1);
       }),
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("restores an omitted repository scope when adopting a synced Ticket", () =>
@@ -723,7 +723,7 @@ describe("JiraTicketWriteService", () => {
         assert.strictEqual(result, ticketId);
         assert.deepStrictEqual(imported[0]?.repositoryProjectIds, [primaryT3ProjectId]);
       }),
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("rejects changed repository scope for an already-created request", () =>
@@ -739,7 +739,7 @@ describe("JiraTicketWriteService", () => {
         assert.strictEqual(error.code, "invalid_binding");
         assert.strictEqual(yield* Ref.get(h.createCalls), 1);
       }),
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("loads transition choices without rereading the assigned sprints", () =>
@@ -766,7 +766,7 @@ describe("JiraTicketWriteService", () => {
           ["GET"],
         );
       }),
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
   it.effect("lists available transitions with mapping availability and the remote timestamp", () =>
     runWithHarness(
@@ -800,7 +800,7 @@ describe("JiraTicketWriteService", () => {
           { id: "31", name: "Send to QA", to: { id: "99", name: "QA" } },
         ],
       },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("allows transition lookup after a refresh changes only binding metadata", () =>
@@ -815,7 +815,7 @@ describe("JiraTicketWriteService", () => {
           );
         }),
       { bindingAfterPermit: metadataOnlyBinding },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect.each(updateBindingChanges)(
@@ -836,7 +836,7 @@ describe("JiraTicketWriteService", () => {
             assert.strictEqual(yield* Ref.get(harness.sprintReads), 0);
           }),
         { bindingAfterPermit },
-      ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+      ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect(
@@ -864,7 +864,7 @@ describe("JiraTicketWriteService", () => {
             selectedSprints: [{ id: makeBinding().sprintId, name: "Renamed sprint" }],
           },
         },
-      ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+      ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("writes the shared description and mapped status, then stores the readback", () =>
@@ -894,7 +894,7 @@ describe("JiraTicketWriteService", () => {
         assert.strictEqual(imported[1]?.mappedStatus, "in_progress");
         assert.strictEqual(links[0]?.issue.description, "Updated description");
       }),
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect(
@@ -956,7 +956,7 @@ describe("JiraTicketWriteService", () => {
             assert.strictEqual((yield* Ref.get(harness.imported))[0]?.mappedStatus, "in_progress");
           }),
         { initialStatus: { id: "2", name: "In Progress" } },
-      ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+      ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("leaves an interrupted execution uncertain when Jira has returned to Todo", () =>
@@ -976,7 +976,7 @@ describe("JiraTicketWriteService", () => {
         }>`SELECT state FROM workbench_execution_runs WHERE run_id = ${execution.runId}`;
         assert.strictEqual(pending[0]?.state, "uncertain");
       }),
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect(
@@ -1002,7 +1002,7 @@ describe("JiraTicketWriteService", () => {
               assert.deepStrictEqual(harness.requests, []);
               assert.deepStrictEqual(yield* Ref.get(harness.imported), []);
             }),
-          ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory));
+          ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory));
         }
       }),
   );
@@ -1021,7 +1021,7 @@ describe("JiraTicketWriteService", () => {
         assert.strictEqual(imported.length, 1);
         assert.strictEqual(imported[0]?.mappedStatus, "in_progress");
       }),
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("starts in the first working mirror column instead of a later review column", () =>
@@ -1052,7 +1052,7 @@ describe("JiraTicketWriteService", () => {
           { id: "21", name: "Start", to: { id: "2", name: "Implementation" } },
         ],
       },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("starts after a concurrent sync refreshes binding metadata", () =>
@@ -1070,7 +1070,7 @@ describe("JiraTicketWriteService", () => {
           lastSyncedAt: "2026-09-14T23:00:00.000Z",
         },
       },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("rejects a different Jira connection while waiting to start", () =>
@@ -1087,7 +1087,7 @@ describe("JiraTicketWriteService", () => {
           connectionId: WorkbenchJiraConnectionId.make("other-connection"),
         },
       },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("keeps a Jira issue already further along without applying a transition", () =>
@@ -1105,7 +1105,7 @@ describe("JiraTicketWriteService", () => {
         initialStatus: { id: "3", name: "Done" },
         additionalStatusMappings: [{ jiraStatusId: "3", workbenchStatus: "done" }],
       },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("does not guess when automatic Jira start has ambiguous transitions", () =>
@@ -1129,7 +1129,7 @@ describe("JiraTicketWriteService", () => {
           { id: "22", name: "Resume work", to: { id: "2", name: "In Progress" } },
         ],
       },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("does not persist a local status when Jira rejects the automatic transition", () =>
@@ -1148,7 +1148,7 @@ describe("JiraTicketWriteService", () => {
           assert.strictEqual(imported.length, 0);
         }),
       { failStatusWrite: true },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("requires the automatic Jira status readback before persisting", () =>
@@ -1167,7 +1167,7 @@ describe("JiraTicketWriteService", () => {
           assert.strictEqual(imported.length, 0);
         }),
       { preserveStatusOnPost: true },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("does not apply Jira's start transition again after a successful start", () =>
@@ -1182,7 +1182,7 @@ describe("JiraTicketWriteService", () => {
         );
         assert.strictEqual((yield* Ref.get(harness.imported)).length, 2);
       }),
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("rejects a stale remote timestamp before making a Jira write", () =>
@@ -1199,7 +1199,7 @@ describe("JiraTicketWriteService", () => {
         assert.isTrue(error.message.includes("changed remotely"));
         assert.deepStrictEqual(harness.requests, []);
       }),
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("rejects a Jira issue without a remote timestamp before making a Jira write", () =>
@@ -1218,7 +1218,7 @@ describe("JiraTicketWriteService", () => {
           assert.deepStrictEqual(harness.requests, []);
         }),
       { missingRemoteUpdatedAt: true },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("requires one shared field and still repairs the local projection for a no-op", () =>
@@ -1257,7 +1257,7 @@ describe("JiraTicketWriteService", () => {
         assert.strictEqual(imported.length, 1);
         assert.deepStrictEqual(harness.requests, []);
       }),
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("does not guess when more than one Jira transition maps to the target state", () =>
@@ -1284,7 +1284,7 @@ describe("JiraTicketWriteService", () => {
           { id: "22", name: "Resume work", to: { id: "2", name: "In Progress" } },
         ],
       },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect(
@@ -1318,7 +1318,7 @@ describe("JiraTicketWriteService", () => {
             { id: "31", name: "Resume work", to: { id: "3", name: "In Progress (QA)" } },
           ],
         },
-      ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+      ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("rejects a stale transition id before making a Jira write", () =>
@@ -1339,7 +1339,7 @@ describe("JiraTicketWriteService", () => {
           ["GET"],
         );
       }),
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("rejects an explicit transition to an unmapped Jira status before writing", () =>
@@ -1364,7 +1364,7 @@ describe("JiraTicketWriteService", () => {
       {
         transitions: [{ id: "31", name: "Send to QA", to: { id: "99", name: "QA" } }],
       },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("reports a denied Jira write without changing the local snapshot", () =>
@@ -1389,7 +1389,7 @@ describe("JiraTicketWriteService", () => {
           assert.strictEqual(imported.length, 0);
         }),
       { failDescriptionWrite: true },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("requires the write scope and assigned issue membership", () =>
@@ -1408,7 +1408,7 @@ describe("JiraTicketWriteService", () => {
           assert.deepStrictEqual(harness.requests, []);
         }),
       { writeScope: false },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("rejects an issue that is no longer in the assigned sprint set", () =>
@@ -1427,7 +1427,7 @@ describe("JiraTicketWriteService", () => {
           assert.deepStrictEqual(harness.requests, []);
         }),
       { missingIssue: true },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect(
@@ -1453,7 +1453,7 @@ describe("JiraTicketWriteService", () => {
             assert.strictEqual(imported.length, 0);
           }),
         { preserveDescriptionOnPut: true },
-      ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+      ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect(
@@ -1479,7 +1479,7 @@ describe("JiraTicketWriteService", () => {
             assert.strictEqual(imported.length, 0);
           }),
         { preserveStatusOnPost: true },
-      ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+      ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect(
@@ -1512,7 +1512,7 @@ describe("JiraTicketWriteService", () => {
             { id: "31", name: "Resume work", to: { id: "3", name: "In Progress (QA)" } },
           ],
         },
-      ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+      ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
   it.effect("reports a local persistence failure after Jira has accepted the write", () =>
@@ -1534,6 +1534,6 @@ describe("JiraTicketWriteService", () => {
           );
         }),
       { failImport: true },
-    ).pipe(Effect.scoped, Effect.provide(SqlitePersistenceMemory)),
+    ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 });

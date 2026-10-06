@@ -13,17 +13,14 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
-import {
-  makeSqlitePersistenceLive,
-  SqlitePersistenceMemory,
-} from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
 
 const TestLayer = WorkbenchStoreLive.pipe(
-  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(
     Layer.mock(GitWorkflowService.GitWorkflowService, {
       isRepository: () => Effect.succeed(true),
@@ -38,7 +35,7 @@ describe("WorkbenchStore", () => {
     const workspaceId = WorkbenchProjectId.make("workspace-native-non-repository");
     const createdAt = "2026-09-17T10:00:00.000Z";
     const layer = WorkbenchStoreLive.pipe(
-      Layer.provideMerge(SqlitePersistenceMemory),
+      Layer.provideMerge(SqlitePersistence.layerMemory),
       Layer.provideMerge(
         Layer.mock(GitWorkflowService.GitWorkflowService, {
           isRepository: (cwd) => {
@@ -1356,7 +1353,9 @@ describe("WorkbenchStore", () => {
   it.effect("reloads Workbench data after the SQLite layer restarts", () => {
     const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-workbench-store-"));
     const dbPath = NodePath.join(tempDir, "orchestration.sqlite");
-    const persistence = makeSqlitePersistenceLive(dbPath).pipe(Layer.provide(NodeServices.layer));
+    const persistence = SqlitePersistence.layerFromPath(dbPath).pipe(
+      Layer.provide(NodeServices.layer),
+    );
     const layer = WorkbenchStoreLive.pipe(
       Layer.provideMerge(persistence),
       Layer.provideMerge(
@@ -2071,7 +2070,9 @@ describe("WorkbenchStore", () => {
   it.effect("migrates existing Tickets and Assignments without losing their links", () => {
     const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-workbench-v1-"));
     const dbPath = NodePath.join(tempDir, "orchestration.sqlite");
-    const persistence = makeSqlitePersistenceLive(dbPath).pipe(Layer.provide(NodeServices.layer));
+    const persistence = SqlitePersistence.layerFromPath(dbPath).pipe(
+      Layer.provide(NodeServices.layer),
+    );
     const workbench = WorkbenchStoreLive.pipe(
       Layer.provideMerge(persistence),
       Layer.provideMerge(

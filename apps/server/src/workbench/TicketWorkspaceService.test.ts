@@ -18,21 +18,18 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import * as ChildProcess from "effect/unstable/process/ChildProcess";
-import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import * as ChildProcess from "effect/process/ChildProcess";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerConfig from "../config.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
 import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
-import {
-  makeSqlitePersistenceLive,
-  SqlitePersistenceMemory,
-} from "../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { ticketWorkspaceHostLayer } from "./TicketWorkspaceService.ts";
 import { TicketWorkspacePullRequestResolver } from "./TicketWorkspacePullRequestResolver.ts";
 import {
@@ -259,10 +256,10 @@ const makeTestLayer = ({
     isRepository: () => Effect.succeed(true),
   });
   const storeLayer = WorkbenchStoreLive.pipe(
-    Layer.provideMerge(SqlitePersistenceMemory),
+    Layer.provideMerge(SqlitePersistence.layerMemory),
     Layer.provideMerge(storeGitLayer),
   );
-  const configLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
+  const configLayer = ServerConfig.layerTest(process.cwd(), {
     prefix: "t3-ticket-workspace-test-",
   }).pipe(Layer.provide(NodeServices.layer));
   const projectLayer = Layer.mock(ProjectStoreV2)({
@@ -553,7 +550,7 @@ const makePersistentWorkspaceFixture = Effect.gen(function* () {
     ]);
   }
   const removals: Array<string> = [];
-  const persistence = makeSqlitePersistenceLive(path.join(directory, "state.sqlite")).pipe(
+  const persistence = SqlitePersistence.layerFromPath(path.join(directory, "state.sqlite")).pipe(
     Layer.provide(NodeServices.layer),
   );
   const storeLayer = WorkbenchStoreLive.pipe(

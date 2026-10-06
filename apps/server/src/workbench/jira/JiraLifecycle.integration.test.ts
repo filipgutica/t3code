@@ -21,10 +21,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
-import { HttpClient, HttpClientResponse } from "effect/unstable/http";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { HttpClient, HttpClientResponse } from "effect/http";
+import * as SqlClient from "effect/sql/SqlClient";
 
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
 import { JiraApi } from "@t3tools/workbench/jira/JiraApi";
@@ -44,7 +44,7 @@ import {
 const TestLayer = jiraTicketImporterLayer.pipe(
   Layer.provideMerge(WorkbenchStoreLive),
   Layer.provideMerge(jiraRepositoryLayer),
-  Layer.provideMerge(SqlitePersistenceMemory),
+  Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(
     Layer.mock(GitWorkflowService.GitWorkflowService, {
       isRepository: () => Effect.succeed(true),

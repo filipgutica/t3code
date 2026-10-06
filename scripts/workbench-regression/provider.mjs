@@ -324,7 +324,7 @@ const handleAppServerMessage = (message) => {
         // This copied executable runs outside the workspace module graph.
         // eslint-disable-next-line t3code/no-global-process-runtime
         platformFamily: process.platform === "win32" ? "windows" : "unix",
-        // eslint-disable-next-line t3code/no-global-process-runtime
+        // eslint-disable-next-line t3code/no-global-process-runtime -- This copied executable runs outside the workspace module graph.
         platformOs: process.platform,
       },
     });

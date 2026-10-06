@@ -11,7 +11,7 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import { useAtomValue } from "@effect/atom-react";
 import type { PendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { environmentThreadDetails } from "../state/threads";
 import { useUiStateStore } from "../uiStateStore";

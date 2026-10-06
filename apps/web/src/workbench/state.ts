@@ -7,8 +7,8 @@ import {
   createEnvironmentQueryAtomFamily,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Effect from "effect/Effect";
-import * as Atom from "effect/unstable/reactivity/Atom";
-import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry";
+import * as Atom from "effect/reactivity/Atom";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 

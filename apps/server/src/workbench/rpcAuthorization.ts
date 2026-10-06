@@ -5,7 +5,7 @@ import {
   WORKBENCH_WS_METHODS,
   WorkbenchRpcGroup,
 } from "@t3tools/contracts";
-import type * as RpcGroup from "effect/unstable/rpc/RpcGroup";
+import type * as RpcGroup from "effect/rpc/RpcGroup";
 
 type WorkbenchRpcMethod = RpcGroup.Rpcs<typeof WorkbenchRpcGroup>["_tag"];
 

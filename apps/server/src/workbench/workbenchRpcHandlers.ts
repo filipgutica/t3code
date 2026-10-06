@@ -4,7 +4,7 @@ import {
   WorkbenchRpcGroup,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
+import * as RpcGroup from "effect/rpc/RpcGroup";
 
 import * as TicketSummaryService from "./TicketSummaryService.ts";
 import * as TicketWorkspaceService from "./TicketWorkspaceService.ts";

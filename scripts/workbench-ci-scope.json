@@ -1,5 +1,5 @@
 {
-  "upstreamBase": "c5bc98db03ef048e2d88010876b2b3e474ecfd90",
+  "upstreamBase": "204a6390967b14311d40ab9205e062302a0c195a",
   "groups": [
     {
       "name": "Workbench domain, adapters, UI and contracts",
@@ -191,6 +191,7 @@
         "apps/desktop/src/app/DesktopClerk.ts",
         "apps/desktop/src/app/DesktopEarlyElectronStartup.ts",
         "apps/desktop/src/app/DesktopEnvironment.ts",
+        "apps/desktop/src/app/DesktopLegacyLocalStorage.ts",
         "apps/desktop/src/app/DesktopStatePaths.ts",
         "apps/desktop/src/app/DesktopUserData.ts",
         "apps/desktop/src/backend/DesktopBackendConfiguration.ts",
@@ -207,7 +208,8 @@
         "apps/desktop/src/backend/DesktopBackendConfiguration.test.ts",
         "apps/desktop/src/electron/ElectronProtocol.test.ts",
         "apps/desktop/src/electron/WorkbenchGithubProvider.test.ts",
-        "apps/desktop/src/updates/DesktopUpdates.test.ts"
+        "apps/desktop/src/updates/DesktopUpdates.test.ts",
+        "apps/desktop/src/workbench/legacyLocalStorage.test.ts"
       ],
       "verification": ["unit", "typecheck", "build"]
     },

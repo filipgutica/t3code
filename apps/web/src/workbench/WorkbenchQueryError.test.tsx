@@ -3,7 +3,7 @@ import type { WorkbenchSnapshot } from "@t3tools/contracts";
 import { act, type ButtonHTMLAttributes } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import * as Effect from "effect/Effect";
-import { Atom, AtomRegistry } from "effect/unstable/reactivity";
+import { Atom, AtomRegistry } from "effect/reactivity";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { useEnvironmentQuery } from "../state/query";
 import { WorkbenchQueryError } from "./WorkbenchQueryError";

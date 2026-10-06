@@ -40,8 +40,8 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
-import * as Socket from "effect/unstable/socket/Socket";
-import { RpcClient, RpcSerialization } from "effect/unstable/rpc";
+import * as Socket from "effect/socket/Socket";
+import { RpcClient, RpcSerialization } from "effect/rpc";
 
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 

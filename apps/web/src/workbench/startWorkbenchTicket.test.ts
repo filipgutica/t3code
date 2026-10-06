@@ -15,7 +15,7 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import * as Cause from "effect/Cause";
-import * as AsyncResult from "effect/unstable/reactivity/AsyncResult";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import type { ReviewCommentContext } from "../reviewCommentContext";
 import { resolveThreadRouteRenderState } from "../threadRoutes";
 

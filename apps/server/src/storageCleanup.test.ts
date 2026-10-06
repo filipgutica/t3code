@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 import { it as effectIt } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
@@ -17,8 +18,8 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
-import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
+import * as SqlClient from "effect/sql/SqlClient";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as TestClock from "effect/testing/TestClock";
 import * as ServerConfig from "./config.ts";
 import * as GitManager from "./git/GitManager.ts";
@@ -26,7 +27,7 @@ import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
-import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "./persistence/Sqlite.ts";
 import * as Settings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as WorkbenchWorktreeOwnership from "./workbench/worktreeOwnership.ts";
@@ -139,13 +140,19 @@ const cleanupConfigLayer = Layer.unwrap(
     return ServerConfig.layerTest("/fixture/repository", canonicalDirectory);
   }),
 );
-const cleanupTestLayer = Layer.mergeAll(SqlitePersistenceMemory, cleanupConfigLayer).pipe(
+const cleanupTestLayer = Layer.mergeAll(SqlitePersistence.layerMemory, cleanupConfigLayer).pipe(
   Layer.provideMerge(NodeServices.layer),
 );
 
-for (const lifecycle of ["idle", "deleted"] as const) {
-  effectIt.effect(
-    `retains ${lifecycle} Ticket worktrees and removes a native prefix lookalike`,
+const cleanupCases = (["idle", "deleted"] as const).flatMap((lifecycle) =>
+  (["default", "custom", "symlinked", "overlapping"] as const).map((directory) => ({
+    lifecycle,
+    directory,
+  })),
+);
+for (const { lifecycle, directory } of cleanupCases) {
+  effectIt.effect.skipIf(directory === "symlinked" && !symlinksSupported)(
+    `retains ${lifecycle} Ticket worktrees and removes a native prefix lookalike (${directory} directory)`,
     () =>
       Effect.gen(function* () {
         yield* TestClock.setTime(NOW_MS);
@@ -153,9 +160,25 @@ for (const lifecycle of ["idle", "deleted"] as const) {
         const path = yield* Path.Path;
         const config = yield* ServerConfig.ServerConfig;
         const sql = yield* SqlClient.SqlClient;
-        const namespace = path.join(config.worktreesDir, "workbench");
+        const managedRoot =
+          directory === "default" || directory === "overlapping"
+            ? config.worktreesDir
+            : path.join(config.baseDir, "custom-worktrees");
+        yield* fs.makeDirectory(managedRoot, { recursive: true });
+        const linkedRoot = path.join(config.baseDir, "linked-worktrees");
+        if (directory === "symlinked") yield* fs.symlink(managedRoot, linkedRoot);
+        const worktreesDirectory =
+          directory === "symlinked"
+            ? linkedRoot
+            : directory === "overlapping"
+              ? path.join(managedRoot, "workbench")
+              : directory === "custom"
+                ? managedRoot
+                : "";
+        const threadRoot = directory === "symlinked" ? linkedRoot : managedRoot;
+        const namespace = path.join(threadRoot, "workbench");
         const ticketPath = path.join(namespace, "ticket", "primary");
-        const nativePath = path.join(config.worktreesDir, "workbench-legacy", "feature");
+        const nativePath = path.join(threadRoot, "workbench-legacy", "feature");
         const threads = [namespace, ticketPath, nativePath].map((worktreePath, index) =>
           shell({
             id: ThreadId.make(`storage-${lifecycle}-${index}`),
@@ -200,6 +223,7 @@ for (const lifecycle of ["idle", "deleted"] as const) {
             Layer.mergeAll(
               WorkbenchWorktreeOwnership.layer,
               Settings.layerTest({
+                worktreesDirectory,
                 worktreeCleanup: {
                   mode: "custom",
                   rules: {

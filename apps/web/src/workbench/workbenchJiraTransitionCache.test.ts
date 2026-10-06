@@ -9,7 +9,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it } from "@effect/vitest";
 import { beforeEach, vi } from "vite-plus/test";
 
@@ -100,6 +100,8 @@ function makeTestRuntime() {
         Effect.void,
       remove: (_environmentId: EnvironmentId) => Effect.void,
       removeRelayEnvironments: () => Effect.void,
+      removeRoute: () => Effect.die("Unexpected route removal"),
+      reorderRoutes: () => Effect.die("Unexpected route reorder"),
       retryNow: (_environmentId: EnvironmentId) => Effect.void,
       setEnabled: (_environmentId: EnvironmentId, _enabled: boolean) => Effect.void,
       setCompatibility: (_environmentId: EnvironmentId, _error) => Effect.void,
