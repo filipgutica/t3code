@@ -122,14 +122,18 @@ const tools = [
           Menu
         </summary>
         <div class="nav-content" id="site-menu-links">
-      <nav class="family" aria-label="Tools">
+      <nav class="family" aria-labelledby="project-nav-label">
+        <h2 class="nav-label" id="project-nav-label">Projects</h2>
         {tools.map((tool) => <a href={tool.href}>{tool.name}</a>)}
         <a href={base} aria-current="page">workbench</a>
+        <a href="https://filipgutica.github.io/ui/">Vue UI</a>
       </nav>
-      <nav class="section-nav" aria-label="On this page">
+      <nav class="section-nav" aria-labelledby="page-nav-label">
+        <h2 class="nav-label" id="page-nav-label">On this page</h2>
         <a href="#hero-heading">Overview</a>
         <a href="#walkthrough-heading">Walkthrough</a>
         <a href="#scope-heading">Workspaces</a>
+        <a href="#review-heading">Review</a>
         <a href="#jira-heading">Jira</a>
       </nav>
       <div class="appearance" hidden>
@@ -345,6 +349,48 @@ const tools = [
         document.addEventListener("focusin", (event) => {
           menuFocus = event.target instanceof HTMLElement && (siteMenu.contains(event.target) || menuDrawer.contains(event.target)) ? event.target : null;
         });
+      }
+    </script>
+    <script>
+      const sectionLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('.section-nav a[href^="#"]'))
+        .flatMap((link) => {
+          const target = document.getElementById(link.hash.slice(1));
+          return target ? [{ link, target }] : [];
+        });
+      if (sectionLinks.length) {
+        let activeLink: HTMLAnchorElement | null = null;
+        let updatePending = false;
+        const updateSection = () => {
+          const inset = Number.parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop) || 0;
+          let current = sectionLinks[0];
+          for (const section of sectionLinks) {
+            if (section.target.getBoundingClientRect().top <= inset + 1) current = section;
+          }
+          // The final heading may never reach the top of a short closing section.
+          if (window.scrollY > 0 && window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1) {
+            current = sectionLinks[sectionLinks.length - 1];
+          }
+          if (current.link === activeLink) return;
+          activeLink?.removeAttribute("aria-current");
+          current.link.setAttribute("aria-current", "location");
+          activeLink = current.link;
+        };
+        const scheduleSectionUpdate = () => {
+          if (updatePending) return;
+          updatePending = true;
+          requestAnimationFrame(() => {
+            updatePending = false;
+            updateSection();
+          });
+        };
+        window.addEventListener("scroll", scheduleSectionUpdate, { passive: true });
+        window.addEventListener("resize", scheduleSectionUpdate);
+        window.addEventListener("pageshow", scheduleSectionUpdate);
+        // Reveal transforms can move headings without changing layout size.
+        document.querySelector("main")?.addEventListener("transitionend", scheduleSectionUpdate);
+        // Image loading and expanding content can move headings without a scroll event.
+        new ResizeObserver(scheduleSectionUpdate).observe(document.body);
+        updateSection();
       }
     </script>
     <script>
