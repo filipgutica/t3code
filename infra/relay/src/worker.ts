@@ -67,8 +67,7 @@ import * as MobileRegistrations from "./agentActivity/MobileRegistrations.ts";
 import * as HookForwarder from "./hooks/HookForwarder.ts";
 import * as HeldHooks from "./hooks/HeldHooks.ts";
 import * as HookInbox from "./hooks/HookInbox.ts";
-import { HookInboxObject } from "./hooks/HookInboxObject.ts";
-import * as HookInboxObjectLayer from "./hooks/HookInboxObject.ts";
+import * as HookInboxObject from "./hooks/HookInboxObject.ts";
 
 const layerWebcrypto = Layer.succeed(
   Crypto.Crypto,
@@ -185,6 +184,11 @@ export const layer = Api.make(
     const managedEndpointDnsBinding = yield* Cloudflare.DNS.ReadWriteDns(managedEndpointZone);
     const managedEndpointZoneName = yield* managedEndpointZone.name;
     const managedEndpointCleanupMode = yield* RelayConfiguration.managedEndpointCleanupModeConfig;
+    const legacyManagedEndpointCleanupMode =
+      yield* RelayConfiguration.legacyManagedEndpointCleanupModeConfig;
+    const legacyTunnelGraceMinutes = Option.getOrUndefined(
+      yield* RelayConfiguration.legacyTunnelGraceMinutesConfig,
+    );
     // Keys are endpoint keys or hashes over them, which already differ per
     // stage, so stages sharing an account cannot collide in these namespaces.
     const hookRateLimit = yield* Cloudflare.RateLimit("HOOK_RATE_LIMIT", {
@@ -201,7 +205,7 @@ export const layer = Api.make(
         period: HookForwarder.RELAY_HOOK_ENDPOINT_RATE_LIMIT.periodSeconds,
       },
     });
-    const hookInboxes = yield* HookInboxObject;
+    const hookInboxes = yield* HookInboxObject.HookInboxObject;
 
     //
     // 3. Runtime layers and app construction
@@ -222,6 +226,8 @@ export const layer = Api.make(
         managedEndpointBaseDomain: yield* managedEndpointZoneName,
         managedEndpointNamespace: stage,
         managedEndpointCleanupMode,
+        legacyManagedEndpointCleanupMode,
+        ...(legacyTunnelGraceMinutes === undefined ? {} : { legacyTunnelGraceMinutes }),
       });
     });
 
@@ -470,7 +476,7 @@ export const layer = Api.make(
         Layer.provideMerge(Cloudflare.Tunnel.ReadWriteTunnelBinding),
         Layer.provideMerge(Cloudflare.DNS.ReadWriteDnsHttp),
         Layer.provideMerge(Cloudflare.Workers.RateLimitBinding),
-        Layer.provideMerge(HookInboxObjectLayer.layer),
+        Layer.provideMerge(HookInboxObject.layer),
         // The worker runtime opens its own HTTP span around ours. For webhook
         // paths it would record the raw URL, token included, and adopt the
         // sender's traceparent, so only our redacted span covers those.
