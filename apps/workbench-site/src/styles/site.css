@@ -2,6 +2,7 @@
 
 html {
   scroll-padding-top: var(--space-6);
+  scroll-behavior: smooth;
 }
 
 body {
@@ -278,10 +279,24 @@ nav.family a[aria-current="page"] {
 nav.section-nav {
   display: grid;
   gap: var(--space-2);
+}
+.nav-label {
+  grid-column: 1 / -1;
+  margin: 0 0 var(--space-2);
   padding-inline: var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
 }
 nav.section-nav a {
   min-height: var(--control-md);
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-md);
+}
+nav.section-nav a[aria-current="location"] {
+  background: var(--surface-selected);
+  color: var(--accent);
+  font-weight: var(--weight-medium);
 }
 :focus-visible {
   outline: 2px solid var(--accent);
