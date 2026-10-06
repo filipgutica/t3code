@@ -40,3 +40,5 @@
 **/*.sqlite*
 **/config.env
 **/secrets
+# Native secret-request code is not runtime credential storage.
+!apps/server/src/secrets/SecretRequests.ts
