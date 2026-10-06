@@ -42,6 +42,19 @@ jobs:
         run: vp run --filter @t3tools/workbench-site typecheck
       - name: Build static site
         run: vp run --filter @t3tools/workbench-site build
+      - name: Install browser
+        run: pnpm --filter @t3tools/workbench-site exec playwright install --with-deps chromium
+      - name: Verify site interactions
+        run: vp run --filter @t3tools/workbench-site test:e2e
+      - name: Upload browser failures
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: workbench-site-browser-failures
+          path: |
+            apps/workbench-site/playwright-report
+            apps/workbench-site/test-results
+          if-no-files-found: ignore
       - uses: actions/upload-pages-artifact@v4
         with:
           path: apps/workbench-site/dist
