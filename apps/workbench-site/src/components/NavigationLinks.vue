@@ -1,66 +1,23 @@
 <script setup lang="ts">
 import { UiButton } from "@filipgutica/ui";
-import type { ThemeChoice } from "../composables/useTheme";
-
-const { activeId, theme, enhanced } = defineProps<{
-  activeId: string | undefined;
-  theme: ThemeChoice;
-  enhanced: boolean;
-}>();
-const emit = defineEmits<{
-  (event: "theme", value: ThemeChoice): void;
-  (event: "navigate", href: string, click: MouseEvent): void;
-}>();
-const sections = [
-  { id: "hero-heading", label: "Overview" },
-  { id: "walkthrough-heading", label: "Walkthrough" },
-  { id: "scope-heading", label: "Workspaces" },
-  { id: "review-heading", label: "Review" },
-  { id: "jira-heading", label: "Jira" },
-] as const;
+import { onMounted, ref } from "vue";
+import { useTheme } from "../composables/useTheme";
+const enhanced = ref(false);
+const { choice: theme, choose } = useTheme();
+onMounted(() => {
+  enhanced.value = true;
+});
 </script>
 
 <template>
-  <div class="nav-content" id="site-menu-links">
+  <div class="footer-navigation">
     <nav class="family" aria-labelledby="project-nav-label">
       <h2 class="nav-label" id="project-nav-label">Projects</h2>
-      <a
-        href="https://filipgutica.github.io/annoterm/"
-        @click="emit('navigate', 'https://filipgutica.github.io/annoterm/', $event)"
-        >annoterm</a
-      >
-      <a
-        href="https://filipgutica.github.io/wtree/"
-        @click="emit('navigate', 'https://filipgutica.github.io/wtree/', $event)"
-        >wtree</a
-      >
-      <a
-        href="https://filipgutica.github.io/devps/"
-        @click="emit('navigate', 'https://filipgutica.github.io/devps/', $event)"
-        >devps</a
-      >
-      <a
-        href="/t3code/"
-        aria-current="page"
-        @click="emit('navigate', 'https://filipgutica.github.io/t3code/', $event)"
-        >workbench</a
-      >
-      <a
-        href="https://filipgutica.github.io/ui/"
-        @click="emit('navigate', 'https://filipgutica.github.io/ui/', $event)"
-        >Vue UI</a
-      >
-    </nav>
-    <nav class="section-nav" aria-labelledby="page-nav-label">
-      <h2 class="nav-label" id="page-nav-label">On this page</h2>
-      <a
-        v-for="section in sections"
-        :key="section.id"
-        :href="`#${section.id}`"
-        :aria-current="activeId === section.id ? 'location' : undefined"
-        @click="emit('navigate', `#${section.id}`, $event)"
-        >{{ section.label }}</a
-      >
+      <a href="https://filipgutica.github.io/annoterm/">annoterm</a>
+      <a href="https://filipgutica.github.io/wtree/">wtree</a>
+      <a href="https://filipgutica.github.io/devps/">devps</a>
+      <a href="/t3code/" aria-current="page">workbench</a>
+      <a href="https://filipgutica.github.io/ui/">Vue UI</a>
     </nav>
     <div v-if="enhanced" class="appearance">
       <span class="appearance-label">Appearance</span>
@@ -75,7 +32,7 @@ const sections = [
           :aria-label="`${value[0].toUpperCase() + value.slice(1)} theme`"
           :title="`${value[0].toUpperCase() + value.slice(1)} theme`"
           :aria-pressed="theme === value"
-          @click="emit('theme', value)"
+          @click="choose(value)"
         >
           <svg
             v-if="value === 'system'"

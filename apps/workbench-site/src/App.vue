@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, useTemplateRef } from "vue";
+import { nextTick, onMounted, onUnmounted, ref } from "vue";
 import SiteNavigation from "./components/SiteNavigation.vue";
+import NavigationLinks from "./components/NavigationLinks.vue";
 import ProductImage from "./components/ProductImage.vue";
 import ScreenshotWalkthrough from "./components/ScreenshotWalkthrough.vue";
 import ImageLightbox from "./components/ImageLightbox.vue";
-import CommitBranch from "./components/CommitBranch.vue";
-import { useTrace } from "./composables/useTrace";
 import type { ProductImageDescriptor, WalkthroughStep } from "./images";
 
 const { images, walkthrough, base, repository, guide, downloads } = defineProps<{
@@ -20,13 +19,7 @@ const { images, walkthrough, base, repository, guide, downloads } = defineProps<
   guide: string;
   downloads: string;
 }>();
-const tools = [
-  { name: "annoterm", href: "https://filipgutica.github.io/annoterm/" },
-  { name: "wtree", href: "https://filipgutica.github.io/wtree/" },
-  { name: "devps", href: "https://filipgutica.github.io/devps/" },
-];
-const main = useTemplateRef<HTMLElement>("main");
-useTrace(main);
+const jiraImage = walkthrough.find((step) => step.id === "jira")?.image;
 const selected = ref(walkthrough[0]?.id ?? "ticket");
 const enhanced = ref(false);
 const viewer = ref(false);
@@ -79,7 +72,6 @@ onUnmounted(() => {
   <div :data-enhanced="enhanced">
     <a class="skip-link" href="#main">Skip to content</a>
     <div class="site-layout">
-      <SiteNavigation />
       <div class="site-content">
         <header class="site-header wrap">
           <a class="brand" :href="base" aria-label="T3 Code Workbench home"
@@ -91,20 +83,19 @@ onUnmounted(() => {
             <a :href="downloads">Downloads</a>
           </nav>
         </header>
-        <main id="main" ref="main" class="wrap">
-          <section class="hero" aria-labelledby="hero-heading" data-trace-section>
-            <CommitBranch lane="fork" />
+        <SiteNavigation />
+        <main id="main" class="wrap">
+          <section class="hero" aria-labelledby="hero-heading">
             <div class="section-body">
               <div class="hero-copy">
                 <div class="hero-summary">
                   <h1 id="hero-heading">Your work, across repositories.</h1>
                   <p class="lead">
-                    Tickets, isolated worktrees, native T3 Threads, and pull requests together
-                    across the repositories you work in.
+                    Tickets, isolated worktrees, native T3 Threads, and pull requests in one place.
                   </p>
                   <p class="provenance">
-                    An independent fork, regularly synced with upstream
-                    <a href="https://t3.codes">T3 Code</a>.
+                    An independent fork of <a href="https://t3.codes">T3 Code</a>, regularly synced
+                    upstream.
                   </p>
                 </div>
                 <div class="actions">
@@ -116,29 +107,17 @@ onUnmounted(() => {
               </div>
               <figure class="hero-media">
                 <ProductImage :image="images.board" @open="openImage" />
-                <figcaption>
-                  A demo Orbit Workspace, with Tickets spanning Orbit Web and Orbit API.
-                </figcaption>
+                <figcaption>Demo workspace across two repositories.</figcaption>
               </figure>
             </div>
           </section>
 
-          <section
-            class="section walkthrough-section"
-            aria-labelledby="walkthrough-heading"
-            data-trace-section
-          >
-            <CommitBranch lane="parallel" />
+          <section class="section walkthrough-section" aria-labelledby="walkthrough-heading">
             <div class="section-body">
               <div class="review-heading">
                 <h2 id="walkthrough-heading">From Ticket to review</h2>
-                <p>
-                  Explore Tickets, prepared workspaces, native Threads, pull requests, and
-                  notifications. Jira is optional.
-                </p>
                 <p class="walkthrough-note">
-                  Open screenshots to view them at full size. Captured in the Workbench demo; PR
-                  feedback and outcomes are illustrative.
+                  Demo screenshots. PR feedback and outcomes are illustrative.
                 </p>
               </div>
               <ScreenshotWalkthrough
@@ -149,18 +128,13 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section
-            class="section workspace-section"
-            aria-labelledby="scope-heading"
-            data-trace-section
-          >
-            <CommitBranch lane="merge" />
+          <section class="section workspace-section" aria-labelledby="scope-heading">
             <div class="section-body">
               <div class="section-copy">
-                <h2 id="scope-heading">Give every Ticket its own workspace</h2>
+                <h2 id="scope-heading">One Ticket. Isolated worktrees.</h2>
                 <p>
-                  Prepare one isolated Git worktree per repository. Then open a native T3 Thread
-                  with the Ticket’s context and repository paths attached.
+                  Prepare a worktree per repository, then open a native Thread with the Ticket’s
+                  context.
                 </p>
               </div>
               <figure
@@ -170,80 +144,54 @@ onUnmounted(() => {
                 }"
               >
                 <ProductImage :image="images.workspace" @open="openImage" />
-                <figcaption>
-                  One Ticket, with worktrees across all the repositories it touches.
-                </figcaption>
               </figure>
-              <div class="workspace-details">
-                <div>
-                  <h3>Prepare first, start when ready</h3>
-                  <p>
-                    Creating a Thread prepares the conversation. Send your first message to start an
-                    agent turn.
-                  </p>
-                </div>
-                <div>
-                  <h3>Keep the work connected</h3>
-                  <p>
-                    The Ticket keeps its repository scope, prepared worktrees, and linked Threads
-                    together.
-                  </p>
-                </div>
+              <div class="section-copy">
+                <p>
+                  Preparing worktrees or creating a Thread does not start an agent. Send a message
+                  when ready.
+                </p>
               </div>
               <a class="text-link" :href="`${guide}#start-agent-work`"
-                >See how a Ticket becomes a Thread <span aria-hidden="true">↗</span></a
+                >Workspace guide <span aria-hidden="true">↗</span></a
               >
             </div>
           </section>
 
-          <section
-            class="section review-section"
-            aria-labelledby="review-heading"
-            data-trace-section
-          >
-            <CommitBranch lane="main" />
+          <section class="section review-section" aria-labelledby="review-heading">
             <div class="section-body">
               <div class="review-heading">
                 <h2 id="review-heading">Review linked pull requests</h2>
-                <p>
-                  Open linked pull requests across repositories. Inspect checks and review feedback
-                  without leaving the Ticket.
-                </p>
+                <p>Check PR status and review feedback without leaving the Ticket.</p>
               </div>
               <figure class="media-stage">
                 <ProductImage :image="images.pullRequest" @open="openImage" />
-                <figcaption>
-                  The native pull request panel opens over the Ticket. Demo PR feedback and outcomes
-                  are illustrative.
-                </figcaption>
+                <figcaption>Illustrative PR feedback in the native review panel.</figcaption>
               </figure>
             </div>
           </section>
 
-          <section class="section jira-section" aria-labelledby="jira-heading" data-trace-section>
-            <CommitBranch lane="fork" />
+          <section class="section jira-section" aria-labelledby="jira-heading">
             <div class="section-body">
               <div class="section-copy">
-                <h2 id="jira-heading">Connect Jira when you need it</h2>
+                <h2 id="jira-heading">Jira, optional.</h2>
                 <p>
-                  Bring your assigned sprint issues into Workbench and update their descriptions and
-                  statuses. Local Tickets use the same workflow without a Jira account.
+                  Sync assigned sprint issues and update descriptions and statuses. Local Tickets
+                  need no Jira account.
                 </p>
                 <a class="text-link" :href="`${guide}#connect-jira`"
-                  >Explore the Jira workflow <span aria-hidden="true">↗</span></a
+                  >Jira guide <span aria-hidden="true">↗</span></a
                 >
               </div>
+              <figure v-if="jiraImage" class="media-stage">
+                <ProductImage :image="jiraImage" @open="openImage" />
+              </figure>
             </div>
           </section>
 
-          <section class="closing section" aria-labelledby="closing-heading" data-trace-section>
-            <CommitBranch lane="merge" terminal />
+          <section class="closing section" aria-labelledby="closing-heading">
             <div class="section-body">
               <h2 id="closing-heading">Install Workbench alongside T3 Code</h2>
-              <p>
-                Workbench keeps its saved data separate from the official app. Choose a build from
-                the releases page.
-              </p>
+              <p>Workbench stores its data separately from the official app.</p>
               <div class="actions">
                 <a class="button button--secondary" :href="downloads">Download Workbench</a>
                 <a class="text-link" :href="guide"
@@ -251,23 +199,16 @@ onUnmounted(() => {
                 >
               </div>
               <p class="release-note">
-                macOS builds are signed and notarized. Windows and Linux builds are unsigned. See
-                the release notes for downloads and update details.
+                macOS builds are signed and notarized. Windows and Linux builds are unsigned.
               </p>
             </div>
           </section>
         </main>
         <footer class="site-footer wrap">
           <a class="brand" :href="base">T3 Code <span>Workbench</span></a>
-          <p>
-            Built on <a href="https://github.com/pingdotgg/t3code">T3 Code</a>. An independent,
-            open-source fork.
-          </p>
+          <p>Built on <a href="https://github.com/pingdotgg/t3code">T3 Code</a>.</p>
           <a :href="repository">Browse the source <span aria-hidden="true">↗</span></a>
-          <nav class="footer-tools" aria-label="More from Filip">
-            <span>Also from Filip</span>
-            <a v-for="tool in tools" :key="tool.name" :href="tool.href">{{ tool.name }}</a>
-          </nav>
+          <NavigationLinks />
         </footer>
       </div>
     </div>

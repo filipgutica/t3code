@@ -4,6 +4,7 @@ import App from "../App.vue";
 import type { ProductImageDescriptor, ImageCrop } from "../images";
 import type { ImageMetadata } from "astro";
 import libraryThemeCss from "@filipgutica/ui/theme.css?raw";
+import sitePaletteCss from "../styles/palette.css?raw";
 import board from "../assets/screenshots/board.png";
 import ticket from "../assets/screenshots/ticket.png";
 import workspace from "../assets/screenshots/workspace.png";
@@ -18,15 +19,15 @@ const guide = `${repository}/blob/main/docs/user/agent-workbench.md`;
 const downloads = `${repository}/releases/latest`;
 const title = "T3 Code Workbench | Your work, across repositories";
 const description =
-  "A control center for work across repositories. Track Tickets, agent Threads, pull requests, and isolated worktrees together. Jira optional.";
+  "Tickets, isolated worktrees, native T3 Threads, and pull requests across repositories. An independent T3 Code fork with optional Jira integration.";
 const base = import.meta.env.BASE_URL;
 const canonical = new URL(base, Astro.site);
 const shareImage = await getImage({ src: board, width: 1200, format: "jpeg", quality: 85 });
 const screenshotSizes =
-  "(max-width: 800px) calc(100vw - 32px), (max-width: 1344px) calc(100vw - 320px), 1024px";
+  "(max-width: 1152px) calc(100vw - 32px), 1120px";
 const workspaceCrop = { x: 48, y: 683, width: 1932, height: 720 };
 const workspaceImageScale = workspace.width / workspaceCrop.width;
-const workspaceCropSizes = `(max-width: 800px) calc(${100 * workspaceImageScale}vw - ${32 * workspaceImageScale}px), (max-width: 1344px) calc(${100 * workspaceImageScale}vw - ${320 * workspaceImageScale}px), ${workspace.width / 2}px`;
+const workspaceCropSizes = `(max-width: 998px) calc(${100 * workspaceImageScale}vw - ${32 * workspaceImageScale}px), ${workspace.width / 2}px`;
 const walkthrough = [
   {
     id: "ticket",
@@ -35,7 +36,7 @@ const walkthrough = [
     src: ticket,
     alt: "Workbench Ticket showing its description and linked native T3 Threads",
     caption:
-      "Read the goal and acceptance criteria, with linked native T3 Threads beside the description.",
+      "A goal, acceptance criteria, and linked native Threads.",
   },
   {
     id: "workspace",
@@ -44,7 +45,7 @@ const walkthrough = [
     src: workspace,
     alt: "Prepared Ticket workspace showing repository worktrees",
     caption:
-      "Each repository in scope has an isolated Git worktree. Preparing the workspace does not start an agent turn.",
+      "Isolated worktrees per repository. Preparation does not start an agent.",
   },
   {
     id: "thread",
@@ -53,7 +54,7 @@ const walkthrough = [
     src: thread,
     alt: "Native T3 Thread with Ticket context attached to the composer",
     caption:
-      "Ticket context is attached to the composer. Send a message when you are ready to start an agent turn.",
+      "Ticket context is attached. Send a message to start the agent.",
   },
   {
     id: "pull-request",
@@ -61,7 +62,7 @@ const walkthrough = [
     title: "Review the linked pull request",
     src: pullRequest,
     alt: "Native pull request panel over a demo Ticket showing its summary and failing checks",
-    caption: "A second demo Ticket shows linked pull request checks and review feedback.",
+    caption: "Linked PR checks and review feedback on a second demo Ticket.",
   },
   {
     id: "notifications",
@@ -70,7 +71,7 @@ const walkthrough = [
     src: notifications,
     alt: "Ticket Needs attention list with five signals from Threads and linked pull requests",
     caption:
-      "The same demo Ticket’s Needs attention list links to Threads, review feedback, and failed checks.",
+      "Threads, review feedback, and failed checks that need attention.",
   },
   {
     id: "jira",
@@ -78,7 +79,7 @@ const walkthrough = [
     title: "Bring Jira into the same workflow",
     src: jira,
     alt: "Workbench Jira board showing the selected sprint, sync timestamp, and issue statuses",
-    caption: "Connect Jira for sprint issues, or use local Tickets without a Jira account.",
+    caption: "Assigned sprint issues in Workbench.",
   },
 ];
 const prepareImage = async ({
@@ -137,8 +138,11 @@ const images = {
     alt: "Native pull request panel over a demo Ticket showing its summary and failing checks",
   }),
 };
-const darkTokens = libraryThemeCss.match(/:root\.dark\s*\{([^}]+)\}/)?.[1];
-if (!darkTokens) throw new Error("The UI library dark theme tokens are missing.");
+const darkTokens = [libraryThemeCss, sitePaletteCss].map((css) => {
+  const tokens = css.match(/:root\.dark\s*\{([^}]+)\}/)?.[1];
+  if (!tokens) throw new Error("The dark theme tokens are missing.");
+  return tokens;
+}).join("\n");
 const noScriptDarkCss = `@media (prefers-color-scheme: dark) { :root:not(.dark) { ${darkTokens} } }`;
 ---
 
@@ -150,8 +154,8 @@ const noScriptDarkCss = `@media (prefers-color-scheme: dark) { :root:not(.dark) 
     <meta name="color-scheme" content="light dark" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    <meta name="theme-color" content="#fcfcfd" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#0f0f11" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f4f5f8" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1b1c1f" media="(prefers-color-scheme: dark)" />
     <script is:inline>
       let choice = 'system';
       try { choice = localStorage.getItem('tool-site-theme') || 'system'; } catch {}

@@ -17,7 +17,6 @@ import { test, expect } from "@playwright/test";
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
     ).toBeLessThanOrEqual(1);
-    if (width <= 800) await page.locator("summary.menu-toggle").click();
     const nav = page.getByRole("navigation", { name: "On this page" });
     await expect(nav).toBeVisible();
     await nav.getByRole("link", { name: "Review", exact: true }).click();
@@ -30,13 +29,13 @@ test("static deep links reach content after all screenshot panels", async ({ pag
   await page.goto("/t3code/#scope-heading");
   await expect(page.locator("#scope-heading")).toBeInViewport();
 });
-test("no-JavaScript system dark uses the canonical library palette", async ({ page }) => {
+test("no-JavaScript system appearance uses the public page palette", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/t3code/");
-  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(252, 252, 253)");
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(244, 245, 248)");
   await page.emulateMedia({ colorScheme: "dark" });
-  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(15, 15, 17)");
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(27, 28, 31)");
   await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
   await page.emulateMedia({ colorScheme: "light" });
-  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(252, 252, 253)");
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(244, 245, 248)");
 });
