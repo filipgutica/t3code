@@ -80,7 +80,14 @@ import { isElectron } from "../env";
 import { Badge } from "../components/ui/badge";
 import { OpenInPicker } from "../components/chat/OpenInPicker";
 import { Button } from "../components/ui/button";
-import { Menu, MenuGroup, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
+import {
+  Menu,
+  MenuGroup,
+  MenuItem,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+} from "../components/ui/menu";
 import { Checkbox } from "../components/ui/checkbox";
 import {
   Dialog,
@@ -147,7 +154,11 @@ import {
   WorkbenchCheckoutDetails,
   WorkbenchThreadCheckoutDetails,
 } from "./WorkbenchCheckoutDetails";
-import { WorkbenchTicketSourceBadge, WorkbenchTicketKindBadge } from "./WorkbenchTicketMetadata";
+import {
+  WorkbenchTicketSourceBadge,
+  WorkbenchTicketKindBadge,
+  WorkbenchTicketCopyMenuItems,
+} from "./WorkbenchTicketMetadata";
 import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
 import { WorkbenchJiraSprintSelect } from "./WorkbenchJiraSprintSelect";
 import { WorkbenchTicketPullRequests } from "./WorkbenchTicketPullRequests";
@@ -1981,7 +1992,12 @@ function WorkbenchTicketHeader({
             selectedThreadTitle: selectedThreadTitle,
             lifecycleActionsEnabled: lifecycleActionsEnabled,
           }}
-          records={{ ticket: ticket, actionableTicket: actionableTicket, assignment: assignment }}
+          records={{
+            ticket: ticket,
+            actionableTicket: actionableTicket,
+            assignment: assignment,
+            jiraIssueLink: jiraIssueLink,
+          }}
           actions={{
             onReplaceThread: onReplaceThread,
             settledAssignments: settledAssignments,
@@ -4305,7 +4321,6 @@ function WorkbenchEpicTickets({
                   <span className="flex min-w-0 flex-wrap items-center gap-2">
                     <WorkbenchTicketKindBadge kind={ticket.kind} />
                     <WorkbenchTicketSourceBadge
-                      ticketId={ticket.id}
                       jiraIssueLink={jiraIssueLink}
                       jiraOwnershipKnown={jiraOwnershipKnown}
                       className="z-10"
@@ -4716,7 +4731,6 @@ function WorkbenchTicketHeading({
           ticketTitle={ticket.title}
         />
         <WorkbenchTicketSourceBadge
-          ticketId={ticket.id}
           jiraIssueLink={jiraIssueLink}
           jiraOwnershipKnown={jiraOwnershipKnown ?? true}
         />
@@ -4766,6 +4780,7 @@ type WorkbenchTicketHeaderActionsProps = Pick<
   WorkbenchTicketHeaderProps,
   | "displayedTitle"
   | "ticket"
+  | "jiraIssueLink"
   | "isArchived"
   | "actionableTicket"
   | "pending"
@@ -4800,7 +4815,10 @@ function WorkbenchTicketHeaderActions({
     | "selectedThreadTitle"
     | "lifecycleActionsEnabled"
   >;
-  records: Pick<WorkbenchTicketHeaderActionsProps, "ticket" | "actionableTicket" | "assignment">;
+  records: Pick<
+    WorkbenchTicketHeaderActionsProps,
+    "ticket" | "actionableTicket" | "assignment" | "jiraIssueLink"
+  >;
   actions: Pick<
     WorkbenchTicketHeaderActionsProps,
     | "onReplaceThread"
@@ -4822,7 +4840,7 @@ function WorkbenchTicketHeaderActions({
     selectedThreadTitle,
     lifecycleActionsEnabled,
   } = presentation;
-  const { ticket, actionableTicket, assignment } = records;
+  const { ticket, actionableTicket, assignment, jiraIssueLink } = records;
   const {
     onReplaceThread,
     settledAssignments,
@@ -4872,15 +4890,15 @@ function WorkbenchTicketHeaderActions({
           </Button>
         </>
       ) : null}
-      {lifecycleActionsEnabled ? (
-        <WorkbenchTicketLifecycleMenu
-          isArchived={isArchived}
-          pending={pending}
-          ticket={ticket}
-          onArchive={onArchive}
-          setDeleteConfirmationOpen={setDeleteConfirmationOpen}
-        />
-      ) : null}
+      <WorkbenchTicketActionsMenu
+        isArchived={isArchived}
+        pending={pending}
+        ticket={ticket}
+        jiraIssueLink={jiraIssueLink}
+        lifecycleActionsEnabled={lifecycleActionsEnabled}
+        onArchive={onArchive}
+        setDeleteConfirmationOpen={setDeleteConfirmationOpen}
+      />
     </div>
   );
 }
@@ -5448,15 +5466,23 @@ function WorkbenchEpicCounts({
   );
 }
 
-function WorkbenchTicketLifecycleMenu({
+function WorkbenchTicketActionsMenu({
   isArchived,
   pending,
   ticket,
+  jiraIssueLink,
+  lifecycleActionsEnabled,
   onArchive,
   setDeleteConfirmationOpen,
 }: Pick<
   WorkbenchTicketHeaderActionsProps,
-  "isArchived" | "pending" | "ticket" | "onArchive" | "setDeleteConfirmationOpen"
+  | "isArchived"
+  | "pending"
+  | "ticket"
+  | "jiraIssueLink"
+  | "lifecycleActionsEnabled"
+  | "onArchive"
+  | "setDeleteConfirmationOpen"
 >) {
   return (
     <Menu>
@@ -5465,21 +5491,29 @@ function WorkbenchTicketLifecycleMenu({
       </MenuTrigger>
       <MenuPopup align="end">
         <MenuGroup>
-          <MenuItem
-            disabled={pending}
-            onClick={() => void onArchive(ticket, isArchived ? null : new Date().toISOString())}
-          >
-            {isArchived ? <RotateCcwIcon /> : <ArchiveIcon />}
-            {isArchived ? "Restore Ticket" : "Archive Ticket"}
-          </MenuItem>
-          <MenuItem
-            disabled={pending}
-            onClick={() => setDeleteConfirmationOpen(true)}
-            variant="destructive"
-          >
-            <Trash2Icon /> Delete Ticket
-          </MenuItem>
+          <WorkbenchTicketCopyMenuItems ticketId={ticket.id} jiraIssueLink={jiraIssueLink} />
         </MenuGroup>
+        {lifecycleActionsEnabled ? (
+          <>
+            <MenuSeparator />
+            <MenuGroup>
+              <MenuItem
+                disabled={pending}
+                onClick={() => void onArchive(ticket, isArchived ? null : new Date().toISOString())}
+              >
+                {isArchived ? <RotateCcwIcon /> : <ArchiveIcon />}
+                {isArchived ? "Restore Ticket" : "Archive Ticket"}
+              </MenuItem>
+              <MenuItem
+                disabled={pending}
+                onClick={() => setDeleteConfirmationOpen(true)}
+                variant="destructive"
+              >
+                <Trash2Icon /> Delete Ticket
+              </MenuItem>
+            </MenuGroup>
+          </>
+        ) : null}
       </MenuPopup>
     </Menu>
   );
