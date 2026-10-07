@@ -272,12 +272,16 @@ test.describe("Jira connection UX @live", () => {
       (link) => link.bindingId === binding?.id && link.active,
     )?.issue;
     if (!firstImportedIssue) throw new Error("The Jira sync did not create an active issue link.");
-    await expect(page.getByText(firstImportedIssue.key, { exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByText(`Jira · ${firstImportedIssue.key}`, { exact: true }).first(),
+    ).toBeVisible();
 
     await page.reload();
     await waitForWorkbench(page);
     await expect(page.getByLabel("Jira sync status")).toContainText("Jira synced");
-    await expect(page.getByText(firstImportedIssue.key, { exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByText(`Jira · ${firstImportedIssue.key}`, { exact: true }).first(),
+    ).toBeVisible();
   });
 
   test("J1 error: a failed Jira sync is visible and retryable", async ({ page, demo }) => {
