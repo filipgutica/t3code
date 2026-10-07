@@ -81,7 +81,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "../components/ui/empty";
-import { MenuItem } from "../components/ui/menu";
+import { MenuItem, MenuSeparator } from "../components/ui/menu";
 import {
   WorkbenchTicketStatusMenu,
   type WorkbenchJiraTransitionSelection,
@@ -103,7 +103,11 @@ import {
   isWorkbenchThreadArchived,
 } from "./workbench.logic";
 import { getWorkbenchBoardTicketPreview } from "./workbenchBoardTicketPreview";
-import { WorkbenchTicketSourceBadge, WorkbenchTicketKindBadge } from "./WorkbenchTicketMetadata";
+import {
+  WorkbenchTicketSourceBadge,
+  WorkbenchTicketKindBadge,
+  WorkbenchTicketCopyMenuItems,
+} from "./WorkbenchTicketMetadata";
 import { getWorkbenchBoardColumns, orderWorkbenchTicketsByJiraRank } from "./workbenchJira.logic";
 
 const STATUS_DOT_CLASS: Record<WorkbenchTicketStatus, string> = {
@@ -608,6 +612,8 @@ function WorkbenchBoardTicketActions({
       >
         {getWorkbenchTicketSummaryActionLabel(ticket.generatedSummary)}
       </MenuItem>
+      <MenuSeparator />
+      <WorkbenchTicketCopyMenuItems ticketId={ticket.id} jiraIssueLink={jiraIssueLink} />
     </WorkbenchTicketStatusMenu>
   );
 }
@@ -878,7 +884,6 @@ function renderWorkbenchBoardTicketMetadata(
       {pendingTicketIds.has(ticket.id) ? <span role="status">Saving status…</span> : null}
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         <WorkbenchTicketSourceBadge
-          ticketId={ticket.id}
           jiraIssueLink={jiraIssueLink}
           jiraOwnershipKnown={board.jiraOwnershipKnown ?? true}
           className="z-10"
