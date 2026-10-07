@@ -10,23 +10,49 @@ import * as PlatformError from "effect/PlatformError";
 import { writeFileStringAtomically } from "./atomicWrite.ts";
 
 it.layer(NodeServices.layer)("writeFileStringAtomically", (it) => {
-  it.effect("keeps a symlinked file linked and rewrites its destination", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-atomic-write-" });
-      const destination = path.join(root, "dotfiles", "settings.json");
-      const link = path.join(root, "home", "settings.json");
-      yield* fs.makeDirectory(path.dirname(destination), { recursive: true });
-      yield* fs.makeDirectory(path.dirname(link), { recursive: true });
-      yield* fs.writeFileString(destination, "before");
-      yield* fs.symlink(destination, link);
+  it.effect.each([false, true])(
+    "keeps a symlinked file linked and rewrites its destination with cleanup failure %s",
+    (cleanupFails) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-atomic-write-" });
+        const destination = path.join(root, "dotfiles", "settings.json");
+        const link = path.join(root, "home", "settings.json");
+        yield* fs.makeDirectory(path.dirname(destination), { recursive: true });
+        yield* fs.makeDirectory(path.dirname(link), { recursive: true });
+        yield* fs.writeFileString(destination, "before");
+        yield* fs.symlink(destination, link);
 
-      yield* writeFileStringAtomically({ filePath: link, contents: "after" });
+        const remove = (directory: string) =>
+          Effect.fail(
+            PlatformError.systemError({
+              _tag: "PermissionDenied",
+              module: "FileSystem",
+              method: "remove",
+              pathOrDescriptor: directory,
+            }),
+          );
+        const writeFileSystem = cleanupFails
+          ? FileSystem.FileSystem.of({
+              ...fs,
+              remove,
+              makeTempDirectoryScoped: (options) =>
+                Effect.acquireRelease(fs.makeTempDirectory(options), (directory) =>
+                  remove(directory).pipe(Effect.orDie),
+                ),
+            })
+          : fs;
+        const result = yield* Effect.exit(
+          writeFileStringAtomically({ filePath: link, contents: "after" }).pipe(
+            Effect.provideService(FileSystem.FileSystem, writeFileSystem),
+          ),
+        );
 
-      assert.strictEqual(yield* fs.readLink(link), destination);
-      assert.strictEqual(yield* fs.readFileString(destination), "after");
-    }),
+        assert.strictEqual(yield* fs.readLink(link), destination);
+        assert.strictEqual(yield* fs.readFileString(destination), "after");
+        assert.deepStrictEqual(result, Exit.void);
+      }),
   );
 
   it.effect("keeps a dangling symlink linked and creates its destination", () =>
