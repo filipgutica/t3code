@@ -26,27 +26,7 @@ on:
   push:
     branches:
       - main
-    paths:
-      - packages/workbench/**
-      - apps/server/src/workbench/**
-      - apps/web/src/workbench/**
-      - apps/desktop/src/workbench/**
-      - apps/mobile/src/workbench/**
-      - infra/workbench-auth/src/**
-      - apps/web/src/routes/workbench.tsx
-      - packages/contracts/**
-      - packages/shared/**
-      - package.json
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
-      - tsconfig.base.json
-      - vite.config.ts
-      - knip.jsonc
-      - scripts/knip-schemas.ts
-      - scripts/workbench-quality.mts
-      - scripts/workbench-restyle-ceiling*
-      - scripts/lib/workbench-quality*
-      - .github/workflows/workbench-quality.yml
+    # Daily releases require quality proof for every captured main checkpoint.
   workflow_dispatch:
 
 permissions:

@@ -7,6 +7,7 @@ import * as Option from "effect/Option";
 import * as TestClock from "effect/testing/TestClock";
 
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
+import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import { WorkbenchGithubProvider } from "../electron/WorkbenchGithubProvider.ts";
 import { flushCallbacks, makeHarness } from "../updates/updatesTestHarness.ts";
 
@@ -53,31 +54,45 @@ describe("Workbench DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
-  it.effect(
-    "checks signed Workbench builds and keeps release updates on the Workbench channel",
-    () => {
-      vi.stubGlobal("__T3CODE_WORKBENCH_BUILD__", true);
-      vi.stubGlobal("__T3CODE_WORKBENCH_MAC_SIGNED__", true);
-      const harness = makeHarness();
-      return Effect.scoped(
-        Effect.gen(function* () {
-          const updates = yield* DesktopUpdates.DesktopUpdates;
-          yield* updates.configure;
-          assert.equal((yield* updates.getState).enabled, true);
-          yield* updates.setChannel("nightly");
-          assert.equal((yield* updates.getState).channel, "latest");
-          yield* TestClock.adjust(Duration.seconds(15));
-          assert.equal(harness.checkCount(), 1);
-          harness.emit("update-available", {
-            version: "1.2.4",
-            releaseNotes: "Workbench update",
-          });
-          yield* flushCallbacks;
-          assert.equal((yield* updates.getState).status, "available");
-          assert.equal(harness.downloadCount(), 0);
-          assert.equal(harness.quitAndInstalls(), 0);
-        }),
-      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
-    },
-  );
+  it.effect("persists daily opt-in and stable switch-back in signed Workbench builds", () => {
+    vi.stubGlobal("__T3CODE_WORKBENCH_BUILD__", true);
+    vi.stubGlobal("__T3CODE_WORKBENCH_MAC_SIGNED__", true);
+    const harness = makeHarness();
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+        yield* updates.configure;
+        assert.equal((yield* updates.getState).enabled, true);
+        yield* updates.setChannel("nightly");
+        assert.equal((yield* updates.getState).channel, "nightly");
+        assert.equal((yield* settings.get).updateChannel, "nightly");
+        yield* TestClock.adjust(Duration.seconds(15));
+        assert.equal(harness.checkCount(), 2);
+        harness.emit("update-available", {
+          version: "1.2.4-nightly.20261007.1",
+          releaseNotes: "Workbench update",
+        });
+        yield* flushCallbacks;
+        assert.equal((yield* updates.getState).status, "available");
+        assert.equal((yield* updates.getState).availableVersion, "1.2.4-nightly.20261007.1");
+        harness.emit("update-available", {
+          version: "1.2.4",
+          releaseNotes: "Promoted Workbench release",
+        });
+        yield* flushCallbacks;
+        assert.equal((yield* updates.getState).status, "available");
+        assert.equal((yield* updates.getState).availableVersion, "1.2.4");
+        assert.deepEqual((yield* updates.getState).releaseNotes, [
+          { version: "1.2.4", items: ["Promoted Workbench release"], totalItems: 1 },
+        ]);
+        assert.equal((yield* settings.get).updateChannel, "nightly");
+        assert.equal(harness.downloadCount(), 0);
+        assert.equal(harness.quitAndInstalls(), 0);
+        yield* updates.setChannel("latest");
+        assert.equal((yield* updates.getState).channel, "latest");
+        assert.equal((yield* settings.get).updateChannel, "latest");
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
 });

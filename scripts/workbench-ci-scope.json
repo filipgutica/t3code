@@ -156,6 +156,7 @@
         "apps/web/src/components/chat/ChatHeader.tsx",
         "apps/web/src/components/chat/OpenInPicker.tsx",
         "apps/web/src/components/composerContextPresentation.tsx",
+        "apps/web/src/components/desktopUpdate.logic.ts",
         "apps/web/src/components/pullRequest/LinkPullRequestDialog.tsx",
         "apps/web/src/components/pullRequest/PullRequestCodeTab.tsx",
         "apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx",
@@ -190,6 +191,7 @@
         "apps/web/src/components/chat/ChatHeader.test.ts",
         "apps/web/src/components/chat/OpenInPicker.test.ts",
         "apps/web/src/components/composerContextPresentation.test.ts",
+        "apps/web/src/components/desktopUpdate.logic.test.ts",
         "apps/web/src/components/pullRequest/PullRequestCodeTab.test.tsx",
         "apps/web/src/components/pullRequest/PullRequestDetailPanel.test.tsx",
         "apps/web/src/components/pullRequest/PullRequestSummaryTab.test.tsx",
@@ -308,6 +310,15 @@
       "verification": ["workbench-pages"]
     },
     {
+      "name": "Workbench daily release planning",
+      "paths": [
+        "scripts/resolve-workbench-daily-release.ts",
+        ".github/workflows/workbench-daily-release.yml"
+      ],
+      "tests": ["scripts/resolve-workbench-daily-release.test.ts"],
+      "verification": ["unit", "typecheck", "packaging"]
+    },
+    {
       "name": "Packaging and local launcher",
       "paths": [
         "scripts/build-desktop-artifact.ts",
@@ -344,15 +355,18 @@
   "packagingTests": [
     "scripts/build-desktop-artifact.test.ts",
     "scripts/update-release-package-versions.test.ts",
-    "scripts/merge-update-manifests.test.ts"
+    "scripts/merge-update-manifests.test.ts",
+    "scripts/resolve-workbench-daily-release.test.ts"
   ],
   "packagingPaths": [
     ".github/workflows/workbench-release.yml",
+    ".github/workflows/workbench-daily-release.yml",
     "apps/desktop/",
     "scripts/build-desktop-artifact.ts",
     "scripts/build-cli-archive.ts",
     "scripts/smoke-cli-archive.ts",
     "scripts/update-release-package-versions.ts",
+    "scripts/resolve-workbench-daily-release.ts",
     "scripts/merge-update-manifests.ts",
     "scripts/release-smoke.ts",
     "package.json",

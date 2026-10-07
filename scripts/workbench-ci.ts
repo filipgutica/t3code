@@ -275,6 +275,10 @@ ${verificationJob(
   `      - run: vp run --filter @t3tools/desktop ensure:electron
       - name: Exercise fork-owned contracts and native integrations
         run: node scripts/workbench-ci.ts --run-tests
+      - name: Verify Workbench update release links
+        env:
+          T3CODE_WORKBENCH_BUILD: "1"
+        run: vp test run apps/web/src/components/desktopUpdate.logic.test.ts
 `,
 )}
 ${verificationJob(
