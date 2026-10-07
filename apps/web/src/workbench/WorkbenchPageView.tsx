@@ -9,7 +9,7 @@ import { useWorkbenchTicketActions } from "./useWorkbenchTicketActions";
 import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
 import { useWorkbenchJiraBindings } from "./useWorkbenchJiraBindings";
 
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, type WorkbenchTicket, type WorkbenchTicketId } from "@t3tools/contracts";
 
 import {
   AlertCircleIcon,
@@ -69,6 +69,8 @@ import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
 import { WorkbenchJiraDialog } from "./WorkbenchJiraDialog";
+import { WorkbenchPublishTicketDialog } from "./WorkbenchPublishTicketDialog";
+import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
 import { getWorkbenchJiraBindingSprints, isWorkbenchJiraEpic } from "./workbenchJira.logic";
 
 type WorkbenchPageViewProps = {
@@ -440,47 +442,144 @@ function WorkbenchBoardToolbar(props: Pick<WorkbenchPageViewProps, "boardData">)
   );
 }
 
-function WorkbenchPageTicketDetail(
-  props: Pick<
-    WorkbenchPageViewProps,
-    | "boardData"
-    | "dialogs"
-    | "environmentId"
-    | "error"
-    | "jiraBindings"
-    | "pageData"
-    | "pendingAction"
-    | "selection"
-    | "setError"
-    | "threadActions"
-    | "ticketActions"
-  >,
-) {
+type WorkbenchPageTicketDetailProps = Pick<
+  WorkbenchPageViewProps,
+  | "boardData"
+  | "dialogs"
+  | "environmentId"
+  | "error"
+  | "jiraBindings"
+  | "pageData"
+  | "pendingAction"
+  | "selection"
+  | "setError"
+  | "threadActions"
+  | "ticketActions"
+>;
+
+function getWorkbenchPageTicketState({
+  props: { pageData, ticketActions, jiraBindings, pendingAction, error },
+  ticketId,
+}: {
+  props: WorkbenchPageTicketDetailProps;
+  ticketId: WorkbenchTicketId;
+}) {
+  return {
+    ticketWorkspace: pageData.snapshot?.ticketWorkspaces.find(
+      (workspace) => workspace.ticketId === ticketId,
+    ),
+    pending: pendingAction !== null || pageData.optimisticStatus.pendingTicketIds.has(ticketId),
+    threadActionPending: isWorkbenchPageTicketThreadPending({
+      assignmentsByTicket: pageData.assignmentsByTicket,
+      pendingAction,
+      ticketId,
+    }),
+    threadActionLabel: getWorkbenchTicketStartProgressLabel(pendingAction, ticketId),
+    error: error ?? pageData.query.error ?? pageData.archivedThreadsError ?? jiraBindings.jiraError,
+    preparationFailed: ticketActions.workspacePreparationFailure === ticketId,
+    preparationPending:
+      pendingAction === `prepare-workspace:${ticketId}` ||
+      pendingAction === `start:${ticketId}:preparing-workspace`,
+  };
+}
+
+function isWorkbenchPageTicketThreadPending({
+  assignmentsByTicket,
+  pendingAction,
+  ticketId,
+}: {
+  assignmentsByTicket: WorkbenchPageViewProps["pageData"]["assignmentsByTicket"];
+  pendingAction: string | null;
+  ticketId: WorkbenchTicketId;
+}) {
+  const assignment = assignmentsByTicket.get(ticketId);
+  return (
+    isWorkbenchTicketStartPending(pendingAction, ticketId) ||
+    (assignment !== undefined && pendingAction === `restore:${assignment.threadId}`)
+  );
+}
+
+function getWorkbenchPageTicketJiraProps({
+  props: { boardData, jiraBindings, pageData, pendingAction, ticketActions },
+  ticket,
+}: {
+  props: WorkbenchPageTicketDetailProps;
+  ticket: WorkbenchTicket;
+}) {
+  const { jiraIssueLinksByTicketId, jiraManagedTicketIds, jiraOwnershipKnown, jiraBinding } =
+    boardData;
+  const { jiraPendingAction, syncJiraBinding } = jiraBindings;
+  const jiraFieldsManaged = jiraManagedTicketIds.has(ticket.id);
+  return {
+    jiraIssueLink: jiraIssueLinksByTicketId.get(ticket.id) ?? null,
+    jiraFieldsManaged,
+    jiraOwnershipKnown,
+    jiraPublicationAction: (
+      <WorkbenchPageTicketPublicationAction
+        ticket={ticket}
+        binding={jiraBinding}
+        ownershipKnown={jiraOwnershipKnown}
+        jiraFieldsManaged={jiraFieldsManaged}
+        pending={pendingAction !== null}
+        editing={pageData.ticketDrafts.get(ticket.id)?.mode === "editing"}
+        onPublish={ticketActions.openPublication}
+      />
+    ),
+    jiraRefreshing: jiraPendingAction === "sync",
+    jiraRefreshDisabled: jiraPendingAction !== null || !jiraBinding?.active,
+    onRefreshJira: jiraBinding ? () => void syncJiraBinding(jiraBinding) : null,
+    lifecycleActionsEnabled: jiraOwnershipKnown && !jiraFieldsManaged,
+  };
+}
+
+function WorkbenchPageTicketPublicationAction({
+  ticket,
+  binding,
+  ownershipKnown,
+  jiraFieldsManaged,
+  pending,
+  editing,
+  onPublish,
+}: {
+  ticket: WorkbenchTicket;
+  binding: WorkbenchPageViewProps["boardData"]["jiraBinding"];
+  ownershipKnown: boolean;
+  jiraFieldsManaged: boolean;
+  pending: boolean;
+  editing: boolean;
+  onPublish: WorkbenchPageViewProps["ticketActions"]["openPublication"];
+}) {
+  if (!binding || !ownershipKnown || jiraFieldsManaged) return null;
+  return (
+    <Button
+      size="xs"
+      variant="outline"
+      disabled={pending || !binding.active || ticket.archivedAt != null || editing}
+      onClick={() => onPublish(ticket)}
+      title={
+        binding.active
+          ? "Create a Jira issue for this local Ticket"
+          : "Resume Jira sync before publishing"
+      }
+    >
+      <WorkbenchJiraIcon /> Publish to Jira…
+    </Button>
+  );
+}
+
+function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
   const {
     pageData,
     selection,
-    jiraBindings,
     dialogs,
     boardData,
     ticketActions,
     threadActions,
     environmentId,
-    error,
-    pendingAction,
     setError,
   } = props;
-  const {
-    keybindings,
-    availableEditors,
-    query,
-    snapshot,
-    optimisticStatus,
-    threadsById,
-    archivedThreadsById,
-    assignmentsByTicket,
-    threadLookupReady,
-    archivedThreadsError,
-  } = pageData;
+  const { keybindings, availableEditors, threadsById, archivedThreadsById, threadLookupReady } =
+    pageData;
   const {
     setSelectedTicketId,
     setSelectedEpicId,
@@ -491,19 +590,9 @@ function WorkbenchPageTicketDetail(
     updateEpicRouteSelection,
     closeWorkItem,
   } = selection;
-  const { jiraError, jiraPendingAction, syncJiraBinding } = jiraBindings;
   const { openEpicDialog } = dialogs;
+  const { linkedT3Projects, projectEpics, selectedAssignments } = boardData;
   const {
-    jiraIssueLinksByTicketId,
-    linkedT3Projects,
-    projectEpics,
-    jiraBinding,
-    jiraManagedTicketIds,
-    jiraOwnershipKnown,
-    selectedAssignments,
-  } = boardData;
-  const {
-    workspacePreparationFailure,
     changeTicket,
     changeJiraTransition,
     setTicketArchived,
@@ -521,7 +610,6 @@ function WorkbenchPageTicketDetail(
     deleteAssignedThread,
     unlinkThread,
   } = threadActions;
-  const pending = pendingAction !== null;
   if (environmentId === null || selectedProject === null || selectedTicket === null) return null;
   return (
     <WorkbenchTicketDetail
@@ -529,9 +617,8 @@ function WorkbenchPageTicketDetail(
       environmentId={environmentId}
       workspaceTitle={selectedProject.title}
       ticket={selectedTicket}
-      ticketWorkspace={snapshot?.ticketWorkspaces.find(
-        (workspace) => workspace.ticketId === selectedTicket.id,
-      )}
+      {...getWorkbenchPageTicketState({ props, ticketId: selectedTicket.id })}
+      {...getWorkbenchPageTicketJiraProps({ props, ticket: selectedTicket })}
       repositoryScopeDraft={ticketActions.repositoryScopeDraft}
       onEditRepositories={ticketActions.editRepositories}
       onRepositoryScopeChange={ticketActions.changeRepositoryScope}
@@ -539,26 +626,12 @@ function WorkbenchPageTicketDetail(
       onSaveRepositories={ticketActions.saveRepositories}
       linkedProjects={linkedT3Projects}
       epics={projectEpics}
-      jiraIssueLink={jiraIssueLinksByTicketId.get(selectedTicket.id) ?? null}
-      jiraFieldsManaged={jiraManagedTicketIds.has(selectedTicket.id)}
-      jiraRefreshing={jiraPendingAction === "sync"}
-      jiraRefreshDisabled={jiraPendingAction !== null || !jiraBinding?.active}
-      onRefreshJira={jiraBinding ? () => void syncJiraBinding(jiraBinding) : null}
-      lifecycleActionsEnabled={jiraOwnershipKnown && !jiraManagedTicketIds.has(selectedTicket.id)}
       keybindings={keybindings}
       availableEditors={availableEditors}
       assignments={selectedAssignments}
       threadsById={threadsById}
       archivedThreadsById={archivedThreadsById}
       threadLookupReady={threadLookupReady}
-      pending={pending || optimisticStatus.pendingTicketIds.has(selectedTicket.id)}
-      threadActionPending={
-        isWorkbenchTicketStartPending(pendingAction, selectedTicket.id) ||
-        (assignmentsByTicket.get(selectedTicket.id) !== undefined &&
-          pendingAction === `restore:${assignmentsByTicket.get(selectedTicket.id)?.threadId}`)
-      }
-      threadActionLabel={getWorkbenchTicketStartProgressLabel(pendingAction, selectedTicket.id)}
-      error={error ?? query.error ?? archivedThreadsError ?? jiraError}
       onBack={() => {
         setError(null);
         closeWorkItem();
@@ -597,11 +670,6 @@ function WorkbenchPageTicketDetail(
       }}
       onArchive={setTicketArchived}
       onDelete={removeTicket}
-      preparationFailed={workspacePreparationFailure === selectedTicket.id}
-      preparationPending={
-        pendingAction === `prepare-workspace:${selectedTicket.id}` ||
-        pendingAction === `start:${selectedTicket.id}:preparing-workspace`
-      }
       onResetWorkspace={resetTicketWorkspace}
     />
   );
@@ -650,6 +718,7 @@ function WorkbenchPageEpicDetail(
       repositoriesById={repositoriesById}
       assignmentsByTicket={assignmentsByTicket}
       jiraIssueLinksByTicketId={jiraIssueLinksByTicketId}
+      jiraOwnershipKnown={boardData.jiraOwnershipKnown}
       pending={pending}
       error={error ?? query.error}
       onBack={() => {
@@ -755,6 +824,11 @@ function WorkbenchPageBoard(
           key={`${selectedProject.id}:${jiraBinding?.boardMode ?? "mapped"}`}
           mirrorColumns={jiraBinding?.boardMode === "mirror_jira" ? jiraBinding.boardColumns : null}
           jiraConnected={jiraBinding !== null}
+          jiraOwnershipKnown={boardData.jiraOwnershipKnown}
+          {...(jiraBinding && boardData.jiraOwnershipKnown
+            ? { onPublishToJira: ticketActions.openPublication }
+            : {})}
+          jiraPublishDisabled={!jiraBinding?.active}
           jiraStatusMappings={jiraBinding?.statusMappings ?? []}
           projectId={selectedProject.id}
           tickets={boardTickets}
@@ -1039,10 +1113,10 @@ function WorkbenchPageThreadDialogs(
 function WorkbenchPageTicketDialogs(
   props: Pick<
     WorkbenchPageViewProps,
-    "boardData" | "dialogs" | "error" | "pageData" | "pendingAction" | "selection"
+    "boardData" | "dialogs" | "error" | "pageData" | "pendingAction" | "selection" | "ticketActions"
   >,
 ) {
-  const { pageData, selection, dialogs, boardData, error, pendingAction } = props;
+  const { pageData, selection, dialogs, boardData, error, pendingAction, ticketActions } = props;
   const { query, jiraSnapshot } = pageData;
   const { selectedProject } = selection;
 
@@ -1059,8 +1133,27 @@ function WorkbenchPageTicketDialogs(
   const { linkedT3Projects, activeProjectEpics, jiraBinding } = boardData;
 
   const pending = pendingAction !== null;
+  const publication = ticketActions.publication;
   return (
     <>
+      {publication ? (
+        <WorkbenchPublishTicketDialog
+          key={publication.ticket.id}
+          ticket={publication.ticket}
+          binding={publication.binding}
+          epics={activeProjectEpics.filter((epic) =>
+            isWorkbenchJiraEpic({
+              epicId: epic.id,
+              bindingId: publication.binding.id,
+              epicLinks: jiraSnapshot?.epicLinks,
+            }),
+          )}
+          pending={pending}
+          error={ticketActions.publicationError}
+          onClose={ticketActions.closePublication}
+          onPublish={ticketActions.publishTicket}
+        />
+      ) : null}
       {selectedProject ? (
         <WorkbenchEpicDialog
           open={epicDialogOpen}
@@ -1075,7 +1168,8 @@ function WorkbenchPageTicketDialogs(
           key={`${selectedProject.id}:${ticketDialogEpicId ?? "no-epic"}`}
           open={ticketDialogOpen}
           linkedProjects={linkedT3Projects}
-          epics={
+          epics={activeProjectEpics}
+          jiraEpics={
             jiraBinding
               ? activeProjectEpics.filter((epic) =>
                   isWorkbenchJiraEpic({
@@ -1086,18 +1180,10 @@ function WorkbenchPageTicketDialogs(
                 )
               : activeProjectEpics
           }
-          initialEpicId={
-            jiraBinding &&
-            ticketDialogEpicId !== null &&
-            !isWorkbenchJiraEpic({
-              epicId: ticketDialogEpicId,
-              bindingId: jiraBinding.id,
-              epicLinks: jiraSnapshot?.epicLinks,
-            })
-              ? null
-              : ticketDialogEpicId
-          }
+          initialEpicId={ticketDialogEpicId}
           jiraBinding={jiraBinding}
+          localOnlySupported={jiraSnapshot?.supportsLocalOnlyTickets === true}
+          jiraOwnershipKnown={boardData.jiraOwnershipKnown}
           pending={pending}
           error={error ?? query.error}
           onOpenChange={handleTicketDialogOpenChange}

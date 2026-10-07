@@ -189,8 +189,18 @@ selection, Ticket worktrees, linked Threads, and generated summaries. Changes ma
 in Jira appear on the next successful sync; issues that leave the selected sprints
 leave the active Board but remain in Workbench history.
 
-**New Ticket** in a Jira-linked Workspace creates an issue in the configured Jira
-project and assigns it to the connected account. If access expires, choose
+**New Ticket** in a Jira-linked Workspace lets you choose **Jira** or **Local only**.
+Jira creates an issue in the configured project and selected sprint, assigned to the
+connected account. Local-only Tickets stay in Workbench and can be created while
+Jira sync is paused. Tickets show **Local** or their Jira issue key on the Board,
+in the sidebar, and in Ticket details.
+
+To publish a local Ticket, choose **Publish to Jira** in its details or Board menu.
+Select a sprint and, optionally, a Jira Epic, then confirm. Publishing keeps the
+Ticket's linked Threads and worktrees. Jira then controls its description, status,
+and Epic relationship.
+
+If access expires, choose
 **Reconnect Jira**, authorize again, and use the same site to retain the mirror and
 Ticket history. Cancelling authorization leaves the existing mirror unchanged.
 

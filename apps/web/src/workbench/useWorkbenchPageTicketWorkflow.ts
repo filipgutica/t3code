@@ -1,4 +1,5 @@
 import type { EnvironmentId, WorkbenchTicketId } from "@t3tools/contracts";
+import type { Dispatch, SetStateAction } from "react";
 import { useWorkbenchTicketActions } from "./useWorkbenchTicketActions";
 import { useWorkbenchThreadActions } from "./useWorkbenchThreadActions";
 import { useWorkbenchSidebarActions } from "./useWorkbenchSidebarActions";
@@ -23,7 +24,7 @@ export function useWorkbenchPageTicketWorkflow({
   jiraBindings: ReturnType<typeof useWorkbenchJiraBindings>;
   boardData: ReturnType<typeof useWorkbenchBoardData>;
   pendingAction: string | null;
-  setPendingAction: (action: string | null) => void;
+  setPendingAction: Dispatch<SetStateAction<string | null>>;
   setError: (message: string | null) => void;
   initialTicketId: WorkbenchTicketId | undefined;
 }) {
@@ -42,6 +43,7 @@ export function useWorkbenchPageTicketWorkflow({
   const { jiraOwnershipKnown, jiraIssueLinksByTicketId, jiraManagedTicketIds } = boardData;
   const ticketActions = useWorkbenchTicketActions({
     environmentId,
+    selectedProjectId: selection.selectedProject?.id ?? null,
     pendingAction,
     setPendingAction,
     setError,

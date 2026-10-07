@@ -7,6 +7,7 @@ import {
   WorkbenchJiraCompleteAuthResult,
   WorkbenchJiraEpicLink,
   WorkbenchJiraIssueLink,
+  WorkbenchJiraSnapshot,
   WorkbenchJiraSyncBindingInput,
   WorkbenchJiraUpdateTicketInput,
 } from "./workbenchJira.ts";
@@ -18,6 +19,17 @@ const decodeCompleteAuthResult = Schema.decodeUnknownEffect(WorkbenchJiraComplet
 const decodeSyncBinding = Schema.decodeUnknownEffect(WorkbenchJiraSyncBindingInput);
 
 describe("Workbench Jira contracts", () => {
+  it.effect("requires explicit local-only support from server snapshots", () =>
+    Effect.gen(function* () {
+      const decode = Schema.decodeUnknownEffect(WorkbenchJiraSnapshot);
+      const snapshot = { connections: [], bindings: [], issueLinks: [] };
+      assert.isUndefined((yield* decode(snapshot)).supportsLocalOnlyTickets);
+      assert.isTrue(
+        (yield* decode({ ...snapshot, supportsLocalOnlyTickets: true })).supportsLocalOnlyTickets,
+      );
+    }),
+  );
+
   it.effect("accepts legacy status writes and exact Jira transition writes", () =>
     Effect.gen(function* () {
       const decodeUpdate = Schema.decodeUnknownEffect(WorkbenchJiraUpdateTicketInput);

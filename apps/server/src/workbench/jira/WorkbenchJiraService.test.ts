@@ -27,6 +27,7 @@ import { JiraTicketWriteService } from "@t3tools/workbench/jira/JiraTicketWriteS
 import {
   WorkbenchJiraRepository,
   WorkbenchJiraRepositoryError,
+  layerSql as jiraRepositoryLayer,
   type WorkbenchJiraRepositoryShape,
 } from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 import * as WorkbenchJiraService from "@t3tools/workbench/jira/WorkbenchJiraService";
@@ -151,7 +152,10 @@ describe("WorkbenchJiraService", () => {
       const createCalls = yield* Ref.make(0);
       const writer = JiraTicketWriteService.of({
         createTicket: (input) =>
-          Ref.update(createCalls, (count) => count + 1).pipe(Effect.as(input.id)),
+          Ref.update(createCalls, (count) => count + 1).pipe(
+            Effect.andThen(workbench.createTicket(input).pipe(Effect.orDie)),
+            Effect.map((ticket) => ticket.id),
+          ),
         getTicketTransitions: () => Effect.die("unexpected Jira transition lookup"),
         updateTicket: () => Effect.die("unexpected Jira Ticket write"),
         startTicketExecution: () => Effect.die("unexpected Jira execution"),
@@ -175,7 +179,37 @@ describe("WorkbenchJiraService", () => {
         createdAt,
       };
       const localTicket = yield* service.createTicket(localInput);
+      expect((yield* service.getSnapshot).supportsLocalOnlyTickets).toBe(true);
       expect(localTicket.id).toBe(localInput.id);
+      expect(yield* Ref.get(createCalls)).toBe(0);
+
+      const invalidLocalRepository = yield* Effect.flip(
+        service.createTicket({
+          ...localInput,
+          id: WorkbenchTicketId.make("invalid-local-repository"),
+          projectId: activeWorkspaceId,
+          localOnly: true,
+          repositoryProjectIds: [nativeProjectId, otherNativeProjectId],
+        }),
+      );
+      expect(invalidLocalRepository.code).toBe("repository_not_linked");
+      const invalidLocalPublication = yield* Effect.flip(
+        service.createTicket({ ...localInput, localOnly: true, existingLocalTicketRevision: 0 }),
+      );
+      expect(invalidLocalPublication.code).toBe("invalid_binding");
+
+      for (const projectId of [activeWorkspaceId, pausedWorkspaceId]) {
+        const input = {
+          ...localInput,
+          id: WorkbenchTicketId.make(`local-only-${projectId}`),
+          projectId,
+          localOnly: true,
+          ...(projectId === activeWorkspaceId ? { epicId: localEpic.id } : {}),
+        };
+        const ticket = yield* service.createTicket(input);
+        expect(ticket).toMatchObject({ id: input.id, projectId, title: input.title });
+        expect((yield* workbench.getSnapshot).tickets).toContainEqual(ticket);
+      }
       expect(yield* Ref.get(createCalls)).toBe(0);
 
       const invalidRepository = yield* Effect.flip(
@@ -232,6 +266,53 @@ describe("WorkbenchJiraService", () => {
       );
       expect(paused.code).toBe("binding_inactive");
       expect(yield* Ref.get(createCalls)).toBe(0);
+
+      const persistedRepository = yield* WorkbenchJiraRepository.pipe(
+        Effect.provide(jiraRepositoryLayer),
+      );
+      yield* persistedRepository.upsertConnection(
+        {
+          id: activeBinding.connectionId,
+          cloudId: "cloud-1",
+          siteName: "Workbench",
+          siteUrl: "https://example.atlassian.net",
+          avatarUrl: null,
+          scopes: [],
+          createdAt,
+          updatedAt: createdAt,
+        },
+        "credential-1",
+      );
+      yield* persistedRepository.upsertBinding(activeBinding);
+      const pendingTicketId = WorkbenchTicketId.make("pending-jira-ticket");
+      yield* sql`
+        INSERT INTO workbench_jira_ticket_creations (
+          ticket_id, binding_id, title, kind, markdown, state, created_at, updated_at
+        ) VALUES (
+          ${pendingTicketId}, ${activeBinding.id}, 'Pending', 'story', '', 'uncertain', ${createdAt}, ${createdAt}
+        )
+      `;
+      const pendingLocalCreation = yield* Effect.flip(
+        service.createTicket({
+          ...localInput,
+          id: pendingTicketId,
+          projectId: activeWorkspaceId,
+          localOnly: true,
+        }),
+      );
+      expect(pendingLocalCreation.message).toContain("already started in Jira");
+      expect(
+        (yield* workbench.getSnapshot).tickets.some((ticket) => ticket.id === pendingTicketId),
+      ).toBe(false);
+      expect(yield* Ref.get(createCalls)).toBe(0);
+
+      const jiraTicket = yield* service.createTicket({
+        ...localInput,
+        id: WorkbenchTicketId.make("jira-ticket"),
+        projectId: activeWorkspaceId,
+      });
+      expect(jiraTicket.id).toBe("jira-ticket");
+      expect(yield* Ref.get(createCalls)).toBe(1);
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
