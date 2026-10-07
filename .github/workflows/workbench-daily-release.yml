@@ -1,6 +1,7 @@
 name: Workbench daily desktop release
 
 on:
+  workflow_dispatch:
   schedule:
     - cron: "0 2 * * *"
       timezone: "America/Vancouver"
@@ -16,7 +17,9 @@ permissions:
 jobs:
   resolve:
     name: Resolve changed main checkpoint
-    if: github.repository == 'filipgutica/t3code' && github.ref == 'refs/heads/main'
+    if: >-
+      github.repository == 'filipgutica/t3code' && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

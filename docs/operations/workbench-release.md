@@ -43,16 +43,42 @@ back to unsigned output.
 Review the stable draft and publish it manually. Only published releases become
 update candidates. Stable Workbench releases use the independent `workbench-vX.Y.Z` tag namespace.
 
+To validate or recover an existing signed draft without rebuilding, run
+[Workbench validate and publish Stable draft](../../.github/workflows/workbench-publish-stable.yml)
+from `main`. Supply its release ID, successful build run ID, version, and full
+source SHA. Leave **publish** unchecked for validation; explicitly check it to
+publish the same verified release as latest Stable. The original build workflow
+continues to create drafts. Recovery checks exact-source main CI, signing and
+quality jobs, retained build artifacts, updater manifests, and all existing
+asset sizes and SHA-256 digests. It never uploads, replaces, or deletes assets.
+The build artifacts must still be retained (currently seven days). A verified
+published retry leaves the release unchanged.
+A newer published `workbench-vX.Y.Z` release, including a preview accepted by
+the Stable feed, blocks promotion of an older draft.
+
+For the signed `0.0.22` bootstrap, use release **405421054**, build run
+**37575614686**, and source **641fc96b34631af94661fde7ee0e9f1e5a38df6e**.
+Publishing an older workflow target can require
+[Workflows write permission](https://docs.github.com/en/rest/releases/releases#update-a-release),
+which `GITHUB_TOKEN` cannot receive. If an existing authorized
+`WORKBENCH_RELEASE_TOKEN` secret is available, recovery uses it only for
+publication. Without one, workflow differences from current `main` stop
+publication with a clear error; the owner can publish the verified draft in
+GitHub. This procedure does not provision credentials or change repository settings.
+
 ## Daily prereleases
 
 [Workbench daily desktop release](../../.github/workflows/workbench-daily-release.yml)
 reuses the same quality checks, WSL runtime, four-platform build matrix, and Apple signing requirements.
-Its proposed schedule is nightly at **02:00 America/Vancouver**, using GitHub's
+Its schedule is nightly at **02:00 America/Vancouver**, using GitHub's
 [IANA timezone support](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onschedule).
 Timezone rules determine the UTC offset. If a clock change skips 02:00, GitHub advances the run to the next valid time.
 GitHub may delay or drop scheduled runs, so this is a target time rather than a guaranteed start.
 The scheduler requires successful main feature CI and Workbench quality runs for its exact captured SHA.
 Missing, pending, or failed verification skips that day's build.
+**Run workflow** on `main` invokes the same changed-checkpoint path manually,
+with the same CI, unchanged-day, signing, and publication gates. Other branches
+do not run the resolver. Rerunning a failed run preserves its original daily identity.
 
 The scheduler captures its main SHA and original run date. It builds only when that
 checkpoint differs from the last successful daily release or the current stable release.
@@ -74,8 +100,7 @@ integrated upstream baseline, date, and run identifier. The same record appears 
 The integrated baseline is distinct from the observed upstream tip in the release notes.
 Missing signing credentials or incomplete daily publication stops the run; it does not create unsigned daily updates.
 
-The scheduler becomes active only after its workflow is merged into main.
-Review the draft implementation before enabling it. The implementation PR does not publish installer releases.
+Workflow changes must be reviewed and merged into `main` before manual activation.
 
 ## Updates
 
