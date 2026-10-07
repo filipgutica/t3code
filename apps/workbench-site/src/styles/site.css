@@ -1,6 +1,7 @@
 @import "tailwindcss/utilities.css" source(none);
 @import "@filipgutica/ui/theme.css";
 @import "@filipgutica/ui/components.css";
+@import "./palette.css";
 
 :root {
   --bg: var(--color-bg);
@@ -451,4 +452,10 @@ nav.family a[aria-current="page"] {
     animation-duration: 0ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Neutral prose links remain identifiable without relying on color. */
+main p a {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
 }

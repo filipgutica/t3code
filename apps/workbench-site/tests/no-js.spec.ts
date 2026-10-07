@@ -29,13 +29,13 @@ test("static deep links reach content after all screenshot panels", async ({ pag
   await page.goto("/t3code/#scope-heading");
   await expect(page.locator("#scope-heading")).toBeInViewport();
 });
-test("no-JavaScript system dark uses the canonical library palette", async ({ page }) => {
+test("no-JavaScript system appearance uses the public page palette", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/t3code/");
-  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(252, 252, 253)");
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(248, 247, 244)");
   await page.emulateMedia({ colorScheme: "dark" });
-  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(15, 15, 17)");
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(20, 20, 19)");
   await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
   await page.emulateMedia({ colorScheme: "light" });
-  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(252, 252, 253)");
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(248, 247, 244)");
 });
