@@ -69,10 +69,12 @@ const git = (...args: string[]): string =>
   }).trim();
 const validDate = (value: string): boolean => {
   if (!/^\d{8}$/.test(value)) return false;
-  const date = new Date(`${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T00:00:00Z`);
-  return (
-    !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10).replaceAll("-", "") === value
-  );
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(4, 6));
+  const day = Number(value.slice(6, 8));
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return year > 0 && day > 0 && day <= (days[month - 1] ?? 0);
 };
 const readReleases = (file: string): Release[] => {
   const raw: unknown = JSON.parse(NodeFS.readFileSync(file, "utf8"));

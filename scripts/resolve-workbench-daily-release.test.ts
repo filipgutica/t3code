@@ -290,5 +290,10 @@ it("fails closed on incomplete publication, forged provenance and sources outsid
       should_release: "true",
       sha: merged,
     });
-    expect(f.run([f.stable], { date: "20260230" }).status).toBe(1);
+    for (const date of ["20260230", "20260229", "21000229", "20260001", "20261000", "20261301"]) {
+      expect(f.run([f.stable], { date }).status).toBe(1);
+    }
+    for (const date of ["20240229", "20000229"]) {
+      expect(f.run([f.stable], { date, sha: merged }).status).toBe(0);
+    }
   }));
