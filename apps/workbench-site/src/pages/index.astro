@@ -19,7 +19,7 @@ const guide = `${repository}/blob/main/docs/user/agent-workbench.md`;
 const downloads = `${repository}/releases/latest`;
 const title = "T3 Code Workbench | Your work, across repositories";
 const description =
-  "A control center for work across repositories. Track Tickets, agent Threads, pull requests, and isolated worktrees together. Jira optional.";
+  "Tickets, isolated worktrees, native T3 Threads, and pull requests across repositories. An independent T3 Code fork with optional Jira integration.";
 const base = import.meta.env.BASE_URL;
 const canonical = new URL(base, Astro.site);
 const shareImage = await getImage({ src: board, width: 1200, format: "jpeg", quality: 85 });
@@ -36,7 +36,7 @@ const walkthrough = [
     src: ticket,
     alt: "Workbench Ticket showing its description and linked native T3 Threads",
     caption:
-      "Read the goal and acceptance criteria, with linked native T3 Threads beside the description.",
+      "A goal, acceptance criteria, and linked native Threads.",
   },
   {
     id: "workspace",
@@ -45,7 +45,7 @@ const walkthrough = [
     src: workspace,
     alt: "Prepared Ticket workspace showing repository worktrees",
     caption:
-      "Each repository in scope has an isolated Git worktree. Preparing the workspace does not start an agent turn.",
+      "Isolated worktrees per repository. Preparation does not start an agent.",
   },
   {
     id: "thread",
@@ -54,7 +54,7 @@ const walkthrough = [
     src: thread,
     alt: "Native T3 Thread with Ticket context attached to the composer",
     caption:
-      "Ticket context is attached to the composer. Send a message when you are ready to start an agent turn.",
+      "Ticket context is attached. Send a message to start the agent.",
   },
   {
     id: "pull-request",
@@ -62,7 +62,7 @@ const walkthrough = [
     title: "Review the linked pull request",
     src: pullRequest,
     alt: "Native pull request panel over a demo Ticket showing its summary and failing checks",
-    caption: "A second demo Ticket shows linked pull request checks and review feedback.",
+    caption: "Linked PR checks and review feedback on a second demo Ticket.",
   },
   {
     id: "notifications",
@@ -71,7 +71,7 @@ const walkthrough = [
     src: notifications,
     alt: "Ticket Needs attention list with five signals from Threads and linked pull requests",
     caption:
-      "The same demo Ticket’s Needs attention list links to Threads, review feedback, and failed checks.",
+      "Threads, review feedback, and failed checks that need attention.",
   },
   {
     id: "jira",
@@ -79,7 +79,7 @@ const walkthrough = [
     title: "Bring Jira into the same workflow",
     src: jira,
     alt: "Workbench Jira board showing the selected sprint, sync timestamp, and issue statuses",
-    caption: "Connect Jira for sprint issues, or use local Tickets without a Jira account.",
+    caption: "Assigned sprint issues in Workbench.",
   },
 ];
 const prepareImage = async ({
