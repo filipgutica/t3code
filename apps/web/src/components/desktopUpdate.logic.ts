@@ -1,4 +1,8 @@
 import type { DesktopUpdateActionResult, DesktopUpdateState } from "@t3tools/contracts";
+import {
+  getWorkbenchDesktopUpdateReleaseHistoryUrl,
+  getWorkbenchDesktopUpdateReleaseUrl,
+} from "../workbench/desktopUpdateRelease";
 
 export type DesktopUpdateButtonAction = "download" | "install" | "none";
 
@@ -18,10 +22,16 @@ export function getDesktopUpdateDownloadedVersion(state: DesktopUpdateState): st
 export function getDesktopUpdateReleaseUrl(version: string | null): string | null {
   const normalizedVersion = version?.trim();
   if (!normalizedVersion) return null;
+  if (import.meta.env.VITE_T3CODE_WORKBENCH_BUILD) {
+    return getWorkbenchDesktopUpdateReleaseUrl(normalizedVersion);
+  }
   return `${DESKTOP_RELEASE_TAG_URL}/v${encodeURIComponent(normalizedVersion)}`;
 }
 
 export function getDesktopUpdateReleaseHistoryUrl(): string {
+  if (import.meta.env.VITE_T3CODE_WORKBENCH_BUILD) {
+    return getWorkbenchDesktopUpdateReleaseHistoryUrl();
+  }
   return DESKTOP_RELEASE_HISTORY_URL;
 }
 

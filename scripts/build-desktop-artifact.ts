@@ -2812,7 +2812,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         provider: "github",
         owner: "filipgutica",
         repo: "t3code",
-        channel: "latest",
+        channel: updateChannel,
         releaseType: "prerelease",
       },
     ];

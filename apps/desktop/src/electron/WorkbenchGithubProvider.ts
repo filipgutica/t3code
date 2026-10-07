@@ -6,11 +6,15 @@ import {
 import type { UpdateInfo } from "electron-updater";
 import type { ProviderRuntimeOptions } from "electron-updater/out/providers/Provider.js";
 import type { ResolvedUpdateFileInfo } from "electron-updater/out/types.js";
+import type { DesktopUpdateChannel } from "@t3tools/contracts";
+import { compareSemverVersions } from "@t3tools/shared/semver";
 import * as Schema from "effect/Schema";
 
 const WORKBENCH_RELEASES_API = "https://api.github.com/repos/filipgutica/t3code/releases";
 const WORKBENCH_DOWNLOAD_BASE = "https://github.com/filipgutica/t3code/releases/download";
 const WORKBENCH_TAG = /^workbench-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const WORKBENCH_DAILY_TAG =
+  /^workbench-daily-v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)-nightly\.[1-9]\d{7}\.(?:0|[1-9]\d*))$/;
 
 const GithubRelease = Schema.Struct({
   draft: Schema.Boolean,
@@ -39,43 +43,44 @@ interface WorkbenchGithubOptions {
 
 interface UpdaterVersionSource {
   readonly currentVersion: { readonly version: string };
+  readonly channel?: string | null;
+  readonly allowDowngrade?: boolean;
 }
 
-/** Returns the highest published Workbench release from GitHub's API response. */
+/** Nightly includes daily builds and their stable promotion; latest includes only stable tags. */
 export function selectLatestWorkbenchRelease(
   releases: readonly WorkbenchGithubRelease[],
-  requiredAssetName?: string,
-): (WorkbenchGithubRelease & { readonly version: string }) | null {
-  let latest: (WorkbenchGithubRelease & { readonly version: string }) | null = null;
+  requiredAssetName?: string | ((channel: DesktopUpdateChannel) => string),
+  channel: DesktopUpdateChannel = "latest",
+):
+  | (WorkbenchGithubRelease & { readonly version: string; readonly channel: DesktopUpdateChannel })
+  | null {
+  let latest:
+    | (WorkbenchGithubRelease & {
+        readonly version: string;
+        readonly channel: DesktopUpdateChannel;
+      })
+    | null = null;
 
   for (const release of releases) {
     if (release.draft || release.published_at === null) continue;
-    if (requiredAssetName && !release.assets.some((asset) => asset.name === requiredAssetName)) {
-      continue;
-    }
-
     const match = WORKBENCH_TAG.exec(release.tag_name);
-    if (!match) continue;
+    const dailyMatch = channel === "nightly" ? WORKBENCH_DAILY_TAG.exec(release.tag_name) : null;
+    const version = match ? `${match[1]}.${match[2]}.${match[3]}` : dailyMatch?.[1];
+    if (!version) continue;
+    const releaseChannel = match ? "latest" : "nightly";
+    const assetName =
+      typeof requiredAssetName === "function"
+        ? requiredAssetName(releaseChannel)
+        : requiredAssetName;
+    if (assetName && !release.assets.some((asset) => asset.name === assetName)) continue;
 
-    const version = `${match[1]}.${match[2]}.${match[3]}`;
-    if (latest === null || compareVersions(version, latest.version) > 0) {
-      latest = { ...release, version };
+    if (latest === null || compareSemverVersions(version, latest.version) > 0) {
+      latest = { ...release, version, channel: releaseChannel };
     }
   }
 
   return latest;
-}
-
-function compareVersions(left: string, right: string): number {
-  const leftParts = left.split(".").map(Number);
-  const rightParts = right.split(".").map(Number);
-
-  for (let index = 0; index < leftParts.length; index += 1) {
-    const difference = leftParts[index]! - rightParts[index]!;
-    if (difference !== 0) return difference;
-  }
-
-  return 0;
 }
 
 function releaseBaseUrl(tag: string): URL {
@@ -98,13 +103,14 @@ function makeNoUpdateInfo(version: string, tag = `workbench-v${version}`): Workb
 /**
  * electron-updater's built-in GitHub provider uses `/releases/latest`, which
  * excludes prereleases and does not filter the tag namespace. Workbench releases use a
- * separate `workbench-v` namespace and may be published as prereleases, so
+ * separate stable and daily namespaces and may be published as prereleases, so
  * resolve the release explicitly before delegating manifest/file handling to
  * electron-updater's shared provider helpers.
  */
 export class WorkbenchGithubProvider extends Provider<WorkbenchUpdateInfo> {
   private readonly options: WorkbenchGithubOptions;
   private readonly currentVersion: string;
+  private readonly updater: UpdaterVersionSource;
 
   constructor(
     options: WorkbenchGithubOptions,
@@ -114,6 +120,7 @@ export class WorkbenchGithubProvider extends Provider<WorkbenchUpdateInfo> {
     super(runtimeOptions);
     this.options = options;
     this.currentVersion = updater.currentVersion.version;
+    this.updater = updater;
   }
 
   async getLatestVersion(): Promise<WorkbenchUpdateInfo> {
@@ -136,14 +143,13 @@ export class WorkbenchGithubProvider extends Provider<WorkbenchUpdateInfo> {
       if (pageReleases.length < 100) break;
     }
 
-    const channelFile = this.channelFileName();
-    const latestOverall = selectLatestWorkbenchRelease(releases);
-    const latest = selectLatestWorkbenchRelease(releases, channelFile);
-    const selected =
-      latest ??
-      (latestOverall && compareVersions(latestOverall.version, this.currentVersion) <= 0
-        ? latestOverall
-        : null);
+    const channel = this.updater.channel ?? this.options.channel ?? "latest";
+    if (channel !== "latest" && channel !== "nightly") return makeNoUpdateInfo(this.currentVersion);
+    const selected = selectLatestWorkbenchRelease(
+      releases,
+      (releaseChannel) => this.channelFileName(releaseChannel),
+      channel,
+    );
     if (selected === null) {
       // A release can be visible before its platform manifest is uploaded,
       // and an empty repository is a valid no-update state. Returning the
@@ -153,13 +159,15 @@ export class WorkbenchGithubProvider extends Provider<WorkbenchUpdateInfo> {
     }
 
     const tag = selected.tag_name;
-    if (compareVersions(selected.version, this.currentVersion) <= 0) {
-      // Do not fetch a manifest for an older release. This matters while a
-      // release is being assembled, because GitHub can expose the release
-      // before all platform manifests have been uploaded.
+    const comparison = compareSemverVersions(selected.version, this.currentVersion);
+    // Native nightly polling keeps allowDowngrade=true. Only a deliberate
+    // switch back to latest may offer an older release; ordinary polls stay monotonic.
+    const stableSwitchBack = channel === "latest" && this.updater.allowDowngrade === true;
+    if (comparison === 0 || (comparison < 0 && !stableSwitchBack)) {
       return makeNoUpdateInfo(this.currentVersion);
     }
 
+    const channelFile = this.channelFileName(selected.channel);
     const channelUrl = new URL(channelFile, releaseBaseUrl(tag));
     const updateResponse = await this.httpRequest(channelUrl, {
       Accept: "text/yaml, text/plain, */*",
@@ -195,11 +203,11 @@ export class WorkbenchGithubProvider extends Provider<WorkbenchUpdateInfo> {
     return resolveFiles(updateInfo, baseUrl);
   }
 
-  private channelFileName(): string {
-    if (this.options.channel === "latest" || this.options.channel == null) {
+  private channelFileName(channel: DesktopUpdateChannel): string {
+    if (channel === "latest") {
       return `${this.getDefaultChannelName()}.yml`;
     }
 
-    return `${this.getCustomChannelName(this.options.channel)}.yml`;
+    return `${this.getCustomChannelName(channel)}.yml`;
   }
 }

@@ -1,6 +1,48 @@
 name: Workbench desktop release
 
 on:
+  workflow_call:
+    inputs:
+      commit_sha:
+        required: false
+        default: ""
+        type: string
+      version:
+        required: true
+        type: string
+      previous_tag:
+        required: false
+        default: ""
+        type: string
+      sign_macos:
+        required: false
+        default: false
+        type: boolean
+      release_mode:
+        required: false
+        default: unsigned-preview
+        type: string
+      release_channel:
+        description: "Workbench updater channel: latest or nightly"
+        required: false
+        default: latest
+        type: string
+      metadata_json:
+        description: "Canonical provenance from the daily release resolver"
+        required: false
+        default: ""
+        type: string
+    secrets:
+      WORKBENCH_MAC_CSC_LINK:
+        required: false
+      WORKBENCH_MAC_CSC_KEY_PASSWORD:
+        required: false
+      WORKBENCH_APPLE_API_KEY:
+        required: false
+      WORKBENCH_APPLE_API_KEY_ID:
+        required: false
+      WORKBENCH_APPLE_API_ISSUER:
+        required: false
   workflow_dispatch:
     inputs:
       commit_sha:
@@ -31,8 +73,8 @@ on:
           - unsigned-preview
           - build-only
 
-# A release is deliberately started by a maintainer. A second run for the same
-# version waits for the first one instead of canceling it mid-upload.
+# Manual releases and the daily caller share one build. A second run for the
+# same version waits for the first one instead of canceling it mid-upload.
 concurrency:
   group: workbench-release-${{ inputs.version }}
   cancel-in-progress: false
@@ -52,6 +94,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
+      should_release: ${{ steps.resolve.outputs.should_release }}
+      release_channel: ${{ steps.resolve.outputs.release_channel }}
+      metadata_json: ${{ steps.resolve.outputs.metadata_json }}
       sha: ${{ steps.resolve.outputs.sha }}
       version: ${{ steps.resolve.outputs.version }}
       tag: ${{ steps.resolve.outputs.tag }}
@@ -65,10 +110,24 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      - name: Setup daily resolver Node runtime
+        if: inputs.release_channel == 'nightly'
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+
       - name: Require signed macOS builds for releases
         if: inputs.release_mode == 'release' && !inputs.sign_macos
         run: |
           echo "Release mode requires sign_macos=true." >&2
+          exit 1
+
+      - name: Require signed release mode for the daily channel
+        if: inputs.release_channel == 'nightly' && (inputs.release_mode != 'release' || !inputs.sign_macos)
+        run: |
+          echo "The daily channel requires release mode and signed macOS builds." >&2
           exit 1
 
       - name: Validate macOS signing credentials
@@ -93,9 +152,13 @@ jobs:
         name: Resolve exact main commit and release tags
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_CHANNEL: ${{ inputs.release_channel || 'latest' }}
+          DAILY_METADATA_JSON: ${{ inputs.metadata_json }}
           RELEASE_VERSION: ${{ inputs.version }}
           REQUESTED_COMMIT_SHA: ${{ inputs.commit_sha }}
           REQUESTED_PREVIOUS_TAG: ${{ inputs.previous_tag }}
+          RELEASE_MODE: ${{ inputs.release_mode }}
         run: |
           set -euo pipefail
 
@@ -104,8 +167,17 @@ jobs:
             exit 1
           fi
 
+          if [[ "$RELEASE_CHANNEL" != latest && "$RELEASE_CHANNEL" != nightly ]]; then
+            echo "Unknown Workbench release channel: $RELEASE_CHANNEL" >&2
+            exit 1
+          fi
+          case "$RELEASE_MODE" in
+            release|unsigned-preview|build-only) ;;
+            *) echo "Unknown Workbench release mode: $RELEASE_MODE" >&2; exit 1 ;;
+          esac
+
           version="$RELEASE_VERSION"
-          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+          if [[ "$RELEASE_CHANNEL" == latest && ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
             echo "Version must be X.Y.Z without a leading v: $version" >&2
             exit 1
           fi
@@ -124,28 +196,63 @@ jobs:
           fi
           # Prefix Workbench tags so this fork's releases never trigger the
           # upstream-compatible v* release workflow in the same repository.
-          tag="workbench-v$version"
-          if git show-ref --tags --verify --quiet "refs/tags/$tag"; then
-            echo "Release tag already exists: $tag" >&2
-            exit 1
-          fi
-
-          previous_tag="$REQUESTED_PREVIOUS_TAG"
-          if [[ -n "$previous_tag" ]]; then
-            if [[ "$previous_tag" == workbench-v* ]]; then
-              :
-            elif [[ "$previous_tag" == v* ]]; then
-              previous_tag="workbench-$previous_tag"
-            else
-              previous_tag="workbench-v$previous_tag"
+          should_release=true
+          metadata_json=""
+          if [[ "$RELEASE_CHANNEL" == nightly ]]; then
+            # Derive the same plan again with fresh release state. The resolver
+            # validates provenance, first-parent history, version and tag custody.
+            date="$(jq -er '.date' <<< "$DAILY_METADATA_JSON")"
+            run_number="$(jq -er '.runNumber' <<< "$DAILY_METADATA_JSON")"
+            run_id="$(jq -er '.runId' <<< "$DAILY_METADATA_JSON")"
+            gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/workbench-releases.json"
+            plan="$RUNNER_TEMP/workbench-daily-plan"
+            node scripts/resolve-workbench-daily-release.ts \
+              --releases-file "$RUNNER_TEMP/workbench-releases.json" \
+              --date "$date" --run-number "$run_number" --run-id "$run_id" \
+              --sha "$sha" --github-output "$plan"
+            while IFS='=' read -r name value; do
+              case "$name" in
+                should_release) should_release="$value" ;;
+                sha) planned_sha="$value" ;;
+                version) planned_version="$value" ;;
+                tag) tag="$value" ;;
+                previous_tag) previous_tag="$value" ;;
+                metadata_json) metadata_json="$value" ;;
+              esac
+            done < "$plan"
+            if [[ "$should_release" == true && ( "$planned_sha" != "$sha" || "$planned_version" != "$version" || "$metadata_json" != "$DAILY_METADATA_JSON" || "$previous_tag" != "$REQUESTED_PREVIOUS_TAG" ) ]]; then
+              echo "Daily release inputs no longer match the trusted resolver plan." >&2
+              exit 1
             fi
-            previous_sha="$(git rev-parse --verify "refs/tags/$previous_tag^{commit}")"
-            if ! git merge-base --is-ancestor "$previous_sha" "$sha"; then
-              echo "Previous release tag must be an ancestor of the selected commit: $previous_tag" >&2
+            if [[ "$should_release" != true && "$should_release" != false ]]; then exit 1; fi
+            if git show-ref --tags --verify --quiet "refs/tags/$tag" && [[ "$(git rev-parse "refs/tags/$tag^{commit}")" != "$sha" ]]; then
+              echo "Daily tag points at a different source commit: $tag" >&2
               exit 1
             fi
           else
-            previous_tag="$(git tag --merged "$sha" --sort=-version:refname --list 'workbench-v[0-9]*' | head -n 1)"
+            tag="workbench-v$version"
+            if git show-ref --tags --verify --quiet "refs/tags/$tag"; then
+              echo "Release tag already exists: $tag" >&2
+              exit 1
+            fi
+
+            previous_tag="$REQUESTED_PREVIOUS_TAG"
+            if [[ -n "$previous_tag" ]]; then
+              if [[ "$previous_tag" == workbench-v* ]]; then
+                :
+              elif [[ "$previous_tag" == v* ]]; then
+                previous_tag="workbench-$previous_tag"
+              else
+                previous_tag="workbench-v$previous_tag"
+              fi
+              previous_sha="$(git rev-parse --verify "refs/tags/$previous_tag^{commit}")"
+              if ! git merge-base --is-ancestor "$previous_sha" "$sha"; then
+                echo "Previous release tag must be an ancestor of the selected commit: $previous_tag" >&2
+                exit 1
+              fi
+            else
+              previous_tag="$(git tag --merged "$sha" --sort=-version:refname --list 'workbench-v[0-9]*' | head -n 1)"
+            fi
           fi
 
           upstream_sha=""
@@ -156,6 +263,9 @@ jobs:
           fi
 
           printf 'sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+          printf 'should_release=%s\n' "$should_release" >> "$GITHUB_OUTPUT"
+          printf 'release_channel=%s\n' "$RELEASE_CHANNEL" >> "$GITHUB_OUTPUT"
+          printf 'metadata_json=%s\n' "$metadata_json" >> "$GITHUB_OUTPUT"
           printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
           printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
           printf 'previous_tag=%s\n' "$previous_tag" >> "$GITHUB_OUTPUT"
@@ -169,6 +279,7 @@ jobs:
   quality:
     name: Workbench quality gates
     needs: resolve
+    if: needs.resolve.outputs.should_release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -200,6 +311,7 @@ jobs:
   build_wsl_runtime:
     name: Build WSL CLI runtime (linux-x64)
     needs: resolve
+    if: needs.resolve.outputs.should_release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -311,6 +423,7 @@ jobs:
     env:
       RELEASE_MODE: ${{ inputs.release_mode }}
       RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+      RELEASE_CHANNEL: ${{ needs.resolve.outputs.release_channel }}
       T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
     steps:
       - name: Checkout selected commit
@@ -432,7 +545,7 @@ jobs:
           set -euo pipefail
           mkdir -p release-publish
           shopt -s nullglob
-          for pattern in "release/*.dmg" "release/*.zip" "release/*.AppImage" "release/*.exe" "release/*.blockmap" "release/latest*.yml"; do
+          for pattern in "release/*.dmg" "release/*.zip" "release/*.AppImage" "release/*.exe" "release/*.blockmap" "release/$RELEASE_CHANNEL*.yml"; do
             for file in $pattern; do cp "$file" release-publish/; done
           done
 
@@ -453,20 +566,20 @@ jobs:
 
           # Signed clients must never select an unsigned Mac update.
           if [[ "$BUILD_PLATFORM" == mac && "${{ inputs.sign_macos }}" != true ]]; then
-            rm release-publish/latest-mac.yml
+            rm "release-publish/$RELEASE_CHANNEL-mac.yml"
           elif [[ "$BUILD_PLATFORM" == mac && "$BUILD_ARCH" == x64 ]]; then
-            mv release-publish/latest-mac.yml release-publish/latest-mac-x64.yml
+            mv "release-publish/$RELEASE_CHANNEL-mac.yml" "release-publish/$RELEASE_CHANNEL-mac-x64.yml"
           fi
           case "$BUILD_PLATFORM" in
             mac)
               suffix=""
               if [[ "$BUILD_ARCH" == x64 ]]; then suffix="-x64"; fi
               if [[ "${{ inputs.sign_macos }}" == true ]]; then
-                test -f "release-publish/latest-mac$suffix.yml"
+                test -f "release-publish/$RELEASE_CHANNEL-mac$suffix.yml"
               fi
               ;;
-            linux) test -f release-publish/latest-linux.yml ;;
-            win) test -f release-publish/latest.yml ;;
+            linux) test -f "release-publish/$RELEASE_CHANNEL-linux.yml" ;;
+            win) test -f "release-publish/$RELEASE_CHANNEL.yml" ;;
           esac
 
           status="UNSIGNED"
@@ -502,9 +615,12 @@ jobs:
           retention-days: 7
 
   release_draft:
-    name: Create draft GitHub Release
+    name: Create Workbench GitHub Release
     needs: [resolve, quality, build]
-    if: ${{ inputs.release_mode != 'build-only' && !failure() && !cancelled() }}
+    if: >-
+      always() && !cancelled() && inputs.release_mode != 'build-only' &&
+      needs.resolve.result == 'success' && needs.resolve.outputs.should_release == 'true' &&
+      needs.quality.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -513,6 +629,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
       RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+      RELEASE_CHANNEL: ${{ needs.resolve.outputs.release_channel }}
+      DAILY_METADATA_JSON: ${{ needs.resolve.outputs.metadata_json }}
       RELEASE_SHA: ${{ needs.resolve.outputs.sha }}
       PREVIOUS_TAG: ${{ needs.resolve.outputs.previous_tag }}
       UPSTREAM_SHA: ${{ needs.resolve.outputs.upstream_sha }}
@@ -522,7 +640,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ needs.resolve.outputs.sha }}
-          fetch-depth: 1
+          fetch-depth: ${{ needs.resolve.outputs.release_channel == 'nightly' && '0' || '1' }}
+
+      - name: Write daily release provenance
+        if: needs.resolve.outputs.release_channel == 'nightly'
+        run: |
+          mkdir -p release-assets
+          printf '%s\n' "$DAILY_METADATA_JSON" > release-assets/workbench-release.json
 
       - name: Setup manifest merge tools
         uses: voidzero-dev/setup-vp@v1
@@ -554,14 +678,14 @@ jobs:
           test -n "$(find release-assets -type f -print -quit)"
 
           if [[ "${{ inputs.sign_macos }}" == true ]]; then
-            node scripts/merge-update-manifests.ts --platform mac release-assets/latest-mac.yml release-assets/latest-mac-x64.yml
-            rm release-assets/latest-mac-x64.yml
+            node scripts/merge-update-manifests.ts --platform mac "release-assets/$RELEASE_CHANNEL-mac.yml" "release-assets/$RELEASE_CHANNEL-mac-x64.yml"
+            rm "release-assets/$RELEASE_CHANNEL-mac-x64.yml"
           else
-            test ! -f release-assets/latest-mac.yml
-            test ! -f release-assets/latest-mac-x64.yml
+            test ! -f "release-assets/$RELEASE_CHANNEL-mac.yml"
+            test ! -f "release-assets/$RELEASE_CHANNEL-mac-x64.yml"
           fi
-          test -f release-assets/latest.yml
-          test -f release-assets/latest-linux.yml
+          test -f "release-assets/$RELEASE_CHANNEL.yml"
+          test -f "release-assets/$RELEASE_CHANNEL-linux.yml"
 
           node --input-type=module -e '
             import { createHash } from "node:crypto";
@@ -609,9 +733,13 @@ jobs:
             printf -- '- Upstream merge base: `%s`\n' "${UPSTREAM_BASE:-unavailable}"
             printf -- '- Jira broker: `%s`\n' "$T3_WORKBENCH_JIRA_BROKER_URL"
             printf '\n## Verification\n\n- macOS arm64 and x64, Linux x64, and Windows x64 artifacts were built and checksummed.\n- See the platform build metadata for signing status.\n'
+            if [[ "$RELEASE_CHANNEL" == nightly ]]; then
+              printf '\n<!-- workbench-daily: %s -->\n' "$DAILY_METADATA_JSON"
+            fi
           } > "$RUNNER_TEMP/workbench-release-notes.md"
 
       - name: Create draft release
+        if: needs.resolve.outputs.release_channel == 'latest'
         run: |
           set -euo pipefail
           release_flags=()
@@ -626,3 +754,75 @@ jobs:
             --draft \
             --notes-file "$RUNNER_TEMP/workbench-release-notes.md"
           gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Publish a complete daily prerelease
+        if: needs.resolve.outputs.release_channel == 'nightly'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Refresh main and tags only for ancestry validation; build inputs and
+          # provenance remain the checkpoint captured by the scheduled caller.
+          git fetch origin +refs/heads/main:refs/remotes/origin/main --tags
+          date="$(jq -er '.date' <<< "$DAILY_METADATA_JSON")"
+          run_number="$(jq -er '.runNumber' <<< "$DAILY_METADATA_JSON")"
+          run_id="$(jq -er '.runId' <<< "$DAILY_METADATA_JSON")"
+          releases="$RUNNER_TEMP/workbench-releases-before-publish.json"
+          gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$releases"
+          plan="$RUNNER_TEMP/workbench-daily-before-publish"
+          node scripts/resolve-workbench-daily-release.ts \
+            --releases-file "$releases" \
+            --date "$date" --run-number "$run_number" --run-id "$run_id" \
+            --sha "$RELEASE_SHA" --github-output "$plan"
+          should_release=false
+          while IFS='=' read -r name value; do
+            case "$name" in
+              should_release) should_release="$value" ;;
+              metadata_json) planned_metadata="$value" ;;
+            esac
+          done < "$plan"
+          if [[ "$should_release" == false ]]; then
+            echo "The daily checkpoint is already published or superseded; leaving releases unchanged."
+            exit 0
+          fi
+          if [[ "$should_release" != true || "$planned_metadata" != "$DAILY_METADATA_JSON" ]]; then
+            echo "Daily provenance changed before publication." >&2
+            exit 1
+          fi
+
+          existing="$RUNNER_TEMP/workbench-existing-daily.json"
+          jq '[.[][] | select(.tag_name == env.RELEASE_TAG)] | if length <= 1 then .[0] else error("Duplicate release tag") end' "$releases" > "$existing"
+          if [[ "$(jq -r 'type' "$existing")" == null ]]; then
+            request="$RUNNER_TEMP/workbench-create-daily.json"
+            jq -n --rawfile body "$RUNNER_TEMP/workbench-release-notes.md" \
+              '{tag_name: env.RELEASE_TAG, target_commitish: env.RELEASE_SHA, name: env.RELEASE_TAG, body: $body, draft: true, prerelease: true, make_latest: "false"}' > "$request"
+            # Draft tags may not exist yet. Keep the ID returned by creation
+            # instead of querying the published-release endpoint by tag.
+            gh api --method POST "/repos/$GITHUB_REPOSITORY/releases" --input "$request" > "$existing"
+          fi
+          release_id="$(jq -er '.id' "$existing")"
+          # Published content is never recovered, replaced or clobbered. A
+          # resumable draft has already passed the resolver's provenance check.
+          gh api "/repos/$GITHUB_REPOSITORY/releases/$release_id" > "$existing"
+          jq -e '.draft == true and .prerelease == true and .tag_name == env.RELEASE_TAG and (.body | contains("<!-- workbench-daily: " + env.DAILY_METADATA_JSON + " -->"))' "$existing" > /dev/null
+          gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+          gh api "/repos/$GITHUB_REPOSITORY/releases/$release_id" > "$existing"
+          jq -e '.draft == true and .prerelease == true and .tag_name == env.RELEASE_TAG and (.body | contains("<!-- workbench-daily: " + env.DAILY_METADATA_JSON + " -->"))' "$existing" > /dev/null
+
+          # An interrupted upload must leave a draft, never an updater candidate.
+          RELEASE_JSON="$existing" node --input-type=module -e '
+            import { createHash } from "node:crypto";
+            import { readdirSync, readFileSync, statSync } from "node:fs";
+            import { join } from "node:path";
+            const release = JSON.parse(readFileSync(process.env.RELEASE_JSON, "utf8"));
+            const names = readdirSync("release-assets").sort();
+            if (release.assets.length !== names.length) throw new Error("Unexpected daily release assets");
+            for (const name of names) {
+              const local = join("release-assets", name);
+              const asset = release.assets.find((item) => item.name === name);
+              const digest = `sha256:${createHash("sha256").update(readFileSync(local)).digest("hex")}`;
+              if (!asset || asset.state !== "uploaded" || asset.size !== statSync(local).size || asset.digest !== digest) {
+                throw new Error(`Incomplete or mismatched daily release asset: ${name}`);
+              }
+            }
+          '
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false

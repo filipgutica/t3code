@@ -331,6 +331,15 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         undefined,
         undefined,
       );
+      const signedNightly = yield* createBuildConfig(
+        "mac",
+        "dmg",
+        "0.1.0-nightly.20261007.42",
+        true,
+        false,
+        undefined,
+        undefined,
+      );
       assert.equal(config.appId, "com.filipgutica.t3code.workbench");
       assert.equal(config.productName, "T3 Code Workbench");
       assert.equal(config.artifactName, "T3-Code-Workbench-${version}-${arch}.${ext}");
@@ -347,6 +356,15 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           owner: "filipgutica",
           repo: "t3code",
           channel: "latest",
+          releaseType: "prerelease",
+        },
+      ]);
+      assert.deepStrictEqual(signedNightly.publish, [
+        {
+          provider: "github",
+          owner: "filipgutica",
+          repo: "t3code",
+          channel: "nightly",
           releaseType: "prerelease",
         },
       ]);

@@ -8,7 +8,7 @@ workflow**.
 Workbench starts at version **0.0.1**, independently of the bundled upstream
 version. Enter the next Workbench version explicitly for later previews.
 
-Merging a pull request updates `main` without creating a release. Verified
+Merging a pull request updates `main` without immediately creating a release. Verified
 upstream syncs update `main` automatically after their focused gates and
 conflict-checked base update; a stale or protected update remains an open PR
 for manual review.
@@ -40,8 +40,39 @@ Linux remain unsigned. Missing Apple credentials stop the run before builds
 start. A signing or notarization failure fails the release rather than falling
 back to unsigned output.
 
-Review the draft and publish it manually. Only published releases become
-update candidates. Workbench uses the independent `workbench-vX.Y.Z` tag namespace.
+Review the stable draft and publish it manually. Only published releases become
+update candidates. Stable Workbench releases use the independent `workbench-vX.Y.Z` tag namespace.
+
+## Daily prereleases
+
+[Workbench daily desktop release](../../.github/workflows/workbench-daily-release.yml)
+reuses the same quality checks, WSL runtime, four-platform build matrix, and Apple signing requirements.
+Its proposed schedule is **18:17 UTC**, after the flexible daily review around **08:00 America/Vancouver**.
+That is 11:17 in Vancouver during daylight saving time and 10:17 during standard time.
+Review this exact build time before merging the scheduler change. GitHub may delay scheduled runs.
+The scheduler requires successful main feature CI and Workbench quality runs for its exact captured SHA.
+Missing, pending, or failed verification skips that day's build.
+
+The scheduler captures its main SHA and original run date. It builds only when that
+checkpoint differs from the last successful daily release or the current stable release.
+Drafts and failed builds do not advance the checkpoint. The SHA must remain in main's first-parent history.
+Each daily version uses the next stable patch, for example `0.0.22-nightly.20261007.9` after stable `0.0.21`.
+The tag is `workbench-daily-v0.0.22-nightly.20261007.9`; the final number is the workflow run number.
+The original UTC date and run number remain fixed on reruns.
+
+Daily releases publish automatically as prereleases after every platform, signature,
+manifest, and checksum check succeeds. They do not become GitHub's latest stable release.
+The publisher never changes a published daily release. A rerun can recover a matching
+draft, but it skips a successful publication or a checkpoint superseded by a successful release.
+This policy does not enable GitHub's repository-wide immutable-release setting.
+
+`workbench-release.json` records the source SHA, original package versions, provider compatibility pin,
+integrated upstream baseline, date, and run identifier. The same record appears in the release body.
+The integrated baseline is distinct from the observed upstream tip in the release notes.
+Missing signing credentials or incomplete daily publication stops the run; it does not create unsigned daily updates.
+
+The scheduler becomes active only after its workflow is merged into main.
+Review the draft implementation before enabling it. The implementation PR does not publish installer releases.
 
 ## Updates
 
@@ -50,15 +81,24 @@ release manually. Subsequent updater-enabled Windows installations, Linux
 AppImages, and signed macOS builds check GitHub releases automatically. Users
 choose when to download and restart; updates do not install silently.
 
-The updater considers only published `workbench-vX.Y.Z` releases in
-`filipgutica/t3code`, including preview releases. It ignores drafts and unrelated
-tags. Keep Workbench version numbers increasing. Unsigned macOS builds require
+Older clients that force the stable preference, including `0.0.21`, first need a stable release
+containing channel support. Alternatively, install the first daily build manually to opt in.
+
+The default **Stable** preference considers only published `workbench-vX.Y.Z` releases in
+`filipgutica/t3code`, including preview releases. In Settings, choose **Nightly** to opt into daily Workbench prereleases.
+The nightly preference also accepts a newer stable promotion. Stable `0.0.22` sorts after every `0.0.22-nightly.*` build.
+Publishing it does not renumber the upstream packages or provider compatibility pin.
+Switch back to Stable to return to the stable feed, including an explicit downgrade when necessary.
+Ordinary polling does not select older daily builds.
+Both preferences ignore drafts and unrelated tags. Keep Workbench version numbers increasing. Unsigned macOS builds require
 manual downloads because the native Mac updater requires code signing.
 
 Each build emits update metadata. Unsigned Mac releases omit their Mac update
 manifest so signed clients cannot select them. For signed builds, the release job merges both Mac manifests
 into `latest-mac.yml`, retains `latest.yml` for Windows and `latest-linux.yml`
-for Linux, and recomputes the final checksums after merging. Publish only after every platform and metadata check passes. Keep updater
+for Linux, and recomputes the final checksums after merging. Daily builds use the corresponding `nightly*.yml` manifests.
+The provider selects the manifest for the candidate's channel and operating system.
+Publish only after every platform and metadata check passes. Keep updater
 metadata attached while installed clients can still select that release.
 
 ## Required build configuration

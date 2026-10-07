@@ -1,0 +1,111 @@
+name: Workbench daily desktop release
+
+on:
+  schedule:
+    - cron: "17 18 * * *"
+
+# Keep successful checkpoints ordered, including when a failed run is retried.
+concurrency:
+  group: workbench-daily-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Resolve changed main checkpoint
+    if: github.repository == 'filipgutica/t3code' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      should_release: ${{ steps.resolve.outputs.should_release }}
+      reason: ${{ steps.resolve.outputs.reason }}
+      sha: ${{ steps.resolve.outputs.sha }}
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      previous_tag: ${{ steps.resolve.outputs.previous_tag }}
+      metadata_json: ${{ steps.resolve.outputs.metadata_json }}
+    steps:
+      - name: Checkout trusted main history
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup resolver Node runtime
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+
+      - id: resolve
+        name: Resolve daily version and successful checkpoint
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CAPTURED_SHA: ${{ github.sha }}
+          ORIGINAL_RUN_ID: ${{ github.run_id }}
+          ORIGINAL_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          # Build only a main snapshot whose latest push runs passed both fork
+          # gates. A missing, pending or failed run waits for the next schedule.
+          for workflow in workbench-ci.yml workbench-quality.yml; do
+            runs="$RUNNER_TEMP/$workflow-runs.json"
+            gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?event=push&head_sha=$CAPTURED_SHA&branch=main&per_page=100" > "$runs"
+            if ! RUNS_FILE="$runs" WORKFLOW_PATH=".github/workflows/$workflow" node --input-type=module -e '
+              import { readFileSync } from "node:fs";
+              const pages = JSON.parse(readFileSync(process.env.RUNS_FILE, "utf8"));
+              const runs = pages.flatMap((page) => page.workflow_runs).filter((run) =>
+                run.path === process.env.WORKFLOW_PATH && run.event === "push" &&
+                run.head_branch === "main" && run.head_sha === process.env.CAPTURED_SHA
+              );
+              runs.sort((a, b) => b.run_number - a.run_number || b.run_attempt - a.run_attempt);
+              const latest = runs[0];
+              if (!latest || latest.status !== "completed" || latest.conclusion !== "success") {
+                process.stdout.write(`Unverified main: ${process.env.WORKFLOW_PATH} ${latest?.status ?? "missing"}/${latest?.conclusion ?? "none"}\n`);
+                process.exitCode = 1;
+              }
+            '; then
+              printf 'should_release=false\nreason=unverified-main\nsha=%s\n' "$CAPTURED_SHA" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          # created_at survives reruns across midnight; a retry keeps its tag.
+          created_at="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$ORIGINAL_RUN_ID" --jq .created_at)"
+          date="$(date --utc --date "$created_at" +%Y%m%d)"
+          releases="$RUNNER_TEMP/workbench-releases.json"
+          gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$releases"
+          node scripts/resolve-workbench-daily-release.ts \
+            --releases-file "$releases" \
+            --date "$date" --run-number "$ORIGINAL_RUN_NUMBER" --run-id "$ORIGINAL_RUN_ID" \
+            --sha "$CAPTURED_SHA" --github-output "$GITHUB_OUTPUT"
+
+  release:
+    name: Build and publish changed daily checkpoint
+    needs: resolve
+    if: needs.resolve.outputs.should_release == 'true'
+    # A reusable workflow cannot elevate its caller's token permissions. Only
+    # its final release job retains this write permission; builds use read.
+    permissions:
+      contents: write
+    uses: ./.github/workflows/workbench-release.yml
+    with:
+      commit_sha: ${{ needs.resolve.outputs.sha }}
+      version: ${{ needs.resolve.outputs.version }}
+      previous_tag: ${{ needs.resolve.outputs.previous_tag }}
+      metadata_json: ${{ needs.resolve.outputs.metadata_json }}
+      release_channel: nightly
+      release_mode: release
+      sign_macos: true
+    secrets:
+      WORKBENCH_MAC_CSC_LINK: ${{ secrets.WORKBENCH_MAC_CSC_LINK }}
+      WORKBENCH_MAC_CSC_KEY_PASSWORD: ${{ secrets.WORKBENCH_MAC_CSC_KEY_PASSWORD }}
+      WORKBENCH_APPLE_API_KEY: ${{ secrets.WORKBENCH_APPLE_API_KEY }}
+      WORKBENCH_APPLE_API_KEY_ID: ${{ secrets.WORKBENCH_APPLE_API_KEY_ID }}
+      WORKBENCH_APPLE_API_ISSUER: ${{ secrets.WORKBENCH_APPLE_API_ISSUER }}
