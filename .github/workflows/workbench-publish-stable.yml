@@ -50,8 +50,11 @@ jobs:
       BUILD_RUN_ID: ${{ inputs.build_run_id }}
       RELEASE_VERSION: ${{ inputs.version }}
       RELEASE_SHA: ${{ inputs.commit_sha }}
-      EVIDENCE_DIR: ${{ runner.temp }}/workbench-stable-recovery
     steps:
+      - name: Set recovery evidence directory
+        shell: bash
+        run: echo "EVIDENCE_DIR=$RUNNER_TEMP/workbench-stable-recovery" >> "$GITHUB_ENV"
+
       - name: Checkout reviewed main workflow
         uses: actions/checkout@v6
         with:
