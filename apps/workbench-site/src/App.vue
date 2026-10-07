@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, useTemplateRef } from "vue";
+import { nextTick, onMounted, onUnmounted, ref } from "vue";
 import SiteNavigation from "./components/SiteNavigation.vue";
+import NavigationLinks from "./components/NavigationLinks.vue";
 import ProductImage from "./components/ProductImage.vue";
 import ScreenshotWalkthrough from "./components/ScreenshotWalkthrough.vue";
 import ImageLightbox from "./components/ImageLightbox.vue";
-import CommitBranch from "./components/CommitBranch.vue";
-import { useTrace } from "./composables/useTrace";
 import type { ProductImageDescriptor, WalkthroughStep } from "./images";
 
 const { images, walkthrough, base, repository, guide, downloads } = defineProps<{
@@ -20,13 +19,7 @@ const { images, walkthrough, base, repository, guide, downloads } = defineProps<
   guide: string;
   downloads: string;
 }>();
-const tools = [
-  { name: "annoterm", href: "https://filipgutica.github.io/annoterm/" },
-  { name: "wtree", href: "https://filipgutica.github.io/wtree/" },
-  { name: "devps", href: "https://filipgutica.github.io/devps/" },
-];
-const main = useTemplateRef<HTMLElement>("main");
-useTrace(main);
+const jiraImage = walkthrough.find((step) => step.id === "jira")?.image;
 const selected = ref(walkthrough[0]?.id ?? "ticket");
 const enhanced = ref(false);
 const viewer = ref(false);
@@ -79,7 +72,6 @@ onUnmounted(() => {
   <div :data-enhanced="enhanced">
     <a class="skip-link" href="#main">Skip to content</a>
     <div class="site-layout">
-      <SiteNavigation />
       <div class="site-content">
         <header class="site-header wrap">
           <a class="brand" :href="base" aria-label="T3 Code Workbench home"
@@ -91,9 +83,9 @@ onUnmounted(() => {
             <a :href="downloads">Downloads</a>
           </nav>
         </header>
-        <main id="main" ref="main" class="wrap">
-          <section class="hero" aria-labelledby="hero-heading" data-trace-section>
-            <CommitBranch lane="fork" />
+        <SiteNavigation />
+        <main id="main" class="wrap">
+          <section class="hero" aria-labelledby="hero-heading">
             <div class="section-body">
               <div class="hero-copy">
                 <div class="hero-summary">
@@ -123,12 +115,7 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section
-            class="section walkthrough-section"
-            aria-labelledby="walkthrough-heading"
-            data-trace-section
-          >
-            <CommitBranch lane="parallel" />
+          <section class="section walkthrough-section" aria-labelledby="walkthrough-heading">
             <div class="section-body">
               <div class="review-heading">
                 <h2 id="walkthrough-heading">From Ticket to review</h2>
@@ -149,12 +136,7 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section
-            class="section workspace-section"
-            aria-labelledby="scope-heading"
-            data-trace-section
-          >
-            <CommitBranch lane="merge" />
+          <section class="section workspace-section" aria-labelledby="scope-heading">
             <div class="section-body">
               <div class="section-copy">
                 <h2 id="scope-heading">Give every Ticket its own workspace</h2>
@@ -196,12 +178,7 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section
-            class="section review-section"
-            aria-labelledby="review-heading"
-            data-trace-section
-          >
-            <CommitBranch lane="main" />
+          <section class="section review-section" aria-labelledby="review-heading">
             <div class="section-body">
               <div class="review-heading">
                 <h2 id="review-heading">Review linked pull requests</h2>
@@ -220,8 +197,7 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section class="section jira-section" aria-labelledby="jira-heading" data-trace-section>
-            <CommitBranch lane="fork" />
+          <section class="section jira-section" aria-labelledby="jira-heading">
             <div class="section-body">
               <div class="section-copy">
                 <h2 id="jira-heading">Connect Jira when you need it</h2>
@@ -233,11 +209,16 @@ onUnmounted(() => {
                   >Explore the Jira workflow <span aria-hidden="true">↗</span></a
                 >
               </div>
+              <figure v-if="jiraImage" class="media-stage">
+                <ProductImage :image="jiraImage" @open="openImage" />
+                <figcaption>
+                  Assigned Jira issues, alongside the same local Ticket workflow.
+                </figcaption>
+              </figure>
             </div>
           </section>
 
-          <section class="closing section" aria-labelledby="closing-heading" data-trace-section>
-            <CommitBranch lane="merge" terminal />
+          <section class="closing section" aria-labelledby="closing-heading">
             <div class="section-body">
               <h2 id="closing-heading">Install Workbench alongside T3 Code</h2>
               <p>
@@ -264,10 +245,7 @@ onUnmounted(() => {
             open-source fork.
           </p>
           <a :href="repository">Browse the source <span aria-hidden="true">↗</span></a>
-          <nav class="footer-tools" aria-label="More from Filip">
-            <span>Also from Filip</span>
-            <a v-for="tool in tools" :key="tool.name" :href="tool.href">{{ tool.name }}</a>
-          </nav>
+          <NavigationLinks />
         </footer>
       </div>
     </div>

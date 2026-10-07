@@ -81,7 +81,14 @@ const atReadingTop = async (page: Page, id: string) =>
     await expect(hero).toHaveAttribute("fetchpriority", "high");
     const bounds = await hero.boundingBox();
     expect(bounds!.width).toBeLessThanOrEqual(width);
-    if (width <= 800) await page.getByRole("button", { name: "Menu", exact: true }).click();
+    expect(bounds!.y).toBeLessThan(900);
+    const download = page
+      .locator(".hero")
+      .getByRole("link", { name: "Download Workbench", exact: true });
+    await expect(download).toBeInViewport();
+    expect((await download.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    const projects = page.getByRole("navigation", { name: "Projects" });
+    await expect(projects.getByRole("link")).toHaveCount(5);
     await expect(
       page
         .getByRole("navigation", { name: "Projects" })
@@ -232,56 +239,26 @@ test("modifier click preserves the original PNG navigation", async ({ page, cont
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await opened.close();
 });
-test("drawer traps focus, dismisses, and focuses native anchor destinations", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+test("phone section navigation stays keyboard accessible across breakpoints", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
   await load(page);
-  const trigger = page.getByRole("button", { name: "Menu", exact: true });
-  await trigger.click();
-  const drawer = page.getByRole("dialog", { name: "Navigation" });
-  await expect(drawer).toBeVisible();
-  for (let index = 0; index < 16; index++) await page.keyboard.press("Tab");
-  expect(await drawer.evaluate((element) => element.contains(document.activeElement))).toBe(true);
-  await page.keyboard.press("Escape");
-  await expect(trigger).toBeFocused();
-  await trigger.click();
+  const nav = page.getByRole("navigation", { name: "On this page" });
+  const jira = nav.getByRole("link", { name: "Jira", exact: true });
+  await jira.focus();
+  await expect(jira).toBeFocused();
+  await expect(jira).toBeInViewport();
   await markScrollEnd(page);
-  await drawer.getByRole("link", { name: "Workspaces", exact: true }).click();
-  await expect(drawer).not.toBeVisible();
+  await page.keyboard.press("Enter");
   await ended(page);
-  await atReadingTop(page, "scope-heading");
-  await expect(page.locator("#scope-heading")).toBeFocused();
-  await trigger.click();
-  await page.locator(".fg-drawer__overlay").click({ position: { x: 380, y: 40 } });
-  await expect(drawer).not.toBeVisible();
-  await expect(trigger).toBeFocused();
-  await trigger.click();
+  await atReadingTop(page, "jira-heading");
+  await expect(page).toHaveURL(/#jira-heading$/);
+  await jira.focus();
+  await expect(jira).toBeFocused();
   await page.setViewportSize({ width: 1280, height: 900 });
-  await expect(drawer).not.toBeVisible();
-  await expect(
-    page
-      .getByRole("navigation", { name: "Projects" })
-      .getByRole("link", { name: "annoterm", exact: true }),
-  ).toBeFocused();
-});
-test("both breakpoint focus directions include a never-opened Menu", async ({ page }) => {
+  await expect(jira).toBeFocused();
   await page.setViewportSize({ width: 390, height: 844 });
-  await load(page);
-  const trigger = page.getByRole("button", { name: "Menu", exact: true });
-  await trigger.focus();
-  await page.setViewportSize({ width: 1280, height: 900 });
-  const first = page
-    .getByRole("navigation", { name: "Projects" })
-    .getByRole("link", { name: "annoterm", exact: true });
-  await expect(first).toBeFocused();
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(trigger).toBeFocused();
-  await page.setViewportSize({ width: 1280, height: 900 });
-  const guide = page
-    .getByRole("navigation", { name: "Main navigation" })
-    .getByRole("link", { name: "Guide", exact: true });
-  await guide.focus();
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(guide).toBeFocused();
+  await expect(jira).toBeFocused();
+  await noOverflow(page);
 });
 test("themes support saved choice, system changes, and cross-tab updates", async ({
   page,
@@ -308,19 +285,11 @@ test("themes support saved choice, system changes, and cross-tab updates", async
   );
   await other.close();
 });
-test("trace follows sections, cancels motion, and stays hidden on phones", async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await load(page);
-  await expect(page.locator(".trace-packet")).toHaveCount(1);
-  await expect(page.locator("[data-trace-section].is-current")).toHaveCount(1);
-  await page.evaluate(() =>
-    document.getElementById("scope-heading")?.scrollIntoView({ behavior: "instant" }),
-  );
-  await expect(page.locator(".workspace-section")).toHaveClass(/is-current/);
+test("reduced motion keeps section navigation and screenshot changes immediate", async ({
+  page,
+}) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await expect
-    .poll(() => page.locator(".trace-packet").evaluate((element) => element.getAnimations().length))
-    .toBe(0);
+  await load(page);
   await expect(page.locator("html")).toHaveCSS("scroll-behavior", "auto");
   await page.getByRole("tab", { name: "Workspace", exact: true }).click();
   await expect
@@ -330,7 +299,10 @@ test("trace follows sections, cancels motion, and stays hidden on phones", async
         .evaluate((element) => element.getAnimations().length),
     )
     .toBe(0);
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator(".trace-packet")).not.toBeVisible();
+  await page
+    .getByRole("navigation", { name: "On this page" })
+    .getByRole("link", { name: "Workspaces", exact: true })
+    .click();
+  await atReadingTop(page, "scope-heading");
   await noOverflow(page);
 });

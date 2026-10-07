@@ -17,7 +17,6 @@ import { test, expect } from "@playwright/test";
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
     ).toBeLessThanOrEqual(1);
-    if (width <= 800) await page.locator("summary.menu-toggle").click();
     const nav = page.getByRole("navigation", { name: "On this page" });
     await expect(nav).toBeVisible();
     await nav.getByRole("link", { name: "Review", exact: true }).click();

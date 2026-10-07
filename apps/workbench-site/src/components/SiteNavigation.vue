@@ -1,108 +1,25 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, useTemplateRef } from "vue";
-import { UiButton, UiDrawer, useActiveSection } from "@filipgutica/ui";
-import NavigationLinks from "./NavigationLinks.vue";
-import { useTheme } from "../composables/useTheme";
-
-const enhanced = ref(false);
-const mobile = ref(false);
-const open = ref(false);
-const header = useTemplateRef<HTMLElement>("header");
-const { choice, choose } = useTheme();
-const activeId = useActiveSection({
-  targetIds: [
-    "hero-heading",
-    "walkthrough-heading",
-    "scope-heading",
-    "review-heading",
-    "jira-heading",
-  ],
-});
-let media: MediaQueryList | undefined;
-let destination: HTMLElement | null = null;
-
-const syncBreakpoint = () => {
-  const leavingFocusedRail =
-    media?.matches &&
-    !mobile.value &&
-    header.value?.querySelector(".site-menu")?.contains(document.activeElement);
-  const leavingFocusedTrigger =
-    media?.matches === false &&
-    mobile.value &&
-    !open.value &&
-    header.value?.querySelector("button.menu-toggle") === document.activeElement;
-  mobile.value = media?.matches === true;
-  if (!mobile.value) open.value = false;
-  if (leavingFocusedRail) {
-    void nextTick(() =>
-      header.value
-        ?.querySelector<HTMLElement>("button.menu-toggle")
-        ?.focus({ preventScroll: true }),
-    );
-  } else if (leavingFocusedTrigger) {
-    void nextTick(() =>
-      header.value?.querySelector<HTMLElement>(".family a")?.focus({ preventScroll: true }),
-    );
-  }
-};
-const navigate = (href: string, event: MouseEvent) => {
-  if (
-    !open.value ||
-    event.button !== 0 ||
-    event.metaKey ||
-    event.ctrlKey ||
-    event.altKey ||
-    event.shiftKey
-  )
-    return;
-  destination = href.startsWith("#") ? document.getElementById(href.slice(1)) : null;
-  open.value = false;
-};
-const closeAutoFocus = (event: Event) => {
-  if (destination) {
-    event.preventDefault();
-    destination.tabIndex = -1;
-    destination.focus({ preventScroll: true });
-    destination = null;
-  } else if (!mobile.value) {
-    // The drawer trigger disappears when crossing into the desktop rail.
-    event.preventDefault();
-    void nextTick(() =>
-      header.value?.querySelector<HTMLElement>(".family a")?.focus({ preventScroll: true }),
-    );
-  }
-};
-onMounted(() => {
-  media = matchMedia("(max-width: 800px)");
-  syncBreakpoint();
-  enhanced.value = true;
-  media.addEventListener("change", syncBreakpoint);
-});
-onUnmounted(() => media?.removeEventListener("change", syncBreakpoint));
+import { useActiveSection } from "@filipgutica/ui";
+const sections = [
+  { id: "hero-heading", label: "Overview" },
+  { id: "walkthrough-heading", label: "Walkthrough" },
+  { id: "scope-heading", label: "Workspaces" },
+  { id: "review-heading", label: "Review" },
+  { id: "jira-heading", label: "Jira" },
+] as const;
+const activeId = useActiveSection({ targetIds: sections.map((section) => section.id) });
 </script>
 
 <template>
-  <aside
-    ref="header"
-    class="family-bar"
-    aria-label="Tool navigation"
-    :data-navigation-enhanced="enhanced"
-  >
-    <details v-if="!enhanced || !mobile" class="site-menu" :open="enhanced && !mobile">
-      <summary class="menu-toggle" aria-controls="site-menu-links">Menu</summary>
-      <NavigationLinks :active-id="activeId" :theme="choice" :enhanced="enhanced" @theme="choose" />
-    </details>
-    <UiDrawer v-else v-model:open="open" title="Navigation" @close-auto-focus="closeAutoFocus">
-      <template #trigger
-        ><UiButton variant="ghost" size="lg" class="menu-toggle">Menu</UiButton></template
+  <div class="section-navigation">
+    <nav class="section-nav wrap" aria-label="On this page">
+      <a
+        v-for="section in sections"
+        :key="section.id"
+        :href="`#${section.id}`"
+        :aria-current="activeId === section.id ? 'location' : undefined"
+        >{{ section.label }}</a
       >
-      <NavigationLinks
-        :active-id="activeId"
-        :theme="choice"
-        :enhanced="enhanced"
-        @theme="choose"
-        @navigate="navigate"
-      />
-    </UiDrawer>
-  </aside>
+    </nav>
+  </div>
 </template>
