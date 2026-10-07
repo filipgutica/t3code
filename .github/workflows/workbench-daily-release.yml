@@ -2,7 +2,8 @@ name: Workbench daily desktop release
 
 on:
   schedule:
-    - cron: "17 18 * * *"
+    - cron: "0 2 * * *"
+      timezone: "America/Vancouver"
 
 # Keep successful checkpoints ordered, including when a failed run is retried.
 concurrency:

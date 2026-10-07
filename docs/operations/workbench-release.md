@@ -47,9 +47,10 @@ update candidates. Stable Workbench releases use the independent `workbench-vX.Y
 
 [Workbench daily desktop release](../../.github/workflows/workbench-daily-release.yml)
 reuses the same quality checks, WSL runtime, four-platform build matrix, and Apple signing requirements.
-Its proposed schedule is **18:17 UTC**, after the flexible daily review around **08:00 America/Vancouver**.
-That is 11:17 in Vancouver during daylight saving time and 10:17 during standard time.
-Review this exact build time before merging the scheduler change. GitHub may delay scheduled runs.
+Its proposed schedule is nightly at **02:00 America/Vancouver**, using GitHub's
+[IANA timezone support](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onschedule).
+Timezone rules determine the UTC offset. If a clock change skips 02:00, GitHub advances the run to the next valid time.
+GitHub may delay or drop scheduled runs, so this is a target time rather than a guaranteed start.
 The scheduler requires successful main feature CI and Workbench quality runs for its exact captured SHA.
 Missing, pending, or failed verification skips that day's build.
 
