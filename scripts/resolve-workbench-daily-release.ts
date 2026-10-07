@@ -199,10 +199,12 @@ const run = () => {
   const main = new Set(git("rev-list", "--first-parent", "origin/main").split("\n"));
   if (!main.has(sha)) throw new Error("Daily source must be a first-parent main checkpoint");
   const releases = readReleases(values["releases-file"]);
-  const stable = releases
-    .filter((r) => !r.draft && !r.prerelease && r.published_at && STABLE_TAG.test(r.tag_name))
-    .sort((a, b) => compareReleaseVersions(b.tag_name.slice(11), a.tag_name.slice(11)))[0];
-  if (!stable) throw new Error("A published stable Workbench release is required");
+  const ordinary = releases
+    .filter((r) => !r.draft && r.published_at && STABLE_TAG.test(r.tag_name))
+    .sort((a, b) => compareReleaseVersions(b.tag_name.slice(11), a.tag_name.slice(11)));
+  const stable = ordinary.find((r) => !r.prerelease);
+  const versionFloor = ordinary[0];
+  if (!stable || !versionFloor) throw new Error("A published stable Workbench release is required");
   const stableSha = tagSource(stable.tag_name);
   if (!main.has(stableSha)) throw new Error("Stable source is outside first-parent main");
   const published = releases
@@ -249,8 +251,10 @@ const run = () => {
   ) {
     throw new Error("Source identity changed; refusing to resume its release");
   }
-  const stableVersion = stable.tag_name.slice("workbench-v".length);
-  const segments = stableVersion.split(".").map(Number);
+  // Ordinary previews are candidates on the existing Stable feed, but do not
+  // prove that a signed daily has delivered this checkpoint on every platform.
+  const floorVersion = versionFloor.tag_name.slice("workbench-v".length);
+  const segments = floorVersion.split(".").map(Number);
   const nextPatch = (segments[2] ?? 0) + 1;
   if (!segments.every(Number.isSafeInteger) || !Number.isSafeInteger(nextPatch))
     throw new Error("Stable version cannot be incremented safely");
@@ -274,7 +278,8 @@ const run = () => {
     ? "already-published"
     : sha === latest?.sourceSha || sha === stableSha
       ? "unchanged"
-      : (latest &&
+      : compareReleaseVersions(version, floorVersion) <= 0 ||
+          (latest &&
             (compareReleaseVersions(version, latest.version) <= 0 ||
               isAncestor(sha, latest.sourceSha))) ||
           isAncestor(sha, stableSha)

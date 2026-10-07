@@ -56,7 +56,9 @@ Missing, pending, or failed verification skips that day's build.
 The scheduler captures its main SHA and original run date. It builds only when that
 checkpoint differs from the last successful daily release or the current stable release.
 Drafts and failed builds do not advance the checkpoint. The SHA must remain in main's first-parent history.
-Each daily version uses the next stable patch, for example `0.0.22-nightly.20261007.9` after stable `0.0.21`.
+Each daily version increments the highest published `workbench-v*` version, including previews accepted by the Stable feed.
+For example, `0.0.22-nightly.20261007.9` follows stable `0.0.21`.
+An unsigned preview raises that version floor without advancing the successful signed-build checkpoint.
 The tag is `workbench-daily-v0.0.22-nightly.20261007.9`; the final number is the workflow run number.
 The original UTC date and run number remain fixed on reruns.
 

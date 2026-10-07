@@ -238,6 +238,30 @@ it("orders date/run builds numerically and lets the stable sequence advance inde
     ).toMatchObject({ should_release: "false", reason: "stale-run" });
   }));
 
+it("orders daily builds above ordinary previews without advancing the successful checkpoint", () =>
+  fixture((f) => {
+    const oldPlan = f.run().output;
+    const draft = f.published(oldPlan, true);
+    f.git("tag", "workbench-v0.0.22", f.sha);
+    const preview = {
+      ...f.stable,
+      tag_name: "workbench-v0.0.22",
+      prerelease: true,
+      assets: [{ name: "latest.yml" }, { name: "latest-linux.yml" }],
+    };
+    expect(f.run([f.stable, preview, draft], { number: "10", id: "124" }).output).toMatchObject({
+      should_release: "true",
+      reason: "build",
+      sha: f.sha,
+      version: "0.0.23-nightly.20261007.10",
+    });
+    expect(f.run([f.stable, preview, draft]).output).toMatchObject({
+      should_release: "false",
+      reason: "stale-run",
+      version: oldPlan.version,
+    });
+  }));
+
 it("fails closed on incomplete publication, forged provenance and sources outside main's first-parent history", () =>
   fixture((f) => {
     const first = f.run().output;
