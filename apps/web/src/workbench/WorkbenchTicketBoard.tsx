@@ -45,7 +45,11 @@ import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
-import { WorkbenchDraggableTicket, WorkbenchDropColumn } from "./WorkbenchBoardDrag";
+import {
+  WorkbenchDraggableTicket,
+  WorkbenchDropColumn,
+  type WorkbenchDraggableTicketRenderProps,
+} from "./WorkbenchBoardDrag";
 import { WorkbenchJiraDropDialog } from "./WorkbenchJiraDropDialog";
 import {
   canMoveWorkbenchBoardTicket,
@@ -99,7 +103,7 @@ import {
   isWorkbenchThreadArchived,
 } from "./workbench.logic";
 import { getWorkbenchBoardTicketPreview } from "./workbenchBoardTicketPreview";
-import { WorkbenchJiraIssueKey, WorkbenchTicketKindBadge } from "./WorkbenchTicketMetadata";
+import { WorkbenchTicketSourceBadge, WorkbenchTicketKindBadge } from "./WorkbenchTicketMetadata";
 import { getWorkbenchBoardColumns, orderWorkbenchTicketsByJiraRank } from "./workbenchJira.logic";
 
 const STATUS_DOT_CLASS: Record<WorkbenchTicketStatus, string> = {
@@ -114,6 +118,9 @@ type WorkbenchTicketBoardProps = {
   readonly projectId: WorkbenchProjectId;
   readonly mirrorColumns: ReadonlyArray<WorkbenchJiraBoardColumn> | null;
   readonly jiraConnected: boolean;
+  readonly jiraOwnershipKnown?: boolean;
+  readonly onPublishToJira?: (ticket: WorkbenchTicket) => void;
+  readonly jiraPublishDisabled?: boolean;
   readonly jiraStatusMappings: ReadonlyArray<WorkbenchJiraStatusMapping>;
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
@@ -310,6 +317,9 @@ type WorkbenchBoardContext = Pick<
   | "projectId"
   | "groupMode"
   | "jiraIssueLinksByTicketId"
+  | "jiraOwnershipKnown"
+  | "onPublishToJira"
+  | "jiraPublishDisabled"
   | "activeJiraTicketIds"
   | "selectedTicketId"
   | "repositoriesById"
@@ -466,20 +476,15 @@ function renderWorkbenchBoardTicket({
     pending,
     pendingTicketIds,
     onSelect,
-    onMove,
-    onJiraTransition,
-    onRegenerateSummary,
     onOpenThread,
     dragDisabled,
   } = board;
   const presentation = getWorkbenchBoardTicketPresentation({ ticket, board });
-  const { jiraIssueLink } = presentation;
+  const ticketDisabled = pendingTicketIds.has(ticket.id) || ticket.archivedAt != null;
+  const ticketDragDisabled = dragDisabled || ticketDisabled;
+  const attentionReasons = board.attentionReasonsByTicket.get(ticket.id) ?? [];
   return (
-    <WorkbenchDraggableTicket
-      key={ticket.id}
-      id={ticket.id}
-      disabled={dragDisabled || pendingTicketIds.has(ticket.id) || ticket.archivedAt != null}
-    >
+    <WorkbenchDraggableTicket key={ticket.id} id={ticket.id} disabled={ticketDragDisabled}>
       {({ attributes, listeners, setActivatorNodeRef }) => (
         <article
           onMouseDown={(event) => {
@@ -497,34 +502,13 @@ function renderWorkbenchBoardTicket({
           }`}
         >
           <div className="flex items-start gap-2">
-            <button
-              ref={setActivatorNodeRef}
-              {...(!dragDisabled && !pendingTicketIds.has(ticket.id) && ticket.archivedAt == null
-                ? attributes
-                : {})}
-              className={cn(
-                "min-w-0 flex-1 cursor-pointer text-left outline-none after:absolute after:inset-0 after:z-[1] after:rounded-lg after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring",
-                !dragDisabled &&
-                  !pendingTicketIds.has(ticket.id) &&
-                  ticket.archivedAt == null &&
-                  "cursor-grab active:cursor-grabbing",
-              )}
-              type="button"
-              onClick={() => onSelect(projectId, ticket.id)}
-            >
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <h3 className="line-clamp-3 min-w-0 break-words text-sm font-semibold leading-snug" />
-                  }
-                >
-                  {ticket.title}
-                </TooltipTrigger>
-                <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
-                  {ticket.title}
-                </TooltipPopup>
-              </Tooltip>
-            </button>
+            <WorkbenchBoardTicketTitle
+              ticket={ticket}
+              attributes={attributes}
+              setActivatorNodeRef={setActivatorNodeRef}
+              dragDisabled={ticketDragDisabled}
+              onSelect={() => onSelect(projectId, ticket.id)}
+            />
             <div
               data-workbench-no-drag=""
               className="relative z-10 flex min-w-0 shrink-0 items-center gap-1"
@@ -535,45 +519,119 @@ function renderWorkbenchBoardTicket({
                 ticketTitle={ticket.title}
                 onOpenThread={(threadId) => onOpenThread(ticket, threadId)}
               />
-              <WorkbenchTicketStatusMenu
-                key={`${environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
-                environmentId={environmentId}
-                ticket={ticket}
-                jiraIssueLink={jiraIssueLink ?? null}
-                disabled={pending || pendingTicketIds.has(ticket.id) || ticket.archivedAt != null}
-                onStatusChange={(status) => onMove(ticket, status)}
-                onJiraTransition={onJiraTransition}
-                trigger={
-                  <Button className="-mr-1 -mt-1 shrink-0" size="icon-xs" variant="ghost">
-                    <MoreHorizontalIcon />
-                  </Button>
-                }
-              >
-                <MenuItem
-                  disabled={
-                    pending ||
-                    pendingTicketIds.has(ticket.id) ||
-                    ticket.archivedAt != null ||
-                    ticket.generatedSummary?.status === "pending"
-                  }
-                  onClick={() => onRegenerateSummary(ticket)}
-                >
-                  {getWorkbenchTicketSummaryActionLabel(ticket.generatedSummary)}
-                </MenuItem>
-              </WorkbenchTicketStatusMenu>
+              <WorkbenchBoardTicketActions
+                presentation={presentation}
+                disabled={pending || ticketDisabled}
+              />
             </div>
           </div>
           {renderWorkbenchBoardTicketMetadata(presentation)}
-          {board.attentionMode !== "all" &&
-          (board.attentionReasonsByTicket.get(ticket.id)?.length ?? 0) > 0 ? (
-            <p className="mt-2 text-xs text-muted-foreground">
-              {board.attentionReasonsByTicket.get(ticket.id)?.join(" · ")}
-            </p>
+          {board.attentionMode !== "all" && attentionReasons.length > 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">{attentionReasons.join(" · ")}</p>
           ) : null}
           {renderWorkbenchBoardTicketThreadAction(presentation)}
         </article>
       )}
     </WorkbenchDraggableTicket>
+  );
+}
+
+function WorkbenchBoardTicketTitle({
+  ticket,
+  attributes,
+  setActivatorNodeRef,
+  dragDisabled,
+  onSelect,
+}: Pick<WorkbenchDraggableTicketRenderProps, "attributes" | "setActivatorNodeRef"> & {
+  ticket: WorkbenchTicket;
+  dragDisabled: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      ref={setActivatorNodeRef}
+      {...(!dragDisabled ? attributes : {})}
+      className={cn(
+        "min-w-0 flex-1 cursor-pointer text-left outline-none after:absolute after:inset-0 after:z-[1] after:rounded-lg after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring",
+        !dragDisabled && "cursor-grab active:cursor-grabbing",
+      )}
+      type="button"
+      onClick={onSelect}
+    >
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <h3 className="line-clamp-3 min-w-0 break-words text-sm font-semibold leading-snug" />
+          }
+        >
+          {ticket.title}
+        </TooltipTrigger>
+        <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
+          {ticket.title}
+        </TooltipPopup>
+      </Tooltip>
+    </button>
+  );
+}
+
+function WorkbenchBoardTicketActions({
+  presentation: { ticket, board, jiraIssueLink },
+  disabled,
+}: {
+  presentation: ReturnType<typeof getWorkbenchBoardTicketPresentation>;
+  disabled: boolean;
+}) {
+  return (
+    <WorkbenchTicketStatusMenu
+      key={`${board.environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
+      environmentId={board.environmentId}
+      ticket={ticket}
+      jiraIssueLink={jiraIssueLink ?? null}
+      disabled={disabled}
+      onStatusChange={(status) => board.onMove(ticket, status)}
+      onJiraTransition={board.onJiraTransition}
+      trigger={
+        <Button className="-mr-1 -mt-1 shrink-0" size="icon-xs" variant="ghost">
+          <MoreHorizontalIcon />
+        </Button>
+      }
+    >
+      <WorkbenchBoardTicketPublicationAction
+        ticket={ticket}
+        board={board}
+        jiraIssueLink={jiraIssueLink}
+        disabled={disabled}
+      />
+      <MenuItem
+        disabled={disabled || ticket.generatedSummary?.status === "pending"}
+        onClick={() => board.onRegenerateSummary(ticket)}
+      >
+        {getWorkbenchTicketSummaryActionLabel(ticket.generatedSummary)}
+      </MenuItem>
+    </WorkbenchTicketStatusMenu>
+  );
+}
+
+function WorkbenchBoardTicketPublicationAction({
+  ticket,
+  board,
+  jiraIssueLink,
+  disabled,
+}: Pick<
+  ReturnType<typeof getWorkbenchBoardTicketPresentation>,
+  "ticket" | "board" | "jiraIssueLink"
+> & {
+  disabled: boolean;
+}) {
+  const { onPublishToJira } = board;
+  if (jiraIssueLink || !onPublishToJira) return null;
+  return (
+    <MenuItem
+      disabled={disabled || board.jiraPublishDisabled}
+      onClick={() => onPublishToJira(ticket)}
+    >
+      Publish to Jira…
+    </MenuItem>
   );
 }
 
@@ -819,9 +877,12 @@ function renderWorkbenchBoardTicketMetadata(
     <div className="mt-2 flex min-w-0 flex-col gap-2 text-xs text-muted-foreground">
       {pendingTicketIds.has(ticket.id) ? <span role="status">Saving status…</span> : null}
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        {jiraIssueLink ? (
-          <WorkbenchJiraIssueKey issue={jiraIssueLink.issue} className="z-10" />
-        ) : null}
+        <WorkbenchTicketSourceBadge
+          ticketId={ticket.id}
+          jiraIssueLink={jiraIssueLink}
+          jiraOwnershipKnown={board.jiraOwnershipKnown ?? true}
+          className="z-10"
+        />
         <WorkbenchTicketKindBadge kind={ticket.kind} />
         {groupMode === "none" && epic ? (
           <Badge className="min-w-0 max-w-full" size="default" variant="outline">

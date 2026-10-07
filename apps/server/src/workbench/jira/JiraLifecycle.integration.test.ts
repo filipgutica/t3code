@@ -12,6 +12,7 @@ import {
   type WorkbenchJiraIssueLink,
   type WorkbenchJiraIssueSnapshot,
   type WorkbenchJiraSprint,
+  WorkbenchJiraOperationError,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
@@ -36,6 +37,7 @@ import {
   layer as jiraTicketImporterLayer,
 } from "@t3tools/workbench/jira/JiraTicketImporter";
 import * as JiraTicketWriteService from "@t3tools/workbench/jira/JiraTicketWriteService";
+import * as WorkbenchJiraService from "@t3tools/workbench/jira/WorkbenchJiraService";
 import {
   layerSql as jiraRepositoryLayer,
   WorkbenchJiraRepository,
@@ -226,6 +228,122 @@ const stubApi = (input: {
 
 describe("Jira lifecycle persistence", () => {
   it.effect(
+    "publishes one local Ticket in place and resumes sprint placement without another Jira issue",
+    () =>
+      Effect.gen(function* () {
+        const initialBinding = makeBinding({
+          selectedSprints: [{ id: 101, name: "Sprint 101" }],
+          observedActiveSprintIds: [101],
+        });
+        const { repository, workbench } = yield* seedState(initialBinding);
+        yield* repository.replaceIssueLinks(bindingId, []);
+        yield* repository.upsertConnection(
+          {
+            ...connection,
+            scopes: [...connection.scopes, "read:jira-user", "write:sprint:jira-software"],
+          },
+          "lifecycle-credential",
+        );
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`
+        INSERT INTO workbench_ticket_workspaces (
+          ticket_id, attempt_id, status, branch_name, error_message, created_at, updated_at
+        ) VALUES (
+          ${ticketId}, 'publication-attempt', 'ready', 'workbench/publication', NULL,
+          ${createdAt}, ${createdAt}
+        )
+      `;
+        yield* sql`
+        INSERT INTO workbench_ticket_workspace_repositories (
+          ticket_id, t3_project_id, attempt_id, is_primary, source_path, worktree_path,
+          branch_name, status, error_message, created_at, updated_at
+        ) VALUES (
+          ${ticketId}, ${primaryProjectId}, 'publication-attempt', 1, '/repos/primary', '/worktrees/publication',
+          'workbench/publication', 'ready', NULL, ${createdAt}, ${createdAt}
+        )
+      `;
+        const before = yield* workbench.getSnapshot;
+        const ticket = before.tickets.find((candidate) => candidate.id === ticketId)!;
+        const issue = {
+          ...makeIssue({ summary: ticket.title }),
+          description: ticket.markdown,
+        };
+        const createCalls = yield* Ref.make(0);
+        const placements = yield* Ref.make<Array<{ sprintId: number; issueKey: string }>>([]);
+        const api = JiraApi.of({
+          ...stubApi({
+            listSprints: () => Effect.succeed([makeSprint(101)]),
+            listAssignedSprintIssues: () => Effect.succeed([issue]),
+          }),
+          prepareIssueCreation: () =>
+            Effect.succeed({ issueTypeId: "10001", accountId: "account-1" }),
+          createIssue: () =>
+            Ref.update(createCalls, (count) => count + 1).pipe(
+              Effect.as({ id: issue.issueId, key: issue.key }),
+            ),
+          addIssueToSprint: ({ sprintId, issueKey }) =>
+            Effect.gen(function* () {
+              const attempts = yield* Ref.updateAndGet(placements, (entries) =>
+                entries.concat({ sprintId, issueKey }),
+              );
+              if (attempts.length === 1)
+                return yield* new WorkbenchJiraOperationError({
+                  code: "request_failed",
+                  message: "Sprint placement failed.",
+                });
+            }),
+        });
+        const importer = yield* JiraTicketImporter;
+        const sync = yield* makeSyncService({ api, importer, repository });
+        const auth = JiraAuthService.of({
+          begin: () => Effect.die("unexpected Jira auth start"),
+          complete: () => Effect.die("unexpected Jira auth completion"),
+          getAccessToken: () => Effect.succeed("lifecycle-access-token"),
+        });
+        const dependencies = Layer.mergeAll(
+          Layer.succeed(WorkbenchJiraRepository, repository),
+          Layer.succeed(JiraApi, api),
+          Layer.succeed(JiraAuthService, auth),
+          Layer.succeed(JiraSyncServiceTag, sync),
+          Layer.succeed(
+            HttpClient.HttpClient,
+            HttpClient.make(() => Effect.die("unexpected direct HTTP request")),
+          ),
+        );
+        const writer = yield* JiraTicketWriteService.make.pipe(Effect.provide(dependencies));
+        const service = yield* WorkbenchJiraService.make.pipe(
+          Effect.provide(dependencies),
+          Effect.provideService(JiraTicketWriteService.JiraTicketWriteService, writer),
+        );
+        const input = {
+          ...ticket,
+          jiraSprintId: 101,
+          existingLocalTicketRevision: ticket.revision,
+        };
+        const failed = yield* Effect.flip(service.createTicket(input));
+        assert.strictEqual(failed.code, "request_failed");
+        assert.deepStrictEqual(yield* workbench.getSnapshot, before);
+        const published = yield* service.createTicket(input);
+        assert.strictEqual(published.id, ticketId);
+        assert.strictEqual(published.markdown, ticket.markdown);
+        assert.deepStrictEqual(published.repositoryProjectIds, ticket.repositoryProjectIds);
+        const after = yield* workbench.getSnapshot;
+        assert.strictEqual(after.tickets.length, before.tickets.length);
+        assert.deepStrictEqual(after.assignments, before.assignments);
+        assert.deepStrictEqual(after.ticketWorkspaces, before.ticketWorkspaces);
+        const links = yield* repository.listIssueLinks(bindingId);
+        assert.strictEqual(links.length, 1);
+        assert.strictEqual(links[0]?.ticketId, ticketId);
+        assert.strictEqual(links[0]?.issue.key, "WB-1");
+        assert.strictEqual(yield* Ref.get(createCalls), 1);
+        assert.deepStrictEqual(yield* Ref.get(placements), [
+          { sprintId: 101, issueKey: "WB-1" },
+          { sprintId: 101, issueKey: "WB-1" },
+        ]);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect(
     "replaces an ended sprint without changing Ticket identity, repository scope, or assignment across service recreation",
     () =>
       Effect.gen(function* () {
@@ -237,6 +355,15 @@ describe("Jira lifecycle persistence", () => {
           observedActiveSprintIds: [101, 102],
         });
         const { repository, workbench } = yield* seedState(initialBinding);
+        const localTicket = yield* workbench.createTicket({
+          id: WorkbenchTicketId.make("local-only-ticket"),
+          projectId: workspaceId,
+          title: "Keep this Ticket local",
+          kind: "story",
+          markdown: "Local context",
+          primaryT3ProjectId: primaryProjectId,
+          createdAt,
+        });
         const importer = yield* JiraTicketImporter;
         let activeSprints: ReadonlyArray<WorkbenchJiraSprint> = [makeSprint(101), makeSprint(102)];
         let issueSummary = "Initial Jira projection";
@@ -262,6 +389,14 @@ describe("Jira lifecycle persistence", () => {
         const savedBinding = Option.getOrThrow(yield* repository.getBinding(bindingId));
         const links = yield* repository.listIssueLinks(bindingId);
         const snapshot = yield* workbench.getSnapshot;
+        assert.deepStrictEqual(
+          snapshot.tickets.find((ticket) => ticket.id === localTicket.id),
+          localTicket,
+        );
+        assert.strictEqual(
+          links.some((link) => link.ticketId === localTicket.id),
+          false,
+        );
         const savedTicket = snapshot.tickets.find((ticket) => ticket.id === ticketId);
         const savedAssignment = snapshot.assignments.find(
           (assignment) => assignment.ticketId === ticketId,

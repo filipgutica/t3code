@@ -37,10 +37,12 @@ function TicketPreview({
   ticket,
   details,
   status,
+  jiraOwnershipKnown,
 }: {
   readonly ticket: WorkbenchSidebarTicket;
   readonly details: WorkbenchSidebarTicketDetails | undefined;
   readonly status: string;
+  readonly jiraOwnershipKnown: boolean;
 }) {
   const pullRequests = details?.pullRequests ?? [];
   return (
@@ -55,7 +57,12 @@ function TicketPreview({
               {!details.issueLink.active ? " · Outside selected sprints" : ""}
             </dd>
           </>
-        ) : null}
+        ) : (
+          <>
+            <dt>Source</dt>
+            <dd>{jiraOwnershipKnown ? "Local" : "Checking Jira…"}</dd>
+          </>
+        )}
         {details ? (
           <>
             <dt>Type</dt>
@@ -112,47 +119,87 @@ function WorkbenchSidebarTicketLabel({
   ticket,
   details,
   status,
+  jiraOwnershipKnown,
 }: {
   readonly ticket: WorkbenchSidebarTicket;
   readonly details: WorkbenchSidebarTicketDetails | undefined;
   readonly status: string;
+  readonly jiraOwnershipKnown: boolean;
 }) {
-  const kind = details?.kind ?? "story";
-  const Icon = ticket.archivedAt ? ArchiveIcon : kind === "bug" ? BugIcon : BookOpenIcon;
-  const iconTone = ticket.archivedAt ? "text-sidebar-muted-foreground/60" : TICKET_ICON_TONE[kind];
-  const pullRequestCount = details?.environmentId ? details.pullRequests.length : 0;
   const { attentionSignalsByTicket } = useWorkbenchAttentionData();
   const hasAttention = (attentionSignalsByTicket.get(ticket.id)?.length ?? 0) > 0;
 
   return (
     <span className="flex min-w-0 flex-1 flex-col gap-1">
-      <span className="flex min-w-0 items-start gap-2">
-        <span aria-hidden className={`mt-0.5 size-3.5 shrink-0 ${iconTone}`}>
-          <Icon className="size-3.5" />
-        </span>
-        <span className={`flex min-w-0 flex-1 items-center gap-1 ${hasAttention ? "pe-6" : ""}`}>
-          <span className="min-w-0 flex-1 truncate">{ticket.title}</span>
-          {details?.attentionLabel ? (
-            <CircleAlertIcon
-              aria-label={details.attentionLabel}
-              className="size-3 shrink-0 text-warning"
-            />
-          ) : null}
-        </span>
+      <WorkbenchSidebarTicketTitle ticket={ticket} details={details} hasAttention={hasAttention} />
+      <WorkbenchSidebarTicketStatus
+        ticket={ticket}
+        details={details}
+        status={status}
+        jiraOwnershipKnown={jiraOwnershipKnown}
+      />
+    </span>
+  );
+}
+
+function WorkbenchSidebarTicketTitle({
+  ticket,
+  details,
+  hasAttention,
+}: {
+  readonly ticket: WorkbenchSidebarTicket;
+  readonly details: WorkbenchSidebarTicketDetails | undefined;
+  readonly hasAttention: boolean;
+}) {
+  const kind = details?.kind ?? "story";
+  const Icon = ticket.archivedAt ? ArchiveIcon : kind === "bug" ? BugIcon : BookOpenIcon;
+  const iconTone = ticket.archivedAt ? "text-sidebar-muted-foreground/60" : TICKET_ICON_TONE[kind];
+
+  return (
+    <span className="flex min-w-0 items-start gap-2">
+      <span aria-hidden className={`mt-0.5 size-3.5 shrink-0 ${iconTone}`}>
+        <Icon className="size-3.5" />
       </span>
-      <span
-        className={`flex min-w-0 items-center gap-1 text-2xs font-normal text-sidebar-muted-foreground ${pullRequestCount > 1 ? "pe-20" : pullRequestCount === 1 ? "pe-14" : ""}`}
-      >
-        <span
-          aria-hidden
-          className={`size-1.5 shrink-0 rounded-full ${TICKET_STATUS_DOT_TONE[ticket.status]}`}
-        />
-        {details?.issueLink ? (
-          <span className="min-w-0 truncate font-mono">{details.issueLink.issue.key}</span>
+      <span className={`flex min-w-0 flex-1 items-center gap-1 ${hasAttention ? "pe-6" : ""}`}>
+        <span className="min-w-0 flex-1 truncate">{ticket.title}</span>
+        {details?.attentionLabel ? (
+          <CircleAlertIcon
+            aria-label={details.attentionLabel}
+            className="size-3 shrink-0 text-warning"
+          />
         ) : null}
-        {details?.issueLink ? <span aria-hidden>·</span> : null}
-        <span className="truncate">{status}</span>
       </span>
+    </span>
+  );
+}
+
+function WorkbenchSidebarTicketStatus({
+  ticket,
+  details,
+  status,
+  jiraOwnershipKnown,
+}: {
+  readonly ticket: WorkbenchSidebarTicket;
+  readonly details: WorkbenchSidebarTicketDetails | undefined;
+  readonly status: string;
+  readonly jiraOwnershipKnown: boolean;
+}) {
+  const pullRequestCount = details?.environmentId ? details.pullRequests.length : 0;
+  return (
+    <span
+      className={`flex min-w-0 items-center gap-1 text-2xs font-normal text-sidebar-muted-foreground ${pullRequestCount > 1 ? "pe-20" : pullRequestCount === 1 ? "pe-14" : ""}`}
+    >
+      <span
+        aria-hidden
+        className={`size-1.5 shrink-0 rounded-full ${TICKET_STATUS_DOT_TONE[ticket.status]}`}
+      />
+      {details?.issueLink ? (
+        <span className="min-w-0 truncate font-mono">Jira · {details.issueLink.issue.key}</span>
+      ) : (
+        <span className="shrink-0">{jiraOwnershipKnown ? "Local" : "Checking Jira…"}</span>
+      )}
+      <span aria-hidden>·</span>
+      <span className="truncate">{status}</span>
     </span>
   );
 }
@@ -262,14 +309,26 @@ export function WorkbenchSidebarTicketButton({
         size="lg"
         className="h-auto min-h-12 min-w-0 flex-1 items-start"
         tooltip={{
-          children: <TicketPreview ticket={ticket} details={details} status={status} />,
+          children: (
+            <TicketPreview
+              ticket={ticket}
+              details={details}
+              status={status}
+              jiraOwnershipKnown={jiraOwnershipKnown}
+            />
+          ),
           hidden: false,
           align: "start",
           variant: "glass",
           className: "max-w-80 text-left whitespace-normal",
         }}
       >
-        <WorkbenchSidebarTicketLabel ticket={ticket} details={details} status={status} />
+        <WorkbenchSidebarTicketLabel
+          ticket={ticket}
+          details={details}
+          status={status}
+          jiraOwnershipKnown={jiraOwnershipKnown}
+        />
       </SidebarMenuButton>
       {details?.environmentId ? (
         <div className="absolute end-2 top-2 z-10">

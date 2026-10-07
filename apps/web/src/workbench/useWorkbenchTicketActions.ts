@@ -4,8 +4,9 @@ import type {
   WorkbenchTicket,
   WorkbenchSnapshot,
   WorkbenchJiraSnapshot,
+  WorkbenchProjectId,
 } from "@t3tools/contracts";
-import { useState, type RefObject } from "react";
+import { useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
 import { reportWorkbenchCommandFailure } from "./workbenchPageCommands";
@@ -21,6 +22,7 @@ import {
 import type { useOptimisticWorkbenchStatus } from "./useOptimisticWorkbenchStatus";
 import type { useWorkbenchJiraBindings } from "./useWorkbenchJiraBindings";
 import type { WorkbenchJiraTransitionSelection } from "./WorkbenchTicketStatusMenu";
+import { useWorkbenchTicketPublishing } from "./useWorkbenchTicketPublishing";
 import {
   getWorkbenchRepositoryScope,
   isWorkbenchRepositoryScopeEqual,
@@ -44,6 +46,7 @@ type WorkbenchTicketPatch = Partial<
 
 export function useWorkbenchTicketActions({
   environmentId,
+  selectedProjectId,
   pendingAction,
   setPendingAction,
   setError,
@@ -62,8 +65,9 @@ export function useWorkbenchTicketActions({
   closeWorkItem,
 }: {
   readonly environmentId: EnvironmentId | null;
+  readonly selectedProjectId: WorkbenchProjectId | null;
   readonly pendingAction: string | null;
-  readonly setPendingAction: (action: string | null) => void;
+  readonly setPendingAction: Dispatch<SetStateAction<string | null>>;
   readonly setError: (message: string | null) => void;
   readonly optimisticStatus: ReturnType<typeof useOptimisticWorkbenchStatus>;
   readonly jiraOwnershipKnown: boolean;
@@ -82,6 +86,18 @@ export function useWorkbenchTicketActions({
   readonly clearTicketDraft: (environmentId: EnvironmentId, ticketId: WorkbenchTicketId) => void;
   readonly closeWorkItem: () => void;
 }) {
+  const ticketPublishing = useWorkbenchTicketPublishing({
+    environmentId,
+    selectedProjectId,
+    snapshot,
+    jiraSnapshot,
+    ticketDrafts,
+    pendingAction,
+    setPendingAction,
+    setError,
+    refreshWorkbenchSnapshot,
+    refreshJiraSnapshot,
+  });
   const updateTicket = useAtomCommand(workbenchEnvironment.updateTicket, { reportFailure: false });
   const regenerateTicketSummary = useAtomCommand(workbenchEnvironment.regenerateTicketSummary, {
     reportFailure: false,
@@ -534,6 +550,7 @@ export function useWorkbenchTicketActions({
   };
 
   return {
+    ...ticketPublishing,
     repositoryScopeDraft,
     editRepositories,
     changeRepositoryScope,

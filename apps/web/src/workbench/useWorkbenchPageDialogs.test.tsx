@@ -2,6 +2,7 @@ import {
   EnvironmentId,
   ProjectId,
   WorkbenchProjectId,
+  WorkbenchTicketId,
   type WorkbenchSnapshot,
 } from "@t3tools/contracts";
 import {
@@ -12,13 +13,14 @@ import {
   RouterContextProvider,
   useLocation,
 } from "@tanstack/react-router";
-import { act } from "react";
+import { act, useEffect } from "react";
 import { create } from "react-test-renderer";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { useWorkbenchPageDialogs } from "./useWorkbenchPageDialogs";
 import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
 import { parseWorkbenchSearch } from "./workbenchSearch";
-vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
+const command = vi.hoisted(() => vi.fn());
+vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => command }));
 const environmentId = EnvironmentId.make("remote");
 const workspaceId = WorkbenchProjectId.make("workspace");
 const time = "2026-09-27T00:00:00.000Z";
@@ -38,8 +40,9 @@ const snapshot: WorkbenchSnapshot = {
   reservedThreadIds: [],
   ticketWorkspaces: [],
 };
-const setError = () => {};
+const setError = vi.fn();
 const setPendingAction = () => {};
+let latestDialogs: ReturnType<typeof useWorkbenchPageDialogs>;
 function Harness({ data }: { data: WorkbenchSnapshot | null }) {
   const location = useLocation();
   const search = parseWorkbenchSearch(location.search);
@@ -56,10 +59,14 @@ function Harness({ data }: { data: WorkbenchSnapshot | null }) {
   const dialogs = useWorkbenchPageDialogs({
     environmentId,
     projects: [],
+    localOnlySupported: false,
     selection,
     setError,
     setPendingAction,
   });
+  useEffect(() => {
+    latestDialogs = dialogs;
+  }, [dialogs]);
   return (
     <button
       data-open={dialogs.ticketDialogOpen}
@@ -137,6 +144,24 @@ describe("palette Ticket creation intent", () => {
       });
       expect(mounted.root.findByType("button").props["data-open"]).toBe(true);
       expect(router.state.location.search).not.toHaveProperty("create");
+      await act(async () => {
+        expect(
+          await latestDialogs.submitTicket({
+            id: WorkbenchTicketId.make("local-ticket"),
+            title: "Keep local",
+            markdown: "",
+            kind: "story",
+            epicId: null,
+            primaryT3ProjectId: ProjectId.make("repo"),
+            repositoryProjectIds: [ProjectId.make("repo")],
+            localOnly: true,
+          }),
+        ).toBe(false);
+      });
+      expect(command).not.toHaveBeenCalled();
+      expect(setError).toHaveBeenLastCalledWith(
+        "Update this environment before creating local-only Tickets.",
+      );
     } finally {
       await act(async () => renderer?.unmount());
       vi.unstubAllGlobals();

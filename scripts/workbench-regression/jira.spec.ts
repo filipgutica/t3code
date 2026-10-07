@@ -112,7 +112,9 @@ test.describe("Jira Workbench integration @live", () => {
     await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=demo-jira"));
     await expect(page.getByRole("heading", { name: "Orbit Jira", exact: true })).toBeVisible();
     for (const link of links) {
-      await expect(page.getByText(link.issue.key, { exact: true }).first()).toBeVisible();
+      await expect(
+        page.getByText(`Jira · ${link.issue.key}`, { exact: true }).first(),
+      ).toBeVisible();
     }
 
     const dialog = await openJiraDialog(page, demo);

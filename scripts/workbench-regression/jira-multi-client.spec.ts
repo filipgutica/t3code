@@ -161,7 +161,9 @@ test.describe("Jira multi-sprint selection and client conflicts @live", () => {
       expect(new Set(activeLinks.map((candidate) => candidate.issue.key))).toEqual(
         new Set(baselineLinks.map((candidate) => candidate.issue.key)),
       );
-      await expect(page.getByText(originalIssue.key, { exact: true }).first()).toBeVisible();
+      await expect(
+        page.getByText(`Jira · ${originalIssue.key}`, { exact: true }).first(),
+      ).toBeVisible();
 
       const afterWorkbench = await snapshot(demo);
       const ticketAfterImport = afterWorkbench.tickets.find(

@@ -212,6 +212,8 @@ export const WorkbenchCreateTicketInput = Schema.Struct({
   markdown: WorkbenchTicket.fields.markdown,
   primaryT3ProjectId: ProjectId,
   repositoryProjectIds: Schema.optionalKey(Schema.Array(ProjectId).check(Schema.isMinLength(1))),
+  /** Keep a new Ticket local even when its Workspace is connected to Jira. */
+  localOnly: Schema.optionalKey(Schema.Boolean),
   /** Selects the target Jira sprint when the Workspace has more than one. */
   jiraSprintId: Schema.optionalKey(PositiveInt),
   /** Explicitly publish an existing local Ticket without replacing its identity. */

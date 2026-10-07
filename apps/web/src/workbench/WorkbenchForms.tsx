@@ -147,8 +147,9 @@ import {
   WorkbenchCheckoutDetails,
   WorkbenchThreadCheckoutDetails,
 } from "./WorkbenchCheckoutDetails";
-import { WorkbenchJiraIssueKey, WorkbenchTicketKindBadge } from "./WorkbenchTicketMetadata";
+import { WorkbenchTicketSourceBadge, WorkbenchTicketKindBadge } from "./WorkbenchTicketMetadata";
 import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
+import { WorkbenchJiraSprintSelect } from "./WorkbenchJiraSprintSelect";
 import { WorkbenchTicketPullRequests } from "./WorkbenchTicketPullRequests";
 import {
   WorkbenchTicketPanelHeader,
@@ -172,6 +173,7 @@ export function WorkbenchEpicDetail({
   repositoriesById,
   assignmentsByTicket,
   jiraIssueLinksByTicketId,
+  jiraOwnershipKnown,
   pending,
   error,
   onBack,
@@ -187,6 +189,7 @@ export function WorkbenchEpicDetail({
   readonly repositoriesById: ReadonlyMap<Project["id"], Project>;
   readonly assignmentsByTicket: ReadonlyMap<WorkbenchTicket["id"], WorkbenchAssignment>;
   readonly jiraIssueLinksByTicketId: ReadonlyMap<WorkbenchTicket["id"], WorkbenchJiraIssueLink>;
+  readonly jiraOwnershipKnown: boolean;
   readonly pending: boolean;
   readonly error: string | null;
   readonly onBack: () => void;
@@ -256,6 +259,7 @@ export function WorkbenchEpicDetail({
               repositoriesById={repositoriesById}
               assignmentsByTicket={assignmentsByTicket}
               jiraIssueLinksByTicketId={jiraIssueLinksByTicketId}
+              jiraOwnershipKnown={jiraOwnershipKnown}
               pending={pending}
               onOpenTicket={onOpenTicket}
               onCreateTicket={onCreateTicket}
@@ -472,8 +476,11 @@ export function WorkbenchTicketDialog({
   open,
   linkedProjects,
   epics,
+  jiraEpics = epics,
   initialEpicId,
   jiraBinding = null,
+  localOnlySupported = false,
+  jiraOwnershipKnown,
   pending,
   error,
   onOpenChange,
@@ -482,8 +489,11 @@ export function WorkbenchTicketDialog({
   readonly open: boolean;
   readonly linkedProjects: ReadonlyArray<Project>;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
+  readonly jiraEpics?: ReadonlyArray<WorkbenchEpic>;
   readonly initialEpicId: WorkbenchEpicId | null;
   readonly jiraBinding?: WorkbenchJiraBinding | null;
+  readonly localOnlySupported?: boolean;
+  readonly jiraOwnershipKnown: boolean;
   readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
   readonly pending: boolean;
   readonly error: string | null;
@@ -492,6 +502,8 @@ export function WorkbenchTicketDialog({
 }) {
   const {
     requestId,
+    localOnly,
+    setLocalOnly,
     jiraSprintId,
     setJiraSprintId,
     title,
@@ -508,6 +520,15 @@ export function WorkbenchTicketDialog({
     setPrimaryProjectId,
     handleOpenChange,
   } = useWorkbenchCreateTicketDraft({ initialEpicId, pending, onOpenChange });
+  const { creationBinding, localOnlyUnavailable, availableEpics, selectedEpicId } =
+    getWorkbenchCreateTicketDestination({
+      localOnly,
+      localOnlySupported,
+      jiraBinding,
+      epics,
+      jiraEpics,
+      epicId,
+    });
   const { selectedRepositoryProjectIds, selectedProjectId } = getWorkbenchCreateTicketRepositories({
     linkedProjects,
     repositoryProjectIds,
@@ -515,35 +536,32 @@ export function WorkbenchTicketDialog({
   });
   const { jiraSprints, selectedSprintId, createLabel, description } =
     getWorkbenchCreateTicketJiraPresentation({
-      jiraBinding,
+      jiraBinding: creationBinding,
       jiraSprintId,
       pending,
     });
-  const submit = (event: FormEvent) => {
+  const cannotCreate =
+    pending ||
+    !jiraOwnershipKnown ||
+    localOnlyUnavailable ||
+    title.trim().length === 0 ||
+    selectedProjectId === null ||
+    (creationBinding !== null && (!creationBinding.active || selectedSprintId === undefined));
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (
-      pending ||
-      title.trim().length === 0 ||
-      selectedProjectId === null ||
-      (jiraBinding !== null && (!jiraBinding.active || selectedSprintId === undefined))
-    )
-      return;
-    void (async () => {
-      if (
-        !(await onCreate({
-          id: requestId,
-          title,
-          markdown,
-          kind,
-          epicId,
-          repositoryProjectIds: selectedRepositoryProjectIds,
-          primaryT3ProjectId: selectedProjectId,
-          ...(selectedSprintId === undefined ? {} : { jiraSprintId: selectedSprintId }),
-        }))
-      )
-        return;
-      handleOpenChange(false);
-    })();
+    if (cannotCreate || selectedProjectId === null) return;
+    const created = await onCreate({
+      id: requestId,
+      title,
+      markdown,
+      kind,
+      epicId: selectedEpicId,
+      repositoryProjectIds: selectedRepositoryProjectIds,
+      primaryT3ProjectId: selectedProjectId,
+      ...(localOnly ? { localOnly: true } : {}),
+      ...(selectedSprintId === undefined ? {} : { jiraSprintId: selectedSprintId }),
+    });
+    if (created) handleOpenChange(false);
   };
 
   return (
@@ -551,22 +569,21 @@ export function WorkbenchTicketDialog({
       <DialogPopup>
         <DialogHeader>
           <DialogTitle>Create Ticket</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogDescription>
+            {getWorkbenchCreateTicketDescription({ jiraOwnershipKnown, localOnly, description })}
+          </DialogDescription>
         </DialogHeader>
         <DialogPanel>
           <form id="create-workbench-ticket" className="space-y-5" onSubmit={submit}>
             {error ? <WorkbenchInlineError message={error} /> : null}
-            {jiraBinding && !jiraBinding.active ? (
-              <WorkbenchInlineError message="Resume the Jira connection before creating a Ticket." />
-            ) : null}
-            {jiraBinding ? (
-              <WorkbenchCreateTicketSprint
-                pending={pending}
-                jiraSprints={jiraSprints}
-                selectedSprintId={selectedSprintId}
-                setJiraSprintId={setJiraSprintId}
-              />
-            ) : null}
+            <WorkbenchCreateTicketDestination
+              jiraBinding={jiraBinding}
+              localOnlySupported={localOnlySupported}
+              localOnly={localOnly}
+              pending={pending}
+              setLocalOnly={setLocalOnly}
+              sprintSelection={{ jiraSprints, selectedSprintId, setJiraSprintId }}
+            />
             <WorkbenchCreateTicketKind
               kind={kind}
               markdown={markdown}
@@ -584,11 +601,11 @@ export function WorkbenchTicketDialog({
               />
             </div>
             <WorkbenchCreateTicketEpic
-              jiraBinding={jiraBinding}
+              jiraBinding={creationBinding}
               onCreateEpic={onCreateEpic}
-              epics={epics}
+              epics={availableEpics}
               pending={pending}
-              epicId={epicId}
+              epicId={selectedEpicId}
               setEpicId={setEpicId}
             />
             <div className="space-y-1.5">
@@ -618,12 +635,7 @@ export function WorkbenchTicketDialog({
             form="create-workbench-ticket"
             aria-label={createLabel}
             aria-busy={pending}
-            disabled={
-              pending ||
-              title.trim().length === 0 ||
-              selectedProjectId === null ||
-              (jiraBinding !== null && (!jiraBinding.active || selectedSprintId === undefined))
-            }
+            disabled={cannotCreate}
             type="submit"
           >
             {pending ? <LoaderCircleIcon className="animate-spin" /> : <PlusIcon />}
@@ -632,6 +644,115 @@ export function WorkbenchTicketDialog({
         </DialogFooter>
       </DialogPopup>
     </Dialog>
+  );
+}
+
+function getWorkbenchCreateTicketDestination({
+  localOnly,
+  localOnlySupported,
+  jiraBinding,
+  epics,
+  jiraEpics,
+  epicId,
+}: {
+  localOnly: boolean;
+  localOnlySupported: boolean;
+  jiraBinding: WorkbenchJiraBinding | null;
+  epics: ReadonlyArray<WorkbenchEpic>;
+  jiraEpics: ReadonlyArray<WorkbenchEpic>;
+  epicId: WorkbenchEpicId | null;
+}) {
+  const creationBinding = localOnly ? null : jiraBinding;
+  const availableEpics = creationBinding ? jiraEpics : epics;
+  return {
+    creationBinding,
+    localOnlyUnavailable: localOnly && !localOnlySupported,
+    availableEpics,
+    selectedEpicId: availableEpics.some((epic) => epic.id === epicId) ? epicId : null,
+  };
+}
+
+function getWorkbenchCreateTicketDescription({
+  jiraOwnershipKnown,
+  localOnly,
+  description,
+}: {
+  jiraOwnershipKnown: boolean;
+  localOnly: boolean;
+  description: string;
+}) {
+  if (!jiraOwnershipKnown)
+    return "Checking Jira connection details before choosing where to create this Ticket.";
+  if (localOnly) return "Keep this Ticket in Workbench without creating a Jira issue.";
+  return description;
+}
+
+function WorkbenchCreateTicketDestination({
+  jiraBinding,
+  localOnlySupported,
+  localOnly,
+  pending,
+  setLocalOnly,
+  sprintSelection,
+}: {
+  jiraBinding: WorkbenchJiraBinding | null;
+  localOnlySupported: boolean;
+  localOnly: boolean;
+  pending: boolean;
+  setLocalOnly: (value: boolean) => void;
+  sprintSelection: Omit<Parameters<typeof WorkbenchJiraSprintSelect>[0], "pending">;
+}) {
+  const creationBinding = localOnly ? null : jiraBinding;
+  return (
+    <>
+      {jiraBinding && localOnlySupported ? (
+        <WorkbenchCreateTicketSourceSelect
+          pending={pending}
+          localOnly={localOnly}
+          setLocalOnly={setLocalOnly}
+        />
+      ) : null}
+      {localOnly && !localOnlySupported ? (
+        <WorkbenchInlineError message="Update this environment before creating local-only Tickets." />
+      ) : null}
+      {creationBinding && !creationBinding.active ? (
+        <WorkbenchInlineError message="Resume the Jira connection before creating a Ticket." />
+      ) : null}
+      {creationBinding ? (
+        <WorkbenchJiraSprintSelect pending={pending} {...sprintSelection} />
+      ) : null}
+    </>
+  );
+}
+
+function WorkbenchCreateTicketSourceSelect({
+  pending,
+  localOnly,
+  setLocalOnly,
+}: {
+  pending: boolean;
+  localOnly: boolean;
+  setLocalOnly: (value: boolean) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>Create in</Label>
+      <Select
+        disabled={pending}
+        value={localOnly ? "local" : "jira"}
+        onValueChange={(value) => {
+          if (value === "local" || value === "jira") setLocalOnly(value === "local");
+        }}
+      >
+        <SelectTrigger aria-label="Create in">
+          <SelectValue>{localOnly ? "Local only" : "Jira"}</SelectValue>
+        </SelectTrigger>
+        <SelectPopup>
+          <SelectItem value="jira">Jira</SelectItem>
+          <SelectItem value="local">Local only</SelectItem>
+        </SelectPopup>
+      </Select>
+    </div>
   );
 }
 
@@ -644,6 +765,8 @@ export type WorkbenchTicketDetailProps = {
   readonly epics: ReadonlyArray<WorkbenchEpic>;
   readonly jiraIssueLink: WorkbenchJiraIssueLink | null;
   readonly jiraFieldsManaged: boolean;
+  readonly jiraOwnershipKnown?: boolean;
+  readonly jiraPublicationAction?: ReactNode;
   readonly jiraRefreshing: boolean;
   readonly jiraRefreshDisabled: boolean;
   readonly onRefreshJira: (() => void) | null;
@@ -725,6 +848,8 @@ export function WorkbenchTicketDetail(props: WorkbenchTicketDetailProps) {
         epics: props.epics,
         jiraIssueLink: props.jiraIssueLink,
         jiraFieldsManaged: props.jiraFieldsManaged,
+        jiraOwnershipKnown: props.jiraOwnershipKnown ?? true,
+        jiraPublicationAction: props.jiraPublicationAction,
         jiraRefreshing: props.jiraRefreshing,
         jiraRefreshDisabled: props.jiraRefreshDisabled,
         pending: props.pending,
@@ -801,6 +926,8 @@ function WorkbenchTicketDetailController({
     | "epics"
     | "jiraIssueLink"
     | "jiraFieldsManaged"
+    | "jiraOwnershipKnown"
+    | "jiraPublicationAction"
     | "jiraRefreshing"
     | "jiraRefreshDisabled"
     | "pending"
@@ -859,6 +986,8 @@ function WorkbenchTicketDetailController({
     epics,
     jiraIssueLink,
     jiraFieldsManaged,
+    jiraOwnershipKnown,
+    jiraPublicationAction,
     jiraRefreshing,
     jiraRefreshDisabled,
     pending,
@@ -1030,6 +1159,8 @@ function WorkbenchTicketDetailController({
           editing: editing,
           jiraRefreshDisabled: jiraRefreshDisabled,
           jiraRefreshing: jiraRefreshing,
+          jiraOwnershipKnown: jiraOwnershipKnown,
+          jiraPublicationAction: jiraPublicationAction,
           canOpenThread: canOpenThread,
           threadActionPending: threadActionPending,
           threadActionLabel: threadActionLabel,
@@ -1689,6 +1820,8 @@ type WorkbenchTicketHeaderProps = {
   displayedTitle: string;
   ticket: WorkbenchTicket;
   jiraIssueLink: WorkbenchJiraIssueLink | null;
+  jiraOwnershipKnown: boolean | undefined;
+  jiraPublicationAction: ReactNode;
   isArchived: boolean;
   environmentId: EnvironmentId;
   actionableTicket: WorkbenchTicket;
@@ -1756,6 +1889,8 @@ function WorkbenchTicketHeader({
     | "editing"
     | "jiraRefreshDisabled"
     | "jiraRefreshing"
+    | "jiraOwnershipKnown"
+    | "jiraPublicationAction"
     | "canOpenThread"
     | "threadActionPending"
     | "threadActionLabel"
@@ -1789,6 +1924,8 @@ function WorkbenchTicketHeader({
     editing,
     jiraRefreshDisabled,
     jiraRefreshing,
+    jiraOwnershipKnown,
+    jiraPublicationAction,
     canOpenThread,
     threadActionPending,
     threadActionLabel,
@@ -1817,6 +1954,8 @@ function WorkbenchTicketHeader({
             editing: editing,
             jiraRefreshDisabled: jiraRefreshDisabled,
             jiraRefreshing: jiraRefreshing,
+            jiraOwnershipKnown: jiraOwnershipKnown,
+            jiraPublicationAction: jiraPublicationAction,
           }}
           records={{
             ticket: ticket,
@@ -4094,6 +4233,7 @@ function WorkbenchEpicTickets({
   repositoriesById,
   assignmentsByTicket,
   jiraIssueLinksByTicketId,
+  jiraOwnershipKnown,
   pending,
   onOpenTicket,
   onCreateTicket,
@@ -4106,6 +4246,7 @@ function WorkbenchEpicTickets({
   | "repositoriesById"
   | "assignmentsByTicket"
   | "jiraIssueLinksByTicketId"
+  | "jiraOwnershipKnown"
   | "pending"
   | "onOpenTicket"
   | "onCreateTicket"
@@ -4163,9 +4304,12 @@ function WorkbenchEpicTickets({
                 <span className="min-w-0">
                   <span className="flex min-w-0 flex-wrap items-center gap-2">
                     <WorkbenchTicketKindBadge kind={ticket.kind} />
-                    {jiraIssueLink ? (
-                      <WorkbenchJiraIssueKey issue={jiraIssueLink.issue} className="z-10" />
-                    ) : null}
+                    <WorkbenchTicketSourceBadge
+                      ticketId={ticket.id}
+                      jiraIssueLink={jiraIssueLink}
+                      jiraOwnershipKnown={jiraOwnershipKnown}
+                      className="z-10"
+                    />
                   </span>
                   <span className="mt-1 block min-w-0">
                     <Tooltip>
@@ -4212,42 +4356,6 @@ function WorkbenchEpicTickets({
         </div>
       )}
     </section>
-  );
-}
-
-function WorkbenchCreateTicketSprint({
-  pending,
-  jiraSprints,
-  selectedSprintId,
-  setJiraSprintId,
-}: Pick<Parameters<typeof WorkbenchTicketDialog>[0], "pending"> & {
-  jiraSprints: ReadonlyArray<{ id: number; name: string }>;
-  selectedSprintId: number | undefined;
-  setJiraSprintId: Dispatch<SetStateAction<number | null>>;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label>Jira sprint</Label>
-      <Select
-        disabled={pending || jiraSprints.length === 1}
-        value={selectedSprintId === undefined ? null : String(selectedSprintId)}
-        onValueChange={(value) => setJiraSprintId(value ? Number(value) : null)}
-      >
-        <SelectTrigger aria-label="Jira sprint">
-          <SelectValue>
-            {jiraSprints.find((sprint) => sprint.id === selectedSprintId)?.name ??
-              "Select a sprint"}
-          </SelectValue>
-        </SelectTrigger>
-        <SelectPopup>
-          {jiraSprints.map((sprint) => (
-            <SelectItem key={sprint.id} value={String(sprint.id)}>
-              {sprint.name}
-            </SelectItem>
-          ))}
-        </SelectPopup>
-      </Select>
-    </div>
   );
 }
 
@@ -4555,6 +4663,8 @@ type WorkbenchTicketHeadingProps = Pick<
   | "onRefreshJira"
   | "jiraRefreshDisabled"
   | "jiraRefreshing"
+  | "jiraOwnershipKnown"
+  | "jiraPublicationAction"
 >;
 function WorkbenchTicketHeading({
   presentation,
@@ -4571,6 +4681,8 @@ function WorkbenchTicketHeading({
     | "editing"
     | "jiraRefreshDisabled"
     | "jiraRefreshing"
+    | "jiraOwnershipKnown"
+    | "jiraPublicationAction"
   >;
   records: Pick<WorkbenchTicketHeadingProps, "ticket" | "jiraIssueLink" | "actionableTicket">;
   context: Pick<WorkbenchTicketHeadingProps, "environmentId">;
@@ -4584,6 +4696,8 @@ function WorkbenchTicketHeading({
     editing,
     jiraRefreshDisabled,
     jiraRefreshing,
+    jiraOwnershipKnown,
+    jiraPublicationAction,
   } = presentation;
   const { ticket, jiraIssueLink, actionableTicket } = records;
   const { environmentId } = context;
@@ -4601,7 +4715,12 @@ function WorkbenchTicketHeading({
           ticketId={ticket.id}
           ticketTitle={ticket.title}
         />
-        {jiraIssueLink ? <WorkbenchJiraIssueKey issue={jiraIssueLink.issue} /> : null}
+        <WorkbenchTicketSourceBadge
+          ticketId={ticket.id}
+          jiraIssueLink={jiraIssueLink}
+          jiraOwnershipKnown={jiraOwnershipKnown ?? true}
+        />
+        {jiraPublicationAction}
         {isArchived ? <Badge variant="outline">Archived</Badge> : null}
         <WorkbenchTicketStatusMenu
           key={`${environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
@@ -5495,6 +5614,7 @@ function useWorkbenchCreateTicketDraft({
   "initialEpicId" | "pending" | "onOpenChange"
 >) {
   const [requestId, setRequestId] = useState(() => WorkbenchTicketId.make(randomUUID()));
+  const [localOnly, setLocalOnly] = useState(false);
   const [jiraSprintId, setJiraSprintId] = useState<number | null>(null);
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<WorkbenchTicketKind>("story");
@@ -5506,6 +5626,7 @@ function useWorkbenchCreateTicketDraft({
     if (pending) return;
     if (!nextOpen) {
       setRequestId(WorkbenchTicketId.make(randomUUID()));
+      setLocalOnly(false);
       setJiraSprintId(null);
       setTitle("");
       setKind("story");
@@ -5518,6 +5639,8 @@ function useWorkbenchCreateTicketDraft({
   };
   return {
     requestId,
+    localOnly,
+    setLocalOnly,
     jiraSprintId,
     setJiraSprintId,
     title,

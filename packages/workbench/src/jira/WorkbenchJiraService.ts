@@ -165,6 +165,7 @@ export const make = Effect.gen(function* () {
             : repository.listEpicLinks(binding.id).pipe(Effect.mapError(repositoryError)),
         );
         return {
+          supportsLocalOnlyTickets: true,
           connections,
           bindings,
           issueLinks: issueLinks.flat(),
@@ -419,6 +420,22 @@ export const make = Effect.gen(function* () {
 
   const createTicket: WorkbenchJiraServiceShape["createTicket"] = (input) =>
     Effect.gen(function* () {
+      if (input.localOnly) {
+        if (input.existingLocalTicketRevision !== undefined) {
+          return yield* operationError("Publishing an existing Ticket requires Jira creation.");
+        }
+        const creation = yield* sql<{ readonly ticketId: string }>`
+          SELECT ticket_id AS "ticketId" FROM workbench_jira_ticket_creations
+          WHERE ticket_id = ${input.id}
+          LIMIT 1
+        `.pipe(Effect.mapError(repositoryError));
+        if (creation.length > 0) {
+          return yield* operationError(
+            "This Ticket creation has already started in Jira. Resolve it before starting a new local Ticket.",
+          );
+        }
+        return yield* workbench.createTicket(input);
+      }
       const bindings = yield* repository.listBindings().pipe(Effect.mapError(repositoryError));
       const matches = bindings.filter((binding) => binding.projectId === input.projectId);
       if (matches.length === 0) {

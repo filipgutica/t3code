@@ -564,7 +564,7 @@ test.describe("Jira connection UI contract", () => {
     await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
     await expect(dialog).not.toBeVisible();
     await page.getByRole("button", { name: "View imported tickets", exact: true }).click();
-    await expect(page.getByText("ORBIT-999", { exact: true })).toBeVisible();
+    await expect(page.getByText("Jira · ORBIT-999", { exact: true })).toBeVisible();
 
     route.setRemoteTicketTitle("Changed in Jira while away");
     await page.evaluate(() => window.dispatchEvent(new Event("focus")));
@@ -595,7 +595,7 @@ test.describe("Jira connection UI contract", () => {
     await expect(
       page.getByRole("status").filter({ hasText: /Synced \d+ Jira tickets?/i }),
     ).toBeVisible();
-    await expect(page.getByText("ORBIT-999", { exact: true })).toBeVisible();
+    await expect(page.getByText("Jira · ORBIT-999", { exact: true })).toBeVisible();
     await page.getByRole("button", { name: "View imported tickets", exact: true }).click();
     await expect(page.getByRole("region", { name: "All Tickets", exact: true })).toBeVisible();
     await expect(

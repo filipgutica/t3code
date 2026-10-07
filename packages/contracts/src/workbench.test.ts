@@ -226,6 +226,12 @@ describe("Workbench contracts", () => {
         primaryT3ProjectId: "t3-project-1",
         createdAt: "2026-09-03T12:00:00.000Z",
       });
+      expect(createInput.localOnly).toBeUndefined();
+      const localCreateInput = yield* decodeWorkbenchCreateTicketInput({
+        ...createInput,
+        localOnly: true,
+      });
+      expect(localCreateInput.localOnly).toBe(true);
       const updateInput = yield* decodeWorkbenchUpdateTicketInput({
         id: "ticket-1",
         expectedRevision: 0,

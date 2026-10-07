@@ -411,6 +411,8 @@ export const WorkbenchJiraSyncResult = Schema.Struct({
 export type WorkbenchJiraSyncResult = typeof WorkbenchJiraSyncResult.Type;
 
 export const WorkbenchJiraSnapshot = Schema.Struct({
+  /** Absent on older servers, which ignore localOnly and can create a Jira issue instead. */
+  supportsLocalOnlyTickets: Schema.optionalKey(Schema.Boolean),
   connections: Schema.Array(WorkbenchJiraConnection),
   bindings: Schema.Array(WorkbenchJiraBinding),
   issueLinks: Schema.Array(WorkbenchJiraIssueLink),

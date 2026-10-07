@@ -90,6 +90,7 @@ export function WorkbenchPage({
   const dialogs = useWorkbenchPageDialogs({
     environmentId,
     projects,
+    localOnlySupported: pageData.jiraSnapshot?.supportsLocalOnlyTickets === true,
     selection,
     setPendingAction,
     setError,

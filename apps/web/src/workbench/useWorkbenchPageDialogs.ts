@@ -19,12 +19,14 @@ import type { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
 export function useWorkbenchPageDialogs({
   environmentId,
   projects,
+  localOnlySupported,
   selection,
   setPendingAction,
   setError,
 }: {
   readonly environmentId: EnvironmentId | null;
   readonly projects: ReturnType<typeof useWorkbenchPageData>["projects"];
+  readonly localOnlySupported: boolean;
   readonly selection: ReturnType<typeof useWorkbenchPageSelection>;
   readonly setPendingAction: (action: string | null) => void;
   readonly setError: (message: string | null) => void;
@@ -126,6 +128,10 @@ export function useWorkbenchPageDialogs({
 
   const submitTicket = async (draft: WorkbenchCreateTicketDraft) => {
     if (environmentId === null || selectedProject === null) return false;
+    if (draft.localOnly && !localOnlySupported) {
+      setError("Update this environment before creating local-only Tickets.");
+      return false;
+    }
     setPendingAction("create-ticket");
     setError(null);
     const primaryProject = projects.find((project) => project.id === draft.primaryT3ProjectId);
