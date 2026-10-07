@@ -11,7 +11,7 @@
   --border-subtle: var(--color-border-subtle);
   --text: var(--color-text);
   --text-muted: var(--color-muted);
-  --accent: var(--color-accent);
+  --accent: var(--color-button-bg);
   --accent-text: var(--color-button-text);
   --accent-hover: var(--color-button-hover);
   --font-sans: var(--font-ui);
@@ -74,7 +74,7 @@ h3 {
   letter-spacing: -0.01em;
 }
 a {
-  color: var(--accent);
+  color: var(--color-link);
   text-decoration: none;
   text-underline-offset: var(--space-1);
 }
@@ -82,7 +82,7 @@ a:hover {
   text-decoration: underline;
 }
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--color-focus);
   outline-offset: var(--space-1);
 }
 .wrap {
@@ -150,7 +150,7 @@ nav a:hover {
   border-bottom: 2px solid transparent;
 }
 .section-nav a[aria-current="location"] {
-  border-bottom-color: var(--accent);
+  border-bottom-color: var(--color-accent);
   color: var(--text);
   font-weight: var(--weight-medium);
 }
