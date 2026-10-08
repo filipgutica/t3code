@@ -356,17 +356,20 @@
     "scripts/build-desktop-artifact.test.ts",
     "scripts/update-release-package-versions.test.ts",
     "scripts/merge-update-manifests.test.ts",
-    "scripts/resolve-workbench-daily-release.test.ts"
+    "scripts/resolve-workbench-daily-release.test.ts",
+    "scripts/workbench-verify-stable-release.test.ts"
   ],
   "packagingPaths": [
     ".github/workflows/workbench-release.yml",
     ".github/workflows/workbench-daily-release.yml",
+    ".github/workflows/workbench-publish-stable.yml",
     "apps/desktop/",
     "scripts/build-desktop-artifact.ts",
     "scripts/build-cli-archive.ts",
     "scripts/smoke-cli-archive.ts",
     "scripts/update-release-package-versions.ts",
     "scripts/resolve-workbench-daily-release.ts",
+    "scripts/workbench-verify-stable-release.ts",
     "scripts/merge-update-manifests.ts",
     "scripts/release-smoke.ts",
     "package.json",

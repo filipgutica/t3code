@@ -1,0 +1,157 @@
+name: Workbench validate and publish Stable draft
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: "Existing signed Stable release ID (0.0.22: 405421054)"
+        required: true
+        type: string
+      build_run_id:
+        description: "Successful Stable build run ID (0.0.22: 37575614686)"
+        required: true
+        type: string
+      version:
+        description: "Existing Stable version (X.Y.Z)"
+        required: true
+        type: string
+      commit_sha:
+        description: "Exact source SHA recorded by the signed build"
+        required: true
+        type: string
+      publish:
+        description: "Publish this verified existing draft as latest Stable"
+        required: true
+        default: false
+        type: boolean
+
+# Serialize against Stable builds of the same version. No build or upload occurs here.
+concurrency:
+  group: workbench-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  recover:
+    name: Verify existing signed Stable assets
+    if: >-
+      github.repository == 'filipgutica/t3code' && github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_ID: ${{ inputs.release_id }}
+      BUILD_RUN_ID: ${{ inputs.build_run_id }}
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_SHA: ${{ inputs.commit_sha }}
+    steps:
+      - name: Set recovery evidence directory
+        shell: bash
+        run: echo "EVIDENCE_DIR=$RUNNER_TEMP/workbench-stable-recovery" >> "$GITHUB_ENV"
+
+      - name: Checkout reviewed main workflow
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Setup verifier Node runtime
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: false
+
+      - name: Capture release and successful build evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_ID" =~ ^[1-9][0-9]*$ && "$BUILD_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          git fetch origin +refs/heads/main:refs/remotes/origin/main --tags
+          git rev-list --first-parent origin/main | grep -Fx "$RELEASE_SHA" > /dev/null
+          tag="workbench-v$RELEASE_VERSION"
+          if git show-ref --verify --quiet "refs/tags/$tag"; then
+            [[ "$(git rev-parse "$tag^{commit}")" == "$RELEASE_SHA" ]]
+          fi
+          mkdir -p "$EVIDENCE_DIR"
+          gh api "/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > "$EVIDENCE_DIR/release.json"
+          gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" > "$EVIDENCE_DIR/run.json"
+          run_sha="$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1])).head_sha)' "$EVIDENCE_DIR/run.json")"
+          git rev-list --first-parent origin/main | grep -Fx "$run_sha" > /dev/null
+          gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID/jobs?filter=latest&per_page=100" > "$EVIDENCE_DIR/jobs.json"
+          gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID/artifacts?per_page=100" > "$EVIDENCE_DIR/artifacts.json"
+          cp "$EVIDENCE_DIR/artifacts.json" "$EVIDENCE_DIR/artifacts-downloaded.json"
+          gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$EVIDENCE_DIR/releases.json"
+          gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/actions/workflows/workbench-ci.yml/runs?event=push&head_sha=$RELEASE_SHA&branch=main&per_page=100" > "$EVIDENCE_DIR/ci-feature.json"
+          gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/actions/workflows/workbench-quality.yml/runs?event=push&head_sha=$RELEASE_SHA&branch=main&per_page=100" > "$EVIDENCE_DIR/ci-quality.json"
+
+      - name: Download retained build artifacts without rebuilding
+        uses: actions/download-artifact@v8
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.build_run_id }}
+          pattern: workbench-desktop-*
+          merge-multiple: false
+          path: ${{ env.EVIDENCE_DIR }}/artifacts
+
+      - name: Verify every existing asset against the signed build
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/workbench-verify-stable-release.ts \
+            --evidence-dir "$EVIDENCE_DIR" --version "$RELEASE_VERSION" \
+            --sha "$RELEASE_SHA" --release-id "$RELEASE_ID" --run-id "$BUILD_RUN_ID" \
+            > "$EVIDENCE_DIR/verification.json"
+          cat "$EVIDENCE_DIR/verification.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish verified existing Stable draft
+        if: inputs.publish
+        shell: bash
+        env:
+          RELEASE_TOKEN: ${{ secrets.WORKBENCH_RELEASE_TOKEN || github.token }}
+          HAS_RELEASE_TOKEN: ${{ secrets.WORKBENCH_RELEASE_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          # Refresh all gates immediately before the only mutation. Artifact IDs/digests must
+          # still match the downloaded inventory; published retries are read-only.
+          gh api "/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > "$EVIDENCE_DIR/release.json"
+          gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID" > "$EVIDENCE_DIR/run.json"
+          gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID/jobs?filter=latest&per_page=100" > "$EVIDENCE_DIR/jobs.json"
+          gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN_ID/artifacts?per_page=100" > "$EVIDENCE_DIR/artifacts.json"
+          gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$EVIDENCE_DIR/releases.json"
+          gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/actions/workflows/workbench-ci.yml/runs?event=push&head_sha=$RELEASE_SHA&branch=main&per_page=100" > "$EVIDENCE_DIR/ci-feature.json"
+          gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/actions/workflows/workbench-quality.yml/runs?event=push&head_sha=$RELEASE_SHA&branch=main&per_page=100" > "$EVIDENCE_DIR/ci-quality.json"
+          verification="$(node scripts/workbench-verify-stable-release.ts \
+            --evidence-dir "$EVIDENCE_DIR" --version "$RELEASE_VERSION" \
+            --sha "$RELEASE_SHA" --release-id "$RELEASE_ID" --run-id "$BUILD_RUN_ID")"
+          if [[ "$(printf '%s' "$verification" | node -e 'let s="";for await(const c of process.stdin)s+=c;process.stdout.write(JSON.parse(s).action)' --input-type=module)" == already-published ]]; then
+            echo "This exact verified Stable release is already published." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git fetch origin +refs/heads/main:refs/remotes/origin/main --tags
+          git rev-list --first-parent origin/main | grep -Fx "$RELEASE_SHA" > /dev/null
+          tag="workbench-v$RELEASE_VERSION"
+          if git show-ref --verify --quiet "refs/tags/$tag"; then
+            [[ "$(git rev-parse "$tag^{commit}")" == "$RELEASE_SHA" ]]
+          fi
+          # GitHub requires Workflows write for historical targets whose workflows differ from main.
+          # GITHUB_TOKEN cannot receive it. An existing authorized publisher secret is optional;
+          # never retarget the signed assets or provision credentials as part of recovery.
+          if [[ "$HAS_RELEASE_TOKEN" != true ]] && ! git diff --quiet "$RELEASE_SHA" origin/main -- .github/workflows; then
+            echo "Publication requires an existing WORKBENCH_RELEASE_TOKEN authorized for Contents and Workflows write, or owner publication of this verified draft. GITHUB_TOKEN cannot publish this historical workflow target." >&2
+            exit 1
+          fi
+          GH_TOKEN="$RELEASE_TOKEN" gh api --method PATCH "/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            -F draft=false -F prerelease=false -f make_latest=true
+          gh api "/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > "$EVIDENCE_DIR/release.json"
+          test "$(node scripts/workbench-verify-stable-release.ts \
+            --evidence-dir "$EVIDENCE_DIR" --version "$RELEASE_VERSION" \
+            --sha "$RELEASE_SHA" --release-id "$RELEASE_ID" --run-id "$BUILD_RUN_ID" \
+            | node -e 'let s="";for await(const c of process.stdin)s+=c;process.stdout.write(JSON.parse(s).action)' --input-type=module)" == already-published
