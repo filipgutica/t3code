@@ -27,6 +27,7 @@ import {
   groupWorkbenchAttentionSignals,
   getWorkbenchAttentionSignalLabel,
   getWorkbenchAttentionSourceLabel,
+  getWorkbenchAttentionSourceParts,
   type WorkbenchAttentionSignal,
   type WorkbenchAttentionInspection,
 } from "./workbenchAttention.logic";
@@ -124,7 +125,7 @@ function AttentionSignalItem({
         className={`mt-0.5 size-3.5 shrink-0 ${signal.kind === "failed-checks" || failedRun ? "text-warning" : "text-muted-foreground"}`}
       />
       <span className="min-w-0 flex-1">
-        <span className="block font-medium">{label}</span>
+        <span className="block font-semibold">{label}</span>
         <span className="block text-2xs text-muted-foreground">{actionDescription}</span>
       </span>
       {discussions.length === 0 ? (
@@ -215,15 +216,25 @@ function AttentionItems({
     <div className="flex flex-col gap-3">
       {groups.map(({ key, signals: group }) => {
         const source = group[0]!.source;
+        const { prefix, title, repository } = getWorkbenchAttentionSourceParts(source);
         return (
-          <div key={key} className="flex min-w-0 flex-col gap-1">
-            <p className="break-words text-2xs font-medium text-muted-foreground">
-              {getWorkbenchAttentionSourceLabel(source)}
-            </p>
+          <section
+            key={key}
+            className="flex min-w-0 flex-col gap-1 border-t border-border/50 pt-3 first:border-t-0 first:pt-0"
+          >
+            <div className="px-2">
+              <h3 className="break-words text-xs leading-5">
+                <span className="font-semibold">{prefix}</span>
+                {title ? <span className="font-medium"> · {title}</span> : null}
+              </h3>
+              {repository ? (
+                <p className="break-words text-2xs text-muted-foreground">{repository}</p>
+              ) : null}
+            </div>
             {group.map((signal) => (
               <AttentionSignalItem key={signal.kind} signal={signal} onOpenSignal={openSignal} />
             ))}
-          </div>
+          </section>
         );
       })}
       {inspections
@@ -288,7 +299,7 @@ export function WorkbenchTicketAttentionBadge(
       <PopoverPopup width="md" padding="compact" side={props.side ?? "bottom"} align="end">
         <div className="mb-3 flex flex-col gap-1 border-b pb-3">
           <PopoverTitle>Needs your attention</PopoverTitle>
-          <p className="truncate text-2xs text-muted-foreground">{props.ticketTitle}</p>
+          <p className="break-words text-xs text-muted-foreground">{props.ticketTitle}</p>
         </div>
         <div className="max-h-80 overflow-y-auto">
           <AttentionItems
