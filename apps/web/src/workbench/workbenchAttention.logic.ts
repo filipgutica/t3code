@@ -97,11 +97,18 @@ const signalLabels = {
 export const getWorkbenchAttentionSignalLabel = (signal: WorkbenchAttentionSignal) =>
   signal.kind === "waiting" ? waitingLabels[signal.cause] : signalLabels[signal.kind];
 
-export const getWorkbenchAttentionSourceLabel = (source: WorkbenchAttentionSignal["source"]) => {
-  if (source.type === "thread") return `Thread · ${source.threadTitle}`;
+export const getWorkbenchAttentionSourceParts = (source: WorkbenchAttentionSignal["source"]) => {
+  if (source.type === "thread")
+    return { prefix: "Thread", title: source.threadTitle, repository: null };
   const reference = source.row.pullRequest;
   const title = reference.title === reference.repository ? undefined : reference.title;
-  return [`PR #${reference.number}`, title, reference.repository].filter(Boolean).join(" · ");
+  return { prefix: `PR #${reference.number}`, title, repository: reference.repository };
+};
+
+export const getWorkbenchAttentionSourceLabel = (source: WorkbenchAttentionSignal["source"]) => {
+  const { prefix, title, repository } = getWorkbenchAttentionSourceParts(source);
+  if (source.type === "thread") return `${prefix} · ${title}`;
+  return [prefix, title, repository].filter(Boolean).join(" · ");
 };
 export interface WorkbenchAttentionInspection {
   readonly row: WorkbenchTicketPullRequest;
