@@ -355,6 +355,7 @@ it("hides archived Workspaces from actionable results and restores their search 
     );
   });
   expect(renderer!.root.findByType("summary").children).toEqual(["Archived Workspaces"]);
+  expect(renderer!.root.findByType("details").props.open).toBeUndefined();
   await act(() => button("Show actionable Tickets and Threads").props.onClick());
   expect(renderer!.root.findAllByType("summary")).toHaveLength(0);
   expect(renderer!.root.findByProps({ "aria-live": "polite" }).children).toEqual([
@@ -366,6 +367,7 @@ it("hides archived Workspaces from actionable results and restores their search 
   await act(() => search.props.onChange({ target: { value: "Release Checklist" } }));
   expect(renderer!.root.findAllByType("summary")).toHaveLength(1);
   expect(renderer!.root.findByProps({ "aria-live": "polite" }).children).toEqual(["1 result"]);
+  expect(renderer!.root.findByType("details").props.open).toBe(true);
   expect(
     renderer!.root
       .findAllByType("span")

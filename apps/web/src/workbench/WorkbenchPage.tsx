@@ -110,12 +110,11 @@ export function WorkbenchPage({
     initialTicketId,
   });
 
-  const refreshBinding = getWorkbenchRefreshBinding(selection.selectedProject, jiraBinding);
   const hasLocalMigrationData =
     localTicketsForJiraMigration.length > 0 || localEpicsForJiraMigration.length > 0;
   useWorkbenchPageRefresh({
     environmentId,
-    jiraBinding: refreshBinding,
+    jiraBinding: selection.selectedProject?.archivedAt != null ? null : jiraBinding,
     jiraDialogOpen,
     jiraPendingAction,
     jiraSyncBinding,
@@ -177,13 +176,6 @@ function WorkbenchPageDeleteConfirmation({
       onDelete={workspaceActions.removeWorkspace}
     />
   );
-}
-
-function getWorkbenchRefreshBinding(
-  workspace: ReturnType<typeof useWorkbenchPageSelection>["selectedProject"],
-  binding: ReturnType<typeof useWorkbenchBoardData>["jiraBinding"],
-) {
-  return workspace?.archivedAt != null ? null : binding;
 }
 
 function useWorkbenchWorkspaceSelection(

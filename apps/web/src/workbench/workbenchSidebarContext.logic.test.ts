@@ -5,12 +5,14 @@ import {
   ProjectId,
   ThreadId,
   WorkbenchJiraBindingId,
+  WorkbenchProjectId,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
 import { getWorkbenchSidebarTicketDetails } from "./workbenchSidebarContext.logic";
 
 const environmentId = EnvironmentId.make("local");
 const projectId = ProjectId.make("repo");
+const workspaceId = WorkbenchProjectId.make("workspace");
 const ticketId = WorkbenchTicketId.make("ticket");
 const threadId = ThreadId.make("thread");
 const pr = {
@@ -21,6 +23,7 @@ const pr = {
 };
 const ticket = {
   id: ticketId,
+  projectId: workspaceId,
   kind: "bug" as const,
   status: "in_progress" as const,
   blocked: true,
@@ -45,6 +48,35 @@ const thread = {
 };
 
 describe("Workbench sidebar ticket context", () => {
+  it.each([
+    { name: "active", workbenchProjects: [{ id: workspaceId, archivedAt: null }], readOnly: false },
+    {
+      name: "archived",
+      workbenchProjects: [{ id: workspaceId, archivedAt: "2026-10-09T00:00:00.000Z" }],
+      readOnly: true,
+    },
+    {
+      name: "missing",
+      workbenchProjects: [{ id: WorkbenchProjectId.make("other-workspace"), archivedAt: null }],
+      readOnly: true,
+    },
+  ])("projects $name workspace action availability", ({ workbenchProjects, readOnly }) => {
+    const inputs = {
+      environmentId,
+      tickets: [ticket],
+      assignments: [],
+      threads: [],
+      projects: [],
+      workbenchProjects,
+      epics: [],
+      issueLinks: [],
+    };
+    expect(getWorkbenchSidebarTicketDetails(inputs).get(ticketId)?.readOnly).toBe(readOnly);
+    expect(
+      getWorkbenchSidebarTicketDetails({ ...inputs, environmentId: null }).get(ticketId)?.readOnly,
+    ).toBe(true);
+  });
+
   it("uses Jira status and flagged state instead of stale local attention", () => {
     const issueLink = {
       bindingId: WorkbenchJiraBindingId.make("binding"),
@@ -71,6 +103,7 @@ describe("Workbench sidebar ticket context", () => {
       assignments: [],
       threads: [],
       projects: [],
+      workbenchProjects: [],
       epics: [],
       issueLinks: [issueLink],
     };
@@ -106,6 +139,7 @@ describe("Workbench sidebar ticket context", () => {
         { id: projectId, environmentId, title: "Local repo" },
         { id: projectId, environmentId: EnvironmentId.make("remote"), title: "Remote repo" },
       ],
+      workbenchProjects: [],
       epics: [],
       issueLinks: [],
     }).get(ticketId);
@@ -123,6 +157,7 @@ describe("Workbench sidebar ticket context", () => {
       assignments: [{ ticketId, threadId, supersededAt: null }],
       threads: [],
       projects: [],
+      workbenchProjects: [],
       epics: [],
       issueLinks: [],
     }).get(ticketId);
@@ -155,6 +190,7 @@ describe("Workbench sidebar ticket context", () => {
       ],
       threads: [working, { ...thread, id: historicalId, hasPendingApprovals: true }],
       projects: [],
+      workbenchProjects: [],
       epics: [],
       issueLinks: [],
     };

@@ -662,7 +662,7 @@ function WorkbenchSidebarArchivedWorkspaces({
     (workspace) => workspace.id === rowProps.navigation.selectedWorkspaceId,
   );
   return (
-    <details open={selected || undefined}>
+    <details open={selected || rowProps.isSearching || undefined}>
       <summary className="cursor-pointer px-2 py-2 text-xs font-medium text-sidebar-muted-foreground focus-visible:ring-2 focus-visible:ring-ring">
         Archived Workspaces
       </summary>
@@ -1428,6 +1428,7 @@ function useWorkbenchSidebarData({
             assignments: snapshot.assignments,
             threads: currentThread ? [...threadShells, currentThread] : threadShells,
             projects: nativeProjects,
+            workbenchProjects: snapshot.projects,
             epics: snapshot.epics,
             issueLinks: jiraQuery.data?.issueLinks ?? [],
           })

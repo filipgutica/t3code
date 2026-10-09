@@ -7,6 +7,7 @@ import type {
   WorkbenchAssignment,
   WorkbenchEpic,
   WorkbenchJiraIssueLink,
+  WorkbenchProject,
   WorkbenchTicket,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
@@ -22,6 +23,7 @@ export const getWorkbenchSidebarTicketDetails = ({
   assignments,
   threads,
   projects,
+  workbenchProjects,
   epics,
   issueLinks,
 }: {
@@ -30,6 +32,7 @@ export const getWorkbenchSidebarTicketDetails = ({
     Pick<
       WorkbenchTicket,
       | "id"
+      | "projectId"
       | "kind"
       | "status"
       | "blocked"
@@ -60,6 +63,7 @@ export const getWorkbenchSidebarTicketDetails = ({
     >
   >;
   readonly projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "title">>;
+  readonly workbenchProjects: ReadonlyArray<Pick<WorkbenchProject, "id" | "archivedAt">>;
   readonly epics: ReadonlyArray<Pick<WorkbenchEpic, "id" | "title">>;
   readonly issueLinks: ReadonlyArray<WorkbenchJiraIssueLink>;
 }) => {
@@ -72,6 +76,9 @@ export const getWorkbenchSidebarTicketDetails = ({
     projects
       .filter((project) => project.environmentId === environmentId)
       .map((project) => [project.id, project.title]),
+  );
+  const activeWorkspaceIds = new Set(
+    workbenchProjects.filter((workspace) => workspace.archivedAt == null).map(({ id }) => id),
   );
   const executionStatuses = getWorkbenchTicketExecutionStatuses({
     environmentId,
@@ -97,6 +104,7 @@ export const getWorkbenchSidebarTicketDetails = ({
         ticket.id,
         {
           environmentId,
+          readOnly: environmentId === null || !activeWorkspaceIds.has(ticket.projectId),
           executionStatus: executionStatuses.get(ticket.id) ?? null,
           kind: ticket.kind,
           statusLabel:

@@ -47,18 +47,17 @@ function executionOrder(status: WorkbenchThreadExecutionStatus) {
   return status.startedAt === null ? Number.POSITIVE_INFINITY : Date.parse(status.startedAt);
 }
 
-type SelectedExecution = {
+type SelectedExecution = WorkbenchThreadExecutionStatus & {
   readonly threadId: EnvironmentThreadShell["id"];
-  readonly status: WorkbenchThreadExecutionStatus;
 };
 
 function shouldReplaceExecution(previous: SelectedExecution | undefined, next: SelectedExecution) {
   if (previous === undefined) return true;
-  const priority = TICKET_EXECUTION_PRIORITY[next.status.kind];
-  const previousPriority = TICKET_EXECUTION_PRIORITY[previous.status.kind];
+  const priority = TICKET_EXECUTION_PRIORITY[next.kind];
+  const previousPriority = TICKET_EXECUTION_PRIORITY[previous.kind];
   if (priority !== previousPriority) return priority > previousPriority;
-  const startedAt = executionOrder(next.status);
-  const previousStartedAt = executionOrder(previous.status);
+  const startedAt = executionOrder(next);
+  const previousStartedAt = executionOrder(previous);
   if (startedAt !== previousStartedAt) return startedAt < previousStartedAt;
   return next.threadId < previous.threadId;
 }
@@ -79,19 +78,17 @@ export function getWorkbenchTicketExecutionStatuses({
   WorkbenchThreadExecutionStatus & { readonly threadId: EnvironmentThreadShell["id"] }
 > {
   const selected = new Map<WorkbenchTicketId, SelectedExecution>();
-  if (environmentId === null) return new Map();
+  if (environmentId === null) return selected;
   for (const assignment of assignments) {
     if (assignment.supersededAt !== null) continue;
     const thread = threadsById.get(assignment.threadId);
     if (!thread || thread.environmentId !== environmentId || thread.archivedAt !== null) continue;
     const status = getWorkbenchThreadExecutionStatus(thread);
     if (status === null) continue;
-    const next = { threadId: thread.id, status };
+    const next = { ...status, threadId: thread.id };
     if (shouldReplaceExecution(selected.get(assignment.ticketId), next)) {
       selected.set(assignment.ticketId, next);
     }
   }
-  return new Map(
-    [...selected].map(([ticketId, { threadId, status }]) => [ticketId, { ...status, threadId }]),
-  );
+  return selected;
 }

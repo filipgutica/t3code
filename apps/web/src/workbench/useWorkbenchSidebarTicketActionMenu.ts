@@ -10,7 +10,6 @@ import type {
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
 import { useCallback } from "react";
-import { useEnvironmentQuery } from "../state/query";
 
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { readLocalApi } from "../localApi";
@@ -211,22 +210,17 @@ export function useWorkbenchSidebarTicketActionMenu({
   ticket,
   issueLink,
   jiraOwnershipKnown,
+  readOnly,
 }: {
   readonly environmentId: EnvironmentId | null | undefined;
   readonly ticket: WorkbenchSidebarTicket;
   readonly issueLink: WorkbenchJiraIssueLink | null;
   readonly jiraOwnershipKnown: boolean;
+  readonly readOnly: boolean;
 }) {
   const navigate = useNavigate();
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
-  const snapshot = useEnvironmentQuery(
-    environmentId ? workbenchEnvironment.snapshot({ environmentId, input: {} }) : null,
-  ).data;
-  const readOnly = !snapshot?.projects.some(
-    (workspace) => workspace.id === ticket.projectId && workspace.archivedAt == null,
-  );
-
   const openMenu = useCallback(
     (position: { x: number; y: number }) => {
       if (!environmentId) return;

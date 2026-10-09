@@ -298,6 +298,7 @@ export function WorkbenchSidebarTicketButton({
     ticket,
     issueLink: details?.issueLink ?? null,
     jiraOwnershipKnown,
+    readOnly: details?.readOnly ?? true,
   });
   const openKeyboardMenu = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;

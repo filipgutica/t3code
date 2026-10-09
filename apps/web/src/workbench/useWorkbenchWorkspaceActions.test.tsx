@@ -316,17 +316,12 @@ describe("Workspace lifecycle", () => {
     await act(async () => actions.requestDeletion(workspace));
     expect(actions.deletion?.ticketCount).toBe(2);
   });
-  it("selects another active Workspace and clears child routes after deletion", async () => {
+  it("does not select a previously deleted Workspace while its snapshot still lags", async () => {
     const { router } = await mount();
     await act(async () => actions.requestDeletion(workspace));
     await act(async () => actions.removeWorkspace());
     expect(router.state.location.search).toEqual({ environmentId, workbenchProjectId: next.id });
     expect(actions.deletion).toBeNull();
-  });
-  it("does not select a previously deleted Workspace while its snapshot still lags", async () => {
-    const { router } = await mount();
-    await act(async () => actions.requestDeletion(workspace));
-    await act(async () => actions.removeWorkspace());
     await act(async () => actions.requestDeletion(next));
     await act(async () => actions.removeWorkspace());
     expect(router.state.location.search).toEqual({ environmentId });
