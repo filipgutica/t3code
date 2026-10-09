@@ -85,6 +85,7 @@ describe("Workbench native execution indicators", () => {
       runtime: { ...runtime, status: "failed", lastError: "Provider disconnected" },
     });
     expect(summarize([working, input])?.presentation.label).toBe("Input");
+    expect(summarize([working, input])?.threadId).toBe(input.id);
     expect(summarize([input, working])?.presentation.label).toBe("Input");
     expect(summarize([working, failed])?.presentation.label).toBe("Failed");
     expect(summarize([working, waiting])?.presentation.label).toBe("Working");
@@ -110,6 +111,7 @@ describe("Workbench native execution indicators", () => {
     });
     expect(summarize([working, continued])?.startedAt).toBe("2026-10-09T09:00:05.000Z");
     expect(summarize([continued, working])?.startedAt).toBe("2026-10-09T09:00:05.000Z");
+    expect(summarize([working, continued])?.threadId).toBe(continued.id);
     expect(
       getWorkbenchThreadExecutionStatus({
         ...continued,

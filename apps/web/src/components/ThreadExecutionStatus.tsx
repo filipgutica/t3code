@@ -38,15 +38,19 @@ function WorkingDuration({ startedAt }: { startedAt: string | null }) {
 export function ThreadExecutionStatus({
   status,
   startedAt = null,
+  compact = false,
 }: {
   status: ThreadExecutionStatusPresentation | null | undefined;
   startedAt?: string | null | undefined;
+  compact?: boolean;
 }) {
   if (!status) return null;
   const Icon = status.icon !== null && status.icon !== "woke" ? STATUS_ICONS[status.icon] : null;
   return (
-    <span className={`inline-flex shrink-0 items-center gap-1 font-medium ${status.className}`}>
-      {Icon ? <Icon aria-hidden className="size-4 shrink-0" /> : null}
+    <span
+      className={`inline-flex shrink-0 items-center gap-1 ${compact ? "text-2xs font-normal" : "font-medium"} ${status.className}`}
+    >
+      {Icon ? <Icon aria-hidden className={`shrink-0 ${compact ? "size-3" : "size-4"}`} /> : null}
       {/* Keep the clock outside the live label so screen readers do not announce each second. */}
       <span role="status">{status.label}</span>
       {status.icon === "working" ? <WorkingDuration key={startedAt} startedAt={startedAt} /> : null}

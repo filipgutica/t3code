@@ -11,6 +11,7 @@ import {
   filterWorkbenchSidebarNavigation,
   getWorkbenchSidebarExpansionDefaults,
   getWorkbenchSidebarTicketGroups,
+  isWorkbenchSidebarExecutionThreadVisible,
   reduceWorkbenchSidebarExpansion,
   revealWorkbenchSidebarSelection,
   type WorkbenchSidebarExpansion,
@@ -20,6 +21,48 @@ const environmentId = EnvironmentId.make("environment-one");
 const otherEnvironmentId = EnvironmentId.make("environment-two");
 const workspaceId = WorkbenchProjectId.make("workspace-one");
 const otherWorkspaceId = WorkbenchProjectId.make("workspace-two");
+
+describe("Workbench sidebar execution visibility", () => {
+  const thread = {
+    id: ThreadId.make("execution-thread"),
+    environmentId,
+    title: "Working Thread",
+    archivedAt: null,
+    settledOverride: null,
+  };
+  const inputs = {
+    threads: [thread],
+    threadId: thread.id,
+    ticketExpanded: true,
+    settledExpanded: false,
+  };
+
+  it("replaces the Ticket summary only after its Thread row is expanded", () => {
+    expect(isWorkbenchSidebarExecutionThreadVisible({ ...inputs, ticketExpanded: false })).toBe(
+      false,
+    );
+    expect(isWorkbenchSidebarExecutionThreadVisible(inputs)).toBe(true);
+  });
+
+  it("retains the summary until a settled contributor's nested section is expanded", () => {
+    const settled = { ...inputs, threads: [{ ...thread, settledOverride: "settled" as const }] };
+    expect(isWorkbenchSidebarExecutionThreadVisible(settled)).toBe(false);
+    expect(isWorkbenchSidebarExecutionThreadVisible({ ...settled, settledExpanded: true })).toBe(
+      true,
+    );
+  });
+
+  it("retains a filtered-out contributor even while another Thread row is visible", () => {
+    expect(
+      isWorkbenchSidebarExecutionThreadVisible({
+        ...inputs,
+        threads: [{ ...thread, id: ThreadId.make("other-thread") }],
+        settledExpanded: true,
+      }),
+    ).toBe(false);
+    expect(isWorkbenchSidebarExecutionThreadVisible({ ...inputs, threads: [] })).toBe(false);
+  });
+});
 
 const ticket = (
   id: string,

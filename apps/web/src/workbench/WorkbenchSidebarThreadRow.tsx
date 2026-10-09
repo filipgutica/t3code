@@ -80,6 +80,7 @@ function WorkbenchSidebarThreadTitle({
       {data.shell?.pinnedAt ? <PinIcon aria-label="Pinned" className="size-3 shrink-0" /> : null}
       {data.snoozed ? <ClockIcon aria-label="Snoozed" className="size-3 shrink-0" /> : null}
       <ThreadExecutionStatus
+        compact
         status={data.status?.presentation}
         startedAt={data.status?.startedAt}
       />

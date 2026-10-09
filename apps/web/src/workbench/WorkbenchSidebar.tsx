@@ -57,6 +57,7 @@ import { workbenchEnvironment } from "./state";
 import {
   filterWorkbenchSidebarNavigation,
   getWorkbenchSidebarExpansionDefaults,
+  isWorkbenchSidebarExecutionThreadVisible,
   getWorkbenchSidebarTicketGroups,
   reduceWorkbenchSidebarExpansion,
   revealWorkbenchSidebarSelection,
@@ -955,7 +956,7 @@ function WorkbenchSidebarTicketGroups({
           isSearching={isSearching}
           group={group}
           isDone={isDone || (group.ticket.status === "done" && group.ticket.archivedAt == null)}
-          key={group.ticket.id}
+          key={`${group.ticket.id}:${group.threads.some((thread) => thread.id === contextThreadId) ? contextThreadId : "none"}`}
           onOpenThread={onOpenThread}
           onSelectTicket={onSelectTicket}
           onToggleTicket={onToggleTicket}
@@ -966,6 +967,35 @@ function WorkbenchSidebarTicketGroups({
       ))}
     </SidebarMenu>
   );
+}
+
+function useWorkbenchSidebarTicketThreadDisclosure({
+  threads,
+  contextThreadId,
+  isSearching,
+  ticketExpanded,
+  executionThreadId,
+}: Pick<WorkbenchSidebarTicketGroup, "threads"> &
+  Pick<WorkbenchSidebarTicketGroupsProps, "contextThreadId" | "isSearching"> & {
+    readonly ticketExpanded: boolean;
+    readonly executionThreadId: ThreadId | undefined;
+  }) {
+  const selectedThreadIsSettled = threads.some(
+    (thread) => thread.id === contextThreadId && thread.settledOverride === "settled",
+  );
+  const [expanded, setExpanded] = useState(selectedThreadIsSettled);
+  const settledExpanded = isSearching || expanded;
+  return {
+    settledExpanded,
+    showExecutionStatus: !isWorkbenchSidebarExecutionThreadVisible({
+      threads,
+      threadId: executionThreadId,
+      ticketExpanded,
+      settledExpanded,
+    }),
+    resetSettled: () => setExpanded(selectedThreadIsSettled),
+    toggleSettled: () => setExpanded((value) => !value),
+  };
 }
 
 function WorkbenchSidebarTicketGroupRow({
@@ -988,6 +1018,15 @@ function WorkbenchSidebarTicketGroupRow({
   const { ticket, threads } = group;
   const ticketExpanded =
     isSearching || (expansion.ticketId === ticket.id && expansion.done === isDone);
+  const { settledExpanded, showExecutionStatus, resetSettled, toggleSettled } =
+    useWorkbenchSidebarTicketThreadDisclosure({
+      threads,
+      contextThreadId,
+      isSearching,
+      ticketExpanded,
+      executionThreadId: ticketDetailsById.get(ticket.id)?.executionStatus?.threadId,
+    });
+  const ticketToggleLabel = `${ticketExpanded ? "Collapse" : "Expand"} ${ticket.title}`;
   const ticketPanelId = `workbench-sidebar-ticket-${ticket.id}-${isDone ? "done" : "active"}`;
   const ticketIsDestination = isWorkbenchSidebarTicketDestination({
     ticketId: ticket.id,
@@ -1004,8 +1043,11 @@ function WorkbenchSidebarTicketGroupRow({
             controls={ticketPanelId}
             expanded={ticketExpanded}
             disabled={isSearching}
-            label={`${ticketExpanded ? "Collapse" : "Expand"} ${ticket.title}`}
-            onToggle={() => onToggleTicket(ticket.id, isDone)}
+            label={ticketToggleLabel}
+            onToggle={() => {
+              resetSettled();
+              onToggleTicket(ticket.id, isDone);
+            }}
           />
         ) : (
           <span aria-hidden className="size-7 shrink-0" />
@@ -1015,6 +1057,7 @@ function WorkbenchSidebarTicketGroupRow({
           details={ticketDetailsById.get(ticket.id)}
           jiraOwnershipKnown={jiraOwnershipKnown}
           isActive={ticketIsDestination}
+          showExecutionStatus={showExecutionStatus}
           onSelect={() => onSelectTicket(workspaceId, ticket.id)}
         />
       </div>
@@ -1026,6 +1069,8 @@ function WorkbenchSidebarTicketGroupRow({
         contextThreadId={contextThreadId}
         isSearching={isSearching}
         onOpenThread={onOpenThread}
+        settledExpanded={settledExpanded}
+        onToggleSettled={toggleSettled}
       />
     </SidebarMenuItem>
   );
@@ -1100,13 +1145,15 @@ function WorkbenchSidebarTicketThreads({
   isSearching,
   onOpenThread,
   ticket,
+  settledExpanded,
+  onToggleSettled,
 }: Pick<WorkbenchSidebarTicketGroup, "threads" | "ticket"> &
-  Pick<WorkbenchSidebarTicketGroupsProps, "contextThreadId" | "onOpenThread" | "isSearching">) {
+  Pick<WorkbenchSidebarTicketGroupsProps, "contextThreadId" | "onOpenThread" | "isSearching"> & {
+    readonly settledExpanded: boolean;
+    readonly onToggleSettled: () => void;
+  }) {
   const activeThreads = threads.filter((thread) => thread.settledOverride !== "settled");
   const settledThreads = threads.filter((thread) => thread.settledOverride === "settled");
-  const selectedThreadIsSettled = settledThreads.some((thread) => thread.id === contextThreadId);
-  const [expanded, setExpanded] = useState(selectedThreadIsSettled);
-  const settledExpanded = isSearching || expanded;
   const panelId = `workbench-sidebar-ticket-settled-${ticket.id}`;
   const renderThread = (thread: WorkbenchSidebarTicketGroup["threads"][number]) => (
     <WorkbenchSidebarThreadRow
@@ -1126,7 +1173,7 @@ function WorkbenchSidebarTicketThreads({
             aria-controls={panelId}
             aria-expanded={settledExpanded}
             className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-xs text-sidebar-muted-foreground hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => setExpanded((value) => !value)}
+            onClick={onToggleSettled}
             disabled={isSearching}
             type="button"
           >
@@ -1257,9 +1304,17 @@ function WorkbenchSidebarTicketThreadPanel({
   contextThreadId,
   isSearching,
   onOpenThread,
+  settledExpanded,
+  onToggleSettled,
 }: Pick<
   Parameters<typeof WorkbenchSidebarTicketThreads>[0],
-  "threads" | "ticket" | "contextThreadId" | "isSearching" | "onOpenThread"
+  | "threads"
+  | "ticket"
+  | "contextThreadId"
+  | "isSearching"
+  | "onOpenThread"
+  | "settledExpanded"
+  | "onToggleSettled"
 > & { ticketExpanded: boolean; ticketPanelId: string }) {
   return (
     <>
@@ -1272,14 +1327,13 @@ function WorkbenchSidebarTicketThreadPanel({
         >
           {ticketExpanded ? (
             <WorkbenchSidebarTicketThreads
-              key={
-                threads.some((thread) => thread.id === contextThreadId) ? contextThreadId : "none"
-              }
               threads={threads}
               contextThreadId={contextThreadId}
               isSearching={isSearching}
               onOpenThread={onOpenThread}
               ticket={ticket}
+              settledExpanded={settledExpanded}
+              onToggleSettled={onToggleSettled}
             />
           ) : null}
         </div>

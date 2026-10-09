@@ -33,6 +33,24 @@ export interface WorkbenchSidebarTicketSections {
   readonly done: ReadonlyArray<WorkbenchSidebarTicketGroup>;
 }
 
+/** A Ticket summary is redundant only while its contributing Thread row is visible. */
+export function isWorkbenchSidebarExecutionThreadVisible({
+  threads,
+  threadId,
+  ticketExpanded,
+  settledExpanded,
+}: {
+  readonly threads: ReadonlyArray<WorkbenchSidebarThread>;
+  readonly threadId: ThreadId | undefined;
+  readonly ticketExpanded: boolean;
+  readonly settledExpanded: boolean;
+}) {
+  if (!ticketExpanded || threadId === undefined) return false;
+  const thread = threads.find((thread) => thread.id === threadId);
+  if (thread === undefined) return false;
+  return thread.settledOverride !== "settled" || settledExpanded;
+}
+
 export interface WorkbenchSidebarExpansion {
   readonly workspaceId: WorkbenchProjectId | null;
   readonly ticketId: WorkbenchTicketId | null;

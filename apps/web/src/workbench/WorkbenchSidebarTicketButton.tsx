@@ -121,11 +121,13 @@ function WorkbenchSidebarTicketLabel({
   details,
   status,
   jiraOwnershipKnown,
+  showExecutionStatus,
 }: {
   readonly ticket: WorkbenchSidebarTicket;
   readonly details: WorkbenchSidebarTicketDetails | undefined;
   readonly status: string;
   readonly jiraOwnershipKnown: boolean;
+  readonly showExecutionStatus: boolean;
 }) {
   const { attentionSignalsByTicket } = useWorkbenchAttentionData();
   const hasAttention = (attentionSignalsByTicket.get(ticket.id)?.length ?? 0) > 0;
@@ -138,6 +140,7 @@ function WorkbenchSidebarTicketLabel({
         details={details}
         status={status}
         jiraOwnershipKnown={jiraOwnershipKnown}
+        showExecutionStatus={showExecutionStatus}
       />
     </span>
   );
@@ -179,11 +182,13 @@ function WorkbenchSidebarTicketStatus({
   details,
   status,
   jiraOwnershipKnown,
+  showExecutionStatus,
 }: {
   readonly ticket: WorkbenchSidebarTicket;
   readonly details: WorkbenchSidebarTicketDetails | undefined;
   readonly status: string;
   readonly jiraOwnershipKnown: boolean;
+  readonly showExecutionStatus: boolean;
 }) {
   const pullRequestCount = details?.environmentId ? details.pullRequests.length : 0;
   return (
@@ -201,10 +206,13 @@ function WorkbenchSidebarTicketStatus({
       )}
       <span aria-hidden>·</span>
       <span className="truncate">{status}</span>
-      <ThreadExecutionStatus
-        status={details?.executionStatus?.presentation}
-        startedAt={details?.executionStatus?.startedAt}
-      />
+      {showExecutionStatus ? (
+        <ThreadExecutionStatus
+          compact
+          status={details?.executionStatus?.presentation}
+          startedAt={details?.executionStatus?.startedAt}
+        />
+      ) : null}
     </span>
   );
 }
@@ -275,12 +283,14 @@ export function WorkbenchSidebarTicketButton({
   jiraOwnershipKnown,
   isActive,
   onSelect,
+  showExecutionStatus = true,
 }: {
   readonly ticket: WorkbenchSidebarTicket;
   readonly details: WorkbenchSidebarTicketDetails | undefined;
   readonly jiraOwnershipKnown: boolean;
   readonly isActive: boolean;
   readonly onSelect: () => void;
+  readonly showExecutionStatus?: boolean;
 }) {
   const status = details?.statusLabel ?? WORKBENCH_TICKET_STATUS_LABELS[ticket.status];
   const { openMenu } = useWorkbenchSidebarTicketActionMenu({
@@ -333,6 +343,7 @@ export function WorkbenchSidebarTicketButton({
           details={details}
           status={status}
           jiraOwnershipKnown={jiraOwnershipKnown}
+          showExecutionStatus={showExecutionStatus}
         />
       </SidebarMenuButton>
       {details?.environmentId ? (

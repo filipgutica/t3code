@@ -74,7 +74,10 @@ export function getWorkbenchTicketExecutionStatuses({
     Pick<WorkbenchAssignment, "ticketId" | "threadId" | "supersededAt">
   >;
   readonly threadsById: ReadonlyMap<EnvironmentThreadShell["id"], AssignedExecutionThread>;
-}): ReadonlyMap<WorkbenchTicketId, WorkbenchThreadExecutionStatus> {
+}): ReadonlyMap<
+  WorkbenchTicketId,
+  WorkbenchThreadExecutionStatus & { readonly threadId: EnvironmentThreadShell["id"] }
+> {
   const selected = new Map<WorkbenchTicketId, SelectedExecution>();
   if (environmentId === null) return new Map();
   for (const assignment of assignments) {
@@ -88,5 +91,7 @@ export function getWorkbenchTicketExecutionStatuses({
       selected.set(assignment.ticketId, next);
     }
   }
-  return new Map([...selected].map(([ticketId, { status }]) => [ticketId, status]));
+  return new Map(
+    [...selected].map(([ticketId, { threadId, status }]) => [ticketId, { ...status, threadId }]),
+  );
 }
