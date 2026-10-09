@@ -65,15 +65,17 @@ export const preparePreview = async (ambient: NodeJS.ProcessEnv, stateDirectory:
     JSON.stringify({
       defaultModelSelection: PREVIEW_MODEL_SELECTION,
       textGenerationModelSelection: PREVIEW_MODEL_SELECTION,
-      providers: {
-        codex: { enabled: false },
-        claudeAgent: { enabled: false },
-        cursor: { enabled: false },
-        grok: { enabled: false },
-        antigravity: { enabled: false },
-        opencode: { enabled: true },
+      providerInstances: {
+        codex: { driver: "codex", enabled: false },
+        claudeAgent: { driver: "claudeAgent", enabled: false },
+        cursor: { driver: "cursor", enabled: false },
+        grok: { driver: "grok", enabled: false },
+        antigravity: { driver: "antigravity", enabled: false },
+        pi: { driver: "pi", enabled: false },
+        muse: { driver: "muse", enabled: false },
+        acpRegistry: { driver: "acpRegistry", enabled: false },
+        opencode: { driver: "opencode", enabled: true },
       },
-      providerInstances: { opencode: { driver: "opencode", enabled: true } },
     }),
     { mode: 0o600 },
   );

@@ -162,12 +162,27 @@ if (args[0] === "pr") {
 if (args[0] !== "api" || !args.includes("graphql"))
   refuse("Command is outside the fixture allowlist");
 const budget = { cost: 1, limit: 5000, remaining: 4999, resetAt: "2099-01-01T00:00:00Z" };
-if (query.includes("PullRequestSummaries")) {
-  const entries = [
+if (
+  query.includes("PullRequestSummaries") ||
+  query.includes("s0: repository(owner: $owner, name: $name)")
+) {
+  const literalEntries = [
     ...query.matchAll(
       /(s\d+): repository\(owner: "([^"]+)", name: "([^"]+)"\) \{ pullRequest\(number: (\d+)\)/g,
     ),
   ];
+  const variableEntries = [
+    ...query.matchAll(
+      /(s\d+): repository\(owner: \$(\w+), name: \$(\w+)\) \{ pullRequest\(number: \$(\w+)\)/g,
+    ),
+  ].map((entry) => [
+    entry[0],
+    entry[1],
+    variables[entry[2]],
+    variables[entry[3]],
+    variables[entry[4]],
+  ]);
+  const entries = [...literalEntries, ...variableEntries];
   if (!entries.length) refuse("Repository is outside the fixture allowlist");
   const data = { rateLimit: budget };
   for (const entry of entries) {
@@ -263,6 +278,14 @@ if (query.includes("reviewThreads(first:")) {
     latestReviews: { nodes: reviews(number) },
     reviews: { nodes: reviews(number) },
     comments: { nodes: [] },
+    commits: { nodes: [] },
+  };
+} else if (query.includes("comments(first: 100, after: $commentsAfter)")) {
+  const pageInfo = { hasNextPage: false, endCursor: null };
+  pullRequest = {
+    ...pullRequest,
+    comments: { nodes: [], pageInfo },
+    reviews: { nodes: reviews(number), pageInfo },
     commits: { nodes: [] },
   };
 } else if (query.includes("statusCheckRollup { contexts")) {

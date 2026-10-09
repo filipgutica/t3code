@@ -34,8 +34,9 @@ import {
   type WorkbenchUpdateTicketInput,
   type WorkbenchTicketStatus,
 } from "@t3tools/contracts";
-import * as NodeCrypto from "node:crypto";
+import { sha256 } from "@noble/hashes/sha2";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -44,6 +45,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
+import * as Hex from "effect/encoding/Hex";
 
 import { WorkbenchNativeAccess } from "./WorkbenchNativeAccess.ts";
 import { ensureWorkbenchSchema } from "./WorkbenchSchema.ts";
@@ -196,9 +198,7 @@ const ticketFromRow = (
   });
 
 const ticketSummarySourceHash = (title: string, markdown: string): string =>
-  NodeCrypto.createHash("sha256")
-    .update(JSON.stringify([title, markdown]))
-    .digest("hex");
+  Hex.encode(sha256(new TextEncoder().encode(JSON.stringify([title, markdown]))));
 
 const normalizeSummaryText = (text: string): string =>
   Array.from(text.trim()).slice(0, 500).join("");
@@ -454,6 +454,7 @@ const workbenchStoreError = (cause: unknown) =>
   isWorkbenchOperationError(cause) ? cause : persistenceError(cause);
 
 const makeWorkbenchStore = Effect.gen(function* () {
+  const crypto = yield* Crypto.Crypto;
   const sql = yield* SqlClient.SqlClient;
   const native = yield* WorkbenchNativeAccess;
   const ticketChangesPubSub = yield* PubSub.unbounded<WorkbenchTicketChange>();
@@ -3003,7 +3004,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     "WorkbenchStore.replaceAssignment",
   )(function* (input) {
     const replacement = WorkbenchAssignment.make({
-      id: input.id ?? WorkbenchAssignmentId.make(NodeCrypto.randomUUID()),
+      id: input.id ?? WorkbenchAssignmentId.make(yield* crypto.randomUUIDv4.pipe(Effect.orDie)),
       ticketId: input.ticketId,
       threadId: input.threadId,
       createdAt: input.replacedAt,

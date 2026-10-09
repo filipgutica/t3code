@@ -1949,7 +1949,7 @@ function WorkbenchTicketHeader({
   return (
     <WorkspacePageHeader
       electron={isElectron}
-      className="h-auto items-start border-b border-border py-4"
+      className="h-auto! min-h-0! max-h-none! items-start border-b border-border py-4"
     >
       <div className="mx-auto grid w-full min-w-0 max-w-6xl grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 @min-[48rem]/ticket:grid-cols-[auto_minmax(0,1fr)_auto]">
         <Button aria-label="Back to Board" onClick={onBack} size="sm" variant="ghost">

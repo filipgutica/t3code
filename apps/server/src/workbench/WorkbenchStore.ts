@@ -11,11 +11,13 @@ export type {
 } from "@t3tools/workbench/WorkbenchStore";
 
 import { WorkbenchStoreLive as WorkbenchStorePackageLive } from "@t3tools/workbench/WorkbenchStore";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as Layer from "effect/Layer";
 
 import { WorkbenchNativeAccessLive } from "./WorkbenchNativeAccess.ts";
 
 /** Server composition supplies native T3 projection access to the package store. */
 export const WorkbenchStoreLive = WorkbenchStorePackageLive.pipe(
+  Layer.provide(NodeCrypto.layer),
   Layer.provideMerge(WorkbenchNativeAccessLive),
 );

@@ -1,9 +1,29 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetch:off - Live regression helpers own remote Jira assertions.
 
 import { WORKBENCH_DEMO_CLEANUP_LABEL } from "../workbench-demo/remotes.mts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as Crypto from "effect/Crypto";
+import * as Effect from "effect/Effect";
+import * as Hex from "effect/encoding/Hex";
 
 /** Shared with the baseline reset: interrupted live tests may leave this issue behind. */
 export const JIRA_REGRESSION_CLEANUP_LABEL = WORKBENCH_DEMO_CLEANUP_LABEL;
+
+/** Host-side fixture identifiers keep live cleanup tied to this run's own records. */
+export const createJiraRegressionId = () =>
+  Effect.runPromise(
+    Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomUUIDv4).pipe(
+      Effect.provide(NodeCrypto.layer),
+    ),
+  );
+
+export const createJiraRegressionSuffix = () =>
+  Effect.runPromise(
+    Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomBytes(10)).pipe(
+      Effect.map(Hex.encode),
+      Effect.provide(NodeCrypto.layer),
+    ),
+  );
 
 export type JiraHttpConfig = {
   readonly site: string;

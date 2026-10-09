@@ -4,7 +4,11 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
-import { ServerSettings } from "../../packages/contracts/src/settings.ts";
+import {
+  ServerSettings,
+  resolveProviderInstanceEnabled,
+} from "../../packages/contracts/src/settings.ts";
+import { ProviderInstanceId } from "../../packages/contracts/src/providerInstance.ts";
 import { preparePreview, resetPreviewState } from "./config.mts";
 const decodeSettings = Schema.decodeSync(Schema.fromJsonString(ServerSettings));
 
@@ -37,9 +41,29 @@ it("starts fresh without ambient credentials and configures only the fixed free 
     const settings = decodeSettings(settingsText);
     expect(settings.defaultModelSelection?.model).toBe("opencode/big-pickle");
     expect(settings.textGenerationModelSelection.model).toBe("opencode/big-pickle");
-    expect(settings.providers.codex.enabled).toBe(false);
-    expect(settings.providers.claudeAgent.enabled).toBe(false);
-    expect(settings.providers.opencode.enabled).toBe(true);
+    for (const driver of [
+      "codex",
+      "claudeAgent",
+      "cursor",
+      "grok",
+      "antigravity",
+      "pi",
+      "muse",
+      "acpRegistry",
+    ]) {
+      const instance = settings.providerInstances[ProviderInstanceId.make(driver)];
+      expect(instance?.driver).toBe(driver);
+      expect(instance?.enabled).toBe(false);
+    }
+    expect(
+      Object.entries(settings.providerInstances)
+        .filter(([, instance]) => resolveProviderInstanceEnabled(instance))
+        .map(([id]) => id),
+    ).toEqual(["opencode"]);
+    for (const instance of Object.values(settings.providerInstances)) {
+      expect(instance.config ?? {}).toEqual({});
+      expect(instance.environment ?? []).toEqual([]);
+    }
     const openCode = JSON.parse(await NodeFSP.readFile(first.environment.OPENCODE_CONFIG!, "utf8"));
     expect(openCode.model).toBe("opencode/big-pickle");
     expect(openCode.small_model).toBe("opencode/big-pickle");

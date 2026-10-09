@@ -90,6 +90,7 @@
     "quality": "vp run lint && vp run knip && vp run fallow && vp run -w workbench:restyle-ceiling"
   },
   "dependencies": {
+    "@noble/hashes": "catalog:",
     "@t3tools/contracts": "workspace:*",
     "effect": "catalog:"
   },

@@ -7,6 +7,7 @@ import {
   WorkbenchTicketId,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -52,6 +53,7 @@ const testLayer = (options?: Parameters<typeof nativeLayer>[0]) =>
   WorkbenchStoreLive.pipe(
     Layer.provideMerge(nativeLayer(options)),
     Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" })),
+    Layer.provideMerge(NodeCrypto.layer),
   );
 
 const seedTicket = (input: {
