@@ -272,7 +272,7 @@ test("R1 R3: multi-repository worktrees persist and reset refuses retained Threa
     page.getByRole("heading", { name: "Create the welcome checklist", exact: true }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "Expand Advanced workspace settings", exact: true })
+    .getByRole("button", { name: "Expand Advanced work area settings", exact: true })
     .click();
   await page.getByRole("button", { name: "Remove prepared worktrees", exact: true }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Cancel", exact: true }).click();
