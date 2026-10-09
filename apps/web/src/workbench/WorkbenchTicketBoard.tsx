@@ -271,7 +271,7 @@ function renderWorkbenchTicketBoard({
           !search.query &&
           data.repositoryId === null &&
           !(groupMode === "epic" && epics.length > 0) ? (
-            <div className="absolute inset-0 z-10 flex flex-col items-center overflow-auto bg-background/45 p-6 backdrop-blur-xs">
+            <div className="absolute inset-0 z-10 flex flex-col items-center overflow-auto scrollbar-gutter-both bg-background/45 p-6 backdrop-blur-xs">
               <div className="my-auto w-full max-w-sm shrink-0 rounded-xl border border-border bg-background shadow-lg/10">
                 <Empty className="min-h-72">
                   <EmptyHeader>

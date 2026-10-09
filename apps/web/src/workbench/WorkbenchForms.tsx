@@ -240,7 +240,7 @@ export function WorkbenchEpicDetail({
         blockedCount={blockedCount}
       />
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6">
+      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-gutter-both p-4 sm:p-6">
         <div className="mx-auto grid min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="min-w-0 space-y-4">
             {error ? <WorkbenchInlineError message={error} /> : null}
@@ -1215,7 +1215,7 @@ function WorkbenchTicketDetailController({
       </nav>
 
       <form
-        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 @min-[40rem]/ticket:p-6 @min-[64rem]/ticket:overflow-hidden [&_[data-slot=button]>svg]:mx-0"
+        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-gutter-both p-4 @min-[40rem]/ticket:p-6 @min-[64rem]/ticket:overflow-hidden [&_[data-slot=button]>svg]:mx-0"
         onSubmit={(event) => {
           event.preventDefault();
           if (!editing || !draft) return;

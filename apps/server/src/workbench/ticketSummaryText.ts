@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { limitSection } from "../textGeneration/TextGenerationUtils.ts";
+import { limitSection } from "@t3tools/provider-core/server/textGenerationUtils";
 
 /** Ticket content is data; the provider receives only this bounded prompt. */
 export function buildTicketSummaryPrompt(input: { title: string; description: string }) {

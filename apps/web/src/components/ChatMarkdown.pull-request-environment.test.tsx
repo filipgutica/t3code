@@ -1,5 +1,6 @@
 import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { AsyncResult } from "effect/reactivity";
 import { act, type ComponentProps, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -9,7 +10,21 @@ import ChatMarkdown from "./ChatMarkdown";
 
 const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
+vi.mock("@effect/atom-react", () => ({
+  useAtomValue: () => null,
+}));
+vi.mock("../state/query", () => ({
+  useEnvironmentQuery: () => ({
+    resultIdentity: AsyncResult.initial(),
+    data: null,
+    dataUpdatedAt: 0,
+    error: null,
+    failure: null,
+    isPending: false,
+    isSuccess: false,
+    refresh: vi.fn(),
+  }),
+}));
 vi.mock("../hooks/useTheme", () => ({ useTheme: () => ({ resolvedTheme: "dark" }) }));
 vi.mock("../hooks/useSettings", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../hooks/useSettings")>();
@@ -46,8 +61,11 @@ vi.mock("../assets/assetUrls", () => ({
 vi.mock("../state/session", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../state/session")>()),
   usePreparedConnection: () => ({ _tag: "Loading" }),
+  useEnvironmentScope: () => true,
+  readEnvironmentScope: () => true,
 }));
 vi.mock("../state/entities", () => ({
+  readEnvironmentSupportsServerBrowser: () => false,
   readThreadShell: () => null,
   useProjects: () =>
     ["local", "remote"].map((environmentId) => ({
