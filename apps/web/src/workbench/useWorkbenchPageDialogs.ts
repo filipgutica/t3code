@@ -76,7 +76,9 @@ export function useWorkbenchPageDialogs({
     consumedTicketIntent.current = location.href;
     setError(null);
     setTicketDialogEpicId(null);
-    setTicketDialogOpen(true);
+    setTicketDialogOpen(selectedProject.archivedAt == null);
+    if (selectedProject.archivedAt != null)
+      setError("Restore this Workspace before creating a Ticket.");
     // Consume before the dialog can close, so navigation or reload cannot reopen it.
     void navigate({
       to: "/workbench",
@@ -109,13 +111,15 @@ export function useWorkbenchPageDialogs({
   };
 
   const saveWorkspace = async (title: string, linkedProjectIds: ReadonlyArray<ProjectId>) => {
-    if (environmentId === null || !selectedProject) return false;
+    if (environmentId === null || !selectedProject || selectedProject.archivedAt != null)
+      return false;
     setPendingAction("update-project");
     setError(null);
     const result = await updateProject({
       environmentId,
       input: {
         id: selectedProject.id,
+        expectedRevision: selectedProject.revision ?? 0,
         title,
         linkedProjectIds,
         updatedAt: new Date().toISOString(),
@@ -127,7 +131,8 @@ export function useWorkbenchPageDialogs({
   };
 
   const submitTicket = async (draft: WorkbenchCreateTicketDraft) => {
-    if (environmentId === null || selectedProject === null) return false;
+    if (environmentId === null || selectedProject === null || selectedProject.archivedAt != null)
+      return false;
     if (draft.localOnly && !localOnlySupported) {
       setError("Update this environment before creating local-only Tickets.");
       return false;
@@ -160,7 +165,8 @@ export function useWorkbenchPageDialogs({
   };
 
   const saveEpicContent = async (epic: WorkbenchEpic, title: string, markdown: string) => {
-    if (environmentId === null || title.trim().length === 0) return false;
+    if (environmentId === null || selectedProject?.archivedAt != null || title.trim().length === 0)
+      return false;
     setPendingAction(`update-epic:${epic.id}`);
     setError(null);
     const result = await updateEpic({
@@ -178,7 +184,8 @@ export function useWorkbenchPageDialogs({
   };
 
   const submitEpic = async (title: string, markdown: string) => {
-    if (environmentId === null || selectedProject === null) return false;
+    if (environmentId === null || selectedProject === null || selectedProject.archivedAt != null)
+      return false;
     const onCreated = epicCreatedRef.current;
     setPendingAction("create-epic");
     setError(null);
@@ -208,11 +215,13 @@ export function useWorkbenchPageDialogs({
   };
 
   const openTicketDialog = (epicId: WorkbenchEpicId | null = null) => {
+    if (selectedProject?.archivedAt != null) return;
     setError(null);
     setTicketDialogEpicId(epicId);
     setTicketDialogOpen(true);
   };
   const openEpicDialog = (onCreated?: (epicId: WorkbenchEpicId) => void) => {
+    if (selectedProject?.archivedAt != null) return;
     epicCreatedRef.current = onCreated ?? null;
     setError(null);
     setEpicDialogOpen(true);

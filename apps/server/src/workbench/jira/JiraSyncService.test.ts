@@ -80,6 +80,14 @@ const TestLayer = WorkbenchStoreLive.pipe(
   ),
 );
 
+const makeSyncService = JiraSyncService.make.pipe(
+  Effect.provide(
+    Layer.mock(WorkbenchStore, {
+      requireActiveProject: () => Effect.void,
+    }),
+  ),
+);
+
 const oldIssue = (issueId: string): WorkbenchJiraIssueLink => ({
   bindingId,
   ticketId: issueId === "10001" ? existingTicketId : unseenTicketId,
@@ -175,7 +183,7 @@ const makeSyncHarness = (options?: {
     const importer = JiraTicketImporter.of({
       upsertJiraProjection: () => Effect.die("unexpected Ticket import"),
     });
-    const service = yield* JiraSyncService.make.pipe(
+    const service = yield* makeSyncService.pipe(
       Effect.provideService(WorkbenchJiraRepository, repository),
       Effect.provideService(JiraApi, api),
       Effect.provideService(JiraTicketImporter, importer),
@@ -273,7 +281,7 @@ describe("JiraSyncService", () => {
           upsertJiraProjection: () => Effect.die("unexpected Ticket import"),
         });
         const makeService = () =>
-          JiraSyncService.make.pipe(
+          makeSyncService.pipe(
             Effect.provideService(WorkbenchJiraRepository, repository),
             Effect.provideService(JiraApi, api),
             Effect.provideService(JiraTicketImporter, importer),
@@ -356,7 +364,7 @@ describe("JiraSyncService", () => {
             return WorkbenchTicketId.make(`imported-${issue.issueId}`);
           }),
       });
-      const service = yield* JiraSyncService.make.pipe(
+      const service = yield* makeSyncService.pipe(
         Effect.provideService(WorkbenchJiraRepository, repository),
         Effect.provideService(JiraApi, api),
         Effect.provideService(JiraTicketImporter, importer),
@@ -445,7 +453,7 @@ describe("JiraSyncService", () => {
             return existingTicketId ?? WorkbenchTicketId.make("unexpected-new-ticket");
           }),
       });
-      const service = yield* JiraSyncService.make.pipe(
+      const service = yield* makeSyncService.pipe(
         Effect.provideService(WorkbenchJiraRepository, repository),
         Effect.provideService(JiraApi, api),
         Effect.provideService(JiraTicketImporter, importer),
@@ -578,7 +586,7 @@ describe("JiraSyncService", () => {
             return WorkbenchTicketId.make(`imported-${issue.issueId}`);
           }),
       });
-      const service = yield* JiraSyncService.make.pipe(
+      const service = yield* makeSyncService.pipe(
         Effect.provideService(WorkbenchJiraRepository, repository),
         Effect.provideService(JiraApi, api),
         Effect.provideService(JiraTicketImporter, importer),
@@ -658,7 +666,7 @@ describe("JiraSyncService", () => {
         upsertJiraProjection: ({ existingTicketId: id }) =>
           id === null ? Effect.die("expected existing Ticket link") : Effect.succeed(id),
       });
-      const service = yield* JiraSyncService.make.pipe(
+      const service = yield* makeSyncService.pipe(
         Effect.provideService(WorkbenchJiraRepository, repository),
         Effect.provideService(JiraApi, api),
         Effect.provideService(JiraTicketImporter, importer),
@@ -716,7 +724,7 @@ describe("JiraSyncService", () => {
       const importer = JiraTicketImporter.of({
         upsertJiraProjection: () => Effect.die("unexpected Ticket import"),
       });
-      const service = yield* JiraSyncService.make.pipe(
+      const service = yield* makeSyncService.pipe(
         Effect.provideService(WorkbenchJiraRepository, repository),
         Effect.provideService(JiraApi, api),
         Effect.provideService(JiraTicketImporter, importer),
@@ -877,7 +885,7 @@ describe("JiraSyncService", () => {
       const importer = JiraTicketImporter.of({
         upsertJiraProjection: () => Effect.die("unexpected Ticket import"),
       });
-      const service = yield* JiraSyncService.make.pipe(
+      const service = yield* makeSyncService.pipe(
         Effect.provideService(WorkbenchJiraRepository, repository),
         Effect.provideService(JiraApi, api),
         Effect.provideService(JiraTicketImporter, importer),
@@ -937,7 +945,7 @@ describe("JiraSyncService", () => {
         upsertJiraProjection: () =>
           Ref.update(importCount, (count) => count + 1).pipe(Effect.as(existingTicketId)),
       });
-      const service = yield* JiraSyncService.make.pipe(
+      const service = yield* makeSyncService.pipe(
         Effect.provideService(WorkbenchJiraRepository, repository),
         Effect.provideService(JiraApi, api),
         Effect.provideService(JiraTicketImporter, importer),
@@ -1029,7 +1037,7 @@ describe("JiraSyncService", () => {
                 mappedStatus: "in_progress",
               }),
       });
-      const service = yield* JiraSyncService.make.pipe(
+      const service = yield* makeSyncService.pipe(
         Effect.provideService(WorkbenchJiraRepository, repository),
         Effect.provideService(JiraApi, api),
         Effect.provideService(JiraTicketImporter, importer),
@@ -1150,7 +1158,7 @@ describe("JiraSyncService", () => {
             Effect.as(existingTicketId),
           ),
       });
-      const service = yield* JiraSyncService.make.pipe(
+      const service = yield* makeSyncService.pipe(
         Effect.provideService(WorkbenchJiraRepository, repository),
         Effect.provideService(JiraApi, api),
         Effect.provideService(JiraTicketImporter, importer),
@@ -1248,7 +1256,7 @@ describe("JiraSyncService", () => {
             }),
           ),
       });
-      const service = yield* JiraSyncService.make.pipe(
+      const service = yield* makeSyncService.pipe(
         Effect.provideService(WorkbenchJiraRepository, repository),
         Effect.provideService(JiraApi, api),
         Effect.provideService(JiraTicketImporter, importer),
@@ -1317,7 +1325,7 @@ describe("JiraSyncService", () => {
       const importer = JiraTicketImporter.of({
         upsertJiraProjection: () => Effect.die("unexpected Ticket import"),
       });
-      const service = yield* JiraSyncService.make.pipe(
+      const service = yield* makeSyncService.pipe(
         Effect.provideService(WorkbenchJiraRepository, repository),
         Effect.provideService(JiraApi, api),
         Effect.provideService(JiraTicketImporter, importer),
@@ -1381,7 +1389,7 @@ describe("JiraSyncService", () => {
       const importer = JiraTicketImporter.of({
         upsertJiraProjection: () => Effect.die("unexpected Ticket import"),
       });
-      const service = yield* JiraSyncService.make.pipe(
+      const service = yield* makeSyncService.pipe(
         Effect.provideService(WorkbenchJiraRepository, repository),
         Effect.provideService(JiraApi, api),
         Effect.provideService(JiraTicketImporter, importer),

@@ -117,6 +117,7 @@ const STATUS_DOT_CLASS: Record<WorkbenchTicketStatus, string> = {
 };
 
 type WorkbenchTicketBoardProps = {
+  readonly readOnly?: boolean;
   readonly environmentId: EnvironmentId;
   readonly onJiraTransition: (selection: WorkbenchJiraTransitionSelection) => void;
   readonly projectId: WorkbenchProjectId;
@@ -284,7 +285,7 @@ function renderWorkbenchTicketBoard({
                     </EmptyDescription>
                   </EmptyHeader>
                   <EmptyContent>
-                    <Button onClick={onCreateTicket}>
+                    <Button disabled={props.readOnly} onClick={onCreateTicket}>
                       <PlusIcon /> Create Ticket
                     </Button>
                   </EmptyContent>
@@ -303,7 +304,7 @@ function renderWorkbenchTicketBoard({
       </DragOverlay>
       {renderWorkbenchBoardJiraDrop({
         environmentId,
-        jiraDropTicket,
+        jiraDropTicket: props.readOnly ? undefined : jiraDropTicket,
         jiraDropLink,
         jiraDropColumn,
         mirrorColumns,
@@ -317,6 +318,7 @@ function renderWorkbenchTicketBoard({
 
 type WorkbenchBoardContext = Pick<
   WorkbenchTicketBoardProps,
+  | "readOnly"
   | "environmentId"
   | "projectId"
   | "groupMode"
@@ -484,7 +486,8 @@ function renderWorkbenchBoardTicket({
     dragDisabled,
   } = board;
   const presentation = getWorkbenchBoardTicketPresentation({ ticket, board });
-  const ticketDisabled = pendingTicketIds.has(ticket.id) || ticket.archivedAt != null;
+  const ticketDisabled =
+    board.readOnly === true || pendingTicketIds.has(ticket.id) || ticket.archivedAt != null;
   const ticketDragDisabled = dragDisabled || ticketDisabled;
   const attentionReasons = board.attentionReasonsByTicket.get(ticket.id) ?? [];
   return (
@@ -982,7 +985,11 @@ function renderWorkbenchBoardTicketThreadAction(
         aria-label={`${threadActionLabel ?? thread.actionLabel} for ${ticket.title}`}
         data-workbench-no-drag=""
         className="relative z-10"
-        disabled={pending || pendingTicketIds.has(ticket.id)}
+        disabled={
+          pending ||
+          pendingTicketIds.has(ticket.id) ||
+          (board.readOnly === true && (thread.state === "unassigned" || thread.state === "missing"))
+        }
         onClick={() => onOpenThread(ticket, assignment?.threadId)}
         size="xs"
         variant={thread.state === "unassigned" || thread.state === "missing" ? "default" : "ghost"}
@@ -1002,6 +1009,7 @@ function useWorkbenchBoardDrag({
   jiraIssueLinksByTicketId,
   groupMode,
   pending,
+  readOnly,
   pendingTicketIds,
   onMove,
   columns,
@@ -1016,6 +1024,7 @@ function useWorkbenchBoardDrag({
   | "pending"
   | "pendingTicketIds"
   | "onMove"
+  | "readOnly"
 > &
   Pick<ReturnType<typeof useWorkbenchBoardData>, "columns" | "swimlanes">) {
   const { view, setView } = useWorkbenchBoardView({ environmentId, projectId });
@@ -1042,7 +1051,7 @@ function useWorkbenchBoardDrag({
     jiraIssueLinksByTicketId,
   });
   const hasJiraDrop = Boolean(jiraDropTicket && jiraDropLink && jiraDropColumn);
-  const dragDisabled = !wideBoard || pending || hasJiraDrop;
+  const dragDisabled = readOnly === true || !wideBoard || pending || hasJiraDrop;
   const dropTargets = useMemo(
     () =>
       new Map(

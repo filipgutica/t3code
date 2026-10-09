@@ -307,7 +307,7 @@ type WorkbenchSidebarNavigationFields = {
   }) => void;
   readonly onSelectTicket: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
   readonly onSelectWorkspace: (projectId: WorkbenchProjectId) => void;
-  readonly projects: ReadonlyArray<Pick<WorkbenchProject, "id" | "title">>;
+  readonly projects: ReadonlyArray<Pick<WorkbenchProject, "id" | "title" | "archivedAt">>;
   readonly searchQuery: string;
   readonly onSearchQueryChange: (query: string) => void;
   readonly onlyActionable: boolean;
@@ -520,12 +520,18 @@ function WorkbenchSidebarNavigation({
       onlyActionable,
     ],
   );
+  const activeProjects = useMemo(
+    () => projects.filter((project) => project.archivedAt == null),
+    [projects],
+  );
   const actionableProjects = useMemo(
     () =>
       onlyActionable
-        ? projects.filter((project) => (prioritizedGroups.get(project.id)?.active.length ?? 0) > 0)
-        : projects,
-    [onlyActionable, projects, prioritizedGroups],
+        ? activeProjects.filter(
+            (project) => (prioritizedGroups.get(project.id)?.active.length ?? 0) > 0,
+          )
+        : activeProjects,
+    [onlyActionable, activeProjects, prioritizedGroups],
   );
   const actionableTicketCount = [...attentionSignalsByTicket.values()].filter(
     (signals) => signals.length > 0,
@@ -574,41 +580,100 @@ function WorkbenchSidebarNavigation({
       )
     : ticketCountsByWorkspace;
 
+  const archivedFiltered = useMemo(
+    () =>
+      filterWorkbenchSidebarNavigation({
+        query: searchQuery,
+        projects: projects.filter((workspace) => workspace.archivedAt != null),
+        ticketGroupsByWorkspace,
+        archivedTicketsByWorkspace,
+        jiraKeysByTicketId,
+      }),
+    [
+      searchQuery,
+      projects,
+      ticketGroupsByWorkspace,
+      archivedTicketsByWorkspace,
+      jiraKeysByTicketId,
+    ],
+  );
+  const navigation = {
+    contextThreadId,
+    jiraOwnershipKnown,
+    onOpenThread,
+    onSelectTicket,
+    onSelectWorkspace,
+    selectedEpicId,
+    selectedTicketId,
+    selectedWorkspaceId,
+    ticketCountsByWorkspace,
+    ticketDetailsById,
+  };
+  const renderWorkspace = (workspace: Pick<WorkbenchProject, "id" | "title">) => (
+    <WorkbenchSidebarWorkspaceRow
+      key={workspace.id}
+      workspace={workspace}
+      ticketSections={filtered.ticketGroupsByWorkspace.get(workspace.id)}
+      archivedTickets={filtered.archivedTicketsByWorkspace.get(workspace.id) ?? []}
+      expansion={expansion}
+      isSearching={isSearching}
+      onToggle={toggleExpansion}
+      navigation={{ ...navigation, ticketCountsByWorkspace: visibleTicketCounts }}
+    />
+  );
   return (
     <div className="space-y-4">
       <WorkbenchSidebarFilters
         search={search}
-        resultCount={filtered.resultCount}
+        resultCount={filtered.resultCount + archivedFiltered.resultCount}
         actionableTicketCount={actionableTicketCount}
         incompleteInspection={incompleteInspection}
         attentionCoverage={attentionCoverage}
       />
       <SidebarMenu aria-label="Workbench Workspaces" className="ps-px">
+        {filtered.projects.map(renderWorkspace)}
+      </SidebarMenu>
+      <WorkbenchSidebarArchivedWorkspaces
+        filtered={archivedFiltered}
+        expansion={expansion}
+        isSearching={isSearching}
+        onToggle={toggleExpansion}
+        navigation={navigation}
+      />
+    </div>
+  );
+}
+
+function WorkbenchSidebarArchivedWorkspaces({
+  filtered,
+  ...rowProps
+}: Pick<
+  WorkbenchSidebarWorkspaceRowProps,
+  "expansion" | "isSearching" | "onToggle" | "navigation"
+> & {
+  filtered: ReturnType<typeof filterWorkbenchSidebarNavigation>;
+}) {
+  if (filtered.projects.length === 0) return null;
+  const selected = filtered.projects.some(
+    (workspace) => workspace.id === rowProps.navigation.selectedWorkspaceId,
+  );
+  return (
+    <details open={selected || undefined}>
+      <summary className="cursor-pointer px-2 py-2 text-xs font-medium text-sidebar-muted-foreground focus-visible:ring-2 focus-visible:ring-ring">
+        Archived Workspaces
+      </summary>
+      <SidebarMenu aria-label="Archived Workspaces">
         {filtered.projects.map((workspace) => (
           <WorkbenchSidebarWorkspaceRow
             key={workspace.id}
+            {...rowProps}
             workspace={workspace}
             ticketSections={filtered.ticketGroupsByWorkspace.get(workspace.id)}
             archivedTickets={filtered.archivedTicketsByWorkspace.get(workspace.id) ?? []}
-            expansion={expansion}
-            isSearching={isSearching}
-            onToggle={toggleExpansion}
-            navigation={{
-              contextThreadId,
-              jiraOwnershipKnown,
-              onOpenThread,
-              onSelectTicket,
-              onSelectWorkspace,
-              selectedEpicId,
-              selectedTicketId,
-              selectedWorkspaceId,
-              ticketCountsByWorkspace: visibleTicketCounts,
-              ticketDetailsById,
-            }}
           />
         ))}
       </SidebarMenu>
-    </div>
+    </details>
   );
 }
 

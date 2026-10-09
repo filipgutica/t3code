@@ -41,8 +41,12 @@ vi.mock("../state/environments", () => ({
 const shells: EnvironmentThreadShell[] = [];
 vi.mock("../state/entities", () => ({ useThreadShells: () => shells }));
 const snapshot = {
-  projects: [{ id: WorkbenchProjectId.make("workspace") }],
-  tickets: [] as { id: WorkbenchTicketId; archivedAt: string | null }[],
+  projects: [{ id: WorkbenchProjectId.make("workspace"), archivedAt: null as string | null }],
+  tickets: [] as {
+    id: WorkbenchTicketId;
+    projectId: WorkbenchProjectId;
+    archivedAt: string | null;
+  }[],
   assignments: [] as WorkbenchAssignment[],
 };
 vi.mock("../state/query", () => ({
@@ -81,6 +85,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.route = null;
   shells.length = 0;
+  snapshot.projects[0]!.archivedAt = null;
   snapshot.tickets.length = 0;
   snapshot.assignments.length = 0;
   useUiStateStore.setState({ threadLastVisitedAtById: {} });
@@ -168,7 +173,7 @@ it("acknowledges a plain native route only after its visible active Ticket assig
   await act(async () => renderer.update(page()));
   expect(useUiStateStore.getState().threadLastVisitedAtById[key]).toBeUndefined();
   const ticketId = WorkbenchTicketId.make("ticket");
-  snapshot.tickets = [{ id: ticketId, archivedAt: null }];
+  snapshot.tickets = [{ id: ticketId, projectId: snapshot.projects[0]!.id, archivedAt: null }];
   snapshot.assignments = [
     {
       id: WorkbenchAssignmentId.make("assignment"),
@@ -181,10 +186,15 @@ it("acknowledges a plain native route only after its visible active Ticket assig
   await act(async () => renderer.update(page()));
   expect(useUiStateStore.getState().threadLastVisitedAtById[key]).toBeUndefined();
   snapshot.assignments = snapshot.assignments.map((row) => ({ ...row, supersededAt: null }));
-  snapshot.tickets = [{ id: ticketId, archivedAt: requestAt }];
+  snapshot.tickets = [{ id: ticketId, projectId: snapshot.projects[0]!.id, archivedAt: requestAt }];
   await act(async () => renderer.update(page()));
   expect(useUiStateStore.getState().threadLastVisitedAtById[key]).toBeUndefined();
-  snapshot.tickets = [{ id: ticketId, archivedAt: null }];
+  snapshot.tickets = [{ id: ticketId, projectId: snapshot.projects[0]!.id, archivedAt: null }];
+  snapshot.projects[0]!.archivedAt = requestAt;
+  await act(async () => renderer.update(page()));
+  expect(useUiStateStore.getState().threadLastVisitedAtById[key]).toBeUndefined();
+  snapshot.projects[0]!.archivedAt = null;
+  snapshot.projects = [...snapshot.projects];
   await act(async () => renderer.update(page()));
   expect(useUiStateStore.getState().threadLastVisitedAtById[key]).toBe(requestAt);
 });

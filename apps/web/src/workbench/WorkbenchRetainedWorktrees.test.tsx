@@ -57,7 +57,11 @@ vi.mock("../state/query", () => ({
   }),
 }));
 vi.mock("./WorkbenchAttentionProvider", () => ({
-  useWorkbenchAttentionData: () => ({ attentionSignalsByTicket: new Map() }),
+  useWorkbenchAttentionData: () => ({
+    attentionSignalsByTicket: new Map(),
+    attentionInspectionsByTicket: new Map(),
+    attentionCoverage: "complete",
+  }),
 }));
 vi.mock("../components/sidebar/SidebarChrome", () => ({ SidebarChromeFooter: () => null }));
 vi.mock("./WorkbenchSidebarTicketButton", () => ({ WorkbenchSidebarTicketButton: () => null }));
@@ -75,7 +79,16 @@ vi.mock("../components/ui/sidebar", () => {
 });
 vi.mock("../components/ui/tooltip", () => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
-  return { Tooltip: Container, TooltipTrigger: Container, TooltipPopup: Container };
+  return {
+    Tooltip: Container,
+    TooltipTrigger: ({ render, children }: { render?: ReactNode; children?: ReactNode }) => (
+      <>
+        {render}
+        {children}
+      </>
+    ),
+    TooltipPopup: Container,
+  };
 });
 vi.mock("../components/ui/button", () => ({
   Button: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
@@ -308,4 +321,54 @@ it("confirms cleanup, keeps a failed removal available, and retires refreshed re
   expect(renderer!.root.findAllByType("button")).toHaveLength(1);
   await act(() => button("Retained worktrees").props.onClick());
   expect(button(`Remove worktrees for ${ticketId}`)).toBeDefined();
+});
+
+it("keeps archived Workspaces searchable and reachable while showing only actionable Tickets", async () => {
+  sidebarHost.environmentId = "archived-sidebar-host";
+  const workspaceId = WorkbenchProjectId.make("archived-workspace");
+  sidebarHost.snapshot = {
+    ...snapshot,
+    projects: [
+      {
+        id: workspaceId,
+        title: "Archived Roadmap",
+        linkedProjectIds: [],
+        archivedAt: timestamp,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ],
+    tickets: [{ ...snapshot.tickets[0]!, projectId: workspaceId, title: "Release Checklist" }],
+    ticketWorkspaces: [],
+  };
+  const root = createRootRoute();
+  const route = createRoute({ getParentRoute: () => root, path: "/workbench" });
+  const router = createRouter({
+    routeTree: root.addChildren([route]),
+    history: createMemoryHistory({ initialEntries: ["/workbench"] }),
+  });
+  await router.load();
+  await act(() => {
+    renderer = create(
+      <RouterContextProvider router={router}>
+        <WorkbenchSidebar />
+      </RouterContextProvider>,
+    );
+  });
+  await act(() => button("Show actionable Tickets and Threads").props.onClick());
+  expect(renderer!.root.findByType("summary").children).toEqual(["Archived Workspaces"]);
+  const search = renderer!.root.findByProps({ "aria-label": "Search Workbench sidebar" });
+  await act(() => search.props.onChange({ target: { value: "Release Checklist" } }));
+  expect(renderer!.root.findAllByType("summary")).toHaveLength(1);
+  await act(() => search.props.onChange({ target: { value: "unrelated search" } }));
+  expect(renderer!.root.findAllByType("summary")).toHaveLength(0);
+  await act(() => search.props.onChange({ target: { value: "Roadmap" } }));
+  const workspaceButton = renderer!.root
+    .findAllByType("button")
+    .find((node) => node.props.tooltip?.children === "Archived Roadmap")!;
+  await act(() => workspaceButton.props.onClick());
+  expect(router.state.location.search).toMatchObject({
+    environmentId: "archived-sidebar-host",
+    workbenchProjectId: workspaceId,
+  });
 });

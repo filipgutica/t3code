@@ -194,6 +194,14 @@ export function useWorkbenchThreadActions({
   });
 
   const repositoryReviewRequest = (ticket: WorkbenchTicket) => {
+    if (
+      !snapshot?.projects.some(
+        (workspace) => workspace.id === ticket.projectId && workspace.archivedAt == null,
+      )
+    ) {
+      setError("Restore this Workspace before creating a Thread.");
+      return null;
+    }
     const draft = repositoryScopeDraft?.ticket.id === ticket.id ? repositoryScopeDraft : null;
     const workspace = snapshot?.ticketWorkspaces.find(
       (candidate) => candidate.ticketId === ticket.id,
@@ -307,7 +315,13 @@ export function useWorkbenchThreadActions({
 
   const getReviewedStartThreadTicket = (request: WorkbenchStartThreadRequest) => {
     const ticket = snapshot?.tickets.find((candidate) => candidate.id === request.ticket.id);
-    if (!ticket || ticket.archivedAt != null) {
+    if (
+      !ticket ||
+      ticket.archivedAt != null ||
+      !snapshot?.projects.some(
+        (workspace) => workspace.id === ticket.projectId && workspace.archivedAt == null,
+      )
+    ) {
       setError("This Ticket is no longer available for a new Thread.");
       setStartThreadRequest(null);
       return null;

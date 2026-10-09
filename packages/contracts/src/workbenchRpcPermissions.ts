@@ -13,6 +13,8 @@ export const WORKBENCH_RPC_REQUIRED_SCOPES = {
   [WORKBENCH_WS_METHODS.workbenchGetSnapshot]: AuthOrchestrationReadScope,
   [WORKBENCH_WS_METHODS.workbenchCreateProject]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchUpdateProject]: AuthOrchestrationOperateScope,
+  [WORKBENCH_WS_METHODS.workbenchArchiveProject]: AuthOrchestrationOperateScope,
+  [WORKBENCH_WS_METHODS.workbenchDeleteProject]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchCreateEpic]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchUpdateEpic]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchArchiveEpic]: AuthOrchestrationOperateScope,

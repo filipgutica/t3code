@@ -29,7 +29,8 @@ export const getWorkbenchCommandPaletteTargets = ({
   };
   return {
     board,
-    createTicket: workspace ? { ...board, create: "ticket" as const } : null,
+    createTicket:
+      workspace && workspace.archivedAt == null ? { ...board, create: "ticket" as const } : null,
     ticket: context
       ? { environmentId, workbenchProjectId: context.workspace.id, ticketId: context.ticket.id }
       : null,

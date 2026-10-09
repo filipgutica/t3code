@@ -21,6 +21,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
+import * as WorkbenchStore from "../WorkbenchStore.ts";
 
 import { JiraApi } from "./JiraApi.ts";
 import { JiraAuthService } from "./JiraAuthService.ts";
@@ -224,6 +225,7 @@ export const make = Effect.gen(function* () {
   const sync = yield* JiraSyncService;
   const importer = yield* JiraTicketImporter;
   const repository = yield* WorkbenchJiraRepository;
+  const workbench = yield* WorkbenchStore.WorkbenchStore;
   const clock = yield* Clock.Clock;
   const sql = yield* SqlClient.SqlClient;
   const httpClient = yield* HttpClient.HttpClient;
@@ -405,7 +407,11 @@ export const make = Effect.gen(function* () {
           "This Ticket is linked to more than one Jira issue. Refresh Jira and repair the duplicate links before editing it.",
         );
       }
-      return matches[0]!;
+      const managed = matches[0]!;
+      yield* workbench
+        .requireActiveProject(managed.binding.projectId)
+        .pipe(Effect.mapError((error) => operationError("invalid_binding", error.message)));
+      return managed;
     });
 
   const readAssignedIssue = (managed: ManagedIssue) =>
@@ -577,6 +583,9 @@ export const make = Effect.gen(function* () {
     },
   ): Effect.Effect<WorkbenchCreateTicketInput["id"], WorkbenchJiraOperationError> =>
     Effect.gen(function* () {
+      yield* workbench
+        .requireActiveProject(input.projectId)
+        .pipe(Effect.mapError((error) => operationError("invalid_binding", error.message)));
       if (!input.binding.active) {
         return yield* operationError(
           "binding_inactive",
@@ -625,6 +634,9 @@ export const make = Effect.gen(function* () {
       return yield* sync.withBindingPermit(
         input.binding.id,
         Effect.gen(function* () {
+          yield* workbench
+            .requireActiveProject(input.projectId)
+            .pipe(Effect.mapError((error) => operationError("invalid_binding", error.message)));
           const currentBinding = yield* repository
             .getBinding(input.binding.id)
             .pipe(Effect.mapError(repositoryError));
@@ -1065,11 +1077,16 @@ export const make = Effect.gen(function* () {
     sql`SELECT r.run_id FROM workbench_execution_runs r
       JOIN workbench_assignments a ON a.assignment_id = r.assignment_id
       JOIN workbench_tickets t ON t.ticket_id = a.ticket_id
+      JOIN workbench_projects p ON p.project_id = t.workbench_project_id
       WHERE r.run_id = ${execution.runId} AND r.state IN ('pending', 'uncertain')
         AND r.assignment_id = ${execution.assignmentId} AND r.sequence = ${execution.sequence}
         AND t.ticket_id = ${ticketId} AND t.deleted_at IS NULL AND t.archived_at IS NULL
         AND t.status = 'todo' AND a.superseded_at IS NULL
-        AND t.execution_after_sequence < r.sequence AND a.execution_after_sequence < r.sequence`.pipe(
+        AND p.deleted_at IS NULL AND p.archived_at IS NULL
+        AND (p.execution_after_sequence < r.sequence
+          OR (${execution.readbackOnly === true ? 1 : 0} = 1 AND r.state = 'uncertain'))
+        AND t.execution_after_sequence < r.sequence
+        AND a.execution_after_sequence < r.sequence`.pipe(
       Effect.mapError(repositoryError),
       Effect.flatMap((rows) =>
         rows.length > 0

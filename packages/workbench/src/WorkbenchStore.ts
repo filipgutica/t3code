@@ -21,6 +21,8 @@ import {
   ThreadId,
   ProjectId,
   type WorkbenchArchiveTicketInput,
+  type WorkbenchArchiveProjectInput,
+  type WorkbenchDeleteProjectInput,
   type WorkbenchCreateAssignmentInput,
   type WorkbenchUnlinkAssignmentInput,
   type WorkbenchArchiveEpicInput,
@@ -53,6 +55,8 @@ import { ensureWorkbenchSchema } from "./WorkbenchSchema.ts";
 const WorkbenchProjectRow = Schema.Struct({
   id: WorkbenchProjectId,
   title: WorkbenchProject.fields.title,
+  archivedAt: Schema.NullOr(IsoDateTime),
+  revision: Schema.Number,
   createdAt: WorkbenchProject.fields.createdAt,
   updatedAt: WorkbenchProject.fields.updatedAt,
 });
@@ -328,6 +332,18 @@ interface WorkbenchStoreShape {
   ) => Effect.Effect<Option.Option<WorkbenchTicket>, WorkbenchOperationError>;
   readonly recheckTicketSummary: (ticketId: WorkbenchTicketId) => Effect.Effect<void>;
   readonly ticketChanges: Stream.Stream<WorkbenchTicketChange>;
+  readonly getProject: (
+    projectId: WorkbenchProjectId,
+  ) => Effect.Effect<Option.Option<WorkbenchProject>, WorkbenchOperationError>;
+  readonly requireActiveProject: (
+    projectId: WorkbenchProjectId,
+  ) => Effect.Effect<void, WorkbenchOperationError>;
+  readonly archiveProject: (
+    input: WorkbenchArchiveProjectInput & { readonly expectedJiraBindingId?: string | null },
+  ) => Effect.Effect<WorkbenchProject, WorkbenchOperationError>;
+  readonly deleteProject: (
+    input: WorkbenchDeleteProjectInput & { readonly expectedJiraBindingId?: string | null },
+  ) => Effect.Effect<void, WorkbenchOperationError>;
   readonly createProject: (
     input: WorkbenchCreateProjectInput,
   ) => Effect.Effect<WorkbenchProject, WorkbenchOperationError>;
@@ -471,9 +487,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
       SELECT
         project_id AS "id",
         title,
+        archived_at AS "archivedAt",
+        revision,
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM workbench_projects
+      WHERE deleted_at IS NULL
       ORDER BY created_at ASC, project_id ASC
     `,
   });
@@ -502,6 +521,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM workbench_epics
+      WHERE workbench_project_id IN (SELECT project_id FROM workbench_projects WHERE deleted_at IS NULL)
       ORDER BY created_at ASC, epic_id ASC
     `,
   });
@@ -541,6 +561,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       SELECT ticket.ticket_id AS "ticketId"
       FROM workbench_tickets AS ticket
       WHERE ticket.deleted_at IS NULL
+        AND ticket.workbench_project_id IN (SELECT project_id FROM workbench_projects WHERE deleted_at IS NULL AND archived_at IS NULL)
         AND ticket.archived_at IS NULL
         AND ticket.generated_summary_status = 'pending'
         AND (
@@ -771,12 +792,125 @@ const makeWorkbenchStore = Effect.gen(function* () {
       SELECT
         project_id AS "id",
         title,
+        archived_at AS "archivedAt",
+        revision,
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM workbench_projects
-      WHERE project_id = ${id}
+      WHERE project_id = ${id} AND deleted_at IS NULL
     `,
   });
+  const getProject: WorkbenchStoreShape["getProject"] = Effect.fn("WorkbenchStore.getProject")(
+    (projectId) =>
+      sql
+        .withTransaction(
+          Effect.gen(function* () {
+            const project = yield* findProject({ id: projectId });
+            if (Option.isNone(project)) return Option.none<WorkbenchProject>();
+            const links = yield* listProjectLinkRows();
+            return Option.some(
+              WorkbenchProject.make({
+                ...project.value,
+                linkedProjectIds: links
+                  .filter((link) => link.projectId === projectId)
+                  .map((link) => link.linkedProjectId),
+              }),
+            );
+          }),
+        )
+        .pipe(Effect.mapError(workbenchStoreError)),
+  );
+
+  const requireActiveProject: WorkbenchStoreShape["requireActiveProject"] = Effect.fn(
+    "WorkbenchStore.requireActiveProject",
+  )(function* (projectId) {
+    const project = yield* findProject({ id: projectId }).pipe(Effect.mapError(persistenceError));
+    if (Option.isNone(project))
+      return yield* new WorkbenchOperationError({
+        code: "project_not_found",
+        message: "The Workbench Workspace does not exist.",
+      });
+    if (project.value.archivedAt !== null)
+      return yield* new WorkbenchOperationError({
+        code: "project_archived",
+        message: "Archived Workbench Workspaces are read-only. Restore the Workspace first.",
+      });
+    return;
+  });
+
+  const lockProject = (projectId: WorkbenchProjectId) => sql`
+    UPDATE workbench_projects SET updated_at = updated_at WHERE project_id = ${projectId}
+  `;
+  const requireProjectRevision = Effect.fnUntraced(function* (input: {
+    readonly id: WorkbenchProjectId;
+    readonly expectedRevision: number;
+  }) {
+    yield* lockProject(input.id);
+    const project = yield* getProject(input.id);
+    if (Option.isNone(project))
+      return yield* new WorkbenchOperationError({
+        code: "project_not_found",
+        message: "The Workbench Workspace does not exist.",
+      });
+    if (project.value.revision !== input.expectedRevision)
+      return yield* new WorkbenchOperationError({
+        code: "project_changed",
+        message: "The Workbench Workspace changed. Refresh it and try again.",
+      });
+    return project.value;
+  });
+
+  const requireExpectedJiraBinding = Effect.fnUntraced(function* (input: {
+    readonly id: WorkbenchProjectId;
+    readonly expectedJiraBindingId?: string | null;
+  }) {
+    if (input.expectedJiraBindingId === undefined) return;
+    const bindings = yield* sql<{
+      readonly id: string;
+    }>`SELECT binding_id AS id FROM workbench_jira_bindings WHERE workbench_project_id = ${input.id}`;
+    if ((bindings[0]?.id ?? null) !== input.expectedJiraBindingId)
+      return yield* new WorkbenchOperationError({
+        code: "project_changed",
+        message: "The Workspace Jira configuration changed. Refresh it and try again.",
+      });
+  });
+
+  const requireStableProjectWorkspaces = Effect.fnUntraced(function* (
+    projectId: WorkbenchProjectId,
+  ) {
+    const busy = yield* sql`
+      SELECT 1 FROM workbench_ticket_workspaces w JOIN workbench_tickets t ON t.ticket_id = w.ticket_id
+      WHERE t.workbench_project_id = ${projectId} AND w.status IN ('preparing', 'releasing') LIMIT 1
+    `;
+    if (busy.length > 0)
+      return yield* new WorkbenchOperationError({
+        code: "ticket_workspace_in_use",
+        message:
+          "A Ticket Workspace is changing. Wait for it to finish before changing the Workspace lifecycle.",
+      });
+  });
+
+  const requireResolvedProjectJiraOperations = Effect.fnUntraced(function* (
+    projectId: WorkbenchProjectId,
+  ) {
+    const pending = yield* sql`
+      SELECT 1 WHERE EXISTS (
+        SELECT 1 FROM workbench_jira_bindings b WHERE b.workbench_project_id = ${projectId}
+          AND (EXISTS (SELECT 1 FROM workbench_jira_ticket_creations c WHERE c.binding_id = b.binding_id AND c.state IN ('pending', 'uncertain'))
+            OR EXISTS (SELECT 1 FROM workbench_jira_epic_creations c WHERE c.binding_id = b.binding_id AND c.state IN ('pending', 'uncertain')))
+      ) OR EXISTS (
+        SELECT 1 FROM workbench_execution_runs r JOIN workbench_tickets t ON t.ticket_id = r.ticket_id
+        WHERE t.workbench_project_id = ${projectId} AND r.state = 'uncertain'
+      )
+    `;
+    if (pending.length > 0)
+      return yield* new WorkbenchOperationError({
+        code: "jira_operation_pending",
+        message:
+          "Resolve pending or uncertain Jira operations before archiving or deleting this Workspace.",
+      });
+  });
+
   const findProjectLink = SqlSchema.findOneOption({
     Request: FindProjectLinkInput,
     Result: WorkbenchProjectLinkRow,
@@ -862,6 +996,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         message: "The Workbench Ticket does not exist.",
       });
     }
+    yield* requireActiveProject(ticket.value.projectId);
     if (ticket.value.revision !== expectedRevision) {
       return yield* new WorkbenchOperationError({
         code: "ticket_changed",
@@ -884,6 +1019,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         message: "The Workbench Ticket does not exist.",
       });
     }
+    yield* requireActiveProject(ticket.value.projectId);
     if (ticket.value.archivedAt !== null) {
       return yield* new WorkbenchOperationError({
         code: "ticket_archived",
@@ -906,6 +1042,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         updated_at AS "updatedAt"
       FROM workbench_epics
       WHERE epic_id = ${epicId}
+        AND workbench_project_id IN (SELECT project_id FROM workbench_projects WHERE deleted_at IS NULL)
     `,
   });
   const findNativeThread = Effect.fn("WorkbenchStore.findNativeThread")(function* ({
@@ -1064,6 +1201,30 @@ const makeWorkbenchStore = Effect.gen(function* () {
     return Option.some(hydrateTicketWorkspace({ workspace: workspace.value, repositories }));
   });
 
+  const requireWorkspaceMutationTicket = Effect.fnUntraced(function* (
+    ticketId: WorkbenchTicketId,
+    allowRetained = false,
+  ) {
+    const ticket = yield* lockAndFindTicket({ ticketId, activeOnly: false });
+    if (Option.isSome(ticket)) {
+      yield* requireActiveProject(ticket.value.projectId);
+      return;
+    }
+    if (allowRetained) {
+      yield* requireDeletedWorkspaceTicket(ticketId);
+      const workspace = yield* findTicketWorkspaceRow({ ticketId });
+      if (
+        Option.isSome(workspace) &&
+        (workspace.value.status === "releasing" || workspace.value.status === "released")
+      )
+        return;
+    }
+    return yield* new WorkbenchOperationError({
+      code: "ticket_not_found",
+      message: "The Workbench Ticket does not exist.",
+    });
+  });
+
   const requireTicketWorkspaceAttempt = Effect.fn("WorkbenchStore.requireTicketWorkspaceAttempt")(
     function* ({
       ticketId,
@@ -1186,6 +1347,9 @@ const makeWorkbenchStore = Effect.gen(function* () {
             ) {
               return Option.none<WorkbenchTicket>();
             }
+            const project = yield* findProject({ id: ticket.value.projectId });
+            if (Option.isNone(project) || project.value.archivedAt !== null)
+              return Option.none<WorkbenchTicket>();
             const jiraLinks = yield* listJiraIssueLinkActivity(ticketId);
             if (jiraLinks.length > 0 && !jiraLinks.some((link) => link.active === 1)) {
               return Option.none<WorkbenchTicket>();
@@ -1488,18 +1652,25 @@ const makeWorkbenchStore = Effect.gen(function* () {
       .pipe(Effect.mapError(workbenchStoreError));
   });
 
+  const requirePreparingTicketWorkspace = Effect.fnUntraced(function* (input: {
+    readonly ticketId: WorkbenchTicketId;
+    readonly attemptId: WorkbenchTicketWorkspaceAttemptId;
+  }) {
+    yield* requireWorkspaceMutationTicket(input.ticketId);
+    const workspace = yield* requireTicketWorkspaceAttempt(input);
+    if (workspace.status !== "preparing")
+      return yield* new WorkbenchOperationError({
+        code: "ticket_workspace_preparation_changed",
+        message: "The Ticket Workspace is no longer being prepared.",
+      });
+  });
+
   const markTicketWorkspaceRepositoryReady: WorkbenchStoreShape["markTicketWorkspaceRepositoryReady"] =
     Effect.fn("WorkbenchStore.markTicketWorkspaceRepositoryReady")(function* (input) {
       return yield* sql
         .withTransaction(
           Effect.gen(function* () {
-            const workspace = yield* requireTicketWorkspaceAttempt(input);
-            if (workspace.status !== "preparing") {
-              return yield* new WorkbenchOperationError({
-                code: "ticket_workspace_preparation_changed",
-                message: "The Ticket Workspace is no longer being prepared.",
-              });
-            }
+            yield* requirePreparingTicketWorkspace(input);
             const updated = yield* sql<{
               readonly projectId: ProjectId;
             }>`
@@ -1538,13 +1709,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     return yield* sql
       .withTransaction(
         Effect.gen(function* () {
-          const workspace = yield* requireTicketWorkspaceAttempt(input);
-          if (workspace.status !== "preparing") {
-            return yield* new WorkbenchOperationError({
-              code: "ticket_workspace_preparation_changed",
-              message: "The Ticket Workspace is no longer being prepared.",
-            });
-          }
+          yield* requirePreparingTicketWorkspace(input);
           const repositories = yield* listTicketWorkspaceRepositoriesByTicket({
             ticketId: input.ticketId,
           });
@@ -1568,12 +1733,17 @@ const makeWorkbenchStore = Effect.gen(function* () {
       .pipe(Effect.mapError(workbenchStoreError));
   });
 
-  const failTicketWorkspace: WorkbenchStoreShape["failTicketWorkspace"] = Effect.fn(
-    "WorkbenchStore.failTicketWorkspace",
-  )(function* (input) {
+  const persistTicketWorkspaceFailure = Effect.fnUntraced(function* ({
+    input,
+    matchRepositoryAttempt,
+  }: {
+    readonly input: WorkbenchFailTicketWorkspaceInput;
+    readonly matchRepositoryAttempt: boolean;
+  }) {
     return yield* sql
       .withTransaction(
         Effect.gen(function* () {
+          yield* requireWorkspaceMutationTicket(input.ticketId);
           yield* requireTicketWorkspaceAttempt(input);
           if (input.projectId !== null) {
             const updated = yield* sql<{ readonly projectId: ProjectId }>`
@@ -1581,6 +1751,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               SET status = 'failed', error_message = ${input.errorMessage}, updated_at = ${input.failedAt}
               WHERE ticket_id = ${input.ticketId}
                 AND t3_project_id = ${input.projectId}
+                AND ${matchRepositoryAttempt ? sql`attempt_id = ${input.attemptId}` : sql`1 = 1`}
               RETURNING t3_project_id AS "projectId"
             `;
             if (updated.length === 0) {
@@ -1601,44 +1772,21 @@ const makeWorkbenchStore = Effect.gen(function* () {
       .pipe(Effect.mapError(workbenchStoreError));
   });
 
+  const failTicketWorkspace: WorkbenchStoreShape["failTicketWorkspace"] = Effect.fn(
+    "WorkbenchStore.failTicketWorkspace",
+  )((input) => persistTicketWorkspaceFailure({ input, matchRepositoryAttempt: false }));
+
   const failTicketWorkspaceExtension: WorkbenchStoreShape["failTicketWorkspaceExtension"] =
-    Effect.fn("WorkbenchStore.failTicketWorkspaceExtension")(function* (input) {
-      return yield* sql
-        .withTransaction(
-          Effect.gen(function* () {
-            yield* requireTicketWorkspaceAttempt(input);
-            if (input.projectId !== null) {
-              const updated = yield* sql<{ readonly projectId: ProjectId }>`
-                UPDATE workbench_ticket_workspace_repositories
-                SET status = 'failed', error_message = ${input.errorMessage}, updated_at = ${input.failedAt}
-                WHERE ticket_id = ${input.ticketId}
-                  AND t3_project_id = ${input.projectId}
-                  AND attempt_id = ${input.attemptId}
-                RETURNING t3_project_id AS "projectId"
-              `;
-              if (updated.length === 0) {
-                return yield* new WorkbenchOperationError({
-                  code: "ticket_workspace_repository_not_found",
-                  message: "The Ticket Workspace repository does not exist.",
-                });
-              }
-            }
-            yield* sql`
-              UPDATE workbench_ticket_workspaces
-              SET status = 'failed', error_message = ${input.errorMessage}, updated_at = ${input.failedAt}
-              WHERE ticket_id = ${input.ticketId}
-            `;
-            return Option.getOrThrow(yield* loadTicketWorkspace(input.ticketId));
-          }),
-        )
-        .pipe(Effect.mapError(workbenchStoreError));
-    });
+    Effect.fn("WorkbenchStore.failTicketWorkspaceExtension")((input) =>
+      persistTicketWorkspaceFailure({ input, matchRepositoryAttempt: true }),
+    );
 
   const releaseTicketWorkspaceRepository: WorkbenchStoreShape["releaseTicketWorkspaceRepository"] =
     Effect.fn("WorkbenchStore.releaseTicketWorkspaceRepository")(function* (input) {
       return yield* sql
         .withTransaction(
           Effect.gen(function* () {
+            yield* requireWorkspaceMutationTicket(input.ticketId, true);
             yield* requireTicketWorkspaceAttempt(input);
             const updated = yield* sql<{ readonly projectId: ProjectId }>`
               UPDATE workbench_ticket_workspace_repositories
@@ -1721,20 +1869,14 @@ const makeWorkbenchStore = Effect.gen(function* () {
             SET updated_at = updated_at
             WHERE ticket_id = ${input.ticketId}
           `;
+          if (input.requireDeletedTicket !== true) {
+            yield* requireWorkspaceMutationTicket(input.ticketId);
+          }
           if (input.requireActiveTicket === true) {
-            const ticket = yield* findTicket({ id: input.ticketId });
-            if (Option.isNone(ticket)) {
-              return yield* new WorkbenchOperationError({
-                code: "ticket_not_found",
-                message: "The Workbench Ticket does not exist.",
-              });
-            }
-            if (ticket.value.archivedAt !== null) {
-              return yield* new WorkbenchOperationError({
-                code: "ticket_archived",
-                message: "Archived Workbench Tickets cannot release a Workspace.",
-              });
-            }
+            yield* requireActiveTicket({
+              ticketId: input.ticketId,
+              archivedMessage: "Archived Workbench Tickets cannot release a Workspace.",
+            });
           }
           if (input.requireDeletedTicket === true) {
             yield* requireDeletedWorkspaceTicket(input.ticketId);
@@ -1787,6 +1929,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       return yield* sql
         .withTransaction(
           Effect.gen(function* () {
+            yield* requireWorkspaceMutationTicket(input.ticketId, true);
             yield* requireTicketWorkspaceAttempt(input);
             const repositories = yield* listTicketWorkspaceRepositoriesByTicket({
               ticketId: input.ticketId,
@@ -1844,9 +1987,95 @@ const makeWorkbenchStore = Effect.gen(function* () {
     return WorkbenchProject.make({
       ...input,
       linkedProjectIds,
+      archivedAt: null,
+      revision: 0,
       updatedAt: input.createdAt,
     });
   });
+
+  const archiveProject: WorkbenchStoreShape["archiveProject"] = Effect.fn(
+    "WorkbenchStore.archiveProject",
+  )(function* (input) {
+    const { project, pendingTickets } = yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const current = yield* requireProjectRevision(input);
+          yield* requireExpectedJiraBinding(input);
+          yield* requireStableProjectWorkspaces(input.id);
+          if (input.archivedAt !== null) yield* requireResolvedProjectJiraOperations(input.id);
+          const sequence = yield* native.executionSequence;
+          yield* sql`
+        UPDATE workbench_projects SET archived_at = ${input.archivedAt}, revision = revision + 1,
+          execution_after_sequence = MAX(execution_after_sequence, ${sequence}), updated_at = ${input.updatedAt} WHERE project_id = ${input.id}
+      `;
+          // Old summary requests and delayed native executions must not cross a
+          // Workspace archive/restore boundary, even when workers finish later.
+          yield* sql`
+        UPDATE workbench_tickets SET generated_summary_request_id = NULL
+        WHERE workbench_project_id = ${input.id} AND deleted_at IS NULL
+      `;
+          const pendingTickets =
+            input.archivedAt === null
+              ? yield* sql<{ readonly ticketId: WorkbenchTicketId }>`
+                SELECT ticket_id AS "ticketId" FROM workbench_tickets
+                WHERE workbench_project_id = ${input.id} AND deleted_at IS NULL
+                  AND archived_at IS NULL AND generated_summary_status = 'pending'
+              `
+              : [];
+          return {
+            project: WorkbenchProject.make({
+              ...current,
+              archivedAt: input.archivedAt,
+              revision: input.expectedRevision + 1,
+              updatedAt: input.updatedAt,
+            }),
+            pendingTickets,
+          };
+        }),
+      )
+      .pipe(Effect.mapError(workbenchStoreError));
+    for (const { ticketId } of pendingTickets) yield* publishTicketChange(ticketId);
+    return project;
+  });
+
+  const deleteProject: WorkbenchStoreShape["deleteProject"] = Effect.fn(
+    "WorkbenchStore.deleteProject",
+  )((input) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* requireProjectRevision(input);
+          yield* requireExpectedJiraBinding(input);
+          yield* requireStableProjectWorkspaces(input.id);
+          const counts = yield* sql<{ readonly ticketCount: number; readonly epicCount: number }>`
+        SELECT (SELECT COUNT(*) FROM workbench_tickets WHERE workbench_project_id = ${input.id} AND deleted_at IS NULL) AS "ticketCount",
+          (SELECT COUNT(*) FROM workbench_epics WHERE workbench_project_id = ${input.id}) AS "epicCount"
+      `;
+          if (
+            counts[0]?.ticketCount !== input.expectedTicketCount ||
+            counts[0]?.epicCount !== input.expectedEpicCount
+          )
+            return yield* new WorkbenchOperationError({
+              code: "project_changed",
+              message:
+                "The Workspace planning data changed. Review the updated deletion counts and try again.",
+            });
+          yield* requireResolvedProjectJiraOperations(input.id);
+          // Tombstones preserve Assignment reservations and retained worktree ownership.
+          // Bindings and creation ledgers remain for external-operation history.
+          yield* sql`
+        UPDATE workbench_tickets SET deleted_at = ${input.deletedAt}, updated_at = ${input.deletedAt},
+          revision = revision + 1, generated_summary_request_id = NULL
+        WHERE workbench_project_id = ${input.id} AND deleted_at IS NULL
+      `;
+          yield* sql`
+        UPDATE workbench_projects SET deleted_at = ${input.deletedAt}, updated_at = ${input.deletedAt},
+          revision = revision + 1 WHERE project_id = ${input.id}
+      `;
+        }),
+      )
+      .pipe(Effect.mapError(workbenchStoreError)),
+  );
 
   const updateProject: WorkbenchStoreShape["updateProject"] = Effect.fn(
     "WorkbenchStore.updateProject",
@@ -1870,6 +2099,15 @@ const makeWorkbenchStore = Effect.gen(function* () {
             });
           }
 
+          yield* requireActiveProject(input.id);
+          if (
+            input.expectedRevision !== undefined &&
+            current.value.revision !== input.expectedRevision
+          )
+            return yield* new WorkbenchOperationError({
+              code: "project_changed",
+              message: "The Workbench Workspace changed. Refresh it and try again.",
+            });
           const currentLinks = (yield* listProjectLinkRows()).filter(
             (link) => link.projectId === input.id,
           );
@@ -1884,7 +2122,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
 
           yield* sql`
             UPDATE workbench_projects
-            SET title = ${input.title}, updated_at = ${input.updatedAt}
+            SET title = ${input.title}, updated_at = ${input.updatedAt}, revision = revision + 1
             WHERE project_id = ${input.id}
           `;
           const nextPosition = currentLinks.reduce(
@@ -1904,6 +2142,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           return WorkbenchProject.make({
             ...current.value,
             title: input.title,
+            revision: current.value.revision + 1,
             linkedProjectIds: [...existingProjectIds, ...additions],
             updatedAt: input.updatedAt,
           });
@@ -1912,18 +2151,26 @@ const makeWorkbenchStore = Effect.gen(function* () {
       .pipe(Effect.mapError(workbenchStoreError));
   });
 
+  const requireMutableEpic = Effect.fnUntraced(function* (epicId: WorkbenchEpicId) {
+    yield* sql`UPDATE workbench_epics SET updated_at = updated_at WHERE epic_id = ${epicId}`;
+    const epic = yield* findEpic({ epicId });
+    if (Option.isNone(epic))
+      return yield* new WorkbenchOperationError({
+        code: "epic_not_found",
+        message: "The Workbench Epic does not exist.",
+      });
+    yield* requireActiveProject(epic.value.projectId);
+    return epic.value;
+  });
+
   const createEpic: WorkbenchStoreShape["createEpic"] = Effect.fn("WorkbenchStore.createEpic")(
-    function* (input) {
-      const project = yield* findProject({ id: input.projectId }).pipe(
-        Effect.mapError(persistenceError),
-      );
-      if (Option.isNone(project)) {
-        return yield* new WorkbenchOperationError({
-          code: "project_not_found",
-          message: "The Workbench Workspace does not exist.",
-        });
-      }
-      yield* sql`
+    (input) =>
+      sql
+        .withTransaction(
+          Effect.gen(function* () {
+            yield* lockProject(input.projectId);
+            yield* requireActiveProject(input.projectId);
+            yield* sql`
       INSERT INTO workbench_epics (
         epic_id,
         workbench_project_id,
@@ -1942,24 +2189,23 @@ const makeWorkbenchStore = Effect.gen(function* () {
         ${input.createdAt}
       )
     `.pipe(Effect.mapError(persistenceError));
-      return WorkbenchEpic.make({
-        ...input,
-        archivedAt: null,
-        updatedAt: input.createdAt,
-      });
-    },
+            return WorkbenchEpic.make({
+              ...input,
+              archivedAt: null,
+              updatedAt: input.createdAt,
+            });
+          }),
+        )
+        .pipe(Effect.mapError(workbenchStoreError)),
   );
 
   const updateEpic: WorkbenchStoreShape["updateEpic"] = Effect.fn("WorkbenchStore.updateEpic")(
-    function* (input) {
-      const current = yield* findEpic({ epicId: input.id }).pipe(Effect.mapError(persistenceError));
-      if (Option.isNone(current)) {
-        return yield* new WorkbenchOperationError({
-          code: "epic_not_found",
-          message: "The Workbench Epic does not exist.",
-        });
-      }
-      yield* sql`
+    (input) =>
+      sql
+        .withTransaction(
+          Effect.gen(function* () {
+            yield* requireMutableEpic(input.id);
+            yield* sql`
       UPDATE workbench_epics
       SET
         title = CASE
@@ -1985,31 +2231,34 @@ const makeWorkbenchStore = Effect.gen(function* () {
         updated_at = ${input.updatedAt}
       WHERE epic_id = ${input.id}
     `.pipe(Effect.mapError(persistenceError));
-      const updated = yield* findEpic({ epicId: input.id }).pipe(Effect.mapError(persistenceError));
-      return Option.getOrThrow(updated);
-    },
+            const updated = yield* findEpic({ epicId: input.id }).pipe(
+              Effect.mapError(persistenceError),
+            );
+            return Option.getOrThrow(updated);
+          }),
+        )
+        .pipe(Effect.mapError(workbenchStoreError)),
   );
 
   const archiveEpic: WorkbenchStoreShape["archiveEpic"] = Effect.fn("WorkbenchStore.archiveEpic")(
-    function* (input) {
-      const current = yield* findEpic({ epicId: input.id }).pipe(Effect.mapError(persistenceError));
-      if (Option.isNone(current)) {
-        return yield* new WorkbenchOperationError({
-          code: "epic_not_found",
-          message: "The Workbench Epic does not exist.",
-        });
-      }
-      yield* sql`
+    (input) =>
+      sql
+        .withTransaction(
+          Effect.gen(function* () {
+            const current = yield* requireMutableEpic(input.id);
+            yield* sql`
       UPDATE workbench_epics
       SET archived_at = ${input.archivedAt}, updated_at = ${input.archivedAt}
       WHERE epic_id = ${input.id}
     `.pipe(Effect.mapError(persistenceError));
-      return WorkbenchEpic.make({
-        ...current.value,
-        archivedAt: input.archivedAt,
-        updatedAt: input.archivedAt,
-      });
-    },
+            return WorkbenchEpic.make({
+              ...current,
+              archivedAt: input.archivedAt,
+              updatedAt: input.archivedAt,
+            });
+          }),
+        )
+        .pipe(Effect.mapError(workbenchStoreError)),
   );
 
   const validateTicketRepositoryScope = Effect.fn("WorkbenchStore.validateTicketRepositoryScope")(
@@ -2082,27 +2331,20 @@ const makeWorkbenchStore = Effect.gen(function* () {
   const createTicket: WorkbenchStoreShape["createTicket"] = Effect.fn(
     "WorkbenchStore.createTicket",
   )(function* (input) {
-    const project = yield* findProject({ id: input.projectId }).pipe(
-      Effect.mapError(persistenceError),
-    );
-    if (Option.isNone(project)) {
-      return yield* new WorkbenchOperationError({
-        code: "project_not_found",
-        message: "The Workbench Workspace does not exist.",
-      });
-    }
-    const epicId = yield* validateTicketEpic({
-      projectId: input.projectId,
-      epicId: input.epicId ?? null,
-    });
-    const repositoryProjectIds = yield* validateTicketRepositoryScope({
-      projectId: input.projectId,
-      primaryT3ProjectId: input.primaryT3ProjectId,
-      repositoryProjectIds: input.repositoryProjectIds ?? [input.primaryT3ProjectId],
-    });
-    yield* sql
+    const { epicId, repositoryProjectIds } = yield* sql
       .withTransaction(
         Effect.gen(function* () {
+          yield* lockProject(input.projectId);
+          yield* requireActiveProject(input.projectId);
+          const epicId = yield* validateTicketEpic({
+            projectId: input.projectId,
+            epicId: input.epicId ?? null,
+          });
+          const repositoryProjectIds = yield* validateTicketRepositoryScope({
+            projectId: input.projectId,
+            primaryT3ProjectId: input.primaryT3ProjectId,
+            repositoryProjectIds: input.repositoryProjectIds ?? [input.primaryT3ProjectId],
+          });
           yield* sql`
             INSERT INTO workbench_tickets (
               ticket_id,
@@ -2153,9 +2395,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
               ) VALUES (${input.id}, ${repositoryProjectId}, ${position})
             `;
           }
+          return { epicId, repositoryProjectIds };
         }),
       )
-      .pipe(Effect.mapError(persistenceError));
+      .pipe(Effect.mapError(workbenchStoreError));
 
     const ticket = WorkbenchTicket.make({
       ...input,
@@ -2426,8 +2669,9 @@ const makeWorkbenchStore = Effect.gen(function* () {
             }>`
           SELECT a.assignment_id AS id, a.ticket_id AS "ticketId" FROM workbench_assignments a
           JOIN workbench_tickets t ON t.ticket_id = a.ticket_id
+            JOIN workbench_projects p ON p.project_id = t.workbench_project_id
           WHERE a.thread_id = ${run.threadId} AND a.superseded_at IS NULL
-            AND t.deleted_at IS NULL AND t.archived_at IS NULL AND t.status = 'todo'
+            AND p.deleted_at IS NULL AND p.archived_at IS NULL AND p.execution_after_sequence < ${input.sequence} AND t.deleted_at IS NULL AND t.archived_at IS NULL AND t.status = 'todo'
             AND a.execution_after_sequence < ${input.sequence}
             AND t.execution_after_sequence < ${input.sequence}`;
             const assignment = assignments[0];
@@ -2462,13 +2706,25 @@ const makeWorkbenchStore = Effect.gen(function* () {
       .withTransaction(
         Effect.gen(function* () {
           yield* sql`UPDATE workbench_execution_runs SET state = state WHERE run_id = ${runId}`;
+          // Legacy archived uncertainty remains recoverable. A restore admits
+          // readback only; it must never retry an already-sent Jira transition.
+          const paused = yield* sql`
+            SELECT 1 FROM workbench_execution_runs r
+            JOIN workbench_tickets t ON t.ticket_id = r.ticket_id
+            JOIN workbench_projects p ON p.project_id = t.workbench_project_id
+            WHERE r.run_id = ${runId} AND r.state = 'uncertain'
+              AND p.deleted_at IS NULL AND p.archived_at IS NOT NULL
+          `;
+          if (paused.length > 0) return "skip";
           const current = yield* sql<{
             readonly state: "pending" | "uncertain";
           }>`SELECT r.state FROM workbench_execution_runs r
       JOIN workbench_assignments a ON a.assignment_id = r.assignment_id
       JOIN workbench_tickets t ON t.ticket_id = a.ticket_id
+            JOIN workbench_projects p ON p.project_id = t.workbench_project_id
       WHERE r.run_id = ${runId} AND r.state IN ('pending', 'uncertain')
-        AND a.superseded_at IS NULL AND t.deleted_at IS NULL AND t.archived_at IS NULL
+        AND a.superseded_at IS NULL AND p.deleted_at IS NULL AND p.archived_at IS NULL AND t.deleted_at IS NULL AND t.archived_at IS NULL
+        AND (r.state = 'uncertain' OR p.execution_after_sequence < r.sequence)
         AND t.status = 'todo' AND a.execution_after_sequence < r.sequence AND t.execution_after_sequence < r.sequence`;
           if (current[0] === undefined) {
             yield* sql`UPDATE workbench_execution_runs SET state = 'done' WHERE run_id = ${runId}`;
@@ -2613,13 +2869,14 @@ const makeWorkbenchStore = Effect.gen(function* () {
     return yield* sql
       .withTransaction(
         Effect.gen(function* () {
-          const current = yield* findTicket({ id: input.ticketId });
+          const current = yield* lockAndFindTicket({ ticketId: input.ticketId, activeOnly: true });
           if (Option.isNone(current)) {
             return yield* new WorkbenchOperationError({
               code: "ticket_not_found",
               message: "The Workbench Ticket does not exist.",
             });
           }
+          yield* requireActiveProject(current.value.projectId);
           if (current.value.archivedAt !== null) {
             return yield* new WorkbenchOperationError({
               code: "ticket_archived",
@@ -2666,96 +2923,48 @@ const makeWorkbenchStore = Effect.gen(function* () {
       .pipe(Effect.mapError(workbenchStoreError));
   });
 
-  const completeTicketSummary: WorkbenchStoreShape["completeTicketSummary"] = Effect.fn(
-    "WorkbenchStore.completeTicketSummary",
-  )(function* (input) {
-    return yield* sql
-      .withTransaction(
-        Effect.gen(function* () {
-          const current = yield* findTicket({ id: input.ticketId });
-          if (Option.isNone(current) || current.value.archivedAt !== null) {
-            return Option.none<WorkbenchTicket>();
-          }
-          const sourceHash = ticketSummarySourceHash(current.value.title, current.value.markdown);
-          if (
-            current.value.generatedSummaryRequestId !== input.requestId ||
-            current.value.generatedSummarySourceHash !== sourceHash
-          ) {
-            return Option.none<WorkbenchTicket>();
-          }
-          const summary = normalizeSummaryText(input.summary);
-          const updated = yield* sql<{ readonly ticketId: string }>`
-            UPDATE workbench_tickets
-            SET
-              generated_summary = ${summary},
-              generated_summary_status = 'ready',
-              generated_summary_stale = 0,
-              generated_summary_error = NULL,
-              generated_summary_request_id = NULL,
-              generated_summary_source_hash = ${sourceHash}
-            WHERE ticket_id = ${input.ticketId}
-              AND deleted_at IS NULL
-              AND generated_summary_request_id = ${input.requestId}
-              AND generated_summary_source_hash = ${sourceHash}
-            RETURNING ticket_id AS "ticketId"
-          `;
-          if (updated.length === 0) return Option.none<WorkbenchTicket>();
-          const repositories = yield* listTicketRepositoryRowsByTicket({
-            ticketId: input.ticketId,
-          });
-          return Option.some(
-            ticketFromRow(
-              {
-                ...current.value,
-                generatedSummaryText: summary,
-                generatedSummaryStatus: "ready",
-                generatedSummaryStale: 0,
-                generatedSummaryError: null,
-                generatedSummarySourceHash: sourceHash,
-                generatedSummaryRequestId: null,
-              },
-              repositories.length > 0
-                ? repositories.map((repository) => repository.repositoryProjectId)
-                : [current.value.primaryT3ProjectId],
-            ),
-          );
-        }),
-      )
-      .pipe(Effect.mapError(workbenchStoreError));
+  const findCurrentTicketSummaryRequest = Effect.fnUntraced(function* (
+    input: WorkbenchRequestTicketSummaryInput,
+  ) {
+    const current = yield* lockAndFindTicket({ ticketId: input.ticketId, activeOnly: true });
+    if (Option.isNone(current) || current.value.archivedAt !== null)
+      return Option.none<typeof WorkbenchTicketRow.Type>();
+    const project = yield* findProject({ id: current.value.projectId });
+    if (Option.isNone(project) || project.value.archivedAt !== null)
+      return Option.none<typeof WorkbenchTicketRow.Type>();
+    const sourceHash = ticketSummarySourceHash(current.value.title, current.value.markdown);
+    if (
+      current.value.generatedSummaryRequestId !== input.requestId ||
+      current.value.generatedSummarySourceHash !== sourceHash
+    )
+      return Option.none<typeof WorkbenchTicketRow.Type>();
+    return current;
   });
 
-  const failTicketSummary: WorkbenchStoreShape["failTicketSummary"] = Effect.fn(
-    "WorkbenchStore.failTicketSummary",
-  )(function* (input) {
+  const settleTicketSummary = Effect.fnUntraced(function* (
+    input: WorkbenchCompleteTicketSummaryInput | WorkbenchFailTicketSummaryInput,
+  ) {
     return yield* sql
       .withTransaction(
         Effect.gen(function* () {
-          const current = yield* findTicket({ id: input.ticketId });
-          if (Option.isNone(current) || current.value.archivedAt !== null) {
-            return Option.none<WorkbenchTicket>();
-          }
+          const current = yield* findCurrentTicketSummaryRequest(input);
+          if (Option.isNone(current)) return Option.none<WorkbenchTicket>();
           const sourceHash = ticketSummarySourceHash(current.value.title, current.value.markdown);
-          if (
-            current.value.generatedSummaryRequestId !== input.requestId ||
-            current.value.generatedSummarySourceHash !== sourceHash
-          ) {
-            return Option.none<WorkbenchTicket>();
-          }
-          const error = normalizeSummaryError(input.error);
+          const succeeded = "summary" in input;
+          const text = succeeded
+            ? normalizeSummaryText(input.summary)
+            : current.value.generatedSummaryText;
+          const status = succeeded ? "ready" : "error";
+          const stale = succeeded ? 0 : current.value.generatedSummaryStale;
+          const error = succeeded ? null : normalizeSummaryError(input.error);
           const updated = yield* sql<{ readonly ticketId: string }>`
-            UPDATE workbench_tickets
-            SET
-              generated_summary_status = 'error',
-              generated_summary_stale = ${current.value.generatedSummaryStale},
-              generated_summary_error = ${error},
-              generated_summary_request_id = NULL,
-              generated_summary_source_hash = ${sourceHash}
-            WHERE ticket_id = ${input.ticketId}
-              AND deleted_at IS NULL
-              AND generated_summary_request_id = ${input.requestId}
-              AND generated_summary_source_hash = ${sourceHash}
-            RETURNING ticket_id AS "ticketId"
-          `;
+        UPDATE workbench_tickets SET generated_summary = ${text}, generated_summary_status = ${status},
+          generated_summary_stale = ${stale}, generated_summary_error = ${error},
+          generated_summary_request_id = NULL, generated_summary_source_hash = ${sourceHash}
+        WHERE ticket_id = ${input.ticketId} AND deleted_at IS NULL
+          AND generated_summary_request_id = ${input.requestId} AND generated_summary_source_hash = ${sourceHash}
+        RETURNING ticket_id AS "ticketId"
+      `;
           if (updated.length === 0) return Option.none<WorkbenchTicket>();
           const repositories = yield* listTicketRepositoryRowsByTicket({
             ticketId: input.ticketId,
@@ -2764,8 +2973,9 @@ const makeWorkbenchStore = Effect.gen(function* () {
             ticketFromRow(
               {
                 ...current.value,
-                generatedSummaryStatus: "error",
-                generatedSummaryStale: current.value.generatedSummaryStale,
+                generatedSummaryText: text,
+                generatedSummaryStatus: status,
+                generatedSummaryStale: stale,
                 generatedSummaryError: error,
                 generatedSummarySourceHash: sourceHash,
                 generatedSummaryRequestId: null,
@@ -2779,6 +2989,14 @@ const makeWorkbenchStore = Effect.gen(function* () {
       )
       .pipe(Effect.mapError(workbenchStoreError));
   });
+
+  const completeTicketSummary: WorkbenchStoreShape["completeTicketSummary"] = Effect.fn(
+    "WorkbenchStore.completeTicketSummary",
+  )((input) => settleTicketSummary(input));
+
+  const failTicketSummary: WorkbenchStoreShape["failTicketSummary"] = Effect.fn(
+    "WorkbenchStore.failTicketSummary",
+  )((input) => settleTicketSummary(input));
 
   const archiveTicket: WorkbenchStoreShape["archiveTicket"] = Effect.fn(
     "WorkbenchStore.archiveTicket",
@@ -2892,19 +3110,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
     ticketId: WorkbenchTicketId;
     threadId: ThreadId;
   }) {
-    const ticket = yield* findTicket({ id: ticketId }).pipe(Effect.mapError(persistenceError));
-    if (Option.isNone(ticket)) {
-      return yield* new WorkbenchOperationError({
-        code: "ticket_not_found",
-        message: "The Workbench Ticket does not exist.",
-      });
-    }
-    if (ticket.value.archivedAt !== null) {
-      return yield* new WorkbenchOperationError({
-        code: "ticket_archived",
-        message: "Archived Workbench Tickets cannot receive Agent Threads.",
-      });
-    }
+    const ticket = yield* requireActiveTicket({
+      ticketId,
+      archivedMessage: "Archived Workbench Tickets cannot receive Agent Threads.",
+    });
     const nativeThread = yield* findNativeThread({ threadId }).pipe(
       Effect.mapError(persistenceError),
     );
@@ -2914,13 +3123,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
         message: "The native T3 Thread does not exist.",
       });
     }
-    if (nativeThread.value.projectId !== ticket.value.primaryT3ProjectId) {
+    if (nativeThread.value.projectId !== ticket.primaryT3ProjectId) {
       return yield* new WorkbenchOperationError({
         code: "thread_project_mismatch",
         message: "The native T3 Thread belongs to a different T3 Project.",
       });
     }
-    return ticket.value;
+    return ticket;
   });
 
   const createAssignment: WorkbenchStoreShape["createAssignment"] = Effect.fn(
@@ -3091,6 +3300,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
     getTicketSummaryCandidate,
     recheckTicketSummary,
     ticketChanges,
+    getProject,
+    requireActiveProject,
+    archiveProject,
+    deleteProject,
     createProject,
     updateProject,
     createEpic,

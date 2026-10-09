@@ -71,6 +71,11 @@ export const WorkbenchProject = Schema.Struct({
   id: WorkbenchProjectId,
   title: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
   linkedProjectIds: Schema.Array(ProjectId).check(Schema.isMinLength(1)),
+  // Legacy snapshots and local fixtures omit Workspace lifecycle fields.
+  archivedAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  revision: Schema.optionalKey(NonNegativeInt).pipe(Schema.withDecodingDefault(Effect.succeed(0))),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -172,6 +177,7 @@ export type WorkbenchCreateProjectInput = typeof WorkbenchCreateProjectInput.Typ
 
 export const WorkbenchUpdateProjectInput = Schema.Struct({
   id: WorkbenchProjectId,
+  expectedRevision: Schema.optionalKey(NonNegativeInt),
   title: WorkbenchProject.fields.title,
   // The server treats this as an additive set. Existing links remain intact;
   // callers may send either the new IDs or the full selected list.
@@ -179,6 +185,23 @@ export const WorkbenchUpdateProjectInput = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 export type WorkbenchUpdateProjectInput = typeof WorkbenchUpdateProjectInput.Type;
+
+export const WorkbenchArchiveProjectInput = Schema.Struct({
+  id: WorkbenchProjectId,
+  expectedRevision: NonNegativeInt,
+  archivedAt: Schema.NullOr(IsoDateTime),
+  updatedAt: IsoDateTime,
+});
+export type WorkbenchArchiveProjectInput = typeof WorkbenchArchiveProjectInput.Type;
+
+export const WorkbenchDeleteProjectInput = Schema.Struct({
+  id: WorkbenchProjectId,
+  expectedRevision: NonNegativeInt,
+  expectedTicketCount: NonNegativeInt,
+  expectedEpicCount: NonNegativeInt,
+  deletedAt: IsoDateTime,
+});
+export type WorkbenchDeleteProjectInput = typeof WorkbenchDeleteProjectInput.Type;
 
 export const WorkbenchCreateEpicInput = Schema.Struct({
   id: WorkbenchEpicId,
@@ -310,6 +333,9 @@ export type WorkbenchReleaseTicketWorkspaceInput = typeof WorkbenchReleaseTicket
 
 export const WorkbenchOperationErrorCode = Schema.Literals([
   "project_not_found",
+  "project_archived",
+  "project_changed",
+  "jira_operation_pending",
   "epic_not_found",
   "epic_project_mismatch",
   "epic_archived",

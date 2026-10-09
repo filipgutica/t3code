@@ -62,6 +62,20 @@ const snapshot: WorkbenchSnapshot = {
   ticketWorkspaces: [],
 };
 describe("Workbench command navigation", () => {
+  it("keeps archived Workspace and Ticket navigation while omitting creation", () => {
+    const targets = getWorkbenchCommandPaletteTargets({
+      environmentId,
+      snapshot: {
+        ...snapshot,
+        projects: snapshot.projects.map((project) => ({ ...project, archivedAt: time })),
+      },
+      workspaceId,
+      threadId,
+    });
+    expect(targets.board).toEqual({ environmentId, workbenchProjectId: workspaceId });
+    expect(targets.ticket).toEqual({ environmentId, workbenchProjectId: workspaceId, ticketId });
+    expect(targets.createTicket).toBeNull();
+  });
   it("returns an assigned Thread to its Ticket in the remote environment through a validated route", async () => {
     const root = createRootRoute();
     const route = createRoute({

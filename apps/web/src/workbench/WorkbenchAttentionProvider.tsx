@@ -94,10 +94,18 @@ function WorkbenchEnvironmentAttention({
       ),
     [shells, environmentId],
   );
-  const visibleTickets = useMemo(
-    () => snapshot?.tickets.filter((ticket) => ticket.archivedAt == null) ?? [],
-    [snapshot?.tickets],
-  );
+  const visibleTickets = useMemo(() => {
+    const activeWorkspaceIds = new Set(
+      snapshot?.projects
+        .filter((project) => project.archivedAt == null)
+        .map((project) => project.id),
+    );
+    return (
+      snapshot?.tickets.filter(
+        (ticket) => ticket.archivedAt == null && activeWorkspaceIds.has(ticket.projectId),
+      ) ?? []
+    );
+  }, [snapshot?.projects, snapshot?.tickets]);
   const assignedThreadRef = useMemo(() => {
     if (!activeThreadRef || activeThreadRef.environmentId !== environmentId) return null;
     const ticketIds = new Set(visibleTickets.map((ticket) => ticket.id));
@@ -113,7 +121,7 @@ function WorkbenchEnvironmentAttention({
   }, [activeThreadRef, environmentId, snapshot?.assignments, threadsById, visibleTickets]);
   const attention = useWorkbenchAttention({
     environmentId,
-    projectId: snapshot?.projects[0]?.id ?? null,
+    projectId: snapshot?.projects.find((project) => project.archivedAt == null)?.id ?? null,
     tickets: isOnWorkbench ? visibleTickets : emptyTickets,
     assignments: isOnWorkbench ? (snapshot?.assignments ?? emptyAssignments) : emptyAssignments,
     threadsById,

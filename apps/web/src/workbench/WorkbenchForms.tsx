@@ -175,8 +175,31 @@ import {
 const NO_EPIC_VALUE = "__workbench_no_epic__";
 const CREATE_EPIC_VALUE = "__workbench_create_epic__";
 
+function useWorkbenchEpicEditor(epic: WorkbenchEpic) {
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState("");
+  const [markdown, setMarkdown] = useState("");
+  const cancelEditing = () => setEditing(false);
+  const startEditing = () => {
+    setTitle(epic.title);
+    setMarkdown(epic.markdown);
+    setEditing(true);
+  };
+  return {
+    editing,
+    title,
+    markdown,
+    setTitle,
+    setMarkdown,
+    setEditing,
+    cancelEditing,
+    startEditing,
+  };
+}
+
 export function WorkbenchEpicDetail({
   workspaceTitle,
+  readOnly = false,
   epic,
   jiraManaged,
   jiraUrl,
@@ -193,6 +216,7 @@ export function WorkbenchEpicDetail({
   onCreateTicket,
 }: {
   readonly workspaceTitle: string;
+  readonly readOnly?: boolean;
   readonly epic: WorkbenchEpic;
   readonly jiraManaged: boolean;
   readonly jiraUrl: string | null;
@@ -208,22 +232,22 @@ export function WorkbenchEpicDetail({
   readonly onOpenTicket: (ticket: WorkbenchTicket) => void;
   readonly onCreateTicket: () => void;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState("");
-  const [markdown, setMarkdown] = useState("");
+  const {
+    editing,
+    title,
+    markdown,
+    setTitle,
+    setMarkdown,
+    setEditing,
+    cancelEditing,
+    startEditing,
+  } = useWorkbenchEpicEditor(epic);
   const progress = getWorkbenchEpicProgress(tickets);
+  const mutationDisabled = pending || readOnly;
+  const descriptionEditing = editing && !readOnly;
   const blockedCount = tickets.filter(
     (ticket) => jiraIssueLinksByTicketId.get(ticket.id)?.issue.flagged,
   ).length;
-
-  const cancelEditing = () => {
-    setEditing(false);
-  };
-  const startEditing = () => {
-    setTitle(epic.title);
-    setMarkdown(epic.markdown);
-    setEditing(true);
-  };
 
   return (
     <article className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -233,7 +257,7 @@ export function WorkbenchEpicDetail({
         jiraManaged={jiraManaged}
         jiraUrl={jiraUrl}
         tickets={tickets}
-        pending={pending}
+        pending={mutationDisabled}
         onBack={onBack}
         onCreateTicket={onCreateTicket}
         progress={progress}
@@ -243,13 +267,13 @@ export function WorkbenchEpicDetail({
       <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-gutter-both p-4 sm:p-6">
         <div className="mx-auto grid min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="min-w-0 space-y-4">
-            {error ? <WorkbenchInlineError message={error} /> : null}
+            <WorkbenchInlineError message={error} />
             <WorkbenchEpicDescription
               presentation={{
                 epic: epic,
                 jiraManaged: jiraManaged,
-                pending: pending,
-                editing: editing,
+                pending: mutationDisabled,
+                editing: descriptionEditing,
                 startEditing: startEditing,
                 cancelEditing: cancelEditing,
                 title: title,
@@ -271,7 +295,7 @@ export function WorkbenchEpicDetail({
               assignmentsByTicket={assignmentsByTicket}
               jiraIssueLinksByTicketId={jiraIssueLinksByTicketId}
               jiraOwnershipKnown={jiraOwnershipKnown}
-              pending={pending}
+              pending={mutationDisabled}
               onOpenTicket={onOpenTicket}
               onCreateTicket={onCreateTicket}
               progress={progress}
@@ -770,6 +794,7 @@ function WorkbenchCreateTicketSourceSelect({
 export type WorkbenchTicketDetailProps = {
   readonly environmentId: EnvironmentId;
   readonly workspaceTitle: string;
+  readonly workspaceReadOnly?: boolean;
   readonly ticket: WorkbenchTicket;
   readonly ticketWorkspace: WorkbenchTicketWorkspace | undefined;
   readonly linkedProjects: ReadonlyArray<Project>;
@@ -855,6 +880,7 @@ export function WorkbenchTicketDetail(props: WorkbenchTicketDetailProps) {
       }}
       content={{
         workspaceTitle: props.workspaceTitle,
+        workspaceReadOnly: props.workspaceReadOnly ?? false,
         ticket: props.ticket,
         epics: props.epics,
         jiraIssueLink: props.jiraIssueLink,
@@ -933,6 +959,7 @@ function WorkbenchTicketDetailController({
   content: Pick<
     WorkbenchTicketDetailProps,
     | "workspaceTitle"
+    | "workspaceReadOnly"
     | "ticket"
     | "epics"
     | "jiraIssueLink"
@@ -1004,6 +1031,7 @@ function WorkbenchTicketDetailController({
     pending,
     error,
     lifecycleActionsEnabled,
+    workspaceReadOnly,
   } = content;
   const {
     ticketWorkspace,
@@ -1105,14 +1133,19 @@ function WorkbenchTicketDetailController({
     hasUnsavedChanges,
     cancelEditing,
     startEditing,
-  } = useWorkbenchTicketDraftEditor({ environmentId, ticket, jiraIssueLink, jiraFieldsManaged });
-  const agentTitle =
-    displayedThread?.title ??
-    (assignment && !threadLookupReady
-      ? "Checking Thread…"
-      : settledAssignments.length > 0
-        ? "No active Threads"
-        : "No Thread");
+  } = useWorkbenchTicketDraftEditor({
+    environmentId,
+    ticket,
+    jiraIssueLink,
+    jiraFieldsManaged,
+    workspaceReadOnly: workspaceReadOnly ?? false,
+  });
+  const agentTitle = getWorkbenchAgentTitle({
+    displayedThread,
+    assignment,
+    threadLookupReady,
+    settledCount: settledAssignments.length,
+  });
   const {
     repositoryScopeLocked,
     workspaceHasSelectedRepositories,
@@ -1145,7 +1178,9 @@ function WorkbenchTicketDetailController({
     ],
   });
   const linkedEpicId = ticket.epicId;
-  const canOpenThread = !isArchived || assignment !== undefined;
+  const canOpenThread = workspaceReadOnly
+    ? assignment !== undefined && displayedThread !== undefined
+    : !isArchived || assignment !== undefined;
 
   return (
     <article className="@container/ticket flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [&_[data-slot=button]>svg]:mx-0">
@@ -1302,6 +1337,7 @@ function WorkbenchTicketDetailController({
             />
 
             <WorkbenchTicketPullRequests
+              readOnly={workspaceReadOnly ?? false}
               onOpenThread={onOpenAssignedThread}
               environmentId={environmentId}
               ticketId={ticket.id}
@@ -1813,7 +1849,8 @@ function getWorkbenchThreadRecencyLabel(thread: EnvironmentThreadShell): string 
   );
 }
 
-function WorkbenchInlineError({ message }: { readonly message: string }) {
+function WorkbenchInlineError({ message }: { readonly message: string | null }) {
+  if (message === null) return null;
   return (
     <div
       className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive-foreground"
@@ -4735,7 +4772,7 @@ function WorkbenchTicketHeading({
           jiraOwnershipKnown={jiraOwnershipKnown ?? true}
         />
         {jiraPublicationAction}
-        {isArchived ? <Badge variant="outline">Archived</Badge> : null}
+        {ticket.archivedAt != null ? <Badge variant="outline">Archived</Badge> : null}
         <WorkbenchTicketStatusMenu
           key={`${environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
           environmentId={environmentId}
@@ -5127,9 +5164,10 @@ function useWorkbenchTicketDraftEditor({
   ticket,
   jiraIssueLink,
   jiraFieldsManaged,
+  workspaceReadOnly,
 }: Pick<
   WorkbenchTicketDetailProps,
-  "environmentId" | "ticket" | "jiraIssueLink" | "jiraFieldsManaged"
+  "environmentId" | "ticket" | "jiraIssueLink" | "jiraFieldsManaged" | "workspaceReadOnly"
 >) {
   const storedDraft = useWorkbenchDraftStore((state) =>
     state.drafts.get(environmentId)?.get(ticket.id),
@@ -5139,7 +5177,10 @@ function useWorkbenchTicketDraftEditor({
     ticket,
     jiraRemoteUpdatedAt: jiraIssueLink?.issue.remoteUpdatedAt,
   });
-  const draft = draftProjected ? undefined : storedDraft;
+  const draft =
+    draftProjected || (workspaceReadOnly && storedDraft?.mode === "editing")
+      ? undefined
+      : storedDraft;
   const setDraft = useWorkbenchDraftStore((state) => state.setDraft);
   const markDraftSaved = useWorkbenchDraftStore((state) => state.markDraftSaved);
   const clearDraft = useWorkbenchDraftStore((state) => state.clearDraft);
@@ -5155,7 +5196,13 @@ function useWorkbenchTicketDraftEditor({
     summaryHeaderLabel,
     summaryFailedEmpty,
     hasUnsavedChanges,
-  } = getWorkbenchTicketDraftPresentation({ ticket, jiraIssueLink, jiraFieldsManaged, draft });
+  } = getWorkbenchTicketDraftPresentation({
+    ticket,
+    jiraIssueLink,
+    jiraFieldsManaged,
+    draft,
+    workspaceReadOnly: workspaceReadOnly ?? false,
+  });
   useEffect(() => {
     if (draftProjected) {
       clearDraft(environmentId, ticket.id);
@@ -5721,10 +5768,14 @@ function getWorkbenchTicketDraftPresentation({
   jiraIssueLink,
   jiraFieldsManaged,
   draft,
-}: Pick<WorkbenchTicketDetailProps, "ticket" | "jiraIssueLink" | "jiraFieldsManaged"> & {
+  workspaceReadOnly,
+}: Pick<
+  WorkbenchTicketDetailProps,
+  "ticket" | "jiraIssueLink" | "jiraFieldsManaged" | "workspaceReadOnly"
+> & {
   draft: WorkbenchTicketDraft | undefined;
 }) {
-  const isArchived = ticket.archivedAt != null;
+  const isArchived = ticket.archivedAt != null || workspaceReadOnly === true;
   const editing = !isArchived && draft?.mode === "editing";
   const projectedContent = resolveWorkbenchTicketContent({
     ticket,
@@ -5887,4 +5938,20 @@ function WorkbenchTicketResetConfirmation({
       </AlertDialogPopup>
     </AlertDialog>
   );
+}
+
+function getWorkbenchAgentTitle({
+  displayedThread,
+  assignment,
+  threadLookupReady,
+  settledCount,
+}: {
+  displayedThread: EnvironmentThreadShell | undefined;
+  assignment: WorkbenchAssignment | undefined;
+  threadLookupReady: boolean;
+  settledCount: number;
+}) {
+  if (displayedThread) return displayedThread.title;
+  if (assignment && !threadLookupReady) return "Checking Thread…";
+  return settledCount > 0 ? "No active Threads" : "No Thread";
 }

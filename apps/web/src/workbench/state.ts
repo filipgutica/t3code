@@ -108,6 +108,20 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,
   }),
+  archiveProject: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:archive-project",
+    tag: WS_METHODS.workbenchArchiveProject,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshWorkbenchAndJiraSnapshots,
+  }),
+  deleteProject: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:delete-project",
+    tag: WS_METHODS.workbenchDeleteProject,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshWorkbenchAndJiraSnapshots,
+  }),
   createEpic: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:create-epic",
     tag: WS_METHODS.workbenchCreateEpic,

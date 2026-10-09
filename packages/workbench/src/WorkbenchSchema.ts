@@ -705,6 +705,18 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
       yield* sql`INSERT INTO workbench_schema_migrations (version) VALUES (15)`;
     }),
   );
+  yield* sql.withTransaction(
+    Effect.gen(function* () {
+      const applied =
+        yield* sql`SELECT version FROM workbench_schema_migrations WHERE version = 16`;
+      if (applied.length > 0) return;
+      yield* sql`ALTER TABLE workbench_projects ADD COLUMN archived_at TEXT`;
+      yield* sql`ALTER TABLE workbench_projects ADD COLUMN deleted_at TEXT`;
+      yield* sql`ALTER TABLE workbench_projects ADD COLUMN revision INTEGER NOT NULL DEFAULT 0`;
+      yield* sql`ALTER TABLE workbench_projects ADD COLUMN execution_after_sequence INTEGER NOT NULL DEFAULT 0`;
+      yield* sql`INSERT INTO workbench_schema_migrations (version) VALUES (16)`;
+    }),
+  );
   yield* sql`
     INSERT OR IGNORE INTO workbench_schema_migrations (version)
     VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13), (14)

@@ -11,6 +11,8 @@ import { useWorkbenchPageData } from "./useWorkbenchPageData";
 
 import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
 import { useWorkbenchPageRefresh } from "./useWorkbenchPageRefresh";
+import { useWorkbenchWorkspaceActions } from "./useWorkbenchWorkspaceActions";
+import { WorkbenchWorkspaceDeleteDialog } from "./WorkbenchWorkspaceDeleteDialog";
 
 import {
   EnvironmentId,
@@ -51,18 +53,15 @@ export function WorkbenchPage({
   const pageData = useWorkbenchPageData(environmentId);
   const { projects, refreshWorkbenchSnapshot, refreshJiraSnapshot, snapshot, optimisticStatus } =
     pageData;
-  const [error, setError] = useState<string | null>(null);
-  const [pendingAction, setPendingAction] = useState<string | null>(null);
-  const selection = useWorkbenchPageSelection({
-    environmentId,
-    initialProjectId,
-    initialTicketId,
-    initialEpicId,
-    snapshot,
-    tickets: optimisticStatus.tickets,
-    pendingAction,
-    setError,
-  });
+  const { error, setError, pendingAction, setPendingAction, workspaceActions, selection } =
+    useWorkbenchWorkspaceSelection({
+      environmentId,
+      snapshot,
+      tickets: optimisticStatus.tickets,
+      initialProjectId,
+      initialTicketId,
+      initialEpicId,
+    });
 
   const {
     jiraBindings,
@@ -111,15 +110,17 @@ export function WorkbenchPage({
     initialTicketId,
   });
 
+  const refreshBinding = getWorkbenchRefreshBinding(selection.selectedProject, jiraBinding);
+  const hasLocalMigrationData =
+    localTicketsForJiraMigration.length > 0 || localEpicsForJiraMigration.length > 0;
   useWorkbenchPageRefresh({
     environmentId,
-    jiraBinding,
+    jiraBinding: refreshBinding,
     jiraDialogOpen,
     jiraPendingAction,
     jiraSyncBinding,
     pendingJiraMigrationBindingsRef,
-    hasLocalMigrationData:
-      localTicketsForJiraMigration.length > 0 || localEpicsForJiraMigration.length > 0,
+    hasLocalMigrationData,
     refreshJiraSnapshot,
     refreshWorkbenchSnapshot,
     setJiraError,
@@ -128,7 +129,13 @@ export function WorkbenchPage({
   return (
     <>
       <LinkPullRequestDialogHost />
+      <WorkbenchPageDeleteConfirmation
+        workspaceActions={workspaceActions}
+        pending={pendingAction !== null}
+        error={error}
+      />
       <WorkbenchPageView
+        workspaceActions={workspaceActions}
         environmentId={environmentId}
         createWorkspace={createWorkspace}
         jiraDialogOpen={jiraDialogOpen}
@@ -148,4 +155,62 @@ export function WorkbenchPage({
       />
     </>
   );
+}
+
+function WorkbenchPageDeleteConfirmation({
+  workspaceActions,
+  pending,
+  error,
+}: {
+  workspaceActions: ReturnType<typeof useWorkbenchWorkspaceActions>;
+  pending: boolean;
+  error: string | null;
+}) {
+  if (workspaceActions.deletion === null) return null;
+  return (
+    <WorkbenchWorkspaceDeleteDialog
+      {...workspaceActions.deletion}
+      canDelete={workspaceActions.canDelete}
+      pending={pending}
+      error={error}
+      onClose={workspaceActions.closeDeletion}
+      onDelete={workspaceActions.removeWorkspace}
+    />
+  );
+}
+
+function getWorkbenchRefreshBinding(
+  workspace: ReturnType<typeof useWorkbenchPageSelection>["selectedProject"],
+  binding: ReturnType<typeof useWorkbenchBoardData>["jiraBinding"],
+) {
+  return workspace?.archivedAt != null ? null : binding;
+}
+
+function useWorkbenchWorkspaceSelection(
+  options: Pick<
+    Parameters<typeof useWorkbenchPageSelection>[0],
+    | "environmentId"
+    | "initialProjectId"
+    | "initialTicketId"
+    | "initialEpicId"
+    | "snapshot"
+    | "tickets"
+  >,
+) {
+  const [error, setError] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const workspaceActions = useWorkbenchWorkspaceActions({
+    environmentId: options.environmentId,
+    snapshot: options.snapshot,
+    pendingAction,
+    setPendingAction,
+    setError,
+  });
+  const selection = useWorkbenchPageSelection({
+    ...options,
+    excludedProjectIds: workspaceActions.deletedProjectIds,
+    pendingAction,
+    setError,
+  });
+  return { error, setError, pendingAction, setPendingAction, workspaceActions, selection };
 }

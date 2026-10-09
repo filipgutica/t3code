@@ -209,6 +209,54 @@ describe("TicketSummaryService", () => {
     }),
   );
 
+  it.effect("restarts a generation invalidated by Workspace archive and restore", () =>
+    Effect.gen(function* () {
+      const firstStarted = yield* Deferred.make<void>();
+      const releaseFirst = yield* Deferred.make<void>();
+      let calls = 0;
+      yield* Effect.gen(function* () {
+        const store = yield* WorkbenchStore;
+        const service = yield* TicketSummaryService;
+        yield* createTicket;
+        yield* Deferred.await(firstStarted);
+        yield* store.archiveProject({
+          id: workspaceId,
+          expectedRevision: 0,
+          archivedAt: createdAt,
+          updatedAt: createdAt,
+        });
+        yield* store.archiveProject({
+          id: workspaceId,
+          expectedRevision: 1,
+          archivedAt: null,
+          updatedAt: createdAt,
+        });
+        yield* Deferred.succeed(releaseFirst, undefined);
+        yield* service.awaitIdle;
+        expect(calls).toBe(2);
+        expect((yield* store.getSnapshot).tickets[0]?.generatedSummary).toMatchObject({
+          status: "ready",
+          text: "Summary after restore.",
+        });
+      }).pipe(
+        Effect.provide(
+          testLayer({
+            generate: () =>
+              Effect.gen(function* () {
+                calls += 1;
+                if (calls === 1) {
+                  yield* Deferred.succeed(firstStarted, undefined);
+                  yield* Deferred.await(releaseFirst);
+                  return "Obsolete summary.";
+                }
+                return "Summary after restore.";
+              }),
+          }),
+        ),
+      );
+    }),
+  );
+
   it.effect("keeps the previous summary after failure and supports an explicit retry", () =>
     Effect.gen(function* () {
       const started = yield* Deferred.make<void>();

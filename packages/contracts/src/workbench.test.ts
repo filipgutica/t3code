@@ -5,6 +5,8 @@ import * as Schema from "effect/Schema";
 import {
   WorkbenchAssignment,
   WorkbenchArchiveTicketInput,
+  WorkbenchArchiveProjectInput,
+  WorkbenchDeleteProjectInput,
   WorkbenchCreateEpicInput,
   WorkbenchCreateTicketInput,
   WorkbenchDeleteTicketInput,
@@ -24,6 +26,8 @@ import {
 import { WORKBENCH_WS_METHODS } from "./workbenchRpc.ts";
 import { WsRpcGroup } from "./rpc.ts";
 
+const decodeWorkbenchArchiveProjectInput = Schema.decodeUnknownEffect(WorkbenchArchiveProjectInput);
+const decodeWorkbenchDeleteProjectInput = Schema.decodeUnknownEffect(WorkbenchDeleteProjectInput);
 const decodeWorkbenchSnapshot = Schema.decodeUnknownEffect(WorkbenchSnapshot);
 const decodeWorkbenchCreateEpicInput = Schema.decodeUnknownEffect(WorkbenchCreateEpicInput);
 const decodeWorkbenchProject = Schema.decodeUnknownEffect(WorkbenchProject);
@@ -124,6 +128,7 @@ describe("Workbench contracts", () => {
         ],
       });
 
+      expect(snapshot.projects[0]).toMatchObject({ archivedAt: null, revision: 0 });
       expect(snapshot.projects[0]?.linkedProjectIds).toEqual(["t3-project-1"]);
       expect(snapshot.epics[0]).toMatchObject({ id: "epic-1", archivedAt: null });
       expect(snapshot.tickets[0]).toMatchObject({
@@ -140,6 +145,42 @@ describe("Workbench contracts", () => {
         status: "ready",
         repositories: [expect.objectContaining({ projectId: "t3-project-1", isPrimary: true })],
       });
+    }),
+  );
+
+  it.effect("requires lifecycle revisions and deletion counts for Workspaces", () =>
+    Effect.gen(function* () {
+      const archive = {
+        id: "workspace",
+        expectedRevision: 0,
+        archivedAt: null,
+        updatedAt: "2026-10-09T10:00:00.000Z",
+      };
+      const deletion = {
+        id: "workspace",
+        expectedRevision: 0,
+        expectedTicketCount: 2,
+        expectedEpicCount: 1,
+        deletedAt: archive.updatedAt,
+      };
+      expect(yield* decodeWorkbenchArchiveProjectInput(archive)).toEqual(archive);
+      expect(yield* decodeWorkbenchDeleteProjectInput(deletion)).toEqual(deletion);
+      expect(
+        (yield* Effect.exit(
+          decodeWorkbenchArchiveProjectInput({
+            ...archive,
+            expectedRevision: undefined,
+          }),
+        ))._tag,
+      ).toBe("Failure");
+      expect(
+        (yield* Effect.exit(
+          decodeWorkbenchDeleteProjectInput({
+            ...deletion,
+            expectedTicketCount: undefined,
+          }),
+        ))._tag,
+      ).toBe("Failure");
     }),
   );
 
