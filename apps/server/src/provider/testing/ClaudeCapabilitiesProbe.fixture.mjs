@@ -42,14 +42,10 @@ lines.on("line", (line) => {
       output_style: "default",
       available_output_styles: ["default"],
       models: [],
-      account: {
-        tokenSource: "none",
-        apiKeySource: "ANTHROPIC_API_KEY",
-        apiProvider: "firstParty",
-      },
+      account: { email: "dev@example.com", subscriptionType: "pro", tokenSource: "oauth" },
     });
   }
-  // Exercise usage decoding with independent synthetic data on the same process.
+  // The probe follows initialize with get_usage on the same process.
   if (message.request?.subtype === "get_usage") {
     reply({
       session: {},
