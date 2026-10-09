@@ -369,14 +369,15 @@ export const make = Effect.gen(function* () {
         );
       }
     }).pipe(
-      Effect.catchTag("SqlError", () =>
-        Effect.fail(
-          operationError(
-            "persistence_failed",
-            "The local Ticket revision could not be checked before the Jira write.",
+      Effect.catchTags({
+        SqlError: () =>
+          Effect.fail(
+            operationError(
+              "persistence_failed",
+              "The local Ticket revision could not be checked before the Jira write.",
+            ),
           ),
-        ),
-      ),
+      }),
     );
 
   const findManagedIssue = (ticketId: WorkbenchJiraUpdateTicketInput["ticketId"]) =>
@@ -552,14 +553,15 @@ export const make = Effect.gen(function* () {
         }),
       )
       .pipe(
-        Effect.catchTag("SqlError", () =>
-          Effect.fail(
-            operationError(
-              "persistence_failed",
-              "Workbench could not save the local Ticket. Refresh Jira and try again.",
+        Effect.catchTags({
+          SqlError: () =>
+            Effect.fail(
+              operationError(
+                "persistence_failed",
+                "Workbench could not save the local Ticket. Refresh Jira and try again.",
+              ),
             ),
-          ),
-        ),
+        }),
         Effect.mapError((error) =>
           operationError(
             "persistence_failed",

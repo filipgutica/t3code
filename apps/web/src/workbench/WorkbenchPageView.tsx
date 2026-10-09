@@ -141,7 +141,7 @@ function WorkbenchBoardHeader(
   return (
     <WorkspacePageHeader
       electron={isElectron}
-      className="h-auto min-h-20 items-start border-b border-border py-3"
+      className="h-auto! min-h-20! max-h-none! items-start border-b border-border py-3"
     >
       <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 basis-full flex-col gap-1 sm:basis-auto sm:flex-1">

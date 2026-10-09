@@ -5,6 +5,7 @@ import {
   WorkbenchTicketId,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -33,6 +34,7 @@ const storeLayer = WorkbenchStoreLive.pipe(
     }),
   ),
   Layer.provide(NodeSqliteClient.layer({ filename: ":memory:" })),
+  Layer.provideMerge(NodeCrypto.layer),
 );
 
 const testLayer = (host: TicketSummaryHost["Service"]) =>

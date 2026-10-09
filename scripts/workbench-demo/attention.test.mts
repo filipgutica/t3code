@@ -11,12 +11,16 @@ import {
   decodeReviewThreadsJson,
   buildPullRequestSummariesGraphQlQuery,
   pullRequestCoreGraphQlQuery,
+  PULL_REQUEST_ACTIVITY_GRAPHQL_QUERY,
   REVIEW_THREADS_GRAPHQL_QUERY,
 } from "../../apps/server/src/pullRequest/gitHubPullRequestJson.ts";
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 const adapter = NodePath.join(import.meta.dirname, "gh-attention.mjs");
-const execute = async (args: string[]) =>
-  (await execFile(process.execPath, [adapter, ...args])).stdout;
+const execute = async (args: string[], input?: unknown) => {
+  const execution = execFile(process.execPath, [adapter, ...args]);
+  if (input !== undefined) execution.child.stdin?.end(JSON.stringify(input));
+  return (await execution).stdout;
+};
 const read = async (number: number, query: string) =>
   execute([
     "api",
@@ -34,19 +38,15 @@ const read = async (number: number, query: string) =>
   ]);
 
 it("delivers failed checks, unresolved feedback, a separate API repository and incomplete coverage through the native GitHub decoding contract", async () => {
+  const summariesDocument = buildPullRequestSummariesGraphQlQuery([
+    ...[901, 902].map((number) => ({
+      repository: "workbench-synthetic/attention-fixtures",
+      number,
+    })),
+    { repository: "workbench-synthetic/attention-api", number: 906 },
+  ]);
   const summaries = decodePullRequestSummariesJson(
-    await execute([
-      "api",
-      "graphql",
-      "-f",
-      `query=${buildPullRequestSummariesGraphQlQuery([
-        ...[901, 902].map((number) => ({
-          repository: "workbench-synthetic/attention-fixtures",
-          number,
-        })),
-        { repository: "workbench-synthetic/attention-api", number: 906 },
-      ])}`,
-    ]),
+    await execute(["api", "graphql", "--input", "-"], summariesDocument),
   );
   expect(Result.isSuccess(summaries)).toBe(true);
   if (!Result.isSuccess(summaries))
@@ -62,20 +62,12 @@ it("delivers failed checks, unresolved feedback, a separate API repository and i
     }),
   );
   const activity = decodePullRequestActivityJson(
-    await execute([
-      "pr",
-      "view",
-      "902",
-      "--repo",
-      "github.com/workbench-synthetic/attention-fixtures",
-      "--json",
-      "author,comments,reviews,commits",
-    ]),
+    await read(902, PULL_REQUEST_ACTIVITY_GRAPHQL_QUERY),
   );
   expect(Result.isSuccess(activity)).toBe(true);
   if (!Result.isSuccess(activity))
     throw new Error("Native activity decoder rejected the synthetic review");
-  expect(activity.success.comments).toEqual([
+  expect(activity.success.remarks).toEqual([
     expect.objectContaining({
       kind: "review",
       author: expect.objectContaining({ login: "synthetic-reviewer" }),

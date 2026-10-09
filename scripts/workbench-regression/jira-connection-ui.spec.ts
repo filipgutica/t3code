@@ -436,6 +436,10 @@ const routeMockJira = async (page: Page) => {
     setRemoteTicketTitle: (title: string) => {
       remoteTicketTitle = title;
     },
+    setSelectedSprints: (sprints: Array<{ id: number; name: string }>) => {
+      if (!binding) throw new Error("Expected a connected Jira mirror.");
+      binding = { ...binding, selectedSprints: sprints, followActiveSprint: false };
+    },
     waitForSync: async () => {
       await Promise.race([
         syncRequestSeen,
@@ -610,6 +614,45 @@ test.describe("Jira connection UI contract", () => {
         (project) => project.title === "Deterministic Jira Connection",
       ),
     ).toBe(true);
+  });
+
+  test("keeps Workspace actions reachable after selecting multiple Jira sprints", async ({
+    page,
+    demo,
+  }) => {
+    const route = await routeMockJira(page);
+    await createWorkspace(page, demo, "Workbench Jira");
+    const dialog = await connectJira(page);
+    await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    const futureSprintName = "WB-reg-0123456789abcdef0123";
+    route.setSelectedSprints([
+      { id: fakeSprint.id, name: fakeSprint.name },
+      { id: 4243, name: futureSprintName },
+    ]);
+    await page.reload();
+    await waitForWorkbench(page);
+    await expect(page.getByLabel("Jira sync context")).toContainText(
+      `${fakeSprint.name}, ${futureSprintName}`,
+    );
+
+    for (const viewport of [
+      { width: 1280, height: 720 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.getByRole("button", { name: "Workspace actions", exact: true }).click();
+      await page
+        .getByRole("menuitem", { name: "Configure Jira sprint mirror", exact: true })
+        .click();
+      const mirrorDialog = page.getByRole("dialog", { name: "Jira sprint mirror", exact: true });
+      await expect(mirrorDialog).toBeVisible();
+      await mirrorDialog
+        .getByRole("button", { name: "Close", exact: true })
+        .filter({ hasText: "Close" })
+        .click();
+      await expect(mirrorDialog).not.toBeVisible();
+    }
   });
 
   test("shows a failed sync with a retry action", async ({ page, demo }) => {

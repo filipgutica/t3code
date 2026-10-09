@@ -2,13 +2,21 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
+import * as NodeURL from "node:url";
 import { CommandId, ProjectId, ThreadId } from "../../packages/contracts/src/baseSchemas.ts";
 import {
   DEFAULT_RUNTIME_MODE,
   DEFAULT_PROVIDER_INTERACTION_MODE,
 } from "../../packages/contracts/src/providerPolicy.ts";
 import type { ModelSelection } from "../../packages/contracts/src/modelSelection.ts";
-import { demoDatabasePath } from "./environment.mts";
+import { demoDatabasePath, requireHome, resolveHome } from "./environment.mts";
+import {
+  buildPullRequestSummariesGraphQlQuery,
+  pullRequestCoreGraphQlQuery,
+  pullRequestSummaryGraphQlQuery,
+  PULL_REQUEST_ACTIVITY_GRAPHQL_QUERY,
+  REVIEW_THREADS_GRAPHQL_QUERY,
+} from "../../apps/server/src/pullRequest/gitHubPullRequestJson.ts";
 import { insertVisualMessage, readVisualThread, seedVisualRun } from "./native-projections.mts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 import {
@@ -111,23 +119,100 @@ const fixtures = [
   { id: "loading", title: "Slow PR inspection", pr: 905 },
 ] as const;
 
-/** Installed only in disposable demos. It never forwards to real gh. */
+/** Installed only in owned disposable homes; CLI and native HTTP reads stay synthetic. */
 export const installAttentionGitHubAdapter = async (
   home: string,
   environment: NodeJS.ProcessEnv,
 ) => {
-  const bin = NodePath.join(home, "attention-bin");
-  await NodeFSP.mkdir(bin, { recursive: true });
+  const ownedHome = resolveHome(home);
+  const uid = process.getuid?.();
+  const ownedEntry = async (path: string, directory = false) => {
+    const entry = await NodeFSP.lstat(path);
+    if (
+      entry.isSymbolicLink() ||
+      (directory ? !entry.isDirectory() : !entry.isFile()) ||
+      (uid !== undefined && entry.uid !== uid)
+    )
+      throw new Error("Synthetic attention requires an owned demo directory.");
+  };
+  if (NodePath.resolve(home) !== ownedHome)
+    throw new Error("Synthetic attention does not install through a symlink.");
+  await ownedEntry(ownedHome, true);
+  const demoMarker = NodePath.join(ownedHome, ".workbench-demo.json");
+  const hasDemoMarker = await NodeFSP.lstat(demoMarker).then(
+    () => true,
+    (error: unknown) => {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+      throw error;
+    },
+  );
+  if (hasDemoMarker) {
+    await ownedEntry(demoMarker);
+    requireHome(ownedHome);
+  } else {
+    const parent = NodePath.dirname(ownedHome);
+    const previewMarker = NodePath.join(parent, ".workbench-preview-owned");
+    await ownedEntry(parent, true);
+    await ownedEntry(previewMarker);
+    if (
+      uid === undefined ||
+      !NodePath.basename(ownedHome).startsWith("session-") ||
+      environment.HOME !== ownedHome ||
+      (await NodeFSP.readFile(previewMarker, "utf8")) !== "workbench-preview-v1\n"
+    )
+      throw new Error("Synthetic attention requires an owned demo or preview home.");
+  }
+  const bin = NodePath.join(ownedHome, "attention-bin");
+  await NodeFSP.mkdir(bin, { recursive: true, mode: 0o700 });
+  await ownedEntry(bin, true);
+  const safeWrite = async (path: string, contents: string, mode: number) => {
+    try {
+      await ownedEntry(path);
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+    }
+    await NodeFSP.writeFile(path, contents, { mode });
+  };
   const quote = (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
-  await NodeFSP.writeFile(
+  await safeWrite(
     NodePath.join(bin, "gh"),
     `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(NodePath.join(import.meta.dirname, "gh-attention.mjs"))} "$@"\n`,
-    { mode: 0o700 },
+    0o700,
   );
+  // Native summary reads batch up to 25 aliases; the adapter still validates each fixture identity.
+  const batchQueries = Array.from({ length: 25 }, (_, index) =>
+    [false, true].map(
+      (includeStacks) =>
+        buildPullRequestSummariesGraphQlQuery(
+          Array.from({ length: index + 1 }, () => ({ repository, number: 901 })),
+          includeStacks,
+        )!.query,
+    ),
+  ).flat();
+  await safeWrite(
+    NodePath.join(ownedHome, ".synthetic-attention-transport.json"),
+    JSON.stringify({
+      kind: "synthetic-attention-transport",
+      version: 1,
+      home: ownedHome,
+      queries: [
+        pullRequestCoreGraphQlQuery("github.com"),
+        PULL_REQUEST_ACTIVITY_GRAPHQL_QUERY,
+        REVIEW_THREADS_GRAPHQL_QUERY,
+        pullRequestSummaryGraphQlQuery(),
+        pullRequestSummaryGraphQlQuery(true),
+        ...batchQueries,
+      ],
+    }) + "\n",
+    0o600,
+  );
+  const preload = NodeURL.pathToFileURL(NodePath.join(import.meta.dirname, "attention-fetch.mjs"));
   return {
     ...environment,
     PATH: `${bin}${NodePath.delimiter}${environment.PATH ?? ""}`,
     T3CODE_PATH_PREPEND: bin,
+    T3CODE_SYNTHETIC_ATTENTION_HOME: ownedHome,
+    NODE_OPTIONS: `${environment.NODE_OPTIONS ?? ""} --import=${preload.href}`.trim(),
   };
 };
 

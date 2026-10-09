@@ -3,11 +3,13 @@ import { test as base, expect, type BrowserContext, type Page } from "@playwrigh
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as Clock from "effect/Clock";
+import * as Effect from "effect/Effect";
+import { prepareStartup } from "./startup-preparation.mts";
 import { setupHome } from "../workbench-demo/environment.mts";
 import { withDemoAccess } from "../workbench-demo/access.mts";
 import { runRpc, readShellSnapshot } from "../workbench-demo/local.mts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
-import { configureProvider } from "./provider-settings.mts";
 import { resetToBaseline } from "../workbench-demo/reset-to-baseline.mts";
 import { decodeJiraAuthBundle } from "../workbench-demo/jira-auth.mts";
 import { resetJira, validateJiraBaseline } from "../workbench-demo/remotes.mts";
@@ -43,8 +45,8 @@ export const openWorkbench = async (page: Page, url: string) => {
 export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
   // Playwright requires an explicit destructuring pattern for fixture dependencies.
   demo: [
-    // eslint-disable-next-line no-empty-pattern -- Playwright discovers fixture dependencies from explicit destructuring.
-    async ({}, use) => {
+    async ({ browser }, use) => {
+      const preparationDeadline = Effect.runSync(Clock.currentTimeMillis) + 165_000;
       const live = process.env.WORKBENCH_REGRESSION_LIVE === "1";
       const home = setupHome(
         live && process.env.DEMO_HOME
@@ -96,20 +98,35 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
           { mode: 0o600 },
         );
       }
-      const server = live
-        ? await resetToBaseline({
-            home,
-            remoteApply: true,
-            oauthBundle: decodeJiraAuthBundle(required("DEMO_JIRA_OAUTH_BUNDLE")),
-            configure: configureProvider,
-          })
-        : await resetToBaseline({ home, remoteApply: false, configure: configureProvider });
+      const oauthBundle = live
+        ? decodeJiraAuthBundle(required("DEMO_JIRA_OAUTH_BUNDLE"))
+        : undefined;
+      const preparation = prepareStartup({ browser, home, live, deadline: preparationDeadline });
+      let server: Awaited<ReturnType<typeof resetToBaseline>> | undefined;
       try {
+        const reset = resetToBaseline({
+          home,
+          remoteApply: live,
+          configure: preparation.configure,
+          ...(oauthBundle ? { oauthBundle, onAuthImported: preparation.onAuthImported } : {}),
+        }).catch(async (error) => {
+          await preparation.cancel(error);
+          throw error;
+        });
+        const [baselineResult, startupResult] = await Promise.allSettled([
+          reset,
+          preparation.ready,
+        ]);
+        if (baselineResult.status === "fulfilled") server = baselineResult.value;
+        else throw baselineResult.reason;
+        if (startupResult.status === "rejected") throw startupResult.reason;
+        await preparation.verify(startupResult.value);
+        const readyServer = server;
         const environmentId = (
           await NodeFSP.readFile(NodePath.join(home, "userdata", "environment-id"), "utf8")
         ).trim();
         if (!environmentId) throw new Error("The demo has no environment ID.");
-        await NodeFSP.writeFile(NodePath.join(home, "pairing-url"), server.pairingUrl, {
+        await NodeFSP.writeFile(NodePath.join(home, "pairing-url"), readyServer.pairingUrl, {
           mode: 0o600,
         });
         // One short-lived session belongs to this worker's disposable server.
@@ -119,7 +136,7 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
           ({ wsUrl, token }) =>
             use({
               home,
-              origin: server.origin,
+              origin: readyServer.origin,
               workbenchUrl: (path) => workbenchUrlFor(environmentId, path),
               rpc: (operation) => runRpc(wsUrl, token, operation),
               shellSnapshot: () => readShellSnapshot(wsUrl, token),
@@ -128,14 +145,21 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
           { ttl: "30m" },
         );
       } finally {
-        await server.stop();
-        if (baseline)
-          await resetJira({
-            baseline,
-            email: required("DEMO_JIRA_EMAIL"),
-            token: required("DEMO_JIRA_API_TOKEN"),
-            apply: true,
-          });
+        try {
+          await preparation.close();
+        } finally {
+          try {
+            await server?.stop();
+          } finally {
+            if (baseline)
+              await resetJira({
+                baseline,
+                email: required("DEMO_JIRA_EMAIL"),
+                token: required("DEMO_JIRA_API_TOKEN"),
+                apply: true,
+              });
+          }
+        }
       }
     },
     { scope: "worker", timeout: 180_000 },

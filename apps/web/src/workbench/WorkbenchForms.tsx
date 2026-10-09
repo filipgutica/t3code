@@ -240,7 +240,7 @@ export function WorkbenchEpicDetail({
         blockedCount={blockedCount}
       />
 
-      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6">
+      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-gutter-both p-4 sm:p-6">
         <div className="mx-auto grid min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="min-w-0 space-y-4">
             {error ? <WorkbenchInlineError message={error} /> : null}
@@ -1215,7 +1215,7 @@ function WorkbenchTicketDetailController({
       </nav>
 
       <form
-        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 @min-[40rem]/ticket:p-6 @min-[64rem]/ticket:overflow-hidden [&_[data-slot=button]>svg]:mx-0"
+        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-gutter-both p-4 @min-[40rem]/ticket:p-6 @min-[64rem]/ticket:overflow-hidden [&_[data-slot=button]>svg]:mx-0"
         onSubmit={(event) => {
           event.preventDefault();
           if (!editing || !draft) return;
@@ -1949,7 +1949,7 @@ function WorkbenchTicketHeader({
   return (
     <WorkspacePageHeader
       electron={isElectron}
-      className="h-auto items-start border-b border-border py-4"
+      className="h-auto! min-h-0! max-h-none! items-start border-b border-border py-4"
     >
       <div className="mx-auto grid w-full min-w-0 max-w-6xl grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 @min-[48rem]/ticket:grid-cols-[auto_minmax(0,1fr)_auto]">
         <Button aria-label="Back to Board" onClick={onBack} size="sm" variant="ghost">

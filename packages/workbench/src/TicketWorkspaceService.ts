@@ -1,4 +1,4 @@
-import * as NodeCrypto from "node:crypto";
+import { sha256 } from "@noble/hashes/sha2";
 
 import {
   WorkbenchOperationError,
@@ -14,6 +14,7 @@ import {
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -23,12 +24,13 @@ import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Semaphore from "effect/Semaphore";
+import * as Hex from "effect/encoding/Hex";
 
 import { TicketWorkspaceHost } from "./TicketWorkspaceHost.ts";
 import { WorkbenchStore, type WorkbenchTicketWorkspaceRepositoryState } from "./WorkbenchStore.ts";
 
 const shortStableSuffix = (value: string) =>
-  NodeCrypto.createHash("sha256").update(value).digest("hex").slice(0, 8);
+  Hex.encode(sha256(new TextEncoder().encode(value))).slice(0, 8);
 
 const slugSegment = (value: string, fallback: string) => {
   const slug = value
@@ -134,6 +136,7 @@ interface ValidatedRepository {
 }
 
 const makeTicketWorkspaceService = Effect.gen(function* () {
+  const crypto = yield* Crypto.Crypto;
   const store = yield* WorkbenchStore;
   const { git, projections, resolveOpenPullRequestBranch, worktreesDir } =
     yield* TicketWorkspaceHost;
@@ -1154,7 +1157,9 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       workspaceDirectory,
     });
 
-    const attemptId = WorkbenchTicketWorkspaceAttemptId.make(NodeCrypto.randomUUID());
+    const attemptId = WorkbenchTicketWorkspaceAttemptId.make(
+      yield* crypto.randomUUIDv4.pipe(Effect.orDie),
+    );
     const claimedWorkspace = yield* store.claimTicketWorkspace({
       ticketId: ticket.id,
       attemptId,

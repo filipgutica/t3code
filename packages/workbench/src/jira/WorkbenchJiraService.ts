@@ -174,14 +174,15 @@ export const make = Effect.gen(function* () {
       }),
     )
     .pipe(
-      Effect.catchTag("SqlError", () =>
-        Effect.fail(
-          new WorkbenchJiraOperationError({
-            code: "persistence_failed",
-            message: "Jira connection state could not be saved or loaded.",
-          }),
-        ),
-      ),
+      Effect.catchTags({
+        SqlError: () =>
+          Effect.fail(
+            new WorkbenchJiraOperationError({
+              code: "persistence_failed",
+              message: "Jira connection state could not be saved or loaded.",
+            }),
+          ),
+      }),
     );
 
   const validateRemoteSprintSelection = Effect.fnUntraced(function* (
@@ -1061,14 +1062,15 @@ export const make = Effect.gen(function* () {
         epicIds: epics.map((epic) => epic.id),
       } satisfies WorkbenchJiraMigrateLocalTicketsResult;
     }).pipe(
-      Effect.catchTag("SqlError", () =>
-        Effect.fail(
-          new WorkbenchJiraOperationError({
-            code: "persistence_failed",
-            message: "Jira migration state could not be saved or loaded.",
-          }),
-        ),
-      ),
+      Effect.catchTags({
+        SqlError: () =>
+          Effect.fail(
+            new WorkbenchJiraOperationError({
+              code: "persistence_failed",
+              message: "Jira migration state could not be saved or loaded.",
+            }),
+          ),
+      }),
     );
 
   const syncActiveBindings = repository.listBindings().pipe(

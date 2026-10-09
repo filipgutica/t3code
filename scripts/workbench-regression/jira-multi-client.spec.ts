@@ -1,10 +1,9 @@
 import { test, expect, jiraSnapshot, openWorkbench, snapshot, type Demo } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
-import * as NodeCrypto from "node:crypto";
 import { readConfig } from "../workbench-demo/environment.mts";
 import { validateJiraBaseline } from "../workbench-demo/remotes.mts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
-import { JiraHttpClient, type JiraSprint } from "./jira-http.mts";
+import { JiraHttpClient, createJiraRegressionSuffix, type JiraSprint } from "./jira-http.mts";
 
 const live = process.env.WORKBENCH_REGRESSION_LIVE === "1";
 
@@ -105,7 +104,8 @@ test.describe("Jira multi-sprint selection and client conflicts @live", () => {
     let futureSprintName: string | undefined;
     let testFailure: unknown;
     try {
-      futureSprintName = `WB-reg-${NodeCrypto.randomBytes(10).toString("hex")}`;
+      const suffix = await createJiraRegressionSuffix();
+      futureSprintName = `WB-reg-${suffix}`;
       let futureSprint: JiraSprint;
       try {
         futureSprint = await client.createFutureSprint(binding.boardId, futureSprintName);
@@ -268,6 +268,7 @@ test.describe("Jira multi-sprint selection and client conflicts @live", () => {
       throw new AggregateError(
         [...(testFailure === undefined ? [] : [testFailure]), ...cleanupErrors],
         "Multi-sprint regression cleanup failed.",
+        { cause: testFailure ?? cleanupErrors[0] },
       );
     }
     if (testFailure !== undefined) throw testFailure;

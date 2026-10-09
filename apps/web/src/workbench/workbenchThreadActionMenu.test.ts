@@ -8,6 +8,7 @@ import {
 import { filterWorkbenchThreadActionMenuItems } from "./workbenchThreadActionMenu";
 
 const baseState: ThreadActionMenuState = {
+  canOperate: true,
   projectFilter: null,
   branch: "feature/ticket",
   isPinned: true,

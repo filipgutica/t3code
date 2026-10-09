@@ -480,14 +480,15 @@ export const make = Effect.gen(function* () {
           }),
         )
         .pipe(
-          Effect.catchTag("SqlError", () =>
-            Effect.fail(
-              syncError(
-                "persistence_failed",
-                "Jira synchronization state could not be saved or loaded.",
+          Effect.catchTags({
+            SqlError: () =>
+              Effect.fail(
+                syncError(
+                  "persistence_failed",
+                  "Jira synchronization state could not be saved or loaded.",
+                ),
               ),
-            ),
-          ),
+          }),
         );
     });
 

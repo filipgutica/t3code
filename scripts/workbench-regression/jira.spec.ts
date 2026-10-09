@@ -1,9 +1,13 @@
 import { test, expect, jiraSnapshot, openWorkbench, snapshot, type Demo } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
-import * as NodeCrypto from "node:crypto";
 import { readConfig } from "../workbench-demo/environment.mts";
 import { validateJiraBaseline } from "../workbench-demo/remotes.mts";
-import { JiraHttpClient, JIRA_REGRESSION_CLEANUP_LABEL, type JiraIssue } from "./jira-http.mts";
+import {
+  JiraHttpClient,
+  JIRA_REGRESSION_CLEANUP_LABEL,
+  createJiraRegressionId,
+  type JiraIssue,
+} from "./jira-http.mts";
 
 const live = process.env.WORKBENCH_REGRESSION_LIVE === "1";
 
@@ -252,7 +256,8 @@ test.describe("Jira Workbench integration @live", () => {
     demo,
   }) => {
     const { client, binding } = await liveJira(demo);
-    const title = `[Workbench regression] Jira create ${NodeCrypto.randomUUID()}`;
+    const id = await createJiraRegressionId();
+    const title = `[Workbench regression] Jira create ${id}`;
     const description = "Created by the live Workbench Jira regression.";
     let key: string | undefined;
     try {

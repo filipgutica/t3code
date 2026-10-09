@@ -1,4 +1,3 @@
-import * as NodeCrypto from "node:crypto";
 import type {
   WorkbenchOperationError,
   WorkbenchRegenerateTicketSummaryInput,
@@ -6,6 +5,7 @@ import type {
   WorkbenchTicketId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -39,6 +39,7 @@ export const TicketSummaryServiceLive = Layer.effect(
   Effect.gen(function* () {
     const store = yield* WorkbenchStore;
     const host = yield* TicketSummaryHost;
+    const crypto = yield* Crypto.Crypto;
     const queue = yield* Queue.unbounded<WorkbenchTicketId>();
     const lock = yield* Semaphore.make(1);
     // One queued entry per ticket and one running model call per environment.
@@ -66,7 +67,7 @@ export const TicketSummaryServiceLive = Layer.effect(
           return Option.some(existing.ticket);
         }
       }
-      const requestId = NodeCrypto.randomUUID();
+      const requestId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
       const ticket = yield* store.requestTicketSummary({ ticketId, requestId });
       if (jobs.size === 0) idle = yield* Deferred.make<void>();
       jobs.set(ticketId, { requestId, ticket });

@@ -20,7 +20,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import { forkParked } from "../serverActivation.ts";
 import { OrchestratorV2 } from "../orchestration-v2/Orchestrator.ts";
 import { EventSinkV2 } from "../orchestration-v2/EventSink.ts";
-import { makeProviderFailure } from "../orchestration-v2/ProviderFailure.ts";
+import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import {
   TicketExecutionService,
   layer as ticketExecutionLayer,
