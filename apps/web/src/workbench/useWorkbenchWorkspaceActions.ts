@@ -103,6 +103,7 @@ export function useWorkbenchWorkspaceActions({
         },
       });
       if (result._tag === "Success") {
+        setDeletion(null);
         setDeletedWorkspaces((previous) => [
           ...previous,
           { environmentId, id: deletion.workspace.id },
@@ -133,7 +134,6 @@ export function useWorkbenchWorkspaceActions({
           setError(`Workspace deleted, but Workbench could not open another Workspace.${detail}`);
         }
       }
-      setDeletion(null);
     } finally {
       setPendingAction(null);
     }

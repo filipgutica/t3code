@@ -243,6 +243,18 @@ describe("Workspace lifecycle", () => {
       environmentId: otherEnvironmentId,
       workbenchProjectId: workspace.id,
     });
+    await act(async () =>
+      router.navigate({
+        to: "/workbench",
+        search: { environmentId, workbenchProjectId: next.id },
+      }),
+    );
+    await update(snapshot);
+    expect(actions.deletion).toBeNull();
+    expect(actions.deletedProjectIds.has(workspace.id)).toBe(true);
+    await act(async () => actions.removeWorkspace());
+    expect(commands.remove).toHaveBeenCalledTimes(1);
+    expect(router.state.location.search).toEqual({ environmentId, workbenchProjectId: next.id });
   });
   it("archives and restores in the selected environment using the reviewed revision", async () => {
     await mount();
