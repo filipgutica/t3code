@@ -23,8 +23,14 @@ import {
 } from "../threadNotifications";
 import { resolveSidebarThreadStatus } from "./Sidebar.logic";
 import { toastManager } from "./ui/toast";
+import {
+  isUnsavedTicketPreparation,
+  useWorkbenchTicketPreparations,
+  useWorkbenchTicketPreparationRefresh,
+} from "../workbench/useWorkbenchTicketPreparations";
 
 export function ThreadNotificationCoordinator() {
+  useWorkbenchTicketPreparationRefresh();
   const environmentIds = useEnvironmentIds();
   const mode = useClientSettings((settings) => settings.notificationMode);
   const inAppNotificationsEnabled = useClientSettings(
@@ -101,6 +107,7 @@ function EnvironmentNotifications({
   environmentId: EnvironmentId;
   onNotification: (environmentId: EnvironmentId, notification: Notification) => void;
 }) {
+  const preparations = useWorkbenchTicketPreparations();
   const shell = useAtomValue(environmentShell.stateValueAtom(environmentId));
   // The shell reducer keeps the thread list and unchanged thread objects
   // stable, so this only rescans when a thread actually changed.
@@ -123,6 +130,7 @@ function EnvironmentNotifications({
     }
     const next = new Map<ThreadId, NotificationState>();
     for (const rawThread of threads) {
+      if (isUnsavedTicketPreparation(preparations, environmentId, rawThread.id)) continue;
       if (rawThread.lineage.relationshipToParent === "subagent") continue;
       const prior = previous.current.get(rawThread.id);
       // The same object cannot produce a new notification.
@@ -240,6 +248,7 @@ function EnvironmentNotifications({
     mode,
     navigate,
     onNotification,
+    preparations,
     threads,
   ]);
 

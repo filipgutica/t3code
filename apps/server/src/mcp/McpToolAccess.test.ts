@@ -194,6 +194,15 @@ const ended = threadCaller(endedThreadId);
 const supervisedClient = clientCaller("approval-required");
 const fullAccessClient = clientCaller("full-access");
 const readOnlyClient = clientCaller("read-only");
+const readOnlyProvider = {
+  ...fullAccess,
+  thread: {
+    threadId: fullAccessThreadId,
+    providerSessionId: `provider:${fullAccessThreadId}`,
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    readOnly: true,
+  },
+};
 // A live full-access thread whose credential may use its browser but not control threads.
 const previewOnly = { ...fullAccess, capabilities: new Set(["preview"] as const) };
 
@@ -202,6 +211,10 @@ it.effect.each([
   ["reads", ended, {}, "ran"],
   ["reads", supervisedClient, {}, "ran"],
   ["reads", readOnlyClient, {}, "ran"],
+  ["reads", readOnlyProvider, {}, "ran"],
+  ["writes", readOnlyProvider, {}, "capability_denied"],
+  ["acts_as_caller", readOnlyProvider, {}, "capability_denied"],
+  ["starts_threads", readOnlyProvider, {}, "capability_denied"],
 
   // A client approved for read-only access changes nothing.
   ["writes", readOnlyClient, {}, "capability_denied"],

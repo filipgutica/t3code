@@ -17,6 +17,7 @@ import {
 } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "./OrchestratorMcpService.ts";
+import { assertMcpWritesAllowed } from "../workbench/TicketPlanningRuntime.ts";
 import {
   assertFullAccess,
   assertLiveCaller,
@@ -100,15 +101,19 @@ export class Declaration<out Handler> {
 /** A client approved for read-only access changes nothing. */
 const refuseReadOnlyClient = McpInvocationContext.McpInvocationContext.pipe(
   Effect.flatMap((scope) =>
-    scope.client?.access === "read-only"
+    scope.client?.access === "read-only" || scope.thread?.readOnly === true
       ? Effect.fail(
           new OrchestratorMcpFailure({
             code: "capability_denied",
             message:
-              "This tool changes the environment, and this MCP client was approved for read-only access.",
+              scope.thread?.readOnly === true
+                ? "This tool changes the environment, and this provider credential allows read-only access."
+                : "This tool changes the environment, and this MCP client was approved for read-only access.",
           }),
         )
-      : Effect.void,
+      : scope.thread === undefined
+        ? Effect.void
+        : assertMcpWritesAllowed(scope.thread.threadId),
   ),
 );
 

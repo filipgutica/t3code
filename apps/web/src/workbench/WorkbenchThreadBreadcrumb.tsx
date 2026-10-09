@@ -1,7 +1,7 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
-import { BlocksIcon, TicketIcon, RefreshCwIcon } from "lucide-react";
+import { BlocksIcon, TicketIcon, TicketPlusIcon } from "lucide-react";
 
 import {
   WorkspaceBreadcrumbItem,
@@ -9,6 +9,7 @@ import {
 } from "../components/WorkspaceBreadcrumb";
 import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { useProjects, useThreadShell } from "../state/entities";
 import { attachWorkbenchTicketContext } from "./attachWorkbenchTicketContext";
 import { Badge } from "../components/ui/badge";
@@ -69,39 +70,47 @@ export function WorkbenchThreadBreadcrumb({
           <Badge
             size="default"
             variant="secondary"
-            className="hidden font-normal text-muted-foreground @5xl/header-actions:inline-flex"
+            className="hidden @5xl/header-actions:inline-flex"
           >
             {WORKBENCH_TICKET_STATUS_LABELS[ticket.status]}
           </Badge>
         </Link>
       </WorkspaceBreadcrumbItem>
       <WorkspaceBreadcrumbItem>
-        <Button
-          aria-label="Attach current Ticket context"
-          title="Attach current Ticket context"
-          variant="ghost"
-          size="icon-sm"
-          disabled={thread === null}
-          onClick={() => {
-            if (thread === null) return;
-            attachWorkbenchTicketContext({
-              environmentId,
-              thread,
-              ticket,
-              projects: projects.filter((candidate) => candidate.environmentId === environmentId),
-              repositories:
-                data?.ticketWorkspaces.find((workspace) => workspace.ticketId === ticket.id)
-                  ?.repositories ?? [],
-            });
-            toastManager.add({
-              type: "success",
-              title: "Ticket context attached",
-              description: "Review it in the composer before sending.",
-            });
-          }}
-        >
-          <RefreshCwIcon />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                aria-label="Add ticket context"
+                variant="ghost"
+                size="icon-sm"
+                disabled={thread === null}
+                onClick={() => {
+                  if (thread === null) return;
+                  attachWorkbenchTicketContext({
+                    environmentId,
+                    thread,
+                    ticket,
+                    projects: projects.filter(
+                      (candidate) => candidate.environmentId === environmentId,
+                    ),
+                    repositories:
+                      data?.ticketWorkspaces.find((workspace) => workspace.ticketId === ticket.id)
+                        ?.repositories ?? [],
+                  });
+                  toastManager.add({
+                    type: "success",
+                    title: "Ticket context attached",
+                    description: "Review it in the composer before sending.",
+                  });
+                }}
+              />
+            }
+          >
+            <TicketPlusIcon />
+          </TooltipTrigger>
+          <TooltipPopup>Add current ticket details to your next message</TooltipPopup>
+        </Tooltip>
       </WorkspaceBreadcrumbItem>
       <WorkspaceBreadcrumbSeparator />
     </>

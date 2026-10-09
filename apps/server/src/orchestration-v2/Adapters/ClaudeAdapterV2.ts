@@ -826,6 +826,7 @@ export function makeClaudeQueryOptions(input: {
   readonly allowedTools?: ReadonlyArray<string>;
   readonly disallowedTools?: ReadonlyArray<string>;
   readonly permissionMode?: PermissionMode;
+  readonly readOnlySandbox?: boolean;
   readonly canUseTool?: CanUseTool;
   readonly onUserDialog?: ClaudeQueryOptions["onUserDialog"];
   readonly supportedDialogKinds?: ClaudeQueryOptions["supportedDialogKinds"];
@@ -924,7 +925,21 @@ export function makeClaudeQueryOptions(input: {
   ];
   const withDirectories =
     additionalDirectories.length === 0 ? options : { ...options, additionalDirectories };
-  return input.cwd === null ? withDirectories : { ...withDirectories, cwd: input.cwd };
+  const restrictedOptions =
+    input.readOnlySandbox === true
+      ? {
+          ...withDirectories,
+          permissionMode: "dontAsk" as const,
+          tools: [...CLAUDE_READ_ONLY_ALLOWED_TOOLS],
+          allowDangerouslySkipPermissions: false,
+          strictMcpConfig: true,
+          settings: {
+            ...(typeof withDirectories.settings === "object" ? withDirectories.settings : {}),
+            disableAllHooks: true,
+          },
+        }
+      : withDirectories;
+  return input.cwd === null ? restrictedOptions : { ...restrictedOptions, cwd: input.cwd };
 }
 
 export const CLAUDE_T3_MCP_TOOL_WILDCARD = "mcp__t3-code__*";
@@ -7358,6 +7373,8 @@ export function makeClaudeAdapterV2(
               ? {}
               : { mcpServers: mcpOverrides.mcpServers }),
             permissionMode: queryPolicy.permissionMode,
+            readOnlySandbox:
+              sandboxPolicyKindForClaudeRuntimePolicy(turnInput.runtimePolicy) === "readOnly",
             ...(queryPolicy.allowDangerouslySkipPermissions === undefined
               ? {}
               : {

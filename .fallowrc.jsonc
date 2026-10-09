@@ -1,0 +1,35 @@
+{
+  // Keep the commit hook on the same Workbench limits as the package and CI gates.
+  "extends": ["./packages/workbench/.fallowrc.jsonc"],
+
+  // Preserve native callers in the module graph while reporting Workbench-owned code.
+  "ignoreFindings": [
+    "!packages/workbench/**",
+    "!apps/{server,web,desktop,mobile}/src/workbench/**",
+    "!packages/contracts/src/workbench*",
+    "!apps/web/src/routes/workbench.tsx",
+    "!infra/workbench-auth/src/**",
+  ],
+  "ignoreExports": [
+    // Effect services expose separate namespace imports with the conventional layer name.
+    { "file": "apps/server/src/workbench/**", "exports": ["layer"] },
+  ],
+  "health": {
+    // Enforce the inherited 20/15 limits; graph-estimated coverage is not a test gate.
+    "maxCrap": 0,
+    "ignore": [
+      "apps/server/src/orchestration-v2/**",
+      "apps/server/src/mcp/**",
+      "apps/web/src/components/**",
+      "**/*.{test,spec}.{ts,tsx,js,jsx}",
+      "**/{__tests__,test,tests,fixtures,test-support}/**",
+    ],
+  },
+  "duplicates": {
+    "ignore": [
+      "apps/server/src/orchestration-v2/**",
+      "apps/server/src/mcp/**",
+      "apps/web/src/components/**",
+    ],
+  },
+}

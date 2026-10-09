@@ -42,6 +42,7 @@ export const RuntimePolicyV2Override = Schema.Struct({
   approvalPolicy: Schema.optional(Schema.Unknown),
   sandboxPolicy: Schema.optional(Schema.Unknown),
   reasoningEffort: Schema.optional(Schema.String),
+  checkpoints: Schema.optional(Schema.Literal("disabled")),
 });
 export type RuntimePolicyV2Override = typeof RuntimePolicyV2Override.Type;
 
@@ -52,7 +53,13 @@ export interface RuntimePolicyV2Shape {
   readonly resolve: (input: {
     readonly thread: OrchestrationV2AppThread;
     readonly modelSelection: ModelSelection;
-  }) => Effect.Effect<ProviderAdapterV2RuntimePolicyType, RuntimePolicyV2Error>;
+  }) => Effect.Effect<
+    ProviderAdapterV2RuntimePolicyType & {
+      readonly checkpoints?: "disabled";
+      readonly instructions?: string;
+    },
+    RuntimePolicyV2Error
+  >;
 }
 
 export class RuntimePolicyV2 extends Context.Service<RuntimePolicyV2, RuntimePolicyV2Shape>()(
@@ -148,8 +155,8 @@ export function layerWithOverride(
       return {
         resolve: (input) =>
           base.resolve(input).pipe(
-            Effect.map((policy) =>
-              ProviderAdapterV2RuntimePolicy.make({
+            Effect.map((policy) => ({
+              ...ProviderAdapterV2RuntimePolicy.make({
                 ...policy,
                 ...(override.cwd === undefined ? {} : { cwd: override.cwd }),
                 ...(override.approvalPolicy === undefined
@@ -162,7 +169,11 @@ export function layerWithOverride(
                   ? {}
                   : { reasoningEffort: override.reasoningEffort }),
               }),
-            ),
+              ...(policy.instructions === undefined ? {} : { instructions: policy.instructions }),
+              ...((override.checkpoints ?? policy.checkpoints)
+                ? { checkpoints: override.checkpoints ?? policy.checkpoints }
+                : {}),
+            })),
           ),
       } satisfies RuntimePolicyV2Shape;
     }),

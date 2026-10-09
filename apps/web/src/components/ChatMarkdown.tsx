@@ -213,6 +213,8 @@ import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
 
 interface ChatMarkdownProps {
   text: string;
+  /** Identifies assistant-authored blocks for a scoped content renderer. */
+  messageId?: string | undefined;
   cwd: string | undefined;
   threadRef?: ScopedThreadRef | undefined;
   /** Panel that receives pull request links, including the standalone PR view. */
@@ -251,6 +253,20 @@ export interface ChatMarkdownContextReference {
   contextId: string;
   label: string;
 }
+
+export interface ChatMarkdownCodeBlock {
+  readonly messageId: string | undefined;
+  readonly language: string | undefined;
+  readonly code: string;
+  readonly sourceOffset: number | undefined;
+  readonly isStreaming: boolean;
+  readonly isComplete: boolean;
+}
+
+/** A surrounding feature may render a fenced block; undefined keeps the native code UI. */
+export const ChatMarkdownCodeBlockRendererContext = React.createContext<
+  ((block: ChatMarkdownCodeBlock) => ReactNode | undefined) | null
+>(null);
 
 export function canUseMarkdownFileShellActions(
   environmentId: EnvironmentId | null,
@@ -2291,6 +2307,7 @@ function areMarkdownFileLinkPropsEqual(
 
 function useChatMarkdownState({
   text,
+  messageId,
   cwd,
   threadRef,
   pullRequestPanelRef,
@@ -2736,6 +2753,7 @@ function useChatMarkdownState({
       pullRequestServerConfig,
       skills,
       text,
+      messageId,
       threadRef,
       updateThreadPullRequestLink,
     }),
@@ -2770,6 +2788,7 @@ function useChatMarkdownState({
       pullRequestServerConfig,
       skills,
       text,
+      messageId,
       threadRef,
       updateThreadPullRequestLink,
     ],
@@ -3321,15 +3340,31 @@ const CHAT_MARKDOWN_COMPONENTS = {
     return <MarkdownDetails open={detailsOpen}>{children}</MarkdownDetails>;
   },
   pre: function MarkdownPre({ node, children, ...props }) {
-    const { resolvedTheme, diffThemeName, expandMedia, isStreaming, onRunShellCommand, text } = use(
-      ChatMarkdownRendererContext,
-    );
+    const {
+      resolvedTheme,
+      diffThemeName,
+      expandMedia,
+      isStreaming,
+      onRunShellCommand,
+      text,
+      messageId,
+    } = use(ChatMarkdownRendererContext);
+    const renderCodeBlock = use(ChatMarkdownCodeBlockRendererContext);
     const codeBlock = extractCodeBlock(children);
     if (!codeBlock) {
       return <pre {...props}>{children}</pre>;
     }
 
     const language = extractFenceLanguage(codeBlock.className);
+    const renderedBlock = renderCodeBlock?.({
+      messageId,
+      language,
+      code: codeBlock.code,
+      sourceOffset: node?.position?.start.offset,
+      isStreaming,
+      isComplete: isClosedCodeFence(node, text),
+    });
+    if (renderedBlock !== undefined) return renderedBlock;
     const fenceTitle = extractFenceTitle(extractPreCodeMeta(node));
     const highlightedCode = (
       <RenderErrorBoundary

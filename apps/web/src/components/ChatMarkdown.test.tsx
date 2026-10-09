@@ -81,6 +81,7 @@ vi.mock("~/lib/openPullRequestLink", () => ({
 }));
 
 import ChatMarkdown, {
+  ChatMarkdownCodeBlockRendererContext,
   canUseMarkdownFileShellActions,
   hasMarkdownFilePrimaryAction,
   shouldUseMarkdownFileBrowserPrimaryAction,
@@ -276,6 +277,58 @@ describe("ChatMarkdown favicon privacy", () => {
 });
 
 describe("ChatMarkdown streaming", () => {
+  it("renders opted-in assistant blocks while preserving surrounding text and ordinary code", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const text =
+      "Before.\n\n```proposal\nstructured payload\n```\n\nAfter.\n\n```text\nordinary code\n```";
+    const renderBlock: NonNullable<
+      ComponentProps<typeof ChatMarkdownCodeBlockRendererContext>["value"]
+    > = (block) =>
+      block.messageId === "assistant" && block.language === "proposal" ? (
+        <section aria-label="Proposal">
+          {block.isStreaming || !block.isComplete ? "Preparing proposal" : block.code}
+        </section>
+      ) : undefined;
+    const message = (messageId?: string, isStreaming = false) => (
+      <ChatMarkdownCodeBlockRendererContext value={renderBlock}>
+        <ChatMarkdown
+          cwd="/tmp/project"
+          text={text}
+          messageId={messageId}
+          isStreaming={isStreaming}
+        />
+      </ChatMarkdownCodeBlockRendererContext>
+    );
+    try {
+      await act(async () => {
+        root.render(message("assistant", true));
+      });
+      expect(container.querySelector("section")?.textContent).toBe("Preparing proposal");
+      await act(async () => {
+        root.render(message("assistant"));
+      });
+      expect(container.querySelector("section")?.textContent).toBe("structured payload\n");
+      expect([...container.querySelectorAll("p")].map((node) => node.textContent)).toEqual([
+        "Before.",
+        "After.",
+      ]);
+      expect(container.querySelectorAll("pre")).toHaveLength(1);
+      // User-authored and non-message Markdown do not opt into assistant rendering.
+      await act(async () => {
+        root.render(message());
+      });
+      expect(container.querySelectorAll("section")).toHaveLength(0);
+      expect(container.querySelectorAll("pre")).toHaveLength(2);
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("runs only a complete single-line shell block after a click", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     const onRunShellCommand = vi.fn();
