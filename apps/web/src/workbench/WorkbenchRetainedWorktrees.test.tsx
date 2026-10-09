@@ -322,7 +322,7 @@ it("confirms cleanup, keeps a failed removal available, and retires refreshed re
   expect(button(`Remove worktrees for ${ticketId}`)).toBeDefined();
 });
 
-it("keeps archived Workspaces searchable and reachable while the actionable filter is enabled", async () => {
+it("hides archived Workspaces from actionable results and restores their search and navigation when cleared", async () => {
   sidebarHost.environmentId = "archived-sidebar-host";
   const workspaceId = WorkbenchProjectId.make("archived-workspace");
   sidebarHost.snapshot = {
@@ -354,11 +354,36 @@ it("keeps archived Workspaces searchable and reachable while the actionable filt
       </RouterContextProvider>,
     );
   });
-  await act(() => button("Show actionable Tickets and Threads").props.onClick());
   expect(renderer!.root.findByType("summary").children).toEqual(["Archived Workspaces"]);
+  await act(() => button("Show actionable Tickets and Threads").props.onClick());
+  expect(renderer!.root.findAllByType("summary")).toHaveLength(0);
+  expect(renderer!.root.findByProps({ "aria-live": "polite" }).children).toEqual([
+    "No confirmed actions",
+  ]);
+  await act(() => button("Show actionable Tickets and Threads").props.onClick());
+  expect(renderer!.root.findAllByType("summary")).toHaveLength(1);
   const search = renderer!.root.findByProps({ "aria-label": "Search Workbench sidebar" });
   await act(() => search.props.onChange({ target: { value: "Release Checklist" } }));
   expect(renderer!.root.findAllByType("summary")).toHaveLength(1);
+  expect(renderer!.root.findByProps({ "aria-live": "polite" }).children).toEqual(["1 result"]);
+  expect(
+    renderer!.root
+      .findAllByType("span")
+      .some((node) => node.children.includes("Release Checklist")),
+  ).toBe(true);
+  await act(() => button("Show actionable Tickets and Threads").props.onClick());
+  expect(renderer!.root.findAllByType("summary")).toHaveLength(0);
+  expect(renderer!.root.findByProps({ "aria-live": "polite" }).children).toEqual([
+    "No Workbench results",
+  ]);
+  expect(
+    renderer!.root
+      .findAllByType("span")
+      .some((node) => node.children.includes("Release Checklist")),
+  ).toBe(false);
+  await act(() => button("Show actionable Tickets and Threads").props.onClick());
+  expect(renderer!.root.findAllByType("summary")).toHaveLength(1);
+  expect(renderer!.root.findByProps({ "aria-live": "polite" }).children).toEqual(["1 result"]);
   await act(() => search.props.onChange({ target: { value: "unrelated search" } }));
   expect(renderer!.root.findAllByType("summary")).toHaveLength(0);
   await act(() => search.props.onChange({ target: { value: "Roadmap" } }));

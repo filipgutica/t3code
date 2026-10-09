@@ -585,13 +585,16 @@ function WorkbenchSidebarNavigation({
     () =>
       filterWorkbenchSidebarNavigation({
         query: searchQuery,
-        projects: projects.filter((workspace) => workspace.archivedAt != null),
+        projects: onlyActionable
+          ? []
+          : projects.filter((workspace) => workspace.archivedAt != null),
         ticketGroupsByWorkspace,
         archivedTicketsByWorkspace,
         jiraKeysByTicketId,
       }),
     [
       searchQuery,
+      onlyActionable,
       projects,
       ticketGroupsByWorkspace,
       archivedTicketsByWorkspace,
