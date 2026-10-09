@@ -45,6 +45,11 @@ export function useWorkbenchSidebarActions({
         setError("This Ticket is no longer available.");
         return;
       }
+      const workspace = snapshot.projects.find((project) => project.id === ticket.projectId);
+      if (!workspace || workspace.archivedAt != null) {
+        setError("Restore this Workspace before changing its planning data.");
+        return;
+      }
       switch (action.kind) {
         case "new-thread":
           requestNewThread(ticket);

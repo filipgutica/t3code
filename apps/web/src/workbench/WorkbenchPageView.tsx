@@ -8,11 +8,15 @@ import { useWorkbenchPageData } from "./useWorkbenchPageData";
 import { useWorkbenchTicketActions } from "./useWorkbenchTicketActions";
 import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
 import { useWorkbenchJiraBindings } from "./useWorkbenchJiraBindings";
+import type { useWorkbenchWorkspaceActions } from "./useWorkbenchWorkspaceActions";
 
 import { EnvironmentId, type WorkbenchTicket, type WorkbenchTicketId } from "@t3tools/contracts";
 
 import {
   AlertCircleIcon,
+  ArchiveIcon,
+  RotateCcwIcon,
+  Trash2Icon,
   BlocksIcon,
   FolderGit2Icon,
   Layers3Icon,
@@ -74,6 +78,7 @@ import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
 import { getWorkbenchJiraBindingSprints, isWorkbenchJiraEpic } from "./workbenchJira.logic";
 
 type WorkbenchPageViewProps = {
+  readonly workspaceActions: ReturnType<typeof useWorkbenchWorkspaceActions>;
   readonly environmentId: EnvironmentId | null;
   readonly createWorkspace: boolean;
   readonly jiraDialogOpen: boolean;
@@ -111,6 +116,51 @@ function WorkbenchLoading() {
   );
 }
 
+function WorkbenchWorkspaceLifecycleMenu({
+  workspace,
+  pending,
+  actions,
+}: {
+  workspace: NonNullable<ReturnType<typeof useWorkbenchPageSelection>["selectedProject"]>;
+  pending: boolean;
+  actions: ReturnType<typeof useWorkbenchWorkspaceActions>;
+}) {
+  const archived = workspace.archivedAt != null;
+  return (
+    <MenuGroup>
+      <MenuItem
+        disabled={pending || !actions.canArchive}
+        onClick={() => void actions.setArchived(workspace)}
+      >
+        {archived ? <RotateCcwIcon /> : <ArchiveIcon />}
+        {archived ? "Restore Workspace" : "Archive Workspace"}
+      </MenuItem>
+      <MenuItem
+        variant="destructive"
+        disabled={pending || !actions.canDelete}
+        onClick={() => actions.requestDeletion(workspace)}
+      >
+        <Trash2Icon /> Delete Workspace…
+      </MenuItem>
+    </MenuGroup>
+  );
+}
+
+function WorkbenchWorkspaceStateBadges({
+  readOnly,
+  jiraBinding,
+}: {
+  readOnly: boolean;
+  jiraBinding: ReturnType<typeof useWorkbenchBoardData>["jiraBinding"];
+}) {
+  return (
+    <>
+      {readOnly ? <Badge variant="outline">Archived Workspace</Badge> : null}
+      {jiraBinding && !jiraBinding.active ? <Badge variant="outline">Jira paused</Badge> : null}
+    </>
+  );
+}
+
 function WorkbenchBoardHeader(
   props: Pick<
     WorkbenchPageViewProps,
@@ -118,12 +168,24 @@ function WorkbenchBoardHeader(
     | "dialogs"
     | "jiraBindings"
     | "openJiraDialog"
+    | "workspaceActions"
     | "pageData"
     | "selection"
     | "setError"
+    | "pendingAction"
   >,
 ) {
-  const { pageData, selection, jiraBindings, dialogs, boardData, setError, openJiraDialog } = props;
+  const {
+    pageData,
+    selection,
+    jiraBindings,
+    dialogs,
+    boardData,
+    setError,
+    openJiraDialog,
+    workspaceActions,
+    pendingAction,
+  } = props;
   const { keybindings, availableEditors } = pageData;
   const { selectedProject } = selection;
   const { jiraPendingAction, syncJiraBinding } = jiraBindings;
@@ -138,6 +200,12 @@ function WorkbenchBoardHeader(
   } = boardData;
 
   if (selectedProject === null) return null;
+  const readOnly = selectedProject.archivedAt != null;
+  const lifecyclePending = pendingAction !== null || jiraPendingAction !== null;
+  const mutationDisabled = readOnly || lifecyclePending;
+  const ticketCountLabel = showJiraImportedOnly
+    ? `${boardTickets.length} imported tickets`
+    : `${projectTickets.length} tickets`;
   return (
     <WorkspacePageHeader
       electron={isElectron}
@@ -149,14 +217,8 @@ function WorkbenchBoardHeader(
             <h2 className="max-w-full min-w-0 truncate text-xl font-semibold">
               {selectedProject.title}
             </h2>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {showJiraImportedOnly
-                ? `${boardTickets.length} imported tickets`
-                : `${projectTickets.length} tickets`}
-            </span>
-            {jiraBinding && !jiraBinding.active ? (
-              <Badge variant="outline">Jira paused</Badge>
-            ) : null}
+            <span className="shrink-0 text-xs text-muted-foreground">{ticketCountLabel}</span>
+            <WorkbenchWorkspaceStateBadges readOnly={readOnly} jiraBinding={jiraBinding} />
           </div>
           {jiraBinding ? (
             <WorkbenchJiraBoardContext binding={jiraBinding} pendingAction={jiraPendingAction} />
@@ -187,7 +249,12 @@ function WorkbenchBoardHeader(
               </div>
             </PopoverPopup>
           </Popover>
-          <Button aria-label="New Ticket" onClick={() => openTicketDialog()} size="sm">
+          <Button
+            aria-label="New Ticket"
+            disabled={mutationDisabled}
+            onClick={() => openTicketDialog()}
+            size="sm"
+          >
             <PlusIcon data-icon="inline-start" />
             New Ticket
           </Button>
@@ -199,10 +266,11 @@ function WorkbenchBoardHeader(
             </MenuTrigger>
             <MenuPopup align="end" data-workbench-workspace-actions="">
               <MenuGroup>
-                <MenuItem onClick={() => openEpicDialog()}>
+                <MenuItem disabled={mutationDisabled} onClick={() => openEpicDialog()}>
                   <Layers3Icon /> New Epic
                 </MenuItem>
                 <MenuItem
+                  disabled={mutationDisabled}
                   onClick={() => {
                     setError(null);
                     setEditWorkspaceOpen(true);
@@ -219,11 +287,11 @@ function WorkbenchBoardHeader(
                       {jiraBinding.boardName}
                       {!jiraBinding.active ? " · Paused" : ""}
                     </MenuGroupLabel>
-                    <MenuItem onClick={openJiraDialog}>
+                    <MenuItem disabled={mutationDisabled} onClick={openJiraDialog}>
                       <Settings2Icon /> Configure Jira sprint mirror
                     </MenuItem>
                     <MenuItem
-                      disabled={jiraPendingAction !== null || !jiraBinding.active}
+                      disabled={mutationDisabled || !jiraBinding.active}
                       onClick={() => void syncJiraBinding(jiraBinding)}
                     >
                       <RefreshCwIcon />{" "}
@@ -246,11 +314,17 @@ function WorkbenchBoardHeader(
                 </>
               ) : (
                 <MenuGroup>
-                  <MenuItem onClick={openJiraDialog}>
+                  <MenuItem disabled={mutationDisabled} onClick={openJiraDialog}>
                     <LinkIcon /> Connect Jira
                   </MenuItem>
                 </MenuGroup>
               )}
+              <MenuSeparator />
+              <WorkbenchWorkspaceLifecycleMenu
+                workspace={selectedProject}
+                pending={lifecyclePending}
+                actions={workspaceActions}
+              />
             </MenuPopup>
           </Menu>
         </div>
@@ -323,7 +397,9 @@ function WorkbenchJiraSyncNotice(
             }`}
           />
           <span className="min-w-0 flex-1">{activeJiraSyncNotice.message}</span>
-          {activeJiraSyncNotice.state === "error" && jiraBinding?.active ? (
+          {activeJiraSyncNotice.state === "error" &&
+          jiraBinding?.active &&
+          selectedProject?.archivedAt == null ? (
             <Button onClick={() => void syncJiraBinding(jiraBinding)} size="xs" variant="outline">
               <RefreshCwIcon /> Retry
             </Button>
@@ -500,7 +576,7 @@ function isWorkbenchPageTicketThreadPending({
 }
 
 function getWorkbenchPageTicketJiraProps({
-  props: { boardData, jiraBindings, pageData, pendingAction, ticketActions },
+  props: { boardData, jiraBindings, pageData, pendingAction, ticketActions, selection },
   ticket,
 }: {
   props: WorkbenchPageTicketDetailProps;
@@ -520,15 +596,19 @@ function getWorkbenchPageTicketJiraProps({
         binding={jiraBinding}
         ownershipKnown={jiraOwnershipKnown}
         jiraFieldsManaged={jiraFieldsManaged}
-        pending={pendingAction !== null}
+        pending={pendingAction !== null || selection.selectedProject?.archivedAt != null}
         editing={pageData.ticketDrafts.get(ticket.id)?.mode === "editing"}
         onPublish={ticketActions.openPublication}
       />
     ),
     jiraRefreshing: jiraPendingAction === "sync",
-    jiraRefreshDisabled: jiraPendingAction !== null || !jiraBinding?.active,
+    jiraRefreshDisabled:
+      jiraPendingAction !== null ||
+      !jiraBinding?.active ||
+      selection.selectedProject?.archivedAt != null,
     onRefreshJira: jiraBinding ? () => void syncJiraBinding(jiraBinding) : null,
-    lifecycleActionsEnabled: jiraOwnershipKnown && !jiraFieldsManaged,
+    lifecycleActionsEnabled:
+      jiraOwnershipKnown && !jiraFieldsManaged && selection.selectedProject?.archivedAt == null,
   };
 }
 
@@ -616,6 +696,7 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
       key={selectedTicket.id}
       environmentId={environmentId}
       workspaceTitle={selectedProject.title}
+      workspaceReadOnly={selectedProject.archivedAt != null}
       ticket={selectedTicket}
       {...getWorkbenchPageTicketState({ props, ticketId: selectedTicket.id })}
       {...getWorkbenchPageTicketJiraProps({ props, ticket: selectedTicket })}
@@ -704,6 +785,7 @@ function WorkbenchPageEpicDetail(
     <WorkbenchEpicDetail
       key={selectedEpic.id}
       workspaceTitle={selectedProject.title}
+      readOnly={selectedProject.archivedAt != null}
       epic={selectedEpic}
       jiraUrl={selectedJiraEpicUrl}
       jiraManaged={
@@ -747,6 +829,7 @@ function WorkbenchPageBoard(
     | "error"
     | "jiraBindings"
     | "openJiraDialog"
+    | "workspaceActions"
     | "pageData"
     | "pendingAction"
     | "selection"
@@ -818,6 +901,7 @@ function WorkbenchPageBoard(
         ) : null}
         <WorkbenchTicketBoard
           environmentId={environmentId}
+          readOnly={selectedProject.archivedAt != null}
           onJiraTransition={(selection) => {
             void changeJiraTransition(selection);
           }}
@@ -828,7 +912,7 @@ function WorkbenchPageBoard(
           {...(jiraBinding && boardData.jiraOwnershipKnown
             ? { onPublishToJira: ticketActions.openPublication }
             : {})}
-          jiraPublishDisabled={!jiraBinding?.active}
+          jiraPublishDisabled={!jiraBinding?.active || selectedProject.archivedAt != null}
           jiraStatusMappings={jiraBinding?.statusMappings ?? []}
           projectId={selectedProject.id}
           tickets={boardTickets}
@@ -888,6 +972,7 @@ function WorkbenchPageWorkspace(
     | "error"
     | "jiraBindings"
     | "openJiraDialog"
+    | "workspaceActions"
     | "pageData"
     | "pendingAction"
     | "selection"
@@ -907,10 +992,35 @@ function WorkbenchPageWorkspace(
   if (environmentId === null) return null;
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      {selection.selectedProject && selection.selectedProject.archivedAt != null ? (
+        <div
+          role="status"
+          className="border-b border-border px-4 py-3 text-sm text-muted-foreground"
+        >
+          This Workspace is archived. Planning is read-only and Jira sync is paused. Linked Threads
+          remain available.
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => {
+              if (selection.selectedProject)
+                void props.workspaceActions.setArchived(selection.selectedProject);
+            }}
+            disabled={pending || !props.workspaceActions.canArchive}
+          >
+            <RotateCcwIcon /> Restore Workspace
+          </Button>
+        </div>
+      ) : null}
       <WorkbenchJiraTransitionsPreloader
         environmentId={environmentId}
         issueLinks={projectJiraIssueLinks}
-        paused={pending || optimisticStatus.pendingTicketIds.size > 0 || jiraPendingAction !== null}
+        paused={
+          selection.selectedProject?.archivedAt != null ||
+          pending ||
+          optimisticStatus.pendingTicketIds.size > 0 ||
+          jiraPendingAction !== null
+        }
       />
       {selectedTicket ? (
         <WorkbenchPageTicketDetail {...props} />
@@ -948,7 +1058,7 @@ function WorkbenchPageWorkspaceDialogs(
           onSave={submitProject}
         />
       ) : null}
-      {editWorkspaceOpen && selectedProject ? (
+      {editWorkspaceOpen && selectedProject && selectedProject.archivedAt == null ? (
         <WorkbenchWorkspaceDialog
           key={selectedProject.id}
           open
@@ -1008,7 +1118,7 @@ function WorkbenchPageJiraDialog(
 
   return (
     <>
-      {selectedProject && jiraDialogOpen ? (
+      {selectedProject && selectedProject.archivedAt == null && jiraDialogOpen ? (
         <WorkbenchJiraDialog
           // Keep the dialog instance stable while a first migration is being
           // retried; its revision snapshot must not be replaced by a refresh.
@@ -1134,6 +1244,7 @@ function WorkbenchPageTicketDialogs(
 
   const pending = pendingAction !== null;
   const publication = ticketActions.publication;
+  if (selectedProject?.archivedAt != null) return null;
   return (
     <>
       {publication ? (
@@ -1204,6 +1315,7 @@ function WorkbenchPageContent(
     | "error"
     | "jiraBindings"
     | "openJiraDialog"
+    | "workspaceActions"
     | "pageData"
     | "pendingAction"
     | "selection"
@@ -1239,18 +1351,23 @@ function WorkbenchPageContent(
   return <WorkbenchPageWorkspace {...props} />;
 }
 
-function WorkbenchPageNoWorkspace(props: Pick<WorkbenchPageViewProps, "pageData" | "selection">) {
+function WorkbenchPageNoWorkspace(
+  props: Pick<WorkbenchPageViewProps, "pageData" | "selection" | "error">,
+) {
   const { query } = props.pageData;
   const { openWorkspaceDialog } = props.selection;
+  const error = props.error ?? query.error;
   return (
     <div className="relative min-h-0 flex-1">
-      {query.error ? (
+      {error ? (
         <div className="absolute inset-x-4 top-4 z-10 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive-foreground">
           <AlertCircleIcon className="size-4" />
-          <span className="min-w-0 flex-1">{query.error}</span>
-          <Button onClick={query.refresh} size="xs" variant="outline">
-            <RefreshCwIcon /> Retry
-          </Button>
+          <span className="min-w-0 flex-1">{error}</span>
+          {query.error ? (
+            <Button onClick={query.refresh} size="xs" variant="outline">
+              <RefreshCwIcon /> Retry
+            </Button>
+          ) : null}
         </div>
       ) : null}
       <Empty className="h-full">
@@ -1258,9 +1375,15 @@ function WorkbenchPageNoWorkspace(props: Pick<WorkbenchPageViewProps, "pageData"
           <EmptyMedia variant="icon">
             <LayoutDashboardIcon />
           </EmptyMedia>
-          <EmptyTitle>Create your first Workbench Workspace</EmptyTitle>
+          <EmptyTitle>
+            {props.pageData.snapshot?.projects.length
+              ? "No active Workbench Workspaces"
+              : "Create your first Workbench Workspace"}
+          </EmptyTitle>
           <EmptyDescription>
-            Group tickets around the repositories and native Agent Threads that deliver them.
+            {props.pageData.snapshot?.projects.length
+              ? "Open Archived Workspaces in the sidebar to inspect or restore one, or create a new Workspace."
+              : "Group tickets around the repositories and native Agent Threads that deliver them."}
           </EmptyDescription>
         </EmptyHeader>
         <EmptyContent>

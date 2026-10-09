@@ -17,6 +17,7 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as WorkbenchStore from "../WorkbenchStore.ts";
 
 import { JiraApi } from "./JiraApi.ts";
 import { reconcileJiraIssueLinks, type JiraIssueImport } from "./JiraReconciliation.ts";
@@ -92,6 +93,7 @@ export const make = Effect.gen(function* () {
   const api = yield* JiraApi;
   const importer = yield* JiraTicketImporter;
   const repository = yield* WorkbenchJiraRepository;
+  const workbench = yield* WorkbenchStore.WorkbenchStore;
   const sql = yield* SqlClient.SqlClient;
   const bindingLocks = yield* Ref.make<ReadonlyMap<string, Semaphore.Semaphore>>(new Map());
   const lastAttemptAt = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
@@ -171,6 +173,9 @@ export const make = Effect.gen(function* () {
       return yield* syncError("binding_not_found", "The Jira sprint binding was not found.");
     }
     const binding = bindingOption.value;
+    yield* workbench
+      .requireActiveProject(binding.projectId)
+      .pipe(Effect.mapError((error) => syncError("invalid_binding", error.message)));
     if (!binding.active) {
       return yield* syncError("binding_inactive", "The Jira sprint binding is inactive.");
     }

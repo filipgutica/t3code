@@ -38,6 +38,7 @@ import {
 } from "@t3tools/workbench/jira/JiraTicketImporter";
 import * as JiraTicketWriteService from "@t3tools/workbench/jira/JiraTicketWriteService";
 import * as WorkbenchJiraService from "@t3tools/workbench/jira/WorkbenchJiraService";
+import * as WorkspaceLifecycleService from "@t3tools/workbench/WorkspaceLifecycleService";
 import {
   layerSql as jiraRepositoryLayer,
   WorkbenchJiraRepository,
@@ -227,6 +228,230 @@ const stubApi = (input: {
   });
 
 describe("Jira lifecycle persistence", () => {
+  it.effect(
+    "serializes Workspace lifecycle with Jira I/O and retains native records and connections",
+    () =>
+      Effect.gen(function* () {
+        const binding = makeBinding({
+          selectedSprints: [{ id: 101, name: "Sprint 101" }],
+          observedActiveSprintIds: [101],
+        });
+        const { repository, workbench } = yield* seedState(binding);
+        const importer = yield* JiraTicketImporter;
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const lifecycleRequested = yield* Deferred.make<void>();
+        let jiraReads = 0;
+        const api = stubApi({
+          listSprints: () => Effect.succeed([makeSprint(101)]),
+          listAssignedSprintIssues: () =>
+            Effect.gen(function* () {
+              jiraReads += 1;
+              yield* Deferred.succeed(started, undefined);
+              yield* Deferred.await(release);
+              return [makeIssue({ summary: "Synced before archive" })];
+            }),
+        });
+        const sync = yield* makeSyncService({ api, importer, repository });
+        const lifecycleSync = JiraSyncServiceTag.of({
+          ...sync,
+          withBindingPermit: (id, effect) =>
+            Deferred.succeed(lifecycleRequested, undefined).pipe(
+              Effect.andThen(sync.withBindingPermit(id, effect)),
+            ),
+        });
+        const lifecycle = yield* WorkspaceLifecycleService.WorkspaceLifecycleService.pipe(
+          Effect.provide(WorkspaceLifecycleService.layer),
+          Effect.provideService(JiraSyncServiceTag, lifecycleSync),
+        );
+        const refresh = yield* sync.syncBinding({ bindingId }).pipe(Effect.forkChild);
+        yield* Deferred.await(started);
+        const archive = yield* lifecycle
+          .archive({
+            id: workspaceId,
+            expectedRevision: 0,
+            archivedAt: createdAt,
+            updatedAt: createdAt,
+          })
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(lifecycleRequested);
+        assert.strictEqual(
+          Option.getOrThrow(yield* workbench.getProject(workspaceId)).archivedAt,
+          null,
+        );
+        yield* Deferred.succeed(release, undefined);
+        yield* Fiber.join(refresh);
+        const archived = yield* Fiber.join(archive);
+        assert.strictEqual(archived.archivedAt, createdAt);
+        assert.strictEqual(
+          (yield* workbench.getSnapshot).tickets[0]?.title,
+          "Synced before archive",
+        );
+        assert.strictEqual(
+          (yield* sync.syncBinding({ bindingId }).pipe(Effect.flip)).code,
+          "invalid_binding",
+        );
+        const writer = yield* JiraTicketWriteService.make.pipe(
+          Effect.provideService(JiraSyncServiceTag, sync),
+          Effect.provideService(JiraApi, api),
+          Effect.provideService(
+            JiraAuthService,
+            JiraAuthService.of({
+              begin: () => Effect.die("unexpected OAuth start"),
+              complete: () => Effect.die("unexpected OAuth completion"),
+              getAccessToken: () => Effect.die("archived Workspace must not read credentials"),
+            }),
+          ),
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make(() => Effect.die("unexpected Jira write")),
+          ),
+        );
+        assert.strictEqual(
+          (yield* writer
+            .updateTicket({
+              ticketId,
+              markdown: "Blocked edit",
+              expectedRemoteUpdatedAt: createdAt,
+            })
+            .pipe(Effect.flip)).code,
+          "invalid_binding",
+        );
+        assert.strictEqual(
+          (yield* writer
+            .createTicket({
+              id: WorkbenchTicketId.make("archived-create"),
+              projectId: workspaceId,
+              title: "Blocked create",
+              kind: "story",
+              markdown: "",
+              primaryT3ProjectId: primaryProjectId,
+              createdAt,
+              binding,
+            })
+            .pipe(Effect.flip)).code,
+          "invalid_binding",
+        );
+        assert.strictEqual(jiraReads, 1);
+        yield* repository.upsertBinding({ ...binding, active: false });
+        const restored = yield* lifecycle.archive({
+          id: workspaceId,
+          expectedRevision: archived.revision ?? 0,
+          archivedAt: null,
+          updatedAt: createdAt,
+        });
+        assert.strictEqual(
+          Option.getOrThrow(yield* repository.getBinding(bindingId)).active,
+          false,
+        );
+        yield* lifecycle.delete({
+          id: workspaceId,
+          expectedRevision: restored.revision ?? 0,
+          deletedAt: createdAt,
+          expectedTicketCount: 1,
+          expectedEpicCount: 0,
+        });
+        const snapshot = yield* workbench.getSnapshot;
+        assert.strictEqual(snapshot.projects.length, 0);
+        assert.strictEqual(snapshot.tickets.length, 0);
+        assert.deepStrictEqual(yield* repository.listBindings(), []);
+        assert.strictEqual((yield* repository.listConnections()).length, 1);
+        assert.strictEqual(
+          Option.getOrThrow(yield* repository.getCredentialId(connectionId)),
+          "lifecycle-credential",
+        );
+        const sql = yield* SqlClient.SqlClient;
+        assert.strictEqual(
+          (yield* sql`SELECT project_id FROM projection_projects WHERE deleted_at IS NULL`).length,
+          2,
+        );
+        assert.strictEqual(
+          (yield* sql`SELECT thread_id FROM orchestration_v2_projection_threads WHERE deleted_at IS NULL`)
+            .length,
+          1,
+        );
+        assert.strictEqual((yield* sql`SELECT assignment_id FROM workbench_assignments`).length, 1);
+        assert.strictEqual((yield* sql`SELECT binding_id FROM workbench_jira_bindings`).length, 1);
+        assert.strictEqual(jiraReads, 1);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
+  it.effect("rejects first-time Jira binding creation that finishes after Workspace archive", () =>
+    Effect.gen(function* () {
+      const binding = makeBinding({
+        selectedSprints: [{ id: 101, name: "Sprint 101" }],
+        observedActiveSprintIds: [101],
+      });
+      const { repository, workbench } = yield* seedState(binding);
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`DELETE FROM workbench_jira_bindings WHERE binding_id = ${bindingId}`;
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const api = JiraApi.of({
+        ...stubApi({
+          listSprints: () =>
+            Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Deferred.await(release)),
+              Effect.as([makeSprint(101)]),
+            ),
+          listAssignedSprintIssues: () => Effect.die("unexpected Jira issue read"),
+        }),
+        getBoardConfiguration: () =>
+          Effect.succeed({
+            boardId: 42,
+            name: "Workbench board",
+            type: "scrum",
+            columns: [],
+            rankFieldId: null,
+          }),
+      });
+      const importer = yield* JiraTicketImporter;
+      const sync = yield* makeSyncService({ api, importer, repository });
+      const service = yield* WorkbenchJiraService.make.pipe(
+        Effect.provideService(JiraApi, api),
+        Effect.provideService(JiraSyncServiceTag, sync),
+        Effect.provideService(
+          JiraAuthService,
+          JiraAuthService.of({
+            begin: () => Effect.die("unexpected OAuth start"),
+            complete: () => Effect.die("unexpected OAuth completion"),
+            getAccessToken: () => Effect.die("unexpected credential read"),
+          }),
+        ),
+        Effect.provideService(
+          JiraTicketWriteService.JiraTicketWriteService,
+          JiraTicketWriteService.JiraTicketWriteService.of({
+            createTicket: () => Effect.die("unexpected Ticket creation"),
+            getTicketTransitions: () => Effect.die("unexpected transition lookup"),
+            updateTicket: () => Effect.die("unexpected Ticket write"),
+            startTicketExecution: () => Effect.die("unexpected Jira execution"),
+          }),
+        ),
+      );
+      const creation = yield* service.createBinding(binding).pipe(Effect.result, Effect.forkChild);
+      yield* Deferred.await(started);
+      const lifecycle = yield* WorkspaceLifecycleService.WorkspaceLifecycleService.pipe(
+        Effect.provide(WorkspaceLifecycleService.layer),
+        Effect.provideService(JiraSyncServiceTag, sync),
+      );
+      yield* lifecycle.archive({
+        id: workspaceId,
+        expectedRevision: 0,
+        archivedAt: createdAt,
+        updatedAt: createdAt,
+      });
+      yield* Deferred.succeed(release, undefined);
+      const result = yield* Fiber.join(creation);
+      assert.strictEqual(result._tag, "Failure");
+      if (result._tag === "Failure") assert.strictEqual(result.failure.code, "invalid_binding");
+      assert.deepStrictEqual(yield* repository.listBindings(), []);
+      assert.strictEqual(
+        Option.getOrThrow(yield* workbench.getProject(workspaceId)).archivedAt,
+        createdAt,
+      );
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
   it.effect(
     "publishes one local Ticket in place and resumes sprint placement without another Jira issue",
     () =>

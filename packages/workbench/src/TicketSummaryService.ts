@@ -48,7 +48,7 @@ export const TicketSummaryServiceLive = Layer.effect(
     let idle = yield* Deferred.make<void>();
     yield* Deferred.succeed(idle, undefined);
 
-    const enqueue = Effect.fn("TicketSummaryService.enqueue")(function* ({
+    const enqueueUnlocked = Effect.fn("TicketSummaryService.enqueue")(function* ({
       ticketId,
       automatic,
     }: {
@@ -76,12 +76,31 @@ export const TicketSummaryServiceLive = Layer.effect(
         yield* Queue.offer(queue, ticketId);
       }
       return Option.some(ticket);
-    }, lock.withPermit);
+    });
+    const enqueue = (input: Parameters<typeof enqueueUnlocked>[0]) =>
+      lock.withPermit(enqueueUnlocked(input));
 
     const finish = (job: SummaryJob) =>
       lock.withPermit(
         Effect.gen(function* () {
-          if (jobs.get(job.ticket.id)?.requestId === job.requestId) jobs.delete(job.ticket.id);
+          if (jobs.get(job.ticket.id)?.requestId === job.requestId) {
+            yield* Effect.gen(function* () {
+              const candidate = yield* store.getTicketSummaryCandidate(job.ticket.id);
+              if (Option.isSome(candidate)) {
+                // Archive/restore can invalidate the persisted request without
+                // changing content. Replace it before declaring the queue idle.
+                yield* enqueueUnlocked({ ticketId: job.ticket.id, automatic: false });
+              } else {
+                jobs.delete(job.ticket.id);
+              }
+            }).pipe(
+              Effect.catch(() =>
+                Effect.sync(() => jobs.delete(job.ticket.id)).pipe(
+                  Effect.andThen(Effect.logWarning("A ticket summary could not be rescheduled.")),
+                ),
+              ),
+            );
+          }
           if (jobs.size === 0) yield* Deferred.succeed(idle, undefined);
         }),
       );

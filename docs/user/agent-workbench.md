@@ -37,6 +37,21 @@ keep their scope.
 
 ![A Ticket with a long description and two linked Threads.](./media/workbench/ticket.png)
 
+## Archive or delete a Workspace
+
+Choose **Archive Workspace** from the Workspace actions menu to hide it from the
+active list and attention counts. Open **Archived Workspaces** in the sidebar to
+inspect its Tickets and Epics. Archived planning is read-only, Jira sync is paused,
+and linked native Threads remain available. Choose **Restore Workspace** to resume
+planning. Restoration keeps individual Ticket and Epic archive states and the
+Jira sync's previous active or paused setting.
+
+Choose **Delete Workspace** from the same menu and review the Ticket and Epic
+counts before confirming. Deletion permanently removes the Workspace's planning
+data and Jira mirror from Workbench. Native Projects, Threads, Git worktrees,
+branches, commits, and Jira issues remain. There is no undo. **Retained worktrees**
+in the sidebar remains available for cleanup even after deleting the last Workspace.
+
 ## Start agent work
 
 1. Open a Ticket and choose **Create Thread**.
@@ -75,9 +90,14 @@ Ticket** for the current Workspace, and **Back to Ticket** from a linked Thread.
 
 Ticket progress and agent activity describe different states:
 
-| Ticket progress          | Agent activity                            |
-| ------------------------ | ----------------------------------------- |
-| To Do, In Progress, Done | Waiting for input, Working, Agent replied |
+| Ticket progress          | Agent activity                    |
+| ------------------------ | --------------------------------- |
+| To Do, In Progress, Done | Working, Waiting, Approval, Input |
+
+Thread activity uses the same status as native Threads, including elapsed time
+while working. A Ticket summarizes its current linked Threads: approval requests,
+input requests, and failures take priority over work in progress. Notifications
+and **Needs attention** remain available separately for reviewing results.
 
 When a linked Thread starts a turn, a To Do Ticket moves to In Progress. **A
 completed agent turn does not mark the Ticket Done.** Review the result, then set
@@ -160,7 +180,7 @@ Threads. Unlink Threads working elsewhere. Commit or preserve local changes, the
 workspace → Advanced workspace settings → Remove prepared worktrees** and confirm.
 The reset removes worktrees but keeps the Ticket, branches, and commits.
 
-After deleting a Ticket, open **Retained worktrees** in the Workbench sidebar to
+After deleting a Ticket or Workspace, open **Retained worktrees** in the Workbench sidebar to
 remove its kept worktrees. Review the listed repository paths, choose **Remove**,
 and confirm. The same Thread ownership and local-change checks apply.
 

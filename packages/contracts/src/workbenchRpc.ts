@@ -6,6 +6,8 @@ import { EnvironmentAuthorizationError } from "./auth.ts";
 import {
   WorkbenchAssignment,
   WorkbenchArchiveEpicInput,
+  WorkbenchArchiveProjectInput,
+  WorkbenchDeleteProjectInput,
   WorkbenchArchiveTicketInput,
   WorkbenchCreateAssignmentInput,
   WorkbenchCreateEpicInput,
@@ -62,6 +64,8 @@ export const WORKBENCH_WS_METHODS = {
   workbenchGetSnapshot: "workbench.getSnapshot",
   workbenchCreateProject: "workbench.projects.create",
   workbenchUpdateProject: "workbench.projects.update",
+  workbenchArchiveProject: "workbench.projects.archive",
+  workbenchDeleteProject: "workbench.projects.delete",
   workbenchCreateEpic: "workbench.epics.create",
   workbenchUpdateEpic: "workbench.epics.update",
   workbenchArchiveEpic: "workbench.epics.archive",
@@ -113,6 +117,18 @@ const WsWorkbenchCreateProjectRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchCreat
 const WsWorkbenchUpdateProjectRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchUpdateProject, {
   payload: WorkbenchUpdateProjectInput,
   success: WorkbenchProject,
+  error: WorkbenchRpcError,
+});
+
+const WsWorkbenchArchiveProjectRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchArchiveProject, {
+  payload: WorkbenchArchiveProjectInput,
+  success: WorkbenchProject,
+  error: WorkbenchRpcError,
+});
+
+const WsWorkbenchDeleteProjectRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchDeleteProject, {
+  payload: WorkbenchDeleteProjectInput,
+  success: Schema.Void,
   error: WorkbenchRpcError,
 });
 
@@ -310,6 +326,8 @@ export const WorkbenchRpcGroup = RpcGroup.make(
   WsWorkbenchGetSnapshotRpc,
   WsWorkbenchCreateProjectRpc,
   WsWorkbenchUpdateProjectRpc,
+  WsWorkbenchArchiveProjectRpc,
+  WsWorkbenchDeleteProjectRpc,
   WsWorkbenchCreateEpicRpc,
   WsWorkbenchUpdateEpicRpc,
   WsWorkbenchArchiveEpicRpc,

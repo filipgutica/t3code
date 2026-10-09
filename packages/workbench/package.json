@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./WorkspaceLifecycleService": {
+      "types": "./src/WorkspaceLifecycleService.ts",
+      "import": "./src/WorkspaceLifecycleService.ts"
+    },
     "./TicketExecutionService": {
       "types": "./src/TicketExecutionService.ts",
       "import": "./src/TicketExecutionService.ts"

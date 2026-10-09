@@ -48,6 +48,14 @@ const ticketId = WorkbenchTicketId.make("ticket-1");
 const createdTicketId = WorkbenchTicketId.make("created-ticket-1");
 const issueUpdatedAt = "2026-09-05T12:00:00.000Z";
 
+const makeWriter = JiraTicketWriteService.make.pipe(
+  Effect.provide(
+    Layer.mock(WorkbenchStore, {
+      requireActiveProject: () => Effect.void,
+    }),
+  ),
+);
+
 const makeIssue = (overrides?: Partial<WorkbenchJiraIssueSnapshot>) =>
   ({
     issueId: "10001",
@@ -420,7 +428,7 @@ const makeHarness = (options?: {
       return Effect.die(`unexpected HTTP method ${request.method}`);
     });
 
-    const service = yield* JiraTicketWriteService.make.pipe(
+    const service = yield* makeWriter.pipe(
       Effect.provideService(WorkbenchJiraRepository, repository),
       Effect.provideService(JiraApi, api),
       Effect.provideService(JiraAuthService, auth),
@@ -941,12 +949,14 @@ describe("JiraTicketWriteService", () => {
   );
 
   it.effect(
-    "reconciles a possibly successful execution request through readback without repeating a Jira POST",
+    "reconciles an uncertain execution across Workspace restore through readback without repeating a Jira POST",
     () =>
       runWithHarness(
         (harness) =>
           Effect.gen(function* () {
             yield* seedExecution;
+            const sql = yield* SqlClient.SqlClient;
+            yield* sql`UPDATE workbench_projects SET execution_after_sequence = 10 WHERE project_id = 'workspace-1'`;
             const result = yield* harness.service.startTicketExecution({ ticketId, execution });
             assert.strictEqual(result.status.id, "2");
             assert.deepStrictEqual(
@@ -983,15 +993,17 @@ describe("JiraTicketWriteService", () => {
     "refuses Jira execution after its assignment changes or an explicit reset boundary advances",
     () =>
       Effect.gen(function* () {
-        for (const guard of ["assignment", "reset"] as const) {
+        for (const guard of ["assignment", "reset", "workspace"] as const) {
           yield* runWithHarness((harness) =>
             Effect.gen(function* () {
               yield* seedExecution;
               const sql = yield* SqlClient.SqlClient;
               if (guard === "assignment")
                 yield* sql`UPDATE workbench_assignments SET superseded_at = ${issueUpdatedAt} WHERE assignment_id = ${execution.assignmentId}`;
-              else
+              else if (guard === "reset")
                 yield* sql`UPDATE workbench_tickets SET execution_after_sequence = 10 WHERE ticket_id = ${ticketId}`;
+              else
+                yield* sql`UPDATE workbench_projects SET execution_after_sequence = 10 WHERE project_id = 'workspace-1'`;
               const error = yield* Effect.flip(
                 harness.service.startTicketExecution({
                   ticketId,

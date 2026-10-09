@@ -232,6 +232,83 @@ describe("WorkbenchJiraService local migration", () => {
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
+  it.effect.each([
+    { action: "delete", lifecycle: "archive" },
+    { action: "delete", lifecycle: "delete" },
+    { action: "publish", lifecycle: "archive" },
+    { action: "publish", lifecycle: "delete" },
+  ] as const)(
+    "rejects late $action of an Epic after Workspace $lifecycle",
+    ({ action, lifecycle }) =>
+      Effect.gen(function* () {
+        const workbench = yield* WorkbenchStore;
+        const sql = yield* SqlClient.SqlClient;
+        const creates = yield* Ref.make(0);
+        const { epic, ticket } = yield* seedLocalData;
+        yield* workbench.deleteTicket({
+          ticketId: ticket.id,
+          expectedRevision: ticket.revision,
+          deletedAt: createdAt,
+        });
+        const changeLifecycle =
+          lifecycle === "archive"
+            ? workbench
+                .archiveProject({
+                  id: workspaceId,
+                  expectedRevision: 0,
+                  archivedAt: createdAt,
+                  updatedAt: createdAt,
+                })
+                .pipe(Effect.asVoid, Effect.orDie)
+            : workbench
+                .deleteProject({
+                  id: workspaceId,
+                  expectedRevision: 0,
+                  expectedTicketCount: 0,
+                  expectedEpicCount: 1,
+                  deletedAt: createdAt,
+                })
+                .pipe(Effect.orDie);
+        const repository = makeRepository();
+        const writer = JiraTicketWriteService.of({
+          createTicket: () => Effect.die("unexpected Jira Ticket creation"),
+          getTicketTransitions: () => Effect.die("unexpected Jira transition lookup"),
+          updateTicket: () => Effect.die("unexpected Jira Ticket write"),
+          startTicketExecution: () => Effect.die("unexpected Jira execution"),
+        });
+        const service = yield* makeService({
+          writer,
+          creates,
+          repository:
+            action === "delete"
+              ? {
+                  ...repository,
+                  // The migration snapshot has already been read when lifecycle changes.
+                  listIssueLinks: () => changeLifecycle.pipe(Effect.as([])),
+                }
+              : repository,
+          beforeBindingPermit: action === "publish" ? changeLifecycle : Effect.void,
+        });
+        const error = yield* service
+          .migrateLocalTickets({
+            bindingId: binding.id,
+            action,
+            tickets: [],
+            epics: [{ id: epic.id, updatedAt: epic.updatedAt }],
+          })
+          .pipe(Effect.flip);
+        expect(error.code).toBe("invalid_binding");
+        expect(yield* Ref.get(creates)).toBe(0);
+        expect(yield* sql`SELECT epic_id FROM workbench_epics WHERE epic_id = ${epic.id}`).toEqual([
+          { epic_id: epic.id },
+        ]);
+        expect(yield* sql`SELECT * FROM workbench_jira_epic_creations`).toEqual([]);
+        expect(
+          yield* sql`SELECT epic_id FROM workbench_tickets WHERE ticket_id = ${ticket.id}`,
+        ).toEqual([{ epic_id: epic.id }]);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+
   it.effect.each(["paused", "connection", "project"] as const)(
     "refuses Epic publication when the binding is %s before acquiring its permit",
     (change) =>

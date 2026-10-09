@@ -7,12 +7,14 @@ import type {
   WorkbenchAssignment,
   WorkbenchEpic,
   WorkbenchJiraIssueLink,
+  WorkbenchProject,
   WorkbenchTicket,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
 
 import { WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
 import { getWorkbenchTicketPullRequests } from "./workbenchPullRequests.logic";
+import { getWorkbenchTicketExecutionStatuses } from "./workbenchThreadStatus.logic";
 
 /** Project already-loaded context once, without fetching PRs for each sidebar row. */
 export const getWorkbenchSidebarTicketDetails = ({
@@ -21,6 +23,7 @@ export const getWorkbenchSidebarTicketDetails = ({
   assignments,
   threads,
   projects,
+  workbenchProjects,
   epics,
   issueLinks,
 }: {
@@ -29,6 +32,7 @@ export const getWorkbenchSidebarTicketDetails = ({
     Pick<
       WorkbenchTicket,
       | "id"
+      | "projectId"
       | "kind"
       | "status"
       | "blocked"
@@ -37,7 +41,9 @@ export const getWorkbenchSidebarTicketDetails = ({
       | "primaryT3ProjectId"
     >
   >;
-  readonly assignments: ReadonlyArray<Pick<WorkbenchAssignment, "ticketId" | "threadId">>;
+  readonly assignments: ReadonlyArray<
+    Pick<WorkbenchAssignment, "ticketId" | "threadId" | "supersededAt">
+  >;
   readonly threads: ReadonlyArray<
     Pick<
       EnvironmentThreadShell,
@@ -48,9 +54,16 @@ export const getWorkbenchSidebarTicketDetails = ({
       | "pullRequests"
       | "linkedPullRequest"
       | "branchPullRequest"
+      | "hasPendingApprovals"
+      | "hasPendingUserInput"
+      | "runtime"
+      | "latestRun"
+      | "goal"
+      | "archivedAt"
     >
   >;
   readonly projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "title">>;
+  readonly workbenchProjects: ReadonlyArray<Pick<WorkbenchProject, "id" | "archivedAt">>;
   readonly epics: ReadonlyArray<Pick<WorkbenchEpic, "id" | "title">>;
   readonly issueLinks: ReadonlyArray<WorkbenchJiraIssueLink>;
 }) => {
@@ -64,6 +77,14 @@ export const getWorkbenchSidebarTicketDetails = ({
       .filter((project) => project.environmentId === environmentId)
       .map((project) => [project.id, project.title]),
   );
+  const activeWorkspaceIds = new Set(
+    workbenchProjects.filter((workspace) => workspace.archivedAt == null).map(({ id }) => id),
+  );
+  const executionStatuses = getWorkbenchTicketExecutionStatuses({
+    environmentId,
+    assignments,
+    threadsById,
+  });
   const epicsById = new Map(epics.map((epic) => [epic.id, epic.title]));
   const issuesByTicket = new Map(issueLinks.map((link) => [link.ticketId, link]));
   const assignmentsByTicket = new Map<
@@ -83,6 +104,8 @@ export const getWorkbenchSidebarTicketDetails = ({
         ticket.id,
         {
           environmentId,
+          readOnly: environmentId === null || !activeWorkspaceIds.has(ticket.projectId),
+          executionStatus: executionStatuses.get(ticket.id) ?? null,
           kind: ticket.kind,
           statusLabel:
             issueLink?.issue.status.name ?? WORKBENCH_TICKET_STATUS_LABELS[ticket.status],

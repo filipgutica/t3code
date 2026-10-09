@@ -6,6 +6,7 @@ import * as TicketSummaryService from "./TicketSummaryService.ts";
 import * as TicketWorkspaceService from "./TicketWorkspaceService.ts";
 import * as WorkbenchStore from "./WorkbenchStore.ts";
 import * as WorkbenchJiraService from "./jira/WorkbenchJiraService.ts";
+import * as WorkspaceLifecycleService from "@t3tools/workbench/WorkspaceLifecycleService";
 
 type WorkbenchRpcHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof WorkbenchRpcGroup>>;
 
@@ -14,6 +15,7 @@ export type WorkbenchRpcServices = {
   readonly ticketWorkspaces: TicketWorkspaceService.TicketWorkspaceService["Service"];
   readonly workbenchJira: WorkbenchJiraService.WorkbenchJiraService["Service"];
   readonly ticketSummaries: TicketSummaryService.TicketSummaryService["Service"];
+  readonly workspaceLifecycle: WorkspaceLifecycleService.WorkspaceLifecycleService["Service"];
 };
 
 export const acquireWorkbenchRpcServices = Effect.gen(function* () {
@@ -21,12 +23,14 @@ export const acquireWorkbenchRpcServices = Effect.gen(function* () {
   const ticketWorkspaces = yield* TicketWorkspaceService.TicketWorkspaceService;
   const workbenchJira = yield* WorkbenchJiraService.WorkbenchJiraService;
   const ticketSummaries = yield* TicketSummaryService.TicketSummaryService;
+  const workspaceLifecycle = yield* WorkspaceLifecycleService.WorkspaceLifecycleService;
 
   return {
     workbench,
     ticketWorkspaces,
     workbenchJira,
     ticketSummaries,
+    workspaceLifecycle,
   } satisfies WorkbenchRpcServices;
 });
 
@@ -35,11 +39,14 @@ export const makeWorkbenchRpcHandlers = ({
   ticketWorkspaces,
   workbenchJira,
   ticketSummaries,
+  workspaceLifecycle,
 }: WorkbenchRpcServices) =>
   ({
     [WORKBENCH_WS_METHODS.workbenchGetSnapshot]: (_input) => workbench.getSnapshot,
     [WORKBENCH_WS_METHODS.workbenchCreateProject]: (input) => workbench.createProject(input),
     [WORKBENCH_WS_METHODS.workbenchUpdateProject]: (input) => workbench.updateProject(input),
+    [WORKBENCH_WS_METHODS.workbenchArchiveProject]: (input) => workspaceLifecycle.archive(input),
+    [WORKBENCH_WS_METHODS.workbenchDeleteProject]: (input) => workspaceLifecycle.delete(input),
     [WORKBENCH_WS_METHODS.workbenchCreateEpic]: (input) => workbench.createEpic(input),
     [WORKBENCH_WS_METHODS.workbenchUpdateEpic]: (input) => workbench.updateEpic(input),
     [WORKBENCH_WS_METHODS.workbenchArchiveEpic]: (input) => workbench.archiveEpic(input),

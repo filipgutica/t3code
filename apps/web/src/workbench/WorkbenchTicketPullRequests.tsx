@@ -59,6 +59,7 @@ const ticketCheckoutPullRequests = Atom.family((key: string) => {
 });
 
 export function WorkbenchTicketPullRequests({
+  readOnly = false,
   environmentId,
   ticketId,
   assignments,
@@ -69,6 +70,7 @@ export function WorkbenchTicketPullRequests({
   checkouts,
   onOpenThread,
 }: {
+  readonly readOnly?: boolean;
   readonly environmentId: EnvironmentId;
   readonly ticketId: WorkbenchTicketId;
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
@@ -133,27 +135,15 @@ export function WorkbenchTicketPullRequests({
         onToggle={() => setCollapsed((value) => !value)}
         contentId={contentId}
         actions={
-          <>
-            <WorkbenchLinkPullRequest
-              key={`${environmentId}:${ticketId}`}
-              environmentId={environmentId}
-              ticketId={ticketId}
-              assignments={assignments}
-              threadsById={threadsById}
-            />
-            {canSearch ? (
-              <Button
-                aria-label="Refresh ticket pull requests"
-                title="Refresh ticket pull requests"
-                size="icon-xs"
-                variant="outline"
-                disabled={search.isPending}
-                onClick={() => search.refresh()}
-              >
-                <RefreshCwIcon />
-              </Button>
-            ) : null}
-          </>
+          <WorkbenchTicketPullRequestActions
+            readOnly={readOnly}
+            environmentId={environmentId}
+            ticketId={ticketId}
+            assignments={assignments}
+            threadsById={threadsById}
+            canSearch={canSearch}
+            search={search}
+          />
         }
       />
       <div id={contentId} hidden={collapsed} className="min-w-0 space-y-3 px-4 pb-4">
@@ -178,6 +168,48 @@ export function WorkbenchTicketPullRequests({
         />
       </div>
     </section>
+  );
+}
+
+function WorkbenchTicketPullRequestActions({
+  readOnly,
+  environmentId,
+  ticketId,
+  assignments,
+  threadsById,
+  canSearch,
+  search,
+}: Pick<
+  Parameters<typeof WorkbenchTicketPullRequests>[0],
+  "readOnly" | "environmentId" | "ticketId" | "assignments" | "threadsById"
+> & {
+  canSearch: boolean;
+  search: ReturnType<typeof usePullRequestList>;
+}) {
+  return (
+    <>
+      {!readOnly ? (
+        <WorkbenchLinkPullRequest
+          key={`${environmentId}:${ticketId}`}
+          environmentId={environmentId}
+          ticketId={ticketId}
+          assignments={assignments}
+          threadsById={threadsById}
+        />
+      ) : null}
+      {canSearch ? (
+        <Button
+          aria-label="Refresh ticket pull requests"
+          title="Refresh ticket pull requests"
+          size="icon-xs"
+          variant="outline"
+          disabled={search.isPending}
+          onClick={() => search.refresh()}
+        >
+          <RefreshCwIcon />
+        </Button>
+      ) : null}
+    </>
   );
 }
 

@@ -270,6 +270,8 @@ it.effect("keeps Workbench workspace availability and dispatch aligned with oper
       registry.set(sessions(env), AsyncResult.success(grant(true)));
       registry.set(sessions(other), AsyncResult.success(grant(false)));
       for (const method of [
+        WORKBENCH_WS_METHODS.workbenchArchiveProject,
+        WORKBENCH_WS_METHODS.workbenchDeleteProject,
         WORKBENCH_WS_METHODS.workbenchPrepareTicketWorkspace,
         WORKBENCH_WS_METHODS.workbenchReleaseTicketWorkspace,
       ]) {

@@ -36,6 +36,7 @@ export function useWorkbenchPageSelection({
   tickets,
   pendingAction,
   setError,
+  excludedProjectIds,
 }: {
   readonly environmentId: EnvironmentId | null;
   readonly initialProjectId: WorkbenchProjectId | undefined;
@@ -45,6 +46,7 @@ export function useWorkbenchPageSelection({
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
   readonly pendingAction: string | null;
   readonly setError: (message: string | null) => void;
+  readonly excludedProjectIds?: ReadonlySet<WorkbenchProjectId>;
 }) {
   const navigate = useNavigate({ from: "/workbench" });
   const [selectedProjectId, setSelectedProjectId] = useState<WorkbenchProjectId | null>(
@@ -68,6 +70,7 @@ export function useWorkbenchPageSelection({
       awaitingEpicId,
       selectedEpicId,
       selectedTicketId,
+      excludedProjectIds,
     });
   const updateRouteSelection = (projectId: WorkbenchProjectId, ticketId?: WorkbenchTicketId) => {
     return navigate({
@@ -110,7 +113,25 @@ export function useWorkbenchPageSelection({
   }, [initialEpicId, initialProjectId, initialTicketId]);
 
   useEffect(() => {
+    // Creation markers only protect the gap before the server snapshot contains the record.
+    if (snapshot?.projects.some((project) => project.id === awaitingProjectId)) {
+      // oxlint-disable-next-line react/set-state-in-effect -- A server snapshot ends the creation wait.
+      setAwaitingProjectId(null);
+    }
+    if (snapshot?.tickets.some((ticket) => ticket.id === awaitingTicketId))
+      setAwaitingTicketId(null);
+    if (snapshot?.epics.some((epic) => epic.id === awaitingEpicId)) setAwaitingEpicId(null);
+  }, [snapshot, awaitingProjectId, awaitingTicketId, awaitingEpicId]);
+
+  useEffect(() => {
     if (snapshot === null) return;
+    // Let a new route selection reach local state before normalizing missing records.
+    if (
+      selectedProjectId !== (initialProjectId ?? null) ||
+      selectedTicketId !== (initialTicketId ?? null) ||
+      selectedEpicId !== (initialEpicId ?? null)
+    )
+      return;
     if (
       isAwaitingRecord({
         awaitingId: awaitingProjectId,
@@ -135,25 +156,19 @@ export function useWorkbenchPageSelection({
       })
     )
       return;
-    if (selectedProject === null || pendingAction === "create-project") return;
-    const ticketId = selectedTicket?.id ?? null;
-    const epicId = ticketId === null ? (selectedEpic?.id ?? null) : null;
-    if (
-      selectedProject.id === selectedProjectId &&
-      ticketId === selectedTicketId &&
-      epicId === selectedEpicId
-    )
-      return;
+    if (pendingAction === "create-project" || pendingAction === "delete-project") return;
+    const search = normalizedWorkbenchSelectionSearch({
+      selectedProject,
+      selectedTicket,
+      selectedEpic,
+      selectedProjectId,
+      selectedTicketId,
+      selectedEpicId,
+    });
+    if (search === null) return;
     void navigate({
       to: "/workbench",
-      search: withWorkbenchEnvironmentSearch(
-        environmentId,
-        ticketId
-          ? { workbenchProjectId: selectedProject.id, ticketId }
-          : epicId
-            ? { workbenchProjectId: selectedProject.id, epicId }
-            : { workbenchProjectId: selectedProject.id },
-      ),
+      search: withWorkbenchEnvironmentSearch(environmentId, { ...search }),
       replace: true,
     });
   }, [
@@ -170,6 +185,9 @@ export function useWorkbenchPageSelection({
     selectedTicket,
     selectedTicketId,
     snapshot,
+    initialProjectId,
+    initialTicketId,
+    initialEpicId,
   ]);
 
   const openWorkspaceDialog = () => {
@@ -235,6 +253,7 @@ function resolveWorkbenchSelectedRecords({
   awaitingEpicId,
   selectedEpicId,
   selectedTicketId,
+  excludedProjectIds,
 }: {
   snapshot: WorkbenchSnapshot | null;
   tickets: ReadonlyArray<WorkbenchTicket>;
@@ -243,6 +262,7 @@ function resolveWorkbenchSelectedRecords({
   awaitingEpicId: WorkbenchEpicId | null;
   selectedEpicId: WorkbenchEpicId | null;
   selectedTicketId: WorkbenchTicketId | null;
+  excludedProjectIds: ReadonlySet<WorkbenchProjectId> | undefined;
 }) {
   const awaitingSelectedProject = isAwaitingRecord({
     awaitingId: awaitingProjectId,
@@ -251,8 +271,12 @@ function resolveWorkbenchSelectedRecords({
   });
   const selectedProject = awaitingSelectedProject
     ? null
-    : (snapshot?.projects.find((project) => project.id === selectedProjectId) ??
-      snapshot?.projects[0] ??
+    : (snapshot?.projects.find(
+        (project) => project.id === selectedProjectId && !excludedProjectIds?.has(project.id),
+      ) ??
+      snapshot?.projects.find(
+        (project) => project.archivedAt == null && !excludedProjectIds?.has(project.id),
+      ) ??
       null);
   const awaitingSelectedEpic = isAwaitingRecord({
     awaitingId: awaitingEpicId,
@@ -269,4 +293,30 @@ function resolveWorkbenchSelectedRecords({
       (ticket) => ticket.id === selectedTicketId && ticket.projectId === selectedProject?.id,
     ) ?? null;
   return { awaitingSelectedProject, selectedProject, selectedEpic, selectedTicket };
+}
+
+function normalizedWorkbenchSelectionSearch({
+  selectedProject,
+  selectedTicket,
+  selectedEpic,
+  selectedProjectId,
+  selectedTicketId,
+  selectedEpicId,
+}: Pick<
+  ReturnType<typeof resolveWorkbenchSelectedRecords>,
+  "selectedProject" | "selectedTicket" | "selectedEpic"
+> & {
+  selectedProjectId: WorkbenchProjectId | null;
+  selectedTicketId: WorkbenchTicketId | null;
+  selectedEpicId: WorkbenchEpicId | null;
+}): WorkbenchSearch | null {
+  const projectId = selectedProject?.id ?? null;
+  const ticketId = selectedTicket?.id ?? null;
+  const epicId = ticketId === null ? (selectedEpic?.id ?? null) : null;
+  if (projectId === selectedProjectId && ticketId === selectedTicketId && epicId === selectedEpicId)
+    return null;
+  if (projectId === null) return {};
+  if (ticketId !== null) return { workbenchProjectId: projectId, ticketId };
+  if (epicId !== null) return { workbenchProjectId: projectId, epicId };
+  return { workbenchProjectId: projectId };
 }

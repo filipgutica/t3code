@@ -1,6 +1,7 @@
 import { act, cloneElement, type ComponentProps, type ReactElement, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import type { DragEndEvent } from "@dnd-kit/core";
 import {
   EnvironmentId,
   ProjectId,
@@ -10,6 +11,8 @@ import {
   type WorkbenchTicket,
 } from "@t3tools/contracts";
 import { ToggleGroup } from "../components/ui/toggle-group";
+
+vi.mock("../hooks/useMediaQuery", () => ({ useMediaQuery: () => true }));
 import { Select } from "../components/ui/select";
 import type { Project } from "../types";
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
@@ -114,6 +117,42 @@ describe("Workbench Board view", () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+  it("rejects a drag completed after archive and permits it after restore", () => {
+    const onMove = vi.fn();
+    const active = props.tickets[0]!;
+    const drop: DragEndEvent = {
+      activatorEvent: new Event("mousedown"),
+      active: {
+        id: active.id,
+        data: { current: undefined },
+        rect: { current: { initial: null, translated: null } },
+      },
+      over: {
+        id: JSON.stringify([null, "in_progress"]),
+        data: { current: undefined },
+        rect: { top: 0, left: 0, right: 100, bottom: 100, width: 100, height: 100 },
+        disabled: false,
+      },
+      collisions: [],
+      delta: { x: 0, y: 0 },
+    };
+    act(() => {
+      renderer = create(<WorkbenchTicketBoard {...props} onMove={onMove} />);
+    });
+    const dragContext = () =>
+      renderer.root.find(
+        (node) =>
+          typeof node.props.onDragStart === "function" &&
+          typeof node.props.onDragEnd === "function",
+      );
+    act(() => dragContext().props.onDragStart(drop));
+    act(() => renderer.update(<WorkbenchTicketBoard {...props} onMove={onMove} readOnly />));
+    act(() => dragContext().props.onDragEnd(drop));
+    expect(onMove).not.toHaveBeenCalled();
+    act(() => renderer.update(<WorkbenchTicketBoard {...props} onMove={onMove} />));
+    act(() => dragContext().props.onDragEnd(drop));
+    expect(onMove).toHaveBeenCalledExactlyOnceWith(active, "in_progress");
   });
   it("keeps the search and matching Tickets when returning from Ticket detail", () => {
     act(() => {

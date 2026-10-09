@@ -210,16 +210,17 @@ export function useWorkbenchSidebarTicketActionMenu({
   ticket,
   issueLink,
   jiraOwnershipKnown,
+  readOnly,
 }: {
   readonly environmentId: EnvironmentId | null | undefined;
   readonly ticket: WorkbenchSidebarTicket;
   readonly issueLink: WorkbenchJiraIssueLink | null;
   readonly jiraOwnershipKnown: boolean;
+  readonly readOnly: boolean;
 }) {
   const navigate = useNavigate();
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
-
   const openMenu = useCallback(
     (position: { x: number; y: number }) => {
       if (!environmentId) return;
@@ -229,7 +230,12 @@ export function useWorkbenchSidebarTicketActionMenu({
         let selected: TicketMenuAction | null;
         try {
           selected = await api.contextMenu.show(
-            menuItems({ ticket, issueLink, jiraOwnershipKnown }),
+            readOnly
+              ? [
+                  { id: "copy-link" as const, label: "Copy Ticket link" },
+                  ...(issueLink ? [{ id: "open-jira" as const, label: "Open in Jira" }] : []),
+                ]
+              : menuItems({ ticket, issueLink, jiraOwnershipKnown }),
             position,
           );
         } catch (cause) {
@@ -251,6 +257,7 @@ export function useWorkbenchSidebarTicketActionMenu({
           return;
         }
 
+        if (readOnly) return;
         const action =
           selected === "change-status" && issueLink && ticket.archivedAt === null
             ? await selectJiraTransition({ api, environmentId, ticket, issueLink, position })
@@ -286,6 +293,7 @@ export function useWorkbenchSidebarTicketActionMenu({
       router,
       setOpenMobile,
       ticket,
+      readOnly,
     ],
   );
 

@@ -225,6 +225,9 @@ export const layerSql = Layer.effect(
           created_at AS "createdAt",
           updated_at AS "updatedAt"
         FROM workbench_jira_bindings
+        WHERE workbench_project_id IN (
+          SELECT project_id FROM workbench_projects WHERE deleted_at IS NULL
+        )
         ORDER BY created_at ASC, binding_id ASC
       `;
       return yield* Effect.forEach(rows, (row) =>

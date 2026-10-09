@@ -348,8 +348,38 @@ describe("WorkbenchJiraService", () => {
       const pausedBinding = {
         ...activeBinding,
         id: WorkbenchJiraBindingId.make("binding-paused"),
+        projectId: WorkbenchProjectId.make("workspace-paused"),
         active: false,
       };
+      const archivedBinding = {
+        ...activeBinding,
+        id: WorkbenchJiraBindingId.make("binding-archived"),
+        projectId: WorkbenchProjectId.make("workspace-archived"),
+      };
+      const sql = yield* SqlClient.SqlClient;
+      const workbench = yield* WorkbenchStore;
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+        ) VALUES (
+          ${activeBinding.defaultPrimaryT3ProjectId}, 'Repository', '/repos/workbench', '[]',
+          ${activeBinding.createdAt}, ${activeBinding.createdAt}, NULL
+        )
+      `;
+      for (const binding of [activeBinding, pausedBinding, archivedBinding]) {
+        yield* workbench.createProject({
+          id: binding.projectId,
+          title: binding.projectId,
+          linkedProjectIds: [activeBinding.defaultPrimaryT3ProjectId],
+          createdAt: binding.createdAt,
+        });
+      }
+      yield* workbench.archiveProject({
+        id: archivedBinding.projectId,
+        expectedRevision: 0,
+        archivedAt: activeBinding.createdAt,
+        updatedAt: activeBinding.createdAt,
+      });
       const repository = WorkbenchJiraRepository.of({
         findConnectionByCloudId: () => Effect.succeed(Option.none()),
         getConnection: () => Effect.succeed(Option.none()),
@@ -358,7 +388,7 @@ describe("WorkbenchJiraService", () => {
         upsertConnection: () => Effect.void,
         upsertConnections: () => Effect.void,
         getBinding: () => Effect.succeed(Option.none()),
-        listBindings: () => Effect.succeed([activeBinding, pausedBinding]),
+        listBindings: () => Effect.succeed([activeBinding, pausedBinding, archivedBinding]),
         upsertBinding: () => Effect.void,
         updateBindingSyncMetadata: () => Effect.succeed(true),
         updateBindingSyncError: () => Effect.succeed(true),

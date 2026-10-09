@@ -59,6 +59,7 @@ import {
 } from "lucide-react";
 import {
   useEffect,
+  useMemo,
   useState,
   type Dispatch,
   type SetStateAction,
@@ -70,7 +71,12 @@ import {
   type WorkbenchJiraTransitionSelection,
 } from "./WorkbenchTicketStatusMenu";
 
-import { resolveThreadStatusPill } from "../components/Sidebar.logic";
+import { ThreadExecutionStatus } from "../components/ThreadExecutionStatus";
+import {
+  getWorkbenchThreadExecutionStatus,
+  getWorkbenchTicketExecutionStatuses,
+  type WorkbenchThreadExecutionStatus,
+} from "./workbenchThreadStatus.logic";
 import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
 import { deriveProviderInstanceEntries } from "../providerInstances";
 import { serverEnvironment } from "../state/server";
@@ -126,7 +132,6 @@ import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { Project } from "../types";
 import {
   getWorkbenchThreadPresentation,
-  getWorkbenchAgentPresentation,
   getWorkbenchEpicProgress,
   getActiveAssignmentsByTicket,
   getWorkbenchTicketRepositoryProjectIds,
@@ -175,8 +180,31 @@ import {
 const NO_EPIC_VALUE = "__workbench_no_epic__";
 const CREATE_EPIC_VALUE = "__workbench_create_epic__";
 
+function useWorkbenchEpicEditor(epic: WorkbenchEpic) {
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState("");
+  const [markdown, setMarkdown] = useState("");
+  const cancelEditing = () => setEditing(false);
+  const startEditing = () => {
+    setTitle(epic.title);
+    setMarkdown(epic.markdown);
+    setEditing(true);
+  };
+  return {
+    editing,
+    title,
+    markdown,
+    setTitle,
+    setMarkdown,
+    setEditing,
+    cancelEditing,
+    startEditing,
+  };
+}
+
 export function WorkbenchEpicDetail({
   workspaceTitle,
+  readOnly = false,
   epic,
   jiraManaged,
   jiraUrl,
@@ -193,6 +221,7 @@ export function WorkbenchEpicDetail({
   onCreateTicket,
 }: {
   readonly workspaceTitle: string;
+  readonly readOnly?: boolean;
   readonly epic: WorkbenchEpic;
   readonly jiraManaged: boolean;
   readonly jiraUrl: string | null;
@@ -208,22 +237,22 @@ export function WorkbenchEpicDetail({
   readonly onOpenTicket: (ticket: WorkbenchTicket) => void;
   readonly onCreateTicket: () => void;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [title, setTitle] = useState("");
-  const [markdown, setMarkdown] = useState("");
+  const {
+    editing,
+    title,
+    markdown,
+    setTitle,
+    setMarkdown,
+    setEditing,
+    cancelEditing,
+    startEditing,
+  } = useWorkbenchEpicEditor(epic);
   const progress = getWorkbenchEpicProgress(tickets);
+  const mutationDisabled = pending || readOnly;
+  const descriptionEditing = editing && !readOnly;
   const blockedCount = tickets.filter(
     (ticket) => jiraIssueLinksByTicketId.get(ticket.id)?.issue.flagged,
   ).length;
-
-  const cancelEditing = () => {
-    setEditing(false);
-  };
-  const startEditing = () => {
-    setTitle(epic.title);
-    setMarkdown(epic.markdown);
-    setEditing(true);
-  };
 
   return (
     <article className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -233,7 +262,7 @@ export function WorkbenchEpicDetail({
         jiraManaged={jiraManaged}
         jiraUrl={jiraUrl}
         tickets={tickets}
-        pending={pending}
+        pending={mutationDisabled}
         onBack={onBack}
         onCreateTicket={onCreateTicket}
         progress={progress}
@@ -243,13 +272,13 @@ export function WorkbenchEpicDetail({
       <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-gutter-both p-4 sm:p-6">
         <div className="mx-auto grid min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="min-w-0 space-y-4">
-            {error ? <WorkbenchInlineError message={error} /> : null}
+            <WorkbenchInlineError message={error} />
             <WorkbenchEpicDescription
               presentation={{
                 epic: epic,
                 jiraManaged: jiraManaged,
-                pending: pending,
-                editing: editing,
+                pending: mutationDisabled,
+                editing: descriptionEditing,
                 startEditing: startEditing,
                 cancelEditing: cancelEditing,
                 title: title,
@@ -271,7 +300,7 @@ export function WorkbenchEpicDetail({
               assignmentsByTicket={assignmentsByTicket}
               jiraIssueLinksByTicketId={jiraIssueLinksByTicketId}
               jiraOwnershipKnown={jiraOwnershipKnown}
-              pending={pending}
+              pending={mutationDisabled}
               onOpenTicket={onOpenTicket}
               onCreateTicket={onCreateTicket}
               progress={progress}
@@ -770,6 +799,7 @@ function WorkbenchCreateTicketSourceSelect({
 export type WorkbenchTicketDetailProps = {
   readonly environmentId: EnvironmentId;
   readonly workspaceTitle: string;
+  readonly workspaceReadOnly?: boolean;
   readonly ticket: WorkbenchTicket;
   readonly ticketWorkspace: WorkbenchTicketWorkspace | undefined;
   readonly linkedProjects: ReadonlyArray<Project>;
@@ -855,6 +885,7 @@ export function WorkbenchTicketDetail(props: WorkbenchTicketDetailProps) {
       }}
       content={{
         workspaceTitle: props.workspaceTitle,
+        workspaceReadOnly: props.workspaceReadOnly ?? false,
         ticket: props.ticket,
         epics: props.epics,
         jiraIssueLink: props.jiraIssueLink,
@@ -933,6 +964,7 @@ function WorkbenchTicketDetailController({
   content: Pick<
     WorkbenchTicketDetailProps,
     | "workspaceTitle"
+    | "workspaceReadOnly"
     | "ticket"
     | "epics"
     | "jiraIssueLink"
@@ -1004,6 +1036,7 @@ function WorkbenchTicketDetailController({
     pending,
     error,
     lifecycleActionsEnabled,
+    workspaceReadOnly,
   } = content;
   const {
     ticketWorkspace,
@@ -1079,7 +1112,7 @@ function WorkbenchTicketDetailController({
     archivedThread,
     displayedThread,
     nativeStatus,
-    nativeThreadFailed,
+
     thread,
   } = getWorkbenchDetailThread({
     assignment,
@@ -1105,14 +1138,19 @@ function WorkbenchTicketDetailController({
     hasUnsavedChanges,
     cancelEditing,
     startEditing,
-  } = useWorkbenchTicketDraftEditor({ environmentId, ticket, jiraIssueLink, jiraFieldsManaged });
-  const agentTitle =
-    displayedThread?.title ??
-    (assignment && !threadLookupReady
-      ? "Checking Thread…"
-      : settledAssignments.length > 0
-        ? "No active Threads"
-        : "No Thread");
+  } = useWorkbenchTicketDraftEditor({
+    environmentId,
+    ticket,
+    jiraIssueLink,
+    jiraFieldsManaged,
+    workspaceReadOnly: workspaceReadOnly ?? false,
+  });
+  const agentTitle = getWorkbenchAgentTitle({
+    displayedThread,
+    assignment,
+    threadLookupReady,
+    settledCount: settledAssignments.length,
+  });
   const {
     repositoryScopeLocked,
     workspaceHasSelectedRepositories,
@@ -1144,8 +1182,17 @@ function WorkbenchTicketDetailController({
       }),
     ],
   });
+  const executionStatus = useMemo(
+    () =>
+      getWorkbenchTicketExecutionStatuses({ environmentId, assignments, threadsById }).get(
+        ticket.id,
+      ) ?? null,
+    [environmentId, assignments, threadsById, ticket.id],
+  );
   const linkedEpicId = ticket.epicId;
-  const canOpenThread = !isArchived || assignment !== undefined;
+  const canOpenThread = workspaceReadOnly
+    ? assignment !== undefined && displayedThread !== undefined
+    : !isArchived || assignment !== undefined;
 
   return (
     <article className="@container/ticket flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [&_[data-slot=button]>svg]:mx-0">
@@ -1178,6 +1225,7 @@ function WorkbenchTicketDetailController({
           thread: thread,
           selectedThreadTitle: displayedThread?.title,
           lifecycleActionsEnabled: lifecycleActionsEnabled,
+          executionStatus,
         }}
         records={{
           ticket: ticket,
@@ -1275,7 +1323,7 @@ function WorkbenchTicketDetailController({
                 displayedTitle: displayedTitle,
                 pending: pending,
                 nativeStatus: nativeStatus,
-                nativeThreadFailed: nativeThreadFailed,
+
                 agentTitle: agentTitle,
                 isArchived: isArchived,
                 supportsSettlement: supportsSettlement,
@@ -1302,6 +1350,7 @@ function WorkbenchTicketDetailController({
             />
 
             <WorkbenchTicketPullRequests
+              readOnly={workspaceReadOnly ?? false}
               onOpenThread={onOpenAssignedThread}
               environmentId={environmentId}
               ticketId={ticket.id}
@@ -1708,7 +1757,7 @@ function WorkbenchThreadOpenButton({
   providerKind,
   recencyLabel,
   stateLabel,
-  statusDotClassName,
+  executionStatus,
   title,
 }: {
   readonly actions?: ReactNode;
@@ -1718,8 +1767,8 @@ function WorkbenchThreadOpenButton({
   readonly onClick: () => void;
   readonly providerKind: ProviderDriverKind | undefined;
   readonly recencyLabel: string | null;
-  readonly stateLabel: string;
-  readonly statusDotClassName: string | undefined;
+  readonly stateLabel: string | null;
+  readonly executionStatus?: WorkbenchThreadExecutionStatus | null;
   readonly title: string;
 }) {
   return (
@@ -1749,10 +1798,14 @@ function WorkbenchThreadOpenButton({
             title={title}
           />
           <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-            {statusDotClassName ? (
-              <span aria-hidden className={`size-2 shrink-0 rounded-full ${statusDotClassName}`} />
+            {executionStatus ? (
+              <ThreadExecutionStatus
+                status={executionStatus.presentation}
+                startedAt={executionStatus.startedAt}
+              />
+            ) : stateLabel ? (
+              <span className="min-w-0 break-words [overflow-wrap:anywhere]">{stateLabel}</span>
             ) : null}
-            <span className="min-w-0 break-words [overflow-wrap:anywhere]">{stateLabel}</span>
           </span>
         </span>
         <span className="flex shrink-0 items-center text-muted-foreground group-hover:text-foreground">
@@ -1813,7 +1866,8 @@ function getWorkbenchThreadRecencyLabel(thread: EnvironmentThreadShell): string 
   );
 }
 
-function WorkbenchInlineError({ message }: { readonly message: string }) {
+function WorkbenchInlineError({ message }: { readonly message: string | null }) {
+  if (message === null) return null;
   return (
     <div
       className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive-foreground"
@@ -1826,6 +1880,7 @@ function WorkbenchInlineError({ message }: { readonly message: string }) {
 }
 
 type WorkbenchTicketHeaderProps = {
+  executionStatus: WorkbenchThreadExecutionStatus | null;
   onBack: () => void;
   workspaceTitle: string;
   displayedTitle: string;
@@ -1893,6 +1948,7 @@ function WorkbenchTicketHeader({
   >;
   presentation: Pick<
     WorkbenchTicketHeaderProps,
+    | "executionStatus"
     | "workspaceTitle"
     | "displayedTitle"
     | "isArchived"
@@ -1928,6 +1984,7 @@ function WorkbenchTicketHeader({
     setDeleteConfirmationOpen,
   } = actions;
   const {
+    executionStatus,
     workspaceTitle,
     displayedTitle,
     isArchived,
@@ -1958,6 +2015,7 @@ function WorkbenchTicketHeader({
         </Button>
         <WorkbenchTicketHeading
           presentation={{
+            executionStatus,
             workspaceTitle: workspaceTitle,
             displayedTitle: displayedTitle,
             isArchived: isArchived,
@@ -2315,8 +2373,8 @@ type WorkbenchTicketThreadsPanelProps = {
   actionableTicket: WorkbenchTicket;
   onOpenThread: (ticket: WorkbenchTicket, threadId?: ThreadId) => void;
   nativeThread: EnvironmentThreadShell | undefined;
-  nativeStatus: ReturnType<typeof getWorkbenchAgentPresentation> | null;
-  nativeThreadFailed: boolean;
+  nativeStatus: WorkbenchThreadExecutionStatus | null;
+
   agentTitle: string;
   isArchived: boolean;
   onUnlinkThread: (threadId: ThreadId) => void;
@@ -2372,7 +2430,6 @@ function WorkbenchTicketThreadsPanel({
     | "displayedTitle"
     | "pending"
     | "nativeStatus"
-    | "nativeThreadFailed"
     | "agentTitle"
     | "isArchived"
     | "supportsSettlement"
@@ -2422,7 +2479,7 @@ function WorkbenchTicketThreadsPanel({
     displayedTitle,
     pending,
     nativeStatus,
-    nativeThreadFailed,
+
     agentTitle,
     isArchived,
     supportsSettlement,
@@ -2483,7 +2540,7 @@ function WorkbenchTicketThreadsPanel({
                 displayedTitle: displayedTitle,
                 pending: pending,
                 nativeStatus: nativeStatus,
-                nativeThreadFailed: nativeThreadFailed,
+
                 agentTitle: agentTitle,
                 isArchived: isArchived,
                 supportsSettlement: supportsSettlement,
@@ -3285,7 +3342,6 @@ type WorkbenchTicketPrimaryThreadProps = Pick<
   | "onOpenThread"
   | "nativeThread"
   | "nativeStatus"
-  | "nativeThreadFailed"
   | "agentTitle"
   | "isArchived"
   | "onUnlinkThread"
@@ -3324,7 +3380,6 @@ function WorkbenchTicketPrimaryThread({
     | "displayedTitle"
     | "pending"
     | "nativeStatus"
-    | "nativeThreadFailed"
     | "agentTitle"
     | "isArchived"
     | "supportsSettlement"
@@ -3355,7 +3410,7 @@ function WorkbenchTicketPrimaryThread({
     displayedTitle,
     pending,
     nativeStatus,
-    nativeThreadFailed,
+
     agentTitle,
     isArchived,
     supportsSettlement,
@@ -3387,13 +3442,8 @@ function WorkbenchTicketPrimaryThread({
             }
             onOpenThread(actionableTicket, assignment?.threadId);
           }}
-          stateLabel={assignment ? thread.stateLabel : "Create a Thread"}
-          statusDotClassName={
-            nativeThread
-              ? (nativeStatus?.dotClass ??
-                (nativeThreadFailed ? "bg-destructive" : "bg-muted-foreground/60"))
-              : undefined
-          }
+          stateLabel={nativeThread ? null : assignment ? thread.stateLabel : "Create a Thread"}
+          executionStatus={nativeStatus}
           title={agentTitle}
           actions={
             assignment && displayedThread ? (
@@ -3777,7 +3827,6 @@ function WorkbenchTicketActiveThreadRow({
   const {
     archivedActiveThread,
     displayedActiveThread,
-    activeStatusPill,
     activeAgentState,
     activeThreadState,
     activeThreadModel,
@@ -3791,7 +3840,6 @@ function WorkbenchTicketActiveThreadRow({
   });
   const rowPresentation = getWorkbenchActiveThreadRowPresentation({
     displayedActiveThread,
-    activeStatusPill,
     activeAgentState,
     activeThreadState,
     activeThreadModel,
@@ -3811,7 +3859,7 @@ function WorkbenchTicketActiveThreadRow({
         recencyLabel={rowPresentation.recencyLabel}
         onClick={() => onOpenAssignedThread(activeAssignment.threadId)}
         stateLabel={rowPresentation.stateLabel}
-        statusDotClassName={rowPresentation.statusDotClassName}
+        executionStatus={rowPresentation.executionStatus}
         title={rowPresentation.title}
         actions={
           displayedActiveThread ? (
@@ -3905,20 +3953,15 @@ function WorkbenchTicketHistoricalThreadRow({
     onOpenAssignedThread,
   } = actions;
   const { ticket } = records;
-  const {
-    historicalArchivedThread,
-    displayedHistoricalThread,
-    historicalStatusPill,
-    historicalAgentState,
-  } = getWorkbenchHistoricalThreadRow({
-    historicalAssignment,
-    threadsById,
-    archivedThreadsById,
-    ticket,
-  });
+  const { historicalArchivedThread, displayedHistoricalThread, historicalAgentState } =
+    getWorkbenchHistoricalThreadRow({
+      historicalAssignment,
+      threadsById,
+      archivedThreadsById,
+      ticket,
+    });
   const rowPresentation = getWorkbenchHistoricalThreadRowPresentation({
     displayedHistoricalThread,
-    historicalStatusPill,
     historicalAgentState,
     threadLookupReady,
   });
@@ -3935,7 +3978,7 @@ function WorkbenchTicketHistoricalThreadRow({
         recencyLabel={rowPresentation.recencyLabel}
         onClick={() => onOpenAssignedThread(historicalAssignment.threadId)}
         stateLabel={rowPresentation.stateLabel}
-        statusDotClassName={rowPresentation.statusDotClassName}
+        executionStatus={rowPresentation.executionStatus}
         title={rowPresentation.title}
         actions={
           displayedHistoricalThread ? (
@@ -3985,9 +4028,9 @@ function WorkbenchTicketSettledThreadRow({
   | "archivedThreadsById"
   | "onOpenAssignedThread"
 > & { settledAssignment: WorkbenchAssignment }) {
-  const settledThread =
-    threadsById.get(settledAssignment.threadId) ??
-    archivedThreadsById.get(settledAssignment.threadId);
+  const liveThread = threadsById.get(settledAssignment.threadId);
+  const settledThread = liveThread ?? archivedThreadsById.get(settledAssignment.threadId);
+  const executionStatus = liveThread ? getWorkbenchThreadExecutionStatus(liveThread) : null;
   if (!settledThread) return null;
   return (
     <div
@@ -3998,15 +4041,11 @@ function WorkbenchTicketSettledThreadRow({
         providerKind={threadProviderKind(settledThread)}
         ariaLabel={`Open Thread ${settledThread.title}`}
         disabled={pending}
-        modelLabel={
-          settledThread.modelSelection
-            ? `${settledThread.modelSelection.instanceId} · ${settledThread.modelSelection.model}`
-            : null
-        }
+        modelLabel={getWorkbenchThreadModelLabel(settledThread)}
         recencyLabel={getWorkbenchThreadRecencyLabel(settledThread)}
         onClick={() => onOpenAssignedThread(settledAssignment.threadId)}
         stateLabel="Settled"
-        statusDotClassName="bg-muted-foreground/60"
+        executionStatus={executionStatus}
         title={settledThread.title}
         actions={
           <>
@@ -4664,6 +4703,7 @@ function WorkbenchTicketSummaryContent({
 
 type WorkbenchTicketHeadingProps = Pick<
   WorkbenchTicketHeaderProps,
+  | "executionStatus"
   | "workspaceTitle"
   | "displayedTitle"
   | "ticket"
@@ -4689,6 +4729,7 @@ function WorkbenchTicketHeading({
 }: {
   presentation: Pick<
     WorkbenchTicketHeadingProps,
+    | "executionStatus"
     | "workspaceTitle"
     | "displayedTitle"
     | "isArchived"
@@ -4704,6 +4745,7 @@ function WorkbenchTicketHeading({
   actions: Pick<WorkbenchTicketHeadingProps, "onUpdate" | "onJiraTransition" | "onRefreshJira">;
 }) {
   const {
+    executionStatus,
     workspaceTitle,
     displayedTitle,
     isArchived,
@@ -4724,6 +4766,10 @@ function WorkbenchTicketHeading({
         {displayedTitle.trim() || ticket.title}
       </h1>
       <div className="mt-2 flex flex-wrap items-center gap-2">
+        <ThreadExecutionStatus
+          status={executionStatus?.presentation}
+          startedAt={executionStatus?.startedAt}
+        />
         <WorkbenchTicketKindBadge kind={ticket.kind} />
         <WorkbenchTicketAttentionBadge
           environmentId={environmentId}
@@ -4735,7 +4781,7 @@ function WorkbenchTicketHeading({
           jiraOwnershipKnown={jiraOwnershipKnown ?? true}
         />
         {jiraPublicationAction}
-        {isArchived ? <Badge variant="outline">Archived</Badge> : null}
+        {ticket.archivedAt != null ? <Badge variant="outline">Archived</Badge> : null}
         <WorkbenchTicketStatusMenu
           key={`${environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
           environmentId={environmentId}
@@ -4907,7 +4953,6 @@ function getWorkbenchActiveThreadRow({
   activeAssignment,
   threadsById,
   archivedThreadsById,
-  ticket,
   threadLookupReady,
 }: Pick<
   WorkbenchTicketActiveThreadRowProps,
@@ -4922,22 +4967,7 @@ function getWorkbenchActiveThreadRow({
     ? archivedThreadsById.get(activeAssignment.threadId)
     : undefined;
   const displayedActiveThread = liveThread ?? archivedActiveThread;
-  const activeStatusPill = displayedActiveThread
-    ? resolveThreadStatusPill({
-        thread: displayedActiveThread,
-      })
-    : null;
-  const activeAgentState = liveThread
-    ? getWorkbenchAgentPresentation({
-        nativeLabel: resolveThreadStatusPill({
-          thread: liveThread,
-        })?.label,
-        runtimeStatus: liveThread.runtime?.status,
-        runStatus: liveThread.latestRun?.status,
-        settledOverride: liveThread.settledOverride,
-        ticketStatus: ticket.status,
-      })
-    : null;
+  const activeAgentState = liveThread ? getWorkbenchThreadExecutionStatus(liveThread) : null;
   const activeThreadState = displayedActiveThread
     ? "Open"
     : threadLookupReady
@@ -4950,7 +4980,6 @@ function getWorkbenchActiveThreadRow({
   return {
     archivedActiveThread,
     displayedActiveThread,
-    activeStatusPill,
     activeAgentState,
     activeThreadState,
     activeThreadModel,
@@ -4962,7 +4991,6 @@ function getWorkbenchHistoricalThreadRow({
   historicalAssignment,
   threadsById,
   archivedThreadsById,
-  ticket,
 }: Pick<
   WorkbenchTicketHistoricalThreadRowProps,
   "historicalAssignment" | "threadsById" | "archivedThreadsById" | "ticket"
@@ -4976,26 +5004,12 @@ function getWorkbenchHistoricalThreadRow({
     ? archivedThreadsById.get(historicalAssignment.threadId)
     : undefined;
   const displayedHistoricalThread = historicalThread ?? historicalArchivedThread;
-  const historicalStatusPill = displayedHistoricalThread
-    ? resolveThreadStatusPill({
-        thread: displayedHistoricalThread,
-      })
-    : null;
-  const historicalAgentState = displayedHistoricalThread
-    ? getWorkbenchAgentPresentation({
-        nativeLabel: resolveThreadStatusPill({
-          thread: displayedHistoricalThread,
-        })?.label,
-        runtimeStatus: displayedHistoricalThread.runtime?.status,
-        runStatus: displayedHistoricalThread.latestRun?.status,
-        settledOverride: displayedHistoricalThread.settledOverride,
-        ticketStatus: ticket.status,
-      })
+  const historicalAgentState = historicalThread
+    ? getWorkbenchThreadExecutionStatus(historicalThread)
     : null;
   return {
     historicalArchivedThread,
     displayedHistoricalThread,
-    historicalStatusPill,
     historicalAgentState,
   };
 }
@@ -5127,9 +5141,10 @@ function useWorkbenchTicketDraftEditor({
   ticket,
   jiraIssueLink,
   jiraFieldsManaged,
+  workspaceReadOnly,
 }: Pick<
   WorkbenchTicketDetailProps,
-  "environmentId" | "ticket" | "jiraIssueLink" | "jiraFieldsManaged"
+  "environmentId" | "ticket" | "jiraIssueLink" | "jiraFieldsManaged" | "workspaceReadOnly"
 >) {
   const storedDraft = useWorkbenchDraftStore((state) =>
     state.drafts.get(environmentId)?.get(ticket.id),
@@ -5139,7 +5154,10 @@ function useWorkbenchTicketDraftEditor({
     ticket,
     jiraRemoteUpdatedAt: jiraIssueLink?.issue.remoteUpdatedAt,
   });
-  const draft = draftProjected ? undefined : storedDraft;
+  const draft =
+    draftProjected || (workspaceReadOnly && storedDraft?.mode === "editing")
+      ? undefined
+      : storedDraft;
   const setDraft = useWorkbenchDraftStore((state) => state.setDraft);
   const markDraftSaved = useWorkbenchDraftStore((state) => state.markDraftSaved);
   const clearDraft = useWorkbenchDraftStore((state) => state.clearDraft);
@@ -5155,7 +5173,13 @@ function useWorkbenchTicketDraftEditor({
     summaryHeaderLabel,
     summaryFailedEmpty,
     hasUnsavedChanges,
-  } = getWorkbenchTicketDraftPresentation({ ticket, jiraIssueLink, jiraFieldsManaged, draft });
+  } = getWorkbenchTicketDraftPresentation({
+    ticket,
+    jiraIssueLink,
+    jiraFieldsManaged,
+    draft,
+    workspaceReadOnly: workspaceReadOnly ?? false,
+  });
   useEffect(() => {
     if (draftProjected) {
       clearDraft(environmentId, ticket.id);
@@ -5233,7 +5257,7 @@ function getWorkbenchDetailAssignments({
     archivedThreadIds: new Set(archivedThreadsById.keys()),
     workingThreadIds: new Set(
       [...threadsById.values()]
-        .filter((thread) => resolveThreadStatusPill({ thread })?.label === "Working")
+        .filter((thread) => getWorkbenchThreadExecutionStatus(thread)?.kind === "working")
         .map((thread) => thread.id),
     ),
   }).get(ticket.id);
@@ -5385,7 +5409,6 @@ function getWorkbenchDetailThread({
   assignment,
   threadsById,
   archivedThreadsById,
-  ticket,
   threadLookupReady,
 }: Pick<
   WorkbenchTicketDetailProps,
@@ -5397,20 +5420,11 @@ function getWorkbenchDetailThread({
       ? archivedThreadsById.get(assignment.threadId)
       : undefined;
   const displayedThread = nativeThread ?? archivedThread;
-  const nativeStatus = nativeThread
-    ? getWorkbenchAgentPresentation({
-        nativeLabel: resolveThreadStatusPill({ thread: nativeThread })?.label,
-        runtimeStatus: nativeThread.runtime?.status,
-        runStatus: nativeThread.latestRun?.status,
-        settledOverride: nativeThread.settledOverride,
-        ticketStatus: ticket.status,
-      })
-    : null;
-  const nativeThreadFailed = nativeThread?.runtime?.status === "failed";
+  const nativeStatus = nativeThread ? getWorkbenchThreadExecutionStatus(nativeThread) : null;
   const thread = getWorkbenchThreadPresentation(
     assignment !== undefined,
     nativeThread !== undefined,
-    nativeStatus?.label ?? (nativeThreadFailed ? "Failed" : null),
+    nativeStatus?.presentation.label ?? null,
     archivedThread !== undefined,
     threadLookupReady,
   );
@@ -5419,7 +5433,7 @@ function getWorkbenchDetailThread({
     archivedThread,
     displayedThread,
     nativeStatus,
-    nativeThreadFailed,
+
     thread,
   };
 }
@@ -5555,7 +5569,6 @@ function WorkbenchTicketThreadCreationActions({
 
 function getWorkbenchActiveThreadRowPresentation({
   displayedActiveThread,
-  activeStatusPill,
   activeAgentState,
   activeThreadState,
   activeThreadModel,
@@ -5564,7 +5577,6 @@ function getWorkbenchActiveThreadRowPresentation({
 }: Pick<
   ReturnType<typeof getWorkbenchActiveThreadRow>,
   | "displayedActiveThread"
-  | "activeStatusPill"
   | "activeAgentState"
   | "activeThreadState"
   | "activeThreadModel"
@@ -5574,26 +5586,23 @@ function getWorkbenchActiveThreadRowPresentation({
     ariaLabel: `${activeThreadState} ${displayedActiveThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…")}`,
     modelLabel: activeThreadModel,
     recencyLabel: activeThreadRecency,
-    stateLabel:
-      activeAgentState?.label ??
-      activeStatusPill?.label ??
-      (displayedActiveThread ? "Idle" : activeThreadState),
-    statusDotClassName:
-      activeAgentState?.dotClass ??
-      activeStatusPill?.dotClass ??
-      (displayedActiveThread ? "bg-muted-foreground/60" : undefined),
+    stateLabel: displayedActiveThread?.archivedAt
+      ? "Archived"
+      : displayedActiveThread
+        ? null
+        : activeThreadState,
+    executionStatus: activeAgentState,
     title: displayedActiveThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…"),
   };
 }
 
 function getWorkbenchHistoricalThreadRowPresentation({
   displayedHistoricalThread,
-  historicalStatusPill,
   historicalAgentState,
   threadLookupReady,
 }: Pick<
   ReturnType<typeof getWorkbenchHistoricalThreadRow>,
-  "displayedHistoricalThread" | "historicalStatusPill" | "historicalAgentState"
+  "displayedHistoricalThread" | "historicalAgentState"
 > & { threadLookupReady: boolean }) {
   return {
     ariaLabel: `${displayedHistoricalThread ? "Open" : "Checking"} ${displayedHistoricalThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…")}`,
@@ -5601,14 +5610,14 @@ function getWorkbenchHistoricalThreadRowPresentation({
     recencyLabel: displayedHistoricalThread
       ? getWorkbenchThreadRecencyLabel(displayedHistoricalThread)
       : null,
-    stateLabel:
-      historicalAgentState?.label ??
-      historicalStatusPill?.label ??
-      (displayedHistoricalThread ? "Historical" : threadLookupReady ? "No Thread" : "Checking…"),
-    statusDotClassName:
-      historicalAgentState?.dotClass ??
-      historicalStatusPill?.dotClass ??
-      (displayedHistoricalThread ? "bg-muted-foreground/60" : undefined),
+    stateLabel: displayedHistoricalThread
+      ? displayedHistoricalThread.archivedAt
+        ? "Archived"
+        : "Historical"
+      : threadLookupReady
+        ? "No Thread"
+        : "Checking…",
+    executionStatus: historicalAgentState,
     title:
       displayedHistoricalThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…"),
   };
@@ -5721,10 +5730,14 @@ function getWorkbenchTicketDraftPresentation({
   jiraIssueLink,
   jiraFieldsManaged,
   draft,
-}: Pick<WorkbenchTicketDetailProps, "ticket" | "jiraIssueLink" | "jiraFieldsManaged"> & {
+  workspaceReadOnly,
+}: Pick<
+  WorkbenchTicketDetailProps,
+  "ticket" | "jiraIssueLink" | "jiraFieldsManaged" | "workspaceReadOnly"
+> & {
   draft: WorkbenchTicketDraft | undefined;
 }) {
-  const isArchived = ticket.archivedAt != null;
+  const isArchived = ticket.archivedAt != null || workspaceReadOnly === true;
   const editing = !isArchived && draft?.mode === "editing";
   const projectedContent = resolveWorkbenchTicketContent({
     ticket,
@@ -5887,4 +5900,20 @@ function WorkbenchTicketResetConfirmation({
       </AlertDialogPopup>
     </AlertDialog>
   );
+}
+
+function getWorkbenchAgentTitle({
+  displayedThread,
+  assignment,
+  threadLookupReady,
+  settledCount,
+}: {
+  displayedThread: EnvironmentThreadShell | undefined;
+  assignment: WorkbenchAssignment | undefined;
+  threadLookupReady: boolean;
+  settledCount: number;
+}) {
+  if (displayedThread) return displayedThread.title;
+  if (assignment && !threadLookupReady) return "Checking Thread…";
+  return settledCount > 0 ? "No active Threads" : "No Thread";
 }

@@ -134,11 +134,31 @@ export const make = Effect.gen(function* () {
   const ticketWriter = yield* JiraTicketWriteService;
   const sql = yield* SqlClient.SqlClient;
   const clock = yield* Clock.Clock;
+  const requireActiveWorkspace = (projectId: WorkbenchJiraBinding["projectId"]) =>
+    workbench
+      .requireActiveProject(projectId)
+      .pipe(Effect.mapError((error) => operationError(error.message)));
+  const lockActiveWorkspace = Effect.fnUntraced(function* (
+    projectId: WorkbenchJiraBinding["projectId"],
+  ) {
+    yield* sql`UPDATE workbench_projects SET updated_at = updated_at WHERE project_id = ${projectId}`;
+    yield* requireActiveWorkspace(projectId);
+  });
+  const saveBinding = (binding: WorkbenchJiraBinding) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* lockActiveWorkspace(binding.projectId);
+          yield* repository.upsertBinding(binding).pipe(Effect.mapError(repositoryError));
+        }),
+      )
+      .pipe(Effect.catchTags({ SqlError: () => Effect.fail(repositoryError(undefined)) }));
 
   const completeLocalMigration = (binding: WorkbenchJiraBinding) =>
     Effect.gen(function* () {
       if (binding.localMigrationPending !== true) return;
       if (repository.completeLocalMigrationIfReady === undefined) return;
+      yield* lockActiveWorkspace(binding.projectId);
       const complete = yield* repository
         .completeLocalMigrationIfReady(binding.id, binding.projectId)
         .pipe(Effect.mapError(repositoryError));
@@ -147,7 +167,10 @@ export const make = Effect.gen(function* () {
           "Finish migrating all active local Tickets and Epics before importing Jira issues.",
         );
       }
-    });
+    }).pipe(
+      sql.withTransaction,
+      Effect.catchTags({ SqlError: () => Effect.fail(repositoryError(undefined)) }),
+    );
 
   const getSnapshot = sql
     .withTransaction(
@@ -290,6 +313,7 @@ export const make = Effect.gen(function* () {
 
   const createBinding: WorkbenchJiraServiceShape["createBinding"] = (input) =>
     Effect.gen(function* () {
+      yield* requireActiveWorkspace(input.projectId);
       if (input.selectedSprints !== undefined && input.selectedSprints.length === 0) {
         return yield* operationError("Select at least one Jira sprint.");
       }
@@ -338,7 +362,7 @@ export const make = Effect.gen(function* () {
         lastSyncError: null,
         updatedAt: input.createdAt,
       } satisfies WorkbenchJiraBinding;
-      yield* repository.upsertBinding(binding).pipe(Effect.mapError(repositoryError));
+      yield* saveBinding(binding);
       return binding;
     });
 
@@ -355,6 +379,7 @@ export const make = Effect.gen(function* () {
             message: "The Jira sprint binding was not found.",
           });
         }
+        yield* requireActiveWorkspace(existing.value.projectId);
         if (input.selectedSprints !== undefined && input.selectedSprints.length === 0) {
           return yield* operationError("Select at least one Jira sprint.");
         }
@@ -414,13 +439,14 @@ export const make = Effect.gen(function* () {
             existing.value.localMigrationPending === true || input.localMigrationPending === true,
           lastSyncError: null,
         } satisfies WorkbenchJiraBinding;
-        yield* repository.upsertBinding(binding).pipe(Effect.mapError(repositoryError));
+        yield* saveBinding(binding);
         return binding;
       }),
     );
 
   const createTicket: WorkbenchJiraServiceShape["createTicket"] = (input) =>
     Effect.gen(function* () {
+      yield* requireActiveWorkspace(input.projectId);
       if (input.localOnly) {
         if (input.existingLocalTicketRevision !== undefined) {
           return yield* operationError("Publishing an existing Ticket requires Jira creation.");
@@ -582,6 +608,7 @@ export const make = Effect.gen(function* () {
         });
       }
       const binding = bindingOption.value;
+      yield* requireActiveWorkspace(binding.projectId);
       if (!binding.active) {
         return yield* new WorkbenchJiraOperationError({
           code: "binding_inactive",
@@ -729,6 +756,7 @@ export const make = Effect.gen(function* () {
 
       const now = DateTime.formatIso(DateTime.makeUnsafe(yield* clock.currentTimeMillis));
       const deleteLocalRecords = Effect.fnUntraced(function* () {
+        yield* lockActiveWorkspace(binding.projectId);
         // Recheck every selected record inside the transaction. The
         // initial snapshot prevents stale confirmation, while this check
         // keeps a concurrent edit from producing a partial delete.
@@ -878,6 +906,7 @@ export const make = Effect.gen(function* () {
               });
             }
             const currentBinding = currentBindingOption.value;
+            yield* requireActiveWorkspace(currentBinding.projectId);
             if (!currentBinding.active) {
               return yield* new WorkbenchJiraOperationError({
                 code: "binding_inactive",
@@ -1079,7 +1108,13 @@ export const make = Effect.gen(function* () {
       Effect.forEach(
         bindings.filter((binding) => binding.active),
         (binding) =>
-          sync.syncBinding({ bindingId: binding.id, background: true }).pipe(
+          Effect.gen(function* () {
+            const project = yield* workbench
+              .getProject(binding.projectId)
+              .pipe(Effect.mapError(repositoryError));
+            if (Option.isNone(project) || project.value.archivedAt != null) return;
+            yield* sync.syncBinding({ bindingId: binding.id, background: true });
+          }).pipe(
             Effect.catch((cause) =>
               Effect.logWarning("Workbench Jira background sync failed", {
                 bindingId: binding.id,
