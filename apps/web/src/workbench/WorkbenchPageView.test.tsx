@@ -178,6 +178,10 @@ function Harness({
   error?: string | null;
   dialog?: "create" | "publish";
 }) {
+  const statusEnvironmentRef = useRef(environmentId);
+  const pendingJiraMigrationBindingsRef = useRef<
+    PageProps["jiraBindings"]["pendingJiraMigrationBindingsRef"]["current"]
+  >(new Map());
   const archivedAt = workspaceState === "archived" ? timestamp : null;
   const currentWorkspace = { ...workspace, archivedAt };
   const selectedProject = workspaceState === "deleted" ? null : currentWorkspace;
@@ -260,8 +264,8 @@ function Harness({
     setJiraPendingAction: noop,
     jiraSyncNotice: null,
     setJiraSyncNotice: noop,
-    statusEnvironmentRef: useRef(environmentId),
-    pendingJiraMigrationBindingsRef: useRef(new Map()),
+    statusEnvironmentRef,
+    pendingJiraMigrationBindingsRef,
     jiraSyncBinding: vi.fn<PageProps["jiraBindings"]["jiraSyncBinding"]>(),
     listJiraProjectsForConnection: vi.fn(async () => []),
     listJiraBoardsForProject: vi.fn(async () => []),
