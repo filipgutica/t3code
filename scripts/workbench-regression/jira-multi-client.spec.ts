@@ -268,6 +268,7 @@ test.describe("Jira multi-sprint selection and client conflicts @live", () => {
       throw new AggregateError(
         [...(testFailure === undefined ? [] : [testFailure]), ...cleanupErrors],
         "Multi-sprint regression cleanup failed.",
+        { cause: testFailure ?? cleanupErrors[0] },
       );
     }
     if (testFailure !== undefined) throw testFailure;
