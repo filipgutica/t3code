@@ -87,14 +87,15 @@ const atReadingTop = async (page: Page, id: string) =>
       .getByRole("link", { name: "Download Workbench", exact: true });
     await expect(download).toBeInViewport();
     expect((await download.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await page.locator(".fg-site-projects > summary").click();
     const projects = page.getByRole("navigation", { name: "Projects" });
     await expect(projects.getByRole("link")).toHaveCount(5);
     await expect(
       page
         .getByRole("navigation", { name: "Projects" })
-        .getByRole("link", { name: "workbench", exact: true }),
+        .getByRole("link", { name: "Workbench", exact: true }),
     ).toHaveAttribute("aria-current", "page");
-    await expect(page.getByRole("link", { name: "Vue UI", exact: true })).toHaveAttribute(
+    await expect(page.getByRole("link", { name: "UI", exact: true })).toHaveAttribute(
       "href",
       "https://filipgutica.github.io/ui/",
     );

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref } from "vue";
 import SiteNavigation from "./components/SiteNavigation.vue";
-import NavigationLinks from "./components/NavigationLinks.vue";
+import { UiSiteHeader } from "@filipgutica/ui/site";
 import ProductImage from "./components/ProductImage.vue";
 import ScreenshotWalkthrough from "./components/ScreenshotWalkthrough.vue";
 import ImageLightbox from "./components/ImageLightbox.vue";
@@ -73,16 +73,15 @@ onUnmounted(() => {
     <a class="skip-link" href="#main">Skip to content</a>
     <div class="site-layout">
       <div class="site-content">
-        <header class="site-header wrap">
-          <a class="brand" :href="base" aria-label="T3 Code Workbench home"
-            >T3 Code <span>Workbench</span></a
-          >
-          <nav aria-label="Main navigation">
-            <a :href="guide">Guide</a>
-            <a :href="repository">GitHub</a>
-            <a :href="downloads">Downloads</a>
-          </nav>
-        </header>
+        <UiSiteHeader
+          class="wrap"
+          project="workbench"
+          :links="[
+            { label: 'Guide', href: guide },
+            { label: 'GitHub', href: repository },
+            { label: 'Downloads', href: downloads },
+          ]"
+        />
         <SiteNavigation />
         <main id="main" class="wrap">
           <section class="hero" aria-labelledby="hero-heading">
@@ -100,9 +99,7 @@ onUnmounted(() => {
                 </div>
                 <div class="actions">
                   <a class="button" :href="downloads">Download Workbench</a>
-                  <a class="text-link" :href="guide"
-                    >Read the guide <span aria-hidden="true">↗</span></a
-                  >
+                  <a class="text-link" :href="guide">Read the guide</a>
                 </div>
               </div>
               <figure class="hero-media">
@@ -151,9 +148,7 @@ onUnmounted(() => {
                   when ready.
                 </p>
               </div>
-              <a class="text-link" :href="`${guide}#start-agent-work`"
-                >Workspace guide <span aria-hidden="true">↗</span></a
-              >
+              <a class="text-link" :href="`${guide}#start-agent-work`">Workspace guide</a>
             </div>
           </section>
 
@@ -178,9 +173,7 @@ onUnmounted(() => {
                   Sync assigned sprint issues and update descriptions and statuses. Local Tickets
                   need no Jira account.
                 </p>
-                <a class="text-link" :href="`${guide}#connect-jira`"
-                  >Jira guide <span aria-hidden="true">↗</span></a
-                >
+                <a class="text-link" :href="`${guide}#connect-jira`">Jira guide</a>
               </div>
               <figure v-if="jiraImage" class="media-stage">
                 <ProductImage :image="jiraImage" @open="openImage" />
@@ -194,9 +187,7 @@ onUnmounted(() => {
               <p>Workbench stores its data separately from the official app.</p>
               <div class="actions">
                 <a class="button button--secondary" :href="downloads">Download Workbench</a>
-                <a class="text-link" :href="guide"
-                  >Read the guide <span aria-hidden="true">↗</span></a
-                >
+                <a class="text-link" :href="guide">Read the guide</a>
               </div>
               <p class="release-note">
                 macOS builds are signed and notarized. Windows and Linux builds are unsigned.
@@ -207,8 +198,7 @@ onUnmounted(() => {
         <footer class="site-footer wrap">
           <a class="brand" :href="base">T3 Code <span>Workbench</span></a>
           <p>Built on <a href="https://github.com/pingdotgg/t3code">T3 Code</a>.</p>
-          <a :href="repository">Browse the source <span aria-hidden="true">↗</span></a>
-          <NavigationLinks />
+          <a :href="repository">Browse the source</a>
         </footer>
       </div>
     </div>
