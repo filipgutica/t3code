@@ -15,11 +15,7 @@ import {
 } from "@t3tools/shared/threadPullRequests";
 import { useCallback, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
-import {
-  hasUnseenCompletion,
-  resolveSidebarThreadStatus,
-  resolveThreadStatusPill,
-} from "../components/Sidebar.logic";
+import { hasUnseenCompletion } from "../components/Sidebar.logic";
 import {
   linkedPullRequestSnapshotStatus,
   prStatusIndicator,
@@ -36,6 +32,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { useUiStateStore } from "../uiStateStore";
 import { toastManager } from "../components/ui/toast";
 import { deriveProviderInstanceEntries, type ProviderInstanceEntry } from "../providerInstances";
+import { getWorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
 import type { WorkbenchSidebarThread } from "./workbenchSidebar.logic";
 import {
   resolveWorkbenchSidebarRepositoryLabel,
@@ -55,7 +52,7 @@ export interface WorkbenchSidebarThreadRowData {
   environment: ThreadEnvironment;
   providerEntry: ProviderInstanceEntry | null;
   lastVisitedAt: string | undefined;
-  status: ReturnType<typeof resolveThreadStatusPill>;
+  status: ReturnType<typeof getWorkbenchThreadExecutionStatus>;
   failed: boolean;
   unread: boolean;
   snoozed: boolean;
@@ -89,9 +86,10 @@ function resolveThreadActivityState(shell: ThreadShell, lastVisitedAt: string | 
   if (shell === null) {
     return { status: null, failed: false, unread: false, snoozed: false };
   }
+  const status = getWorkbenchThreadExecutionStatus(shell);
   return {
-    status: resolveThreadStatusPill({ thread: { ...shell, lastVisitedAt } }),
-    failed: resolveSidebarThreadStatus(shell) === "failed",
+    status,
+    failed: status?.kind === "failed",
     unread: hasUnseenCompletion({ ...shell, lastVisitedAt }),
     snoozed: effectiveSnoozed(shell, { now: new Date().toISOString() }),
   };

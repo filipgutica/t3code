@@ -90,9 +90,14 @@ Ticket** for the current Workspace, and **Back to Ticket** from a linked Thread.
 
 Ticket progress and agent activity describe different states:
 
-| Ticket progress          | Agent activity                            |
-| ------------------------ | ----------------------------------------- |
-| To Do, In Progress, Done | Waiting for input, Working, Agent replied |
+| Ticket progress          | Agent activity                    |
+| ------------------------ | --------------------------------- |
+| To Do, In Progress, Done | Working, Waiting, Approval, Input |
+
+Thread activity uses the same status as native Threads, including elapsed time
+while working. A Ticket summarizes its current linked Threads: approval requests,
+input requests, and failures take priority over work in progress. Notifications
+and **Needs attention** remain available separately for reviewing results.
 
 When a linked Thread starts a turn, a To Do Ticket moves to In Progress. **A
 completed agent turn does not mark the Ticket Done.** Review the result, then set

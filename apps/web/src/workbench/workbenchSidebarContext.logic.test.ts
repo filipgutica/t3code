@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
+  ProviderInstanceId,
   ProjectId,
   ThreadId,
   WorkbenchJiraBindingId,
@@ -35,6 +36,12 @@ const thread = {
   pullRequests: [],
   linkedPullRequest: pr,
   branchPullRequest: pr,
+  hasPendingApprovals: false,
+  hasPendingUserInput: false,
+  runtime: null,
+  latestRun: null,
+  goal: null,
+  archivedAt: null,
 };
 
 describe("Workbench sidebar ticket context", () => {
@@ -84,8 +91,8 @@ describe("Workbench sidebar ticket context", () => {
       environmentId,
       tickets: [ticket],
       assignments: [
-        { ticketId, threadId },
-        { ticketId, threadId },
+        { ticketId, threadId, supersededAt: null },
+        { ticketId, threadId, supersededAt: null },
       ],
       threads: [
         thread,
@@ -113,7 +120,7 @@ describe("Workbench sidebar ticket context", () => {
     const details = getWorkbenchSidebarTicketDetails({
       environmentId,
       tickets: [ticket],
-      assignments: [{ ticketId, threadId }],
+      assignments: [{ ticketId, threadId, supersededAt: null }],
       threads: [],
       projects: [],
       epics: [],
@@ -123,5 +130,51 @@ describe("Workbench sidebar ticket context", () => {
     expect(details?.repositories).toEqual([]);
     expect(details?.threadCount).toBe(0);
     expect(details?.kind).toBe("bug");
+  });
+
+  it("tracks current native execution independently of ticket planning and historical Threads", () => {
+    const working = {
+      ...thread,
+      runtime: {
+        status: "running" as const,
+        activeRunId: null,
+        activityStartedAt: "2026-10-09T10:00:00.000Z",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        providerName: "Codex",
+        lastError: null,
+        updatedAt: "2026-10-09T10:00:00.000Z",
+      },
+    };
+    const historicalId = ThreadId.make("historical");
+    const inputs = {
+      environmentId,
+      tickets: [ticket],
+      assignments: [
+        { ticketId, threadId, supersededAt: null },
+        { ticketId, threadId: historicalId, supersededAt: "2026-10-08T10:00:00.000Z" },
+      ],
+      threads: [working, { ...thread, id: historicalId, hasPendingApprovals: true }],
+      projects: [],
+      epics: [],
+      issueLinks: [],
+    };
+    const details = getWorkbenchSidebarTicketDetails(inputs).get(ticketId);
+    expect(details?.executionStatus?.presentation.label).toBe("Working");
+    expect(details?.executionStatus?.startedAt).toBe("2026-10-09T10:00:00.000Z");
+    expect(details?.statusLabel).toBe("In Progress");
+    expect(details?.attentionLabel).toBe("Blocked");
+    expect(details?.threadCount).toBe(2);
+    expect(
+      getWorkbenchSidebarTicketDetails({
+        ...inputs,
+        threads: [{ ...working, hasPendingUserInput: true }],
+      }).get(ticketId)?.executionStatus?.presentation.label,
+    ).toBe("Input");
+    expect(
+      getWorkbenchSidebarTicketDetails({
+        ...inputs,
+        threads: [{ ...working, environmentId: EnvironmentId.make("remote") }],
+      }).get(ticketId)?.executionStatus,
+    ).toBeNull();
   });
 });

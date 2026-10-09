@@ -56,7 +56,11 @@ import {
   getWorkbenchBoardDropJiraStatusIds,
 } from "./workbenchBoardDrag.logic";
 
-import { resolveThreadStatusPill } from "../components/Sidebar.logic";
+import { ThreadExecutionStatus } from "../components/ThreadExecutionStatus";
+import {
+  getWorkbenchTicketExecutionStatuses,
+  type WorkbenchThreadExecutionStatus,
+} from "./workbenchThreadStatus.logic";
 
 import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
@@ -95,8 +99,6 @@ import {
 import {
   getWorkbenchThreadPresentation,
   getVisibleWorkbenchAssignments,
-  getWorkbenchAgentPresentation,
-  getWorkbenchTicketAgentPresentation,
   getWorkbenchTicketRepositoryProjectIds,
   getWorkbenchTicketSummaryActionLabel,
   groupWorkbenchTicketsByEpic,
@@ -351,10 +353,7 @@ type WorkbenchBoardContext = Pick<
     ticket: WorkbenchTicket,
     target: { columnId: string; status: WorkbenchTicketStatus; epicId: WorkbenchEpic["id"] | null },
   ) => boolean;
-  agentStatesByTicket: ReadonlyMap<
-    WorkbenchTicketId,
-    ReturnType<typeof getWorkbenchTicketAgentPresentation>
-  >;
+  agentStatesByTicket: ReadonlyMap<WorkbenchTicketId, WorkbenchThreadExecutionStatus>;
   attentionMode: WorkbenchAttentionMode;
   attentionReasonsByTicket: ReadonlyMap<WorkbenchTicketId, ReadonlyArray<string>>;
   threadCounts: ReadonlyMap<WorkbenchTicketId, number>;
@@ -728,33 +727,10 @@ function useWorkbenchBoardData({
     () => new Set(visibleTickets.map((ticket) => ticket.id)),
     [visibleTickets],
   );
-  const agentStatesByTicket = useMemo(() => {
-    const states = new Map<
-      WorkbenchTicketId,
-      Array<Parameters<typeof getWorkbenchAgentPresentation>[0]>
-    >();
-    const ticketsById = new Map(tickets.map((ticket) => [ticket.id, ticket]));
-    for (const assignment of assignments) {
-      if (assignment.supersededAt !== null) continue;
-      const thread = threadsById.get(assignment.threadId);
-      if (!thread) continue;
-      const group = states.get(assignment.ticketId) ?? [];
-      group.push({
-        nativeLabel: resolveThreadStatusPill({ thread })?.label,
-        runtimeStatus: thread.runtime?.status,
-        runStatus: thread.latestRun?.status,
-        settledOverride: thread.settledOverride,
-        ticketStatus: ticketsById.get(assignment.ticketId)?.status,
-      });
-      states.set(assignment.ticketId, group);
-    }
-    return new Map(
-      [...states].map(([ticketId, threads]) => [
-        ticketId,
-        getWorkbenchTicketAgentPresentation(threads),
-      ]),
-    );
-  }, [assignments, threadsById, tickets]);
+  const agentStatesByTicket = useMemo(
+    () => getWorkbenchTicketExecutionStatuses({ environmentId, assignments, threadsById }),
+    [environmentId, assignments, threadsById],
+  );
   const threadCounts = useMemo(() => {
     const counts = new Map<WorkbenchTicketId, number>();
     for (const assignment of getVisibleWorkbenchAssignments(
@@ -836,11 +812,10 @@ function getWorkbenchBoardTicketPresentation({
       ? archivedThreadsById.get(assignment.threadId)
       : undefined;
   const nativeStatus = agentStatesByTicket.get(ticket.id) ?? null;
-  const nativeThreadFailed = nativeThread?.runtime?.status === "failed";
   const thread = getWorkbenchThreadPresentation(
     assignment !== undefined,
     nativeThread !== undefined,
-    nativeStatus?.label ?? (nativeThreadFailed ? "Failed" : null),
+    nativeStatus?.presentation.label ?? null,
     archivedThread !== undefined,
     threadLookupReady,
   );
@@ -866,7 +841,6 @@ function getWorkbenchBoardTicketPresentation({
     board,
     assignment,
     nativeStatus,
-    nativeThreadFailed,
     thread,
     threadActionPending,
     threadActionLabel,
@@ -1121,28 +1095,25 @@ function useWorkbenchBoardDrag({
 function renderWorkbenchBoardTicketThreadStatus(
   presentation: ReturnType<typeof getWorkbenchBoardTicketPresentation>,
 ) {
-  const { ticket, board, nativeStatus, nativeThreadFailed, thread } = presentation;
+  const { ticket, board, nativeStatus, thread } = presentation;
   const { threadCounts } = board;
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-      {thread.state === "linked" || thread.state === "archived" ? (
-        <span
-          aria-hidden
-          className={`size-2 rounded-full ${
-            nativeStatus?.dotClass ??
-            (nativeThreadFailed ? "bg-destructive" : "bg-muted-foreground/60")
-          }`}
+      {nativeStatus ? (
+        <ThreadExecutionStatus
+          status={nativeStatus.presentation}
+          startedAt={nativeStatus.startedAt}
         />
       ) : (
-        <BotIcon className="size-3.5" />
+        <>
+          {thread.state === "linked" || thread.state === "archived" ? (
+            <span aria-hidden className="size-2 shrink-0 rounded-full bg-muted-foreground/60" />
+          ) : (
+            <BotIcon className="size-3.5" />
+          )}
+          <span>{thread.stateLabel}</span>
+        </>
       )}
-      <span
-        className={
-          nativeStatus?.colorClass ?? (nativeThreadFailed ? "text-destructive" : undefined)
-        }
-      >
-        {thread.stateLabel}
-      </span>
       {(threadCounts.get(ticket.id) ?? 0) > 1 ? (
         <span className="text-muted-foreground/60">· {threadCounts.get(ticket.id)} Threads</span>
       ) : null}

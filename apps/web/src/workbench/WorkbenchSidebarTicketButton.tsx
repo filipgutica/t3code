@@ -1,3 +1,4 @@
+import { ThreadExecutionStatus } from "../components/ThreadExecutionStatus";
 import { ArchiveIcon, BookOpenIcon, BugIcon, CircleAlertIcon } from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
 
@@ -200,6 +201,10 @@ function WorkbenchSidebarTicketStatus({
       )}
       <span aria-hidden>·</span>
       <span className="truncate">{status}</span>
+      <ThreadExecutionStatus
+        status={details?.executionStatus?.presentation}
+        startedAt={details?.executionStatus?.startedAt}
+      />
     </span>
   );
 }

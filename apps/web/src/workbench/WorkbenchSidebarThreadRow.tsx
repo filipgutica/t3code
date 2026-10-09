@@ -1,10 +1,10 @@
+import { ThreadExecutionStatus } from "../components/ThreadExecutionStatus";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { ClockIcon, MessageSquareIcon, PinIcon } from "lucide-react";
 import { useState, type Dispatch, type MouseEvent, type SetStateAction } from "react";
 
 import {
   ThreadPullRequestBadgeControl,
-  ThreadStatusLabel,
   resolveThreadPullRequestBadgePresentation,
 } from "../components/ThreadStatusIndicators";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
@@ -79,11 +79,10 @@ function WorkbenchSidebarThreadTitle({
       ) : null}
       {data.shell?.pinnedAt ? <PinIcon aria-label="Pinned" className="size-3 shrink-0" /> : null}
       {data.snoozed ? <ClockIcon aria-label="Snoozed" className="size-3 shrink-0" /> : null}
-      {data.failed ? (
-        <span className="text-3xs text-destructive">Failed</span>
-      ) : data.status ? (
-        <ThreadStatusLabel status={{ ...data.status, pulse: false }} />
-      ) : null}
+      <ThreadExecutionStatus
+        status={data.status?.presentation}
+        startedAt={data.status?.startedAt}
+      />
     </span>
   );
 }

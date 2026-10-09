@@ -13,6 +13,7 @@ import type {
 
 import { WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
 import { getWorkbenchTicketPullRequests } from "./workbenchPullRequests.logic";
+import { getWorkbenchTicketExecutionStatuses } from "./workbenchThreadStatus.logic";
 
 /** Project already-loaded context once, without fetching PRs for each sidebar row. */
 export const getWorkbenchSidebarTicketDetails = ({
@@ -37,7 +38,9 @@ export const getWorkbenchSidebarTicketDetails = ({
       | "primaryT3ProjectId"
     >
   >;
-  readonly assignments: ReadonlyArray<Pick<WorkbenchAssignment, "ticketId" | "threadId">>;
+  readonly assignments: ReadonlyArray<
+    Pick<WorkbenchAssignment, "ticketId" | "threadId" | "supersededAt">
+  >;
   readonly threads: ReadonlyArray<
     Pick<
       EnvironmentThreadShell,
@@ -48,6 +51,12 @@ export const getWorkbenchSidebarTicketDetails = ({
       | "pullRequests"
       | "linkedPullRequest"
       | "branchPullRequest"
+      | "hasPendingApprovals"
+      | "hasPendingUserInput"
+      | "runtime"
+      | "latestRun"
+      | "goal"
+      | "archivedAt"
     >
   >;
   readonly projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "title">>;
@@ -64,6 +73,11 @@ export const getWorkbenchSidebarTicketDetails = ({
       .filter((project) => project.environmentId === environmentId)
       .map((project) => [project.id, project.title]),
   );
+  const executionStatuses = getWorkbenchTicketExecutionStatuses({
+    environmentId,
+    assignments,
+    threadsById,
+  });
   const epicsById = new Map(epics.map((epic) => [epic.id, epic.title]));
   const issuesByTicket = new Map(issueLinks.map((link) => [link.ticketId, link]));
   const assignmentsByTicket = new Map<
@@ -83,6 +97,7 @@ export const getWorkbenchSidebarTicketDetails = ({
         ticket.id,
         {
           environmentId,
+          executionStatus: executionStatuses.get(ticket.id) ?? null,
           kind: ticket.kind,
           statusLabel:
             issueLink?.issue.status.name ?? WORKBENCH_TICKET_STATUS_LABELS[ticket.status],

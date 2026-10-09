@@ -11,7 +11,6 @@ import {
   buildTicketReviewComment,
   buildTicketThreadContext,
   getActiveAssignmentsByTicket,
-  getWorkbenchTicketAgentPresentation,
   getAssignmentsForTicket,
   getWorkbenchEpicProgress,
   getWorkbenchContextForThread,
@@ -22,7 +21,6 @@ import {
   getWorkbenchTicketTemplate,
   getWorkbenchTicketThreadSections,
   getWorkbenchThreadPresentation,
-  getWorkbenchAgentPresentation,
   getWorkbenchTicketStatusMoves,
   getVisibleWorkbenchAssignments,
   isWorkbenchTicketKind,
@@ -397,22 +395,6 @@ describe("Workbench ticket helpers", () => {
     ).toBeNull();
   });
 
-  it("surfaces a sibling Thread needing input before another Thread's activity", () => {
-    const working = { nativeLabel: "Working", runtimeStatus: "running", runStatus: "running" };
-    const blocked = {
-      nativeLabel: "Awaiting Input",
-      runtimeStatus: "ready",
-      runStatus: "completed",
-    };
-    expect(getWorkbenchTicketAgentPresentation([working, blocked])?.label).toBe(
-      "Waiting for your answer",
-    );
-    expect(getWorkbenchTicketAgentPresentation([blocked, working])?.label).toBe(
-      "Waiting for your answer",
-    );
-    expect(getWorkbenchTicketAgentPresentation([working])?.label).toBe("Working");
-  });
-
   it("separates the active Assignment from a Ticket's historical Assignments", () => {
     const ticketId = WorkbenchTicketId.make("ticket-one");
     const historical = {
@@ -655,76 +637,5 @@ describe("Workbench ticket helpers", () => {
         new Set([threadId]),
       ),
     ).toEqual({ state: "open", threadId });
-  });
-});
-
-describe("Workbench agent activity", () => {
-  const idle = { nativeLabel: null, runtimeStatus: null, runStatus: null };
-  it("shows native settlement independently of the last turn", () => {
-    expect(
-      getWorkbenchAgentPresentation({ ...idle, runStatus: "completed", ticketStatus: "done" })
-        ?.label,
-    ).toBe("Completed");
-    expect(
-      getWorkbenchAgentPresentation({ ...idle, runStatus: "completed", settledOverride: "settled" })
-        ?.label,
-    ).toBe("Settled");
-    expect(getWorkbenchAgentPresentation({ ...idle, settledOverride: "settled" })?.label).toBe(
-      "Settled",
-    );
-    expect(
-      getWorkbenchAgentPresentation({
-        ...idle,
-        runStatus: "interrupted",
-        settledOverride: "settled",
-      })?.label,
-    ).toBe("Settled");
-    expect(
-      getWorkbenchAgentPresentation({
-        ...idle,
-        nativeLabel: "Working",
-        settledOverride: "settled",
-      })?.label,
-    ).toBe("Working");
-    expect(
-      getWorkbenchAgentPresentation({
-        ...idle,
-        nativeLabel: "Pending Approval",
-        settledOverride: "settled",
-      })?.label,
-    ).toBe("Waiting for input");
-    expect(
-      getWorkbenchAgentPresentation({ ...idle, nativeLabel: "Working", ticketStatus: "done" })
-        ?.label,
-    ).toBe("Working");
-    expect(
-      getWorkbenchAgentPresentation({ ...idle, runStatus: "failed", ticketStatus: "done" })?.label,
-    ).toBe("Waiting for input");
-  });
-  it("normalizes native activity independently of Ticket progress", () => {
-    expect(getWorkbenchAgentPresentation(idle)).toBeNull();
-    for (const nativeLabel of ["Working", "Connecting", "Monitoring"]) {
-      expect(
-        getWorkbenchAgentPresentation({ ...idle, nativeLabel, runStatus: "completed" })?.label,
-      ).toBe("Working");
-    }
-    for (const nativeLabel of ["Pending Approval", "Plan Ready"]) {
-      expect(
-        getWorkbenchAgentPresentation({ ...idle, nativeLabel, runtimeStatus: "running" })?.label,
-      ).toBe("Waiting for input");
-    }
-    expect(getWorkbenchAgentPresentation({ ...idle, nativeLabel: "Awaiting Input" })?.label).toBe(
-      "Waiting for your answer",
-    );
-    expect(getWorkbenchAgentPresentation({ ...idle, runStatus: "completed" })?.label).toBe(
-      "Agent replied",
-    );
-    expect(getWorkbenchAgentPresentation({ ...idle, runStatus: "interrupted" })?.label).toBe(
-      "Waiting for input",
-    );
-    expect(
-      getWorkbenchAgentPresentation({ ...idle, runtimeStatus: "failed", runStatus: "completed" })
-        ?.label,
-    ).toBe("Waiting for input");
   });
 });
