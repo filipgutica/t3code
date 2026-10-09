@@ -190,7 +190,7 @@ const getPreparedPrimaryRepository = ({
   );
   if (!primary || primary.projectId !== ticket.primaryT3ProjectId || !selectedRepositoriesReady) {
     throw new Error(
-      "The prepared Ticket Workspace does not match the reviewed repositories. Review the Ticket workspace and try again.",
+      "The prepared work area does not match the reviewed repositories. Review the work area and try again.",
     );
   }
   return primary;

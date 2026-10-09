@@ -646,6 +646,34 @@ describe("CodexAdapterV2 runtime policy", () => {
 });
 
 describe("CodexAdapterV2 process spawning", () => {
+  it("closes unsandboxed MCP and hook integrations for read-only conversations", () => {
+    const params = CodexAdapterV2.codexThreadRuntimeParams({
+      threadId: null,
+      runtimePolicy: {
+        runtimeMode: "approval-required",
+        interactionMode: "plan",
+        cwd: "/repo/planning",
+        sandboxPolicy: { type: "readOnly", access: { type: "fullAccess" } },
+      },
+      disabledMcpServers: ["external-jira", "server.with.dots", "t3-code"],
+    });
+    assert.deepEqual(params.config.mcp_servers, {
+      "external-jira": { enabled: false },
+      "server.with.dots": { enabled: false },
+    });
+    for (const feature of [
+      "hooks",
+      "codex_hooks",
+      "plugin_hooks",
+      "plugins",
+      "apps",
+      "connectors",
+      "multi_agent",
+    ]) {
+      assert.equal(params.config[`features.${feature}`], false);
+    }
+  });
+
   it("injects cwd, model, and MCP authorization into thread-scoped params", () => {
     const threadId = ThreadId.make("thread-codex-mcp");
     McpProviderSession.setMcpProviderSession({
@@ -1725,6 +1753,7 @@ describe("CodexAdapterV2 session initialize", () => {
         beforeEmitInbound === undefined ? {} : { beforeEmitInbound },
       );
       let initializeRequests = 0;
+      const requests: Array<string> = [];
       const adapter = CodexAdapterV2.makeCodexAdapterV2({
         instanceId: CodexAdapterV2.CODEX_DEFAULT_INSTANCE_ID,
         settings: DEFAULT_CODEX_SETTINGS,
@@ -1741,6 +1770,7 @@ describe("CodexAdapterV2 session initialize", () => {
                     ...client,
                     request: (method, params) =>
                       Effect.sync(() => {
+                        requests.push(method);
                         if (method === "initialize") initializeRequests++;
                       }).pipe(Effect.andThen(client.request(method, params))),
                   }) satisfies CodexClient.CodexAppServerClient["Service"],
@@ -1767,11 +1797,13 @@ describe("CodexAdapterV2 session initialize", () => {
         runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
       });
       return {
-        ensureThread: (threadId: string) =>
+        runtime,
+        requests,
+        ensureThread: (threadId: string, runtimePolicy = CODEX_TEST_RUNTIME_POLICY) =>
           runtime.ensureThread({
             threadId: ThreadId.make(threadId),
             modelSelection: CODEX_TEST_MODEL_SELECTION,
-            runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+            runtimePolicy,
           }),
         initializeRequests: () => initializeRequests,
       };
@@ -1779,6 +1811,171 @@ describe("CodexAdapterV2 session initialize", () => {
 
   const replayPreamble = (nativeThreadId: string) =>
     codexReplayPreamble({ nativeThreadId, nativeTurnId: "unused", prompt: "unused" });
+
+  it.effect.each([false, true])(
+    "isolates inherited integrations only for read-only native start and resume (read-only: %s)",
+    (readOnly) =>
+      Effect.gen(function* () {
+        const scenario = `integration-isolation-${readOnly}`;
+        const threadId = ThreadId.make(`thread-${scenario}`);
+        const nativeThreadId = `native-${scenario}`;
+        const endpoint = "http://127.0.0.1:43123/mcp";
+        const authorization = "Bearer readonly-protocol-token";
+        McpProviderSession.setMcpProviderSession({
+          environmentId: EnvironmentId.make("integration-isolation"),
+          threadId,
+          providerSessionId: `mcp-${scenario}`,
+          providerInstanceId: CODEX_TEST_MODEL_SELECTION.instanceId,
+          endpoint,
+          authorizationHeader: authorization,
+          browserToolsAvailable: false,
+        });
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId)),
+        );
+        const policy = {
+          ...CODEX_TEST_RUNTIME_POLICY,
+          ...(readOnly ? { sandboxPolicy: { type: "readOnly" as const } } : {}),
+        };
+        const expectedParams = {
+          cwd: "/workspace",
+          model: "gpt-5.4",
+          config: {
+            "tools.update_plan.enabled": true,
+            ...(readOnly
+              ? {
+                  "features.hooks": false,
+                  "features.codex_hooks": false,
+                  "features.plugin_hooks": false,
+                  "features.plugins": false,
+                  "features.apps": false,
+                  "features.connectors": false,
+                  "features.multi_agent": false,
+                }
+              : {}),
+            mcp_servers: {
+              ...(readOnly
+                ? { jira: { enabled: false }, "github.external": { enabled: false } }
+                : {}),
+              "t3-code": { url: endpoint, http_headers: { Authorization: authorization } },
+            },
+          },
+        };
+        const inventory = (id: number): Array<CodexReplay.CodexAppServerReplayEntry> =>
+          readOnly
+            ? [
+                {
+                  type: "expect_outbound",
+                  label: "config/read",
+                  frame: {
+                    id,
+                    method: "config/read",
+                    params: { cwd: "/workspace", includeLayers: false },
+                  },
+                },
+                {
+                  type: "emit_inbound",
+                  label: "config/read",
+                  frame: {
+                    id,
+                    result: {
+                      config: {
+                        mcp_servers: {
+                          jira: { command: "jira-write-server" },
+                          "github.external": { url: "https://external.invalid/mcp" },
+                          "t3-code": { enabled: true },
+                        },
+                      },
+                      origins: {},
+                    },
+                  },
+                },
+              ]
+            : [];
+        const preamble = replayPreamble(nativeThreadId);
+        const startId = readOnly ? 3 : 2;
+        const resumeId = readOnly ? 5 : 3;
+        const session = yield* openReplaySession(
+          makeCodexReplayTranscript({
+            scenario,
+            entries: [
+              ...preamble.slice(0, 3),
+              ...inventory(2),
+              {
+                type: "expect_outbound",
+                label: "thread/start",
+                frame: { id: startId, method: "thread/start", params: expectedParams },
+              },
+              withReplayRequestId(preamble[4]!, startId),
+              ...inventory(4),
+              {
+                type: "expect_outbound",
+                label: "thread/resume",
+                frame: {
+                  id: resumeId,
+                  method: "thread/resume",
+                  params: { threadId: nativeThreadId, excludeTurns: true, ...expectedParams },
+                },
+              },
+              {
+                type: "emit_inbound",
+                label: "thread/resume",
+                frame: {
+                  id: resumeId,
+                  result: { thread: { id: nativeThreadId, updatedAt: 1782622450 } },
+                },
+              },
+            ],
+          }),
+        );
+        const started = yield* session.ensureThread(threadId, policy);
+        const resumed = yield* session.runtime.resumeThread({
+          providerThread: started,
+          modelSelection: CODEX_TEST_MODEL_SELECTION,
+          runtimePolicy: policy,
+        });
+        assert.equal(resumed.nativeThreadRef?.nativeId, nativeThreadId);
+        assert.equal(
+          session.requests.filter((method) => method === "config/read").length,
+          readOnly ? 2 : 0,
+        );
+      }).pipe(Effect.scoped, Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+  );
+
+  it.effect("refuses native start when the read-only integration inventory cannot be read", () =>
+    Effect.gen(function* () {
+      const session = yield* openReplaySession(
+        makeCodexReplayTranscript({
+          scenario: "integration-inventory-failure",
+          entries: [
+            ...replayPreamble("inventory-failure").slice(0, 3),
+            {
+              type: "expect_outbound",
+              label: "config/read",
+              frame: {
+                id: 2,
+                method: "config/read",
+                params: { cwd: "/workspace", includeLayers: false },
+              },
+            },
+            {
+              type: "emit_inbound",
+              label: "config/read",
+              frame: { id: 2, error: { code: -32603, message: "Config unavailable" } },
+            },
+          ],
+        }),
+      );
+      const error = yield* session
+        .ensureThread("thread-inventory-failure", {
+          ...CODEX_TEST_RUNTIME_POLICY,
+          sandboxPolicy: { type: "readOnly" },
+        })
+        .pipe(Effect.flip);
+      assert.equal(error._tag, "ProviderAdapterEnsureThreadError");
+      assert.deepEqual(session.requests, ["initialize", "config/read"]);
+    }).pipe(Effect.scoped, Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+  );
 
   it.effect("sends one initialize when two threads start on a fresh session at once", () =>
     Effect.gen(function* () {

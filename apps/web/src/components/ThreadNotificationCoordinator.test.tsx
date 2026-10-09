@@ -20,6 +20,7 @@ const state = vi.hoisted(() => ({
   turnError: false,
   limited: false,
   subagent: false,
+  unsavedTicket: false,
   background: [] as Array<{ taskId: string; kind: "command" | "monitor" }>,
   add: vi.fn(
     (_toast: { title: string; description: string; actionProps: { onClick: () => void } }) =>
@@ -111,6 +112,11 @@ vi.mock("../state/environments", () => ({
 vi.mock("../state/shell", () => ({
   environmentShell: { stateValueAtom: vi.fn() },
 }));
+vi.mock("../workbench/useWorkbenchTicketPreparations", () => ({
+  useWorkbenchTicketPreparations: () => new Map(),
+  useWorkbenchTicketPreparationRefresh: () => {},
+  isUnsavedTicketPreparation: () => state.unsavedTicket,
+}));
 vi.mock("../threadNotifications", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../threadNotifications")>()),
   playNotificationSound: state.sound,
@@ -137,6 +143,7 @@ async function complete() {
 }
 
 beforeEach(() => {
+  state.unsavedTicket = false;
   vi.clearAllMocks();
   Object.assign(state, {
     mode: "off",
@@ -175,8 +182,13 @@ afterEach(async () => {
 });
 
 describe("thread notifications", () => {
-  it.each([true, false])("keeps subagents silent with focus=%s", async (focused) => {
-    state.subagent = true;
+  it.each([
+    { kind: "subagent" as const, focused: true },
+    { kind: "subagent" as const, focused: false },
+    { kind: "unsavedTicket" as const, focused: true },
+    { kind: "unsavedTicket" as const, focused: false },
+  ])("keeps $kind silent with focus=$focused", async ({ kind, focused }) => {
+    state[kind] = true;
     state.focused = focused;
     state.mode = "notifications-and-sound";
     await render();

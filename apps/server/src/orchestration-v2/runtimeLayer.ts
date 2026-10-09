@@ -51,6 +51,8 @@ import * as ThreadForkService from "./ThreadForkService.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
+import * as TicketPlanningRuntime from "../workbench/TicketPlanningRuntime.ts";
+import * as WorkbenchStore from "../workbench/WorkbenchStore.ts";
 
 /** The shared application event log and its command receipts. */
 export const layerEventInfrastructure = Layer.mergeAll(
@@ -58,7 +60,9 @@ export const layerEventInfrastructure = Layer.mergeAll(
   OrchestrationCommandReceipts.layer,
 );
 
-const layerRuntimePolicyProvided = RuntimePolicy.layerFromProjectStore.pipe(
+const layerRuntimePolicyProvided = TicketPlanningRuntime.layer.pipe(
+  Layer.provide(RuntimePolicy.layerFromProjectStore),
+  Layer.provide(WorkbenchStore.WorkbenchStoreLive),
   Layer.provide(ProjectStore.layer),
 );
 

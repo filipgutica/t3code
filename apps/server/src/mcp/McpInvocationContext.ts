@@ -25,6 +25,8 @@ export interface McpThreadCaller {
   readonly threadId: ThreadId;
   readonly providerSessionId: string;
   readonly providerInstanceId: ProviderInstanceId;
+  /** A read-only provider credential stays read-only for its entire lifetime. */
+  readonly readOnly?: boolean;
 }
 
 /** An agent T3 Code did not launch, signed in through MCP OAuth. */

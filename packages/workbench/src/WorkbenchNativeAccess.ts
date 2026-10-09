@@ -17,10 +17,18 @@ export class WorkbenchNativeAccess extends Context.Service<
     readonly isProjectRepository: (
       projectId: ProjectId,
     ) => Effect.Effect<boolean, WorkbenchOperationError>;
-    readonly findThread: (
+    /** Pending/active native work must keep the planning policy record until provider startup settles. */
+    readonly hasPendingThreadWork: (
       threadId: ThreadId,
-    ) => Effect.Effect<
-      Option.Option<{ readonly id: ThreadId; readonly projectId: ProjectId }>,
+    ) => Effect.Effect<boolean, WorkbenchOperationError>;
+    readonly findThread: (threadId: ThreadId) => Effect.Effect<
+      Option.Option<{
+        readonly id: ThreadId;
+        readonly projectId: ProjectId;
+        readonly worktreePath?: string | null;
+        readonly branch?: string | null;
+        readonly archivedAt?: string | null;
+      }>,
       WorkbenchOperationError
     >;
     /** Whether a non-deleted native Thread still owns the given worktree path. */

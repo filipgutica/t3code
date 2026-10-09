@@ -4,6 +4,11 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 
 import { EnvironmentAuthorizationError } from "./auth.ts";
 import {
+  WorkbenchTicketDraft,
+  WorkbenchTicketPreparation,
+  WorkbenchBeginTicketDraftInput,
+  WorkbenchUpdateTicketDraftInput,
+  WorkbenchTicketDraftActionInput,
   WorkbenchAssignment,
   WorkbenchArchiveEpicInput,
   WorkbenchArchiveProjectInput,
@@ -61,6 +66,12 @@ import {
 
 export const WORKBENCH_WS_METHODS = {
   // Workbench project-management methods
+  workbenchBeginTicketDraft: "workbench.ticketDrafts.begin",
+  workbenchUpdateTicketDraft: "workbench.ticketDrafts.update",
+  workbenchPromoteTicketDraft: "workbench.ticketDrafts.promote",
+  workbenchDiscardTicketDraft: "workbench.ticketDrafts.discard",
+  workbenchStartTicketDraftWork: "workbench.ticketDrafts.startWork",
+  workbenchGetTicketPreparations: "workbench.ticketPreparations.get",
   workbenchGetSnapshot: "workbench.getSnapshot",
   workbenchCreateProject: "workbench.projects.create",
   workbenchUpdateProject: "workbench.projects.update",
@@ -101,6 +112,15 @@ const WorkbenchCreateTicketRpcError = Schema.Union([
   WorkbenchJiraOperationError,
   EnvironmentAuthorizationError,
 ]);
+
+const WsWorkbenchGetTicketPreparationsRpc = Rpc.make(
+  WORKBENCH_WS_METHODS.workbenchGetTicketPreparations,
+  {
+    payload: Schema.Struct({}),
+    success: Schema.Array(WorkbenchTicketPreparation),
+    error: WorkbenchRpcError,
+  },
+);
 
 const WsWorkbenchGetSnapshotRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchGetSnapshot, {
   payload: Schema.Struct({}),
@@ -322,7 +342,48 @@ const WsWorkbenchJiraMigrateLocalTicketsRpc = Rpc.make(
   },
 );
 
+const WsWorkbenchBeginTicketDraftRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchBeginTicketDraft, {
+  payload: WorkbenchBeginTicketDraftInput,
+  success: WorkbenchTicketDraft,
+  error: WorkbenchRpcError,
+});
+const WsWorkbenchUpdateTicketDraftRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchUpdateTicketDraft, {
+  payload: WorkbenchUpdateTicketDraftInput,
+  success: WorkbenchTicketDraft,
+  error: WorkbenchRpcError,
+});
+const WsWorkbenchPromoteTicketDraftRpc = Rpc.make(
+  WORKBENCH_WS_METHODS.workbenchPromoteTicketDraft,
+  {
+    payload: WorkbenchTicketDraftActionInput,
+    success: WorkbenchTicketDraft,
+    error: WorkbenchCreateTicketRpcError,
+  },
+);
+const WsWorkbenchDiscardTicketDraftRpc = Rpc.make(
+  WORKBENCH_WS_METHODS.workbenchDiscardTicketDraft,
+  {
+    payload: WorkbenchTicketDraftActionInput,
+    success: Schema.Void,
+    error: WorkbenchRpcError,
+  },
+);
+const WsWorkbenchStartTicketDraftWorkRpc = Rpc.make(
+  WORKBENCH_WS_METHODS.workbenchStartTicketDraftWork,
+  {
+    payload: WorkbenchTicketDraftActionInput,
+    success: WorkbenchTicketDraft,
+    error: WorkbenchRpcError,
+  },
+);
+
 export const WorkbenchRpcGroup = RpcGroup.make(
+  WsWorkbenchGetTicketPreparationsRpc,
+  WsWorkbenchBeginTicketDraftRpc,
+  WsWorkbenchUpdateTicketDraftRpc,
+  WsWorkbenchPromoteTicketDraftRpc,
+  WsWorkbenchDiscardTicketDraftRpc,
+  WsWorkbenchStartTicketDraftWorkRpc,
   WsWorkbenchGetSnapshotRpc,
   WsWorkbenchCreateProjectRpc,
   WsWorkbenchUpdateProjectRpc,

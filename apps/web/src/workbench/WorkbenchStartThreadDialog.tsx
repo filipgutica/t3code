@@ -266,11 +266,12 @@ export function WorkbenchStartThreadDialog({
       ? null
       : (store.stickyModelSelectionByProvider[store.stickyActiveProvider] ?? null),
   );
-  const dialogTitle =
-    customTitle ?? (additional ? "Create Additional Agent Thread" : "Create Agent Thread");
+  const dialogTitle = customTitle ?? "Create Thread";
   const dialogDescription =
     customDescription ??
-    "Choose the provider and model. The new Thread opens with ticket context attached; add an optional message and send it when you’re ready.";
+    (additional
+      ? "Start another Thread for this ticket. It opens with ticket context attached."
+      : "The Thread opens with ticket context attached. Add a message and send when you’re ready.");
   const selection = useWorkbenchStartThreadSelection({
     providers,
     settings,
@@ -314,6 +315,7 @@ export function WorkbenchStartThreadDialog({
           <form id="workbench-start-thread" className="space-y-5" onSubmit={submit}>
             <WorkbenchStartThreadWorkspaceReview
               ticket={ticket}
+              workspace={workspace}
               projects={projects}
               scope={repositoryScope}
               onScopeChange={setRepositoryScope}
@@ -368,14 +370,37 @@ function WorkbenchStartThreadFooter({
           ? "Preparing thread…"
           : workspaceReady
             ? startLabel
-            : "Create workspace and thread"}
+            : "Create work area and Thread"}
       </Button>
     </DialogFooter>
   );
 }
 
+const getWorkAreaStatus = ({
+  ready,
+  workspace,
+}: {
+  ready: boolean;
+  workspace: WorkbenchTicketWorkspace | undefined;
+}): { label: string; variant: "success" | "info" | "warning" | "error" | "secondary" } => {
+  if (ready) return { label: "Ready", variant: "success" };
+  switch (workspace?.status) {
+    case "preparing":
+      return { label: "Preparing", variant: "info" };
+    case "releasing":
+      return { label: "Releasing", variant: "warning" };
+    case "failed":
+      return { label: "Failed", variant: "error" };
+    case "ready":
+      return { label: "Needs update", variant: "warning" };
+    default:
+      return { label: "Not prepared", variant: "secondary" };
+  }
+};
+
 function WorkbenchStartThreadWorkspaceReview({
   ticket,
+  workspace,
   projects,
   scope,
   onScopeChange,
@@ -385,6 +410,7 @@ function WorkbenchStartThreadWorkspaceReview({
   onEditRepositories,
 }: {
   ticket: WorkbenchTicket;
+  workspace: WorkbenchTicketWorkspace | undefined;
   projects: readonly Project[];
   scope: WorkbenchRepositoryScope;
   onScopeChange: (scope: WorkbenchRepositoryScope) => void;
@@ -393,10 +419,14 @@ function WorkbenchStartThreadWorkspaceReview({
   pending: boolean;
   onEditRepositories: () => void;
 }) {
+  const status = getWorkAreaStatus({ ready, workspace });
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-medium">Ticket workspace</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium">Work area</p>
+          <Badge variant={status.variant}>{status.label}</Badge>
+        </div>
         {ready ? (
           <Button
             type="button"
@@ -411,23 +441,23 @@ function WorkbenchStartThreadWorkspaceReview({
       </div>
       {ready ? (
         <div className="space-y-2">
-          {[
-            ticket.primaryT3ProjectId,
-            ...ticket.repositoryProjectIds.filter((id) => id !== ticket.primaryT3ProjectId),
-          ].map((id) => (
-            <div key={id} className="flex min-w-0 items-center gap-2 text-sm">
-              <span className="min-w-0 break-words">
-                {projects.find((project) => project.id === id)?.title ?? "Repository unavailable"}
-              </span>
-              {id === ticket.primaryT3ProjectId ? (
-                <Badge size="sm" variant="outline">
-                  Primary
-                </Badge>
-              ) : null}
-            </div>
-          ))}
+          <ul aria-label="Work area repositories" className="flex flex-wrap gap-1.5">
+            {[
+              ticket.primaryT3ProjectId,
+              ...ticket.repositoryProjectIds.filter((id) => id !== ticket.primaryT3ProjectId),
+            ].map((id) => (
+              <Badge key={id} render={<li />} variant="outline" size="lg">
+                <span className="max-w-56 truncate">
+                  {projects.find((project) => project.id === id)?.title ?? "Repository unavailable"}
+                </span>
+                {id === ticket.primaryT3ProjectId ? (
+                  <span className="text-muted-foreground">· Primary</span>
+                ) : null}
+              </Badge>
+            ))}
+          </ul>
           <p className="text-xs text-muted-foreground">
-            This thread reuses the ticket’s prepared worktrees.
+            This Thread reuses the prepared worktrees.
           </p>
         </div>
       ) : (
@@ -441,7 +471,7 @@ function WorkbenchStartThreadWorkspaceReview({
       )}
       {locked ? (
         <p role="status" className="text-xs text-muted-foreground">
-          Wait for workspace preparation or release to finish.
+          Wait for work area preparation or release to finish.
         </p>
       ) : null}
     </section>
@@ -465,13 +495,7 @@ function WorkbenchStartThreadModelFields({
     selectionAvailable,
   } = selection;
   return resolvedSelection && activeEntry ? (
-    <div className="space-y-3">
-      <div className="space-y-1.5">
-        <p className="text-sm font-medium">Provider and model</p>
-        <p className="text-xs text-muted-foreground">
-          This choice is saved on the Thread when it starts.
-        </p>
-      </div>
+    <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <ProviderModelPicker
           activeInstanceId={resolvedSelection.instanceId}

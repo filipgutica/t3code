@@ -278,7 +278,7 @@ export const layer: Layer.Layer<
         providerThread === undefined ||
         providerThread.providerSessionId === null ||
         message === undefined ||
-        checkpointScope === undefined
+        (rootNode.checkpointScopeId !== null && checkpointScope === undefined)
       ) {
         return yield* new ProviderTurnStartError({
           runId,
@@ -950,10 +950,14 @@ export const layer: Layer.Layer<
       const routableSubagents = projection.subagents.filter((subagent) =>
         RunExecutionService.canRouteRelatedSubagent(subagent.status),
       );
-      const userText = projectComposerContextForProvider({
+      const composerText = projectComposerContextForProvider({
         text: message.text,
         records: message.context?.records ?? [],
       });
+      const userText =
+        resolvedRuntimePolicy.instructions === undefined
+          ? composerText
+          : `${resolvedRuntimePolicy.instructions}\n\nUser message:\n${composerText}`;
       // Delivered once: this run's provider turn marks the work as told. A
       // restart continuation is prompted by its own text or resumes natively.
       const noteContinuation = isRestartNoteContinuation(
@@ -1234,7 +1238,7 @@ export const layer: Layer.Layer<
         session: deliverySession,
         run: runningRun,
         rootNode: runningRootNode,
-        checkpointScope,
+        checkpointScope: checkpointScope ?? null,
         providerThread: runningProviderThread,
         attempt: runningAttempt,
         attemptId: attempt.id,

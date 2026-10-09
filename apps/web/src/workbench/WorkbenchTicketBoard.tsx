@@ -111,6 +111,11 @@ import {
   WorkbenchTicketCopyMenuItems,
 } from "./WorkbenchTicketMetadata";
 import { getWorkbenchBoardColumns, orderWorkbenchTicketsByJiraRank } from "./workbenchJira.logic";
+import { WorkbenchDraftTickets } from "./WorkbenchDraftTickets";
+import {
+  getConversationDraftTitle,
+  type WorkbenchConversationDraft,
+} from "./workbenchTicketDraft.logic";
 
 const STATUS_DOT_CLASS: Record<WorkbenchTicketStatus, string> = {
   todo: "bg-muted-foreground/55",
@@ -130,6 +135,7 @@ type WorkbenchTicketBoardProps = {
   readonly jiraPublishDisabled?: boolean;
   readonly jiraStatusMappings: ReadonlyArray<WorkbenchJiraStatusMapping>;
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
+  readonly drafts?: ReadonlyArray<WorkbenchConversationDraft>;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
   readonly groupMode: "none" | "epic";
   readonly viewControls: ReactNode;
@@ -243,6 +249,23 @@ function renderWorkbenchTicketBoard({
         })}
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
           <div className="h-full overflow-auto p-3 sm:p-4 md:pt-0">
+            <WorkbenchDraftTickets
+              drafts={(props.drafts ?? []).filter(
+                (draft) =>
+                  data.attentionMode === "all" &&
+                  (data.repositoryId === null ||
+                    draft.fields.repositoryProjectIds.includes(data.repositoryId)) &&
+                  matchesWorkbenchTicketSearch({
+                    title: getConversationDraftTitle(
+                      draft,
+                      props.threadsById.get(draft.threadId)?.title,
+                    ),
+                    query: search.query,
+                  }),
+              )}
+              threadsById={props.threadsById}
+              onSelect={props.onSelect}
+            />
             <div
               style={boardStyle}
               className="flex min-w-0 flex-col gap-3 md:min-w-[calc(var(--board-column-count)*18rem+(var(--board-column-count)-1)*0.75rem)]"
@@ -271,6 +294,7 @@ function renderWorkbenchTicketBoard({
           </div>
 
           {tickets.length === 0 &&
+          (props.drafts?.length ?? 0) === 0 &&
           !search.query &&
           data.repositoryId === null &&
           !(groupMode === "epic" && epics.length > 0) ? (

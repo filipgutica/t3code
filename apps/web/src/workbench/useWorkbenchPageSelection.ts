@@ -118,7 +118,10 @@ export function useWorkbenchPageSelection({
       // oxlint-disable-next-line react/set-state-in-effect -- A server snapshot ends the creation wait.
       setAwaitingProjectId(null);
     }
-    if (snapshot?.tickets.some((ticket) => ticket.id === awaitingTicketId))
+    if (
+      snapshot?.tickets.some((ticket) => ticket.id === awaitingTicketId) ||
+      snapshot?.ticketDrafts?.some((draft) => draft.id === awaitingTicketId)
+    )
       setAwaitingTicketId(null);
     if (snapshot?.epics.some((epic) => epic.id === awaitingEpicId)) setAwaitingEpicId(null);
   }, [snapshot, awaitingProjectId, awaitingTicketId, awaitingEpicId]);
@@ -144,7 +147,7 @@ export function useWorkbenchPageSelection({
       isAwaitingRecord({
         awaitingId: awaitingTicketId,
         selectedId: selectedTicketId,
-        records: snapshot?.tickets,
+        records: [...snapshot.tickets, ...(snapshot.ticketDrafts ?? [])],
       })
     )
       return;
@@ -154,6 +157,16 @@ export function useWorkbenchPageSelection({
         selectedId: selectedEpicId,
         records: snapshot?.epics,
       })
+    )
+      return;
+    // A draft uses the future ticket id in the route before a Ticket record exists.
+    if (
+      snapshot.ticketDrafts?.some(
+        (draft) =>
+          draft.id === selectedTicketId &&
+          draft.projectId === selectedProject?.id &&
+          draft.phase !== "working",
+      )
     )
       return;
     if (pendingAction === "create-project" || pendingAction === "delete-project") return;
@@ -228,6 +241,7 @@ export function useWorkbenchPageSelection({
     setSelectedProjectId,
     selectedTicketId,
     setSelectedTicketId,
+    awaitingTicketId,
     selectedEpicId,
     setSelectedEpicId,
     setAwaitingProjectId,

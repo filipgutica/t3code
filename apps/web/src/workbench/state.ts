@@ -18,6 +18,12 @@ const snapshot = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
   staleTimeMs: 5_000,
 });
 
+const ticketPreparations = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
+  label: "environment-data:workbench:ticket-preparations",
+  tag: WS_METHODS.workbenchGetTicketPreparations,
+  staleTimeMs: 5_000,
+});
+
 const jiraSnapshot = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
   label: "environment-data:workbench:jira:snapshot",
   tag: WS_METHODS.workbenchJiraGetSnapshot,
@@ -53,14 +59,15 @@ const refreshSnapshot = (
   { environmentId }: { readonly environmentId: EnvironmentId },
   registry: AtomRegistry.AtomRegistry,
 ) =>
-  Effect.sync(() =>
+  Effect.sync(() => {
     registry.refresh(
       snapshot({
         environmentId,
         input: {},
       }),
-    ),
-  );
+    );
+    registry.refresh(ticketPreparations({ environmentId, input: {} }));
+  });
 
 const refreshJiraSnapshot = (
   { environmentId }: { readonly environmentId: EnvironmentId },
@@ -85,6 +92,7 @@ const refreshWorkbenchAndJiraSnapshots = (
 
 export const workbenchEnvironment = {
   snapshot,
+  ticketPreparations,
   jiraSnapshot,
   // A failed migration can have committed remotely; recovery needs a fresh reply,
   // not the query atom's cached value or its fire-and-forget refresh.
@@ -227,6 +235,43 @@ export const workbenchEnvironment = {
   updateTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:update-ticket",
     tag: WS_METHODS.workbenchUpdateTicket,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshSnapshot,
+  }),
+  // The conversation draft lives in the Workbench snapshot, so every transition refreshes it.
+  beginTicketDraft: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:begin-ticket-draft",
+    tag: WS_METHODS.workbenchBeginTicketDraft,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshSnapshot,
+  }),
+  updateTicketDraft: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:update-ticket-draft",
+    tag: WS_METHODS.workbenchUpdateTicketDraft,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshSnapshot,
+  }),
+  // Creating the ticket can create a Jira issue, so Jira links refresh as well.
+  promoteTicketDraft: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:promote-ticket-draft",
+    tag: WS_METHODS.workbenchPromoteTicketDraft,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshWorkbenchAndJiraSnapshots,
+  }),
+  discardTicketDraft: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:discard-ticket-draft",
+    tag: WS_METHODS.workbenchDiscardTicketDraft,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshSnapshot,
+  }),
+  startTicketDraftWork: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:start-ticket-draft-work",
+    tag: WS_METHODS.workbenchStartTicketDraftWork,
     scheduler,
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,

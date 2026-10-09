@@ -1,9 +1,11 @@
 import * as Layer from "effect/Layer";
 
+import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as WorkbenchOrchestrationReactor from "./OrchestrationReactor.ts";
 import * as TicketSettlement from "./TicketSettlement.ts";
 import * as TicketExecutionReactor from "./TicketExecutionReactor.ts";
+import * as TicketDraftService from "./TicketDraftService.ts";
 import * as TicketSummaryService from "./TicketSummaryService.ts";
 import * as TicketWorkspaceService from "./TicketWorkspaceService.ts";
 import * as WorkbenchStore from "./WorkbenchStore.ts";
@@ -22,7 +24,17 @@ const WorkspaceLifecycleLayerLive = WorkspaceLifecycleService.layer.pipe(
   Layer.provide(WorkbenchStoreLayerLive),
 );
 
+const TicketDraftLayerLive = TicketDraftService.layer.pipe(
+  Layer.provide(CommandReceiptStore.layer.pipe(Layer.provide(SqlitePersistence.layerConfig))),
+  Layer.provide(WorkbenchStoreLayerLive),
+  Layer.provide(WorkbenchJiraLayerLive),
+  Layer.provide(
+    TicketWorkspaceService.TicketWorkspaceServiceLive.pipe(Layer.provide(WorkbenchStoreLayerLive)),
+  ),
+);
+
 export const WorkbenchServicesLayerLive = Layer.empty.pipe(
+  Layer.provideMerge(TicketDraftLayerLive),
   Layer.provideMerge(WorkspaceLifecycleLayerLive),
   Layer.provideMerge(WorkbenchJiraLayerLive),
   Layer.provideMerge(TicketWorkspaceService.TicketWorkspaceServiceLive),

@@ -160,6 +160,22 @@ function makeClaudeTestTurnInput(input: {
 }
 
 describe("ClaudeAdapterV2 runtime query policy", () => {
+  it("keeps read-only queries restricted despite user launch overrides and hooks", () => {
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "read-only-planning",
+      resume: false,
+      cwd: "/workspace",
+      readOnlySandbox: true,
+      tools: ClaudeAdapterV2.CLAUDE_READ_ONLY_ALLOWED_TOOLS,
+      permissionMode: "plan",
+      settings: { ...DEFAULT_CLAUDE_SETTINGS, launchArgs: "--dangerously-skip-permissions" },
+    });
+    assert.equal(options.permissionMode, "dontAsk");
+    assert.equal(options.strictMcpConfig, true);
+    assert.include(options.settings, { disableAllHooks: true });
+    assert.deepEqual(options.tools, ["Read", "Glob", "Grep"]);
+  });
   it.each([false, true])("requests thinking summaries with resume=%s", (resume) => {
     const options = ClaudeAdapterV2.makeClaudeQueryOptions({
       modelSelection: CLAUDE_TEST_MODEL_SELECTION,

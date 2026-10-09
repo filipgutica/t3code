@@ -1,6 +1,7 @@
 "use client";
 
 import { useWorkbenchCommandPaletteActions } from "../workbench/useWorkbenchCommandPaletteActions";
+import { useWorkbenchVisibleThreadShells } from "../workbench/useWorkbenchTicketPreparations";
 
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
@@ -117,7 +118,7 @@ import { useScratchProject } from "../hooks/useScratchProject";
 import { useNewProject } from "../hooks/useNewProject";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
-import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
+import { useProjects, useServerConfigs, waitForProject } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import {
@@ -799,7 +800,7 @@ function OpenCommandPaletteDialog(props: {
     }
   }, [activeThreadReferenceCopyTarget]);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
-  const threads = useThreadShells();
+  const threads = useWorkbenchVisibleThreadShells();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const {
     theme,

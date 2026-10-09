@@ -3377,6 +3377,23 @@ it.effect("emits run_interrupt_result when hard-stop finalizes the active attemp
 );
 
 it.effect.each(["completed", "interrupted", "cancelled", "failed"] as const)(
+  "finalizes checkpoint-free planning runs as %s without repository checkpoint effects",
+  (status) =>
+    Effect.gen(function* () {
+      const result = yield* captureRootRunTermination({
+        key: `checkpoint-free:${status}`,
+        withoutCheckpoints: true,
+        shouldFinalizeRun: () => Effect.succeed(true),
+        events: (ids) => Stream.make(rootTerminalEvent(ids, status)),
+      });
+      assert.deepEqual(result.observed, [`run:${status}`, "pull-requests-refreshed"]);
+      assert.equal(result.baselineCaptures, 0);
+      assert.deepEqual(result.submittedEffects, []);
+      assert.deepEqual(result.committedEffects, []);
+    }),
+);
+
+it.effect.each(["completed", "interrupted", "cancelled", "failed"] as const)(
   "refreshes pull requests after the current root run %s",
   (status) =>
     Effect.gen(function* () {
@@ -3500,6 +3517,7 @@ it.effect("keeps completed runs completed when pull request refresh fails", () =
 
 function captureRootRunTermination(input: {
   readonly key: string;
+  readonly withoutCheckpoints?: boolean;
   readonly shouldFinalizeRun: () => Effect.Effect<boolean, ProjectionStore.ProjectionStoreV2Error>;
   readonly rejectTerminalWrite?: boolean;
   readonly hasUnpairedRunInterruptRequest?: () => Effect.Effect<boolean, never>;
@@ -3525,6 +3543,7 @@ function captureRootRunTermination(input: {
     const submittedEffects = yield* Ref.make<ReadonlyArray<PendingOrchestrationEffectV2>>([]);
     const committedEffects = yield* Ref.make<ReadonlyArray<PendingOrchestrationEffectV2>>([]);
     const ingestionDone = yield* Deferred.make<void>();
+    const baselineCaptures = yield* Ref.make(0);
     const captureTurnItem = (payload: OrchestrationV2TurnItem) =>
       Ref.update(writtenItems, (current) => [...current, payload]);
     const captureFinalEvents = (events: ReadonlyArray<OrchestrationV2DomainEvent>) =>
@@ -3542,7 +3561,9 @@ function captureRootRunTermination(input: {
       Layer.provide(
         Layer.mergeAll(
           McpAppModelContext.layerEmpty,
-          Layer.mock(CheckpointService.CheckpointServiceV2)({ captureBaseline: () => Effect.void }),
+          Layer.mock(CheckpointService.CheckpointServiceV2)({
+            captureBaseline: () => Ref.update(baselineCaptures, (count) => count + 1),
+          }),
           Layer.mock(EventSink.EventSinkV2)({
             write: (payload) =>
               Effect.gen(function* () {
@@ -3637,9 +3658,11 @@ function captureRootRunTermination(input: {
           id: ids.rootNodeId,
           providerTurnId: ids.rootProviderTurnId,
         } as OrchestrationV2ExecutionNode,
-        checkpointScope: {
-          id: CheckpointScopeId.make(`checkpoint-scope:${input.key}`),
-        } as OrchestrationV2CheckpointScope,
+        checkpointScope: input.withoutCheckpoints
+          ? null
+          : ({
+              id: CheckpointScopeId.make(`checkpoint-scope:${input.key}`),
+            } as OrchestrationV2CheckpointScope),
         providerThread: {
           id: ids.providerThreadId,
           driver,
@@ -3684,6 +3707,7 @@ function captureRootRunTermination(input: {
       observed: yield* Ref.get(observed),
       submittedEffects: yield* Ref.get(submittedEffects),
       committedEffects: yield* Ref.get(committedEffects),
+      baselineCaptures: yield* Ref.get(baselineCaptures),
     };
   });
 }

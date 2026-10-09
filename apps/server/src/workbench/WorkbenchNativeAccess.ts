@@ -13,6 +13,9 @@ const NativeProjectRow = Schema.Struct({ id: ProjectId, workspaceRoot: Schema.St
 const NativeThreadRow = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
+  worktreePath: Schema.NullOr(Schema.String),
+  branch: Schema.NullOr(Schema.String),
+  archivedAt: Schema.NullOr(Schema.String),
 });
 
 const persistenceError = (_cause: unknown) =>
@@ -40,7 +43,9 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
     Request: Schema.Struct({ threadId: ThreadId }),
     Result: NativeThreadRow,
     execute: ({ threadId }) => sql`
-      SELECT thread_id AS "id", project_id AS "projectId"
+      SELECT thread_id AS "id", project_id AS "projectId",
+        json_extract(payload_json, '$.worktreePath') AS "worktreePath",
+        json_extract(payload_json, '$.branch') AS "branch", archived_at AS "archivedAt"
       FROM orchestration_v2_projection_threads
       WHERE thread_id = ${threadId}
         AND deleted_at IS NULL
@@ -104,6 +109,17 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
       Effect.map((rows) => rows.map((row) => row.id)),
       Effect.mapError(persistenceError),
     ),
+    hasPendingThreadWork: (threadId) =>
+      sql`SELECT 1 WHERE EXISTS (
+      SELECT 1 FROM orchestration_v2_projection_runs WHERE thread_id = ${threadId}
+        AND status IN ('preparing', 'queued', 'starting', 'running', 'waiting')
+    ) OR EXISTS (
+      SELECT 1 FROM orchestration_v2_projection_runtime_requests WHERE thread_id = ${threadId}
+        AND status = 'pending'
+    )`.pipe(
+        Effect.map((rows) => rows.length > 0),
+        Effect.mapError(persistenceError),
+      ),
     findProject,
     isProjectRepository,
     findThread,
