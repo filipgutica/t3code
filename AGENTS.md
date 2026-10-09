@@ -143,13 +143,27 @@ Architecture and its constraints: `docs/internals/overview.md`. Glossary: `docs/
 Apply the project skills automatically for Workbench changes:
 
 - Use [workbench-isolation](.agents/skills/workbench-isolation/SKILL.md) while planning or implementing to choose owners and integration points.
-- Use [workbench-isolation-review](.agents/skills/workbench-isolation-review/SKILL.md) after implementation, before opening a PR, and before merging a PR. Reuse current evidence when the reviewed scope and relevant refs are unchanged.
+- Use [workbench-isolation-review](.agents/skills/workbench-isolation-review/SKILL.md) during code review, after implementation, before opening a PR, and before merging a PR. Reuse current evidence when the reviewed scope and relevant refs are unchanged.
 
 Keep the fork's Workbench core/backend code in `packages/workbench`, T3-specific adapters and composition in `apps/server/src/workbench`, React UI in `apps/web/src/workbench`, and wire schemas in the Workbench contract modules. The Workbench package must not import from applications, including through test helpers. Keep changes to upstream-owned files limited to thin integration points so regular T3 Code updates remain practical. Native T3 Threads remain the conversation experience; reference native records rather than duplicating them. See `docs/internals/workbench-fork.md` for ownership and sync verification.
 
 Before changing core T3 Code for a Workbench feature, check whether an existing adapter or extension point can own it. Keep Workbench business rules in the fork-owned modules; core integration should delegate to them and preserve behavior outside Workbench. For each upstream-owned file changed, review why that integration is necessary and whether it can be smaller. Verify package isolation with `vp run --filter @t3tools/workbench typecheck`, which checks resolved application imports and workspace dependency cycles. During upstream conflict resolution, preserve upstream behavior and reapply the smallest Workbench integration rather than retaining a forked copy of core logic.
 
 Merge upstream-sync PRs with a merge commit (`gh pr merge --merge`), never squash or rebase. This preserves upstream ancestry so later syncs do not replay already-integrated changes. Follow the ancestry verification in `docs/internals/workbench-fork.md` when completing a sync.
+
+### Automatic code review
+
+Review the PR's exact base/head using repository-local guidance. The linked Workbench skills and docs are available in CI; machine-local skills and developer state are not prerequisites. Keep automatic review read-only.
+
+Use the ownership rules above to assess the changed code and its callers. Workbench is an intentional fork overlay; an upstream difference alone is not a defect. Prioritize these checks when the diff touches their boundary:
+
+- **Native integration:** Preserve native Project and Thread lifecycle and behavior outside Workbench. Check shared integrations for duplicated native logic or Workbench rules that belong in the overlay.
+- **Environment and authorization:** Trace the selected environment through client queries, cache keys, RPC authorization, and host effects. Project and Thread IDs must resolve in the owning environment.
+- **Persistence and side effects:** Read [Workbench data model](docs/internals/workbench-data-model.md) for transaction or schema changes. Native reads participating in Workbench writes must use the caller's SQL client and transaction. For Git, Thread creation, or Jira effects, check failure and retry behavior across the external boundary.
+- **Compatibility and lifecycle:** Trace changed wire contracts through affected clients and services. Check snapshot defaults, migration ownership, stale-write handling, and preservation of Ticket IDs and Assignment history where applicable.
+- **Fork CI and distribution:** For workflow or packaging changes, read the CI ownership rules in [Maintaining the Workbench fork](docs/internals/workbench-fork.md). Verify that fork checks still cover changed native integrations and that Workbench retains its own release and updater identity.
+
+Report actionable defects introduced by the change with a changed file/line, the triggering condition, and the concrete consequence. Separate maintenance tradeoffs and unavailable verification from confirmed defects. Missing local tools or an unrun check are verification limits. A passing package boundary check proves import/dependency isolation only; it does not prove behavior or upstream merge safety.
 
 ## Where code lives
 
