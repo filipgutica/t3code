@@ -123,7 +123,7 @@ test("unlink preserves a native thread and its workspace, and permits relinking"
     .click();
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Create workspace and thread", exact: true })
+    .getByRole("button", { name: "Create work area and Thread", exact: true })
     .click();
   await expect(page).toHaveURL(
     (url) => url.pathname !== "/workbench" && url.searchParams.get("workbench") === "true",

@@ -921,7 +921,9 @@ function WorkbenchPageConversation(
       initialEpicId={dialogs.conversationEpicId}
       refreshSnapshot={pageData.refreshWorkbenchSnapshot}
       onClose={dialogs.closeTicketConversation}
-      onCreateManually={() => dialogs.openTicketDialog()}
+      onCreateManually={() =>
+        dialogs.openTicketDialog(draft ? draft.fields.epicId : dialogs.conversationEpicId)
+      }
       onCreateEpic={dialogs.openEpicDialog}
       onDraftPrepared={dialogs.openCreatedTicket}
       onTicketCreated={dialogs.openCreatedTicket}

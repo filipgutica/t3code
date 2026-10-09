@@ -143,7 +143,7 @@ test("ticket PRs exclude shared checkouts until a workspace is prepared", async 
   await page.reload();
   await waitForWorkbench(page);
   await expect(page.getByRole("heading", { name: /^Pull requests/ })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Ticket workspace", exact: true })).toBeVisible();
+  await expect(page.getByText("Work area", { exact: true })).toBeVisible();
   await expect(page.getByText("Ticket workspace change", { exact: true })).toBeVisible();
   await expect(page.getByText("Unrelated shared checkout change", { exact: true })).toHaveCount(0);
 });
