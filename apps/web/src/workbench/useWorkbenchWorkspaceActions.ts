@@ -91,48 +91,52 @@ export function useWorkbenchWorkspaceActions({
       return;
     setError(null);
     setPendingAction("delete-project");
-    const result = await deleteProject({
-      environmentId,
-      input: {
-        id: deletion.workspace.id,
-        expectedRevision: deletion.workspace.revision ?? 0,
-        expectedTicketCount: deletion.ticketCount,
-        expectedEpicCount: deletion.epicCount,
-        deletedAt: new Date().toISOString(),
-      },
-    });
-    if (result._tag === "Success") {
-      setDeletedWorkspaces((previous) => [
-        ...previous,
-        { environmentId, id: deletion.workspace.id },
-      ]);
-    }
-    if (currentEnvironment.current !== environmentId) {
-      setPendingAction(null);
-      return;
-    }
-    if (reportWorkbenchCommandFailure(result, setError)) {
-      setPendingAction(null);
-      return;
-    }
-    const next = snapshot?.projects.find(
-      (workspace) =>
-        workspace.id !== deletion.workspace.id &&
-        workspace.archivedAt == null &&
-        !deletedWorkspaces.some(
-          (deleted) => deleted.environmentId === environmentId && deleted.id === workspace.id,
-        ),
-    );
-    await navigate({
-      to: "/workbench",
-      search: withWorkbenchEnvironmentSearch(
+    try {
+      const result = await deleteProject({
         environmentId,
-        next ? { workbenchProjectId: next.id } : {},
-      ),
-      replace: true,
-    });
-    setDeletion(null);
-    setPendingAction(null);
+        input: {
+          id: deletion.workspace.id,
+          expectedRevision: deletion.workspace.revision ?? 0,
+          expectedTicketCount: deletion.ticketCount,
+          expectedEpicCount: deletion.epicCount,
+          deletedAt: new Date().toISOString(),
+        },
+      });
+      if (result._tag === "Success") {
+        setDeletedWorkspaces((previous) => [
+          ...previous,
+          { environmentId, id: deletion.workspace.id },
+        ]);
+      }
+      if (currentEnvironment.current !== environmentId) return;
+      if (reportWorkbenchCommandFailure(result, setError)) return;
+      const next = snapshot?.projects.find(
+        (workspace) =>
+          workspace.id !== deletion.workspace.id &&
+          workspace.archivedAt == null &&
+          !deletedWorkspaces.some(
+            (deleted) => deleted.environmentId === environmentId && deleted.id === workspace.id,
+          ),
+      );
+      try {
+        await navigate({
+          to: "/workbench",
+          search: withWorkbenchEnvironmentSearch(
+            environmentId,
+            next ? { workbenchProjectId: next.id } : {},
+          ),
+          replace: true,
+        });
+      } catch (cause) {
+        if (currentEnvironment.current === environmentId) {
+          const detail = cause instanceof Error ? ` ${cause.message}` : "";
+          setError(`Workspace deleted, but Workbench could not open another Workspace.${detail}`);
+        }
+      }
+      setDeletion(null);
+    } finally {
+      setPendingAction(null);
+    }
   };
   const closeDeletion = () => {
     if (pendingAction !== null) return;

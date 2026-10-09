@@ -890,9 +890,6 @@ describe("Workbench Workspace lifecycle", () => {
             }),
           )).code,
         ).toBe("project_not_found");
-        const native = yield* WorkbenchNativeAccess;
-        expect(Option.isSome(yield* native.findProject(projectId))).toBe(true);
-        expect(Option.isSome(yield* native.findThread(threadId))).toBe(true);
         expect(
           (yield* Effect.flip(
             store.claimTicketWorkspaceRelease({

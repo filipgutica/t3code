@@ -1351,18 +1351,23 @@ function WorkbenchPageContent(
   return <WorkbenchPageWorkspace {...props} />;
 }
 
-function WorkbenchPageNoWorkspace(props: Pick<WorkbenchPageViewProps, "pageData" | "selection">) {
+function WorkbenchPageNoWorkspace(
+  props: Pick<WorkbenchPageViewProps, "pageData" | "selection" | "error">,
+) {
   const { query } = props.pageData;
   const { openWorkspaceDialog } = props.selection;
+  const error = props.error ?? query.error;
   return (
     <div className="relative min-h-0 flex-1">
-      {query.error ? (
+      {error ? (
         <div className="absolute inset-x-4 top-4 z-10 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive-foreground">
           <AlertCircleIcon className="size-4" />
-          <span className="min-w-0 flex-1">{query.error}</span>
-          <Button onClick={query.refresh} size="xs" variant="outline">
-            <RefreshCwIcon /> Retry
-          </Button>
+          <span className="min-w-0 flex-1">{error}</span>
+          {query.error ? (
+            <Button onClick={query.refresh} size="xs" variant="outline">
+              <RefreshCwIcon /> Retry
+            </Button>
+          ) : null}
         </div>
       ) : null}
       <Empty className="h-full">

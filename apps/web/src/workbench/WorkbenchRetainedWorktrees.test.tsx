@@ -64,7 +64,6 @@ vi.mock("./WorkbenchAttentionProvider", () => ({
   }),
 }));
 vi.mock("../components/sidebar/SidebarChrome", () => ({ SidebarChromeFooter: () => null }));
-vi.mock("./WorkbenchSidebarTicketButton", () => ({ WorkbenchSidebarTicketButton: () => null }));
 vi.mock("./WorkbenchSidebarThreadRow", () => ({ WorkbenchSidebarThreadRow: () => null }));
 vi.mock("../components/ui/sidebar", () => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
@@ -323,7 +322,7 @@ it("confirms cleanup, keeps a failed removal available, and retires refreshed re
   expect(button(`Remove worktrees for ${ticketId}`)).toBeDefined();
 });
 
-it("keeps archived Workspaces searchable and reachable while showing only actionable Tickets", async () => {
+it("keeps archived Workspaces searchable and reachable while the actionable filter is enabled", async () => {
   sidebarHost.environmentId = "archived-sidebar-host";
   const workspaceId = WorkbenchProjectId.make("archived-workspace");
   sidebarHost.snapshot = {

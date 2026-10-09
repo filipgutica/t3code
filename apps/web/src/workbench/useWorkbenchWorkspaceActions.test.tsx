@@ -244,7 +244,7 @@ describe("Workspace lifecycle", () => {
       workbenchProjectId: workspace.id,
     });
   });
-  it("archives and restores using the reviewed revision without changing child archive states", async () => {
+  it("archives and restores in the selected environment using the reviewed revision", async () => {
     await mount();
     await act(async () => actions.setArchived(workspace));
     expect(commands.archive).toHaveBeenLastCalledWith({
@@ -311,6 +311,30 @@ describe("Workspace lifecycle", () => {
     expect(router.state.location.search).toEqual({ environmentId, workbenchProjectId: next.id });
     expect(actions.deletion).toBeNull();
   });
+  it("does not select a previously deleted Workspace while its snapshot still lags", async () => {
+    const { router } = await mount();
+    await act(async () => actions.requestDeletion(workspace));
+    await act(async () => actions.removeWorkspace());
+    await act(async () => actions.requestDeletion(next));
+    await act(async () => actions.removeWorkspace());
+    expect(router.state.location.search).toEqual({ environmentId });
+    expect(selection.selectedProject).toBeNull();
+    expect(actions.deletedProjectIds).toEqual(new Set([workspace.id, next.id]));
+  });
+  it("reports a navigation failure after deletion and leaves lifecycle actions usable", async () => {
+    const { router } = await mount();
+    await act(async () => actions.requestDeletion(workspace));
+    const navigation = vi
+      .spyOn(router, "navigate")
+      .mockRejectedValueOnce(new Error("Route failed"));
+    await act(async () => actions.removeWorkspace());
+    navigation.mockRestore();
+    expect(error).toContain("Route failed");
+    expect(actions.deletedProjectIds.has(workspace.id)).toBe(true);
+    expect(actions.deletion).toBeNull();
+    await act(async () => actions.requestDeletion(next));
+    expect(actions.deletion?.workspace.id).toBe(next.id);
+  });
   it("clears all child route IDs when no active Workspace remains", async () => {
     const { router, update } = await mount({ ...snapshot, projects: [workspace, archived] });
     await act(async () => actions.requestDeletion(workspace));
@@ -338,6 +362,41 @@ describe("Workspace lifecycle", () => {
     await update({ ...snapshot, projects: [next], tickets: [], epics: [] });
     expect(router.state.location.search).toEqual({ environmentId, workbenchProjectId: next.id });
   });
+  it.each([
+    { child: "Ticket", search: "ticketId=ticket", expected: { ticketId } },
+    { child: "Epic", search: "epicId=epic", expected: { epicId } },
+  ])(
+    "preserves a valid $child route when replacing a missing Workspace selection",
+    async ({ search, expected }) => {
+      const { router } = await mount(
+        snapshot,
+        `/workbench?environmentId=remote&workbenchProjectId=missing&${search}`,
+      );
+      expect(router.state.location.search).toEqual({
+        environmentId,
+        workbenchProjectId: workspace.id,
+        ...expected,
+      });
+    },
+  );
+  it.each([
+    { child: "Ticket", search: "ticketId=ticket", expected: { ticketId } },
+    { child: "Epic", search: "epicId=epic", expected: { epicId } },
+  ])(
+    "keeps the environment and $child route when cancelling Workspace creation",
+    async ({ search, expected }) => {
+      const { router } = await mount(
+        snapshot,
+        `/workbench?environmentId=remote&workbenchProjectId=workspace&${search}&create=workspace`,
+      );
+      await act(async () => selection.handleWorkspaceDialogOpenChange(false));
+      expect(router.state.location.search).toEqual({
+        environmentId,
+        workbenchProjectId: workspace.id,
+        ...expected,
+      });
+    },
+  );
   it.each([
     { child: "ticket", fallback: true },
     { child: "ticket", fallback: false },
