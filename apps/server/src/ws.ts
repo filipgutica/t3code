@@ -1,4 +1,9 @@
-import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
+import {
+  OrchestrationDispatchCommandError,
+  RpcScopeAuthorization,
+  WorkbenchRpcGroup,
+  WORKBENCH_WS_METHODS,
+} from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 
@@ -548,6 +553,9 @@ import {
 
 // Middleware added later wraps middleware added earlier, so instrumentation wraps authorization.
 const ServerWsRpcGroup = WsRpcGroup.middleware(RpcInstrumentation);
+const ServerNativeWsRpcGroup = ServerWsRpcGroup.omit(...Object.values(WORKBENCH_WS_METHODS));
+const ServerWorkbenchWsRpcGroup =
+  WorkbenchRpcGroup.middleware(RpcScopeAuthorization).middleware(RpcInstrumentation);
 // When a resuming client's cursor is more than this many events behind the
 // current head, skip the per-event catch-up replay and send a fresh shell
 // snapshot instead. Replaying each intervening event costs a shell refetch;
@@ -1188,14 +1196,14 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   },
 );
 
-const layerWsRpc = (
+const layerNativeWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
   clientAnalyticsProps: Readonly<Record<string, unknown>>,
   previewAutomationBroker: PreviewAutomationBroker.PreviewAutomationBroker["Service"],
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
 ) =>
-  ServerWsRpcGroup.toLayer(
+  ServerNativeWsRpcGroup.toLayer(
     Effect.gen(function* () {
       const currentSessionId = currentSession.sessionId;
       const sql = yield* SqlClient.SqlClient;
@@ -1669,7 +1677,6 @@ const layerWsRpc = (
         yield* providerRegistry.refreshInstance(input.instanceId);
         return { disabled: true } as const;
       });
-      const workbenchRpcServices = yield* acquireWorkbenchRpcServices;
       const loadAuthAccessSnapshot = () =>
         Effect.all({
           pairingLinks: serverAuth.listPairingLinks(),
@@ -1820,8 +1827,7 @@ const layerWsRpc = (
         return result;
       });
 
-      const handlers = ServerWsRpcGroup.of({
-        ...makeWorkbenchRpcHandlers(workbenchRpcServices),
+      const handlers = ServerNativeWsRpcGroup.of({
         [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
           Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
@@ -3123,6 +3129,14 @@ const layerWsRpc = (
       });
       return handlers;
     }),
+  );
+
+const layerWsRpc = (...args: Parameters<typeof layerNativeWsRpc>) =>
+  Layer.merge(
+    layerNativeWsRpc(...args),
+    ServerWorkbenchWsRpcGroup.toLayer(
+      Effect.map(acquireWorkbenchRpcServices, makeWorkbenchRpcHandlers),
+    ),
   );
 
 // A defect in a handler's effect fails only its own request. RpcServer's default
