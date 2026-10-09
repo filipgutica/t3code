@@ -236,7 +236,7 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("serializes strict no-MCP options and still resolves account capabilities", () =>
+  it.effect("serializes strict no-MCP options and preserves API-key account capabilities", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -276,10 +276,11 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
       );
 
       assert.deepEqual(capabilities, {
-        email: "dev@example.com",
-        subscriptionType: "pro",
-        tokenSource: "oauth",
-        apiProvider: undefined,
+        email: undefined,
+        subscriptionType: undefined,
+        tokenSource: "none",
+        apiKeySource: "ANTHROPIC_API_KEY",
+        apiProvider: "firstParty",
         slashCommands: [
           {
             name: "review",

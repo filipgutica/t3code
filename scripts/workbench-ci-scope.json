@@ -52,6 +52,7 @@
         "apps/server/src/provider/ModelManifest.ts",
         "apps/server/src/provider/OpenCodeServerLedger.ts",
         "apps/server/src/provider/providerCompatibility.ts",
+        "apps/server/src/provider/testing/ClaudeCapabilitiesProbe.fixture.mjs",
         "apps/server/src/pullRequest/AzureDevOpsPullRequestCli.ts",
         "apps/server/src/pullRequest/GitHubPullRequestCli.ts",
         "apps/server/src/pullRequest/GitHubPullRequestProvider.ts",
