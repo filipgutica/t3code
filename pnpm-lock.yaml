@@ -961,8 +961,8 @@ importers:
         specifier: 7.0.3
         version: 7.0.3(@types/node@24.12.4)(astro@7.3.5(@types/node@24.12.4)(aws4fetch@1.0.20)(idb-keyval@6.2.1)(ioredis@5.11.0)(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(yaml@2.9.0))(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(vue@3.5.43(typescript@6.0.3))(yaml@2.9.0)
       '@filipgutica/ui':
-        specifier: 1.2.0
-        version: 1.2.0(vue@3.5.43(typescript@6.0.3))
+        specifier: 1.4.0
+        version: 1.4.0(vue@3.5.43(typescript@6.0.3))
       astro:
         specifier: ^7.0.3
         version: 7.3.5(@types/node@24.12.4)(aws4fetch@1.0.20)(idb-keyval@6.2.1)(ioredis@5.11.0)(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(yaml@2.9.0)
@@ -3714,8 +3714,8 @@ packages:
     cpu: [x64, arm64]
     os: [darwin, linux, win32]
 
-  '@filipgutica/ui@1.2.0':
-    resolution: {integrity: sha512-wQvFAXoSs41ihANInCq8Ay9hwruIcL1EY+qO/unQTg0bMPm5HqG3NhFgHeS3nr0/7tRa3gF/tiY29sC0kk6l/Q==}
+  '@filipgutica/ui@1.4.0':
+    resolution: {integrity: sha512-eeotsa3dtPkVtvMe4HBoETjau7Eg1kjbS4Hk1EHcVScwnpG7QYiW2ebeZh4zU/6IvU4ZwH5kbZwGPHHcr2SPOQ==}
     engines: {node: '>=22.12'}
     peerDependencies:
       vue: ^3.5.0
@@ -15104,7 +15104,7 @@ snapshots:
       '@ff-labs/fff-bin-win32-arm64': 0.9.4
       '@ff-labs/fff-bin-win32-x64': 0.9.4
 
-  '@filipgutica/ui@1.2.0(vue@3.5.43(typescript@6.0.3))':
+  '@filipgutica/ui@1.4.0(vue@3.5.43(typescript@6.0.3))':
     dependencies:
       '@vueuse/core': 14.4.0(vue@3.5.43(typescript@6.0.3))
       jsonc-parser: 3.3.1

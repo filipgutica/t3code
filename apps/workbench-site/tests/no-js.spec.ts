@@ -22,7 +22,7 @@ import { test, expect } from "@playwright/test";
     await nav.getByRole("link", { name: "Review", exact: true }).click();
     await expect(page).toHaveURL(/#review-heading$/);
     await expect(page.locator("#review-heading")).toBeInViewport();
-    await expect(page.getByRole("button", { name: /theme$/ })).toHaveCount(0);
+    await expect(page.getByRole("group", { name: "Color theme" })).toHaveCount(0);
   });
 });
 test("static deep links reach content after all screenshot panels", async ({ page }) => {
@@ -34,7 +34,7 @@ test("no-JavaScript system appearance uses the public page palette", async ({ pa
   await page.goto("/t3code/");
   await expect(page.locator("body")).toHaveCSS("background-color", "rgb(244, 245, 248)");
   await page.emulateMedia({ colorScheme: "dark" });
-  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(27, 28, 31)");
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(21, 22, 25)");
   await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
   await page.emulateMedia({ colorScheme: "light" });
   await expect(page.locator("body")).toHaveCSS("background-color", "rgb(244, 245, 248)");

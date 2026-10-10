@@ -4,7 +4,8 @@ import App from "../App.vue";
 import type { ProductImageDescriptor, ImageCrop } from "../images";
 import type { ImageMetadata } from "astro";
 import libraryThemeCss from "@filipgutica/ui/theme.css?raw";
-import sitePaletteCss from "../styles/palette.css?raw";
+import sitePaletteCss from "@filipgutica/ui/themes/graphite-indigo.css?raw";
+import { siteThemeBootScript } from "@filipgutica/ui/site";
 import board from "../assets/screenshots/board.png";
 import ticket from "../assets/screenshots/ticket.png";
 import workspace from "../assets/screenshots/workspace.png";
@@ -24,10 +25,10 @@ const base = import.meta.env.BASE_URL;
 const canonical = new URL(base, Astro.site);
 const shareImage = await getImage({ src: board, width: 1200, format: "jpeg", quality: 85 });
 const screenshotSizes =
-  "(max-width: 1152px) calc(100vw - 32px), 1120px";
+  "(max-width: 640px) calc(100vw - 32px), (max-width: 1168px) calc(100vw - 48px), 1120px";
 const workspaceCrop = { x: 48, y: 683, width: 1932, height: 720 };
 const workspaceImageScale = workspace.width / workspaceCrop.width;
-const workspaceCropSizes = `(max-width: 998px) calc(${100 * workspaceImageScale}vw - ${32 * workspaceImageScale}px), ${workspace.width / 2}px`;
+const workspaceCropSizes = `(max-width: 640px) calc(${100 * workspaceImageScale}vw - ${32 * workspaceImageScale}px), (max-width: 1014px) calc(${100 * workspaceImageScale}vw - ${48 * workspaceImageScale}px), ${workspace.width / 2}px`;
 const walkthrough = [
   {
     id: "ticket",
@@ -143,6 +144,9 @@ const darkTokens = [libraryThemeCss, sitePaletteCss].map((css) => {
   if (!tokens) throw new Error("The dark theme tokens are missing.");
   return tokens;
 }).join("\n");
+const lightCanvas = sitePaletteCss.match(/--color-bg:\s*([^;]+);/)?.[1];
+const darkCanvas = darkTokens.match(/--color-bg:\s*([^;]+);/g)?.at(-1)?.match(/:\s*([^;]+);/)?.[1];
+if (!lightCanvas || !darkCanvas) throw new Error("The canvas colors are missing.");
 const noScriptDarkCss = `@media (prefers-color-scheme: dark) { :root:not(.dark) { ${darkTokens} } }`;
 ---
 
@@ -154,14 +158,9 @@ const noScriptDarkCss = `@media (prefers-color-scheme: dark) { :root:not(.dark) 
     <meta name="color-scheme" content="light dark" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    <meta name="theme-color" content="#f4f5f8" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1b1c1f" media="(prefers-color-scheme: dark)" />
-    <script is:inline>
-      let choice = 'system';
-      try { choice = localStorage.getItem('tool-site-theme') || 'system'; } catch {}
-      document.documentElement.classList.toggle('dark', choice === 'dark' || (choice !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches));
-      if (choice === 'light' || choice === 'dark') document.documentElement.dataset.theme = choice;
-    </script>
+    <meta name="theme-color" content={lightCanvas} media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content={darkCanvas} media="(prefers-color-scheme: dark)" />
+    <script is:inline set:html={siteThemeBootScript}></script>
     <link rel="canonical" href={canonical} />
     <link rel="icon" href={`${base}favicon.svg`} type="image/svg+xml" />
     <meta property="og:type" content="website" />

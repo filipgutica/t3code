@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from "vue";
+import { nextTick, onMounted, onUnmounted, ref, useTemplateRef } from "vue";
+import { useActiveSection } from "@filipgutica/ui";
+import { sections } from "./sections";
+import CommitBranch from "./components/CommitBranch.vue";
+import { useTrace } from "./composables/useTrace";
 import SiteNavigation from "./components/SiteNavigation.vue";
-import NavigationLinks from "./components/NavigationLinks.vue";
+import { UiSiteHeader } from "@filipgutica/ui/site";
 import ProductImage from "./components/ProductImage.vue";
 import ScreenshotWalkthrough from "./components/ScreenshotWalkthrough.vue";
 import ImageLightbox from "./components/ImageLightbox.vue";
@@ -19,6 +23,9 @@ const { images, walkthrough, base, repository, guide, downloads } = defineProps<
   guide: string;
   downloads: string;
 }>();
+const main = useTemplateRef<HTMLElement>("main");
+const activeId = useActiveSection({ targetIds: sections.map((section) => section.id) });
+useTrace({ main, activeId });
 const jiraImage = walkthrough.find((step) => step.id === "jira")?.image;
 const selected = ref(walkthrough[0]?.id ?? "ticket");
 const enhanced = ref(false);
@@ -73,19 +80,19 @@ onUnmounted(() => {
     <a class="skip-link" href="#main">Skip to content</a>
     <div class="site-layout">
       <div class="site-content">
-        <header class="site-header wrap">
-          <a class="brand" :href="base" aria-label="T3 Code Workbench home"
-            >T3 Code <span>Workbench</span></a
-          >
-          <nav aria-label="Main navigation">
-            <a :href="guide">Guide</a>
-            <a :href="repository">GitHub</a>
-            <a :href="downloads">Downloads</a>
-          </nav>
-        </header>
-        <SiteNavigation />
-        <main id="main" class="wrap">
-          <section class="hero" aria-labelledby="hero-heading">
+        <UiSiteHeader
+          class="wrap"
+          project="workbench"
+          :links="[
+            { label: 'Guide', href: guide },
+            { label: 'GitHub', href: repository },
+            { label: 'Downloads', href: downloads },
+          ]"
+        />
+        <SiteNavigation :sections="sections" :active-id="activeId" />
+        <main id="main" ref="main" class="wrap">
+          <section class="hero" aria-labelledby="hero-heading" data-trace-section>
+            <CommitBranch lane="fork" />
             <div class="section-body">
               <div class="hero-copy">
                 <div class="hero-summary">
@@ -100,9 +107,7 @@ onUnmounted(() => {
                 </div>
                 <div class="actions">
                   <a class="button" :href="downloads">Download Workbench</a>
-                  <a class="text-link" :href="guide"
-                    >Read the guide <span aria-hidden="true">↗</span></a
-                  >
+                  <a class="text-link" :href="guide">Read the guide</a>
                 </div>
               </div>
               <figure class="hero-media">
@@ -112,7 +117,12 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section class="section walkthrough-section" aria-labelledby="walkthrough-heading">
+          <section
+            class="section walkthrough-section"
+            aria-labelledby="walkthrough-heading"
+            data-trace-section
+          >
+            <CommitBranch lane="parallel" />
             <div class="section-body">
               <div class="review-heading">
                 <h2 id="walkthrough-heading">From Ticket to review</h2>
@@ -128,7 +138,12 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section class="section workspace-section" aria-labelledby="scope-heading">
+          <section
+            class="section workspace-section"
+            aria-labelledby="scope-heading"
+            data-trace-section
+          >
+            <CommitBranch lane="merge" />
             <div class="section-body">
               <div class="section-copy">
                 <h2 id="scope-heading">One Ticket. Isolated worktrees.</h2>
@@ -151,13 +166,16 @@ onUnmounted(() => {
                   when ready.
                 </p>
               </div>
-              <a class="text-link" :href="`${guide}#start-agent-work`"
-                >Workspace guide <span aria-hidden="true">↗</span></a
-              >
+              <a class="text-link" :href="`${guide}#start-agent-work`">Workspace guide</a>
             </div>
           </section>
 
-          <section class="section review-section" aria-labelledby="review-heading">
+          <section
+            class="section review-section"
+            aria-labelledby="review-heading"
+            data-trace-section
+          >
+            <CommitBranch lane="main" />
             <div class="section-body">
               <div class="review-heading">
                 <h2 id="review-heading">Review linked pull requests</h2>
@@ -170,7 +188,8 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section class="section jira-section" aria-labelledby="jira-heading">
+          <section class="section jira-section" aria-labelledby="jira-heading" data-trace-section>
+            <CommitBranch lane="fork" />
             <div class="section-body">
               <div class="section-copy">
                 <h2 id="jira-heading">Jira, optional.</h2>
@@ -178,9 +197,7 @@ onUnmounted(() => {
                   Sync assigned sprint issues and update descriptions and statuses. Local Tickets
                   need no Jira account.
                 </p>
-                <a class="text-link" :href="`${guide}#connect-jira`"
-                  >Jira guide <span aria-hidden="true">↗</span></a
-                >
+                <a class="text-link" :href="`${guide}#connect-jira`">Jira guide</a>
               </div>
               <figure v-if="jiraImage" class="media-stage">
                 <ProductImage :image="jiraImage" @open="openImage" />
@@ -188,15 +205,14 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section class="closing section" aria-labelledby="closing-heading">
+          <section class="closing section" aria-labelledby="closing-heading" data-trace-section>
+            <CommitBranch lane="merge" terminal />
             <div class="section-body">
               <h2 id="closing-heading">Install Workbench alongside T3 Code</h2>
               <p>Workbench stores its data separately from the official app.</p>
               <div class="actions">
                 <a class="button button--secondary" :href="downloads">Download Workbench</a>
-                <a class="text-link" :href="guide"
-                  >Read the guide <span aria-hidden="true">↗</span></a
-                >
+                <a class="text-link" :href="guide">Read the guide</a>
               </div>
               <p class="release-note">
                 macOS builds are signed and notarized. Windows and Linux builds are unsigned.
@@ -207,8 +223,7 @@ onUnmounted(() => {
         <footer class="site-footer wrap">
           <a class="brand" :href="base">T3 Code <span>Workbench</span></a>
           <p>Built on <a href="https://github.com/pingdotgg/t3code">T3 Code</a>.</p>
-          <a :href="repository">Browse the source <span aria-hidden="true">↗</span></a>
-          <NavigationLinks />
+          <a :href="repository">Browse the source</a>
         </footer>
       </div>
     </div>

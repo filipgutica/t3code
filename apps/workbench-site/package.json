@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@astrojs/vue": "7.0.3",
-    "@filipgutica/ui": "1.2.0",
+    "@filipgutica/ui": "1.4.0",
     "astro": "^7.0.3",
     "sharp": "0.34.5",
     "vue": "3.5.43"

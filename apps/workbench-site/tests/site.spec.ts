@@ -87,14 +87,15 @@ const atReadingTop = async (page: Page, id: string) =>
       .getByRole("link", { name: "Download Workbench", exact: true });
     await expect(download).toBeInViewport();
     expect((await download.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    await page.locator(".fg-site-projects > summary").click();
     const projects = page.getByRole("navigation", { name: "Projects" });
     await expect(projects.getByRole("link")).toHaveCount(5);
     await expect(
       page
         .getByRole("navigation", { name: "Projects" })
-        .getByRole("link", { name: "workbench", exact: true }),
+        .getByRole("link", { name: "Workbench", exact: true }),
     ).toHaveAttribute("aria-current", "page");
-    await expect(page.getByRole("link", { name: "Vue UI", exact: true })).toHaveAttribute(
+    await expect(page.getByRole("link", { name: "UI", exact: true })).toHaveAttribute(
       "href",
       "https://filipgutica.github.io/ui/",
     );
@@ -305,4 +306,115 @@ test("reduced motion keeps section navigation and screenshot changes immediate",
     .click();
   await atReadingTop(page, "scope-heading");
   await noOverflow(page);
+});
+
+test("branch handoffs follow the current navigation section and settle without looping", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await load(page);
+  const packet = page.locator(".trace-packet");
+  await expect(packet).toHaveCount(1);
+  await packet.evaluate((element) => {
+    const animate = element.animate.bind(element);
+    element.animate = (...args) => {
+      element.setAttribute(
+        "data-handoffs",
+        String(Number(element.getAttribute("data-handoffs")) + 1),
+      );
+      return animate(...args);
+    };
+  });
+  const nav = page.getByRole("navigation", { name: "On this page" });
+  for (const [label, id] of [
+    ["Walkthrough", "walkthrough-heading"],
+    ["Workspaces", "scope-heading"],
+  ]) {
+    await markScrollEnd(page);
+    await nav.getByRole("link", { name: label, exact: true }).click();
+    await ended(page);
+    await atReadingTop(page, id!);
+    await expect(nav.getByRole("link", { name: label, exact: true })).toHaveAttribute(
+      "aria-current",
+      "location",
+    );
+    await expect(page.locator("[data-trace-section].is-current")).toHaveAttribute(
+      "aria-labelledby",
+      id!,
+    );
+  }
+  // Browser automation can scroll the sticky link into view before activating it,
+  // producing additional real section changes on the way to the destination.
+  expect(Number(await packet.getAttribute("data-handoffs"))).toBeGreaterThanOrEqual(2);
+  await packet.evaluate(async (element) => {
+    await Promise.all(
+      element.getAnimations().map((animation) => animation.finished.catch(() => undefined)),
+    );
+  });
+  await expect(packet).toHaveCSS("opacity", "0");
+  expect(await packet.evaluate((element) => element.getAnimations().length)).toBe(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".commit-branch").first()).toBeHidden();
+  await noOverflow(page);
+});
+
+test("walkthrough signals fork, merge, and notify, and stop when reduced motion is enabled", async ({
+  page,
+}) => {
+  await load(page);
+  for (const [tab, id] of [
+    ["Workspace", "workspace"],
+    ["Pull request", "pull-request"],
+    ["Notifications", "notifications"],
+  ]) {
+    await page.getByRole("tab", { name: tab, exact: true }).click();
+    const frame = page.locator(`#walkthrough-${id}`);
+    await expect(frame.locator(".walkthrough-signal")).toBeVisible();
+    await expect(frame.locator(".signal-start")).not.toHaveCSS("stroke", "none");
+    await expect(frame.locator(".signal-end")).not.toHaveCSS("stroke", "none");
+    // Seek the finite effect to inspect its visible shape without a timing-sensitive sleep.
+    const effect = await frame.locator(".walkthrough-signal").evaluate((signal) => {
+      const animations = signal.getAnimations({ subtree: true });
+      for (const animation of animations) {
+        animation.pause();
+        animation.currentTime = Number(animation.effect?.getTiming().duration) / 2;
+      }
+      return {
+        count: animations.length,
+        loops: animations.map((animation) => animation.effect?.getTiming().iterations),
+        packets: [...signal.querySelectorAll(".signal-packet")].map((packet) => ({
+          opacity: Number(getComputedStyle(packet).opacity),
+          y: packet.getBoundingClientRect().y,
+        })),
+        ring: Number(getComputedStyle(signal.querySelector(".signal-ring")!).opacity),
+      };
+    });
+    expect(effect.count).toBeGreaterThan(0);
+    expect(effect.loops.every((iterations) => iterations === 1)).toBe(true);
+    if (id === "workspace") {
+      expect(effect.packets.every((packet) => packet.opacity > 0)).toBe(true);
+      expect(effect.packets[0]!.y).toBeLessThan(effect.packets[1]!.y);
+    } else if (id === "pull-request") {
+      expect(effect.packets.every((packet) => packet.opacity > 0)).toBe(true);
+      expect(effect.packets[0]!.y).toBeCloseTo(effect.packets[1]!.y, 0);
+    } else {
+      expect(effect.ring).toBeGreaterThan(0);
+    }
+  }
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect
+    .poll(() =>
+      page
+        .locator("#walkthrough-notifications")
+        .evaluate((frame) => frame.getAnimations({ subtree: true }).length),
+    )
+    .toBe(0);
+  await page.getByRole("tab", { name: "Workspace", exact: true }).click();
+  await expect
+    .poll(() =>
+      page
+        .locator("#walkthrough-workspace")
+        .evaluate((frame) => frame.getAnimations({ subtree: true }).length),
+    )
+    .toBe(0);
 });
