@@ -125,7 +125,7 @@ onUnmounted(() => {
             <CommitBranch lane="parallel" />
             <div class="section-body">
               <div class="review-heading">
-                <h2 id="walkthrough-heading">From Ticket to review</h2>
+                <h2 id="walkthrough-heading">From idea to review</h2>
                 <p class="walkthrough-note">
                   Demo screenshots. PR feedback and outcomes are illustrative.
                 </p>
@@ -148,14 +148,14 @@ onUnmounted(() => {
               <div class="section-copy">
                 <h2 id="scope-heading">One Ticket. Isolated worktrees.</h2>
                 <p>
-                  Prepare a worktree per repository, then open a native Thread with the Ticket’s
-                  context.
+                  Plan the work in a conversation, then prepare a worktree per repository and
+                  continue the same native Thread.
                 </p>
               </div>
               <figure
                 class="media-stage"
                 :style="{
-                  maxWidth: `${(images.workspace.crop?.width ?? images.workspace.width) / 2}px`,
+                  maxWidth: `${images.workspace.width / 2}px`,
                 }"
               >
                 <ProductImage :image="images.workspace" @open="openImage" />
@@ -166,7 +166,7 @@ onUnmounted(() => {
                   when ready.
                 </p>
               </div>
-              <a class="text-link" :href="`${guide}#start-agent-work`">Workspace guide</a>
+              <a class="text-link" :href="`${guide}#start-agent-work`">Work area guide</a>
             </div>
           </section>
 

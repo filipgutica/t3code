@@ -8,11 +8,14 @@ Workbench is available in the web and desktop clients. Jira is optional. Each T3
 environment has its own Workspaces and Tickets, so records do not appear across
 environments. There is no dedicated Workbench mobile interface yet.
 
-![Beacon Board with Tickets across Todo, In Progress, and Done, plus attention, search, repository, and grouping controls.](./media/workbench/board.png)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/board-light.png">
+  <img src="./media/workbench/board.png" alt="Beacon Board with a saved draft above Tickets across Todo, In Progress, and Done.">
+</picture>
 
 The screenshots use fictional Orbit and Beacon projects in an isolated demo.
-Prepared Git worktrees are real. Conversation outcomes and PR inspection data
-are sample states, not evidence that an agent completed the work.
+Planning conversations and prepared Git worktrees are real. PR feedback and
+implementation outcomes are illustrative; they do not show completed product work.
 
 For a tabbed overview, open the [screenshot walkthrough](https://filipgutica.github.io/t3code/#walkthrough-heading).
 
@@ -29,14 +32,25 @@ related Tickets. A Ticket's **work area** contains its prepared repository workt
 4. Describe what you want to work on in the planning conversation. Choose your
    model using the native conversation controls.
 5. Review the proposed title, plan, acceptance criteria, and repository scope.
-   Apply a suggestion to the draft, or edit its fields yourself.
+   Choose **Apply to draft**, then edit any field. Use **Write** or **Preview** for the description.
 6. Choose **Create ticket** to save it locally or in Jira.
 
-Planning can inspect the workspace's repositories but cannot change them. Closing
-the view keeps the draft in the Board’s **Drafts** section and the Workbench sidebar.
-Open it to resume the conversation, or choose **New Ticket** to explore another idea.
-**Create manually** opens
-the form when you already know the requirements.
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/planning-light.png">
+  <img src="./media/workbench/planning.png" alt="A native planning conversation proposes a Ticket beside its editable draft.">
+</picture>
+
+You do not need a title or repository selection before starting the conversation.
+Planning can inspect the workspace's repositories but cannot change them. Ask
+follow-up questions to refine the proposal. Applying a new proposal replaces the
+draft's title, description, and repository selection; it does not create the Ticket.
+
+Leaving the view keeps the draft in the Board’s **Drafts** section and the Workbench
+sidebar. Open it to resume its conversation and saved fields. Choose **New Ticket**
+to explore another idea in a separate draft. Planning conversations stay in
+Workbench until you start work.
+
+**Create manually** opens the form when you already know the requirements.
 
 Creating the Ticket keeps the same conversation for further planning. Choose
 **Start work** when ready to prepare its work area and continue that Thread in the
@@ -48,7 +62,10 @@ repositories when the work spans several codebases. Use **Edit Workspace** to
 rename a Workspace or change its repository list; existing Tickets and Threads
 keep their scope.
 
-![A Ticket with a long description and two linked Threads.](./media/workbench/ticket.png)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/ticket-light.png">
+  <img src="./media/workbench/ticket.png" alt="A prepared Ticket with its description and the same native planning Thread.">
+</picture>
 
 ## Archive or delete a Workspace
 
@@ -67,6 +84,11 @@ in the sidebar remains available for cleanup even after deleting the last Worksp
 
 ## Start agent work
 
+For a Ticket prepared through a conversation, choose **Start work** to continue
+that same Thread in its prepared work area. Send your next instruction when ready.
+
+For a manually created or imported Ticket, or an additional conversation:
+
 1. Open a Ticket and choose **Create Thread**.
 2. If the work area is not prepared, review the primary and additional repositories.
    Select a provider and model, then choose **Create work area and Thread**.
@@ -81,13 +103,19 @@ worktree. The context chip includes the Ticket description and repository paths.
 To prepare worktrees before opening a conversation, choose **Prepare work area**
 in **Work area**, review the repositories, and confirm.
 
-![A prepared Ticket work area with worktrees for Orbit Web (primary) and Orbit API.](./media/workbench/workspace.png)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/workspace-light.png">
+  <img src="./media/workbench/workspace.png" alt="A prepared Ticket work area with worktrees for Beacon Docs (primary) and Beacon CLI.">
+</picture>
 
 After changing the Ticket, use **Add ticket context** in an existing
 Thread to stage its saved requirements and current checkout paths. Review the
 context chip and send when ready; attaching context does not send a message.
 
-![A native Thread with the Ticket context attached, ready for a first message.](./media/workbench/thread.png)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/thread-light.png">
+  <img src="./media/workbench/thread.png" alt="The same native Thread continues from planning into the prepared Ticket work area.">
+</picture>
 
 Use **Create Thread** for another conversation on the same Ticket. Use **Link existing
 Thread** to add an unassigned native conversation, or **Unlink Thread from Ticket**
@@ -132,7 +160,10 @@ Opening a Thread acknowledges its notification. An unanswered question stays
 **Waiting for input** until you respond. PR actions remain until the checks or review
 feedback are resolved.
 
-![A Ticket's attention list showing waiting Threads, requested changes, and unresolved PR discussions.](./media/workbench/notifications.png)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/notifications-light.png">
+  <img src="./media/workbench/notifications.png" alt="A Ticket's attention list showing interrupted runs, failed checks, requested changes, and unresolved PR discussions.">
+</picture>
 
 The Ticket's **Pull Requests** section collects PRs reported by linked Threads and
 prepared worktrees. For Jira Tickets, it also searches linked repositories for the
@@ -148,7 +179,10 @@ failed checks** to request failed-job reruns for its current head. This requires
 GitHub Actions write permission. A successful request does not mean the checks
 have passed; refresh the PR to follow the results.
 
-![A linked PR opened beside its Ticket, with its summary and failing checks visible.](./media/workbench/pull-request.png)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/pull-request-light.png">
+  <img src="./media/workbench/pull-request.png" alt="A linked PR opened beside its Ticket, with its summary and failing checks visible.">
+</picture>
 
 ## Edit and organize Tickets
 
@@ -214,7 +248,10 @@ or delete them before importing. Deleting requires an exact-count confirmation;
 native Agent Threads remain in history. Save the configuration to start the first
 sync.
 
-![Orbit Jira Board showing its Jira board name, selected sprint, sync status, and imported Tickets.](./media/workbench/jira.png)
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/jira-light.png">
+  <img src="./media/workbench/jira.png" alt="Orbit Jira Board showing its Jira board name, selected sprint, sync status, and imported Tickets.">
+</picture>
 
 Use **Sync Jira** for an immediate refresh. Jira controls issue descriptions,
 status, Epic relationships, and sprint membership. Workbench controls repository

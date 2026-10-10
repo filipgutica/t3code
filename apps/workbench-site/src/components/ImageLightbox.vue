@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { UiButton, UiDialog } from "@filipgutica/ui";
+import { useSiteAppearance } from "@filipgutica/ui/site";
 import type { ProductImageDescriptor } from "../images";
 const open = defineModel<boolean>("open", { required: true });
 const { image } = defineProps<{ image?: ProductImageDescriptor }>();
+const { appearance } = useSiteAppearance({ applyToRoot: false });
+const source = computed(() => (appearance.value === "light" ? image?.light : image));
 const emit = defineEmits<{ (event: "close-auto-focus", value: Event): void }>();
 const dpr = ref(1);
 const sizeImage = () => {
@@ -27,7 +30,7 @@ onUnmounted(() => window.removeEventListener("resize", sizeImage));
     <div class="lightbox-image-region">
       <img
         v-if="image"
-        :src="image.original"
+        :src="source?.original"
         :alt="image.alt"
         :style="{ width }"
         :width="image.width"

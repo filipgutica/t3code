@@ -1,14 +1,15 @@
-export type ImageCrop = { x: number; y: number; width: number; height: number };
-export type ProductImageDescriptor = {
+export type ProductImageSource = {
   src: string;
   srcset: string;
   original: string;
   width: number;
   height: number;
+};
+export type ProductImageDescriptor = ProductImageSource & {
+  light: ProductImageSource;
   alt: string;
   sizes: string;
   eager: boolean;
-  crop?: ImageCrop;
 };
 export type WalkthroughStep = {
   id: string;

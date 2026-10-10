@@ -13,9 +13,10 @@ vp run --filter @t3tools/workbench-site build
 vp run --filter @t3tools/workbench-site preview
 ```
 
-Open the printed origin at `/t3code/`. The site imports PNG screenshots from
-`src/assets/screenshots`; Astro produces responsive WebP images during the build,
-and the full-size link opens the original PNG. Capture at twice the intended
+Open the printed origin at `/t3code/`. The site imports matched dark (`name.png`)
+and light (`name-light.png`) screenshots from `src/assets/screenshots`. Both captures
+must have the same dimensions and framing. Astro produces responsive WebP images;
+the preview and full-size lightbox follow the shared System/Light/Dark choice. Capture at twice the intended
 display width so text stays clear on Retina displays. Keep source screenshots
 free of pairing URLs and private data.
 
@@ -25,13 +26,13 @@ PNG. Automation snapshots are capped at 1280 pixels. Check the saved dimensions
 and text at 1:1 before replacing both the site and user-guide images; keep the
 pointer outside the page and close popovers that expose local paths.
 
-The walkthrough shows a Ticket, its prepared workspace and native Thread, then
-a second demo Ticket with a linked pull request and notifications. Jira is an
-optional final step.
+The walkthrough starts with a native planning conversation and editable draft.
+It then shows the saved Ticket, prepared work area, and continuation of the same
+Thread. A second demo Ticket demonstrates linked PRs and attention; Jira is optional.
 Readers select each screenshot with tabs; arrow keys, Home, and End move between
 them. Without JavaScript, all steps remain visible. Each screenshot opens in the
-existing lightbox. The captured Thread has not started an agent turn; demo PR
-feedback and outcomes are illustrative.
+existing lightbox. The planning conversation is real; it does not show completed implementation work.
+Demo PR feedback and implementation outcomes are illustrative.
 
 The theme switch shares its `tool-site-theme` setting with the annoterm, wtree, and devps sites, which are served from the same origin.
 

@@ -7,10 +7,10 @@ import { test, expect } from "@playwright/test";
     await page.goto("/t3code/");
     await expect(page.getByRole("tablist")).toHaveCount(0);
     const frames = page.locator("[data-walkthrough-frame]");
-    await expect(frames).toHaveCount(6);
+    await expect(frames).toHaveCount(7);
     for (const frame of await frames.all()) await expect(frame).toBeVisible();
     await expect(page.locator(".hero-media img")).toHaveAttribute("srcset", /480w/);
-    await expect(page.locator(".hero-media [data-product-image]")).toHaveAttribute(
+    await expect(page.locator(".hero-media [data-product-image]:visible")).toHaveAttribute(
       "href",
       /\.png$/,
     );
@@ -33,9 +33,29 @@ test("no-JavaScript system appearance uses the public page palette", async ({ pa
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/t3code/");
   await expect(page.locator("body")).toHaveCSS("background-color", "rgb(244, 245, 248)");
+  await expect
+    .poll(() =>
+      page
+        .locator(".hero-media img")
+        .evaluate((image) => (image instanceof HTMLImageElement ? image.currentSrc : "")),
+    )
+    .toMatch(/board-light[.]/);
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator("body")).toHaveCSS("background-color", "rgb(21, 22, 25)");
   await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
+  await expect
+    .poll(() =>
+      page
+        .locator(".hero-media img")
+        .evaluate((image) => (image instanceof HTMLImageElement ? image.currentSrc : "")),
+    )
+    .toMatch(/board[.]/);
+  const original = page.locator(".hero-media [data-product-image]:visible");
+  await expect(original).toHaveAttribute("href", /board[.].*\.png$/);
+  const darkOriginal = new URL((await original.getAttribute("href"))!, page.url()).href;
+  await original.click();
+  await expect(page).toHaveURL(darkOriginal);
+  await page.goBack();
   await page.emulateMedia({ colorScheme: "light" });
   await expect(page.locator("body")).toHaveCSS("background-color", "rgb(244, 245, 248)");
 });
