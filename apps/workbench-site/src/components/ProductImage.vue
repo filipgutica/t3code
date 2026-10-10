@@ -28,7 +28,7 @@ const open = (event: MouseEvent) => {
 };
 </script>
 <template>
-  <div class="product-image" data-product-image-frame :data-image-enhanced="enhanced">
+  <div class="product-image" data-product-image-frame>
     <picture>
       <source :media="darkMedia" :srcset="image.srcset" :sizes="image.sizes" />
       <img
@@ -44,7 +44,8 @@ const open = (event: MouseEvent) => {
       />
     </picture>
     <a
-      class="image-link enhanced-or-light-link"
+      class="image-link"
+      :class="{ 'static-light-link': !enhanced }"
       :href="source.original"
       data-product-image
       :data-image-width="image.width"
@@ -89,7 +90,7 @@ img {
   display: none;
 }
 @media (prefers-color-scheme: dark) {
-  .product-image:not([data-image-enhanced="true"]) .enhanced-or-light-link {
+  .static-light-link {
     display: none;
   }
   .static-dark-link {
