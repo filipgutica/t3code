@@ -568,7 +568,7 @@ main.wrap::before {
   height: var(--space-8);
   overflow: visible;
   fill: var(--bg);
-  stroke: var(--text-faint);
+  stroke: var(--text-muted);
   stroke-width: 1.5;
 }
 

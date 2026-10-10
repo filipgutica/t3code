@@ -370,6 +370,8 @@ test("walkthrough signals fork, merge, and notify, and stop when reduced motion 
     await page.getByRole("tab", { name: tab, exact: true }).click();
     const frame = page.locator(`#walkthrough-${id}`);
     await expect(frame.locator(".walkthrough-signal")).toBeVisible();
+    await expect(frame.locator(".signal-start")).not.toHaveCSS("stroke", "none");
+    await expect(frame.locator(".signal-end")).not.toHaveCSS("stroke", "none");
     // Seek the finite effect to inspect its visible shape without a timing-sensitive sleep.
     const effect = await frame.locator(".walkthrough-signal").evaluate((signal) => {
       const animations = signal.getAnimations({ subtree: true });
