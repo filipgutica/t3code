@@ -175,6 +175,15 @@ test("unlink preserves a native thread and its workspace, and permits relinking"
   await dialog.getByRole("button", { name: thread.title, exact: true }).click();
   await dialog.getByRole("button", { name: /Link Thread/i, exact: true }).click();
   await expect(dialog).not.toBeVisible();
+  await expect(page).toHaveURL(
+    (url) => url.pathname.endsWith(`/${thread.id}`) && url.searchParams.get("workbench") === "true",
+  );
+  await page
+    .getByRole("link", {
+      name: "Back to Ticket Validate invitation addresses in Workspace Orbit",
+      exact: true,
+    })
+    .click();
   await expect(
     page.getByRole("button", { name: `Unlink Thread ${thread.title}`, exact: true }),
   ).toBeVisible();
