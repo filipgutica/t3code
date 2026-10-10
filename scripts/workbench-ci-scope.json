@@ -48,6 +48,7 @@
         "apps/server/src/orchestration-v2/RestartContinuation.ts",
         "apps/server/src/orchestration-v2/RunExecutionService.ts",
         "apps/server/src/orchestration-v2/RuntimePolicy.ts",
+        "apps/server/src/orchestration-v2/testkit/ProviderReplayHarness.ts",
         "apps/server/src/orchestration-v2/runtimeLayer.ts",
         "packages/provider-core/src/server/subagentProjection.ts",
         "apps/server/src/os-jank.ts",

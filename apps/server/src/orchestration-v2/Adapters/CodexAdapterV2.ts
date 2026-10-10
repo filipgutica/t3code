@@ -109,6 +109,7 @@ import { ProviderEventLoggers } from "../../provider/ProviderEventLoggers.ts";
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "../../provider/codexLaunchArgs.ts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
+import { prepareCodexThreadRuntimeParams } from "../../workbench/CodexPlanningRuntime.ts";
 import {
   MCP_APP_EXTENSION_ID,
   MCP_APP_MIME_TYPE,
@@ -1315,13 +1316,11 @@ export class CodexAppServerClientFactory extends Context.Service<
  * todo list. Codex layers these above the user's and project's `config.toml`.
  */
 export const CODEX_THREAD_CONFIG = { "tools.update_plan.enabled": true } as const;
-const isReadOnlySandbox = Schema.is(Schema.Struct({ type: Schema.Literal("readOnly") }));
 
 export function codexThreadRuntimeParams(input: {
   readonly threadId: ThreadId | null;
   readonly modelSelection?: { readonly model: string };
   readonly runtimePolicy?: ProviderAdapterV2RuntimePolicy;
-  readonly disabledMcpServers?: ReadonlyArray<string>;
 }): {
   readonly cwd?: string;
   readonly model?: string;
@@ -1334,36 +1333,16 @@ export function codexThreadRuntimeParams(input: {
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
     config: {
       ...CODEX_THREAD_CONFIG,
-      ...(!isReadOnlySandbox(input.runtimePolicy?.sandboxPolicy)
-        ? {}
-        : {
-            "features.hooks": false,
-            "features.codex_hooks": false,
-            "features.plugin_hooks": false,
-            "features.plugins": false,
-            "features.apps": false,
-            "features.connectors": false,
-            "features.multi_agent": false,
-          }),
-      ...(mcpSession === undefined && !input.disabledMcpServers?.length
+      ...(mcpSession === undefined
         ? {}
         : {
             mcp_servers: {
-              ...Object.fromEntries(
-                (input.disabledMcpServers ?? [])
-                  .filter((name) => name !== "t3-code")
-                  .map((name) => [name, { enabled: false }]),
-              ),
-              ...(mcpSession === undefined
-                ? {}
-                : {
-                    "t3-code": {
-                      url: mcpSession.endpoint,
-                      http_headers: {
-                        Authorization: mcpSession.authorizationHeader,
-                      },
-                    },
-                  }),
+              "t3-code": {
+                url: mcpSession.endpoint,
+                http_headers: {
+                  Authorization: mcpSession.authorizationHeader,
+                },
+              },
             },
           }),
     },
@@ -6416,28 +6395,16 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
             }).pipe(Effect.mapError(mcpAppsError("Codex MCP resource read failed."))),
         };
 
-        // MCP tools and lifecycle hooks execute outside the filesystem sandbox.
-        // Disable inherited integrations for read-only conversations; T3's own
-        // MCP credential separately enforces its read-only permission ceiling.
-        const threadRuntimeParams = Effect.fnUntraced(function* (
-          params: Parameters<typeof codexThreadRuntimeParams>[0],
-        ) {
-          if (!isReadOnlySandbox(params.runtimePolicy?.sandboxPolicy)) {
-            return codexThreadRuntimeParams(params);
-          }
-          const response = yield* ensureInitialized.pipe(
-            Effect.andThen(
-              client.request("config/read", {
-                includeLayers: false,
-                ...(params.runtimePolicy?.cwd == null ? {} : { cwd: params.runtimePolicy.cwd }),
+        const threadRuntimeParams = (params: Parameters<typeof codexThreadRuntimeParams>[0]) =>
+          ensureInitialized.pipe(
+            Effect.andThen(() =>
+              prepareCodexThreadRuntimeParams({
+                client,
+                runtimePolicy: params.runtimePolicy,
+                params: codexThreadRuntimeParams(params),
               }),
             ),
           );
-          const servers = yield* Schema.decodeUnknownEffect(
-            Schema.Record(Schema.String, Schema.Unknown),
-          )(response.config.mcp_servers ?? {});
-          return codexThreadRuntimeParams({ ...params, disabledMcpServers: Object.keys(servers) });
-        });
 
         const runtime: ProviderAdapterV2SessionRuntime = {
           instanceId: adapterOptions.instanceId,

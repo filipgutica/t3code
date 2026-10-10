@@ -42,7 +42,6 @@ export const RuntimePolicyV2Override = Schema.Struct({
   approvalPolicy: Schema.optional(Schema.Unknown),
   sandboxPolicy: Schema.optional(Schema.Unknown),
   reasoningEffort: Schema.optional(Schema.String),
-  checkpoints: Schema.optional(Schema.Literal("disabled")),
 });
 export type RuntimePolicyV2Override = typeof RuntimePolicyV2Override.Type;
 
@@ -155,8 +154,8 @@ export function layerWithOverride(
       return {
         resolve: (input) =>
           base.resolve(input).pipe(
-            Effect.map((policy) => ({
-              ...ProviderAdapterV2RuntimePolicy.make({
+            Effect.map((policy) =>
+              ProviderAdapterV2RuntimePolicy.make({
                 ...policy,
                 ...(override.cwd === undefined ? {} : { cwd: override.cwd }),
                 ...(override.approvalPolicy === undefined
@@ -169,11 +168,7 @@ export function layerWithOverride(
                   ? {}
                   : { reasoningEffort: override.reasoningEffort }),
               }),
-              ...(policy.instructions === undefined ? {} : { instructions: policy.instructions }),
-              ...((override.checkpoints ?? policy.checkpoints)
-                ? { checkpoints: override.checkpoints ?? policy.checkpoints }
-                : {}),
-            })),
+            ),
           ),
       } satisfies RuntimePolicyV2Shape;
     }),
