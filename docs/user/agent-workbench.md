@@ -2,7 +2,7 @@
 
 Workbench gives you one view of work across repositories: what’s to do, in progress,
 and done. Each Ticket brings together its context, agents, pull requests, and an
-isolated workspace with worktrees for the repositories involved.
+isolated work area with worktrees for the repositories involved.
 
 Workbench is available in the web and desktop clients. Jira is optional. Each T3
 environment has its own Workspaces and Tickets, so records do not appear across
@@ -18,17 +18,30 @@ For a tabbed overview, open the [screenshot walkthrough](https://filipgutica.git
 
 ## Create a Workspace and Ticket
 
-A **Workspace** groups T3 Projects that belong together. Linked Projects must point
-to Git repositories. A **Ticket** describes work to do; an **Epic** groups related
-Tickets.
+A **Workbench workspace** groups T3 Projects that belong together. Linked Projects
+must point to Git repositories. A **Ticket** describes work to do; an **Epic** groups
+related Tickets. A Ticket's **work area** contains its prepared repository worktrees.
 
 1. Add the repositories you need as T3 Projects.
 2. Open **Agent Workbench**, choose **Add Workspace**, select the Projects, and
    choose **Create Workspace**.
 3. Open the Workspace Board and choose **New Ticket**.
-4. Enter a title and description, select the repositories, and choose the primary
-   repository.
-5. Choose **Create Ticket**.
+4. Describe what you want to work on in the planning conversation. Choose your
+   model using the native conversation controls.
+5. Review the proposed title, plan, acceptance criteria, and repository scope.
+   Apply a suggestion to the draft, or edit its fields yourself.
+6. Choose **Create ticket** to save it locally or in Jira.
+
+Planning can inspect the workspace's repositories but cannot change them. Closing
+the view keeps the draft in the Board’s **Drafts** section and the Workbench sidebar.
+Open it to resume the conversation, or choose **New Ticket** to explore another idea.
+**Create manually** opens
+the form when you already know the requirements.
+
+Creating the Ticket keeps the same conversation for further planning. Choose
+**Start work** when ready to prepare its work area and continue that Thread in the
+primary worktree. Start work does not send a message; send your next instruction
+to begin implementation. Read-only planning supports Codex and Claude providers.
 
 The primary repository is where new Threads open. A Ticket can include other
 repositories when the work spans several codebases. Use **Edit Workspace** to
@@ -55,9 +68,9 @@ in the sidebar remains available for cleanup even after deleting the last Worksp
 ## Start agent work
 
 1. Open a Ticket and choose **Create Thread**.
-2. If the workspace is not prepared, review the primary and additional repositories.
-   Select a provider and model, then choose **Create workspace and thread**.
-   Prepared workspaces show the repositories that the new Thread will reuse.
+2. If the work area is not prepared, review the primary and additional repositories.
+   Select a provider and model, then choose **Create work area and Thread**.
+   Prepared work areas show the repositories that the new Thread will reuse.
 3. Review the Ticket context chip in the native Thread composer.
 4. Add instructions and send the message.
 
@@ -65,12 +78,12 @@ Creating a Thread does not start an agent turn. Workbench prepares one Git
 worktree per selected repository and opens the Thread in the primary repository's
 worktree. The context chip includes the Ticket description and repository paths.
 
-To prepare worktrees before opening a conversation, choose **Prepare workspace**
-in **Ticket workspace**, review the repositories, and confirm.
+To prepare worktrees before opening a conversation, choose **Prepare work area**
+in **Work area**, review the repositories, and confirm.
 
-![A prepared Ticket workspace with worktrees for Orbit Web (primary) and Orbit API.](./media/workbench/workspace.png)
+![A prepared Ticket work area with worktrees for Orbit Web (primary) and Orbit API.](./media/workbench/workspace.png)
 
-After changing the Ticket, use **Attach current Ticket context** in an existing
+After changing the Ticket, use **Add ticket context** in an existing
 Thread to stage its saved requirements and current checkout paths. Review the
 context chip and send when ready; attaching context does not send a message.
 
@@ -159,25 +172,25 @@ or deleted locally.
 
 ## Manage repositories and worktrees
 
-Choose **Edit repositories** in **Ticket workspace** to change the primary or
+Choose **Edit repositories** in **Work area** to change the primary or
 additional repositories. Changes stay local until you choose **Save changes**;
-**Cancel** restores the saved choices. Adding repositories to a prepared workspace
+**Cancel** restores the saved choices. Adding repositories to a prepared work area
 prepares their worktrees together after saving.
 
 Threads using the same Ticket worktree share its files, branch, and uncommitted
 changes. Existing Threads keep their working directory and sent context when the
 Ticket's repository scope changes. Adding a repository to an already prepared
-workspace prepares its worktree; removing one keeps its worktree and local
+work area prepares its worktree; removing one keeps its worktree and local
 changes so it can be added again later.
 
 Creating a Workspace groups existing Projects; it does not create repository
-directories. **Prepare workspace** creates worktrees without opening a Thread, and
+directories. **Prepare work area** creates worktrees without opening a Thread, and
 **Create Thread** prepares missing worktrees and reuses existing ones. Creating,
 importing, or viewing a Ticket alone does not prepare worktrees.
 
 To remove prepared worktrees, delete Threads that still use them, including archived
 Threads. Unlink Threads working elsewhere. Commit or preserve local changes, then open **Ticket
-workspace → Advanced workspace settings → Remove prepared worktrees** and confirm.
+work area → Advanced work area settings → Remove prepared worktrees** and confirm.
 The reset removes worktrees but keeps the Ticket, branches, and commits.
 
 After deleting a Ticket or Workspace, open **Retained worktrees** in the Workbench sidebar to
@@ -231,7 +244,7 @@ Ticket history. Cancelling authorization leaves the existing mirror unchanged.
 | The agent has not started after creating a Thread | Send a message; creation only prepares the conversation.                                     |
 | A completed turn leaves the Ticket In Progress    | Review the result and update progress yourself.                                              |
 | A repository is missing from a Workspace          | Add its directory as a T3 Project first.                                                     |
-| A prepared worktree is missing                    | Remove Threads that use it, reset the Ticket workspace, then prepare again.                  |
+| A prepared worktree is missing                    | Remove Threads that use it, reset the Ticket work area, then prepare again.                  |
 | Jira cannot advance or import issues              | Check the selected board, sprints, assignment, and Jira permissions, then reconnect or sync. |
 | Workspaces or Tickets seem to be missing          | Check the connected environment; each environment has separate records and saved data.       |
 

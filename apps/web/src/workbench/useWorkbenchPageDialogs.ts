@@ -5,9 +5,10 @@ import {
   type EnvironmentId,
   type WorkbenchEpic,
 } from "@t3tools/contracts";
-import { useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "@tanstack/react-router";
-import { parseWorkbenchSearch } from "./workbenchSearch";
+import { useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { withWorkbenchEnvironmentSearch } from "./workbenchNavigation";
+import type { WorkbenchConversationDraft } from "./workbenchTicketDraft.logic";
 import { useAtomCommand } from "../state/use-atom-command";
 import { randomUUID } from "../lib/utils";
 import { workbenchEnvironment } from "./state";
@@ -51,41 +52,14 @@ export function useWorkbenchPageDialogs({
   const createEpic = useAtomCommand(workbenchEnvironment.createEpic, { reportFailure: false });
   const updateEpic = useAtomCommand(workbenchEnvironment.updateEpic, { reportFailure: false });
   const createTicket = useAtomCommand(workbenchEnvironment.createTicket, { reportFailure: false });
-  const location = useLocation();
   const navigate = useNavigate();
-  const consumedTicketIntent = useRef<string | null>(null);
   const [editWorkspaceOpen, setEditWorkspaceOpen] = useState(false);
   const [ticketDialogOpen, setTicketDialogOpen] = useState(false);
   const [ticketDialogEpicId, setTicketDialogEpicId] = useState<WorkbenchEpicId | null>(null);
+  // Seeds a new conversation's Epic; a resumed draft keeps the Epic it already has.
+  const [conversationEpicId, setConversationEpicId] = useState<WorkbenchEpicId | null>(null);
   const [epicDialogOpen, setEpicDialogOpen] = useState(false);
   const epicCreatedRef = useRef<((epicId: WorkbenchEpicId) => void) | null>(null);
-  useEffect(() => {
-    const search = parseWorkbenchSearch(location.search);
-    if (search.create !== "ticket") {
-      consumedTicketIntent.current = null;
-      return;
-    }
-    if (
-      !selectedProject ||
-      environmentId === null ||
-      search.environmentId !== environmentId ||
-      search.workbenchProjectId !== selectedProject.id ||
-      consumedTicketIntent.current === location.href
-    )
-      return;
-    consumedTicketIntent.current = location.href;
-    setError(null);
-    setTicketDialogEpicId(null);
-    setTicketDialogOpen(selectedProject.archivedAt == null);
-    if (selectedProject.archivedAt != null)
-      setError("Restore this Workspace before creating a Ticket.");
-    // Consume before the dialog can close, so navigation or reload cannot reopen it.
-    void navigate({
-      to: "/workbench",
-      search: parseWorkbenchSearch({ ...location.search, create: null }),
-      replace: true,
-    });
-  }, [environmentId, selectedProject, location.href, location.search, navigate, setError]);
   const submitProject = async (title: string, linkedProjectIds: ReadonlyArray<ProjectId>) => {
     if (environmentId === null) return false;
     setPendingAction("create-project");
@@ -214,6 +188,46 @@ export function useWorkbenchPageDialogs({
     return true;
   };
 
+  // New ticket starts a fresh preparation; begin replaces the intent with its durable id.
+  const openTicketConversation = (epicId: WorkbenchEpicId | null = null) => {
+    if (environmentId === null || !selectedProject || selectedProject.archivedAt != null) return;
+    setError(null);
+    setConversationEpicId(epicId);
+    setAwaitingTicketId(null);
+    setAwaitingEpicId(null);
+    setSelectedTicketId(null);
+    setSelectedEpicId(null);
+    void navigate({
+      to: "/workbench",
+      search: withWorkbenchEnvironmentSearch(environmentId, {
+        workbenchProjectId: selectedProject.id,
+        create: "ticket" as const,
+      }),
+    });
+  };
+  const closeTicketConversation = () => {
+    setError(null);
+    setConversationEpicId(null);
+    if (selectedProject) void updateRouteSelection(selectedProject.id);
+  };
+  // Both draft creation and promotion select the same durable id and conversation.
+  const openCreatedTicket = (draft: WorkbenchConversationDraft) => {
+    if (!selectedProject) return;
+    setConversationEpicId(null);
+    setAwaitingTicketId(draft.id);
+    setAwaitingEpicId(null);
+    setSelectedTicketId(draft.id);
+    setSelectedEpicId(null);
+    void updateRouteSelection(selectedProject.id, draft.id);
+  };
+  const openDraftThread = (draft: WorkbenchConversationDraft) => {
+    if (environmentId === null) return;
+    void navigate({
+      to: "/$environmentId/$threadId",
+      params: { environmentId, threadId: draft.threadId },
+      search: { workbench: true },
+    });
+  };
   const openTicketDialog = (epicId: WorkbenchEpicId | null = null) => {
     if (selectedProject?.archivedAt != null) return;
     setError(null);
@@ -249,6 +263,11 @@ export function useWorkbenchPageDialogs({
     saveEpicContent,
     submitEpic,
     openTicketDialog,
+    conversationEpicId,
+    openTicketConversation,
+    closeTicketConversation,
+    openCreatedTicket,
+    openDraftThread,
     openEpicDialog,
     handleTicketDialogOpenChange,
     handleEpicDialogOpenChange,

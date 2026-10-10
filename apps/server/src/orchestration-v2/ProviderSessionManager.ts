@@ -464,10 +464,15 @@ export const layerWithOptions = (
        * Serialized per thread so two concurrent prepares cannot interleave
        * their rotate steps and revoke each other's freshly minted credential.
        */
-      const prepareMcpSession = (
-        threadId: ThreadId,
-        providerInstanceId: ProviderInstanceId,
-      ): Effect.Effect<PreparedMcpCredential> =>
+      const prepareMcpSession = ({
+        threadId,
+        providerInstanceId,
+        readOnly: requestedReadOnly,
+      }: {
+        readonly threadId: ThreadId;
+        readonly providerInstanceId: ProviderInstanceId;
+        readonly readOnly?: boolean;
+      }): Effect.Effect<PreparedMcpCredential> =>
         options.configureMcp === false
           ? Effect.sync((): PreparedMcpCredential => {
               McpProviderSession.clearMcpProviderSession(threadId);
@@ -476,6 +481,7 @@ export const layerWithOptions = (
           : mcpPrepareLock.withLock(
               threadId,
               Effect.gen(function* () {
+                let readOnly = requestedReadOnly;
                 // Reuse a still-valid credential for this thread instead of
                 // rotating: long-lived provider processes (codex app-server)
                 // build their MCP client once per conversation and keep using
@@ -506,10 +512,12 @@ export const layerWithOptions = (
                         ),
                       ),
                     );
+                  readOnly ??= resolved?.thread.readOnly ?? false;
                   if (
                     resolved !== undefined &&
                     resolved.thread.threadId === threadId &&
                     resolved.thread.providerInstanceId === providerInstanceId &&
+                    (resolved.thread.readOnly ?? false) === readOnly &&
                     // A flipped browser-access setting must not survive through
                     // credential reuse: rotate so the new scope reflects it.
                     resolved.capabilities.has("preview") === browserToolsAvailable &&
@@ -525,6 +533,7 @@ export const layerWithOptions = (
                   providerInstanceId,
                   browserToolsAvailable,
                   capabilities,
+                  ...(readOnly === true ? { readOnly: true } : {}),
                 });
                 McpProviderSession.setMcpProviderSession(credential.config);
                 reserveMcpCredential(threadId, credential.config.providerSessionId);
@@ -1287,6 +1296,7 @@ export const layerWithOptions = (
         readonly providerSessionId: ProviderSessionId;
         readonly threadId: ThreadId;
         readonly providerInstanceId: ProviderInstanceId;
+        readonly readOnly?: boolean;
       }) =>
         Effect.suspend(() => {
           let attachedTo: ProviderAdapterV2SessionRuntime | undefined;
@@ -1302,14 +1312,86 @@ export const layerWithOptions = (
           // thread's lock: a concurrent attach of the same thread waits, so it
           // never sees an attachment that this call is about to roll back.
           const attach = Effect.gen(function* () {
+            const credential = McpProviderSession.readMcpProviderSession(input.threadId);
+            const resolved =
+              input.readOnly === undefined || credential === undefined
+                ? undefined
+                : yield* mcpSessionRegistry.resolve(
+                    credential.authorizationHeader.replace(/^Bearer\s+/i, ""),
+                  );
+            const currentEntry = (yield* Ref.get(sessions)).get(
+              sessionKey(input.providerSessionId),
+            );
+            const changingCredential =
+              options.configureMcp !== false &&
+              input.readOnly !== undefined &&
+              (resolved !== undefined
+                ? (resolved.thread.readOnly ?? false) !== input.readOnly
+                : currentEntry?.mcpCredentialIdByThread.has(input.threadId) === true);
+            if (changingCredential)
+              yield* withActivityError(
+                input.providerSessionId,
+                Effect.gen(function* () {
+                  const entry = (yield* Ref.get(sessions)).get(sessionKey(input.providerSessionId));
+                  if (entry?.supportsMultipleProviderThreads) {
+                    const projection = yield* projectionStore.getThreadRecords(input.threadId, [
+                      "providerThreads",
+                    ]);
+                    const nativeThreads = projection.providerThreads.filter(
+                      (thread) =>
+                        thread.providerSessionId === input.providerSessionId &&
+                        thread.nativeThreadRef !== null,
+                    );
+                    const unloadThread = entry.runtime.unloadThread;
+                    if (nativeThreads.length > 0 && unloadThread === undefined) {
+                      return yield* new ProviderSessionOpenError({
+                        instanceId: input.providerInstanceId,
+                        providerSessionId: input.providerSessionId,
+                        cause:
+                          "The provider cannot unload native state before changing MCP permissions.",
+                      });
+                    }
+                    // A prior detach may have skipped or failed its unload. Finish
+                    // it under the attachment lock before rotating an immutable
+                    // credential; resuming a resident native thread can retain its
+                    // original MCP client even when its T3 load key was cleared.
+                    if (unloadThread !== undefined)
+                      yield* Effect.forEach(
+                        nativeThreads,
+                        (providerThread) =>
+                          unloadThread({ providerThread }).pipe(
+                            Effect.timeout(UNLOAD_THREAD_TIMEOUT_MS),
+                          ),
+                        { concurrency: 1, discard: true },
+                      );
+                    yield* Ref.update(sessions, (current) => {
+                      const key = sessionKey(input.providerSessionId);
+                      const live = current.get(key);
+                      if (live?.runtime !== entry.runtime) return current;
+                      const loadedProviderThreadKeyByThread = new Map(
+                        live.loadedProviderThreadKeyByThread,
+                      );
+                      loadedProviderThreadKeyByThread.delete(input.threadId);
+                      return new Map(current).set(key, {
+                        ...live,
+                        loadedProviderThreadKeyByThread,
+                      });
+                    });
+                  }
+                }),
+              );
             const attached = yield* attachThread(input).pipe(
               // Recorded with no gap for an interrupt: cleanup undoes only an
               // attach this call made, never one an earlier open made.
               Effect.tap((runtime) => Effect.sync(() => (attachedTo = runtime))),
               Effect.uninterruptible,
             );
-            if (attached !== undefined) {
-              const prepared = yield* prepareMcpSession(input.threadId, input.providerInstanceId);
+            if (attached !== undefined || changingCredential) {
+              const prepared = yield* prepareMcpSession({
+                threadId: input.threadId,
+                providerInstanceId: input.providerInstanceId,
+                ...(input.readOnly === undefined ? {} : { readOnly: input.readOnly }),
+              });
               preparedForCleanup = prepared;
               if (prepared.mcpCredentialId !== undefined) {
                 const mcpCredentialId = prepared.mcpCredentialId;
@@ -2022,6 +2104,10 @@ export const layerWithOptions = (
             input.providerSessionId,
             Effect.gen(function* () {
               const cwd = input.runtimePolicy.cwd;
+              const readOnly =
+                typeof input.runtimePolicy.sandboxPolicy === "object" &&
+                input.runtimePolicy.sandboxPolicy !== null &&
+                Reflect.get(input.runtimePolicy.sandboxPolicy, "type") === "readOnly";
               if (cwd !== null) {
                 const workspaceIsDirectory = yield* fileSystem.stat(cwd).pipe(
                   Effect.map((stat) => stat.type === "Directory"),
@@ -2051,6 +2137,7 @@ export const layerWithOptions = (
                   providerSessionId: input.providerSessionId,
                   threadId: input.threadId,
                   providerInstanceId: existing.runtime.instanceId,
+                  readOnly,
                 });
                 yield* touchActivity(input.providerSessionId);
                 return existing.exposedRuntime;
@@ -2066,10 +2153,11 @@ export const layerWithOptions = (
                     }),
                 ),
               );
-              const prepared = yield* prepareMcpSession(
-                input.threadId,
-                input.modelSelection.instanceId,
-              );
+              const prepared = yield* prepareMcpSession({
+                threadId: input.threadId,
+                providerInstanceId: input.modelSelection.instanceId,
+                readOnly,
+              });
               const mcpCredentialId = prepared.mcpCredentialId;
               // The reservation from prepare protects the credential (which
               // eager adapters bake into the provider process during

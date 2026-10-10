@@ -1,9 +1,11 @@
 import {
   EnvironmentId,
   ProjectId,
+  ThreadId,
   WorkbenchProjectId,
   WorkbenchTicketId,
   type WorkbenchSnapshot,
+  type WorkbenchTicketDraft,
 } from "@t3tools/contracts";
 import {
   createMemoryHistory,
@@ -18,6 +20,7 @@ import { create } from "react-test-renderer";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { useWorkbenchPageDialogs } from "./useWorkbenchPageDialogs";
 import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
+import { parseWorkbenchThreadSearch } from "./workbenchNavigation";
 import { parseWorkbenchSearch } from "./workbenchSearch";
 const command = vi.hoisted(() => vi.fn());
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => command }));
@@ -76,74 +79,139 @@ function Harness({ data }: { data: WorkbenchSnapshot | null }) {
     </button>
   );
 }
-describe("palette Ticket creation intent", () => {
-  it("waits for the Workspace, consumes the intent, remains closed after cancellation, and can open again", async () => {
+const draft: WorkbenchTicketDraft = {
+  id: WorkbenchTicketId.make("planned-ticket"),
+  projectId: workspaceId,
+  threadId: ThreadId.make("planning-thread"),
+  anchorProjectId: ProjectId.make("repo"),
+  modelSelection: { instanceId: "codex", model: "gpt" } as WorkbenchTicketDraft["modelSelection"],
+  revision: 4,
+  phase: "planning",
+  fields: {
+    title: "Planned",
+    markdown: "",
+    kind: "story",
+    epicId: null,
+    repositoryProjectIds: [ProjectId.make("repo")],
+    primaryT3ProjectId: ProjectId.make("repo"),
+    localOnly: false,
+    jiraSprintId: null,
+  },
+  createdAt: time,
+  updatedAt: time,
+};
+const mountRouter = async (entry: string) => {
+  const root = createRootRoute();
+  const workbench = createRoute({
+    getParentRoute: () => root,
+    path: "/workbench",
+    validateSearch: parseWorkbenchSearch,
+  });
+  const thread = createRoute({
+    getParentRoute: () => root,
+    path: "/$environmentId/$threadId",
+    validateSearch: parseWorkbenchThreadSearch,
+  });
+  const router = createRouter({
+    routeTree: root.addChildren([workbench, thread]),
+    history: createMemoryHistory({ initialEntries: [entry] }),
+  });
+  await router.load();
+  return router;
+};
+describe("ticket planning conversation navigation", () => {
+  const workspaceEntry = "/workbench?environmentId=remote&workbenchProjectId=workspace";
+  const mount = async (entry: string) => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    const root = createRootRoute();
-    const route = createRoute({
-      getParentRoute: () => root,
-      path: "/workbench",
-      validateSearch: parseWorkbenchSearch,
-    });
-    const router = createRouter({
-      routeTree: root.addChildren([route]),
-      history: createMemoryHistory({
-        initialEntries: [
-          "/workbench?environmentId=remote&workbenchProjectId=workspace&create=ticket",
-        ],
-      }),
-    });
-    await router.load();
+    command.mockClear();
+    const router = await mountRouter(entry);
     let renderer: ReturnType<typeof create> | undefined;
-    const render = (data: WorkbenchSnapshot | null) => (
-      <RouterContextProvider router={router}>
-        <Harness data={data} />
-      </RouterContextProvider>
-    );
+    await act(async () => {
+      renderer = create(
+        <RouterContextProvider router={router}>
+          <Harness data={snapshot} />
+        </RouterContextProvider>,
+      );
+    });
+    if (!renderer) throw new Error("Harness not mounted");
+    const mounted = renderer;
+    return {
+      router,
+      mounted,
+      settle: async () => {
+        await act(async () => {
+          await router.load();
+        });
+      },
+      unmount: () => act(async () => mounted.unmount()),
+    };
+  };
+
+  it("keeps create=ticket in the URL so reload and history resume the conversation", async () => {
+    const { router, mounted, settle, unmount } = await mount(`${workspaceEntry}&create=ticket`);
     try {
-      await act(async () => {
-        renderer = create(render(null));
-      });
-      if (!renderer) throw new Error("Harness not mounted");
-      const mounted = renderer;
-      expect(mounted.root.findByType("button").props["data-open"]).toBe(false);
+      await settle();
       expect(router.state.location.search.create).toBe("ticket");
-      await act(async () => {
-        mounted.update(render(snapshot));
+      // The manual form stays closed; it opens only from an explicit manual action.
+      expect(mounted.root.findByType("button").props["data-open"]).toBe(false);
+    } finally {
+      await unmount();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("opens the Workspace conversation and keeps the draft when it closes", async () => {
+    const { router, settle, unmount } = await mount(workspaceEntry);
+    try {
+      await settle();
+      await act(async () => latestDialogs.openTicketConversation());
+      await settle();
+      expect(router.state.location.search).toEqual({
+        environmentId: "remote",
+        workbenchProjectId: "workspace",
+        create: "ticket",
       });
-      await act(async () => {
-        await router.load();
-      });
-      expect(mounted.root.findByType("button").props["data-open"]).toBe(true);
-      await act(async () => {
-        mounted.update(render({ ...snapshot }));
-      });
+      await act(async () => latestDialogs.closeTicketConversation());
+      await settle();
       expect(router.state.location.search).toEqual({
         environmentId: "remote",
         workbenchProjectId: "workspace",
       });
-      await act(async () => {
-        mounted.root.findByType("button").props.onClick();
-        mounted.update(render({ ...snapshot }));
+      expect(command).not.toHaveBeenCalled();
+    } finally {
+      await unmount();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("selects the created ticket and continues the same native Thread on Start work", async () => {
+    const { router, settle, unmount } = await mount(`${workspaceEntry}&create=ticket`);
+    try {
+      await settle();
+      await act(async () => latestDialogs.openCreatedTicket(draft));
+      await settle();
+      // The draft id is the ticket id, so the route keeps the conversation's identity.
+      expect(router.state.location.search).toEqual({
+        environmentId: "remote",
+        workbenchProjectId: "workspace",
+        ticketId: draft.id,
       });
-      expect(mounted.root.findByType("button").props["data-open"]).toBe(false);
-      await act(async () => {
-        await router.navigate({
-          to: "/workbench",
-          search: { environmentId, workbenchProjectId: workspaceId, create: "ticket" },
-        });
-      });
-      await act(async () => {
-        await router.load();
-      });
-      await act(async () => {
-        mounted.update(render({ ...snapshot }));
-      });
-      await act(async () => {
-        await router.load();
-      });
-      expect(mounted.root.findByType("button").props["data-open"]).toBe(true);
-      expect(router.state.location.search).not.toHaveProperty("create");
+      await act(async () => latestDialogs.openDraftThread({ ...draft, phase: "working" }));
+      await settle();
+      expect(router.state.location.pathname).toBe(`/remote/${draft.threadId}`);
+      expect(router.state.location.search).toEqual({ workbench: true });
+      // Navigation only: no Thread is created or started from this path.
+      expect(command).not.toHaveBeenCalled();
+    } finally {
+      await unmount();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("still refuses local-only tickets on hosts that cannot store them", async () => {
+    const { settle, unmount } = await mount(workspaceEntry);
+    try {
+      await settle();
       await act(async () => {
         expect(
           await latestDialogs.submitTicket({
@@ -163,7 +231,7 @@ describe("palette Ticket creation intent", () => {
         "Update this environment before creating local-only Tickets.",
       );
     } finally {
-      await act(async () => renderer?.unmount());
+      await unmount();
       vi.unstubAllGlobals();
     }
   });

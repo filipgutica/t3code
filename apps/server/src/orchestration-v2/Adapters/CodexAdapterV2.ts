@@ -109,6 +109,7 @@ import { ProviderEventLoggers } from "../../provider/ProviderEventLoggers.ts";
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "../../provider/codexLaunchArgs.ts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
+import { prepareCodexThreadRuntimeParams } from "../../workbench/CodexPlanningRuntime.ts";
 import {
   MCP_APP_EXTENSION_ID,
   MCP_APP_MIME_TYPE,
@@ -6394,6 +6395,17 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
             }).pipe(Effect.mapError(mcpAppsError("Codex MCP resource read failed."))),
         };
 
+        const threadRuntimeParams = (params: Parameters<typeof codexThreadRuntimeParams>[0]) =>
+          ensureInitialized.pipe(
+            Effect.andThen(() =>
+              prepareCodexThreadRuntimeParams({
+                client,
+                runtimePolicy: params.runtimePolicy,
+                params: codexThreadRuntimeParams(params),
+              }),
+            ),
+          );
+
         const runtime: ProviderAdapterV2SessionRuntime = {
           instanceId: adapterOptions.instanceId,
           driver: CODEX_PROVIDER,
@@ -6450,14 +6462,14 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
           ensureThread: (threadInput) =>
             ensureInitialized.pipe(
               Effect.andThen(
-                client.request(
-                  "thread/start",
-                  codexThreadRuntimeParams({
+                Effect.gen(function* () {
+                  const params = yield* threadRuntimeParams({
                     threadId: threadInput.threadId,
                     modelSelection: threadInput.modelSelection,
                     runtimePolicy: threadInput.runtimePolicy,
-                  }),
-                ),
+                  });
+                  return yield* client.request("thread/start", params);
+                }),
               ),
               Effect.map((response): OrchestrationV2ProviderThread =>
                 providerThreadFromCodexThread({
@@ -6481,19 +6493,20 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
           resumeThread: (threadInput) =>
             Effect.gen(function* () {
               const nativeThreadId = yield* getNativeThreadId(threadInput.providerThread);
+              const params = yield* threadRuntimeParams({
+                threadId: threadInput.threadId ?? threadInput.providerThread.appThreadId,
+                ...(threadInput.modelSelection === undefined
+                  ? {}
+                  : { modelSelection: threadInput.modelSelection }),
+                ...(threadInput.runtimePolicy === undefined
+                  ? {}
+                  : { runtimePolicy: threadInput.runtimePolicy }),
+              });
               // excludeTurns is not in the generated request schema yet.
               const resume = client.raw.request("thread/resume", {
                 threadId: nativeThreadId,
                 excludeTurns: true,
-                ...codexThreadRuntimeParams({
-                  threadId: threadInput.threadId ?? threadInput.providerThread.appThreadId,
-                  ...(threadInput.modelSelection === undefined
-                    ? {}
-                    : { modelSelection: threadInput.modelSelection }),
-                  ...(threadInput.runtimePolicy === undefined
-                    ? {}
-                    : { runtimePolicy: threadInput.runtimePolicy }),
-                }),
+                ...params,
               });
               const response = yield* ensureInitialized.pipe(
                 Effect.andThen(
@@ -7213,11 +7226,11 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
                 yield* client.raw.request("thread/resume", {
                   threadId,
                   excludeTurns: true,
-                  ...codexThreadRuntimeParams({
+                  ...(yield* threadRuntimeParams({
                     threadId: threadInput.providerThread.appThreadId,
                     modelSelection: input.modelSelection,
                     runtimePolicy: input.runtimePolicy,
-                  }),
+                  })),
                 });
               }
               const response = yield* ensureInitialized.pipe(
@@ -7262,7 +7275,7 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
                     ...(boundary.lastTurnId === undefined
                       ? {}
                       : { lastTurnId: boundary.lastTurnId }),
-                    ...codexThreadRuntimeParams({
+                    ...(yield* threadRuntimeParams({
                       threadId: threadInput.targetThreadId,
                       ...(threadInput.modelSelection === undefined
                         ? {}
@@ -7270,7 +7283,7 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
                       ...(threadInput.runtimePolicy === undefined
                         ? {}
                         : { runtimePolicy: threadInput.runtimePolicy }),
-                    }),
+                    })),
                   }),
                 ),
                 Effect.mapError(

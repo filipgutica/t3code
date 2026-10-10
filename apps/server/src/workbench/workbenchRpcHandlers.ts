@@ -2,6 +2,7 @@ import { WORKBENCH_WS_METHODS, WorkbenchRpcGroup } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 
+import * as TicketDraftService from "./TicketDraftService.ts";
 import * as TicketSummaryService from "./TicketSummaryService.ts";
 import * as TicketWorkspaceService from "./TicketWorkspaceService.ts";
 import * as WorkbenchStore from "./WorkbenchStore.ts";
@@ -11,6 +12,7 @@ import * as WorkspaceLifecycleService from "@t3tools/workbench/WorkspaceLifecycl
 type WorkbenchRpcHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof WorkbenchRpcGroup>>;
 
 export type WorkbenchRpcServices = {
+  readonly ticketDrafts: TicketDraftService.TicketDraftService["Service"];
   readonly workbench: WorkbenchStore.WorkbenchStore["Service"];
   readonly ticketWorkspaces: TicketWorkspaceService.TicketWorkspaceService["Service"];
   readonly workbenchJira: WorkbenchJiraService.WorkbenchJiraService["Service"];
@@ -19,6 +21,7 @@ export type WorkbenchRpcServices = {
 };
 
 export const acquireWorkbenchRpcServices = Effect.gen(function* () {
+  const ticketDrafts = yield* TicketDraftService.TicketDraftService;
   const workbench = yield* WorkbenchStore.WorkbenchStore;
   const ticketWorkspaces = yield* TicketWorkspaceService.TicketWorkspaceService;
   const workbenchJira = yield* WorkbenchJiraService.WorkbenchJiraService;
@@ -26,6 +29,7 @@ export const acquireWorkbenchRpcServices = Effect.gen(function* () {
   const workspaceLifecycle = yield* WorkspaceLifecycleService.WorkspaceLifecycleService;
 
   return {
+    ticketDrafts,
     workbench,
     ticketWorkspaces,
     workbenchJira,
@@ -35,6 +39,7 @@ export const acquireWorkbenchRpcServices = Effect.gen(function* () {
 });
 
 export const makeWorkbenchRpcHandlers = ({
+  ticketDrafts,
   workbench,
   ticketWorkspaces,
   workbenchJira,
@@ -42,6 +47,13 @@ export const makeWorkbenchRpcHandlers = ({
   workspaceLifecycle,
 }: WorkbenchRpcServices) =>
   ({
+    [WORKBENCH_WS_METHODS.workbenchBeginTicketDraft]: (input) => ticketDrafts.begin(input),
+    [WORKBENCH_WS_METHODS.workbenchUpdateTicketDraft]: (input) => ticketDrafts.update(input),
+    [WORKBENCH_WS_METHODS.workbenchPromoteTicketDraft]: (input) => ticketDrafts.promote(input),
+    [WORKBENCH_WS_METHODS.workbenchDiscardTicketDraft]: (input) => ticketDrafts.discard(input),
+    [WORKBENCH_WS_METHODS.workbenchStartTicketDraftWork]: (input) => ticketDrafts.startWork(input),
+    [WORKBENCH_WS_METHODS.workbenchGetTicketPreparations]: (_input) =>
+      workbench.getTicketPreparations,
     [WORKBENCH_WS_METHODS.workbenchGetSnapshot]: (_input) => workbench.getSnapshot,
     [WORKBENCH_WS_METHODS.workbenchCreateProject]: (input) => workbench.createProject(input),
     [WORKBENCH_WS_METHODS.workbenchUpdateProject]: (input) => workbench.updateProject(input),

@@ -522,6 +522,7 @@ const seedLocalEpicAndTicket = async (page: Page, demo: Demo, workspaceId: strin
   );
   await expect(page.getByRole("heading", { name: epic.title, exact: true })).toBeVisible();
   await page.getByRole("button", { name: "New Ticket", exact: true }).click();
+  await page.getByRole("button", { name: "Create manually", exact: true }).click();
   const ticketDialog = page.getByRole("dialog", { name: "Create Ticket", exact: true });
   await ticketDialog.getByPlaceholder("What needs doing?").fill("Jira migration regression Ticket");
   await ticketDialog.getByRole("button", { name: "Create Ticket", exact: true }).click();

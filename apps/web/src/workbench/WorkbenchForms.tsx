@@ -687,7 +687,7 @@ export function WorkbenchTicketDialog({
   );
 }
 
-function getWorkbenchCreateTicketDestination({
+export function getWorkbenchCreateTicketDestination({
   localOnly,
   localOnlySupported,
   jiraBinding,
@@ -727,7 +727,7 @@ function getWorkbenchCreateTicketDescription({
   return description;
 }
 
-function WorkbenchCreateTicketDestination({
+export function WorkbenchCreateTicketDestination({
   jiraBinding,
   localOnlySupported,
   localOnly,
@@ -1866,7 +1866,7 @@ function getWorkbenchThreadRecencyLabel(thread: EnvironmentThreadShell): string 
   );
 }
 
-function WorkbenchInlineError({ message }: { readonly message: string | null }) {
+export function WorkbenchInlineError({ message }: { readonly message: string | null }) {
   if (message === null) return null;
   return (
     <div
@@ -2298,20 +2298,22 @@ function WorkbenchTicketDescriptionPanel({
   );
 }
 
-function WorkbenchTicketDescriptionEditor({
+export function WorkbenchTicketDescriptionEditor({
+  id = "edit-workbench-ticket-context",
   markdown,
   jira,
   onChange,
 }: {
+  id?: string;
   markdown: string;
   jira: boolean;
   onChange: (markdown: string) => void;
 }) {
   const [preview, setPreview] = useState(false);
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Label htmlFor="edit-workbench-ticket-context">Description</Label>
+        <Label htmlFor={id}>Description</Label>
         <ToggleGroup
           aria-label="Ticket description editor mode"
           variant="segmented"
@@ -2331,7 +2333,7 @@ function WorkbenchTicketDescriptionEditor({
       </div>
       <div hidden={preview}>
         <Textarea
-          id="edit-workbench-ticket-context"
+          id={id}
           className="min-h-72"
           placeholder="Goal, constraints, and acceptance criteria…"
           value={markdown}
@@ -2672,9 +2674,9 @@ type WorkbenchTicketWorkspacePanelProps = Pick<
   isArchived: boolean;
   repositoryScopeLocked: boolean;
   workspacePreparationActionLabel:
-    | "Preparing workspace…"
+    | "Preparing work area…"
     | "Retry preparation"
-    | "Prepare workspace";
+    | "Prepare work area";
   setRepositoryScopePanelCollapsed: Dispatch<SetStateAction<boolean>>;
   repositories: ReadonlyArray<WorkbenchTicketRepositoryEntry>;
   retainedRepositories: ReadonlyArray<WorkbenchTicketRepositoryEntry>;
@@ -2859,7 +2861,7 @@ function WorkbenchTicketWorkspaceHeader({
   return (
     <>
       <WorkbenchTicketPanelHeader
-        title="Ticket workspace"
+        title="Work area"
         description={
           <Badge
             size="sm"
@@ -2949,7 +2951,7 @@ function WorkbenchTicketWorkspaceReviewActions({
         type="button"
       >
         {preparationPending
-          ? "Preparing workspace…"
+          ? "Preparing work area…"
           : draft.prepare
             ? workspacePreparationActionLabel
             : "Save changes"}
@@ -3002,7 +3004,7 @@ function WorkbenchTicketWorkspaceRepositoryEditor({
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
         {draft.prepare
-          ? "Review the primary and additional repositories before preparing this workspace."
+          ? "Review the primary and additional repositories before preparing this work area."
           : "Save repository choices together. Existing threads keep their working directories and context."}
       </p>
       <WorkbenchRepositoryScopeFields
@@ -3055,7 +3057,7 @@ function WorkbenchTicketAdvancedWorkspace({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 id="workbench-ticket-advanced-settings-heading" className="text-xs font-medium">
-            Advanced workspace settings
+            Advanced work area settings
           </h3>
           <p className="mt-1 text-xs text-muted-foreground">
             Reset or remove this Ticket&apos;s prepared worktrees.
@@ -3066,15 +3068,15 @@ function WorkbenchTicketAdvancedWorkspace({
           aria-expanded={!advancedWorkspaceSettingsCollapsed}
           aria-label={
             advancedWorkspaceSettingsCollapsed
-              ? "Expand Advanced workspace settings"
-              : "Collapse Advanced workspace settings"
+              ? "Expand Advanced work area settings"
+              : "Collapse Advanced work area settings"
           }
           onClick={() => setAdvancedWorkspaceSettingsCollapsed((collapsed) => !collapsed)}
           size="icon-xs"
           title={
             advancedWorkspaceSettingsCollapsed
-              ? "Expand Advanced workspace settings"
-              : "Collapse Advanced workspace settings"
+              ? "Expand Advanced work area settings"
+              : "Collapse Advanced work area settings"
           }
           type="button"
           variant="ghost"
@@ -3111,7 +3113,7 @@ function WorkbenchTicketAdvancedWorkspace({
             </Button>
           ) : (
             <p className="text-xs text-muted-foreground">
-              No prepared worktrees to remove. Prepare the workspace when you are ready to work on
+              No prepared worktrees to remove. Prepare the work area when you are ready to work on
               this Ticket.
             </p>
           )}
@@ -3195,11 +3197,11 @@ function getWorkbenchWorkspaceDescription({
 >) {
   if (workspaceIsPreparing) return "Preparing the selected repositories.";
   if (ticketWorkspace === undefined)
-    return "Review repositories and prepare a workspace for your editor or first thread.";
+    return "Review repositories and prepare a work area for your editor or first thread.";
   if (ticketWorkspace.status === "ready" && !workspaceHasSelectedRepositories)
-    return "Repository selection changed. Prepare the workspace to add the missing repositories; existing worktrees stay available.";
+    return "Repository selection changed. Prepare the work area to add the missing repositories; existing worktrees stay available.";
   if (ticketWorkspace.status === "released")
-    return "No active worktrees. Review repositories before preparing a workspace or creating a thread.";
+    return "No active worktrees. Review repositories before preparing a work area or creating a thread.";
   if (ticketWorkspace.status === "failed")
     return "Preparation failed. Retry preparation after resolving the reported repository error.";
   if (ticketWorkspace.status === "releasing") return "Removing prepared worktrees.";
@@ -4413,7 +4415,7 @@ function WorkbenchEpicTickets({
   );
 }
 
-function WorkbenchCreateTicketKind({
+export function WorkbenchCreateTicketKind({
   kind,
   markdown,
   setKind,
@@ -4452,7 +4454,7 @@ function WorkbenchCreateTicketKind({
   );
 }
 
-function WorkbenchCreateTicketEpic({
+export function WorkbenchCreateTicketEpic({
   jiraBinding,
   onCreateEpic,
   epics,
@@ -4502,7 +4504,7 @@ function WorkbenchCreateTicketEpic({
   );
 }
 
-function WorkbenchCreateTicketRepositories({
+export function WorkbenchCreateTicketRepositories({
   linkedProjects,
   selectedRepositoryProjectIds,
   selectedProjectId,
@@ -4515,7 +4517,7 @@ function WorkbenchCreateTicketRepositories({
   setPrimaryProjectId: Dispatch<SetStateAction<ProjectId | null>>;
 }) {
   return (
-    <fieldset className="space-y-2">
+    <fieldset className="min-w-0 space-y-2">
       <legend className="text-sm font-medium">Repository scope</legend>
       <p className="text-xs text-muted-foreground">
         Select every repository this Ticket may need. Its primary repository hosts the Agent Thread.
@@ -4530,7 +4532,7 @@ function WorkbenchCreateTicketRepositories({
                 <label
                   key={project.id}
                   htmlFor={inputId}
-                  className="flex cursor-pointer items-start gap-3 rounded-md px-3 py-2.5 hover:bg-accent"
+                  className="flex min-w-0 cursor-pointer items-start gap-3 rounded-md px-3 py-2.5 hover:bg-accent"
                 >
                   <Checkbox
                     id={inputId}
@@ -4547,7 +4549,7 @@ function WorkbenchCreateTicketRepositories({
                       }
                     }}
                   />
-                  <span className="min-w-0">
+                  <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{project.title}</span>
                     <span className="block truncate font-mono text-xs text-muted-foreground">
                       {project.workspaceRoot}
@@ -5303,10 +5305,10 @@ function getWorkbenchDetailWorkspace({
   });
   const workspacePreparationActionLabel: WorkbenchTicketWorkspacePanelProps["workspacePreparationActionLabel"] =
     workspaceIsPreparing
-      ? "Preparing workspace…"
+      ? "Preparing work area…"
       : workspaceHasFailure
         ? "Retry preparation"
-        : "Prepare workspace";
+        : "Prepare work area";
   const repositories = selectedRepositoryProjectIds.map((id) => {
     const repository = linkedProjects.find((project) => project.id === id);
     const workspaceRepository = ticketWorkspace?.repositories.find(
@@ -5702,7 +5704,7 @@ function useWorkbenchCreateTicketDraft({
   };
 }
 
-function getWorkbenchCreateTicketRepositories({
+export function getWorkbenchCreateTicketRepositories({
   linkedProjects,
   repositoryProjectIds,
   primaryProjectId,
@@ -5777,7 +5779,7 @@ function getWorkbenchTicketDraftPresentation({
   };
 }
 
-function getWorkbenchCreateTicketJiraPresentation({
+export function getWorkbenchCreateTicketJiraPresentation({
   jiraBinding,
   jiraSprintId,
   pending,
@@ -5875,7 +5877,7 @@ function WorkbenchTicketResetConfirmation({
           <AlertDialogDescription>
             This removes this Ticket&apos;s prepared repository worktrees. The Ticket, Git branches,
             and commits are kept. Removal is refused while linked Threads or native Threads using
-            these worktrees exist, or any worktree has local changes. Prepare the workspace again
+            these worktrees exist, or any worktree has local changes. Prepare the work area again
             whenever you need it.
           </AlertDialogDescription>
           {error ? <WorkbenchInlineError message={error} /> : null}

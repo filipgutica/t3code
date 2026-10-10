@@ -1,0 +1,21 @@
+/* Embedded ticket UI owns its spacing; chat typography still applies to the description. */
+.chat-markdown [data-workbench-ticket-proposal-copy],
+.chat-markdown [data-workbench-ticket-repositories] {
+  margin: 0;
+}
+
+.chat-markdown [data-workbench-ticket-proposal-heading] {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--text-sm--line-height);
+}
+
+.chat-markdown [data-workbench-ticket-repositories] {
+  padding: 0;
+  list-style: none;
+}
+
+.chat-markdown [data-workbench-ticket-repository-badge] {
+  margin: 0;
+}

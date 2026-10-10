@@ -49,6 +49,8 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 import * as Hex from "effect/encoding/Hex";
 
+import { listTicketDrafts, makeTicketDraftPersistence } from "./TicketDraftPersistence.ts";
+
 import { WorkbenchNativeAccess } from "./WorkbenchNativeAccess.ts";
 import { ensureWorkbenchSchema } from "./WorkbenchSchema.ts";
 
@@ -321,7 +323,21 @@ export interface WorkbenchClaimTicketWorkspaceReleaseInput {
   readonly expectedRevision?: number;
 }
 
-interface WorkbenchStoreShape {
+interface WorkbenchStoreShape extends Omit<
+  Effect.Success<typeof makeTicketDraftPersistence>,
+  "getTicketDraftForThread"
+> {
+  readonly getTicketDraftForThread: (threadId: ThreadId) => Effect.Effect<
+    | (NonNullable<
+        Effect.Success<
+          ReturnType<Effect.Success<typeof makeTicketDraftPersistence>["getTicketDraftForThread"]>
+        >
+      > & {
+        readonly workArea: WorkbenchTicketWorkspace | null;
+      })
+    | null,
+    WorkbenchOperationError
+  >;
   readonly getSnapshot: Effect.Effect<WorkbenchSnapshot, WorkbenchOperationError>;
   readonly listTicketsNeedingSummary: Effect.Effect<
     ReadonlyArray<WorkbenchTicket>,
@@ -473,6 +489,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const sql = yield* SqlClient.SqlClient;
   const native = yield* WorkbenchNativeAccess;
+  const ticketDraftPersistence = yield* makeTicketDraftPersistence;
   const ticketChangesPubSub = yield* PubSub.unbounded<WorkbenchTicketChange>();
   const ticketChanges = Stream.fromPubSub(ticketChangesPubSub);
 
@@ -882,6 +899,14 @@ const makeWorkbenchStore = Effect.gen(function* () {
       SELECT 1 FROM workbench_ticket_workspaces w JOIN workbench_tickets t ON t.ticket_id = w.ticket_id
       WHERE t.workbench_project_id = ${projectId} AND w.status IN ('preparing', 'releasing') LIMIT 1
     `;
+    const changingDrafts = yield* sql`SELECT 1 FROM workbench_ticket_drafts
+      WHERE workbench_project_id = ${projectId} AND phase IN ('creating', 'promoting', 'starting', 'discarding') LIMIT 1`;
+    if (changingDrafts.length > 0)
+      return yield* new WorkbenchOperationError({
+        code: "ticket_draft_busy",
+        message:
+          "Ticket preparation is changing. Finish or retry it before changing the workspace lifecycle.",
+      });
     if (busy.length > 0)
       return yield* new WorkbenchOperationError({
         code: "ticket_workspace_in_use",
@@ -1299,6 +1324,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
           workspaceRepositoriesByTicket.set(repository.ticketId, repositories);
         }
         return WorkbenchSnapshot.make({
+          ticketDrafts: yield* listTicketDrafts.pipe(
+            Effect.provideService(WorkbenchNativeAccess, native),
+            Effect.provideService(SqlClient.SqlClient, sql),
+          ),
           projects: projectRows.map((project) => ({
             ...project,
             linkedProjectIds: linksByProject.get(project.id) ?? [],
@@ -2038,6 +2067,19 @@ const makeWorkbenchStore = Effect.gen(function* () {
     return project;
   });
 
+  const requireIdlePlanningThreads = (threadIds: ReadonlyArray<ThreadId>) =>
+    Effect.gen(function* () {
+      for (const threadId of threadIds) {
+        if (yield* native.hasPendingThreadWork(threadId)) {
+          return yield* new WorkbenchOperationError({
+            code: "ticket_draft_busy",
+            message:
+              "Stop or finish the planning conversation before deleting its Ticket or workspace.",
+          });
+        }
+      }
+    });
+
   const deleteProject: WorkbenchStoreShape["deleteProject"] = Effect.fn(
     "WorkbenchStore.deleteProject",
   )((input) =>
@@ -2047,6 +2089,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
           yield* requireProjectRevision(input);
           yield* requireExpectedJiraBinding(input);
           yield* requireStableProjectWorkspaces(input.id);
+          const planningThreads = yield* sql<{
+            readonly threadId: ThreadId;
+          }>`SELECT thread_id AS "threadId"
+            FROM workbench_ticket_drafts WHERE workbench_project_id = ${input.id} AND phase <> 'working'`;
+          yield* requireIdlePlanningThreads(planningThreads.map((row) => row.threadId));
           const counts = yield* sql<{ readonly ticketCount: number; readonly epicCount: number }>`
         SELECT (SELECT COUNT(*) FROM workbench_tickets WHERE workbench_project_id = ${input.id} AND deleted_at IS NULL) AS "ticketCount",
           (SELECT COUNT(*) FROM workbench_epics WHERE workbench_project_id = ${input.id}) AS "epicCount"
@@ -2072,6 +2119,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
         UPDATE workbench_projects SET deleted_at = ${input.deletedAt}, updated_at = ${input.deletedAt},
           revision = revision + 1 WHERE project_id = ${input.id}
       `;
+          // Workspace deletion retains native conversations, including idle planning Threads.
+          yield* sql`DELETE FROM workbench_ticket_drafts WHERE workbench_project_id = ${input.id}`;
         }),
       )
       .pipe(Effect.mapError(workbenchStoreError)),
@@ -2672,6 +2721,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             JOIN workbench_projects p ON p.project_id = t.workbench_project_id
           WHERE a.thread_id = ${run.threadId} AND a.superseded_at IS NULL
             AND p.deleted_at IS NULL AND p.archived_at IS NULL AND p.execution_after_sequence < ${input.sequence} AND t.deleted_at IS NULL AND t.archived_at IS NULL AND t.status = 'todo'
+            AND NOT EXISTS (SELECT 1 FROM workbench_ticket_drafts d WHERE d.thread_id = a.thread_id AND d.phase <> 'working')
             AND a.execution_after_sequence < ${input.sequence}
             AND t.execution_after_sequence < ${input.sequence}`;
             const assignment = assignments[0];
@@ -2725,6 +2775,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       WHERE r.run_id = ${runId} AND r.state IN ('pending', 'uncertain')
         AND a.superseded_at IS NULL AND p.deleted_at IS NULL AND p.archived_at IS NULL AND t.deleted_at IS NULL AND t.archived_at IS NULL
         AND (r.state = 'uncertain' OR p.execution_after_sequence < r.sequence)
+        AND NOT EXISTS (SELECT 1 FROM workbench_ticket_drafts d WHERE d.thread_id = a.thread_id AND d.phase <> 'working')
         AND t.status = 'todo' AND a.execution_after_sequence < r.sequence AND t.execution_after_sequence < r.sequence`;
           if (current[0] === undefined) {
             yield* sql`UPDATE workbench_execution_runs SET state = 'done' WHERE run_id = ${runId}`;
@@ -3078,6 +3129,19 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "Jira-managed Tickets cannot be deleted.",
             });
           }
+          const changingDrafts =
+            yield* sql`SELECT 1 FROM workbench_ticket_drafts WHERE draft_id = ${input.ticketId}
+            AND phase IN ('promoting', 'starting')`;
+          if (changingDrafts.length > 0)
+            return yield* new WorkbenchOperationError({
+              code: "ticket_draft_busy",
+              message: "Finish or retry ticket preparation before deleting the ticket.",
+            });
+          const planningThreads = yield* sql<{
+            readonly threadId: ThreadId;
+          }>`SELECT thread_id AS "threadId"
+            FROM workbench_ticket_drafts WHERE draft_id = ${input.ticketId} AND phase <> 'working'`;
+          yield* requireIdlePlanningThreads(planningThreads.map((row) => row.threadId));
           const workspace = yield* findTicketWorkspaceRow({ ticketId: input.ticketId });
           if (
             Option.isSome(workspace) &&
@@ -3097,6 +3161,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
               AND deleted_at IS NULL
               AND revision = ${input.expectedRevision}
           `;
+          // Native Thread history and Assignment reservations survive ticket deletion.
+          yield* sql`DELETE FROM workbench_ticket_drafts WHERE draft_id = ${input.ticketId}`;
           return undefined;
         }),
       )
@@ -3295,6 +3361,18 @@ const makeWorkbenchStore = Effect.gen(function* () {
   });
 
   return WorkbenchStore.of({
+    ...ticketDraftPersistence,
+    getTicketDraftForThread: (threadId) =>
+      sql
+        .withTransaction(
+          Effect.gen(function* () {
+            const draft = yield* ticketDraftPersistence.getTicketDraftForThread(threadId);
+            if (!draft) return null;
+            const workArea = yield* loadTicketWorkspace(draft.id);
+            return { ...draft, workArea: Option.getOrNull(workArea) };
+          }),
+        )
+        .pipe(Effect.mapError(workbenchStoreError)),
     getSnapshot: getSnapshot(),
     listTicketsNeedingSummary: listTicketsNeedingSummary(),
     getTicketSummaryCandidate,

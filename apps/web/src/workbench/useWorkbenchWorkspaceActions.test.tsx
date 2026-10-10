@@ -1,5 +1,6 @@
 import {
   EnvironmentId,
+  ThreadId,
   ProjectId,
   WorkbenchProjectId,
   WorkbenchTicketId,
@@ -179,6 +180,45 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => renderer?.unmount());
   vi.unstubAllGlobals();
+});
+
+it("preserves a draft deep link without requiring a Ticket record and falls back after discard", async () => {
+  const draftId = WorkbenchTicketId.make("draft");
+  const draft = {
+    id: draftId,
+    projectId: workspace.id,
+    threadId: ThreadId.make("draft-thread"),
+    anchorProjectId: ProjectId.make("repo"),
+    modelSelection: { instanceId: "codex", model: "gpt" } as NonNullable<
+      WorkbenchSnapshot["ticketDrafts"]
+    >[number]["modelSelection"],
+    revision: 1,
+    phase: "draft" as const,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    fields: {
+      title: "Try retries",
+      markdown: "",
+      kind: "story" as const,
+      epicId: null,
+      repositoryProjectIds: [],
+      primaryT3ProjectId: null,
+      localOnly: false,
+      jiraSprintId: null,
+    },
+  };
+  const { router, update } = await mount(
+    { ...snapshot, ticketDrafts: [draft] },
+    "/workbench?environmentId=remote&workbenchProjectId=workspace&ticketId=draft",
+  );
+  expect(router.state.location.search.ticketId).toBe(draftId);
+  expect(selection.selectedTicketId).toBe(draftId);
+  expect(selection.selectedTicket).toBeNull();
+  await act(async () => selection.setAwaitingTicketId(draftId));
+  await update({ ...snapshot, ticketDrafts: [draft] });
+  expect(selection.awaitingTicketId).toBeNull();
+  await update({ ...snapshot, ticketDrafts: [] });
+  expect(router.state.location.search.ticketId).toBeUndefined();
 });
 
 describe("Workspace lifecycle", () => {

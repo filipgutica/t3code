@@ -687,11 +687,19 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
     CREATE INDEX IF NOT EXISTS idx_workbench_jira_issue_links_ticket
     ON workbench_jira_issue_links(ticket_id, active)
   `;
-  yield* sql.withTransaction(
+  const applyMigration = <E, R>(version: number, migration: Effect.Effect<void, E, R>) =>
+    sql.withTransaction(
+      Effect.gen(function* () {
+        const applied =
+          yield* sql`SELECT version FROM workbench_schema_migrations WHERE version = ${version}`;
+        if (applied.length > 0) return;
+        yield* migration;
+        yield* sql`INSERT INTO workbench_schema_migrations (version) VALUES (${version})`;
+      }),
+    );
+  yield* applyMigration(
+    15,
     Effect.gen(function* () {
-      const applied =
-        yield* sql`SELECT version FROM workbench_schema_migrations WHERE version = 15`;
-      if (applied.length > 0) return;
       yield* sql`ALTER TABLE workbench_tickets ADD COLUMN execution_after_sequence INTEGER NOT NULL DEFAULT 0`;
       yield* sql`ALTER TABLE workbench_assignments ADD COLUMN execution_after_sequence INTEGER NOT NULL DEFAULT 0`;
       yield* sql`CREATE TABLE workbench_execution_cursor (
@@ -702,20 +710,34 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
       assignment_id TEXT, started_at TEXT, state TEXT NOT NULL
         CHECK (state IN ('done', 'pending', 'uncertain'))
     )`;
-      yield* sql`INSERT INTO workbench_schema_migrations (version) VALUES (15)`;
     }),
   );
-  yield* sql.withTransaction(
+  yield* applyMigration(
+    16,
     Effect.gen(function* () {
-      const applied =
-        yield* sql`SELECT version FROM workbench_schema_migrations WHERE version = 16`;
-      if (applied.length > 0) return;
       yield* sql`ALTER TABLE workbench_projects ADD COLUMN archived_at TEXT`;
       yield* sql`ALTER TABLE workbench_projects ADD COLUMN deleted_at TEXT`;
       yield* sql`ALTER TABLE workbench_projects ADD COLUMN revision INTEGER NOT NULL DEFAULT 0`;
       yield* sql`ALTER TABLE workbench_projects ADD COLUMN execution_after_sequence INTEGER NOT NULL DEFAULT 0`;
-      yield* sql`INSERT INTO workbench_schema_migrations (version) VALUES (16)`;
     }),
+  );
+  yield* applyMigration(
+    17,
+    Effect.gen(function* () {
+      yield* sql`CREATE TABLE workbench_ticket_drafts (
+      draft_id TEXT PRIMARY KEY, workbench_project_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL UNIQUE, phase TEXT NOT NULL, revision INTEGER NOT NULL,
+      payload_json TEXT NOT NULL,
+      FOREIGN KEY (workbench_project_id) REFERENCES workbench_projects(project_id) ON DELETE CASCADE
+    )`;
+      yield* sql`CREATE UNIQUE INDEX uq_workbench_active_ticket_draft
+      ON workbench_ticket_drafts(workbench_project_id)
+      WHERE phase IN ('creating', 'draft', 'promoting', 'discarding')`;
+    }),
+  );
+  yield* applyMigration(
+    18,
+    sql`DROP INDEX IF EXISTS uq_workbench_active_ticket_draft`.pipe(Effect.asVoid),
   );
   yield* sql`
     INSERT OR IGNORE INTO workbench_schema_migrations (version)

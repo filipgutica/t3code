@@ -129,7 +129,7 @@ export function WorkbenchTicketPullRequests({
         description={
           canSearch
             ? `Linked PRs and ${ticketKey} mentions`
-            : "Linked through threads or the ticket workspace"
+            : "Linked through threads or the ticket work area"
         }
         collapsed={collapsed}
         onToggle={() => setCollapsed((value) => !value)}
@@ -259,7 +259,7 @@ function WorkbenchTicketPullRequestRow({
             </TooltipPopup>
           </Tooltip>
         ) : !matchesTicket ? (
-          <Badge variant="secondary">Ticket workspace</Badge>
+          <Badge variant="secondary">Work area</Badge>
         ) : null}
       </div>
     </div>
@@ -313,7 +313,7 @@ function WorkbenchPullRequestSearchStatus({
       ) : null}
       {checkout.isPending ? (
         <p role="status" className="text-xs leading-5 text-muted-foreground">
-          Checking ticket workspace pull requests…
+          Checking ticket work area pull requests…
         </p>
       ) : null}
       {checkout.errors.map((error) => (

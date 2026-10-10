@@ -1,6 +1,7 @@
 import { seedNativeThread } from "./testing/nativeThreads.ts";
 import {
   ProjectId,
+  ProviderInstanceId,
   ThreadId,
   WorkbenchAssignmentId,
   WorkbenchEpicId,
@@ -29,6 +30,112 @@ const TestLayer = WorkbenchStoreLive.pipe(
 );
 
 describe("WorkbenchStore", () => {
+  it.effect.each(["queued", "starting", "pending-request"] as const)(
+    "retains planning policy during %s work until workspace or Ticket deletion is safe",
+    (status) =>
+      Effect.gen(function* () {
+        const store = yield* WorkbenchStore;
+        const sql = yield* SqlClient.SqlClient;
+        const projectId = ProjectId.make("planning-delete-project");
+        const workspaceId = WorkbenchProjectId.make("planning-delete-workspace");
+        const ticketId = WorkbenchTicketId.make("planning-delete-ticket");
+        const threadId = ThreadId.make("planning-delete-thread");
+        const createdAt = "2026-10-09T12:00:00.000Z";
+        yield* sql`INSERT INTO projection_projects
+          (project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at)
+          VALUES (${projectId}, 'Planning', '/repos/planning', '[]', ${createdAt}, ${createdAt}, NULL)`;
+        yield* store.createProject({
+          id: workspaceId,
+          title: "Planning",
+          linkedProjectIds: [projectId],
+          createdAt,
+        });
+        let draft = yield* store.beginTicketDraft({
+          id: ticketId,
+          projectId: workspaceId,
+          threadId,
+          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6.1-sol" },
+        });
+        yield* seedNativeThread({ threadId, projectId, createdAt });
+        draft = yield* store.transitionTicketDraft({
+          id: draft.id,
+          expectedRevision: draft.revision,
+          from: ["creating"],
+          phase: "draft",
+        });
+        draft = yield* store.updateTicketDraft({
+          id: draft.id,
+          expectedRevision: draft.revision,
+          fields: {
+            ...draft.fields,
+            title: "Plan work",
+            primaryT3ProjectId: projectId,
+            repositoryProjectIds: [projectId],
+          },
+        });
+        draft = yield* store.transitionTicketDraft({
+          id: draft.id,
+          expectedRevision: draft.revision,
+          from: ["draft"],
+          phase: "promoting",
+        });
+        yield* store.createTicket({
+          id: ticketId,
+          projectId: workspaceId,
+          title: "Plan work",
+          kind: "story",
+          markdown: "Plan",
+          primaryT3ProjectId: projectId,
+          createdAt,
+        });
+        yield* store.createAssignment({
+          id: WorkbenchAssignmentId.make("planning-delete-assignment"),
+          ticketId,
+          threadId,
+          createdAt,
+        });
+        yield* store.transitionTicketDraft({
+          id: draft.id,
+          expectedRevision: draft.revision,
+          from: ["promoting"],
+          phase: "planning",
+        });
+        if (status === "pending-request") {
+          yield* sql`INSERT INTO orchestration_v2_projection_runtime_requests
+            (runtime_request_id, thread_id, node_id, kind, status, created_at, payload_json)
+            VALUES ('planning-request', ${threadId}, 'node', 'approval', 'pending', ${createdAt}, '{}')`;
+        } else {
+          yield* sql`INSERT INTO orchestration_v2_projection_runs
+            (run_id, thread_id, ordinal, provider, status, requested_at, payload_json)
+            VALUES ('planning-run', ${threadId}, 1, 'codex', ${status}, ${createdAt}, '{}')`;
+        }
+        const deleteTicket = store.deleteTicket({
+          ticketId,
+          expectedRevision: 0,
+          deletedAt: createdAt,
+        });
+        const deleteWorkspace = store.deleteProject({
+          id: workspaceId,
+          expectedRevision: 0,
+          expectedTicketCount: 1,
+          expectedEpicCount: 0,
+          deletedAt: createdAt,
+        });
+        expect(yield* deleteTicket.pipe(Effect.flip)).toMatchObject({ code: "ticket_draft_busy" });
+        expect(yield* deleteWorkspace.pipe(Effect.flip)).toMatchObject({
+          code: "ticket_draft_busy",
+        });
+        expect((yield* store.getTicketDraftForThread(threadId))?.phase).toBe("planning");
+        yield* sql`DELETE FROM orchestration_v2_projection_runs WHERE thread_id = ${threadId}`;
+        yield* sql`DELETE FROM orchestration_v2_projection_runtime_requests WHERE thread_id = ${threadId}`;
+        yield* deleteWorkspace;
+        expect(yield* store.getTicketDraftForThread(threadId)).toBeNull();
+        expect(
+          yield* sql`SELECT thread_id FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId}`,
+        ).toHaveLength(1);
+      }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.effect("rejects a native project that is not a Git repository", () => {
     const inspectedRoots: Array<string> = [];
     const projectId = ProjectId.make("native-non-repository");

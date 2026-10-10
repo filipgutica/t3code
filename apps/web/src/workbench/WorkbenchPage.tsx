@@ -26,6 +26,7 @@ import { useState } from "react";
 interface WorkbenchPageProps {
   readonly initialEnvironmentId: EnvironmentId | undefined;
   readonly createWorkspace: boolean;
+  readonly createTicket: boolean;
   readonly initialProjectId: WorkbenchProjectId | undefined;
   readonly initialTicketId: WorkbenchTicketId | undefined;
   readonly initialEpicId: WorkbenchEpicId | undefined;
@@ -37,6 +38,7 @@ interface WorkbenchPageProps {
 export function WorkbenchPage({
   initialEnvironmentId,
   createWorkspace,
+  createTicket,
   initialProjectId,
   initialTicketId,
   initialEpicId,
@@ -137,6 +139,7 @@ export function WorkbenchPage({
         workspaceActions={workspaceActions}
         environmentId={environmentId}
         createWorkspace={createWorkspace}
+        createTicket={createTicket}
         jiraDialogOpen={jiraDialogOpen}
         error={error}
         pendingAction={pendingAction}

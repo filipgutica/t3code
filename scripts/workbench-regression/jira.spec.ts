@@ -208,6 +208,7 @@ test.describe("Jira Workbench integration @live", () => {
       await expect(page.getByText("Jira paused", { exact: true })).toBeVisible();
 
       await page.getByRole("button", { name: "New Ticket", exact: true }).click();
+      await page.getByRole("button", { name: "Create manually", exact: true }).click();
       const createDialog = page.getByRole("dialog", { name: "Create Ticket", exact: true });
       await expect(
         createDialog.getByText("Resume the Jira connection before creating a Ticket."),
@@ -263,6 +264,7 @@ test.describe("Jira Workbench integration @live", () => {
     try {
       await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=demo-jira"));
       await page.getByRole("button", { name: "New Ticket", exact: true }).click();
+      await page.getByRole("button", { name: "Create manually", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "Create Ticket", exact: true });
       await dialog.getByPlaceholder("What needs doing?").fill(title);
       // Creation uses the user's selected scope; mirror defaults apply to imports.
@@ -409,7 +411,7 @@ test.describe("Jira Workbench integration @live", () => {
         .click();
       await page
         .getByRole("dialog")
-        .getByRole("button", { name: "Create workspace and thread", exact: true })
+        .getByRole("button", { name: "Create work area and Thread", exact: true })
         .click();
       await expect(page).toHaveURL(
         (url) => url.pathname !== "/workbench" && url.searchParams.get("workbench") === "true",

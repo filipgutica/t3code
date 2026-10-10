@@ -23,6 +23,7 @@ import {
   type WorkbenchJiraIssueLink,
   type WorkbenchSnapshot,
   type WorkbenchTicket,
+  type WorkbenchTicketDraft,
 } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { makeThreadFixture } from "../test-fixtures";
@@ -34,6 +35,25 @@ vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn(async 
 vi.mock("../state/query", () => ({
   useEnvironmentQuery: () => ({ data: null, error: null, isPending: false }),
 }));
+// The conversation embeds the native ChatView; this suite only proves when the Workspace shows it.
+vi.mock("./WorkbenchTicketConversation", async () => {
+  const { createElement } = await import("react");
+  return {
+    WorkbenchTicketConversation: (props: {
+      draft: { phase: string } | null;
+      draftsSupported: boolean;
+      onShowTicketDetails: () => void;
+    }) =>
+      createElement(
+        "div",
+        {
+          "data-conversation": props.draft?.phase ?? "none",
+          "data-drafts-supported": String(props.draftsSupported),
+        },
+        createElement("button", { onClick: props.onShowTicketDetails }, "Ticket details"),
+      ),
+  };
+});
 vi.mock("../state/pullRequests", () => ({
   linkedPullRequestDetailAtom: () => null,
   pullRequestEnvironment: { activity: () => null },
@@ -134,6 +154,71 @@ const assignment = {
   supersededAt: null,
   createdAt: timestamp,
 };
+const conversationDraft = (
+  phase: WorkbenchTicketDraft["phase"],
+  id: WorkbenchTicketId = WorkbenchTicketId.make("draft-ticket"),
+): WorkbenchTicketDraft => ({
+  id,
+  projectId: workspace.id,
+  threadId: ThreadId.make("planning-thread"),
+  anchorProjectId: repository.id,
+  modelSelection: { instanceId: "codex", model: "gpt" } as WorkbenchTicketDraft["modelSelection"],
+  revision: 1,
+  phase,
+  fields: {
+    title: "",
+    markdown: "",
+    kind: "story",
+    epicId: null,
+    repositoryProjectIds: [],
+    primaryT3ProjectId: null,
+    localOnly: false,
+    jiraSprintId: null,
+  },
+  createdAt: timestamp,
+  updatedAt: timestamp,
+});
+type ConversationMode = "create" | "resume" | "planning" | "working" | "legacy";
+/** What the snapshot and route hold for each way the page can reach the conversation. */
+const conversationFixture = ({
+  conversation,
+  detail,
+}: {
+  conversation: ConversationMode | undefined;
+  detail: boolean;
+}) => {
+  const ticketPhase =
+    conversation === "planning" || conversation === "working" ? conversation : null;
+  const unsavedDraft = conversation === "resume" ? [conversationDraft("draft")] : [];
+  return {
+    selectedTicket: detail || ticketPhase !== null ? ticket : null,
+    // A host that predates conversation drafts omits the snapshot key entirely.
+    ticketDrafts:
+      conversation === "legacy"
+        ? undefined
+        : ticketPhase !== null
+          ? [conversationDraft(ticketPhase, ticket.id)]
+          : unsavedDraft,
+    createTicket: conversation === "create" || conversation === "legacy",
+  };
+};
+const workspaceFixture = (workspaceState: "active" | "archived" | "deleted") => {
+  const currentWorkspace = {
+    ...workspace,
+    archivedAt: workspaceState === "archived" ? timestamp : null,
+  };
+  return {
+    currentWorkspace,
+    selectedProject: workspaceState === "deleted" ? null : currentWorkspace,
+  };
+};
+const ticketsFixture = (snapshotTickets: ReadonlyArray<WorkbenchTicket>, includeLocal: boolean) =>
+  includeLocal
+    ? [
+        ...snapshotTickets,
+        { ...ticket, id: WorkbenchTicketId.make("local-ticket"), title: "Local follow-up" },
+      ]
+    : snapshotTickets;
 const snapshot: WorkbenchSnapshot = {
   projects: [workspace],
   tickets: [ticket],
@@ -168,6 +253,7 @@ function Harness({
   grants = defaultGrants,
   error = null,
   dialog,
+  conversation,
 }: {
   workspaceState?: "active" | "archived" | "deleted";
   detail?: boolean;
@@ -177,27 +263,30 @@ function Harness({
   grants?: { archive: boolean; remove: boolean };
   error?: string | null;
   dialog?: "create" | "publish";
+  /** create=ticket in the URL, an unsaved draft to resume, or a saved ticket's draft phase. */
+  conversation?: ConversationMode;
 }) {
   const statusEnvironmentRef = useRef(environmentId);
   const pendingJiraMigrationBindingsRef = useRef<
     PageProps["jiraBindings"]["pendingJiraMigrationBindingsRef"]["current"]
   >(new Map());
-  const archivedAt = workspaceState === "archived" ? timestamp : null;
-  const currentWorkspace = { ...workspace, archivedAt };
-  const selectedProject = workspaceState === "deleted" ? null : currentWorkspace;
-  const selectedTicket = detail ? ticket : null;
+  const { currentWorkspace, selectedProject } = workspaceFixture(workspaceState);
+  const { selectedTicket, ticketDrafts, createTicket } = conversationFixture({
+    conversation,
+    detail,
+  });
   const selectedTicketId = selectedTicket?.id ?? null;
   const publication = dialog === "publish" ? { ticket, binding } : null;
   const jiraSyncMessage =
     syncState === "success" ? "Jira sync completed" : "Jira sync needs a retry";
   const issueLinks = mirrored ? [issueLink] : [];
-  const tickets = includeLocalTicket
-    ? [
-        ...snapshot.tickets,
-        { ...ticket, id: WorkbenchTicketId.make("local-ticket"), title: "Local follow-up" },
-      ]
-    : snapshot.tickets;
-  const currentSnapshot = { ...snapshot, projects: [currentWorkspace], tickets };
+  const tickets = ticketsFixture(snapshot.tickets, includeLocalTicket);
+  const currentSnapshot = {
+    ...snapshot,
+    projects: [currentWorkspace],
+    tickets,
+    ...(ticketDrafts === undefined ? {} : { ticketDrafts }),
+  };
   const jiraSnapshot: NonNullable<PageProps["pageData"]["jiraSnapshot"]> = {
     connections: [],
     bindings: [binding],
@@ -238,6 +327,7 @@ function Harness({
     refreshArchivedThreads: noop,
   };
   const selection: PageProps["selection"] = {
+    awaitingTicketId: null,
     selectedProjectId: workspace.id,
     setSelectedProjectId: noop,
     selectedTicketId,
@@ -291,6 +381,7 @@ function Harness({
   const props: PageProps = {
     environmentId,
     createWorkspace: false,
+    createTicket,
     jiraDialogOpen: false,
     error,
     pendingAction: null,
@@ -324,6 +415,11 @@ function Harness({
       saveEpicContent: success,
       submitEpic: success,
       openTicketDialog: noop,
+      conversationEpicId: null,
+      openTicketConversation: noop,
+      closeTicketConversation: noop,
+      openCreatedTicket: noop,
+      openDraftThread: noop,
       openEpicDialog: noop,
       handleTicketDialogOpenChange: noop,
       handleEpicDialogOpenChange: noop,
@@ -407,14 +503,17 @@ const render = async (props: ComponentProps<typeof Harness> = {}) => {
     ),
   );
 };
-const button = (label: string) => {
+function button(label: string): HTMLButtonElement;
+function button(label: string, options: { optional: true }): HTMLButtonElement | null;
+function button(label: string, options?: { optional: true }) {
   const found = [...document.querySelectorAll("button")].find(
     (candidate) =>
       candidate.getAttribute("aria-label") === label || candidate.textContent?.trim() === label,
   );
+  if (!found && options?.optional) return null;
   if (!found) throw new Error(`Missing button: ${label}`);
   return found;
-};
+}
 
 it("suspends planning and Jira retry on archive and restores their availability", async () => {
   await render();
@@ -529,4 +628,56 @@ it("keeps linked native Threads openable while archived Ticket publication is di
     expect.objectContaining({ id: ticket.id }),
     thread.id,
   );
+});
+
+it("opens the planning conversation for create=ticket instead of the board", async () => {
+  await render({ conversation: "create" });
+  expect(document.querySelector('[data-conversation="none"]')).not.toBeNull();
+  expect(document.querySelector("article")).toBeNull();
+  await render({ conversation: "create", workspaceState: "archived" });
+  expect(document.querySelector("[data-conversation]")).toBeNull();
+  expect(document.querySelector("article")).not.toBeNull();
+});
+
+it("shows a draft on the board while New Ticket remains available", async () => {
+  await render({ conversation: "resume" });
+  expect(document.querySelector("[data-conversation]")).toBeNull();
+  expect(button("New Ticket").disabled).toBe(false);
+  expect(button("Open draft Untitled draft").disabled).toBe(false);
+  expect(document.body.textContent).toContain("Draft");
+});
+
+it("keeps a planning ticket in the conversation and shows the ordinary ticket once work starts", async () => {
+  await render({ conversation: "planning" });
+  expect(document.querySelector('[data-conversation="planning"]')).not.toBeNull();
+  expect(document.body.textContent).not.toContain("Publish to Jira…");
+  await render({ conversation: "working" });
+  expect(document.querySelector("[data-conversation]")).toBeNull();
+  expect(button("Open Thread for Ship the release").disabled).toBe(false);
+});
+
+it("opens the ticket details from a planning conversation and returns to the same conversation", async () => {
+  await render({ conversation: "planning" });
+  await act(async () => button("Ticket details").click());
+  expect(document.querySelector("[data-conversation]")).toBeNull();
+  // The ordinary ticket view brings back editing and repositories that planning hides.
+  expect(document.body.textContent).toContain(ticket.title);
+  expect(button("Publish to Jira…").disabled).toBe(false);
+  await act(async () => button("Continue planning").click());
+  expect(document.querySelector('[data-conversation="planning"]')).not.toBeNull();
+});
+
+it("returns to planning instead of opening a second Thread from the planning ticket's details", async () => {
+  await render({ conversation: "planning" });
+  await act(async () => button("Ticket details").click());
+  await act(async () => button("Open Thread for Ship the release").click());
+  expect(requestTicketThread).not.toHaveBeenCalled();
+  expect(document.querySelector('[data-conversation="planning"]')).not.toBeNull();
+});
+
+it("tells the conversation when the host predates conversation drafts", async () => {
+  await render({ conversation: "legacy" });
+  expect(document.querySelector('[data-drafts-supported="false"]')).not.toBeNull();
+  await render({ conversation: "create" });
+  expect(document.querySelector('[data-drafts-supported="true"]')).not.toBeNull();
 });

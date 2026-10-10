@@ -2740,6 +2740,9 @@ export const OrchestrationV2Command = Schema.Union([
     type: Schema.Literal("thread.metadata.update"),
     commandId: CommandId,
     threadId: ThreadId,
+    /** Rebind an idle thread; callers must provide both expected binding fields. */
+    projectId: Schema.optional(ProjectId),
+    expectedProjectId: Schema.optional(ProjectId),
     title: Schema.optional(TrimmedNonEmptyString),
     /** Kick off (true) or abandon (false) an async title regeneration. */
     regenerateTitle: Schema.optional(Schema.Boolean),

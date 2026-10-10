@@ -49,6 +49,7 @@ const nativeLayer = (options?: {
       hasThreadAtWorktreePath: () => Effect.succeed(false),
       executionSequence: options?.executionSequence ?? Effect.succeed(0),
       startedExecutionRunIds: Effect.succeed([]),
+      hasPendingThreadWork: () => Effect.succeed(false),
     }),
   );
 };

@@ -1245,6 +1245,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
   size?: "sm" | "xs";
   hidden?: boolean;
+  runtimeModeLocked?: boolean;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
@@ -1306,6 +1307,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
         <Select
           open={open}
           onOpenChange={setOpen}
+          disabled={props.runtimeModeLocked}
           value={props.runtimeMode}
           onValueChange={(value) => props.onRuntimeModeChange(value!)}
         >
@@ -1526,6 +1528,8 @@ export interface ChatComposerProps {
   draftId: DraftId | null;
   multipleModelSelections: ReadonlyArray<ModelSelection> | null;
   supportsMultipleModels: boolean;
+  /** Match a server-enforced read-only planning policy with fixed run-mode controls. */
+  readOnlyPlanning?: boolean;
   onMultipleModelSelectionsChange: React.Dispatch<
     React.SetStateAction<ReadonlyArray<ModelSelection> | null>
   >;
@@ -1720,6 +1724,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     draftId,
     multipleModelSelections,
     supportsMultipleModels,
+    readOnlyPlanning = false,
     onMultipleModelSelectionsChange: setMultipleModelSelections,
     activeThreadId,
     activeThreadEnvironmentId: _activeThreadEnvironmentId,
@@ -2160,8 +2165,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const selectedProvider: ProviderDriverKind =
     selectedProviderEntry?.driverKind ?? requestedDriverKind;
   const supportedRuntimeModes = selectedProviderEntry?.snapshot.supportedRuntimeModes;
-  const compatibleRuntimeModeOptions =
-    supportedRuntimeModes && supportedRuntimeModes.length > 0
+  const compatibleRuntimeModeOptions = readOnlyPlanning
+    ? runtimeModeOptions.filter((option) => option.mode === "approval-required")
+    : supportedRuntimeModes && supportedRuntimeModes.length > 0
       ? runtimeModeOptions.filter((option) => supportedRuntimeModes.includes(option.mode))
       : runtimeModeOptions;
   // Older threads can contain a mode their current provider no longer offers.
@@ -5456,7 +5462,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       id: "mode",
       content: (
         <ComposerFooterModeControls
-          showInteractionModeToggle={planModeUiEnabled}
+          showInteractionModeToggle={planModeUiEnabled && !readOnlyPlanning}
+          runtimeModeLocked={readOnlyPlanning}
           interactionMode={interactionMode}
           runtimeMode={compatibleRuntimeMode}
           runtimeModeOptions={compatibleRuntimeModeOptions}
@@ -5624,7 +5631,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             runtimeModeOptions={compatibleRuntimeModeOptions}
             size={composerControlsCollapsed ? "xs" : "sm"}
             hidden={composerControlsHidden || hiddenRestingBlockIds.length === 0}
-            showInteractionModeToggle={planModeUiEnabled && hiddenRestingBlockIds.includes("mode")}
+            showInteractionModeToggle={
+              planModeUiEnabled && !readOnlyPlanning && hiddenRestingBlockIds.includes("mode")
+            }
             traitsMenuContent={
               hiddenRestingBlockIds.includes("traits") ? providerTraitsMenuContent : undefined
             }

@@ -824,6 +824,10 @@ function isCompactCommandMessage(message: ChatMessage): boolean {
   return message.role === "user" && text === "/compact" && !message.attachments?.length;
 }
 
+/**
+ * `readOnlyPlanning` presents a conversation whose runtime policy restricts it to
+ * planning. Runtime enforcement stays on the server; this hides incompatible controls.
+ */
 type ChatViewProps =
   | {
       environmentId: EnvironmentId;
@@ -831,6 +835,8 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      readOnlyPlanning?: boolean;
+      hideHeader?: boolean;
       routeKind: "server";
       draftId?: never;
     }
@@ -840,6 +846,8 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      readOnlyPlanning?: boolean;
+      hideHeader?: boolean;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -1577,6 +1585,8 @@ export default function ChatView(props: ChatViewProps) {
     onDiffPanelOpen,
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
+    readOnlyPlanning = false,
+    hideHeader = false,
   } = props;
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
@@ -11316,6 +11326,8 @@ export default function ChatView(props: ChatViewProps) {
                 )
               : "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)",
             COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+            // Last, so tailwind-merge lets it win over the header's `flex`.
+            hideHeader && "hidden",
           )}
         >
           {isElectron && rightPanelControlsAtRoot ? (
@@ -11607,9 +11619,11 @@ export default function ChatView(props: ChatViewProps) {
                               reportedModelSelection={reportedModelSelection}
                               multipleModelSelections={multipleModelSelections}
                               supportsMultipleModels={
+                                !readOnlyPlanning &&
                                 serverConfig?.environment.capabilities.requiredWorktreeBootstrap ===
-                                true
+                                  true
                               }
+                              readOnlyPlanning={readOnlyPlanning}
                               onMultipleModelSelectionsChange={setMultipleModelSelections}
                               composerRef={composerRef}
                               composerDraftTarget={composerDraftTarget}
@@ -11814,7 +11828,7 @@ export default function ChatView(props: ChatViewProps) {
                                 ref={branchToolbarRef}
                                 environmentId={activeThread.environmentId}
                                 threadId={activeThread.id}
-                                showGitControls={isGitRepo}
+                                showGitControls={isGitRepo && !readOnlyPlanning}
                                 {...(routeKind === "draft" && draftId ? { draftId } : {})}
                                 onEnvModeChange={onEnvModeChange}
                                 startFromOrigin={startFromOrigin}
@@ -11827,7 +11841,7 @@ export default function ChatView(props: ChatViewProps) {
                                         setPendingServerThreadBranch,
                                     }
                                   : {})}
-                                envLocked={envLocked}
+                                envLocked={envLocked || readOnlyPlanning}
                                 onComposerFocusRequest={scheduleComposerFocus}
                                 {...(canCheckoutPullRequestIntoThread
                                   ? { onCheckoutPullRequestRequest: openPullRequestDialog }

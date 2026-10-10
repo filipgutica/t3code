@@ -24,6 +24,7 @@ test("E1 T3: Epic creation, child membership and completion progress persist", a
   await expect(page.getByRole("heading", { name: "Regression Epic", exact: true })).toBeVisible();
   await expect(page.getByText("0 of 0 done", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "New Ticket", exact: true }).click();
+  await page.getByRole("button", { name: "Create manually", exact: true }).click();
   await dialog.getByPlaceholder("What needs doing?").fill("Regression Epic child");
   await dialog.getByRole("combobox", { name: "Ticket type" }).click();
   await page.getByRole("option", { name: "Bug", exact: true }).click();

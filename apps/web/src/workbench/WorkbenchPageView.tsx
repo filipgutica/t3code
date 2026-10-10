@@ -11,6 +11,7 @@ import { useWorkbenchJiraBindings } from "./useWorkbenchJiraBindings";
 import type { useWorkbenchWorkspaceActions } from "./useWorkbenchWorkspaceActions";
 
 import { EnvironmentId, type WorkbenchTicket, type WorkbenchTicketId } from "@t3tools/contracts";
+import { useState } from "react";
 
 import {
   AlertCircleIcon,
@@ -22,6 +23,7 @@ import {
   Layers3Icon,
   LinkIcon,
   LayoutDashboardIcon,
+  MessagesSquareIcon,
   MoreHorizontalIcon,
   PlusIcon,
   Settings2Icon,
@@ -70,17 +72,26 @@ import {
   WorkbenchWorkspaceDialog,
 } from "./WorkbenchForms";
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
+import { WorkbenchTicketConversation } from "./WorkbenchTicketConversation";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
 import { WorkbenchJiraDialog } from "./WorkbenchJiraDialog";
 import { WorkbenchPublishTicketDialog } from "./WorkbenchPublishTicketDialog";
 import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
 import { getWorkbenchJiraBindingSprints, isWorkbenchJiraEpic } from "./workbenchJira.logic";
+import {
+  getUnsavedConversationDrafts,
+  resolveWorkbenchWorkItemView,
+  supportsConversationDrafts,
+  type WorkbenchConversationDraft,
+} from "./workbenchTicketDraft.logic";
 
 type WorkbenchPageViewProps = {
   readonly workspaceActions: ReturnType<typeof useWorkbenchWorkspaceActions>;
   readonly environmentId: EnvironmentId | null;
   readonly createWorkspace: boolean;
+  /** `create=ticket` is in the URL: the Workspace shows its ticket planning conversation. */
+  readonly createTicket?: boolean;
   readonly jiraDialogOpen: boolean;
   readonly error: string | null;
   readonly pendingAction: string | null;
@@ -189,7 +200,8 @@ function WorkbenchBoardHeader(
   const { keybindings, availableEditors } = pageData;
   const { selectedProject } = selection;
   const { jiraPendingAction, syncJiraBinding } = jiraBindings;
-  const { setEditWorkspaceOpen, openTicketDialog, openEpicDialog } = dialogs;
+  const { setEditWorkspaceOpen, openTicketDialog, openTicketConversation, openEpicDialog } =
+    dialogs;
   const {
     projectTickets,
     linkedT3Projects,
@@ -252,7 +264,7 @@ function WorkbenchBoardHeader(
           <Button
             aria-label="New Ticket"
             disabled={mutationDisabled}
-            onClick={() => openTicketDialog()}
+            onClick={() => openTicketConversation()}
             size="sm"
           >
             <PlusIcon data-icon="inline-start" />
@@ -266,6 +278,9 @@ function WorkbenchBoardHeader(
             </MenuTrigger>
             <MenuPopup align="end" data-workbench-workspace-actions="">
               <MenuGroup>
+                <MenuItem disabled={mutationDisabled} onClick={() => openTicketDialog()}>
+                  <PlusIcon /> New ticket manually
+                </MenuItem>
                 <MenuItem disabled={mutationDisabled} onClick={() => openEpicDialog()}>
                   <Layers3Icon /> New Epic
                 </MenuItem>
@@ -647,7 +662,16 @@ function WorkbenchPageTicketPublicationAction({
   );
 }
 
-function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
+/**
+ * While a saved ticket is still planning, its Thread is the planning conversation: Start work is
+ * the step that hands it over. Thread changes here would only make Start work fail, so they
+ * explain that instead, and opening the Thread returns to the conversation.
+ */
+type WorkbenchPlanningDetailMode = { readonly onContinuePlanning: () => void };
+
+function WorkbenchPageTicketDetail(
+  props: WorkbenchPageTicketDetailProps & { readonly planning?: WorkbenchPlanningDetailMode },
+) {
   const {
     pageData,
     selection,
@@ -672,6 +696,9 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
   } = selection;
   const { openEpicDialog } = dialogs;
   const { linkedT3Projects, projectEpics, selectedAssignments } = boardData;
+  const planning = props.planning;
+  const blockThreadChange = () =>
+    setError("Start work before changing this ticket's Threads. Planning keeps its own Thread.");
   const {
     changeTicket,
     changeJiraTransition,
@@ -715,7 +742,8 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
       threadLookupReady={threadLookupReady}
       onBack={() => {
         setError(null);
-        closeWorkItem();
+        if (planning) planning.onContinuePlanning();
+        else closeWorkItem();
       }}
       onSave={saveTicketContent}
       onRegenerateSummary={(ticket) => {
@@ -733,20 +761,24 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
         setSelectedEpicId(epicId);
         void updateEpicRouteSelection(selectedProject.id, epicId);
       }}
-      onOpenThread={requestTicketThread}
-      onOpenAssignedThread={openAssignedThread}
-      onNewThread={requestNewThread}
+      onOpenThread={planning ? planning.onContinuePlanning : requestTicketThread}
+      onOpenAssignedThread={planning ? planning.onContinuePlanning : openAssignedThread}
+      onNewThread={planning ? blockThreadChange : requestNewThread}
       onAttachThread={(ticket) => {
+        if (planning) return blockThreadChange();
         setError(null);
         setAttachThreadTicket(ticket);
       }}
       onUnlinkThread={(threadId) => {
+        if (planning) return blockThreadChange();
         void unlinkThread(threadId);
       }}
       onDeleteThread={(threadId) => {
+        if (planning) return blockThreadChange();
         void deleteAssignedThread(threadId);
       }}
       onReplaceThread={(ticket, previousThreadId) => {
+        if (planning) return blockThreadChange();
         requestReplacementThread({ ticket, previousThreadId });
       }}
       onArchive={setTicketArchived}
@@ -775,7 +807,7 @@ function WorkbenchPageEpicDetail(
     closeWorkItem,
   } = selection;
 
-  const { saveEpicContent, openTicketDialog } = dialogs;
+  const { saveEpicContent, openTicketConversation } = dialogs;
   const { jiraIssueLinksByTicketId, selectedEpicTickets, jiraBinding, selectedJiraEpicUrl } =
     boardData;
 
@@ -815,7 +847,89 @@ function WorkbenchPageEpicDetail(
         setSelectedTicketId(ticket.id);
         void updateRouteSelection(selectedProject.id, ticket.id);
       }}
-      onCreateTicket={() => openTicketDialog(selectedEpic.id)}
+      onCreateTicket={() => openTicketConversation(selectedEpic.id)}
+    />
+  );
+}
+
+/** Jira-bound Workspaces create tickets from Jira's Epics; local ones use every active Epic. */
+function getCreationEpics({
+  jiraBinding,
+  activeProjectEpics,
+  epicLinks,
+}: {
+  jiraBinding: WorkbenchPageViewProps["boardData"]["jiraBinding"];
+  activeProjectEpics: WorkbenchPageViewProps["boardData"]["activeProjectEpics"];
+  epicLinks:
+    | NonNullable<WorkbenchPageViewProps["pageData"]["jiraSnapshot"]>["epicLinks"]
+    | undefined;
+}) {
+  if (!jiraBinding) return activeProjectEpics;
+  return activeProjectEpics.filter((epic) =>
+    isWorkbenchJiraEpic({ epicId: epic.id, bindingId: jiraBinding.id, epicLinks }),
+  );
+}
+
+function WorkbenchPageConversation(
+  props: WorkbenchPageTicketDetailProps & { readonly draft: WorkbenchConversationDraft | null },
+) {
+  const { pageData, selection, dialogs, boardData, environmentId, draft } = props;
+  const { selectedProject, selectedTicket } = selection;
+  // The ticket whose details replace the conversation; another ticket always opens the conversation.
+  const [detailsTicketId, setDetailsTicketId] = useState<WorkbenchTicketId | null>(null);
+  const continuePlanning = () => {
+    props.setError(null);
+    setDetailsTicketId(null);
+  };
+  if (environmentId === null || selectedProject === null) return null;
+  if (selectedTicket !== null && detailsTicketId === selectedTicket.id) {
+    return (
+      <>
+        <div className="flex items-center gap-3 border-b border-border px-4 py-2">
+          <Button size="sm" variant="outline" onClick={continuePlanning}>
+            <MessagesSquareIcon data-icon="inline-start" />
+            Continue planning
+          </Button>
+          <span className="min-w-0 text-xs text-muted-foreground">
+            Ticket details and repositories. Start work from the conversation.
+          </span>
+        </div>
+        <WorkbenchPageTicketDetail {...props} planning={{ onContinuePlanning: continuePlanning }} />
+      </>
+    );
+  }
+  return (
+    <WorkbenchTicketConversation
+      environmentId={environmentId}
+      workspace={selectedProject}
+      draft={draft}
+      requestedDraftId={selection.selectedTicketId}
+      // Resuming from the board selects no ticket, yet an interrupted Create ticket may have saved one.
+      ticket={selectedTicket ?? pageData.snapshot?.tickets.find((t) => t.id === draft?.id) ?? null}
+      draftsSupported={supportsConversationDrafts(pageData.snapshot)}
+      providers={pageData.providers}
+      linkedProjects={boardData.linkedT3Projects}
+      epics={boardData.activeProjectEpics}
+      jiraEpics={getCreationEpics({
+        jiraBinding: boardData.jiraBinding,
+        activeProjectEpics: boardData.activeProjectEpics,
+        epicLinks: pageData.jiraSnapshot?.epicLinks,
+      })}
+      jiraBinding={boardData.jiraBinding}
+      localOnlySupported={pageData.jiraSnapshot?.supportsLocalOnlyTickets === true}
+      jiraOwnershipKnown={boardData.jiraOwnershipKnown}
+      initialEpicId={dialogs.conversationEpicId}
+      refreshSnapshot={pageData.refreshWorkbenchSnapshot}
+      onClose={dialogs.closeTicketConversation}
+      onCreateManually={() =>
+        dialogs.openTicketDialog(draft ? draft.fields.epicId : dialogs.conversationEpicId)
+      }
+      onCreateEpic={dialogs.openEpicDialog}
+      onDraftPrepared={dialogs.openCreatedTicket}
+      onTicketCreated={dialogs.openCreatedTicket}
+      onDiscarded={dialogs.closeTicketConversation}
+      onWorkStarted={dialogs.openDraftThread}
+      onShowTicketDetails={() => setDetailsTicketId(selectedTicket?.id ?? null)}
     />
   );
 }
@@ -867,7 +981,7 @@ function WorkbenchPageBoard(
     updateEpicRouteSelection,
   } = selection;
 
-  const { openTicketDialog } = dialogs;
+  const { openTicketConversation } = dialogs;
   const {
     jiraIssueLinksByTicketId,
     jiraBinding,
@@ -915,6 +1029,7 @@ function WorkbenchPageBoard(
           jiraPublishDisabled={!jiraBinding?.active || selectedProject.archivedAt != null}
           jiraStatusMappings={jiraBinding?.statusMappings ?? []}
           projectId={selectedProject.id}
+          drafts={getUnsavedConversationDrafts(snapshot, selectedProject.id)}
           tickets={boardTickets}
           epics={boardEpics}
           groupMode={boardGroupModeForView}
@@ -956,7 +1071,7 @@ function WorkbenchPageBoard(
           onOpenThread={(ticket, threadId) =>
             requestTicketThread(ticketForBoardAction(ticket), threadId)
           }
-          onCreateTicket={() => openTicketDialog()}
+          onCreateTicket={() => openTicketConversation()}
         />
       </div>
     </>
@@ -966,6 +1081,7 @@ function WorkbenchPageBoard(
 function WorkbenchPageWorkspace(
   props: Pick<
     WorkbenchPageViewProps,
+    | "createTicket"
     | "boardData"
     | "dialogs"
     | "environmentId"
@@ -983,8 +1099,18 @@ function WorkbenchPageWorkspace(
 ) {
   const { pageData, selection, jiraBindings, boardData, environmentId, pendingAction } = props;
   const { optimisticStatus } = pageData;
-  const { selectedEpic, selectedTicket } = selection;
+  const { selectedProject, selectedEpic, selectedTicket } = selection;
   const { jiraPendingAction } = jiraBindings;
+  const workItemView = resolveWorkbenchWorkItemView({
+    snapshot: pageData.snapshot,
+    workspaceId: selectedProject?.id ?? null,
+    selectedTicketId: selection.selectedTicketId,
+    ticketExists: selectedTicket !== null,
+    hasSelectedEpic: selectedEpic !== null,
+    // An archived Workspace is read-only, so it never starts a conversation.
+    createTicket: props.createTicket === true && selectedProject?.archivedAt == null,
+    awaitingTicketId: selection.awaitingTicketId,
+  });
 
   const { projectJiraIssueLinks } = boardData;
 
@@ -1022,9 +1148,11 @@ function WorkbenchPageWorkspace(
           jiraPendingAction !== null
         }
       />
-      {selectedTicket ? (
+      {workItemView.kind === "conversation" ? (
+        <WorkbenchPageConversation {...props} draft={workItemView.draft} />
+      ) : workItemView.kind === "ticket" ? (
         <WorkbenchPageTicketDetail {...props} />
-      ) : selectedEpic ? (
+      ) : workItemView.kind === "epic" ? (
         <WorkbenchPageEpicDetail {...props} />
       ) : (
         <WorkbenchPageBoard {...props} />
@@ -1280,17 +1408,11 @@ function WorkbenchPageTicketDialogs(
           open={ticketDialogOpen}
           linkedProjects={linkedT3Projects}
           epics={activeProjectEpics}
-          jiraEpics={
-            jiraBinding
-              ? activeProjectEpics.filter((epic) =>
-                  isWorkbenchJiraEpic({
-                    epicId: epic.id,
-                    bindingId: jiraBinding.id,
-                    epicLinks: jiraSnapshot?.epicLinks,
-                  }),
-                )
-              : activeProjectEpics
-          }
+          jiraEpics={getCreationEpics({
+            jiraBinding,
+            activeProjectEpics,
+            epicLinks: jiraSnapshot?.epicLinks,
+          })}
           initialEpicId={ticketDialogEpicId}
           jiraBinding={jiraBinding}
           localOnlySupported={jiraSnapshot?.supportsLocalOnlyTickets === true}
@@ -1309,6 +1431,7 @@ function WorkbenchPageTicketDialogs(
 function WorkbenchPageContent(
   props: Pick<
     WorkbenchPageViewProps,
+    | "createTicket"
     | "boardData"
     | "dialogs"
     | "environmentId"

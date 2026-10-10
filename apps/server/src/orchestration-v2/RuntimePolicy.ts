@@ -52,7 +52,13 @@ export interface RuntimePolicyV2Shape {
   readonly resolve: (input: {
     readonly thread: OrchestrationV2AppThread;
     readonly modelSelection: ModelSelection;
-  }) => Effect.Effect<ProviderAdapterV2RuntimePolicyType, RuntimePolicyV2Error>;
+  }) => Effect.Effect<
+    ProviderAdapterV2RuntimePolicyType & {
+      readonly checkpoints?: "disabled";
+      readonly instructions?: string;
+    },
+    RuntimePolicyV2Error
+  >;
 }
 
 export class RuntimePolicyV2 extends Context.Service<RuntimePolicyV2, RuntimePolicyV2Shape>()(

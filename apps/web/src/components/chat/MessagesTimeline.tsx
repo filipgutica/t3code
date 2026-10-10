@@ -2760,6 +2760,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           >
             <ChatMarkdown
               text={messageText}
+              messageId={row.message.id}
               cwd={ctx.markdownCwd}
               threadRef={ctx.threadRef ?? undefined}
               isStreaming={Boolean(row.message.streaming)}

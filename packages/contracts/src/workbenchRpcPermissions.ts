@@ -10,6 +10,12 @@ type WorkbenchRpcMethod = RpcGroup.Rpcs<typeof WorkbenchRpcGroup>["_tag"];
 
 /** Existing Workbench policy shared by server enforcement and client mutation guards. */
 export const WORKBENCH_RPC_REQUIRED_SCOPES = {
+  [WORKBENCH_WS_METHODS.workbenchBeginTicketDraft]: AuthOrchestrationOperateScope,
+  [WORKBENCH_WS_METHODS.workbenchUpdateTicketDraft]: AuthOrchestrationOperateScope,
+  [WORKBENCH_WS_METHODS.workbenchPromoteTicketDraft]: AuthOrchestrationOperateScope,
+  [WORKBENCH_WS_METHODS.workbenchDiscardTicketDraft]: AuthOrchestrationOperateScope,
+  [WORKBENCH_WS_METHODS.workbenchStartTicketDraftWork]: AuthOrchestrationOperateScope,
+  [WORKBENCH_WS_METHODS.workbenchGetTicketPreparations]: AuthOrchestrationReadScope,
   [WORKBENCH_WS_METHODS.workbenchGetSnapshot]: AuthOrchestrationReadScope,
   [WORKBENCH_WS_METHODS.workbenchCreateProject]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchUpdateProject]: AuthOrchestrationOperateScope,
@@ -45,6 +51,7 @@ export const WORKBENCH_RPC_REQUIRED_SCOPES = {
 } as const satisfies Record<WorkbenchRpcMethod, AuthEnvironmentScope>;
 
 const {
+  [WORKBENCH_WS_METHODS.workbenchGetTicketPreparations]: _preparations,
   [WORKBENCH_WS_METHODS.workbenchGetSnapshot]: _snapshot,
   [WORKBENCH_WS_METHODS.workbenchJiraGetSnapshot]: _jiraSnapshot,
   [WORKBENCH_WS_METHODS.workbenchJiraGetTicketTransitions]: _transitions,

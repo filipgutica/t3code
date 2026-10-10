@@ -11,6 +11,7 @@ function WorkbenchRoute() {
       <WorkbenchPage
         initialEnvironmentId={search.environmentId}
         createWorkspace={search.create === "workspace"}
+        createTicket={search.create === "ticket"}
         initialProjectId={search.workbenchProjectId}
         initialTicketId={search.ticketId}
         initialEpicId={search.epicId}

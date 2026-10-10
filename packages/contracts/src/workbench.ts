@@ -11,6 +11,8 @@ import {
   TrimmedString,
 } from "./baseSchemas.ts";
 
+import { ModelSelection } from "./modelSelection.ts";
+
 const makeWorkbenchId = <Brand extends string>(brand: Parameters<typeof Schema.brand<Brand>>[0]) =>
   TrimmedNonEmptyString.pipe(Schema.brand<Brand>(brand));
 
@@ -153,8 +155,73 @@ export const WorkbenchTicketWorkspace = Schema.Struct({
 });
 export type WorkbenchTicketWorkspace = typeof WorkbenchTicketWorkspace.Type;
 
+/** Workbench-owned preparation state; conversation history remains native. */
+export const WorkbenchTicketDraftPhase = Schema.Literals([
+  "creating",
+  "draft",
+  "promoting",
+  "planning",
+  "starting",
+  "working",
+  "discarding",
+]);
+export type WorkbenchTicketDraftPhase = typeof WorkbenchTicketDraftPhase.Type;
+export const WorkbenchTicketDraftFields = Schema.Struct({
+  title: TrimmedString.check(Schema.isMaxLength(240)),
+  markdown: TrimmedString.check(Schema.isMaxLength(120_000)),
+  kind: WorkbenchTicketKind,
+  epicId: Schema.NullOr(WorkbenchEpicId),
+  repositoryProjectIds: Schema.Array(ProjectId),
+  primaryT3ProjectId: Schema.NullOr(ProjectId),
+  localOnly: Schema.Boolean,
+  jiraSprintId: Schema.NullOr(PositiveInt),
+});
+export type WorkbenchTicketDraftFields = typeof WorkbenchTicketDraftFields.Type;
+export const WorkbenchTicketDraft = Schema.Struct({
+  id: WorkbenchTicketId,
+  projectId: WorkbenchProjectId,
+  threadId: ThreadId,
+  anchorProjectId: ProjectId,
+  modelSelection: ModelSelection,
+  revision: NonNegativeInt,
+  phase: WorkbenchTicketDraftPhase,
+  fields: WorkbenchTicketDraftFields,
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+export type WorkbenchTicketDraft = typeof WorkbenchTicketDraft.Type;
+
+/** Compact ownership index for native conversation navigation. */
+export const WorkbenchTicketPreparation = Schema.Struct({
+  draftId: Schema.optional(WorkbenchTicketId),
+  threadId: ThreadId,
+  projectId: WorkbenchProjectId,
+  ticketId: Schema.NullOr(WorkbenchTicketId),
+  phase: WorkbenchTicketDraftPhase,
+});
+export type WorkbenchTicketPreparation = typeof WorkbenchTicketPreparation.Type;
+export const WorkbenchBeginTicketDraftInput = Schema.Struct({
+  id: WorkbenchTicketId,
+  projectId: WorkbenchProjectId,
+  threadId: ThreadId,
+  modelSelection: ModelSelection,
+});
+export type WorkbenchBeginTicketDraftInput = typeof WorkbenchBeginTicketDraftInput.Type;
+export const WorkbenchUpdateTicketDraftInput = Schema.Struct({
+  id: WorkbenchTicketId,
+  expectedRevision: NonNegativeInt,
+  fields: WorkbenchTicketDraftFields,
+});
+export type WorkbenchUpdateTicketDraftInput = typeof WorkbenchUpdateTicketDraftInput.Type;
+export const WorkbenchTicketDraftActionInput = Schema.Struct({
+  id: WorkbenchTicketId,
+  expectedRevision: NonNegativeInt,
+});
+export type WorkbenchTicketDraftActionInput = typeof WorkbenchTicketDraftActionInput.Type;
+
 export const WorkbenchSnapshot = Schema.Struct({
   projects: Schema.Array(WorkbenchProject),
+  ticketDrafts: Schema.optionalKey(Schema.Array(WorkbenchTicketDraft)),
   epics: Schema.Array(WorkbenchEpic).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   tickets: Schema.Array(WorkbenchTicket),
   assignments: Schema.Array(WorkbenchAssignment),
@@ -332,6 +399,11 @@ export const WorkbenchReleaseTicketWorkspaceInput = Schema.Struct({
 export type WorkbenchReleaseTicketWorkspaceInput = typeof WorkbenchReleaseTicketWorkspaceInput.Type;
 
 export const WorkbenchOperationErrorCode = Schema.Literals([
+  "ticket_draft_not_found",
+  "ticket_draft_changed",
+  "ticket_draft_busy",
+  "ticket_draft_invalid",
+  "ticket_draft_operation_failed",
   "project_not_found",
   "project_archived",
   "project_changed",

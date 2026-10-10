@@ -79,6 +79,14 @@
     "./jira/JiraConfig": {
       "types": "./src/jira/JiraConfig.ts",
       "import": "./src/jira/JiraConfig.ts"
+    },
+    "./TicketDraftService": {
+      "types": "./src/TicketDraftService.ts",
+      "import": "./src/TicketDraftService.ts"
+    },
+    "./TicketDraftHost": {
+      "types": "./src/TicketDraftHost.ts",
+      "import": "./src/TicketDraftHost.ts"
     }
   },
   "scripts": {

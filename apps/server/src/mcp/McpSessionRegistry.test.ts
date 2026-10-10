@@ -59,6 +59,24 @@ it.effect("stores only a token hash, resolves the bearer token, and revokes by t
   }),
 );
 
+it.effect("retains the read-only ceiling on a provider credential until revocation", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry(() => 1_000);
+    const threadId = ThreadId.make("readonly-planning");
+    const issued = yield* registry.issue({
+      threadId,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      readOnly: true,
+    });
+    const token = issued.config.authorizationHeader.replace(/^Bearer\s+/, "");
+    expect((yield* registry.resolve(token))?.thread.readOnly).toBe(true);
+    yield* registry.touch(threadId);
+    expect((yield* registry.resolve(token))?.thread.readOnly).toBe(true);
+    yield* registry.revokeThread(threadId);
+    expect(yield* registry.resolve(token)).toBeUndefined();
+  }),
+);
+
 it.effect("always grants pull-requests and gates browser and device access independently", () =>
   Effect.gen(function* () {
     const registry = yield* makeRegistry(() => 1_000);

@@ -15,6 +15,7 @@ import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
   readonly providerInstanceId: ProviderInstanceId;
+  readonly readOnly?: boolean;
   /**
    * When false, the credential is minted without the "preview" capability so
    * the user's choice to withhold agent browser access holds everywhere the
@@ -135,6 +136,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           threadId: ThreadId.make(request.threadId),
           providerSessionId,
           providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
+          ...(request.readOnly === true ? { readOnly: true } : {}),
         },
         client: undefined,
         capabilities: new Set<McpInvocationContext.McpCapability>([

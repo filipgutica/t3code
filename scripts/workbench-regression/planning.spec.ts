@@ -38,15 +38,26 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
   demo,
 }) => {
   await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
+  await page.setViewportSize({ width: 1600, height: 900 });
   await page.getByRole("button", { name: "New Ticket", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Create Ticket", exact: true });
-  await dialog.getByPlaceholder("What needs doing?").fill("Regression disposable ticket");
-  await dialog
-    .getByPlaceholder("Goal, constraints, and acceptance criteria…")
+  const draft = page.getByRole("complementary", { name: "Ticket draft", exact: true });
+  await draft.getByLabel("Title", { exact: true }).fill("Regression disposable ticket");
+  await draft
+    .getByLabel("Description", { exact: true })
     .fill("Full regression description with acceptance criteria.");
-  await dialog.getByRole("button", { name: "Create Ticket", exact: true }).click();
-  await expect(dialog).not.toBeVisible();
-  await page.getByText("Regression disposable ticket", { exact: true }).last().click();
+  await draft.getByRole("button", { name: "Create ticket", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Start work", exact: true })).toBeVisible();
+  const prepared = await snapshot(demo);
+  const created = prepared.tickets.find((t) => t.title === "Regression disposable ticket");
+  if (!created) throw new Error("Created Ticket was not persisted");
+  const assignment = prepared.assignments.find((a) => a.ticketId === created.id);
+  if (!assignment) throw new Error("Planning Thread was not retained");
+  await page.getByRole("button", { name: "Start work", exact: true }).click();
+  await expect(page).toHaveURL((url) => url.pathname.endsWith(`/${assignment.threadId}`));
+  await openWorkbench(
+    page,
+    demo.workbenchUrl(`/workbench?workbenchProjectId=orbit&ticketId=${created.id}`),
+  );
   await expect(
     page.getByRole("heading", { name: "Regression disposable ticket", exact: true }),
   ).toBeVisible();
