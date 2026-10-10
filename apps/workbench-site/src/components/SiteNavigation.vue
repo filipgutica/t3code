@@ -1,13 +1,6 @@
 <script setup lang="ts">
-import { useActiveSection } from "@filipgutica/ui";
-const sections = [
-  { id: "hero-heading", label: "Overview" },
-  { id: "walkthrough-heading", label: "Walkthrough" },
-  { id: "scope-heading", label: "Workspaces" },
-  { id: "review-heading", label: "Review" },
-  { id: "jira-heading", label: "Jira" },
-] as const;
-const activeId = useActiveSection({ targetIds: sections.map((section) => section.id) });
+import type { sections as pageSections } from "../sections";
+defineProps<{ sections: typeof pageSections; activeId?: string }>();
 </script>
 
 <template>

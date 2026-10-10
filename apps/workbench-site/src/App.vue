@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from "vue";
+import { nextTick, onMounted, onUnmounted, ref, useTemplateRef } from "vue";
+import { useActiveSection } from "@filipgutica/ui";
+import { sections } from "./sections";
+import CommitBranch from "./components/CommitBranch.vue";
+import { useTrace } from "./composables/useTrace";
 import SiteNavigation from "./components/SiteNavigation.vue";
 import { UiSiteHeader } from "@filipgutica/ui/site";
 import ProductImage from "./components/ProductImage.vue";
@@ -19,6 +23,9 @@ const { images, walkthrough, base, repository, guide, downloads } = defineProps<
   guide: string;
   downloads: string;
 }>();
+const main = useTemplateRef<HTMLElement>("main");
+const activeId = useActiveSection({ targetIds: sections.map((section) => section.id) });
+useTrace({ main, activeId });
 const jiraImage = walkthrough.find((step) => step.id === "jira")?.image;
 const selected = ref(walkthrough[0]?.id ?? "ticket");
 const enhanced = ref(false);
@@ -82,9 +89,10 @@ onUnmounted(() => {
             { label: 'Downloads', href: downloads },
           ]"
         />
-        <SiteNavigation />
-        <main id="main" class="wrap">
-          <section class="hero" aria-labelledby="hero-heading">
+        <SiteNavigation :sections="sections" :active-id="activeId" />
+        <main id="main" ref="main" class="wrap">
+          <section class="hero" aria-labelledby="hero-heading" data-trace-section>
+            <CommitBranch lane="fork" />
             <div class="section-body">
               <div class="hero-copy">
                 <div class="hero-summary">
@@ -109,7 +117,12 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section class="section walkthrough-section" aria-labelledby="walkthrough-heading">
+          <section
+            class="section walkthrough-section"
+            aria-labelledby="walkthrough-heading"
+            data-trace-section
+          >
+            <CommitBranch lane="parallel" />
             <div class="section-body">
               <div class="review-heading">
                 <h2 id="walkthrough-heading">From Ticket to review</h2>
@@ -125,7 +138,12 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section class="section workspace-section" aria-labelledby="scope-heading">
+          <section
+            class="section workspace-section"
+            aria-labelledby="scope-heading"
+            data-trace-section
+          >
+            <CommitBranch lane="merge" />
             <div class="section-body">
               <div class="section-copy">
                 <h2 id="scope-heading">One Ticket. Isolated worktrees.</h2>
@@ -152,7 +170,12 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section class="section review-section" aria-labelledby="review-heading">
+          <section
+            class="section review-section"
+            aria-labelledby="review-heading"
+            data-trace-section
+          >
+            <CommitBranch lane="main" />
             <div class="section-body">
               <div class="review-heading">
                 <h2 id="review-heading">Review linked pull requests</h2>
@@ -165,7 +188,8 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section class="section jira-section" aria-labelledby="jira-heading">
+          <section class="section jira-section" aria-labelledby="jira-heading" data-trace-section>
+            <CommitBranch lane="fork" />
             <div class="section-body">
               <div class="section-copy">
                 <h2 id="jira-heading">Jira, optional.</h2>
@@ -181,7 +205,8 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section class="closing section" aria-labelledby="closing-heading">
+          <section class="closing section" aria-labelledby="closing-heading" data-trace-section>
+            <CommitBranch lane="merge" terminal />
             <div class="section-body">
               <h2 id="closing-heading">Install Workbench alongside T3 Code</h2>
               <p>Workbench stores its data separately from the official app.</p>

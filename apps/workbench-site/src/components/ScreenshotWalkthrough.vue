@@ -10,10 +10,23 @@ const emit = defineEmits<{
 }>();
 const walkthrough = useTemplateRef<HTMLElement>("walkthrough");
 const items = steps.map((step) => ({ value: step.id, label: step.tab }));
+const signals: Record<string, { motion: string; path: string }> = {
+  workspace: {
+    motion: "fork",
+    path: "M8 16 H24 C36 16 36 8 48 8 H88 M24 16 C36 16 36 24 48 24 H88",
+  },
+  "pull-request": {
+    motion: "merge",
+    path: "M8 8 H24 C36 8 36 16 48 16 H88 M8 24 H24 C36 24 36 16 48 16",
+  },
+  notifications: { motion: "notify", path: "M8 16 H88" },
+};
+const signalFor = (id: string) => signals[id] ?? { motion: "handoff", path: "M8 16 H88" };
 let reduced: MediaQueryList | undefined;
 let ready = false;
 const stopMotion = () => {
   walkthrough.value?.querySelectorAll<HTMLElement>("[data-walkthrough-frame]").forEach((frame) => {
+    frame.classList.remove("is-switching");
     frame
       .querySelector("[data-product-image]")
       ?.getAnimations()
@@ -29,6 +42,7 @@ watch(
     if (reduced?.matches) return;
     const frame = walkthrough.value?.querySelector<HTMLElement>(`#walkthrough-${value}`);
     if (!frame) return;
+    frame.classList.add("is-switching");
     const direction =
       steps.findIndex((step) => step.id === value) > steps.findIndex((step) => step.id === previous)
         ? 1
@@ -71,9 +85,25 @@ onBeforeUnmount(() => {
           :id="`walkthrough-${step.id}`"
           data-walkthrough-frame
           :data-tab="step.tab"
+          :data-motion="signalFor(step.id).motion"
         >
           <div class="walkthrough-heading">
             <h3>{{ step.title }}</h3>
+            <svg
+              class="walkthrough-signal"
+              viewBox="0 0 96 32"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path :d="signalFor(step.id).path" />
+              <circle class="signal-start" cx="8" :cy="step.id === 'pull-request' ? 8 : 16" r="3" />
+              <circle class="signal-end" cx="88" :cy="step.id === 'workspace' ? 8 : 16" r="3" />
+              <circle v-if="step.id === 'workspace'" cx="88" cy="24" r="3" />
+              <circle v-if="step.id === 'pull-request'" cx="8" cy="24" r="3" />
+              <circle class="signal-packet signal-packet--first" cx="0" cy="0" r="3" />
+              <circle class="signal-packet signal-packet--second" cx="0" cy="0" r="3" />
+              <circle class="signal-ring" cx="88" cy="16" r="5" />
+            </svg>
           </div>
           <ProductImage
             :image="step.image"
