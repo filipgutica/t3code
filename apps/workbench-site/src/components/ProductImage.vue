@@ -1,20 +1,24 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { useSiteAppearance } from "@filipgutica/ui/site";
 import type { ProductImageDescriptor } from "../images";
 const { image } = defineProps<{ image: ProductImageDescriptor }>();
+const { appearance } = useSiteAppearance({ applyToRoot: false });
+const enhanced = ref(false);
+onMounted(() => {
+  enhanced.value = true;
+});
+const source = computed(() => (appearance.value === "light" ? image.light : image));
+const darkMedia = computed(() =>
+  enhanced.value
+    ? appearance.value === "dark"
+      ? "all"
+      : "not all"
+    : "(prefers-color-scheme: dark)",
+);
 const emit = defineEmits<{
   (event: "open", image: ProductImageDescriptor, trigger: HTMLElement): void;
 }>();
-const cropStyle = computed(() =>
-  image.crop
-    ? {
-        aspectRatio: `${image.crop.width}/${image.crop.height}`,
-        "--image-width": `${(image.width / image.crop.width) * 100}%`,
-        "--image-left": `${(-image.crop.x / image.crop.width) * 100}%`,
-        "--image-top": `${(-image.crop.y / image.crop.height) * 100}%`,
-      }
-    : undefined,
-);
 const open = (event: MouseEvent) => {
   if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
     return;
@@ -24,32 +28,44 @@ const open = (event: MouseEvent) => {
 };
 </script>
 <template>
-  <a
-    class="product-image"
-    :class="{ cropped: image.crop }"
-    :style="cropStyle"
-    :href="image.original"
-    data-product-image
-    :data-image-width="image.width"
-    aria-haspopup="dialog"
-    :aria-label="`${image.alt} — enlarge screenshot`"
-    @click="open"
-  >
-    <img
-      :src="image.src"
-      :srcset="image.srcset"
-      :alt="image.alt"
-      :sizes="image.sizes"
-      :width="image.width"
-      :height="image.height"
-      :loading="image.eager ? 'eager' : 'lazy'"
-      :fetchpriority="image.eager ? 'high' : 'auto'"
-      decoding="async"
+  <div class="product-image" data-product-image-frame>
+    <picture>
+      <source :media="darkMedia" :srcset="image.srcset" :sizes="image.sizes" />
+      <img
+        :src="image.light.src"
+        :srcset="image.light.srcset"
+        :alt="image.alt"
+        :sizes="image.sizes"
+        :width="image.width"
+        :height="image.height"
+        :loading="image.eager ? 'eager' : 'lazy'"
+        :fetchpriority="image.eager ? 'high' : 'auto'"
+        decoding="async"
+      />
+    </picture>
+    <a
+      class="image-link"
+      :class="{ 'static-light-link': !enhanced }"
+      :href="source.original"
+      data-product-image
+      :data-image-width="image.width"
+      :aria-haspopup="enhanced ? 'dialog' : undefined"
+      :aria-label="`${image.alt} — enlarge screenshot`"
+      @click="open"
     />
-  </a>
+    <a
+      v-if="!enhanced"
+      class="image-link static-dark-link"
+      :href="image.original"
+      data-product-image
+      :data-image-width="image.width"
+      :aria-label="`${image.alt} — enlarge screenshot`"
+    />
+  </div>
 </template>
 <style scoped>
 .product-image {
+  position: relative;
   display: block;
   overflow: hidden;
   border: 1px solid var(--border-subtle);
@@ -61,15 +77,25 @@ img {
   height: auto;
   display: block;
 }
-.cropped {
-  position: relative;
-}
-.cropped img {
+.image-link {
   position: absolute;
-  width: var(--image-width);
-  max-width: none;
-  left: var(--image-left);
-  top: var(--image-top);
+  inset: 0;
+  border-radius: inherit;
+}
+.image-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+.static-dark-link {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  .static-light-link {
+    display: none;
+  }
+  .static-dark-link {
+    display: block;
+  }
 }
 .product-image:hover {
   border-color: var(--border);

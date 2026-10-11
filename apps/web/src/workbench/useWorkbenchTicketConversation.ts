@@ -16,6 +16,7 @@ import { workbenchEnvironment } from "./state";
 import { failureMessage } from "./workbenchPageCommands";
 import type { WorkbenchConversationDraft } from "./workbenchTicketDraft.logic";
 import { createTicketDraftFieldSync } from "./workbenchTicketDraftSync";
+import { attachWorkbenchTicketContext } from "./attachWorkbenchTicketContext";
 
 const SAVE_DELAY_MS = 600;
 
@@ -280,6 +281,7 @@ type DraftAction = "promote" | "start" | "discard";
 export function useTicketDraftTransitions({
   environmentId,
   draft,
+  projects,
   editor,
   onDraft,
   onTicketCreated,
@@ -291,6 +293,7 @@ export function useTicketDraftTransitions({
 }: {
   readonly environmentId: EnvironmentId;
   readonly draft: WorkbenchConversationDraft;
+  readonly projects: Parameters<typeof attachWorkbenchTicketContext>[0]["projects"];
   readonly editor: Pick<
     ReturnType<typeof useTicketDraftEditor>,
     "edit" | "flush" | "revision" | "latestRevision" | "abandon"
@@ -309,6 +312,7 @@ export function useTicketDraftTransitions({
   const startWorkDraft = useAtomCommand(workbenchEnvironment.startTicketDraftWork, {
     reportFailure: false,
   });
+  const readSnapshot = useAtomCommand(workbenchEnvironment.readSnapshot, { reportFailure: false });
   const discardDraft = useAtomCommand(workbenchEnvironment.discardTicketDraft, {
     reportFailure: false,
   });
@@ -376,12 +380,57 @@ export function useTicketDraftTransitions({
       environmentId,
       input: { id: draft.id, expectedRevision: revision() },
     });
-    settle(result, (started) => {
-      onDraft(started);
-      // The same native Thread continues in its prepared work area; nothing is sent automatically.
-      onWorkStarted(started);
-    });
-  }, [draft.id, environmentId, onDraft, onWorkStarted, revision, settle, startWorkDraft]);
+    if (result._tag === "Failure") return settle(result, () => {});
+    const started = result.value;
+    const snapshotResult = await readSnapshot({ environmentId, input: {} });
+    let contextError: string | null = null;
+    if (snapshotResult._tag === "Failure") contextError = failureMessage(snapshotResult);
+    else {
+      const snapshot = snapshotResult.value;
+      const ticket = snapshot.tickets.find((candidate) => candidate.id === started.id);
+      const workspace = snapshot.ticketWorkspaces.find(
+        (candidate) => candidate.ticketId === started.id,
+      );
+      const primary = workspace?.repositories.find(
+        (repository) => repository.projectId === ticket?.primaryT3ProjectId,
+      );
+      if (!ticket || workspace?.status !== "ready" || primary?.status !== "ready") {
+        contextError = "The saved ticket or its prepared repositories are unavailable.";
+      } else
+        attachWorkbenchTicketContext({
+          environmentId,
+          thread: {
+            id: started.threadId,
+            projectId: primary.projectId,
+            worktreePath: primary.worktreePath,
+          },
+          ticket,
+          projects,
+          repositories: workspace.repositories,
+        });
+    }
+    // The working snapshot can unmount this view during the read. Recovery must outlive it.
+    if (contextError !== null)
+      toastManager.add({
+        type: "warning",
+        title: "Ticket context could not be attached",
+        description: `Your work area is ready. Use Add ticket context in the Thread before sending. ${contextError}`,
+      });
+    setAction(null);
+    onDraft(started);
+    // The same native Thread continues in its prepared work area; nothing is sent automatically.
+    onWorkStarted(started);
+  }, [
+    draft.id,
+    environmentId,
+    onDraft,
+    onWorkStarted,
+    projects,
+    readSnapshot,
+    revision,
+    settle,
+    startWorkDraft,
+  ]);
 
   // Discard throws the edits away, so a failed flush is not a reason to stop; it only needs the
   // newest revision, which a conflicting saved draft may have advanced.

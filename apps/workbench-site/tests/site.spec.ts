@@ -146,7 +146,7 @@ test("inactive screenshot deep links and history select the matching tab", async
   await page.evaluate(() => {
     location.hash = "walkthrough-workspace";
   });
-  await expect(page.getByRole("tab", { name: "Workspace", exact: true })).toHaveAttribute(
+  await expect(page.getByRole("tab", { name: "Work area", exact: true })).toHaveAttribute(
     "aria-selected",
     "true",
   );
@@ -160,26 +160,26 @@ test("inactive screenshot deep links and history select the matching tab", async
 });
 test("tabs support keyboard controls and retained original screenshot links", async ({ page }) => {
   await load(page);
-  const first = page.getByRole("tab", { name: "Ticket", exact: true });
+  const first = page.getByRole("tab", { name: "Plan", exact: true });
   await first.focus();
   await page.keyboard.press("ArrowRight");
-  await expect(page.getByRole("tab", { name: "Workspace", exact: true })).toBeFocused();
-  await expect(page.locator("#walkthrough-workspace")).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Ticket", exact: true })).toBeFocused();
+  await expect(page.locator("#walkthrough-ticket")).toBeVisible();
   await page.keyboard.press("End");
   await expect(page.getByRole("tab", { name: "Jira (optional)", exact: true })).toBeFocused();
   await page.keyboard.press("Home");
   await expect(first).toBeFocused();
-  expect(await page.locator("[data-walkthrough-frame]").count()).toBe(6);
+  expect(await page.locator("[data-walkthrough-frame]").count()).toBe(7);
   for (const link of await page.locator("[data-product-image]").all())
     await expect(link).toHaveAttribute("href", /\/t3code\/_astro\/.*\.png$/);
 });
 test("image dialog uses original pixels, scales to DPR, and restores focus", async ({ page }) => {
-  await page.setViewportSize({ width: 2560, height: 1440 });
+  await page.setViewportSize({ width: 2800, height: 1440 });
   await load(page);
   const link = page.locator(".hero-media [data-product-image]");
   const original = await link.getAttribute("href");
   await link.click();
-  const dialog = page.getByRole("dialog", { name: /Orbit Workbench Board/ });
+  const dialog = page.getByRole("dialog", { name: /Beacon Workbench Board/ });
   await expect(dialog).toBeVisible();
   await expect(dialog.locator("img")).toHaveAttribute("src", original!);
   const measured = await dialog.locator("img").evaluate((image) => ({
@@ -209,13 +209,13 @@ test("full-size screenshots keep one source pixel per screen pixel on Retina", a
   const context = await browser.newContext({
     baseURL,
     deviceScaleFactor: 2,
-    viewport: { width: 1280, height: 900 },
+    viewport: { width: 1440, height: 900 },
   });
   try {
     const page = await context.newPage();
     await load(page);
     await page.locator(".hero-media [data-product-image]").click();
-    const image = page.getByRole("dialog", { name: /Orbit Workbench Board/ }).locator("img");
+    const image = page.getByRole("dialog", { name: /Beacon Workbench Board/ }).locator("img");
     const pixels = await image.evaluate((element) => ({
       original: Number(element.getAttribute("width")),
       dpr: devicePixelRatio,
@@ -261,25 +261,46 @@ test("phone section navigation stays keyboard accessible across breakpoints", as
   await expect(jira).toBeFocused();
   await noOverflow(page);
 });
-test("themes support saved choice, system changes, and cross-tab updates", async ({
+test("themes switch screenshot previews, originals, and an open lightbox", async ({
   page,
   context,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await load(page);
+  const hero = page.locator(".hero-media img");
+  const link = page.locator(".hero-media [data-product-image]");
+  const currentSource = () =>
+    hero.evaluate((image) => (image instanceof HTMLImageElement ? image.currentSrc : ""));
+  await page.getByRole("button", { name: "Light theme", exact: true }).click();
+  await expect.poll(currentSource).toMatch(/board-light[.]/);
+  const lightOriginal = await link.getAttribute("href");
   await page.getByRole("button", { name: "Dark theme", exact: true }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect.poll(currentSource).toMatch(/board[.]/);
+  const darkOriginal = await link.getAttribute("href");
+  expect(darkOriginal).not.toBe(lightOriginal);
   await page.reload();
   await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect.poll(currentSource).toMatch(/board[.]/);
+  await expect(link).toHaveAttribute("href", darkOriginal!);
   await page.getByRole("button", { name: "System theme", exact: true }).click();
   await page.emulateMedia({ colorScheme: "light" });
   await expect(page.locator("html")).not.toHaveClass(/dark/);
+  await expect.poll(currentSource).toMatch(/board-light[.]/);
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect.poll(currentSource).toMatch(/board[.]/);
+  await link.click();
+  const fullSize = page.getByRole("dialog").locator("img");
+  await expect(fullSize).toHaveAttribute("src", darkOriginal!);
   const other = await context.newPage();
   await other.goto("/t3code/");
   await other.evaluate(() => localStorage.setItem("tool-site-theme", "light"));
   await expect(page.locator("html")).not.toHaveClass(/dark/);
+  await expect.poll(currentSource).toMatch(/board-light[.]/);
+  await expect(fullSize).toHaveAttribute("src", lightOriginal!);
+  await page.keyboard.press("Escape");
+  await expect(link).toBeFocused();
   await expect(page.getByRole("button", { name: "Light theme", exact: true })).toHaveAttribute(
     "aria-pressed",
     "true",
@@ -292,11 +313,11 @@ test("reduced motion keeps section navigation and screenshot changes immediate",
   await page.emulateMedia({ reducedMotion: "reduce" });
   await load(page);
   await expect(page.locator("html")).toHaveCSS("scroll-behavior", "auto");
-  await page.getByRole("tab", { name: "Workspace", exact: true }).click();
+  await page.getByRole("tab", { name: "Work area", exact: true }).click();
   await expect
     .poll(() =>
       page
-        .locator("#walkthrough-workspace [data-product-image]")
+        .locator("#walkthrough-workspace [data-product-image-frame]")
         .evaluate((element) => element.getAnimations().length),
     )
     .toBe(0);
@@ -363,7 +384,7 @@ test("walkthrough signals fork, merge, and notify, and stop when reduced motion 
 }) => {
   await load(page);
   for (const [tab, id] of [
-    ["Workspace", "workspace"],
+    ["Work area", "workspace"],
     ["Pull request", "pull-request"],
     ["Notifications", "notifications"],
   ]) {
@@ -409,7 +430,7 @@ test("walkthrough signals fork, merge, and notify, and stop when reduced motion 
         .evaluate((frame) => frame.getAnimations({ subtree: true }).length),
     )
     .toBe(0);
-  await page.getByRole("tab", { name: "Workspace", exact: true }).click();
+  await page.getByRole("tab", { name: "Work area", exact: true }).click();
   await expect
     .poll(() =>
       page

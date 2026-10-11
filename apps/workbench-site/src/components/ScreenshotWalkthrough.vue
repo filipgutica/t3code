@@ -28,7 +28,7 @@ const stopMotion = () => {
   walkthrough.value?.querySelectorAll<HTMLElement>("[data-walkthrough-frame]").forEach((frame) => {
     frame.classList.remove("is-switching");
     frame
-      .querySelector("[data-product-image]")
+      .querySelector("[data-product-image-frame]")
       ?.getAnimations()
       .forEach((animation) => animation.cancel());
   });
@@ -50,7 +50,7 @@ watch(
     const tokens = getComputedStyle(frame);
     const durationToken = tokens.getPropertyValue("--duration-walkthrough").trim();
     const duration = parseFloat(durationToken) * (durationToken.endsWith("ms") ? 1 : 1000);
-    frame.querySelector("[data-product-image]")?.animate(
+    frame.querySelector("[data-product-image-frame]")?.animate(
       [
         {
           opacity: 0.6,

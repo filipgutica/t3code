@@ -92,6 +92,13 @@ const refreshWorkbenchAndJiraSnapshots = (
 
 export const workbenchEnvironment = {
   snapshot,
+  // Start work needs the saved ticket and prepared paths, rather than a stale query value.
+  readSnapshot: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:read-snapshot",
+    tag: WS_METHODS.workbenchGetSnapshot,
+    scheduler,
+    concurrency: serialPerEnvironment,
+  }),
   ticketPreparations,
   jiraSnapshot,
   // A failed migration can have committed remotely; recovery needs a fresh reply,
