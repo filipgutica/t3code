@@ -1,4 +1,4 @@
-import { expect, it } from "@effect/vitest";
+import { assert, expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
   OrchestratorMcpFailure,
@@ -17,6 +17,7 @@ import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.t
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpToolAccess from "./McpToolAccess.ts";
+import { McpWritePolicy } from "./McpWritePolicy.ts";
 import { liveThreadShell } from "./McpToolAccess.testkit.ts";
 
 const supervisedThreadId = ThreadId.make("thread:supervised");
@@ -205,6 +206,51 @@ const readOnlyProvider = {
 };
 // A live full-access thread whose credential may use its browser but not control threads.
 const previewOnly = { ...fullAccess, capabilities: new Set(["preview"] as const) };
+
+it.effect("applies an owner write policy after credential restrictions and before handlers", () =>
+  Effect.gen(function* () {
+    const checked: ThreadId[] = [];
+    const deny = {
+      assertAllowed: (threadId: ThreadId) =>
+        Effect.sync(() => checked.push(threadId)).pipe(
+          Effect.andThen(
+            Effect.fail(
+              new OrchestratorMcpFailure({
+                code: "capability_denied",
+                message: "Owner forbids writes",
+              }),
+            ),
+          ),
+        ),
+    };
+    assert.equal(
+      yield* call("writes", fullAccess).pipe(Effect.provideService(McpWritePolicy, deny)),
+      "capability_denied",
+    );
+    assert.deepEqual(checked, [fullAccessThreadId]);
+    assert.equal(
+      yield* call("reads", fullAccess).pipe(Effect.provideService(McpWritePolicy, deny)),
+      "ran",
+    );
+    assert.equal(
+      yield* call("writes", readOnlyProvider).pipe(Effect.provideService(McpWritePolicy, deny)),
+      "capability_denied",
+    );
+    assert.equal(
+      yield* call("writes", fullAccessClient).pipe(Effect.provideService(McpWritePolicy, deny)),
+      "ran",
+    );
+    assert.deepEqual(checked, [fullAccessThreadId]);
+  }).pipe(
+    Effect.provide(
+      probeServer(
+        Layer.mock(ThreadManagement.ThreadManagementService)({
+          getThreadShell: (threadId) => Effect.succeed(shells.get(threadId) ?? null),
+        }),
+      ),
+    ),
+  ),
+);
 
 it.effect.each([
   // Reads are open to every caller, even one whose turn ended.

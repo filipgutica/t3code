@@ -65,6 +65,13 @@ export class RuntimePolicyV2 extends Context.Service<RuntimePolicyV2, RuntimePol
   "t3/orchestration-v2/RuntimePolicy/RuntimePolicyV2",
 ) {}
 
+/** Decorates the native resolver at composition, so every runtime consumer shares its policy. */
+export class RuntimePolicyDecorator extends Context.Reference<{
+  readonly decorate: (native: RuntimePolicyV2Shape) => RuntimePolicyV2Shape;
+}>("t3/orchestration-v2/RuntimePolicy/RuntimePolicyDecorator", {
+  defaultValue: () => ({ decorate: (native) => native }),
+}) {}
+
 /**
  * IMPLEMENTATIONS
  */
@@ -102,7 +109,8 @@ export const layerFromProjectStore: Layer.Layer<
   Effect.gen(function* () {
     const projects = yield* ProjectStore.ProjectStoreV2;
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
-    return RuntimePolicyV2.of({
+    const decorator = yield* RuntimePolicyDecorator;
+    const native = RuntimePolicyV2.of({
       resolve: Effect.fn("RuntimePolicyV2.resolve")(function* (input) {
         const instance = yield* providerInstances.getInstance(input.modelSelection.instanceId);
         const supportedRuntimeModes =
@@ -141,6 +149,7 @@ export const layerFromProjectStore: Layer.Layer<
         });
       }),
     });
+    return decorator.decorate(native);
   }),
 );
 

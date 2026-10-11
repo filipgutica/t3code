@@ -7,6 +7,7 @@ import * as WorkbenchWorktreeOwnership from "./workbench/worktreeOwnership.ts";
 import {
   WorkbenchServicesLayerLive,
   WorkbenchRuntimeReactorLayerLive,
+  WorkbenchHostPoliciesLayerLive,
 } from "./workbench/serverLayer.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
 import * as PullRequestWatchReactor from "./orchestration-v2/PullRequestWatchReactor.ts";
@@ -471,6 +472,7 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
 );
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
+  Layer.provide(WorkbenchHostPoliciesLayerLive),
   Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(ProviderEventIngestor.layerAnalytics),
   Layer.provide(layerCheckpointStore),

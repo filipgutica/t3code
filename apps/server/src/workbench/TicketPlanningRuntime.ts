@@ -6,13 +6,13 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
 import * as WorkbenchStore from "./WorkbenchStore.ts";
+import { McpWritePolicy } from "../mcp/McpWritePolicy.ts";
 
 const RepositoryManifest = Schema.Array(
   Schema.Struct({ id: ProjectId, name: Schema.String, path: Schema.String }),
@@ -31,37 +31,41 @@ const encodeWorkArea = Schema.encodeEffect(Schema.fromJsonString(WorkAreaManifes
 const isRuntimePolicyResolveError = Schema.is(RuntimePolicy.RuntimePolicyResolveError);
 
 /** Planning agents can inspect repositories, but cannot mutate the environment through MCP. */
-export const assertMcpWritesAllowed = (threadId: ThreadId) =>
+export const layerMcpWritePolicy = Layer.effect(
+  McpWritePolicy,
   Effect.gen(function* () {
-    const store = yield* Effect.serviceOption(WorkbenchStore.WorkbenchStore);
-    if (Option.isNone(store)) return;
-    const draft = yield* store.value.getTicketDraftForThread(threadId).pipe(
-      Effect.mapError(
-        () =>
-          new OrchestratorMcpFailure({
-            code: "capability_denied",
-            message: "Ticket planning permissions could not be verified.",
-          }),
-      ),
-    );
-    if (draft !== null && draft.phase !== "working") {
-      return yield* new OrchestratorMcpFailure({
-        code: "capability_denied",
-        message:
-          "This conversation is preparing a ticket. Start work before changing repositories or the environment.",
-      });
-    }
-  });
+    const store = yield* WorkbenchStore.WorkbenchStore;
+    return {
+      assertAllowed: (threadId: ThreadId) =>
+        Effect.gen(function* () {
+          const draft = yield* store.getTicketDraftForThread(threadId).pipe(
+            Effect.mapError(
+              () =>
+                new OrchestratorMcpFailure({
+                  code: "capability_denied",
+                  message: "Ticket planning permissions could not be verified.",
+                }),
+            ),
+          );
+          if (draft !== null && draft.phase !== "working") {
+            return yield* new OrchestratorMcpFailure({
+              code: "capability_denied",
+              message:
+                "This conversation is preparing a ticket. Start work before changing repositories or the environment.",
+            });
+          }
+        }),
+    };
+  }),
+);
 
 /** Decorate the native policy; native Projects, Threads, and provider execution remain authoritative. */
-export const layer = Layer.effect(
-  RuntimePolicy.RuntimePolicyV2,
-  Effect.gen(function* () {
-    const base = yield* RuntimePolicy.RuntimePolicyV2;
-    const store = yield* WorkbenchStore.WorkbenchStore;
-    const projects = yield* ProjectStore.ProjectStoreV2;
-    const providers = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
-    return RuntimePolicy.RuntimePolicyV2.of({
+const makeRuntimePolicyDecorator = Effect.gen(function* () {
+  const store = yield* WorkbenchStore.WorkbenchStore;
+  const projects = yield* ProjectStore.ProjectStoreV2;
+  const providers = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+  return {
+    decorate: (base: RuntimePolicy.RuntimePolicyV2Shape): RuntimePolicy.RuntimePolicyV2Shape => ({
       resolve: (input) =>
         Effect.gen(function* () {
           const policy = yield* base.resolve(input);
@@ -149,6 +153,21 @@ export const layer = Layer.effect(
                 }),
           ),
         ),
-    });
+    }),
+  };
+});
+
+export const layerRuntimePolicyDecorator = Layer.effect(
+  RuntimePolicy.RuntimePolicyDecorator,
+  makeRuntimePolicyDecorator,
+);
+
+/** Standalone composition for callers that already supply a native resolver. */
+export const layer = Layer.effect(
+  RuntimePolicy.RuntimePolicyV2,
+  Effect.gen(function* () {
+    const base = yield* RuntimePolicy.RuntimePolicyV2;
+    const decorator = yield* makeRuntimePolicyDecorator;
+    return decorator.decorate(base);
   }),
 );

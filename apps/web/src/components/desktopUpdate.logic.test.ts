@@ -192,9 +192,13 @@ describe("desktop update UI helpers", () => {
       "https://github.com/filipgutica/t3code/releases/tag/workbench-daily-v0.0.30-nightly.20260728.931",
     ],
   ] as const)("links the downloaded release %s", (version, officialUrl, workbenchUrl) => {
-    expect(getDesktopUpdateReleaseUrl(version)).toBe(
-      import.meta.env.VITE_T3CODE_WORKBENCH_BUILD ? workbenchUrl : officialUrl,
-    );
+    expect(getDesktopUpdateReleaseUrl(version)).toBe(officialUrl);
+    expect(
+      getDesktopUpdateReleaseUrl(version, {
+        releaseUrl: () => workbenchUrl,
+        historyUrl: "https://product.example/releases",
+      }),
+    ).toBe(workbenchUrl);
   });
 
   it("omits the release URL when the updater does not report a version", () => {
@@ -204,10 +208,14 @@ describe("desktop update UI helpers", () => {
 
   it("links release history", () => {
     expect(getDesktopUpdateReleaseHistoryUrl()).toBe(
-      import.meta.env.VITE_T3CODE_WORKBENCH_BUILD
-        ? "https://github.com/filipgutica/t3code/releases"
-        : "https://github.com/pingdotgg/t3code/releases",
+      "https://github.com/pingdotgg/t3code/releases",
     );
+    expect(
+      getDesktopUpdateReleaseHistoryUrl({
+        releaseUrl: () => "",
+        historyUrl: "https://product.example/releases",
+      }),
+    ).toBe("https://product.example/releases");
   });
 
   it("toasts only for actionable updater errors", () => {

@@ -7,9 +7,10 @@ import {
   type WorkbenchTicketPreparation,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
+import { filterVisibleThreads } from "../hostIntegrations";
 
 import {
-  filterTicketPreparationThreads,
+  createWorkbenchThreadPresentationPolicy,
   isUnsavedTicketPreparation,
 } from "./useWorkbenchTicketPreparations";
 
@@ -29,9 +30,46 @@ const threads = [
 ];
 
 describe("Workbench preparation visibility", () => {
+  it.each([
+    ["creating", false, false],
+    ["draft", false, false],
+    ["promoting", false, false],
+    ["discarding", false, false],
+    ["planning", false, true],
+    ["starting", false, true],
+    ["working", true, true],
+  ] as const)(
+    "keeps saved %s list visibility and notifications distinct",
+    (phase, visible, notify) => {
+      const policy = createWorkbenchThreadPresentationPolicy(
+        new Map([[key, { ...preparation, ticketId: WorkbenchTicketId.make("saved"), phase }]]),
+      )!;
+      expect(policy.isVisible(scopeThreadRef(one, threadId))).toBe(visible);
+      expect(policy.canNotify(scopeThreadRef(one, threadId))).toBe(notify);
+      expect(policy.isVisible(scopeThreadRef(two, threadId))).toBe(true);
+      expect(policy.canNotify(scopeThreadRef(two, threadId))).toBe(true);
+    },
+  );
+
+  it.each([
+    "creating",
+    "draft",
+    "promoting",
+    "discarding",
+    "planning",
+    "starting",
+    "working",
+  ] as const)("never notifies an unsaved %s preparation", (phase) => {
+    const policy = createWorkbenchThreadPresentationPolicy(
+      new Map([[key, { ...preparation, phase }]]),
+    )!;
+    expect(policy.canNotify(scopeThreadRef(one, threadId))).toBe(false);
+  });
   it("hides an unsaved conversation only in its owning environment", () => {
     const index = new Map([[key, preparation]]);
-    expect(filterTicketPreparationThreads(threads, index)).toEqual([threads[1]]);
+    expect(filterVisibleThreads(threads, createWorkbenchThreadPresentationPolicy(index))).toEqual([
+      threads[1],
+    ]);
     expect(isUnsavedTicketPreparation(index, two, threadId)).toBe(false);
   });
 
@@ -41,7 +79,9 @@ describe("Workbench preparation visibility", () => {
       const index = new Map([
         [key, { ...preparation, ticketId: WorkbenchTicketId.make("saved"), phase }],
       ]);
-      expect(filterTicketPreparationThreads(threads, index)).toEqual([threads[1]]);
+      expect(filterVisibleThreads(threads, createWorkbenchThreadPresentationPolicy(index))).toEqual(
+        [threads[1]],
+      );
       expect(isUnsavedTicketPreparation(index, one, threadId)).toBe(false);
     },
   );
@@ -53,7 +93,9 @@ describe("Workbench preparation visibility", () => {
         { ...preparation, ticketId: WorkbenchTicketId.make("saved"), phase: "promoting" as const },
       ],
     ]);
-    expect(filterTicketPreparationThreads(threads, index)).toEqual([threads[1]]);
+    expect(filterVisibleThreads(threads, createWorkbenchThreadPresentationPolicy(index))).toEqual([
+      threads[1],
+    ]);
     expect(isUnsavedTicketPreparation(index, one, threadId)).toBe(true);
   });
 
@@ -64,10 +106,14 @@ describe("Workbench preparation visibility", () => {
         { ...preparation, ticketId: WorkbenchTicketId.make("saved"), phase: "working" as const },
       ],
     ]);
-    expect(filterTicketPreparationThreads(threads, index)).toEqual(threads);
+    expect(filterVisibleThreads(threads, createWorkbenchThreadPresentationPolicy(index))).toEqual(
+      threads,
+    );
   });
 
   it("leaves native lists unchanged outside Workbench or on older hosts", () => {
-    expect(filterTicketPreparationThreads(threads, new Map())).toBe(threads);
+    expect(filterVisibleThreads(threads, createWorkbenchThreadPresentationPolicy(new Map()))).toBe(
+      threads,
+    );
   });
 });

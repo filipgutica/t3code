@@ -397,7 +397,7 @@ import {
   terminalContextReference,
 } from "../lib/composerContextRecords";
 import { type ReviewCommentContext } from "../reviewCommentContext";
-import { resolveWorkbenchReviewCommentTitle } from "../workbench/workbenchComposerTitle";
+import { useHostIntegrations } from "../hostIntegrations";
 import { environmentCatalog } from "../connection/catalog";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useEnvironmentDisconnectDelay } from "../hooks/useEnvironmentDisconnectDelay";
@@ -1578,6 +1578,7 @@ function releaseChatTimelineAnchor<T extends { readonly messageId: MessageId | n
 const retryingWorkspacePreparationRunIds = new Set<RunId>();
 
 export default function ChatView(props: ChatViewProps) {
+  const integrations = useHostIntegrations();
   const {
     environmentId,
     threadId,
@@ -9838,7 +9839,7 @@ export default function ChatView(props: ChatViewProps) {
         titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
       } else if (composerReviewCommentsSnapshot.length > 0) {
         titleSeed =
-          resolveWorkbenchReviewCommentTitle(composerReviewCommentsSnapshot[0]!) ??
+          integrations.reviewCommentTitle?.(composerReviewCommentsSnapshot[0]!) ??
           `Review: ${reviewCommentContextLabel(composerReviewCommentsSnapshot[0]!)}`;
       } else if (composerPreviewAnnotationsSnapshot.length > 0) {
         titleSeed = previewAnnotationContextLabel(composerPreviewAnnotationsSnapshot[0]!);

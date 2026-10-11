@@ -1,3 +1,5 @@
+import "./WorkbenchPage.css";
+
 const formatJiraSyncStatus = (value: string | null) =>
   value === null ? "Jira not synced yet" : `Jira synced ${new Date(value).toLocaleString()}`;
 

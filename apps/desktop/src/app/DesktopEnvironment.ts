@@ -16,7 +16,7 @@ import * as DesktopConfig from "./DesktopConfig.ts";
 import { resolveLinuxDesktopEntryName } from "./DesktopEarlyElectronStartup.ts";
 import { resolveDesktopBaseDir, resolveDesktopStateDir } from "./DesktopStatePaths.ts";
 import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
-import { getWorkbenchDistribution } from "../workbench/distribution.ts";
+import { getDesktopProduct, getDesktopProductIdentity } from "./DesktopProduct.ts";
 import type { OtlpProtocol } from "@t3tools/shared/observability";
 
 export interface MakeDesktopEnvironmentInput {
@@ -94,8 +94,6 @@ export class DesktopEnvironment extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 
-const APP_BASE_NAME = "T3 Code";
-
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;
   readonly appVersion: string;
@@ -112,18 +110,13 @@ export function resolveDesktopAppBranding(input: {
   readonly appVersion: string;
 }): DesktopAppBranding {
   const stageLabel = resolveDesktopAppStageLabel(input);
-  const workbenchDistribution = getWorkbenchDistribution();
-  if (workbenchDistribution) {
-    return {
-      baseName: workbenchDistribution.productName,
-      stageLabel,
-      displayName: workbenchDistribution.productName,
-    };
-  }
+  const product = getDesktopProduct();
   return {
-    baseName: APP_BASE_NAME,
+    baseName: product.baseName,
     stageLabel,
-    displayName: `${APP_BASE_NAME} (${stageLabel})`,
+    displayName: product.showStageInDisplayName
+      ? `${product.baseName} (${stageLabel})`
+      : product.baseName,
   };
 }
 
@@ -189,7 +182,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     appVersion: input.appVersion,
   });
   const displayName = branding.displayName;
-  const workbenchDistribution = getWorkbenchDistribution();
+  const identity = getDesktopProductIdentity(isDevelopment);
   const stateDir = resolveDesktopStateDir({
     baseDir,
     isDevelopment,
@@ -245,15 +238,9 @@ const make = Effect.fn("desktop.environment.make")(function* (
     otlpProtocol: config.otlpProtocol,
     branding,
     displayName,
-    appUserModelId: Option.getOrElse(
-      config.appUserModelIdOverride,
-      () =>
-        workbenchDistribution?.appId ??
-        (isDevelopment ? "com.t3tools.t3code.dev" : "com.t3tools.t3code"),
-    ),
+    appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () => identity.appUserModelId),
     linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
-    linuxWmClass:
-      workbenchDistribution?.executableName ?? (isDevelopment ? "t3code-dev" : "t3code"),
+    linuxWmClass: identity.linuxWmClass,
     linuxApplicationsDir,
     appImagePath: config.appImagePath,
     defaultDesktopSettings: DesktopAppSettings.resolveDefaultDesktopSettings(input.appVersion),

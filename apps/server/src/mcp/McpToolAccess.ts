@@ -17,7 +17,7 @@ import {
 } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "./OrchestratorMcpService.ts";
-import { assertMcpWritesAllowed } from "../workbench/TicketPlanningRuntime.ts";
+import { McpWritePolicy } from "./McpWritePolicy.ts";
 import {
   assertFullAccess,
   assertLiveCaller,
@@ -98,6 +98,9 @@ export class Declaration<out Handler> {
   }
 }
 
+const assertThreadWritesAllowed = (threadId: ThreadId) =>
+  Effect.flatMap(McpWritePolicy, (policy) => policy.assertAllowed(threadId));
+
 /** A client approved for read-only access changes nothing. */
 const refuseReadOnlyClient = McpInvocationContext.McpInvocationContext.pipe(
   Effect.flatMap((scope) =>
@@ -113,7 +116,7 @@ const refuseReadOnlyClient = McpInvocationContext.McpInvocationContext.pipe(
         )
       : scope.thread === undefined
         ? Effect.void
-        : assertMcpWritesAllowed(scope.thread.threadId),
+        : assertThreadWritesAllowed(scope.thread.threadId),
   ),
 );
 

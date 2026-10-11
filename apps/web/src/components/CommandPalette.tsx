@@ -1,7 +1,6 @@
 "use client";
 
-import { useWorkbenchCommandPaletteActions } from "../workbench/useWorkbenchCommandPaletteActions";
-import { useWorkbenchVisibleThreadShells } from "../workbench/useWorkbenchTicketPreparations";
+import { HostCommandPaletteContributions, useVisibleThreads } from "../hostIntegrations";
 
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
@@ -118,7 +117,7 @@ import { useScratchProject } from "../hooks/useScratchProject";
 import { useNewProject } from "../hooks/useNewProject";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
-import { useProjects, useServerConfigs, waitForProject } from "../state/entities";
+import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import {
@@ -699,6 +698,31 @@ function OpenCommandPaletteDialog(props: {
   readonly openOverlayMode: (mode: SearchOverlayMode) => void;
   readonly clearOpenIntent: () => void;
 }) {
+  const newThread = useHandleNewThread();
+  return (
+    <HostCommandPaletteContributions
+      thread={newThread.activeThread}
+      draftEnvironmentId={newThread.activeDraftThread?.environmentId}
+    >
+      {(actions) => (
+        <OpenCommandPaletteDialogContent
+          {...props}
+          newThread={newThread}
+          additionalActions={actions}
+        />
+      )}
+    </HostCommandPaletteContributions>
+  );
+}
+
+function OpenCommandPaletteDialogContent(props: {
+  readonly openIntent: CommandPaletteOpenIntent | null;
+  readonly setOpen: (open: boolean) => void;
+  readonly openOverlayMode: (mode: SearchOverlayMode) => void;
+  readonly clearOpenIntent: () => void;
+  readonly newThread: ReturnType<typeof useHandleNewThread>;
+  readonly additionalActions: ReadonlyArray<CommandPaletteActionItem>;
+}) {
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { clearOpenIntent, openIntent, openOverlayMode, setOpen } = props;
@@ -746,13 +770,8 @@ function OpenCommandPaletteDialog(props: {
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
-  const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
-    useHandleNewThread();
+  const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } = props.newThread;
   const projects = useProjects();
-  const workbenchActions = useWorkbenchCommandPaletteActions({
-    thread: activeThread,
-    draftEnvironmentId: activeDraftThread?.environmentId,
-  });
   const referenceThreadRef =
     pathname === "/pull-requests"
       ? environments.some(
@@ -800,7 +819,7 @@ function OpenCommandPaletteDialog(props: {
     }
   }, [activeThreadReferenceCopyTarget]);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
-  const threads = useWorkbenchVisibleThreadShells();
+  const threads = useVisibleThreads(useThreadShells());
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const {
     theme,
@@ -2315,7 +2334,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  actionItems.push(...workbenchActions);
+  actionItems.push(...props.additionalActions);
   const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
   const settingsSearchItems: CommandPaletteActionItem[] = searchSettings(
     deferredQuery,

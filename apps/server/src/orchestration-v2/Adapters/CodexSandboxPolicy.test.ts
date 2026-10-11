@@ -26,9 +26,9 @@ import {
   ProviderAdapterV2RuntimePolicy,
 } from "@t3tools/provider-core/server/ProviderAdapter";
 import * as Schema from "effect/Schema";
-import packageJson from "../../package.json" with { type: "json" };
-import * as CodexAdapterV2 from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
-import { makeReplayServerConfig } from "../orchestration-v2/Adapters/CodexAdapterV2.testkit.ts";
+import packageJson from "../../../package.json" with { type: "json" };
+import * as CodexAdapterV2 from "./CodexAdapterV2.ts";
+import { makeReplayServerConfig } from "./CodexAdapterV2.testkit.ts";
 
 const DEFAULT_CODEX_SETTINGS = Schema.decodeSync(CodexSettings)({});
 const CODEX_TEST_MODEL_SELECTION = {
@@ -152,7 +152,7 @@ function withReplayRequestId(
     : entry;
 }
 
-describe("Codex planning runtime integration", () => {
+describe("Codex read-only sandbox integration", () => {
   const openReplaySession = (
     transcript: CodexReplay.CodexAppServerReplayTranscript,
     runtimePolicy = CODEX_TEST_RUNTIME_POLICY,

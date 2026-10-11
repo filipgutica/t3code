@@ -109,7 +109,7 @@ import { ProviderEventLoggers } from "../../provider/ProviderEventLoggers.ts";
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "../../provider/codexLaunchArgs.ts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
-import { prepareCodexThreadRuntimeParams } from "../../workbench/CodexPlanningRuntime.ts";
+import { prepareCodexThreadRuntimeParams } from "./CodexSandboxPolicy.ts";
 import {
   MCP_APP_EXTENSION_ID,
   MCP_APP_MIME_TYPE,

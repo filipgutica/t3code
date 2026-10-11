@@ -20,7 +20,7 @@ const state = vi.hoisted(() => ({
   turnError: false,
   limited: false,
   subagent: false,
-  unsavedTicket: false,
+  notificationsSuppressed: false,
   background: [] as Array<{ taskId: string; kind: "command" | "monitor" }>,
   add: vi.fn(
     (_toast: { title: string; description: string; actionProps: { onClick: () => void } }) =>
@@ -112,11 +112,6 @@ vi.mock("../state/environments", () => ({
 vi.mock("../state/shell", () => ({
   environmentShell: { stateValueAtom: vi.fn() },
 }));
-vi.mock("../workbench/useWorkbenchTicketPreparations", () => ({
-  useWorkbenchTicketPreparations: () => new Map(),
-  useWorkbenchTicketPreparationRefresh: () => {},
-  isUnsavedTicketPreparation: () => state.unsavedTicket,
-}));
 vi.mock("../threadNotifications", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../threadNotifications")>()),
   playNotificationSound: state.sound,
@@ -127,13 +122,23 @@ vi.mock("./ui/toast", () => ({
 }));
 
 import { ThreadNotificationCoordinator } from "./ThreadNotificationCoordinator";
+import { ThreadPresentationPolicyContext } from "../hostIntegrations";
 
 let renderer: ReactTestRenderer | undefined;
 
 async function render() {
   await act(() => {
-    if (renderer) renderer.update(<ThreadNotificationCoordinator />);
-    else renderer = create(<ThreadNotificationCoordinator />);
+    const view = (
+      <ThreadPresentationPolicyContext
+        value={
+          state.notificationsSuppressed ? { isVisible: () => false, canNotify: () => false } : null
+        }
+      >
+        <ThreadNotificationCoordinator />
+      </ThreadPresentationPolicyContext>
+    );
+    if (renderer) renderer.update(view);
+    else renderer = create(view);
   });
 }
 
@@ -143,7 +148,7 @@ async function complete() {
 }
 
 beforeEach(() => {
-  state.unsavedTicket = false;
+  state.notificationsSuppressed = false;
   vi.clearAllMocks();
   Object.assign(state, {
     mode: "off",
@@ -185,8 +190,8 @@ describe("thread notifications", () => {
   it.each([
     { kind: "subagent" as const, focused: true },
     { kind: "subagent" as const, focused: false },
-    { kind: "unsavedTicket" as const, focused: true },
-    { kind: "unsavedTicket" as const, focused: false },
+    { kind: "notificationsSuppressed" as const, focused: true },
+    { kind: "notificationsSuppressed" as const, focused: false },
   ])("keeps $kind silent with focus=$focused", async ({ kind, focused }) => {
     state[kind] = true;
     state.focused = focused;

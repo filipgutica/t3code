@@ -191,7 +191,7 @@ import {
   type TerminalContextSelection,
 } from "../../lib/terminalContext";
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
-import { WorkbenchComposerPendingReviewComments } from "../../workbench/WorkbenchComposerPendingReviewComments";
+import { HostPendingReviewAttachments } from "../../hostIntegrations";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import {
   getRestingComposerImagePreviewCounts,
@@ -7038,7 +7038,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 !isComposerApprovalState &&
                 pendingUserInputs.length === 0 &&
                 composerReviewComments.length > 0 && (
-                  <WorkbenchComposerPendingReviewComments
+                  <HostPendingReviewAttachments
                     comments={composerReviewComments}
                     onRemove={(commentId) =>
                       removeComposerDraftReviewComment(composerDraftTarget, commentId)

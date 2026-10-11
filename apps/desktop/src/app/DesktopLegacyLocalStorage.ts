@@ -7,7 +7,7 @@ import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
-import { getWorkbenchDesktopProfileNames } from "../workbench/distribution.ts";
+import { getDesktopProduct } from "./DesktopProduct.ts";
 import { readChromiumLocalStorage } from "./chromiumLocalStorage.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
@@ -32,8 +32,6 @@ export class DesktopLegacyLocalStorage extends Context.Service<
 >()("@t3tools/desktop/app/DesktopLegacyLocalStorage") {}
 
 const MARKER_FILE_NAME = "v1-local-storage-imported";
-// V1 used "T3 Code (Alpha)" when that folder existed and "t3code" otherwise.
-const V1_PROFILE_NAMES = ["T3 Code (Alpha)", "t3code"];
 
 const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
@@ -61,8 +59,7 @@ const make = Effect.gen(function* () {
   /** The V1 profile whose Local Storage was written most recently, if any. */
   const findV1LocalStorage = Effect.gen(function* () {
     let newest: { readonly directory: string; readonly mtime: number } | null = null;
-    const workbenchProfileNames = getWorkbenchDesktopProfileNames(false);
-    const profileNames = workbenchProfileNames ? [workbenchProfileNames.legacy] : V1_PROFILE_NAMES;
+    const profileNames = getDesktopProduct().legacyProfileNames;
     for (const name of profileNames) {
       const directory = path.join(environment.appDataDirectory, name, "Local Storage", "leveldb");
       const mtime = yield* newestFileMtime(directory);

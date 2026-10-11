@@ -1,7 +1,7 @@
 import {
   rerunFailedGitHubWorkflowJobs,
   type GitHubWorkflowRerunError,
-} from "../workbench/githubWorkflowRerun.ts";
+} from "./githubWorkflowRerun.ts";
 import { removeAgentCredits } from "./mergeMessage.ts";
 import { KnownWorkflowRuns, makeChecksRevalidator } from "./gitHubConditionalChecks.ts";
 import { runGitHubStackAction, type GitHubStackActionError } from "./githubStackActions.ts";

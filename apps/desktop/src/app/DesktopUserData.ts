@@ -3,7 +3,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
-import { getWorkbenchDesktopProfileNames } from "../workbench/distribution.ts";
+import { getDesktopProductIdentity } from "./DesktopProduct.ts";
 
 export class DesktopUserDataInitializationError extends Schema.TaggedError<DesktopUserDataInitializationError>()(
   "DesktopUserDataInitializationError",
@@ -41,11 +41,7 @@ export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPa
   }) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const names =
-      getWorkbenchDesktopProfileNames(input.isDevelopment) ??
-      (input.isDevelopment
-        ? { current: "t3code-dev", legacy: "T3 Code (Dev)", fallback: "t3code" }
-        : { current: "t3code-v2", legacy: "T3 Code (Alpha)", fallback: "t3code" });
+    const names = getDesktopProductIdentity(input.isDevelopment).profileNames;
     const destinationPath = path.join(input.appDataDirectory, names.current);
     const legacyPath = path.join(input.appDataDirectory, names.legacy);
     const inspect = (resourcePath: string) =>

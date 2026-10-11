@@ -1,4 +1,4 @@
-import { GitHubWorkflowRerunError } from "../workbench/githubWorkflowRerun.ts";
+import { GitHubWorkflowRerunError } from "./githubWorkflowRerun.ts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

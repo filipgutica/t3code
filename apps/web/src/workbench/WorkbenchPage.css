@@ -1,0 +1,5 @@
+/* Native drag hit-testing ignores z-index. Suspend background drag regions
+   while workspace actions cover the Workbench header. */
+body:has([data-workbench-workspace-actions]) [data-workbench-page] .drag-region {
+  -webkit-app-region: no-drag;
+}

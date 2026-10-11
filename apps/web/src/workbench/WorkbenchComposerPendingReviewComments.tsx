@@ -5,10 +5,7 @@ import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../componen
 import type { ReviewCommentContext } from "../reviewCommentContext";
 import { cn } from "../lib/utils";
 import { WorkbenchTicketContextPreview } from "./WorkbenchTicketContextPreview";
-
-function isWorkbenchTicketReviewComment(comment: ReviewCommentContext): boolean {
-  return comment.sectionId.startsWith("workbench-ticket:");
-}
+import { isWorkbenchTicketReviewComment } from "./workbenchTicketContext";
 
 function WorkbenchTicketReviewComment({
   comment,

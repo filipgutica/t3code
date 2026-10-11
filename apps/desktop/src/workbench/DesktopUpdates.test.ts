@@ -8,7 +8,7 @@ import * as TestClock from "effect/testing/TestClock";
 
 import * as DesktopUpdates from "../updates/DesktopUpdates.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
-import { WorkbenchGithubProvider } from "../electron/WorkbenchGithubProvider.ts";
+import { WorkbenchGithubProvider } from "./WorkbenchGithubProvider.ts";
 import { flushCallbacks, makeHarness } from "../updates/updatesTestHarness.ts";
 
 describe("Workbench DesktopUpdates", () => {

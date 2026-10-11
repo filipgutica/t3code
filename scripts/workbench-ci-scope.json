@@ -68,7 +68,6 @@
         "apps/server/src/pullRequest/PullRequestReadCache.ts",
         "apps/server/src/pullRequest/PullRequestService.ts",
         "apps/server/src/pullRequest/gitHubPullRequestJson.ts",
-        "apps/server/src/workbench/githubWorkflowRerun.ts",
         "apps/server/src/resourceTelemetry/NativeTelemetryClient.ts",
         "apps/server/src/scheduledTasks/ScheduledTaskService.ts",
         "apps/server/src/server.ts",
@@ -92,7 +91,10 @@
         "packages/provider-core/src/server/textGeneration.ts",
         "packages/provider-core/src/server/textGenerationOperations.ts",
         "packages/provider-muse/src/server/textGeneration.ts",
-        "apps/server/src/observability/RpcInstrumentation.ts"
+        "apps/server/src/observability/RpcInstrumentation.ts",
+        "apps/server/src/mcp/McpWritePolicy.ts",
+        "apps/server/src/orchestration-v2/Adapters/CodexSandboxPolicy.ts",
+        "apps/server/src/pullRequest/githubWorkflowRerun.ts"
       ],
       "tests": [
         "apps/server/src/assets/AssetAccess.test.ts",
@@ -140,7 +142,6 @@
         "apps/server/src/pullRequest/PullRequestReadCache.test.ts",
         "apps/server/src/pullRequest/PullRequestService.test.ts",
         "apps/server/src/pullRequest/gitHubPullRequestJson.test.ts",
-        "apps/server/src/workbench/githubWorkflowRerun.test.ts",
         "apps/server/src/resourceTelemetry/NativeTelemetryClient.test.ts",
         "apps/server/src/scheduledTasks/Schedule.test.ts",
         "apps/server/src/scheduledTasks/ScheduledTaskService.schedule.test.ts",
@@ -161,7 +162,9 @@
         "apps/server/src/ws.test.ts",
         "packages/provider-core/src/server/textGenerationPrompts.test.ts",
         "packages/provider-muse/src/server/textGeneration.test.ts",
-        "apps/server/src/observability/RpcInstrumentation.test.ts"
+        "apps/server/src/observability/RpcInstrumentation.test.ts",
+        "apps/server/src/orchestration-v2/Adapters/CodexSandboxPolicy.test.ts",
+        "apps/server/src/pullRequest/githubWorkflowRerun.test.ts"
       ],
       "verification": ["unit", "typecheck"]
     },
@@ -209,7 +212,12 @@
         "apps/web/src/state/pullRequests.ts",
         "apps/web/src/state/query.ts",
         "apps/web/src/vite-env.d.ts",
-        "apps/web/vite.config.ts"
+        "apps/web/vite.config.ts",
+        "apps/web/src/hostIntegrations.tsx",
+        "apps/web/src/routes/__root.tsx",
+        "apps/web/src/components/desktopUpdate.toast.tsx",
+        "apps/web/src/components/sidebar/SidebarUpdatePill.tsx",
+        "apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx"
       ],
       "tests": [
         "apps/web/src/components/ChatMarkdown.pull-request-environment.test.tsx",
@@ -253,9 +261,9 @@
         "apps/desktop/src/backend/DesktopBackendConfiguration.ts",
         "apps/desktop/src/backend/DesktopServerExposure.ts",
         "apps/desktop/src/electron/ElectronProtocol.ts",
-        "apps/desktop/src/electron/WorkbenchGithubProvider.ts",
         "apps/desktop/src/updates/DesktopUpdates.ts",
-        "apps/desktop/vite.config.ts"
+        "apps/desktop/vite.config.ts",
+        "apps/desktop/src/app/DesktopProduct.ts"
       ],
       "tests": [
         "apps/desktop/src/app/DesktopClerk.test.ts",
@@ -265,7 +273,6 @@
         "apps/desktop/src/backend/DesktopBackendConfiguration.test.ts",
         "apps/desktop/src/backend/DesktopServerExposure.test.ts",
         "apps/desktop/src/electron/ElectronProtocol.test.ts",
-        "apps/desktop/src/electron/WorkbenchGithubProvider.test.ts",
         "apps/desktop/src/updates/DesktopUpdates.test.ts",
         "apps/desktop/src/workbench/legacyLocalStorage.test.ts"
       ],
@@ -358,7 +365,8 @@
       "paths": [
         "scripts/build-desktop-artifact.ts",
         "scripts/dev-runner.ts",
-        "scripts/release-smoke.ts"
+        "scripts/release-smoke.ts",
+        "scripts/lib/desktop-build-product.ts"
       ],
       "tests": ["scripts/build-desktop-artifact.test.ts", "scripts/dev-runner.test.ts"],
       "verification": ["unit", "typecheck", "packaging"]
@@ -418,6 +426,8 @@
     "scripts/release-smoke.ts",
     "package.json",
     "pnpm-lock.yaml",
-    "pnpm-workspace.yaml"
+    "pnpm-workspace.yaml",
+    "scripts/lib/desktop-build-product.ts",
+    "scripts/lib/workbench-desktop-product.ts"
   ]
 }

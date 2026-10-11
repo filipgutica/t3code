@@ -20,6 +20,7 @@ import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import { McpWritePolicy } from "../mcp/McpWritePolicy.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
 import * as Providers from "../provider/ProviderInstanceRegistry.ts";
 import * as TicketPlanningRuntime from "./TicketPlanningRuntime.ts";
@@ -248,32 +249,51 @@ it.effect.each([
     Effect.provide(policyLayer("draft", driver, missing)),
   ),
 );
-it.effect.each(["draft", "planning", "starting", "working"] as const)(
+it.effect.each(["draft", "planning", "starting", "working", null] as const)(
   "MCP mutations require completed Start work (%s)",
   (phase) =>
-    Effect.result(TicketPlanningRuntime.assertMcpWritesAllowed(threadId)).pipe(
+    Effect.result(Effect.flatMap(McpWritePolicy, (policy) => policy.assertAllowed(threadId))).pipe(
       Effect.map((result) => {
-        assert.equal(Result.isSuccess(result), phase === "working");
-        if (Result.isFailure(result)) assert.equal(result.failure.code, "capability_denied");
+        assert.equal(Result.isSuccess(result), phase === "working" || phase === null);
+        if (Result.isFailure(result)) {
+          assert.equal(result.failure.code, "capability_denied");
+          assert.equal(
+            result.failure.message,
+            "This conversation is preparing a ticket. Start work before changing repositories or the environment.",
+          );
+        }
       }),
       Effect.provide(
-        Layer.mock(WorkbenchStore)({ getTicketDraftForThread: () => Effect.succeed(draft(phase)) }),
+        TicketPlanningRuntime.layerMcpWritePolicy.pipe(
+          Layer.provide(
+            Layer.mock(WorkbenchStore)({
+              getTicketDraftForThread: () => Effect.succeed(phase === null ? null : draft(phase)),
+            }),
+          ),
+        ),
       ),
     ),
 );
 it.effect("refuses MCP mutations when planning ownership cannot be read", () =>
-  Effect.result(TicketPlanningRuntime.assertMcpWritesAllowed(threadId)).pipe(
+  Effect.result(Effect.flatMap(McpWritePolicy, (policy) => policy.assertAllowed(threadId))).pipe(
     Effect.map((result) => {
       assert.isTrue(Result.isFailure(result));
-      if (Result.isFailure(result)) assert.equal(result.failure.code, "capability_denied");
+      if (Result.isFailure(result)) {
+        assert.equal(result.failure.code, "capability_denied");
+        assert.equal(result.failure.message, "Ticket planning permissions could not be verified.");
+      }
     }),
     Effect.provide(
-      Layer.mock(WorkbenchStore)({
-        getTicketDraftForThread: () =>
-          Effect.fail(
-            new WorkbenchOperationError({ code: "persistence_failed", message: "Unavailable" }),
-          ),
-      }),
+      TicketPlanningRuntime.layerMcpWritePolicy.pipe(
+        Layer.provide(
+          Layer.mock(WorkbenchStore)({
+            getTicketDraftForThread: () =>
+              Effect.fail(
+                new WorkbenchOperationError({ code: "persistence_failed", message: "Unavailable" }),
+              ),
+          }),
+        ),
+      ),
     ),
   ),
 );

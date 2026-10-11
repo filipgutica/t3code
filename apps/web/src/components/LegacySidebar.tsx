@@ -88,11 +88,13 @@ import { isTerminalFocused } from "../lib/terminalFocus";
 import { isMacPlatform } from "../lib/utils";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
-import { readThreadShell, useProjects } from "../state/entities";
 import {
-  useWorkbenchVisibleThreadShells,
-  useWorkbenchVisibleProjectThreadShells,
-} from "../workbench/useWorkbenchTicketPreparations";
+  readThreadShell,
+  useProjects,
+  useThreadShells,
+  useThreadShellsForProjectRefs,
+} from "../state/entities";
+import { useHostIntegrations, useVisibleThreads } from "../hostIntegrations";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useThreadDiscoveredPorts } from "../portDiscoveryState";
@@ -1279,7 +1281,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     },
   });
   const openPrLink = useOpenPrLink();
-  const sidebarThreads = useWorkbenchVisibleProjectThreadShells(project.memberProjectRefs);
+  const sidebarThreads = useVisibleThreads(
+    useThreadShellsForProjectRefs(project.memberProjectRefs),
+  );
   const sidebarThreadByKey = useMemo(
     () =>
       new Map(
@@ -3226,8 +3230,9 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
 });
 
 export default function LegacySidebar() {
+  const { desktopReleaseLinks } = useHostIntegrations();
   const projects = useProjects();
-  const sidebarThreads = useWorkbenchVisibleThreadShells();
+  const sidebarThreads = useVisibleThreads(useThreadShells());
   const projectExpandedById = useUiStateStore((store) => store.projectExpandedById);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const reorderProjects = useUiStateStore((store) => store.reorderProjects);
@@ -3765,7 +3770,11 @@ export default function LegacySidebar() {
         .downloadUpdate()
         .then((result) => {
           if (result.completed) {
-            showDesktopUpdateDownloadedToast(bridge, result.state);
+            showDesktopUpdateDownloadedToast({
+              shell: bridge,
+              state: result.state,
+              releaseLinks: desktopReleaseLinks,
+            });
           }
           if (!shouldToastDesktopUpdateActionResult(result)) return;
           const actionError = getDesktopUpdateActionError(result);
@@ -3842,6 +3851,7 @@ export default function LegacySidebar() {
     desktopUpdateButtonAction,
     desktopUpdateButtonDisabled,
     desktopUpdateState,
+    desktopReleaseLinks,
   ]);
 
   const expandThreadListForProject = useCallback((projectKey: string) => {

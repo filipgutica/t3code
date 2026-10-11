@@ -30,7 +30,7 @@ import {
 } from "~/lib/composerContextRecords";
 import type { TerminalContextDraft } from "~/lib/terminalContext";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
-import { isWorkbenchTicketReviewComment } from "~/workbench/workbenchTicketContext";
+import { useHostIntegrations } from "~/hostIntegrations";
 import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTerminalContexts";
 import { ThreadContextChip } from "./ThreadContextChip";
 import {
@@ -97,14 +97,6 @@ export function uploadedContextRecordFromDraft(entry: ComposerDraftContextRecord
 export const ComposerContextRecordsContext = createContext<ComposerDraftContextRecords>(
   EMPTY_COMPOSER_CONTEXT_RECORDS,
 );
-
-/** Ticket context is kept in the prompt for persistence and sending, but its inline chip is
- * redundant with the removable Ticket attachment shown above the editor. */
-export function isWorkbenchTicketContextRecord(
-  record: ComposerDraftContextRecord | undefined,
-): boolean {
-  return record?.kind === "review-comment" && isWorkbenchTicketReviewComment(record.record);
-}
 
 export function composerContextRecordsFromDraft(input: {
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
@@ -463,10 +455,15 @@ export function ComposerContextReferenceChip(props: {
   label: string;
 }): ReactElement {
   const records = use(ComposerContextRecordsContext);
-  if (isWorkbenchTicketContextRecord(records.get(props.contextId))) {
+  const integrations = useHostIntegrations();
+  const record = records.get(props.contextId);
+  if (
+    record?.kind === "review-comment" &&
+    integrations.isReviewCommentReferenceHidden?.(record.record)
+  ) {
     return <span hidden aria-hidden="true" data-composer-context-reference-hidden="true" />;
   }
-  return composerContextPresentationRegistry.render(props.kind, records.get(props.contextId), {
+  return composerContextPresentationRegistry.render(props.kind, record, {
     label: props.label,
   });
 }

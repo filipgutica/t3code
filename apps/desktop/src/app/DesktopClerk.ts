@@ -18,7 +18,7 @@ import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopUserData from "./DesktopUserData.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
-import { getWorkbenchCodexAuthScheme } from "../workbench/distribution.ts";
+import { getDesktopProduct } from "./DesktopProduct.ts";
 
 declare const __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: string | undefined;
 
@@ -144,7 +144,7 @@ export const make = Effect.gen(function* () {
         const request = readCodexAuthHandoff(
           value,
           environment.isDevelopment,
-          getWorkbenchCodexAuthScheme() ?? "t3code",
+          getDesktopProduct().codexAuthScheme,
         );
         if (!request) return false;
         void runPromise(

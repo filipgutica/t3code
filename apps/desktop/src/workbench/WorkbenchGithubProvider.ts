@@ -38,6 +38,7 @@ export interface WorkbenchUpdateInfo extends UpdateInfo {
 }
 
 interface WorkbenchGithubOptions {
+  readonly provider?: "custom";
   readonly channel?: string | null;
 }
 
@@ -47,39 +48,49 @@ interface UpdaterVersionSource {
   readonly allowDowngrade?: boolean;
 }
 
+type WorkbenchReleaseCandidate = WorkbenchGithubRelease & {
+  readonly version: string;
+  readonly channel: DesktopUpdateChannel;
+};
+
+type RequiredReleaseAsset = string | ((channel: DesktopUpdateChannel) => string);
+
+/** Ignore unpublished tags and releases that cannot supply this platform's manifest. */
+const resolveReleaseCandidate = ({
+  release,
+  channel,
+  requiredAssetName,
+}: {
+  readonly release: WorkbenchGithubRelease;
+  readonly channel: DesktopUpdateChannel;
+  readonly requiredAssetName: RequiredReleaseAsset | undefined;
+}): WorkbenchReleaseCandidate | null => {
+  if (release.draft || release.published_at === null) return null;
+  const match = WORKBENCH_TAG.exec(release.tag_name);
+  const dailyMatch = channel === "nightly" ? WORKBENCH_DAILY_TAG.exec(release.tag_name) : null;
+  const version = match ? `${match[1]}.${match[2]}.${match[3]}` : dailyMatch?.[1];
+  if (!version) return null;
+  const releaseChannel = match ? "latest" : "nightly";
+  const assetName =
+    typeof requiredAssetName === "function" ? requiredAssetName(releaseChannel) : requiredAssetName;
+  if (assetName && !release.assets.some((asset) => asset.name === assetName)) return null;
+  return { ...release, version, channel: releaseChannel };
+};
+
 /** Nightly includes daily builds and their stable promotion; latest includes only stable tags. */
 export function selectLatestWorkbenchRelease(
   releases: readonly WorkbenchGithubRelease[],
-  requiredAssetName?: string | ((channel: DesktopUpdateChannel) => string),
+  requiredAssetName?: RequiredReleaseAsset,
   channel: DesktopUpdateChannel = "latest",
-):
-  | (WorkbenchGithubRelease & { readonly version: string; readonly channel: DesktopUpdateChannel })
-  | null {
-  let latest:
-    | (WorkbenchGithubRelease & {
-        readonly version: string;
-        readonly channel: DesktopUpdateChannel;
-      })
-    | null = null;
-
+): WorkbenchReleaseCandidate | null {
+  let latest: WorkbenchReleaseCandidate | null = null;
   for (const release of releases) {
-    if (release.draft || release.published_at === null) continue;
-    const match = WORKBENCH_TAG.exec(release.tag_name);
-    const dailyMatch = channel === "nightly" ? WORKBENCH_DAILY_TAG.exec(release.tag_name) : null;
-    const version = match ? `${match[1]}.${match[2]}.${match[3]}` : dailyMatch?.[1];
-    if (!version) continue;
-    const releaseChannel = match ? "latest" : "nightly";
-    const assetName =
-      typeof requiredAssetName === "function"
-        ? requiredAssetName(releaseChannel)
-        : requiredAssetName;
-    if (assetName && !release.assets.some((asset) => asset.name === assetName)) continue;
-
-    if (latest === null || compareSemverVersions(version, latest.version) > 0) {
-      latest = { ...release, version, channel: releaseChannel };
+    const candidate = resolveReleaseCandidate({ release, channel, requiredAssetName });
+    if (candidate === null) continue;
+    if (latest === null || compareSemverVersions(candidate.version, latest.version) > 0) {
+      latest = candidate;
     }
   }
-
   return latest;
 }
 
@@ -124,25 +135,7 @@ export class WorkbenchGithubProvider extends Provider<WorkbenchUpdateInfo> {
   }
 
   async getLatestVersion(): Promise<WorkbenchUpdateInfo> {
-    const releases: WorkbenchGithubRelease[] = [];
-    for (let page = 1; ; page += 1) {
-      const releasesResponse = await this.httpRequest(
-        new URL(`${WORKBENCH_RELEASES_API}?per_page=100&page=${page}`),
-        { Accept: "application/vnd.github+json" },
-      );
-      if (releasesResponse === null) break;
-
-      let pageReleases: readonly WorkbenchGithubRelease[];
-      try {
-        pageReleases = decodeGithubReleases(JSON.parse(releasesResponse));
-      } catch (cause) {
-        throw new Error("GitHub returned an invalid Workbench release list.", { cause });
-      }
-
-      releases.push(...pageReleases);
-      if (pageReleases.length < 100) break;
-    }
-
+    const releases = await this.loadReleases();
     const channel = this.updater.channel ?? this.options.channel ?? "latest";
     if (channel !== "latest" && channel !== "nightly") return makeNoUpdateInfo(this.currentVersion);
     const selected = selectLatestWorkbenchRelease(
@@ -201,6 +194,29 @@ export class WorkbenchGithubProvider extends Provider<WorkbenchUpdateInfo> {
     }
 
     return resolveFiles(updateInfo, baseUrl);
+  }
+
+  private async loadReleases(): Promise<readonly WorkbenchGithubRelease[]> {
+    const releases: WorkbenchGithubRelease[] = [];
+    for (let page = 1; ; page += 1) {
+      const releasesResponse = await this.httpRequest(
+        new URL(`${WORKBENCH_RELEASES_API}?per_page=100&page=${page}`),
+        { Accept: "application/vnd.github+json" },
+      );
+      if (releasesResponse === null) break;
+
+      let pageReleases: readonly WorkbenchGithubRelease[];
+      try {
+        pageReleases = decodeGithubReleases(JSON.parse(releasesResponse));
+      } catch (cause) {
+        throw new Error("GitHub returned an invalid Workbench release list.", { cause });
+      }
+
+      releases.push(...pageReleases);
+      if (pageReleases.length < 100) break;
+    }
+
+    return releases;
   }
 
   private channelFileName(channel: DesktopUpdateChannel): string {
