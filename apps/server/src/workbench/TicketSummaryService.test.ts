@@ -1,11 +1,13 @@
 import {
   DEFAULT_SERVER_SETTINGS,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   TextGenerationError,
   type ModelSelection,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
+import { decodeJsonReply } from "@t3tools/provider-core/server/textGenerationOperations";
 import { TicketSummaryHost } from "@t3tools/workbench/TicketSummaryHost";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -144,6 +146,16 @@ describe("TicketSummaryHost", () => {
                   getSettings: Effect.sync(() => ({
                     ...DEFAULT_SERVER_SETTINGS,
                     textGenerationModelSelection: selection,
+                    providerInstances: {
+                      [first.instanceId]: {
+                        driver: ProviderDriverKind.make("codex"),
+                        enabled: true,
+                      },
+                      [second.instanceId]: {
+                        driver: ProviderDriverKind.make("codex"),
+                        enabled: true,
+                      },
+                    },
                   })),
                 }),
               ),
@@ -164,6 +176,98 @@ describe("TicketSummaryHost", () => {
                         }).pipe(Effect.orDie),
                       ),
                     ),
+                }),
+              ),
+            ),
+          ),
+        );
+      }),
+  );
+
+  it.effect.each(["project choice", "fallback", "all disabled"] as const)(
+    "honors primary-project provider settings: %s",
+    (scenario) =>
+      Effect.gen(function* () {
+        const environmentWriter = ProviderInstanceId.make("environment-writer");
+        const projectWriter = ProviderInstanceId.make("project-writer");
+        const calls: ProviderInstanceId[] = [];
+        const settings = {
+          ...DEFAULT_SERVER_SETTINGS,
+          textGenerationModelSelection: createModelSelection(
+            environmentWriter,
+            "environment-model",
+          ),
+          providerInstances: {
+            [environmentWriter]: { driver: ProviderDriverKind.make("codex"), enabled: true },
+            [projectWriter]: { driver: ProviderDriverKind.make("codex"), enabled: false },
+          },
+          projectSettingsOverrides: {
+            [projectId]: {
+              ...(scenario === "project choice"
+                ? {
+                    textGenerationModelSelection: createModelSelection(
+                      projectWriter,
+                      "project-model",
+                    ),
+                  }
+                : {}),
+              providerInstances: {
+                [environmentWriter]: { enabled: scenario === "project choice" },
+                [projectWriter]: { enabled: scenario === "project choice" },
+                ...(scenario === "all disabled"
+                  ? { codex: { enabled: false }, claudeAgent: { enabled: false } }
+                  : {}),
+              },
+            },
+          },
+        };
+        yield* Effect.gen(function* () {
+          const host = yield* TicketSummaryHost;
+          if (scenario === "all disabled") {
+            const failure = yield* host.generate(ticket).pipe(Effect.flip);
+            expect(failure.code).toBe("ticket_summary_generation_failed");
+            expect(calls).toEqual([]);
+          } else {
+            expect(yield* host.generate(ticket)).toBe("A project summary.");
+            expect(calls).toEqual([
+              scenario === "project choice" ? projectWriter : ProviderInstanceId.make("codex"),
+            ]);
+          }
+        }).pipe(
+          Effect.provide(
+            ticketSummaryHostLayer.pipe(
+              Layer.provide(
+                Layer.mock(ProjectStoreV2)({
+                  getShell: (id) =>
+                    Effect.succeed(
+                      Option.some({
+                        id,
+                        title: "Primary",
+                        workspaceRoot: "/repos/primary",
+                        defaultModelSelection: null,
+                        scripts: [],
+                        createdAt: "2026-09-07T10:00:00.000Z",
+                        updatedAt: "2026-09-07T10:00:00.000Z",
+                      }),
+                    ),
+                }),
+              ),
+              Layer.provide(
+                Layer.mock(ServerSettingsService)({ getSettings: Effect.succeed(settings) }),
+              ),
+              Layer.provide(
+                Layer.mock(TextGeneration)({
+                  generateStructured: (input) => {
+                    calls.push(input.modelSelection.instanceId);
+                    return decodeJsonReply(
+                      {
+                        operation: input.operation,
+                        outputSchema: Schema.toType(input.outputSchema),
+                      },
+                      "Test",
+                      '{"summary":"A project summary."}',
+                    );
+                  },
                 }),
               ),
             ),

@@ -20,7 +20,7 @@ function WorkbenchTicketReviewComment({
       <Popover>
         <PopoverTrigger
           aria-label={`Inspect context: ${label}`}
-          className="inline-flex min-w-0 items-center gap-1 rounded-sm text-left outline-none hover:text-primary focus-visible:ring-1 focus-visible:ring-ring"
+          className="inline-flex min-w-0 items-center gap-1 rounded-sm text-left outline-none hover:text-primary focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
         >
           <MessageCircle className="size-3.5 shrink-0" />
           <ContextChipLabel>{label}</ContextChipLabel>

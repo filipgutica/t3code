@@ -4,10 +4,10 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { assert, it } from "@effect/vitest";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 const envFiles = [".env", NodePath.join("infra", "relay", ".env")];
-const windows = HostProcessPlatform.defaultValue() === "win32";
+const windows = HostProcess.Platform.defaultValue() === "win32";
 
 it.each(["real file", "directory", "missing", "broken symlink", "main checkout", "symlink source"])(
   "setup preserves env files and only replaces links: %s",

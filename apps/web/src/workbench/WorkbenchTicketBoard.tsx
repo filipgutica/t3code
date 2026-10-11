@@ -420,7 +420,7 @@ function renderWorkbenchBoardSwimlane({
     >
       {groupMode === "epic" ? (
         <header className="mb-2 flex items-center gap-2 border-b border-border/40 py-1">
-          <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-2 text-left outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring">
+          <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-2 text-left outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
             <ChevronDownIcon className="size-3.5 shrink-0 -rotate-90 text-muted-foreground transition-transform group-data-panel-open:rotate-0 motion-reduce:transition-none" />
             <Layers3Icon className="size-3.5 shrink-0 text-muted-foreground" />
             <h3 className="min-w-0 truncate text-sm font-semibold">
@@ -582,7 +582,7 @@ function WorkbenchBoardTicketTitle({
       ref={setActivatorNodeRef}
       {...(!dragDisabled ? attributes : {})}
       className={cn(
-        "min-w-0 flex-1 cursor-pointer text-left outline-none after:absolute after:inset-0 after:z-[1] after:rounded-lg after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-ring",
+        "min-w-0 flex-1 cursor-pointer text-left outline-none after:absolute after:inset-0 after:z-[1] after:rounded-lg after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring",
         !dragDisabled && "cursor-grab active:cursor-grabbing",
       )}
       type="button"
@@ -909,7 +909,7 @@ function renderWorkbenchBoardTicketMetadata(
               type="button"
               onClick={() => onSelect(projectId, ticket.id)}
               aria-label={`Ticket ${summary.source === "description" ? "description" : "summary"}: ${summary.text}`}
-              className="relative z-10 line-clamp-2 cursor-pointer break-words text-left text-xs text-foreground/80 outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring"
+              className="relative z-10 line-clamp-2 cursor-pointer break-words text-left text-xs text-foreground/80 outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               tabIndex={0}
             />
           }
@@ -932,7 +932,7 @@ function renderWorkbenchBoardTicketMetadata(
               type="button"
               onClick={() => onSelect(projectId, ticket.id)}
               aria-label={`Repositories for ${ticket.title}: ${repositories.map(({ id, title }) => `${title}${id === ticket.primaryT3ProjectId ? " (primary)" : ""}`).join(", ")}. Open ticket`}
-              className="relative z-10 flex min-w-0 max-w-full cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 self-start rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="relative z-10 flex min-w-0 max-w-full cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 self-start rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             />
           }
         >

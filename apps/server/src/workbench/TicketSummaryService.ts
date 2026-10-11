@@ -1,4 +1,9 @@
-import { TextGenerationError, WorkbenchOperationError } from "@t3tools/contracts";
+import {
+  resolveProjectProviderInstanceEnabled,
+  TextGenerationError,
+  WorkbenchOperationError,
+} from "@t3tools/contracts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { TicketSummaryHost } from "@t3tools/workbench/TicketSummaryHost";
 import { TicketSummaryServiceLive as serviceLayer } from "@t3tools/workbench/TicketSummaryService";
 import * as Effect from "effect/Effect";
@@ -50,6 +55,21 @@ export const ticketSummaryHostLayer = Layer.effect(
               }),
           ),
         );
+        const modelSelection = resolveProjectSettings(currentSettings, ticket.primaryT3ProjectId)
+          .settings.textGenerationModelSelection;
+        if (
+          !resolveProjectProviderInstanceEnabled(
+            currentSettings,
+            ticket.primaryT3ProjectId,
+            modelSelection.instanceId,
+          )
+        ) {
+          return yield* new WorkbenchOperationError({
+            code: "ticket_summary_generation_failed",
+            message:
+              "No text generation provider is enabled for this ticket's primary repository. Enable one in project settings, then regenerate the summary.",
+          });
+        }
         const { prompt, outputSchema } = buildTicketSummaryPrompt({
           title: ticket.title,
           description: ticket.markdown,
@@ -60,7 +80,7 @@ export const ticketSummaryHostLayer = Layer.effect(
             cwd: project.value.workspaceRoot,
             prompt,
             outputSchema,
-            modelSelection: currentSettings.textGenerationModelSelection,
+            modelSelection,
           })
           .pipe(
             Effect.map((result) => sanitizeTicketSummary(result.summary)),

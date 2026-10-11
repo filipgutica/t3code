@@ -20,7 +20,7 @@ import * as Predicate from "effect/Predicate";
 import * as CodexClient from "effect-codex-app-server/client";
 import * as CodexReplay from "effect-codex-app-server/replay";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import {
   ProviderAdapterOpenSessionError,
   ProviderAdapterV2RuntimePolicy,
@@ -161,7 +161,7 @@ describe("Codex read-only sandbox integration", () => {
       const driver = yield* CodexReplay.makeReplayDriver(transcript, {});
       const requests: Array<string> = [];
       const sentRequests: Array<{ method: string; params: unknown }> = [];
-      const adapter = CodexAdapterV2.makeCodexAdapterV2({
+      const adapter = yield* CodexAdapterV2.makeCodexAdapterV2({
         instanceId: CodexAdapterV2.CODEX_DEFAULT_INSTANCE_ID,
         settings: DEFAULT_CODEX_SETTINGS,
         environment: {},
@@ -283,8 +283,9 @@ describe("Codex read-only sandbox integration", () => {
         const nativeThreadId = `native-${scenario}`;
         const endpoint = "http://127.0.0.1:43123/mcp";
         const authorization = "Bearer readonly-protocol-token";
+        const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
         if (nativeMcp)
-          McpProviderSession.setMcpProviderSession({
+          yield* mcpSessions.set({
             environmentId: EnvironmentId.make("integration-isolation"),
             threadId,
             providerSessionId: `mcp-${scenario}`,
@@ -293,9 +294,7 @@ describe("Codex read-only sandbox integration", () => {
             authorizationHeader: authorization,
             browserToolsAvailable: false,
           });
-        yield* Effect.addFinalizer(() =>
-          Effect.sync(() => McpProviderSession.clearMcpProviderSession(threadId)),
-        );
+        yield* Effect.addFinalizer(() => mcpSessions.clear(threadId));
         const policy = {
           ...CODEX_TEST_RUNTIME_POLICY,
           ...(readOnly ? { sandboxPolicy: { type: "readOnly" as const } } : {}),
@@ -369,7 +368,12 @@ describe("Codex read-only sandbox integration", () => {
           session.requests.filter((method) => method === "config/read").length,
           readOnly ? 2 : 0,
         );
-      }).pipe(Effect.scoped, Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
   );
 
   it.effect.each(["unavailable", "malformed"])(
@@ -409,7 +413,12 @@ describe("Codex read-only sandbox integration", () => {
           .pipe(Effect.flip);
         assert.equal(error._tag, "ProviderAdapterEnsureThreadError");
         assert.deepEqual(session.requests, ["initialize", "config/read"]);
-      }).pipe(Effect.scoped, Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
   );
 
   it.effect.each(["fork", "rollback"])(
@@ -532,6 +541,11 @@ describe("Codex read-only sandbox integration", () => {
             ...restrictedParams,
           },
         );
-      }).pipe(Effect.scoped, Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
   );
 });

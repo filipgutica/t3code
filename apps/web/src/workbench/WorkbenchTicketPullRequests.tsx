@@ -278,7 +278,7 @@ function WorkbenchTicketPullRequestRepository({
       href={repositoryUrl}
       target="_blank"
       rel="noopener noreferrer"
-      className="max-w-full break-words rounded-sm underline-offset-2 outline-none [overflow-wrap:anywhere] hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+      className="max-w-full break-words rounded-sm underline-offset-2 outline-none [overflow-wrap:anywhere] hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
       {pullRequest.repository}
     </a>

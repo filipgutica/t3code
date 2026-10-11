@@ -1,5 +1,5 @@
 {
-  "upstreamBase": "a6698271a41a4c1f2c42f25ca5d69cd7d1fa9c30",
+  "upstreamBase": "f23d0084b6e023ffb1af9e332d8666affc99d542",
   "groups": [
     {
       "name": "Workbench domain, adapters, UI and contracts",
@@ -60,14 +60,14 @@
         "apps/server/src/provider/ModelManifest.ts",
         "packages/provider-opencode/src/server/OpenCodeServerLedger.ts",
         "apps/server/src/provider/providerCompatibility.ts",
-        "apps/server/src/pullRequest/AzureDevOpsPullRequestCli.ts",
-        "apps/server/src/pullRequest/GitHubPullRequestApi.ts",
-        "apps/server/src/pullRequest/GitHubPullRequestProvider.ts",
-        "apps/server/src/pullRequest/GitLabPullRequestCli.ts",
-        "apps/server/src/pullRequest/PullRequestProvider.ts",
+        "packages/source-control-azure-devops/src/server/AzureDevOpsPullRequestCli.ts",
+        "packages/source-control-github/src/server/GitHubPullRequestApi.ts",
+        "packages/source-control-github/src/server/GitHubPullRequestProvider.ts",
+        "packages/source-control-gitlab/src/server/GitLabPullRequestCli.ts",
+        "packages/source-control-core/src/server/PullRequestProvider.ts",
         "apps/server/src/pullRequest/PullRequestReadCache.ts",
         "apps/server/src/pullRequest/PullRequestService.ts",
-        "apps/server/src/pullRequest/gitHubPullRequestJson.ts",
+        "packages/source-control-github/src/server/gitHubPullRequestJson.ts",
         "apps/server/src/resourceTelemetry/NativeTelemetryClient.ts",
         "apps/server/src/scheduledTasks/ScheduledTaskService.ts",
         "apps/server/src/server.ts",
@@ -94,7 +94,8 @@
         "apps/server/src/observability/RpcInstrumentation.ts",
         "apps/server/src/mcp/McpWritePolicy.ts",
         "apps/server/src/orchestration-v2/Adapters/CodexSandboxPolicy.ts",
-        "apps/server/src/pullRequest/githubWorkflowRerun.ts"
+        "packages/source-control-github/src/server/githubWorkflowRerun.ts",
+        "packages/source-control-github/src/client/definition.ts"
       ],
       "tests": [
         "apps/server/src/assets/AssetAccess.test.ts",
@@ -135,13 +136,13 @@
         "apps/server/src/provider/ModelManifest.test.ts",
         "packages/provider-opencode/src/server/OpenCodeServerLedger.test.ts",
         "apps/server/src/provider/providerCompatibility.test.ts",
-        "apps/server/src/pullRequest/AzureDevOpsPullRequestCli.test.ts",
-        "apps/server/src/pullRequest/GitHubPullRequestApi.test.ts",
-        "apps/server/src/pullRequest/GitHubPullRequestProvider.test.ts",
-        "apps/server/src/pullRequest/GitLabPullRequestCli.test.ts",
+        "packages/source-control-azure-devops/src/server/AzureDevOpsPullRequestCli.test.ts",
+        "packages/source-control-github/src/server/GitHubPullRequestApi.test.ts",
+        "packages/source-control-github/src/server/GitHubPullRequestProvider.test.ts",
+        "packages/source-control-gitlab/src/server/GitLabPullRequestCli.test.ts",
         "apps/server/src/pullRequest/PullRequestReadCache.test.ts",
         "apps/server/src/pullRequest/PullRequestService.test.ts",
-        "apps/server/src/pullRequest/gitHubPullRequestJson.test.ts",
+        "packages/source-control-github/src/server/gitHubPullRequestJson.test.ts",
         "apps/server/src/resourceTelemetry/NativeTelemetryClient.test.ts",
         "apps/server/src/scheduledTasks/Schedule.test.ts",
         "apps/server/src/scheduledTasks/ScheduledTaskService.schedule.test.ts",
@@ -164,7 +165,7 @@
         "packages/provider-muse/src/server/textGeneration.test.ts",
         "apps/server/src/observability/RpcInstrumentation.test.ts",
         "apps/server/src/orchestration-v2/Adapters/CodexSandboxPolicy.test.ts",
-        "apps/server/src/pullRequest/githubWorkflowRerun.test.ts"
+        "packages/source-control-github/src/server/githubWorkflowRerun.test.ts"
       ],
       "verification": ["unit", "typecheck"]
     },
@@ -402,7 +403,11 @@
     "packages/provider-muse": "@t3tools/provider-muse",
     "packages/provider-opencode": "@t3tools/provider-opencode",
     "packages/provider-cursor": "@t3tools/provider-cursor",
-    "packages/provider-grok": "@t3tools/provider-grok"
+    "packages/provider-grok": "@t3tools/provider-grok",
+    "packages/source-control-azure-devops": "@t3tools/source-control-azure-devops",
+    "packages/source-control-core": "@t3tools/source-control-core",
+    "packages/source-control-github": "@t3tools/source-control-github",
+    "packages/source-control-gitlab": "@t3tools/source-control-gitlab"
   },
   "packagingTests": [
     "scripts/build-desktop-artifact.test.ts",

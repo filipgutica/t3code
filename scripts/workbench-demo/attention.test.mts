@@ -13,7 +13,7 @@ import {
   pullRequestCoreGraphQlQuery,
   PULL_REQUEST_ACTIVITY_GRAPHQL_QUERY,
   REVIEW_THREADS_GRAPHQL_QUERY,
-} from "../../apps/server/src/pullRequest/gitHubPullRequestJson.ts";
+} from "../../packages/source-control-github/src/server/gitHubPullRequestJson.ts";
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 const adapter = NodePath.join(import.meta.dirname, "gh-attention.mjs");
 const execute = async (args: string[], input?: unknown) => {

@@ -12,10 +12,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
-import {
-  ProviderAdapterV2RuntimePolicy,
-  type ProviderAdapterV2RuntimePolicy as ProviderAdapterV2RuntimePolicyType,
-} from "@t3tools/provider-core/server/ProviderAdapter";
+import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProjectStore from "./ProjectStore.ts";
 
 /**
@@ -53,7 +50,7 @@ export interface RuntimePolicyV2Shape {
     readonly thread: OrchestrationV2AppThread;
     readonly modelSelection: ModelSelection;
   }) => Effect.Effect<
-    ProviderAdapterV2RuntimePolicyType & {
+    ProviderAdapter.ProviderAdapterV2RuntimePolicy & {
       readonly checkpoints?: "disabled";
       readonly instructions?: string;
     },
@@ -142,7 +139,7 @@ export const layerFromProjectStore: Layer.Layer<
               }),
             ),
           ));
-        return ProviderAdapterV2RuntimePolicy.make({
+        return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,
           cwd,
@@ -164,7 +161,7 @@ export function layerWithOverride(
         resolve: (input) =>
           base.resolve(input).pipe(
             Effect.map((policy) =>
-              ProviderAdapterV2RuntimePolicy.make({
+              ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
                 ...policy,
                 ...(override.cwd === undefined ? {} : { cwd: override.cwd }),
                 ...(override.approvalPolicy === undefined

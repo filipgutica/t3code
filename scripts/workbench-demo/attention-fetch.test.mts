@@ -14,7 +14,7 @@ import {
   buildPullRequestSummariesGraphQlQuery,
   pullRequestCoreGraphQlQuery,
   pullRequestSummaryGraphQlQuery,
-} from "../../apps/server/src/pullRequest/gitHubPullRequestJson.ts";
+} from "../../packages/source-control-github/src/server/gitHubPullRequestJson.ts";
 
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 const serverRequire = NodeModule.createRequire(

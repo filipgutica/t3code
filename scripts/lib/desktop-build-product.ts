@@ -9,7 +9,7 @@ export interface DesktopBuildProduct {
   readonly protocols: readonly { readonly name: string; readonly schemes: readonly string[] }[];
   readonly publish: readonly Record<string, unknown>[] | null;
   readonly mac: {
-    readonly hardenedRuntime: boolean;
+    readonly hardenedRuntime?: boolean;
     readonly forceCodeSigning: boolean;
     readonly identity?: string;
     readonly notarize?: false;

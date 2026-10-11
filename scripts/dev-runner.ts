@@ -6,7 +6,7 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NetService from "@t3tools/shared/Net";
 import { resolveGitWorktreePath, resolveWorktreeT3Home } from "@t3tools/shared/devHome";
-import { HostProcessEnvironment, HostProcessWorkingDirectory } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -646,7 +646,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       return yield* new DevRunnerHostNotProxiableError({ mode: input.mode, host: input.host });
     }
 
-    const worktreePath = yield* resolveGitWorktreePath(yield* HostProcessWorkingDirectory);
+    const worktreePath = yield* resolveGitWorktreePath(yield* HostProcess.WorkingDirectory);
 
     const { offset, source } = yield* resolveOffset({
       portOffset,
@@ -664,11 +664,11 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       checkPortAvailability: makeDefaultCheckPortAvailability(input.host),
     });
 
-    const hostEnvironment = yield* HostProcessEnvironment;
+    const hostEnvironment = yield* HostProcess.Environment;
     // A dev server started inside a worktree defaults to that worktree's own
     // (gitignored) `.t3` — see @t3tools/shared/devHome for why this must
     // outrank an ambient T3CODE_HOME. `--home-dir` still wins.
-    const worktreeHome = yield* resolveWorktreeT3Home(yield* HostProcessWorkingDirectory);
+    const worktreeHome = yield* resolveWorktreeT3Home(yield* HostProcess.WorkingDirectory);
     // Trim before choosing: `--home-dir ""` is not a selection, and treating it
     // as one would skip the worktree default and land on the shared home —
     // exactly the outcome this precedence exists to prevent.
@@ -906,13 +906,13 @@ const devRunnerCli = Command.make("dev-runner", {
   Command.withDescription("Run monorepo development modes with deterministic port/env wiring."),
   Command.withHandler((input) =>
     Effect.gen(function* () {
-      const baseEnv = yield* HostProcessEnvironment;
+      const baseEnv = yield* HostProcess.Environment;
       const prepared = yield* Effect.sync(() =>
         prepareWorkbenchJiraDevEnv({ mode: input.mode, dryRun: input.dryRun, baseEnv }),
       );
       if (prepared.warning) yield* Effect.logWarning(`[dev-runner] ${prepared.warning}`);
       return yield* runDevRunnerWithInput(input).pipe(
-        Effect.provideService(HostProcessEnvironment, prepared.env),
+        Effect.provideService(HostProcess.Environment, prepared.env),
       );
     }),
   ),

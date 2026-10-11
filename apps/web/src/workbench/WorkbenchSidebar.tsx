@@ -716,7 +716,7 @@ function WorkbenchSidebarArchivedWorkspaces({
   );
   return (
     <details open={selected || rowProps.isSearching || undefined}>
-      <summary className="cursor-pointer px-2 py-2 text-xs font-medium text-sidebar-muted-foreground focus-visible:ring-2 focus-visible:ring-ring">
+      <summary className="cursor-pointer px-2 py-2 text-xs font-medium text-sidebar-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
         Archived Workspaces
       </summary>
       <SidebarMenu aria-label="Archived Workspaces">
@@ -1200,7 +1200,7 @@ function WorkbenchSidebarDoneTickets({
       <button
         aria-controls={panelId}
         aria-expanded={sectionExpanded}
-        className="mx-0.5 flex h-8 w-[calc(100%-0.25rem)] cursor-pointer items-center gap-2 rounded-(--control-radius) px-2 text-left text-xs font-medium text-sidebar-muted-foreground/60 outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="mx-0.5 flex h-8 w-[calc(100%-0.25rem)] cursor-pointer items-center gap-2 rounded-(--control-radius) px-2 text-left text-xs font-medium text-sidebar-muted-foreground/60 outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         onClick={onToggle}
         disabled={isSearching}
         type="button"
@@ -1268,7 +1268,7 @@ function WorkbenchSidebarTicketThreads({
             aria-label={`${settledExpanded ? "Collapse" : "Expand"} Settled Threads in ${ticket.title}`}
             aria-controls={panelId}
             aria-expanded={settledExpanded}
-            className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-xs text-sidebar-muted-foreground hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-xs text-sidebar-muted-foreground hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             onClick={onToggleSettled}
             disabled={isSearching}
             type="button"
@@ -1308,7 +1308,7 @@ function WorkbenchSidebarDisclosure({
       aria-expanded={expanded}
       aria-label={label}
       disabled={disabled}
-      className="inline-flex size-7 shrink-0 items-center justify-center rounded-(--control-radius) text-sidebar-muted-foreground outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      className="inline-flex size-7 shrink-0 items-center justify-center rounded-(--control-radius) text-sidebar-muted-foreground outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       onClick={onToggle}
       type="button"
     >
@@ -1355,7 +1355,7 @@ function WorkbenchSidebarArchivedTickets({
       <button
         aria-controls={panelId}
         aria-expanded={sectionExpanded}
-        className="mx-0.5 flex h-8 w-[calc(100%-0.25rem)] cursor-pointer items-center gap-2 rounded-(--control-radius) px-2 text-left text-xs font-medium text-sidebar-muted-foreground/60 outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="mx-0.5 flex h-8 w-[calc(100%-0.25rem)] cursor-pointer items-center gap-2 rounded-(--control-radius) px-2 text-left text-xs font-medium text-sidebar-muted-foreground/60 outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         onClick={onToggle}
         disabled={isSearching}
         type="button"

@@ -127,6 +127,7 @@ const instance = (driverKind: ProviderDriverKind): ProviderInstance => ({
     generateBranchName: () => unused,
     generateThreadTitle: () => unused,
     generateStructured: () => unused,
+    generateReviewGuide: () => unused,
   },
 });
 const basePolicy = {

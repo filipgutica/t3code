@@ -1,5 +1,4 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { changeRequestUrlFor as changeRequestWebUrl } from "@t3tools/shared/changeRequestUrl";
 export { changeRequestUrlFor as changeRequestWebUrl } from "@t3tools/shared/changeRequestUrl";
 import {
   canonicalRepositoryKey,
@@ -10,8 +9,8 @@ import {
   type PullRequestListEntry,
   type PullRequestRef,
   type ScopedThreadRef,
-  type SourceControlProviderKind,
 } from "@t3tools/contracts";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
@@ -174,15 +173,19 @@ function LinkPullRequestDialog({
       identity.displayName ??
       (identity.owner && identity.name ? `${identity.owner}/${identity.name}` : null);
     if (repository === null) return null;
-    const kind = identity.provider as SourceControlProviderKind;
-    const host = pullRequestHostOf(identity, kind);
+    const definition = sourceControlClients.get(identity.provider ?? "unknown");
+    const host = pullRequestHostOf(identity, definition.kind);
     return {
       host,
       repository,
       webUrl: (number: number) =>
-        kind === "forgejo" && identity.webUrl
-          ? `${identity.webUrl.replace(/\/+$/, "")}/pulls/${number}`
-          : changeRequestWebUrl(kind, host, repository, number, identity.locator.remoteUrl),
+        definition.changeRequestUrl({
+          host,
+          repository,
+          number,
+          remoteUrl: identity.locator.remoteUrl,
+          webUrl: identity.webUrl,
+        }),
     };
   }, [environmentProjects, thread?.projectId]);
   const ownUrl = ownProject?.webUrl(1);
@@ -433,7 +436,7 @@ function LinkPullRequestDialog({
                             aria-pressed={selectedUrl === entry.url}
                             disabled={linked || pending}
                             onClick={() => setSelectedUrl(entry.url)}
-                            className="flex w-full flex-col gap-1 px-3 py-2 text-left text-sm outline-none hover:bg-accent aria-pressed:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-64"
+                            className="flex w-full flex-col gap-1 px-3 py-2 text-left text-sm outline-none hover:bg-accent aria-pressed:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-64"
                           >
                             <span className="w-full truncate">{entry.title}</span>
                             <span className="w-full truncate text-xs text-muted-foreground">

@@ -25,18 +25,24 @@ import * as ServerConfig from "../config.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as McpSessionRegistryTestkit from "../mcp/McpSessionRegistry.testkit.ts";
 import * as EffectWorker from "../orchestration-v2/EffectWorker.ts";
+import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
 import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
 import type * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
+import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as Providers from "../provider/ProviderInstanceRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as TicketPlanningRuntime from "./TicketPlanningRuntime.ts";
+import * as TicketDraftService from "./TicketDraftService.ts";
+import { TicketWorkspaceService } from "@t3tools/workbench/TicketWorkspaceService";
+import { WorkbenchJiraService } from "./jira/WorkbenchJiraService.ts";
 import { WorkbenchStore } from "./WorkbenchStore.ts";
 
 const projectId = ProjectId.make("repo:composed-policy");
@@ -85,6 +91,7 @@ const instance: ProviderInstance = {
     generateBranchName: () => unused,
     generateThreadTitle: () => unused,
     generateStructured: () => unused,
+    generateReviewGuide: () => unused,
   },
 };
 const draft = {
@@ -128,14 +135,16 @@ const layerTest = Layer.mergeAll(
   RuntimeLayer.layer,
   RuntimeLayer.layerEventSink,
   ProjectStore.layer,
+  CommandReceiptStore.layer,
 ).pipe(
   Layer.provide(planningPolicyLayer),
   Layer.provide(McpSessionRegistryTestkit.layer),
+  Layer.provide(McpProviderSessions.layer),
   Layer.provide(SqlitePersistence.layerMemory),
   Layer.provide(Layer.mock(CheckpointStore.CheckpointStore)({})),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-workbench-composed-policy-" })),
-  Layer.provide(ServerSettings.layerTest()),
-  Layer.provide(
+  Layer.provideMerge(ServerSettings.layerTest()),
+  Layer.provideMerge(
     Layer.mock(Providers.ProviderInstanceRegistry)({ getInstance: () => Effect.succeed(instance) }),
   ),
   Layer.provide(Layer.mock(GitWorkflow.GitWorkflowService)({ pruneWorktrees: () => Effect.void })),
@@ -147,7 +156,76 @@ const layerTest = Layer.mergeAll(
       resolveLink: () => unused,
     }),
   ),
-  Layer.provide(NodeServices.layer),
+  Layer.provideMerge(NodeServices.layer),
+);
+
+it.effect("uses native project enablement for planning creation, retries and turns", () =>
+  Effect.gen(function* () {
+    const threads = yield* ThreadManagement.ThreadManagementService;
+    const settings = yield* ServerSettings.ServerSettingsService;
+    const providers = yield* Providers.ProviderInstanceRegistry;
+    const creatingDraft = { ...draft, phase: "creating" as const };
+    const drafts = yield* TicketDraftService.TicketDraftService.pipe(
+      Effect.provide(
+        TicketDraftService.layer.pipe(
+          Layer.provide(
+            Layer.mock(WorkbenchStore)({
+              beginTicketDraft: () => Effect.succeed(creatingDraft),
+              transitionTicketDraft: () => Effect.succeed({ ...draft, phase: "draft" as const }),
+            }),
+          ),
+          Layer.provide(Layer.mock(TicketWorkspaceService)({})),
+          Layer.provide(Layer.mock(WorkbenchJiraService)({ createTicket: () => unused })),
+        ),
+      ),
+    );
+    const beginInput = {
+      id: draft.id,
+      projectId: draft.projectId,
+      threadId: draft.threadId,
+      modelSelection,
+    };
+    const setEnabled = (enabled: boolean) =>
+      settings.updateSettings({
+        projectSettingsOverrides: {
+          [projectId]: { providerInstances: { [instanceId]: { enabled } } },
+        },
+      });
+    yield* setEnabled(false);
+    const deniedCreation = yield* drafts.begin(beginInput).pipe(Effect.flip);
+    assert.equal(deniedCreation.code, "ticket_draft_invalid");
+    assert.isNull(yield* threads.getThreadShell(draft.threadId));
+    yield* setEnabled(true);
+    yield* drafts.begin(beginInput);
+    const created = yield* threads.getThreadShell(draft.threadId);
+    assert.equal(created?.projectId, projectId);
+    yield* setEnabled(false);
+    yield* settings.updateSettings({
+      providerInstances: { [instanceId]: { driver: instance.driverKind, enabled: false } },
+    });
+    const disabledProvider = vi
+      .spyOn(providers, "getInstance")
+      .mockReturnValue(Effect.succeed({ ...instance, enabled: false }));
+    yield* Effect.addFinalizer(() => Effect.sync(() => disabledProvider.mockRestore()));
+    // Simulate retry after native create committed but the draft transition did not.
+    yield* drafts.begin(beginInput);
+    assert.deepEqual(yield* threads.getThreadShell(draft.threadId), created);
+    const deniedTurn = yield* threads
+      .dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("dispatch:disabled-planning"),
+        threadId: draft.threadId,
+        messageId: MessageId.make("message:disabled-planning"),
+        text: "Inspect the change",
+        attachments: [],
+        dispatchMode: { type: "start_immediately" },
+        createdBy: "user",
+        creationSource: "web",
+      })
+      .pipe(Effect.flip);
+    assert.equal(deniedTurn._tag, "ThreadManagementProviderInstanceDisabledError");
+    assert.deepEqual((yield* threads.getThreadRecords(draft.threadId, ["runs"])).runs, []);
+  }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect(
