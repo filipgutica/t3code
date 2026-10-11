@@ -685,6 +685,7 @@ function WorkbenchTicketConversationBody(props: DraftBodyProps) {
   const transitions = useTicketDraftTransitions({
     environmentId,
     draft,
+    projects: props.linkedProjects,
     editor,
     onDraft,
     onTicketCreated: props.onTicketCreated,

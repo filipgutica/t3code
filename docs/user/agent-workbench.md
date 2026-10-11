@@ -85,7 +85,8 @@ in the sidebar remains available for cleanup even after deleting the last Worksp
 ## Start agent work
 
 For a Ticket prepared through a conversation, choose **Start work** to continue
-that same Thread in its prepared work area. Send your next instruction when ready.
+that same Thread in its prepared work area. Review the Ticket context chip in the
+composer, add your next instruction, and send when ready.
 
 For a manually created or imported Ticket, or an additional conversation:
 
