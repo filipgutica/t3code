@@ -1,5 +1,5 @@
 import * as NodeOS from "node:os";
-import { getWorkbenchWslHomeOverride } from "../workbench/distribution.ts";
+import { getDesktopProduct } from "../app/DesktopProduct.ts";
 
 import { parsePersistedServerObservabilitySettings } from "@t3tools/shared/serverSettings";
 import { currentDesktopBootstrapToken } from "@t3tools/shared/desktopBootstrapToken";
@@ -568,6 +568,10 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       host: backendExposure.bindHost,
       desktopBootstrapToken: input.bootstrapToken,
       desktopBootstrapSecret: input.bootstrapSecret,
+      // DesktopApp installs the shell environment into process.env before any
+      // backend starts, and this child extends it (extendEnv below). WSL gets
+      // a different environment, so its bootstrap never sets this.
+      shellEnvironmentPrepared: true,
       tailscaleServeEnabled: backendExposure.tailscaleServeEnabled,
       tailscaleServePort: backendExposure.tailscaleServePort,
       desktopTelemetryFd: 4,
@@ -642,14 +646,13 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
   // LAN; the primary owns LAN exposure when the user opts in.
   const wslBindHost = "0.0.0.0";
 
+  const wslHome = getDesktopProduct().wslHome;
   const bootstrap = {
     mode: "desktop" as const,
     noBrowser: true,
     port: input.port,
-    ...getWorkbenchWslHomeOverride(),
-    // The Linux backend uses its own home instead of the Windows-side baseDir
-    // (a /mnt/c path shared with the primary). Workbench uses a separate
-    // Linux home from upstream T3 Code.
+    // A distribution may isolate Linux state from the Windows-side baseDir.
+    ...(wslHome === null ? {} : { t3Home: wslHome }),
     host: wslBindHost,
     desktopBootstrapToken: input.bootstrapToken,
     desktopBootstrapSecret: input.bootstrapSecret,

@@ -11,11 +11,11 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 import * as Electron from "electron";
-import { getWorkbenchDesktopScheme } from "../workbench/distribution.ts";
+import { getDesktopProductIdentity } from "../app/DesktopProduct.ts";
 
 export const DESKTOP_HOST = "app";
-const DESKTOP_PRODUCTION_SCHEME = getWorkbenchDesktopScheme(false) ?? "t3code";
-const DESKTOP_DEVELOPMENT_SCHEME = getWorkbenchDesktopScheme(true) ?? "t3code-dev";
+const DESKTOP_PRODUCTION_SCHEME = getDesktopProductIdentity(false).scheme;
+const DESKTOP_DEVELOPMENT_SCHEME = getDesktopProductIdentity(true).scheme;
 
 export function getDesktopScheme(isDevelopment: boolean): string {
   return isDevelopment ? DESKTOP_DEVELOPMENT_SCHEME : DESKTOP_PRODUCTION_SCHEME;

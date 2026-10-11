@@ -12,10 +12,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
-import {
-  ProviderAdapterV2RuntimePolicy,
-  type ProviderAdapterV2RuntimePolicy as ProviderAdapterV2RuntimePolicyType,
-} from "@t3tools/provider-core/server/ProviderAdapter";
+import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProjectStore from "./ProjectStore.ts";
 
 /**
@@ -53,7 +50,7 @@ export interface RuntimePolicyV2Shape {
     readonly thread: OrchestrationV2AppThread;
     readonly modelSelection: ModelSelection;
   }) => Effect.Effect<
-    ProviderAdapterV2RuntimePolicyType & {
+    ProviderAdapter.ProviderAdapterV2RuntimePolicy & {
       readonly checkpoints?: "disabled";
       readonly instructions?: string;
     },
@@ -64,6 +61,13 @@ export interface RuntimePolicyV2Shape {
 export class RuntimePolicyV2 extends Context.Service<RuntimePolicyV2, RuntimePolicyV2Shape>()(
   "t3/orchestration-v2/RuntimePolicy/RuntimePolicyV2",
 ) {}
+
+/** Decorates the native resolver at composition, so every runtime consumer shares its policy. */
+export class RuntimePolicyDecorator extends Context.Reference<{
+  readonly decorate: (native: RuntimePolicyV2Shape) => RuntimePolicyV2Shape;
+}>("t3/orchestration-v2/RuntimePolicy/RuntimePolicyDecorator", {
+  defaultValue: () => ({ decorate: (native) => native }),
+}) {}
 
 /**
  * IMPLEMENTATIONS
@@ -102,7 +106,8 @@ export const layerFromProjectStore: Layer.Layer<
   Effect.gen(function* () {
     const projects = yield* ProjectStore.ProjectStoreV2;
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
-    return RuntimePolicyV2.of({
+    const decorator = yield* RuntimePolicyDecorator;
+    const native = RuntimePolicyV2.of({
       resolve: Effect.fn("RuntimePolicyV2.resolve")(function* (input) {
         const instance = yield* providerInstances.getInstance(input.modelSelection.instanceId);
         const supportedRuntimeModes =
@@ -134,13 +139,14 @@ export const layerFromProjectStore: Layer.Layer<
               }),
             ),
           ));
-        return ProviderAdapterV2RuntimePolicy.make({
+        return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,
           cwd,
         });
       }),
     });
+    return decorator.decorate(native);
   }),
 );
 
@@ -155,7 +161,7 @@ export function layerWithOverride(
         resolve: (input) =>
           base.resolve(input).pipe(
             Effect.map((policy) =>
-              ProviderAdapterV2RuntimePolicy.make({
+              ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
                 ...policy,
                 ...(override.cwd === undefined ? {} : { cwd: override.cwd }),
                 ...(override.approvalPolicy === undefined

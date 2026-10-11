@@ -1,11 +1,13 @@
 import * as Layer from "effect/Layer";
 
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as WorkbenchOrchestrationReactor from "./OrchestrationReactor.ts";
 import * as TicketSettlement from "./TicketSettlement.ts";
 import * as TicketExecutionReactor from "./TicketExecutionReactor.ts";
 import * as TicketDraftService from "./TicketDraftService.ts";
+import * as TicketPlanningRuntime from "./TicketPlanningRuntime.ts";
 import * as TicketSummaryService from "./TicketSummaryService.ts";
 import * as TicketWorkspaceService from "./TicketWorkspaceService.ts";
 import * as WorkbenchStore from "./WorkbenchStore.ts";
@@ -15,6 +17,11 @@ import * as WorkspaceLifecycleService from "@t3tools/workbench/WorkspaceLifecycl
 const WorkbenchStoreLayerLive = WorkbenchStore.WorkbenchStoreLive.pipe(
   Layer.provide(SqlitePersistence.layerConfig),
 );
+
+export const WorkbenchHostPoliciesLayerLive = Layer.mergeAll(
+  TicketPlanningRuntime.layerRuntimePolicyDecorator,
+  TicketPlanningRuntime.layerMcpWritePolicy,
+).pipe(Layer.provide(WorkbenchStoreLayerLive), Layer.provide(ProjectStore.layer));
 const WorkbenchJiraLayerLive = WorkbenchJiraService.layerLive.pipe(
   Layer.provide(SqlitePersistence.layerConfig),
   Layer.provide(WorkbenchStoreLayerLive),
@@ -34,6 +41,7 @@ const TicketDraftLayerLive = TicketDraftService.layer.pipe(
 );
 
 export const WorkbenchServicesLayerLive = Layer.empty.pipe(
+  Layer.provideMerge(WorkbenchHostPoliciesLayerLive),
   Layer.provideMerge(TicketDraftLayerLive),
   Layer.provideMerge(WorkspaceLifecycleLayerLive),
   Layer.provideMerge(WorkbenchJiraLayerLive),

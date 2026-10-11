@@ -30,7 +30,7 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProjectionMaintenance from "./ProjectionMaintenance.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
-import * as ProviderContinuationRequests from "@t3tools/provider-core/server/continuationRequests";
+import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
 import * as ProviderContinuationService from "./ProviderContinuationService.ts";
 import * as ThreadTitleRegenerationService from "./ThreadTitleRegenerationService.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
@@ -51,8 +51,6 @@ import * as ThreadForkService from "./ThreadForkService.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
-import * as TicketPlanningRuntime from "../workbench/TicketPlanningRuntime.ts";
-import * as WorkbenchStore from "../workbench/WorkbenchStore.ts";
 
 /** The shared application event log and its command receipts. */
 export const layerEventInfrastructure = Layer.mergeAll(
@@ -60,9 +58,7 @@ export const layerEventInfrastructure = Layer.mergeAll(
   OrchestrationCommandReceipts.layer,
 );
 
-const layerRuntimePolicyProvided = TicketPlanningRuntime.layer.pipe(
-  Layer.provide(RuntimePolicy.layerFromProjectStore),
-  Layer.provide(WorkbenchStore.WorkbenchStoreLive),
+const layerRuntimePolicyProvided = RuntimePolicy.layerFromProjectStore.pipe(
   Layer.provide(ProjectStore.layer),
 );
 
@@ -244,7 +240,14 @@ const layerAgentSessionImporterProvided = AgentSessionImporter.layer.pipe(
 );
 
 const layerThreadManagementProvided = ThreadManagementService.layerWithLegacyImporter.pipe(
-  Layer.provide(Layer.merge(layerOrchestratorProvided, layerLegacyV1ThreadImporterProvided)),
+  Layer.provide(
+    Layer.mergeAll(
+      layerOrchestratorProvided,
+      layerLegacyV1ThreadImporterProvided,
+      layerCommandReceiptStoreProvided,
+      layerProviderSessionManagerProvided,
+    ),
+  ),
 );
 export const layerProjectSetupScriptRunner = ProjectSetupScriptRunner.layer.pipe(
   Layer.provide(layerProjectService),

@@ -3,6 +3,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   ProjectId,
   SourceControlProviderError,
+  SourceControlProviderKind,
   type ChangeRequest,
   type OrchestrationProjectShell,
   type OrchestrationV2ThreadShell,
@@ -18,7 +19,7 @@ import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
 import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
 import { nativeThreadShell } from "./testing/nativeThreads.ts";
 import { PullRequestService } from "../pullRequest/PullRequestService.ts";
-import { SourceControlProvider } from "../sourceControl/SourceControlProvider.ts";
+import { SourceControlProvider } from "@t3tools/source-control-core/server/SourceControlProvider";
 import { SourceControlProviderRegistry } from "../sourceControl/SourceControlProviderRegistry.ts";
 import { make } from "./TicketWorkspacePullRequestResolver.ts";
 
@@ -36,14 +37,14 @@ const project: OrchestrationProjectShell = {
   repositoryIdentity: {
     canonicalKey: "github.com/example/api",
     displayName: "example/api",
-    provider: "github",
+    provider: SourceControlProviderKind.make("github"),
     locator: { source: "git-remote", remoteName: "origin", remoteUrl },
   },
 };
 const entry = (number: number, repository = "example/api"): PullRequestListEntry => ({
   projectId,
   projectTitle: "API",
-  provider: "github",
+  provider: SourceControlProviderKind.make("github"),
   host: "github.com",
   repository,
   number,
@@ -63,7 +64,7 @@ const entry = (number: number, repository = "example/api"): PullRequestListEntry
   labels: [],
 });
 const summary = (number: number, patch: Partial<ChangeRequest> = {}): ChangeRequest => ({
-  provider: "github",
+  provider: SourceControlProviderKind.make("github"),
   number,
   title: `PR ${number}`,
   url: entry(number).url,
@@ -142,7 +143,7 @@ const resolve = (
                 providers: [
                   {
                     host: "github.com",
-                    kind: "github",
+                    kind: SourceControlProviderKind.make("github"),
                     searchesOnHost: true,
                     configured: true,
                     projectCount: 1,
@@ -162,7 +163,11 @@ const resolve = (
               Effect.succeed({
                 provider,
                 context: {
-                  provider: { kind: "github", name: "GitHub", baseUrl: "https://github.com" },
+                  provider: {
+                    kind: SourceControlProviderKind.make("github"),
+                    name: "GitHub",
+                    baseUrl: "https://github.com",
+                  },
                   remoteName: "origin",
                   remoteUrl: options.remote ?? remoteUrl,
                 },
@@ -174,13 +179,13 @@ const resolve = (
   }).pipe(
     Effect.provide(
       Layer.mock(SourceControlProvider)({
-        kind: "github",
+        kind: SourceControlProviderKind.make("github"),
         getChangeRequest: ({ reference }) => {
           options.reads?.push(reference);
           if (options.failRead)
             return Effect.fail(
               new SourceControlProviderError({
-                provider: "github",
+                provider: SourceControlProviderKind.make("github"),
                 operation: "getChangeRequest",
                 cwd: project.workspaceRoot,
                 detail: "offline",
@@ -310,7 +315,7 @@ describe("Ticket workspace PR resolution", () => {
           providers: [
             {
               host: "github.com",
-              kind: "github" as const,
+              kind: SourceControlProviderKind.make("github"),
               searchesOnHost: true,
               configured: false,
               projectCount: 1,
@@ -333,7 +338,7 @@ describe("Ticket workspace PR resolution", () => {
             providers: [
               {
                 host: "github.com",
-                kind: "github",
+                kind: SourceControlProviderKind.make("github"),
                 searchesOnHost: false,
                 configured: true,
                 projectCount: 1,

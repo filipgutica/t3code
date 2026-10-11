@@ -20,6 +20,7 @@ import {
   shouldToastDesktopUpdateActionResult,
 } from "../desktopUpdate.logic";
 import { showDesktopUpdateDownloadedToast } from "../desktopUpdate.toast";
+import { useHostIntegrations } from "../../hostIntegrations";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { SidebarMenuItem } from "../ui/sidebar";
@@ -113,6 +114,7 @@ export function SidebarUpdatePill() {
 }
 
 function SidebarUpdateControl() {
+  const { desktopReleaseLinks } = useHostIntegrations();
   const state = useDesktopUpdateState();
   const [isActionPending, setIsActionPending] = useState(false);
   const [checkAnimationKey, setCheckAnimationKey] = useState(0);
@@ -185,7 +187,11 @@ function SidebarUpdateControl() {
         .downloadUpdate()
         .then((result) => {
           if (result.completed) {
-            showDesktopUpdateDownloadedToast(bridge, result.state);
+            showDesktopUpdateDownloadedToast({
+              shell: bridge,
+              state: result.state,
+              releaseLinks: desktopReleaseLinks,
+            });
           }
           if (!shouldToastDesktopUpdateActionResult(result)) return;
           const actionError = getDesktopUpdateActionError(result);
@@ -286,7 +292,7 @@ function SidebarUpdateControl() {
         );
       })
       .finally(() => setIsActionPending(false));
-  }, [action, isInteractionDisabled, prefersReducedMotion, state]);
+  }, [action, desktopReleaseLinks, isInteractionDisabled, prefersReducedMotion, state]);
 
   const handleCheckAnimationIteration = useCallback(() => {
     setIsCheckAnimationLatched(
@@ -303,7 +309,7 @@ function SidebarUpdateControl() {
       aria-label={tooltip}
       aria-disabled={isInteractionDisabled || undefined}
       className={cn(
-        "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors focus-visible:ring-2",
+        "inline-flex size-8 items-center justify-center rounded-full outline-hidden ring-ring transition-colors focus-visible:ring-2 focus-visible:ring-inset",
         isInteractionDisabled ? "cursor-not-allowed" : "cursor-pointer",
         showUpdateIconState
           ? cn(
@@ -407,6 +413,7 @@ function SidebarUpdateControl() {
             tooltipStyle
           >
             <SidebarUpdateReleaseNotes
+              releaseLinks={desktopReleaseLinks}
               shell={window.desktopBridge}
               state={state}
               tooltip={tooltip}

@@ -6,6 +6,7 @@ import {
   getDesktopUpdateReleaseUrl,
 } from "./desktopUpdate.logic";
 import { toastManager } from "./ui/toast";
+import type { DesktopReleaseLinks } from "../hostIntegrations";
 
 type DesktopUpdateShell = Pick<DesktopBridge, "openExternal">;
 
@@ -46,11 +47,19 @@ function ReleaseNotesLink({
   );
 }
 
-export function showDesktopUpdateDownloadedToast(
-  shell: DesktopUpdateShell,
-  state: DesktopUpdateState,
-): void {
-  const releaseUrl = getDesktopUpdateReleaseUrl(getDesktopUpdateDownloadedVersion(state));
+export function showDesktopUpdateDownloadedToast({
+  shell,
+  state,
+  releaseLinks,
+}: {
+  readonly shell: DesktopUpdateShell;
+  readonly state: DesktopUpdateState;
+  readonly releaseLinks?: DesktopReleaseLinks | undefined;
+}): void {
+  const releaseUrl = getDesktopUpdateReleaseUrl(
+    getDesktopUpdateDownloadedVersion(state),
+    releaseLinks,
+  );
   toastManager.add({
     type: "success",
     title: "Update downloaded",

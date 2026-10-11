@@ -1,5 +1,5 @@
 import * as Option from "effect/Option";
-import { getWorkbenchDistribution } from "../workbench/distribution.ts";
+import { getDesktopProduct } from "./DesktopProduct.ts";
 
 export type JoinPath = (first: string, ...segments: string[]) => string;
 
@@ -17,7 +17,7 @@ export function resolveDesktopBaseDir(input: {
   readonly t3Home: Option.Option<string>;
 }): string {
   return Option.getOrElse(normalizeConfiguredBaseDir(input.t3Home), () =>
-    input.joinPath(input.homeDirectory, getWorkbenchDistribution()?.homeDirectoryName ?? ".t3"),
+    input.joinPath(input.homeDirectory, getDesktopProduct().homeDirectoryName),
   );
 }
 

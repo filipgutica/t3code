@@ -1,6 +1,7 @@
 import type {
   EnvironmentId,
   ModelSelection,
+  ProjectId,
   ServerProvider,
   WorkbenchTicket,
   WorkbenchTicketWorkspace,
@@ -99,11 +100,13 @@ export function resolveWorkbenchStartThreadSelectionWithFallback({
 }
 
 const useWorkbenchStartThreadSelection = ({
+  projectId,
   providers,
   settings,
   defaultModelSelection,
   stickyModelSelection,
 }: {
+  readonly projectId: ProjectId;
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly settings: Parameters<typeof getCustomModelOptionsByInstance>[0];
   readonly defaultModelSelection: ModelSelection | null;
@@ -112,9 +115,13 @@ const useWorkbenchStartThreadSelection = ({
   const instanceEntries = useMemo(
     () =>
       sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
+        applyProviderInstanceSettings(
+          deriveProviderInstanceEntries(providers),
+          settings,
+          projectId,
+        ),
       ),
-    [providers, settings],
+    [providers, settings, projectId],
   );
   const availableModelOptionsByInstance = useMemo(
     () => getCustomModelOptionsByInstance(settings, providers),
@@ -273,6 +280,7 @@ export function WorkbenchStartThreadDialog({
       ? "Start another Thread for this ticket. It opens with ticket context attached."
       : "The Thread opens with ticket context attached. Add a message and send when you’re ready.");
   const selection = useWorkbenchStartThreadSelection({
+    projectId: repositoryScope.primaryT3ProjectId,
     providers,
     settings,
     defaultModelSelection: getWorkbenchStartThreadDefaultSelection({
@@ -330,6 +338,7 @@ export function WorkbenchStartThreadDialog({
               </p>
             ) : null}
             <WorkbenchStartThreadModelFields
+              environmentId={environmentId}
               selection={selection}
               planModeEnabled={settings.planModeEnabled}
             />
@@ -479,9 +488,11 @@ function WorkbenchStartThreadWorkspaceReview({
 }
 
 function WorkbenchStartThreadModelFields({
+  environmentId,
   selection,
   planModeEnabled,
 }: {
+  environmentId: EnvironmentId;
   selection: ReturnType<typeof useWorkbenchStartThreadSelection>;
   planModeEnabled: boolean;
 }) {
@@ -498,6 +509,7 @@ function WorkbenchStartThreadModelFields({
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <ProviderModelPicker
+          environmentId={environmentId}
           activeInstanceId={resolvedSelection.instanceId}
           model={resolvedSelection.model}
           lockedProvider={null}

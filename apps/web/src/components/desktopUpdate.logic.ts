@@ -1,8 +1,5 @@
 import type { DesktopUpdateActionResult, DesktopUpdateState } from "@t3tools/contracts";
-import {
-  getWorkbenchDesktopUpdateReleaseHistoryUrl,
-  getWorkbenchDesktopUpdateReleaseUrl,
-} from "../workbench/desktopUpdateRelease";
+import type { DesktopReleaseLinks } from "../hostIntegrations";
 
 export type DesktopUpdateButtonAction = "download" | "install" | "none";
 
@@ -19,20 +16,18 @@ export function getDesktopUpdateDownloadedVersion(state: DesktopUpdateState): st
 }
 
 /** Release notes for an exact downloaded build; nightly suffixes are part of the tag. */
-export function getDesktopUpdateReleaseUrl(version: string | null): string | null {
+export function getDesktopUpdateReleaseUrl(
+  version: string | null,
+  links?: DesktopReleaseLinks,
+): string | null {
   const normalizedVersion = version?.trim();
   if (!normalizedVersion) return null;
-  if (import.meta.env.VITE_T3CODE_WORKBENCH_BUILD) {
-    return getWorkbenchDesktopUpdateReleaseUrl(normalizedVersion);
-  }
+  if (links) return links.releaseUrl(normalizedVersion);
   return `${DESKTOP_RELEASE_TAG_URL}/v${encodeURIComponent(normalizedVersion)}`;
 }
 
-export function getDesktopUpdateReleaseHistoryUrl(): string {
-  if (import.meta.env.VITE_T3CODE_WORKBENCH_BUILD) {
-    return getWorkbenchDesktopUpdateReleaseHistoryUrl();
-  }
-  return DESKTOP_RELEASE_HISTORY_URL;
+export function getDesktopUpdateReleaseHistoryUrl(links?: DesktopReleaseLinks): string {
+  return links?.historyUrl ?? DESKTOP_RELEASE_HISTORY_URL;
 }
 
 export function resolveDesktopUpdateButtonAction(

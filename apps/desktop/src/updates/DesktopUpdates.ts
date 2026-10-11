@@ -28,13 +28,7 @@ import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopState from "../app/DesktopState.ts";
-import {
-  getWorkbenchAutoUpdateDisabledReason,
-  getWorkbenchUpdateFeed,
-  isDesktopUpdateForChannel,
-  resolveDesktopUpdateChannel,
-  resolveDesktopUpdateReleaseNotesChannel,
-} from "../workbench/updates.ts";
+import { getDesktopProduct } from "../app/DesktopProduct.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as IpcChannels from "../ipc/channels.ts";
@@ -272,7 +266,7 @@ function getAutoUpdateDisabledReason(args: {
   if (args.platform === "linux" && !args.appImage && !args.isDebPackage) {
     return "Automatic updates on Linux require the AppImage or the .deb package.";
   }
-  return getWorkbenchAutoUpdateDisabledReason(args.platform);
+  return getDesktopProduct().updates.disabledReason(args.platform);
 }
 
 function isArm64HostRunningIntelBuild(runtimeInfo: DesktopRuntimeInfo): boolean {
@@ -747,7 +741,7 @@ export const make = Effect.gen(function* () {
       Effect.flatMap(
         Effect.fn("desktop.updates.applyUpdateAvailable")(function* (info) {
           const state = yield* Ref.get(updateStateRef);
-          if (!isDesktopUpdateForChannel(info.version, state.channel)) {
+          if (!getDesktopProduct().updates.isVersionForChannel(info.version, state.channel)) {
             yield* logUpdaterInfo("ignoring update that does not match selected channel", {
               version: info.version,
               channel: state.channel,
@@ -762,7 +756,7 @@ export const make = Effect.gen(function* () {
           const { releaseNotes, omittedReleaseCount } = normalizeDesktopUpdateReleaseNotes(
             info.releaseNotes,
             info.version,
-            resolveDesktopUpdateReleaseNotesChannel(info.version, state.channel),
+            getDesktopProduct().updates.releaseNotesChannel(info.version, state.channel),
           );
           yield* setState(
             reduceDesktopUpdateStateOnUpdateAvailable(
@@ -927,12 +921,12 @@ export const make = Effect.gen(function* () {
           url: `http://localhost:${config.mockUpdateServerPort}`,
         } as ElectronUpdater.ElectronUpdaterFeedUrl);
       } else {
-        const workbenchFeed = getWorkbenchUpdateFeed();
-        if (workbenchFeed) yield* electronUpdater.setFeedURL(workbenchFeed);
+        const productFeed = getDesktopProduct().updates.feed;
+        if (productFeed) yield* electronUpdater.setFeedURL(productFeed);
       }
 
       const settings = yield* desktopSettings.get;
-      const updateChannel = resolveDesktopUpdateChannel(settings.updateChannel);
+      const updateChannel = settings.updateChannel;
       const enabled = yield* shouldEnableAutoUpdates;
       yield* setState(createBaseUpdateState(updateChannel, enabled, environment));
       if (!enabled) {
@@ -981,7 +975,7 @@ export const make = Effect.gen(function* () {
     setChannel: Effect.fn("desktop.updates.setChannel")(function* (
       nextChannel: DesktopUpdateChannel,
     ) {
-      const resolvedChannel = resolveDesktopUpdateChannel(nextChannel);
+      const resolvedChannel = nextChannel;
       yield* Effect.annotateCurrentSpan({ channel: resolvedChannel });
       const activeAction = yield* tryStartChannelChange;
       if (Option.isSome(activeAction)) {

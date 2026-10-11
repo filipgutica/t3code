@@ -75,7 +75,6 @@ const makeHost = Effect.gen(function* () {
         Effect.flatMap((instance) => {
           if (
             !instance ||
-            !instance.enabled ||
             (instance.driverKind !== "codex" && instance.driverKind !== "claudeAgent")
           ) {
             return Effect.fail(
@@ -90,10 +89,23 @@ const makeHost = Effect.gen(function* () {
         }),
       ),
     createThread: Effect.fn("TicketDraftHost.createThread")(function* (draft) {
+      const commandId = CommandId.make(`ticket-draft:${draft.id}:create`);
+      yield* threads
+        .assertProviderInstanceEnabled({
+          projectId: draft.anchorProjectId,
+          commandId,
+          instanceId: draft.modelSelection.instanceId,
+        })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new WorkbenchOperationError({ code: "ticket_draft_invalid", message: error.message }),
+          ),
+        );
       yield* threads
         .dispatch({
           type: "thread.create",
-          commandId: CommandId.make(`ticket-draft:${draft.id}:create`),
+          commandId,
           threadId: draft.threadId,
           projectId: draft.anchorProjectId,
           title: "Prepare ticket",

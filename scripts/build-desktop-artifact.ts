@@ -4,6 +4,8 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodeCrypto from "node:crypto";
 import * as NodeModule from "node:module";
+// plist is CommonJS; Node cannot load its named exports from an ES module.
+import Plist from "plist";
 
 import {
   createPackageWithOptions,
@@ -14,7 +16,7 @@ import {
 } from "@electron/asar";
 
 import { fromYaml } from "@t3tools/shared/schemaYaml";
-import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import rootPackageJson from "../package.json" with { type: "json" };
@@ -36,6 +38,19 @@ import {
 import { loadRepoEnv } from "./lib/public-config.ts";
 import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
+import type { DesktopBuildProduct } from "./lib/desktop-build-product.ts";
+import { selectWorkbenchDesktopBuildProduct } from "./lib/workbench-desktop-product.ts";
+
+// Retain the build script's public helpers while their policy lives with the distribution.
+export {
+  MissingMacWorkbenchSigningCredentialsError,
+  isMacWorkbenchSigningConfigurationError,
+  MacWorkbenchSigningConfigurationResolutionError,
+  WorkbenchMacBuildReuseError,
+  resolveMacWorkbenchSigningConfiguration,
+  validateWorkbenchMacBuildMode,
+  resolveDesktopBundleBuildEnvironment,
+} from "./lib/workbench-desktop-product.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -55,9 +70,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
 const DESKTOP_APP_ID = "com.t3tools.t3code";
-const WORKBENCH_DISTRIBUTION = desktopPackageJson.workbenchDistribution;
 const DESKTOP_PACKAGE_NAME = "t3code";
-const WORKBENCH_PACKAGE_NAME = "t3code-workbench";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -83,9 +96,27 @@ const StageWorkspaceConfig = Schema.Struct({
   allowBuilds: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
   patchedDependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  packageExtensions: Schema.optional(
+    Schema.Record(
+      Schema.String,
+      Schema.Struct({
+        peerDependenciesMeta: Schema.Record(
+          Schema.String,
+          Schema.Struct({ optional: Schema.Boolean }),
+        ),
+      }),
+    ),
+  ),
   nodeLinker: Schema.optional(Schema.Literals(["hoisted"])),
 });
 type StageWorkspaceConfig = typeof StageWorkspaceConfig.Type;
+
+// electron-webauthn declares TypeScript as a peer only for its typings. pnpm
+// auto-installs missing peers, which would ship a compiler inside the app.
+const STAGE_PACKAGE_EXTENSIONS = {
+  "electron-webauthn": { peerDependenciesMeta: { typescript: { optional: true } } },
+  "@electron-webauthn/macos": { peerDependenciesMeta: { typescript: { optional: true } } },
+} as const;
 
 const RepoRoot = Effect.service(Path.Path).pipe(
   Effect.flatMap((path) => path.fromFileUrl(new URL("..", import.meta.url))),
@@ -852,7 +883,7 @@ const resolveGitCommitHash = Effect.fn("resolveGitCommitHash")(function* (repoRo
 const resolvePythonForNodeGyp = Effect.fn("resolvePythonForNodeGyp")(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const hostPlatform = yield* HostProcessPlatform;
+  const hostPlatform = yield* HostProcess.Platform;
   const env = yield* Config.all({
     configuredPython: Config.String("npm_config_python").pipe(
       Config.orElse(() => Config.String("PYTHON")),
@@ -929,6 +960,7 @@ interface StagePackageJson {
   readonly version: string;
   readonly buildVersion: string;
   readonly t3codeCommitHash: string;
+  readonly t3codeWebAuthn?: MacWebAuthnEntitlements;
   readonly private: true;
   readonly packageManager: string;
   readonly description: string;
@@ -1010,6 +1042,14 @@ export const WINDOWS_SERVER_ASAR_RESOURCE = "server.asar";
 // asar redirect convention). Everything else stays packed.
 export const WINDOWS_NATIVE_ASAR_UNPACK_GLOB =
   "{**/*.node,**/*.dll,**/*.exe,**/*.so,**/*.so.*,**/*.dylib}";
+// The server sidecar unpacks .node files separately, keeping only Windows ones.
+export const WINDOWS_SERVER_ASAR_UNPACK_GLOBS = [
+  "**/*.dll",
+  "**/*.exe",
+  "**/*.so",
+  "**/*.so.*",
+  "**/*.dylib",
+] as const;
 // Mirrors DESKTOP_FILE_EXCLUSIONS for the hand-packed sidecar: the Claude SDK
 // platform packages are dead weight (see above), and node_modules/.bin shims
 // are never spawned at runtime (and are symlinks on POSIX build hosts, which
@@ -1167,57 +1207,6 @@ export class MissingMacPasskeyDomainConfigurationError extends Schema.TaggedErro
   }
 }
 
-const MAC_WORKBENCH_SIGNING_ENVIRONMENT_VARIABLES = [
-  "CSC_LINK",
-  "CSC_KEY_PASSWORD",
-  "APPLE_API_KEY",
-  "APPLE_API_KEY_ID",
-  "APPLE_API_ISSUER",
-] as const;
-
-export class MissingMacWorkbenchSigningCredentialsError extends Schema.TaggedError<MissingMacWorkbenchSigningCredentialsError>()(
-  "MissingMacWorkbenchSigningCredentialsError",
-  {
-    missing: Schema.Array(Schema.String),
-  },
-) {
-  override get message(): string {
-    return `Signed Workbench macOS builds require ${this.missing.join(", ")}.`;
-  }
-}
-
-export const isMacWorkbenchSigningConfigurationError = Schema.is(
-  MissingMacWorkbenchSigningCredentialsError,
-);
-
-export class MacWorkbenchSigningConfigurationResolutionError extends Schema.TaggedError<MacWorkbenchSigningConfigurationResolutionError>()(
-  "MacWorkbenchSigningConfigurationResolutionError",
-  {
-    cause: Schema.Defect(),
-  },
-) {
-  static fromCause(
-    cause: unknown,
-  ): MissingMacWorkbenchSigningCredentialsError | MacWorkbenchSigningConfigurationResolutionError {
-    return isMacWorkbenchSigningConfigurationError(cause)
-      ? cause
-      : new MacWorkbenchSigningConfigurationResolutionError({ cause });
-  }
-
-  override get message(): string {
-    return "Failed to resolve macOS Workbench signing configuration.";
-  }
-}
-
-export class WorkbenchMacBuildReuseError extends Schema.TaggedError<WorkbenchMacBuildReuseError>()(
-  "WorkbenchMacBuildReuseError",
-  {},
-) {
-  override get message(): string {
-    return "Workbench macOS packaging cannot use --skip-build because signing state is compiled into the desktop bundle.";
-  }
-}
-
 export class InvalidMacPasskeyPublishableKeyError extends Schema.TaggedError<InvalidMacPasskeyPublishableKeyError>()(
   "InvalidMacPasskeyPublishableKeyError",
   {
@@ -1334,52 +1323,6 @@ export function resolveMacPasskeySigningConfiguration(
   };
 }
 
-/**
- * Workbench uses a Developer ID certificate and App Store Connect API key for
- * distribution signing. It deliberately does not use the upstream app's
- * Associated Domains entitlement or provisioning profile.
- *
- * `APPLE_API_KEY` is the path to the temporary `.p8` file consumed by
- * electron-builder's notarytool integration. CI writes that file from the
- * secret contents before invoking this script.
- */
-export function resolveMacWorkbenchSigningConfiguration(
-  env: Readonly<Record<string, string | undefined>>,
-): void {
-  const missing = MAC_WORKBENCH_SIGNING_ENVIRONMENT_VARIABLES.filter((name) => !env[name]?.trim());
-  if (missing.length > 0) {
-    throw new MissingMacWorkbenchSigningCredentialsError({ missing: [...missing] });
-  }
-}
-
-export function validateWorkbenchMacBuildMode(input: {
-  readonly workbench: boolean;
-  readonly platform: typeof BuildPlatform.Type;
-  readonly skipBuild: boolean;
-}): WorkbenchMacBuildReuseError | undefined {
-  if (input.workbench && input.platform === "mac" && input.skipBuild) {
-    return new WorkbenchMacBuildReuseError();
-  }
-  return undefined;
-}
-
-export function resolveDesktopBundleBuildEnvironment(input: {
-  readonly baseEnv: Readonly<NodeJS.ProcessEnv>;
-  readonly workbench: boolean;
-  readonly platform: typeof BuildPlatform.Type;
-  readonly signed: boolean;
-}): NodeJS.ProcessEnv {
-  const buildEnv: NodeJS.ProcessEnv = { ...input.baseEnv };
-  if (input.workbench && input.platform === "mac") {
-    buildEnv.T3CODE_WORKBENCH_MAC_SIGNED = input.signed ? "1" : "0";
-  }
-  return buildEnv;
-}
-
-export function resolveDesktopPackageName(workbench = false): string {
-  return workbench ? WORKBENCH_PACKAGE_NAME : DESKTOP_PACKAGE_NAME;
-}
-
 function escapeXml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -1389,12 +1332,80 @@ function escapeXml(value: string): string {
     .replaceAll("'", "&apos;");
 }
 
+/**
+ * Passkey entitlements for the in-app browser. Each is granted only when the
+ * provisioning profile authorizes it: macOS refuses to launch an app that
+ * claims a restricted entitlement its embedded profile does not carry.
+ */
+export interface MacWebAuthnEntitlements {
+  /** Keychain group for Electron's Touch ID passkeys. */
+  readonly touchIdKeychainAccessGroup: string | undefined;
+  /** Apple's managed browser entitlement, which allows passkeys for any site. */
+  readonly browserPasskeys: boolean;
+}
+
+const BROWSER_PASSKEYS_ENTITLEMENT = "com.apple.developer.web-browser.public-key-credential";
+
+const ProvisioningProfilePlist = Schema.Struct({
+  Entitlements: Schema.Struct({
+    "keychain-access-groups": Schema.optional(Schema.Array(Schema.String)),
+    [BROWSER_PASSKEYS_ENTITLEMENT]: Schema.optional(Schema.Boolean),
+  }),
+});
+const isProvisioningProfilePlist = Schema.is(ProvisioningProfilePlist);
+
+/**
+ * Reads the Entitlements dict of the XML plist a provisioning profile wraps in
+ * its CMS envelope. Anything unreadable grants nothing.
+ */
+const readProfileEntitlements = (provisioningProfile: string) => {
+  const start = provisioningProfile.indexOf("<?xml");
+  const end = provisioningProfile.indexOf("</plist>", start);
+  if (start === -1 || end === -1) return undefined;
+  try {
+    const profile: unknown = Plist.parse(provisioningProfile.slice(start, end + "</plist>".length));
+    return isProvisioningProfilePlist(profile) ? profile.Entitlements : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+export function resolveMacWebAuthnEntitlements(
+  provisioningProfile: string,
+  configuration: Pick<MacPasskeySigningConfiguration, "appId" | "teamId">,
+): MacWebAuthnEntitlements {
+  const entitlements = readProfileEntitlements(provisioningProfile);
+  const keychainAccessGroup = `${configuration.teamId}.${configuration.appId}.webauthn`;
+  const keychainGroupAuthorized = (entitlements?.["keychain-access-groups"] ?? []).some((group) =>
+    group.endsWith("*")
+      ? keychainAccessGroup.startsWith(group.slice(0, -1))
+      : group === keychainAccessGroup,
+  );
+  return {
+    touchIdKeychainAccessGroup: keychainGroupAuthorized ? keychainAccessGroup : undefined,
+    browserPasskeys: entitlements?.[BROWSER_PASSKEYS_ENTITLEMENT] === true,
+  };
+}
+
 export function renderMacPasskeyEntitlements(
   configuration: MacPasskeySigningConfiguration,
+  webAuthn: MacWebAuthnEntitlements,
 ): string {
   const associatedDomains = configuration.rpDomains
     .map((domain) => `      <string>webcredentials:${escapeXml(domain)}</string>`)
     .join("\n");
+  const keychainAccessGroups = webAuthn.touchIdKeychainAccessGroup
+    ? `
+    <key>keychain-access-groups</key>
+    <array>
+      <string>${escapeXml(webAuthn.touchIdKeychainAccessGroup)}</string>
+    </array>`
+    : "";
+  const browserPasskeys = webAuthn.browserPasskeys
+    ? `
+    <key>${BROWSER_PASSKEYS_ENTITLEMENT}</key>
+    <true/>`
+    : "";
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1407,7 +1418,7 @@ export function renderMacPasskeyEntitlements(
     <key>com.apple.developer.associated-domains</key>
     <array>
 ${associatedDomains}
-    </array>
+    </array>${keychainAccessGroups}${browserPasskeys}
     <key>com.apple.security.cs.allow-jit</key>
     <true/>
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
@@ -1635,6 +1646,7 @@ export function createStageWorkspaceConfig(input: {
       ? { patchedDependencies }
       : {}),
     ...(overrides && Object.keys(overrides).length > 0 ? { overrides } : {}),
+    packageExtensions: STAGE_PACKAGE_EXTENSIONS,
   };
 }
 
@@ -1726,7 +1738,7 @@ export const resolveBuildOptions = Effect.fn("resolveBuildOptions")(function* (
   const path = yield* Path.Path;
   const repoRoot = yield* RepoRoot;
   const env = yield* BuildEnvConfig;
-  const hostPlatform = yield* HostProcessPlatform;
+  const hostPlatform = yield* HostProcess.Platform;
 
   const platform = mergeOptions(
     input.platform,
@@ -2414,7 +2426,7 @@ export const stageBrowserSecret = Effect.fn("stageBrowserSecret")(function* (inp
   // silently. `universal` is a mac-only arch the option type still admits;
   // the helper script rejects it, so it maps to the concrete x64 the Linux
   // resource monitor uses for the same request.
-  const hostPlatform = yield* HostProcessPlatform;
+  const hostPlatform = yield* HostProcess.Platform;
   if (hostPlatform !== "linux") {
     return yield* new LinuxBrowserSecretHostError({ hostPlatform });
   }
@@ -2743,11 +2755,40 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
   return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
 }
 
+const resolveDesktopBuildProduct = (input: {
+  readonly version: string;
+  readonly workbench: boolean;
+  readonly platform: typeof BuildPlatform.Type;
+  readonly signed: boolean;
+}): DesktopBuildProduct =>
+  selectWorkbenchDesktopBuildProduct({
+    ...input,
+    updateChannel: resolveDesktopUpdateChannel(input.version),
+  }) ?? {
+    appId: DESKTOP_APP_ID,
+    packageName: DESKTOP_PACKAGE_NAME,
+    productName:
+      resolveDesktopUpdateChannel(input.version) === "nightly"
+        ? "T3 Code (Nightly)"
+        : (desktopPackageJson.productName ?? "T3 Code"),
+    artifactName: "T3-Code-${version}-${arch}.${ext}",
+    protocols: [{ name: "T3 Code", schemes: ["t3code", "t3code-dev"] }],
+    publish: null,
+    mac: { forceCodeSigning: false, usePasskeySigning: true },
+    linux: { executableName: "t3code", includeDeb: true, includeNativeDebMetadata: true },
+    validateBuildMode: () => Effect.void,
+    validateSigningEnvironment: () => Effect.void,
+    bundleEnvironment: (baseEnv) => ({ ...baseEnv }),
+  };
+
 export function resolveDesktopProductName(version: string, workbench = false): string {
-  if (workbench) return WORKBENCH_DISTRIBUTION.productName;
-  return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "T3 Code (Nightly)"
-    : (desktopPackageJson.productName ?? "T3 Code");
+  return resolveDesktopBuildProduct({ version, workbench, platform: "mac", signed: false })
+    .productName;
+}
+
+export function resolveDesktopPackageName(workbench = false): string {
+  return resolveDesktopBuildProduct({ version: "", workbench, platform: "mac", signed: false })
+    .packageName;
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -2769,15 +2810,18 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   wslRuntimeBundled = false,
   arch?: typeof BuildArch.Type,
 ) {
-  const workbench =
-    (yield* Config.String("T3CODE_WORKBENCH_BUILD").pipe(Config.withDefault(""))) === "1";
+  const product = resolveDesktopBuildProduct({
+    version,
+    platform,
+    signed,
+    workbench:
+      (yield* Config.String("T3CODE_WORKBENCH_BUILD").pipe(Config.withDefault(""))) === "1",
+  });
   const buildConfig: Record<string, unknown> = {
-    appId: workbench ? WORKBENCH_DISTRIBUTION.appId : DESKTOP_APP_ID,
-    ...(workbench && platform === "mac" && signed ? { forceCodeSigning: true } : {}),
-    productName: resolveDesktopProductName(version, workbench),
-    artifactName: workbench
-      ? "T3-Code-Workbench-${version}-${arch}.${ext}"
-      : "T3-Code-${version}-${arch}.${ext}",
+    appId: product.appId,
+    ...(product.mac.forceCodeSigning ? { forceCodeSigning: true } : {}),
+    productName: product.productName,
+    artifactName: product.artifactName,
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [
       ...DESKTOP_FILE_EXCLUSIONS,
@@ -2805,18 +2849,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     ],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
-  if (workbench) {
-    // Emit updater metadata even for draft previews. The Workbench runtime
-    // resolves only published Workbench tags in this repository.
-    buildConfig.publish = [
-      {
-        provider: "github",
-        owner: "filipgutica",
-        repo: "t3code",
-        channel: updateChannel,
-        releaseType: "prerelease",
-      },
-    ];
+  if (product.publish !== null) {
+    buildConfig.publish = product.publish;
   } else if (!isDesktopPreviewVersion(version)) {
     const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
     if (publishConfig) {
@@ -2838,19 +2872,31 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
-      // Ad-hoc previews need a complete bundle signature after Electron is
-      // renamed. Hardened library validation requires a Developer ID team.
-      hardenedRuntime: !workbench || signed,
-      ...(workbench && !signed ? { identity: "-", notarize: false } : {}),
+      ...(product.mac.hardenedRuntime !== undefined
+        ? { hardenedRuntime: product.mac.hardenedRuntime }
+        : {}),
+      ...(product.mac.identity !== undefined ? { identity: product.mac.identity } : {}),
+      ...(product.mac.notarize !== undefined ? { notarize: product.mac.notarize } : {}),
       extendInfo: {
+        NSLocalNetworkUsageDescription:
+          "T3 Code connects to devices on your local network for remote environments and commands run by terminals and coding agents.",
         NSScreenCaptureUsageDescription:
           "T3 Code captures the active window when you use the window capture shortcut.",
+        // macOS lists an app under Default web browser only when it opens web
+        // pages as documents as well as http and https links (see protocols).
+        CFBundleDocumentTypes: [
+          {
+            CFBundleTypeName: "Web page",
+            CFBundleTypeRole: "Viewer",
+            LSHandlerRank: "Alternate",
+            LSItemContentTypes: ["public.html", "public.xhtml"],
+          },
+        ],
       },
       protocols: [
-        {
-          name: workbench ? WORKBENCH_DISTRIBUTION.productName : "T3 Code",
-          schemes: workbench ? [WORKBENCH_DISTRIBUTION.scheme] : ["t3code", "t3code-dev"],
-        },
+        ...product.protocols,
+        // Preserve upstream's default-browser registration alongside the product scheme.
+        { name: "Web site URL", schemes: ["http", "https"], role: "Viewer" },
       ],
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
       ...(macPasskeySigning
@@ -2867,7 +2913,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // Give the themed installer its own Finder volume name. Finder caches
       // DMG window backgrounds by volume name, so reusing a generic name can
       // make a newly built background look unchanged during testing.
-      title: `${resolveDesktopProductName(version, workbench)} ${version} Installer`,
+      title: `${product.productName} ${version} Installer`,
       background: `dmg/dmg-background-${updateChannel}.png`,
       window: {
         width: 640,
@@ -2895,9 +2941,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // The .deb is built from the same unpacked app after the AppImage.
       // electron-builder lists both in latest-linux.yml and writes
       // resources/package-type into the .deb only, so electron-updater updates
-      // each install in its own format. Workbench only releases AppImages.
-      target: target === "AppImage" && !workbench ? [target, "deb"] : [target],
-      executableName: workbench ? WORKBENCH_DISTRIBUTION.executableName : "t3code",
+      // each install in its own format.
+      target: target === "AppImage" && product.linux.includeDeb ? [target, "deb"] : [target],
+      executableName: product.linux.executableName,
       icon: "icons",
       category: "Development",
       synopsis: "Desktop GUI for coding agents",
@@ -2906,22 +2952,17 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // electron-builder turns these into MimeType=x-scheme-handler/<scheme>;
       // in the .desktop entry (Exec already gets %U), so browsers can hand
       // t3code:// OAuth callbacks to the app.
-      protocols: [
-        {
-          name: workbench ? WORKBENCH_DISTRIBUTION.productName : "T3 Code",
-          schemes: workbench ? [WORKBENCH_DISTRIBUTION.scheme] : ["t3code", "t3code-dev"],
-        },
-      ],
+      protocols: product.protocols,
       desktop: {
         entry: {
-          StartupWMClass: workbench ? WORKBENCH_DISTRIBUTION.executableName : "t3code",
+          StartupWMClass: product.linux.executableName,
         },
       },
     };
     buildConfig.deb = {
       // FPM runs outside the staged app directory, so source paths must be absolute.
       // AppStream consumers associate this metadata with our t3code.desktop entry.
-      ...(!workbench
+      ...(product.linux.includeNativeDebMetadata
         ? {
             fpm: [
               `${path.join(repoRoot, "apps/desktop/resources/linux/com.t3tools.t3code.metainfo.xml")}=/usr/share/metainfo/com.t3tools.t3code.metainfo.xml`,
@@ -2956,6 +2997,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     const winConfig: Record<string, unknown> = {
       target: [target],
       icon: "icon.ico",
+      // Smart App Control validates unpacked native addons independently from
+      // the signed desktop executable. Extend release signing to every native
+      // Windows library that Electron or the server sidecar loads at runtime.
+      signExts: [".node", ".dll"],
       // Resource editing applies the product metadata and icon independently
       // of code signing. Disabling it for local unsigned builds leaves the
       // packaged executable with Electron's stock icon.
@@ -3044,11 +3089,33 @@ export const packWindowsServerAsar = Effect.fn("packWindowsServerAsar")(function
   readonly arch: typeof BuildArch.Type;
 }) {
   const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  // Native addons are unpacked only when they are Windows PE ("MZ") binaries.
+  // Signed builds Authenticode-sign every unpacked .node file, which fails on
+  // the darwin and linux prebuilds some packages (node-pty) ship alongside
+  // their win32 ones. The Windows primary never loads those, so they stay packed.
+  const unpackGlobs: string[] = [...WINDOWS_SERVER_ASAR_UNPACK_GLOBS];
+  for (const entry of yield* fs.readDirectory(input.sourceDir, { recursive: true })) {
+    if (!entry.endsWith(".node")) continue;
+    const addonPath = path.join(input.sourceDir, entry);
+    if ((yield* fs.stat(addonPath)).type !== "File") continue;
+    const bytes = yield* fs.readFile(addonPath);
+    if (bytes[0] !== 0x4d || bytes[1] !== 0x5a) continue;
+    const posixPath = entry.split(path.sep).join("/");
+    // Backslash escapes are path separators to minimatch on Windows.
+    if (/[\\*?[\]{}(),]/.test(posixPath)) {
+      return yield* new WindowsServerSidecarPackError({
+        asarPath: input.asarPath,
+        cause: new Error(`native addon path contains glob syntax: ${posixPath}`),
+      });
+    }
+    unpackGlobs.push(`**/${posixPath}`);
+  }
   yield* Effect.tryPromise({
     try: () =>
       createPackageWithOptions(input.sourceDir, input.asarPath, {
         dot: true,
-        unpack: WINDOWS_NATIVE_ASAR_UNPACK_GLOB,
+        unpack: `{${unpackGlobs.join(",")}}`,
         // glob 13 (via @electron/asar 4) matches `ignore` relative to `cwd`,
         // not against the absolute paths it crawls, so anchor it at the source.
         globOptions: {
@@ -3201,8 +3268,8 @@ export const verifyWindowsPrimaryFffNativeLoad = Effect.fn(
   readonly targetArch: typeof BuildArch.Type;
   readonly verbose: boolean;
 }) {
-  const hostPlatform = yield* HostProcessPlatform;
-  const hostArchitecture = yield* HostProcessArchitecture;
+  const hostPlatform = yield* HostProcess.Platform;
+  const hostArchitecture = yield* HostProcess.Architecture;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const executablePath = path.join(input.packagedAppDir, input.appExecutableName);
@@ -3219,10 +3286,7 @@ export const verifyWindowsPrimaryFffNativeLoad = Effect.fn(
   const probeRoot = yield* fs.makeTempDirectoryScoped({
     prefix: "t3code-windows-primary-native-probe-",
   });
-  const fffEntryPath = path.join(
-    input.asarPath,
-    "node_modules/@ff-labs/fff-node/dist/src/index.js",
-  );
+  const fffEntryPath = path.join(input.asarPath, "node_modules/@ff-labs/fff-node/dist/index.js");
   const probeEnv = { ...process.env };
   delete probeEnv.ELECTRON_NO_ASAR;
   delete probeEnv.NODE_OPTIONS;
@@ -3521,17 +3585,16 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const repoRoot = yield* RepoRoot;
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;
-  const hostPlatform = yield* HostProcessPlatform;
+  const hostPlatform = yield* HostProcess.Platform;
   const repoEnv = loadRepoEnv({ repoRoot });
-  const workbench = repoEnv.T3CODE_WORKBENCH_BUILD === "1";
-  const buildModeError = validateWorkbenchMacBuildMode({
-    workbench,
+  const product = resolveDesktopBuildProduct({
+    version: options.version ?? serverPackageJson.version,
+    workbench: repoEnv.T3CODE_WORKBENCH_BUILD === "1",
     platform: options.platform,
-    skipBuild: options.skipBuild,
+    signed: options.signed,
   });
-  if (buildModeError !== undefined) {
-    return yield* buildModeError;
-  }
+  yield* product.validateBuildMode(options.skipBuild);
+
   if (hostPlatform === "linux" && options.platform === "linux") {
     yield* preflightLinuxDesktopBuild(options.arch);
   }
@@ -3620,15 +3683,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
 
   if (!options.skipBuild) {
     yield* Effect.log("[desktop-artifact] Building desktop/server/web artifacts...");
-    // The desktop bundle uses this compile-time flag to enable automatic
-    // updates only in a signed Workbench distribution. Keep unsigned builds
-    // explicitly false even when a shell inherited a stale value.
-    const desktopBuildEnv = resolveDesktopBundleBuildEnvironment({
-      baseEnv: process.env,
-      workbench,
-      platform: options.platform,
-      signed: options.signed,
-    });
+    const desktopBuildEnv = product.bundleEnvironment(process.env);
     const spawnCommand = yield* resolveSpawnCommand("vp", ["run", "build:desktop"], {
       env: desktopBuildEnv,
     });
@@ -3802,14 +3857,9 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const stageProdResourcesDir = path.join(stageAppDir, "apps/desktop/prod-resources");
   yield* fs.copy(stageResourcesDir, stageProdResourcesDir);
 
-  if (options.platform === "mac" && options.signed && workbench) {
-    yield* Effect.try({
-      try: () => resolveMacWorkbenchSigningConfiguration(repoEnv),
-      catch: MacWorkbenchSigningConfigurationResolutionError.fromCause,
-    });
-  }
+  yield* product.validateSigningEnvironment(repoEnv);
   const configuredMacPasskeySigning =
-    options.platform === "mac" && options.signed && !workbench
+    options.platform === "mac" && options.signed && product.mac.usePasskeySigning
       ? yield* Effect.try({
           try: () => resolveMacPasskeySigningConfiguration(repoEnv),
           catch: MacPasskeySigningConfigurationResolutionError.fromCause,
@@ -3827,13 +3877,24 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const macEntitlementsPath = macPasskeySigning
     ? path.join(stageAppDir, "entitlements.mac.plist")
     : undefined;
+  let macWebAuthn: MacWebAuthnEntitlements | undefined;
   if (macPasskeySigning && macEntitlementsPath) {
     if (!(yield* fs.exists(macPasskeySigning.provisioningProfilePath))) {
       return yield* new MacProvisioningProfileNotFoundError({
         provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
       });
     }
-    yield* fs.writeFileString(macEntitlementsPath, renderMacPasskeyEntitlements(macPasskeySigning));
+    macWebAuthn = resolveMacWebAuthnEntitlements(
+      yield* fs.readFileString(macPasskeySigning.provisioningProfilePath),
+      macPasskeySigning,
+    );
+    yield* Effect.log(
+      `[desktop-artifact] In-app browser passkeys: Touch ID ${macWebAuthn.touchIdKeychainAccessGroup ? "enabled" : "disabled"}, browser passkeys ${macWebAuthn.browserPasskeys ? "enabled" : "disabled"}.`,
+    );
+    yield* fs.writeFileString(
+      macEntitlementsPath,
+      renderMacPasskeyEntitlements(macPasskeySigning, macWebAuthn),
+    );
   }
 
   // Windows splits dependencies per process: app.asar carries only the
@@ -3859,10 +3920,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       ? path.join(stageAppDir, WINDOWS_SERVER_RESOURCE_SOURCE_DIR, WINDOWS_SERVER_ASAR_RESOURCE)
       : undefined;
   const stagePackageJson: StagePackageJson = {
-    name: resolveDesktopPackageName(workbench),
+    name: product.packageName,
     version: appVersion,
     buildVersion: appVersion,
     t3codeCommitHash: commitHash,
+    // Read by apps/desktop/src/preview/Passkeys.ts; must match the signed entitlements.
+    ...(macWebAuthn ? { t3codeWebAuthn: macWebAuthn } : {}),
     private: true,
     packageManager: rootPackageJson.packageManager,
     description:

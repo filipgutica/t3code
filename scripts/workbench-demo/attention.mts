@@ -16,7 +16,7 @@ import {
   pullRequestSummaryGraphQlQuery,
   PULL_REQUEST_ACTIVITY_GRAPHQL_QUERY,
   REVIEW_THREADS_GRAPHQL_QUERY,
-} from "../../apps/server/src/pullRequest/gitHubPullRequestJson.ts";
+} from "../../packages/source-control-github/src/server/gitHubPullRequestJson.ts";
 import { insertVisualMessage, readVisualThread, seedVisualRun } from "./native-projections.mts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 import {

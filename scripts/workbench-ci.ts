@@ -256,7 +256,7 @@ ${verificationJob(
   `      - name: Check fork sources and CI policy
         run: |
           node scripts/workbench-ci.ts --lint
-          vp test run scripts/workbench-ci.test.ts
+          vp test run scripts/workbench-ci.test.ts scripts/lib/workbench-isolation.test.ts
 `,
 )}
 ${verificationJob(
@@ -370,9 +370,11 @@ try {
     } else if (command === "--typecheck") {
       for (const name of Object.values(policy.packages))
         run("vp", ["run", "--filter", name, "typecheck"]);
+      run("vp", ["exec", "tsc", "--noEmit", "-p", "scripts/workbench-demo/tsconfig.json"]);
     } else if (command === "--packaging") {
       run("vp", ["test", "run", ...policy.packagingTests]);
     } else if (command === "--lint") {
+      run(process.execPath, ["scripts/workbench-isolation.ts"]);
       const files = validateOwnership(policy).filter((path) => NodeFS.existsSync(path));
       run("vp", [
         "lint",

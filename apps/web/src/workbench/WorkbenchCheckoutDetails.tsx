@@ -76,7 +76,7 @@ export function WorkbenchThreadCheckoutDetails({
       <Tooltip>
         <TooltipTrigger
           render={
-            <summary className="cursor-pointer px-2 py-1.5 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring" />
+            <summary className="cursor-pointer px-2 py-1.5 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring" />
           }
         >
           Checkout details
@@ -215,7 +215,7 @@ function CheckoutDetailPopover({
             render={
               <PopoverTrigger
                 aria-label={`${label}: ${fullValue}`}
-                className="inline-flex min-w-0 max-w-full flex-1 items-center gap-1.5 rounded-sm text-left font-medium outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+                className="inline-flex min-w-0 max-w-full flex-1 items-center gap-1.5 rounded-sm text-left font-medium outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
               />
             }
           >

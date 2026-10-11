@@ -27,6 +27,7 @@ import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstall
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import { SnapShotCoordinator } from "../components/desktop/SnapShotCoordinator";
 import { DesktopAppActivationCoordinator } from "../components/desktop/DesktopAppActivationCoordinator";
+import { DesktopWebLinkCoordinator } from "../components/desktop/DesktopWebLinkCoordinator";
 import { RunningThreadKeepAlive } from "../components/desktop/RunningThreadKeepAlive";
 import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
 import { NightlyMobileBetaNotice } from "../components/NightlyMobileBeta";
@@ -34,6 +35,7 @@ import { LegacyThreadMigrationToast } from "../components/LegacyThreadMigrationT
 import { ThreadNotificationCoordinator } from "../components/ThreadNotificationCoordinator";
 import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut";
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
+import { PullRequestGuideRunCoordinator } from "../components/pullRequest/guide/PullRequestGuideRunCoordinator";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcomeCoordinator";
 import { ProviderAuthCallbackCoordinator } from "../components/settings/ProviderAuthCallbackCoordinator";
@@ -82,6 +84,7 @@ import {
 import { getDesktopSnapShotBridge } from "../lib/desktopSnapShot";
 import { installDesktopPasteAsText } from "../lib/desktopPasteAsText";
 import { shouldResumeSnapShotSetupOnStartup } from "../lib/snapShotSetupResume";
+import { WorkbenchHostProvider } from "../workbench/WorkbenchHostProvider";
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
@@ -181,11 +184,13 @@ function RootRouteView() {
           <FontAppearanceSync />
           <ProviderAuthCallbackCoordinator />
           <CustomSnoozeDialogHost />
-          <CommandPalette>
-            <AppSidebarLayout>
-              <Outlet />
-            </AppSidebarLayout>
-          </CommandPalette>
+          <WorkbenchHostProvider refreshPreparations={false}>
+            <CommandPalette>
+              <AppSidebarLayout>
+                <Outlet />
+              </AppSidebarLayout>
+            </CommandPalette>
+          </WorkbenchHostProvider>
         </AnchoredToastProvider>
       </ToastProvider>
     );
@@ -226,32 +231,36 @@ function RootRouteView() {
           enabled={primaryEnvironmentAuthenticated}
           hostedStatic={authGateState.status === "hosted-static"}
         >
-          {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
-          {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
-          {isElectron ? <RunningThreadKeepAlive /> : null}
-          <RelayClientInstallDialog />
-          <ConnectOnboardingDialog />
-          <SshPasswordPromptDialog />
-          <SnapShotCoordinator />
-          <ThreadNotificationCoordinator />
-          <ReopenClosedViewShortcut />
-          <ConfirmDialogHost />
-          <CustomSnoozeDialogHost />
-          <SlowRpcRequestToastCoordinator />
-          <PermissionUpdateNotice />
-          {primaryEnvironmentAuthenticated ? <LegacyThreadMigrationToast /> : null}
-          <ProjectCloneToastCoordinator />
-          <HostedStaticEnvironmentBootstrap />
-          {primaryEnvironmentAuthenticated ? (
-            <EventRouter skipInitialBootstrapNavigation={returningFromWelcomeRef.current} />
-          ) : null}
-          {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
-          {/* Hosted Nightly is "hosted-static", not authenticated, and needs it too. */}
-          <NightlyMobileBetaNotice />
-          {appShell}
-          {/* Above the router: a theme draft is judged by walking the app, so the
+          <WorkbenchHostProvider>
+            {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
+            {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
+            {primaryEnvironmentAuthenticated ? <DesktopWebLinkCoordinator /> : null}
+            {isElectron ? <RunningThreadKeepAlive /> : null}
+            <RelayClientInstallDialog />
+            <ConnectOnboardingDialog />
+            <SshPasswordPromptDialog />
+            <SnapShotCoordinator />
+            <ThreadNotificationCoordinator />
+            <ReopenClosedViewShortcut />
+            <ConfirmDialogHost />
+            <CustomSnoozeDialogHost />
+            <SlowRpcRequestToastCoordinator />
+            <PermissionUpdateNotice />
+            {primaryEnvironmentAuthenticated ? <LegacyThreadMigrationToast /> : null}
+            <ProjectCloneToastCoordinator />
+            <PullRequestGuideRunCoordinator />
+            <HostedStaticEnvironmentBootstrap />
+            {primaryEnvironmentAuthenticated ? (
+              <EventRouter skipInitialBootstrapNavigation={returningFromWelcomeRef.current} />
+            ) : null}
+            {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
+            {/* Hosted Nightly is "hosted-static", not authenticated, and needs it too. */}
+            <NightlyMobileBetaNotice />
+            {appShell}
+            {/* Above the router: a theme draft is judged by walking the app, so the
               editor has to survive navigation away from settings. */}
-          <ThemeEditorHost />
+            <ThemeEditorHost />
+          </WorkbenchHostProvider>
         </FirstRunGate>
       </AnchoredToastProvider>
     </ToastProvider>

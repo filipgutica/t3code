@@ -10,6 +10,7 @@ import {
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -32,6 +33,7 @@ import * as TerminalManager from "../terminal/Manager.ts";
 import * as WorkbenchWorktreeOwnership from "./worktreeOwnership.ts";
 import { seedNativeThread } from "./testing/nativeThreads.ts";
 import * as StorageCleanup from "../storageCleanup.ts";
+import { ServerActivation } from "../serverActivation.ts";
 
 const NOW_MS = Date.parse("2026-06-10T12:00:00.000Z");
 const DAY_MS = 24 * 60 * 60 * 1_000;
@@ -103,14 +105,13 @@ const cleanupTestLayer = Layer.mergeAll(SqlitePersistence.layerMemory, cleanupCo
 );
 
 const cleanupCases = (["idle", "deleted"] as const).flatMap((lifecycle) =>
-  (["default", "custom", "symlinked", "overlapping"] as const).map((directory) => ({
-    lifecycle,
-    directory,
-  })),
+  (["default", "custom", "symlinked", "overlapping"] as const).flatMap((directory) =>
+    (["automatic", "manual"] as const).map((trigger) => ({ lifecycle, directory, trigger })),
+  ),
 );
-for (const { lifecycle, directory } of cleanupCases) {
+for (const { lifecycle, directory, trigger } of cleanupCases) {
   effectIt.effect.skipIf(directory === "symlinked" && !symlinksSupported)(
-    `retains ${lifecycle} Ticket worktrees and removes a native prefix lookalike (${directory} directory)`,
+    `retains ${lifecycle} Ticket worktrees and removes a native prefix lookalike (${directory} directory, ${trigger})`,
     () =>
       Effect.gen(function* () {
         yield* TestClock.setTime(NOW_MS);
@@ -176,91 +177,125 @@ for (const { lifecycle, directory } of cleanupCases) {
         }
         const snapshotRead = yield* Deferred.make<void>();
         const removals: string[] = [];
-        const cleanup = yield* StorageCleanup.make.pipe(
-          Effect.provide(
-            Layer.mergeAll(
-              WorkbenchWorktreeOwnership.layer,
-              Settings.layerTest({
-                worktreesDirectory,
-                worktreeCleanup: {
-                  mode: "custom",
-                  rules: {
-                    worktreeAfterDays: lifecycle === "idle" ? 8 : null,
-                    worktreeOnDelete: lifecycle === "deleted",
-                    worktreeOnMerge: false,
-                    worktreeUnchanged: false,
-                  },
-                },
-                storageCleanup: { browserArtifactsAfterDays: null, logsAfterDays: null },
-              }),
-              Layer.mock(ProjectStore.ProjectStoreV2)({
-                listShells: () =>
-                  Effect.succeed([
-                    {
-                      id: ProjectId.make("project-1"),
-                      title: "Fixture",
-                      workspaceRoot: config.baseDir,
-                      defaultModelSelection: null,
-                      scripts: [],
-                      createdAt: DateTime.formatIso(at(-30 * DAY_MS)),
-                      updatedAt: DateTime.formatIso(at(0)),
+        const context = yield* Layer.build(
+          StorageCleanup.layer.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                WorkbenchWorktreeOwnership.layer,
+                Settings.layerTest({
+                  worktreesDirectory,
+                  worktreeCleanup: {
+                    mode: "custom",
+                    rules: {
+                      worktreeAfterDays: lifecycle === "idle" ? 8 : null,
+                      worktreeOnDelete: lifecycle === "deleted",
+                      worktreeOnMerge: false,
+                      worktreeUnchanged: false,
                     },
-                  ]),
-              }),
-              Layer.mock(ProjectionStore.ProjectionStoreV2)({
-                getShellSnapshot: (options) =>
-                  Deferred.succeed(snapshotRead, undefined).pipe(
-                    Effect.as({
-                      schemaVersion: 1,
-                      snapshotSequence: 0,
-                      archivedThreads: [],
-                      threads:
-                        lifecycle === "idle" && options?.location !== "archive" ? threads : [],
+                  },
+                  storageCleanup: { browserArtifactsAfterDays: null, logsAfterDays: null },
+                }),
+                Layer.mock(ProjectStore.ProjectStoreV2)({
+                  listShells: () =>
+                    Effect.succeed([
+                      {
+                        id: ProjectId.make("project-1"),
+                        title: "Fixture",
+                        workspaceRoot: config.baseDir,
+                        defaultModelSelection: null,
+                        scripts: [],
+                        createdAt: DateTime.formatIso(at(-30 * DAY_MS)),
+                        updatedAt: DateTime.formatIso(at(0)),
+                      },
+                    ]),
+                }),
+                Layer.mock(ProjectionStore.ProjectionStoreV2)({
+                  getShellSnapshot: (options) =>
+                    Deferred.succeed(snapshotRead, undefined).pipe(
+                      Effect.as({
+                        schemaVersion: 1,
+                        snapshotSequence: 0,
+                        archivedThreads: [],
+                        threads:
+                          lifecycle === "idle" && options?.location !== "archive" ? threads : [],
+                      }),
+                    ),
+                }),
+                Layer.mock(Orchestrator.OrchestratorV2)({ streamDomainEvents: Stream.empty }),
+                Layer.mock(GitManager.GitManager)({ invalidateStatus: () => Effect.void }),
+                Layer.mock(GitVcsDriver.GitVcsDriver)({
+                  statusDetailsLocal: () =>
+                    Effect.succeed({
+                      isRepo: true,
+                      hasOriginRemote: false,
+                      isDefaultBranch: false,
+                      branch: "feature",
+                      upstreamRef: null,
+                      hasWorkingTreeChanges: false,
+                      workingTree: { files: [], insertions: 0, deletions: 0 },
+                      hasUpstream: false,
+                      aheadCount: 0,
+                      behindCount: 0,
+                      aheadOfDefaultCount: 0,
                     }),
-                  ),
-              }),
-              Layer.mock(Orchestrator.OrchestratorV2)({ streamDomainEvents: Stream.empty }),
-              Layer.mock(GitManager.GitManager)({ invalidateStatus: () => Effect.void }),
-              Layer.mock(GitVcsDriver.GitVcsDriver)({
-                statusDetailsLocal: () =>
-                  Effect.succeed({
-                    isRepo: true,
-                    hasOriginRemote: false,
-                    isDefaultBranch: false,
-                    branch: "feature",
-                    upstreamRef: null,
-                    hasWorkingTreeChanges: false,
-                    workingTree: { files: [], insertions: 0, deletions: 0 },
-                    hasUpstream: false,
-                    aheadCount: 0,
-                    behindCount: 0,
-                    aheadOfDefaultCount: 0,
-                  }),
-                resolveCommit: () => Effect.succeed({ commitSha: "a".repeat(40) }),
-                execute: () =>
-                  Effect.succeed({
-                    exitCode: ChildProcessSpawner.ExitCode(0),
-                    stdout: "",
-                    stderr: "",
-                    stdoutTruncated: false,
-                    stderrTruncated: false,
-                  }),
-                removeWorktree: (input) =>
-                  Effect.sync(() => {
-                    expect(input.force).toBe(false);
-                    removals.push(input.path);
-                  }).pipe(Effect.andThen(fs.remove(input.path, { recursive: true })), Effect.orDie),
-              }),
-              Layer.mock(TerminalManager.TerminalManager)({
-                subscribeMetadata: (listener) =>
-                  listener({ type: "snapshot", terminals: [] }).pipe(Effect.as(() => {})),
-              }),
+                  resolveCommit: () => Effect.succeed({ commitSha: "a".repeat(40) }),
+                  execute: (input) =>
+                    Effect.gen(function* () {
+                      if (input.args[2] === "worktree" && input.args[3] === "remove") {
+                        const worktreePath = input.args[4]!;
+                        expect(input.args).toEqual([
+                          "-c",
+                          "status.showUntrackedFiles=normal",
+                          "worktree",
+                          "remove",
+                          worktreePath,
+                        ]);
+                        removals.push(worktreePath);
+                        yield* fs.remove(worktreePath, { recursive: true }).pipe(Effect.orDie);
+                      }
+                      return {
+                        exitCode: ChildProcessSpawner.ExitCode(0),
+                        stdout:
+                          input.args[0] === "symbolic-ref"
+                            ? "refs/heads/feature\n"
+                            : input.args[0] === "rev-parse"
+                              ? `${path.join(config.baseDir, "fixture-index")}\n`
+                              : "",
+                        stderr: "",
+                        stdoutTruncated: false,
+                        stderrTruncated: false,
+                      };
+                    }),
+                }),
+                Layer.mock(TerminalManager.TerminalManager)({
+                  subscribeMetadata: (listener) =>
+                    listener({ type: "snapshot", terminals: [] }).pipe(Effect.as(() => {})),
+                }),
+              ),
             ),
           ),
+        ).pipe(
+          Effect.provideService(ServerActivation, trigger === "manual" ? Effect.never : undefined),
         );
-        yield* cleanup.start();
-        yield* Deferred.await(snapshotRead);
-        yield* cleanup.drain;
+        const cleanup = Context.get(context, StorageCleanup.StorageCleanup);
+        const report =
+          trigger === "manual"
+            ? yield* cleanup.runNow
+            : yield* Deferred.await(snapshotRead).pipe(
+                Effect.andThen(cleanup.drain),
+                Effect.andThen(cleanup.latestReport),
+              );
+        expect(report?.trigger).toBe(trigger);
+        expect(report?.entries).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              path: ticketPath,
+              outcome: "kept",
+              reason: "Workspace owner manages this worktree",
+            }),
+            expect.objectContaining({ path: nativePath, outcome: "removed" }),
+          ]),
+        );
         expect(yield* fs.exists(namespace)).toBe(true);
         expect(yield* fs.exists(ticketPath)).toBe(true);
         expect(yield* fs.exists(nativePath)).toBe(false);

@@ -17,7 +17,7 @@ import {
 } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "./OrchestratorMcpService.ts";
-import { assertMcpWritesAllowed } from "../workbench/TicketPlanningRuntime.ts";
+import { McpWritePolicy } from "./McpWritePolicy.ts";
 import {
   assertFullAccess,
   assertLiveCaller,
@@ -98,6 +98,9 @@ export class Declaration<out Handler> {
   }
 }
 
+const assertThreadWritesAllowed = (threadId: ThreadId) =>
+  Effect.flatMap(McpWritePolicy, (policy) => policy.assertAllowed(threadId));
+
 /** A client approved for read-only access changes nothing. */
 const refuseReadOnlyClient = McpInvocationContext.McpInvocationContext.pipe(
   Effect.flatMap((scope) =>
@@ -113,7 +116,7 @@ const refuseReadOnlyClient = McpInvocationContext.McpInvocationContext.pipe(
         )
       : scope.thread === undefined
         ? Effect.void
-        : assertMcpWritesAllowed(scope.thread.threadId),
+        : assertThreadWritesAllowed(scope.thread.threadId),
   ),
 );
 
@@ -161,6 +164,14 @@ export const actsAsCaller = <P, A, E, R>(handle: (params: P) => Effect.Effect<A,
 /** Changes something that belongs to no thread, such as a pending upload or a scheduled task. */
 export const writes = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare((params: P) => orchestratingCaller.pipe(Effect.flatMap(() => handle(params))));
+
+/**
+ * Changes something that belongs to no thread under a capability of the tool's own, such as
+ * writing a pull request's review guide. Unlike `writes` it does not need thread control; the
+ * handler checks its capability, as the capability toolkits do.
+ */
+export const writesWithCapability = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
+  declare((params: P) => writingCaller.pipe(Effect.flatMap(() => handle(params))));
 
 /**
  * Changes the threads `threads` names. An omitted id is the caller's own

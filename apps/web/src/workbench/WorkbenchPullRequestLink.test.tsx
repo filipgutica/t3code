@@ -1,7 +1,12 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, ProjectId, type PullRequestSummary } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  SourceControlProviderKind,
+  type PullRequestSummary,
+} from "@t3tools/contracts";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
@@ -71,7 +76,7 @@ describe("Workbench ticket pull request link", () => {
         expect(renderer?.root.findAllByType(PullRequestGlyph.merged)).toHaveLength(0);
 
         observed.queried = {
-          provider: "github",
+          provider: SourceControlProviderKind.make("github"),
           ...reference,
           title: "Finished work",
           state: "merged",
@@ -107,7 +112,7 @@ describe("Workbench ticket pull request link", () => {
   it("keeps an explicit closed state when a shared summary is stale and open", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     observed.cached = {
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       ...pullRequest,
       title: "Old draft",
       state: "open",
@@ -141,7 +146,7 @@ describe("Workbench ticket pull request link", () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     observed.queried = null;
     observed.cached = {
-      provider: "github",
+      provider: SourceControlProviderKind.make("github"),
       ...pullRequest,
       title: "Merged work",
       state: "merged",

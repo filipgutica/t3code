@@ -68,7 +68,7 @@ describe("showDesktopUpdateDownloadedToast", () => {
   it("opens the downloaded version's release notes", async () => {
     const openExternal = vi.fn().mockResolvedValue(true);
 
-    showDesktopUpdateDownloadedToast({ openExternal }, downloadedState());
+    showDesktopUpdateDownloadedToast({ shell: { openExternal }, state: downloadedState() });
     const link = findReleaseNotesLink(getDescription());
     link?.props.onClick?.();
     await vi.waitFor(() => {
@@ -83,10 +83,10 @@ describe("showDesktopUpdateDownloadedToast", () => {
     const openExternal = vi.fn().mockResolvedValue(true);
 
     // The `update-downloaded` event can land after the download RPC resolves.
-    showDesktopUpdateDownloadedToast(
-      { openExternal },
-      downloadedState({ downloadedVersion: null }),
-    );
+    showDesktopUpdateDownloadedToast({
+      shell: { openExternal },
+      state: downloadedState({ downloadedVersion: null }),
+    });
     findReleaseNotesLink(getDescription())?.props.onClick?.();
 
     await vi.waitFor(() => {
@@ -97,10 +97,10 @@ describe("showDesktopUpdateDownloadedToast", () => {
   });
 
   it("omits the link when the updater reports no version at all", () => {
-    showDesktopUpdateDownloadedToast(
-      { openExternal: vi.fn() },
-      downloadedState({ availableVersion: null, downloadedVersion: null }),
-    );
+    showDesktopUpdateDownloadedToast({
+      shell: { openExternal: vi.fn() },
+      state: downloadedState({ availableVersion: null, downloadedVersion: null }),
+    });
 
     expect(findReleaseNotesLink(getDescription())).toBeNull();
   });
@@ -109,7 +109,7 @@ describe("showDesktopUpdateDownloadedToast", () => {
     ["returns false", vi.fn().mockResolvedValue(false)],
     ["rejects", vi.fn().mockRejectedValue(new Error("open failed"))],
   ])("shows an error when opening release notes %s", async (_description, openExternal) => {
-    showDesktopUpdateDownloadedToast({ openExternal }, downloadedState());
+    showDesktopUpdateDownloadedToast({ shell: { openExternal }, state: downloadedState() });
     findReleaseNotesLink(getDescription())?.props.onClick?.();
 
     await vi.waitFor(() => {

@@ -64,17 +64,21 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   await page.getByRole("checkbox", { name: "Orbit Web", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "Orbit Web", exact: true })).not.toBeChecked();
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
-  await expect(page.getByText("Retained worktrees (1)", { exact: true })).toBeVisible();
-  await page.getByText("Retained worktrees (1)", { exact: true }).click();
+  const ticketRepositories = page.locator("#workbench-ticket-repositories");
+  const retainedWorktrees = ticketRepositories.getByText("Retained worktrees (1)", {
+    exact: true,
+  });
+  await expect(retainedWorktrees).toBeVisible();
+  await retainedWorktrees.click();
   await expect(
-    page.getByText("Kept for existing threads. Excluded from new thread context."),
+    ticketRepositories.getByText("Kept for existing threads. Excluded from new thread context."),
   ).toBeVisible();
   expect(await NodeFSP.readFile(marker, "utf8")).toBe("Keep this local work.\n");
   await page.getByRole("button", { name: "Edit repositories", exact: true }).click();
   await page.getByRole("checkbox", { name: "Orbit Web", exact: true }).click();
   await expect(page.getByRole("checkbox", { name: "Orbit Web", exact: true })).toBeChecked();
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
-  await expect(page.getByText("Retained worktrees (1)", { exact: true })).not.toBeVisible();
+  await expect(retainedWorktrees).not.toBeVisible();
   await expect(page.getByRole("button", { name: "Choose editor", exact: true })).toHaveCount(2);
   const restored = (await snapshot(demo)).ticketWorkspaces.find(
     (candidate) => candidate.ticketId === "orbit-007",

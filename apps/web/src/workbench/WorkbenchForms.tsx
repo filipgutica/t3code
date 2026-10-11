@@ -1291,7 +1291,7 @@ function WorkbenchTicketDetailController({
             id="workbench-ticket-work"
             aria-label="Ticket work"
             tabIndex={0}
-            className="flex min-h-0 min-w-0 scroll-mt-4 flex-col gap-6 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring @min-[40rem]/ticket:scroll-mt-6 @min-[64rem]/ticket:col-start-2 @min-[64rem]/ticket:row-start-1 @min-[64rem]/ticket:overflow-y-auto @min-[64rem]/ticket:overscroll-y-contain @min-[64rem]/ticket:pr-2 @min-[64rem]/ticket:pb-2"
+            className="flex min-h-0 min-w-0 scroll-mt-4 flex-col gap-6 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring @min-[40rem]/ticket:scroll-mt-6 @min-[64rem]/ticket:col-start-2 @min-[64rem]/ticket:row-start-1 @min-[64rem]/ticket:overflow-y-auto @min-[64rem]/ticket:overscroll-y-contain @min-[64rem]/ticket:pr-2 @min-[64rem]/ticket:pb-2"
           >
             <WorkbenchTicketAttentionPanel
               environmentId={environmentId}
@@ -1433,7 +1433,7 @@ function WorkbenchTicketDetailController({
             role="region"
             aria-label="Ticket description and summary"
             tabIndex={0}
-            className="min-h-0 min-w-0 scroll-mt-4 space-y-6 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring @min-[40rem]/ticket:scroll-mt-6 @min-[64rem]/ticket:col-start-1 @min-[64rem]/ticket:row-start-1 @min-[64rem]/ticket:overflow-y-auto @min-[64rem]/ticket:overscroll-y-contain @min-[64rem]/ticket:pr-2 @min-[64rem]/ticket:pb-2"
+            className="min-h-0 min-w-0 scroll-mt-4 space-y-6 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring @min-[40rem]/ticket:scroll-mt-6 @min-[64rem]/ticket:col-start-1 @min-[64rem]/ticket:row-start-1 @min-[64rem]/ticket:overflow-y-auto @min-[64rem]/ticket:overscroll-y-contain @min-[64rem]/ticket:pr-2 @min-[64rem]/ticket:pb-2"
           >
             {error ? <WorkbenchInlineError message={error} /> : null}
             <WorkbenchTicketDescriptionPanel
@@ -1775,7 +1775,7 @@ function WorkbenchThreadOpenButton({
     <div className="min-w-0 flex-1 basis-full">
       <button
         aria-label={ariaLabel}
-        className="group relative flex w-full min-w-0 cursor-pointer items-start gap-2 text-left text-sm outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-ring enabled:after:absolute enabled:after:inset-0 enabled:after:content-[''] disabled:cursor-default disabled:opacity-50"
+        className="group relative flex w-full min-w-0 cursor-pointer items-start gap-2 text-left text-sm outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring enabled:after:absolute enabled:after:inset-0 enabled:after:content-[''] disabled:cursor-default disabled:opacity-50"
         disabled={disabled}
         onClick={onClick}
         type="button"
@@ -4130,7 +4130,7 @@ function WorkbenchEpicHeader({
                 href={jiraUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                className="inline-flex items-center gap-1.5 rounded-sm text-xs text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
                 <WorkbenchJiraIcon className="size-3.5" /> Open in Jira
                 <ExternalLinkIcon aria-hidden className="size-3" />
@@ -4374,7 +4374,7 @@ function WorkbenchEpicTickets({
                           <button
                             type="button"
                             onClick={() => onOpenTicket(ticket)}
-                            className="min-w-0 cursor-pointer truncate text-left text-sm font-medium outline-none after:absolute after:inset-0 after:z-[1] after:content-[''] focus-visible:ring-2 focus-visible:ring-ring"
+                            className="min-w-0 cursor-pointer truncate text-left text-sm font-medium outline-none after:absolute after:inset-0 after:z-[1] after:content-[''] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                           />
                         }
                       >

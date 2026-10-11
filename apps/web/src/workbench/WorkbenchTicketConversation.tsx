@@ -128,19 +128,30 @@ function usePlanningModelSelection({
   environmentId,
   providers,
   linkedProjects,
-}: Pick<WorkbenchTicketConversationProps, "environmentId" | "providers" | "linkedProjects">) {
+  workspace,
+  draft,
+}: Pick<
+  WorkbenchTicketConversationProps,
+  "environmentId" | "providers" | "linkedProjects" | "workspace" | "draft"
+>) {
   const settings = useEnvironmentSettings(environmentId);
   const sticky = useComposerDraftStore((store) =>
     store.stickyActiveProvider === null
       ? null
       : (store.stickyModelSelectionByProvider[store.stickyActiveProvider] ?? null),
   );
+  const anchorProjectId = draft?.anchorProjectId ?? workspace.linkedProjectIds[0] ?? null;
+  const anchorProject = linkedProjects.find((project) => project.id === anchorProjectId);
   const entries = useMemo(
     () =>
       sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
+        applyProviderInstanceSettings(
+          deriveProviderInstanceEntries(providers),
+          settings,
+          anchorProjectId,
+        ),
       ),
-    [providers, settings],
+    [providers, settings, anchorProjectId],
   );
   const modelSelection = useMemo(
     () =>
@@ -155,9 +166,9 @@ function usePlanningModelSelection({
             entry.models[0]?.slug ??
             null,
         })),
-        preferred: [linkedProjects[0]?.defaultModelSelection, sticky],
+        preferred: [anchorProject?.defaultModelSelection, sticky],
       }),
-    [entries, linkedProjects, sticky],
+    [entries, anchorProject?.defaultModelSelection, sticky],
   );
   return { entries, modelSelection };
 }
@@ -180,7 +191,7 @@ function ScopedTicketConversation(props: WorkbenchTicketConversationProps) {
   const inScope = (candidate: WorkbenchConversationDraft | null) =>
     candidate?.projectId === props.workspace.id ? candidate : null;
   const draft = pickNewestConversationDraft(inScope(props.draft), inScope(fromCommand));
-  const { entries, modelSelection } = usePlanningModelSelection(props);
+  const { entries, modelSelection } = usePlanningModelSelection({ ...props, draft });
   const begin = useTicketDraftBegin({
     environmentId: props.environmentId,
     workspaceId: props.workspace.id,

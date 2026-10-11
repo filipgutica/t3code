@@ -2,7 +2,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeNet from "node:net";
 import * as NodeFS from "node:fs";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeCrypto from "node:crypto";
@@ -10,7 +10,7 @@ import { requireHome, readConfig } from "./environment.mts";
 
 const root = NodeURL.fileURLToPath(new URL("../../", import.meta.url));
 const socketPath = (home: string) =>
-  HostProcessPlatform.defaultValue() === "win32"
+  HostProcess.Platform.defaultValue() === "win32"
     ? `\\\\.\\pipe\\workbench-demo-${NodeCrypto.createHash("sha256").update(home).digest("hex").slice(0, 24)}`
     : NodePath.join(home, "control.sock");
 
@@ -55,7 +55,7 @@ export const startDemo = async (input: string): Promise<number> => {
       server.once("error", reject);
       server.listen(socketPath(home), () => resolve());
     });
-    if (HostProcessPlatform.defaultValue() !== "win32") NodeFS.chmodSync(socketPath(home), 0o600);
+    if (HostProcess.Platform.defaultValue() !== "win32") NodeFS.chmodSync(socketPath(home), 0o600);
     const config = readConfig(home);
     const env = {
       ...process.env,
@@ -80,13 +80,13 @@ export const startDemo = async (input: string): Promise<number> => {
         stdio: "inherit",
         // Own one process group so a stopped launcher cannot leave Vite or the
         // backend watcher running with this demo's credentials.
-        detached: HostProcessPlatform.defaultValue() !== "win32",
+        detached: HostProcess.Platform.defaultValue() !== "win32",
       },
     );
     let stopping = false;
     const stop = () => {
       stopping = true;
-      if (HostProcessPlatform.defaultValue() === "win32" || child.pid === undefined) {
+      if (HostProcess.Platform.defaultValue() === "win32" || child.pid === undefined) {
         child.kill("SIGINT");
       } else {
         try {

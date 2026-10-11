@@ -1,0 +1,131 @@
+{
+  "integrations": [
+    {
+      "source": "apps/desktop/src/app/DesktopProduct.ts",
+      "target": "apps/desktop/src/workbench/desktopProduct",
+      "symbols": ["selectWorkbenchDesktopProduct"],
+      "reason": "Select the immutable desktop product before Electron initialization."
+    },
+    {
+      "source": "apps/server/src/auth/RpcAuthorization.ts",
+      "target": "apps/server/src/workbench/rpcAuthorization",
+      "symbols": ["WORKBENCH_RPC_REQUIRED_SCOPES"],
+      "reason": "Compose the exhaustive Workbench RPC scope map with native authorization."
+    },
+    {
+      "source": "apps/server/src/observability/RpcInstrumentation.ts",
+      "target": "apps/server/src/workbench/rpcInstrumentation",
+      "symbols": ["WORKBENCH_RPC_AGGREGATES"],
+      "reason": "Compose exhaustive Workbench RPC metric metadata."
+    },
+    {
+      "source": "apps/server/src/provider/providerCompatibility.ts",
+      "target": "apps/server/src/workbench/providerCompatibility",
+      "symbols": ["resolveUpstreamProviderCompatibilityVersion"],
+      "reason": "Read the fork provider compatibility version without changing synchronous native callers."
+    },
+    {
+      "source": "apps/server/src/server.ts",
+      "target": "apps/server/src/workbench/worktreeOwnership",
+      "symbols": ["*"],
+      "reason": "Install Workbench host policies, services, reactors and native worktree ownership at startup."
+    },
+    {
+      "source": "apps/server/src/server.ts",
+      "target": "apps/server/src/workbench/serverLayer",
+      "symbols": [
+        "WorkbenchHostPoliciesLayerLive",
+        "WorkbenchRuntimeReactorLayerLive",
+        "WorkbenchServicesLayerLive"
+      ],
+      "reason": "Install Workbench host policies, services, reactors and native worktree ownership at startup."
+    },
+    {
+      "source": "apps/server/src/ws.ts",
+      "target": "packages/contracts/src/index",
+      "symbols": ["WORKBENCH_WS_METHODS", "WorkbenchRpcGroup"],
+      "reason": "Compose typed Workbench handlers and RPC groups with native middleware."
+    },
+    {
+      "source": "apps/server/src/ws.ts",
+      "target": "apps/server/src/workbench/workbenchRpcHandlers",
+      "symbols": ["acquireWorkbenchRpcServices", "makeWorkbenchRpcHandlers"],
+      "reason": "Compose typed Workbench handlers and RPC groups with native middleware."
+    },
+    {
+      "source": "apps/web/src/routeTree.gen.ts",
+      "target": "apps/web/src/routes/workbench",
+      "symbols": ["Route"],
+      "reason": "Register the static Workbench route in generated router composition."
+    },
+    {
+      "source": "apps/web/src/routes/__root.tsx",
+      "target": "apps/web/src/workbench/WorkbenchHostProvider",
+      "symbols": ["WorkbenchHostProvider"],
+      "reason": "Install the Workbench host provider below existing startup and toast gates."
+    },
+    {
+      "source": "apps/web/src/routes/_chat.$environmentId.$threadId.tsx",
+      "target": "apps/web/src/workbench/workbenchNavigation",
+      "symbols": ["parseWorkbenchThreadSearch"],
+      "reason": "Preserve the typed Workbench deep-link search on the native Thread route."
+    },
+    {
+      "source": "packages/contracts/src/clientRpcPermissions.ts",
+      "target": "packages/contracts/src/workbenchRpcPermissions",
+      "symbols": ["WORKBENCH_CLIENT_GUARDED_RPC_SCOPES"],
+      "reason": "Compose protected Workbench client RPC scopes."
+    },
+    {
+      "source": "packages/contracts/src/index.ts",
+      "target": "packages/contracts/src/workbench",
+      "symbols": ["*"],
+      "reason": "Preserve public Workbench wire schema exports."
+    },
+    {
+      "source": "packages/contracts/src/index.ts",
+      "target": "packages/contracts/src/workbenchJira",
+      "symbols": ["*"],
+      "reason": "Preserve public Workbench wire schema exports."
+    },
+    {
+      "source": "packages/contracts/src/index.ts",
+      "target": "packages/contracts/src/workbenchRpc",
+      "symbols": ["*"],
+      "reason": "Preserve public Workbench wire schema exports."
+    },
+    {
+      "source": "packages/contracts/src/index.ts",
+      "target": "packages/contracts/src/workbenchRpcPermissions",
+      "symbols": ["*"],
+      "reason": "Preserve public Workbench wire schema exports."
+    },
+    {
+      "source": "packages/contracts/src/rpc.ts",
+      "target": "packages/contracts/src/workbenchRpc",
+      "symbols": ["WORKBENCH_WS_METHODS", "WorkbenchRpcGroup"],
+      "reason": "Compose typed Workbench methods and RPC schemas without a dynamic registry."
+    },
+    {
+      "source": "scripts/build-desktop-artifact.ts",
+      "target": "scripts/lib/workbench-desktop-product",
+      "symbols": [
+        "MacWorkbenchSigningConfigurationResolutionError",
+        "MissingMacWorkbenchSigningCredentialsError",
+        "WorkbenchMacBuildReuseError",
+        "isMacWorkbenchSigningConfigurationError",
+        "resolveDesktopBundleBuildEnvironment",
+        "resolveMacWorkbenchSigningConfiguration",
+        "selectWorkbenchDesktopBuildProduct",
+        "validateWorkbenchMacBuildMode"
+      ],
+      "reason": "Select Workbench packaging policy and preserve existing public signing-helper APIs."
+    },
+    {
+      "source": "scripts/dev-runner.ts",
+      "target": "scripts/lib/workbench-jira-dev-env",
+      "symbols": ["prepareWorkbenchJiraDevEnv"],
+      "reason": "Prepare Workbench Jira callback configuration in the development launcher."
+    }
+  ]
+}

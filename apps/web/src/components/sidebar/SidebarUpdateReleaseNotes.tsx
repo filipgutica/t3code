@@ -7,6 +7,7 @@ import {
 } from "../desktopUpdate.logic";
 import { openDesktopUpdateReleaseNotes } from "../desktopUpdate.toast";
 import { Separator } from "../ui/separator";
+import type { DesktopReleaseLinks } from "../../hostIntegrations";
 
 type DesktopUpdateShell = Pick<DesktopBridge, "openExternal">;
 
@@ -30,7 +31,7 @@ function ReleaseLink({
 }) {
   return (
     <a
-      className="mt-2 inline-flex items-center gap-1 rounded-sm text-xs leading-5 text-muted-foreground underline decoration-dotted underline-offset-4 outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      className="mt-2 inline-flex items-center gap-1 rounded-sm text-xs leading-5 text-muted-foreground underline decoration-dotted underline-offset-4 outline-none transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       href={releaseUrl}
       onClick={(event) => {
         event.preventDefault();
@@ -47,10 +48,12 @@ export function SidebarUpdateReleaseNotes({
   shell,
   state,
   tooltip,
+  releaseLinks,
 }: {
   readonly shell: DesktopUpdateShell | undefined;
   readonly state: DesktopUpdateState;
   readonly tooltip: string;
+  readonly releaseLinks?: DesktopReleaseLinks | undefined;
 }) {
   if (state.channel !== "nightly" || state.releaseNotes.length === 0) {
     return <>{tooltip}</>;
@@ -76,7 +79,7 @@ export function SidebarUpdateReleaseNotes({
       </div>
       <div className="min-h-0 max-h-[min(28rem,calc(100vh-6rem))] overflow-y-auto px-1 pt-4 pb-1">
         {state.releaseNotes.map((releaseNote, index) => {
-          const releaseUrl = getDesktopUpdateReleaseUrl(releaseNote.version);
+          const releaseUrl = getDesktopUpdateReleaseUrl(releaseNote.version, releaseLinks);
           const omittedItemCount = Math.max(0, releaseNote.totalItems - releaseNote.items.length);
           const linkLabel =
             omittedItemCount === 0
@@ -109,7 +112,7 @@ export function SidebarUpdateReleaseNotes({
         {state.omittedReleaseCount > 0 ? (
           <div>
             <Separator className="my-3" />
-            <ReleaseLink releaseUrl={getDesktopUpdateReleaseHistoryUrl()} shell={shell}>
+            <ReleaseLink releaseUrl={getDesktopUpdateReleaseHistoryUrl(releaseLinks)} shell={shell}>
               {`${state.omittedReleaseCount} older ${state.omittedReleaseCount === 1 ? "release" : "releases"} on GitHub`}
             </ReleaseLink>
           </div>

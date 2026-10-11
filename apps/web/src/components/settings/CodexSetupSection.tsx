@@ -13,6 +13,7 @@ import type {
   ServerProvider,
 } from "@t3tools/contracts";
 import { codexAuthHandoffUrl } from "@t3tools/shared/codexAuthHandoff";
+import { useHostIntegrations } from "../../hostIntegrations";
 import { providerAuthReturnUrl } from "@t3tools/shared/providerAuthReturnUrl";
 import { isLoopbackHost } from "@t3tools/shared/preview";
 import { CheckIcon, ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
@@ -261,6 +262,7 @@ function ManagedCodexSetup({
       ? primaryEnvironmentId
       : null;
   const returnUrl = new URL(window.location.href);
+  const handoffUrlForProduct = useHostIntegrations().codexAuthHandoffUrl ?? codexAuthHandoffUrl;
   if (returnUrl.pathname === "/welcome") returnUrl.hash = `agents:${environmentId}`;
   if (returnUrl.pathname === "/settings/providers")
     returnUrl.searchParams.set("instanceId", instanceId);
@@ -610,7 +612,7 @@ function ManagedCodexSetup({
 
   const handoffUrl =
     needsManualCallback && url && auth?.flowId && providerAuthReturnUrl(returnUrl.toString())
-      ? codexAuthHandoffUrl(
+      ? handoffUrlForProduct(
           {
             authorizationUrl: url,
             returnUrl: returnUrl.toString(),
@@ -619,7 +621,6 @@ function ManagedCodexSetup({
             flowId: auth.flowId,
           },
           import.meta.env.DEV,
-          import.meta.env.VITE_T3CODE_WORKBENCH_BUILD ? "t3code-workbench" : "t3code",
         )
       : null;
   const waitingControl = (
@@ -1099,7 +1100,7 @@ function CodexSignInDescription({
   return (
     <button
       type="button"
-      className="inline-flex items-center gap-1.5 rounded-sm text-left leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="inline-flex items-center gap-1.5 rounded-sm text-left leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       aria-label="Having trouble signing in?"
       aria-expanded={expanded}
       aria-controls={controls}

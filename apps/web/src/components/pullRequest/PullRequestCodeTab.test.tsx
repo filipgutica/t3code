@@ -1,6 +1,7 @@
 import {
   EnvironmentId,
   ProjectId,
+  SourceControlProviderKind,
   type PullRequestDetailView,
   type PullRequestReviewThread,
 } from "@t3tools/contracts";
@@ -60,7 +61,7 @@ vi.mock("../diffs/StyledDiffCodeView", () => ({ StyledDiffCodeView: () => null }
 vi.mock("../ui/toast", () => ({ toastManager: { add: vi.fn() } }));
 import PullRequestCodeTab from "./PullRequestCodeTab";
 const detail: PullRequestDetailView = {
-  provider: "github",
+  provider: SourceControlProviderKind.make("github"),
   projectId: ProjectId.make("project"),
   projectTitle: "Project",
   workspaceRoot: "/workspace",
@@ -144,6 +145,7 @@ afterEach(() => {
 function render(reviewThreadId: string, diff = true) {
   return (
     <PullRequestCodeTab
+      scrollerRef={() => {}}
       environmentId={EnvironmentId.make("environment")}
       reference={reference}
       detail={{

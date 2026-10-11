@@ -36,7 +36,7 @@ export function WorkbenchThreadBreadcrumb({
       <WorkspaceBreadcrumbItem className="hidden shrink-0 @3xl/header-actions:flex">
         <Link
           aria-label={`Back to Workspace ${project.title} Board`}
-          className="inline-flex h-7 min-w-0 max-w-48 whitespace-nowrap items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-2 text-xs font-medium text-foreground transition-colors hover:bg-primary/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex h-7 min-w-0 max-w-48 whitespace-nowrap items-center gap-1.5 rounded-md border border-primary/20 bg-primary/5 px-2 text-xs font-medium text-foreground transition-colors hover:bg-primary/10 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           search={{ environmentId, workbenchProjectId: project.id }}
           title={`${project.title} Board`}
           to="/workbench"
@@ -59,7 +59,7 @@ export function WorkbenchThreadBreadcrumb({
       <WorkspaceBreadcrumbItem className="min-w-8 max-w-64 shrink">
         <Link
           aria-label={`Back to Ticket ${ticket.title} in Workspace ${project.title}`}
-          className="inline-flex h-7 min-w-0 max-w-full items-center overflow-hidden whitespace-nowrap gap-1.5 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex h-7 min-w-0 max-w-full items-center overflow-hidden whitespace-nowrap gap-1.5 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           search={{ environmentId, workbenchProjectId: project.id, ticketId: ticket.id }}
           title={`${project.title} · ${WORKBENCH_TICKET_STATUS_LABELS[ticket.status]}`}
           to="/workbench"

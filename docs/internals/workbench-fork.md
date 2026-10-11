@@ -16,6 +16,10 @@ Workbench stores references to native `ProjectId` and `ThreadId` values rather t
 
 Before changing an upstream-owned file, check whether a Workbench adapter or extension point can own the behavior. Keep any remaining integration small and preserve behavior outside Workbench. [Ticket lifecycle](workbench-ticket-lifecycle.md), [Jira mirrors](workbench-jira-mirror.md), and [Jira OAuth custody](workbench-jira-oauth.md) describe the fork-owned behavior that crosses native or external boundaries.
 
+Native consumers use typed host capabilities with native defaults. Workbench installs its policy at server startup, the web root, and desktop product selection. This is static composition: wire contracts and route declarations retain explicit integration points. Keep Workbench decisions in the installed implementation rather than copying them into native callers.
+
+Server policy installation must reach the layer that constructs native runtime policy; an inner default can otherwise shadow the overlay. Web slots have stable identities, separate from reactive Thread visibility and notification policy. Desktop product selection is synchronous because Electron identity and profile paths are needed during module initialization.
+
 ## Package checks
 
 Run the focused checks from the repository root when their scope applies:
@@ -23,10 +27,13 @@ Run the focused checks from the repository root when their scope applies:
 ```sh
 vp run --filter @t3tools/workbench typecheck
 vp run --filter @t3tools/workbench test
+node scripts/workbench-isolation.ts
 vp run workbench:quality
 ```
 
 The typecheck includes the [package boundary check](../../packages/workbench/check-boundary.mjs). The [quality workflow](../../.github/workflows/workbench-quality.yml) runs the package checks and production quality gates. Tests for native migration integration stay in the server; independent package tests use package-owned fixtures. Read the current scripts and workflow for their exact gates rather than treating this page as a second configuration source.
+
+The [host import check](../../scripts/workbench-isolation.ts) scans tracked and untracked runtime sources using compiler-resolved imports. Its [reviewed integration policy](../../scripts/workbench-isolation-policy.json) permits exact source, target and symbol combinations with a purpose. New dependencies and obsolete allowances fail; wildcard access to the contract barrel also requires review. Run with `--report` to inspect the current footprint, or `--report --ref <commit>` for a committed baseline. Import checks do not detect copied business rules or prove behavior, so retain integration tests and isolation review.
 
 ## CI ownership
 

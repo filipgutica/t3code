@@ -39,8 +39,7 @@ import { MainAppLocationTracker } from "./sidebar/mainAppLocation";
 import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
 import { useProjects } from "../state/entities";
 import { resolveThreadRouteRef } from "../threadRoutes";
-import { WorkbenchPullRequestPreviewProvider } from "../workbench/WorkbenchPullRequestPreview";
-import { WorkbenchSidebarSlot } from "../workbench/WorkbenchSidebarSlot";
+import { HostSidebarContent } from "../hostIntegrations";
 import {
   clampThreadSidebarWidth,
   resolveInitialThreadSidebarWidth,
@@ -226,14 +225,6 @@ function ProjectProjectionRetention() {
 }
 
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
-  return (
-    <WorkbenchPullRequestPreviewProvider>
-      <AppSidebarLayoutContent>{children}</AppSidebarLayoutContent>
-    </WorkbenchPullRequestPreviewProvider>
-  );
-}
-
-function AppSidebarLayoutContent({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const legacySidebarEnabled = useLegacySidebarEnabled();
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
@@ -346,9 +337,9 @@ function AppSidebarLayoutContent({ children }: { children: ReactNode }) {
               <SettingsSidebarNav pathname={pathname} />
             </>
           ) : (
-            <WorkbenchSidebarSlot pathname={pathname} isElectron={isElectron}>
+            <HostSidebarContent pathname={pathname} isElectron={isElectron}>
               {legacySidebarEnabled ? <LegacyThreadSidebar /> : <ThreadSidebar />}
-            </WorkbenchSidebarSlot>
+            </HostSidebarContent>
           )}
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>

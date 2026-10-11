@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - Tests exercise bootstrap files with a mocked 1Password process.
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
@@ -143,7 +143,7 @@ describe("prepareWorkbenchJiraDevEnv", () => {
     "bootstraps %s without enabling unrelated public defaults",
     (mode) =>
       Effect.gen(function* () {
-        const platform = yield* HostProcessPlatform;
+        const platform = yield* HostProcess.Platform;
         const fixture = makeFixture();
         const result = prepareWorkbenchJiraDevEnv({ ...fixture, mode });
         const localPath = NodePath.join(fixture.repoRoot, ".env.local");

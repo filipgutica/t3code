@@ -4,7 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
-import { WorkbenchThreadPreparationGate } from "../workbench/WorkbenchThreadPreparationGate";
+import { HostThreadRouteContent } from "../hostIntegrations";
 import { resolveDraftPromotionNavigationTarget, threadHasStarted } from "./ChatView.logic";
 import { waitForDraftHeroTransition } from "./chat/draftHeroTransition";
 import { SidebarInset } from "./ui/sidebar";
@@ -20,6 +20,7 @@ import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
 import {
   buildThreadRouteParams,
+  isThreadRouteSnapshotAuthoritative,
   resolveThreadRouteRenderState,
   type ThreadRouteTarget,
 } from "../threadRoutes";
@@ -73,7 +74,7 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
   );
   const serverThreadShell = serverThread;
   const environmentThreadRefs = useEnvironmentThreadRefs(serverThreadRef?.environmentId ?? null);
-  const bootstrapComplete = shell.data?.status === "live" && shell.data.snapshot._tag === "Some";
+  const bootstrapComplete = isThreadRouteSnapshotAuthoritative(shell.data?.status);
   const draftThread = useComposerDraftStore((store) =>
     serverThreadRef ? store.getDraftThreadByRef(serverThreadRef) : null,
   );
@@ -192,11 +193,9 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
 
   return (
     <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">
-      <WorkbenchThreadPreparationGate
-        threadRef={target.kind === "server" ? target.threadRef : null}
-      >
+      <HostThreadRouteContent threadRef={target.kind === "server" ? target.threadRef : null}>
         {view}
-      </WorkbenchThreadPreparationGate>
+      </HostThreadRouteContent>
     </SidebarInset>
   );
 }

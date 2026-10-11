@@ -25,11 +25,6 @@ vi.mock("../state/shell", () => ({ environmentShell: { stateValueAtom: (id: stri
 vi.mock("../state/environments", () => ({
   useEnvironmentIds: () => state.environmentIds,
 }));
-vi.mock("../workbench/useWorkbenchTicketPreparations", () => ({
-  useWorkbenchTicketPreparations: () => new Map(),
-  useWorkbenchTicketPreparationRefresh: () => {},
-  isUnsavedTicketPreparation: () => false,
-}));
 vi.mock("../hooks/useSettings", () => ({
   useClientSettings: (
     select: (settings: { notificationMode: string; inAppNotificationsEnabled: boolean }) => unknown,
