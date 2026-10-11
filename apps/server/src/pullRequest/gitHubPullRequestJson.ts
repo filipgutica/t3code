@@ -1576,7 +1576,7 @@ function toCheckStatus(raw: Schema.Schema.Type<typeof RawCheckSchema>): PullRequ
 /** What GitHub writes where a run has not reached that moment yet, which is not a time. */
 const UNSET_TIMESTAMP = "0001-01-01T00:00:00Z";
 
-/** Sorts after every real timestamp, so the deduper keeps a run that has not finished. */
+/** Sorts after every real timestamp when unfinished work would otherwise look successful. */
 const STILL_RUNNING = "9999-12-31T23:59:59Z";
 
 function realTimestamp(value: string | null | undefined): string | null {
@@ -1591,9 +1591,7 @@ function isNamelessCheck(raw: Schema.Schema.Type<typeof RawCheckSchema>): boolea
 
 /**
  * The rollup as the deduper reads it: a check, the workflow that owns it, and when the run last
- * had something to say. A run that has not finished outranks any finished run of the same check:
- * a workflow triggered by both `push` and `pull_request` runs the check twice on one commit, and
- * the run that finished first must not hide the one still going.
+ * had something to say. Unset timestamps do not describe when a run happened.
  */
 function toCheckEntries(
   raw: ReadonlyArray<Schema.Schema.Type<typeof RawCheckSchema>> | null | undefined,
@@ -1616,10 +1614,7 @@ function toCheckEntries(
           ...(typeof check.isRequired === "boolean" ? { required: check.isRequired } : {}),
         },
         workflowName: trimmed(check.workflowName),
-        at:
-          status === "pending"
-            ? STILL_RUNNING
-            : (realTimestamp(check.completedAt) ?? realTimestamp(check.startedAt)),
+        at: realTimestamp(check.completedAt) ?? realTimestamp(check.startedAt),
       },
     ];
   });
@@ -1655,7 +1650,20 @@ function rollupChecksState(
 function toChecks(
   raw: ReadonlyArray<Schema.Schema.Type<typeof RawCheckSchema>> | null | undefined,
 ): ReadonlyArray<PullRequestCheck> {
-  return dedupeChecks(toCheckEntries(raw));
+  const entries = toCheckEntries(raw);
+  const newest = dedupeChecks(entries);
+  const unfinished = dedupeChecks(
+    entries.map((entry) =>
+      entry.check.status === "pending" ? { ...entry, at: STILL_RUNNING } : entry,
+    ),
+  );
+  // Both passes keep each workflow/name at its first position. Unfinished overlapping runs
+  // must not hide a current failure or approval requirement; a newer rerun still replaces it.
+  return newest.map((check, index) =>
+    check.status === "failure" || check.status === "cancelled" || check.status === "action-required"
+      ? check
+      : unfinished[index]!,
+  );
 }
 
 /** The states that are a verdict in themselves, rather than a wrapper around line comments. */
