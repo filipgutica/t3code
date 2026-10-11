@@ -435,7 +435,7 @@ describe("pull request detail decoding", () => {
     expect(detail.checksState).toBe("pending");
   });
 
-  it("keeps a check pending while another run of it on the same commit is still going", () => {
+  describe("overlapping check runs", () => {
     // A workflow on both `push` and `pull_request` runs the same check twice on one commit. The
     // `pull_request` run finished after the `push` run started, and the `push` run is still going.
     const finished = {
@@ -464,76 +464,55 @@ describe("pull request detail decoding", () => {
       return [detail.checks.map((check) => [check.name, check.status]), detail.checksState];
     };
 
-    // Both listing orders, so the run still going wins on its own rather than by coming last.
-    for (const rollup of [
-      [finished, running],
-      [running, finished],
-      [finished, queued],
-      [queued, finished],
-    ]) {
-      expect(checksOf(rollup)).toEqual([[["check", "pending"]], "pending"]);
-    }
-  });
-
-  it("keeps a failed overlap visible until a newer rerun replaces it", () => {
-    const raw = JSON.parse(detailJson) as Record<string, unknown>;
-    const finished = {
-      __typename: "CheckRun",
-      name: "check",
-      workflowName: "Checks",
-      status: "COMPLETED",
-      conclusion: "FAILURE",
-      startedAt: "2026-10-08T04:06:10Z",
-      completedAt: "2026-10-08T04:18:58Z",
-    };
-    const running = {
-      ...finished,
-      status: "IN_PROGRESS",
-      conclusion: "",
-      startedAt: "2026-10-08T04:06:13Z",
-      completedAt: "0001-01-01T00:00:00Z",
-    };
-    const checksOf = (statusCheckRollup: ReadonlyArray<object>) => {
-      const detail = expectSuccess(
-        decodePullRequestDetailJson(JSON.stringify({ ...raw, statusCheckRollup })),
-      );
-      return [detail.checks.map((check) => [check.name, check.status]), detail.checksState];
-    };
-
-    for (const [conclusion, status, state] of [
-      ["FAILURE", "failure", "failing"],
-      ["CANCELLED", "cancelled", "failing"],
-      ["ACTION_REQUIRED", "action-required", "pending"],
-    ]) {
-      const verdict = { ...finished, conclusion };
+    it("keeps a check pending while another run of it on the same commit is still going", () => {
+      // Both listing orders, so the run still going wins on its own rather than by coming last.
       for (const rollup of [
-        [verdict, running],
-        [running, verdict],
+        [finished, running],
+        [running, finished],
+        [finished, queued],
+        [queued, finished],
       ]) {
-        expect(checksOf(rollup)).toEqual([[["check", status]], state]);
+        expect(checksOf(rollup)).toEqual([[["check", "pending"]], "pending"]);
       }
-    }
+    });
 
-    // A rerun started after the failure replaces it, and its eventual success clears it.
-    const rerun = { ...running, startedAt: "2026-10-08T04:20:00Z" };
-    const passed = {
-      ...rerun,
-      status: "COMPLETED",
-      conclusion: "SUCCESS",
-      completedAt: "2026-10-08T04:25:00Z",
-    };
-    for (const rollup of [
-      [finished, rerun],
-      [rerun, finished],
-    ]) {
-      expect(checksOf(rollup)).toEqual([[["check", "pending"]], "pending"]);
-    }
-    for (const rollup of [
-      [finished, passed],
-      [passed, finished],
-    ]) {
-      expect(checksOf(rollup)).toEqual([[["check", "success"]], "passing"]);
-    }
+    it("keeps a failed overlap visible until a newer rerun replaces it", () => {
+      for (const [conclusion, status, state] of [
+        ["FAILURE", "failure", "failing"],
+        ["CANCELLED", "cancelled", "failing"],
+        ["ACTION_REQUIRED", "action-required", "pending"],
+      ]) {
+        const verdict = { ...finished, conclusion };
+        for (const rollup of [
+          [verdict, running],
+          [running, verdict],
+        ]) {
+          expect(checksOf(rollup)).toEqual([[["check", status]], state]);
+        }
+      }
+
+      const failed = { ...finished, conclusion: "FAILURE" };
+      // A rerun started after the failure replaces it, and its eventual success clears it.
+      const rerun = { ...running, startedAt: "2026-10-08T04:20:00Z" };
+      const passed = {
+        ...rerun,
+        status: "COMPLETED",
+        conclusion: "SUCCESS",
+        completedAt: "2026-10-08T04:25:00Z",
+      };
+      for (const rollup of [
+        [failed, rerun],
+        [rerun, failed],
+      ]) {
+        expect(checksOf(rollup)).toEqual([[["check", "pending"]], "pending"]);
+      }
+      for (const rollup of [
+        [failed, passed],
+        [passed, failed],
+      ]) {
+        expect(checksOf(rollup)).toEqual([[["check", "success"]], "passing"]);
+      }
+    });
   });
 
   it("merges reviews with comments in time order and keeps a bodyless approval", () => {
