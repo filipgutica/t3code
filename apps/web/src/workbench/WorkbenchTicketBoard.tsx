@@ -465,7 +465,7 @@ function renderWorkbenchBoardSwimlane({
                     }))
                 }
                 className={cn(
-                  "min-w-0 flex-col rounded-xl border border-foreground/6 bg-foreground/1 md:flex",
+                  "min-w-0 flex-col rounded-xl md:flex",
                   column.id === visibleColumnId ? "flex" : "hidden",
                 )}
               >
@@ -1153,7 +1153,7 @@ function WorkbenchBoardRepositoryFilter({
 }: Pick<ReturnType<typeof useWorkbenchBoardData>, "repositoryId" | "setRepositoryId"> &
   Pick<WorkbenchTicketBoardProps, "repositoryProjectIds" | "repositoriesById">) {
   return (
-    <div className="w-48 max-w-full">
+    <div className="w-full min-w-0 @min-[42rem]:w-48">
       <Select
         value={repositoryId ?? "all-repositories"}
         onValueChange={(value) => {
@@ -1307,7 +1307,7 @@ function renderWorkbenchBoardSearch({
 }: Pick<WorkbenchTicketBoardProps, "jiraConnected"> &
   Pick<ReturnType<typeof useWorkbenchBoardData>, "search">) {
   return (
-    <div className="relative min-w-40 max-w-full flex-1 sm:max-w-xs">
+    <div className="relative min-w-0 flex-1">
       <SearchIcon
         aria-hidden
         className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
@@ -1379,14 +1379,18 @@ function renderWorkbenchBoardControls({
   return (
     <>
       {" "}
-      <div className="flex shrink-0 flex-col gap-2 border-b border-border/60 px-3 py-2 sm:px-4">
+      <div className="@container flex shrink-0 flex-col gap-2 border-b border-border/60 px-3 py-2 sm:px-4">
+        <div className="min-w-0 max-w-full overflow-x-auto">
+          {renderWorkbenchAttentionModeControl(attentionMode, setAttentionMode)}
+        </div>
         <div
           aria-label="Board filters and grouping"
-          className="flex flex-wrap items-center gap-2"
+          className="grid min-w-0 grid-cols-1 items-center gap-2 @min-[22rem]:grid-cols-[minmax(0,1fr)_auto] @min-[42rem]:grid-cols-[minmax(0,1fr)_auto_auto]"
           role="group"
         >
-          {renderWorkbenchAttentionModeControl(attentionMode, setAttentionMode)}
-          {renderWorkbenchBoardSearch({ jiraConnected, search })}
+          <div className="min-w-0 @min-[22rem]:col-span-2 @min-[42rem]:col-span-1">
+            {renderWorkbenchBoardSearch({ jiraConnected, search })}
+          </div>
           <WorkbenchBoardRepositoryFilter
             repositoryId={repositoryId}
             setRepositoryId={setRepositoryId}

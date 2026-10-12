@@ -21,7 +21,7 @@ export function WorkbenchDraftTickets({
   if (drafts.length === 0) return null;
   return (
     <Collapsible defaultOpen className="mb-4 min-w-0">
-      <CollapsibleTrigger className="group flex w-full items-center gap-2 rounded-md py-2 text-left text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">
+      <CollapsibleTrigger className="group flex w-full cursor-pointer items-center gap-2 rounded-md py-2 text-left text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">
         <ChevronRightIcon
           aria-hidden
           className="size-3.5 shrink-0 group-data-panel-open:rotate-90"
@@ -42,7 +42,7 @@ export function WorkbenchDraftTickets({
                   type="button"
                   aria-label={`Open draft ${title}`}
                   onClick={() => onSelect(draft.projectId, draft.id)}
-                  className="flex w-full min-w-0 items-center gap-3 rounded-lg border border-border bg-card px-3 py-3 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                  className="flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border bg-card px-3 py-3 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
                 >
                   <FilePenLineIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1">
