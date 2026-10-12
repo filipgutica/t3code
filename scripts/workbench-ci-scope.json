@@ -174,6 +174,7 @@
       "paths": [
         "apps/web/src/components/AppSidebarLayout.tsx",
         "apps/web/src/components/ChatMarkdown.tsx",
+        "packages/shared/src/markdownLinks.ts",
         "apps/web/src/components/ChatView.logic.ts",
         "apps/web/src/components/ChatView.tsx",
         "apps/web/src/components/CommandPalette.tsx",
@@ -223,6 +224,7 @@
       "tests": [
         "apps/web/src/components/ChatMarkdown.pull-request-environment.test.tsx",
         "apps/web/src/components/ChatMarkdown.test.tsx",
+        "packages/shared/src/markdownLinks.test.ts",
         "apps/web/src/components/ChatView.logic.test.ts",
         "apps/web/src/components/CommandPalette.logic.test.ts",
         "apps/web/src/components/Sidebar.logic.test.ts",
