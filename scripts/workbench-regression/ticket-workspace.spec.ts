@@ -35,9 +35,14 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   const original = workspace.repositories[0]!;
   const marker = NodePath.join(original.worktreePath, "retained-work.txt");
   await NodeFSP.writeFile(marker, "Keep this local work.\n");
+  const additionalRepositories = page.getByRole("combobox", { name: "Additional repositories" });
+  const orbitApi = page.getByRole("option", { name: "Orbit API", exact: true });
+  const orbitWeb = page.getByRole("option", { name: "Orbit Web", exact: true });
   await page.getByRole("button", { name: "Edit repositories", exact: true }).click();
-  await page.getByRole("checkbox", { name: "Orbit API", exact: true }).click();
-  await expect(page.getByRole("checkbox", { name: "Orbit API", exact: true })).toBeChecked();
+  await additionalRepositories.click();
+  await orbitApi.click();
+  await expect(orbitApi).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Escape");
   const staged = await snapshot(demo);
   expect(staged.ticketWorkspaces).toEqual(prepared.ticketWorkspaces);
   expect(staged.tickets.find((ticket) => ticket.id === "orbit-007")).toEqual(
@@ -45,8 +50,10 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   );
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("button", { name: "Edit repositories", exact: true }).click();
-  await expect(page.getByRole("checkbox", { name: "Orbit API", exact: true })).not.toBeChecked();
-  await page.getByRole("checkbox", { name: "Orbit API", exact: true }).click();
+  await additionalRepositories.click();
+  await expect(orbitApi).toHaveAttribute("aria-selected", "false");
+  await orbitApi.click();
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByRole("button", { name: "Choose editor", exact: true })).toHaveCount(2);
   const extended = (await snapshot(demo)).ticketWorkspaces.find(
@@ -60,9 +67,11 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   await page.getByRole("button", { name: "Edit repositories", exact: true }).click();
   await page.getByRole("combobox", { name: "Primary repository" }).click();
   await page.getByRole("option", { name: "Orbit API", exact: true }).click();
-  await expect(page.getByRole("checkbox", { name: "Orbit Web", exact: true })).toBeChecked();
-  await page.getByRole("checkbox", { name: "Orbit Web", exact: true }).click();
-  await expect(page.getByRole("checkbox", { name: "Orbit Web", exact: true })).not.toBeChecked();
+  await additionalRepositories.click();
+  await expect(orbitWeb).toHaveAttribute("aria-selected", "true");
+  await orbitWeb.click();
+  await expect(orbitWeb).toHaveAttribute("aria-selected", "false");
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   const ticketRepositories = page.locator("#workbench-ticket-repositories");
   const retainedWorktrees = ticketRepositories.getByText("Retained worktrees (1)", {
@@ -75,8 +84,10 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   ).toBeVisible();
   expect(await NodeFSP.readFile(marker, "utf8")).toBe("Keep this local work.\n");
   await page.getByRole("button", { name: "Edit repositories", exact: true }).click();
-  await page.getByRole("checkbox", { name: "Orbit Web", exact: true }).click();
-  await expect(page.getByRole("checkbox", { name: "Orbit Web", exact: true })).toBeChecked();
+  await additionalRepositories.click();
+  await orbitWeb.click();
+  await expect(orbitWeb).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(retainedWorktrees).not.toBeVisible();
   await expect(page.getByRole("button", { name: "Choose editor", exact: true })).toHaveCount(2);
