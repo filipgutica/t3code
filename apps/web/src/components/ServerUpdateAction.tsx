@@ -373,7 +373,10 @@ export function OutdatedServerUpdateAction({
   readonly label?: string;
 }) {
   const { allowNpmServerUpdates = true, outdatedServerDescriptor } = useHostIntegrations();
-  const descriptorQuery = useEnvironmentQuery(outdatedServerDescriptor?.(environmentId) ?? null);
+  const [includeSsh, setIncludeSsh] = useState(false);
+  const descriptorQuery = useEnvironmentQuery(
+    outdatedServerDescriptor?.(environmentId, includeSsh) ?? null,
+  );
   const capabilities = outdatedServerDescriptor
     ? descriptorQuery.isSuccess && !descriptorQuery.isPending
       ? descriptorQuery.data?.capabilities
@@ -413,13 +416,21 @@ export function OutdatedServerUpdateAction({
     }
   };
   if (!allowed) {
+    const checkAvailability = () => {
+      if (includeSsh) descriptorQuery.refresh();
+      else setIncludeSsh(true);
+    };
     return descriptorQuery.error ? (
       <div role="alert" className="text-xs text-muted-foreground">
         Could not check desktop update availability.
-        <Button size="xs" variant="outline" onClick={descriptorQuery.refresh}>
+        <Button size="xs" variant="outline" onClick={checkAvailability}>
           Retry update check
         </Button>
       </div>
+    ) : outdatedServerDescriptor && descriptorQuery.isSuccess && descriptorQuery.data === null ? (
+      <Button size="xs" variant="outline" onClick={checkAvailability}>
+        Check update availability
+      </Button>
     ) : null;
   }
   return (

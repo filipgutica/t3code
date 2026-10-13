@@ -69,8 +69,10 @@ export interface HostIntegrations {
   readonly desktopReleaseLinks?: DesktopReleaseLinks;
   /** Whether update actions can target npm-managed servers. Native hosts default to true. */
   readonly allowNpmServerUpdates?: boolean;
+  /** includeSsh requires an explicit check because opening a tunnel can start a remote server. */
   readonly outdatedServerDescriptor?: (
     environmentId: EnvironmentId,
+    includeSsh?: boolean,
   ) => Atom.Atom<AsyncResult.AsyncResult<ExecutionEnvironmentDescriptor | null, unknown>>;
   readonly codexAuthHandoffUrl?: (input: CodexAuthHandoff, development: boolean) => string;
 }
