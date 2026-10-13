@@ -46,6 +46,13 @@ import {
 } from "../components/ui/empty";
 import { Skeleton } from "../components/ui/skeleton";
 import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
+import {
   Menu,
   MenuGroup,
   MenuGroupLabel,
@@ -55,7 +62,6 @@ import {
   MenuTrigger,
 } from "../components/ui/menu";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
-import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
 import { isElectron } from "../env";
 
 import {
@@ -489,7 +495,7 @@ function WorkbenchBoardToolbar(props: Pick<WorkbenchPageViewProps, "boardData">)
   } = boardData;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm">
+    <div className="flex min-w-0 max-w-44 flex-wrap items-center gap-2 text-sm">
       {showJiraImportedOnly ? (
         <Button
           aria-label="Show all Workbench tickets"
@@ -512,23 +518,25 @@ function WorkbenchBoardToolbar(props: Pick<WorkbenchPageViewProps, "boardData">)
         </Badge>
       ) : null}
       {boardEpics.length > 0 ? (
-        <div className="flex items-center gap-2">
-          <span className="hidden text-xs text-muted-foreground sm:inline">Group</span>
-          <ToggleGroup
-            aria-label="Group Board tickets"
-            size="sm"
-            value={[boardGroupModeForView]}
-            variant="segmented"
+        <div className="w-44 max-w-full">
+          <Select
+            value={boardGroupModeForView}
             onValueChange={(value) => {
-              const nextMode = value[0];
-              if (nextMode === "none" || nextMode === "epic") {
-                setBoardGroupMode(nextMode);
+              if (value === "none" || value === "epic") {
+                setBoardGroupMode(value);
               }
             }}
           >
-            <Toggle value="none">None</Toggle>
-            <Toggle value="epic">Epic</Toggle>
-          </ToggleGroup>
+            <SelectTrigger aria-label="Group Board tickets" size="sm">
+              <SelectValue>
+                Group by: {boardGroupModeForView === "epic" ? "Epic" : "Status"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              <SelectItem value="none">Status</SelectItem>
+              <SelectItem value="epic">Epic</SelectItem>
+            </SelectPopup>
+          </Select>
         </div>
       ) : null}
     </div>

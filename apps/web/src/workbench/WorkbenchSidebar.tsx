@@ -40,7 +40,6 @@ import {
 } from "./workbenchSidebarAttention.logic";
 import "./WorkbenchSidebarRows.css";
 import { SidebarChromeFooter } from "../components/sidebar/SidebarChrome";
-import { Badge } from "../components/ui/badge";
 import {
   getUnsavedConversationDrafts,
   getConversationDraftTitle,
@@ -831,28 +830,30 @@ function WorkbenchSidebarWorkspaceRow({
         panelId={workspacePanelId}
         title={workspace.title}
       >
-        <WorkbenchSidebarDraftRows
-          drafts={drafts}
-          workspace={workspace}
-          selectedTicketId={selectedTicketId}
-          onSelectTicket={onSelectTicket}
-        />
-        <WorkbenchSidebarWorkspaceContents
-          activeTicketGroups={activeTicketGroups}
-          archivedTickets={visibleArchivedTickets}
-          contextThreadId={contextThreadId}
-          doneTicketGroups={doneTicketGroups}
-          expansion={expansion}
-          isSearching={isSearching}
-          jiraOwnershipKnown={jiraOwnershipKnown}
-          onOpenThread={onOpenThread}
-          onSelectTicket={onSelectTicket}
-          onToggle={onToggle}
-          selectedEpicId={selectedEpicId}
-          selectedTicketId={selectedTicketId}
-          ticketDetailsById={ticketDetailsById}
-          workspaceId={workspace.id}
-        />
+        <div className="ms-3 border-sidebar-border border-l ps-2">
+          <WorkbenchSidebarDraftRows
+            drafts={drafts}
+            workspace={workspace}
+            selectedTicketId={selectedTicketId}
+            onSelectTicket={onSelectTicket}
+          />
+          <WorkbenchSidebarWorkspaceContents
+            activeTicketGroups={activeTicketGroups}
+            archivedTickets={visibleArchivedTickets}
+            contextThreadId={contextThreadId}
+            doneTicketGroups={doneTicketGroups}
+            expansion={expansion}
+            isSearching={isSearching}
+            jiraOwnershipKnown={jiraOwnershipKnown}
+            onOpenThread={onOpenThread}
+            onSelectTicket={onSelectTicket}
+            onToggle={onToggle}
+            selectedEpicId={selectedEpicId}
+            selectedTicketId={selectedTicketId}
+            ticketDetailsById={ticketDetailsById}
+            workspaceId={workspace.id}
+          />
+        </div>
       </WorkbenchSidebarWorkspacePanel>
     </SidebarMenuItem>
   );
@@ -867,22 +868,31 @@ function WorkbenchSidebarDraftRows({
   Pick<WorkbenchSidebarNavigationFields, "selectedTicketId" | "onSelectTicket">) {
   if (drafts.length === 0) return null;
   return (
-    <SidebarMenu aria-label={`${workspace.title} drafts`}>
-      {drafts.map((draft) => (
-        <SidebarMenuItem key={draft.id}>
-          <SidebarMenuButton
-            aria-label={`Open draft ${draft.title}`}
-            aria-current={draft.id === selectedTicketId ? "page" : undefined}
-            isActive={draft.id === selectedTicketId}
-            onClick={() => onSelectTicket(workspace.id, draft.id)}
-          >
-            <FilePenLineIcon />
-            <WorkbenchSidebarItemTitle>{draft.title}</WorkbenchSidebarItemTitle>
-            <Badge variant="outline">Draft</Badge>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      ))}
-    </SidebarMenu>
+    <section aria-label={`${workspace.title} drafts`} className="mb-2">
+      <div className="flex items-center gap-2 px-2 py-2 text-xs text-sidebar-muted-foreground">
+        <span>Drafts</span>
+        <span className="tabular-nums">{drafts.length}</span>
+      </div>
+      <SidebarMenu>
+        {drafts.map((draft) => (
+          <SidebarMenuItem key={draft.id}>
+            <div className="flex min-w-0 items-center gap-1">
+              <span aria-hidden className="size-7 shrink-0" />
+              <SidebarMenuButton
+                aria-label={`Open draft ${draft.title}`}
+                aria-current={draft.id === selectedTicketId ? "page" : undefined}
+                isActive={draft.id === selectedTicketId}
+                onClick={() => onSelectTicket(workspace.id, draft.id)}
+                tooltip={{ children: draft.title, hidden: false }}
+              >
+                <FilePenLineIcon />
+                <WorkbenchSidebarItemTitle>{draft.title}</WorkbenchSidebarItemTitle>
+              </SidebarMenuButton>
+            </div>
+          </SidebarMenuItem>
+        ))}
+      </SidebarMenu>
+    </section>
   );
 }
 
@@ -951,7 +961,7 @@ function WorkbenchSidebarWorkspaceContents({
     onToggle({ type: "toggleTicket", ticketId, workspaceId, done });
 
   return (
-    <div className="ms-3 border-sidebar-border border-l ps-2">
+    <>
       {activeTicketGroups.length > 0 ? (
         <WorkbenchSidebarTicketGroups
           ticketDetailsById={ticketDetailsById}
@@ -1003,7 +1013,7 @@ function WorkbenchSidebarWorkspaceContents({
           jiraOwnershipKnown={jiraOwnershipKnown}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
