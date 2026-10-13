@@ -320,12 +320,12 @@ function UnsupportedPlanning({
         <EmptyTitle>
           {hostOutdated
             ? "Update this environment to plan tickets"
-            : "Ticket planning needs Codex or Claude"}
+            : "Ticket planning needs a supported provider"}
         </EmptyTitle>
         <EmptyDescription>
           {hostOutdated
             ? "This environment does not support planning conversations yet. Enter the ticket yourself, or update the environment."
-            : "Planning is read-only, and only Codex and Claude can enforce that. Set one up in provider settings, or enter the ticket yourself."}
+            : "Workbench currently supports read-only ticket planning with Codex and Claude. Set one up in provider settings, or create the ticket manually."}
         </EmptyDescription>
       </EmptyHeader>
       <EmptyContent>

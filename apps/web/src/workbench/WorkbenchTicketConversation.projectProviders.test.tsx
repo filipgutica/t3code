@@ -131,7 +131,7 @@ it("blocks planning when the workspace anchor disables the provider despite nati
   expect(observed.beginInput).toHaveBeenCalledWith(
     expect.objectContaining({ modelSelection: null }),
   );
-  expect(JSON.stringify(renderer.toJSON())).toContain("Ticket planning needs Codex or Claude");
+  expect(JSON.stringify(renderer.toJSON())).toContain("Ticket planning needs a supported provider");
 });
 it("supplies the anchor's enabled provider and default model to planning despite reversed native project order", () => {
   observed.settings = {
