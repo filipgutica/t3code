@@ -235,6 +235,31 @@ describe("board draft discard", () => {
     expect(actions.error).toContain("read-only or your permission changed");
   });
 
+  it("stops a confirmed discard when its target workspace becomes read-only", async () => {
+    mount();
+    act(() => actions.confirm([first, second]));
+    act(() =>
+      renderer.update(
+        <Harness
+          environmentId={environmentId}
+          drafts={[first, second]}
+          readOnlyDraftIds={new Set([second.id])}
+        />,
+      ),
+    );
+    await act(async () => {
+      await actions.discard();
+    });
+    expect(mocks.discard).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: { id: first.id, expectedRevision: 0 },
+    });
+    expect(actions.selectedIds).toEqual(new Set([second.id]));
+    expect(actions.error).toContain("read-only or your permission changed");
+    act(() => actions.confirm([second]));
+    expect(actions.confirmation?.open).toBe(false);
+  });
+
   it("keeps confirmed records and revisions bound to their owning environment", async () => {
     mount();
     act(() => actions.confirm([first]));

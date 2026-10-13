@@ -18,10 +18,12 @@ const canDiscardBoardDraft = (draft: WorkbenchConversationDraft) =>
 export function useWorkbenchDraftActions({
   environmentId,
   readOnly,
+  readOnlyDraftIds,
   drafts,
 }: {
   readonly environmentId: EnvironmentId;
   readonly readOnly?: boolean;
+  readonly readOnlyDraftIds?: ReadonlySet<WorkbenchTicketId>;
   readonly drafts: ReadonlyArray<WorkbenchConversationDraft>;
 }) {
   const permission = useAtomValue(
@@ -31,10 +33,10 @@ export function useWorkbenchDraftActions({
     reportFailure: false,
   });
   const canMutate = !readOnly && permission;
-  const eligibility = useRef(canMutate);
+  const eligibility = useRef({ canMutate, readOnlyDraftIds });
   useLayoutEffect(() => {
-    eligibility.current = canMutate;
-  }, [canMutate]);
+    eligibility.current = { canMutate, readOnlyDraftIds };
+  }, [canMutate, readOnlyDraftIds]);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<WorkbenchTicketId>>(new Set());
   const [confirmation, setConfirmation] = useState<{
     environmentId: EnvironmentId;
@@ -52,11 +54,13 @@ export function useWorkbenchDraftActions({
   const running = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [discardSucceeded, setDiscardSucceeded] = useState(false);
-  const eligibleDrafts = drafts.filter(canDiscardBoardDraft);
+  const canDiscard = (draft: WorkbenchConversationDraft) =>
+    canDiscardBoardDraft(draft) && !readOnlyDraftIds?.has(draft.id);
+  const eligibleDrafts = drafts.filter(canDiscard);
   // Hidden drafts are never included by Select all or by the confirmation.
   const selectedDrafts = eligibleDrafts.filter((draft) => selectedIds.has(draft.id));
   const select = (draft: WorkbenchConversationDraft, checked: boolean) => {
-    if (!canMutate || busy || !canDiscardBoardDraft(draft)) return;
+    if (!canMutate || busy || !canDiscard(draft)) return;
     setSelectedIds((previous) => {
       const next = new Set(previous);
       if (checked) next.add(draft.id);
@@ -83,7 +87,7 @@ export function useWorkbenchDraftActions({
     let attempted = false;
     try {
       for (const draft of confirmation.drafts) {
-        if (!eligibility.current) {
+        if (!eligibility.current.canMutate || eligibility.current.readOnlyDraftIds?.has(draft.id)) {
           failed.push(draft);
           messages.push("This workspace is read-only or your permission changed.");
           continue;
@@ -132,7 +136,7 @@ export function useWorkbenchDraftActions({
     selectedIds,
     selectedDrafts,
     confirmation,
-    canDiscard: canDiscardBoardDraft,
+    canDiscard,
     select,
     confirm,
     discard,
