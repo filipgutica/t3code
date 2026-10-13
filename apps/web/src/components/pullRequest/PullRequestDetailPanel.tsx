@@ -26,6 +26,7 @@ import {
   ArrowLeftIcon,
   ArrowUpRightIcon,
   BookOpenIcon,
+  CheckIcon,
   CircleDotIcon,
   CopyIcon,
   ChevronDownIcon,
@@ -2079,7 +2080,11 @@ export function PullRequestDetailPanel({
                                 : pendingAutoMergeLabel
                           }
                         >
-                          <PullRequestGlyph.merged aria-hidden className="size-3.5" />
+                          {inlineConfirm.isArmed("enable-auto-merge") ? (
+                            <CheckIcon aria-hidden className="size-3.5" />
+                          ) : (
+                            <PullRequestGlyph.merged aria-hidden className="size-3.5" />
+                          )}
                           <span className="inline-grid @max-[30rem]/pr-header:hidden">
                             <span aria-hidden className="invisible col-start-1 row-start-1">
                               {pendingAutoMergeLabel}
@@ -2148,7 +2153,11 @@ export function PullRequestDetailPanel({
                                 : selectedMergeMethodLabel
                           }
                         >
-                          <PullRequestGlyph.merged aria-hidden className="size-3.5" />
+                          {inlineConfirm.isArmed("merge") ? (
+                            <CheckIcon aria-hidden className="size-3.5" />
+                          ) : (
+                            <PullRequestGlyph.merged aria-hidden className="size-3.5" />
+                          )}
                           <span className="inline-grid @max-[30rem]/pr-header:hidden">
                             <span aria-hidden className="invisible col-start-1 row-start-1">
                               {selectedMergeMethodLabel}

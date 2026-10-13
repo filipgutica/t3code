@@ -1720,6 +1720,8 @@ function SavedBackendListRow({
           environmentId={environmentId}
           serverLabel={`${environment.label} server`}
           fromVersion={lastDescriptor?.serverVersion}
+          selfUpdate={lastDescriptor?.capabilities.serverSelfUpdate ?? null}
+          desktopAppUpdate={lastDescriptor?.capabilities.desktopAppUpdate === true}
           targetVersion={APP_VERSION}
           label={serverUpdateState.status === "failed" ? "Retry update" : "Update"}
         />

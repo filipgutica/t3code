@@ -20,6 +20,8 @@ import { CircleArrowUpIcon } from "lucide-react";
 import { type ComponentProps, useRef, useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
+import { useHostIntegrations } from "~/hostIntegrations";
+import { useEnvironmentQuery } from "~/state/query";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { serverEnvironment, updateOutdatedServer } from "~/state/server";
@@ -65,11 +67,15 @@ type UpdateButtonProps = Pick<ComponentProps<typeof Button>, "variant" | "size" 
   readonly appearance?: "button" | "icon";
 };
 
-function useServerUpdate() {
+/** Updates one server and waits until it is back on the target version.
+    Reports its own success or failure toast; never rejects. */
+export function useServerUpdate() {
+  const { allowNpmServerUpdates = true } = useHostIntegrations();
   const updateServer = useAtomCommand(serverEnvironment.updateServer, { reportFailure: false });
   return async (target: ServerUpdateTarget, failureTitle = "Server update failed") => {
     const { environmentId, serverLabel, selfUpdate, targetVersion } = target;
     if (
+      (!allowNpmServerUpdates && selfUpdate !== "desktop-managed") ||
       !canUpdateServer(appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId))) ||
       pendingUpdateEnvironmentIds.has(environmentId)
     )
@@ -119,11 +125,13 @@ export function ServerUpdatesAction({
 }: UpdateButtonProps & {
   readonly targets: ReadonlyArray<ServerUpdateTarget>;
 }) {
+  const { allowNpmServerUpdates = true } = useHostIntegrations();
   const update = useServerUpdate();
   const pending = useRef(false);
   const [isPending, setIsPending] = useState(false);
   const eligible = targets.filter(
     (target) =>
+      (allowNpmServerUpdates || target.selfUpdate === "desktop-managed") &&
       target.selfUpdate !== null &&
       (target.selfUpdate !== "desktop-managed" || target.desktopAppUpdate),
   );
@@ -164,7 +172,9 @@ export function ServerUpdatesAction({
   );
 }
 
-function canUpdateServer(result: AsyncResult.AsyncResult<AuthSessionState, unknown>): boolean {
+export function canUpdateServer(
+  result: AsyncResult.AsyncResult<AuthSessionState, unknown>,
+): boolean {
   if (result._tag !== "Success" || !result.value.authenticated) return false;
   return sessionGrantsScope(result.value, AuthEnvironmentMaintainScope);
 }
@@ -221,6 +231,7 @@ export function ServerUpdateAction({
   className,
   appearance = "button",
 }: Omit<ServerUpdateTarget, "continueThreadsAfterServerUpdate"> & UpdateButtonProps) {
+  const { allowNpmServerUpdates = true } = useHostIntegrations();
   const isDesktopAppUpdate = selfUpdate === "desktop-managed";
   const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
   const canUpdate = canUpdateServer(useAtomValue(sessionStateAtom));
@@ -281,6 +292,8 @@ export function ServerUpdateAction({
       continueThreadsAfterServerUpdate,
     });
   };
+
+  if (!allowNpmServerUpdates && !isDesktopAppUpdate) return null;
 
   if (selfUpdate === "desktop-managed" && !desktopAppUpdate) {
     return (
@@ -346,18 +359,36 @@ export function OutdatedServerUpdateAction({
   environmentId,
   serverLabel,
   fromVersion,
+  selfUpdate,
+  desktopAppUpdate = false,
   targetVersion,
   label = "Update",
 }: {
   readonly environmentId: EnvironmentId;
   readonly serverLabel: string;
   readonly fromVersion: string | undefined;
+  readonly selfUpdate?: ServerSelfUpdateCapability | null;
+  readonly desktopAppUpdate?: boolean;
   readonly targetVersion: string;
   readonly label?: string;
 }) {
+  const { allowNpmServerUpdates = true, outdatedServerDescriptor } = useHostIntegrations();
+  const [includeSsh, setIncludeSsh] = useState(false);
+  const descriptorQuery = useEnvironmentQuery(
+    outdatedServerDescriptor?.(environmentId, includeSsh) ?? null,
+  );
+  const capabilities = outdatedServerDescriptor
+    ? descriptorQuery.isSuccess && !descriptorQuery.isPending
+      ? descriptorQuery.data?.capabilities
+      : undefined
+    : { serverSelfUpdate: selfUpdate, desktopAppUpdate };
+  const allowed =
+    allowNpmServerUpdates ||
+    (capabilities?.serverSelfUpdate === "desktop-managed" &&
+      capabilities.desktopAppUpdate === true);
   const update = useAtomCommand(updateOutdatedServer, { reportFailure: false });
   const handleUpdate = async () => {
-    if (pendingUpdateEnvironmentIds.has(environmentId)) return;
+    if (!allowed || pendingUpdateEnvironmentIds.has(environmentId)) return;
     pendingUpdateEnvironmentIds.add(environmentId);
     try {
       const result = await update({
@@ -384,6 +415,24 @@ export function OutdatedServerUpdateAction({
       pendingUpdateEnvironmentIds.delete(environmentId);
     }
   };
+  if (!allowed) {
+    const checkAvailability = () => {
+      if (includeSsh) descriptorQuery.refresh();
+      else setIncludeSsh(true);
+    };
+    return descriptorQuery.error ? (
+      <div role="alert" className="text-xs text-muted-foreground">
+        Could not check desktop update availability.
+        <Button size="xs" variant="outline" onClick={checkAvailability}>
+          Retry update check
+        </Button>
+      </div>
+    ) : outdatedServerDescriptor && descriptorQuery.isSuccess && descriptorQuery.data === null ? (
+      <Button size="xs" variant="outline" onClick={checkAvailability}>
+        Check update availability
+      </Button>
+    ) : null;
+  }
   return (
     <Button size="xs" variant="outline" onClick={() => void handleUpdate()}>
       {label}

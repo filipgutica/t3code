@@ -1,4 +1,10 @@
-import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ExecutionEnvironmentDescriptor,
+  ScopedThreadRef,
+  ThreadId,
+} from "@t3tools/contracts";
+import type { AsyncResult, Atom } from "effect/reactivity";
 import type { CodexAuthHandoff } from "@t3tools/shared/codexAuthHandoff";
 import { createContext, useContext, useMemo, type ComponentType, type ReactNode } from "react";
 
@@ -61,6 +67,13 @@ export interface HostIntegrations {
   readonly isReviewCommentReferenceHidden?: (comment: ReviewCommentContext) => boolean;
   readonly reviewCommentTitle?: (comment: ReviewCommentContext) => string | null;
   readonly desktopReleaseLinks?: DesktopReleaseLinks;
+  /** Whether update actions can target npm-managed servers. Native hosts default to true. */
+  readonly allowNpmServerUpdates?: boolean;
+  /** includeSsh requires an explicit check because opening a tunnel can start a remote server. */
+  readonly outdatedServerDescriptor?: (
+    environmentId: EnvironmentId,
+    includeSsh?: boolean,
+  ) => Atom.Atom<AsyncResult.AsyncResult<ExecutionEnvironmentDescriptor | null, unknown>>;
   readonly codexAuthHandoffUrl?: (input: CodexAuthHandoff, development: boolean) => string;
 }
 

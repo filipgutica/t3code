@@ -66,6 +66,7 @@
     "@types/node": "catalog:",
     "fallow": "3.18.0",
     "knip": "6.34.0",
+    "tsc-rs": "0.4.0",
     "typescript": "catalog:",
     "vite-plus": "catalog:"
   },
