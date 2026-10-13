@@ -220,7 +220,8 @@
         "apps/web/src/routes/__root.tsx",
         "apps/web/src/components/desktopUpdate.toast.tsx",
         "apps/web/src/components/sidebar/SidebarUpdatePill.tsx",
-        "apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx"
+        "apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx",
+        "apps/web/src/components/sidebar/useUpdateEverything.ts"
       ],
       "tests": [
         "apps/web/src/components/ChatMarkdown.pull-request-environment.test.tsx",

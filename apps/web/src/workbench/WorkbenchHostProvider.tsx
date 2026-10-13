@@ -47,6 +47,8 @@ const WORKBENCH_HOST_INTEGRATIONS: HostIntegrations = {
   reviewCommentTitle: resolveWorkbenchReviewCommentTitle,
   ...(import.meta.env.VITE_T3CODE_WORKBENCH_BUILD
     ? {
+        // Workbench release versions do not identify upstream t3 releases on npm.
+        allowNpmServerUpdates: false,
         codexAuthHandoffUrl: (input, development) =>
           codexAuthHandoffUrl(input, development, "t3code-workbench"),
         desktopReleaseLinks: {

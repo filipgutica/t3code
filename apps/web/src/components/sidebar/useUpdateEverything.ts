@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { APP_VERSION } from "~/branding";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isElectron } from "~/env";
+import { useHostIntegrations } from "~/hostIntegrations";
 import { useEnvironments } from "~/state/environments";
 import { useNpmReleasePublished } from "~/state/npmRelease";
 import { serverEnvironment } from "~/state/server";
@@ -27,6 +28,7 @@ import {
  * this app's own download and install when given.
  */
 export function useUpdateEverything(localUpdateVersion: string | null) {
+  const { allowNpmServerUpdates = true } = useHostIntegrations();
   const targetVersion = localUpdateVersion ?? APP_VERSION;
   const { environments } = useEnvironments();
   const machinesAtom = useMemo(
@@ -50,7 +52,9 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     [environments],
   );
   const machines = useAtomValue(machinesAtom);
-  const behindServers = collectServerUpdateTargets(machines, targetVersion);
+  const behindServers = collectServerUpdateTargets(machines, targetVersion).filter(
+    (server) => allowNpmServerUpdates || server.selfUpdate === "desktop-managed",
+  );
   // A desktop-managed server installs from its own app's update feed, so only
   // servers that download t3 from npm wait for npm to publish the version.
   const needsNpm = behindServers.some((server) => server.selfUpdate !== "desktop-managed");
