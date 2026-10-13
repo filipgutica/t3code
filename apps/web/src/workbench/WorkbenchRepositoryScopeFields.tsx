@@ -16,12 +16,14 @@ export function WorkbenchRepositoryScopeFields({
   onChange,
   disabled = false,
   idPrefix,
+  lockedScope,
 }: {
   readonly projects: readonly Pick<Project, "id" | "title">[];
   readonly value: WorkbenchRepositoryScope;
   readonly onChange: (value: WorkbenchRepositoryScope) => void;
   readonly disabled?: boolean;
   readonly idPrefix: string;
+  readonly lockedScope?: WorkbenchRepositoryScope | undefined;
 }) {
   const primaryRepository = projects.find((project) => project.id === value.primaryT3ProjectId);
   const unavailableAdditionalRepositoryIds = value.repositoryProjectIds.filter(
@@ -52,7 +54,7 @@ export function WorkbenchRepositoryScopeFields({
           Where the thread starts. The primary repository is always included.
         </p>
         <Select
-          disabled={disabled || projects.length === 0}
+          disabled={disabled || lockedScope !== undefined || projects.length === 0}
           value={value.primaryT3ProjectId}
           onValueChange={(id) => {
             const repository = projects.find((project) => project.id === id);
@@ -129,7 +131,11 @@ export function WorkbenchRepositoryScopeFields({
           </SelectTrigger>
           <SelectPopup alignItemWithTrigger={false}>
             {additionalRepositories.map((repository) => (
-              <SelectItem key={repository.id} value={repository.id}>
+              <SelectItem
+                key={repository.id}
+                value={repository.id}
+                disabled={lockedScope?.repositoryProjectIds.includes(repository.id)}
+              >
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="min-w-0 max-w-80 flex-1 truncate">{repository.title}</span>
                   {additionalRepositoryIds.includes(repository.id) ? (
@@ -146,6 +152,12 @@ export function WorkbenchRepositoryScopeFields({
           </p>
         ) : null}
       </div>
+      {lockedScope ? (
+        <p className="col-span-full text-xs text-muted-foreground">
+          Prepared repositories and the primary are fixed here. You can add repositories. To remove
+          one or change the primary, use Edit repositories in the ticket’s work area.
+        </p>
+      ) : null}
     </fieldset>
   );
 }

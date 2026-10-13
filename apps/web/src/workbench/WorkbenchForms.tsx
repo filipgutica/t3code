@@ -3014,6 +3014,10 @@ function WorkbenchTicketWorkspaceRepositoryEditor({
         disabled={disabled}
         idPrefix={`ticket-workspace-${ticket.id}`}
       />
+      <p className="text-xs text-muted-foreground">
+        Removing a repository changes this ticket’s scope for future threads. Its existing worktrees
+        remain on disk, and existing threads keep their working directories and context.
+      </p>
       {failedRepositories.length > 0 ? (
         <div className="divide-y divide-border/50 border-t border-border/50 pt-2">
           {failedRepositories.map((entry) => (

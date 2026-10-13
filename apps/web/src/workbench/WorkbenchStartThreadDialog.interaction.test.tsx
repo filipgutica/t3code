@@ -131,10 +131,14 @@ const render = async ({
   pending = false,
   repositoryScope,
   availableProjects = projects,
+  savedTicket = ticket,
+  preparedWorkspace = workspace,
 }: {
   pending?: boolean;
   repositoryScope?: WorkbenchRepositoryScope;
   availableProjects?: ReadonlyArray<Project>;
+  savedTicket?: WorkbenchTicket;
+  preparedWorkspace?: WorkbenchTicketWorkspace;
 } = {}) => {
   await act(async () =>
     root.render(
@@ -145,9 +149,9 @@ const render = async ({
         request={{
           environmentId,
           defaultModelSelection: null,
-          ticket,
+          ticket: savedTicket,
           projects: availableProjects,
-          workspace,
+          workspace: preparedWorkspace,
           initialRepositoryScope: repositoryScope,
           additional: true,
         }}
@@ -171,7 +175,8 @@ const toggleAdditionalRepository = async (label = "Additional") => {
   );
   if (!trigger) throw new Error("Missing additional repository picker");
   await act(async () => trigger.click());
-  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+  const listbox = document.getElementById(trigger.getAttribute("aria-controls") ?? "");
+  const option = [...(listbox?.querySelectorAll<HTMLElement>('[role="option"]') ?? [])].find(
     (candidate) => candidate.textContent?.trim() === label,
   );
   if (!option) throw new Error("Missing additional repository option");
@@ -229,7 +234,7 @@ it("keeps many selections in a compact summary and removes one without losing th
   });
   const trigger = document.querySelector('[aria-label="Additional repositories"]');
   expect(trigger?.textContent).toBe("Additional + 12 more");
-  expect(document.querySelector('[role="option"]')).toBeNull();
+  expect(trigger?.getAttribute("aria-expanded")).toBe("false");
   expect(document.querySelector('[role="checkbox"]')).toBeNull();
   await toggleAdditionalRepository("Extra repository 4");
   expect(trigger?.textContent).toBe("Additional + 11 more");
@@ -260,6 +265,77 @@ it("lets an unavailable additional repository be removed from the dropdown", asy
   );
   expect(button("Create Thread").disabled).toBe(false);
   expect(document.querySelector('[role="alert"]')).toBeNull();
+  await act(async () => button("Create Thread").click());
+  expect(onStart).toHaveBeenCalledWith({
+    modelSelection: { instanceId: provider.instanceId, model: "gpt-default" },
+  });
+});
+
+it.each(["ready", "failed"] as const)(
+  "preserves prepared choices while allowing additions (%s)",
+  async (status) => {
+    const extra = { ...projects[1]!, id: ProjectId.make("extra"), title: "Extra" };
+    const savedTicket = { ...ticket, repositoryProjectIds: projects.map((project) => project.id) };
+    const preparedWorkspace = {
+      ...workspace,
+      status,
+      repositories: projects.map((project, index) => ({
+        ...workspace.repositories[0]!,
+        projectId: project.id,
+        isPrimary: index === 0,
+        sourcePath: project.workspaceRoot,
+        worktreePath: `/worktrees/${project.id}`,
+      })),
+    };
+    await render({ savedTicket, preparedWorkspace, availableProjects: [...projects, extra] });
+    if (status === "ready") await act(async () => button("Edit repositories").click());
+    const primary = document.querySelector<HTMLButtonElement>('[aria-label="Primary repository"]')!;
+    await act(async () => primary.click());
+    expect(primary.getAttribute("aria-expanded")).toBe("false");
+    await toggleAdditionalRepository();
+    await toggleAdditionalRepository("Extra");
+    await act(async () => button("Create work area and Thread").click());
+    expect(onStart).toHaveBeenCalledWith({
+      modelSelection: { instanceId: provider.instanceId, model: "gpt-default" },
+      repositoryScope: {
+        primaryT3ProjectId: ticket.primaryT3ProjectId,
+        repositoryProjectIds: [projects[0]!.id, projects[1]!.id, extra.id],
+      },
+    });
+  },
+);
+
+it("restores prepared choices from an unsaved narrowing draft", async () => {
+  await render({
+    repositoryScope: {
+      primaryT3ProjectId: projects[1]!.id,
+      repositoryProjectIds: [projects[1]!.id],
+    },
+  });
+  await act(async () => button("Create work area and Thread").click());
+  expect(onStart).toHaveBeenCalledWith({
+    modelSelection: { instanceId: provider.instanceId, model: "gpt-default" },
+    repositoryScope: {
+      primaryT3ProjectId: ticket.primaryT3ProjectId,
+      repositoryProjectIds: [projects[0]!.id, projects[1]!.id],
+    },
+  });
+});
+
+it("keeps a repository removed from the saved ticket excluded despite its retained worktree", async () => {
+  await render({
+    preparedWorkspace: {
+      ...workspace,
+      repositories: [
+        ...workspace.repositories,
+        { ...workspace.repositories[0]!, projectId: projects[1]!.id, isPrimary: false },
+      ],
+    },
+  });
+  await act(async () => button("Edit repositories").click());
+  expect(document.querySelector('[aria-label="Additional repositories"]')?.textContent).toBe(
+    "None",
+  );
   await act(async () => button("Create Thread").click());
   expect(onStart).toHaveBeenCalledWith({
     modelSelection: { instanceId: provider.instanceId, model: "gpt-default" },

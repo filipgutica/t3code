@@ -228,6 +228,38 @@ const getWorkbenchStartThreadDefaultSelection = ({
   projects.find((project) => project.id === scope.primaryT3ProjectId)?.defaultModelSelection ??
   (workspaceReady ? defaultModelSelection : null);
 
+const resolveThreadRepositoryScope = ({
+  ticket,
+  workspace,
+  draft,
+}: {
+  ticket: WorkbenchTicket;
+  workspace: WorkbenchTicketWorkspace | undefined;
+  draft: WorkbenchRepositoryScope;
+}) => {
+  const preparedRepositoryIds = new Set(
+    workspace?.repositories
+      .filter((repository) => repository.status === "ready")
+      .map((repository) => repository.projectId),
+  );
+  if (preparedRepositoryIds.size === 0) return { scope: draft, lockedScope: undefined };
+  const lockedScope = {
+    primaryT3ProjectId: ticket.primaryT3ProjectId,
+    repositoryProjectIds: ticket.repositoryProjectIds.filter(
+      (id) => id === ticket.primaryT3ProjectId || preparedRepositoryIds.has(id),
+    ),
+  };
+  return {
+    lockedScope,
+    scope: {
+      primaryT3ProjectId: lockedScope.primaryT3ProjectId,
+      repositoryProjectIds: [
+        ...new Set([...lockedScope.repositoryProjectIds, ...draft.repositoryProjectIds]),
+      ],
+    },
+  };
+};
+
 export function WorkbenchStartThreadDialog({
   open,
   onOpenChange,
@@ -260,9 +292,15 @@ export function WorkbenchStartThreadDialog({
     description: customDescription,
     startLabel = "Create Thread",
   } = request;
-  const [repositoryScope, setRepositoryScope] = useState(
+  const [repositoryScopeDraft, setRepositoryScope] = useState(
     initialRepositoryScope ?? getWorkbenchRepositoryScope(ticket),
   );
+  const { scope: repositoryScope, lockedScope: lockedRepositoryScope } =
+    resolveThreadRepositoryScope({
+      ticket,
+      workspace,
+      draft: repositoryScopeDraft,
+    });
   const workspaceReady =
     isWorkbenchTicketWorkspaceReady({ ticket, workspace }) &&
     isWorkbenchRepositoryScopeEqual(ticket, repositoryScope);
@@ -326,8 +364,11 @@ export function WorkbenchStartThreadDialog({
               ticket={ticket}
               workspace={workspace}
               projects={projects}
-              scope={repositoryScope}
-              onScopeChange={setRepositoryScope}
+              repositorySelection={{
+                value: repositoryScope,
+                onChange: setRepositoryScope,
+                lockedScope: lockedRepositoryScope,
+              }}
               ready={workspaceReady}
               locked={workspaceLocked}
               pending={pending}
@@ -411,8 +452,7 @@ function WorkbenchStartThreadWorkspaceReview({
   ticket,
   workspace,
   projects,
-  scope,
-  onScopeChange,
+  repositorySelection,
   ready,
   locked,
   pending,
@@ -420,14 +460,21 @@ function WorkbenchStartThreadWorkspaceReview({
   ticket: WorkbenchTicket;
   workspace: WorkbenchTicketWorkspace | undefined;
   projects: readonly Project[];
-  scope: WorkbenchRepositoryScope;
-  onScopeChange: (scope: WorkbenchRepositoryScope) => void;
+  repositorySelection: {
+    value: WorkbenchRepositoryScope;
+    onChange: (scope: WorkbenchRepositoryScope) => void;
+    lockedScope: WorkbenchRepositoryScope | undefined;
+  };
   ready: boolean;
   locked: boolean;
   pending: boolean;
 }) {
   const [editingRepositories, setEditingRepositories] = useState(false);
   const status = getWorkAreaStatus({ ready, workspace });
+  const toggleRepositoryEditing = () => {
+    if (editingRepositories) repositorySelection.onChange(getWorkbenchRepositoryScope(ticket));
+    setEditingRepositories((editing) => !editing);
+  };
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -441,10 +488,7 @@ function WorkbenchStartThreadWorkspaceReview({
             variant="ghost"
             size="xs"
             disabled={pending || locked}
-            onClick={() => {
-              if (editingRepositories) onScopeChange(getWorkbenchRepositoryScope(ticket));
-              setEditingRepositories((editing) => !editing);
-            }}
+            onClick={toggleRepositoryEditing}
           >
             {editingRepositories ? "Cancel repository edits" : "Edit repositories"}
           </Button>
@@ -474,8 +518,7 @@ function WorkbenchStartThreadWorkspaceReview({
       ) : (
         <WorkbenchRepositoryScopeFields
           projects={projects}
-          value={scope}
-          onChange={onScopeChange}
+          {...repositorySelection}
           disabled={pending || locked}
           idPrefix={`start-thread-${ticket.id}`}
         />
