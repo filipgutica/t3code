@@ -18,12 +18,11 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   LayoutDashboardIcon,
-  FilePenLineIcon,
   PlusIcon,
   RefreshCwIcon,
   XIcon,
 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useWorkbenchSidebarFilters } from "./workbenchSidebarFilterState";
 
 import { WorkbenchSidebarTicketButton } from "./WorkbenchSidebarTicketButton";
@@ -39,6 +38,14 @@ import {
   prioritizeWorkbenchSidebarAttention,
 } from "./workbenchSidebarAttention.logic";
 import "./WorkbenchSidebarRows.css";
+import { WorkbenchDiscardDraftDialog } from "./WorkbenchDiscardDraftDialog";
+import { WorkbenchInlineError } from "./WorkbenchForms";
+import {
+  WorkbenchSidebarDrafts,
+  useWorkbenchSidebarDraftMenu,
+  useWorkbenchSidebarDrafts,
+  type WorkbenchSidebarDraft,
+} from "./WorkbenchSidebarDrafts";
 import { SidebarChromeFooter } from "../components/sidebar/SidebarChrome";
 import {
   getUnsavedConversationDrafts,
@@ -46,7 +53,7 @@ import {
 } from "./workbenchTicketDraft.logic";
 import { matchesWorkbenchTicketSearch } from "./useWorkbenchTicketSearch";
 
-type SidebarDraft = { readonly id: WorkbenchTicketId; readonly title: string };
+type SidebarDraft = WorkbenchSidebarDraft;
 
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -266,37 +273,40 @@ export function WorkbenchSidebar({
             query={query}
             snapshot={snapshot}
             navigation={
-              <WorkbenchSidebarNavigation
-                key={environmentId ?? "none"}
-                data={{
-                  archivedTicketsByWorkspace,
-                  jiraOwnershipKnown: jiraQuery.data !== null,
-                  projects: snapshot?.projects ?? [],
-                  draftsByWorkspace,
-                  ticketCountsByWorkspace,
-                  ticketDetailsById,
-                  ticketGroupsByWorkspace,
-                  actionableThreadIdsByTicket,
-                }}
-                selection={{
-                  contextThreadId: context?.threadId,
-                  selectedEpicId,
-                  selectedTicketId,
-                  selectedTicketIsDone,
-                  selectedWorkspaceId,
-                }}
-                search={{
-                  searchQuery: sidebarQuery,
-                  onSearchQueryChange: setSidebarSearch,
-                  onlyActionable,
-                  onOnlyActionableChange: setOnlyActionable,
-                }}
-                actions={{
-                  onOpenThread: openThread,
-                  onSelectTicket: selectTicket,
-                  onSelectWorkspace: selectWorkspace,
-                }}
-              />
+              environmentId && (
+                <WorkbenchSidebarNavigation
+                  key={environmentId ?? "none"}
+                  data={{
+                    environmentId,
+                    archivedTicketsByWorkspace,
+                    jiraOwnershipKnown: jiraQuery.data !== null,
+                    projects: snapshot?.projects ?? [],
+                    draftsByWorkspace,
+                    ticketCountsByWorkspace,
+                    ticketDetailsById,
+                    ticketGroupsByWorkspace,
+                    actionableThreadIdsByTicket,
+                  }}
+                  selection={{
+                    contextThreadId: context?.threadId,
+                    selectedEpicId,
+                    selectedTicketId,
+                    selectedTicketIsDone,
+                    selectedWorkspaceId,
+                  }}
+                  search={{
+                    searchQuery: sidebarQuery,
+                    onSearchQueryChange: setSidebarSearch,
+                    onlyActionable,
+                    onOnlyActionableChange: setOnlyActionable,
+                  }}
+                  actions={{
+                    onOpenThread: openThread,
+                    onSelectTicket: selectTicket,
+                    onSelectWorkspace: selectWorkspace,
+                  }}
+                />
+              )
             }
           />
         </SidebarGroup>
@@ -307,6 +317,7 @@ export function WorkbenchSidebar({
 }
 
 type WorkbenchSidebarNavigationFields = {
+  readonly environmentId: EnvironmentId;
   readonly draftsByWorkspace: ReadonlyMap<WorkbenchProjectId, ReadonlyArray<SidebarDraft>>;
   readonly archivedTicketsByWorkspace: ReadonlyMap<
     WorkbenchProjectId,
@@ -339,6 +350,7 @@ type WorkbenchSidebarNavigationProps = {
   readonly data: Pick<
     WorkbenchSidebarNavigationFields,
     | "archivedTicketsByWorkspace"
+    | "environmentId"
     | "jiraOwnershipKnown"
     | "projects"
     | "draftsByWorkspace"
@@ -467,6 +479,7 @@ function WorkbenchSidebarNavigation({
   actions,
 }: WorkbenchSidebarNavigationProps) {
   const {
+    environmentId,
     archivedTicketsByWorkspace,
     ticketDetailsById,
     jiraOwnershipKnown,
@@ -637,6 +650,24 @@ function WorkbenchSidebarNavigation({
       filtered.projects.some((match) => match.id === project.id) ||
       (visibleDrafts.get(project.id)?.length ?? 0) > 0,
   );
+  const allDrafts = [...draftsByWorkspace.values()].flat();
+  const selectedDraft = allDrafts.find((draft) => draft.id === selectedTicketId);
+  const writableWorkspaceIds = new Set(
+    projects.filter((workspace) => workspace.archivedAt == null).map((workspace) => workspace.id),
+  );
+  const {
+    navigationRef,
+    disclosure: draftDisclosure,
+    menu: draftMenu,
+  } = useWorkbenchSidebarDrafts({
+    environmentId,
+    drafts: [...visibleDrafts.values()].flat(),
+    writableWorkspaceIds,
+    selectedWorkspaceId,
+    selectedTicketId,
+    onSelectWorkspace,
+    selectedDraft,
+  });
   const navigation = {
     contextThreadId,
     jiraOwnershipKnown,
@@ -648,8 +679,11 @@ function WorkbenchSidebarNavigation({
     selectedWorkspaceId,
     ticketCountsByWorkspace,
     ticketDetailsById,
+    collapsedDrafts: draftDisclosure.collapsed,
+    onToggleDrafts: draftDisclosure.toggle,
+    onOpenDraftMenu: draftMenu.openMenu,
   };
-  const renderWorkspace = (workspace: Pick<WorkbenchProject, "id" | "title">) => (
+  const renderWorkspace = (workspace: Pick<WorkbenchProject, "id" | "title" | "archivedAt">) => (
     <WorkbenchSidebarWorkspaceRow
       key={workspace.id}
       workspace={workspace}
@@ -663,7 +697,7 @@ function WorkbenchSidebarNavigation({
     />
   );
   return (
-    <div className="space-y-4">
+    <div ref={navigationRef} tabIndex={-1} aria-label="Workbench navigation" className="space-y-4">
       <WorkbenchSidebarFilters
         search={search}
         resultCount={
@@ -675,6 +709,7 @@ function WorkbenchSidebarNavigation({
         incompleteInspection={incompleteInspection}
         attentionCoverage={attentionCoverage}
       />
+      <WorkbenchInlineError message={draftMenu.error} />
       <SidebarMenu aria-label="Workbench Workspaces" className="ps-px">
         {visibleProjects.map(renderWorkspace)}
       </SidebarMenu>
@@ -693,6 +728,18 @@ function WorkbenchSidebarNavigation({
         isSearching={isSearching}
         onToggle={toggleExpansion}
         navigation={navigation}
+      />
+      <WorkbenchDiscardDraftDialog
+        title={draftMenu.confirmationTitle}
+        open={draftMenu.actions.confirmation?.open === true}
+        busy={draftMenu.actions.busy}
+        creationUncertain={draftMenu.creationUncertain}
+        error={null}
+        finalFocus={draftMenu.finalFocus}
+        onOpenChange={(open) => {
+          if (!open) draftMenu.actions.closeConfirmation();
+        }}
+        onDiscard={draftMenu.actions.discard}
       />
     </div>
   );
@@ -736,7 +783,7 @@ function WorkbenchSidebarArchivedWorkspaces({
 
 type WorkbenchSidebarWorkspaceRowProps = {
   readonly drafts: ReadonlyArray<SidebarDraft>;
-  readonly workspace: Pick<WorkbenchProject, "id" | "title">;
+  readonly workspace: Pick<WorkbenchProject, "id" | "title" | "archivedAt">;
   readonly ticketSections: WorkbenchSidebarTicketSections | undefined;
   readonly archivedTickets: ReadonlyArray<WorkbenchSidebarTicket>;
   readonly expansion: WorkbenchSidebarExpansion;
@@ -754,7 +801,11 @@ type WorkbenchSidebarWorkspaceRowProps = {
     | "selectedWorkspaceId"
     | "ticketCountsByWorkspace"
     | "ticketDetailsById"
-  >;
+  > & {
+    readonly collapsedDrafts: ReadonlySet<WorkbenchProjectId>;
+    readonly onToggleDrafts: (workspaceId: WorkbenchProjectId) => void;
+    readonly onOpenDraftMenu: ReturnType<typeof useWorkbenchSidebarDraftMenu>["openMenu"];
+  };
 };
 
 function WorkbenchSidebarWorkspaceRow({
@@ -767,6 +818,7 @@ function WorkbenchSidebarWorkspaceRow({
   onToggle,
   navigation,
 }: WorkbenchSidebarWorkspaceRowProps) {
+  const workspaceButtonRef = useRef<HTMLButtonElement>(null);
   const {
     contextThreadId,
     jiraOwnershipKnown,
@@ -781,8 +833,8 @@ function WorkbenchSidebarWorkspaceRow({
   } = navigation;
   const activeTicketGroups = ticketSections?.active ?? [];
   const doneTicketGroups = ticketSections?.done ?? [];
-  const visibleArchivedTickets =
-    isSearching || workspace.id === selectedWorkspaceId ? archivedTickets : [];
+  const showArchivedTickets = isSearching || workspace.id === selectedWorkspaceId;
+  const visibleArchivedTickets = showArchivedTickets ? archivedTickets : [];
   const hasDescendants = [
     drafts.length,
     activeTicketGroups.length,
@@ -791,6 +843,7 @@ function WorkbenchSidebarWorkspaceRow({
   ].some((count) => count > 0);
   const workspaceExpanded = isSearching || expansion.workspaceId === workspace.id;
   const workspacePanelId = `workbench-sidebar-workspace-${workspace.id}`;
+  const disclosureLabel = `${workspaceExpanded ? "Collapse" : "Expand"} ${workspace.title}`;
   const workspaceIsDestination =
     workspace.id === selectedWorkspaceId &&
     selectedTicketId === undefined &&
@@ -804,13 +857,14 @@ function WorkbenchSidebarWorkspaceRow({
             controls={workspacePanelId}
             expanded={workspaceExpanded}
             disabled={isSearching}
-            label={`${workspaceExpanded ? "Collapse" : "Expand"} ${workspace.title}`}
+            label={disclosureLabel}
             onToggle={() => onToggle({ type: "toggleWorkspace", workspaceId: workspace.id })}
           />
         ) : (
           <span aria-hidden className="size-7 shrink-0" />
         )}
         <SidebarMenuButton
+          ref={workspaceButtonRef}
           aria-current={workspaceIsDestination ? "page" : undefined}
           className="h-9 w-auto min-w-0 flex-1 gap-2.5 rounded-md px-2.5 text-sm"
           isActive={workspaceIsDestination}
@@ -831,11 +885,16 @@ function WorkbenchSidebarWorkspaceRow({
         title={workspace.title}
       >
         <div className="ms-3 border-sidebar-border border-l ps-2">
-          <WorkbenchSidebarDraftRows
+          <WorkbenchSidebarDrafts
             drafts={drafts}
-            workspace={workspace}
+            workspaceTitle={workspace.title}
+            workspaceButtonRef={workspaceButtonRef}
             selectedTicketId={selectedTicketId}
-            onSelectTicket={onSelectTicket}
+            expanded={!navigation.collapsedDrafts.has(workspace.id)}
+            isSearching={isSearching}
+            onToggle={() => navigation.onToggleDrafts(workspace.id)}
+            onSelect={(draft) => onSelectTicket(workspace.id, draft.id)}
+            onOpenMenu={navigation.onOpenDraftMenu}
           />
           <WorkbenchSidebarWorkspaceContents
             activeTicketGroups={activeTicketGroups}
@@ -856,43 +915,6 @@ function WorkbenchSidebarWorkspaceRow({
         </div>
       </WorkbenchSidebarWorkspacePanel>
     </SidebarMenuItem>
-  );
-}
-
-function WorkbenchSidebarDraftRows({
-  drafts,
-  workspace,
-  selectedTicketId,
-  onSelectTicket,
-}: Pick<WorkbenchSidebarWorkspaceRowProps, "drafts" | "workspace"> &
-  Pick<WorkbenchSidebarNavigationFields, "selectedTicketId" | "onSelectTicket">) {
-  if (drafts.length === 0) return null;
-  return (
-    <section aria-label={`${workspace.title} drafts`} className="mb-2">
-      <div className="flex items-center gap-2 px-2 py-2 text-xs text-sidebar-muted-foreground">
-        <span>Drafts</span>
-        <span className="tabular-nums">{drafts.length}</span>
-      </div>
-      <SidebarMenu>
-        {drafts.map((draft) => (
-          <SidebarMenuItem key={draft.id}>
-            <div className="flex min-w-0 items-center gap-1">
-              <span aria-hidden className="size-7 shrink-0" />
-              <SidebarMenuButton
-                aria-label={`Open draft ${draft.title}`}
-                aria-current={draft.id === selectedTicketId ? "page" : undefined}
-                isActive={draft.id === selectedTicketId}
-                onClick={() => onSelectTicket(workspace.id, draft.id)}
-                tooltip={{ children: draft.title, hidden: false }}
-              >
-                <FilePenLineIcon />
-                <WorkbenchSidebarItemTitle>{draft.title}</WorkbenchSidebarItemTitle>
-              </SidebarMenuButton>
-            </div>
-          </SidebarMenuItem>
-        ))}
-      </SidebarMenu>
-    </section>
   );
 }
 
@@ -1521,7 +1543,7 @@ function getWorkbenchSidebarDrafts({
     (snapshot?.projects ?? []).map((workspace) => [
       workspace.id,
       getUnsavedConversationDrafts(snapshot, workspace.id).map((draft) => ({
-        id: draft.id,
+        ...draft,
         title: getConversationDraftTitle(draft, threadTitles.get(draft.threadId)),
       })),
     ]),

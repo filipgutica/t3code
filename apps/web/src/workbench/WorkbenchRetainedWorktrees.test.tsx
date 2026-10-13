@@ -33,9 +33,15 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
   useSearch: () => ({}),
 }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => release }));
+vi.mock("@effect/atom-react", () => ({
+  useAtomValue: () => true,
+  useAtomRefresh: () => vi.fn(),
+}));
 vi.mock("./state", () => ({
   workbenchEnvironment: {
     releaseTicketWorkspace: {},
+    discardTicketDraftInBatch: { permissionAtom: () => null },
+    ticketPreparations: () => "preparations",
     snapshot: () => "workbench",
     jiraSnapshot: () => "jira",
   },
@@ -115,6 +121,7 @@ vi.mock("../components/ui/alert-dialog", () => {
     AlertDialogTitle: Container,
     AlertDialogDescription: Container,
     AlertDialogFooter: Container,
+    AlertDialogClose: Container,
   };
 });
 
