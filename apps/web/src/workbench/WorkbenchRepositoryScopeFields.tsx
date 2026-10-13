@@ -1,5 +1,5 @@
 import type { Project } from "../types";
-import { Checkbox } from "../components/ui/checkbox";
+import { CheckIcon } from "lucide-react";
 import { Label } from "../components/ui/label";
 import {
   Select,
@@ -24,9 +24,25 @@ export function WorkbenchRepositoryScopeFields({
   readonly idPrefix: string;
 }) {
   const primaryRepository = projects.find((project) => project.id === value.primaryT3ProjectId);
-  const unavailableRepositoryIds = value.repositoryProjectIds.filter(
-    (id) => !projects.some((project) => project.id === id),
+  const unavailableAdditionalRepositoryIds = value.repositoryProjectIds.filter(
+    (id) => id !== value.primaryT3ProjectId && !projects.some((project) => project.id === id),
   );
+  const additionalRepositoryIds = value.repositoryProjectIds.filter(
+    (id) => id !== value.primaryT3ProjectId,
+  );
+  const additionalRepositories = [
+    ...projects.filter((project) => project.id !== value.primaryT3ProjectId),
+    ...unavailableAdditionalRepositoryIds.map((id) => ({
+      id,
+      title: `Repository unavailable (${id})`,
+    })),
+  ];
+  const firstAdditionalRepository = additionalRepositories.find(
+    (repository) => repository.id === additionalRepositoryIds[0],
+  );
+  const additionalRepositorySummary = firstAdditionalRepository
+    ? `${firstAdditionalRepository.title}${additionalRepositoryIds.length > 1 ? ` + ${additionalRepositoryIds.length - 1} more` : ""}`
+    : "None";
   return (
     <fieldset disabled={disabled} className="min-w-0 space-y-4">
       <legend className="sr-only">Workspace repositories</legend>
@@ -81,68 +97,51 @@ export function WorkbenchRepositoryScopeFields({
         ) : null}
       </div>
       <div className="space-y-2">
-        <p id={`${idPrefix}-additional-label`} className="text-sm font-medium">
-          Additional repositories
-        </p>
-        <p className="text-xs text-muted-foreground">
+        <Label htmlFor={`${idPrefix}-additional`}>Additional repositories</Label>
+        <p id={`${idPrefix}-additional-description`} className="text-xs text-muted-foreground">
           Included in the workspace and new thread context. Existing threads stay unchanged.
         </p>
-        <div className="space-y-1" role="group" aria-labelledby={`${idPrefix}-additional-label`}>
-          {projects
-            .filter((repository) => repository.id !== value.primaryT3ProjectId)
-            .map((repository) => (
-              <label key={repository.id} className="flex min-w-0 items-center gap-2 py-1 text-sm">
-                <Checkbox
-                  disabled={disabled}
-                  checked={value.repositoryProjectIds.includes(repository.id)}
-                  onCheckedChange={(checked) =>
-                    onChange({
-                      ...value,
-                      repositoryProjectIds: checked
-                        ? value.repositoryProjectIds.includes(repository.id)
-                          ? value.repositoryProjectIds
-                          : [...value.repositoryProjectIds, repository.id]
-                        : value.repositoryProjectIds.filter((id) => id !== repository.id),
-                    })
-                  }
-                />
-                <span className="min-w-0 break-words [overflow-wrap:anywhere]">
-                  {repository.title}
+        <Select
+          multiple
+          disabled={disabled || additionalRepositories.length === 0}
+          value={additionalRepositoryIds}
+          onValueChange={(ids) =>
+            onChange({
+              ...value,
+              repositoryProjectIds: [value.primaryT3ProjectId, ...ids],
+            })
+          }
+        >
+          <SelectTrigger
+            id={`${idPrefix}-additional`}
+            aria-label="Additional repositories"
+            aria-describedby={`${idPrefix}-additional-description`}
+            aria-invalid={unavailableAdditionalRepositoryIds.length > 0}
+          >
+            <SelectValue>
+              {additionalRepositories.length === 0
+                ? "No additional repositories linked"
+                : additionalRepositorySummary}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup alignItemWithTrigger={false}>
+            {additionalRepositories.map((repository) => (
+              <SelectItem key={repository.id} value={repository.id}>
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 max-w-80 flex-1 truncate">{repository.title}</span>
+                  {additionalRepositoryIds.includes(repository.id) ? (
+                    <CheckIcon aria-hidden className="size-4 shrink-0" />
+                  ) : null}
                 </span>
-              </label>
+              </SelectItem>
             ))}
-          {projects.length === 1 && unavailableRepositoryIds.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No additional repositories linked.</p>
-          ) : null}
-          {unavailableRepositoryIds.length > 0 ? (
-            <div className="space-y-1 border-t border-border/50 pt-2">
-              <p className="text-xs text-destructive">
-                Saved repositories are no longer linked. Remove them or link them again to continue.
-              </p>
-              {unavailableRepositoryIds.map((id) => (
-                <label key={id} className="flex min-w-0 items-start gap-2 py-1 text-sm">
-                  <Checkbox
-                    disabled={disabled || id === value.primaryT3ProjectId}
-                    checked
-                    onCheckedChange={(checked) => {
-                      if (!checked)
-                        onChange({
-                          ...value,
-                          repositoryProjectIds: value.repositoryProjectIds.filter(
-                            (candidate) => candidate !== id,
-                          ),
-                        });
-                    }}
-                  />
-                  <span className="min-w-0 break-words text-muted-foreground [overflow-wrap:anywhere]">
-                    Repository unavailable <span className="font-mono text-xs">({id})</span>
-                    {id === value.primaryT3ProjectId ? " · Choose another primary to remove" : null}
-                  </span>
-                </label>
-              ))}
-            </div>
-          ) : null}
-        </div>
+          </SelectPopup>
+        </Select>
+        {unavailableAdditionalRepositoryIds.length > 0 ? (
+          <p className="text-xs text-destructive" role="alert">
+            Saved repositories are no longer linked. Remove them or link them again to continue.
+          </p>
+        ) : null}
       </div>
     </fieldset>
   );

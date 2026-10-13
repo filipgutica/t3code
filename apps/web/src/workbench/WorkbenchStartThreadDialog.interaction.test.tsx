@@ -17,6 +17,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import type { Project } from "../types";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
+import type { WorkbenchRepositoryScope } from "./workbenchRepositoryScope";
 
 vi.mock("../hooks/useSettings", async () => {
   const { DEFAULT_CLIENT_SETTINGS, DEFAULT_SERVER_SETTINGS } =
@@ -126,7 +127,15 @@ afterEach(async () => {
   container.remove();
   vi.unstubAllGlobals();
 });
-const render = async (pending = false) => {
+const render = async ({
+  pending = false,
+  repositoryScope,
+  availableProjects = projects,
+}: {
+  pending?: boolean;
+  repositoryScope?: WorkbenchRepositoryScope;
+  availableProjects?: ReadonlyArray<Project>;
+} = {}) => {
   await act(async () =>
     root.render(
       <WorkbenchStartThreadDialog
@@ -137,9 +146,9 @@ const render = async (pending = false) => {
           environmentId,
           defaultModelSelection: null,
           ticket,
-          projects,
+          projects: availableProjects,
           workspace,
-          initialRepositoryScope: undefined,
+          initialRepositoryScope: repositoryScope,
           additional: true,
         }}
         pending={pending}
@@ -156,10 +165,18 @@ const button = (label: string) => {
   if (!result) throw new Error(`Missing button: ${label}`);
   return result;
 };
-const additionalRepository = () => {
-  const result = document.querySelector<HTMLButtonElement>('[role="checkbox"]');
-  if (!result) throw new Error("Missing additional repository checkbox");
-  return result;
+const toggleAdditionalRepository = async (label = "Additional") => {
+  const trigger = document.querySelector<HTMLButtonElement>(
+    '[aria-label="Additional repositories"]',
+  );
+  if (!trigger) throw new Error("Missing additional repository picker");
+  await act(async () => trigger.click());
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+    (candidate) => candidate.textContent?.trim() === label,
+  );
+  if (!option) throw new Error("Missing additional repository option");
+  await act(async () => option.click());
+  await act(async () => trigger.click());
 };
 
 it("edits prepared repositories in the dialog and submits the reviewed choices", async () => {
@@ -168,7 +185,7 @@ it("edits prepared repositories in the dialog and submits the reviewed choices",
   expect(document.querySelector('[role="dialog"]')).not.toBeNull();
   expect(document.querySelector('[aria-label="Primary repository"]')).not.toBeNull();
   expect(onOpenChange).not.toHaveBeenCalled();
-  await act(async () => additionalRepository().click());
+  await toggleAdditionalRepository();
   await act(async () => button("Create work area and Thread").click());
   expect(onStart).toHaveBeenCalledWith({
     modelSelection: { instanceId: provider.instanceId, model: "gpt-default" },
@@ -182,7 +199,7 @@ it("edits prepared repositories in the dialog and submits the reviewed choices",
 it("cancels repository edits without abandoning thread creation and blocks edits while pending", async () => {
   await render();
   await act(async () => button("Edit repositories").click());
-  await act(async () => additionalRepository().click());
+  await toggleAdditionalRepository();
   await act(async () => button("Cancel repository edits").click());
   expect(document.querySelector('[aria-label="Primary repository"]')).toBeNull();
   expect(document.querySelector('[role="dialog"]')).not.toBeNull();
@@ -191,7 +208,60 @@ it("cancels repository edits without abandoning thread creation and blocks edits
   expect(onStart).toHaveBeenCalledWith({
     modelSelection: { instanceId: provider.instanceId, model: "gpt-default" },
   });
-  await render(true);
+  await render({ pending: true });
   expect(button("Edit repositories").disabled).toBe(true);
   expect(button("Cancel").disabled).toBe(true);
+});
+
+it("keeps many selections in a compact summary and removes one without losing the primary", async () => {
+  const extraProjects = Array.from({ length: 12 }, (_, index) => ({
+    ...projects[1]!,
+    id: ProjectId.make(`extra-${index}`),
+    title: `Extra repository ${index}`,
+  }));
+  const availableProjects = [...projects, ...extraProjects];
+  await render({
+    availableProjects,
+    repositoryScope: {
+      primaryT3ProjectId: ticket.primaryT3ProjectId,
+      repositoryProjectIds: availableProjects.map((project) => project.id),
+    },
+  });
+  const trigger = document.querySelector('[aria-label="Additional repositories"]');
+  expect(trigger?.textContent).toBe("Additional + 12 more");
+  expect(document.querySelector('[role="option"]')).toBeNull();
+  expect(document.querySelector('[role="checkbox"]')).toBeNull();
+  await toggleAdditionalRepository("Extra repository 4");
+  expect(trigger?.textContent).toBe("Additional + 11 more");
+  await act(async () => button("Create work area and Thread").click());
+  expect(onStart).toHaveBeenCalledWith({
+    modelSelection: { instanceId: provider.instanceId, model: "gpt-default" },
+    repositoryScope: {
+      primaryT3ProjectId: ticket.primaryT3ProjectId,
+      repositoryProjectIds: availableProjects
+        .filter((project) => project.id !== ProjectId.make("extra-4"))
+        .map((project) => project.id),
+    },
+  });
+});
+
+it("lets an unavailable additional repository be removed from the dropdown", async () => {
+  const unavailableId = ProjectId.make("unlinked-repository");
+  await render({
+    repositoryScope: {
+      primaryT3ProjectId: ticket.primaryT3ProjectId,
+      repositoryProjectIds: [ticket.primaryT3ProjectId, unavailableId],
+    },
+  });
+  expect(button("Create work area and Thread").disabled).toBe(true);
+  await toggleAdditionalRepository(`Repository unavailable (${unavailableId})`);
+  expect(document.querySelector('[aria-label="Work area repositories"]')?.textContent).toContain(
+    "Primary",
+  );
+  expect(button("Create Thread").disabled).toBe(false);
+  expect(document.querySelector('[role="alert"]')).toBeNull();
+  await act(async () => button("Create Thread").click());
+  expect(onStart).toHaveBeenCalledWith({
+    modelSelection: { instanceId: provider.instanceId, model: "gpt-default" },
+  });
 });
