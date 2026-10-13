@@ -21,6 +21,7 @@ import { type ComponentProps, useRef, useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useHostIntegrations } from "~/hostIntegrations";
+import { useEnvironmentQuery } from "~/state/query";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { serverEnvironment, updateOutdatedServer } from "~/state/server";
@@ -358,19 +359,33 @@ export function OutdatedServerUpdateAction({
   environmentId,
   serverLabel,
   fromVersion,
+  selfUpdate,
+  desktopAppUpdate = false,
   targetVersion,
   label = "Update",
 }: {
   readonly environmentId: EnvironmentId;
   readonly serverLabel: string;
   readonly fromVersion: string | undefined;
+  readonly selfUpdate?: ServerSelfUpdateCapability | null;
+  readonly desktopAppUpdate?: boolean;
   readonly targetVersion: string;
   readonly label?: string;
 }) {
-  const { allowNpmServerUpdates = true } = useHostIntegrations();
+  const { allowNpmServerUpdates = true, outdatedServerDescriptor } = useHostIntegrations();
+  const descriptorQuery = useEnvironmentQuery(outdatedServerDescriptor?.(environmentId) ?? null);
+  const capabilities = outdatedServerDescriptor
+    ? descriptorQuery.isSuccess && !descriptorQuery.isPending
+      ? descriptorQuery.data?.capabilities
+      : undefined
+    : { serverSelfUpdate: selfUpdate, desktopAppUpdate };
+  const allowed =
+    allowNpmServerUpdates ||
+    (capabilities?.serverSelfUpdate === "desktop-managed" &&
+      capabilities.desktopAppUpdate === true);
   const update = useAtomCommand(updateOutdatedServer, { reportFailure: false });
   const handleUpdate = async () => {
-    if (!allowNpmServerUpdates || pendingUpdateEnvironmentIds.has(environmentId)) return;
+    if (!allowed || pendingUpdateEnvironmentIds.has(environmentId)) return;
     pendingUpdateEnvironmentIds.add(environmentId);
     try {
       const result = await update({
@@ -397,7 +412,16 @@ export function OutdatedServerUpdateAction({
       pendingUpdateEnvironmentIds.delete(environmentId);
     }
   };
-  if (!allowNpmServerUpdates) return null;
+  if (!allowed) {
+    return descriptorQuery.error ? (
+      <div role="alert" className="text-xs text-muted-foreground">
+        Could not check desktop update availability.
+        <Button size="xs" variant="outline" onClick={descriptorQuery.refresh}>
+          Retry update check
+        </Button>
+      </div>
+    ) : null;
+  }
   return (
     <Button size="xs" variant="outline" onClick={() => void handleUpdate()}>
       {label}

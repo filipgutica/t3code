@@ -40,6 +40,9 @@ vi.mock("./useWorkbenchTicketPreparations", () => ({
   useWorkbenchTicketPreparationRefresh: () => {},
   createWorkbenchThreadPresentationPolicy: () => ({ isVisible: () => true, canNotify: () => true }),
 }));
+vi.mock("./workbenchOutdatedServerDescriptor", () => ({
+  workbenchOutdatedServerDescriptor: vi.fn(),
+}));
 vi.mock("./WorkbenchPullRequestPreview", () => ({
   WorkbenchPullRequestPreviewProvider: ({ children }: { children: ReactNode }) => children,
 }));

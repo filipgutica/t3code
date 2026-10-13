@@ -42,6 +42,9 @@ vi.mock("./useWorkbenchCommandPaletteActions", () => ({
   useWorkbenchCommandPaletteActions: () => [],
 }));
 vi.mock("./state", () => ({ workbenchEnvironment: { ticketPreparations: vi.fn() } }));
+vi.mock("./workbenchOutdatedServerDescriptor", () => ({
+  workbenchOutdatedServerDescriptor: vi.fn(),
+}));
 vi.mock("../components/ChatMarkdown", () => ({
   default: ({ text }: { text: string }) => <>{text}</>,
 }));

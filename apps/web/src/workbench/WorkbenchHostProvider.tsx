@@ -26,6 +26,7 @@ import {
 import { resolveWorkbenchReviewCommentTitle } from "./workbenchComposerTitle";
 import { isWorkbenchSidebarPage } from "./workbenchNavigation";
 import { isWorkbenchTicketReviewComment } from "./workbenchTicketContext";
+import { workbenchOutdatedServerDescriptor } from "./workbenchOutdatedServerDescriptor";
 
 function WorkbenchCommandPaletteContributions({
   children,
@@ -49,6 +50,7 @@ const WORKBENCH_HOST_INTEGRATIONS: HostIntegrations = {
     ? {
         // Workbench release versions do not identify upstream t3 releases on npm.
         allowNpmServerUpdates: false,
+        outdatedServerDescriptor: workbenchOutdatedServerDescriptor,
         codexAuthHandoffUrl: (input, development) =>
           codexAuthHandoffUrl(input, development, "t3code-workbench"),
         desktopReleaseLinks: {
