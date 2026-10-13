@@ -44,11 +44,11 @@ export function WorkbenchRepositoryScopeFields({
     ? `${firstAdditionalRepository.title}${additionalRepositoryIds.length > 1 ? ` + ${additionalRepositoryIds.length - 1} more` : ""}`
     : "None";
   return (
-    <fieldset disabled={disabled} className="min-w-0 space-y-4">
+    <fieldset disabled={disabled} className="grid min-w-0 gap-4 sm:grid-cols-2">
       <legend className="sr-only">Workspace repositories</legend>
-      <div className="space-y-2">
+      <div className="flex min-w-0 flex-col gap-2">
         <Label htmlFor={`${idPrefix}-primary`}>Primary repository</Label>
-        <p id={`${idPrefix}-primary-description`} className="text-xs text-muted-foreground">
+        <p id={`${idPrefix}-primary-description`} className="flex-1 text-xs text-muted-foreground">
           Where the thread starts. The primary repository is always included.
         </p>
         <Select
@@ -96,9 +96,12 @@ export function WorkbenchRepositoryScopeFields({
           </p>
         ) : null}
       </div>
-      <div className="space-y-2">
+      <div className="flex min-w-0 flex-col gap-2">
         <Label htmlFor={`${idPrefix}-additional`}>Additional repositories</Label>
-        <p id={`${idPrefix}-additional-description`} className="text-xs text-muted-foreground">
+        <p
+          id={`${idPrefix}-additional-description`}
+          className="flex-1 text-xs text-muted-foreground"
+        >
           Included in the workspace and new thread context. Existing threads stay unchanged.
         </p>
         <Select
