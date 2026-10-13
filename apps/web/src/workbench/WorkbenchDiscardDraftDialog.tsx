@@ -15,6 +15,7 @@ import { WorkbenchInlineError } from "./WorkbenchForms";
 
 export function WorkbenchDiscardDraftDialog({
   title,
+  count = 1,
   finalFocus,
   open,
   busy,
@@ -24,6 +25,7 @@ export function WorkbenchDiscardDraftDialog({
   onDiscard,
 }: {
   readonly title?: string;
+  readonly count?: number;
   readonly finalFocus?: ComponentProps<typeof AlertDialogPopup>["finalFocus"];
   readonly open: boolean;
   readonly busy: boolean;
@@ -43,18 +45,24 @@ export function WorkbenchDiscardDraftDialog({
       <AlertDialogPopup finalFocus={finalFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>
-            {title ? `Discard “${title}”?` : "Discard this ticket draft?"}
+            {count > 1
+              ? `Discard ${count} drafts?`
+              : title
+                ? `Discard “${title}”?`
+                : "Discard this ticket draft?"}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {creationUncertain
               ? "Creating this ticket did not finish, and Jira may already have created the issue. Discarding deletes the planning conversation and this draft here, but it does not delete anything in Jira. Check Jira for the issue before you create another ticket."
-              : "The planning conversation and its draft are deleted. Tickets you already created are not affected."}
+              : count > 1
+                ? "The selected drafts and their planning conversations are deleted. Tickets you already created are not affected."
+                : "The planning conversation and its draft are deleted. Tickets you already created are not affected."}
           </AlertDialogDescription>
           <WorkbenchInlineError message={error} />
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" disabled={busy} />}>
-            Keep draft
+            {count > 1 ? "Keep drafts" : "Keep draft"}
           </AlertDialogClose>
           <Button
             variant="destructive"
@@ -65,7 +73,8 @@ export function WorkbenchDiscardDraftDialog({
               });
             }}
           >
-            <Trash2Icon /> Discard draft
+            <Trash2Icon />{" "}
+            {busy ? "Discarding…" : count > 1 ? `Discard ${count} drafts` : "Discard draft"}
           </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>

@@ -271,6 +271,7 @@ function WorkbenchTicketBoardContent({
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
           <div className="h-full overflow-auto p-3 sm:p-4 md:pt-0">
             <WorkbenchDraftTickets
+              key={`${environmentId}:${props.projectId}`}
               environmentId={environmentId}
               readOnly={props.readOnly === true}
               boardRef={boardRef}

@@ -30,6 +30,7 @@ vi.mock("../state/pullRequests", () => ({
 vi.mock("./state", () => ({
   workbenchEnvironment: {
     jiraGetTicketTransitions: () => null,
+    snapshot: () => Atom.make(null),
     discardTicketDraft: { permissionAtom: () => Atom.make(true) },
   },
 }));

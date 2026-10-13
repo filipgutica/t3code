@@ -1,4 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type {
   EnvironmentId,
@@ -6,18 +5,17 @@ import type {
   WorkbenchProjectId,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
-import { ArrowRightIcon, ChevronRightIcon, FilePenLineIcon, Trash2Icon } from "lucide-react";
-import { useRef, useState, type RefObject } from "react";
+import { ArrowRightIcon, ChevronRightIcon, Trash2Icon } from "lucide-react";
+import { useRef, type RefObject } from "react";
 
 import { Button } from "../components/ui/button";
+import { Checkbox } from "../components/ui/checkbox";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
-import { useAtomCommand } from "../state/use-atom-command";
 import { WorkbenchDiscardDraftDialog } from "./WorkbenchDiscardDraftDialog";
-import { failureMessage } from "./workbenchPageCommands";
-import { workbenchEnvironment } from "./state";
+import { WorkbenchInlineError } from "./WorkbenchForms";
+import { useWorkbenchDraftActions } from "./useWorkbenchDraftActions";
 import {
-  canDiscardConversationDraft,
   getConversationDraftTitle,
   type WorkbenchConversationDraft,
 } from "./workbenchTicketDraft.logic";
@@ -38,78 +36,109 @@ export function WorkbenchDraftTickets({
   readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   readonly onSelect: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
 }) {
-  const canOperate = useAtomValue(
-    workbenchEnvironment.discardTicketDraft.permissionAtom(environmentId),
-  );
-  const discardDraft = useAtomCommand(workbenchEnvironment.discardTicketDraft, {
-    reportFailure: false,
-  });
-  const [selected, setSelected] = useState<WorkbenchConversationDraft | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const headingRef = useRef<HTMLButtonElement>(null);
+  const actions = useWorkbenchDraftActions({ environmentId, readOnly: readOnly === true, drafts });
   const returnFocus = useRef<HTMLElement | null>(null);
-  const discarded = useRef(false);
-  const discard = async () => {
-    if (!selected || busy || readOnly || !canOperate) return false;
-    setBusy(true);
-    setError(null);
-    const result = await discardDraft({
-      environmentId,
-      input: { id: selected.id, expectedRevision: selected.revision },
-    });
-    setBusy(false);
-    if (result._tag === "Failure") {
-      setError(failureMessage(result));
-      return false;
-    }
-    discarded.current = true;
-    return true;
-  };
+  const headingRef = useRef<HTMLButtonElement>(null);
+  const bulkButtonRef = useRef<HTMLButtonElement>(null);
+  const count = actions.selectedDrafts.length;
   return (
     <>
       {drafts.length > 0 && (
         <Collapsible defaultOpen className="mb-4 min-w-0">
           <CollapsibleTrigger
             ref={headingRef}
-            className="group flex w-full cursor-pointer items-center gap-2 rounded-md py-2 text-left text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring"
+            className="group flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-md py-2 text-left text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring"
           >
             <ChevronRightIcon
               aria-hidden
               className="size-3.5 shrink-0 group-data-panel-open:rotate-90"
             />
-            Drafts
+            Drafts{" "}
             <span className="text-xs text-muted-foreground tabular-nums">{drafts.length}</span>
           </CollapsibleTrigger>
+          {count > 0 && (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span role="status" className="text-xs text-muted-foreground">
+                {count} selected
+              </span>
+              <Button
+                variant="ghost"
+                size="xs"
+                disabled={!actions.canMutate || actions.busy}
+                onClick={actions.selectAll}
+              >
+                Select all
+              </Button>
+              <Button
+                ref={bulkButtonRef}
+                variant="destructive"
+                size="xs"
+                disabled={!actions.canMutate || actions.busy}
+                onClick={(event) => {
+                  returnFocus.current = event.currentTarget;
+                  actions.confirm(actions.selectedDrafts);
+                }}
+              >
+                Discard selected ({count})
+              </Button>
+              <Button
+                variant="ghost"
+                size="xs"
+                disabled={actions.busy}
+                onClick={() => {
+                  actions.clearSelection();
+                  headingRef.current?.focus();
+                }}
+              >
+                Clear selection
+              </Button>
+            </div>
+          )}
+          <WorkbenchInlineError message={actions.error} />
           <CollapsiblePanel>
-            <p className="mb-3 text-xs text-muted-foreground">
-              Continue planning before creating a ticket.
-            </p>
-            <ul className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {count === 0 && (
+              <p className="mb-2 text-xs text-muted-foreground">
+                Continue planning before creating a ticket.
+              </p>
+            )}
+            <ul
+              aria-label="Drafts"
+              className="grid max-h-24 min-w-0 gap-2 overflow-y-auto overscroll-contain sm:grid-cols-2 lg:grid-cols-3"
+            >
               {drafts.map((draft) => {
                 const title = getConversationDraftTitle(
                   draft,
                   threadsById.get(draft.threadId)?.title,
                 );
+                const disabled = actions.busy || !actions.canMutate || !actions.canDiscard(draft);
                 return (
                   <li
                     key={draft.id}
-                    className="flex min-w-0 items-center rounded-lg border border-border bg-card"
+                    data-selected={actions.selectedIds.has(draft.id) || undefined}
+                    className="flex h-11 min-w-0 items-center rounded-lg border border-border bg-card data-selected:bg-accent"
                   >
+                    <label className="flex h-full w-11 shrink-0 cursor-pointer items-center justify-center">
+                      <Checkbox
+                        aria-label={`Select draft ${title}`}
+                        checked={actions.selectedIds.has(draft.id)}
+                        disabled={disabled}
+                        onCheckedChange={(checked) => actions.select(draft, checked)}
+                      />
+                    </label>
                     <button
                       type="button"
                       aria-label={`Open draft ${title}`}
                       onClick={() => onSelect(draft.projectId, draft.id)}
-                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg px-3 py-3 text-left hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+                      className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg pr-2 text-left hover:bg-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
                     >
-                      <FilePenLineIcon
-                        aria-hidden
-                        className="size-4 shrink-0 text-muted-foreground"
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{title}</span>
-                        <span className="block text-xs text-muted-foreground">Continue draft</span>
-                      </span>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={<span className="min-w-0 flex-1 truncate text-sm font-medium" />}
+                        >
+                          {title}
+                        </TooltipTrigger>
+                        <TooltipPopup>{title}</TooltipPopup>
+                      </Tooltip>
                       <ArrowRightIcon
                         aria-hidden
                         className="size-4 shrink-0 text-muted-foreground"
@@ -123,20 +152,10 @@ export function WorkbenchDraftTickets({
                               variant="ghost"
                               size="icon"
                               aria-label={`Discard draft ${title}`}
-                              disabled={
-                                busy ||
-                                readOnly ||
-                                !canOperate ||
-                                !canDiscardConversationDraft({
-                                  phase: draft.phase,
-                                  ticketExists: false,
-                                })
-                              }
+                              disabled={disabled}
                               onClick={(event) => {
                                 returnFocus.current = event.currentTarget;
-                                discarded.current = false;
-                                setError(null);
-                                setSelected(draft);
+                                actions.confirm([draft]);
                               }}
                             />
                           }
@@ -155,21 +174,32 @@ export function WorkbenchDraftTickets({
       )}
       <WorkbenchDiscardDraftDialog
         title={
-          selected
-            ? getConversationDraftTitle(selected, threadsById.get(selected.threadId)?.title)
+          actions.confirmation?.drafts.length === 1
+            ? getConversationDraftTitle(
+                actions.confirmation.drafts[0]!,
+                threadsById.get(actions.confirmation.drafts[0]!.threadId)?.title,
+              )
             : ""
         }
-        finalFocus={() =>
-          discarded.current ? (headingRef.current ?? boardRef.current) : returnFocus.current
-        }
-        open={selected !== null}
-        busy={busy}
-        creationUncertain={selected?.phase === "promoting"}
-        error={error}
-        onOpenChange={(open) => {
-          if (!open) setSelected(null);
+        count={actions.confirmation?.drafts.length ?? 1}
+        finalFocus={() => {
+          if (actions.discardSucceeded) return boardRef.current;
+          const trigger = returnFocus.current;
+          if (trigger?.isConnected && !trigger.hasAttribute("disabled")) return trigger;
+          if (bulkButtonRef.current && !bulkButtonRef.current.disabled)
+            return bulkButtonRef.current;
+          return headingRef.current ?? boardRef.current;
         }}
-        onDiscard={discard}
+        open={actions.confirmation?.open === true}
+        busy={actions.busy}
+        creationUncertain={
+          actions.confirmation?.drafts.some((draft) => draft.phase === "promoting") ?? false
+        }
+        error={null}
+        onOpenChange={(open) => {
+          if (!open) actions.closeConfirmation();
+        }}
+        onDiscard={actions.discard}
       />
     </>
   );
