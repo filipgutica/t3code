@@ -1,5 +1,5 @@
 {
-  "upstreamBase": "f23d0084b6e023ffb1af9e332d8666affc99d542",
+  "upstreamBase": "e82a1ce3f369f113b0b33dff8249569c345e30e8",
   "groups": [
     {
       "name": "Workbench domain, adapters, UI and contracts",
@@ -32,6 +32,7 @@
         "apps/server/src/git/GitManager.ts",
         "apps/server/src/git/GitWorkflowService.ts",
         "apps/server/src/http.ts",
+        "apps/server/src/httpCors.ts",
         "apps/server/src/mcp/McpInvocationContext.ts",
         "apps/server/src/mcp/McpSessionRegistry.ts",
         "apps/server/src/mcp/McpToolAccess.ts",

@@ -410,7 +410,7 @@ it.effect.each([
 
 afterEach(() => vi.unstubAllGlobals());
 it.effect.each([false, true])(
-  "hands web links and HTML files to the renderer and leaves other links alone (Workbench: %s)",
+  "hands web and app links and HTML files to the renderer and leaves other links alone (Workbench: %s)",
   (workbench) =>
     Effect.gen(function* () {
       vi.stubGlobal("__T3CODE_WORKBENCH_BUILD__", workbench);
@@ -436,6 +436,10 @@ it.effect.each([false, true])(
         // macOS hands the default browser every web link.
         assert.strictEqual(open("https://example.com/page"), 1);
         assert.strictEqual(open("http://localhost:3000/"), 1);
+        const scheme = workbench ? "t3code-workbench" : "t3code";
+        assert.strictEqual(open(`${scheme}://new?prompt=hi`), 1);
+        assert.strictEqual(open(`${scheme}://threads/env-1/thread-1`), 1);
+        assert.strictEqual(open(`${scheme}://somewhere-else`), 0);
         // Anything else is not a web page; Electron keeps its own handling.
         assert.strictEqual(open("mailto:hello@example.com"), 0);
         const fileEvent = { preventDefault: vi.fn() };
@@ -446,6 +450,8 @@ it.effect.each([false, true])(
         assert.deepStrictEqual(received, [
           "https://example.com/page",
           "http://localhost:3000/",
+          `${scheme}://new?prompt=hi`,
+          `${scheme}://threads/env-1/thread-1`,
           "file:///tmp/browser-page.html",
         ]);
       }).pipe(
