@@ -459,7 +459,6 @@ function Harness({
       deleteAssignedThread: idle,
       attachExistingThread: idle,
       startSelectedThread: idle,
-      editStartThreadRepositories: noop,
       unlinkThread: idle,
     },
   };

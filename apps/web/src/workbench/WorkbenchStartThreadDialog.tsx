@@ -37,6 +37,7 @@ import type { Project } from "../types";
 import { WorkbenchRepositoryScopeFields } from "./WorkbenchRepositoryScopeFields";
 import {
   getWorkbenchRepositoryScope,
+  isWorkbenchRepositoryScopeEqual,
   isWorkbenchRepositoryScopeValid,
   isWorkbenchTicketWorkspaceReady,
   type WorkbenchRepositoryScope,
@@ -234,7 +235,6 @@ export function WorkbenchStartThreadDialog({
   request,
   pending,
   onStart,
-  onEditRepositories,
   error,
 }: {
   readonly open: boolean;
@@ -246,7 +246,6 @@ export function WorkbenchStartThreadDialog({
     modelSelection: ModelSelection;
     repositoryScope?: WorkbenchRepositoryScope;
   }) => void;
-  readonly onEditRepositories: () => void;
   readonly error: string | null;
 }) {
   const {
@@ -264,7 +263,9 @@ export function WorkbenchStartThreadDialog({
   const [repositoryScope, setRepositoryScope] = useState(
     initialRepositoryScope ?? getWorkbenchRepositoryScope(ticket),
   );
-  const workspaceReady = isWorkbenchTicketWorkspaceReady({ ticket, workspace });
+  const workspaceReady =
+    isWorkbenchTicketWorkspaceReady({ ticket, workspace }) &&
+    isWorkbenchRepositoryScopeEqual(ticket, repositoryScope);
   const workspaceLocked = workspace?.status === "preparing" || workspace?.status === "releasing";
   const scopeValid = isWorkbenchRepositoryScopeValid({ scope: repositoryScope, projects });
   const settings = useEnvironmentSettings(environmentId);
@@ -330,7 +331,6 @@ export function WorkbenchStartThreadDialog({
               ready={workspaceReady}
               locked={workspaceLocked}
               pending={pending}
-              onEditRepositories={onEditRepositories}
             />
             {error ? (
               <p role="alert" className="break-words text-sm text-destructive">
@@ -416,7 +416,6 @@ function WorkbenchStartThreadWorkspaceReview({
   ready,
   locked,
   pending,
-  onEditRepositories,
 }: {
   ticket: WorkbenchTicket;
   workspace: WorkbenchTicketWorkspace | undefined;
@@ -426,8 +425,8 @@ function WorkbenchStartThreadWorkspaceReview({
   ready: boolean;
   locked: boolean;
   pending: boolean;
-  onEditRepositories: () => void;
 }) {
+  const [editingRepositories, setEditingRepositories] = useState(false);
   const status = getWorkAreaStatus({ ready, workspace });
   return (
     <section className="space-y-3">
@@ -436,19 +435,22 @@ function WorkbenchStartThreadWorkspaceReview({
           <p className="text-sm font-medium">Work area</p>
           <Badge variant={status.variant}>{status.label}</Badge>
         </div>
-        {ready ? (
+        {ready || editingRepositories ? (
           <Button
             type="button"
             variant="ghost"
             size="xs"
-            disabled={pending}
-            onClick={onEditRepositories}
+            disabled={pending || locked}
+            onClick={() => {
+              if (editingRepositories) onScopeChange(getWorkbenchRepositoryScope(ticket));
+              setEditingRepositories((editing) => !editing);
+            }}
           >
-            Edit repositories
+            {editingRepositories ? "Cancel repository edits" : "Edit repositories"}
           </Button>
         ) : null}
       </div>
-      {ready ? (
+      {ready && !editingRepositories ? (
         <div className="space-y-2">
           <ul aria-label="Work area repositories" className="flex flex-wrap gap-1.5">
             {[
@@ -478,6 +480,11 @@ function WorkbenchStartThreadWorkspaceReview({
           idPrefix={`start-thread-${ticket.id}`}
         />
       )}
+      {editingRepositories ? (
+        <p className="text-xs text-muted-foreground">
+          Repository changes apply to this ticket’s work area when you create the Thread.
+        </p>
+      ) : null}
       {locked ? (
         <p role="status" className="text-xs text-muted-foreground">
           Wait for work area preparation or release to finish.
