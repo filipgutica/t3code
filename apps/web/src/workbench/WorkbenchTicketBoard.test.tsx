@@ -10,6 +10,7 @@ import {
   WorkbenchTicketId,
   type WorkbenchTicket,
 } from "@t3tools/contracts";
+import { Atom } from "effect/reactivity";
 import { ToggleGroup } from "../components/ui/toggle-group";
 
 vi.mock("../hooks/useMediaQuery", () => ({ useMediaQuery: () => true }));
@@ -26,7 +27,15 @@ vi.mock("../state/pullRequests", () => ({
   pullRequestEnvironment: { activity: () => null },
   useSharedPullRequestSummary: () => null,
 }));
-vi.mock("./state", () => ({ workbenchEnvironment: { jiraGetTicketTransitions: () => null } }));
+vi.mock("./state", () => ({
+  workbenchEnvironment: {
+    jiraGetTicketTransitions: () => null,
+    snapshot: () => Atom.make(null),
+    ticketPreparations: () => Atom.make(null),
+    discardTicketDraftInBatch: { permissionAtom: () => Atom.make(true) },
+  },
+}));
+vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
 
 vi.mock("../components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,

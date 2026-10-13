@@ -55,6 +55,13 @@ const serialPerEnvironment = {
   key: ({ environmentId }: { readonly environmentId: EnvironmentId }) => environmentId,
 } as const;
 
+const discardTicketDraftOptions = {
+  label: "environment-data:workbench:discard-ticket-draft",
+  tag: WS_METHODS.workbenchDiscardTicketDraft,
+  scheduler,
+  concurrency: serialPerEnvironment,
+};
+
 const refreshSnapshot = (
   { environmentId }: { readonly environmentId: EnvironmentId },
   registry: AtomRegistry.AtomRegistry,
@@ -270,12 +277,14 @@ export const workbenchEnvironment = {
     onSuccess: refreshWorkbenchAndJiraSnapshots,
   }),
   discardTicketDraft: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:discard-ticket-draft",
-    tag: WS_METHODS.workbenchDiscardTicketDraft,
-    scheduler,
-    concurrency: serialPerEnvironment,
+    ...discardTicketDraftOptions,
     onSuccess: refreshSnapshot,
   }),
+  // The board refreshes both queries once after its sequential batch settles.
+  discardTicketDraftInBatch: createEnvironmentRpcCommand(
+    connectionAtomRuntime,
+    discardTicketDraftOptions,
+  ),
   startTicketDraftWork: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:start-ticket-draft-work",
     tag: WS_METHODS.workbenchStartTicketDraftWork,

@@ -40,7 +40,15 @@ import {
   SearchIcon,
   XIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useEnvironmentQuery } from "../state/query";
@@ -162,6 +170,7 @@ type WorkbenchTicketBoardProps = {
 };
 
 export function WorkbenchTicketBoard(props: WorkbenchTicketBoardProps) {
+  const boardRef = useRef<HTMLElement>(null);
   const data = useWorkbenchBoardData(props);
   const drag = useWorkbenchBoardDrag({
     ...props,
@@ -169,15 +178,25 @@ export function WorkbenchTicketBoard(props: WorkbenchTicketBoardProps) {
     swimlanes: data.swimlanes,
   });
   const board = { ...props, ...data, ...drag };
-  return renderWorkbenchTicketBoard({ props, data, drag, board });
+  return (
+    <WorkbenchTicketBoardContent
+      props={props}
+      data={data}
+      drag={drag}
+      board={board}
+      boardRef={boardRef}
+    />
+  );
 }
 
-function renderWorkbenchTicketBoard({
+function WorkbenchTicketBoardContent({
   props,
   data,
   drag,
   board,
+  boardRef,
 }: {
+  boardRef: RefObject<HTMLElement | null>;
   props: WorkbenchTicketBoardProps;
   data: ReturnType<typeof useWorkbenchBoardData>;
   drag: ReturnType<typeof useWorkbenchBoardDrag>;
@@ -225,6 +244,8 @@ function renderWorkbenchTicketBoard({
       onDragEnd={handleDragEnd}
     >
       <section
+        ref={boardRef}
+        tabIndex={-1}
         aria-label="Ticket board"
         className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
       >
@@ -250,6 +271,10 @@ function renderWorkbenchTicketBoard({
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
           <div className="h-full overflow-auto p-3 sm:p-4 md:pt-0">
             <WorkbenchDraftTickets
+              key={`${environmentId}:${props.projectId}`}
+              environmentId={environmentId}
+              readOnly={props.readOnly === true}
+              boardRef={boardRef}
               drafts={(props.drafts ?? []).filter(
                 (draft) =>
                   data.attentionMode === "all" &&
