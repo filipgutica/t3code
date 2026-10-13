@@ -25,12 +25,11 @@ export function useWorkbenchDraftActions({
   readonly drafts: ReadonlyArray<WorkbenchConversationDraft>;
 }) {
   const permission = useAtomValue(
-    workbenchEnvironment.discardTicketDraft.permissionAtom(environmentId),
+    workbenchEnvironment.discardTicketDraftInBatch.permissionAtom(environmentId),
   );
-  const discardDraft = useAtomCommand(workbenchEnvironment.discardTicketDraft, {
+  const discardDraft = useAtomCommand(workbenchEnvironment.discardTicketDraftInBatch, {
     reportFailure: false,
   });
-  const refresh = useAtomRefresh(workbenchEnvironment.snapshot({ environmentId, input: {} }));
   const canMutate = !readOnly && permission;
   const eligibility = useRef(canMutate);
   useLayoutEffect(() => {
@@ -42,6 +41,13 @@ export function useWorkbenchDraftActions({
     open: boolean;
     drafts: ReadonlyArray<WorkbenchConversationDraft>;
   } | null>(null);
+  const refreshEnvironmentId = confirmation?.environmentId ?? environmentId;
+  const refresh = useAtomRefresh(
+    workbenchEnvironment.snapshot({ environmentId: refreshEnvironmentId, input: {} }),
+  );
+  const refreshPreparations = useAtomRefresh(
+    workbenchEnvironment.ticketPreparations({ environmentId: refreshEnvironmentId, input: {} }),
+  );
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +80,7 @@ export function useWorkbenchDraftActions({
     setError(null);
     const failed: WorkbenchConversationDraft[] = [];
     const messages: string[] = [];
+    let attempted = false;
     try {
       for (const draft of confirmation.drafts) {
         if (!eligibility.current) {
@@ -81,6 +88,7 @@ export function useWorkbenchDraftActions({
           messages.push("This workspace is read-only or your permission changed.");
           continue;
         }
+        attempted = true;
         const result = await discardDraft({
           environmentId: confirmation.environmentId,
           input: { id: draft.id, expectedRevision: draft.revision },
@@ -105,9 +113,12 @@ export function useWorkbenchDraftActions({
         setError(
           `${removed > 0 ? `${removed} discarded. ` : ""}${failed.length} ${failed.length === 1 ? "draft could" : "drafts could"} not be discarded. ${[...new Set(messages)].join(" ") || "This workspace is read-only or your permission changed."} Check the remaining drafts and try again.`,
         );
-        refresh();
       }
     } finally {
+      if (attempted) {
+        refresh();
+        refreshPreparations();
+      }
       running.current = false;
       setBusy(false);
     }

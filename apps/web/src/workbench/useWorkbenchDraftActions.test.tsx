@@ -15,16 +15,23 @@ import * as Cause from "effect/Cause";
 import { useWorkbenchDraftActions } from "./useWorkbenchDraftActions";
 import type { WorkbenchConversationDraft } from "./workbenchTicketDraft.logic";
 
-const mocks = vi.hoisted(() => ({ permission: true, discard: vi.fn(), refresh: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  permission: true,
+  discard: vi.fn(),
+  refresh: vi.fn(),
+  refreshPreparations: vi.fn(),
+}));
 vi.mock("@effect/atom-react", () => ({
   useAtomValue: () => mocks.permission,
-  useAtomRefresh: () => mocks.refresh,
+  useAtomRefresh: (atom: string) =>
+    atom === "snapshot" ? mocks.refresh : mocks.refreshPreparations,
 }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => mocks.discard }));
 vi.mock("./state", () => ({
   workbenchEnvironment: {
-    discardTicketDraft: { permissionAtom: () => null },
-    snapshot: () => null,
+    discardTicketDraftInBatch: { permissionAtom: () => null },
+    snapshot: () => "snapshot",
+    ticketPreparations: () => "preparations",
   },
 }));
 
@@ -80,6 +87,7 @@ describe("board draft discard", () => {
     mocks.permission = true;
     mocks.discard.mockReset().mockResolvedValue(success);
     mocks.refresh.mockReset();
+    mocks.refreshPreparations.mockReset();
   });
   afterEach(() => {
     act(() => renderer?.unmount());
@@ -96,6 +104,31 @@ describe("board draft discard", () => {
     expect(mocks.discard).not.toHaveBeenCalled();
     act(() => actions.clearSelection());
     expect(actions.selectedDrafts).toEqual([]);
+  });
+
+  it("refreshes both queries once when the whole batch settles", async () => {
+    let finishSecond!: (value: typeof success) => void;
+    mocks.discard.mockResolvedValueOnce(success).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSecond = resolve;
+        }),
+    );
+    mount();
+    act(() => actions.confirm([first, second]));
+    let pending!: Promise<boolean>;
+    await act(async () => {
+      pending = actions.discard();
+    });
+    expect(mocks.discard).toHaveBeenCalledTimes(2);
+    expect(mocks.refresh).not.toHaveBeenCalled();
+    expect(mocks.refreshPreparations).not.toHaveBeenCalled();
+    await act(async () => {
+      finishSecond(success);
+      await pending;
+    });
+    expect(mocks.refresh).toHaveBeenCalledOnce();
+    expect(mocks.refreshPreparations).toHaveBeenCalledOnce();
   });
 
   it("never confirms hidden drafts or already saved ticket conversations", async () => {
@@ -129,6 +162,7 @@ describe("board draft discard", () => {
     expect(actions.selectedIds).toEqual(new Set([second.id]));
     expect(actions.error).toContain("1 discarded. 1 draft could not be discarded.");
     expect(mocks.refresh).toHaveBeenCalledOnce();
+    expect(mocks.refreshPreparations).toHaveBeenCalledOnce();
     const interrupted = { ...second, phase: "discarding" as const, revision: 4 };
     act(() => renderer.update(<Harness environmentId={environmentId} drafts={[interrupted]} />));
     act(() => actions.confirm(actions.selectedDrafts));

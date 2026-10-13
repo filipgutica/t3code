@@ -31,7 +31,8 @@ vi.mock("./state", () => ({
   workbenchEnvironment: {
     jiraGetTicketTransitions: () => null,
     snapshot: () => Atom.make(null),
-    discardTicketDraft: { permissionAtom: () => Atom.make(true) },
+    ticketPreparations: () => Atom.make(null),
+    discardTicketDraftInBatch: { permissionAtom: () => Atom.make(true) },
   },
 }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
