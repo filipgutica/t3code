@@ -30,6 +30,7 @@ vi.mock("~/hooks/useSettings", () => ({
     selector: (settings: { continueThreadsAfterServerUpdate: boolean }) => unknown,
   ) => selector({ continueThreadsAfterServerUpdate: testState.continueThreadsAfterServerUpdate }),
 }));
+vi.mock("~/hostIntegrations", () => ({ useHostIntegrations: () => ({}) }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => testState.session }));
 vi.mock("~/rpc/atomRegistry", () => ({
   appAtomRegistry: { get: () => testState.session },

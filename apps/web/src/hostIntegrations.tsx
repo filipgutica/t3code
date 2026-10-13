@@ -61,7 +61,7 @@ export interface HostIntegrations {
   readonly isReviewCommentReferenceHidden?: (comment: ReviewCommentContext) => boolean;
   readonly reviewCommentTitle?: (comment: ReviewCommentContext) => string | null;
   readonly desktopReleaseLinks?: DesktopReleaseLinks;
-  /** Whether aggregate updates can target npm-managed servers. Native hosts default to true. */
+  /** Whether update actions can target npm-managed servers. Native hosts default to true. */
   readonly allowNpmServerUpdates?: boolean;
   readonly codexAuthHandoffUrl?: (input: CodexAuthHandoff, development: boolean) => string;
 }
