@@ -115,7 +115,7 @@ export function WorkbenchDraftTickets({
                   <li
                     key={draft.id}
                     data-selected={actions.selectedIds.has(draft.id) || undefined}
-                    className="flex h-11 min-w-0 items-center rounded-lg border border-border bg-card data-selected:bg-accent"
+                    className="flex h-11 min-w-0 items-center rounded-lg border border-border bg-card hover:bg-accent/50 data-selected:bg-accent"
                   >
                     <label className="flex h-full w-11 shrink-0 cursor-pointer items-center justify-center">
                       <Checkbox
@@ -129,7 +129,7 @@ export function WorkbenchDraftTickets({
                       type="button"
                       aria-label={`Open draft ${title}`}
                       onClick={() => onSelect(draft.projectId, draft.id)}
-                      className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg pr-2 text-left hover:bg-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+                      className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-lg pr-2 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
                     >
                       <Tooltip>
                         <TooltipTrigger
