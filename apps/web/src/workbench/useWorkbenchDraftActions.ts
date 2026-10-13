@@ -1,6 +1,6 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, WorkbenchTicketId } from "@t3tools/contracts";
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 import { useAtomCommand } from "../state/use-atom-command";
 import { failureMessage } from "./workbenchPageCommands";
@@ -33,7 +33,7 @@ export function useWorkbenchDraftActions({
   const refresh = useAtomRefresh(workbenchEnvironment.snapshot({ environmentId, input: {} }));
   const canMutate = !readOnly && permission;
   const eligibility = useRef(canMutate);
-  useEffect(() => {
+  useLayoutEffect(() => {
     eligibility.current = canMutate;
   }, [canMutate]);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<WorkbenchTicketId>>(new Set());

@@ -54,10 +54,14 @@ const first = draft("first");
 const second = draft("second", 3);
 const success = { _tag: "Success", value: undefined };
 let actions: ReturnType<typeof useWorkbenchDraftActions>;
-function Harness(props: Parameters<typeof useWorkbenchDraftActions>[0]) {
+function Harness({
+  onCommit,
+  ...props
+}: Parameters<typeof useWorkbenchDraftActions>[0] & { onCommit?: () => void }) {
   const result = useWorkbenchDraftActions(props);
   useLayoutEffect(() => {
     actions = result;
+    onCommit?.();
   });
   return null;
 }
@@ -170,6 +174,30 @@ describe("board draft discard", () => {
     });
     expect(mocks.discard).toHaveBeenCalledTimes(1);
     expect(actions.selectedIds).toEqual(new Set([second.id]));
+    expect(actions.error).toContain("read-only or your permission changed");
+  });
+
+  it("honors a read-only commit before passive effects run", async () => {
+    mount();
+    act(() => actions.confirm([first, second]));
+    let pending!: Promise<boolean>;
+    act(() =>
+      renderer.update(
+        <Harness
+          environmentId={environmentId}
+          drafts={[first, second]}
+          readOnly
+          onCommit={() => {
+            if (!pending) pending = actions.discard();
+          }}
+        />,
+      ),
+    );
+    await act(async () => {
+      await pending;
+    });
+    expect(mocks.discard).not.toHaveBeenCalled();
+    expect(actions.selectedIds).toEqual(new Set([first.id, second.id]));
     expect(actions.error).toContain("read-only or your permission changed");
   });
 
