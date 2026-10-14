@@ -1300,7 +1300,6 @@ function WorkbenchPageThreadDialogs(
     setAttachThreadTicket,
     attachExistingThread,
     startSelectedThread,
-    editStartThreadRepositories,
   } = threadActions;
   const pending = pendingAction !== null;
   return (
@@ -1326,7 +1325,6 @@ function WorkbenchPageThreadDialogs(
                 ?.defaultModelSelection ?? null,
             additional: startThreadRequest.mode === "additional",
           }}
-          onEditRepositories={editStartThreadRepositories}
           error={error}
           providers={providers}
           pending={pending}

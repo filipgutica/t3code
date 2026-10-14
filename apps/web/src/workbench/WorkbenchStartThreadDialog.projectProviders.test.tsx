@@ -113,7 +113,6 @@ const mount = () =>
         providers={[provider]}
         pending={false}
         onStart={start}
-        onEditRepositories={() => {}}
         error={null}
         request={{
           environmentId,

@@ -230,7 +230,6 @@ function Harness({ input }: { input: HarnessInput }) {
     repositoryScopeDraft: input.repositoryScopeDraft,
     clearRepositoryScope: vi.fn(),
     acceptSavedRepositoryScope: vi.fn(),
-    onEditRepositories: vi.fn(),
   });
   useEffect(() => {
     actions = current;

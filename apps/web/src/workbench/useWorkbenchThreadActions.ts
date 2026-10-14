@@ -83,7 +83,6 @@ export function useWorkbenchThreadActions({
   repositoryScopeDraft,
   clearRepositoryScope,
   acceptSavedRepositoryScope,
-  onEditRepositories,
 }: {
   readonly environmentId: EnvironmentId | null;
   readonly pageData: ReturnType<typeof useWorkbenchPageData>;
@@ -95,7 +94,6 @@ export function useWorkbenchThreadActions({
   readonly repositoryScopeDraft: WorkbenchRepositoryScopeDraft | null;
   readonly clearRepositoryScope: () => void;
   readonly acceptSavedRepositoryScope: (ticket: WorkbenchTicket) => void;
-  readonly onEditRepositories: (ticket: WorkbenchTicket) => void;
 }) {
   const navigate = useNavigate({ from: "/workbench" });
   const {
@@ -386,16 +384,6 @@ export function useWorkbenchThreadActions({
     }
   };
 
-  const editStartThreadRepositories = () => {
-    if (!startThreadRequest || pendingAction !== null) return;
-    const ticket = snapshot?.tickets.find(
-      (candidate) => candidate.id === startThreadRequest.ticket.id,
-    );
-    if (!ticket) return;
-    setStartThreadRequest(null);
-    onEditRepositories(ticket);
-  };
-
   const unlinkThread = async (threadId: ThreadId) => {
     if (
       environmentId === null ||
@@ -426,7 +414,6 @@ export function useWorkbenchThreadActions({
     deleteAssignedThread,
     attachExistingThread,
     startSelectedThread,
-    editStartThreadRepositories,
     unlinkThread,
   };
 }
