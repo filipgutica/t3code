@@ -21,9 +21,11 @@ For each proposed shared-file change, state its necessity, the existing extensio
 
 Keep native records authoritative. Check where lifecycle, persistence, transactions, and environment identity are owned before introducing Workbench state. Follow the documented ownership rules rather than cloning native models, components, or workflows to make integration convenient.
 
+Compare affected native behavior with the integrated upstream baseline, including patches without Workbench imports. Apply the [native boundary constraints](../../../docs/internals/workbench-fork.md#isolation-boundary) before choosing an extraction.
+
 ## Plan the proof
 
-Name the affected entry points and clients, including the reverse action and non-Workbench path when applicable. Choose focused behavior checks and the relevant package boundary gate from the live repository scripts. Keep the verification proportional to the change; documentation-only changes need instruction and link validation, not application suites.
+Name the affected entry points and clients, including the reverse action and non-Workbench path when applicable. Choose focused behavior checks and the applicable package and host-import gates from [Package checks](../../../docs/internals/workbench-fork.md#package-checks). Keep the verification proportional to the change; documentation-only changes need instruction and link validation, not application suites.
 
 Surface a conflict between the requested behavior and isolation before committing to an implementation. Explain the smallest supported option and its tradeoff; keep progressing on independent authorized work.
 

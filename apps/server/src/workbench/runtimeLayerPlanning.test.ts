@@ -12,6 +12,7 @@ import {
   ThreadId,
   WorkbenchProjectId,
   WorkbenchTicketId,
+  WorkbenchTicketWorkspaceAttemptId,
 } from "@t3tools/contracts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as DateTime from "effect/DateTime";
@@ -43,7 +44,7 @@ import * as TicketPlanningRuntime from "./TicketPlanningRuntime.ts";
 import * as TicketDraftService from "./TicketDraftService.ts";
 import { TicketWorkspaceService } from "@t3tools/workbench/TicketWorkspaceService";
 import { WorkbenchJiraService } from "./jira/WorkbenchJiraService.ts";
-import { WorkbenchStore } from "./WorkbenchStore.ts";
+import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
 
 const projectId = ProjectId.make("repo:composed-policy");
 const planningThreadId = ThreadId.make("thread:composed-planning");
@@ -131,32 +132,49 @@ const planningPolicyLayer = TicketPlanningRuntime.layerRuntimePolicyDecorator.pi
 
 // Provide the decorator outside the complete native graph, as production composition does.
 // The resolver inside that graph must consume it instead of installing a shadowing default.
-const layerTest = Layer.mergeAll(
-  RuntimeLayer.layer,
-  RuntimeLayer.layerEventSink,
-  ProjectStore.layer,
-  CommandReceiptStore.layer,
-).pipe(
-  Layer.provide(planningPolicyLayer),
-  Layer.provide(McpSessionRegistryTestkit.layer),
-  Layer.provide(McpProviderSessions.layer),
-  Layer.provide(SqlitePersistence.layerMemory),
-  Layer.provide(Layer.mock(CheckpointStore.CheckpointStore)({})),
-  Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-workbench-composed-policy-" })),
-  Layer.provideMerge(ServerSettings.layerTest()),
-  Layer.provideMerge(
-    Layer.mock(Providers.ProviderInstanceRegistry)({ getInstance: () => Effect.succeed(instance) }),
+const makeLayerTest = <A, E, R>(policies: Layer.Layer<A, E, R>) =>
+  Layer.mergeAll(
+    RuntimeLayer.layer,
+    RuntimeLayer.layerEventSink,
+    ProjectStore.layer,
+    CommandReceiptStore.layer,
+  ).pipe(
+    Layer.provideMerge(policies),
+    Layer.provide(McpSessionRegistryTestkit.layer),
+    Layer.provide(McpProviderSessions.layer),
+    Layer.provide(SqlitePersistence.layerMemory),
+    Layer.provide(Layer.mock(CheckpointStore.CheckpointStore)({})),
+    Layer.provide(
+      ServerConfig.layerTest(process.cwd(), { prefix: "t3-workbench-composed-policy-" }),
+    ),
+    Layer.provideMerge(ServerSettings.layerTest()),
+    Layer.provideMerge(
+      Layer.mock(Providers.ProviderInstanceRegistry)({
+        getInstance: () => Effect.succeed(instance),
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(GitWorkflow.GitWorkflowService)({
+        pruneWorktrees: () => Effect.void,
+        isRepository: () => Effect.succeed(true),
+      }),
+    ),
+    Layer.provide(
+      Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeed(Option.none()) }),
+    ),
+    Layer.provide(
+      Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+        resolveLink: () => unused,
+      }),
+    ),
+    Layer.provideMerge(NodeServices.layer),
+  );
+const layerTest = makeLayerTest(planningPolicyLayer);
+const layerPersistedPlanningTest = makeLayerTest(
+  TicketPlanningRuntime.layerRuntimePolicyDecorator.pipe(
+    Layer.provideMerge(WorkbenchStoreLive),
+    Layer.provide(ProjectStore.layer),
   ),
-  Layer.provide(Layer.mock(GitWorkflow.GitWorkflowService)({ pruneWorktrees: () => Effect.void })),
-  Layer.provide(
-    Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeed(Option.none()) }),
-  ),
-  Layer.provide(
-    Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-      resolveLink: () => unused,
-    }),
-  ),
-  Layer.provideMerge(NodeServices.layer),
 );
 
 it.effect("uses native project enablement for planning creation, retries and turns", () =>
@@ -229,13 +247,61 @@ it.effect("uses native project enablement for planning creation, retries and tur
 );
 
 it.effect(
-  "native dispatch and turn execution consume the composed planning policy without changing native threads",
+  "Start work restores execution checkpoints in the same conversation without changing native defaults",
   () =>
     Effect.gen(function* () {
       const projects = yield* ProjectStore.ProjectStoreV2;
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
       const sessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const store = yield* WorkbenchStore;
+      const worktreePath = "/work-area/composed-policy";
+      const branch = "workbench/composed-policy";
+      const drafts = yield* TicketDraftService.TicketDraftService.pipe(
+        Effect.provide(
+          TicketDraftService.layer.pipe(
+            Layer.provide(Layer.mock(WorkbenchJiraService)({ createTicket: store.createTicket })),
+            Layer.provide(
+              Layer.mock(TicketWorkspaceService)({
+                // Exclude Git worktree creation, but persist preparation through the real store.
+                prepare: ({ ticketId, requestedAt }) =>
+                  Effect.gen(function* () {
+                    const attemptId =
+                      WorkbenchTicketWorkspaceAttemptId.make("composed-preparation");
+                    yield* store.claimTicketWorkspace({
+                      ticketId,
+                      attemptId,
+                      branchName: branch,
+                      claimedAt: requestedAt,
+                      repositories: [
+                        {
+                          projectId,
+                          isPrimary: true,
+                          sourcePath: process.cwd(),
+                          worktreePath,
+                        },
+                      ],
+                    });
+                    yield* store.markTicketWorkspaceRepositoryReady({
+                      ticketId,
+                      attemptId,
+                      projectId,
+                      worktreePath,
+                      branchName: branch,
+                      updatedAt: requestedAt,
+                    });
+                    return yield* store.completeTicketWorkspace({
+                      ticketId,
+                      attemptId,
+                      completedAt: requestedAt,
+                    });
+                  }),
+              }),
+            ),
+          ),
+        ),
+      );
       const policies = new Map<
         ThreadId,
         Effect.Success<ReturnType<RuntimePolicy.RuntimePolicyV2Shape["resolve"]>>
@@ -274,21 +340,39 @@ it.effect(
           updatedAt: now,
         },
       });
+      yield* store.createProject({
+        id: draft.projectId,
+        title: "Policy workspace",
+        linkedProjectIds: [projectId],
+        createdAt: now,
+      });
+      const begun = yield* drafts.begin({
+        id: draft.id,
+        projectId: draft.projectId,
+        threadId: planningThreadId,
+        modelSelection,
+      });
+      const editable = yield* store.updateTicketDraft({
+        id: begun.id,
+        expectedRevision: begun.revision,
+        fields: draft.fields,
+      });
       for (const threadId of [planningThreadId, nativeThreadId]) {
-        yield* orchestrator.dispatch({
-          type: "thread.create",
-          commandId: CommandId.make(`create:${threadId}`),
-          threadId,
-          projectId,
-          title: threadId,
-          modelSelection,
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          branch: null,
-          worktreePath: null,
-          createdBy: "user",
-          creationSource: "web",
-        });
+        if (threadId === nativeThreadId)
+          yield* orchestrator.dispatch({
+            type: "thread.create",
+            commandId: CommandId.make(`create:${threadId}`),
+            threadId,
+            projectId,
+            title: threadId,
+            modelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdBy: "user",
+            creationSource: "web",
+          });
         const dispatched = yield* orchestrator.dispatch({
           type: "message.dispatch",
           commandId: CommandId.make(`dispatch:${threadId}`),
@@ -325,5 +409,71 @@ it.effect(
       assert.isUndefined(native?.sandboxPolicy);
       assert.isUndefined(native?.checkpoints);
       assert.isUndefined(native?.instructions);
-    }).pipe(Effect.provide(layerTest)),
+
+      // The process boundary is excluded; native Stop makes the observed planning turn idle.
+      yield* threads.dispatch({
+        type: "thread.stop",
+        commandId: CommandId.make("stop:composed-planning"),
+        threadId: planningThreadId,
+      });
+      yield* worker.drain();
+      const before = yield* threads.getThreadProjection(planningThreadId);
+      assert.deepEqual(before.checkpointScopes, []);
+      assert.include(
+        before.messages.map((message) => message.id),
+        MessageId.make(`message:${planningThreadId}`),
+      );
+      const promoted = yield* drafts.promote({
+        id: editable.id,
+        expectedRevision: editable.revision,
+      });
+      const assignments = (yield* store.getSnapshot).assignments;
+      assert.lengthOf(assignments, 1);
+      assert.equal(assignments[0]?.threadId, planningThreadId);
+      assert.equal(assignments[0]?.ticketId, draft.id);
+      const working = yield* drafts.startWork({
+        id: promoted.id,
+        expectedRevision: promoted.revision,
+      });
+      assert.equal(working.phase, "working");
+      const after = yield* threads.getThreadProjection(planningThreadId);
+      assert.equal(after.thread.id, before.thread.id);
+      assert.equal(after.thread.projectId, projectId);
+      assert.equal(after.thread.worktreePath, worktreePath);
+      assert.equal(after.thread.branch, branch);
+      assert.equal(after.thread.interactionMode, "default");
+      assert.deepEqual(after.messages, before.messages);
+      assert.deepEqual((yield* store.getSnapshot).assignments, assignments);
+
+      const execution = yield* threads.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("dispatch:composed-execution"),
+        threadId: planningThreadId,
+        messageId: MessageId.make("message:composed-execution"),
+        text: "Implement the approved ticket",
+        attachments: [],
+        dispatchMode: { type: "start_immediately" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      assert.isTrue(
+        execution.storedEvents.some(({ event }) => event.type === "checkpoint-scope.created"),
+      );
+      const executing = yield* threads.getThreadProjection(planningThreadId);
+      assert.lengthOf(executing.checkpointScopes, 1);
+      assert.equal(executing.checkpointScopes[0]?.cwd, worktreePath);
+      assert.includeMembers(
+        executing.messages.map((message) => message.id),
+        before.messages.map((message) => message.id),
+      );
+      yield* worker.drain();
+      const policy = policies.get(planningThreadId);
+      assert.isDefined(policy);
+      assert.equal(policy?.cwd, worktreePath);
+      assert.equal(policy?.runtimeMode, "full-access");
+      assert.equal(policy?.interactionMode, "default");
+      assert.isUndefined(policy?.sandboxPolicy);
+      assert.isUndefined(policy?.checkpoints);
+      assert.include(policy?.instructions ?? "", "Start work has completed");
+    }).pipe(Effect.provide(layerPersistedPlanningTest)),
 );
