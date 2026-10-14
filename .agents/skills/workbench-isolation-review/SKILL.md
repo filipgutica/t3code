@@ -24,15 +24,18 @@ Classify every changed file against the documented ownership boundaries. For eac
 
 Trace relevant callers, types, and tests. Check for copied native implementations, application imports from the Workbench package (including test helpers), unnecessary shared exports, and changes to native persistence or transaction ownership. Directory placement alone does not prove isolation.
 
+Inspect remaining native behavior differences against the integrated upstream baseline, even when the host-import check passes. Apply the [native boundary constraints](../../../docs/internals/workbench-fork.md#isolation-boundary) when reviewing those patches.
+
 ## Verify proportionately
 
-For code changes affecting the package, application overlay, or shared integration, run the documented package typecheck/boundary gate from the repository root:
+For code changes affecting the package, application overlay, or shared integration, run the documented package and host-import gates from the repository root:
 
 ```sh
 vp run --filter @t3tools/workbench typecheck
+node scripts/workbench-isolation.ts
 ```
 
-Use focused application tests, typechecks, or current CI for affected behavior. For instruction-only changes, validate instructions, links, and commands. The package gate proves package import/dependency isolation; it does not prove UI ownership, compatibility, or future merge safety. Report unavailable checks as unverified.
+Use focused application tests, typechecks, or current CI for affected behavior. For instruction-only changes, validate instructions, links, and commands. The package gate checks resolved imports and dependency cycles; the host gate checks imports against reviewed integration allowances. Neither proves behavior, compatibility, or future merge safety. Report unavailable checks as unverified.
 
 ## Compare upstream risk
 

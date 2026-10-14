@@ -40,6 +40,7 @@
         "apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts",
         "apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts",
         "apps/server/src/orchestration-v2/Orchestrator.ts",
+        "apps/server/src/orchestration-v2/ThreadRepositoryBinding.ts",
         "apps/server/src/orchestration-v2/ProjectionStore.ts",
         "packages/provider-core/src/server/ProviderAdapter.ts",
         "apps/server/src/orchestration-v2/ProviderRuntimeRecoveryService.ts",
