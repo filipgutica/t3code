@@ -98,6 +98,7 @@ import * as EffectOutbox from "./EffectOutbox.ts";
 import type { OrchestrationEffectRequestV2, PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
+import { decideThreadRepositoryBinding } from "./ThreadRepositoryBinding.ts";
 import { DispatchModeLimit, exceededDispatchModeLimit } from "./DispatchModeLimit.ts";
 import {
   applyToProjection,
@@ -2552,55 +2553,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         });
       }
     }
-    if (
-      command.type === "thread.metadata.update" &&
-      command.expectedProjectId !== undefined &&
-      command.expectedProjectId !== thread.projectId
-    ) {
-      return yield* new OrchestratorDispatchError({
-        commandId: command.commandId,
-        commandType: command.type,
-        cause: `Thread ${command.threadId} project changed before the metadata update could be applied.`,
-      });
-    }
-    if (command.type === "thread.metadata.update" && command.projectId !== undefined) {
-      const project = yield* projects.get(command.projectId).pipe(mapDispatchError(command));
-      if (
-        command.expectedProjectId === undefined ||
-        command.expectedWorktreePath === undefined ||
-        command.branch === undefined ||
-        command.worktreePath === undefined ||
-        Option.isNone(project) ||
-        project.value.deletedAt !== null ||
-        thread.archivedAt !== null ||
-        isProviderNativeSubagentThread(thread)
-      ) {
+    let projectChanged = false;
+    if (command.type === "thread.metadata.update") {
+      const binding = yield* decideThreadRepositoryBinding({
+        thread,
+        command,
+        projects,
+        projections: projectionStore,
+      }).pipe(mapDispatchError(command));
+      if (binding.type === "refused") {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
-          cause: `Thread ${command.threadId} requires a live destination project and an explicit expected and destination binding.`,
+          cause: binding.cause,
         });
       }
-      const records = yield* projectionStore
-        .getThreadRecords(command.threadId, ["runs", "runtimeRequests"])
-        .pipe(mapDispatchError(command));
-      if (
-        records.runs.some((run) =>
-          ["preparing", "queued", "starting", "running", "waiting"].includes(run.status),
-        ) ||
-        records.runtimeRequests.some((request) => request.status === "pending")
-      ) {
-        return yield* new OrchestratorDispatchError({
-          commandId: command.commandId,
-          commandType: command.type,
-          cause: `Thread ${command.threadId} has active or blocked work and cannot be rebound.`,
-        });
-      }
+      projectChanged = binding.projectChanged;
     }
-    const projectChanged =
-      command.type === "thread.metadata.update" &&
-      command.projectId !== undefined &&
-      command.projectId !== thread.projectId;
     if (
       command.type === "thread.metadata.update" &&
       command.expectedWorktreePath !== undefined &&

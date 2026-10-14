@@ -14,11 +14,15 @@ import {
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
+import * as EventStore from "../orchestration-v2/EventStore.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
@@ -52,6 +56,8 @@ const layerTest = Layer.mergeAll(
   layerDatabase,
   ProjectionStore.layer.pipe(Layer.provide(layerDatabase)),
   ProjectStore.layer.pipe(Layer.provide(layerDatabase)),
+  CommandReceiptStore.layer.pipe(Layer.provide(layerDatabase)),
+  EventStore.layer.pipe(Layer.provide(layerDatabase)),
   ProviderReplayHarness.layerWithRegistry(
     { name: "workbench-thread-preparation" },
     ProviderAdapterRegistry.layerFromAdapters([adapter]),
@@ -265,27 +271,81 @@ it.effect("rebinds an idle conversation without losing history and detaches its 
 it.effect("rejects stale, missing, or invalid destinations before rebinding", () =>
   Effect.gen(function* () {
     const { orchestrator, projections, command } = yield* seedRebindThread;
+    const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
+    const events = yield* EventStore.EventStoreV2;
     const before = yield* projections.getThread(command.threadId);
+    const staleProject = `Thread ${command.threadId} project changed before the metadata update could be applied.`;
+    const incompleteBinding = `Thread ${command.threadId} requires a live destination project and an explicit expected and destination binding.`;
+    const staleWorktree = `Thread ${command.threadId} worktree changed before the metadata update could be applied.`;
     for (const [index, update] of [
-      { expectedProjectId: command.projectId },
-      { expectedProjectId: undefined },
-      { expectedWorktreePath: undefined },
-      { expectedWorktreePath: "/stale-worktree" },
-      { projectId: ProjectId.make("missing-project") },
-      { worktreePath: undefined },
-      { branch: undefined },
+      { fields: { expectedProjectId: command.projectId }, cause: staleProject },
+      { fields: { expectedProjectId: undefined }, cause: incompleteBinding },
+      { fields: { expectedWorktreePath: undefined }, cause: incompleteBinding },
+      { fields: { expectedWorktreePath: "/stale-worktree" }, cause: staleWorktree },
+      { fields: { projectId: ProjectId.make("missing-project") }, cause: incompleteBinding },
+      { fields: { worktreePath: undefined }, cause: incompleteBinding },
+      { fields: { branch: undefined }, cause: incompleteBinding },
+      {
+        fields: { projectId: undefined, expectedProjectId: command.projectId },
+        cause: staleProject,
+      },
     ].entries()) {
-      const result = yield* Effect.exit(
+      const commandId = CommandId.make(`invalid-rebind:${index}`);
+      const error = yield* Effect.flip(
         orchestrator.dispatch({
           ...command,
-          ...update,
-          commandId: CommandId.make(`invalid-rebind:${index}`),
+          ...update.fields,
+          commandId,
         }),
       );
-      assert.equal(result._tag, "Failure");
+      assert.equal(error._tag, "OrchestratorDispatchError");
+      if (error._tag === "OrchestratorDispatchError") assert.equal(error.cause, update.cause);
       assert.deepEqual(yield* projections.getThread(command.threadId), before);
+      const receipt = yield* receipts.getByCommandId(commandId);
+      assert.isTrue(Option.isSome(receipt));
+      if (Option.isSome(receipt)) {
+        assert.equal(receipt.value.status, "rejected");
+        assert.equal(
+          receipt.value.error,
+          `Failed to dispatch orchestration command thread.metadata.update (${commandId}).`,
+        );
+      }
+      assert.deepEqual(yield* events.readByCommandId({ commandId }).pipe(Stream.runCollect), []);
     }
   }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect(
+  "preserves title-only and worktree-only metadata updates without rebinding the Project",
+  () =>
+    Effect.gen(function* () {
+      const { orchestrator, projections, command } = yield* seedRebindThread;
+      const before = yield* projections.getThread(command.threadId);
+      yield* orchestrator.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make("metadata-title-only"),
+        threadId: command.threadId,
+        title: "Continued planning",
+      });
+      const renamed = yield* projections.getThread(command.threadId);
+      assert.equal(renamed.title, "Continued planning");
+      assert.equal(renamed.projectId, before.projectId);
+      assert.equal(renamed.worktreePath, before.worktreePath);
+      yield* orchestrator.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make("metadata-worktree-only"),
+        threadId: command.threadId,
+        expectedProjectId: before.projectId,
+        expectedWorktreePath: null,
+        branch: "feature/existing-project",
+        worktreePath: "/existing-project-worktree",
+      });
+      const moved = yield* projections.getThread(command.threadId);
+      assert.equal(moved.projectId, before.projectId);
+      assert.equal(moved.branch, "feature/existing-project");
+      assert.equal(moved.worktreePath, "/existing-project-worktree");
+      assert.equal(moved.title, renamed.title);
+    }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("rejects rebinding with queued work or an unanswered runtime request", () =>
@@ -303,6 +363,20 @@ it.effect("rejects rebinding with queued work or an unanswered runtime request",
       creationSource: "web",
     });
     assert.equal((yield* Effect.exit(orchestrator.dispatch(command)))._tag, "Failure");
+    const busyBeforeStaleWorktree = yield* orchestrator
+      .dispatch({
+        ...command,
+        commandId: CommandId.make("rebind-busy-and-stale-worktree"),
+        expectedWorktreePath: "/stale-worktree",
+      })
+      .pipe(Effect.flip);
+    assert.equal(busyBeforeStaleWorktree._tag, "OrchestratorDispatchError");
+    if (busyBeforeStaleWorktree._tag === "OrchestratorDispatchError") {
+      assert.equal(
+        busyBeforeStaleWorktree.cause,
+        `Thread ${command.threadId} has active or blocked work and cannot be rebound.`,
+      );
+    }
     yield* orchestrator.dispatch({
       type: "message.dispatch",
       commandId: CommandId.make("queued-followup-before-rebind"),

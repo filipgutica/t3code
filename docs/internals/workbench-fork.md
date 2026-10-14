@@ -20,7 +20,7 @@ Native consumers use typed host capabilities with native defaults. Workbench ins
 
 Server policy installation must reach the layer that constructs native runtime policy; an inner default can otherwise shadow the overlay. Web slots have stable identities, separate from reactive Thread visibility and notification policy. Desktop product selection is synchronous because Electron identity and profile paths are needed during module initialization.
 
-Native capability patches can remain after Workbench imports are isolated. Workbench selects policy through its adapters; native commands retain validation and state transitions that must be serialized together. An adapter precheck cannot replace that boundary. Retire an existing native capability patch only when compatible upstream behavior preserves its callers. Core T3 fixes follow the [upstream ownership rule](../../AGENTS.md#workbench-isolation-and-upstream-sync).
+Native capability patches can remain after Workbench imports are isolated. Workbench selects policy through its adapters; native commands retain validation and state transitions that must be serialized together. An adapter precheck cannot replace that boundary. A native decision helper can reduce the integration in the command handler, but its reads must remain inside the same dispatch lock: [Thread repository binding](../../apps/server/src/orchestration-v2/ThreadRepositoryBinding.ts) uses this boundary. Extraction does not remove the fork's native capability patch. Retire a patch only when compatible upstream behavior preserves its callers. Core T3 fixes follow the [upstream ownership rule](../../AGENTS.md#workbench-isolation-and-upstream-sync).
 
 ## Package checks
 
