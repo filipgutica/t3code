@@ -343,10 +343,14 @@
     },
     {
       "name": "RPC transport compatibility",
-      "paths": ["packages/client-runtime/src/errors/transport.ts"],
+      "paths": [
+        "packages/client-runtime/src/errors/transport.ts",
+        "packages/client-runtime/src/connection/supervisor.ts"
+      ],
       "tests": [
         "packages/client-runtime/src/errors/transport.test.ts",
-        "packages/client-runtime/src/rpc/session.test.ts"
+        "packages/client-runtime/src/rpc/session.test.ts",
+        "packages/client-runtime/src/connection/supervisor.test.ts"
       ],
       "verification": ["unit", "typecheck"]
     },
