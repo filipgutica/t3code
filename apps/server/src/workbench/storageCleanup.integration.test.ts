@@ -305,3 +305,94 @@ for (const { lifecycle, directory, trigger } of cleanupCases) {
       }).pipe(Effect.provide(cleanupTestLayer), Effect.scoped),
   );
 }
+
+for (const directory of ["default", "custom", "symlinked", "overlapping"] as const) {
+  effectIt.effect.skipIf(directory === "symlinked" && !symlinksSupported)(
+    `does not report unassigned Ticket workspaces as orphaned (${directory} directory)`,
+    () =>
+      Effect.gen(function* () {
+        yield* TestClock.setTime(NOW_MS);
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const config = yield* ServerConfig.ServerConfig;
+        const managedRoot =
+          directory === "custom" || directory === "symlinked"
+            ? path.join(config.baseDir, "custom-worktrees")
+            : config.worktreesDir;
+        const namespace = path.join(managedRoot, "workbench");
+        const ticketDirectory = path.join(namespace, "unassigned-ticket");
+        const ticketPath = path.join(ticketDirectory, "primary");
+        const nativePath = path.join(managedRoot, "workbench-legacy", "unassigned");
+        for (const worktreePath of [ticketPath, nativePath]) {
+          yield* fs.makeDirectory(worktreePath, { recursive: true });
+          yield* fs.writeFileString(path.join(worktreePath, ".git"), "gitdir: /fixture/admin");
+          yield* fs.utimes(worktreePath, 1, 1);
+        }
+        yield* fs.utimes(ticketDirectory, 1, 1);
+        const linkedRoot = path.join(config.baseDir, "linked-worktrees");
+        if (directory === "symlinked") yield* fs.symlink(managedRoot, linkedRoot);
+        const context = yield* Layer.build(
+          StorageCleanup.layer.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                WorkbenchWorktreeOwnership.layer,
+                Settings.layerTest({
+                  worktreesDirectory:
+                    directory === "overlapping"
+                      ? namespace
+                      : directory === "symlinked"
+                        ? linkedRoot
+                        : directory === "custom"
+                          ? managedRoot
+                          : "",
+                  worktreeCleanup: {
+                    mode: "custom",
+                    rules: {
+                      worktreeAfterDays: null,
+                      worktreeOnDelete: true,
+                      worktreeOnMerge: false,
+                      worktreeUnchanged: false,
+                    },
+                  },
+                  storageCleanup: { browserArtifactsAfterDays: null, logsAfterDays: null },
+                }),
+                ProjectStore.layer,
+                Layer.mock(ProjectionStore.ProjectionStoreV2)({
+                  getThreadWorktreePaths: () => Effect.succeed([]),
+                  getShellSnapshot: () =>
+                    Effect.succeed({
+                      schemaVersion: 1,
+                      snapshotSequence: 0,
+                      archivedThreads: [],
+                      threads: [],
+                    }),
+                }),
+                Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
+                  isLive: () => Effect.succeed(false),
+                }),
+                Layer.mock(Orchestrator.OrchestratorV2)({ streamDomainEvents: Stream.empty }),
+                Layer.mock(GitManager.GitManager)({}),
+                Layer.mock(GitVcsDriver.GitVcsDriver)({}),
+                Layer.mock(TerminalManager.TerminalManager)({
+                  subscribeMetadata: (listener) =>
+                    listener({ type: "snapshot", terminals: [] }).pipe(Effect.as(() => {})),
+                }),
+              ),
+            ),
+          ),
+        ).pipe(Effect.provideService(ServerActivation, Effect.never));
+        const cleanup = Context.get(context, StorageCleanup.StorageCleanup);
+        const report = yield* cleanup.runNow;
+        expect(report.entries).toEqual([
+          expect.objectContaining({
+            path: nativePath,
+            threadId: null,
+            outcome: "kept",
+            reason: "No thread uses this worktree",
+          }),
+        ]);
+        expect(yield* fs.exists(ticketPath)).toBe(true);
+        expect(yield* fs.exists(nativePath)).toBe(true);
+      }).pipe(Effect.provide(cleanupTestLayer), Effect.scoped),
+  );
+}

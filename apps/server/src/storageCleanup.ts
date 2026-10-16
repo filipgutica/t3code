@@ -383,6 +383,14 @@ const make = Effect.gen(function* () {
     const reported = new Set<string>();
     const report = Effect.fnUntraced(
       function* (worktreePath: string) {
+        const protectedRoot = yield* Effect.findFirst(
+          roots.filter((root) => inside(root, worktreePath)),
+          (root) =>
+            cleanupPolicy
+              .canRemove({ worktreesDir: root, worktreePath })
+              .pipe(Effect.map((canRemove) => !canRemove)),
+        );
+        if (Option.isSome(protectedRoot)) return;
         const key = pathKey(worktreePath);
         if (
           reported.has(key) ||
