@@ -1575,33 +1575,31 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               )
           : null;
       const activeHandoff = handoff ?? legacyImportRecoveryHandoff;
-      const checkpointScope = yield* runtimePolicy
-        .resolve({ thread: projection.thread, modelSelection: queuedRun.modelSelection })
-        .pipe(
-          Effect.flatMap((resolvedRuntimePolicy) =>
-            resolvedRuntimePolicy.checkpoints === "disabled"
-              ? Effect.succeed(null)
-              : storedCheckpointScope !== undefined
-                ? Effect.succeed(storedCheckpointScope)
-                : prepareCheckpointScope({
-                    threadId,
-                    runId: queuedRun.id,
-                    rootNodeId: rootNode.id,
-                    providerThreadId: queuedProviderThread.id,
-                    cwd:
-                      resolvedRuntimePolicy.cwd ?? projection.thread.worktreePath ?? process.cwd(),
-                    createdAt: now,
-                  }),
-          ),
-          Effect.mapError(
-            (cause) =>
-              new OrchestratorDispatchError({
-                commandId,
-                commandType: "message.dispatch",
-                cause,
+      const checkpointScope =
+        storedCheckpointScope ??
+        (yield* runtimePolicy
+          .resolve({ thread: projection.thread, modelSelection: queuedRun.modelSelection })
+          .pipe(
+            Effect.flatMap((resolvedRuntimePolicy) =>
+              prepareCheckpointScope({
+                checkpoints: resolvedRuntimePolicy.checkpoints,
+                threadId,
+                runId: queuedRun.id,
+                rootNodeId: rootNode.id,
+                providerThreadId: queuedProviderThread.id,
+                cwd: resolvedRuntimePolicy.cwd ?? projection.thread.worktreePath ?? process.cwd(),
+                createdAt: now,
               }),
-          ),
-        );
+            ),
+            Effect.mapError(
+              (cause) =>
+                new OrchestratorDispatchError({
+                  commandId,
+                  commandType: "message.dispatch",
+                  cause,
+                }),
+            ),
+          ));
       const providerSessionId =
         (!canResumeAcrossInstances &&
         queuedProviderThread.providerSessionId !== null &&
@@ -1744,19 +1742,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 payload: { ...rootNode, checkpointScopeId: checkpointScope.id },
               },
             ]
-          : rootNode.checkpointScopeId !== null && checkpointScope === null
-            ? [
-                {
-                  type: "node.updated",
-                  threadId,
-                  runId: queuedRun.id,
-                  nodeId: rootNode.id,
-                  providerInstanceId: queuedRun.providerInstanceId,
-                  occurredAt: now,
-                  payload: { ...rootNode, checkpointScopeId: null },
-                },
-              ]
-            : [];
+          : [];
       const sessionsToDetach = projection.providerSessions.filter(
         (session) =>
           switchPlan?.releaseProviderSessionIds.includes(session.id) &&

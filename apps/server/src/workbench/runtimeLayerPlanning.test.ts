@@ -10,17 +10,23 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderThreadId,
+  ProviderTurnId,
   ServerProvider,
   ThreadId,
   WorkbenchProjectId,
   WorkbenchTicketId,
   WorkbenchTicketWorkspaceAttemptId,
+  type OrchestrationV2DomainEvent,
 } from "@t3tools/contracts";
+import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as JiraRepository from "@t3tools/workbench/jira/WorkbenchJiraRepository";
@@ -192,6 +198,32 @@ const makeLayerTest = <A, E, R>(policies: Layer.Layer<A, E, R>) =>
     Layer.provideMerge(NodeServices.layer),
   );
 const layerTest = makeLayerTest(planningPolicyLayer);
+const seedProject = Effect.gen(function* () {
+  const projects = yield* ProjectStore.ProjectStoreV2;
+  const now = DateTime.formatIso(yield* DateTime.now);
+  yield* projects.apply({
+    sequence: 0,
+    eventId: EventId.make("seed:composed-policy"),
+    aggregateKind: "project",
+    aggregateId: projectId,
+    occurredAt: now,
+    commandId: null,
+    causationEventId: null,
+    correlationId: null,
+    metadata: {},
+    type: "project.created",
+    payload: {
+      projectId,
+      title: "Policy repository",
+      workspaceRoot: process.cwd(),
+      defaultModelSelection: modelSelection,
+      scripts: [],
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+  return now;
+});
 const layerPersistedPlanningTest = makeLayerTest(
   TicketPlanningRuntime.layerRuntimePolicyDecorator.pipe(
     Layer.provideMerge(WorkbenchStoreLive),
@@ -265,6 +297,189 @@ it.effect("uses native project enablement for planning creation, retries and tur
       .pipe(Effect.flip);
     assert.equal(deniedTurn._tag, "ThreadManagementProviderInstanceDisabledError");
     assert.deepEqual((yield* threads.getThreadRecords(draft.threadId, ["runs"])).runs, []);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("starts a follow-up queued behind a planning turn without checkpoints", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+    const providers = yield* Providers.ProviderInstanceRegistry;
+    const driver = instance.driverKind;
+    const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+    const started: Array<ProviderAdapter.ProviderAdapterV2TurnInput> = [];
+    const orchestrationAdapter: ProviderInstance["orchestrationAdapter"] = {
+      ...instance.orchestrationAdapter,
+      openSession: (input) =>
+        Effect.gen(function* () {
+          const now = yield* DateTime.now;
+          return {
+            instanceId,
+            driver,
+            providerSessionId: input.providerSessionId,
+            providerSession: {
+              id: input.providerSessionId,
+              driver,
+              providerInstanceId: instanceId,
+              status: "ready",
+              cwd: process.cwd(),
+              model: modelSelection.model,
+              capabilities: CodexProviderCapabilitiesV2,
+              createdAt: now,
+              updatedAt: now,
+              lastError: null,
+            },
+            events: Stream.fromQueue(events),
+            ensureThread: ({ threadId }) =>
+              Effect.succeed({
+                id: ProviderThreadId.make(`provider-thread:${threadId}`),
+                driver,
+                providerInstanceId: instanceId,
+                providerSessionId: input.providerSessionId,
+                appThreadId: threadId,
+                ownerNodeId: null,
+                nativeThreadRef: { driver, nativeId: "native-thread", strength: "strong" },
+                nativeConversationHeadRef: null,
+                status: "idle",
+                firstRunOrdinal: null,
+                lastRunOrdinal: null,
+                handoffIds: [],
+                forkedFrom: null,
+                createdAt: now,
+                updatedAt: now,
+              }),
+            resumeThread: ({ providerThread }) => Effect.succeed(providerThread),
+            // Codex can unload a native thread when its MCP credential is reissued.
+            unloadThread: () => Effect.void,
+            startTurn: (turn) =>
+              Effect.gen(function* () {
+                started.push(turn);
+                yield* Queue.offer(events, {
+                  type: "provider_turn.updated",
+                  driver,
+                  providerTurn: {
+                    id: ProviderTurnId.make(`provider-turn:${turn.attemptId}`),
+                    providerThreadId: turn.providerThread.id,
+                    nodeId: turn.rootNodeId,
+                    runAttemptId: turn.attemptId,
+                    nativeTurnRef: {
+                      driver,
+                      nativeId: `native:${turn.attemptId}`,
+                      strength: "strong",
+                    },
+                    ordinal: turn.providerTurnOrdinal,
+                    status: "running",
+                    startedAt: now,
+                    completedAt: null,
+                  },
+                });
+              }),
+            steerTurn: () => unused,
+            interruptTurn: () => Effect.void,
+            respondToRuntimeRequest: () => Effect.void,
+            readThreadSnapshot: () => unused,
+            rollbackThread: () => unused,
+            forkThread: () => unused,
+          };
+        }),
+    };
+    const providerSpy = vi
+      .spyOn(providers, "getInstance")
+      .mockReturnValue(Effect.succeed({ ...instance, orchestrationAdapter }));
+    yield* Effect.addFinalizer(() => Effect.sync(() => providerSpy.mockRestore()));
+    const watch = (predicate: (event: OrchestrationV2DomainEvent) => boolean) =>
+      orchestrator.streamDomainEvents.pipe(
+        Stream.filter(predicate),
+        Stream.take(1),
+        Stream.runDrain,
+        Effect.forkScoped,
+      );
+    yield* seedProject;
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("create:queued-planning"),
+      threadId: planningThreadId,
+      projectId,
+      title: "Queued planning",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const message = (
+      key: string,
+      dispatchMode: { readonly type: "start_immediately" | "queue_after_active" },
+    ) =>
+      orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make(`dispatch:queued-planning-${key}`),
+        threadId: planningThreadId,
+        messageId: MessageId.make(`message:queued-planning-${key}`),
+        text: `Inspect the change (${key})`,
+        attachments: [],
+        dispatchMode,
+        createdBy: "user",
+        creationSource: "web",
+      });
+    yield* message("first", { type: "start_immediately" });
+    const running = yield* watch(
+      (event) => event.type === "provider-turn.updated" && event.payload.status === "running",
+    );
+    yield* worker.drain();
+    yield* Fiber.join(running);
+    yield* message("follow-up", { type: "queue_after_active" });
+    const queued = yield* orchestrator.getThreadProjection(planningThreadId);
+    const first = queued.runs.find((run) => run.id === started[0]?.runId);
+    const followUp = queued.runs.find((run) => run.status === "queued");
+    if (first === undefined || followUp === undefined)
+      return yield* Effect.die("Missing planning runs");
+
+    // Native terminal handling dispatches the queue; the effect worker then starts its turn.
+    const dispatched = yield* watch(
+      (event) =>
+        event.type === "run.updated" &&
+        event.payload.id === followUp.id &&
+        event.payload.status !== "queued",
+    );
+    const executed = yield* watch(
+      (event) =>
+        event.type === "run.updated" &&
+        event.payload.id === followUp.id &&
+        event.payload.status !== "queued" &&
+        event.payload.status !== "starting",
+    );
+    const turn = queued.providerTurns[0]!;
+    yield* Queue.offer(events, {
+      type: "provider_turn.updated",
+      driver,
+      providerTurn: { ...turn, status: "completed", completedAt: yield* DateTime.now },
+    });
+    yield* Queue.offer(events, {
+      type: "turn.terminal",
+      driver,
+      providerThreadId: turn.providerThreadId,
+      providerTurnId: turn.id,
+      runOrdinal: first.ordinal,
+      status: "completed",
+      failure: null,
+      threadDisposition: "reusable",
+    });
+    yield* Fiber.join(dispatched);
+    yield* worker.drain();
+    yield* Fiber.join(executed);
+
+    assert.deepEqual(
+      started.map((input) => input.runId),
+      [first.id, followUp.id],
+    );
+    const final = yield* orchestrator.getThreadProjection(planningThreadId);
+    assert.equal(final.runs.find((run) => run.id === first.id)?.status, "completed");
+    assert.isNull(final.nodes.find((node) => node.id === followUp.rootNodeId)?.checkpointScopeId);
+    assert.deepEqual(final.checkpointScopes, []);
+    assert.deepEqual(final.checkpoints, []);
   }).pipe(Effect.provide(layerTest)),
 );
 
@@ -435,28 +650,7 @@ it.effect(
         );
       });
       yield* Effect.addFinalizer(() => Effect.sync(() => openSpy.mockRestore()));
-      const now = DateTime.formatIso(yield* DateTime.now);
-      yield* projects.apply({
-        sequence: 0,
-        eventId: EventId.make("seed:composed-policy"),
-        aggregateKind: "project",
-        aggregateId: projectId,
-        occurredAt: now,
-        commandId: null,
-        causationEventId: null,
-        correlationId: null,
-        metadata: {},
-        type: "project.created",
-        payload: {
-          projectId,
-          title: "Policy repository",
-          workspaceRoot: process.cwd(),
-          defaultModelSelection: modelSelection,
-          scripts: [],
-          createdAt: now,
-          updatedAt: now,
-        },
-      });
+      const now = yield* seedProject;
       yield* store.createProject({
         id: draft.projectId,
         title: "Policy workspace",

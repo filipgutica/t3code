@@ -41,17 +41,6 @@ import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 import type { DesktopBuildProduct } from "./lib/desktop-build-product.ts";
 import { selectWorkbenchDesktopBuildProduct } from "./lib/workbench-desktop-product.ts";
 
-// Retain the build script's public helpers while their policy lives with the distribution.
-export {
-  MissingMacWorkbenchSigningCredentialsError,
-  isMacWorkbenchSigningConfigurationError,
-  MacWorkbenchSigningConfigurationResolutionError,
-  WorkbenchMacBuildReuseError,
-  resolveMacWorkbenchSigningConfiguration,
-  validateWorkbenchMacBuildMode,
-  resolveDesktopBundleBuildEnvironment,
-} from "./lib/workbench-desktop-product.ts";
-
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Config from "effect/Config";

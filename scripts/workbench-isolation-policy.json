@@ -116,17 +116,8 @@
     {
       "source": "scripts/build-desktop-artifact.ts",
       "target": "scripts/lib/workbench-desktop-product",
-      "symbols": [
-        "MacWorkbenchSigningConfigurationResolutionError",
-        "MissingMacWorkbenchSigningCredentialsError",
-        "WorkbenchMacBuildReuseError",
-        "isMacWorkbenchSigningConfigurationError",
-        "resolveDesktopBundleBuildEnvironment",
-        "resolveMacWorkbenchSigningConfiguration",
-        "selectWorkbenchDesktopBuildProduct",
-        "validateWorkbenchMacBuildMode"
-      ],
-      "reason": "Select Workbench packaging policy and preserve existing public signing-helper APIs."
+      "symbols": ["selectWorkbenchDesktopBuildProduct"],
+      "reason": "Select Workbench packaging policy before native installer mechanics run."
     },
     {
       "source": "scripts/dev-runner.ts",
