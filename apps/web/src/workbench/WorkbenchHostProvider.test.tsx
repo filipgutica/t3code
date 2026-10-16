@@ -135,6 +135,70 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+it.each(["/settings", "/pull-requests", "/usage"])(
+  "returns from %s to the selected Workbench board after visiting other utilities",
+  async (utilityPath) => {
+    const {
+      createMemoryHistory,
+      createRootRoute,
+      createRoute,
+      createRouter,
+      RouterContextProvider,
+    } = await import("@tanstack/react-router");
+    const { MainAppLocationTracker, useNavigateToMainApp } =
+      await import("../components/sidebar/mainAppLocation");
+    function Navigation() {
+      const back = useNavigateToMainApp();
+      return (
+        <>
+          <MainAppLocationTracker />
+          <button onClick={back}>Back</button>
+        </>
+      );
+    }
+    const root = createRootRoute();
+    const routes = [
+      "/",
+      "/workbench",
+      "/settings",
+      "/settings/providers",
+      "/pull-requests",
+      "/usage",
+    ].map((path) =>
+      createRoute({
+        getParentRoute: () => root,
+        path,
+        validateSearch: (search: Record<string, unknown>) => search,
+      }),
+    );
+    const router = createRouter({
+      routeTree: root.addChildren(routes),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    await router.load();
+    const view = () => (
+      <provider.WorkbenchHostProvider>
+        <RouterContextProvider router={router}>
+          <Navigation />
+        </RouterContextProvider>
+      </provider.WorkbenchHostProvider>
+    );
+    await render(view());
+    const go = async (href: string) => {
+      await router.navigate({ href });
+      // Node uses the router's server snapshot, so render the new location explicitly.
+      await render(view());
+    };
+    const boardHref =
+      "/workbench?environmentId=remote&workbenchProjectId=workspace&ticketId=ticket";
+    await go(boardHref);
+    await go(utilityPath);
+    await go("/settings/providers");
+    await act(() => renderer!.root.findByType("button").props.onClick());
+    expect(router.state.location.href).toBe(boardHref);
+  },
+);
+
 it("updates scoped native lists through preparation promotion without repainting static consumers", async () => {
   const onStaticRender = vi.fn();
   function NativeList() {

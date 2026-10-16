@@ -12,19 +12,32 @@ import { useNavigate, useSearch } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
   AlertCircleIcon,
-  ArrowLeftIcon,
   BellIcon,
   BlocksIcon,
-  ChevronDownIcon,
   ChevronRightIcon,
+  InfoIcon,
   LayoutDashboardIcon,
   PlusIcon,
   RefreshCwIcon,
   XIcon,
 } from "lucide-react";
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type FocusEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { useWorkbenchSidebarFilters } from "./workbenchSidebarFilterState";
 
+import {
+  getWorkbenchSidebarSearchResults,
+  type WorkbenchSidebarSearchResult,
+} from "./workbenchSidebarSearch.logic";
+import { WorkbenchSidebarSearchResults } from "./WorkbenchSidebarSearchResults";
 import { WorkbenchSidebarTicketButton } from "./WorkbenchSidebarTicketButton";
 import { WorkbenchRetainedWorktrees } from "./WorkbenchRetainedWorktrees";
 import {
@@ -32,6 +45,7 @@ import {
   type WorkbenchSidebarTicketDetails,
 } from "./workbenchSidebarContext.logic";
 import { WorkbenchSidebarThreadRow } from "./WorkbenchSidebarThreadRow";
+import { WorkbenchSidebarRowNavigation } from "./WorkbenchSidebarRowNavigation";
 import { useWorkbenchAttentionData } from "./WorkbenchAttentionProvider";
 import {
   getWorkbenchSidebarActionableThreadIds,
@@ -46,22 +60,21 @@ import {
   useWorkbenchSidebarDrafts,
   type WorkbenchSidebarDraft,
 } from "./WorkbenchSidebarDrafts";
-import { SidebarChromeFooter } from "../components/sidebar/SidebarChrome";
+import { WorkbenchSidebarFooter } from "./WorkbenchSidebarFooter";
 import {
   getUnsavedConversationDrafts,
   getConversationDraftTitle,
 } from "./workbenchTicketDraft.logic";
-import { matchesWorkbenchTicketSearch } from "./useWorkbenchTicketSearch";
 
 type SidebarDraft = WorkbenchSidebarDraft;
 
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
 import {
   SidebarContent,
   SidebarGroup,
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
 } from "../components/ui/sidebar";
@@ -72,9 +85,7 @@ import { useProjects, useThreadShell, useThreadShells } from "../state/entities"
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
 import {
-  filterWorkbenchSidebarNavigation,
   getWorkbenchSidebarExpansionDefaults,
-  isWorkbenchSidebarExecutionThreadVisible,
   getWorkbenchSidebarTicketGroups,
   reduceWorkbenchSidebarExpansion,
   revealWorkbenchSidebarSelection,
@@ -164,7 +175,18 @@ function useWorkbenchSidebarNavigation({
     });
   };
 
-  return { selectWorkspace, selectTicket, openThread, leaveWorkbench, addWorkspace };
+  const createTicket = (projectId: WorkbenchProjectId) => {
+    if (isMobile) setOpenMobile(false);
+    void navigate({
+      to: "/workbench",
+      search: {
+        ...(environmentId ? { environmentId } : {}),
+        workbenchProjectId: projectId,
+        create: "ticket",
+      },
+    });
+  };
+  return { selectWorkspace, selectTicket, openThread, leaveWorkbench, addWorkspace, createTicket };
 }
 
 export function WorkbenchSidebar({
@@ -214,7 +236,7 @@ export function WorkbenchSidebar({
     archivedTicketsByWorkspace,
   } = useWorkbenchSidebarData({ context, environmentId, selectedTicketId });
 
-  const { selectWorkspace, selectTicket, openThread, leaveWorkbench, addWorkspace } =
+  const { selectWorkspace, selectTicket, openThread, leaveWorkbench, addWorkspace, createTicket } =
     useWorkbenchSidebarNavigation({
       context,
       environmentId,
@@ -225,93 +247,92 @@ export function WorkbenchSidebar({
       setOpenMobile,
     });
 
+  const header = (
+    <>
+      <div className="flex h-9 items-center gap-2.5 px-2 text-sm font-medium text-sidebar-muted-foreground">
+        <BlocksIcon className="size-3.5" />
+        <span className="min-w-0 flex-1 truncate">Workspaces</span>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                aria-label="Add Workspace"
+                className="-me-1"
+                onClick={addWorkspace}
+                size="icon-xs"
+                variant="ghost"
+              />
+            }
+          >
+            <PlusIcon />
+          </TooltipTrigger>
+          <TooltipPopup side="right">Add Workspace</TooltipPopup>
+        </Tooltip>
+      </div>
+    </>
+  );
   return (
     <>
-      <SidebarContent className="overflow-x-hidden">
-        <SidebarGroup className="gap-2 p-(--sidebar-content-inset)">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={leaveWorkbench}>
-                <ArrowLeftIcon />
-                <span>Back to Threads</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-          <div className="flex h-9 items-center gap-2.5 px-2 text-sm font-medium text-sidebar-muted-foreground">
-            <BlocksIcon className="size-3.5" />
-            <span className="min-w-0 flex-1 truncate">Workspaces</span>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    aria-label="Add Workspace"
-                    className="-me-1"
-                    onClick={addWorkspace}
-                    size="icon-xs"
-                    variant="ghost"
-                  />
-                }
-              >
-                <PlusIcon />
-              </TooltipTrigger>
-              <TooltipPopup side="right">Add Workspace</TooltipPopup>
-            </Tooltip>
-          </div>
-
-          {environmentId && snapshot ? (
-            <div className="px-2">
-              <WorkbenchRetainedWorktrees
-                key={environmentId}
-                environmentId={environmentId}
-                snapshot={snapshot}
-              />
-            </div>
-          ) : null}
-
+      {environmentId ? (
+        <WorkbenchSidebarNavigation
+          key={environmentId}
+          header={header}
+          query={query}
+          snapshot={snapshot}
+          data={{
+            environmentId,
+            archivedTicketsByWorkspace,
+            jiraOwnershipKnown: jiraQuery.data !== null,
+            projects: snapshot?.projects ?? [],
+            draftsByWorkspace,
+            ticketCountsByWorkspace,
+            ticketDetailsById,
+            ticketGroupsByWorkspace,
+            actionableThreadIdsByTicket,
+          }}
+          selection={{
+            contextThreadId: context?.threadId,
+            selectedEpicId,
+            selectedTicketId,
+            selectedTicketIsDone,
+            selectedWorkspaceId,
+          }}
+          search={{
+            searchQuery: sidebarQuery,
+            onSearchQueryChange: setSidebarSearch,
+            onlyActionable,
+            onOnlyActionableChange: setOnlyActionable,
+          }}
+          actions={{
+            onOpenThread: openThread,
+            onSelectTicket: selectTicket,
+            onSelectWorkspace: selectWorkspace,
+            onCreateTicket: createTicket,
+          }}
+        />
+      ) : (
+        <SidebarContent fixedHeader={<SidebarGroup>{header}</SidebarGroup>}>
           <WorkbenchSidebarWorkspaceState
-            environmentId={environmentId}
+            environmentId={null}
             query={query}
             snapshot={snapshot}
-            navigation={
-              environmentId && (
-                <WorkbenchSidebarNavigation
-                  key={environmentId ?? "none"}
-                  data={{
-                    environmentId,
-                    archivedTicketsByWorkspace,
-                    jiraOwnershipKnown: jiraQuery.data !== null,
-                    projects: snapshot?.projects ?? [],
-                    draftsByWorkspace,
-                    ticketCountsByWorkspace,
-                    ticketDetailsById,
-                    ticketGroupsByWorkspace,
-                    actionableThreadIdsByTicket,
-                  }}
-                  selection={{
-                    contextThreadId: context?.threadId,
-                    selectedEpicId,
-                    selectedTicketId,
-                    selectedTicketIsDone,
-                    selectedWorkspaceId,
-                  }}
-                  search={{
-                    searchQuery: sidebarQuery,
-                    onSearchQueryChange: setSidebarSearch,
-                    onlyActionable,
-                    onOnlyActionableChange: setOnlyActionable,
-                  }}
-                  actions={{
-                    onOpenThread: openThread,
-                    onSelectTicket: selectTicket,
-                    onSelectWorkspace: selectWorkspace,
-                  }}
-                />
-              )
-            }
+            navigation={null}
           />
-        </SidebarGroup>
-      </SidebarContent>
-      <SidebarChromeFooter />
+        </SidebarContent>
+      )}
+      <WorkbenchSidebarFooter
+        onLeave={leaveWorkbench}
+        retainedWorktrees={
+          environmentId && snapshot ? (
+            <WorkbenchRetainedWorktrees
+              key={environmentId}
+              environmentId={environmentId}
+              snapshot={snapshot}
+              compact
+            />
+          ) : null
+        }
+      />
     </>
   );
 }
@@ -332,6 +353,7 @@ type WorkbenchSidebarNavigationFields = {
   }) => void;
   readonly onSelectTicket: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
   readonly onSelectWorkspace: (projectId: WorkbenchProjectId) => void;
+  readonly onCreateTicket: (projectId: WorkbenchProjectId) => void;
   readonly projects: ReadonlyArray<Pick<WorkbenchProject, "id" | "title" | "archivedAt">>;
   readonly searchQuery: string;
   readonly onSearchQueryChange: (query: string) => void;
@@ -347,6 +369,9 @@ type WorkbenchSidebarNavigationFields = {
 };
 
 type WorkbenchSidebarNavigationProps = {
+  readonly header: ReactNode;
+  readonly query: { isPending: boolean; error: string | null; refresh: () => void };
+  readonly snapshot: { projects: ReadonlyArray<unknown> } | null;
   readonly data: Pick<
     WorkbenchSidebarNavigationFields,
     | "archivedTicketsByWorkspace"
@@ -373,7 +398,7 @@ type WorkbenchSidebarNavigationProps = {
   >;
   readonly actions: Pick<
     WorkbenchSidebarNavigationFields,
-    "onOpenThread" | "onSelectTicket" | "onSelectWorkspace"
+    "onOpenThread" | "onSelectTicket" | "onSelectWorkspace" | "onCreateTicket"
   >;
 };
 
@@ -400,7 +425,11 @@ function WorkbenchSidebarFilters({
   actionableTicketCount,
   incompleteInspection,
   attentionCoverage,
+  onSearchKeyDown,
+  activeResultIndex,
 }: {
+  onSearchKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
+  activeResultIndex: number;
   search: WorkbenchSidebarNavigationProps["search"];
   resultCount: number;
   actionableTicketCount: number;
@@ -415,38 +444,21 @@ function WorkbenchSidebarFilters({
         <Input
           aria-label="Search Workbench sidebar"
           onChange={(event) => onSearchQueryChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape" && searchQuery) {
-              event.stopPropagation();
-              onSearchQueryChange("");
-            }
-          }}
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={isSearching}
+          aria-controls={isSearching ? "workbench-sidebar-search-results" : undefined}
+          aria-activedescendant={
+            isSearching && activeResultIndex >= 0
+              ? `workbench-sidebar-search-result-${activeResultIndex}`
+              : undefined
+          }
+          onKeyDown={onSearchKeyDown}
           placeholder="Search Workbench…"
           size="compact"
           type="search"
           value={searchQuery}
         />
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                aria-label="Show actionable Tickets and Threads"
-                aria-pressed={onlyActionable}
-                onClick={() => onOnlyActionableChange(!onlyActionable)}
-                size="icon-xs"
-                variant={onlyActionable ? "accent-soft" : "ghost-muted"}
-              />
-            }
-          >
-            <span aria-hidden className="relative inline-flex">
-              <BellIcon className="size-3" />
-              {!onlyActionable && actionableTicketCount > 0 ? (
-                <span className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-primary ring-2 ring-sidebar" />
-              ) : null}
-            </span>
-          </TooltipTrigger>
-          <TooltipPopup side="right">Show only confirmed actions</TooltipPopup>
-        </Tooltip>
         {searchQuery ? (
           <Button
             aria-label="Clear Workbench search"
@@ -458,21 +470,389 @@ function WorkbenchSidebarFilters({
           </Button>
         ) : null}
       </div>
+      <div className="flex min-w-0 items-center gap-1 px-1">
+        <div
+          role="group"
+          aria-label="Workbench filter"
+          className="flex min-w-0 flex-1 gap-0.5 rounded-md border border-sidebar-border p-0.5"
+        >
+          <button
+            type="button"
+            data-workbench-sidebar-filter=""
+            aria-pressed={!onlyActionable}
+            onClick={() => onOnlyActionableChange(false)}
+          >
+            Work
+          </button>
+          <button
+            type="button"
+            data-workbench-sidebar-filter=""
+            aria-label="Needs attention"
+            aria-pressed={onlyActionable}
+            onClick={() => onOnlyActionableChange(true)}
+          >
+            <BellIcon aria-hidden className="size-3 shrink-0" />
+            <span>Needs attention</span>
+            {actionableTicketCount > 0 ? (
+              <span className="tabular-nums">{actionableTicketCount}</span>
+            ) : null}
+          </button>
+        </div>
+        <span className="flex w-6 shrink-0 justify-center pointer-coarse:w-11 max-md:w-11">
+          {onlyActionable && incompleteInspection ? (
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button
+                    size="icon-xs"
+                    variant="ghost-muted"
+                    aria-label="PR inspection coverage"
+                  />
+                }
+              >
+                <InfoIcon />
+              </PopoverTrigger>
+              <PopoverPopup side="right" align="start" width="sm" padding="compact">
+                <p className="text-xs">{attentionCoverage}. Some PR attention may be missing.</p>
+              </PopoverPopup>
+            </Popover>
+          ) : null}
+        </span>
+      </div>
       {isSearching || onlyActionable ? (
-        <p aria-live="polite" className="px-2 text-xs text-sidebar-muted-foreground">
+        <p
+          aria-live="polite"
+          className={isSearching ? "px-2 text-xs text-sidebar-muted-foreground" : "sr-only"}
+        >
           {getWorkbenchSidebarFilterLabel({ isSearching, resultCount, actionableTicketCount })}
-        </p>
-      ) : null}
-      {onlyActionable && incompleteInspection ? (
-        <p role="status" className="px-2 text-xs text-sidebar-muted-foreground">
-          {attentionCoverage}. Some actions may be missing.
         </p>
       ) : null}
     </>
   );
 }
 
+function useWorkbenchSidebarSearchKeyboard({
+  searchQuery,
+  searchResults,
+  onSearchQueryChange,
+  onSelect,
+}: {
+  searchQuery: string;
+  searchResults: ReadonlyArray<WorkbenchSidebarSearchResult>;
+  onSearchQueryChange: (query: string) => void;
+  onSelect: (result: WorkbenchSidebarSearchResult) => void;
+}) {
+  const [searchCursor, setSearchCursor] = useState({ query: searchQuery, index: -1 });
+  const activeResultIndex =
+    searchResults.length === 0
+      ? -1
+      : Math.min(
+          searchCursor.query === searchQuery ? searchCursor.index : -1,
+          searchResults.length - 1,
+        );
+  const setActiveResultIndex = (index: number) => setSearchCursor({ query: searchQuery, index });
+  const changeSearchQuery = (query: string) => {
+    setSearchCursor({ query, index: -1 });
+    onSearchQueryChange(query);
+  };
+  const onSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "Escape") {
+      if (searchQuery) event.stopPropagation();
+      changeSearchQuery("");
+      return;
+    }
+    if (searchResults.length === 0) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const result = searchResults[Math.max(0, activeResultIndex)];
+      if (result) onSelect(result);
+      return;
+    }
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    event.preventDefault();
+    const direction = event.key === "ArrowDown" ? 1 : -1;
+    const current = activeResultIndex < 0 && direction < 0 ? 0 : activeResultIndex;
+    const index = (current + direction + searchResults.length) % searchResults.length;
+    setActiveResultIndex(index);
+    document
+      .getElementById(`workbench-sidebar-search-result-${index}`)
+      ?.scrollIntoView({ block: "nearest" });
+  };
+  return { activeResultIndex, onSearchKeyDown, setActiveResultIndex, changeSearchQuery };
+}
+
+function useWorkbenchSidebarDisclosure({
+  selectionKey,
+  selection,
+  onlyActionable,
+  onOnlyActionableChange,
+}: {
+  selectionKey: string;
+  selection: Parameters<typeof getWorkbenchSidebarExpansionDefaults>[0];
+  onlyActionable: boolean;
+  onOnlyActionableChange: (value: boolean) => void;
+}) {
+  const [allDisclosure, setAllDisclosure] = useState(() => ({
+    selectionKey,
+    expansion: getWorkbenchSidebarExpansionDefaults(selection),
+  }));
+  const [attentionDisclosure, setAttentionDisclosure] = useState(() => ({
+    selectionKey,
+    expansion: getWorkbenchSidebarExpansionDefaults(selection),
+  }));
+  const disclosure = onlyActionable ? attentionDisclosure : allDisclosure;
+  const setDisclosure = onlyActionable ? setAttentionDisclosure : setAllDisclosure;
+  const expansion =
+    disclosure.selectionKey === selectionKey
+      ? disclosure.expansion
+      : revealWorkbenchSidebarSelection(disclosure.expansion, selection);
+  const setExpansion = (
+    update: (state: WorkbenchSidebarExpansion) => WorkbenchSidebarExpansion,
+  ) => {
+    setDisclosure((state) => ({
+      selectionKey,
+      expansion: update(
+        state.selectionKey === selectionKey
+          ? state.expansion
+          : revealWorkbenchSidebarSelection(state.expansion, selection),
+      ),
+    }));
+  };
+  const [collapsedAttentionWorkspaces, setCollapsedAttentionWorkspaces] = useState<
+    ReadonlySet<WorkbenchProjectId>
+  >(() => new Set());
+  const changeAttentionFilter = (value: boolean) => {
+    if (value !== onlyActionable) setCollapsedAttentionWorkspaces(new Set());
+    onOnlyActionableChange(value);
+  };
+  const toggleExpansion = (action: WorkbenchSidebarExpansionAction) => {
+    if (!onlyActionable || action.type !== "toggleWorkspace") {
+      setExpansion((state) => reduceWorkbenchSidebarExpansion(state, action));
+      return;
+    }
+    setCollapsedAttentionWorkspaces((previous) => {
+      const next = new Set(previous);
+      if (next.has(action.workspaceId)) next.delete(action.workspaceId);
+      else next.add(action.workspaceId);
+      return next;
+    });
+  };
+  const revealAttentionWorkspace = (workspaceId: WorkbenchProjectId) =>
+    setCollapsedAttentionWorkspaces((previous) => {
+      const next = new Set(previous);
+      next.delete(workspaceId);
+      return next;
+    });
+  return {
+    expansion,
+    setExpansion,
+    toggleExpansion,
+    collapsedAttentionWorkspaces,
+    changeAttentionFilter,
+    revealAttentionWorkspace,
+  };
+}
+
+function isWorkbenchSidebarSelectionVisible({
+  selection,
+  projects,
+  groups,
+}: {
+  selection: WorkbenchSidebarNavigationProps["selection"];
+  projects: WorkbenchSidebarNavigationFields["projects"];
+  groups: WorkbenchSidebarNavigationFields["ticketGroupsByWorkspace"];
+}) {
+  const { selectedWorkspaceId, selectedTicketId, contextThreadId } = selection;
+  if (!selectedWorkspaceId) return true;
+  if (!selectedTicketId) return projects.some((project) => project.id === selectedWorkspaceId);
+  const group = groups
+    .get(selectedWorkspaceId)
+    ?.active.find((group) => group.ticket.id === selectedTicketId);
+  if (!group) return false;
+  return !contextThreadId || group.threads.some((thread) => thread.id === contextThreadId);
+}
+
+function WorkbenchSidebarFilterLocationCue({
+  selection,
+  onClear,
+}: {
+  selection: WorkbenchSidebarNavigationProps["selection"];
+  onClear: () => void;
+}) {
+  const kind = selection.contextThreadId
+    ? "Thread"
+    : selection.selectedTicketId
+      ? "Ticket"
+      : "Workspace";
+  return (
+    <div className="px-2 text-xs text-sidebar-muted-foreground">
+      Current {kind} is outside this filter.{" "}
+      <button type="button" className="underline" onClick={onClear}>
+        Show all work
+      </button>
+    </div>
+  );
+}
+
+function WorkbenchSidebarFixedHeader({
+  header,
+  filters,
+  location,
+}: {
+  header: ReactNode;
+  filters: Parameters<typeof WorkbenchSidebarFilters>[0];
+  location: Parameters<typeof WorkbenchSidebarFilterLocationCue>[0] & { visible: boolean };
+}) {
+  return (
+    <SidebarGroup>
+      <div className="space-y-2">
+        {header}
+        <WorkbenchSidebarFilters {...filters} />
+        {location.visible ? (
+          <WorkbenchSidebarFilterLocationCue
+            selection={location.selection}
+            onClear={location.onClear}
+          />
+        ) : null}
+      </div>
+    </SidebarGroup>
+  );
+}
+
+function getWorkbenchSidebarSearchSelection(
+  result: WorkbenchSidebarSearchResult,
+  groups: WorkbenchSidebarNavigationFields["ticketGroupsByWorkspace"],
+) {
+  const ticketId = result.kind === "workspace" ? undefined : result.ticketId;
+  const ticketIsDone =
+    groups.get(result.workspaceId)?.done.some((group) => group.ticket.id === ticketId) ?? false;
+  return { workspaceId: result.workspaceId, ticketId, ticketIsDone };
+}
+
+const emptySidebarDrafts: WorkbenchSidebarNavigationFields["draftsByWorkspace"] = new Map();
+
+/** Ticket status and native settlement move rows between lists, removing focused actions. */
+function useWorkbenchSidebarRowFocus(navigationRef: RefObject<HTMLElement | null>) {
+  const previousFocus = useRef<{
+    threadId: string | undefined;
+    ticketId: string | undefined;
+    trigger: HTMLElement;
+  } | null>(null);
+  useLayoutEffect(() => {
+    const previous = previousFocus.current;
+    if (!previous || previous.trigger.isConnected) return;
+    previousFocus.current = null;
+    if (document.activeElement !== document.body) return;
+    const navigation = navigationRef.current;
+    const threadRow = Array.from(
+      navigation?.querySelectorAll<HTMLElement>("[data-workbench-sidebar-thread-id]") ?? [],
+    ).find((row) => row.dataset.workbenchSidebarThreadId === previous.threadId);
+    const ticketRow = Array.from(
+      navigation?.querySelectorAll<HTMLElement>("[data-workbench-sidebar-ticket-row-id]") ?? [],
+    ).find((row) => row.dataset.workbenchSidebarTicketRowId === previous.ticketId);
+    const target =
+      threadRow?.querySelector<HTMLButtonElement>("[data-workbench-sidebar-navigation]") ??
+      ticketRow?.querySelector<HTMLButtonElement>("[data-workbench-sidebar-navigation]") ??
+      document.querySelector<HTMLInputElement>('input[aria-label="Search Workbench sidebar"]');
+    target?.focus({ preventScroll: true });
+  });
+  return (event: FocusEvent<HTMLElement>) => {
+    if (!(event.target instanceof HTMLElement)) return;
+    const threadRow = event.target.closest<HTMLElement>("[data-workbench-sidebar-thread-id]");
+    const ticketRow = event.target.closest<HTMLElement>("[data-workbench-sidebar-ticket-row-id]");
+    previousFocus.current =
+      threadRow || ticketRow
+        ? {
+            threadId: threadRow?.dataset.workbenchSidebarThreadId,
+            ticketId:
+              threadRow?.dataset.workbenchSidebarOwnerTicketId ??
+              ticketRow?.dataset.workbenchSidebarTicketRowId,
+            trigger: event.target,
+          }
+        : null;
+  };
+}
+
+function getWorkbenchSidebarVisibleProjects({
+  projects,
+  onlyActionable,
+  groups,
+}: {
+  projects: WorkbenchSidebarNavigationFields["projects"];
+  onlyActionable: boolean;
+  groups: WorkbenchSidebarNavigationFields["ticketGroupsByWorkspace"];
+}) {
+  return projects.filter((project) => {
+    if (project.archivedAt != null) return false;
+    return !onlyActionable || (groups.get(project.id)?.active.length ?? 0) > 0;
+  });
+}
+
+function useWorkbenchSidebarAttentionNavigation({
+  ticketGroupsByWorkspace,
+  actionableThreadIdsByTicket,
+  projects,
+  onlyActionable,
+}: Pick<
+  WorkbenchSidebarNavigationFields,
+  "ticketGroupsByWorkspace" | "actionableThreadIdsByTicket" | "projects" | "onlyActionable"
+>) {
+  const { attentionSignalsByTicket, attentionInspectionsByTicket, attentionCoverage } =
+    useWorkbenchAttentionData();
+  const prioritizedGroups = useMemo(
+    () =>
+      prioritizeWorkbenchSidebarAttention({
+        ticketGroupsByWorkspace,
+        attentionSignalsByTicket,
+        actionableThreadIdsByTicket,
+        onlyActionable,
+      }),
+    [
+      ticketGroupsByWorkspace,
+      attentionSignalsByTicket,
+      actionableThreadIdsByTicket,
+      onlyActionable,
+    ],
+  );
+  const actionableProjects = useMemo(
+    () =>
+      getWorkbenchSidebarVisibleProjects({ projects, onlyActionable, groups: prioritizedGroups }),
+    [projects, onlyActionable, prioritizedGroups],
+  );
+  const actionableTicketCount = [...attentionSignalsByTicket.values()].filter(
+    (signals) => signals.length > 0,
+  ).length;
+  const incompleteInspection = [...attentionInspectionsByTicket.values()].some((inspections) =>
+    inspections.some((inspection) => inspection.status !== "complete"),
+  );
+  const archivedProjects = onlyActionable
+    ? []
+    : projects.filter((workspace) => workspace.archivedAt != null);
+  return {
+    archivedProjects,
+    prioritizedGroups,
+    actionableProjects,
+    actionableTicketCount,
+    incompleteInspection,
+    attentionCoverage,
+  };
+}
+
+function getWorkbenchSidebarJiraKeys(
+  ticketDetailsById: WorkbenchSidebarNavigationFields["ticketDetailsById"],
+) {
+  return new Map(
+    [...ticketDetailsById].flatMap(([ticketId, details]) =>
+      details.issueLink ? [[ticketId, details.issueLink.issue.key] as const] : [],
+    ),
+  );
+}
+
 function WorkbenchSidebarNavigation({
+  header,
+  query,
+  snapshot,
   data,
   selection: routeSelection,
   search,
@@ -497,159 +877,56 @@ function WorkbenchSidebarNavigation({
     selectedWorkspaceId,
   } = routeSelection;
   const { searchQuery, onlyActionable } = search;
-  const { attentionSignalsByTicket, attentionInspectionsByTicket, attentionCoverage } =
-    useWorkbenchAttentionData();
-  const { onOpenThread, onSelectTicket, onSelectWorkspace } = actions;
+  const { onOpenThread, onSelectTicket, onSelectWorkspace, onCreateTicket } = actions;
   const selectionKey = JSON.stringify([
-    selectedWorkspaceId ?? "none",
-    selectedTicketId ?? "none",
-    selectedTicketIsDone ? "done" : "active",
-    contextThreadId ?? "none",
+    selectedWorkspaceId,
+    selectedTicketId,
+    selectedTicketIsDone,
+    contextThreadId,
   ]);
   const selection = {
     workspaceId: selectedWorkspaceId,
     ticketId: selectedTicketId,
     ticketIsDone: selectedTicketIsDone,
   };
-  const [disclosure, setDisclosure] = useState(() => ({
+  const {
+    expansion,
+    setExpansion,
+    toggleExpansion,
+    collapsedAttentionWorkspaces,
+    changeAttentionFilter,
+    revealAttentionWorkspace,
+  } = useWorkbenchSidebarDisclosure({
     selectionKey,
-    expansion: getWorkbenchSidebarExpansionDefaults(selection),
-  }));
-  const expansion =
-    disclosure.selectionKey === selectionKey
-      ? disclosure.expansion
-      : revealWorkbenchSidebarSelection(disclosure.expansion, selection);
-  const setExpansion = (
-    update: (state: WorkbenchSidebarExpansion) => WorkbenchSidebarExpansion,
-  ) => {
-    setDisclosure((state) => ({
-      selectionKey,
-      expansion: update(
-        state.selectionKey === selectionKey
-          ? state.expansion
-          : revealWorkbenchSidebarSelection(state.expansion, selection),
-      ),
-    }));
-  };
-  const toggleExpansion = (action: WorkbenchSidebarExpansionAction) =>
-    setExpansion((state) => reduceWorkbenchSidebarExpansion(state, action));
+    selection,
+    onlyActionable,
+    onOnlyActionableChange: search.onOnlyActionableChange,
+  });
   const isSearching = searchQuery.trim().length > 0;
-  const prioritizedGroups = useMemo(
-    () =>
-      prioritizeWorkbenchSidebarAttention({
-        ticketGroupsByWorkspace,
-        attentionSignalsByTicket,
-        actionableThreadIdsByTicket,
-        onlyActionable,
-      }),
-    [
-      ticketGroupsByWorkspace,
-      attentionSignalsByTicket,
-      actionableThreadIdsByTicket,
-      onlyActionable,
-    ],
-  );
-  const activeProjects = useMemo(
-    () => projects.filter((project) => project.archivedAt == null),
-    [projects],
-  );
-  const actionableProjects = useMemo(
-    () =>
-      onlyActionable
-        ? activeProjects.filter(
-            (project) => (prioritizedGroups.get(project.id)?.active.length ?? 0) > 0,
-          )
-        : activeProjects,
-    [onlyActionable, activeProjects, prioritizedGroups],
-  );
-  const actionableTicketCount = [...attentionSignalsByTicket.values()].filter(
-    (signals) => signals.length > 0,
-  ).length;
-  const incompleteInspection = [...attentionInspectionsByTicket.values()].some((inspections) =>
-    inspections.some((inspection) => inspection.status !== "complete"),
-  );
+  const {
+    prioritizedGroups,
+    archivedProjects,
+    actionableProjects,
+    actionableTicketCount,
+    incompleteInspection,
+    attentionCoverage,
+  } = useWorkbenchSidebarAttentionNavigation({
+    ticketGroupsByWorkspace,
+    actionableThreadIdsByTicket,
+    projects,
+    onlyActionable,
+  });
   const jiraKeysByTicketId = useMemo(
-    () =>
-      new Map(
-        [...ticketDetailsById].flatMap(([ticketId, details]) =>
-          details.issueLink ? [[ticketId, details.issueLink.issue.key] as const] : [],
-        ),
-      ),
+    () => getWorkbenchSidebarJiraKeys(ticketDetailsById),
     [ticketDetailsById],
   );
-  const filtered = useMemo(
-    () =>
-      isSearching
-        ? filterWorkbenchSidebarNavigation({
-            query: searchQuery,
-            projects: actionableProjects,
-            ticketGroupsByWorkspace: prioritizedGroups,
-            archivedTicketsByWorkspace: onlyActionable ? new Map() : archivedTicketsByWorkspace,
-            jiraKeysByTicketId,
-          })
-        : {
-            projects: actionableProjects,
-            ticketGroupsByWorkspace: prioritizedGroups,
-            archivedTicketsByWorkspace: onlyActionable ? new Map() : archivedTicketsByWorkspace,
-            resultCount: 0,
-          },
-    [
-      isSearching,
-      searchQuery,
-      actionableProjects,
-      prioritizedGroups,
-      onlyActionable,
-      archivedTicketsByWorkspace,
-      jiraKeysByTicketId,
-    ],
-  );
-  const visibleTicketCounts = onlyActionable
-    ? new Map(
-        [...filtered.ticketGroupsByWorkspace].map(([id, sections]) => [id, sections.active.length]),
-      )
-    : ticketCountsByWorkspace;
-
-  const archivedFiltered = useMemo(
-    () =>
-      filterWorkbenchSidebarNavigation({
-        query: searchQuery,
-        projects: onlyActionable
-          ? []
-          : projects.filter((workspace) => workspace.archivedAt != null),
-        ticketGroupsByWorkspace,
-        archivedTicketsByWorkspace,
-        jiraKeysByTicketId,
-      }),
-    [
-      searchQuery,
-      onlyActionable,
-      projects,
-      ticketGroupsByWorkspace,
-      archivedTicketsByWorkspace,
-      jiraKeysByTicketId,
-    ],
-  );
-  const visibleDrafts = new Map(
-    [...draftsByWorkspace].map(([id, drafts]) => [
-      id,
-      onlyActionable
-        ? []
-        : drafts.filter(
-            (draft) =>
-              matchesWorkbenchTicketSearch({ title: draft.title, query: searchQuery }) ||
-              projects.some(
-                (project) =>
-                  project.id === id &&
-                  matchesWorkbenchTicketSearch({ title: project.title, query: searchQuery }),
-              ),
-          ),
-    ]),
-  );
-  const visibleProjects = activeProjects.filter(
-    (project) =>
-      filtered.projects.some((match) => match.id === project.id) ||
-      (visibleDrafts.get(project.id)?.length ?? 0) > 0,
-  );
+  const visibleDrafts = onlyActionable ? emptySidebarDrafts : draftsByWorkspace;
+  const visibleProjects = actionableProjects;
+  const archivedFiltered = {
+    projects: archivedProjects,
+    ticketGroupsByWorkspace,
+    archivedTicketsByWorkspace,
+  };
   const allDrafts = [...draftsByWorkspace.values()].flat();
   const selectedDraft = allDrafts.find((draft) => draft.id === selectedTicketId);
   const writableWorkspaceIds = new Set(
@@ -668,6 +945,7 @@ function WorkbenchSidebarNavigation({
     onSelectWorkspace,
     selectedDraft,
   });
+  const onRowFocusCapture = useWorkbenchSidebarRowFocus(navigationRef);
   const navigation = {
     contextThreadId,
     jiraOwnershipKnown,
@@ -679,6 +957,7 @@ function WorkbenchSidebarNavigation({
     selectedWorkspaceId,
     ticketCountsByWorkspace,
     ticketDetailsById,
+    onCreateTicket,
     collapsedDrafts: draftDisclosure.collapsed,
     onToggleDrafts: draftDisclosure.toggle,
     onOpenDraftMenu: draftMenu.openMenu,
@@ -688,60 +967,150 @@ function WorkbenchSidebarNavigation({
       key={workspace.id}
       workspace={workspace}
       drafts={visibleDrafts.get(workspace.id) ?? []}
-      ticketSections={filtered.ticketGroupsByWorkspace.get(workspace.id)}
-      archivedTickets={filtered.archivedTicketsByWorkspace.get(workspace.id) ?? []}
+      ticketSections={prioritizedGroups.get(workspace.id)}
+      archivedTickets={onlyActionable ? [] : (archivedTicketsByWorkspace.get(workspace.id) ?? [])}
       expansion={expansion}
-      isSearching={isSearching}
+      attentionExpanded={
+        onlyActionable ? !collapsedAttentionWorkspaces.has(workspace.id) : undefined
+      }
       onToggle={toggleExpansion}
-      navigation={{ ...navigation, ticketCountsByWorkspace: visibleTicketCounts }}
+      navigation={navigation}
     />
   );
+  const searchResults = useMemo(
+    () =>
+      getWorkbenchSidebarSearchResults({
+        query: searchQuery,
+        projects: onlyActionable ? actionableProjects : projects,
+        ticketGroupsByWorkspace: prioritizedGroups,
+        archivedTicketsByWorkspace: onlyActionable ? new Map() : archivedTicketsByWorkspace,
+        jiraKeysByTicketId,
+        draftsByWorkspace: visibleDrafts,
+      }),
+    [
+      searchQuery,
+      onlyActionable,
+      actionableProjects,
+      projects,
+      prioritizedGroups,
+      archivedTicketsByWorkspace,
+      jiraKeysByTicketId,
+      visibleDrafts,
+    ],
+  );
+  const selectSearchResult = (result: WorkbenchSidebarSearchResult) => {
+    search.onSearchQueryChange("");
+    revealAttentionWorkspace(result.workspaceId);
+    if (result.kind === "draft") draftDisclosure.reveal(result.workspaceId);
+    setExpansion((state) =>
+      revealWorkbenchSidebarSelection(
+        state,
+        getWorkbenchSidebarSearchSelection(result, ticketGroupsByWorkspace),
+      ),
+    );
+    switch (result.kind) {
+      case "thread":
+        onOpenThread(result.thread);
+        break;
+      case "workspace":
+        onSelectWorkspace(result.workspaceId);
+        break;
+      default:
+        onSelectTicket(result.workspaceId, result.ticketId);
+    }
+  };
+  const { activeResultIndex, onSearchKeyDown, setActiveResultIndex, changeSearchQuery } =
+    useWorkbenchSidebarSearchKeyboard({
+      searchQuery,
+      searchResults,
+      onSearchQueryChange: search.onSearchQueryChange,
+      onSelect: selectSearchResult,
+    });
+  const selectionOutsideAttention =
+    onlyActionable &&
+    !isWorkbenchSidebarSelectionVisible({
+      selection: routeSelection,
+      projects: actionableProjects,
+      groups: prioritizedGroups,
+    });
   return (
-    <div ref={navigationRef} tabIndex={-1} aria-label="Workbench navigation" className="space-y-4">
-      <WorkbenchSidebarFilters
-        search={search}
-        resultCount={
-          filtered.resultCount +
-          archivedFiltered.resultCount +
-          [...visibleDrafts.values()].reduce((count, drafts) => count + drafts.length, 0)
-        }
-        actionableTicketCount={actionableTicketCount}
-        incompleteInspection={incompleteInspection}
-        attentionCoverage={attentionCoverage}
-      />
-      <WorkbenchInlineError message={draftMenu.error} />
-      <SidebarMenu aria-label="Workbench Workspaces" className="ps-px">
-        {visibleProjects.map(renderWorkspace)}
-      </SidebarMenu>
-      <WorkbenchSidebarArchivedWorkspaces
-        filtered={{
-          ...archivedFiltered,
-          projects: projects.filter(
-            (project) =>
-              project.archivedAt != null &&
-              (archivedFiltered.projects.some((match) => match.id === project.id) ||
-                (visibleDrafts.get(project.id)?.length ?? 0) > 0),
-          ),
-        }}
-        draftsByWorkspace={visibleDrafts}
-        expansion={expansion}
-        isSearching={isSearching}
-        onToggle={toggleExpansion}
-        navigation={navigation}
-      />
-      <WorkbenchDiscardDraftDialog
-        title={draftMenu.confirmationTitle}
-        open={draftMenu.actions.confirmation?.open === true}
-        busy={draftMenu.actions.busy}
-        creationUncertain={draftMenu.creationUncertain}
-        error={null}
-        finalFocus={draftMenu.finalFocus}
-        onOpenChange={(open) => {
-          if (!open) draftMenu.actions.closeConfirmation();
-        }}
-        onDiscard={draftMenu.actions.discard}
-      />
-    </div>
+    <SidebarContent
+      fixedHeader={
+        <WorkbenchSidebarFixedHeader
+          header={header}
+          filters={{
+            search: {
+              ...search,
+              onOnlyActionableChange: changeAttentionFilter,
+              onSearchQueryChange: changeSearchQuery,
+            },
+            resultCount: searchResults.length,
+            actionableTicketCount,
+            incompleteInspection,
+            attentionCoverage,
+            onSearchKeyDown,
+            activeResultIndex,
+          }}
+          location={{
+            visible: selectionOutsideAttention,
+            selection: routeSelection,
+            onClear: () => changeAttentionFilter(false),
+          }}
+        />
+      }
+    >
+      <SidebarGroup>
+        <WorkbenchSidebarWorkspaceState
+          environmentId={environmentId}
+          query={query}
+          snapshot={snapshot}
+          navigation={
+            <div
+              ref={navigationRef}
+              onFocusCapture={onRowFocusCapture}
+              tabIndex={-1}
+              aria-label="Workbench navigation"
+              className="space-y-4"
+            >
+              {isSearching ? (
+                <WorkbenchSidebarSearchResults
+                  results={searchResults}
+                  activeIndex={activeResultIndex}
+                  onActiveIndexChange={setActiveResultIndex}
+                  onSelect={selectSearchResult}
+                />
+              ) : (
+                <>
+                  <WorkbenchInlineError message={draftMenu.error} />
+                  <SidebarMenu aria-label="Workbench Workspaces">
+                    {visibleProjects.map(renderWorkspace)}
+                  </SidebarMenu>
+                  <WorkbenchSidebarArchivedWorkspaces
+                    filtered={archivedFiltered}
+                    draftsByWorkspace={visibleDrafts}
+                    expansion={expansion}
+                    onToggle={toggleExpansion}
+                    navigation={navigation}
+                  />
+                </>
+              )}
+              <WorkbenchDiscardDraftDialog
+                title={draftMenu.confirmationTitle}
+                open={draftMenu.actions.confirmation?.open === true}
+                busy={draftMenu.actions.busy}
+                creationUncertain={draftMenu.creationUncertain}
+                error={null}
+                finalFocus={draftMenu.finalFocus}
+                onOpenChange={(open) => {
+                  if (!open) draftMenu.actions.closeConfirmation();
+                }}
+                onDiscard={draftMenu.actions.discard}
+              />
+            </div>
+          }
+        />
+      </SidebarGroup>
+    </SidebarContent>
   );
 }
 
@@ -749,11 +1118,11 @@ function WorkbenchSidebarArchivedWorkspaces({
   filtered,
   draftsByWorkspace,
   ...rowProps
-}: Pick<
-  WorkbenchSidebarWorkspaceRowProps,
-  "expansion" | "isSearching" | "onToggle" | "navigation"
-> & {
-  filtered: ReturnType<typeof filterWorkbenchSidebarNavigation>;
+}: Pick<WorkbenchSidebarWorkspaceRowProps, "expansion" | "onToggle" | "navigation"> & {
+  filtered: Pick<
+    WorkbenchSidebarNavigationFields,
+    "projects" | "ticketGroupsByWorkspace" | "archivedTicketsByWorkspace"
+  >;
   draftsByWorkspace: ReadonlyMap<WorkbenchProjectId, ReadonlyArray<SidebarDraft>>;
 }) {
   if (filtered.projects.length === 0) return null;
@@ -761,7 +1130,7 @@ function WorkbenchSidebarArchivedWorkspaces({
     (workspace) => workspace.id === rowProps.navigation.selectedWorkspaceId,
   );
   return (
-    <details open={selected || rowProps.isSearching || undefined}>
+    <details open={selected || undefined}>
       <summary className="cursor-pointer px-2 py-2 text-xs font-medium text-sidebar-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
         Archived Workspaces
       </summary>
@@ -782,12 +1151,12 @@ function WorkbenchSidebarArchivedWorkspaces({
 }
 
 type WorkbenchSidebarWorkspaceRowProps = {
+  readonly attentionExpanded?: boolean | undefined;
   readonly drafts: ReadonlyArray<SidebarDraft>;
   readonly workspace: Pick<WorkbenchProject, "id" | "title" | "archivedAt">;
   readonly ticketSections: WorkbenchSidebarTicketSections | undefined;
   readonly archivedTickets: ReadonlyArray<WorkbenchSidebarTicket>;
   readonly expansion: WorkbenchSidebarExpansion;
-  readonly isSearching: boolean;
   readonly onToggle: (action: WorkbenchSidebarExpansionAction) => void;
   readonly navigation: Pick<
     WorkbenchSidebarNavigationFields,
@@ -796,6 +1165,7 @@ type WorkbenchSidebarWorkspaceRowProps = {
     | "onOpenThread"
     | "onSelectTicket"
     | "onSelectWorkspace"
+    | "onCreateTicket"
     | "selectedEpicId"
     | "selectedTicketId"
     | "selectedWorkspaceId"
@@ -814,7 +1184,7 @@ function WorkbenchSidebarWorkspaceRow({
   ticketSections,
   archivedTickets,
   expansion,
-  isSearching,
+  attentionExpanded,
   onToggle,
   navigation,
 }: WorkbenchSidebarWorkspaceRowProps) {
@@ -824,74 +1194,43 @@ function WorkbenchSidebarWorkspaceRow({
     jiraOwnershipKnown,
     onOpenThread,
     onSelectTicket,
-    onSelectWorkspace,
     selectedEpicId,
     selectedTicketId,
-    selectedWorkspaceId,
-    ticketCountsByWorkspace,
     ticketDetailsById,
   } = navigation;
   const activeTicketGroups = ticketSections?.active ?? [];
   const doneTicketGroups = ticketSections?.done ?? [];
-  const showArchivedTickets = isSearching || workspace.id === selectedWorkspaceId;
+  const showArchivedTickets = workspace.id === navigation.selectedWorkspaceId;
   const visibleArchivedTickets = showArchivedTickets ? archivedTickets : [];
-  const hasDescendants = [
-    drafts.length,
-    activeTicketGroups.length,
-    doneTicketGroups.length,
-    visibleArchivedTickets.length,
-  ].some((count) => count > 0);
-  const workspaceExpanded = isSearching || expansion.workspaceId === workspace.id;
+  const hasContents = [drafts, activeTicketGroups, doneTicketGroups, visibleArchivedTickets].some(
+    (items) => items.length > 0,
+  );
+  const workspaceExpanded = attentionExpanded ?? expansion.workspaceId === workspace.id;
   const workspacePanelId = `workbench-sidebar-workspace-${workspace.id}`;
-  const disclosureLabel = `${workspaceExpanded ? "Collapse" : "Expand"} ${workspace.title}`;
-  const workspaceIsDestination =
-    workspace.id === selectedWorkspaceId &&
-    selectedTicketId === undefined &&
-    selectedEpicId === undefined;
 
   return (
     <SidebarMenuItem>
-      <div className="flex min-w-0 items-center gap-1">
-        {hasDescendants ? (
-          <WorkbenchSidebarDisclosure
-            controls={workspacePanelId}
-            expanded={workspaceExpanded}
-            disabled={isSearching}
-            label={disclosureLabel}
-            onToggle={() => onToggle({ type: "toggleWorkspace", workspaceId: workspace.id })}
-          />
-        ) : (
-          <span aria-hidden className="size-7 shrink-0" />
-        )}
-        <SidebarMenuButton
-          ref={workspaceButtonRef}
-          aria-current={workspaceIsDestination ? "page" : undefined}
-          className="h-9 w-auto min-w-0 flex-1 gap-2.5 rounded-md px-2.5 text-sm"
-          isActive={workspaceIsDestination}
-          onClick={() => onSelectWorkspace(workspace.id)}
-          tooltip={{ children: workspace.title, hidden: false }}
-        >
-          <LayoutDashboardIcon />
-          <WorkbenchSidebarItemTitle>{workspace.title}</WorkbenchSidebarItemTitle>
-          <span className="text-xs tabular-nums text-sidebar-muted-foreground">
-            {ticketCountsByWorkspace.get(workspace.id) ?? 0}
-          </span>
-        </SidebarMenuButton>
-      </div>
+      <WorkbenchSidebarWorkspaceHeader
+        workspace={workspace}
+        hasContents={hasContents}
+        workspaceButtonRef={workspaceButtonRef}
+        workspaceExpanded={workspaceExpanded}
+        workspacePanelId={workspacePanelId}
+        onToggle={onToggle}
+        navigation={navigation}
+      />
       <WorkbenchSidebarWorkspacePanel
-        hasDescendants={hasDescendants}
         expanded={workspaceExpanded}
         panelId={workspacePanelId}
         title={workspace.title}
       >
-        <div className="ms-3 border-sidebar-border border-l ps-2">
+        <div className="ms-4">
           <WorkbenchSidebarDrafts
             drafts={drafts}
             workspaceTitle={workspace.title}
             workspaceButtonRef={workspaceButtonRef}
             selectedTicketId={selectedTicketId}
             expanded={!navigation.collapsedDrafts.has(workspace.id)}
-            isSearching={isSearching}
             onToggle={() => navigation.onToggleDrafts(workspace.id)}
             onSelect={(draft) => onSelectTicket(workspace.id, draft.id)}
             onOpenMenu={navigation.onOpenDraftMenu}
@@ -902,7 +1241,6 @@ function WorkbenchSidebarWorkspaceRow({
             contextThreadId={contextThreadId}
             doneTicketGroups={doneTicketGroups}
             expansion={expansion}
-            isSearching={isSearching}
             jiraOwnershipKnown={jiraOwnershipKnown}
             onOpenThread={onOpenThread}
             onSelectTicket={onSelectTicket}
@@ -918,20 +1256,89 @@ function WorkbenchSidebarWorkspaceRow({
   );
 }
 
+function WorkbenchSidebarWorkspaceHeader({
+  workspace,
+  hasContents,
+  workspaceButtonRef,
+  workspaceExpanded,
+  workspacePanelId,
+  onToggle,
+  navigation,
+}: Pick<WorkbenchSidebarWorkspaceRowProps, "workspace" | "onToggle" | "navigation"> & {
+  hasContents: boolean;
+  workspaceButtonRef: RefObject<HTMLButtonElement | null>;
+  workspaceExpanded: boolean;
+  workspacePanelId: string;
+}) {
+  const { selectedWorkspaceId, selectedTicketId, selectedEpicId, onSelectWorkspace } = navigation;
+  const ticketCount = navigation.ticketCountsByWorkspace.get(workspace.id) ?? 0;
+  const boardLabel = `Open ${workspace.title} board (${ticketCount} Tickets)`;
+  const disclosureLabel = `${workspaceExpanded ? "Collapse" : "Expand"} ${workspace.title}`;
+  const workspaceIsDestination =
+    workspace.id === selectedWorkspaceId &&
+    selectedTicketId === undefined &&
+    selectedEpicId === undefined;
+
+  return (
+    <div
+      data-workbench-sidebar-disclosure-row=""
+      data-workbench-sidebar-surface=""
+      data-active={workspaceIsDestination || undefined}
+      className="relative flex min-w-0 items-start rounded-md"
+    >
+      <WorkbenchSidebarDisclosure
+        available={hasContents}
+        controls={workspacePanelId}
+        expanded={workspaceExpanded}
+        label={disclosureLabel}
+        onToggle={() => onToggle({ type: "toggleWorkspace", workspaceId: workspace.id })}
+      />
+      <WorkbenchSidebarRowNavigation
+        ref={workspaceButtonRef}
+        label={boardLabel}
+        isActive={workspaceIsDestination}
+        compact
+        onSelect={() => {
+          if (hasContents && (workspaceIsDestination || !workspaceExpanded)) {
+            onToggle({ type: "toggleWorkspace", workspaceId: workspace.id });
+          }
+          onSelectWorkspace(workspace.id);
+        }}
+        preview={<span className="p-2">{boardLabel}</span>}
+      >
+        <LayoutDashboardIcon className="size-4 shrink-0" />
+        <span className="min-w-0 flex-1 truncate font-medium">{workspace.title}</span>
+        <span aria-hidden className="ms-auto text-xs tabular-nums text-sidebar-muted-foreground">
+          {ticketCount}
+        </span>
+      </WorkbenchSidebarRowNavigation>
+      {workspace.archivedAt == null ? (
+        <span className="flex h-8 shrink-0 items-center justify-center pe-1 pointer-coarse:size-11 max-md:size-11">
+          <Button
+            size="icon-xs"
+            variant="ghost-muted"
+            aria-label={`New Ticket in ${workspace.title}`}
+            onClick={() => navigation.onCreateTicket(workspace.id)}
+          >
+            <PlusIcon />
+          </Button>
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function WorkbenchSidebarWorkspacePanel({
-  hasDescendants,
   expanded,
   panelId,
   title,
   children,
 }: {
-  readonly hasDescendants: boolean;
   readonly expanded: boolean;
   readonly panelId: string;
   readonly title: string;
   readonly children: ReactNode;
 }) {
-  if (!hasDescendants) return null;
   return (
     <div
       aria-label={`${title} contents`}
@@ -958,7 +1365,6 @@ type WorkbenchSidebarWorkspaceContentsProps = Pick<
   readonly archivedTickets: ReadonlyArray<WorkbenchSidebarTicket>;
   readonly doneTicketGroups: ReadonlyArray<WorkbenchSidebarTicketGroup>;
   readonly expansion: WorkbenchSidebarExpansion;
-  readonly isSearching: boolean;
   readonly onToggle: (action: WorkbenchSidebarExpansionAction) => void;
   readonly workspaceId: WorkbenchProjectId;
 };
@@ -969,7 +1375,6 @@ function WorkbenchSidebarWorkspaceContents({
   contextThreadId,
   doneTicketGroups,
   expansion,
-  isSearching,
   jiraOwnershipKnown,
   onOpenThread,
   onSelectTicket,
@@ -997,7 +1402,6 @@ function WorkbenchSidebarWorkspaceContents({
           contextThreadId={contextThreadId}
           jiraOwnershipKnown={jiraOwnershipKnown}
           expansion={expansion}
-          isSearching={isSearching}
           workspaceId={workspaceId}
         />
       ) : null}
@@ -1006,7 +1410,6 @@ function WorkbenchSidebarWorkspaceContents({
           ticketDetailsById={ticketDetailsById}
           groups={doneTicketGroups}
           expanded={expansion.done}
-          isSearching={isSearching}
           onOpenThread={onOpenThread}
           onSelectTicket={onSelectTicket}
           onToggle={() => onToggle({ type: "toggleDone", workspaceId })}
@@ -1025,7 +1428,6 @@ function WorkbenchSidebarWorkspaceContents({
           ticketDetailsById={ticketDetailsById}
           archivedTickets={archivedTickets}
           expanded={expansion.archived}
-          isSearching={isSearching}
           onSelectTicket={onSelectTicket}
           onToggle={() => onToggle({ type: "toggleArchived", workspaceId })}
           selectedEpicId={selectedEpicId}
@@ -1043,7 +1445,6 @@ type WorkbenchSidebarTicketGroupsProps = {
   readonly contextThreadId: ThreadId | undefined;
   readonly jiraOwnershipKnown: boolean;
   readonly expansion: WorkbenchSidebarExpansion;
-  readonly isSearching: boolean;
   readonly groups: ReadonlyArray<WorkbenchSidebarTicketGroup>;
   readonly ticketDetailsById: ReadonlyMap<WorkbenchTicketId, WorkbenchSidebarTicketDetails>;
   readonly isDone: boolean;
@@ -1063,7 +1464,6 @@ function WorkbenchSidebarTicketGroups({
   contextThreadId,
   jiraOwnershipKnown,
   expansion,
-  isSearching,
   groups,
   isDone,
   onOpenThread,
@@ -1081,7 +1481,6 @@ function WorkbenchSidebarTicketGroups({
           contextThreadId={contextThreadId}
           jiraOwnershipKnown={jiraOwnershipKnown}
           expansion={expansion}
-          isSearching={isSearching}
           group={group}
           isDone={isDone || (group.ticket.status === "done" && group.ticket.archivedAt == null)}
           key={`${group.ticket.id}:${group.threads.some((thread) => thread.id === contextThreadId) ? contextThreadId : "none"}`}
@@ -1100,29 +1499,28 @@ function WorkbenchSidebarTicketGroups({
 function useWorkbenchSidebarTicketThreadDisclosure({
   threads,
   contextThreadId,
-  isSearching,
-  ticketExpanded,
-  executionThreadId,
 }: Pick<WorkbenchSidebarTicketGroup, "threads"> &
-  Pick<WorkbenchSidebarTicketGroupsProps, "contextThreadId" | "isSearching"> & {
-    readonly ticketExpanded: boolean;
-    readonly executionThreadId: ThreadId | undefined;
-  }) {
+  Pick<WorkbenchSidebarTicketGroupsProps, "contextThreadId">) {
   const selectedThreadIsSettled = threads.some(
     (thread) => thread.id === contextThreadId && thread.settledOverride === "settled",
   );
-  const [expanded, setExpanded] = useState(selectedThreadIsSettled);
-  const settledExpanded = isSearching || expanded;
+  const selectedSettledThreadId = selectedThreadIsSettled ? contextThreadId : undefined;
+  const [disclosure, setDisclosure] = useState({
+    selectedSettledThreadId,
+    expanded: selectedThreadIsSettled,
+  });
+  if (disclosure.selectedSettledThreadId !== selectedSettledThreadId) {
+    setDisclosure({
+      selectedSettledThreadId,
+      expanded: selectedThreadIsSettled || disclosure.expanded,
+    });
+  }
   return {
-    settledExpanded,
-    showExecutionStatus: !isWorkbenchSidebarExecutionThreadVisible({
-      threads,
-      threadId: executionThreadId,
-      ticketExpanded,
-      settledExpanded,
-    }),
-    resetSettled: () => setExpanded(selectedThreadIsSettled),
-    toggleSettled: () => setExpanded((value) => !value),
+    settledExpanded: disclosure.expanded,
+    resetSettled: () =>
+      setDisclosure((previous) => ({ ...previous, expanded: selectedThreadIsSettled })),
+    toggleSettled: () =>
+      setDisclosure((previous) => ({ ...previous, expanded: !previous.expanded })),
   };
 }
 
@@ -1131,7 +1529,6 @@ function WorkbenchSidebarTicketGroupRow({
   contextThreadId,
   jiraOwnershipKnown,
   expansion,
-  isSearching,
   group,
   isDone,
   onOpenThread,
@@ -1144,15 +1541,11 @@ function WorkbenchSidebarTicketGroupRow({
   readonly group: WorkbenchSidebarTicketGroup;
 }) {
   const { ticket, threads } = group;
-  const ticketExpanded =
-    isSearching || (expansion.ticketId === ticket.id && expansion.done === isDone);
-  const { settledExpanded, showExecutionStatus, resetSettled, toggleSettled } =
+  const ticketExpanded = expansion.ticketId === ticket.id && expansion.done === isDone;
+  const { settledExpanded, resetSettled, toggleSettled } =
     useWorkbenchSidebarTicketThreadDisclosure({
       threads,
       contextThreadId,
-      isSearching,
-      ticketExpanded,
-      executionThreadId: ticketDetailsById.get(ticket.id)?.executionStatus?.threadId,
     });
   const ticketToggleLabel = `${ticketExpanded ? "Collapse" : "Expand"} ${ticket.title}`;
   const ticketPanelId = `workbench-sidebar-ticket-${ticket.id}-${isDone ? "done" : "active"}`;
@@ -1162,31 +1555,38 @@ function WorkbenchSidebarTicketGroupRow({
     contextThreadId,
     selectedEpicId,
   });
+  const toggleTicket = () => {
+    resetSettled();
+    onToggleTicket(ticket.id, isDone);
+  };
+  const selectTicket = () => {
+    if (threads.length > 0 && (ticketIsDestination || !ticketExpanded)) toggleTicket();
+    onSelectTicket(workspaceId, ticket.id);
+  };
 
   return (
     <SidebarMenuItem>
-      <div className="flex min-w-0 items-center gap-1">
-        {threads.length > 0 ? (
-          <WorkbenchSidebarDisclosure
-            controls={ticketPanelId}
-            expanded={ticketExpanded}
-            disabled={isSearching}
-            label={ticketToggleLabel}
-            onToggle={() => {
-              resetSettled();
-              onToggleTicket(ticket.id, isDone);
-            }}
-          />
-        ) : (
-          <span aria-hidden className="size-7 shrink-0" />
-        )}
+      <div
+        data-workbench-sidebar-disclosure-row=""
+        data-workbench-sidebar-surface=""
+        data-workbench-sidebar-ticket-row-id={ticket.id}
+        data-active={ticketIsDestination || undefined}
+        className="relative flex min-w-0 items-start rounded-md"
+      >
+        <WorkbenchSidebarDisclosure
+          available={threads.length > 0}
+          controls={ticketPanelId}
+          expanded={ticketExpanded}
+          label={ticketToggleLabel}
+          onToggle={toggleTicket}
+          detail
+        />
         <WorkbenchSidebarTicketButton
           ticket={ticket}
           details={ticketDetailsById.get(ticket.id)}
           jiraOwnershipKnown={jiraOwnershipKnown}
           isActive={ticketIsDestination}
-          showExecutionStatus={showExecutionStatus}
-          onSelect={() => onSelectTicket(workspaceId, ticket.id)}
+          onSelect={selectTicket}
         />
       </div>
       <WorkbenchSidebarTicketThreadPanel
@@ -1195,7 +1595,6 @@ function WorkbenchSidebarTicketGroupRow({
         ticketExpanded={ticketExpanded}
         ticketPanelId={ticketPanelId}
         contextThreadId={contextThreadId}
-        isSearching={isSearching}
         onOpenThread={onOpenThread}
         settledExpanded={settledExpanded}
         onToggleSettled={toggleSettled}
@@ -1210,7 +1609,6 @@ function WorkbenchSidebarDoneTickets({
   jiraOwnershipKnown,
   expansion,
   expanded,
-  isSearching,
   groups,
   onOpenThread,
   onSelectTicket,
@@ -1222,36 +1620,32 @@ function WorkbenchSidebarDoneTickets({
   workspaceId,
 }: Omit<WorkbenchSidebarTicketGroupsProps, "isDone"> & {
   readonly expanded: boolean;
-  readonly isSearching: boolean;
   readonly onToggle: () => void;
   readonly panelId: string;
 }) {
-  const sectionExpanded = isSearching || expanded;
   return (
-    <section aria-label="Done Tickets" className="mt-2">
+    <section aria-label="Done Tickets" className="mt-1">
       <button
         aria-controls={panelId}
-        aria-expanded={sectionExpanded}
-        className="mx-0.5 flex h-8 w-[calc(100%-0.25rem)] cursor-pointer items-center gap-2 rounded-(--control-radius) px-2 text-left text-xs font-medium text-sidebar-muted-foreground/60 outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        aria-expanded={expanded}
+        data-workbench-sidebar-group-toggle=""
         onClick={onToggle}
-        disabled={isSearching}
         type="button"
       >
-        <span className="shrink-0">Done ({groups.length})</span>
-        <span aria-hidden className="h-px min-w-2 flex-1 bg-sidebar-border/60" />
-        <ChevronDownIcon
+        <ChevronRightIcon
           aria-hidden
-          className={`size-3 shrink-0 transition-transform ${sectionExpanded ? "rotate-180" : ""}`}
+          className={`size-3 shrink-0 ${expanded ? "rotate-90" : ""}`}
         />
+        <span>Done</span>
+        <span className="tabular-nums">{groups.length}</span>
       </button>
-      <div aria-label="Done Ticket list" hidden={!sectionExpanded} id={panelId}>
-        {sectionExpanded ? (
+      <div aria-label="Done Ticket list" hidden={!expanded} id={panelId}>
+        {expanded ? (
           <WorkbenchSidebarTicketGroups
             ticketDetailsById={ticketDetailsById}
             contextThreadId={contextThreadId}
             jiraOwnershipKnown={jiraOwnershipKnown}
             expansion={expansion}
-            isSearching={isSearching}
             groups={groups}
             isDone
             onOpenThread={onOpenThread}
@@ -1270,13 +1664,12 @@ function WorkbenchSidebarDoneTickets({
 function WorkbenchSidebarTicketThreads({
   threads,
   contextThreadId,
-  isSearching,
   onOpenThread,
   ticket,
   settledExpanded,
   onToggleSettled,
 }: Pick<WorkbenchSidebarTicketGroup, "threads" | "ticket"> &
-  Pick<WorkbenchSidebarTicketGroupsProps, "contextThreadId" | "onOpenThread" | "isSearching"> & {
+  Pick<WorkbenchSidebarTicketGroupsProps, "contextThreadId" | "onOpenThread"> & {
     readonly settledExpanded: boolean;
     readonly onToggleSettled: () => void;
   }) {
@@ -1287,12 +1680,13 @@ function WorkbenchSidebarTicketThreads({
     <WorkbenchSidebarThreadRow
       key={thread.id}
       thread={thread}
+      ticketId={ticket.id}
       isActive={thread.id === contextThreadId}
       onOpenThread={onOpenThread}
     />
   );
   return (
-    <div className="ms-8 border-sidebar-border border-l ps-2">
+    <div className="ms-4">
       <SidebarMenu>{activeThreads.map(renderThread)}</SidebarMenu>
       {settledThreads.length > 0 ? (
         <section aria-label={`Settled Threads in ${ticket.title}`} className="mt-1">
@@ -1300,17 +1694,16 @@ function WorkbenchSidebarTicketThreads({
             aria-label={`${settledExpanded ? "Collapse" : "Expand"} Settled Threads in ${ticket.title}`}
             aria-controls={panelId}
             aria-expanded={settledExpanded}
-            className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-xs text-sidebar-muted-foreground hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            data-workbench-sidebar-group-toggle=""
             onClick={onToggleSettled}
-            disabled={isSearching}
             type="button"
           >
-            <span>Settled ({settledThreads.length})</span>
-            <span aria-hidden className="h-px min-w-2 flex-1 bg-sidebar-border/60" />
-            <ChevronDownIcon
+            <ChevronRightIcon
               aria-hidden
-              className={`size-3 ${settledExpanded ? "rotate-180" : ""}`}
+              className={`size-3 ${settledExpanded ? "rotate-90" : ""}`}
             />
+            <span>Settled</span>
+            <span className="tabular-nums">{settledThreads.length}</span>
           </button>
           <div hidden={!settledExpanded} id={panelId}>
             {settledExpanded ? <SidebarMenu>{settledThreads.map(renderThread)}</SidebarMenu> : null}
@@ -1325,22 +1718,25 @@ function WorkbenchSidebarDisclosure({
   controls,
   expanded,
   label,
-  disabled = false,
+  detail = false,
+  available = true,
   onToggle,
 }: {
   readonly controls: string;
   readonly expanded: boolean;
   readonly label: string;
-  readonly disabled?: boolean;
+  readonly detail?: boolean;
+  readonly available?: boolean;
   readonly onToggle: () => void;
 }) {
+  const kind = detail ? "ticket" : "workspace";
+  if (!available) return <span aria-hidden data-workbench-sidebar-disclosure={kind} />;
   return (
     <button
       aria-controls={controls}
       aria-expanded={expanded}
       aria-label={label}
-      disabled={disabled}
-      className="inline-flex size-7 shrink-0 items-center justify-center rounded-(--control-radius) text-sidebar-muted-foreground outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      data-workbench-sidebar-disclosure={kind}
       onClick={onToggle}
       type="button"
     >
@@ -1352,17 +1748,12 @@ function WorkbenchSidebarDisclosure({
   );
 }
 
-function WorkbenchSidebarItemTitle({ children }: { readonly children: string }) {
-  return <span className="min-w-0 flex-1 truncate">{children}</span>;
-}
-
 function WorkbenchSidebarArchivedTickets({
   ticketDetailsById,
   archivedTickets,
   contextThreadId,
   jiraOwnershipKnown,
   expanded,
-  isSearching,
   onSelectTicket,
   onToggle,
   panelId,
@@ -1374,49 +1765,59 @@ function WorkbenchSidebarArchivedTickets({
   readonly contextThreadId: ThreadId | undefined;
   readonly jiraOwnershipKnown: boolean;
   readonly expanded: boolean;
-  readonly isSearching: boolean;
   readonly onSelectTicket: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
   readonly onToggle: () => void;
   readonly panelId: string;
   readonly selectedEpicId: WorkbenchEpicId | undefined;
   readonly selectedTicketId: WorkbenchTicketId | undefined;
 }) {
-  const sectionExpanded = isSearching || expanded;
   return (
-    <section aria-label="Archived Tickets" className="mt-2">
+    <section aria-label="Archived Tickets" className="mt-1">
       <button
         aria-controls={panelId}
-        aria-expanded={sectionExpanded}
-        className="mx-0.5 flex h-8 w-[calc(100%-0.25rem)] cursor-pointer items-center gap-2 rounded-(--control-radius) px-2 text-left text-xs font-medium text-sidebar-muted-foreground/60 outline-hidden hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        aria-expanded={expanded}
+        data-workbench-sidebar-group-toggle=""
         onClick={onToggle}
-        disabled={isSearching}
         type="button"
       >
-        <span className="shrink-0">Archived ({archivedTickets.length})</span>
-        <span aria-hidden className="h-px min-w-2 flex-1 bg-sidebar-border/60" />
-        <ChevronDownIcon
+        <ChevronRightIcon
           aria-hidden
-          className={`size-3 shrink-0 transition-transform ${sectionExpanded ? "rotate-180" : ""}`}
+          className={`size-3 shrink-0 ${expanded ? "rotate-90" : ""}`}
         />
+        <span>Archived</span>
+        <span className="tabular-nums">{archivedTickets.length}</span>
       </button>
-      <div aria-label="Archived Ticket list" hidden={!sectionExpanded} id={panelId}>
-        {sectionExpanded ? (
-          <SidebarMenu className="ps-px">
-            {archivedTickets.map((ticket) => (
-              <SidebarMenuItem key={ticket.id}>
-                <WorkbenchSidebarTicketButton
-                  ticket={ticket}
-                  details={ticketDetailsById.get(ticket.id)}
-                  jiraOwnershipKnown={jiraOwnershipKnown}
-                  isActive={
-                    ticket.id === selectedTicketId &&
-                    contextThreadId === undefined &&
-                    selectedEpicId === undefined
-                  }
-                  onSelect={() => onSelectTicket(ticket.projectId, ticket.id)}
-                />
-              </SidebarMenuItem>
-            ))}
+      <div aria-label="Archived Ticket list" hidden={!expanded} id={panelId}>
+        {expanded ? (
+          <SidebarMenu>
+            {archivedTickets.map((ticket) => {
+              const isActive = isWorkbenchSidebarTicketDestination({
+                ticketId: ticket.id,
+                selectedTicketId,
+                contextThreadId,
+                selectedEpicId,
+              });
+              return (
+                <SidebarMenuItem key={ticket.id}>
+                  {/* Archived Tickets have no Thread list; the empty column keeps them aligned. */}
+                  <div
+                    data-workbench-sidebar-disclosure-row=""
+                    data-workbench-sidebar-surface=""
+                    data-active={isActive || undefined}
+                    className="relative flex min-w-0 items-start rounded-md"
+                  >
+                    <span aria-hidden data-workbench-sidebar-disclosure="ticket" />
+                    <WorkbenchSidebarTicketButton
+                      ticket={ticket}
+                      details={ticketDetailsById.get(ticket.id)}
+                      jiraOwnershipKnown={jiraOwnershipKnown}
+                      isActive={isActive}
+                      onSelect={() => onSelectTicket(ticket.projectId, ticket.id)}
+                    />
+                  </div>
+                </SidebarMenuItem>
+              );
+            })}
           </SidebarMenu>
         ) : null}
       </div>
@@ -1430,19 +1831,12 @@ function WorkbenchSidebarTicketThreadPanel({
   ticketExpanded,
   ticketPanelId,
   contextThreadId,
-  isSearching,
   onOpenThread,
   settledExpanded,
   onToggleSettled,
 }: Pick<
   Parameters<typeof WorkbenchSidebarTicketThreads>[0],
-  | "threads"
-  | "ticket"
-  | "contextThreadId"
-  | "isSearching"
-  | "onOpenThread"
-  | "settledExpanded"
-  | "onToggleSettled"
+  "threads" | "ticket" | "contextThreadId" | "onOpenThread" | "settledExpanded" | "onToggleSettled"
 > & { ticketExpanded: boolean; ticketPanelId: string }) {
   return (
     <>
@@ -1457,7 +1851,6 @@ function WorkbenchSidebarTicketThreadPanel({
             <WorkbenchSidebarTicketThreads
               threads={threads}
               contextThreadId={contextThreadId}
-              isSearching={isSearching}
               onOpenThread={onOpenThread}
               ticket={ticket}
               settledExpanded={settledExpanded}

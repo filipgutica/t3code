@@ -279,8 +279,9 @@ describe("Workbench Board view", () => {
       waiting.title,
     ]);
     expect(
-      renderer.root.findAllByProps({ "aria-label": "1 attention item for Waiting for input" })
-        .length,
+      renderer.root.findAllByProps({
+        "aria-label": "Needs attention, 1 item for Waiting for input: Approval needed",
+      }).length,
     ).toBeGreaterThan(0);
   });
   it("matches secondary repositories, retains the filter while loading, and clears removed repositories", () => {

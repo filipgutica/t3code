@@ -1,9 +1,11 @@
 import type { EnvironmentId, WorkbenchProjectId, WorkbenchTicketId } from "@t3tools/contracts";
-import { ChevronRightIcon, EllipsisIcon, FilePenLineIcon } from "lucide-react";
+import { ChevronRightIcon, FilePenLineIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
-import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../components/ui/sidebar";
+import { SidebarMenu, SidebarMenuItem } from "../components/ui/sidebar";
+import { WorkbenchSidebarRowNavigation } from "./WorkbenchSidebarRowNavigation";
+import { WorkbenchSidebarRowActions } from "./WorkbenchSidebarRowActions";
 import { toastManager } from "../components/ui/toast";
 import { readLocalApi } from "../localApi";
 import { useWorkbenchDraftActions } from "./useWorkbenchDraftActions";
@@ -34,6 +36,13 @@ function useWorkbenchSidebarDraftDisclosure(selectedDraft: WorkbenchSidebarDraft
   }
   return {
     collapsed: disclosure.collapsed,
+    reveal: (workspaceId: WorkbenchProjectId) =>
+      setDisclosure((previous) => {
+        if (!previous.collapsed.has(workspaceId)) return previous;
+        const collapsed = new Set(previous.collapsed);
+        collapsed.delete(workspaceId);
+        return { ...previous, collapsed };
+      }),
     toggle: (workspaceId: WorkbenchProjectId) =>
       setDisclosure((previous) => {
         const collapsed = new Set(previous.collapsed);
@@ -187,11 +196,6 @@ export function useWorkbenchSidebarDraftMenu({
       return (
         (!actions.discardSucceeded && visible(request?.trigger)) ||
         visible(request?.workspaceButton) ||
-        visible(
-          navigationRef.current?.querySelector<HTMLInputElement>(
-            'input[aria-label="Search Workbench sidebar"]',
-          ),
-        ) ||
         visible(navigationRef.current) ||
         visible(document.querySelector<HTMLElement>('[aria-label="Ticket board"]'))
       );
@@ -205,7 +209,6 @@ export function WorkbenchSidebarDrafts({
   workspaceButtonRef,
   selectedTicketId,
   expanded,
-  isSearching,
   onToggle,
   onSelect,
   onOpenMenu,
@@ -215,7 +218,6 @@ export function WorkbenchSidebarDrafts({
   readonly workspaceButtonRef: RefObject<HTMLButtonElement | null>;
   readonly selectedTicketId: WorkbenchTicketId | undefined;
   readonly expanded: boolean;
-  readonly isSearching: boolean;
   readonly onToggle: () => void;
   readonly onSelect: (draft: WorkbenchSidebarDraft) => void;
   readonly onOpenMenu: (request: DraftMenuRequest) => Promise<void>;
@@ -235,55 +237,42 @@ export function WorkbenchSidebarDrafts({
     });
   };
   return (
-    <Collapsible open={expanded || isSearching} onOpenChange={onToggle} className="mb-2">
+    <Collapsible open={expanded} onOpenChange={onToggle} className="mb-1">
       <CollapsibleTrigger
-        disabled={isSearching}
-        aria-label={`${expanded || isSearching ? "Collapse" : "Expand"} drafts in ${workspaceTitle}`}
-        className="group flex h-8 w-full items-center gap-2 rounded-md px-2 text-xs font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:outline-2 focus-visible:outline-ring"
+        aria-label={`${expanded ? "Collapse" : "Expand"} drafts in ${workspaceTitle}`}
+        data-workbench-sidebar-group-toggle=""
+        className="group"
       >
         <ChevronRightIcon aria-hidden className="size-3 shrink-0 group-data-panel-open:rotate-90" />
         <span>Drafts</span>
-        <span className="ml-auto tabular-nums">{drafts.length}</span>
+        <span className="tabular-nums">{drafts.length}</span>
       </CollapsibleTrigger>
       <CollapsiblePanel animate={false}>
-        <div className="ms-3 border-l border-sidebar-border ps-2">
+        <div data-workbench-sidebar-draft-list="">
           <SidebarMenu>
             {drafts.map((draft) => (
               <SidebarMenuItem key={draft.id}>
                 <div
-                  data-workbench-sidebar-item-row=""
-                  className={`group/draft relative flex min-w-0 rounded-lg ${draft.id === selectedTicketId ? "bg-sidebar-row-selected" : "hover:bg-sidebar-row-hover"}`}
+                  data-workbench-sidebar-item-row="compact"
+                  data-workbench-sidebar-surface=""
+                  data-active={draft.id === selectedTicketId || undefined}
+                  className="relative"
                 >
-                  <SidebarMenuButton
-                    aria-label={`Open draft ${draft.title}`}
-                    aria-current={draft.id === selectedTicketId ? "page" : undefined}
+                  <WorkbenchSidebarRowNavigation
+                    label={`Open draft ${draft.title}`}
                     isActive={draft.id === selectedTicketId}
-                    onClick={() => onSelect(draft)}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      openAt(draft, event.currentTarget, { x: event.clientX, y: event.clientY });
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-                        event.preventDefault();
-                        openAt(draft, event.currentTarget);
-                      }
-                    }}
-                    tooltip={{ children: draft.title, hidden: false }}
-                    className="min-h-11 min-w-0 flex-1 sm:min-h-9"
+                    compact
+                    onSelect={() => onSelect(draft)}
+                    openMenu={(position, trigger) => openAt(draft, trigger, position)}
+                    preview={<span className="p-2">{draft.title}</span>}
                   >
-                    <FilePenLineIcon aria-hidden />
+                    <FilePenLineIcon aria-hidden className="size-4 shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{draft.title}</span>
-                  </SidebarMenuButton>
-                  <button
-                    type="button"
-                    aria-label={`Actions for draft ${draft.title}`}
-                    aria-haspopup="menu"
-                    onClick={(event) => openAt(draft, event.currentTarget)}
-                    className="flex w-11 shrink-0 cursor-pointer items-center justify-center rounded-md text-sidebar-muted-foreground hover:text-sidebar-foreground focus-visible:outline-2 focus-visible:outline-ring sm:w-8 sm:opacity-0 sm:group-focus-within/draft:opacity-100 sm:group-hover/draft:opacity-100"
-                  >
-                    <EllipsisIcon aria-hidden className="size-4" />
-                  </button>
+                  </WorkbenchSidebarRowNavigation>
+                  <WorkbenchSidebarRowActions
+                    label={`Actions for draft ${draft.title}`}
+                    openMenu={(position, trigger) => openAt(draft, trigger, position)}
+                  />
                 </div>
               </SidebarMenuItem>
             ))}

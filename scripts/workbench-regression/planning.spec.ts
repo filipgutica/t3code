@@ -109,6 +109,32 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
   expect((await snapshot(demo)).tickets.some((t) => t.id === ticket.id)).toBe(false);
 });
 
+test("sidebar status quick actions retain keyboard focus when a Ticket moves sections", async ({
+  page,
+  demo,
+}) => {
+  const title = "Build an interactive setup command";
+  await openWorkbench(
+    page,
+    demo.workbenchUrl("/workbench?workbenchProjectId=beacon&ticketId=beacon-009"),
+  );
+  const sidebar = page.locator('[aria-label="Workbench navigation"]');
+  const ticket = sidebar.locator('[data-workbench-sidebar-ticket-row-id="beacon-009"]');
+  const navigation = ticket.getByRole("button", { name: title, exact: true });
+  const complete = ticket.getByRole("button", { name: `Mark as done: ${title}`, exact: true });
+  const reopen = ticket.getByRole("button", { name: `Reopen: ${title}`, exact: true });
+
+  await complete.focus();
+  await complete.press("Enter");
+  await expect(reopen).toBeVisible();
+  await expect(navigation).toBeFocused();
+
+  await reopen.focus();
+  await reopen.press("Enter");
+  await expect(complete).toBeVisible();
+  await expect(navigation).toBeFocused();
+});
+
 test("W3 W4 X2: direct routes, history and narrow layout retain Ticket ownership", async ({
   page,
   demo,
@@ -144,7 +170,7 @@ test("W3 W4 X2: direct routes, history and narrow layout retain Ticket ownership
   );
 });
 
-test("sidebar Back returns to a native Thread and exits a direct Workbench entry", async ({
+test("sidebar Threads restores native Thread context and exits a direct board entry", async ({
   page,
   demo,
 }) => {
@@ -155,27 +181,16 @@ test("sidebar Back returns to a native Thread and exits a direct Workbench entry
   if (!environmentId) throw new Error("The demo has no environment ID.");
   const threadPath = `/${encodeURIComponent(environmentId)}/orbit-001-thread`;
 
-  await page.goto(`${demo.origin}${threadPath}`);
-  await expect(page).toHaveURL(new RegExp(`${threadPath}$`));
-  await page.getByRole("button", { name: "Agent Workbench", exact: true }).click();
+  await page.goto(`${demo.origin}${threadPath}?workbench=true`);
   await waitForWorkbench(page);
-  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.getByRole("button", { name: "Back to Threads", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`${threadPath}$`));
   await expect(page.getByRole("button", { name: "Agent Workbench", exact: true })).toBeVisible();
 
   await page.goto(`${demo.origin}${demo.workbenchUrl("/workbench?workbenchProjectId=orbit")}`);
   await waitForWorkbench(page);
-  await page.getByRole("button", { name: "Back", exact: true }).click();
-  await page.waitForURL((url) => {
-    const pathSegments = url.pathname.split("/").filter(Boolean);
-    return (
-      url.pathname === "/" ||
-      (pathSegments.length === 3 &&
-        pathSegments[0] === encodeURIComponent(environmentId) &&
-        pathSegments[1] === "draft" &&
-        pathSegments[2] !== "")
-    );
-  });
+  await page.getByRole("button", { name: "Back to Threads", exact: true }).click();
+  await page.waitForURL((url) => /^\/draft\/[^/]+$/.test(url.pathname));
   await expect(page.getByRole("button", { name: "Submit message", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Agent Workbench", exact: true })).toBeVisible();
 });

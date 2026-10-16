@@ -8,10 +8,8 @@ import {
 } from "@t3tools/contracts";
 
 import {
-  filterWorkbenchSidebarNavigation,
   getWorkbenchSidebarExpansionDefaults,
   getWorkbenchSidebarTicketGroups,
-  isWorkbenchSidebarExecutionThreadVisible,
   reduceWorkbenchSidebarExpansion,
   revealWorkbenchSidebarSelection,
   type WorkbenchSidebarExpansion,
@@ -21,48 +19,6 @@ const environmentId = EnvironmentId.make("environment-one");
 const otherEnvironmentId = EnvironmentId.make("environment-two");
 const workspaceId = WorkbenchProjectId.make("workspace-one");
 const otherWorkspaceId = WorkbenchProjectId.make("workspace-two");
-
-describe("Workbench sidebar execution visibility", () => {
-  const thread = {
-    id: ThreadId.make("execution-thread"),
-    environmentId,
-    title: "Working Thread",
-    archivedAt: null,
-    settledOverride: null,
-  };
-  const inputs = {
-    threads: [thread],
-    threadId: thread.id,
-    ticketExpanded: true,
-    settledExpanded: false,
-  };
-
-  it("replaces the Ticket summary only after its Thread row is expanded", () => {
-    expect(isWorkbenchSidebarExecutionThreadVisible({ ...inputs, ticketExpanded: false })).toBe(
-      false,
-    );
-    expect(isWorkbenchSidebarExecutionThreadVisible(inputs)).toBe(true);
-  });
-
-  it("retains the summary until a settled contributor's nested section is expanded", () => {
-    const settled = { ...inputs, threads: [{ ...thread, settledOverride: "settled" as const }] };
-    expect(isWorkbenchSidebarExecutionThreadVisible(settled)).toBe(false);
-    expect(isWorkbenchSidebarExecutionThreadVisible({ ...settled, settledExpanded: true })).toBe(
-      true,
-    );
-  });
-
-  it("retains a filtered-out contributor even while another Thread row is visible", () => {
-    expect(
-      isWorkbenchSidebarExecutionThreadVisible({
-        ...inputs,
-        threads: [{ ...thread, id: ThreadId.make("other-thread") }],
-        settledExpanded: true,
-      }),
-    ).toBe(false);
-    expect(isWorkbenchSidebarExecutionThreadVisible({ ...inputs, threads: [] })).toBe(false);
-  });
-});
 
 const ticket = (
   id: string,
@@ -358,6 +314,19 @@ describe("Workbench sidebar ticket groups", () => {
       done: [],
     });
   });
+
+  it("can include unassigned Tickets in search results", () => {
+    const unassigned = ticket("unassigned");
+    const groups = getWorkbenchSidebarTicketGroups({
+      environmentId,
+      tickets: [unassigned],
+      assignments: [],
+      threads: [],
+      selectedTicketId: undefined,
+      includeUnassignedTickets: true,
+    });
+    expect(groups.get(workspaceId)?.active).toEqual([{ ticket: unassigned, threads: [] }]);
+  });
 });
 
 describe("Workbench sidebar expansion", () => {
@@ -521,92 +490,5 @@ describe("Workbench sidebar expansion", () => {
       done: true,
       archived: false,
     });
-  });
-});
-
-describe("Workbench sidebar search", () => {
-  const roadmap = { id: workspaceId, title: "Roadmap" };
-  const platform = { id: otherWorkspaceId, title: "Platform" };
-  const activeTicket = { ...ticket("palette"), title: "Update chart palette" };
-  const doneTicket = { ...ticket("finished", workspaceId, "done"), title: "Retire old colors" };
-  const archivedTicket = {
-    ...ticket("archived", otherWorkspaceId),
-    title: "Migrate chart data",
-    archivedAt: "2026-01-01",
-  };
-  const activeThread = thread("active", "Inspect chart tokens");
-  const unrelatedThread = thread("unrelated", "Prepare release");
-  const input = {
-    projects: [roadmap, platform],
-    ticketGroupsByWorkspace: new Map([
-      [
-        workspaceId,
-        {
-          active: [{ ticket: activeTicket, threads: [activeThread, unrelatedThread] }],
-          done: [{ ticket: doneTicket, threads: [] }],
-        },
-      ],
-    ]),
-    archivedTicketsByWorkspace: new Map([[otherWorkspaceId, [archivedTicket]]]),
-    jiraKeysByTicketId: new Map([[activeTicket.id, "MA-5517"]]),
-  };
-
-  it("keeps Workspace and Ticket ancestors for a matching Thread", () => {
-    const result = filterWorkbenchSidebarNavigation({ ...input, query: "chart tokens" });
-    expect(result.projects).toEqual([roadmap]);
-    expect(result.ticketGroupsByWorkspace.get(workspaceId)).toEqual({
-      active: [{ ticket: activeTicket, threads: [activeThread] }],
-      done: [],
-    });
-    expect(result.resultCount).toBe(1);
-  });
-
-  it("counts and shows both a matching Ticket and its matching Thread", () => {
-    const result = filterWorkbenchSidebarNavigation({ ...input, query: "chart" });
-    expect(result.ticketGroupsByWorkspace.get(workspaceId)?.active).toEqual([
-      { ticket: activeTicket, threads: [activeThread] },
-    ]);
-    expect(result.resultCount).toBe(3);
-  });
-
-  it("finds a Jira key, Workspace title, and archived Ticket without leaking unrelated rows", () => {
-    const jira = filterWorkbenchSidebarNavigation({ ...input, query: "ma-5517" });
-    expect(jira.projects).toEqual([roadmap]);
-    expect(jira.ticketGroupsByWorkspace.get(workspaceId)?.active).toEqual([
-      { ticket: activeTicket, threads: [] },
-    ]);
-    expect(jira.resultCount).toBe(1);
-
-    const workspace = filterWorkbenchSidebarNavigation({ ...input, query: "platform" });
-    expect(workspace.projects).toEqual([platform]);
-    expect(workspace.ticketGroupsByWorkspace.get(otherWorkspaceId)).toEqual({
-      active: [],
-      done: [],
-    });
-    expect(workspace.resultCount).toBe(1);
-
-    const archived = filterWorkbenchSidebarNavigation({ ...input, query: "migrate chart" });
-    expect(archived.projects).toEqual([platform]);
-    expect(archived.archivedTicketsByWorkspace.get(otherWorkspaceId)).toEqual([archivedTicket]);
-    expect(archived.resultCount).toBe(1);
-  });
-
-  it("returns no ancestors for a query with no matches", () => {
-    const result = filterWorkbenchSidebarNavigation({ ...input, query: "unmatched" });
-    expect(result.projects).toEqual([]);
-    expect(result.resultCount).toBe(0);
-  });
-
-  it("can include unassigned Tickets in search results", () => {
-    const unassigned = ticket("unassigned");
-    const groups = getWorkbenchSidebarTicketGroups({
-      environmentId,
-      tickets: [unassigned],
-      assignments: [],
-      threads: [],
-      selectedTicketId: undefined,
-      includeUnassignedTickets: true,
-    });
-    expect(groups.get(workspaceId)?.active).toEqual([{ ticket: unassigned, threads: [] }]);
   });
 });

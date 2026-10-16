@@ -82,9 +82,11 @@ function WorkbenchSidebarThreadPreviewDetails({
   readonly environment: EnvironmentPresentation | null;
   readonly providerEntry: ProviderInstanceEntry | null;
 }) {
-  const repositoryLabel = resolveWorkbenchSidebarRepositoryLabel(
-    project ? { title: project.title, repositoryIdentity: project.repositoryIdentity } : null,
-  );
+  const repositoryLabel =
+    project?.repositoryIdentity?.displayName?.trim() ||
+    resolveWorkbenchSidebarRepositoryLabel(
+      project ? { title: project.title, repositoryIdentity: project.repositoryIdentity } : null,
+    );
   const machine = resolveEnvironmentMachineKind(environment?.serverConfig ?? null);
   const selectedModel = shell
     ? providerEntry?.models.find((model) => model.slug === shell.modelSelection.model)

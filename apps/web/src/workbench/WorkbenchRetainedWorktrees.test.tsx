@@ -69,12 +69,26 @@ vi.mock("./WorkbenchAttentionProvider", () => ({
     attentionCoverage: "complete",
   }),
 }));
-vi.mock("../components/sidebar/SidebarChrome", () => ({ SidebarChromeFooter: () => null }));
+vi.mock("./WorkbenchSidebarFooter", () => ({
+  WorkbenchSidebarFooter: ({ retainedWorktrees }: { retainedWorktrees: ReactNode }) =>
+    retainedWorktrees,
+}));
 vi.mock("./WorkbenchSidebarThreadRow", () => ({ WorkbenchSidebarThreadRow: () => null }));
 vi.mock("../components/ui/sidebar", () => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
-    SidebarContent: Container,
+    SidebarContent: ({
+      children,
+      fixedHeader,
+    }: {
+      children?: ReactNode;
+      fixedHeader?: ReactNode;
+    }) => (
+      <div>
+        {fixedHeader}
+        {children}
+      </div>
+    ),
     SidebarGroup: Container,
     SidebarMenu: Container,
     SidebarMenuItem: Container,
@@ -363,24 +377,26 @@ it("hides archived Workspaces from actionable results and restores their search 
   });
   expect(renderer!.root.findByType("summary").children).toEqual(["Archived Workspaces"]);
   expect(renderer!.root.findByType("details").props.open).toBeUndefined();
-  await act(() => button("Show actionable Tickets and Threads").props.onClick());
+  await act(() => button("Needs attention").props.onClick());
   expect(renderer!.root.findAllByType("summary")).toHaveLength(0);
   expect(renderer!.root.findByProps({ "aria-live": "polite" }).children).toEqual([
     "No confirmed actions",
   ]);
-  await act(() => button("Show actionable Tickets and Threads").props.onClick());
+  await act(() => button("Work").props.onClick());
   expect(renderer!.root.findAllByType("summary")).toHaveLength(1);
   const search = renderer!.root.findByProps({ "aria-label": "Search Workbench sidebar" });
   await act(() => search.props.onChange({ target: { value: "Release Checklist" } }));
-  expect(renderer!.root.findAllByType("summary")).toHaveLength(1);
+  expect(renderer!.root.findAllByType("summary")).toHaveLength(0);
   expect(renderer!.root.findByProps({ "aria-live": "polite" }).children).toEqual(["1 result"]);
-  expect(renderer!.root.findByType("details").props.open).toBe(true);
+  expect(renderer!.root.findByProps({ role: "listbox" }).props["aria-label"]).toBe(
+    "Workbench search results",
+  );
   expect(
     renderer!.root
       .findAllByType("span")
       .some((node) => node.children.includes("Release Checklist")),
   ).toBe(true);
-  await act(() => button("Show actionable Tickets and Threads").props.onClick());
+  await act(() => button("Needs attention").props.onClick());
   expect(renderer!.root.findAllByType("summary")).toHaveLength(0);
   expect(renderer!.root.findByProps({ "aria-live": "polite" }).children).toEqual([
     "No Workbench results",
@@ -390,15 +406,13 @@ it("hides archived Workspaces from actionable results and restores their search 
       .findAllByType("span")
       .some((node) => node.children.includes("Release Checklist")),
   ).toBe(false);
-  await act(() => button("Show actionable Tickets and Threads").props.onClick());
-  expect(renderer!.root.findAllByType("summary")).toHaveLength(1);
+  await act(() => button("Work").props.onClick());
+  expect(renderer!.root.findAllByType("summary")).toHaveLength(0);
   expect(renderer!.root.findByProps({ "aria-live": "polite" }).children).toEqual(["1 result"]);
   await act(() => search.props.onChange({ target: { value: "unrelated search" } }));
   expect(renderer!.root.findAllByType("summary")).toHaveLength(0);
   await act(() => search.props.onChange({ target: { value: "Roadmap" } }));
-  const workspaceButton = renderer!.root
-    .findAllByType("button")
-    .find((node) => node.props.tooltip?.children === "Archived Roadmap")!;
+  const workspaceButton = renderer!.root.findByProps({ role: "option" });
   await act(() => workspaceButton.props.onClick());
   expect(router.state.location.search).toMatchObject({
     environmentId: "archived-sidebar-host",

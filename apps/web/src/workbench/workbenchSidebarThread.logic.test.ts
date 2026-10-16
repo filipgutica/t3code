@@ -89,7 +89,10 @@ describe("Workbench sidebar thread presentation", () => {
     expect(
       resolveWorkbenchSidebarRepositoryLabel({
         title: "Workspace",
-        repositoryIdentity: { displayName: "owner/repository" },
+        repositoryIdentity: {
+          displayName: "owner/repository",
+          locator: { remoteUrl: "git@github.com:owner/repository.git" },
+        },
       }),
     ).toBe("owner/repository");
     expect(
@@ -99,5 +102,31 @@ describe("Workbench sidebar thread presentation", () => {
       }),
     ).toBe("Workspace");
     expect(resolveWorkbenchSidebarRepositoryLabel(null)).toBeNull();
+  });
+
+  it.each([
+    { displayName: "/Users/filip/code/beacon-cli" },
+    { displayName: "C:\\work\\beacon-cli" },
+    {
+      displayName: "users/filip/code/beacon-cli",
+      locator: { remoteUrl: "/Users/filip/code/beacon-cli" },
+    },
+    {
+      displayName: "users/filip/code/beacon-cli",
+      locator: { remoteUrl: "file:///Users/filip/code/beacon-cli" },
+    },
+  ])("uses the workspace title for a local repository identity: %j", (repositoryIdentity) => {
+    expect(
+      resolveWorkbenchSidebarRepositoryLabel({
+        title: "Beacon CLI",
+        repositoryIdentity,
+      }),
+    ).toBe("Beacon CLI");
+    expect(
+      resolveWorkbenchSidebarRepositoryLabel({
+        title: " ",
+        repositoryIdentity,
+      }),
+    ).toBe(repositoryIdentity.displayName);
   });
 });

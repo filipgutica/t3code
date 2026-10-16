@@ -26,9 +26,11 @@ import { reportWorkbenchCommandFailure } from "./workbenchPageCommands";
 export function WorkbenchRetainedWorktrees({
   environmentId,
   snapshot,
+  compact = false,
 }: {
   environmentId: EnvironmentId;
   snapshot: WorkbenchSnapshot;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [selectedTicketId, setSelectedTicketId] = useState<WorkbenchTicketId | null>(null);
@@ -77,11 +79,13 @@ export function WorkbenchRetainedWorktrees({
     <>
       <Button
         aria-label="Retained worktrees"
+        title={`Retained worktrees (${workspaces.length})`}
         onClick={() => setOpen(true)}
-        size="sm"
+        size={compact ? "xs" : "sm"}
         variant="ghost"
       >
-        <FolderGit2Icon /> Retained worktrees ({workspaces.length})
+        <FolderGit2Icon />
+        {compact ? workspaces.length : `Retained worktrees (${workspaces.length})`}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogPopup>

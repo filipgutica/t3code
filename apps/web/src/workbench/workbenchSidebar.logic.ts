@@ -33,24 +33,6 @@ export interface WorkbenchSidebarTicketSections {
   readonly done: ReadonlyArray<WorkbenchSidebarTicketGroup>;
 }
 
-/** A Ticket summary is redundant only while its contributing Thread row is visible. */
-export function isWorkbenchSidebarExecutionThreadVisible({
-  threads,
-  threadId,
-  ticketExpanded,
-  settledExpanded,
-}: {
-  readonly threads: ReadonlyArray<WorkbenchSidebarThread>;
-  readonly threadId: ThreadId | undefined;
-  readonly ticketExpanded: boolean;
-  readonly settledExpanded: boolean;
-}) {
-  if (!ticketExpanded || threadId === undefined) return false;
-  const thread = threads.find((thread) => thread.id === threadId);
-  if (thread === undefined) return false;
-  return thread.settledOverride !== "settled" || settledExpanded;
-}
-
 export interface WorkbenchSidebarExpansion {
   readonly workspaceId: WorkbenchProjectId | null;
   readonly ticketId: WorkbenchTicketId | null;
@@ -271,62 +253,4 @@ export function getWorkbenchSidebarTicketGroups({
   }
 
   return groups;
-}
-
-/** Keeps matching rows and the ancestors needed to reach them in the sidebar. */
-export function filterWorkbenchSidebarNavigation({
-  query,
-  projects,
-  ticketGroupsByWorkspace,
-  archivedTicketsByWorkspace,
-  jiraKeysByTicketId,
-}: {
-  readonly query: string;
-  readonly projects: ReadonlyArray<{ readonly id: WorkbenchProjectId; readonly title: string }>;
-  readonly ticketGroupsByWorkspace: ReadonlyMap<WorkbenchProjectId, WorkbenchSidebarTicketSections>;
-  readonly archivedTicketsByWorkspace: ReadonlyMap<
-    WorkbenchProjectId,
-    ReadonlyArray<WorkbenchSidebarTicket>
-  >;
-  readonly jiraKeysByTicketId: ReadonlyMap<WorkbenchTicketId, string>;
-}) {
-  const needle = query.trim().toLocaleLowerCase();
-  const matches = (value: string | undefined) => value?.toLowerCase().includes(needle) ?? false;
-  const visibleProjects: Array<(typeof projects)[number]> = [];
-  const visibleGroups = new Map<WorkbenchProjectId, WorkbenchSidebarTicketSections>();
-  const visibleArchived = new Map<WorkbenchProjectId, ReadonlyArray<WorkbenchSidebarTicket>>();
-  let resultCount = 0;
-
-  for (const project of projects) {
-    const workspaceMatches = matches(project.title);
-    const sections = ticketGroupsByWorkspace.get(project.id) ?? { active: [], done: [] };
-    const filterGroups = (groups: ReadonlyArray<WorkbenchSidebarTicketGroup>) =>
-      groups.flatMap((group) => {
-        const ticketMatches =
-          matches(group.ticket.title) || matches(jiraKeysByTicketId.get(group.ticket.id));
-        const threads = group.threads.filter((thread) => matches(thread.title));
-        if (!ticketMatches && threads.length === 0) return [];
-        resultCount += (ticketMatches ? 1 : 0) + threads.length;
-        return [{ ...group, threads }];
-      });
-    const active = filterGroups(sections.active);
-    const done = filterGroups(sections.done);
-    const archived = (archivedTicketsByWorkspace.get(project.id) ?? []).filter(
-      (ticket) => matches(ticket.title) || matches(jiraKeysByTicketId.get(ticket.id)),
-    );
-    resultCount += archived.length;
-    if (!workspaceMatches && active.length === 0 && done.length === 0 && archived.length === 0)
-      continue;
-    if (workspaceMatches) resultCount += 1;
-    visibleProjects.push(project);
-    visibleGroups.set(project.id, { active, done });
-    if (archived.length > 0) visibleArchived.set(project.id, archived);
-  }
-
-  return {
-    projects: visibleProjects,
-    ticketGroupsByWorkspace: visibleGroups,
-    archivedTicketsByWorkspace: visibleArchived,
-    resultCount,
-  };
 }

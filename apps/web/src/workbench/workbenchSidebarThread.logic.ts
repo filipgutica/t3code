@@ -1,6 +1,7 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { ThreadPullRequestLink } from "@t3tools/contracts";
 import { legacyThreadPullRequestKey } from "@t3tools/shared/threadPullRequests";
+import { isAbsolutePath } from "@t3tools/shared/path";
 
 /**
  * Workbench rows only read the shell snapshot. Keep the legacy single-link projection visible
@@ -42,11 +43,22 @@ export function resolveWorkbenchSidebarThreadPullRequests(
 export function resolveWorkbenchSidebarRepositoryLabel(
   project: {
     readonly title: string;
-    readonly repositoryIdentity: { readonly displayName?: string | null } | null | undefined;
+    readonly repositoryIdentity:
+      | {
+          readonly displayName?: string | null;
+          readonly locator?: { readonly remoteUrl: string };
+        }
+      | null
+      | undefined;
   } | null,
 ): string | null {
   const identityLabel = project?.repositoryIdentity?.displayName?.trim();
-  if (identityLabel) return identityLabel;
   const projectLabel = project?.title.trim();
+  const remoteUrl = project?.repositoryIdentity?.locator?.remoteUrl.trim() ?? "";
+  const localRepository =
+    isAbsolutePath(identityLabel ?? "") ||
+    isAbsolutePath(remoteUrl) ||
+    remoteUrl.startsWith("file://");
+  if (identityLabel && (!localRepository || !projectLabel)) return identityLabel;
   return projectLabel || null;
 }
