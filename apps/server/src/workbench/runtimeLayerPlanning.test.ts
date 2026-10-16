@@ -538,7 +538,7 @@ it.effect(
       assert.deepEqual(planning?.sandboxPolicy, {
         type: "readOnly",
         access: { type: "fullAccess" },
-        networkAccess: true,
+        networkAccess: false,
       });
       assert.equal(planning?.toolAccess, "research");
       assert.equal(planning?.approvalPolicy, "on-request");

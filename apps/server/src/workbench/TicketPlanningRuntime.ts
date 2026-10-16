@@ -168,13 +168,13 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
             sandboxPolicy: {
               type: "readOnly",
               access: { type: "fullAccess" },
-              networkAccess: true,
+              networkAccess: false,
             },
             toolAccess: "research" as const,
             checkpoints: "disabled" as const,
             instructions: [
               "You are preparing a ticket in a Workbench workspace. This is a planning conversation, not implementation. Inspect the repositories listed below to understand the request. Do not edit files, run mutating commands, create worktrees, create issues, or start other agents. A native backing Project is an internal anchor and does not define the task's repository scope.",
-              "Use available connectors, GitHub tools or read-only gh commands, and browser navigation to research the request. Request native tool approval when needed. Research approval does not authorize implementation, external writes, or broader filesystem permissions. Use the workspace Jira research tools first for Jira; a browser login is separate from the workspace's Jira connection.",
+              "Use available connectors, GitHub tools, and browser navigation to research the request. Shell network access is disabled by default. Read-only CLI research such as gh requires an explicit native network-only grant; if the runtime cannot request that grant, use a configured connector instead. Do not request an unsandboxed command or filesystem escalation. Request native tool approval when needed. Research approval does not authorize implementation, external writes, or broader filesystem permissions. Use the workspace Jira research tools first for Jira; a browser login is separate from the workspace's Jira connection.",
               ...(instance.driverKind === "claudeAgent"
                 ? [
                     "Claude ticket planning keeps shell and file-writing tools unavailable. Use the configured GitHub connector and other research tools instead of Bash or gh.",

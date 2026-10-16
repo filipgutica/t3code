@@ -192,7 +192,7 @@ it.effect.each(["codex", "claudeAgent"] as const)(
         assert.deepEqual(policy.sandboxPolicy, {
           type: "readOnly",
           access: { type: "fullAccess" },
-          networkAccess: true,
+          networkAccess: false,
         });
         assert.equal(policy.checkpoints, "disabled");
         assert.include(policy.instructions ?? "", "/repo/repo:first");

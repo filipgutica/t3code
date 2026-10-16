@@ -445,6 +445,7 @@ describe("CodexAdapterV2 runtime policy", () => {
           approvalPolicy: "on-request",
           sandboxPolicy: {
             type: "readOnly",
+            networkAccess: false,
           },
         },
         modelSelection: {
@@ -454,7 +455,7 @@ describe("CodexAdapterV2 runtime policy", () => {
       });
 
       assert.equal(params.approvalPolicy, "on-request");
-      assert.equal(params.sandboxPolicy?.type, "readOnly");
+      assert.deepEqual(params.sandboxPolicy, { type: "readOnly", networkAccess: false });
     }),
   );
 
@@ -3785,6 +3786,8 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     "filesystem-grant",
     "filesystem-grant-entries",
     "command-escape",
+    "legacy-command-escape",
+    "legacy-file-change",
   ] as const)(
     "declines research %s approval without exposing a user grant and continues the turn",
     (kind) =>
@@ -3795,15 +3798,26 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           const base = finalAnswerTranscript(scenario, [
             { id: "answer", text: "RESEARCH_CONTINUES" },
           ]);
+          const legacy = kind.startsWith("legacy-");
           const method =
-            kind === "file-change"
-              ? "item/fileChange/requestApproval"
-              : kind.startsWith("filesystem-grant")
-                ? "item/permissions/requestApproval"
-                : "item/commandExecution/requestApproval";
-          const result = kind.startsWith("filesystem-grant")
-            ? { permissions: {}, scope: "turn" }
-            : { decision: "decline" };
+            kind === "legacy-command-escape"
+              ? "execCommandApproval"
+              : kind === "legacy-file-change"
+                ? "applyPatchApproval"
+                : kind === "file-change"
+                  ? "item/fileChange/requestApproval"
+                  : kind.startsWith("filesystem-grant")
+                    ? "item/permissions/requestApproval"
+                    : "item/commandExecution/requestApproval";
+          const result = legacy
+            ? {
+                decision: {
+                  denied: { rejection: "Ticket planning cannot approve this operation." },
+                },
+              }
+            : kind.startsWith("filesystem-grant")
+              ? { permissions: {}, scope: "turn" }
+              : { decision: "decline" };
           const transcript = {
             ...base,
             entries: [
@@ -3814,36 +3828,51 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                 frame: {
                   id: 77,
                   method,
-                  params: {
-                    threadId: `native-${scenario}-thread`,
-                    turnId: `native-${scenario}-turn`,
-                    itemId: `research-${kind}`,
-                    startedAtMs: 1782622440500,
-                    ...(kind === "file-change"
-                      ? { grantRoot: "/workspace" }
-                      : kind.startsWith("filesystem-grant")
-                        ? {
-                            cwd: "/workspace",
-                            permissions: {
-                              fileSystem:
-                                kind === "filesystem-grant"
-                                  ? { write: ["/workspace"] }
-                                  : {
-                                      entries: [
-                                        {
-                                          path: { type: "path", path: "/workspace" },
-                                          access: "write",
+                  params: legacy
+                    ? {
+                        conversationId: `native-${scenario}-thread`,
+                        callId: `research-${kind}`,
+                        ...(kind === "legacy-file-change"
+                          ? {
+                              fileChanges: { "/workspace/file": { type: "add", content: "write" } },
+                              grantRoot: "/workspace",
+                            }
+                          : {
+                              cwd: "/workspace",
+                              command: ["touch", "/workspace/file"],
+                              parsedCmd: [],
+                            }),
+                      }
+                    : {
+                        threadId: `native-${scenario}-thread`,
+                        turnId: `native-${scenario}-turn`,
+                        itemId: `research-${kind}`,
+                        startedAtMs: 1782622440500,
+                        ...(kind === "file-change"
+                          ? { grantRoot: "/workspace" }
+                          : kind.startsWith("filesystem-grant")
+                            ? {
+                                cwd: "/workspace",
+                                permissions: {
+                                  fileSystem:
+                                    kind === "filesystem-grant"
+                                      ? { write: ["/workspace"] }
+                                      : {
+                                          entries: [
+                                            {
+                                              path: { type: "path", path: "/workspace" },
+                                              access: "write",
+                                            },
+                                          ],
                                         },
-                                      ],
-                                    },
-                            },
-                          }
-                        : {
-                            cwd: "/workspace",
-                            command: "touch /workspace/file",
-                            reason: "Run outside the sandbox",
-                          }),
-                  },
+                                },
+                              }
+                            : {
+                                cwd: "/workspace",
+                                command: "touch /workspace/file",
+                                reason: "Run outside the sandbox",
+                              }),
+                      },
                 },
               },
               {
@@ -3889,100 +3918,106 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       ),
   );
 
-  it.effect.each(["network", "connector"] as const)(
-    "retains native research %s approval and continues after approval",
-    (kind) =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const scenario = `codex-research-approval-${kind}`;
-          const approval = yield* Deferred.make<RuntimeRequestId>();
-          const base = finalAnswerTranscript(scenario, [
-            { id: "answer", text: "RESEARCH_APPROVED" },
-          ]);
-          const networkPermissions = { network: { enabled: true } };
-          const transcript = {
-            ...base,
-            entries: [
-              ...base.entries.slice(0, -2),
-              {
-                type: "emit_inbound" as const,
-                label: `${kind}-approval-request`,
-                frame: {
-                  id: 77,
-                  method:
-                    kind === "network"
-                      ? "item/permissions/requestApproval"
-                      : "mcpServer/elicitation/request",
-                  params: {
-                    threadId: `native-${scenario}-thread`,
-                    turnId: `native-${scenario}-turn`,
-                    ...(kind === "network"
-                      ? {
-                          cwd: "/workspace",
-                          itemId: "network-grant",
-                          startedAtMs: 1782622440500,
-                          permissions: networkPermissions,
-                        }
-                      : {
-                          serverName: "jira",
-                          mode: "form",
-                          requestedSchema: {
-                            type: "object",
-                            properties: {
-                              confirm: { type: "string", enum: ["allow_once", "decline"] },
-                            },
-                            required: ["confirm"],
+  it.effect.each([
+    { kind: "network", decision: "accept" },
+    { kind: "network", decision: "decline" },
+    { kind: "network", decision: "cancel" },
+    { kind: "connector", decision: "accept" },
+  ] as const)("retains native research approval and applies %s", ({ kind, decision }) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const scenario = `codex-research-approval-${kind}-${decision}`;
+        const approval = yield* Deferred.make<RuntimeRequestId>();
+        const base = finalAnswerTranscript(scenario, [
+          { id: "answer", text: "RESEARCH_CONTINUES" },
+        ]);
+        const networkPermissions = { network: { enabled: true } };
+        const transcript = {
+          ...base,
+          entries: [
+            ...base.entries.slice(0, -2),
+            {
+              type: "emit_inbound" as const,
+              label: `${kind}-approval-request`,
+              frame: {
+                id: 77,
+                method:
+                  kind === "network"
+                    ? "item/permissions/requestApproval"
+                    : "mcpServer/elicitation/request",
+                params: {
+                  threadId: `native-${scenario}-thread`,
+                  turnId: `native-${scenario}-turn`,
+                  ...(kind === "network"
+                    ? {
+                        cwd: "/workspace",
+                        itemId: "network-grant",
+                        startedAtMs: 1782622440500,
+                        permissions: networkPermissions,
+                      }
+                    : {
+                        serverName: "jira",
+                        mode: "form",
+                        requestedSchema: {
+                          type: "object",
+                          properties: {
+                            confirm: { type: "string", enum: ["allow_once", "decline"] },
                           },
-                          message: "Authorize Jira research access",
-                        }),
-                  },
+                          required: ["confirm"],
+                        },
+                        message: "Authorize Jira research access",
+                      }),
                 },
               },
-              {
-                type: "expect_outbound" as const,
-                label: `${kind}-approved`,
-                frame: {
-                  id: 77,
-                  result:
-                    kind === "network"
-                      ? { permissions: networkPermissions, scope: "turn" }
-                      : { action: "accept", content: { confirm: "allow_once" } },
-                },
+            },
+            {
+              type: "expect_outbound" as const,
+              label: `${kind}-approved`,
+              frame: {
+                id: 77,
+                result:
+                  kind === "network"
+                    ? {
+                        permissions: decision === "accept" ? networkPermissions : {},
+                        scope: "turn",
+                      }
+                    : { action: "accept", content: { confirm: "allow_once" } },
               },
-              ...base.entries.slice(-2),
-            ],
-          };
-          const harness = yield* makeCodexReplayHarness(transcript, (event) =>
-            event.type === "runtime_request.updated"
-              ? Deferred.succeed(approval, event.runtimeRequest.id).pipe(Effect.asVoid)
-              : Effect.void,
-          );
-          const now = yield* DateTime.now;
-          yield* harness.runtime.startTurn({
-            ...makeCodexTestTurnInput({
-              threadId: harness.threadId,
-              providerThread: harness.providerThread,
-              now,
-              attemptId: RunAttemptId.make(`attempt-${scenario}`),
-              text: "Reply with the requested recovery marker.",
-            }),
-            runtimePolicy: { ...CODEX_TEST_RUNTIME_POLICY, toolAccess: "research" },
-          });
-          const requestId = yield* Deferred.await(approval);
-          assert.deepEqual(harness.terminalEvents(), []);
-          assert.deepEqual(assistantMessages(harness.events), []);
-          yield* harness.runtime.respondToRuntimeRequest({ requestId, decision: "accept" });
-          yield* harness.firstTerminal;
-          assert.deepEqual(
-            assistantMessages(harness.events).map((event) => event.message.text),
-            ["RESEARCH_APPROVED"],
-          );
-        }).pipe(
-          Effect.provide(
-            Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
-          ),
+            },
+            ...base.entries.slice(-2),
+          ],
+        };
+        const harness = yield* makeCodexReplayHarness(transcript, (event) =>
+          event.type === "runtime_request.updated"
+            ? Deferred.succeed(approval, event.runtimeRequest.id).pipe(Effect.asVoid)
+            : Effect.void,
+        );
+        const now = yield* DateTime.now;
+        yield* harness.runtime.startTurn({
+          ...makeCodexTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make(`attempt-${scenario}`),
+            text: "Reply with the requested recovery marker.",
+          }),
+          runtimePolicy: { ...CODEX_TEST_RUNTIME_POLICY, toolAccess: "research" },
+        });
+        const requestId = yield* Deferred.await(approval);
+        assert.deepEqual(harness.terminalEvents(), []);
+        assert.deepEqual(assistantMessages(harness.events), []);
+        yield* harness.runtime.respondToRuntimeRequest({ requestId, decision });
+        yield* harness.firstTerminal;
+        assert.deepEqual(
+          assistantMessages(harness.events).map((event) => event.message.text),
+          ["RESEARCH_CONTINUES"],
+        );
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
         ),
       ),
+    ),
   );
 
   it.effect("suppresses a trailing empty final answer after a non-empty final answer", () =>
