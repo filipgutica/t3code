@@ -196,11 +196,6 @@ export function useWorkbenchSidebarDraftMenu({
       return (
         (!actions.discardSucceeded && visible(request?.trigger)) ||
         visible(request?.workspaceButton) ||
-        visible(
-          navigationRef.current?.querySelector<HTMLInputElement>(
-            'input[aria-label="Search Workbench sidebar"]',
-          ),
-        ) ||
         visible(navigationRef.current) ||
         visible(document.querySelector<HTMLElement>('[aria-label="Ticket board"]'))
       );
@@ -214,7 +209,6 @@ export function WorkbenchSidebarDrafts({
   workspaceButtonRef,
   selectedTicketId,
   expanded,
-  isSearching,
   onToggle,
   onSelect,
   onOpenMenu,
@@ -224,7 +218,6 @@ export function WorkbenchSidebarDrafts({
   readonly workspaceButtonRef: RefObject<HTMLButtonElement | null>;
   readonly selectedTicketId: WorkbenchTicketId | undefined;
   readonly expanded: boolean;
-  readonly isSearching: boolean;
   readonly onToggle: () => void;
   readonly onSelect: (draft: WorkbenchSidebarDraft) => void;
   readonly onOpenMenu: (request: DraftMenuRequest) => Promise<void>;
@@ -244,10 +237,9 @@ export function WorkbenchSidebarDrafts({
     });
   };
   return (
-    <Collapsible open={expanded || isSearching} onOpenChange={onToggle} className="mb-1">
+    <Collapsible open={expanded} onOpenChange={onToggle} className="mb-1">
       <CollapsibleTrigger
-        disabled={isSearching}
-        aria-label={`${expanded || isSearching ? "Collapse" : "Expand"} drafts in ${workspaceTitle}`}
+        aria-label={`${expanded ? "Collapse" : "Expand"} drafts in ${workspaceTitle}`}
         data-workbench-sidebar-group-toggle=""
         className="group"
       >
