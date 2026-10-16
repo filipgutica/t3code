@@ -58,8 +58,8 @@ test.skipIf(HostProcess.Platform.defaultValue() === "win32").each([false, true])
       stdio: ["ignore", "pipe", "pipe", "pipe"],
       detached: true,
     });
-    const closed = NodeEvents.once(child, "close");
-    const launcherExited = NodeEvents.once(child, "exit");
+    const closed = NodeEvents.EventEmitter.once(child, "close");
+    const launcherExited = NodeEvents.EventEmitter.once(child, "exit");
     mocks.spawn.mockReturnValueOnce(child);
     mocks.stopDemo.mockImplementationOnce(async () => {
       NodeAssert.ok(child.pid);
@@ -125,7 +125,7 @@ test("rejects a launcher that exits before ready and saves its final output", as
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
-  const closed = NodeEvents.once(child, "close");
+  const closed = NodeEvents.EventEmitter.once(child, "close");
   mocks.spawn.mockReturnValueOnce(child);
   try {
     await NodeAssert.rejects(launchDemo({ home }), /Demo exited \(7\).*startup failed/s);
