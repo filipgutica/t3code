@@ -71,7 +71,18 @@ jobs:
 
       - name: Preview merge
         if: steps.pending.outputs.needed == 'true'
-        run: node scripts/workbench-upstream-sync.ts --product HEAD --upstream upstream/main
+        shell: bash
+        run: |
+          node scripts/workbench-upstream-sync.ts --product HEAD --upstream upstream/main | tee "$RUNNER_TEMP/upstream-sync-preview.json"
+
+      - name: Upload merge preview
+        if: always() && steps.pending.outputs.needed == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: upstream-sync-preview
+          path: ${{ runner.temp }}/upstream-sync-preview.json
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Merge upstream on a sync branch
         if: steps.pending.outputs.needed == 'true'

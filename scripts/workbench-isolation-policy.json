@@ -116,23 +116,20 @@
     {
       "source": "scripts/build-desktop-artifact.ts",
       "target": "scripts/lib/workbench-desktop-product",
-      "symbols": [
-        "MacWorkbenchSigningConfigurationResolutionError",
-        "MissingMacWorkbenchSigningCredentialsError",
-        "WorkbenchMacBuildReuseError",
-        "isMacWorkbenchSigningConfigurationError",
-        "resolveDesktopBundleBuildEnvironment",
-        "resolveMacWorkbenchSigningConfiguration",
-        "selectWorkbenchDesktopBuildProduct",
-        "validateWorkbenchMacBuildMode"
-      ],
-      "reason": "Select Workbench packaging policy and preserve existing public signing-helper APIs."
+      "symbols": ["selectWorkbenchDesktopBuildProduct"],
+      "reason": "Select Workbench packaging policy before native installer mechanics run."
     },
     {
       "source": "scripts/dev-runner.ts",
       "target": "scripts/lib/workbench-jira-dev-env",
       "symbols": ["prepareWorkbenchJiraDevEnv"],
       "reason": "Prepare Workbench Jira callback configuration in the development launcher."
+    },
+    {
+      "source": "apps/desktop/vite.config.ts",
+      "target": "apps/desktop/src/workbench/distribution.json",
+      "symbols": ["default"],
+      "reason": "Inline immutable Workbench distribution metadata in the desktop build."
     }
   ]
 }

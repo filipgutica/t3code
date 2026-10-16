@@ -1,5 +1,5 @@
 {
-  "upstreamBase": "a01c48f86245f2a779f9af84042f3b09fbdeb91f",
+  "upstreamBase": "cfafb4bb54d244e4612f5681aad3832ea64cb0fb",
   "groups": [
     {
       "name": "Workbench domain, adapters, UI and contracts",
@@ -436,6 +436,7 @@
   },
   "packagingTests": [
     "scripts/build-desktop-artifact.test.ts",
+    "scripts/lib/workbench-desktop-product.test.ts",
     "scripts/update-release-package-versions.test.ts",
     "scripts/merge-update-manifests.test.ts",
     "scripts/resolve-workbench-daily-release.test.ts",

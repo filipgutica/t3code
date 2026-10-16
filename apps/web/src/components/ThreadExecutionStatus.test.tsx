@@ -21,19 +21,19 @@ afterEach(async () => {
 it("ticks only the hidden duration, preserves the live label and stops when work ends", async () => {
   let parentRenders = 0;
   const startedAt = "2026-10-09T12:00:00.000Z";
-  function Row({ working }: { working: boolean }) {
+  function Row({ kind }: { kind: "working" | "waiting" | "done" }) {
     useEffect(() => {
       parentRenders += 1;
     });
     return (
       <ThreadExecutionStatus
-        status={resolveThreadExecutionStatusPresentation({ kind: working ? "working" : "waiting" })}
+        status={resolveThreadExecutionStatusPresentation({ kind })}
         startedAt={startedAt}
       />
     );
   }
   await act(() => {
-    renderer = create(<Row working />);
+    renderer = create(<Row kind="working" />);
   });
   const duration = () => renderer!.root.findByProps({ className: "tabular-nums" });
   expect(duration().children).toEqual(["2s"]);
@@ -42,8 +42,13 @@ it("ticks only the hidden duration, preserves the live label and stops when work
   expect(duration().children).toEqual(["4s"]);
   expect(parentRenders).toBe(1);
   expect(renderer!.root.findByProps({ role: "status" }).children).toEqual(["Working"]);
-  await act(() => renderer!.update(<Row working={false} />));
+  await act(() => renderer!.update(<Row kind="waiting" />));
   expect(renderer!.root.findByProps({ role: "status" }).children).toEqual(["Waiting"]);
+  expect(vi.getTimerCount()).toBe(1);
+  await act(() => vi.advanceTimersByTime(1_000));
+  expect(duration().children).toEqual(["5s"]);
+  await act(() => renderer!.update(<Row kind="done" />));
+  expect(renderer!.root.findByProps({ role: "status" }).children).toEqual(["Done"]);
   expect(vi.getTimerCount()).toBe(0);
 });
 

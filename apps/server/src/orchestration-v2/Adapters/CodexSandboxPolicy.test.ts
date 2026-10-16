@@ -239,6 +239,7 @@ describe("Codex read-only sandbox integration", () => {
     model: "gpt-5.4",
     config: {
       "tools.update_plan.enabled": true,
+      mcp_optional_startup_grace_ms: 10_000,
       "features.hooks": false,
       "features.codex_hooks": false,
       "features.plugin_hooks": false,
@@ -307,6 +308,7 @@ describe("Codex read-only sandbox integration", () => {
           model: "gpt-5.4",
           config: {
             "tools.update_plan.enabled": true,
+            mcp_optional_startup_grace_ms: 10_000,
             ...(isolateIntegrations ? restrictedParams.config : {}),
             ...(research
               ? {
@@ -321,7 +323,13 @@ describe("Codex read-only sandbox integration", () => {
                 ? { jira: { enabled: false }, "github.external": { enabled: false } }
                 : {}),
               ...(nativeMcp
-                ? { "t3-code": { url: endpoint, http_headers: { Authorization: authorization } } }
+                ? {
+                    "t3-code": {
+                      url: endpoint,
+                      tool_timeout_sec: 3900,
+                      http_headers: { Authorization: authorization },
+                    },
+                  }
                 : { "t3-code": { enabled: false } }),
             },
           },
@@ -445,7 +453,10 @@ describe("Codex read-only sandbox integration", () => {
             : {
                 cwd: "/workspace",
                 model: "gpt-5.4",
-                config: { "tools.update_plan.enabled": true },
+                config: {
+                  "tools.update_plan.enabled": true,
+                  mcp_optional_startup_grace_ms: 10_000,
+                },
               };
         const entries =
           operation === "fork"

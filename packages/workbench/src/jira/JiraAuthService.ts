@@ -141,14 +141,16 @@ export const make = Effect.gen(function* () {
         );
       }
 
-      const credentialId = yield* crypto.randomUUIDv4.pipe(
-        Effect.mapError(() =>
-          operationError(
-            "persistence_failed",
-            "A Jira credential identifier could not be created.",
+      const credentialId = yield* crypto
+        .randomUUIDv4()
+        .pipe(
+          Effect.mapError(() =>
+            operationError(
+              "persistence_failed",
+              "A Jira credential identifier could not be created.",
+            ),
           ),
-        ),
-      );
+        );
       const connections: Array<WorkbenchJiraConnection> = [];
       const previousCredentialIds = new Set<string>();
       for (const site of sites) {
@@ -166,14 +168,16 @@ export const make = Effect.gen(function* () {
         const id = Option.isSome(previous)
           ? previous.value.id
           : WorkbenchJiraConnectionId.make(
-              yield* crypto.randomUUIDv4.pipe(
-                Effect.mapError(() =>
-                  operationError(
-                    "persistence_failed",
-                    "A Jira connection identifier could not be created.",
+              yield* crypto
+                .randomUUIDv4()
+                .pipe(
+                  Effect.mapError(() =>
+                    operationError(
+                      "persistence_failed",
+                      "A Jira connection identifier could not be created.",
+                    ),
                   ),
                 ),
-              ),
             );
         connections.push({
           id,

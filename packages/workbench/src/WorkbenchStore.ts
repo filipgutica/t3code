@@ -3279,7 +3279,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     "WorkbenchStore.replaceAssignment",
   )(function* (input) {
     const replacement = WorkbenchAssignment.make({
-      id: input.id ?? WorkbenchAssignmentId.make(yield* crypto.randomUUIDv4.pipe(Effect.orDie)),
+      id: input.id ?? WorkbenchAssignmentId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie)),
       ticketId: input.ticketId,
       threadId: input.threadId,
       createdAt: input.replacedAt,

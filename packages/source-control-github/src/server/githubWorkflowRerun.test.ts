@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as GitHubApi from "./GitHubApi.ts";
+import type * as GitHubRest from "./GitHubRest.ts";
+import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
 import { rerunFailedGitHubWorkflowJobs } from "./githubWorkflowRerun.ts";
 
 const head = { sha: "abc123", ref: "feature", repo: { id: 22, full_name: "fork/web" } };
@@ -33,7 +34,7 @@ const run = (id: number, overrides = {}) => ({
   ],
   ...overrides,
 });
-const output = (value: unknown, truncated = false): GitHubApi.GitHubRestResponse => ({
+const output = (value: unknown, truncated = false): GitHubRest.GitHubRestResponse => ({
   status: 200,
   headers: {},
   body: JSON.stringify(value),
@@ -42,7 +43,7 @@ const output = (value: unknown, truncated = false): GitHubApi.GitHubRestResponse
 });
 const input = { host: "github.enterprise.test", repository: "acme/web", number: 7 };
 const mock = (runs: ReturnType<typeof run>[]) =>
-  vi.fn<GitHubApi.GitHubApi["Service"]["rest"]>((request) => {
+  vi.fn<GitHubRest.GitHubRest["Service"]["rest"]>((request) => {
     const path = request.path;
     return Effect.succeed(
       output(
@@ -193,7 +194,7 @@ describe("GitHub failed workflow reruns", () => {
       rest.mockImplementation((request) =>
         request.method === "POST" && ++requested === 2
           ? Effect.fail(
-              new GitHubApi.GitHubApiResponseError({
+              new GitHubRequestPolicy.GitHubApiResponseError({
                 host: input.host,
                 operation: "rerunFailedWorkflowJobs",
                 status: 403,

@@ -26,6 +26,9 @@ export const launchDemo = async (input: { home: string; env?: NodeJS.ProcessEnv 
   );
   let output = "";
   const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+  // Exit only observes the CLI. Its backend can still hold inherited output
+  // pipes while shutting down, so credentials must wait for close as well.
+  const closed = new Promise<void>((resolve) => child.once("close", () => resolve()));
   const stop = async () => {
     if (child.exitCode === null && child.signalCode === null) {
       try {
@@ -33,25 +36,25 @@ export const launchDemo = async (input: { home: string; env?: NodeJS.ProcessEnv 
       } catch {
         child.kill("SIGINT");
       }
-      let timeout: ReturnType<typeof setTimeout> | undefined;
-      try {
-        await Promise.race([
-          exited,
-          new Promise<never>((_, reject) => {
-            timeout = setTimeout(
-              () =>
-                reject(
-                  new Error(
-                    "Demo launcher did not exit after stop; credentials were not exported.",
-                  ),
+    }
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        closed,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  "Demo processes did not close after stop; credentials were not exported.",
                 ),
-              15_000,
-            );
-          }),
-        ]);
-      } finally {
-        if (timeout) clearTimeout(timeout);
-      }
+              ),
+            15_000,
+          );
+        }),
+      ]);
+    } finally {
+      if (timeout) clearTimeout(timeout);
     }
     await NodeFSP.writeFile(NodePath.join(home, "server.log"), output, { mode: 0o600 });
   };

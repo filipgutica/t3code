@@ -2,6 +2,7 @@ import {
   CircleAlertIcon,
   CircleCheckIcon,
   CircleDashedIcon,
+  CircleDotDashedIcon,
   MessageCircleQuestionIcon,
   ShieldQuestionIcon,
 } from "lucide-react";
@@ -11,6 +12,7 @@ import type { ThreadExecutionStatusPresentation } from "./ThreadExecutionStatus.
 
 const STATUS_ICONS = {
   working: CircleDashedIcon,
+  waiting: CircleDotDashedIcon,
   input: MessageCircleQuestionIcon,
   approval: ShieldQuestionIcon,
   failed: CircleAlertIcon,
@@ -53,7 +55,9 @@ export function ThreadExecutionStatus({
       {Icon ? <Icon aria-hidden className={`shrink-0 ${compact ? "size-3" : "size-4"}`} /> : null}
       {/* Keep the clock outside the live label so screen readers do not announce each second. */}
       <span role="status">{status.label}</span>
-      {status.icon === "working" ? <WorkingDuration key={startedAt} startedAt={startedAt} /> : null}
+      {status.icon === "working" || status.icon === "waiting" ? (
+        <WorkingDuration key={startedAt} startedAt={startedAt} />
+      ) : null}
     </span>
   );
 }

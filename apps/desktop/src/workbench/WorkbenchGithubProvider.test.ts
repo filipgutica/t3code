@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
 import { ElectronHttpExecutor } from "electron-updater/out/electronHttpExecutor.js";
-import { expect, vi } from "vite-plus/test";
+import { afterEach, expect, vi } from "vite-plus/test";
 
 import {
   selectLatestWorkbenchRelease,
@@ -35,6 +35,7 @@ const manifest = (version: string, url = "update.zip") =>
   ].join("\n");
 
 describe("WorkbenchGithubProvider", () => {
+  afterEach(() => vi.unstubAllEnvs());
   it("selects only the highest published Workbench version", () => {
     const latest = selectLatestWorkbenchRelease([
       release("v9.9.9"),
@@ -50,33 +51,51 @@ describe("WorkbenchGithubProvider", () => {
   });
 
   it.each([
-    { channel: "latest", platform: "darwin", version: "0.0.3", file: "latest-mac.yml" },
+    {
+      channel: "latest",
+      platform: "darwin",
+      arch: "arm64",
+      version: "0.0.3",
+      file: "latest-mac.yml",
+    },
     {
       channel: "nightly",
       platform: "darwin",
+      arch: "arm64",
       version: "0.0.4-nightly.20261007.10",
       file: "nightly-mac.yml",
     },
     {
       channel: "nightly",
       platform: "linux",
+      arch: "x64",
       version: "0.0.4-nightly.20261007.10",
       file: "nightly-linux.yml",
     },
     {
       channel: "nightly",
+      platform: "linux",
+      arch: "arm64",
+      version: "0.0.4-nightly.20261007.10",
+      file: "nightly-linux-arm64.yml",
+    },
+    {
+      channel: "nightly",
       platform: "win32",
+      arch: "x64",
       version: "0.0.4-nightly.20261007.10",
       file: "nightly.yml",
     },
   ] as const)(
-    "selects $channel releases and $platform manifests",
-    async ({ channel, platform, version, file }) => {
+    "selects $channel releases and $platform/$arch manifests",
+    async ({ channel, platform, arch, version, file }) => {
+      vi.stubEnv("TEST_UPDATER_ARCH", arch);
       const releases = [
         release("workbench-daily-v0.0.4-nightly.20261007.9", {
           assets: [
             { name: "nightly.yml" },
             { name: "nightly-linux.yml" },
+            { name: "nightly-linux-arm64.yml" },
             { name: "nightly-mac.yml" },
           ],
         }),
@@ -84,6 +103,7 @@ describe("WorkbenchGithubProvider", () => {
           assets: [
             { name: "nightly.yml" },
             { name: "nightly-linux.yml" },
+            { name: "nightly-linux-arm64.yml" },
             { name: "nightly-mac.yml" },
           ],
         }),

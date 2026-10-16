@@ -7,7 +7,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
+import { HttpClient, HttpClientRequest, HttpClientResponse, UrlParams } from "effect/http";
 
 import * as JiraApi from "./JiraApi.ts";
 import { JiraAuthService } from "./JiraAuthService.ts";
@@ -252,10 +252,9 @@ describe("JiraApi", () => {
         1,
       );
       assert.isTrue(
-        requests[1]?.urlParams.params
-          .find(([key]) => key === "fields")?.[1]
-          .split(",")
-          .includes("description") ?? false,
+        UrlParams.getAll(requests[1]?.urlParams ?? UrlParams.empty, "fields").some((fields) =>
+          fields.split(",").includes("description"),
+        ),
       );
       assert.isTrue(
         requests[1]?.url.includes("/rest/software/1.0/board/42/sprint/7/issue") ?? false,

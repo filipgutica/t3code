@@ -2,7 +2,7 @@ import type { SidebarV2TopStatusKind } from "./Sidebar.logic";
 
 const EXECUTION_PRESENTATION = {
   working: { label: "Working", icon: "working", className: "text-info" },
-  waiting: { label: "Waiting", icon: null, className: "text-muted-foreground" },
+  waiting: { label: "Waiting", icon: "waiting", className: "text-muted-foreground" },
   approval: { label: "Approval", icon: "approval", className: "text-warning-foreground" },
   input: { label: "Input", icon: "input", className: "text-indigo-600 dark:text-indigo-300" },
   limited: { label: "Limited", icon: "failed", className: "text-warning" },

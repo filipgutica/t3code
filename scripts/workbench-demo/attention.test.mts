@@ -3,17 +3,24 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeUtil from "node:util";
 import * as NodePath from "node:path";
 import { expect, it } from "vite-plus/test";
-import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import {
-  decodePullRequestActivityJson,
-  decodePullRequestCoreJson,
-  decodePullRequestSummariesJson,
-  decodeReviewThreadsJson,
-  buildPullRequestSummariesGraphQlQuery,
-  pullRequestCoreGraphQlQuery,
-  PULL_REQUEST_ACTIVITY_GRAPHQL_QUERY,
-  REVIEW_THREADS_GRAPHQL_QUERY,
+  toPullRequestActivityPage,
+  toPullRequestCore,
+  toPullRequestSummary,
+  toReviewThreadPage,
 } from "../../packages/source-control-github/src/server/gitHubPullRequestJson.ts";
+import { PullRequestSummary } from "../../packages/source-control-github/src/server/pullRequestBatches.graphql.ts";
+import {
+  PullRequestCore,
+  PullRequestActivity,
+} from "../../packages/source-control-github/src/server/pullRequestReads.graphql.ts";
+import { ReviewThreads } from "../../packages/source-control-github/src/server/pullRequestReviews.graphql.ts";
+import { attentionSummaryDocument } from "./attention-graphql.mts";
+const decodeSummary = Schema.decodeUnknownSync(PullRequestSummary.result);
+const decodeActivity = Schema.decodeUnknownSync(PullRequestActivity.result);
+const decodeCore = Schema.decodeUnknownSync(PullRequestCore.result);
+const decodeThreads = Schema.decodeUnknownSync(ReviewThreads.result);
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 const adapter = NodePath.join(import.meta.dirname, "gh-attention.mjs");
 const execute = async (args: string[], input?: unknown) => {
@@ -38,22 +45,26 @@ const read = async (number: number, query: string) =>
   ]);
 
 it("delivers failed checks, unresolved feedback, a separate API repository and incomplete coverage through the native GitHub decoding contract", async () => {
-  const summariesDocument = buildPullRequestSummariesGraphQlQuery([
+  const summariesDocument = await attentionSummaryDocument([
     ...[901, 902].map((number) => ({
       repository: "workbench-synthetic/attention-fixtures",
       number,
     })),
     { repository: "workbench-synthetic/attention-api", number: 906 },
   ]);
-  const summaries = decodePullRequestSummariesJson(
+  const summariesRaw = JSON.parse(
     await execute(["api", "graphql", "--input", "-"], summariesDocument),
   );
-  expect(Result.isSuccess(summaries)).toBe(true);
-  if (!Result.isSuccess(summaries))
-    throw new Error("Native summary decoder rejected the synthetic adapter");
-  expect(summaries.success.get(0)?.checksState).toBe("failing");
-  expect(summaries.success.get(1)?.reviewDecision).toBe("changes-requested");
-  expect(summaries.success.get(2)).toEqual(
+  const summaries = [0, 1, 2].map((index) => {
+    const decoded = decodeSummary({
+      repository: summariesRaw.data[`_${index}_repository`],
+    });
+    if (!decoded.repository?.pullRequest) throw new Error("Native summary is unavailable");
+    return toPullRequestSummary(decoded.repository.pullRequest);
+  });
+  expect(summaries[0]?.checksState).toBe("failing");
+  expect(summaries[1]?.reviewDecision).toBe("changes-requested");
+  expect(summaries[2]).toEqual(
     expect.objectContaining({
       number: 906,
       url: "https://github.com/workbench-synthetic/attention-api/pull/906",
@@ -61,13 +72,11 @@ it("delivers failed checks, unresolved feedback, a separate API repository and i
       reviewDecision: null,
     }),
   );
-  const activity = decodePullRequestActivityJson(
-    await read(902, PULL_REQUEST_ACTIVITY_GRAPHQL_QUERY),
+  const activity = toPullRequestActivityPage(
+    decodeActivity(JSON.parse(await read(902, PullRequestActivity.document)).data),
   );
-  expect(Result.isSuccess(activity)).toBe(true);
-  if (!Result.isSuccess(activity))
-    throw new Error("Native activity decoder rejected the synthetic review");
-  expect(activity.success.remarks).toEqual([
+  if (!activity) throw new Error("Native activity is unavailable");
+  expect(activity.remarks).toEqual([
     expect.objectContaining({
       kind: "review",
       author: expect.objectContaining({ login: "synthetic-reviewer" }),
@@ -77,41 +86,37 @@ it("delivers failed checks, unresolved feedback, a separate API repository and i
       ),
     }),
   ]);
-  const core = decodePullRequestCoreJson(
-    await read(901, pullRequestCoreGraphQlQuery("github.com")),
+  const core = toPullRequestCore(
+    decodeCore(JSON.parse(await read(901, PullRequestCore.document)).data),
   );
-  expect(Result.isSuccess(core)).toBe(true);
-  if (!Result.isSuccess(core))
-    throw new Error("Native detail decoder rejected the synthetic adapter");
-  expect(core.success.checks.map((check) => check.status)).toEqual(["failure", "failure"]);
-  expect(new Set(core.success.checks.map((check) => check.name)).size).toBe(2);
-  expect(core.success.title).toMatch(/^\[Synthetic attention\]/);
-  const feedback = decodeReviewThreadsJson(await read(902, REVIEW_THREADS_GRAPHQL_QUERY));
-  expect(Result.isSuccess(feedback)).toBe(true);
-  if (!Result.isSuccess(feedback))
-    throw new Error("Native activity decoder rejected the synthetic adapter");
-  expect(feedback.success.threads).toHaveLength(2);
-  expect(new Set(feedback.success.threads.map(({ thread }) => thread.id)).size).toBe(2);
-  expect(feedback.success.threads.map(({ thread }) => thread.path)).toEqual([
+  if (!core) throw new Error("Native detail is unavailable");
+  expect(core.checks.map((check) => check.status)).toEqual(["failure", "failure"]);
+  expect(new Set(core.checks.map((check) => check.name)).size).toBe(2);
+  expect(core.title).toMatch(/^\[Synthetic attention\]/);
+  const feedback = toReviewThreadPage(
+    decodeThreads(JSON.parse(await read(902, ReviewThreads.document)).data),
+  );
+  if (!feedback) throw new Error("Native review threads are unavailable");
+  expect(feedback.threads).toHaveLength(2);
+  expect(new Set(feedback.threads.map(({ thread }) => thread.id)).size).toBe(2);
+  expect(feedback.threads.map(({ thread }) => thread.path)).toEqual([
     "synthetic.txt",
     "src/invitations.ts",
   ]);
-  expect(feedback.success.threads.every(({ thread }) => !thread.isResolved)).toBe(true);
-  expect(feedback.success.threads[0]?.thread.isResolved).toBe(false);
-  expect(feedback.success.threads[0]?.thread.comments[0]?.body).toMatch(
+  expect(feedback.threads.every(({ thread }) => !thread.isResolved)).toBe(true);
+  expect(feedback.threads[0]?.thread.isResolved).toBe(false);
+  expect(feedback.threads[0]?.thread.comments[0]?.body).toMatch(
     /\[Synthetic unresolved feedback\].*empty response/,
   );
-  expect(feedback.success.threads[1]?.thread.comments[0]?.body).toMatch(
+  expect(feedback.threads[1]?.thread.comments[0]?.body).toMatch(
     /\[Synthetic unresolved feedback\].*expiry.*24 hours/,
   );
-  expect(feedback.success.reviewers).toEqual([
-    expect.objectContaining({ login: "synthetic-reviewer" }),
-  ]);
-  const incomplete = decodeReviewThreadsJson(await read(904, REVIEW_THREADS_GRAPHQL_QUERY));
-  expect(Result.isSuccess(incomplete)).toBe(true);
-  if (!Result.isSuccess(incomplete))
-    throw new Error("Native activity decoder rejected the incomplete fixture");
-  expect(incomplete.success.threads[0]?.nextCommentCursor).not.toBeNull();
+  expect(feedback.reviewers).toEqual([expect.objectContaining({ login: "synthetic-reviewer" })]);
+  const incomplete = toReviewThreadPage(
+    decodeThreads(JSON.parse(await read(904, ReviewThreads.document)).data),
+  );
+  if (!incomplete) throw new Error("Native incomplete fixture is unavailable");
+  expect(incomplete.threads[0]?.nextCommentCursor).not.toBeNull();
 });
 
 it("refuses GitHub writes, unrelated identities and deliberately unavailable inspection without forwarding requests", async () => {
