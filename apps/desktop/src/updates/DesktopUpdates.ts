@@ -1046,7 +1046,6 @@ export const make = Effect.gen(function* () {
       }
 
       const settings = yield* desktopSettings.get;
-      const updateChannel = settings.updateChannel;
       const enabled = yield* shouldEnableAutoUpdates;
       yield* setState(yield* baseUpdateState(settings.updateChannel, enabled));
       if (!enabled) {
@@ -1056,7 +1055,7 @@ export const make = Effect.gen(function* () {
 
       yield* electronUpdater.setAutoDownload(false);
       yield* electronUpdater.setAutoInstallOnAppQuit(false);
-      yield* applyAutoUpdaterChannel(updateChannel);
+      yield* applyAutoUpdaterChannel(settings.updateChannel);
       yield* electronUpdater.setDisableDifferentialDownload(
         isArm64HostRunningIntelBuild(environment.runtimeInfo),
       );
@@ -1095,28 +1094,26 @@ export const make = Effect.gen(function* () {
     setChannel: Effect.fn("desktop.updates.setChannel")(function* (
       nextChannel: DesktopUpdateChannel,
     ) {
-      const resolvedChannel = nextChannel;
-      yield* Effect.annotateCurrentSpan({ channel: resolvedChannel });
+      yield* Effect.annotateCurrentSpan({ channel: nextChannel });
       const activeAction = yield* tryStartChannelChange;
       if (Option.isSome(activeAction)) {
         return yield* new DesktopUpdateActionInProgressError({
           action: activeAction.value === "install-recovery" ? "install" : activeAction.value,
-          requestedChannel: resolvedChannel,
+          requestedChannel: nextChannel,
         });
       }
 
       return yield* Effect.gen(function* () {
         const state = yield* Ref.get(updateStateRef);
-        if (resolvedChannel === state.channel) {
+        if (nextChannel === state.channel) {
           return state;
         }
 
         yield* desktopSettings
-          .setUpdateChannel(resolvedChannel)
+          .setUpdateChannel(nextChannel)
           .pipe(
             Effect.mapError(
-              (cause) =>
-                new DesktopUpdateChannelPersistenceError({ channel: resolvedChannel, cause }),
+              (cause) => new DesktopUpdateChannelPersistenceError({ channel: nextChannel, cause }),
             ),
           );
 
@@ -1127,7 +1124,7 @@ export const make = Effect.gen(function* () {
           return yield* Ref.get(updateStateRef);
         }
 
-        yield* applyAutoUpdaterChannel(resolvedChannel);
+        yield* applyAutoUpdaterChannel(nextChannel);
         const allowDowngrade = yield* electronUpdater.allowDowngrade;
         yield* electronUpdater.setAllowDowngrade(true);
         yield* checkForUpdates("channel-change", "held").pipe(

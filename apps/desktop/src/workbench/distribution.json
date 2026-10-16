@@ -1,0 +1,8 @@
+{
+  "appId": "com.filipgutica.t3code.workbench",
+  "productName": "T3 Code Workbench",
+  "executableName": "t3code-workbench",
+  "homeDirectoryName": ".t3-workbench",
+  "scheme": "t3code-workbench",
+  "desktopEntryName": "com.filipgutica.t3code.workbench.desktop"
+}

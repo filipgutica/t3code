@@ -133,6 +133,12 @@
       "target": "scripts/lib/workbench-jira-dev-env",
       "symbols": ["prepareWorkbenchJiraDevEnv"],
       "reason": "Prepare Workbench Jira callback configuration in the development launcher."
+    },
+    {
+      "source": "apps/desktop/vite.config.ts",
+      "target": "apps/desktop/src/workbench/distribution.json",
+      "symbols": ["default"],
+      "reason": "Inline immutable Workbench distribution metadata in the desktop build."
     }
   ]
 }

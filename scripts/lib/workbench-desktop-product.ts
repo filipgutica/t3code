@@ -1,9 +1,7 @@
-import desktopPackageJson from "../../apps/desktop/package.json" with { type: "json" };
+import WORKBENCH_DISTRIBUTION from "../../apps/desktop/src/workbench/distribution.json" with { type: "json" };
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import type { DesktopBuildProduct } from "./desktop-build-product.ts";
-
-const WORKBENCH_DISTRIBUTION = desktopPackageJson.workbenchDistribution;
 
 const MAC_WORKBENCH_SIGNING_ENVIRONMENT_VARIABLES = [
   "CSC_LINK",
