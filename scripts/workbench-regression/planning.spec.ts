@@ -109,6 +109,32 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
   expect((await snapshot(demo)).tickets.some((t) => t.id === ticket.id)).toBe(false);
 });
 
+test("sidebar status quick actions retain keyboard focus when a Ticket moves sections", async ({
+  page,
+  demo,
+}) => {
+  const title = "Build an interactive setup command";
+  await openWorkbench(
+    page,
+    demo.workbenchUrl("/workbench?workbenchProjectId=beacon&ticketId=beacon-009"),
+  );
+  const sidebar = page.locator('[aria-label="Workbench navigation"]');
+  const ticket = sidebar.locator('[data-workbench-sidebar-ticket-row-id="beacon-009"]');
+  const navigation = ticket.getByRole("button", { name: title, exact: true });
+  const complete = ticket.getByRole("button", { name: `Mark as done: ${title}`, exact: true });
+  const reopen = ticket.getByRole("button", { name: `Reopen: ${title}`, exact: true });
+
+  await complete.focus();
+  await complete.press("Enter");
+  await expect(reopen).toBeVisible();
+  await expect(navigation).toBeFocused();
+
+  await reopen.focus();
+  await reopen.press("Enter");
+  await expect(complete).toBeVisible();
+  await expect(navigation).toBeFocused();
+});
+
 test("W3 W4 X2: direct routes, history and narrow layout retain Ticket ownership", async ({
   page,
   demo,

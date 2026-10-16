@@ -732,10 +732,10 @@ function getWorkbenchSidebarSearchSelection(
 
 const emptySidebarDrafts: WorkbenchSidebarNavigationFields["draftsByWorkspace"] = new Map();
 
-/** Native settlement moves rows between lists and can remove an action's focus target. */
-function useWorkbenchSidebarThreadFocus(navigationRef: RefObject<HTMLElement | null>) {
+/** Ticket status and native settlement move rows between lists, removing focused actions. */
+function useWorkbenchSidebarRowFocus(navigationRef: RefObject<HTMLElement | null>) {
   const previousFocus = useRef<{
-    threadId: string;
+    threadId: string | undefined;
     ticketId: string | undefined;
     trigger: HTMLElement;
   } | null>(null);
@@ -759,14 +759,18 @@ function useWorkbenchSidebarThreadFocus(navigationRef: RefObject<HTMLElement | n
   });
   return (event: FocusEvent<HTMLElement>) => {
     if (!(event.target instanceof HTMLElement)) return;
-    const row = event.target.closest<HTMLElement>("[data-workbench-sidebar-thread-id]");
-    previousFocus.current = row?.dataset.workbenchSidebarThreadId
-      ? {
-          threadId: row.dataset.workbenchSidebarThreadId,
-          ticketId: row.dataset.workbenchSidebarOwnerTicketId,
-          trigger: event.target,
-        }
-      : null;
+    const threadRow = event.target.closest<HTMLElement>("[data-workbench-sidebar-thread-id]");
+    const ticketRow = event.target.closest<HTMLElement>("[data-workbench-sidebar-ticket-row-id]");
+    previousFocus.current =
+      threadRow || ticketRow
+        ? {
+            threadId: threadRow?.dataset.workbenchSidebarThreadId,
+            ticketId:
+              threadRow?.dataset.workbenchSidebarOwnerTicketId ??
+              ticketRow?.dataset.workbenchSidebarTicketRowId,
+            trigger: event.target,
+          }
+        : null;
   };
 }
 
@@ -941,7 +945,7 @@ function WorkbenchSidebarNavigation({
     onSelectWorkspace,
     selectedDraft,
   });
-  const onThreadFocusCapture = useWorkbenchSidebarThreadFocus(navigationRef);
+  const onRowFocusCapture = useWorkbenchSidebarRowFocus(navigationRef);
   const navigation = {
     contextThreadId,
     jiraOwnershipKnown,
@@ -1063,7 +1067,7 @@ function WorkbenchSidebarNavigation({
           navigation={
             <div
               ref={navigationRef}
-              onFocusCapture={onThreadFocusCapture}
+              onFocusCapture={onRowFocusCapture}
               tabIndex={-1}
               aria-label="Workbench navigation"
               className="space-y-4"
