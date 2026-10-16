@@ -217,6 +217,8 @@ const stubApi = (input: {
   ) => Effect.Effect<ReadonlyArray<WorkbenchJiraIssueSnapshot>>;
 }) =>
   JiraApi.of({
+    getIssue: () => Effect.die("unexpected research request"),
+    searchIssues: () => Effect.die("unexpected research request"),
     listProjects: () => Effect.die("unexpected Jira project read"),
     listBoards: () => Effect.die("unexpected Jira board read"),
     listSprints: input.listSprints,

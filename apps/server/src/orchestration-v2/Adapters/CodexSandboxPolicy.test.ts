@@ -271,14 +271,16 @@ describe("Codex read-only sandbox integration", () => {
     );
 
   it.effect.each([
-    [false, true],
-    [true, true],
-    [true, false],
+    [false, true, false],
+    [true, true, false],
+    [true, false, false],
+    [true, true, true],
   ] as const)(
     "isolates inherited integrations only for read-only native start and resume (read-only: %s, native MCP: %s)",
-    ([readOnly, nativeMcp]) =>
+    ([readOnly, nativeMcp, research]) =>
       Effect.gen(function* () {
-        const scenario = `integration-isolation-${readOnly}-${nativeMcp}`;
+        const scenario = `integration-isolation-${readOnly}-${nativeMcp}-${research}`;
+        const isolateIntegrations = readOnly && !research;
         const threadId = ThreadId.make(`thread-${scenario}`);
         const nativeThreadId = `native-${scenario}`;
         const endpoint = "http://127.0.0.1:43123/mcp";
@@ -298,15 +300,24 @@ describe("Codex read-only sandbox integration", () => {
         const policy = {
           ...CODEX_TEST_RUNTIME_POLICY,
           ...(readOnly ? { sandboxPolicy: { type: "readOnly" as const } } : {}),
+          ...(research ? { toolAccess: "research" as const } : {}),
         };
         const expectedParams = {
           cwd: "/workspace",
           model: "gpt-5.4",
           config: {
             "tools.update_plan.enabled": true,
-            ...(readOnly ? restrictedParams.config : {}),
+            ...(isolateIntegrations ? restrictedParams.config : {}),
+            ...(research
+              ? {
+                  "features.hooks": false,
+                  "features.codex_hooks": false,
+                  "features.plugin_hooks": false,
+                  "features.multi_agent": false,
+                }
+              : {}),
             mcp_servers: {
-              ...(readOnly
+              ...(isolateIntegrations
                 ? { jira: { enabled: false }, "github.external": { enabled: false } }
                 : {}),
               ...(nativeMcp
@@ -316,21 +327,21 @@ describe("Codex read-only sandbox integration", () => {
           },
         };
         const preamble = replayPreamble(nativeThreadId);
-        const startId = readOnly ? 3 : 2;
-        const resumeId = readOnly ? 5 : 3;
+        const startId = isolateIntegrations ? 3 : 2;
+        const resumeId = isolateIntegrations ? 5 : 3;
         const session = yield* openReplaySession(
           makeCodexReplayTranscript({
             scenario,
             entries: [
               ...preamble.slice(0, 3),
-              ...(readOnly ? inventory(2) : []),
+              ...(isolateIntegrations ? inventory(2) : []),
               {
                 type: "expect_outbound",
                 label: "thread/start",
                 frame: { id: startId, method: "thread/start", params: expectedParams },
               },
               withReplayRequestId(preamble[4]!, startId),
-              ...(readOnly ? inventory(4) : []),
+              ...(isolateIntegrations ? inventory(4) : []),
               {
                 type: "expect_outbound",
                 label: "thread/resume",
@@ -366,7 +377,7 @@ describe("Codex read-only sandbox integration", () => {
         );
         assert.equal(
           session.requests.filter((method) => method === "config/read").length,
-          readOnly ? 2 : 0,
+          isolateIntegrations ? 2 : 0,
         );
       }).pipe(
         Effect.scoped,

@@ -15,6 +15,7 @@ import {
   seedAttentionRecords,
 } from "./attention.mts";
 import { readDemoModelSelection } from "./local.mts";
+import { seedInstalledDemoProviders } from "./providers.mts";
 import { stopDemo } from "./lifecycle.mts";
 import { resetToBaseline } from "./reset-to-baseline.mts";
 import { verifyDemoJira } from "./integrations.mts";
@@ -253,6 +254,8 @@ export const startDisposableDemo = async (input: {
       },
     });
     await server.stop();
+    // The first boot migrates legacy provider settings before we preserve their choices.
+    await seedInstalledDemoProviders({ home: runHome });
     const attentionEnv = await installAttentionGitHubAdapter(runHome, process.env);
     server = await launchDemo({ home: runHome, env: attentionEnv });
     const modelSelection = await readDemoModelSelection(runHome);

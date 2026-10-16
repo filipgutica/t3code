@@ -12,6 +12,11 @@ and removes the run.** Each run starts fresh; configuration and Jira authorizati
 are retained in `~/.t3-workbench-demos/guide`. Remote GitHub and Jira data are left
 unchanged.
 
+Each run enables supported provider CLIs found on your `PATH`, preserving explicit
+provider settings from the saved demo profile. Providers use their normal local
+configuration and authentication; seeding does not copy provider credentials or install tools.
+Installed providers may still need authentication in Settings → Providers.
+
 ## Set up once
 
 Use the repository's Node version, install dependencies with `vp i`, and sign in

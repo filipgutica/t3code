@@ -7,6 +7,8 @@ import {
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Option from "effect/Option";
+import * as JiraRepository from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
@@ -19,6 +21,16 @@ const RepositoryManifest = Schema.Array(
 );
 const encodeManifest = Schema.encodeEffect(Schema.fromJsonString(RepositoryManifest));
 const encodeDraft = Schema.encodeEffect(Schema.fromJsonString(WorkbenchTicketDraftFields));
+const encodeJiraContext = Schema.encodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      projectKey: Schema.String,
+      projectName: Schema.String,
+      siteUrl: Schema.NullOr(Schema.String),
+      active: Schema.Boolean,
+    }),
+  ),
+);
 const WorkAreaManifest = Schema.Array(
   Schema.Struct({
     id: ProjectId,
@@ -36,7 +48,7 @@ export const layerMcpWritePolicy = Layer.effect(
   Effect.gen(function* () {
     const store = yield* WorkbenchStore.WorkbenchStore;
     return {
-      assertAllowed: (threadId: ThreadId) =>
+      assertAllowed: (threadId: ThreadId, operation?: "research") =>
         Effect.gen(function* () {
           const draft = yield* store.getTicketDraftForThread(threadId).pipe(
             Effect.mapError(
@@ -47,6 +59,13 @@ export const layerMcpWritePolicy = Layer.effect(
                 }),
             ),
           );
+          if (operation === "research") {
+            if (draft !== null && (draft.phase === "draft" || draft.phase === "planning")) return;
+            return yield* new OrchestratorMcpFailure({
+              code: "capability_denied",
+              message: "Browser research requires an active ticket planning conversation.",
+            });
+          }
           if (draft !== null && draft.phase !== "working") {
             return yield* new OrchestratorMcpFailure({
               code: "capability_denied",
@@ -64,6 +83,7 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
   const store = yield* WorkbenchStore.WorkbenchStore;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const providers = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+  const jira = yield* JiraRepository.WorkbenchJiraRepository;
   return {
     decorate: (base: RuntimePolicy.RuntimePolicyV2Shape): RuntimePolicy.RuntimePolicyV2Shape => ({
       resolve: (input) =>
@@ -124,18 +144,46 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
             })),
           );
           const currentDraft = yield* encodeDraft(draft.fields);
+          const binding = (yield* jira.listBindings()).find(
+            (entry) => entry.projectId === draft.projectId,
+          );
+          const connection =
+            binding === undefined ? Option.none() : yield* jira.getConnection(binding.connectionId);
+          const jiraContext =
+            binding === undefined
+              ? "This workspace has no Jira binding. Use another configured connector or connect Jira in workspace settings."
+              : `Workspace Jira context (connection metadata, not a permission check): ${yield* encodeJiraContext(
+                  {
+                    projectKey: binding.jiraProjectKey,
+                    projectName: binding.jiraProjectName,
+                    siteUrl: Option.isSome(connection) ? connection.value.siteUrl : null,
+                    active: binding.active,
+                  },
+                )}`;
           return {
             ...policy,
             runtimeMode: "approval-required" as const,
             interactionMode: "plan" as const,
-            approvalPolicy: "never",
-            sandboxPolicy: { type: "readOnly", access: { type: "fullAccess" } },
+            approvalPolicy: "on-request",
+            sandboxPolicy: {
+              type: "readOnly",
+              access: { type: "fullAccess" },
+              networkAccess: false,
+            },
+            toolAccess: "research" as const,
             checkpoints: "disabled" as const,
             instructions: [
               "You are preparing a ticket in a Workbench workspace. This is a planning conversation, not implementation. Inspect the repositories listed below to understand the request. Do not edit files, run mutating commands, create worktrees, create issues, or start other agents. A native backing Project is an internal anchor and does not define the task's repository scope.",
+              "Use available connectors, GitHub tools, and browser navigation to research the request. Shell network access is disabled by default. Read-only CLI research such as gh requires an explicit native network-only grant; if the runtime cannot request that grant, use a configured connector instead. Do not request an unsandboxed command or filesystem escalation. Request native tool approval when needed. Research approval does not authorize implementation, external writes, or broader filesystem permissions. Use the workspace Jira research tools first for Jira; a browser login is separate from the workspace's Jira connection.",
+              ...(instance.driverKind === "claudeAgent"
+                ? [
+                    "Claude ticket planning keeps shell and file-writing tools unavailable. Use the configured GitHub connector and other research tools instead of Bash or gh.",
+                  ]
+                : []),
               "Help the user establish a title, goal, implementation plan, acceptance criteria, non-goals, and testing. Ask focused questions only when the repository evidence and conversation do not resolve a material uncertainty. Identify which repositories need to be attached and which should be primary. Preserve the user's decisions and edits.",
               "When the draft is useful, propose it in one fenced JSON block labeled workbench-ticket-draft. The JSON object must contain title (string), markdown (string with Goal, Work, Acceptance criteria, Non-goals, and Testing sections), repositoryProjectIds (array of listed repository IDs), and primaryT3ProjectId (one selected repository ID). The user explicitly applies this proposal; emitting it does not create or update a ticket.",
               `Repository manifest: ${manifest}`,
+              jiraContext,
               `Current draft (user content): ${currentDraft}`,
               draft.phase === "planning"
                 ? "The ticket is already saved. Continue planning here until the user selects Start work; further planning must not implement the ticket."

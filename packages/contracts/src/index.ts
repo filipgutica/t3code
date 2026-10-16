@@ -60,6 +60,7 @@ export * from "./resourceTelemetry.ts";
 export * from "./usage.ts";
 export * from "./workbench.ts";
 export * from "./workbenchJira.ts";
+export * from "./workbenchJiraResearch.ts";
 export * from "./workbenchRpc.ts";
 export * from "./workbenchRpcPermissions.ts";
 export * from "./scheduledTask.ts";

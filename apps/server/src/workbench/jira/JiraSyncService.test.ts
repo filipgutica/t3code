@@ -155,6 +155,8 @@ const makeSyncHarness = (options?: {
         }),
     } satisfies WorkbenchJiraRepositoryShape);
     const api = JiraApi.of({
+      getIssue: () => Effect.die("unexpected research request"),
+      searchIssues: () => Effect.die("unexpected research request"),
       listProjects: () => Effect.die("unexpected project read"),
       listBoards: () => Effect.die("unexpected board read"),
       listSprints: () => Effect.die("unexpected sprint read"),
@@ -264,6 +266,8 @@ describe("JiraSyncService", () => {
           replaceIssueLinks: () => Effect.void,
         } satisfies WorkbenchJiraRepositoryShape);
         const api = JiraApi.of({
+          getIssue: () => Effect.die("unexpected research request"),
+          searchIssues: () => Effect.die("unexpected research request"),
           listProjects: () => Effect.die("unexpected project read"),
           listBoards: () => Effect.die("unexpected board read"),
           listSprints: () => Effect.die("unexpected sprint read"),
@@ -344,6 +348,8 @@ describe("JiraSyncService", () => {
       const issueOne = oldIssue("10001").issue;
       const issueTwo = oldIssue("10002").issue;
       const api = JiraApi.of({
+        getIssue: () => Effect.die("unexpected research request"),
+        searchIssues: () => Effect.die("unexpected research request"),
         listProjects: () => Effect.die("unexpected project read"),
         listBoards: () => Effect.die("unexpected board read"),
         listSprints: () => Effect.die("unexpected sprint read"),
@@ -437,6 +443,8 @@ describe("JiraSyncService", () => {
           }),
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        getIssue: () => Effect.die("unexpected research request"),
+        searchIssues: () => Effect.die("unexpected research request"),
         listProjects: () => Effect.die("unexpected project read"),
         listBoards: () => Effect.die("unexpected board read"),
         listSprints: () => Effect.die("unexpected sprint read"),
@@ -556,6 +564,8 @@ describe("JiraSyncService", () => {
         completeDate: null,
       });
       const api = JiraApi.of({
+        getIssue: () => Effect.die("unexpected research request"),
+        searchIssues: () => Effect.die("unexpected research request"),
         listProjects: () => Effect.die("unexpected project read"),
         listBoards: () => Effect.die("unexpected board read"),
         listSprints: () =>
@@ -647,6 +657,8 @@ describe("JiraSyncService", () => {
           }),
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        getIssue: () => Effect.die("unexpected research request"),
+        searchIssues: () => Effect.die("unexpected research request"),
         listProjects: () => Effect.die("unexpected project read"),
         listBoards: () => Effect.die("unexpected board read"),
         listSprints: () => Effect.die("unexpected sprint read"),
@@ -704,6 +716,8 @@ describe("JiraSyncService", () => {
         replaceIssueLinks: () => Effect.void,
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        getIssue: () => Effect.die("unexpected research request"),
+        searchIssues: () => Effect.die("unexpected research request"),
         listProjects: () => Effect.die("unexpected project read"),
         listBoards: () => Effect.die("unexpected board read"),
         listSprints: () => Effect.die("unexpected sprint read"),
@@ -869,6 +883,8 @@ describe("JiraSyncService", () => {
         replaceIssueLinks: () => Effect.void,
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        getIssue: () => Effect.die("unexpected research request"),
+        searchIssues: () => Effect.die("unexpected research request"),
         prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
         createIssue: () => Effect.die("unexpected Jira issue creation"),
         addIssueToSprint: () => Effect.die("unexpected Jira sprint write"),
@@ -925,6 +941,8 @@ describe("JiraSyncService", () => {
         replaceIssueLinks: () => Effect.void,
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        getIssue: () => Effect.die("unexpected research request"),
+        searchIssues: () => Effect.die("unexpected research request"),
         prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
         createIssue: () => Effect.die("unexpected Jira issue creation"),
         addIssueToSprint: () => Effect.die("unexpected Jira sprint write"),
@@ -1005,6 +1023,8 @@ describe("JiraSyncService", () => {
           }),
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        getIssue: () => Effect.die("unexpected research request"),
+        searchIssues: () => Effect.die("unexpected research request"),
         prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
         createIssue: () => Effect.die("unexpected Jira issue creation"),
         addIssueToSprint: () => Effect.die("unexpected Jira sprint write"),
@@ -1104,6 +1124,8 @@ describe("JiraSyncService", () => {
         replaceIssueLinks: () => Effect.void,
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        getIssue: () => Effect.die("unexpected research request"),
+        searchIssues: () => Effect.die("unexpected research request"),
         prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
         createIssue: () => Effect.die("unexpected Jira issue creation"),
         addIssueToSprint: () => Effect.die("unexpected Jira sprint write"),
@@ -1234,6 +1256,8 @@ describe("JiraSyncService", () => {
         completeDate: null,
       });
       const api = JiraApi.of({
+        getIssue: () => Effect.die("unexpected research request"),
+        searchIssues: () => Effect.die("unexpected research request"),
         prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
         createIssue: () => Effect.die("unexpected Jira issue creation"),
         addIssueToSprint: () => Effect.die("unexpected Jira sprint write"),
@@ -1309,6 +1333,8 @@ describe("JiraSyncService", () => {
         replaceIssueLinks: () => Effect.die("unexpected link replacement"),
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        getIssue: () => Effect.die("unexpected research request"),
+        searchIssues: () => Effect.die("unexpected research request"),
         prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
         createIssue: () => Effect.die("unexpected Jira issue creation"),
         addIssueToSprint: () => Effect.die("unexpected Jira sprint write"),
@@ -1377,6 +1403,8 @@ describe("JiraSyncService", () => {
         completeDate: null,
       });
       const api = JiraApi.of({
+        getIssue: () => Effect.die("unexpected research request"),
+        searchIssues: () => Effect.die("unexpected research request"),
         prepareIssueCreation: () => Effect.die("unexpected Jira create metadata"),
         createIssue: () => Effect.die("unexpected Jira issue creation"),
         addIssueToSprint: () => Effect.die("unexpected Jira sprint write"),

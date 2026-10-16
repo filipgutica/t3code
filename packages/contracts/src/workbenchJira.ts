@@ -443,6 +443,7 @@ export class WorkbenchJiraOperationError extends Schema.TaggedError<WorkbenchJir
   "WorkbenchJiraOperationError",
   {
     code: WorkbenchJiraOperationErrorCode,
+    httpStatus: Schema.optionalKey(Schema.Int),
     message: TrimmedNonEmptyString,
   },
 ) {}

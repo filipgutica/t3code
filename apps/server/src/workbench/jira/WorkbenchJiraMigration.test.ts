@@ -99,6 +99,8 @@ const makeService = ({
 }) =>
   Effect.gen(function* () {
     const api = JiraApi.of({
+      getIssue: () => Effect.die("unexpected research request"),
+      searchIssues: () => Effect.die("unexpected research request"),
       listProjects: () => Effect.die("unexpected project read"),
       listBoards: () => Effect.die("unexpected board read"),
       listSprints: () => Effect.die("unexpected sprint read"),

@@ -9,6 +9,7 @@ import {
   WorkbenchServicesLayerLive,
   WorkbenchRuntimeReactorLayerLive,
   WorkbenchHostPoliciesLayerLive,
+  WorkbenchMcpLayerLive,
 } from "./workbench/serverLayer.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
 import * as PullRequestWatchReactor from "./orchestration-v2/PullRequestWatchReactor.ts";
@@ -732,7 +733,8 @@ const layerMakeRoutes = Layer.mergeAll(
   // delegation targets through the same live adapter facade the V2
   // orchestrator uses, so MCP capability reporting can never drift from
   // what dispatch can actually serve.
-  McpHttpServer.layer.pipe(
+  WorkbenchMcpLayerLive.pipe(
+    Layer.provideMerge(McpHttpServer.layer),
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
     Layer.provide(McpOAuth.layerMcpClientAuthenticator),
   ),

@@ -196,16 +196,16 @@ const handlers = {
   preview_status: McpToolAccess.readsAsCaller((input) =>
     invokeTargeted<PreviewAutomationStatus>("status", input ?? {}),
   ),
-  preview_open: McpToolAccess.actsAsCaller((input) =>
+  preview_open: McpToolAccess.researchesAsCaller((input) =>
     invokeTargeted<PreviewAutomationStatus>("open", normalizePreviewOpenInput(input)),
   ),
-  preview_navigate: McpToolAccess.actsAsCaller((input) =>
+  preview_navigate: McpToolAccess.researchesAsCaller((input) =>
     invokeTargeted<PreviewAutomationStatus>("navigate", input, input.timeoutMs),
   ),
-  preview_resize: McpToolAccess.actsAsCaller((input) =>
+  preview_resize: McpToolAccess.researchesAsCaller((input) =>
     invokeTargeted<PreviewAutomationResizeResult>("resize", input, input.timeoutMs),
   ),
-  preview_set_appearance: McpToolAccess.actsAsCaller((input) =>
+  preview_set_appearance: McpToolAccess.researchesAsCaller((input) =>
     invokeTargeted<PreviewAutomationSetColorSchemeResult>("setColorScheme", input),
   ),
   preview_snapshot: McpToolAccess.readsAsCaller((input) => {
@@ -219,7 +219,7 @@ const handlers = {
   preview_type: McpToolAccess.actsAsCaller((input) =>
     invokeTargeted<object>("type", input, input.timeoutMs),
   ),
-  preview_hover: McpToolAccess.actsAsCaller((input) =>
+  preview_hover: McpToolAccess.researchesAsCaller((input) =>
     invokeTargeted<object>("hover", input, input.timeoutMs),
   ),
   preview_select: McpToolAccess.actsAsCaller((input) =>
@@ -232,7 +232,9 @@ const handlers = {
     invokeTargeted<object>("upload", input, input.timeoutMs),
   ),
   preview_press: McpToolAccess.actsAsCaller((input) => invokeTargeted<object>("press", input)),
-  preview_scroll: McpToolAccess.actsAsCaller((input) => invokeTargeted<object>("scroll", input)),
+  preview_scroll: McpToolAccess.researchesAsCaller((input) =>
+    invokeTargeted<object>("scroll", input),
+  ),
   preview_evaluate: McpToolAccess.actsAsCaller(({ tabId, ...input }) =>
     invoke<unknown>("evaluate", input, undefined, tabId).pipe(
       Effect.map(({ result, toolIcon }) => ({

@@ -20,6 +20,15 @@ export const prepareCodexThreadRuntimeParams = <
 }) =>
   Effect.gen(function* () {
     if (!isReadOnlySandbox(runtimePolicy?.sandboxPolicy)) return params;
+    const lifecycleRestrictions = {
+      "features.hooks": false,
+      "features.codex_hooks": false,
+      "features.plugin_hooks": false,
+      "features.multi_agent": false,
+    };
+    if (runtimePolicy?.toolAccess === "research") {
+      return { ...params, config: { ...params.config, ...lifecycleRestrictions } };
+    }
     // MCP tools and lifecycle hooks execute outside the filesystem sandbox.
     // Inventory failures must stop the operation, not fall back to inherited tools.
     const response = yield* client.request("config/read", {
@@ -32,13 +41,10 @@ export const prepareCodexThreadRuntimeParams = <
       ...params,
       config: {
         ...params.config,
-        "features.hooks": false,
-        "features.codex_hooks": false,
-        "features.plugin_hooks": false,
+        ...lifecycleRestrictions,
         "features.plugins": false,
         "features.apps": false,
         "features.connectors": false,
-        "features.multi_agent": false,
         mcp_servers: {
           ...Object.fromEntries(Object.keys(inherited).map((name) => [name, { enabled: false }])),
           ...native,

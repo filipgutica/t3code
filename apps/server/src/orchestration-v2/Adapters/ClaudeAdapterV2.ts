@@ -333,6 +333,13 @@ export interface ClaudeAgentSdkQueryPresetTools {
 export type ClaudeAgentSdkQueryTools = ClaudeAgentSdkQueryToolList | ClaudeAgentSdkQueryPresetTools;
 
 export const CLAUDE_READ_ONLY_ALLOWED_TOOLS = ["Read", "Glob", "Grep"] as const;
+const CLAUDE_RESEARCH_ALLOWED_TOOLS = [
+  ...CLAUDE_READ_ONLY_ALLOWED_TOOLS,
+  "WebFetch",
+  "WebSearch",
+  "AskUserQuestion",
+  "ToolSearch",
+];
 
 function claudeAgentSdkQueryToolsForSdk(
   tools: ClaudeAgentSdkQueryTools,
@@ -967,6 +974,7 @@ export function makeClaudeQueryOptions(input: {
   readonly disallowedTools?: ReadonlyArray<string>;
   readonly permissionMode?: PermissionMode;
   readonly readOnlySandbox?: boolean;
+  readonly researchTools?: boolean;
   readonly canUseTool?: CanUseTool;
   readonly onUserDialog?: ClaudeQueryOptions["onUserDialog"];
   readonly supportedDialogKinds?: ClaudeQueryOptions["supportedDialogKinds"];
@@ -1069,10 +1077,14 @@ export function makeClaudeQueryOptions(input: {
     input.readOnlySandbox === true
       ? {
           ...withDirectories,
-          permissionMode: "dontAsk" as const,
-          tools: [...CLAUDE_READ_ONLY_ALLOWED_TOOLS],
+          permissionMode: input.researchTools === true ? ("plan" as const) : ("dontAsk" as const),
+          tools: [
+            ...(input.researchTools === true
+              ? CLAUDE_RESEARCH_ALLOWED_TOOLS
+              : CLAUDE_READ_ONLY_ALLOWED_TOOLS),
+          ],
           allowDangerouslySkipPermissions: false,
-          strictMcpConfig: true,
+          strictMcpConfig: input.researchTools !== true,
           settings: {
             ...(typeof withDirectories.settings === "object" ? withDirectories.settings : {}),
             disableAllHooks: true,
@@ -1128,6 +1140,7 @@ export const CLAUDE_T3_MCP_TOOL_TIMEOUT_MS = 65 * 60 * 1_000;
 export function claudeMcpQueryOverrides(input: {
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
   readonly readOnlySandbox: boolean;
+  readonly researchTools?: boolean;
   readonly allowedTools?: ReadonlyArray<string>;
 }): {
   readonly allowedTools?: ReadonlyArray<string>;
@@ -1137,9 +1150,10 @@ export function claudeMcpQueryOverrides(input: {
   if (session === undefined) {
     return input.allowedTools === undefined ? {} : { allowedTools: input.allowedTools };
   }
-  const mcpAllowedTools = input.readOnlySandbox
-    ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS
-    : [CLAUDE_T3_MCP_TOOL_WILDCARD];
+  const mcpAllowedTools =
+    input.readOnlySandbox && input.researchTools !== true
+      ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS
+      : [CLAUDE_T3_MCP_TOOL_WILDCARD];
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),
     mcpServers: {
@@ -1727,11 +1741,13 @@ export function claudeRuntimeQueryPolicyForRuntimePolicy(
   const permissionMode = permissionModeForClaudeRuntimePolicy(runtimePolicy);
   const readOnlyTools =
     sandboxPolicyKindForClaudeRuntimePolicy(runtimePolicy) === "readOnly"
-      ? CLAUDE_READ_ONLY_ALLOWED_TOOLS
+      ? runtimePolicy.toolAccess === "research"
+        ? CLAUDE_RESEARCH_ALLOWED_TOOLS
+        : CLAUDE_READ_ONLY_ALLOWED_TOOLS
       : undefined;
   const allowedTools =
     readOnlyTools !== undefined && readOnlyPolicyAllowsGlobalReads(runtimePolicy)
-      ? readOnlyTools
+      ? CLAUDE_READ_ONLY_ALLOWED_TOOLS
       : undefined;
   // acceptEdits approves edits before the callback runs; everything else it
   // leaves to the callback, which must ask rather than allow.
@@ -8291,6 +8307,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             mcpSession: yield* mcpSessions.read(turnInput.threadId),
             readOnlySandbox:
               sandboxPolicyKindForClaudeRuntimePolicy(turnInput.runtimePolicy) === "readOnly",
+            researchTools: turnInput.runtimePolicy.toolAccess === "research",
             ...(queryPolicy.allowedTools === undefined
               ? {}
               : { allowedTools: queryPolicy.allowedTools }),
@@ -8383,6 +8400,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             permissionMode: queryPolicy.permissionMode,
             readOnlySandbox:
               sandboxPolicyKindForClaudeRuntimePolicy(turnInput.runtimePolicy) === "readOnly",
+            researchTools: turnInput.runtimePolicy.toolAccess === "research",
             ...(queryPolicy.allowDangerouslySkipPermissions === undefined
               ? {}
               : {
