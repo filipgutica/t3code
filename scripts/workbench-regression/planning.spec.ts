@@ -144,7 +144,7 @@ test("W3 W4 X2: direct routes, history and narrow layout retain Ticket ownership
   );
 });
 
-test("sidebar Back returns to a native Thread and exits a direct Workbench entry", async ({
+test("sidebar Threads restores native Thread context and exits a direct board entry", async ({
   page,
   demo,
 }) => {
@@ -155,27 +155,16 @@ test("sidebar Back returns to a native Thread and exits a direct Workbench entry
   if (!environmentId) throw new Error("The demo has no environment ID.");
   const threadPath = `/${encodeURIComponent(environmentId)}/orbit-001-thread`;
 
-  await page.goto(`${demo.origin}${threadPath}`);
-  await expect(page).toHaveURL(new RegExp(`${threadPath}$`));
-  await page.getByRole("button", { name: "Agent Workbench", exact: true }).click();
+  await page.goto(`${demo.origin}${threadPath}?workbench=true`);
   await waitForWorkbench(page);
-  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await page.getByRole("button", { name: "Back to Threads", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`${threadPath}$`));
   await expect(page.getByRole("button", { name: "Agent Workbench", exact: true })).toBeVisible();
 
   await page.goto(`${demo.origin}${demo.workbenchUrl("/workbench?workbenchProjectId=orbit")}`);
   await waitForWorkbench(page);
-  await page.getByRole("button", { name: "Back", exact: true }).click();
-  await page.waitForURL((url) => {
-    const pathSegments = url.pathname.split("/").filter(Boolean);
-    return (
-      url.pathname === "/" ||
-      (pathSegments.length === 3 &&
-        pathSegments[0] === encodeURIComponent(environmentId) &&
-        pathSegments[1] === "draft" &&
-        pathSegments[2] !== "")
-    );
-  });
+  await page.getByRole("button", { name: "Back to Threads", exact: true }).click();
+  await page.waitForURL((url) => /^\/draft\/[^/]+$/.test(url.pathname));
   await expect(page.getByRole("button", { name: "Submit message", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Agent Workbench", exact: true })).toBeVisible();
 });

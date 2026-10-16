@@ -35,10 +35,10 @@ test("local board search filters titles, clears, and remembers each Workspace", 
 
   await search.fill("welcome");
   await expect(board.locator("article")).toHaveCount(1);
-  await page.getByRole("button", { name: /^Beacon \d+$/ }).click();
+  await page.getByRole("button", { name: /^Open Beacon board \(/ }).click();
   await expect(search).toHaveValue("");
   await expect(board.locator("article").first()).toBeVisible();
-  await page.getByRole("button", { name: /^Orbit \d+$/ }).click();
+  await page.getByRole("button", { name: /^Open Orbit board \(/ }).click();
   await expect(search).toHaveValue("welcome");
   await expect(board.locator("article")).toHaveCount(1);
   await expect(
