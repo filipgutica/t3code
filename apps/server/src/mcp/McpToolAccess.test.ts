@@ -87,6 +87,7 @@ const ProbeToolkit = Toolkit.make(
   Tool.make("reads", probe),
   Tool.make("reads_as_caller", probe),
   Tool.make("acts_as_caller", probe),
+  Tool.make("researches_as_caller", probe),
   Tool.make("writes", probe),
   Tool.make("writes_with_capability", probe),
   Tool.make("writes_threads", {
@@ -107,6 +108,7 @@ const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
   reads: McpToolAccess.reads(() => ran),
   reads_as_caller: McpToolAccess.readsAsCaller(() => ran),
   acts_as_caller: McpToolAccess.actsAsCaller(() => ran),
+  researches_as_caller: McpToolAccess.researchesAsCaller(() => ran),
   writes: McpToolAccess.writes(() => ran),
   writes_with_capability: McpToolAccess.writesWithCapability(() => ran),
   writes_threads: McpToolAccess.writesThreads(
@@ -154,6 +156,7 @@ export const refusedAtCompileTime = () => {
       reads: unchecked,
       reads_as_caller: unchecked,
       acts_as_caller: unchecked,
+      researches_as_caller: unchecked,
       writes: unchecked,
       writes_with_capability: unchecked,
       writes_threads: unchecked,
@@ -255,6 +258,47 @@ it.effect("applies an owner write policy after credential restrictions and befor
   ),
 );
 
+it.effect("requires an explicit research exception without granting mutations", () =>
+  Effect.gen(function* () {
+    assert.equal(yield* call("researches_as_caller", readOnlyProvider), "capability_denied");
+    const researchPolicy = {
+      assertAllowed: (_: ThreadId, operation?: "research") =>
+        operation === "research"
+          ? Effect.void
+          : Effect.fail(
+              new OrchestratorMcpFailure({ code: "capability_denied", message: "Planning" }),
+            ),
+    };
+    assert.equal(
+      yield* call("researches_as_caller", readOnlyProvider).pipe(
+        Effect.provideService(McpWritePolicy, researchPolicy),
+      ),
+      "ran",
+    );
+    assert.equal(
+      yield* call("acts_as_caller", readOnlyProvider).pipe(
+        Effect.provideService(McpWritePolicy, researchPolicy),
+      ),
+      "capability_denied",
+    );
+    assert.equal(
+      yield* call("researches_as_caller", {
+        ...ended,
+        thread: { ...readOnlyProvider.thread, threadId: endedThreadId },
+      }).pipe(Effect.provideService(McpWritePolicy, researchPolicy)),
+      "parent_not_active",
+    );
+  }).pipe(
+    Effect.provide(
+      probeServer(
+        Layer.mock(ThreadManagement.ThreadManagementService)({
+          getThreadShell: (threadId) => Effect.succeed(shells.get(threadId) ?? null),
+        }),
+      ),
+    ),
+  ),
+);
+
 it.effect.each([
   // Reads are open to every caller, even one whose turn ended.
   ["reads", ended, {}, "ran"],
@@ -275,6 +319,9 @@ it.effect.each([
   ["reads_as_caller", ended, {}, "ran"],
   ["reads_as_caller", fullAccessClient, {}, "thread_credential_required"],
   ["acts_as_caller", supervised, {}, "ran"],
+  ["researches_as_caller", supervised, {}, "ran"],
+  ["researches_as_caller", ended, {}, "parent_not_active"],
+  ["researches_as_caller", readOnlyClient, {}, "thread_credential_required"],
   ["acts_as_caller", ended, {}, "parent_not_active"],
   ["acts_as_caller", fullAccessClient, {}, "thread_credential_required"],
 

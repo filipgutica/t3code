@@ -21,6 +21,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as JiraRepository from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
@@ -139,7 +140,15 @@ const makeLayerTest = <A, E, R>(policies: Layer.Layer<A, E, R>) =>
     ProjectStore.layer,
     CommandReceiptStore.layer,
   ).pipe(
-    Layer.provideMerge(policies),
+    Layer.provideMerge(
+      policies.pipe(
+        Layer.provide(
+          Layer.mock(JiraRepository.WorkbenchJiraRepository)({
+            listBindings: () => Effect.succeed([]),
+          }),
+        ),
+      ),
+    ),
     Layer.provide(McpSessionRegistryTestkit.layer),
     Layer.provide(McpProviderSessions.layer),
     Layer.provide(SqlitePersistence.layerMemory),
@@ -397,7 +406,10 @@ it.effect(
       assert.deepEqual(planning?.sandboxPolicy, {
         type: "readOnly",
         access: { type: "fullAccess" },
+        networkAccess: true,
       });
+      assert.equal(planning?.toolAccess, "research");
+      assert.equal(planning?.approvalPolicy, "on-request");
       assert.equal(planning?.checkpoints, "disabled");
       assert.include(planning?.instructions ?? "", "workbench-ticket-draft");
       assert.equal(planning?.cwd, process.cwd());

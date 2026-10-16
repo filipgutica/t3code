@@ -12,6 +12,9 @@ import * as TicketSummaryService from "./TicketSummaryService.ts";
 import * as TicketWorkspaceService from "./TicketWorkspaceService.ts";
 import * as WorkbenchStore from "./WorkbenchStore.ts";
 import * as WorkbenchJiraService from "./jira/WorkbenchJiraService.ts";
+import * as JiraRepository from "@t3tools/workbench/jira/WorkbenchJiraRepository";
+import * as JiraResearch from "./mcp/JiraResearchService.ts";
+import * as JiraResearchToolkit from "./mcp/JiraResearchToolkit.ts";
 import * as WorkspaceLifecycleService from "@t3tools/workbench/WorkspaceLifecycleService";
 
 const WorkbenchStoreLayerLive = WorkbenchStore.WorkbenchStoreLive.pipe(
@@ -21,9 +24,18 @@ const WorkbenchStoreLayerLive = WorkbenchStore.WorkbenchStoreLive.pipe(
 export const WorkbenchHostPoliciesLayerLive = Layer.mergeAll(
   TicketPlanningRuntime.layerRuntimePolicyDecorator,
   TicketPlanningRuntime.layerMcpWritePolicy,
-).pipe(Layer.provide(WorkbenchStoreLayerLive), Layer.provide(ProjectStore.layer));
+).pipe(
+  Layer.provide(WorkbenchStoreLayerLive),
+  Layer.provide(ProjectStore.layer),
+  Layer.provide(JiraRepository.layerSql.pipe(Layer.provide(SqlitePersistence.layerConfig))),
+);
 const WorkbenchJiraLayerLive = WorkbenchJiraService.layerLive.pipe(
   Layer.provide(SqlitePersistence.layerConfig),
+  Layer.provide(WorkbenchStoreLayerLive),
+);
+export const WorkbenchMcpLayerLive = JiraResearchToolkit.layer.pipe(
+  Layer.provide(JiraResearch.layer),
+  Layer.provide(WorkbenchJiraLayerLive),
   Layer.provide(WorkbenchStoreLayerLive),
 );
 const WorkspaceLifecycleLayerLive = WorkspaceLifecycleService.layer.pipe(

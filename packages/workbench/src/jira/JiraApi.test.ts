@@ -429,3 +429,193 @@ describe("JiraApi", () => {
     }),
   );
 });
+
+describe("Jira research API", () => {
+  it.effect("reads issue descriptions and relationship direction outside sprint endpoints", () =>
+    Effect.gen(function* () {
+      const requests: Array<HttpClientRequest.HttpClientRequest> = [];
+      const service = yield* JiraApi.make.pipe(
+        Effect.provideService(WorkbenchJiraRepository, repository),
+        Effect.provideService(JiraAuthService, auth),
+        Effect.provideService(
+          HttpClient.HttpClient,
+          HttpClient.make((request) => {
+            requests.push(request);
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json({
+                  key: "OTHER-17",
+                  fields: {
+                    summary: "An issue outside the selected sprint",
+                    description: "h2. Acceptance criteria\nPreserve the source details.",
+                    issuetype: { name: "Task" },
+                    status: { name: "Open" },
+                    parent: { key: "OTHER-1", fields: { summary: "Parent epic" } },
+                    issuelinks: [
+                      {
+                        type: { inward: "is blocked by", outward: "blocks" },
+                        inwardIssue: { key: "WB-2", fields: { summary: "Prerequisite" } },
+                      },
+                      {
+                        type: { inward: "is blocked by", outward: "blocks" },
+                        outwardIssue: { key: "WB-3", fields: { summary: "Dependent" } },
+                      },
+                    ],
+                  },
+                }),
+              ),
+            );
+          }),
+        ),
+      );
+      const issue = yield* service.getIssue({ connectionId, issueKey: "OTHER-17" });
+      assert.strictEqual(
+        requests[0]?.url,
+        "https://api.atlassian.com/ex/jira/cloud-1/rest/api/2/issue/OTHER-17",
+      );
+      assert.strictEqual(
+        issue.description,
+        "h2. Acceptance criteria\nPreserve the source details.",
+      );
+      assert.strictEqual(issue.url, "https://example.atlassian.net/browse/OTHER-17");
+      assert.deepStrictEqual(issue.parent, { key: "OTHER-1", summary: "Parent epic" });
+      assert.deepStrictEqual(issue.relationships, [
+        { relationship: "is blocked by", issue: { key: "WB-2", summary: "Prerequisite" } },
+        { relationship: "blocks", issue: { key: "WB-3", summary: "Dependent" } },
+      ]);
+    }),
+  );
+
+  it.effect("returns bounded search pages without silently restricting the project or sprint", () =>
+    Effect.gen(function* () {
+      const requests: Array<HttpClientRequest.HttpClientRequest> = [];
+      const service = yield* JiraApi.make.pipe(
+        Effect.provideService(WorkbenchJiraRepository, repository),
+        Effect.provideService(JiraAuthService, auth),
+        Effect.provideService(
+          HttpClient.HttpClient,
+          HttpClient.make((request) => {
+            requests.push(request);
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json({
+                  issues: [
+                    {
+                      key: "OTHER-17",
+                      fields: {
+                        summary: "Found issue",
+                        issuetype: { name: "Bug" },
+                        status: { name: "Open" },
+                      },
+                    },
+                  ],
+                  nextPageToken: "page-two",
+                  isLast: false,
+                }),
+              ),
+            );
+          }),
+        ),
+      );
+      const result = yield* service.searchIssues({
+        connectionId,
+        jql: 'text ~ "token"',
+        maxResults: 5,
+        nextPageToken: "page-one",
+      });
+      assert.strictEqual(
+        requests[0]?.url,
+        "https://api.atlassian.com/ex/jira/cloud-1/rest/api/3/search/jql",
+      );
+      assert.strictEqual(
+        requests[0]?.urlParams.params.find(([key]) => key === "jql")?.[1],
+        'text ~ "token"',
+      );
+      assert.strictEqual(
+        requests[0]?.urlParams.params.find(([key]) => key === "maxResults")?.[1],
+        "5",
+      );
+      assert.strictEqual(
+        requests[0]?.urlParams.params.find(([key]) => key === "nextPageToken")?.[1],
+        "page-one",
+      );
+      assert.strictEqual(result.nextPageToken, "page-two");
+      assert.strictEqual(result.issues[0]?.key, "OTHER-17");
+      assert.deepStrictEqual(result.issues[0]?.relationships, []);
+    }),
+  );
+
+  it.effect(
+    "marks shortened descriptions and relationships and refuses oversized search pages",
+    () =>
+      Effect.gen(function* () {
+        const rawIssue = {
+          key: "WB-1",
+          fields: {
+            summary: "A".repeat(600),
+            description: "B".repeat(30_001),
+            issuetype: { name: "Task" },
+            status: { name: "Open" },
+            issuelinks: Array.from({ length: 21 }, (_, index) => ({
+              type: { inward: "is blocked by", outward: "blocks" },
+              outwardIssue: { key: `WB-${index + 2}`, fields: { summary: "Dependency" } },
+            })),
+          },
+        };
+        const service = yield* JiraApi.make.pipe(
+          Effect.provideService(WorkbenchJiraRepository, repository),
+          Effect.provideService(JiraAuthService, auth),
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make((request) =>
+              Effect.succeed(
+                HttpClientResponse.fromWeb(
+                  request,
+                  Response.json(
+                    request.url.endsWith("/search/jql")
+                      ? { issues: [rawIssue, rawIssue], isLast: true }
+                      : rawIssue,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        const issue = yield* service.getIssue({ connectionId, issueKey: "WB-1" });
+        assert.strictEqual(issue.truncated, true);
+        assert.strictEqual(issue.description.length, 30_000);
+        assert.strictEqual(issue.summary.length, 500);
+        assert.strictEqual(issue.relationships.length, 20);
+        const error = yield* Effect.flip(
+          service.searchIssues({ connectionId, jql: "project = WB", maxResults: 1 }),
+        );
+        assert.strictEqual(error.code, "response_invalid");
+        assert.include(error.message, "page limit");
+      }),
+  );
+
+  it.effect("retains safe HTTP status categories without exposing response bodies", () =>
+    Effect.gen(function* () {
+      for (const status of [401, 403, 404, 429, 503]) {
+        const service = yield* JiraApi.make.pipe(
+          Effect.provideService(WorkbenchJiraRepository, repository),
+          Effect.provideService(JiraAuthService, auth),
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make((request) =>
+              Effect.succeed(
+                HttpClientResponse.fromWeb(request, new Response("credential-secret", { status })),
+              ),
+            ),
+          ),
+        );
+        const error = yield* Effect.flip(service.getIssue({ connectionId, issueKey: "WB-1" }));
+        assert.strictEqual(error.httpStatus, status);
+        assert.notInclude(error.message, "credential-secret");
+        if (status === 404) assert.include(error.message, "may not have access");
+      }
+    }),
+  );
+});

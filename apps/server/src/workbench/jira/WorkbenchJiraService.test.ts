@@ -131,6 +131,8 @@ describe("WorkbenchJiraService", () => {
         replaceIssueLinks: () => Effect.void,
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        getIssue: () => Effect.die("unexpected research request"),
+        searchIssues: () => Effect.die("unexpected research request"),
         listProjects: () => Effect.die("unexpected project read"),
         listBoards: () => Effect.die("unexpected board read"),
         listSprints: () => Effect.die("unexpected sprint read"),
@@ -396,6 +398,8 @@ describe("WorkbenchJiraService", () => {
         replaceIssueLinks: () => Effect.void,
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        getIssue: () => Effect.die("unexpected research request"),
+        searchIssues: () => Effect.die("unexpected research request"),
         listProjects: () => Effect.die("unexpected project read"),
         listBoards: () => Effect.die("unexpected board read"),
         listSprints: () => Effect.die("unexpected sprint read"),
@@ -494,6 +498,8 @@ describe("WorkbenchJiraService", () => {
         replaceIssueLinks: () => Effect.void,
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        getIssue: () => Effect.die("unexpected research request"),
+        searchIssues: () => Effect.die("unexpected research request"),
         listProjects: () => Effect.die("unexpected project read"),
         listBoards: () => Effect.die("unexpected board read"),
         listSprints: () =>
@@ -667,6 +673,8 @@ describe("WorkbenchJiraService", () => {
         replaceIssueLinks: () => Effect.void,
       } satisfies WorkbenchJiraRepositoryShape);
       const api = JiraApi.of({
+        getIssue: () => Effect.die("unexpected research request"),
+        searchIssues: () => Effect.die("unexpected research request"),
         listProjects: () => Effect.die("unexpected project read"),
         listBoards: () => Effect.die("unexpected board read"),
         listSprints: () => Effect.die("unexpected sprint read"),

@@ -5072,6 +5072,12 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               );
             }
 
+            // Research commands stay inside the filesystem sandbox; connector approvals use elicitation.
+            if (context.input.runtimePolicy.toolAccess === "research") {
+              return {
+                decision: "decline",
+              } satisfies CodexSchema.CommandExecutionRequestApprovalResponse;
+            }
             const nativeRequestId = payload.approvalId ?? payload.itemId;
             const artifacts = yield* buildApprovalRequestArtifacts({
               context,
@@ -5135,6 +5141,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               );
             }
 
+            if (context.input.runtimePolicy.toolAccess === "research") {
+              return {
+                decision: "decline",
+              } satisfies CodexSchema.FileChangeRequestApprovalResponse;
+            }
             const artifacts = yield* buildApprovalRequestArtifacts({
               context,
               nativeItemId: payload.itemId,
@@ -5195,6 +5206,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               );
             }
 
+            if (
+              context.input.runtimePolicy.toolAccess === "research" &&
+              payload.permissions.fileSystem != null
+            ) {
+              return {
+                permissions: {},
+                scope: "turn",
+              } satisfies CodexSchema.PermissionsRequestApprovalResponse;
+            }
             const requestKind = providerRequestKindFromPermissions(payload.permissions);
             const artifacts = yield* buildApprovalRequestArtifacts({
               context,

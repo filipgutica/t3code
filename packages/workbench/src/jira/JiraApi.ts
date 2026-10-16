@@ -1,5 +1,10 @@
 import {
   WorkbenchJiraOperationError,
+  type WorkbenchJiraReadIssueInput,
+  type WorkbenchJiraResearchIssue,
+  type WorkbenchJiraResearchIssueSummary,
+  type WorkbenchJiraSearchIssuesInput,
+  type WorkbenchJiraSearchIssuesResult,
   type WorkbenchJiraBoard,
   type WorkbenchJiraBoardConfiguration,
   type WorkbenchJiraConnection,
@@ -116,6 +121,88 @@ const RawIssue = Schema.Struct({
     parent: Schema.optionalKey(Schema.NullOr(RawParentIssue)),
   }),
 });
+const ResearchIssueReference = Schema.Struct({
+  key: Schema.String.check(Schema.isMaxLength(100)),
+  fields: Schema.Struct({ summary: Schema.String }),
+});
+const ResearchIssueFields = {
+  summary: Schema.String,
+  issuetype: Schema.Struct({ name: Schema.String }),
+  status: Schema.Struct({ name: Schema.String }),
+  parent: Schema.optionalKey(Schema.NullOr(ResearchIssueReference)),
+  issuelinks: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        type: Schema.Struct({ inward: Schema.String, outward: Schema.String }),
+        inwardIssue: Schema.optionalKey(ResearchIssueReference),
+        outwardIssue: Schema.optionalKey(ResearchIssueReference),
+      }),
+    ),
+  ),
+  updated: Schema.optionalKey(Schema.String),
+};
+const ResearchIssueSummary = Schema.Struct({
+  key: Schema.String.check(Schema.isMaxLength(100)),
+  fields: Schema.Struct(ResearchIssueFields),
+});
+const ResearchIssue = Schema.Struct({
+  key: Schema.String.check(Schema.isMaxLength(100)),
+  fields: Schema.Struct({
+    ...ResearchIssueFields,
+    description: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  }),
+});
+const ResearchIssuePage = Schema.Struct({
+  issues: Schema.Array(ResearchIssueSummary),
+  nextPageToken: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),
+  isLast: Schema.optionalKey(Schema.Boolean),
+});
+const researchFields = "summary,issuetype,status,parent,issuelinks,updated";
+
+const researchSummary = (
+  issue: typeof ResearchIssueSummary.Type,
+  siteUrl: string,
+): WorkbenchJiraResearchIssueSummary => {
+  let truncated = false;
+  const text = (value: string, limit = 500) => {
+    if (value.length <= limit) return value;
+    truncated = true;
+    return value.slice(0, limit);
+  };
+  const links = issue.fields.issuelinks ?? [];
+  if (links.length > 20) truncated = true;
+  const result = {
+    key: issue.key,
+    url: `${siteUrl.replace(/\/+$/u, "")}/browse/${encodeURIComponent(issue.key)}`,
+    summary: text(issue.fields.summary),
+    issueType: text(issue.fields.issuetype.name, 200),
+    status: text(issue.fields.status.name, 200),
+    parent:
+      issue.fields.parent == null
+        ? null
+        : {
+            key: issue.fields.parent.key,
+            summary: text(issue.fields.parent.fields.summary),
+          },
+    relationships: links.slice(0, 20).flatMap((link) => {
+      const related = link.inwardIssue ?? link.outwardIssue;
+      return related === undefined
+        ? []
+        : [
+            {
+              relationship: text(
+                link.inwardIssue === undefined ? link.type.outward : link.type.inward,
+                200,
+              ),
+              issue: { key: related.key, summary: text(related.fields.summary, 240) },
+            },
+          ];
+    }),
+    updatedAt: issue.fields.updated == null ? null : text(issue.fields.updated, 100),
+  };
+  return { ...result, truncated };
+};
+
 const RawEpicDetails = Schema.Struct({
   fields: Schema.Struct({
     summary: Schema.String,
@@ -150,6 +237,8 @@ const httpStatusErrorMessage = (status: number): string => {
       return "Jira rejected authorization (HTTP 401). Reconnect Jira to authorize access again.";
     case 403:
       return "Jira denied access (HTTP 403). Check Jira project permissions and OAuth scopes, then reconnect Jira if the scopes changed.";
+    case 404:
+      return "Jira could not provide this resource (HTTP 404). It may not exist or your account may not have access.";
     case 429:
       return "Jira is rate-limiting requests (HTTP 429). Wait a moment and try again.";
     default:
@@ -172,6 +261,12 @@ type ListAssignedSprintIssuesInput = WorkbenchJiraListAssignedSprintIssuesInput 
 };
 
 export interface JiraApiShape {
+  readonly getIssue: (
+    input: WorkbenchJiraReadIssueInput & { readonly connectionId: WorkbenchJiraConnectionId },
+  ) => Effect.Effect<WorkbenchJiraResearchIssue, WorkbenchJiraOperationError>;
+  readonly searchIssues: (
+    input: WorkbenchJiraSearchIssuesInput & { readonly connectionId: WorkbenchJiraConnectionId },
+  ) => Effect.Effect<WorkbenchJiraSearchIssuesResult, WorkbenchJiraOperationError>;
   readonly listProjects: (
     input: WorkbenchJiraListProjectsInput,
   ) => Effect.Effect<ReadonlyArray<WorkbenchJiraProject>, WorkbenchJiraOperationError>;
@@ -264,7 +359,13 @@ export const make = Effect.gen(function* () {
                 ),
               ),
             )
-          : Effect.fail(apiError("request_failed", httpStatusErrorMessage(response.status))),
+          : Effect.fail(
+              new WorkbenchJiraOperationError({
+                code: "request_failed",
+                httpStatus: response.status,
+                message: httpStatusErrorMessage(response.status),
+              }),
+            ),
       ),
     );
   };
@@ -358,6 +459,51 @@ export const make = Effect.gen(function* () {
         "response_invalid",
         "Jira pagination exceeded the supported page limit.",
       );
+    });
+
+  const getIssue: JiraApiShape["getIssue"] = (input) =>
+    Effect.gen(function* () {
+      const context = yield* authorized(input.connectionId);
+      // V2 supplies Jira's text description rather than an Atlassian document tree.
+      const issue = yield* executeJson({
+        ...context,
+        path: `/rest/api/2/issue/${encodeURIComponent(input.issueKey)}`,
+        urlParams: { fields: `${researchFields},description` },
+        schema: ResearchIssue,
+      });
+      const summary = researchSummary(issue, context.connection.siteUrl);
+      const description = issue.fields.description ?? "";
+      return {
+        ...summary,
+        description: description.slice(0, 30_000),
+        truncated: summary.truncated || description.length > 30_000,
+      };
+    });
+
+  const searchIssues: JiraApiShape["searchIssues"] = (input) =>
+    Effect.gen(function* () {
+      const context = yield* authorized(input.connectionId);
+      const page = yield* executeJson({
+        ...context,
+        path: "/rest/api/3/search/jql",
+        urlParams: {
+          jql: input.jql,
+          fields: researchFields,
+          maxResults: String(input.maxResults ?? 10),
+          ...(input.nextPageToken === undefined ? {} : { nextPageToken: input.nextPageToken }),
+        },
+        schema: ResearchIssuePage,
+      });
+      if (page.issues.length > (input.maxResults ?? 10)) {
+        return yield* apiError(
+          "response_invalid",
+          "Jira returned more issues than the requested page limit.",
+        );
+      }
+      return {
+        issues: page.issues.map((issue) => researchSummary(issue, context.connection.siteUrl)),
+        nextPageToken: page.isLast === true ? null : (page.nextPageToken ?? null),
+      };
     });
 
   const listProjects: JiraApiShape["listProjects"] = (input) =>
@@ -665,6 +811,8 @@ export const make = Effect.gen(function* () {
   };
 
   return JiraApi.of({
+    getIssue,
+    searchIssues,
     listProjects,
     listBoards,
     listSprints,

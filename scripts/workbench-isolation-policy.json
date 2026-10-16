@@ -35,6 +35,7 @@
       "target": "apps/server/src/workbench/serverLayer",
       "symbols": [
         "WorkbenchHostPoliciesLayerLive",
+        "WorkbenchMcpLayerLive",
         "WorkbenchRuntimeReactorLayerLive",
         "WorkbenchServicesLayerLive"
       ],
@@ -81,6 +82,12 @@
       "target": "packages/contracts/src/workbench",
       "symbols": ["*"],
       "reason": "Preserve public Workbench wire schema exports."
+    },
+    {
+      "source": "packages/contracts/src/index.ts",
+      "target": "packages/contracts/src/workbenchJiraResearch",
+      "symbols": ["*"],
+      "reason": "Expose caller-scoped Workbench Jira research tool schemas."
     },
     {
       "source": "packages/contracts/src/index.ts",

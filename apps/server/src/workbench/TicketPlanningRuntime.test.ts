@@ -18,6 +18,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
+import * as JiraRepository from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import { McpWritePolicy } from "../mcp/McpWritePolicy.ts";
@@ -143,6 +144,9 @@ const policyLayer = (
   TicketPlanningRuntime.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        Layer.mock(JiraRepository.WorkbenchJiraRepository)({
+          listBindings: () => Effect.succeed([]),
+        }),
         Layer.succeed(RuntimePolicy.RuntimePolicyV2, { resolve: () => Effect.succeed(basePolicy) }),
         Layer.mock(WorkbenchStore)({
           getTicketDraftForThread: () => Effect.succeed(phase === null ? null : draft(phase)),
@@ -183,10 +187,12 @@ it.effect.each(["codex", "claudeAgent"] as const)(
       Effect.map((policy) => {
         assert.equal(policy.runtimeMode, "approval-required");
         assert.equal(policy.interactionMode, "plan");
-        assert.equal(policy.approvalPolicy, "never");
+        assert.equal(policy.approvalPolicy, "on-request");
+        assert.equal(policy.toolAccess, "research");
         assert.deepEqual(policy.sandboxPolicy, {
           type: "readOnly",
           access: { type: "fullAccess" },
+          networkAccess: true,
         });
         assert.equal(policy.checkpoints, "disabled");
         assert.include(policy.instructions ?? "", "/repo/repo:first");
@@ -220,6 +226,7 @@ it.effect(
         assert.equal(policy.interactionMode, "default");
         assert.isUndefined(policy.checkpoints);
         assert.isUndefined(policy.sandboxPolicy);
+        assert.isUndefined(policy.toolAccess);
         assert.include(policy.instructions ?? "", "Start work has completed");
         assert.include(policy.instructions ?? "", "Explain failures");
         assert.include(policy.instructions ?? "", "/work-area/repo:first");
@@ -274,6 +281,33 @@ it.effect.each(["draft", "planning", "starting", "working", null] as const)(
         ),
       ),
     ),
+);
+it.effect.each([
+  "draft",
+  "planning",
+  "creating",
+  "promoting",
+  "starting",
+  "working",
+  "discarding",
+  null,
+] as const)("browser research requires a current planning phase (%s)", (phase) =>
+  Effect.result(
+    Effect.flatMap(McpWritePolicy, (policy) => policy.assertAllowed(threadId, "research")),
+  ).pipe(
+    Effect.map((result) =>
+      assert.equal(Result.isSuccess(result), phase === "draft" || phase === "planning"),
+    ),
+    Effect.provide(
+      TicketPlanningRuntime.layerMcpWritePolicy.pipe(
+        Layer.provide(
+          Layer.mock(WorkbenchStore)({
+            getTicketDraftForThread: () => Effect.succeed(phase === null ? null : draft(phase)),
+          }),
+        ),
+      ),
+    ),
+  ),
 );
 it.effect("refuses MCP mutations when planning ownership cannot be read", () =>
   Effect.result(Effect.flatMap(McpWritePolicy, (policy) => policy.assertAllowed(threadId))).pipe(
