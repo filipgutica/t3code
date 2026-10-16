@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "@t3tools/contracts";
-import type * as GitHubApi from "./GitHubApi.ts";
+import type * as GitHubRest from "./GitHubRest.ts";
 
 export class GitHubWorkflowRerunError extends Schema.TaggedError<GitHubWorkflowRerunError>()(
   "GitHubWorkflowRerunError",
@@ -80,7 +80,7 @@ type Input = {
   readonly host: string;
   readonly repository: string;
   readonly number: number;
-  readonly rest: GitHubApi.GitHubApi["Service"]["rest"];
+  readonly rest: GitHubRest.GitHubRest["Service"]["rest"];
 };
 
 export const rerunFailedGitHubWorkflowJobs = Effect.fn(

@@ -1158,7 +1158,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     });
 
     const attemptId = WorkbenchTicketWorkspaceAttemptId.make(
-      yield* crypto.randomUUIDv4.pipe(Effect.orDie),
+      yield* crypto.randomUUIDv4().pipe(Effect.orDie),
     );
     const claimedWorkspace = yield* store.claimTicketWorkspace({
       ticketId: ticket.id,

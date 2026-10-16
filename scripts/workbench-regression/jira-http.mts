@@ -12,7 +12,7 @@ export const JIRA_REGRESSION_CLEANUP_LABEL = WORKBENCH_DEMO_CLEANUP_LABEL;
 /** Host-side fixture identifiers keep live cleanup tied to this run's own records. */
 export const createJiraRegressionId = () =>
   Effect.runPromise(
-    Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomUUIDv4).pipe(
+    Effect.flatMap(Crypto.Crypto, (crypto) => crypto.randomUUIDv4()).pipe(
       Effect.provide(NodeCrypto.layer),
     ),
   );

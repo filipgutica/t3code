@@ -32,9 +32,6 @@ import { Button } from "./ui/button";
 import { toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
-// The wire "installing" stage is a sub-second launcher handoff, so the UI
-// folds it into the download phase; everything after the handoff is the
-// restart the user is actually waiting through.
 const UPDATE_STAGE_LABELS: Record<ServerUpdateStage, string> = {
   downloading: "Downloading…",
   installing: "Downloading…",
@@ -63,23 +60,28 @@ export interface ServerUpdateTarget {
 
 type UpdateButtonProps = Pick<ComponentProps<typeof Button>, "variant" | "size" | "className"> & {
   readonly label?: string;
-  /** "icon" renders a compact icon button with the label in a tooltip. */
   readonly appearance?: "button" | "icon";
 };
 
-/** Updates one server and waits until it is back on the target version.
-    Reports its own success or failure toast; never rejects. */
+export type ServerUpdateOutcome =
+  | { readonly status: "updated" | "skipped" }
+  | { readonly status: "failed"; readonly message: string };
+
+/** Toasts its success or failure unless `quiet`; never rejects. */
 export function useServerUpdate() {
   const { allowNpmServerUpdates = true } = useHostIntegrations();
   const updateServer = useAtomCommand(serverEnvironment.updateServer, { reportFailure: false });
-  return async (target: ServerUpdateTarget, failureTitle = "Server update failed") => {
+  return async (
+    target: ServerUpdateTarget,
+    { quiet = false }: { readonly quiet?: boolean } = {},
+  ): Promise<ServerUpdateOutcome> => {
     const { environmentId, serverLabel, selfUpdate, targetVersion } = target;
     if (
       (!allowNpmServerUpdates && selfUpdate !== "desktop-managed") ||
       !canUpdateServer(appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId))) ||
       pendingUpdateEnvironmentIds.has(environmentId)
     )
-      return;
+      return { status: "skipped" };
     pendingUpdateEnvironmentIds.add(environmentId);
     try {
       const result = await updateServer({
@@ -92,30 +94,36 @@ export function useServerUpdate() {
         },
       });
       if (result._tag === "Failure") {
-        if (isAtomCommandInterrupted(result)) return;
+        if (isAtomCommandInterrupted(result)) return { status: "skipped" };
         throw squashAtomCommandFailure(result);
       }
-      toastManager.add({
-        type: "success",
-        title: `${serverLabel} updated`,
-        description:
-          selfUpdate === "desktop-managed"
-            ? `Desktop app relaunched on ${result.value.targetVersion}.`
-            : `Reconnected on t3@${result.value.targetVersion}.`,
-      });
+      if (!quiet) {
+        toastManager.add({
+          type: "success",
+          title: `${serverLabel} updated`,
+          description:
+            selfUpdate === "desktop-managed"
+              ? `Desktop app relaunched on ${result.value.targetVersion}.`
+              : `Reconnected on t3@${result.value.targetVersion}.`,
+        });
+      }
+      return { status: "updated" };
     } catch (error) {
-      toastManager.add({
-        type: "error",
-        title: failureTitle,
-        description: updateFailureMessage(error),
-      });
+      const message = updateFailureMessage(error);
+      if (!quiet) {
+        toastManager.add({
+          type: "error",
+          title: `${serverLabel} update failed`,
+          description: message,
+        });
+      }
+      return { status: "failed", message };
     } finally {
       pendingUpdateEnvironmentIds.delete(environmentId);
     }
   };
 }
 
-/** Updates eligible machines independently; manual paths remain in the machine list. */
 export function ServerUpdatesAction({
   targets,
   label = "Update all",
@@ -151,9 +159,7 @@ export function ServerUpdatesAction({
           )) ?? true;
         if (!confirmed) return;
       }
-      await Promise.all(
-        available.map((target) => update(target, `${target.serverLabel} update failed`)),
-      );
+      await Promise.all(available.map((target) => update(target)));
     } finally {
       pending.current = false;
       setIsPending(false);
@@ -179,12 +185,6 @@ export function canUpdateServer(
   return sessionGrantsScope(result.value, AuthEnvironmentMaintainScope);
 }
 
-/**
- * One-row status for an in-flight server update: "Downloading…" then
- * "Restarting…". The update is a wait, not a warning: a single pulsing dot
- * and label, no step rail, no versions. Failure turns the row red with the
- * rollback reason.
- */
 export function ServerUpdateProgress({
   state,
 }: {
@@ -203,19 +203,15 @@ export function ServerUpdateProgress({
   }
   return (
     <div className="mt-1 flex items-center gap-2 text-xs font-medium text-foreground">
-      <span
-        className="size-1.5 shrink-0 animate-status-pulse rounded-full bg-foreground"
-        aria-hidden="true"
-      />
+      <span className="size-1.5 shrink-0 rounded-full bg-foreground" aria-hidden="true" />
       <span>{serverUpdateStageLabel(state.stage)}</span>
     </div>
   );
 }
 
 /**
- * Offers the update path advertised by a version-skewed server. Self-updates
- * delegate their full lifecycle to client-runtime so this component can
- * unmount during reconnect without losing operation state.
+ * Self-updates delegate their full lifecycle to client-runtime so this component can unmount
+ * during reconnect without losing operation state.
  */
 export function ServerUpdateAction({
   environmentId,
@@ -270,9 +266,6 @@ export function ServerUpdateAction({
       return;
     }
     if (isDesktopAppUpdate) {
-      // No themed host mounted (undefined) means proceed: the click itself
-      // was the request. This is the only confirmation in the flow; the
-      // remote machine installs without asking anyone there.
       const confirmed =
         (await requestConfirmDialog(
           `Update the T3 Code desktop app that runs the ${serverLabel}? It will close and relaunch on that machine.`,
@@ -352,8 +345,7 @@ export function ServerUpdateAction({
 }
 
 /**
- * Updates a host too old for this client to connect to. Its version comes
- * from the host descriptor because the host never delivers a server config.
+ * Its version comes from the host descriptor because the host never delivers a server config.
  */
 export function OutdatedServerUpdateAction({
   environmentId,
@@ -408,7 +400,7 @@ export function OutdatedServerUpdateAction({
     } catch (error) {
       toastManager.add({
         type: "error",
-        title: "Server update failed",
+        title: `${serverLabel} update failed`,
         description: updateFailureMessage(error),
       });
     } finally {

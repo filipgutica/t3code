@@ -145,7 +145,7 @@ const makeHost = Effect.gen(function* () {
           type: "thread.metadata.update",
           // Rejected native commands also have receipts. A fresh attempt can retry a busy/stale bind.
           commandId: CommandId.make(
-            `ticket-draft:${draft.id}:bind:${yield* crypto.randomUUIDv4.pipe(Effect.orDie)}`,
+            `ticket-draft:${draft.id}:bind:${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`,
           ),
           threadId: draft.threadId,
           projectId,
@@ -162,7 +162,7 @@ const makeHost = Effect.gen(function* () {
         .dispatch({
           type: "thread.interaction-mode.set",
           commandId: CommandId.make(
-            `ticket-draft:${draft.id}:execution-mode:${yield* crypto.randomUUIDv4.pipe(Effect.orDie)}`,
+            `ticket-draft:${draft.id}:execution-mode:${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`,
           ),
           threadId: draft.threadId,
           interactionMode: "default",

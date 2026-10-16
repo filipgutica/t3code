@@ -74,7 +74,9 @@ const title = (number) =>
   `[Synthetic attention] ${{ 901: "Failed PR checks", 902: "Unresolved PR feedback", 903: "Inspection unavailable", 904: "Inspection incomplete", 905: "Slow inspection", 906: "Verify invitation expiry and empty-response recovery across the API contract" }[number]}`;
 const checks = (number) =>
   (number === 901 ? ["API tests", "Web tests"] : ["demo-check"]).map((name) => ({
+    __typename: "CheckRun",
     name: `[Synthetic attention] ${name}`,
+    startedAt: at,
     workflowName: "[Synthetic attention] Attention CI",
     checkSuite: { workflowRun: { workflow: { name: "[Synthetic attention] Attention CI" } } },
     status: "COMPLETED",
@@ -87,10 +89,16 @@ const reviews = (number) =>
     ? [
         {
           id: "synthetic-requested-changes-902",
-          author: { login: "synthetic-reviewer" },
+          author: {
+            __typename: "User",
+            login: "synthetic-reviewer",
+            avatarUrl: "https://example.invalid/synthetic-reviewer.png",
+            name: null,
+          },
           state: "CHANGES_REQUESTED",
           body: "[Synthetic requested changes] Add an empty-response regression test before requesting another review.",
           submittedAt: at,
+          lastEditedAt: null,
           url: `https://github.com/${repository}/pull/902#pullrequestreview-synthetic`,
           reactionGroups: [],
         },
@@ -106,7 +114,17 @@ const pr = (number) => ({
   baseRefName: "main",
   headRefOid: "a".repeat(40),
   isCrossRepository: false,
-  author: { login: viewer },
+  author: {
+    __typename: "User",
+    id: "synthetic-viewer",
+    login: viewer,
+    avatarUrl: "https://example.invalid/synthetic-viewer.png",
+    name: null,
+  },
+  headRepositoryOwner: { __typename: "User", login: "workbench-synthetic" },
+  headRepository: { nameWithOwner: repositoryForPullRequest(number), viewerPermission: "WRITE" },
+  headRef: { id: `synthetic-ref-${number}` },
+  autoMergeRequest: null,
   reviewDecision: number === 902 ? "CHANGES_REQUESTED" : null,
   mergeable: "MERGEABLE",
   createdAt: at,
@@ -161,28 +179,27 @@ if (args[0] === "pr") {
 }
 if (args[0] !== "api" || !args.includes("graphql"))
   refuse("Command is outside the fixture allowlist");
+if (
+  !/^query (?:PullRequestSummary|PullRequestCore|PullRequestActivity|ReviewThreads)\b/.test(query)
+)
+  refuse("Query is outside the fixture allowlist");
 const budget = { cost: 1, limit: 5000, remaining: 4999, resetAt: "2099-01-01T00:00:00Z" };
 if (
-  query.includes("PullRequestSummaries") ||
-  query.includes("s0: repository(owner: $owner, name: $name)")
+  /^query PullRequestSummary\b/.test(query) &&
+  Object.keys(variables).some((key) => /^_\d+_number$/.test(key))
 ) {
-  const literalEntries = [
-    ...query.matchAll(
-      /(s\d+): repository\(owner: "([^"]+)", name: "([^"]+)"\) \{ pullRequest\(number: (\d+)\)/g,
-    ),
-  ];
-  const variableEntries = [
-    ...query.matchAll(
-      /(s\d+): repository\(owner: \$(\w+), name: \$(\w+)\) \{ pullRequest\(number: \$(\w+)\)/g,
-    ),
-  ].map((entry) => [
-    entry[0],
-    entry[1],
-    variables[entry[2]],
-    variables[entry[3]],
-    variables[entry[4]],
-  ]);
-  const entries = [...literalEntries, ...variableEntries];
+  const entries = Object.keys(variables)
+    .filter((key) => /^_\d+_number$/.test(key))
+    .map((key) => {
+      const prefix = key.replace(/number$/, "");
+      return [
+        "",
+        `${prefix}repository`,
+        variables[`${prefix}owner`],
+        variables[`${prefix}name`],
+        variables[key],
+      ];
+    });
   if (!entries.length) refuse("Repository is outside the fixture allowlist");
   const data = { rateLimit: budget };
   for (const entry of entries) {
@@ -214,19 +231,27 @@ const number = Number(variables.number);
 validateRepository(number, `${variables.owner}/${variables.name}`);
 await validate(number);
 let pullRequest = pr(number);
-if (query.includes("reviewThreads(first:")) {
+if (/^query ReviewThreads\b/.test(query)) {
   const comment = {
     id: "synthetic-feedback",
-    author: { login: "synthetic-reviewer" },
+    author: {
+      __typename: "User",
+      login: "synthetic-reviewer",
+      avatarUrl: "https://example.invalid/synthetic-reviewer.png",
+      name: null,
+    },
     body: "[Synthetic unresolved feedback] Handle the empty response before rendering.",
     createdAt: at,
+    lastEditedAt: null,
     url: `https://github.com/${repository}/pull/${number}#discussion_r1`,
     reactionGroups: [],
   };
   pullRequest = {
     ...pullRequest,
     reactionGroups: [],
+    reviewDismissals: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
     reviewThreads: {
+      totalCount: number === 902 ? 2 : number === 904 ? 1 : 0,
       nodes:
         number === 902 || number === 904
           ? [
@@ -280,7 +305,7 @@ if (query.includes("reviewThreads(first:")) {
     comments: { nodes: [] },
     commits: { nodes: [] },
   };
-} else if (query.includes("comments(first: 100, after: $commentsAfter)")) {
+} else if (/^query PullRequestActivity\b/.test(query)) {
   const pageInfo = { hasNextPage: false, endCursor: null };
   pullRequest = {
     ...pullRequest,
@@ -288,7 +313,15 @@ if (query.includes("reviewThreads(first:")) {
     reviews: { nodes: reviews(number), pageInfo },
     commits: { nodes: [] },
   };
-} else if (query.includes("statusCheckRollup { contexts")) {
+} else if (/^query PullRequestSummary\b/.test(query)) {
+  pullRequest = {
+    ...pullRequest,
+    latestReviews: { nodes: reviews(number) },
+    commits: {
+      nodes: [{ commit: { statusCheckRollup: { state: number === 901 ? "FAILURE" : "SUCCESS" } } }],
+    },
+  };
+} else if (/^query PullRequestCore\b/.test(query)) {
   pullRequest = {
     ...pullRequest,
     reviewRequests: { nodes: [] },

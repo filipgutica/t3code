@@ -26,6 +26,7 @@ import * as GitManager from "../git/GitManager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as Settings from "../serverSettings.ts";
@@ -195,21 +196,19 @@ for (const { lifecycle, directory, trigger } of cleanupCases) {
                   },
                   storageCleanup: { browserArtifactsAfterDays: null, logsAfterDays: null },
                 }),
-                Layer.mock(ProjectStore.ProjectStoreV2)({
-                  listShells: () =>
-                    Effect.succeed([
-                      {
-                        id: ProjectId.make("project-1"),
-                        title: "Fixture",
-                        workspaceRoot: config.baseDir,
-                        defaultModelSelection: null,
-                        scripts: [],
-                        createdAt: DateTime.formatIso(at(-30 * DAY_MS)),
-                        updatedAt: DateTime.formatIso(at(0)),
-                      },
-                    ]),
-                }),
+                ProjectStore.layer,
                 Layer.mock(ProjectionStore.ProjectionStoreV2)({
+                  getThreadWorktreePaths: () =>
+                    Effect.succeed(
+                      lifecycle === "deleted"
+                        ? []
+                        : threads.map((thread) => ({
+                            threadId: thread.id,
+                            worktreePath: thread.worktreePath!,
+                          })),
+                    ),
+                  getThreadShell: (threadId) =>
+                    Effect.succeed(threads.find((thread) => thread.id === threadId) ?? null),
                   getShellSnapshot: (options) =>
                     Deferred.succeed(snapshotRead, undefined).pipe(
                       Effect.as({
@@ -220,6 +219,9 @@ for (const { lifecycle, directory, trigger } of cleanupCases) {
                           lifecycle === "idle" && options?.location !== "archive" ? threads : [],
                       }),
                     ),
+                }),
+                Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
+                  isLive: () => Effect.succeed(false),
                 }),
                 Layer.mock(Orchestrator.OrchestratorV2)({ streamDomainEvents: Stream.empty }),
                 Layer.mock(GitManager.GitManager)({ invalidateStatus: () => Effect.void }),

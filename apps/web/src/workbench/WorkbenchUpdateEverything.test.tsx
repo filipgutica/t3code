@@ -3,17 +3,33 @@ import { act, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, it, vi } from "vite-plus/test";
 import type { UpdateEverythingMachine } from "../components/sidebar/updateEverything.logic";
-import type { ServerUpdateTarget } from "../components/ServerUpdateAction";
+import type { ServerUpdateOutcome, ServerUpdateTarget } from "../components/ServerUpdateAction";
 
 const state = vi.hoisted(() => ({
   machines: new Array<UpdateEverythingMachine>(),
   npmPublished: true,
   checkNpm: vi.fn(),
-  updateServer: vi.fn(async (_target: ServerUpdateTarget) => {}),
-  updateProviders: vi.fn(async () => {}),
-  installLocal: vi.fn(async () => {}),
+  updateServer: vi.fn(async (_target: ServerUpdateTarget): Promise<ServerUpdateOutcome> => ({
+    status: "updated",
+  })),
+  updateProviders: vi.fn(async () => []),
+  installLocal: vi.fn(async () => true),
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => state.machines }));
+vi.mock("../components/sidebar/updateEverythingRun", () => ({
+  setUpdateEverythingRun: vi.fn(),
+  settleUpdateRunMachine: vi.fn(),
+  waitForServerUpdateHandoff: async (
+    _environmentId: EnvironmentId,
+    outcome: Promise<ServerUpdateOutcome>,
+  ) => {
+    await outcome;
+  },
+  waitForUpdateRestart: async () => true,
+  saveUpdateEverythingResult: vi.fn(),
+  clearSavedUpdateEverythingResult: vi.fn(),
+  showUpdateEverythingResult: vi.fn(),
+}));
 vi.mock("~/branding", () => ({ APP_VERSION: "0.0.24" }));
 vi.mock("~/env", () => ({ isElectron: true }));
 vi.mock("~/state/environments", () => ({ useEnvironments: () => ({ environments: [] }) }));
@@ -103,7 +119,12 @@ afterEach(async () => {
 function UpdateAction() {
   const updates = useUpdateEverything("0.0.25");
   return (
-    <button onClick={() => updates.run({ installLocal: state.installLocal })}>
+    <button
+      data-skipped={updates.skipped
+        .map((machine) => `${machine.label}: ${machine.reason}`)
+        .join("; ")}
+      onClick={() => updates.run({ installLocal: state.installLocal })}
+    >
       {updates.summary}
     </button>
   );
@@ -139,6 +160,9 @@ it.each([false, true])(
       "Update this app, 1 server, and 1 provider",
     ]);
     expect(state.checkNpm).toHaveBeenCalledWith(null);
+    expect(renderer!.root.findByType("button").props["data-skipped"]).toContain(
+      "npm: npm server updates are disabled for this app",
+    );
     await act(() => renderer!.root.findByType("button").props.onClick());
     expect(state.updateServer.mock.calls.map(([target]) => target.serverLabel)).toEqual([
       "other-desktop",
@@ -147,3 +171,28 @@ it.each([false, true])(
     expect(state.installLocal).toHaveBeenCalledOnce();
   },
 );
+
+it("preserves unreachable machine reporting when Workbench disables npm updates", async () => {
+  state.machines.push({
+    ...state.machines[0]!,
+    environmentId: EnvironmentId.make("offline"),
+    label: "offline",
+    connected: false,
+  });
+  await act(() => {
+    renderer = create(
+      <provider.WorkbenchHostProvider>
+        <UpdateAction />
+      </provider.WorkbenchHostProvider>,
+    );
+  });
+  const button = renderer!.root.findByType("button");
+  expect(button.props["data-skipped"]).toContain("offline: not connected");
+  expect(button.props["data-skipped"]).toContain(
+    "npm: npm server updates are disabled for this app",
+  );
+  await act(() => button.props.onClick());
+  expect(state.updateServer.mock.calls.map(([target]) => target.serverLabel)).toEqual([
+    "other-desktop",
+  ]);
+});

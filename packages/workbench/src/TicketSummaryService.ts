@@ -67,7 +67,7 @@ export const TicketSummaryServiceLive = Layer.effect(
           return Option.some(existing.ticket);
         }
       }
-      const requestId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
+      const requestId = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
       const ticket = yield* store.requestTicketSummary({ ticketId, requestId });
       if (jobs.size === 0) idle = yield* Deferred.make<void>();
       jobs.set(ticketId, { requestId, ticket });

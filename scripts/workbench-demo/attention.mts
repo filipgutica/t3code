@@ -10,13 +10,13 @@ import {
 } from "../../packages/contracts/src/providerPolicy.ts";
 import type { ModelSelection } from "../../packages/contracts/src/modelSelection.ts";
 import { demoDatabasePath, requireHome, resolveHome } from "./environment.mts";
+import { PullRequestSummary } from "../../packages/source-control-github/src/server/pullRequestBatches.graphql.ts";
 import {
-  buildPullRequestSummariesGraphQlQuery,
-  pullRequestCoreGraphQlQuery,
-  pullRequestSummaryGraphQlQuery,
-  PULL_REQUEST_ACTIVITY_GRAPHQL_QUERY,
-  REVIEW_THREADS_GRAPHQL_QUERY,
-} from "../../packages/source-control-github/src/server/gitHubPullRequestJson.ts";
+  PullRequestCore,
+  PullRequestActivity,
+} from "../../packages/source-control-github/src/server/pullRequestReads.graphql.ts";
+import { ReviewThreads } from "../../packages/source-control-github/src/server/pullRequestReviews.graphql.ts";
+import { attentionSummaryDocument } from "./attention-graphql.mts";
 import { insertVisualMessage, readVisualThread, seedVisualRun } from "./native-projections.mts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 import {
@@ -180,15 +180,13 @@ export const installAttentionGitHubAdapter = async (
     0o700,
   );
   // Native summary reads batch up to 25 aliases; the adapter still validates each fixture identity.
-  const batchQueries = Array.from({ length: 25 }, (_, index) =>
-    [false, true].map(
-      (includeStacks) =>
-        buildPullRequestSummariesGraphQlQuery(
-          Array.from({ length: index + 1 }, () => ({ repository, number: 901 })),
-          includeStacks,
-        )!.query,
+  const batchQueries = await Promise.all(
+    Array.from({ length: 25 }, (_, index) =>
+      attentionSummaryDocument(
+        Array.from({ length: index + 1 }, (_, offset) => ({ repository, number: 901 + offset })),
+      ).then(({ query }) => query),
     ),
-  ).flat();
+  );
   await safeWrite(
     NodePath.join(ownedHome, ".synthetic-attention-transport.json"),
     JSON.stringify({
@@ -196,11 +194,10 @@ export const installAttentionGitHubAdapter = async (
       version: 1,
       home: ownedHome,
       queries: [
-        pullRequestCoreGraphQlQuery("github.com"),
-        PULL_REQUEST_ACTIVITY_GRAPHQL_QUERY,
-        REVIEW_THREADS_GRAPHQL_QUERY,
-        pullRequestSummaryGraphQlQuery(),
-        pullRequestSummaryGraphQlQuery(true),
+        PullRequestCore.document,
+        PullRequestActivity.document,
+        ReviewThreads.document,
+        PullRequestSummary.document,
         ...batchQueries,
       ],
     }) + "\n",

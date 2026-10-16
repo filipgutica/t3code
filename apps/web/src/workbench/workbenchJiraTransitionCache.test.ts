@@ -94,7 +94,7 @@ function makeTestRuntime() {
       ),
       networkStatus: yield* SubscriptionRef.make<NetworkStatus>("online"),
       start: Effect.void,
-      register: (_registration: ConnectionRegistration) => Effect.void,
+      register: (_registration: ConnectionRegistration) => Effect.succeed(true),
       registerPlatform: (_registration) => Effect.void,
       reconcilePlatform: (_registrations: ReadonlyArray<PlatformConnectionRegistration>) =>
         Effect.void,

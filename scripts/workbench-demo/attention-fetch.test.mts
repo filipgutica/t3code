@@ -10,11 +10,9 @@ import { expect, it } from "vite-plus/test";
 import { installAttentionGitHubAdapter } from "./attention.mts";
 import { setupHome } from "./environment.mts";
 import { preparePreview } from "../workbench-preview/config.mts";
-import {
-  buildPullRequestSummariesGraphQlQuery,
-  pullRequestCoreGraphQlQuery,
-  pullRequestSummaryGraphQlQuery,
-} from "../../packages/source-control-github/src/server/gitHubPullRequestJson.ts";
+import { PullRequestSummary } from "../../packages/source-control-github/src/server/pullRequestBatches.graphql.ts";
+import { PullRequestCore } from "../../packages/source-control-github/src/server/pullRequestReads.graphql.ts";
+import { attentionSummaryDocument } from "./attention-graphql.mts";
 
 const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
 const serverRequire = NodeModule.createRequire(
@@ -25,7 +23,9 @@ const moduleUrl = (name: string) => NodeURL.pathToFileURL(serverRequire.resolve(
 it.each(["demo", "preview"] as const)(
   "installs synthetic GitHub transport in an owned %s home while delegating other hosts unchanged",
   async (kind) => {
-    const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "attention-fetch-"));
+    const directory = await NodeFSP.realpath(
+      await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "attention-fetch-")),
+    );
     try {
       const fixtureEnvironment: NodeJS.ProcessEnv = { PATH: process.env.PATH };
       let home: string;
@@ -55,23 +55,21 @@ globalThis.fetch = async (input, init) => {
         NODE_OPTIONS: `--import=${NodeURL.pathToFileURL(spy).href}`,
       });
       const document = {
-        query: pullRequestCoreGraphQlQuery("github.com"),
+        query: PullRequestCore.document,
         variables: {
           owner: "workbench-synthetic",
           name: "attention-fixtures",
           number: 901,
           headRef: "refs/pull/901/head",
+          required: true,
         },
       };
       const summaryDocuments = [
-        { query: pullRequestSummaryGraphQlQuery(true), variables: document.variables },
-        buildPullRequestSummariesGraphQlQuery(
-          [
-            { repository: "workbench-synthetic/attention-fixtures", number: 901 },
-            { repository: "workbench-synthetic/attention-api", number: 906 },
-          ],
-          true,
-        ),
+        { query: PullRequestSummary.document, variables: { ...document.variables, stacks: true } },
+        await attentionSummaryDocument([
+          { repository: "workbench-synthetic/attention-fixtures", number: 901 },
+          { repository: "workbench-synthetic/attention-api", number: 906 },
+        ]),
       ];
       const execution = await execFile(
         process.execPath,
@@ -125,9 +123,11 @@ console.log(JSON.stringify({ github, summaries, refused, user, delegated, forwar
       );
       for (const summary of result.summaries) {
         expect(summary.status).toBe(200);
-        expect(summary.body.data.s0.pullRequest.number).toBe(901);
+        expect(
+          (summary.body.data._0_repository ?? summary.body.data.repository).pullRequest.number,
+        ).toBe(901);
       }
-      expect(result.summaries[1].body.data.s1.pullRequest.number).toBe(906);
+      expect(result.summaries[1].body.data._1_repository.pullRequest.number).toBe(906);
       expect(result.refused).toHaveLength(5);
       for (const refusal of result.refused) {
         expect(refusal.status).toBeGreaterThanOrEqual(400);

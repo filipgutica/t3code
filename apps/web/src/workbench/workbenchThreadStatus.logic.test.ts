@@ -65,7 +65,7 @@ describe("Workbench native execution indicators", () => {
 
   it("keeps background waiting and usage limits distinct from progress or ready notifications", () => {
     expect(getWorkbenchThreadExecutionStatus(waiting)).toMatchObject({
-      presentation: { label: "Waiting", icon: null },
+      presentation: { label: "Waiting", icon: "waiting" },
       startedAt: null,
     });
     expect(
