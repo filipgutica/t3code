@@ -209,8 +209,11 @@ adapter support, disabled state, missing executable, or missing authentication.
 
 ### `delegate_task`
 
-Creates a T3-owned child thread and immediately dispatches the supplied task
-prompt.
+Creates a T3-owned child thread and submits the supplied task prompt. The child
+shares the parent's checkout by default. With `isolation: "worktree"`, native
+workspace preparation completes before provider execution starts. The new
+checkout starts at the parent's current committed HEAD; uncommitted edits are
+not copied.
 
 ```ts
 type DelegateTaskInput = {
@@ -222,6 +225,7 @@ type DelegateTaskInput = {
   };
   title?: string;
   role?: "implementation" | "research" | "review" | "design" | "test" | "general";
+  isolation?: "shared" | "worktree";
   mode?: "async" | "wait";
   timeoutMs?: number;
   clientRequestId?: string;

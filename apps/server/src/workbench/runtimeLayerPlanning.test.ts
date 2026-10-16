@@ -3,8 +3,10 @@ import { assert, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
   CommandId,
+  EnvironmentId,
   EventId,
   MessageId,
+  OrchestratorMcpDelegateTaskResult,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -22,14 +24,19 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as JiraRepository from "@t3tools/workbench/jira/WorkbenchJiraRepository";
+import { McpSchema, McpServer } from "effect/ai";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as McpSessionRegistryTestkit from "../mcp/McpSessionRegistry.testkit.ts";
+import * as McpHttpServer from "../mcp/McpHttpServer.ts";
+import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import * as EffectWorker from "../orchestration-v2/EffectWorker.ts";
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
+import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
 import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
 import type * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
@@ -38,6 +45,10 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as Providers from "../provider/ProviderInstanceRegistry.ts";
+import * as ProviderRegistryMock from "../provider/testUtils/providerRegistryMock.ts";
+import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
+import * as SecretRequests from "../secrets/SecretRequests.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
@@ -52,6 +63,7 @@ const planningThreadId = ThreadId.make("thread:composed-planning");
 const nativeThreadId = ThreadId.make("thread:composed-native");
 const instanceId = ProviderInstanceId.make("codex");
 const modelSelection = { instanceId, model: "gpt-5.4" };
+const decodeDelegateTaskResult = Schema.decodeUnknownEffect(OrchestratorMcpDelegateTaskResult);
 const unused = Effect.die("Unexpected provider operation");
 const snapshot = Schema.decodeUnknownSync(ServerProvider)({
   instanceId,
@@ -160,6 +172,7 @@ const makeLayerTest = <A, E, R>(policies: Layer.Layer<A, E, R>) =>
     Layer.provideMerge(
       Layer.mock(Providers.ProviderInstanceRegistry)({
         getInstance: () => Effect.succeed(instance),
+        listInstances: Effect.succeed([instance]),
       }),
     ),
     Layer.provide(
@@ -267,6 +280,101 @@ it.effect(
       const store = yield* WorkbenchStore;
       const worktreePath = "/work-area/composed-policy";
       const branch = "workbench/composed-policy";
+      const baseCommit = "1234567890123456789012345678901234567890";
+      const headLookups: Array<
+        Parameters<GitVcsDriver.GitVcsDriver["Service"]["resolveCommit"]>[0]
+      > = [];
+      const preparations: Array<
+        Parameters<ThreadLaunch.ThreadLaunchService["Service"]["prepareRun"]>[0]
+      > = [];
+      const mcpTools = McpHttpServer.layerOrchestratorToolkit.pipe(
+        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provide(TicketPlanningRuntime.layerMcpWritePolicy),
+        Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
+        Layer.provide(ProviderRegistryMock.layer([snapshot])),
+        Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
+        Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
+        Layer.provide(
+          Layer.mock(ProjectService.ProjectService)({
+            getById: (id) =>
+              projects.get(id).pipe(
+                Effect.map(
+                  Option.map((row) => ({
+                    id: row.projectId,
+                    title: row.title,
+                    workspaceRoot: row.workspaceRoot,
+                    defaultModelSelection: row.defaultModelSelection,
+                    scripts: row.scripts,
+                    createdAt: row.createdAt,
+                    updatedAt: row.updatedAt,
+                    deletedAt: row.deletedAt,
+                  })),
+                ),
+                Effect.orDie,
+              ),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(GitVcsDriver.GitVcsDriver)({
+            resolveCommit: (input) =>
+              Effect.sync(() => {
+                headLookups.push(input);
+                return { commitSha: baseCommit };
+              }),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(ThreadLaunch.ThreadLaunchService)({
+            prepareRun: (input) =>
+              Effect.sync(() => {
+                // Native admission persists the child; physical worktree preparation is excluded.
+                preparations.push(input);
+              }),
+          }),
+        ),
+      );
+      const invokeWorktreeDelegation = (clientRequestId: string) =>
+        Effect.gen(function* () {
+          const server = yield* McpServer.McpServer;
+          return yield* server.callTool({
+            name: "delegate_task",
+            arguments: {
+              task: "Inspect the approved change in an isolated checkout",
+              isolation: "worktree",
+              mode: "async",
+              clientRequestId,
+            },
+          });
+        }).pipe(
+          Effect.provide(mcpTools),
+          Effect.provideService(McpInvocationContext.McpInvocationContext, {
+            environmentId: EnvironmentId.make("environment:composed-policy"),
+            requestNamespace: "provider:composed-policy",
+            thread: {
+              threadId: planningThreadId,
+              providerSessionId: "provider:composed-policy",
+              providerInstanceId: instanceId,
+            },
+            client: undefined,
+            capabilities: new Set(["orchestration"] as const),
+            issuedAt: 0,
+          }),
+          Effect.provideService(
+            McpSchema.McpServerClient,
+            McpSchema.McpServerClient.of({
+              clientId: 1,
+              protocolVersion: "2025-06-18",
+              clientCapabilities: {},
+              clientInfo: { name: "composed-policy-test", version: "1" },
+              initializePayload: {
+                protocolVersion: "2025-06-18",
+                capabilities: {},
+                clientInfo: { name: "composed-policy-test", version: "1" },
+              },
+              getClient: unused,
+            }),
+          ),
+        );
       const drafts = yield* TicketDraftService.TicketDraftService.pipe(
         Effect.provide(
           TicketDraftService.layer.pipe(
@@ -397,6 +505,30 @@ it.effect(
           dispatched.storedEvents.some(({ event }) => event.type === "checkpoint-scope.created"),
           threadId === nativeThreadId,
         );
+        if (threadId === planningThreadId) {
+          const planningShell = yield* threads.getThreadShell(threadId);
+          assert.isOk(planningShell?.activeRunId);
+          const sequence = yield* threads.getThreadEventSequence(threadId);
+          const denied = yield* invokeWorktreeDelegation("planning-worktree-denied");
+          assert.isTrue(denied.isError);
+          const content = denied.content[0];
+          assert.equal(content?.type, "text");
+          if (content?.type === "text") {
+            assert.deepEqual(JSON.parse(content.text), {
+              _tag: "OrchestratorMcpFailure",
+              code: "capability_denied",
+              message:
+                "This conversation is preparing a ticket. Start work before changing repositories or the environment.",
+            });
+          }
+          assert.deepEqual(headLookups, []);
+          assert.deepEqual(preparations, []);
+          assert.equal(yield* threads.getThreadEventSequence(threadId), sequence);
+          assert.deepEqual(
+            (yield* threads.getThreadRecords(threadId, ["subagents"])).subagents,
+            [],
+          );
+        }
         yield* worker.drain();
       }
       const planning = policies.get(planningThreadId);
@@ -478,6 +610,27 @@ it.effect(
         executing.messages.map((message) => message.id),
         before.messages.map((message) => message.id),
       );
+      const admitted = yield* invokeWorktreeDelegation("working-worktree-admitted");
+      assert.isFalse(admitted.isError ?? false);
+      const delegated = yield* decodeDelegateTaskResult(admitted.structuredContent);
+      assert.deepEqual(headLookups, [{ cwd: worktreePath, revision: "HEAD" }]);
+      assert.isNotNull(delegated.childThreadId);
+      if (delegated.childThreadId === null) return yield* Effect.die("Missing delegated child");
+      const child = yield* threads.getThreadProjection(delegated.childThreadId);
+      assert.lengthOf(child.runs, 1);
+      assert.equal(child.runs[0]?.status, "preparing");
+      assert.deepEqual(child.runs[0]?.workspacePreparation, {
+        type: "worktree",
+        baseRef: baseCommit,
+        startFromOrigin: false,
+      });
+      assert.lengthOf(preparations, 1);
+      assert.equal(preparations[0]?.threadId, child.thread.id);
+      assert.equal(preparations[0]?.runId, child.runs[0]?.id);
+      const delegatedParent = yield* threads.getThreadProjection(planningThreadId);
+      assert.equal(delegatedParent.thread.worktreePath, worktreePath);
+      assert.equal(delegatedParent.thread.branch, branch);
+      assert.equal(delegatedParent.subagents[0]?.childThreadId, child.thread.id);
       yield* worker.drain();
       const policy = policies.get(planningThreadId);
       assert.isDefined(policy);
