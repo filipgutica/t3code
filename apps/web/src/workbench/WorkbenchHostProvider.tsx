@@ -24,7 +24,6 @@ import {
   useWorkbenchTicketPreparationRefresh,
 } from "./useWorkbenchTicketPreparations";
 import { resolveWorkbenchReviewCommentTitle } from "./workbenchComposerTitle";
-import { isWorkbenchSidebarPage } from "./workbenchNavigation";
 import { isWorkbenchTicketReviewComment } from "./workbenchTicketContext";
 import { workbenchOutdatedServerDescriptor } from "./workbenchOutdatedServerDescriptor";
 
@@ -43,7 +42,6 @@ const WORKBENCH_HOST_INTEGRATIONS: HostIntegrations = {
   ThreadBreadcrumb: WorkbenchThreadBreadcrumb,
   PendingReviewAttachments: WorkbenchComposerPendingReviewComments,
   CommandPaletteContributions: WorkbenchCommandPaletteContributions,
-  isSidebarUtilityPage: isWorkbenchSidebarPage,
   isReviewCommentReferenceHidden: isWorkbenchTicketReviewComment,
   reviewCommentTitle: resolveWorkbenchReviewCommentTitle,
   ...(import.meta.env.VITE_T3CODE_WORKBENCH_BUILD
