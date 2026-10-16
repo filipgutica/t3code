@@ -4,6 +4,7 @@ import {
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import { useAtomValue } from "@effect/atom-react";
+import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -25,7 +26,14 @@ import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { useRightPanelStore } from "../rightPanelStore";
 import { useEnvironment } from "../state/environments";
 import { useThreadActionMenu } from "../hooks/useThreadActionMenu";
-import { useProject, useThreadShell } from "../state/entities";
+import { useThreadActions } from "../hooks/useThreadActions";
+import {
+  readEnvironmentSupportsSettlement,
+  readThreadShell,
+  useProject,
+  useThreadShell,
+} from "../state/entities";
+import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
 import { serverEnvironment } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -205,6 +213,7 @@ export function useWorkbenchSidebarThreadInteraction({
   onOpenThread,
   startRename,
   currentPullRequest,
+  shell,
 }: {
   thread: WorkbenchSidebarThread;
   threadRef: ThreadRef;
@@ -213,8 +222,14 @@ export function useWorkbenchSidebarThreadInteraction({
   onOpenThread: (thread: WorkbenchSidebarThread) => void;
   startRename: () => void;
   currentPullRequest: CurrentPullRequest;
+  shell: ThreadShell;
 }) {
   const openPrLink = useOpenPrLink(threadRef);
+  const { settleThread, unsettleThread } = useThreadActions();
+  const config = useAtomValue(serverEnvironment.configValueAtom(thread.environmentId));
+  const canOperate = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
+  const settlementPending = useRef(false);
+  const [settlementBusy, setSettlementBusy] = useState(false);
   const { openMenu } = useThreadActionMenu({
     threadRef,
     projectCwd,
@@ -235,5 +250,50 @@ export function useWorkbenchSidebarThreadInteraction({
     if (!isActive) onOpenThread(thread);
   }, [isActive, onOpenThread, thread, threadRef]);
 
-  return { openMenu, handleOpenPullRequest, handleOpenPullRequestStack };
+  const toggleSettlement = useCallback(() => {
+    const current = readThreadShell(threadRef);
+    if (
+      settlementPending.current ||
+      !current ||
+      current.archivedAt !== null ||
+      !readEnvironmentSupportsSettlement(threadRef.environmentId) ||
+      !readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope)
+    )
+      return;
+    const settled = current.settledOverride === "settled";
+    const reportFailure = (cause: unknown) => {
+      toastManager.add({
+        type: "error",
+        title: settled ? "Failed to un-settle thread" : "Failed to settle thread",
+        description: cause instanceof Error ? cause.message : "Please try again.",
+      });
+    };
+    settlementPending.current = true;
+    setSettlementBusy(true);
+    void (async () => {
+      const result = await (settled ? unsettleThread : settleThread)(threadRef);
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        reportFailure(squashAtomCommandFailure(result));
+      }
+    })()
+      .catch(reportFailure)
+      .finally(() => {
+        settlementPending.current = false;
+        setSettlementBusy(false);
+      });
+  }, [settleThread, threadRef, unsettleThread]);
+
+  return {
+    openMenu,
+    handleOpenPullRequest,
+    handleOpenPullRequestStack,
+    canToggleSettlement:
+      canOperate &&
+      config?.environment.capabilities.threadSettlement === true &&
+      shell !== null &&
+      shell.archivedAt === null,
+    isSettled: shell?.settledOverride === "settled",
+    settlementBusy,
+    toggleSettlement,
+  };
 }

@@ -1,8 +1,15 @@
 import { ThreadExecutionStatus } from "../components/ThreadExecutionStatus";
-import { ArchiveIcon, BookOpenIcon, BugIcon, CircleAlertIcon } from "lucide-react";
-import { useState, type KeyboardEvent } from "react";
+import {
+  ArchiveIcon,
+  BookOpenIcon,
+  BugIcon,
+  CircleAlertIcon,
+  CircleCheckIcon,
+  PlusIcon,
+  RotateCcwIcon,
+} from "lucide-react";
+import { useState } from "react";
 
-import { SidebarMenuButton } from "../components/ui/sidebar";
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
 import { WORKBENCH_TICKET_KIND_LABELS, WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
@@ -10,8 +17,13 @@ import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 import { useWorkbenchSidebarTicketActionMenu } from "./useWorkbenchSidebarTicketActionMenu";
 import type { WorkbenchSidebarTicket } from "./workbenchSidebar.logic";
 import type { WorkbenchSidebarTicketDetails } from "./workbenchSidebarContext.logic";
-import { useWorkbenchAttentionData } from "./WorkbenchAttentionProvider";
 import { WorkbenchTicketAttentionBadge } from "./WorkbenchTicketAttention";
+import {
+  WorkbenchSidebarQuickAction,
+  WorkbenchSidebarRowActions,
+} from "./WorkbenchSidebarRowActions";
+import { WorkbenchSidebarRowNavigation } from "./WorkbenchSidebarRowNavigation";
+import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
 
 function TicketPullRequestPreview({
   pullRequests,
@@ -116,63 +128,21 @@ const TICKET_STATUS_DOT_TONE = {
   done: "bg-success",
 } satisfies Record<WorkbenchSidebarTicket["status"], string>;
 
-function WorkbenchSidebarTicketLabel({
-  ticket,
-  details,
-  status,
-  jiraOwnershipKnown,
-  showExecutionStatus,
-}: {
-  readonly ticket: WorkbenchSidebarTicket;
-  readonly details: WorkbenchSidebarTicketDetails | undefined;
-  readonly status: string;
-  readonly jiraOwnershipKnown: boolean;
-  readonly showExecutionStatus: boolean;
-}) {
-  const { attentionSignalsByTicket } = useWorkbenchAttentionData();
-  const hasAttention = (attentionSignalsByTicket.get(ticket.id)?.length ?? 0) > 0;
-
-  return (
-    <span className="flex min-w-0 flex-1 flex-col gap-1">
-      <WorkbenchSidebarTicketTitle ticket={ticket} details={details} hasAttention={hasAttention} />
-      <WorkbenchSidebarTicketStatus
-        ticket={ticket}
-        details={details}
-        status={status}
-        jiraOwnershipKnown={jiraOwnershipKnown}
-        showExecutionStatus={showExecutionStatus}
-      />
-    </span>
-  );
-}
-
 function WorkbenchSidebarTicketTitle({
   ticket,
   details,
-  hasAttention,
 }: {
   readonly ticket: WorkbenchSidebarTicket;
   readonly details: WorkbenchSidebarTicketDetails | undefined;
-  readonly hasAttention: boolean;
 }) {
   const kind = details?.kind ?? "story";
   const Icon = ticket.archivedAt ? ArchiveIcon : kind === "bug" ? BugIcon : BookOpenIcon;
   const iconTone = ticket.archivedAt ? "text-sidebar-muted-foreground/60" : TICKET_ICON_TONE[kind];
 
   return (
-    <span className="flex min-w-0 items-start gap-2">
-      <span aria-hidden className={`mt-0.5 size-3.5 shrink-0 ${iconTone}`}>
-        <Icon className="size-3.5" />
-      </span>
-      <span className={`flex min-w-0 flex-1 items-center gap-1 ${hasAttention ? "pe-6" : ""}`}>
-        <span className="min-w-0 flex-1 truncate">{ticket.title}</span>
-        {details?.attentionLabel ? (
-          <CircleAlertIcon
-            aria-label={details.attentionLabel}
-            className="size-3 shrink-0 text-warning"
-          />
-        ) : null}
-      </span>
+    <span data-workbench-sidebar-title="">
+      <Icon aria-hidden className={`size-4 shrink-0 ${iconTone}`} />
+      <span className="min-w-0 flex-1 truncate">{ticket.title}</span>
     </span>
   );
 }
@@ -181,36 +151,47 @@ function WorkbenchSidebarTicketStatus({
   ticket,
   details,
   status,
-  jiraOwnershipKnown,
-  showExecutionStatus,
 }: {
   readonly ticket: WorkbenchSidebarTicket;
   readonly details: WorkbenchSidebarTicketDetails | undefined;
   readonly status: string;
-  readonly jiraOwnershipKnown: boolean;
-  readonly showExecutionStatus: boolean;
 }) {
-  const pullRequestCount = details?.environmentId ? details.pullRequests.length : 0;
   return (
-    <span
-      className={`flex min-w-0 items-center gap-1 text-2xs font-normal text-sidebar-muted-foreground ${pullRequestCount > 1 ? "pe-20" : pullRequestCount === 1 ? "pe-14" : ""}`}
-    >
-      <span
-        aria-hidden
-        className={`size-1.5 shrink-0 rounded-full ${TICKET_STATUS_DOT_TONE[ticket.status]}`}
-      />
-      {details?.issueLink ? (
-        <span className="min-w-0 truncate font-mono">Jira · {details.issueLink.issue.key}</span>
-      ) : (
-        <span className="shrink-0">{jiraOwnershipKnown ? "Local" : "Checking Jira…"}</span>
-      )}
-      <span aria-hidden>·</span>
-      <span className="truncate">{status}</span>
-      {showExecutionStatus ? (
-        <ThreadExecutionStatus
-          compact
-          status={details?.executionStatus?.presentation}
-          startedAt={details?.executionStatus?.startedAt}
+    <span data-workbench-sidebar-metadata-label="">
+      <span data-workbench-sidebar-metadata-icon="" aria-hidden>
+        {details?.issueLink ? (
+          <WorkbenchJiraIcon className="size-3" />
+        ) : (
+          <span className={`size-1.5 rounded-full ${TICKET_STATUS_DOT_TONE[ticket.status]}`} />
+        )}
+      </span>
+      <span data-workbench-sidebar-ticket-planning="">
+        {details?.issueLink ? (
+          <>
+            <span className="shrink-0 font-mono">{details.issueLink.issue.key}</span>
+            <span aria-hidden>·</span>
+          </>
+        ) : null}
+        <span className="truncate">{status}</span>
+      </span>
+      {details?.executionStatus ? (
+        <>
+          <span aria-hidden className="shrink-0">
+            ·
+          </span>
+          <span data-workbench-sidebar-native-status="ticket">
+            <ThreadExecutionStatus
+              compact
+              status={details.executionStatus.presentation}
+              startedAt={details.executionStatus.startedAt}
+            />
+          </span>
+        </>
+      ) : null}
+      {details?.attentionLabel ? (
+        <CircleAlertIcon
+          aria-label={details.attentionLabel}
+          className="size-3 shrink-0 text-warning"
         />
       ) : null}
     </span>
@@ -230,7 +211,7 @@ function WorkbenchSidebarTicketPrControl({
   if (!environmentId || pullRequests.length === 0) return null;
 
   return (
-    <div className="absolute end-2 bottom-2 z-10 flex h-4 items-center">
+    <div data-workbench-sidebar-pr-control="" className="flex shrink-0 items-center">
       {pullRequests.length === 1 && pullRequests[0] ? (
         <WorkbenchPullRequestLink
           compact
@@ -277,78 +258,92 @@ function WorkbenchSidebarTicketPrControl({
   );
 }
 
+function WorkbenchSidebarTicketQuickActions({
+  ticket,
+  details,
+  actions,
+}: {
+  readonly ticket: WorkbenchSidebarTicket;
+  readonly details: WorkbenchSidebarTicketDetails | undefined;
+  readonly actions: ReturnType<typeof useWorkbenchSidebarTicketActionMenu>;
+}) {
+  if (!actions.canCreateThread && !actions.canChangeStatus) return null;
+  const statusAction = details?.issueLink
+    ? "Change Jira status"
+    : ticket.status === "done"
+      ? "Reopen"
+      : "Mark as done";
+  return (
+    <span data-workbench-sidebar-quick-actions="">
+      {actions.canCreateThread ? (
+        <WorkbenchSidebarQuickAction
+          label={`New Thread for ${ticket.title}`}
+          Icon={PlusIcon}
+          onSelect={actions.newThread}
+        />
+      ) : null}
+      {actions.canChangeStatus ? (
+        <WorkbenchSidebarQuickAction
+          label={`${statusAction}: ${ticket.title}`}
+          Icon={ticket.status === "done" ? RotateCcwIcon : CircleCheckIcon}
+          onSelect={actions.changeStatus}
+        />
+      ) : null}
+    </span>
+  );
+}
+
 export function WorkbenchSidebarTicketButton({
   ticket,
   details,
   jiraOwnershipKnown,
   isActive,
   onSelect,
-  showExecutionStatus = true,
 }: {
   readonly ticket: WorkbenchSidebarTicket;
   readonly details: WorkbenchSidebarTicketDetails | undefined;
   readonly jiraOwnershipKnown: boolean;
   readonly isActive: boolean;
   readonly onSelect: () => void;
-  readonly showExecutionStatus?: boolean;
 }) {
   const status = details?.statusLabel ?? WORKBENCH_TICKET_STATUS_LABELS[ticket.status];
-  const { openMenu } = useWorkbenchSidebarTicketActionMenu({
+  const actions = useWorkbenchSidebarTicketActionMenu({
     environmentId: details?.environmentId,
     ticket,
     issueLink: details?.issueLink ?? null,
     jiraOwnershipKnown,
     readOnly: details?.readOnly ?? true,
   });
-  const openKeyboardMenu = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
-    event.preventDefault();
-    const bounds = event.currentTarget.getBoundingClientRect();
-    openMenu({ x: bounds.left, y: bounds.bottom });
-  };
-
   return (
     <div
       data-workbench-sidebar-item-row=""
-      className={`relative flex min-w-0 flex-1 items-end rounded-lg ${isActive ? "bg-sidebar-row-selected" : "hover:bg-sidebar-row-hover"}`}
+      data-workbench-sidebar-detail-row="ticket"
+      className="min-w-0 flex-1"
+      onContextMenu={(event) => {
+        event.preventDefault();
+        actions.openMenu({ x: event.clientX, y: event.clientY });
+      }}
     >
-      <SidebarMenuButton
-        aria-label={ticket.title}
-        aria-current={isActive ? "page" : undefined}
+      <WorkbenchSidebarRowNavigation
+        label={ticket.title}
         isActive={isActive}
-        onClick={onSelect}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          openMenu({ x: event.clientX, y: event.clientY });
-        }}
-        onKeyDown={openKeyboardMenu}
-        size="lg"
-        className="h-auto min-h-12 min-w-0 flex-1 items-start"
-        tooltip={{
-          children: (
-            <TicketPreview
-              ticket={ticket}
-              details={details}
-              status={status}
-              jiraOwnershipKnown={jiraOwnershipKnown}
-            />
-          ),
-          hidden: false,
-          align: "start",
-          variant: "glass",
-          className: "max-w-80 text-left whitespace-normal",
-        }}
+        onSelect={onSelect}
+        openMenu={actions.openMenu}
+        preview={
+          <TicketPreview
+            ticket={ticket}
+            details={details}
+            status={status}
+            jiraOwnershipKnown={jiraOwnershipKnown}
+          />
+        }
       >
-        <WorkbenchSidebarTicketLabel
-          ticket={ticket}
-          details={details}
-          status={status}
-          jiraOwnershipKnown={jiraOwnershipKnown}
-          showExecutionStatus={showExecutionStatus}
-        />
-      </SidebarMenuButton>
-      {details?.environmentId ? (
-        <div className="absolute end-2 top-2 z-10">
+        <WorkbenchSidebarTicketTitle ticket={ticket} details={details} />
+        <WorkbenchSidebarTicketStatus ticket={ticket} details={details} status={status} />
+      </WorkbenchSidebarRowNavigation>
+      <span data-workbench-sidebar-metadata-controls="">
+        <WorkbenchSidebarTicketPrControl ticket={ticket} details={details} />
+        {details?.environmentId ? (
           <WorkbenchTicketAttentionBadge
             environmentId={details.environmentId}
             ticketId={ticket.id}
@@ -356,9 +351,16 @@ export function WorkbenchSidebarTicketButton({
             side="right"
             compact
           />
-        </div>
+        ) : null}
+        <span data-workbench-sidebar-provider-end="" aria-hidden />
+      </span>
+      {details?.environmentId ? (
+        <WorkbenchSidebarRowActions
+          label={`Actions for Ticket ${ticket.title}`}
+          openMenu={actions.openMenu}
+        />
       ) : null}
-      <WorkbenchSidebarTicketPrControl ticket={ticket} details={details} />
+      <WorkbenchSidebarTicketQuickActions ticket={ticket} details={details} actions={actions} />
     </div>
   );
 }

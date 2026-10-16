@@ -18,7 +18,11 @@ import { act, useLayoutEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
-import { useWorkbenchSidebarDraftMenu, type WorkbenchSidebarDraft } from "./WorkbenchSidebarDrafts";
+import {
+  useWorkbenchSidebarDraftMenu,
+  useWorkbenchSidebarDrafts,
+  type WorkbenchSidebarDraft,
+} from "./WorkbenchSidebarDrafts";
 
 const mocks = vi.hoisted(() => ({
   permission: true,
@@ -68,6 +72,7 @@ const draft: WorkbenchSidebarDraft = {
   updatedAt: "2026-10-13T00:00:00.000Z",
 };
 let menu: ReturnType<typeof useWorkbenchSidebarDraftMenu>;
+let disclosure: ReturnType<typeof useWorkbenchSidebarDrafts>["disclosure"];
 let renderer: ReactTestRenderer;
 const root = createRootRoute();
 const route = createRoute({ getParentRoute: () => root, path: "/workbench" });
@@ -88,19 +93,20 @@ function Harness({
   readOnlyDraftIds?: ReadonlySet<WorkbenchTicketId>;
   selectedTicketId?: WorkbenchTicketId;
 }) {
-  const result = useWorkbenchSidebarDraftMenu({
+  const result = useWorkbenchSidebarDrafts({
     environmentId,
     drafts,
     writableWorkspaceIds: readOnlyDraftIds.has(draft.id) ? new Set() : new Set([workspaceId]),
     selectedWorkspaceId: workspaceId,
     selectedTicketId,
+    selectedDraft: drafts.find((candidate) => candidate.id === selectedTicketId),
     onSelectWorkspace: (id) => {
       void router.navigate({ to: "/workbench", search: { workbenchProjectId: id }, replace: true });
     },
-    navigationRef: { current: null },
   });
   useLayoutEffect(() => {
-    menu = result;
+    menu = result.menu;
+    disclosure = result.disclosure;
   });
   return null;
 }
@@ -130,6 +136,20 @@ beforeEach(async () => {
 afterEach(() => {
   act(() => renderer?.unmount());
   vi.unstubAllGlobals();
+});
+
+it("reveals an already-selected Draft explicitly while preserving disclosure on ordinary rerenders", () => {
+  act(() => disclosure.toggle(workspaceId));
+  expect(disclosure.collapsed.has(workspaceId)).toBe(true);
+
+  act(() => renderer.update(<Harness drafts={[draft]} />));
+  expect(disclosure.collapsed.has(workspaceId)).toBe(true);
+
+  act(() => disclosure.reveal(workspaceId));
+  expect(disclosure.collapsed.has(workspaceId)).toBe(false);
+
+  act(() => disclosure.reveal(workspaceId));
+  expect(disclosure.collapsed.has(workspaceId)).toBe(false);
 });
 
 it("returns the current draft to its board when the last filtered row disappears during discard", async () => {

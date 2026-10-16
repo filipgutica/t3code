@@ -1,4 +1,6 @@
 import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
+import { useAtomValue } from "@effect/atom-react";
+import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import type {
   ContextMenuItem,
   EnvironmentId,
@@ -14,6 +16,7 @@ import { useCallback } from "react";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { readLocalApi } from "../localApi";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { readEnvironmentScope } from "../state/session";
 import { useSidebar } from "../components/ui/sidebar";
 import { toastManager } from "../components/ui/toast";
 import { workbenchEnvironment } from "./state";
@@ -221,68 +224,51 @@ export function useWorkbenchSidebarTicketActionMenu({
   const navigate = useNavigate();
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
-  const openMenu = useCallback(
-    (position: { x: number; y: number }) => {
+  const permission = useAtomValue(
+    workbenchEnvironment.updateTicket.permissionAtom(environmentId ?? null),
+  );
+  const canMutate = Boolean(environmentId && permission && !readOnly);
+  const runSelected = useCallback(
+    async (selected: TicketMenuAction, position: { x: number; y: number }) => {
       if (!environmentId) return;
-      void (async () => {
-        const api = readLocalApi();
-        if (!api) return;
-        let selected: TicketMenuAction | null;
-        try {
-          selected = await api.contextMenu.show(
-            readOnly
-              ? [
-                  { id: "copy-link" as const, label: "Copy Ticket link" },
-                  ...(issueLink ? [{ id: "open-jira" as const, label: "Open in Jira" }] : []),
-                ]
-              : menuItems({ ticket, issueLink, jiraOwnershipKnown }),
-            position,
-          );
-        } catch (cause) {
-          reportMenuFailure("Could not open Ticket actions", cause);
-          return;
-        }
-        if (selected === null) return;
-
-        if (selected === "copy-link") {
-          const location = router.buildLocation({
-            to: "/workbench",
-            search: { environmentId, workbenchProjectId: ticket.projectId, ticketId: ticket.id },
-          });
-          await copyTicketLink(location.href);
-          return;
-        }
-        if (selected === "open-jira") {
-          await openJiraLink(api, issueLink);
-          return;
-        }
-
-        if (readOnly) return;
-        const action =
-          selected === "change-status" && issueLink && ticket.archivedAt === null
-            ? await selectJiraTransition({ api, environmentId, ticket, issueLink, position })
-            : localTicketAction({
-                selected,
-                environmentId,
-                ticket,
-                issueLink,
-                jiraOwnershipKnown,
-              });
-        if (!action) return;
-
-        enqueueWorkbenchSidebarTicketAction(action);
-        if (isMobile) setOpenMobile(false);
-        try {
-          await navigate({
-            to: "/workbench",
-            search: { environmentId, workbenchProjectId: ticket.projectId, ticketId: ticket.id },
-            replace: true,
-          });
-        } catch (cause) {
-          takeWorkbenchSidebarTicketAction(environmentId, ticket.id);
-          reportMenuFailure("Could not open Ticket", cause);
-        }
-      })().catch((cause: unknown) => reportMenuFailure("Could not complete Ticket action", cause));
+      const api = readLocalApi();
+      if (!api) return;
+      if (selected === "copy-link") {
+        const location = router.buildLocation({
+          to: "/workbench",
+          search: { environmentId, workbenchProjectId: ticket.projectId, ticketId: ticket.id },
+        });
+        await copyTicketLink(location.href);
+        return;
+      }
+      if (selected === "open-jira") {
+        await openJiraLink(api, issueLink);
+        return;
+      }
+      if (readOnly || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return;
+      const action =
+        selected === "change-status" && issueLink && ticket.archivedAt === null
+          ? await selectJiraTransition({ api, environmentId, ticket, issueLink, position })
+          : localTicketAction({
+              selected,
+              environmentId,
+              ticket,
+              issueLink,
+              jiraOwnershipKnown,
+            });
+      if (!action || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return;
+      enqueueWorkbenchSidebarTicketAction(action);
+      if (isMobile) setOpenMobile(false);
+      try {
+        await navigate({
+          to: "/workbench",
+          search: { environmentId, workbenchProjectId: ticket.projectId, ticketId: ticket.id },
+          replace: true,
+        });
+      } catch (cause) {
+        takeWorkbenchSidebarTicketAction(environmentId, ticket.id);
+        reportMenuFailure("Could not open Ticket", cause);
+      }
     },
     [
       environmentId,
@@ -296,6 +282,44 @@ export function useWorkbenchSidebarTicketActionMenu({
       readOnly,
     ],
   );
-
-  return { openMenu };
+  const openMenu = useCallback(
+    (position: { x: number; y: number }) => {
+      if (!environmentId) return;
+      void (async () => {
+        const api = readLocalApi();
+        if (!api) return;
+        const selected = await api.contextMenu.show(
+          readOnly || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)
+            ? [
+                { id: "copy-link" as const, label: "Copy Ticket link" },
+                ...(issueLink ? [{ id: "open-jira" as const, label: "Open in Jira" }] : []),
+              ]
+            : menuItems({ ticket, issueLink, jiraOwnershipKnown }),
+          position,
+        );
+        if (selected !== null) await runSelected(selected, position);
+      })().catch((cause: unknown) => reportMenuFailure("Could not complete Ticket action", cause));
+    },
+    [environmentId, issueLink, jiraOwnershipKnown, readOnly, runSelected, ticket],
+  );
+  const quickAction = (selected: TicketMenuAction, position: { x: number; y: number }) => {
+    if (!canMutate || ticket.archivedAt !== null) return;
+    if (selected === "new-thread" && ticket.status === "done") return;
+    void runSelected(selected, position).catch((cause: unknown) =>
+      reportMenuFailure("Could not complete Ticket action", cause),
+    );
+  };
+  return {
+    openMenu,
+    canCreateThread: canMutate && ticket.archivedAt === null && ticket.status !== "done",
+    canChangeStatus: canMutate && ticket.archivedAt === null && jiraOwnershipKnown,
+    newThread: (position: { x: number; y: number }) => quickAction("new-thread", position),
+    changeStatus: (position: { x: number; y: number }) => {
+      if (!jiraOwnershipKnown) return;
+      quickAction(
+        issueLink ? "change-status" : ticket.status === "done" ? "status:todo" : "status:done",
+        position,
+      );
+    },
+  };
 }

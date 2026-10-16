@@ -8,9 +8,11 @@ import type {
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import {
   ArrowRightIcon,
-  BellIcon,
+  CirclePauseIcon,
+  FileCheck2Icon,
+  MessageCircleQuestionIcon,
   MessageSquareIcon,
-  CircleHelpIcon,
+  ShieldQuestionIcon,
   CircleAlertIcon,
   RefreshCwIcon,
 } from "lucide-react";
@@ -31,6 +33,12 @@ import {
   type WorkbenchAttentionSignal,
   type WorkbenchAttentionInspection,
 } from "./workbenchAttention.logic";
+import {
+  getWorkbenchAttentionBadgePresentation,
+  getWorkbenchAttentionSignalPresentation,
+  getWorkbenchThreadAttention,
+} from "./workbenchAttentionPresentation.logic";
+import type { WorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
 
 type TicketAttentionProps = {
   environmentId: EnvironmentId;
@@ -39,12 +47,12 @@ type TicketAttentionProps = {
   onOpenThread?: (threadId: ThreadId) => void;
 };
 const signalIcons = {
-  waiting: MessageSquareIcon,
-  question: CircleHelpIcon,
-  reply: MessageSquareIcon,
-  "failed-checks": CircleAlertIcon,
-  "changes-requested": MessageSquareIcon,
-  "unresolved-feedback": MessageSquareIcon,
+  input: MessageCircleQuestionIcon,
+  approval: ShieldQuestionIcon,
+  failed: CircleAlertIcon,
+  message: MessageSquareIcon,
+  plan: FileCheck2Icon,
+  interrupted: CirclePauseIcon,
 } as const;
 const actionDescriptions = {
   question: "Open Thread to answer the question",
@@ -88,7 +96,7 @@ function AttentionDiscussionButton({
       type="button"
       aria-label={`Open review discussion at ${location}, ${sourceLabel}`}
       aria-describedby={descriptionId}
-      className="flex w-full cursor-pointer items-start gap-2 rounded-md py-1 pl-7 pr-2 text-left text-2xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+      className="flex min-h-11 w-full cursor-pointer items-start gap-2 rounded-md py-2 pl-7.5 pr-2 text-left text-2xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
       onClick={onOpen}
     >
       <span className="min-w-0 flex-1">
@@ -109,44 +117,36 @@ function AttentionSignalItem({
   signal: WorkbenchAttentionSignal;
   onOpenSignal: (signal: WorkbenchAttentionSignal, reviewThreadId?: string) => void;
 }) {
-  const failedRun = signal.kind === "waiting" && signal.cause === "failed";
-  const Icon = failedRun ? CircleAlertIcon : signalIcons[signal.kind];
-  const label = getWorkbenchAttentionSignalLabel(signal);
+  const presentation = getWorkbenchAttentionSignalPresentation(signal);
+  const Icon = signalIcons[presentation.icon];
+  const { label } = presentation;
   const sourceLabel = getWorkbenchAttentionSourceLabel(signal.source);
   const discussions =
     signal.source.type === "pull-request" && signal.kind === "unresolved-feedback"
       ? signal.unresolvedReviewThreads
       : [];
   const actionDescription = getAttentionActionDescription(signal);
-  const content = (
-    <>
-      <Icon
-        aria-hidden
-        className={`mt-0.5 size-3.5 shrink-0 ${signal.kind === "failed-checks" || failedRun ? "text-warning" : "text-muted-foreground"}`}
-      />
-      <span className="min-w-0 flex-1">
-        <span className="block font-semibold">{label}</span>
-        <span className="block text-2xs text-muted-foreground">{actionDescription}</span>
-      </span>
-      {discussions.length === 0 ? (
-        <ArrowRightIcon aria-hidden className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
-      ) : null}
-    </>
-  );
   return (
     <div>
-      {discussions.length > 0 ? (
-        <div className="flex items-start gap-2 p-2 text-xs">{content}</div>
-      ) : (
-        <button
-          type="button"
-          aria-label={`${label}. ${actionDescription}. ${sourceLabel}`}
-          className="flex w-full cursor-pointer items-start gap-2 rounded-md p-2 text-left text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-          onClick={() => onOpenSignal(signal)}
-        >
-          {content}
-        </button>
-      )}
+      <button
+        type="button"
+        aria-label={`${label}. ${actionDescription}. ${sourceLabel}`}
+        className="group/attention-item flex w-full cursor-pointer items-start gap-2 rounded-md p-2 text-left text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:py-3.5 max-md:py-3.5"
+        onClick={() => onOpenSignal(signal)}
+      >
+        <Icon aria-hidden className={`mt-px size-3.5 shrink-0 ${presentation.className}`} />
+        <span className="min-w-0 flex-1">
+          <span className="flex items-baseline justify-between gap-3">
+            <span className="font-medium">{label}</span>
+            <span className="shrink-0 font-medium text-foreground/70 group-hover/attention-item:text-foreground">
+              {presentation.action}
+            </span>
+          </span>
+          {discussions.length > 0 ? (
+            <span className="mt-0.5 block text-2xs text-muted-foreground">{actionDescription}</span>
+          ) : null}
+        </span>
+      </button>
       {discussions.map((thread) => (
         <AttentionDiscussionButton
           key={thread.id}
@@ -225,14 +225,18 @@ function AttentionItems({
             <div className="px-2">
               <h3 className="break-words text-xs leading-5">
                 <span className="font-semibold">{prefix}</span>
-                {title ? <span className="font-medium"> · {title}</span> : null}
+                {title ? <span className="text-foreground/80"> · {title}</span> : null}
               </h3>
               {repository ? (
                 <p className="break-words text-2xs text-muted-foreground">{repository}</p>
               ) : null}
             </div>
             {group.map((signal) => (
-              <AttentionSignalItem key={signal.kind} signal={signal} onOpenSignal={openSignal} />
+              <AttentionSignalItem
+                key={signal.kind === "waiting" ? `${signal.kind}:${signal.cause}` : signal.kind}
+                signal={signal}
+                onOpenSignal={openSignal}
+              />
             ))}
           </section>
         );
@@ -253,20 +257,56 @@ function AttentionItems({
   );
 }
 
-function AttentionBell({ compact, hasFailures }: { compact: boolean; hasFailures: boolean }) {
+function AttentionBadge({
+  environmentId,
+  title,
+  signals,
+  inspections,
+  onOpenThread,
+  side = "bottom",
+  compact = false,
+}: Pick<TicketAttentionProps, "environmentId" | "onOpenThread"> & {
+  title: string;
+  signals: readonly WorkbenchAttentionSignal[];
+  inspections: readonly WorkbenchAttentionInspection[];
+  side?: "bottom" | "right";
+  compact?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const { count, leading, reasons } = getWorkbenchAttentionBadgePresentation(signals);
+  if (leading === null) return null;
+  const Icon = signalIcons[leading.icon];
   return (
-    <span aria-hidden className="relative inline-flex">
-      <BellIcon
-        className={
-          compact ? `size-3 ${hasFailures ? "text-warning" : "text-muted-foreground"}` : undefined
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            data-workbench-attention-badge=""
+            className={`relative inline-flex h-5 min-w-5 shrink-0 cursor-pointer items-center justify-center gap-1 rounded-sm px-1 text-2xs font-medium hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 ${leading.className}`}
+            aria-label={`Needs attention, ${count} ${count === 1 ? "item" : "items"} for ${title}: ${reasons}`}
+          />
         }
-      />
-      {!hasFailures ? (
-        <span
-          className={`absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-primary ring-2 ${compact ? "ring-sidebar" : "ring-popover"}`}
-        />
-      ) : null}
-    </span>
+      >
+        <Icon aria-hidden className="size-3" />
+        {!compact || count > 1 ? <span aria-hidden>{count}</span> : null}
+      </PopoverTrigger>
+      <PopoverPopup width="md" padding="compact" side={side} align="end">
+        <div className="mb-3 flex flex-col gap-1 border-b px-2 pt-2 pb-3">
+          <PopoverTitle>Needs attention</PopoverTitle>
+          <p className="break-words text-xs text-muted-foreground">{title}</p>
+        </div>
+        <div className="max-h-80 overflow-y-auto">
+          <AttentionItems
+            environmentId={environmentId}
+            {...(onOpenThread ? { onOpenThread } : {})}
+            signals={signals}
+            inspections={inspections}
+            onNavigate={() => setOpen(false)}
+          />
+        </div>
+      </PopoverPopup>
+    </Popover>
   );
 }
 
@@ -275,43 +315,39 @@ export function WorkbenchTicketAttentionBadge(
   props: TicketAttentionProps & { side?: "bottom" | "right"; compact?: boolean },
 ) {
   const { attentionSignalsByTicket, attentionInspectionsByTicket } = useWorkbenchAttentionData();
-  const signals = attentionSignalsByTicket.get(props.ticketId) ?? [];
-  const [open, setOpen] = useState(false);
-  const hasFailures = signals.some(
-    (signal) =>
-      signal.kind === "failed-checks" || (signal.kind === "waiting" && signal.cause === "failed"),
-  );
-  if (signals.length === 0) return null;
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        render={
-          <Button
-            size={props.compact ? "icon-micro" : "micro"}
-            variant={props.compact ? "ghost" : hasFailures ? "warning-outline" : "outline"}
-            aria-label={`${signals.length} attention ${signals.length === 1 ? "item" : "items"} for ${props.ticketTitle}`}
-          />
-        }
-      >
-        <AttentionBell compact={!!props.compact} hasFailures={hasFailures} />
-        {props.compact ? null : signals.length}
-      </PopoverTrigger>
-      <PopoverPopup width="md" padding="compact" side={props.side ?? "bottom"} align="end">
-        <div className="mb-3 flex flex-col gap-1 border-b pb-3">
-          <PopoverTitle>Needs your attention</PopoverTitle>
-          <p className="break-words text-xs text-muted-foreground">{props.ticketTitle}</p>
-        </div>
-        <div className="max-h-80 overflow-y-auto">
-          <AttentionItems
-            {...props}
-            signals={signals}
-            inspections={attentionInspectionsByTicket.get(props.ticketId) ?? []}
-            onNavigate={() => setOpen(false)}
-          />
-        </div>
-      </PopoverPopup>
-    </Popover>
+    <AttentionBadge
+      {...props}
+      title={props.ticketTitle}
+      signals={attentionSignalsByTicket.get(props.ticketId) ?? []}
+      inspections={attentionInspectionsByTicket.get(props.ticketId) ?? []}
+    />
   );
+}
+
+export function WorkbenchThreadAttentionBadge({
+  threadId,
+  threadTitle,
+  statusKind,
+  ticketId,
+  ...props
+}: {
+  environmentId: EnvironmentId;
+  ticketId: WorkbenchTicketId;
+  threadId: ThreadId;
+  threadTitle: string;
+  statusKind: WorkbenchThreadExecutionStatus["kind"] | null;
+  side?: "bottom" | "right";
+  compact?: boolean;
+}) {
+  const { attentionSignalsByTicket, attentionInspectionsByTicket } = useWorkbenchAttentionData();
+  const attention = getWorkbenchThreadAttention({
+    threadId,
+    statusKind,
+    signals: attentionSignalsByTicket.get(ticketId) ?? [],
+    inspections: attentionInspectionsByTicket.get(ticketId) ?? [],
+  });
+  return <AttentionBadge {...props} {...attention} title={threadTitle} />;
 }
 
 export function WorkbenchTicketAttentionPanel(props: TicketAttentionProps) {
