@@ -1,4 +1,4 @@
-import { WorkbenchJiraOperationError } from "@t3tools/contracts";
+import { WorkbenchJiraOAuthState, WorkbenchJiraOperationError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -28,7 +28,18 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 const credentialSecretName = (credentialId: string) => `workbench-jira-credential-${credentialId}`;
-const authorizationSecretName = (state: string) => `workbench-jira-oauth-state-${state}`;
+const decodeOAuthState = Schema.decodeUnknownEffect(WorkbenchJiraOAuthState);
+const authorizationSecretName = (state: string) =>
+  decodeOAuthState(state).pipe(
+    Effect.map((validState) => `workbench-jira-oauth-state-${validState}`),
+    Effect.mapError(
+      () =>
+        new WorkbenchJiraOperationError({
+          code: "invalid_oauth_state",
+          message: "The Jira authorization request is invalid or has already been used.",
+        }),
+    ),
+  );
 
 const persistenceError = (message: string) =>
   new WorkbenchJiraOperationError({ code: "persistence_failed", message });
@@ -76,10 +87,15 @@ const make = Effect.gen(function* () {
       write(credentialSecretName(credentialId), credential, encodeCredential),
     removeCredential: (credentialId) => remove(credentialSecretName(credentialId)),
     getPendingAuthorization: (state) =>
-      read(authorizationSecretName(state), decodePendingAuthorization),
+      authorizationSecretName(state).pipe(
+        Effect.flatMap((name) => read(name, decodePendingAuthorization)),
+      ),
     setPendingAuthorization: (state, pending) =>
-      write(authorizationSecretName(state), pending, encodePendingAuthorization),
-    removePendingAuthorization: (state) => remove(authorizationSecretName(state)),
+      authorizationSecretName(state).pipe(
+        Effect.flatMap((name) => write(name, pending, encodePendingAuthorization)),
+      ),
+    removePendingAuthorization: (state) =>
+      authorizationSecretName(state).pipe(Effect.flatMap(remove)),
   });
 });
 

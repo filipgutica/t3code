@@ -20,6 +20,8 @@ import {
 import { JiraOAuthClient, JIRA_OAUTH_SCOPES } from "./JiraOAuthClient.ts";
 import { JiraConfig } from "./JiraConfig.ts";
 
+const oauthState = "A_-0".repeat(8);
+
 const jiraConfig = (environment: NodeJS.ProcessEnv) =>
   JiraConfig.of({
     get: Effect.sync(() => {
@@ -98,6 +100,53 @@ const credentialHarness = () => {
 
 describe("JiraAuthService", () => {
   it.layer(NodeServices.layer)("begins and completes a one-time Jira 3LO authorization", (it) => {
+    it.effect("rejects malformed state before consulting credential storage", () =>
+      Effect.gen(function* () {
+        const store = credentialHarness();
+        const service = yield* JiraAuthService.make.pipe(
+          Effect.provideService(WorkbenchJiraRepository, repositoryHarness().service),
+          Effect.provideService(JiraCredentialStore, {
+            ...store.service,
+            getPendingAuthorization: () => Effect.die("malformed state reached storage"),
+          }),
+          Effect.provideService(
+            JiraOAuthClient,
+            JiraOAuthClient.of({
+              exchangeCode: () => Effect.die("unexpected exchange"),
+              refresh: () => Effect.die("unexpected refresh"),
+              claimBroker: () => Effect.die("unexpected claim"),
+              listAccessibleSites: () => Effect.die("unexpected sites"),
+            }),
+          ),
+          Effect.provideService(
+            JiraConfig,
+            JiraConfig.of({
+              get: Effect.succeed({
+                clientId: "id",
+                clientSecret: "secret",
+                brokerUrl: "https://broker.example",
+              }),
+            }),
+          ),
+        );
+        for (const state of [
+          "x/../../../secret",
+          "a".repeat(31),
+          "a".repeat(33),
+          "a".repeat(31) + ".",
+          " " + "a".repeat(32),
+        ]) {
+          const complete = yield* Effect.flip(
+            service.complete({ state, code: "code", redirectUri: "http://localhost/callback" }),
+          );
+          assert.strictEqual(complete.code, "invalid_oauth_state");
+          assert.ok(service.claim);
+          const claim = yield* Effect.flip(service.claim({ state }));
+          assert.strictEqual(claim.code, "invalid_oauth_state");
+        }
+      }),
+    );
+
     it.effect("explains how to configure the Atlassian OAuth app", () =>
       Effect.gen(function* () {
         const repository = repositoryHarness();
@@ -560,7 +609,7 @@ describe("JiraAuthService", () => {
           scope: JIRA_OAUTH_SCOPES.join(" "),
           expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
         });
-        yield* credentialStore.service.setPendingAuthorization("oauth-state", {
+        yield* credentialStore.service.setPendingAuthorization(oauthState, {
           redirectUri: "http://localhost/oauth/jira",
           expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
         });
@@ -599,7 +648,7 @@ describe("JiraAuthService", () => {
 
         yield* service.complete({
           code: "authorization-code",
-          state: "oauth-state",
+          state: oauthState,
           redirectUri: "http://localhost/oauth/jira",
         });
 
@@ -630,7 +679,7 @@ describe("JiraAuthService", () => {
           scope: JIRA_OAUTH_SCOPES.join(" "),
           expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
         });
-        yield* credentialStore.service.setPendingAuthorization("oauth-state", {
+        yield* credentialStore.service.setPendingAuthorization(oauthState, {
           redirectUri: "http://localhost/oauth/jira",
           expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
         });
@@ -675,7 +724,7 @@ describe("JiraAuthService", () => {
         const error = yield* service
           .complete({
             code: "authorization-code",
-            state: "oauth-state",
+            state: oauthState,
             redirectUri: "http://localhost/oauth/jira",
           })
           .pipe(Effect.flip);
@@ -685,7 +734,7 @@ describe("JiraAuthService", () => {
         assert.isTrue(credentialStore.credentials.has("old-credential"));
         assert.deepStrictEqual(repository.connections.get(connectionId), originalConnection);
         assert.strictEqual(repository.credentialIds.get(connectionId), "old-credential");
-        assert.isFalse(credentialStore.pending.has("oauth-state"));
+        assert.isFalse(credentialStore.pending.has(oauthState));
       }),
     );
 
@@ -693,7 +742,7 @@ describe("JiraAuthService", () => {
       Effect.gen(function* () {
         const repository = repositoryHarness();
         const credentialStore = credentialHarness();
-        yield* credentialStore.service.setPendingAuthorization("oauth-state", {
+        yield* credentialStore.service.setPendingAuthorization(oauthState, {
           redirectUri: "http://localhost/oauth/jira",
           expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
         });
@@ -739,7 +788,7 @@ describe("JiraAuthService", () => {
         );
         const complete = service.complete({
           code: "authorization-code",
-          state: "oauth-state",
+          state: oauthState,
           redirectUri: "http://localhost/oauth/jira",
         });
 
@@ -782,7 +831,7 @@ describe("JiraAuthService", () => {
           scope: JIRA_OAUTH_SCOPES.join(" "),
           expiresAtEpochMs: 0,
         });
-        yield* credentialStore.service.setPendingAuthorization("oauth-state", {
+        yield* credentialStore.service.setPendingAuthorization(oauthState, {
           redirectUri: "http://localhost/oauth/jira",
           expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
         });
@@ -851,7 +900,7 @@ describe("JiraAuthService", () => {
         const reconnect = yield* service
           .complete({
             code: "authorization-code",
-            state: "oauth-state",
+            state: oauthState,
             redirectUri: "http://localhost/oauth/jira",
           })
           .pipe(Effect.forkChild);
@@ -890,7 +939,7 @@ describe("JiraAuthService", () => {
           scope: JIRA_OAUTH_SCOPES.join(" "),
           expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
         });
-        yield* credentialStore.service.setPendingAuthorization("oauth-state", {
+        yield* credentialStore.service.setPendingAuthorization(oauthState, {
           redirectUri: "http://localhost/oauth/jira",
           expiresAtEpochMs: Number.MAX_SAFE_INTEGER,
         });
@@ -927,7 +976,7 @@ describe("JiraAuthService", () => {
         const error = yield* service
           .complete({
             code: "authorization-code",
-            state: "oauth-state",
+            state: oauthState,
             redirectUri: "http://localhost/oauth/jira",
           })
           .pipe(Effect.flip);
@@ -935,7 +984,7 @@ describe("JiraAuthService", () => {
         assert.strictEqual(error.code, "persistence_failed");
         assert.strictEqual(repository.credentialIds.get(connectionId), "old-credential");
         assert.isTrue(credentialStore.credentials.has("old-credential"));
-        assert.isTrue(credentialStore.pending.has("oauth-state"));
+        assert.isTrue(credentialStore.pending.has(oauthState));
       }),
     );
   });

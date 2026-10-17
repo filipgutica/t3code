@@ -4,6 +4,9 @@ import * as Schema from "effect/Schema";
 
 import {
   WorkbenchJiraBinding,
+  WorkbenchJiraBeginAuthResult,
+  WorkbenchJiraCompleteAuthInput,
+  WorkbenchJiraClaimAuthInput,
   WorkbenchJiraCompleteAuthResult,
   WorkbenchJiraEpicLink,
   WorkbenchJiraIssueLink,
@@ -19,6 +22,35 @@ const decodeCompleteAuthResult = Schema.decodeUnknownEffect(WorkbenchJiraComplet
 const decodeSyncBinding = Schema.decodeUnknownEffect(WorkbenchJiraSyncBindingInput);
 
 describe("Workbench Jira contracts", () => {
+  it.effect("requires generated base64url state in every OAuth wire schema", () =>
+    Effect.gen(function* () {
+      for (const schema of [
+        WorkbenchJiraBeginAuthResult,
+        WorkbenchJiraCompleteAuthInput,
+        WorkbenchJiraClaimAuthInput,
+      ]) {
+        const decode = Schema.decodeUnknownEffect(schema);
+        const fields = {
+          authorizationUrl: "https://auth.atlassian.com/authorize",
+          expiresAt: "2026-10-17T00:00:00Z",
+          code: "code",
+          redirectUri: "http://localhost/callback",
+        };
+        yield* decode({ ...fields, state: "A_-0".repeat(8) });
+        for (const state of [
+          "x/../../../secret",
+          "a".repeat(31),
+          "a".repeat(33),
+          "a".repeat(31) + ".",
+          " " + "a".repeat(32),
+          "a".repeat(32) + "\n",
+        ]) {
+          assert.strictEqual((yield* Effect.result(decode({ ...fields, state })))._tag, "Failure");
+        }
+      }
+    }),
+  );
+
   it.effect("requires explicit local-only support from server snapshots", () =>
     Effect.gen(function* () {
       const decode = Schema.decodeUnknownEffect(WorkbenchJiraSnapshot);

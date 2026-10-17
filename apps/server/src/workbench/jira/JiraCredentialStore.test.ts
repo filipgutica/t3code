@@ -27,6 +27,38 @@ const makeHarness = () => {
 };
 
 describe("JiraCredentialStore server adapter", () => {
+  it.effect("rejects malformed pending authorization keys without touching secret storage", () =>
+    Effect.gen(function* () {
+      const store = yield* JiraCredentialStore.JiraCredentialStore;
+      for (const state of [
+        "x/../../../secret",
+        "a".repeat(31),
+        "a".repeat(33),
+        "a".repeat(31) + ".",
+        " " + "a".repeat(32),
+      ]) {
+        for (const operation of [
+          store.getPendingAuthorization(state),
+          store.setPendingAuthorization(state, {
+            redirectUri: "http://localhost/callback",
+            expiresAtEpochMs: 1,
+          }),
+          store.removePendingAuthorization(state),
+        ]) {
+          assert.strictEqual((yield* Effect.flip(operation)).code, "invalid_oauth_state");
+        }
+      }
+    }).pipe(
+      Effect.provide(JiraCredentialStore.layer),
+      Effect.provideService(ServerSecretStore.ServerSecretStore, {
+        ...makeHarness().store,
+        get: () => Effect.die("unexpected secret read"),
+        set: () => Effect.die("unexpected secret write"),
+        remove: () => Effect.die("unexpected secret removal"),
+      }),
+    ),
+  );
+
   it.effect("round-trips credentials and pending authorization using stable secret keys", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
@@ -43,21 +75,26 @@ describe("JiraCredentialStore server adapter", () => {
       } satisfies JiraCredentialStore.PendingJiraAuthorization;
 
       yield* store.setCredential("credential-1", credential);
-      yield* store.setPendingAuthorization("oauth-state", pending);
+      yield* store.setPendingAuthorization("Abcdef01234567_-Abcdef01234567_-", pending);
       assert.deepStrictEqual(
         [...harness.values.keys()].sort(),
-        ["workbench-jira-credential-credential-1", "workbench-jira-oauth-state-oauth-state"].sort(),
+        [
+          "workbench-jira-credential-credential-1",
+          "workbench-jira-oauth-state-Abcdef01234567_-Abcdef01234567_-",
+        ].sort(),
       );
       assert.deepStrictEqual(yield* store.getCredential("credential-1"), Option.some(credential));
       assert.deepStrictEqual(
-        yield* store.getPendingAuthorization("oauth-state"),
+        yield* store.getPendingAuthorization("Abcdef01234567_-Abcdef01234567_-"),
         Option.some(pending),
       );
 
       yield* store.removeCredential("credential-1");
-      yield* store.removePendingAuthorization("oauth-state");
+      yield* store.removePendingAuthorization("Abcdef01234567_-Abcdef01234567_-");
       assert.isTrue(Option.isNone(yield* store.getCredential("credential-1")));
-      assert.isTrue(Option.isNone(yield* store.getPendingAuthorization("oauth-state")));
+      assert.isTrue(
+        Option.isNone(yield* store.getPendingAuthorization("Abcdef01234567_-Abcdef01234567_-")),
+      );
     }).pipe(
       Effect.provide(JiraCredentialStore.layer),
       Effect.provideService(ServerSecretStore.ServerSecretStore, harness.store),

@@ -1,6 +1,7 @@
 import {
   WorkbenchJiraConnectionId,
   WorkbenchJiraOperationError,
+  WorkbenchJiraOAuthState,
   type WorkbenchJiraBeginAuthInput,
   type WorkbenchJiraBeginAuthResult,
   type WorkbenchJiraClaimAuthInput,
@@ -19,6 +20,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
+import * as Schema from "effect/Schema";
 
 import { JiraCredentialStore, type JiraOAuthCredential } from "./JiraCredentialStore.ts";
 import { JiraConfig } from "./JiraConfig.ts";
@@ -27,6 +29,8 @@ import {
   WorkbenchJiraRepository,
   type WorkbenchJiraRepositoryError,
 } from "./WorkbenchJiraRepository.ts";
+
+const isOAuthState = Schema.is(WorkbenchJiraOAuthState);
 
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1_000;
 const REFRESH_EARLY_MS = 60 * 1_000;
@@ -306,6 +310,12 @@ export const make = Effect.gen(function* () {
   const complete: JiraAuthServiceShape["complete"] = (input) =>
     completeSemaphore.withPermit(
       Effect.gen(function* () {
+        if (!isOAuthState(input.state)) {
+          return yield* operationError(
+            "invalid_oauth_state",
+            "The Jira authorization request is invalid or has already been used.",
+          );
+        }
         const config = yield* readConfig;
         const pending = yield* credentials.getPendingAuthorization(input.state);
         if (
@@ -346,6 +356,12 @@ export const make = Effect.gen(function* () {
   const claim: JiraAuthServiceShape["claim"] = (input) =>
     completeSemaphore.withPermit(
       Effect.gen(function* () {
+        if (!isOAuthState(input.state)) {
+          return yield* operationError(
+            "invalid_oauth_state",
+            "The Jira authorization request is invalid or has already been used.",
+          );
+        }
         const config = yield* readConfig;
         if (config.brokerUrl === undefined || oauth.claimBroker === undefined) {
           return yield* operationError(

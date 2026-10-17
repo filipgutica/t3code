@@ -48,6 +48,25 @@ const getCallbackResponse = (
   );
 
 describe("Workbench Jira OAuth callback", () => {
+  it.effect("rejects malformed state before invoking authorization", () =>
+    Effect.gen(function* () {
+      for (const state of [
+        "x/../../../secret",
+        "a".repeat(31),
+        "a".repeat(33),
+        "a".repeat(31) + ".",
+        " " + "a".repeat(32),
+      ]) {
+        const response = yield* getCallbackResponse(
+          () => Effect.die("malformed state reached authorization"),
+          `http://localhost/oauth/workbench/jira/callback?code=code&state=${encodeURIComponent(state)}`,
+        );
+        assert.strictEqual(response.status, 400);
+        expectNoStoreHeaders(response);
+      }
+    }),
+  );
+
   it.effect("rejects incomplete callbacks before completing authorization", () =>
     Effect.gen(function* () {
       const completeAuth = () => Effect.die("unexpected auth completion");
@@ -70,7 +89,7 @@ describe("Workbench Jira OAuth callback", () => {
       const completeAuth = () => Effect.die("unexpected auth completion");
       const response = yield* getCallbackResponse(
         completeAuth,
-        "http://localhost/oauth/workbench/jira/callback?error=access_denied&state=state-token&error_description=private-value",
+        "http://localhost/oauth/workbench/jira/callback?error=access_denied&state=Abcdef01234567_-Abcdef01234567_-&error_description=private-value",
       );
       const body = responseText(response);
 
@@ -80,7 +99,7 @@ describe("Workbench Jira OAuth callback", () => {
         "Jira authorization was cancelled. Return to the desktop app and try again.",
       );
       assert.isFalse(body.includes("private-value"));
-      assert.isFalse(body.includes("state-token"));
+      assert.isFalse(body.includes("Abcdef01234567_-Abcdef01234567_-"));
       expectNoStoreHeaders(response);
     }),
   );
@@ -95,14 +114,14 @@ describe("Workbench Jira OAuth callback", () => {
         });
       const response = yield* getCallbackResponse(
         completeAuth,
-        "http://localhost/oauth/workbench/jira/callback?code=oauth-code&state=state-token&query-secret=private-value",
+        "http://localhost/oauth/workbench/jira/callback?code=oauth-code&state=Abcdef01234567_-Abcdef01234567_-&query-secret=private-value",
       );
 
       assert.strictEqual(response.status, 200);
       assert.strictEqual(responseText(response), "Jira connected. Return to the desktop app.");
       assert.deepStrictEqual(received, {
         code: "oauth-code",
-        state: "state-token",
+        state: "Abcdef01234567_-Abcdef01234567_-",
         redirectUri: "http://localhost/oauth/workbench/jira/callback",
       });
       expectNoStoreHeaders(response);
@@ -120,7 +139,7 @@ describe("Workbench Jira OAuth callback", () => {
         );
       const response = yield* getCallbackResponse(
         completeAuth,
-        "http://localhost/oauth/workbench/jira/callback?code=oauth-code&state=state-token",
+        "http://localhost/oauth/workbench/jira/callback?code=oauth-code&state=Abcdef01234567_-Abcdef01234567_-",
       );
       const body = responseText(response);
 
@@ -130,7 +149,7 @@ describe("Workbench Jira OAuth callback", () => {
         "The Jira authorization request is invalid or has already been used. Return to the desktop app and try again.",
       );
       assert.isFalse(body.includes("oauth-code"));
-      assert.isFalse(body.includes("state-token"));
+      assert.isFalse(body.includes("Abcdef01234567_-Abcdef01234567_-"));
       expectNoStoreHeaders(response);
     }),
   );

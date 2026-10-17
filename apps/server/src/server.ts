@@ -5,9 +5,9 @@ import * as Random from "effect/Random";
 import * as Semaphore from "effect/Semaphore";
 import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
-import * as WorkbenchWorktreeOwnership from "./workbench/worktreeOwnership.ts";
 import {
   WorkbenchServicesLayerLive,
+  withWorkbenchHttpRoutes,
   WorkbenchRuntimeReactorLayerLive,
   WorkbenchHostPoliciesLayerLive,
   WorkbenchMcpLayerLive,
@@ -548,10 +548,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   AgentAwarenessRelay.layer,
   HeldHooksWaker.layer,
   layerThreadSettlementWorker,
-  StorageCleanup.layer.pipe(
-    Layer.provide(ProjectionStoreV2.layer),
-    Layer.provide(WorkbenchWorktreeOwnership.layer),
-  ),
+  StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
   DatabaseStorage.layer.pipe(
     Layer.provide(ProjectionMaintenance.layer),
     Layer.provide(
@@ -704,6 +701,7 @@ const layerMakeRoutes = Layer.mergeAll(
     Layer.provide(McpOAuth.layerMcpClientAuthenticator),
   ),
 ).pipe(
+  withWorkbenchHttpRoutes,
   Layer.provide(
     PullRequestReviewGuideService.layer.pipe(Layer.provide(PullRequestReviewGuides.layer)),
   ),

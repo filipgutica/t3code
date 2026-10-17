@@ -26,15 +26,10 @@
     },
     {
       "source": "apps/server/src/server.ts",
-      "target": "apps/server/src/workbench/worktreeOwnership",
-      "symbols": ["*"],
-      "reason": "Install Workbench host policies, services, reactors and native worktree ownership at startup."
-    },
-    {
-      "source": "apps/server/src/server.ts",
       "target": "apps/server/src/workbench/serverLayer",
       "symbols": [
         "WorkbenchHostPoliciesLayerLive",
+        "withWorkbenchHttpRoutes",
         "WorkbenchMcpLayerLive",
         "WorkbenchRuntimeReactorLayerLive",
         "WorkbenchServicesLayerLive"

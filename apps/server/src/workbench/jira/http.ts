@@ -1,9 +1,13 @@
+import { WorkbenchJiraOAuthState } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 
 import { WorkbenchJiraService } from "@t3tools/workbench/jira/WorkbenchJiraService";
+
+const isOAuthState = Schema.is(WorkbenchJiraOAuthState);
 
 const CALLBACK_PATH = "/oauth/workbench/jira/callback";
 const CALLBACK_HEADERS = {
@@ -32,7 +36,7 @@ export const workbenchJiraOAuthRouteLayer = Layer.unwrap(
         }
 
         const code = url.value.searchParams.get("code")?.trim() ?? "";
-        const state = url.value.searchParams.get("state")?.trim() ?? "";
+        const state = url.value.searchParams.get("state") ?? "";
         const authorizationError = url.value.searchParams.get("error")?.trim() ?? "";
         if (authorizationError.length > 0) {
           return failedCallbackResponse(
@@ -41,7 +45,7 @@ export const workbenchJiraOAuthRouteLayer = Layer.unwrap(
               : "Jira authorization could not be completed.",
           );
         }
-        if (code.length === 0 || state.length === 0) {
+        if (code.length === 0 || !isOAuthState(state)) {
           return failedCallbackResponse("Jira authorization callback was incomplete.");
         }
 
