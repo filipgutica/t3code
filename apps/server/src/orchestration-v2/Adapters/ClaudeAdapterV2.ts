@@ -1285,7 +1285,7 @@ const CLAUDE_RESEARCH_FILE_TOOL_DENIAL = {
   },
 } satisfies HookJSONOutput;
 
-// Check native traversal as well as lexical resolution for connector arguments.
+// Preserve native symlink traversal when checking built-in file tools.
 const claudeResearchRealPath = (target: string) =>
   Effect.callback<string, NodeJS.ErrnoException>((resume) => {
     NodeFS.realpath.native(target, (error, resolved) => {
@@ -1308,12 +1308,21 @@ const claudeResearchPathExists = (target: string) =>
 
 const claudeResearchHasParentSegment = (value: string) => value.split(/[\\/]/).includes("..");
 
-const claudeResearchArgumentStrings = (value: unknown): ReadonlyArray<string> => {
-  if (typeof value === "string") return [value];
-  if (Array.isArray(value)) return value.flatMap(claudeResearchArgumentStrings);
-  if (value !== null && typeof value === "object")
-    return Object.values(value).flatMap(claudeResearchArgumentStrings);
-  return [];
+const claudeResearchHasUnsafeBraces = (value: string) => {
+  let unsafe = false;
+  const withoutGroups = value.replace(/\{([^{}]*)\}/g, (_match, group: string) => {
+    if (
+      group
+        .split(",")
+        .some(
+          (alternative) =>
+            /[\\/]/.test(alternative) || alternative.includes("..") || alternative.startsWith("~"),
+        )
+    )
+      unsafe = true;
+    return "";
+  });
+  return unsafe || /[{}]/.test(withoutGroups);
 };
 
 // Mirrors Claude Code's MCP name normalization: mcp__<server>__<tool>, with
@@ -8148,22 +8157,24 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 if (typeof target !== "string" || target.length === 0)
                   return CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
                 const candidates = [target];
-                for (const key of ["pattern", "glob"]) {
+                const filterKeys =
+                  hookInput.tool_name === "Glob"
+                    ? ["pattern"]
+                    : hookInput.tool_name === "Grep"
+                      ? ["glob", "type"]
+                      : [];
+                for (const key of filterKeys) {
                   const pattern = field(hookInput.tool_input, key);
-                  if (
-                    pattern === undefined &&
-                    !(hookInput.tool_name === "Glob" && key === "pattern")
-                  )
-                    continue;
+                  if (pattern === undefined && key !== "pattern") continue;
                   if (
                     typeof pattern !== "string" ||
                     path.isAbsolute(pattern) ||
                     pattern.startsWith("~") ||
                     claudeResearchHasParentSegment(pattern) ||
-                    /[{}]/.test(pattern)
+                    claudeResearchHasUnsafeBraces(pattern)
                   )
                     return CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
-                  if (hookInput.tool_name === "Glob" || key === "glob")
+                  if (key !== "type" || /[\\/]/.test(pattern))
                     candidates.push(path.join(target, pattern));
                 }
                 if (
@@ -8193,25 +8204,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 })
               )
                 return CLAUDE_RESEARCH_MCP_TOOL_DENIAL;
-              if (serverName !== CLAUDE_T3_MCP_SERVER_NAME && roots !== undefined) {
-                const candidates: string[] = [];
-                for (const value of claudeResearchArgumentStrings(hookInput.tool_input)) {
-                  if (/^file:/i.test(value)) {
-                    candidates.push(yield* path.fromFileUrl(new URL(value)));
-                  } else if (
-                    path.isAbsolute(value) ||
-                    value.startsWith("~") ||
-                    claudeResearchHasParentSegment(value)
-                  ) {
-                    candidates.push(value);
-                  }
-                }
-                if (
-                  candidates.length > 0 &&
-                  !(yield* researchPathsAllowed({ candidates, roots, cwd: hookInput.cwd }))
-                )
-                  return CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
-              }
               return {} satisfies HookJSONOutput;
             }).pipe(
               Effect.timeout("10 seconds"),
