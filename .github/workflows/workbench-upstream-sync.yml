@@ -22,9 +22,10 @@ jobs:
       contents: read
       actions: read
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 60
     outputs:
-      needed: ${{ steps.pending.outputs.needed }}
+      needed: ${{ steps.preview.outputs.proceed }}
+      integrated: ${{ steps.pending.outputs.integrated }}
       product_sha: ${{ steps.pending.outputs.product_sha }}
       verified_sha: ${{ steps.bundle.outputs.verified_sha }}
     steps:
@@ -48,6 +49,7 @@ jobs:
           echo "product_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           if git merge-base --is-ancestor upstream/main HEAD; then
             echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "integrated=true" >> "$GITHUB_OUTPUT"
           else
             echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
@@ -69,11 +71,26 @@ jobs:
         with:
           node-version-file: package.json
 
-      - name: Preview merge
+      - id: preview
+        name: Preview merge
         if: steps.pending.outputs.needed == 'true'
         shell: bash
         run: |
-          node scripts/workbench-upstream-sync.ts --product HEAD --upstream upstream/main | tee "$RUNNER_TEMP/upstream-sync-preview.json"
+          status=0
+          node scripts/workbench-upstream-sync.ts --product HEAD --upstream upstream/main > "$RUNNER_TEMP/upstream-sync-preview.json" || status=$?
+          cat "$RUNNER_TEMP/upstream-sync-preview.json"
+          if [[ "$status" == 2 ]]; then
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Upstream sync needs manual conflict resolution"
+              echo "No merge was published. Conflicting paths:"
+              jq -r '.conflictPaths[] | "- " + .' "$RUNNER_TEMP/upstream-sync-preview.json"
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$status" == 0 ]]; then
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
+          else
+            exit "$status"
+          fi
 
       - name: Upload merge preview
         if: always() && steps.pending.outputs.needed == 'true'
@@ -85,7 +102,7 @@ jobs:
           retention-days: 7
 
       - name: Merge upstream on a sync branch
-        if: steps.pending.outputs.needed == 'true'
+        if: steps.preview.outputs.proceed == 'true'
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
@@ -104,11 +121,11 @@ jobs:
           fi
 
       - name: Review remaining fork ownership and regenerate focused CI
-        if: steps.pending.outputs.needed == 'true'
+        if: steps.preview.outputs.proceed == 'true'
         run: node scripts/workbench-ci.ts --upstream upstream/main
 
       - name: Setup Vite+
-        if: steps.pending.outputs.needed == 'true'
+        if: steps.preview.outputs.proceed == 'true'
         uses: voidzero-dev/setup-vp@v1
         with:
           node-version-file: package.json
@@ -116,7 +133,7 @@ jobs:
           run-install: false
 
       - name: Regenerate and install the merged lockfile
-        if: steps.pending.outputs.needed == 'true'
+        if: steps.preview.outputs.proceed == 'true'
         run: |
           vp install --lockfile-only --no-frozen-lockfile
           vp install --frozen-lockfile
@@ -124,17 +141,17 @@ jobs:
           git commit --no-edit
 
       - name: Setup APT mirrors
-        if: steps.pending.outputs.needed == 'true'
+        if: steps.preview.outputs.proceed == 'true'
         uses: ./.github/actions/setup-apt-mirrors
 
       - name: Install browser secret helper build libraries
-        if: steps.pending.outputs.needed == 'true'
+        if: steps.preview.outputs.proceed == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y libsecret-1-dev pkg-config
 
       - name: Verify Workbench overlay
-        if: steps.pending.outputs.needed == 'true'
+        if: steps.preview.outputs.proceed == 'true'
         run: |
           node scripts/workbench-ci.ts --check
           node scripts/workbench-ci.ts --lint
@@ -145,27 +162,24 @@ jobs:
           vp run --filter @t3tools/workbench quality
           vp exec tsc --noEmit -p scripts/workbench-regression/tsconfig.json
           T3CODE_WORKBENCH_BUILD=1 vp run build:desktop
+          node apps/desktop/scripts/verify-preload-bundle.mjs
           xvfb-run -a vp run --filter @t3tools/desktop smoke-test
 
-      - name: Install Chromium for Workbench lifecycle
-        if: steps.pending.outputs.needed == 'true'
+      - name: Install Chromium for Workbench regressions
+        if: steps.preview.outputs.proceed == 'true'
         working-directory: scripts
         run: vp exec playwright install --with-deps chromium
 
-      - name: Verify Workbench lifecycle
-        if: steps.pending.outputs.needed == 'true'
+      - name: Verify simulated Workbench regressions
+        if: steps.preview.outputs.proceed == 'true'
         working-directory: scripts
         env:
           T3CODE_BUNDLED_DEV: "1"
-        run: >-
-          vp exec playwright test --config workbench-regression/playwright.config.ts
-          planning.spec.ts
-          threads.spec.ts
-          ticket-workspace.spec.ts
+        run: vp exec playwright test --config workbench-regression/playwright.config.ts
 
       - name: Bundle the verified merge
         id: bundle
-        if: steps.pending.outputs.needed == 'true'
+        if: steps.preview.outputs.proceed == 'true'
         env:
           PRODUCT_SHA: ${{ steps.pending.outputs.product_sha }}
         run: |
@@ -178,7 +192,7 @@ jobs:
           git bundle create "$RUNNER_TEMP/verified-sync.bundle" "$SYNC_BRANCH" "^$PRODUCT_SHA"
 
       - name: Upload the verified merge
-        if: steps.pending.outputs.needed == 'true'
+        if: steps.preview.outputs.proceed == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: verified-upstream-sync
@@ -187,12 +201,15 @@ jobs:
           retention-days: 1
 
   publish:
+    timeout-minutes: 10
     needs: verify
     if: needs.verify.outputs.needed == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
       pull-requests: write
+    outputs:
+      merge_sha: ${{ steps.publish.outputs.merge_sha }}
     env:
       GH_TOKEN: ${{ github.token }}
       PRODUCT_SHA: ${{ needs.verify.outputs.product_sha }}
@@ -215,7 +232,8 @@ jobs:
         with:
           node-version-file: package.json
 
-      - name: Publish the verified merge
+      - id: prepare
+        name: Prepare the verified sync PR
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$PRODUCT_SHA"
@@ -245,21 +263,39 @@ jobs:
           fi
           test -n "$pr_number"
 
-          product_remote_sha="$(git ls-remote --refs origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
-          test "$product_remote_sha" = "$PRODUCT_SHA"
-          gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number" > "$RUNNER_TEMP/sync-pr.json"
-          node scripts/workbench-upstream-sync-merge.ts \
-            --pr-json "$RUNNER_TEMP/sync-pr.json" \
-            --repository "$GITHUB_REPOSITORY" \
-            --product-branch "$PRODUCT_BRANCH" \
-            --sync-branch "$SYNC_BRANCH" \
-            --product-sha "$PRODUCT_SHA" \
-            --verified-sha "$VERIFIED_SHA"
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
 
-          # GitHub publishes the PR's conflict-checked merge commit at this
-          # ref. Use that exact commit so protected-branch rules see a real PR
-          # merge, while the normal non-force push rejects a moved base.
-          git fetch --no-tags origin "refs/pull/$pr_number/merge"
+      - name: Wait for the verified sync merge ref
+        env:
+          PR_NUMBER: ${{ steps.prepare.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          for attempt in {1..30}; do
+            gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > "$RUNNER_TEMP/sync-pr.json"
+            node scripts/workbench-upstream-sync-merge.ts \
+              --pr-json "$RUNNER_TEMP/sync-pr.json" \
+              --repository "$GITHUB_REPOSITORY" \
+              --product-branch "$PRODUCT_BRANCH" \
+              --sync-branch "$SYNC_BRANCH" \
+              --product-sha "$PRODUCT_SHA" \
+              --verified-sha "$VERIFIED_SHA"
+            mergeable="$(jq -r '.mergeable' "$RUNNER_TEMP/sync-pr.json")"
+            if [[ "$mergeable" == false ]]; then
+              echo "Sync PR #$PR_NUMBER has merge conflicts; refusing to publish." >&2
+              exit 1
+            fi
+            if [[ "$mergeable" == true ]] && git fetch --no-tags origin "refs/pull/$PR_NUMBER/merge"; then
+              exit 0
+            fi
+            if [[ "$attempt" != 30 ]]; then sleep 2; fi
+          done
+          echo "Timed out waiting for sync PR #$PR_NUMBER merge ref after 30 attempts." >&2
+          exit 1
+
+      - name: Publish the verified merge
+        id: publish
+        run: |
+          set -euo pipefail
           merge_sha="$(git rev-parse FETCH_HEAD)"
           read -r first_parent second_parent extra <<< "$(git show -s --format='%P' "$merge_sha")"
           test -z "${extra:-}"
@@ -279,3 +315,78 @@ jobs:
           test -z "${extra:-}"
           test "$first_parent" = "$PRODUCT_SHA"
           test "$second_parent" = "$VERIFIED_SHA"
+          echo "merge_sha=$merge_sha" >> "$GITHUB_OUTPUT"
+
+  dispatch:
+    needs: [verify, publish]
+    if: >-
+      always() && needs.verify.result == 'success' &&
+      (needs.publish.result == 'success' || needs.verify.outputs.integrated == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PUBLISHED_SHA: ${{ needs.publish.outputs.merge_sha || needs.verify.outputs.product_sha }}
+    steps:
+      - name: Checkout published checkpoint
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.PUBLISHED_SHA }}
+          fetch-depth: 0
+
+      - name: Identify already-published sync merge
+        if: needs.publish.result != 'success'
+        run: |
+          set -euo pipefail
+          read -r first_parent second_parent extra <<< "$(git show -s --format='%P' HEAD)"
+          if [[ -z "$second_parent" || -n "${extra:-}" ]]; then exit 0; fi
+          matching_prs="$(gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$PUBLISHED_SHA/pulls" \
+            --jq ".[] | select(.merged_at != null and .merge_commit_sha == \"$PUBLISHED_SHA\"
+              and .base.ref == \"$PRODUCT_BRANCH\" and .base.repo.full_name == \"$GITHUB_REPOSITORY\"
+              and .head.ref == \"$SYNC_BRANCH\" and .head.repo.full_name == \"$GITHUB_REPOSITORY\"
+              and .head.sha == \"$second_parent\") | .number")"
+          if [[ -z "$matching_prs" ]]; then exit 0; fi
+          test "$(git rev-parse "HEAD^{tree}")" = "$(git rev-parse "$second_parent^{tree}")"
+          echo "REPAIR_SYNC_GATES=true" >> "$GITHUB_ENV"
+
+      - name: Dispatch gates for the published main merge
+        if: needs.publish.result == 'success' || env.REPAIR_SYNC_GATES == 'true'
+        run: |
+          set -euo pipefail
+          retained_run() {
+            gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$PUBLISHED_SHA&branch=$PRODUCT_BRANCH&per_page=100" \
+              --jq ".workflow_runs[] | select(.head_sha == \"$PUBLISHED_SHA\"
+                and (.event == \"push\" or .event == \"workflow_dispatch\")
+                and .path == \".github/workflows/$workflow\" and .head_branch == \"$PRODUCT_BRANCH\")" \
+              | jq -sr --arg since "$1" '
+                map(select($since == "" or (.event == "workflow_dispatch" and .created_at >= $since)))
+                | sort_by(.run_number, .run_attempt) | last
+                | select(. != null and ($since != "" or .status != "completed" or .conclusion == "success"))
+                | .id'
+          }
+          for workflow in workbench-ci.yml workbench-quality.yml; do
+            existing="$(retained_run "")"
+            if [[ -n "$existing" ]]; then continue; fi
+            dispatch_started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            product_remote_sha="$(git ls-remote --refs origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
+            test "$product_remote_sha" = "$PUBLISHED_SHA"
+            if gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" \
+              --ref "$PRODUCT_BRANCH" -f "expected_sha=$PUBLISHED_SHA"; then
+              continue
+            fi
+            # A failed client response can still have created a run, even one that already failed.
+            # Run listings are eventually consistent; never re-dispatch while acceptance is unknown.
+            for attempt in {1..12}; do
+              sleep 5
+              existing="$(retained_run "$dispatch_started")"
+              if [[ -n "$existing" ]]; then break; fi
+            done
+            if [[ -z "$existing" ]]; then
+              echo "Dispatch acceptance unknown for $workflow at $PUBLISHED_SHA after 60 seconds. Rerun this job to repair missing gates; no second dispatch was sent." >&2
+              exit 1
+            fi
+          done

@@ -4,6 +4,12 @@ name: Workbench feature CI
 
 on:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact published main SHA; fail if the branch moved before dispatch
+        type: string
+        required: false
   push:
     branches: [main]
 
@@ -30,10 +36,18 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
+      - name: Verify dispatched checkpoint
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          if [[ -n "$EXPECTED_SHA" && "$GITHUB_SHA" != "$EXPECTED_SHA" ]]; then
+            echo "Main moved before dispatch: expected $EXPECTED_SHA, got $GITHUB_SHA" >&2
+            exit 1
+          fi
       - run: node scripts/workbench-ci.ts --check
       - id: scope
         env:
-          CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
         run: node scripts/workbench-ci.ts --scope "$CI_BASE"
 
   lint:

@@ -57,16 +57,16 @@ jobs:
           ORIGINAL_RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
-          # Build only a main snapshot whose latest push runs passed both fork
+          # Build only a main snapshot whose latest push or dispatch runs passed both fork
           # gates. A missing, pending or failed run waits for the next schedule.
           for workflow in workbench-ci.yml workbench-quality.yml; do
             runs="$RUNNER_TEMP/$workflow-runs.json"
-            gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?event=push&head_sha=$CAPTURED_SHA&branch=main&per_page=100" > "$runs"
+            gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$CAPTURED_SHA&branch=main&per_page=100" > "$runs"
             if ! RUNS_FILE="$runs" WORKFLOW_PATH=".github/workflows/$workflow" node --input-type=module -e '
               import { readFileSync } from "node:fs";
               const pages = JSON.parse(readFileSync(process.env.RUNS_FILE, "utf8"));
               const runs = pages.flatMap((page) => page.workflow_runs).filter((run) =>
-                run.path === process.env.WORKFLOW_PATH && run.event === "push" &&
+                run.path === process.env.WORKFLOW_PATH && ["push", "workflow_dispatch"].includes(run.event) &&
                 run.head_branch === "main" && run.head_sha === process.env.CAPTURED_SHA
               );
               runs.sort((a, b) => b.run_number - a.run_number || b.run_attempt - a.run_attempt);
