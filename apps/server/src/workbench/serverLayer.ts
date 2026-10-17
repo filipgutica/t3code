@@ -23,7 +23,7 @@ const WorkbenchStoreLayerLive = WorkbenchStore.WorkbenchStoreLive.pipe(
   Layer.provide(SqlitePersistence.layerConfig),
 );
 
-export const WorkbenchHostPoliciesLayer = Layer.mergeAll(
+const WorkbenchHostPoliciesLayer = Layer.mergeAll(
   TicketPlanningRuntime.layerRuntimePolicyDecorator,
   TicketPlanningRuntime.layerMcpWritePolicy,
   WorkbenchWorktreeOwnership.layer,

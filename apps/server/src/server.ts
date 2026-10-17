@@ -482,8 +482,8 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
   }),
 );
 
-const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
-  Layer.provide(WorkbenchHostPoliciesLayerLive),
+export const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
+  Layer.provideMerge(WorkbenchHostPoliciesLayerLive),
   Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(ProviderEventIngestor.layerAnalytics),
   Layer.provide(layerCheckpointStore),
@@ -674,7 +674,7 @@ const layerCommandReadiness = HttpRouter.middleware(
   { global: true },
 );
 
-const layerMakeRoutes = Layer.mergeAll(
+export const layerMakeRoutes = Layer.mergeAll(
   Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
       Layer.provide(AuthHttp.layer),
