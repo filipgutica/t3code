@@ -15,6 +15,7 @@ import {
   ProjectId,
   ThreadId,
   WorkbenchAssignmentId,
+  WorkbenchEpicId,
   WorkbenchJiraBindingId,
   WorkbenchJiraConnectionId,
   WorkbenchProjectId,
@@ -254,6 +255,9 @@ function Harness({
   error = null,
   dialog,
   conversation,
+  deletedThread = false,
+  epicState,
+  epicLifecycleSupported,
 }: {
   workspaceState?: "active" | "archived" | "deleted";
   detail?: boolean;
@@ -265,6 +269,9 @@ function Harness({
   dialog?: "create" | "publish";
   /** create=ticket in the URL, an unsaved draft to resume, or a saved ticket's draft phase. */
   conversation?: ConversationMode;
+  deletedThread?: boolean;
+  epicState?: "active" | "archived";
+  epicLifecycleSupported?: boolean;
 }) {
   const statusEnvironmentRef = useRef(environmentId);
   const pendingJiraMigrationBindingsRef = useRef<
@@ -283,6 +290,9 @@ function Harness({
   const tickets = ticketsFixture(snapshot.tickets, includeLocalTicket);
   const currentSnapshot = {
     ...snapshot,
+    ...(epicLifecycleSupported === undefined
+      ? {}
+      : { supportsEpicLifecycle: epicLifecycleSupported }),
     projects: [currentWorkspace],
     tickets,
     ...(ticketDrafts === undefined ? {} : { ticketDrafts }),
@@ -317,9 +327,9 @@ function Harness({
       succeed: noop,
       fail: noop,
     },
-    threadsById: new Map([[thread.id, thread]]),
+    threadsById: new Map(deletedThread ? [] : [[thread.id, thread]]),
     archivedThreadsById: new Map(),
-    existingThreadIds: new Set([thread.id]),
+    existingThreadIds: new Set(deletedThread ? [] : [thread.id]),
     reservedThreadIds: new Set(),
     assignmentsByTicket: new Map([[ticket.id, assignment]]),
     threadLookupReady: true,
@@ -339,7 +349,17 @@ function Harness({
     setAwaitingEpicId: noop,
     awaitingSelectedProject: false,
     selectedProject,
-    selectedEpic: null,
+    selectedEpic: epicState
+      ? {
+          id: WorkbenchEpicId.make("epic"),
+          projectId: workspace.id,
+          title: "Local Epic",
+          markdown: "",
+          archivedAt: epicState === "archived" ? timestamp : null,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        }
+      : null,
     selectedTicket,
     updateRouteSelection: idle,
     updateEpicRouteSelection: idle,
@@ -413,6 +433,8 @@ function Harness({
       saveWorkspace: success,
       submitTicket: success,
       saveEpicContent: success,
+      canArchiveEpic: true,
+      setEpicArchived: success,
       submitEpic: success,
       openTicketDialog: noop,
       conversationEpicId: null,
@@ -623,6 +645,42 @@ it("keeps linked native Threads openable while archived Ticket publication is di
   const openThread = button("Open Thread for Ship the release");
   expect(openThread.disabled).toBe(false);
   await act(async () => openThread.click());
+  expect(requestTicketThread).toHaveBeenCalledWith(
+    expect.objectContaining({ id: ticket.id }),
+    thread.id,
+  );
+});
+
+it.each(["active", "archived"] as const)(
+  "hides %s Epic lifecycle actions until the host advertises support",
+  async (epicState) => {
+    await render({ epicState });
+    expect(button("Actions for Local Epic", { optional: true })).toBeNull();
+    await render({ epicState, epicLifecycleSupported: false });
+    expect(button("Actions for Local Epic", { optional: true })).toBeNull();
+    await render({ epicState, epicLifecycleSupported: true });
+    await act(async () => button("Actions for Local Epic").click());
+    expect(document.querySelector('[role="menu"]')?.textContent).toContain(
+      epicState === "archived" ? "Restore Epic" : "Archive Epic",
+    );
+  },
+);
+
+it("shows the deleted assignment and a visible replacement action in Ticket detail", async () => {
+  await render({ detail: true, deletedThread: true });
+  expect(container.textContent).toContain("Thread deleted");
+  const replacement = [...container.querySelectorAll("button")].find(
+    (candidate) =>
+      candidate.getAttribute("aria-label") === "Create replacement Thread for Ship the release" &&
+      candidate.textContent?.includes("Thread deleted"),
+  );
+  if (!replacement) throw new Error("Missing deleted Thread row action");
+  const label = [...replacement.querySelectorAll("span")].find(
+    (span) => span.children.length === 0 && span.textContent === "Create replacement Thread",
+  );
+  expect(label).toBeDefined();
+  expect(label?.classList.contains("sr-only")).toBe(false);
+  await act(async () => replacement.click());
   expect(requestTicketThread).toHaveBeenCalledWith(
     expect.objectContaining({ id: ticket.id }),
     thread.id,

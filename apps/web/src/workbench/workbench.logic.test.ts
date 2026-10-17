@@ -319,15 +319,15 @@ describe("Workbench ticket helpers", () => {
       state: "linked",
     });
     expect(getWorkbenchThreadPresentation(true, false, null, true)).toEqual({
-      actionLabel: "Open Thread",
-      pendingActionLabel: "Opening Thread…",
-      stateLabel: "Idle",
+      actionLabel: "Restore and open",
+      pendingActionLabel: "Restoring Thread…",
+      stateLabel: "Archived",
       state: "archived",
     });
     expect(getWorkbenchThreadPresentation(true, false)).toEqual({
-      actionLabel: "Create Thread",
-      pendingActionLabel: "Creating Thread…",
-      stateLabel: "No Thread",
+      actionLabel: "Create replacement Thread",
+      pendingActionLabel: "Creating replacement Thread…",
+      stateLabel: "Thread deleted",
       state: "missing",
     });
   });
