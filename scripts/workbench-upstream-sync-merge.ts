@@ -60,7 +60,7 @@ export function validateVerifiedSyncPullRequest({
   }
 }
 
-export async function fetchPullRequestMergeRef({
+async function fetchPullRequestMergeRef({
   repositoryDir,
   pullRequestNumber,
 }: {
