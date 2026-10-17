@@ -48,7 +48,13 @@ const snapshot: WorkbenchSnapshot = {
 const setError = vi.fn();
 const setPendingAction = () => {};
 let latestDialogs: ReturnType<typeof useWorkbenchPageDialogs>;
-function Harness({ data }: { data: WorkbenchSnapshot | null }) {
+function Harness({
+  data,
+  canOperate = true,
+}: {
+  data: WorkbenchSnapshot | null;
+  canOperate?: boolean;
+}) {
   const location = useLocation();
   const search = parseWorkbenchSearch(location.search);
   const selection = useWorkbenchPageSelection({
@@ -65,6 +71,7 @@ function Harness({ data }: { data: WorkbenchSnapshot | null }) {
     environmentId,
     snapshot: data,
     projects: [],
+    canOperate,
     localOnlySupported: false,
     selection,
     setError,
@@ -124,7 +131,7 @@ const mountRouter = async (entry: string) => {
 };
 describe("ticket planning conversation navigation", () => {
   const workspaceEntry = "/workbench?environmentId=remote&workbenchProjectId=workspace";
-  const mount = async (entry: string, data = snapshot) => {
+  const mount = async (entry: string, data = snapshot, canOperate = true) => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     command.mockClear();
     const router = await mountRouter(entry);
@@ -132,7 +139,7 @@ describe("ticket planning conversation navigation", () => {
     await act(async () => {
       renderer = create(
         <RouterContextProvider router={router}>
-          <Harness data={data} />
+          <Harness data={data} canOperate={canOperate} />
         </RouterContextProvider>,
       );
     });
@@ -149,6 +156,30 @@ describe("ticket planning conversation navigation", () => {
       unmount: () => act(async () => mounted.unmount()),
     };
   };
+
+  it("rejects dialog writes and creation intents without operate permission", async () => {
+    const { mounted, settle, unmount, router } = await mount(workspaceEntry, snapshot, false);
+    try {
+      await settle();
+      await act(async () => {
+        expect(await latestDialogs.saveWorkspace("Edited", [ProjectId.make("repo")])).toBe(false);
+        expect(await latestDialogs.submitEpic("Epic", "Description")).toBe(false);
+        expect(await latestDialogs.submitProject("Workspace", [ProjectId.make("repo")])).toBe(
+          false,
+        );
+        latestDialogs.openTicketDialog();
+        latestDialogs.openEpicDialog();
+        latestDialogs.openTicketConversation();
+      });
+      expect(command).not.toHaveBeenCalled();
+      expect(latestDialogs.ticketDialogOpen).toBe(false);
+      expect(latestDialogs.epicDialogOpen).toBe(false);
+      expect(mounted.root.findByType("button").props["data-open"]).toBe(false);
+      expect(router.state.location.href).toBe(workspaceEntry);
+    } finally {
+      await unmount();
+    }
+  });
 
   it.each([undefined, false, true])(
     "requires host lifecycle support (%s) and sends the displayed Epic version",

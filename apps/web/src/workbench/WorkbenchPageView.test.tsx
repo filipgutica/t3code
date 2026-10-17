@@ -32,6 +32,15 @@ import type { Project } from "../types";
 import { WorkbenchPageView } from "./WorkbenchPageView";
 import { useWorkbenchBoardData } from "./useWorkbenchBoardData";
 
+vi.mock("../state/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../state/server")>();
+  const { Atom } = await import("effect/reactivity");
+  const config = Atom.make({ environment: { capabilities: { threadSettlement: true } } });
+  return {
+    ...actual,
+    serverEnvironment: { ...actual.serverEnvironment, configValueAtom: () => config },
+  };
+});
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn(async () => {}) }));
 vi.mock("../state/query", () => ({
   useEnvironmentQuery: () => ({ data: null, error: null, isPending: false }),
@@ -246,6 +255,7 @@ const requestTicketThread = vi.fn();
 const defaultGrants = { archive: true, remove: true };
 
 function Harness({
+  canOperate = true,
   workspaceState = "active",
   detail = false,
   mirrored = false,
@@ -256,9 +266,11 @@ function Harness({
   dialog,
   conversation,
   deletedThread = false,
+  archivedAssignedThread = false,
   epicState,
   epicLifecycleSupported,
 }: {
+  canOperate?: boolean;
   workspaceState?: "active" | "archived" | "deleted";
   detail?: boolean;
   mirrored?: boolean;
@@ -266,10 +278,11 @@ function Harness({
   syncState?: "error" | "success";
   grants?: { archive: boolean; remove: boolean };
   error?: string | null;
-  dialog?: "create" | "publish";
+  dialog?: "create" | "publish" | "workspace";
   /** create=ticket in the URL, an unsaved draft to resume, or a saved ticket's draft phase. */
   conversation?: ConversationMode;
   deletedThread?: boolean;
+  archivedAssignedThread?: boolean;
   epicState?: "active" | "archived";
   epicLifecycleSupported?: boolean;
 }) {
@@ -305,6 +318,7 @@ function Harness({
     supportsLocalOnlyTickets: true,
   };
   const pageData: PageProps["pageData"] = {
+    canOperate,
     projects: [repository],
     repositoriesById: new Map([[repository.id, repository]]),
     providers: [],
@@ -327,8 +341,10 @@ function Harness({
       succeed: noop,
       fail: noop,
     },
-    threadsById: new Map(deletedThread ? [] : [[thread.id, thread]]),
-    archivedThreadsById: new Map(),
+    threadsById: new Map(deletedThread || archivedAssignedThread ? [] : [[thread.id, thread]]),
+    archivedThreadsById: new Map(
+      archivedAssignedThread ? [[thread.id, { ...thread, archivedAt: timestamp }]] : [],
+    ),
     existingThreadIds: new Set(deletedThread ? [] : [thread.id]),
     reservedThreadIds: new Set(),
     assignmentsByTicket: new Map([[ticket.id, assignment]]),
@@ -424,7 +440,7 @@ function Harness({
       closeDeletion: noop,
     },
     dialogs: {
-      editWorkspaceOpen: false,
+      editWorkspaceOpen: dialog === "workspace",
       setEditWorkspaceOpen: noop,
       ticketDialogOpen: dialog === "create",
       ticketDialogEpicId: null,
@@ -737,4 +753,106 @@ it("tells the conversation when the host predates conversation drafts", async ()
   expect(document.querySelector('[data-drafts-supported="false"]')).not.toBeNull();
   await render({ conversation: "create" });
   expect(document.querySelector('[data-drafts-supported="true"]')).not.toBeNull();
+});
+
+it("disables board mutations without operate permission and restores them when granted", async () => {
+  await render({ canOperate: false });
+  expect(button("New Ticket").disabled).toBe(true);
+  expect(button("Retry").disabled).toBe(true);
+  await act(async () => button("Retry").click());
+  expect(syncJiraBinding).not.toHaveBeenCalled();
+  await render({ canOperate: true });
+  expect(button("New Ticket").disabled).toBe(false);
+  await act(async () => button("Retry").click());
+  expect(syncJiraBinding).toHaveBeenCalledOnce();
+});
+
+it("keeps Ticket inspection available while denying edits and Jira refresh", async () => {
+  await render({ detail: true, mirrored: true, canOperate: false });
+  expect(document.body.textContent).toContain(ticket.title);
+  expect(button("Refresh from Jira").disabled).toBe(true);
+  await act(async () => button("Refresh from Jira").click());
+  expect(syncJiraBinding).not.toHaveBeenCalled();
+});
+
+it("blocks saving an already open Workspace dialog after permission is revoked", async () => {
+  await render({ dialog: "workspace" });
+  expect(document.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false);
+  await render({ dialog: "workspace", canOperate: false });
+  const submit = document.querySelector<HTMLButtonElement>('button[type="submit"]');
+  expect(submit).not.toBeNull();
+  expect(submit!.disabled).toBe(true);
+  expect(button("Cancel").disabled).toBe(false);
+  expect(submit!.getAttribute("aria-busy")).not.toBe("true");
+  await act(async () => submit!.click());
+  expect(success).not.toHaveBeenCalled();
+});
+
+it("disables Workspace creation for a read-only session with no selected Workspace", async () => {
+  await render({ workspaceState: "deleted", canOperate: false });
+  expect(button("Create Workspace").disabled).toBe(true);
+});
+
+it.each([false, true])(
+  "keeps assigned Thread navigation available without operate permission (detail=%s)",
+  async (detail) => {
+    await render({ detail, canOperate: false });
+    const open = button("Open Thread for Ship the release");
+    expect(open.disabled).toBe(false);
+    await act(async () => open.click());
+    expect(requestTicketThread).toHaveBeenCalledWith(
+      expect.objectContaining({ id: ticket.id }),
+      thread.id,
+    );
+  },
+);
+
+it.each([false, true])(
+  "requires operate permission to restore an archived Thread (detail=%s)",
+  async (detail) => {
+    await render({ detail, archivedAssignedThread: true, canOperate: false });
+    expect(button("Restore and open for Ship the release").disabled).toBe(true);
+    await render({
+      detail,
+      archivedAssignedThread: true,
+      workspaceState: "archived",
+      canOperate: true,
+    });
+    const restore = button("Restore and open for Ship the release");
+    expect(restore.disabled).toBe(false);
+    await act(async () => restore.click());
+    expect(requestTicketThread).toHaveBeenCalledWith(
+      expect.objectContaining({ id: ticket.id }),
+      thread.id,
+    );
+  },
+);
+
+it("does not start a fresh planning conversation through the URL without operate permission", async () => {
+  await render({ conversation: "create", canOperate: false });
+  expect(document.querySelector("[data-conversation]")).toBeNull();
+  expect(button("New Ticket").disabled).toBe(true);
+});
+
+it("disables Ticket Thread mutations when permission is revoked and restores them when granted", async () => {
+  for (const canOperate of [true, false, true]) {
+    await render({ detail: true, canOperate });
+    for (const label of [
+      "Create Thread",
+      "Link existing Thread",
+      "Unlink Thread Release agent",
+      "Delete Thread Release agent",
+      "Settle Thread Release agent",
+    ]) {
+      expect(button(label).disabled, label).toBe(!canOperate);
+    }
+    expect(button("Open Thread for Ship the release").disabled).toBe(false);
+  }
+});
+
+it("requires operate permission to replace a deleted Ticket Thread", async () => {
+  await render({ detail: true, deletedThread: true, canOperate: false });
+  expect(button("Create replacement Thread for Ship the release", { optional: true })).toBeNull();
+  await render({ detail: true, deletedThread: true, canOperate: true });
+  expect(button("Create replacement Thread for Ship the release").disabled).toBe(false);
 });

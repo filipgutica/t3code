@@ -1,4 +1,5 @@
 import { ChangeRequestLinkOpenProvider } from "../lib/openPullRequestLink";
+import { RenderErrorBoundary } from "../components/RenderErrorBoundary";
 import type { EnvironmentId, PullRequestRef, ThreadId } from "@t3tools/contracts";
 import {
   createContext,
@@ -49,7 +50,9 @@ export const useOpenWorkbenchPullRequest = () => useContext(OpenWorkbenchPullReq
 export function WorkbenchPullRequestPreviewProvider({ children }: { children: ReactNode }) {
   return (
     <WorkbenchAttentionProvider>
-      <WorkbenchPullRequestPreview>{children}</WorkbenchPullRequestPreview>
+      <RenderErrorBoundary fallback={children}>
+        <WorkbenchPullRequestPreview>{children}</WorkbenchPullRequestPreview>
+      </RenderErrorBoundary>
     </WorkbenchAttentionProvider>
   );
 }

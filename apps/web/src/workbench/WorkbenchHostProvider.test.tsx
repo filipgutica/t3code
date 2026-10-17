@@ -16,30 +16,53 @@ import { reviewCommentContextId } from "../lib/composerContextRecords";
 const state = vi.hoisted(() => ({
   preparations: new Map<string, WorkbenchTicketPreparation>(),
   refresh: vi.fn(),
+  failPolicy: false,
+  failPreview: false,
+  failSlot: false,
 }));
 vi.mock("./useWorkbenchTicketPreparations", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./useWorkbenchTicketPreparations")>()),
-  useWorkbenchTicketPreparations: () => state.preparations,
+  useWorkbenchTicketPreparations: () => {
+    if (state.failPolicy) throw new Error("Policy failed");
+    return state.preparations;
+  },
   useWorkbenchTicketPreparationRefresh: () => state.refresh(),
 }));
 vi.mock("./WorkbenchPullRequestPreview", () => ({
-  WorkbenchPullRequestPreviewProvider: ({ children }: { readonly children: ReactNode }) => children,
+  WorkbenchPullRequestPreviewProvider: ({ children }: { readonly children: ReactNode }) => {
+    if (state.failPreview) throw new Error("Preview failed");
+    return children;
+  },
 }));
 // UI slots have their own interaction suites; this suite exercises installed policy
 // through native consumers without mounting a board or a live environment connection.
 vi.mock("./WorkbenchSidebarSlot", () => ({
-  WorkbenchSidebarSlot: ({ children }: { children: ReactNode }) => children,
+  WorkbenchSidebarSlot: ({ children }: { children: ReactNode }) => {
+    if (state.failSlot) throw new Error("Sidebar failed");
+    return children;
+  },
 }));
 vi.mock("./WorkbenchSidebarUtilityItem", () => ({ WorkbenchSidebarUtilityItem: () => null }));
-vi.mock("./WorkbenchThreadBreadcrumb", () => ({ WorkbenchThreadBreadcrumb: () => null }));
+vi.mock("./WorkbenchThreadBreadcrumb", () => ({
+  WorkbenchThreadBreadcrumb: () => {
+    if (state.failSlot) throw new Error("Slot failed");
+    return <span>Workbench breadcrumb</span>;
+  },
+}));
 vi.mock("./WorkbenchThreadPreparationGate", () => ({
-  WorkbenchThreadPreparationGate: ({ children }: { children: ReactNode }) => children,
+  WorkbenchThreadPreparationGate: ({ children }: { children: ReactNode }) => {
+    if (state.failSlot) throw new Error("Route failed");
+    return children;
+  },
 }));
 vi.mock("./WorkbenchComposerPendingReviewComments", () => ({
   WorkbenchComposerPendingReviewComments: () => null,
 }));
 vi.mock("./useWorkbenchCommandPaletteActions", () => ({
-  useWorkbenchCommandPaletteActions: () => [],
+  useWorkbenchCommandPaletteActions: () => {
+    if (state.failSlot) throw new Error("Command palette failed");
+    return [];
+  },
 }));
 vi.mock("./state", () => ({ workbenchEnvironment: { ticketPreparations: vi.fn() } }));
 vi.mock("./workbenchOutdatedServerDescriptor", () => ({
@@ -127,6 +150,9 @@ afterAll(() => vi.unstubAllEnvs());
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.preparations = new Map();
+  state.failPolicy = false;
+  state.failPreview = false;
+  state.failSlot = false;
   state.refresh.mockClear();
 });
 afterEach(async () => {
@@ -366,3 +392,57 @@ it("preserves the installed desktop identity for the native Codex auth handoff",
   );
   expect(new URL(renderer!.root.findByType("a").props.href).protocol).toBe("t3code-workbench-dev:");
 });
+
+it.each(["slot", "preview", "policy"])(
+  "contains a throwing %s while preserving native surfaces and policy defaults",
+  async (failure) => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    state.preparations = new Map([[key, preparation]]);
+    function NativeUI() {
+      const visible = host.useVisibleThreads(threads);
+      const policy = host.useThreadPresentationPolicy();
+      return (
+        <>
+          <host.HostSidebarContent pathname="/" isElectron={false}>
+            <h1>Native sidebar</h1>
+          </host.HostSidebarContent>
+          <host.HostThreadRouteContent threadRef={scopeThreadRef(one, threadId)}>
+            <h1>Native conversation</h1>
+          </host.HostThreadRouteContent>
+          <host.HostCommandPaletteContributions thread={null} draftEnvironmentId={undefined}>
+            {(actions) => <h1>Native commands ({actions.length} Workbench actions)</h1>}
+          </host.HostCommandPaletteContributions>
+          <host.HostThreadBreadcrumb environmentId={one} threadId={threadId} />
+          {visible.map((thread) => (
+            <p key={thread.environmentId}>{thread.environmentId}</p>
+          ))}
+          <span data-can-notify={policy?.canNotify(scopeThreadRef(one, threadId)) ?? true} />
+        </>
+      );
+    }
+    const view = () => (
+      <provider.WorkbenchHostProvider>
+        <NativeUI />
+      </provider.WorkbenchHostProvider>
+    );
+    try {
+      await render(view());
+      state.failSlot = failure === "slot";
+      state.failPreview = failure === "preview";
+      state.failPolicy = failure === "policy";
+      await render(view());
+      expect(visibleText()).toContain("Native conversation");
+      expect(visibleText()).toContain("Native sidebar");
+      expect(renderer!.root.findAllByType("h1").map((node) => node.children.join(""))).toContain(
+        "Native commands (0 Workbench actions)",
+      );
+      expect(renderer!.root.findAllByType("p").map((node) => node.children.join(""))).toEqual(
+        failure === "policy" ? ["one", "two"] : ["two"],
+      );
+      expect(renderer!.root.findByProps({ "data-can-notify": failure === "policy" })).toBeDefined();
+      if (failure === "slot") expect(visibleText()).not.toContain("Workbench breadcrumb");
+    } finally {
+      errors.mockRestore();
+    }
+  },
+);

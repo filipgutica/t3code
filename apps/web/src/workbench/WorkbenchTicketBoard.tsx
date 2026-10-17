@@ -133,6 +133,7 @@ const STATUS_DOT_CLASS: Record<WorkbenchTicketStatus, string> = {
 
 type WorkbenchTicketBoardProps = {
   readonly readOnly?: boolean;
+  readonly threadRestoreDisabled?: boolean;
   readonly environmentId: EnvironmentId;
   readonly onJiraTransition: (selection: WorkbenchJiraTransitionSelection) => void;
   readonly projectId: WorkbenchProjectId;
@@ -370,6 +371,7 @@ function WorkbenchTicketBoardContent({
 type WorkbenchBoardContext = Pick<
   WorkbenchTicketBoardProps,
   | "readOnly"
+  | "threadRestoreDisabled"
   | "environmentId"
   | "projectId"
   | "groupMode"
@@ -1012,6 +1014,7 @@ function renderWorkbenchBoardTicketThreadAction(
         disabled={
           pending ||
           pendingTicketIds.has(ticket.id) ||
+          (board.threadRestoreDisabled === true && thread.state === "archived") ||
           (board.readOnly === true && (thread.state === "unassigned" || thread.state === "missing"))
         }
         onClick={() => onOpenThread(ticket, assignment?.threadId)}

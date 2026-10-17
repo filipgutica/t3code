@@ -31,6 +31,7 @@ export function WorkbenchPublishTicketDialog({
   binding,
   epics,
   pending,
+  disabled,
   error,
   onClose,
   onPublish,
@@ -39,6 +40,7 @@ export function WorkbenchPublishTicketDialog({
   readonly binding: WorkbenchJiraBinding;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
   readonly pending: boolean;
+  readonly disabled?: boolean;
   readonly error: string | null;
   readonly onClose: () => void;
   readonly onPublish: (selection: {
@@ -58,7 +60,7 @@ export function WorkbenchPublishTicketDialog({
       ? jiraSprints[0]?.id
       : jiraSprints.find((sprint) => sprint.id === jiraSprintId)?.id;
   const selectedEpicId = epics.some((epic) => epic.id === epicId) ? epicId : null;
-  const canPublish = binding.active && selectedSprintId !== undefined;
+  const canPublish = !disabled && binding.active && selectedSprintId !== undefined;
   const close = () => {
     if (!pending && !submitting.current) onClose();
   };

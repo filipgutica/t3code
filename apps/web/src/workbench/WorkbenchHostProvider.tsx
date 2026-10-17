@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, type ComponentType, type ReactNode } from "react";
 import { codexAuthHandoffUrl } from "@t3tools/shared/codexAuthHandoff";
 
 import {
@@ -7,6 +7,7 @@ import {
   type CommandPaletteContributionsProps,
   type HostIntegrations,
 } from "../hostIntegrations";
+import { RenderErrorBoundary } from "../components/RenderErrorBoundary";
 import { WorkbenchComposerPendingReviewComments } from "./WorkbenchComposerPendingReviewComments";
 import { WorkbenchPullRequestPreviewProvider } from "./WorkbenchPullRequestPreview";
 import { WorkbenchSidebarSlot } from "./WorkbenchSidebarSlot";
@@ -35,13 +36,31 @@ function WorkbenchCommandPaletteContributions({
   return children(actions);
 }
 
+function containWorkbenchSlot<Props extends object>(
+  Slot: ComponentType<Props>,
+  fallback: (props: Props) => ReactNode = () => null,
+) {
+  return function WorkbenchSlot(props: Props) {
+    return (
+      <RenderErrorBoundary fallback={fallback(props)}>
+        <Slot {...props} />
+      </RenderErrorBoundary>
+    );
+  };
+}
+
 const WORKBENCH_HOST_INTEGRATIONS: HostIntegrations = {
-  SidebarContent: WorkbenchSidebarSlot,
-  SidebarUtility: WorkbenchSidebarUtilityItem,
-  ThreadRouteContent: WorkbenchThreadPreparationGate,
-  ThreadBreadcrumb: WorkbenchThreadBreadcrumb,
-  PendingReviewAttachments: WorkbenchComposerPendingReviewComments,
-  CommandPaletteContributions: WorkbenchCommandPaletteContributions,
+  SidebarContent: containWorkbenchSlot(WorkbenchSidebarSlot, (props) => props.children),
+  SidebarUtility: containWorkbenchSlot(WorkbenchSidebarUtilityItem),
+  ThreadRouteContent: containWorkbenchSlot(
+    WorkbenchThreadPreparationGate,
+    (props) => props.children,
+  ),
+  ThreadBreadcrumb: containWorkbenchSlot(WorkbenchThreadBreadcrumb),
+  PendingReviewAttachments: containWorkbenchSlot(WorkbenchComposerPendingReviewComments),
+  CommandPaletteContributions: containWorkbenchSlot(WorkbenchCommandPaletteContributions, (props) =>
+    props.children([]),
+  ),
   isReviewCommentReferenceHidden: isWorkbenchTicketReviewComment,
   reviewCommentTitle: resolveWorkbenchReviewCommentTitle,
   ...(import.meta.env.VITE_T3CODE_WORKBENCH_BUILD
@@ -92,11 +111,18 @@ export function WorkbenchHostProvider({
   readonly children: ReactNode;
   readonly refreshPreparations?: boolean;
 }) {
+  const content = (
+    <RenderErrorBoundary fallback={children}>
+      <WorkbenchPullRequestPreviewProvider>{children}</WorkbenchPullRequestPreviewProvider>
+    </RenderErrorBoundary>
+  );
   return (
     <HostIntegrationsContext value={WORKBENCH_HOST_INTEGRATIONS}>
-      <WorkbenchThreadPresentation refreshPreparations={refreshPreparations}>
-        <WorkbenchPullRequestPreviewProvider>{children}</WorkbenchPullRequestPreviewProvider>
-      </WorkbenchThreadPresentation>
+      <RenderErrorBoundary fallback={content}>
+        <WorkbenchThreadPresentation refreshPreparations={refreshPreparations}>
+          {content}
+        </WorkbenchThreadPresentation>
+      </RenderErrorBoundary>
     </HostIntegrationsContext>
   );
 }

@@ -266,6 +266,7 @@ export function WorkbenchStartThreadDialog({
   providers,
   request,
   pending,
+  disabled,
   onStart,
   error,
 }: {
@@ -274,6 +275,7 @@ export function WorkbenchStartThreadDialog({
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly request: WorkbenchStartThreadDialogRequest;
   readonly pending: boolean;
+  readonly disabled?: boolean;
   readonly onStart: (input: {
     modelSelection: ModelSelection;
     repositoryScope?: WorkbenchRepositoryScope;
@@ -288,7 +290,7 @@ export function WorkbenchStartThreadDialog({
     workspace,
     initialRepositoryScope,
     additional = false,
-    title: customTitle,
+    title: dialogTitle = "Create Thread",
     description: customDescription,
     startLabel = "Create Thread",
   } = request;
@@ -312,7 +314,6 @@ export function WorkbenchStartThreadDialog({
       ? null
       : (store.stickyModelSelectionByProvider[store.stickyActiveProvider] ?? null),
   );
-  const dialogTitle = customTitle ?? "Create Thread";
   const dialogDescription =
     customDescription ??
     (additional
@@ -333,16 +334,10 @@ export function WorkbenchStartThreadDialog({
 
   const { resolvedSelection, selectionAvailable } = selection;
 
+  const cannotStart = disabled || pending || workspaceLocked || !scopeValid || !selectionAvailable;
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (
-      pending ||
-      workspaceLocked ||
-      !scopeValid ||
-      !selectionAvailable ||
-      resolvedSelection === null
-    )
-      return;
+    if (cannotStart || resolvedSelection === null) return;
     onStart({ modelSelection: resolvedSelection, ...(!workspaceReady ? { repositoryScope } : {}) });
   };
 
@@ -387,7 +382,7 @@ export function WorkbenchStartThreadDialog({
         </DialogPanel>
         <WorkbenchStartThreadFooter
           pending={pending}
-          disabled={pending || workspaceLocked || !scopeValid || !selectionAvailable}
+          disabled={cannotStart}
           workspaceReady={workspaceReady}
           startLabel={startLabel}
           onCancel={() => onOpenChange(false)}

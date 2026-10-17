@@ -98,6 +98,7 @@ export function useWorkbenchThreadActions({
   const navigate = useNavigate({ from: "/workbench" });
   const {
     snapshot,
+    canOperate,
     projects,
     providers,
     assignmentsByTicket,
@@ -125,6 +126,7 @@ export function useWorkbenchThreadActions({
     async (threadId: ThreadId) => {
       if (environmentId === null) return;
       const archived = isWorkbenchThreadArchived(threadId, threadsById, archivedThreadsById);
+      if (archived && !canOperate) return;
       if (archived) {
         setPendingAction(`restore:${threadId}`);
         setError(null);
@@ -169,6 +171,7 @@ export function useWorkbenchThreadActions({
     },
     [
       archivedThreadsById,
+      canOperate,
       environmentId,
       navigate,
       refreshArchivedThreads,

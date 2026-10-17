@@ -92,6 +92,7 @@ export function WorkbenchPage({
     environmentId,
     snapshot: pageData.snapshot,
     projects,
+    canOperate: pageData.canOperate,
     localOnlySupported: pageData.jiraSnapshot?.supportsLocalOnlyTickets === true,
     selection,
     setPendingAction,

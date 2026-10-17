@@ -18,12 +18,14 @@ import { Input } from "../components/ui/input";
 export function WorkbenchAttachThreadDialog({
   threads,
   pending,
+  disabled,
   error,
   onClose,
   onAttach,
 }: {
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;
   readonly pending: boolean;
+  readonly disabled?: boolean;
   readonly error: string | null;
   readonly onClose: () => void;
   readonly onAttach: (threadId: ThreadId) => Promise<void>;
@@ -89,10 +91,13 @@ export function WorkbenchAttachThreadDialog({
           <Button
             className="[&_svg]:mx-0"
             disabled={
-              pending || selectedId === null || !threads.some((thread) => thread.id === selectedId)
+              disabled ||
+              pending ||
+              selectedId === null ||
+              !threads.some((thread) => thread.id === selectedId)
             }
             onClick={() => {
-              if (selectedId !== null) void onAttach(selectedId);
+              if (!disabled && !pending && selectedId !== null) void onAttach(selectedId);
             }}
           >
             <LinkIcon /> Link Thread
