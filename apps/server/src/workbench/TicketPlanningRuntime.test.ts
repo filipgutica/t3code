@@ -263,8 +263,8 @@ it.effect("routes Claude planning approvals to Auto with read-only tools", () =>
         ...(allowedTools === undefined ? {} : { allowedTools }),
       });
       assert.equal(options.permissionMode, "auto");
-      // Unreviewed fallbacks must reach the user rather than run.
-      assert.isTrue(queryPolicy.installPermissionCallback);
+      // Approvals the Auto reviewer leaves undecided are denied, never shown to the user.
+      assert.equal(options.permissionPrompts, "none");
       if (!Array.isArray(options.tools)) return assert.fail("Expected explicit research tools");
       assert.notIncludeMembers(options.tools, ["Bash", "Edit", "Write", "NotebookEdit", "Agent"]);
       assert.notInclude(options.allowedTools ?? [], ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD);
@@ -273,6 +273,10 @@ it.effect("routes Claude planning approvals to Auto with read-only tools", () =>
         "Read",
         "mcp__t3-code__workbench_jira_read_issue",
         "mcp__t3-code__workbench_jira_search_issues",
+      ]);
+      assert.notIncludeMembers(options.allowedTools ?? [], [
+        "mcp__t3-code__html_preview",
+        "mcp__t3-code__html_render",
       ]);
     }),
     Effect.provide(policyLayer("draft", "claudeAgent")),

@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import * as NodeStream from "node:stream";
 
 import type {
+  McpServerStatus,
   Query as ClaudeQuery,
   SDKMessage,
   SDKResultMessage,
@@ -235,6 +236,7 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
       settings: { ...DEFAULT_CLAUDE_SETTINGS, launchArgs: "--dangerously-skip-permissions" },
     });
     assert.equal(options.permissionMode, "auto");
+    assert.equal(options.permissionPrompts, "none");
     assert.isFalse(options.strictMcpConfig);
     assert.isFalse(options.allowDangerouslySkipPermissions);
     assert.isTrue(policy.installPermissionCallback);
@@ -589,6 +591,15 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     assert.deepEqual(overrides.allowedTools, ClaudeAdapterV2.CLAUDE_RESEARCH_T3_MCP_ALLOWED_TOOLS);
     assert.notInclude(overrides.allowedTools ?? [], ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD);
     assert.notInclude(overrides.allowedTools ?? [], "mcp__t3-code__preview_navigate");
+    // Rendered HTML loads public network resources, so research sends it to review.
+    assert.notIncludeMembers(
+      [...(overrides.allowedTools ?? [])],
+      ["mcp__t3-code__html_preview", "mcp__t3-code__html_render"],
+    );
+    assert.includeMembers(
+      [...ClaudeAdapterV2.CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS],
+      ["mcp__t3-code__html_preview", "mcp__t3-code__html_render"],
+    );
   });
   const T3_MCP_SERVERS = {
     "t3-code": {
@@ -1066,128 +1077,311 @@ describe("ClaudeAdapterV2 session permissions", () => {
 });
 
 describe("ClaudeAdapterV2 Auto-accept edits", () => {
-  it.effect.each(["auto-accept-edits", "research"] as const)(
-    "asks before tool execution in %s",
-    (mode) =>
+  it.effect("asks before a command instead of allowing it", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-claude-accept-edits-",
+        });
+        let openedOptions: ClaudeAdapterV2.ClaudeAgentSdkQueryOptions | undefined;
+        const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
+          instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
+          settings: DEFAULT_CLAUDE_SETTINGS,
+          environment: {},
+          attachmentsDir,
+          fileSystem,
+          path: yield* Path.Path,
+          crypto: yield* Crypto.Crypto,
+          idAllocator,
+          queryRunner: {
+            allocateSessionId: Effect.succeed("native-thread-claude-accept-edits"),
+            open: (input) =>
+              Effect.sync(() => {
+                openedOptions = input.options;
+                return {
+                  messages: Stream.never,
+                  offer: () => Effect.void,
+                  setModel: () => Effect.void,
+                  applyFlagSettings: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
+                  backgroundTasks: () => Effect.succeed(false),
+                  stopTask: () => Effect.void,
+                  interrupt: Effect.void,
+                  close: Effect.void,
+                };
+              }),
+            forkSession: () => Effect.die("unused"),
+            subagentLaunchToolUseId: () => Effect.succeed(null),
+            assertComplete: Effect.void,
+          },
+        });
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "auto-accept-edits",
+          interactionMode: "default",
+          cwd: "/workspace",
+        });
+        const threadId = ThreadId.make("thread-claude-accept-edits");
+        const runtime = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("provider-session-claude-accept-edits"),
+          modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+          runtimePolicy,
+        });
+        const providerThread = yield* runtime.ensureThread({
+          threadId,
+          modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+          runtimePolicy,
+        });
+        const now = yield* DateTime.now;
+        yield* runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId,
+            providerThread,
+            now,
+            attemptId: RunAttemptId.make("attempt-claude-accept-edits"),
+            text: "Run node.",
+            attachments: [],
+            runtimePolicy,
+          }),
+        );
+        assert.equal(openedOptions?.permissionMode, "acceptEdits");
+        const canUseTool = openedOptions?.canUseTool;
+        assert.isFunction(canUseTool);
+
+        const requestEvent = yield* runtime.events.pipe(
+          Stream.filter((event) => event.type === "runtime_request.updated"),
+          Stream.runHead,
+          Effect.forkScoped,
+        );
+        const command = { command: "node -e 'console.log(42)'" };
+        const decision = yield* Effect.promise(() =>
+          canUseTool!("Bash", command, {
+            signal: new AbortController().signal,
+            toolUseID: "tool-bash-accept-edits",
+            requestId: "request-bash-accept-edits",
+          }),
+        ).pipe(Effect.forkScoped);
+        const first = yield* Effect.raceFirst(
+          Fiber.join(requestEvent).pipe(
+            Effect.map((event) => ({ type: "request", event }) as const),
+          ),
+          Fiber.join(decision).pipe(
+            Effect.map((result) => ({ type: "decision", result }) as const),
+          ),
+        );
+        assert.equal(first.type, "request", "the command ran without asking");
+        if (first.type !== "request") return;
+        const event = first.event;
+        if (Option.isNone(event) || event.value.type !== "runtime_request.updated") return;
+        assert.equal(event.value.runtimeRequest.kind, "command");
+
+        yield* runtime.respondToRuntimeRequest({
+          requestId: event.value.runtimeRequest.id,
+          decision: "accept",
+        });
+        assert.equal((yield* Fiber.join(decision))?.behavior, "allow");
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+});
+
+describe("ClaudeAdapterV2 research MCP tools", () => {
+  const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+    runtimeMode: "auto",
+    interactionMode: "plan",
+    cwd: "/workspace",
+    toolAccess: "research",
+    sandboxPolicy: { type: "readOnly", access: { type: "fullAccess" } },
+    approvalPolicy: "on-request",
+  });
+  const startResearchTurn = Effect.fn(function* (input: {
+    readonly mcpServers?: ReadonlyArray<McpServerStatus>;
+  }) {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const idAllocator = yield* IdAllocator.IdAllocatorV2;
+    const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: "t3-claude-research-",
+    });
+    let openedOptions: ClaudeAdapterV2.ClaudeAgentSdkQueryOptions | undefined;
+    const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
+      instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
+      settings: DEFAULT_CLAUDE_SETTINGS,
+      environment: {},
+      attachmentsDir,
+      fileSystem,
+      path: yield* Path.Path,
+      crypto: yield* Crypto.Crypto,
+      idAllocator,
+      queryRunner: {
+        allocateSessionId: Effect.succeed("native-thread-claude-research"),
+        open: (openInput) =>
+          Effect.sync(() => {
+            openedOptions = openInput.options;
+            return {
+              messages: Stream.never,
+              offer: () => Effect.void,
+              setModel: () => Effect.void,
+              applyFlagSettings: () => Effect.void,
+              setPermissionMode: () => Effect.void,
+              backgroundTasks: () => Effect.succeed(false),
+              ...(input.mcpServers === undefined
+                ? {}
+                : { mcpServerStatus: Effect.succeed(input.mcpServers) }),
+              stopTask: () => Effect.void,
+              interrupt: Effect.void,
+              close: Effect.void,
+            };
+          }),
+        forkSession: () => Effect.die("unused"),
+        subagentLaunchToolUseId: () => Effect.succeed(null),
+        assertComplete: Effect.void,
+      },
+    });
+    const threadId = ThreadId.make("thread-claude-research");
+    const runtime = yield* adapter.openSession({
+      threadId,
+      providerSessionId: ProviderSessionId.make("provider-session-claude-research"),
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      runtimePolicy: runtimePolicy,
+    });
+    const providerThread = yield* runtime.ensureThread({
+      threadId,
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      runtimePolicy: runtimePolicy,
+    });
+    const now = yield* DateTime.now;
+    yield* runtime.startTurn(
+      makeClaudeTestTurnInput({
+        threadId,
+        providerThread,
+        now,
+        attemptId: RunAttemptId.make("attempt-claude-research"),
+        text: "Research the ticket.",
+        attachments: [],
+        runtimePolicy: runtimePolicy,
+      }),
+    );
+    if (openedOptions === undefined) return yield* Effect.die("query was not opened");
+    return openedOptions;
+  });
+
+  it.effect(
+    "denies unannotated external MCP tools in Auto research before review, without prompts",
+    () =>
       Effect.scoped(
         Effect.gen(function* () {
-          const fileSystem = yield* FileSystem.FileSystem;
-          const idAllocator = yield* IdAllocator.IdAllocatorV2;
-          const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
-            prefix: "t3-claude-accept-edits-",
+          const options = yield* startResearchTurn({
+            mcpServers: [
+              {
+                name: "claude.ai GitHub (Work)",
+                status: "connected",
+                tools: [
+                  { name: "get_issue", annotations: { readOnly: true } },
+                  { name: "delete_branch", annotations: { readOnly: true, destructive: true } },
+                ],
+              },
+              {
+                name: "filesystem",
+                status: "connected",
+                tools: [
+                  { name: "read_file", annotations: { readOnly: true } },
+                  { name: "write_file" },
+                ],
+              },
+            ],
           });
-          let openedOptions: ClaudeAdapterV2.ClaudeAgentSdkQueryOptions | undefined;
-          const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
-            instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
-            settings: DEFAULT_CLAUDE_SETTINGS,
-            environment: {},
-            attachmentsDir,
-            fileSystem,
-            path: yield* Path.Path,
-            crypto: yield* Crypto.Crypto,
-            idAllocator,
-            queryRunner: {
-              allocateSessionId: Effect.succeed("native-thread-claude-accept-edits"),
-              open: (input) =>
-                Effect.sync(() => {
-                  openedOptions = input.options;
-                  return {
-                    messages: Stream.never,
-                    offer: () => Effect.void,
-                    setModel: () => Effect.void,
-                    applyFlagSettings: () => Effect.void,
-                    setPermissionMode: () => Effect.void,
-                    backgroundTasks: () => Effect.succeed(false),
-                    stopTask: () => Effect.void,
-                    interrupt: Effect.void,
-                    close: Effect.void,
-                  };
-                }),
-              forkSession: () => Effect.die("unused"),
-              subagentLaunchToolUseId: () => Effect.succeed(null),
-              assertComplete: Effect.void,
-            },
-          });
-          const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-            runtimeMode: mode === "research" ? "auto" : "auto-accept-edits",
-            interactionMode: mode === "research" ? "plan" : "default",
-            cwd: "/workspace",
-            ...(mode === "research"
-              ? {
-                  toolAccess: "research",
-                  sandboxPolicy: { type: "readOnly", access: { type: "fullAccess" } },
-                  approvalPolicy: "on-request",
-                }
-              : {}),
-          });
-          const threadId = ThreadId.make("thread-claude-accept-edits");
-          const runtime = yield* adapter.openSession({
-            threadId,
-            providerSessionId: ProviderSessionId.make("provider-session-claude-accept-edits"),
-            modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-            runtimePolicy,
-          });
-          const providerThread = yield* runtime.ensureThread({
-            threadId,
-            modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-            runtimePolicy,
-          });
-          const now = yield* DateTime.now;
-          yield* runtime.startTurn(
-            makeClaudeTestTurnInput({
-              threadId,
-              providerThread,
-              now,
-              attemptId: RunAttemptId.make("attempt-claude-accept-edits"),
-              text: "Run node.",
-              attachments: [],
-              runtimePolicy,
-            }),
-          );
-          assert.equal(openedOptions?.permissionMode, mode === "research" ? "auto" : "acceptEdits");
-          const canUseTool = openedOptions?.canUseTool;
-          assert.isFunction(canUseTool);
+          assert.equal(options.permissionMode, "auto");
+          // Anything the Auto reviewer and rules leave undecided is denied, not shown.
+          assert.equal(options.permissionPrompts, "none");
+          const hook = options.hooks?.PreToolUse?.[0]?.hooks[0];
+          assert.isFunction(hook);
+          const decide = (toolName: string, serverName?: string) =>
+            Effect.promise(() =>
+              hook!(
+                {
+                  hook_event_name: "PreToolUse",
+                  session_id: "native-thread-claude-research",
+                  transcript_path: "/tmp/transcript.jsonl",
+                  cwd: "/workspace",
+                  tool_name: toolName,
+                  tool_input: {},
+                  tool_use_id: `tool-${toolName}`,
+                  ...(serverName === undefined
+                    ? {}
+                    : { mcp_server: { name: serverName, source: "user" } }),
+                },
+                `tool-${toolName}`,
+                { signal: new AbortController().signal },
+              ),
+            ).pipe(
+              Effect.map((output) =>
+                "hookSpecificOutput" in output &&
+                output.hookSpecificOutput?.hookEventName === "PreToolUse"
+                  ? output.hookSpecificOutput.permissionDecision
+                  : undefined,
+              ),
+            );
 
-          const requestEvent = yield* runtime.events.pipe(
-            Stream.filter((event) => event.type === "runtime_request.updated"),
-            Stream.runHead,
-            Effect.forkScoped,
+          // A deny here applies before the Auto classifier could approve the call.
+          assert.equal(yield* decide("mcp__filesystem__write_file", "filesystem"), "deny");
+          assert.equal(yield* decide("mcp__filesystem__unknown_tool", "filesystem"), "deny");
+          assert.equal(
+            yield* decide("mcp__claude_ai_GitHub_Work__delete_branch", "claude.ai GitHub (Work)"),
+            "deny",
           );
-          const command = { command: "node -e 'console.log(42)'" };
-          const decision = yield* Effect.promise(() =>
-            canUseTool!(mode === "research" ? "mcp__github__read_issue" : "Bash", command, {
-              signal: new AbortController().signal,
-              toolUseID: "tool-bash-accept-edits",
-              requestId: "request-bash-accept-edits",
-            }),
-          ).pipe(Effect.forkScoped);
-          // Without a callback that asks, the command is allowed before any
-          // request is raised.
-          const first = yield* Effect.raceFirst(
-            Fiber.join(requestEvent).pipe(
-              Effect.map((event) => ({ type: "request", event }) as const),
-            ),
-            Fiber.join(decision).pipe(
-              Effect.map((result) => ({ type: "decision", result }) as const),
-            ),
+          // Read-only tools get no decision, so the Auto reviewer still sees them.
+          assert.isUndefined(yield* decide("mcp__filesystem__read_file", "filesystem"));
+          assert.isUndefined(
+            yield* decide("mcp__claude_ai_GitHub_Work__get_issue", "claude.ai GitHub (Work)"),
           );
-          assert.equal(first.type, "request", "the command ran without asking");
-          if (first.type !== "request") return;
-          const event = first.event;
-          if (Option.isNone(event) || event.value.type !== "runtime_request.updated") return;
-          assert.equal(event.value.runtimeRequest.kind, "command");
-
-          yield* runtime.respondToRuntimeRequest({
-            requestId: event.value.runtimeRequest.id,
-            decision: "accept",
-          });
-          assert.equal((yield* Fiber.join(decision))?.behavior, "allow");
+          assert.isUndefined(yield* decide("mcp__t3-code__workbench_jira_read_issue"));
+          assert.isUndefined(yield* decide("Read"));
         }).pipe(
           Effect.provide(
             Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
           ),
         ),
       ),
+  );
+
+  it.effect("denies external MCP tools in research when server status is unavailable", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const options = yield* startResearchTurn({});
+        const output = yield* Effect.promise(() =>
+          options.hooks!.PreToolUse![0]!.hooks[0]!(
+            {
+              hook_event_name: "PreToolUse",
+              session_id: "native-thread-claude-research",
+              transcript_path: "/tmp/transcript.jsonl",
+              cwd: "/workspace",
+              tool_name: "mcp__filesystem__read_file",
+              tool_input: {},
+              tool_use_id: "tool-read-file",
+            },
+            "tool-read-file",
+            { signal: new AbortController().signal },
+          ),
+        );
+        assert.equal(
+          "hookSpecificOutput" in output &&
+            output.hookSpecificOutput?.hookEventName === "PreToolUse"
+            ? output.hookSpecificOutput.permissionDecision
+            : undefined,
+          "deny",
+        );
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
   );
 });
 

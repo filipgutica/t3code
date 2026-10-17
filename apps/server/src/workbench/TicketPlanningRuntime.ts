@@ -190,7 +190,7 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
               "Use available connectors, GitHub tools, and browser navigation to research the request. Shell commands run read-only without network access, and requests for network access, unsandboxed commands, or more filesystem access are rejected, so use a configured connector instead of network CLI tools such as gh. Other tool approvals are reviewed automatically. An approval does not authorize implementation or external writes. Use the workspace Jira research tools first for Jira; a browser login is separate from the workspace's Jira connection.",
               ...(instance.driverKind === "claudeAgent"
                 ? [
-                    "Claude ticket planning keeps shell and file-writing tools unavailable. Use the configured GitHub connector and other research tools instead of Bash or gh.",
+                    "Claude ticket planning keeps shell and file-writing tools unavailable, along with connector tools that their server does not mark read-only. Use the configured GitHub connector and other research tools instead of Bash or gh.",
                   ]
                 : []),
               "Help the user establish a title, goal, implementation plan, acceptance criteria, non-goals, and testing. Ask focused questions only when the repository evidence and conversation do not resolve a material uncertainty. Identify which repositories need to be attached and which should be primary. Preserve the user's decisions and edits.",

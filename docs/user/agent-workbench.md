@@ -50,7 +50,8 @@ the workspace connection. No browser login is needed. Planning can also use your
 configured connectors, web tools, and the browser for research. During planning,
 the provider's automatic reviewer handles approval requests instead of you.
 Planning has no shell network access, so CLI research such as `gh` is unavailable;
-use a configured connector instead. An approved research step does not start
+use a configured connector instead. Claude can use only the connector tools that
+the connector marks read-only. An approved research step does not start
 implementation.
 
 Leaving the view keeps the draft in the Board’s **Drafts** section and the Workbench
