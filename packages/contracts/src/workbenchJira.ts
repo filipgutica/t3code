@@ -323,9 +323,15 @@ export const WorkbenchJiraBeginAuthInput = Schema.Struct({
 });
 export type WorkbenchJiraBeginAuthInput = typeof WorkbenchJiraBeginAuthInput.Type;
 
+export const WorkbenchJiraOAuthState = Schema.String.check(
+  Schema.isPattern(/^[A-Za-z0-9_-]{32}$/u),
+  // JavaScript's $ anchor also matches before a trailing newline.
+  Schema.isMaxLength(32),
+);
+
 export const WorkbenchJiraBeginAuthResult = Schema.Struct({
   authorizationUrl: TrimmedNonEmptyString,
-  state: TrimmedNonEmptyString,
+  state: WorkbenchJiraOAuthState,
   expiresAt: IsoDateTime,
   /** Broker authorizations complete out of band and are claimed by polling. */
   mode: Schema.optionalKey(Schema.Literals(["direct", "broker"])),
@@ -334,7 +340,7 @@ export type WorkbenchJiraBeginAuthResult = typeof WorkbenchJiraBeginAuthResult.T
 
 export const WorkbenchJiraCompleteAuthInput = Schema.Struct({
   code: TrimmedNonEmptyString,
-  state: TrimmedNonEmptyString,
+  state: WorkbenchJiraOAuthState,
   redirectUri: TrimmedNonEmptyString,
 });
 export type WorkbenchJiraCompleteAuthInput = typeof WorkbenchJiraCompleteAuthInput.Type;
@@ -345,7 +351,7 @@ export const WorkbenchJiraCompleteAuthResult = Schema.Struct({
 export type WorkbenchJiraCompleteAuthResult = typeof WorkbenchJiraCompleteAuthResult.Type;
 
 export const WorkbenchJiraClaimAuthInput = Schema.Struct({
-  state: TrimmedNonEmptyString,
+  state: WorkbenchJiraOAuthState,
 });
 export type WorkbenchJiraClaimAuthInput = typeof WorkbenchJiraClaimAuthInput.Type;
 

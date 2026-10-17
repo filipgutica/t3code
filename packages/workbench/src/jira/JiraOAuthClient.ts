@@ -44,7 +44,21 @@ const AccessibleResources = Schema.Array(AccessibleResource);
 
 const BrokerStartResponse = Schema.Struct({
   sessionId: Schema.String,
-  authorizationUrl: Schema.String,
+  authorizationUrl: Schema.String.check(
+    Schema.makeFilter((value) => {
+      try {
+        const url = new URL(value);
+        return (
+          url.origin === "https://auth.atlassian.com" &&
+          url.pathname === "/authorize" &&
+          !url.username &&
+          !url.password
+        );
+      } catch {
+        return false;
+      }
+    }),
+  ),
   expiresAt: Schema.String,
 });
 const BrokerClaimResponse = Schema.Union([

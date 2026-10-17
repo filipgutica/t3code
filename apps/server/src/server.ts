@@ -8,6 +8,7 @@ import * as StorageCleanup from "./storageCleanup.ts";
 import * as WorkbenchWorktreeOwnership from "./workbench/worktreeOwnership.ts";
 import {
   WorkbenchServicesLayerLive,
+  withWorkbenchHttpRoutes,
   WorkbenchRuntimeReactorLayerLive,
   WorkbenchHostPoliciesLayerLive,
   WorkbenchMcpLayerLive,
@@ -704,6 +705,7 @@ const layerMakeRoutes = Layer.mergeAll(
     Layer.provide(McpOAuth.layerMcpClientAuthenticator),
   ),
 ).pipe(
+  withWorkbenchHttpRoutes,
   Layer.provide(
     PullRequestReviewGuideService.layer.pipe(Layer.provide(PullRequestReviewGuides.layer)),
   ),

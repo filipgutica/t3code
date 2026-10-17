@@ -1,4 +1,5 @@
 import * as Layer from "effect/Layer";
+import { workbenchJiraOAuthRouteLayer } from "./jira/http.ts";
 
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
@@ -20,6 +21,9 @@ import * as WorkspaceLifecycleService from "@t3tools/workbench/WorkspaceLifecycl
 const WorkbenchStoreLayerLive = WorkbenchStore.WorkbenchStoreLive.pipe(
   Layer.provide(SqlitePersistence.layerConfig),
 );
+
+export const withWorkbenchHttpRoutes = <A, E, R>(routes: Layer.Layer<A, E, R>) =>
+  Layer.mergeAll(routes, workbenchJiraOAuthRouteLayer);
 
 export const WorkbenchHostPoliciesLayerLive = Layer.mergeAll(
   TicketPlanningRuntime.layerRuntimePolicyDecorator,

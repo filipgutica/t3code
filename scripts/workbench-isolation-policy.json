@@ -35,6 +35,7 @@
       "target": "apps/server/src/workbench/serverLayer",
       "symbols": [
         "WorkbenchHostPoliciesLayerLive",
+        "withWorkbenchHttpRoutes",
         "WorkbenchMcpLayerLive",
         "WorkbenchRuntimeReactorLayerLive",
         "WorkbenchServicesLayerLive"
