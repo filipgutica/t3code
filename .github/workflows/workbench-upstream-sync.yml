@@ -357,12 +357,21 @@ jobs:
         if: needs.publish.result == 'success' || env.REPAIR_SYNC_GATES == 'true'
         run: |
           set -euo pipefail
-          for workflow in workbench-ci.yml workbench-quality.yml; do
-            existing="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?event=workflow_dispatch&head_sha=$PUBLISHED_SHA&per_page=100" \
+          retained_run() {
+            gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$PUBLISHED_SHA&branch=$PRODUCT_BRANCH&per_page=100" \
               --jq ".workflow_runs[] | select(.head_sha == \"$PUBLISHED_SHA\"
-                and .event == \"workflow_dispatch\" and .head_branch == \"$PRODUCT_BRANCH\"
-                and (.status != \"completed\" or .conclusion == \"success\")) | .id")"
+                and (.event == \"push\" or .event == \"workflow_dispatch\")
+                and .path == \".github/workflows/$workflow\" and .head_branch == \"$PRODUCT_BRANCH\")" \
+              | jq -sr --arg since "$1" '
+                map(select($since == "" or (.event == "workflow_dispatch" and .created_at >= $since)))
+                | sort_by(.run_number, .run_attempt) | last
+                | select(. != null and ($since != "" or .status != "completed" or .conclusion == "success"))
+                | .id'
+          }
+          for workflow in workbench-ci.yml workbench-quality.yml; do
+            existing="$(retained_run "")"
             if [[ -n "$existing" ]]; then continue; fi
+            dispatch_started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             for attempt in {1..5}; do
               product_remote_sha="$(git ls-remote --refs origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
               test "$product_remote_sha" = "$PUBLISHED_SHA"
@@ -370,10 +379,13 @@ jobs:
                 --ref "$PRODUCT_BRANCH" -f "expected_sha=$PUBLISHED_SHA"; then
                 break
               fi
+              if [[ "$attempt" != 5 ]]; then sleep "$((attempt * 2))"; fi
+              # A failed client response can still have created a run, even one that already failed.
+              existing="$(retained_run "$dispatch_started")"
+              if [[ -n "$existing" ]]; then break; fi
               if [[ "$attempt" == 5 ]]; then
                 echo "Failed to dispatch $workflow for $PUBLISHED_SHA after 5 attempts." >&2
                 exit 1
               fi
-              sleep "$((attempt * 2))"
             done
           done

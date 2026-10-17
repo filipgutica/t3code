@@ -240,9 +240,14 @@ gh() {
   fi
   echo "$*" >> "$RUNNER_TEMP/dispatches"
   count=$(wc -l < "$RUNNER_TEMP/dispatches")
+  if [[ "\${ACCEPT_FAILED_DISPATCH:-}" == 1 && "$count" -eq 1 ]]; then
+    cp "$RUNNER_TEMP/accepted-runs.json" "$RUNNER_TEMP/ci-runs.json"
+    return 1
+  fi
   [[ "$count" -gt "\${FAIL_DISPATCHES:-0}" ]]
 }
 git() { echo "\${REMOTE_SHA:-published-merge-sha} refs/heads/main"; }
+date() { echo "2026-10-17T00:00:00Z"; }
 sleep() { echo "$1" >> "$RUNNER_TEMP/backoffs"; }
 `;
 const writeRuns = (root: string, ci: unknown[] = [], quality: unknown[] = []) => {
@@ -293,17 +298,22 @@ it("retains active or successful exact-SHA dispatches but repairs failed or unre
     head_sha: "published-merge-sha",
     head_branch: "main",
     event: "workflow_dispatch",
+    path: ".github/workflows/workbench-ci.yml",
+    run_number: 1,
+    run_attempt: 1,
     status: "completed",
     conclusion: "success",
   };
   for (const [existing, expectedDispatches] of [
     [run, 1],
+    [{ ...run, event: "push" }, 1],
     [{ ...run, status: "queued", conclusion: null }, 1],
     [{ ...run, status: "in_progress", conclusion: null }, 1],
     [{ ...run, conclusion: "failure" }, 2],
     [{ ...run, head_sha: "old-sha" }, 2],
     [{ ...run, event: "pull_request" }, 2],
     [{ ...run, head_branch: "other" }, 2],
+    [{ ...run, path: ".github/workflows/unrelated.yml" }, 2],
   ] as const)
     workflowFixture((root) => {
       writeRuns(root, [existing]);
@@ -316,6 +326,88 @@ it("retains active or successful exact-SHA dispatches but repairs failed or unre
       assert.equal(result.status, 0, result.stderr);
       assert.equal(dispatched(root).length, expectedDispatches);
       assert.match(dispatched(root).at(-1)!, /workbench-quality.yml/);
+    });
+});
+
+it("does not duplicate a dispatch accepted despite a client failure", () => {
+  for (const status of ["queued", "in_progress", "completed"])
+    workflowFixture((root) => {
+      writeRuns(root);
+      NodeFS.writeFileSync(
+        NodePath.join(root, "accepted-runs.json"),
+        JSON.stringify({
+          workflow_runs: [
+            {
+              id: 2,
+              head_sha: "published-merge-sha",
+              head_branch: "main",
+              event: "workflow_dispatch",
+              path: ".github/workflows/workbench-ci.yml",
+              run_number: 2,
+              run_attempt: 1,
+              created_at: "2026-10-17T00:00:00Z",
+              status,
+              conclusion: status === "completed" ? "failure" : null,
+            },
+          ],
+        }),
+      );
+      const result = runStep(
+        root,
+        "Dispatch gates for the published main merge",
+        dispatchPreamble,
+        {
+          PUBLISHED_SHA: "published-merge-sha",
+          ACCEPT_FAILED_DISPATCH: "1",
+        },
+      );
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(dispatched(root).filter((call) => call.includes("workbench-ci.yml")).length, 1);
+      assert.equal(
+        dispatched(root).filter((call) => call.includes("workbench-quality.yml")).length,
+        1,
+      );
+    });
+});
+
+it("repairs the latest failed run even when an older run succeeded", () => {
+  for (const [runNumber, runAttempt] of [
+    [2, 1],
+    [1, 2],
+  ])
+    workflowFixture((root) => {
+      const run = {
+        id: 1,
+        head_sha: "published-merge-sha",
+        head_branch: "main",
+        event: "workflow_dispatch",
+        path: ".github/workflows/workbench-ci.yml",
+        run_number: 1,
+        run_attempt: 1,
+        created_at: "2026-01-01T00:00:00Z",
+        status: "completed",
+        conclusion: "success",
+      };
+      // Deliberately place the older success first instead of relying on API order.
+      writeRuns(root, [
+        run,
+        { ...run, id: 2, run_number: runNumber, run_attempt: runAttempt, conclusion: "failure" },
+      ]);
+      const result = runStep(
+        root,
+        "Dispatch gates for the published main merge",
+        dispatchPreamble,
+        {
+          PUBLISHED_SHA: "published-merge-sha",
+          FAIL_DISPATCHES: "1",
+        },
+      );
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(dispatched(root).filter((call) => call.includes("workbench-ci.yml")).length, 2);
+      assert.equal(
+        dispatched(root).filter((call) => call.includes("workbench-quality.yml")).length,
+        1,
+      );
     });
 });
 
@@ -376,6 +468,9 @@ it("a full rerun recognizes the exact published sync merge and repairs its missi
         head_sha: published,
         head_branch: "main",
         event: "workflow_dispatch",
+        path: ".github/workflows/workbench-ci.yml",
+        run_number: 1,
+        run_attempt: 1,
         status: "completed",
         conclusion: "success",
       },
