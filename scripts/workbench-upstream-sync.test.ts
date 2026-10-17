@@ -125,6 +125,7 @@ const runStep = (root: string, name: string, preamble = "", env = {}) =>
         ...process.env,
         RUNNER_TEMP: root,
         GITHUB_OUTPUT: NodePath.join(root, "outputs"),
+        GITHUB_ENV: NodePath.join(root, "environment"),
         GITHUB_STEP_SUMMARY: NodePath.join(root, "summary"),
         GITHUB_REPOSITORY: "filipgutica/t3code",
         PRODUCT_BRANCH: "main",
@@ -229,26 +230,169 @@ it("bounds merge-ref retries and fails on API errors, conflicts or a changed hea
     });
 });
 
-it("dispatches both gates with the published merge SHA and propagates dispatch errors", () =>
-  workflowFixture((root) => {
-    const preamble =
-      'gh() { echo "$*" >> "$RUNNER_TEMP/dispatches"; return "${DISPATCH_STATUS:-0}"; }';
-    const result = runStep(root, "Dispatch gates for the published main merge", preamble, {
-      PUBLISHED_SHA: "published-merge-sha",
+const dispatchPreamble = `
+gh() {
+  if [[ "$1" == api ]]; then
+    response="$RUNNER_TEMP/ci-runs.json"
+    if [[ "$3" == *workbench-quality.yml* ]]; then response="$RUNNER_TEMP/quality-runs.json"; fi
+    jq -r "$5" "$response"
+    return
+  fi
+  echo "$*" >> "$RUNNER_TEMP/dispatches"
+  count=$(wc -l < "$RUNNER_TEMP/dispatches")
+  [[ "$count" -gt "\${FAIL_DISPATCHES:-0}" ]]
+}
+git() { echo "\${REMOTE_SHA:-published-merge-sha} refs/heads/main"; }
+sleep() { echo "$1" >> "$RUNNER_TEMP/backoffs"; }
+`;
+const writeRuns = (root: string, ci: unknown[] = [], quality: unknown[] = []) => {
+  for (const [name, runs] of [
+    ["ci", ci],
+    ["quality", quality],
+  ] as const) {
+    NodeFS.writeFileSync(
+      NodePath.join(root, `${name}-runs.json`),
+      JSON.stringify({ workflow_runs: runs }),
+    );
+  }
+};
+const dispatched = (root: string) =>
+  NodeFS.readFileSync(NodePath.join(root, "dispatches"), "utf8").trim().split("\n");
+
+it("retries each published-SHA dispatch with bounded backoff and propagates exhaustion", () => {
+  for (const failures of [0, 2, 99])
+    workflowFixture((root) => {
+      writeRuns(root);
+      const result = runStep(
+        root,
+        "Dispatch gates for the published main merge",
+        dispatchPreamble,
+        {
+          PUBLISHED_SHA: "published-merge-sha",
+          FAIL_DISPATCHES: String(failures),
+        },
+      );
+      assert.equal(result.status, failures === 99 ? 1 : 0, result.stderr);
+      const calls = dispatched(root);
+      assert.equal(calls.length, failures === 99 ? 5 : failures + 2);
+      assert.ok(
+        calls.every((call) => call.endsWith("--ref main -f expected_sha=published-merge-sha")),
+      );
+      if (failures !== 99) assert.match(calls.at(-1)!, /workbench-quality.yml/);
+      if (failures > 0)
+        assert.equal(
+          NodeFS.readFileSync(NodePath.join(root, "backoffs"), "utf8"),
+          failures === 99 ? "2\n4\n6\n8\n" : "2\n4\n",
+        );
     });
-    assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(
-      NodeFS.readFileSync(NodePath.join(root, "dispatches"), "utf8").trim().split("\n"),
-      [
-        "workflow run workbench-ci.yml --repo filipgutica/t3code --ref main -f expected_sha=published-merge-sha",
-        "workflow run workbench-quality.yml --repo filipgutica/t3code --ref main -f expected_sha=published-merge-sha",
-      ],
-    );
-    assert.equal(
-      runStep(root, "Dispatch gates for the published main merge", preamble, {
-        PUBLISHED_SHA: "published-merge-sha",
-        DISPATCH_STATUS: "1",
-      }).status,
-      1,
-    );
+});
+
+it("retains active or successful exact-SHA dispatches but repairs failed or unrelated runs", () => {
+  const run = {
+    id: 1,
+    head_sha: "published-merge-sha",
+    head_branch: "main",
+    event: "workflow_dispatch",
+    status: "completed",
+    conclusion: "success",
+  };
+  for (const [existing, expectedDispatches] of [
+    [run, 1],
+    [{ ...run, status: "queued", conclusion: null }, 1],
+    [{ ...run, status: "in_progress", conclusion: null }, 1],
+    [{ ...run, conclusion: "failure" }, 2],
+    [{ ...run, head_sha: "old-sha" }, 2],
+    [{ ...run, event: "pull_request" }, 2],
+    [{ ...run, head_branch: "other" }, 2],
+  ] as const)
+    workflowFixture((root) => {
+      writeRuns(root, [existing]);
+      const result = runStep(
+        root,
+        "Dispatch gates for the published main merge",
+        dispatchPreamble,
+        { PUBLISHED_SHA: "published-merge-sha" },
+      );
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(dispatched(root).length, expectedDispatches);
+      assert.match(dispatched(root).at(-1)!, /workbench-quality.yml/);
+    });
+});
+
+it("refuses dispatch if main has moved", () =>
+  workflowFixture((root) => {
+    writeRuns(root);
+    const result = runStep(root, "Dispatch gates for the published main merge", dispatchPreamble, {
+      PUBLISHED_SHA: "published-merge-sha",
+      REMOTE_SHA: "moved-main",
+    });
+    assert.equal(result.status, 1);
+    assert.equal(NodeFS.existsSync(NodePath.join(root, "dispatches")), false);
   }));
+
+it("a full rerun recognizes the exact published sync merge and repairs its missing gate", () => {
+  const fixture = createFixture([]);
+  try {
+    const root = fixture.repository;
+    runGit(root, ["switch", "product"]);
+    runGit(root, ["merge", "--no-ff", "--no-edit", fixture.upstreamSha]);
+    const verified = runGit(root, ["rev-parse", "HEAD"]);
+    runGit(root, ["checkout", "--detach", fixture.productSha]);
+    runGit(root, ["merge", "--no-ff", "--no-edit", verified]);
+    const published = runGit(root, ["rev-parse", "HEAD"]);
+    runGit(root, ["update-ref", "refs/remotes/upstream/main", fixture.upstreamSha]);
+    const pending = runStep(root, "Check for upstream commits");
+    assert.equal(pending.status, 0, pending.stderr);
+    assert.include(
+      NodeFS.readFileSync(NodePath.join(root, "outputs"), "utf8"),
+      "needed=false\nintegrated=true\n",
+    );
+    const pr = {
+      merged_at: "2026-10-17",
+      merge_commit_sha: published,
+      number: 42,
+      base: { ref: "main", repo: { full_name: "filipgutica/t3code" } },
+      head: {
+        ref: "automation/workbench-upstream-sync",
+        sha: verified,
+        repo: { full_name: "filipgutica/t3code" },
+      },
+    };
+    const preamble = 'gh() { jq -r "$5" "$RUNNER_TEMP/merged-prs.json"; }';
+    for (const match of [false, true]) {
+      NodeFS.writeFileSync(
+        NodePath.join(root, "merged-prs.json"),
+        JSON.stringify([{ ...pr, merge_commit_sha: match ? published : "different-merge" }]),
+      );
+      const identified = runStep(root, "Identify already-published sync merge", preamble, {
+        PUBLISHED_SHA: published,
+      });
+      assert.equal(identified.status, 0, identified.stderr);
+      assert.equal(NodeFS.existsSync(NodePath.join(root, "environment")), match);
+    }
+    writeRuns(root, [
+      {
+        id: 1,
+        head_sha: published,
+        head_branch: "main",
+        event: "workflow_dispatch",
+        status: "completed",
+        conclusion: "success",
+      },
+    ]);
+    const repair = runStep(root, "Dispatch gates for the published main merge", dispatchPreamble, {
+      PUBLISHED_SHA: published,
+      REMOTE_SHA: published,
+    });
+    assert.equal(repair.status, 0, repair.stderr);
+    assert.deepEqual(dispatched(root), [
+      `workflow run workbench-quality.yml --repo filipgutica/t3code --ref main -f expected_sha=${published}`,
+    ]);
+    assert.match(
+      workflow,
+      /needs: \[verify, publish\][\s\S]*always\(\)[\s\S]*needs\.verify\.outputs\.integrated == 'true'/,
+    );
+  } finally {
+    NodeFS.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});

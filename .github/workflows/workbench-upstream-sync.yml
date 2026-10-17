@@ -25,6 +25,7 @@ jobs:
     timeout-minutes: 60
     outputs:
       needed: ${{ steps.preview.outputs.proceed }}
+      integrated: ${{ steps.pending.outputs.integrated }}
       product_sha: ${{ steps.pending.outputs.product_sha }}
       verified_sha: ${{ steps.bundle.outputs.verified_sha }}
     steps:
@@ -48,6 +49,7 @@ jobs:
           echo "product_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           if git merge-base --is-ancestor upstream/main HEAD; then
             echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "integrated=true" >> "$GITHUB_OUTPUT"
           else
             echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
@@ -206,7 +208,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      actions: write
+    outputs:
+      merge_sha: ${{ steps.publish.outputs.merge_sha }}
     env:
       GH_TOKEN: ${{ github.token }}
       PRODUCT_SHA: ${{ needs.verify.outputs.product_sha }}
@@ -314,12 +317,63 @@ jobs:
           test "$second_parent" = "$VERIFIED_SHA"
           echo "merge_sha=$merge_sha" >> "$GITHUB_OUTPUT"
 
+  dispatch:
+    needs: [verify, publish]
+    if: >-
+      always() && needs.verify.result == 'success' &&
+      (needs.publish.result == 'success' || needs.verify.outputs.integrated == 'true')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PUBLISHED_SHA: ${{ needs.publish.outputs.merge_sha || needs.verify.outputs.product_sha }}
+    steps:
+      - name: Checkout published checkpoint
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.PUBLISHED_SHA }}
+          fetch-depth: 0
+
+      - name: Identify already-published sync merge
+        if: needs.publish.result != 'success'
+        run: |
+          set -euo pipefail
+          read -r first_parent second_parent extra <<< "$(git show -s --format='%P' HEAD)"
+          if [[ -z "$second_parent" || -n "${extra:-}" ]]; then exit 0; fi
+          matching_prs="$(gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$PUBLISHED_SHA/pulls" \
+            --jq ".[] | select(.merged_at != null and .merge_commit_sha == \"$PUBLISHED_SHA\"
+              and .base.ref == \"$PRODUCT_BRANCH\" and .base.repo.full_name == \"$GITHUB_REPOSITORY\"
+              and .head.ref == \"$SYNC_BRANCH\" and .head.repo.full_name == \"$GITHUB_REPOSITORY\"
+              and .head.sha == \"$second_parent\") | .number")"
+          if [[ -z "$matching_prs" ]]; then exit 0; fi
+          test "$(git rev-parse "HEAD^{tree}")" = "$(git rev-parse "$second_parent^{tree}")"
+          echo "REPAIR_SYNC_GATES=true" >> "$GITHUB_ENV"
+
       - name: Dispatch gates for the published main merge
-        env:
-          PUBLISHED_SHA: ${{ steps.publish.outputs.merge_sha }}
+        if: needs.publish.result == 'success' || env.REPAIR_SYNC_GATES == 'true'
         run: |
           set -euo pipefail
           for workflow in workbench-ci.yml workbench-quality.yml; do
-            gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" \
-              --ref "$PRODUCT_BRANCH" -f "expected_sha=$PUBLISHED_SHA"
+            existing="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?event=workflow_dispatch&head_sha=$PUBLISHED_SHA&per_page=100" \
+              --jq ".workflow_runs[] | select(.head_sha == \"$PUBLISHED_SHA\"
+                and .event == \"workflow_dispatch\" and .head_branch == \"$PRODUCT_BRANCH\"
+                and (.status != \"completed\" or .conclusion == \"success\")) | .id")"
+            if [[ -n "$existing" ]]; then continue; fi
+            for attempt in {1..5}; do
+              product_remote_sha="$(git ls-remote --refs origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
+              test "$product_remote_sha" = "$PUBLISHED_SHA"
+              if gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" \
+                --ref "$PRODUCT_BRANCH" -f "expected_sha=$PUBLISHED_SHA"; then
+                break
+              fi
+              if [[ "$attempt" == 5 ]]; then
+                echo "Failed to dispatch $workflow for $PUBLISHED_SHA after 5 attempts." >&2
+                exit 1
+              fi
+              sleep "$((attempt * 2))"
+            done
           done
