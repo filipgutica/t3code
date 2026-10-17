@@ -53,6 +53,7 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   sandboxPolicy: Schema.optional(Schema.Unknown),
   /** Research tools use native approvals independently of filesystem restrictions. */
   toolAccess: Schema.optional(Schema.Literal("research")),
+  researchReadRoots: Schema.optional(Schema.Array(Schema.String)),
   reasoningEffort: Schema.optional(Schema.String),
 });
 export type ProviderAdapterV2RuntimePolicy = typeof ProviderAdapterV2RuntimePolicy.Type;

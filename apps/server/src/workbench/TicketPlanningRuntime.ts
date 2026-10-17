@@ -121,7 +121,7 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
               ].join("\n\n"),
             };
           }
-          if (draft.phase !== "draft" && draft.phase !== "creating" && draft.phase !== "planning") {
+          if (!["draft", "creating", "planning"].includes(draft.phase)) {
             return yield* new RuntimePolicy.RuntimePolicyResolveError({
               projectId: input.thread.projectId,
               providerInstanceId: input.modelSelection.instanceId,
@@ -184,6 +184,9 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
               networkAccess: false,
             },
             toolAccess: "research" as const,
+            ...(instance.driverKind === "claudeAgent"
+              ? { researchReadRoots: repositories.map((repository) => repository.workspaceRoot) }
+              : {}),
             checkpoints: "disabled" as const,
             instructions: [
               "You are preparing a ticket in a Workbench workspace. This is a planning conversation, not implementation. Inspect the repositories listed below to understand the request. Do not edit files, run mutating commands, create worktrees, create issues, or start other agents. A native backing Project is an internal anchor and does not define the task's repository scope.",

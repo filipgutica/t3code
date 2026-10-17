@@ -1202,7 +1202,9 @@ describe("ClaudeAdapterV2 research MCP tools", () => {
   });
   const startResearchTurn = Effect.fn(function* (input: {
     readonly mcpServers?: ReadonlyArray<McpServerStatus>;
+    readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
   }) {
+    const policy = input.runtimePolicy ?? runtimePolicy;
     const fileSystem = yield* FileSystem.FileSystem;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
@@ -1248,12 +1250,12 @@ describe("ClaudeAdapterV2 research MCP tools", () => {
       threadId,
       providerSessionId: ProviderSessionId.make("provider-session-claude-research"),
       modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-      runtimePolicy: runtimePolicy,
+      runtimePolicy: policy,
     });
     const providerThread = yield* runtime.ensureThread({
       threadId,
       modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-      runtimePolicy: runtimePolicy,
+      runtimePolicy: policy,
     });
     const now = yield* DateTime.now;
     yield* runtime.startTurn(
@@ -1264,7 +1266,7 @@ describe("ClaudeAdapterV2 research MCP tools", () => {
         attemptId: RunAttemptId.make("attempt-claude-research"),
         text: "Research the ticket.",
         attachments: [],
-        runtimePolicy: runtimePolicy,
+        runtimePolicy: policy,
       }),
     );
     if (openedOptions === undefined) return yield* Effect.die("query was not opened");
@@ -1356,7 +1358,157 @@ describe("ClaudeAdapterV2 research MCP tools", () => {
           assert.isUndefined(yield* decide("mcp__t3-code__workbench_jira_read_issue", "t3-code"));
           assert.equal(yield* decide("mcp__t3-code___write_file", "t3-code_"), "deny");
           assert.equal(yield* decide("mcp__t3-code___write_file"), "deny");
-          assert.isUndefined(yield* decide("Read"));
+          assert.isUndefined(yield* decide("WebSearch"));
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+          ),
+        ),
+      ),
+  );
+
+  it.effect("scopes built-in research reads to the ticket repositories after realpath", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const signal = yield* Effect.abortSignal;
+        const fs = yield* FileSystem.FileSystem;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-read-scope-" });
+        const repo = NodePath.join(root, "repo");
+        const secondRepo = NodePath.join(root, "second-repo");
+        const home = NodePath.join(root, "home");
+        yield* Effect.sync(() => {
+          for (const dir of [
+            repo,
+            secondRepo,
+            home,
+            `${root}/repo-sibling`,
+            `${home}/.ssh`,
+            `${home}/.t3/userdata`,
+          ]) {
+            NodeFS.mkdirSync(dir, { recursive: true });
+            NodeFS.writeFileSync(NodePath.join(dir, "canary"), "fixture");
+          }
+          NodeFS.writeFileSync(`${home}/.ssh/id_ed25519`, "fixture");
+          NodeFS.writeFileSync(`${home}/.t3/userdata/secrets`, "fixture");
+          NodeFS.mkdirSync(`${home}/sub`);
+          NodeFS.writeFileSync(`${repo}/canary`, "inside");
+          NodeFS.symlinkSync(`${home}/sub`, `${repo}/parent-escape`);
+          NodeFS.symlinkSync(home, `${repo}/outside`);
+          NodeFS.symlinkSync(secondRepo, `${repo}/inside`);
+          NodeFS.symlinkSync(repo, `${root}/repo-alias`);
+        });
+        const options = yield* startResearchTurn({
+          runtimePolicy: {
+            ...runtimePolicy,
+            cwd: repo,
+            researchReadRoots: [`${root}/repo-alias`, secondRepo],
+          },
+        }).pipe(Effect.provideService(HostProcess.HomeDirectory, home));
+        const hook = options.hooks?.PreToolUse?.[0]?.hooks[0];
+        assert.isFunction(hook);
+        const cases = [
+          ["Read", { file_path: `${repo}/canary` }, undefined],
+          ["Read", { file_path: "./canary" }, undefined],
+          ["Read", { file_path: "~/../repo/canary" }, undefined],
+          ["Read", { file_path: `${secondRepo}/canary` }, undefined],
+          ["Read", { file_path: "inside/canary" }, undefined],
+          ["Read", { file_path: "~/.ssh/id_ed25519" }, "deny"],
+          ["Read", { file_path: `${home}/.t3/userdata/secrets` }, "deny"],
+          ["Read", { file_path: "../home/.ssh/id_ed25519" }, "deny"],
+          ["Read", { file_path: `${root}/repo-sibling/canary` }, "deny"],
+          ["Read", { file_path: "outside/.ssh/id_ed25519" }, "deny"],
+          ["Read", { file_path: "parent-escape/../canary" }, "deny"],
+          ["Read", { file_path: "~/../repo/parent-escape/../canary" }, "deny"],
+          ["Read", { file_path: "missing" }, "deny"],
+          ["Read", {}, "deny"],
+          ["Read", { file_path: 42 }, "deny"],
+          ["Glob", { pattern: "**/*" }, undefined],
+          ["Grep", { pattern: "fixture" }, undefined],
+          ["Glob", { path: secondRepo, pattern: "**/*" }, undefined],
+          ["Grep", { path: `${secondRepo}/canary`, pattern: "fixture" }, undefined],
+          ["Glob", { path: home, pattern: "**/*" }, "deny"],
+          ["Glob", { pattern: `${home}/**/*` }, "deny"],
+          ["Glob", { pattern: "../home/**/*" }, "deny"],
+          ["Glob", { path: repo, pattern: `${home}/**/*` }, "deny"],
+          ["Grep", { path: home, pattern: "fixture" }, "deny"],
+          ["Glob", { path: "outside", pattern: "**/*" }, "deny"],
+          ["Grep", { path: "outside/.ssh", pattern: "fixture" }, "deny"],
+          ["Glob", { path: "missing", pattern: "**/*" }, "deny"],
+          ["Grep", { path: 42, pattern: "fixture" }, "deny"],
+        ] as const;
+        for (const [tool, input, decision] of cases) {
+          const output = yield* Effect.promise(() =>
+            hook!(
+              {
+                hook_event_name: "PreToolUse",
+                session_id: "native-thread-claude-research",
+                transcript_path: "/tmp/transcript.jsonl",
+                cwd: repo,
+                tool_name: tool,
+                tool_input: input,
+                tool_use_id: "read-scope",
+              },
+              "read-scope",
+              { signal },
+            ),
+          );
+          assert.equal(
+            "hookSpecificOutput" in output &&
+              output.hookSpecificOutput?.hookEventName === "PreToolUse"
+              ? output.hookSpecificOutput.permissionDecision
+              : undefined,
+            decision,
+            `${tool} ${JSON.stringify(input)}`,
+          );
+        }
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
+  it.effect(
+    "fails closed without resolvable research roots and leaves native sessions unchanged",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const signal = yield* Effect.abortSignal;
+          for (const researchReadRoots of [undefined, [], ["/missing-ticket-repository"]]) {
+            const options = yield* startResearchTurn({
+              runtimePolicy: { ...runtimePolicy, researchReadRoots },
+            });
+            const output = yield* Effect.promise(() =>
+              options.hooks!.PreToolUse![0]!.hooks[0]!(
+                {
+                  hook_event_name: "PreToolUse",
+                  session_id: "native-thread-claude-research",
+                  transcript_path: "/tmp/transcript.jsonl",
+                  cwd: "/tmp",
+                  tool_name: "Grep",
+                  tool_input: { pattern: "fixture" },
+                  tool_use_id: "missing-roots",
+                },
+                "missing-roots",
+                { signal },
+              ),
+            );
+            assert.equal(
+              "hookSpecificOutput" in output &&
+                output.hookSpecificOutput?.hookEventName === "PreToolUse"
+                ? output.hookSpecificOutput.permissionDecision
+                : undefined,
+              "deny",
+            );
+          }
+          const nativeOptions = yield* startResearchTurn({
+            runtimePolicy: {
+              ...CLAUDE_TEST_RUNTIME_POLICY,
+              researchReadRoots: ["/missing-ticket-repository"],
+            },
+          });
+          assert.isUndefined(nativeOptions.hooks);
         }).pipe(
           Effect.provide(
             Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
@@ -2838,6 +2990,83 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       };
     });
   const makeWakeHarness = makeWakeHarnessWithOptions();
+
+  it.effect("refreshes research read roots when the live query is reused", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-read-reuse-" });
+      const first = NodePath.join(root, "first");
+      const second = NodePath.join(root, "second");
+      for (const repo of [first, second]) {
+        yield* fs.makeDirectory(repo);
+        yield* fs.writeFileString(NodePath.join(repo, "canary"), "fixture");
+      }
+      const harness = yield* makeWakeHarness;
+      const signal = yield* Effect.abortSignal;
+      let originalOptions: ClaudeAdapterV2.ClaudeAgentSdkQueryOptions | undefined;
+      for (const [index, allowedRoot] of [first, second].entries()) {
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make(`research-roots-${index}`),
+            providerTurnOrdinal: index + 1,
+            text: "Research the ticket.",
+            attachments: [],
+            runtimePolicy: {
+              runtimeMode: "auto",
+              interactionMode: "plan",
+              cwd: first,
+              toolAccess: "research",
+              sandboxPolicy: { type: "readOnly", access: { type: "fullAccess" } },
+              approvalPolicy: "on-request",
+              researchReadRoots: [allowedRoot],
+            },
+          }),
+        );
+        const options = harness.getOpenedOptions();
+        if (index === 0) originalOptions = options;
+        else assert.strictEqual(options, originalOptions);
+        for (const repo of [first, second]) {
+          const output = yield* Effect.promise(() =>
+            options!.hooks!.PreToolUse![0]!.hooks[0]!(
+              {
+                hook_event_name: "PreToolUse",
+                session_id: WAKE_NATIVE_SESSION,
+                transcript_path: "/tmp/transcript.jsonl",
+                cwd: repo,
+                tool_name: "Grep",
+                tool_input: { pattern: "fixture" },
+                tool_use_id: "read-reused-query",
+              },
+              "read-reused-query",
+              { signal },
+            ),
+          );
+          assert.equal(
+            "hookSpecificOutput" in output &&
+              output.hookSpecificOutput?.hookEventName === "PreToolUse"
+              ? output.hookSpecificOutput.permissionDecision
+              : undefined,
+            repo === allowedRoot ? undefined : "deny",
+          );
+        }
+        yield* Queue.offer(
+          harness.sdkMessages,
+          makeResultFrame({
+            uuid: `00000000-0000-4000-8000-${String(800 + index).padStart(12, "0")}`,
+            result: "Research done.",
+          }),
+        );
+        yield* Queue.take(harness.terminalReceipts);
+      }
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
 
   it.effect.each([
     { isError: false, title: "Check weather" },

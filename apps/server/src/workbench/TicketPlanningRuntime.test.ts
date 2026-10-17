@@ -191,6 +191,10 @@ it.effect.each(["codex", "claudeAgent"] as const)(
         assert.equal(policy.runtimeMode, "auto");
         assert.equal(policy.interactionMode, "plan");
         assert.equal(policy.toolAccess, "research");
+        assert.deepEqual(
+          policy.researchReadRoots,
+          driver === "claudeAgent" ? ["/repo/repo:first", "/repo/repo:second"] : undefined,
+        );
         assert.deepEqual(policy.sandboxPolicy, {
           type: "readOnly",
           access: { type: "fullAccess" },

@@ -48,6 +48,8 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk/sdk-tools";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the SDK takes a Node ChildProcess for the CLI.
 import * as NodeChildProcess from "node:child_process";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- native realpath preserves symlink traversal before parent segments.
+import * as NodeFS from "node:fs";
 import { parseCliArgs } from "@t3tools/shared/cliArgs";
 import { AgentScope } from "@t3tools/shared/AgentScope";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -1273,6 +1275,24 @@ const CLAUDE_RESEARCH_MCP_TOOL_DENIAL = {
       "Research is read-only. This MCP tool is not marked read-only by its server, so it is unavailable here.",
   },
 } satisfies HookJSONOutput;
+
+const CLAUDE_RESEARCH_FILE_TOOL_DENIAL = {
+  hookSpecificOutput: {
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+    permissionDecisionReason:
+      "Research file reads must resolve inside the ticket's repository roots.",
+  },
+} satisfies HookJSONOutput;
+
+// fs.realpath (and Effect's realPath) collapses '..' before following symlinks;
+// native realpath resolves the path that the filesystem read actually opens.
+const claudeResearchRealPath = (target: string) =>
+  Effect.callback<string, NodeJS.ErrnoException>((resume) => {
+    NodeFS.realpath.native(target, (error, resolved) => {
+      resume(error === null ? Effect.succeed(resolved) : Effect.fail(error));
+    });
+  });
 
 // Mirrors Claude Code's MCP name normalization: mcp__<server>__<tool>, with
 // characters outside [A-Za-z0-9_-] replaced by "_", and claude.ai connector
@@ -8039,12 +8059,76 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const researchPreToolUse: HookCallback = (hookInput) =>
           runPromise(
             Effect.gen(function* () {
-              if (
-                hookInput.hook_event_name !== "PreToolUse" ||
-                !hookInput.tool_name.startsWith("mcp__")
-              ) {
-                return {} satisfies HookJSONOutput;
+              if (hookInput.hook_event_name !== "PreToolUse") return {} satisfies HookJSONOutput;
+              if (CLAUDE_READ_ONLY_ALLOWED_TOOLS.some((tool) => tool === hookInput.tool_name)) {
+                return yield* Effect.gen(function* () {
+                  const policy = (yield* Ref.get(activeTurn))?.input.runtimePolicy;
+                  const roots = policy?.researchReadRoots;
+                  if (
+                    policy?.toolAccess !== "research" ||
+                    roots === undefined ||
+                    roots.length === 0
+                  ) {
+                    return CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
+                  }
+                  const rawPath = field(
+                    hookInput.tool_input,
+                    hookInput.tool_name === "Read" ? "file_path" : "path",
+                  );
+                  const target =
+                    rawPath === undefined && hookInput.tool_name !== "Read"
+                      ? hookInput.cwd
+                      : rawPath;
+                  if (typeof target !== "string" || target.length === 0)
+                    return CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
+                  // Absolute Glob patterns replace the search root inside Claude Code.
+                  if (hookInput.tool_name === "Glob") {
+                    const pattern = field(hookInput.tool_input, "pattern");
+                    if (
+                      typeof pattern !== "string" ||
+                      path.isAbsolute(pattern) ||
+                      pattern.split(/[\\/]/).includes("..")
+                    ) {
+                      return CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
+                    }
+                  }
+                  const home =
+                    adapterOptions.environment.HOME ?? (yield* HostProcess.HomeDirectory);
+                  const expand = (value: string) =>
+                    value === "~"
+                      ? home
+                      : value.startsWith("~/") || value.startsWith("~\\")
+                        ? `${home}${path.sep}${value.slice(2)}`
+                        : value;
+                  const expanded = expand(target);
+                  // Preserve parent segments until native realpath follows any preceding symlink.
+                  const absolute = path.isAbsolute(expanded)
+                    ? expanded
+                    : `${hookInput.cwd}${path.sep}${expanded}`;
+                  const resolved = yield* claudeResearchRealPath(absolute);
+                  const expandedRoots = roots.map(expand);
+                  if (expandedRoots.some((root) => !path.isAbsolute(root)))
+                    return CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
+                  const resolvedRoots = yield* Effect.forEach(
+                    expandedRoots,
+                    claudeResearchRealPath,
+                  );
+                  return resolvedRoots.some((root) => {
+                    const relative = path.relative(root, resolved);
+                    return (
+                      relative !== ".." &&
+                      !relative.startsWith(`..${path.sep}`) &&
+                      !path.isAbsolute(relative)
+                    );
+                  })
+                    ? ({} satisfies HookJSONOutput)
+                    : CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
+                }).pipe(
+                  Effect.timeout("10 seconds"),
+                  Effect.catchCause(() => Effect.succeed(CLAUDE_RESEARCH_FILE_TOOL_DENIAL)),
+                );
               }
+              if (!hookInput.tool_name.startsWith("mcp__")) return {} satisfies HookJSONOutput;
               const serverName = hookInput.mcp_server?.name;
               const mcpServerStatus = (yield* Ref.get(queryContext))?.query.mcpServerStatus;
               const servers =
