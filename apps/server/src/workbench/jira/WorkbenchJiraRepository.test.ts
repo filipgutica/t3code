@@ -132,6 +132,25 @@ describe("WorkbenchJiraRepository SQL", () => {
       yield* repository.upsertConnection(connection, "oauth-grant-1");
       yield* repository.upsertBinding(binding);
       yield* repository.replaceIssueLinks(bindingId, [issueLink]);
+      yield* sql`CREATE TEMP TABLE link_changes (operation TEXT)`;
+      yield* sql`CREATE TEMP TRIGGER link_insert AFTER INSERT ON workbench_jira_issue_links
+        BEGIN INSERT INTO link_changes VALUES ('insert'); END`;
+      yield* sql`CREATE TEMP TRIGGER link_update AFTER UPDATE ON workbench_jira_issue_links
+        BEGIN INSERT INTO link_changes VALUES ('update'); END`;
+      yield* sql`CREATE TEMP TRIGGER link_delete AFTER DELETE ON workbench_jira_issue_links
+        BEGIN INSERT INTO link_changes VALUES ('delete'); END`;
+      yield* repository.replaceIssueLinks(bindingId, [issueLink]);
+      expect(yield* sql`SELECT operation FROM link_changes`).toEqual([]);
+      yield* repository.replaceIssueLinks(bindingId, []);
+      expect(yield* repository.listIssueLinks(bindingId)).toEqual([
+        { ...issueLink, active: false },
+      ]);
+      expect(yield* sql`SELECT operation FROM link_changes`).toEqual([{ operation: "update" }]);
+      yield* sql`DELETE FROM link_changes`;
+      yield* repository.replaceIssueLinks(bindingId, []);
+      expect(yield* sql`SELECT operation FROM link_changes`).toEqual([]);
+      yield* repository.replaceIssueLinks(bindingId, [issueLink]);
+      expect(yield* sql`SELECT operation FROM link_changes`).toEqual([{ operation: "update" }]);
 
       expect(
         yield* repository.updateBindingSyncMetadata({

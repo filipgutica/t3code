@@ -24,6 +24,7 @@ import {
   type WorkbenchEpic,
   type WorkbenchTicket,
 } from "@t3tools/contracts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
@@ -213,6 +214,7 @@ export const make = Effect.gen(function* () {
       }),
     )
     .pipe(
+      NodeSqliteClient.readOnly,
       Effect.catchTags({
         SqlError: () =>
           Effect.fail(

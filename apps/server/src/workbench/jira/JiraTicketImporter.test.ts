@@ -41,7 +41,15 @@ describe("JiraTicketImporter", () => {
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const workbench = yield* WorkbenchStore;
-      const importer = yield* JiraTicketImporter;
+      const importer = yield* Effect.gen(function* () {
+        return yield* JiraTicketImporter;
+      }).pipe(
+        Effect.provide(Layer.fresh(jiraTicketImporterLayer)),
+        Effect.provideService(WorkbenchStore, {
+          ...workbench,
+          getSnapshot: Effect.die("Jira imports must use targeted reads, not full snapshots"),
+        }),
+      );
       const firstProjectId = ProjectId.make("native-project-1");
       const primaryProjectId = ProjectId.make("native-project-2");
       const projectId = WorkbenchProjectId.make("workspace-1");
