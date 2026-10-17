@@ -1181,7 +1181,12 @@ export function makeClaudeQueryOptions(input: {
     input.readOnlySandbox === true
       ? {
           ...withDirectories,
-          permissionMode: input.researchTools === true ? ("plan" as const) : ("dontAsk" as const),
+          permissionMode:
+            input.researchTools === true
+              ? input.permissionMode === "auto"
+                ? ("auto" as const)
+                : ("plan" as const)
+              : ("dontAsk" as const),
           tools: [
             ...(input.researchTools === true
               ? CLAUDE_RESEARCH_ALLOWED_TOOLS
@@ -1224,6 +1229,14 @@ export const CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
   "mcp__t3-code__html_render",
 ];
 
+// Research may also read Workbench Jira without review; other T3 tools, such as
+// browser navigation, go to the permission mode's reviewer.
+export const CLAUDE_RESEARCH_T3_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
+  ...CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS,
+  "mcp__t3-code__workbench_jira_read_issue",
+  "mcp__t3-code__workbench_jira_search_issues",
+];
+
 // Claude Code aborts an HTTP MCP call after 60 s ("The operation timed out.")
 // unless the server config sets `timeout`. T3's wait tools (t3_thread_wait,
 // delegate_task mode=wait) legitimately block for up to an hour
@@ -1250,10 +1263,11 @@ export function claudeMcpQueryOverrides(input: {
   if (session === undefined) {
     return input.allowedTools === undefined ? {} : { allowedTools: input.allowedTools };
   }
-  const mcpAllowedTools =
-    input.readOnlySandbox && input.researchTools !== true
-      ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS
-      : [CLAUDE_T3_MCP_TOOL_WILDCARD];
+  const mcpAllowedTools = !input.readOnlySandbox
+    ? [CLAUDE_T3_MCP_TOOL_WILDCARD]
+    : input.researchTools === true
+      ? CLAUDE_RESEARCH_T3_MCP_ALLOWED_TOOLS
+      : CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS;
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),
     mcpServers: {
@@ -1783,6 +1797,10 @@ function readOnlyPolicyAllowsGlobalReads(
 function permissionModeForClaudeRuntimePolicy(
   runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
 ): PermissionMode {
+  // Research tools stay read-only, so Auto only moves approvals to the classifier.
+  if (runtimePolicy.toolAccess === "research" && runtimePolicy.runtimeMode === "auto") {
+    return "auto";
+  }
   if (runtimePolicy.interactionMode === "plan") {
     return "plan";
   }

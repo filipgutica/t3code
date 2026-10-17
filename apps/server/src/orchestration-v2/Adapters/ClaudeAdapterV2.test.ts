@@ -215,9 +215,10 @@ function makeClaudeTestTurnInput(input: {
 }
 
 describe("ClaudeAdapterV2 runtime query policy", () => {
-  it("restores connector approvals in research planning without exposing shell or file writes", () => {
+  it("routes research planning approvals to Auto without exposing shell or file writes", () => {
     const policy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy({
       ...CLAUDE_TEST_RUNTIME_POLICY,
+      runtimeMode: "auto",
       interactionMode: "plan",
       approvalPolicy: "on-request",
       sandboxPolicy: { type: "readOnly", access: { type: "fullAccess" } },
@@ -233,7 +234,7 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
       ...policy,
       settings: { ...DEFAULT_CLAUDE_SETTINGS, launchArgs: "--dangerously-skip-permissions" },
     });
-    assert.equal(options.permissionMode, "plan");
+    assert.equal(options.permissionMode, "auto");
     assert.isFalse(options.strictMcpConfig);
     assert.isFalse(options.allowDangerouslySkipPermissions);
     assert.isTrue(policy.installPermissionCallback);
@@ -571,7 +572,7 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
 });
 
 describe("ClaudeAdapterV2 MCP query overrides", () => {
-  it("lets server authorization govern T3 research while retaining connector approval prompts", () => {
+  it("sends unannotated T3 research tools to review", () => {
     const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
       mcpSession: {
         environmentId: EnvironmentId.make("research-environment"),
@@ -585,7 +586,9 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       readOnlySandbox: true,
       researchTools: true,
     });
-    assert.deepEqual(overrides.allowedTools, [ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD]);
+    assert.deepEqual(overrides.allowedTools, ClaudeAdapterV2.CLAUDE_RESEARCH_T3_MCP_ALLOWED_TOOLS);
+    assert.notInclude(overrides.allowedTools ?? [], ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD);
+    assert.notInclude(overrides.allowedTools ?? [], "mcp__t3-code__preview_navigate");
   });
   const T3_MCP_SERVERS = {
     "t3-code": {
@@ -1106,7 +1109,7 @@ describe("ClaudeAdapterV2 Auto-accept edits", () => {
             },
           });
           const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-            runtimeMode: mode === "research" ? "approval-required" : "auto-accept-edits",
+            runtimeMode: mode === "research" ? "auto" : "auto-accept-edits",
             interactionMode: mode === "research" ? "plan" : "default",
             cwd: "/workspace",
             ...(mode === "research"
@@ -1141,7 +1144,7 @@ describe("ClaudeAdapterV2 Auto-accept edits", () => {
               runtimePolicy,
             }),
           );
-          assert.equal(openedOptions?.permissionMode, mode === "research" ? "plan" : "acceptEdits");
+          assert.equal(openedOptions?.permissionMode, mode === "research" ? "auto" : "acceptEdits");
           const canUseTool = openedOptions?.canUseTool;
           assert.isFunction(canUseTool);
 

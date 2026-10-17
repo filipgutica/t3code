@@ -41,6 +41,17 @@ const WorkAreaManifest = Schema.Array(
 );
 const encodeWorkArea = Schema.encodeEffect(Schema.fromJsonString(WorkAreaManifest));
 const isRuntimePolicyResolveError = Schema.is(RuntimePolicy.RuntimePolicyResolveError);
+// The auto reviewer may approve what reaches it, so sandbox escapes and
+// permission grants are rejected before review. Connector approvals still reach it.
+const CODEX_RESEARCH_APPROVAL_POLICY = {
+  granular: {
+    sandbox_approval: false,
+    rules: false,
+    skill_approval: false,
+    request_permissions: false,
+    mcp_elicitations: true,
+  },
+};
 
 /** Planning agents can inspect repositories, but cannot mutate the environment through MCP. */
 export const layerMcpWritePolicy = Layer.effect(
@@ -162,9 +173,11 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
                 )}`;
           return {
             ...policy,
-            runtimeMode: "approval-required" as const,
+            // Approvals go to the provider's auto reviewer, not the user.
+            runtimeMode: "auto" as const,
             interactionMode: "plan" as const,
-            approvalPolicy: "on-request",
+            approvalPolicy:
+              instance.driverKind === "codex" ? CODEX_RESEARCH_APPROVAL_POLICY : "on-request",
             sandboxPolicy: {
               type: "readOnly",
               access: { type: "fullAccess" },
@@ -174,7 +187,7 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
             checkpoints: "disabled" as const,
             instructions: [
               "You are preparing a ticket in a Workbench workspace. This is a planning conversation, not implementation. Inspect the repositories listed below to understand the request. Do not edit files, run mutating commands, create worktrees, create issues, or start other agents. A native backing Project is an internal anchor and does not define the task's repository scope.",
-              "Use available connectors, GitHub tools, and browser navigation to research the request. Shell network access is disabled by default. Read-only CLI research such as gh requires an explicit native network-only grant; if the runtime cannot request that grant, use a configured connector instead. Do not request an unsandboxed command or filesystem escalation. Request native tool approval when needed. Research approval does not authorize implementation, external writes, or broader filesystem permissions. Use the workspace Jira research tools first for Jira; a browser login is separate from the workspace's Jira connection.",
+              "Use available connectors, GitHub tools, and browser navigation to research the request. Shell commands run read-only without network access, and requests for network access, unsandboxed commands, or more filesystem access are rejected, so use a configured connector instead of network CLI tools such as gh. Other tool approvals are reviewed automatically. An approval does not authorize implementation or external writes. Use the workspace Jira research tools first for Jira; a browser login is separate from the workspace's Jira connection.",
               ...(instance.driverKind === "claudeAgent"
                 ? [
                     "Claude ticket planning keeps shell and file-writing tools unavailable. Use the configured GitHub connector and other research tools instead of Bash or gh.",

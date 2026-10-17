@@ -47,11 +47,11 @@ draft's title, description, and repository selection; it does not create the Tic
 
 In a Jira-connected workspace, ask the agent to read an issue or search Jira using
 the workspace connection. No browser login is needed. Planning can also use your
-configured connectors and request tool approval for research. Shell networking is
-off by default. Codex CLI research such as `gh` needs a native network-only grant;
-when the runtime cannot request one, use a configured connector. Claude uses
-connectors and web tools while its shell remains unavailable. Research approval
-does not start implementation.
+configured connectors, web tools, and the browser for research. During planning,
+the provider's automatic reviewer handles approval requests instead of you.
+Planning has no shell network access, so CLI research such as `gh` is unavailable;
+use a configured connector instead. An approved research step does not start
+implementation.
 
 Leaving the view keeps the draft in the Board’s **Drafts** section and the Workbench
 sidebar. Open it to resume its conversation and saved fields. Choose **New Ticket**

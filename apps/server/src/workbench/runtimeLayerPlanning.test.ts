@@ -727,7 +727,7 @@ it.effect(
       }
       const planning = policies.get(planningThreadId);
       assert.isDefined(planning);
-      assert.equal(planning?.runtimeMode, "approval-required");
+      assert.equal(planning?.runtimeMode, "auto");
       assert.equal(planning?.interactionMode, "plan");
       assert.deepEqual(planning?.sandboxPolicy, {
         type: "readOnly",
@@ -735,7 +735,15 @@ it.effect(
         networkAccess: false,
       });
       assert.equal(planning?.toolAccess, "research");
-      assert.equal(planning?.approvalPolicy, "on-request");
+      assert.deepInclude(planning?.approvalPolicy, {
+        granular: {
+          sandbox_approval: false,
+          rules: false,
+          skill_approval: false,
+          request_permissions: false,
+          mcp_elicitations: true,
+        },
+      });
       assert.equal(planning?.checkpoints, "disabled");
       assert.include(planning?.instructions ?? "", "workbench-ticket-draft");
       assert.equal(planning?.cwd, process.cwd());
