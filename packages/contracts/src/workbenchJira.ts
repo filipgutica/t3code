@@ -431,6 +431,8 @@ export type WorkbenchJiraResolveCreationInput = typeof WorkbenchJiraResolveCreat
 
 export const WorkbenchJiraResolveCreationResult = Schema.Struct({
   jiraIssueKey: Schema.NullOr(TrimmedNonEmptyString),
+  alreadyLinkedTicketId: Schema.optionalKey(WorkbenchTicketId),
+  alreadyLinkedEpicId: Schema.optionalKey(WorkbenchEpicId),
 });
 export type WorkbenchJiraResolveCreationResult = typeof WorkbenchJiraResolveCreationResult.Type;
 

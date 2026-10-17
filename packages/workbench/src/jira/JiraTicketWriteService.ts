@@ -1,5 +1,6 @@
 import {
   WorkbenchJiraOperationError,
+  WorkbenchTicketId,
   type RunId,
   type WorkbenchAssignmentId,
   WorkbenchCreateTicketInput,
@@ -844,11 +845,11 @@ export const make = Effect.gen(function* () {
 
   const resolveCreation: JiraTicketWriteServiceShape["resolveCreation"] = (input) =>
     Effect.gen(function* () {
-      const { row, issue } = yield* resolveUncertainCreation(input, input.binding).pipe(
+      const { row, issue, linkedId } = yield* resolveUncertainCreation(input, input.binding).pipe(
         Effect.provideService(JiraApi, api),
         Effect.provideService(SqlClient.SqlClient, sql),
       );
-      if (issue === null) {
+      if (issue === null || linkedId !== null) {
         const drafts = yield* sql<{
           readonly revision: number;
         }>`SELECT revision FROM workbench_ticket_drafts WHERE draft_id = ${input.id} AND phase = 'promoting'`;
@@ -859,7 +860,9 @@ export const make = Effect.gen(function* () {
               expectedRevision: drafts[0].revision,
             })
             .pipe(Effect.mapError((error) => operationError("persistence_failed", error.message)));
-        return { jiraIssueKey: null };
+        return issue !== null && linkedId !== null
+          ? { jiraIssueKey: issue.key, alreadyLinkedTicketId: WorkbenchTicketId.make(linkedId) }
+          : { jiraIssueKey: null };
       }
       const saved = yield* decodeCreationFingerprint(row.requestFingerprint).pipe(
         Effect.mapError(() =>

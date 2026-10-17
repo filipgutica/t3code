@@ -283,6 +283,8 @@ If Jira creation cannot be confirmed, check Jira and choose **Resolve** in the W
 Choose **Not created in Jira** to retry or keep the Ticket local.
 Choose **Created in Jira as KEY** and enter its issue key to finish linking the Ticket or Epic.
 Workbench verifies the issue's project and type before linking it.
+If sync already imported the issue, Workbench keeps that Jira-linked record and leaves the original Ticket or Epic local.
+To link the original record after local edits, restore its saved content before resuming the confirmed creation.
 Resolve uncertain creations before archiving or deleting the Workspace.
 
 If access expires, choose

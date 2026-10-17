@@ -1,5 +1,6 @@
 import {
   WorkbenchJiraOperationError,
+  WorkbenchEpicId,
   WorkbenchOperationError,
   type WorkbenchCreateTicketInput,
   type WorkbenchJiraBeginAuthInput,
@@ -611,6 +612,33 @@ export const make = Effect.gen(function* () {
       return ticket;
     });
 
+  const ensureEpicUnchanged = Effect.fnUntraced(function* ({
+    epic,
+    message,
+  }: {
+    readonly epic: WorkbenchEpic;
+    readonly message: string;
+  }) {
+    const rows = yield* sql<{
+      readonly title: string;
+      readonly markdown: string;
+      readonly updatedAt: string;
+      readonly archivedAt: string | null;
+    }>`
+      SELECT title, markdown, updated_at AS "updatedAt", archived_at AS "archivedAt"
+      FROM workbench_epics WHERE epic_id = ${epic.id} LIMIT 1
+    `;
+    const current = rows[0];
+    if (
+      current === undefined ||
+      current.archivedAt !== null ||
+      current.updatedAt !== epic.updatedAt ||
+      current.title !== epic.title ||
+      current.markdown !== epic.markdown
+    )
+      return yield* operationError(message);
+  });
+
   const migrateLocalTickets: WorkbenchJiraServiceShape["migrateLocalTickets"] = (input) =>
     Effect.gen(function* () {
       const bindingOption = yield* repository
@@ -880,33 +908,6 @@ export const make = Effect.gen(function* () {
         return yield* sql.withTransaction(deleteLocalRecords());
       }
 
-      const ensureEpicUnchanged = Effect.fnUntraced(function* ({
-        epic,
-        message,
-      }: {
-        readonly epic: WorkbenchEpic;
-        readonly message: string;
-      }) {
-        const rows = yield* sql<{
-          readonly title: string;
-          readonly markdown: string;
-          readonly updatedAt: string;
-          readonly archivedAt: string | null;
-        }>`
-          SELECT title, markdown, updated_at AS "updatedAt", archived_at AS "archivedAt"
-          FROM workbench_epics WHERE epic_id = ${epic.id} LIMIT 1
-        `;
-        const current = rows[0];
-        if (
-          current === undefined ||
-          current.archivedAt !== null ||
-          current.updatedAt !== epic.updatedAt ||
-          current.title !== epic.title ||
-          current.markdown !== epic.markdown
-        )
-          return yield* operationError(message);
-      });
-
       const publishEpic = (epic: (typeof epics)[number]) =>
         sync.withBindingPermit(
           binding.id,
@@ -1138,15 +1139,41 @@ export const make = Effect.gen(function* () {
           });
         if (input.kind === "ticket")
           return yield* ticketWriter.resolveCreation({ ...input, binding });
-        const { issue } = yield* resolveUncertainCreation(input, binding).pipe(
+        const { row, issue, linkedId } = yield* resolveUncertainCreation(input, binding).pipe(
           Effect.provideService(JiraApi, api),
           Effect.provideService(SqlClient.SqlClient, sql),
         );
         if (issue === null) return { jiraIssueKey: null };
-        yield* sql`
-        INSERT INTO workbench_jira_epic_links (binding_id, jira_issue_id, jira_issue_key, epic_id)
-        VALUES (${binding.id}, ${issue.id}, ${issue.key}, ${input.id})
-      `;
+        if (linkedId !== null)
+          return { jiraIssueKey: issue.key, alreadyLinkedEpicId: WorkbenchEpicId.make(linkedId) };
+        const snapshot = yield* workbench.getSnapshot.pipe(Effect.mapError(repositoryError));
+        const epic = snapshot.epics.find((candidate) => candidate.id === input.id);
+        const message =
+          "The local Epic changed since Jira creation. Restore its original fields before resuming the saved creation.";
+        if (
+          epic === undefined ||
+          epic.projectId !== binding.projectId ||
+          epic.archivedAt !== null ||
+          row.requestFingerprint !==
+            encodeEpicMigrationFingerprint({
+              bindingId: binding.id,
+              connectionId: binding.connectionId,
+              jiraProjectKey: binding.jiraProjectKey,
+              epicId: epic.id,
+              title: epic.title,
+              markdown: epic.markdown,
+            })
+        )
+          return yield* operationError(message);
+        yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* ensureEpicUnchanged({ epic, message });
+            yield* sql`
+            INSERT INTO workbench_jira_epic_links (binding_id, jira_issue_id, jira_issue_key, epic_id)
+            VALUES (${binding.id}, ${issue.id}, ${issue.key}, ${input.id})
+          `;
+          }),
+        );
         return { jiraIssueKey: issue.key };
       }).pipe(Effect.catchTags({ SqlError: () => Effect.fail(repositoryError(undefined)) })),
       { rejectIfBusy: true },

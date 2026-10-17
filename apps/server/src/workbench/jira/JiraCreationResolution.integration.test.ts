@@ -5,12 +5,14 @@ import {
   ProviderInstanceId,
   ThreadId,
   WorkbenchEpicId,
+  WorkbenchAssignmentId,
   WorkbenchJiraBindingId,
   WorkbenchJiraConnectionId,
   WorkbenchJiraOperationError,
   WorkbenchProjectId,
   WorkbenchTicketId,
   type WorkbenchJiraBinding,
+  type WorkbenchJiraIssueSnapshot,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -21,6 +23,7 @@ import { HttpClient } from "effect/http";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
+import { seedNativeThread } from "../testing/nativeThreads.ts";
 import { JiraApi, JiraIssueCreateError } from "@t3tools/workbench/jira/JiraApi";
 import { JiraAuthService } from "@t3tools/workbench/jira/JiraAuthService";
 import * as JiraSync from "@t3tools/workbench/jira/JiraSyncService";
@@ -72,7 +75,13 @@ const binding: WorkbenchJiraBinding = {
 };
 const harness = (
   kind: "ticket" | "epic",
-  options?: { projectId?: string; typeId?: string; missing?: boolean; localTicket?: boolean },
+  options?: {
+    projectId?: string;
+    typeId?: string;
+    missing?: boolean;
+    localTicket?: boolean;
+    epic?: WorkbenchJiraIssueSnapshot["epic"];
+  },
 ) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -102,14 +111,14 @@ const harness = (
     let creates = 0;
     const sprintMoves: Array<{ sprintId: number; issueKey: string }> = [];
     const issue = {
-      issueId: "200",
-      key: "WB-20",
+      issueId: kind === "ticket" ? "200" : "201",
+      key: kind === "ticket" ? "WB-20" : "WB-21",
       url: "https://example.atlassian.net/browse/WB-20",
       summary: "Recovered",
       description: "Description",
       issueType: { id: "story", name: "Story" },
       status: { id: "1", name: "To Do" },
-      epic: null,
+      epic: options?.epic ?? null,
       flagged: false,
       rank: 0,
       remoteUpdatedAt: at,
@@ -282,6 +291,159 @@ describe("uncertain Jira creation recovery", () => {
       expect(yield* h.rows()).toEqual([{ state: "created", jiraIssueId: "200" }]);
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
+  it.effect("an issue imported by sync resolves uncertainty without moving local work", () =>
+    Effect.gen(function* () {
+      const h = yield* harness("ticket", { localTicket: true });
+      const threadId = ThreadId.make("original-ticket-thread");
+      yield* seedNativeThread({ threadId, projectId: nativeId, createdAt: at });
+      yield* h.store.createAssignment({
+        id: WorkbenchAssignmentId.make("original-assignment"),
+        ticketId,
+        threadId,
+        createdAt: at,
+      });
+      yield* h.sync.syncBinding({ bindingId: binding.id });
+      const before = yield* h.store.getSnapshot;
+      const imported = (yield* h.repository.listIssueLinks(binding.id))[0]!;
+      expect(imported.ticketId).not.toBe(ticketId);
+      expect(yield* h.archive().pipe(Effect.flip)).toMatchObject({
+        code: "jira_operation_pending",
+      });
+      expect(
+        yield* h.service.resolveCreation({
+          ...h.input,
+          outcome: { type: "created", issueKey: "WB-20" },
+        }),
+      ).toEqual({ jiraIssueKey: "WB-20", alreadyLinkedTicketId: imported.ticketId });
+      expect(yield* h.rows()).toEqual([]);
+      expect(yield* h.store.getSnapshot).toEqual(before);
+      expect((yield* h.repository.listIssueLinks(binding.id))[0]).toEqual(imported);
+      expect(
+        yield* h.sql`SELECT thread_id FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId}`,
+      ).toHaveLength(1);
+      expect(h.sprintMoves).toEqual([]);
+      expect(h.creates()).toBe(1);
+      expect((yield* h.archive()).archivedAt).toBe(at);
+      yield* h.store.deleteProject({
+        id: workspaceId,
+        expectedRevision: 1,
+        expectedJiraBindingId: binding.id,
+        expectedTicketCount: 2,
+        expectedEpicCount: 0,
+        deletedAt: at,
+      });
+      expect((yield* h.store.getSnapshot).projects).toEqual([]);
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+  it.effect.each(["canonical", "explicit link"] as const)(
+    "an Epic with %s identity resolves uncertainty while the original stays local",
+    (identity) =>
+      Effect.gen(function* () {
+        const h = yield* harness("epic", {
+          epic: { id: "200", key: "WB-20", summary: "Epic", description: "Description" },
+        });
+        yield* h.sync.syncBinding({ bindingId: binding.id });
+        const before = yield* h.store.getSnapshot;
+        const importedId = WorkbenchEpicId.make(`jira:${binding.id}:epic:200`);
+        expect(before.epics.some((epic) => epic.id === importedId)).toBe(true);
+        if (identity === "explicit link")
+          yield* h.sql`INSERT INTO workbench_jira_epic_links (binding_id, jira_issue_id, jira_issue_key, epic_id) VALUES (${binding.id}, '200', 'WB-20', ${importedId})`;
+        expect(
+          yield* h.service.resolveCreation({
+            ...h.input,
+            outcome: { type: "created", issueKey: "WB-20" },
+          }),
+        ).toEqual({ jiraIssueKey: "WB-20", alreadyLinkedEpicId: importedId });
+        expect(yield* h.rows()).toEqual([]);
+        expect(yield* h.store.getSnapshot).toEqual(before);
+        expect(h.creates()).toBe(1);
+        expect((yield* h.archive()).archivedAt).toBe(at);
+        yield* h.store.deleteProject({
+          id: workspaceId,
+          expectedRevision: 1,
+          expectedJiraBindingId: binding.id,
+          expectedTicketCount: 1,
+          expectedEpicCount: 2,
+          deletedAt: at,
+        });
+        expect((yield* h.store.getSnapshot).projects).toEqual([]);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+  it.effect.each(["draft", "promoting"] as const)(
+    "resolving an already imported issue preserves the original %s and Thread",
+    (phase) =>
+      Effect.gen(function* () {
+        const h = yield* harness("ticket");
+        const threadId = ThreadId.make("original-draft-thread");
+        const draft = yield* h.store.beginTicketDraft({
+          id: ticketId,
+          projectId: workspaceId,
+          threadId,
+          modelSelection: ModelSelection.make({
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-6.1-sol",
+          }),
+        });
+        yield* seedNativeThread({ threadId, projectId: nativeId, createdAt: at });
+        yield* h.store.transitionTicketDraft({
+          id: ticketId,
+          expectedRevision: draft.revision,
+          from: ["creating"],
+          phase,
+        });
+        yield* h.sync.syncBinding({ bindingId: binding.id });
+        const before = yield* h.store.getTicketDraft(ticketId);
+        const imported = (yield* h.repository.listIssueLinks(binding.id))[0]!;
+        expect(
+          yield* h.service.resolveCreation({
+            ...h.input,
+            outcome: { type: "created", issueKey: "WB-20" },
+          }),
+        ).toEqual({ jiraIssueKey: "WB-20", alreadyLinkedTicketId: imported.ticketId });
+        const after = yield* h.store.getTicketDraft(ticketId);
+        expect(after).toEqual({
+          ...before,
+          phase: "draft",
+          revision: before.revision + (phase === "promoting" ? 1 : 0),
+          updatedAt: expect.any(String),
+        });
+        expect(
+          yield* h.sql`SELECT thread_id FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId}`,
+        ).toHaveLength(1);
+        expect(yield* h.rows()).toEqual([]);
+        expect((yield* h.archive()).archivedAt).toBe(at);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+  it.effect.each(["edited", "archived"] as const)(
+    "%s Epics remain local when resolving a saved creation, including after sync",
+    (change) =>
+      Effect.gen(function* () {
+        const h = yield* harness("epic", {
+          epic: { id: "200", key: "WB-20", summary: "Epic", description: "Description" },
+        });
+        if (change === "edited")
+          yield* h.store.updateEpic({
+            id: epicId,
+            title: "Newer local title",
+            markdown: "Newer local content",
+            updatedAt: "2026-10-17T01:00:00.000Z",
+          });
+        else yield* h.store.archiveEpic({ id: epicId, archivedAt: at });
+        const before = (yield* h.store.getSnapshot).epics.find((epic) => epic.id === epicId);
+        expect(
+          yield* h.service
+            .resolveCreation({ ...h.input, outcome: { type: "created", issueKey: "WB-20" } })
+            .pipe(Effect.flip),
+        ).toMatchObject({ code: "invalid_binding" });
+        expect(yield* h.rows()).toEqual([{ state: "created", jiraIssueId: "200" }]);
+        expect(yield* h.repository.listEpicLinks!(binding.id)).toEqual([]);
+        yield* h.sync.syncBinding({ bindingId: binding.id });
+        expect((yield* h.store.getSnapshot).epics.find((epic) => epic.id === epicId)).toEqual(
+          before,
+        );
+        expect(h.creates()).toBe(1);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
   it.effect.each(["ticket", "epic"] as const)(
     "%s: not-created permits a fresh Jira attempt",
     (kind) =>
@@ -306,18 +468,31 @@ describe("uncertain Jira creation recovery", () => {
       }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
   it.effect.each(["ticket", "epic"] as const)(
-    "%s: a linked issue cannot be claimed again",
+    "%s: an issue linked in another binding cannot be claimed again",
     (kind) =>
       Effect.gen(function* () {
         const h = yield* harness(kind);
+        const otherWorkspaceId = WorkbenchProjectId.make("other-workspace");
+        const otherBindingId = WorkbenchJiraBindingId.make("other-binding");
+        yield* h.store.createProject({
+          id: otherWorkspaceId,
+          title: "Other",
+          linkedProjectIds: [nativeId],
+          createdAt: at,
+        });
+        yield* h.repository.upsertBinding({
+          ...binding,
+          id: otherBindingId,
+          projectId: otherWorkspaceId,
+        });
         yield* h.store.createEpic({
           id: WorkbenchEpicId.make("other-epic"),
-          projectId: workspaceId,
+          projectId: otherWorkspaceId,
           title: "Other Epic",
           markdown: "",
           createdAt: at,
         });
-        yield* h.sql`INSERT INTO workbench_jira_epic_links (binding_id, jira_issue_id, jira_issue_key, epic_id) VALUES (${binding.id}, '200', 'WB-20', 'other-epic')`;
+        yield* h.sql`INSERT INTO workbench_jira_epic_links (binding_id, jira_issue_id, jira_issue_key, epic_id) VALUES (${otherBindingId}, '200', 'WB-20', 'other-epic')`;
         expect(
           yield* h.service
             .resolveCreation({ ...h.input, outcome: { type: "created", issueKey: "WB-20" } })

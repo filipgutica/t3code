@@ -56,7 +56,7 @@ export const resolveUncertainCreation = (
     }
     if (input.outcome.type === "not_created") {
       yield* sql`DELETE FROM ${sql(table)} WHERE ${sql(idColumn)} = ${input.id} AND binding_id = ${binding.id} AND state = 'uncertain' AND jira_issue_id IS NULL`;
-      return { row, issue: null };
+      return { row, issue: null, linkedId: null };
     }
     const savedBinding = yield* decodeSavedBinding(row.requestFingerprint).pipe(
       Effect.mapError(() => invalid("The saved Jira creation cannot be read.")),
@@ -95,16 +95,37 @@ export const resolveUncertainCreation = (
           });
     if (!prepared || issue.issueTypeId !== prepared.issueTypeId)
       return yield* invalid("The Jira issue type does not match this saved creation.");
-    // A user-selected issue must not steal another Ticket or Epic's durable identity.
-    yield* sql.withTransaction(
+    const linkedId = yield* sql.withTransaction(
       Effect.gen(function* () {
+        const linked =
+          input.kind === "ticket"
+            ? yield* sql<{ readonly id: string }>`
+              SELECT l.ticket_id AS id FROM workbench_jira_issue_links l
+              JOIN workbench_tickets t ON t.ticket_id = l.ticket_id
+              WHERE l.binding_id = ${binding.id} AND l.jira_issue_id = ${issue.id}
+                AND t.workbench_project_id = ${binding.projectId} AND t.deleted_at IS NULL
+            `
+            : yield* sql<{ readonly id: string }>`
+              SELECT e.epic_id AS id FROM workbench_epics e
+              WHERE e.workbench_project_id = ${binding.projectId} AND (
+                EXISTS (SELECT 1 FROM workbench_jira_epic_links l
+                  WHERE l.binding_id = ${binding.id} AND l.jira_issue_id = ${issue.id} AND l.epic_id = e.epic_id)
+                OR (e.epic_id = ${`jira:${binding.id}:epic:${issue.id}`} AND NOT EXISTS (
+                  SELECT 1 FROM workbench_jira_epic_links l WHERE l.binding_id = ${binding.id} AND l.jira_issue_id = ${issue.id}
+                ))
+              )
+            `;
+        const existingId = linked[0]?.id ?? null;
+        // Keep an imported record's identity; never move native work from the original.
         const duplicates = yield* sql`
     SELECT 1 WHERE EXISTS (
       SELECT 1 FROM workbench_jira_issue_links l JOIN workbench_jira_bindings b ON b.binding_id = l.binding_id
       WHERE b.connection_id = ${binding.connectionId} AND l.jira_issue_id = ${issue.id}
+        AND NOT (${input.kind === "ticket" && existingId !== null ? 1 : 0} AND l.binding_id = ${binding.id} AND l.ticket_id = ${existingId})
     ) OR EXISTS (
       SELECT 1 FROM workbench_jira_epic_links l JOIN workbench_jira_bindings b ON b.binding_id = l.binding_id
       WHERE b.connection_id = ${binding.connectionId} AND l.jira_issue_id = ${issue.id}
+        AND NOT (${input.kind === "epic" && existingId !== null ? 1 : 0} AND l.binding_id = ${binding.id} AND l.epic_id = ${existingId})
     ) OR EXISTS (
       SELECT 1 FROM workbench_jira_ticket_creations c JOIN workbench_jira_bindings b ON b.binding_id = c.binding_id
       WHERE b.connection_id = ${binding.connectionId} AND c.jira_issue_id = ${issue.id}
@@ -117,6 +138,18 @@ export const resolveUncertainCreation = (
           return yield* invalid(
             "This Jira issue is already linked to another saved creation or Workbench item.",
           );
+        if (existingId !== null) {
+          const deleted = yield* sql`
+            DELETE FROM ${sql(table)}
+            WHERE ${sql(idColumn)} = ${input.id} AND binding_id = ${binding.id} AND state = 'uncertain' AND jira_issue_id IS NULL
+            RETURNING ${sql(idColumn)}
+          `;
+          if (deleted.length !== 1)
+            return yield* invalid(
+              "The Jira creation changed. Refresh the Workspace before resolving it.",
+            );
+          return existingId;
+        }
         const updated = yield* sql`
     UPDATE ${sql(table)} SET state = 'created', jira_issue_id = ${issue.id}, jira_issue_key = ${issue.key}
     WHERE ${sql(idColumn)} = ${input.id} AND binding_id = ${binding.id} AND state = 'uncertain' AND jira_issue_id IS NULL
@@ -126,7 +159,8 @@ export const resolveUncertainCreation = (
           return yield* invalid(
             "The Jira creation changed. Refresh the Workspace before resolving it.",
           );
+        return null;
       }),
     );
-    return { row, issue };
+    return { row, issue, linkedId };
   });

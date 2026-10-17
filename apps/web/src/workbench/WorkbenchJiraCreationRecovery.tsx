@@ -8,6 +8,7 @@ import { useState } from "react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { toastManager } from "../components/ui/toast";
 import {
   Dialog,
   DialogPopup,
@@ -67,8 +68,8 @@ export function WorkbenchJiraCreationRecovery({
           creation={selected}
           canResolve={canResolve}
           onClose={() => setSelected(null)}
-          onResolve={(outcome) =>
-            resolve({
+          onResolve={async (outcome) => {
+            const result = await resolve({
               environmentId,
               input: {
                 bindingId: selected.bindingId,
@@ -76,8 +77,18 @@ export function WorkbenchJiraCreationRecovery({
                 id: selected.id,
                 outcome,
               },
-            })
-          }
+            });
+            if (result._tag === "Success") {
+              const id = result.value.alreadyLinkedTicketId ?? result.value.alreadyLinkedEpicId;
+              if (id)
+                toastManager.add({
+                  type: "success",
+                  title: "Jira creation resolved",
+                  description: `This issue is already tracked as ${id}; the original stays local.`,
+                });
+            }
+            return result;
+          }}
         />
       ) : null}
     </div>
