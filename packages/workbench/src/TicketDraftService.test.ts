@@ -14,6 +14,8 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -37,7 +39,10 @@ const model = ModelSelection.make({
 });
 const timestamp = "2026-10-09T12:00:00.000Z";
 
-const fixture = () => {
+const fixture = (options?: {
+  readonly beforeCreateTicket?: Effect.Effect<void>;
+  readonly beforePrepare?: Effect.Effect<void>;
+}) => {
   const threads = new Map<ThreadId, ProjectId>();
   const paths = new Map<ThreadId, string | null>();
   const archivedThreads = new Set<ThreadId>();
@@ -127,6 +132,7 @@ const fixture = () => {
         createTicket: (input) =>
           Effect.gen(function* () {
             ticketCreates++;
+            yield* options?.beforeCreateTicket ?? Effect.void;
             if (rejectCreation) {
               rejectCreation = false;
               return yield* new WorkbenchJiraOperationError({
@@ -147,6 +153,7 @@ const fixture = () => {
         prepare: (input) =>
           Effect.gen(function* () {
             prepares++;
+            yield* options?.beforePrepare ?? Effect.void;
             const ticket = (yield* store.getSnapshot).tickets.find(
               (value) => value.id === input.ticketId,
             );
@@ -265,6 +272,72 @@ const seedUncertainJiraCreate = Effect.gen(function* () {
 });
 
 describe("TicketDraftService", () => {
+  it.effect("finishes Start work after its requesting client disconnects", () =>
+    Effect.gen(function* () {
+      const preparing = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const f = fixture({
+        beforePrepare: Deferred.succeed(preparing, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+        ),
+      });
+      yield* Effect.gen(function* () {
+        const draft = yield* seed;
+        const service = yield* TicketDraftService;
+        const saved = yield* service.promote({ id: draft.id, expectedRevision: draft.revision });
+        const client = yield* service
+          .startWork({ id: saved.id, expectedRevision: saved.revision })
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(preparing);
+        yield* Fiber.interrupt(client);
+        yield* Deferred.succeed(release, undefined);
+        const store = yield* WorkbenchStore;
+        const starting = yield* store.getTicketDraft(draft.id);
+        // The same-draft lock waits for the original operation before it checks the revision.
+        const completed = yield* service.startWork({
+          id: draft.id,
+          expectedRevision: starting.revision,
+        });
+        expect(completed.phase).toBe("working");
+        expect(f.counts().prepares).toBe(1);
+      }).pipe(Effect.provide(f.layer));
+    }),
+  );
+
+  it.effect("autosaves another draft while Jira creation is still pending", () =>
+    Effect.gen(function* () {
+      const creating = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const f = fixture({
+        beforeCreateTicket: Deferred.succeed(creating, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+        ),
+      });
+      yield* Effect.gen(function* () {
+        const firstDraft = yield* seed;
+        const service = yield* TicketDraftService;
+        const other = yield* service.begin({
+          id: WorkbenchTicketId.make("draft-two"),
+          projectId: workspaceId,
+          threadId: ThreadId.make("planning-two"),
+          modelSelection: model,
+        });
+        const promotion = yield* service
+          .promote({ id: firstDraft.id, expectedRevision: firstDraft.revision })
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(creating);
+        const edited = yield* service.update({
+          id: other.id,
+          expectedRevision: other.revision,
+          fields: { ...other.fields, title: "Autosaved while Jira is pending" },
+        });
+        expect(edited.fields.title).toBe("Autosaved while Jira is pending");
+        yield* Deferred.succeed(release, undefined);
+        expect((yield* Fiber.join(promotion)).phase).toBe("planning");
+      }).pipe(Effect.provide(f.layer));
+    }),
+  );
+
   it.effect(
     "returns a compact preparation index including archived workspaces and promotion recovery",
     () => {

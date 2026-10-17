@@ -6,13 +6,13 @@ import {
   type RunId,
   type ThreadId,
 } from "@t3tools/contracts";
-import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Layer from "effect/Layer";
+import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -105,10 +105,8 @@ const make = Effect.gen(function* () {
       );
   };
 
-  let halted = false;
   const processEventSafely = (stored: OrchestrationV2StoredEvent) =>
     Effect.gen(function* () {
-      if (halted) return;
       const event = stored.event;
       const running =
         (event.type === "run.created" || event.type === "run.updated") &&
@@ -137,11 +135,12 @@ const make = Effect.gen(function* () {
             ),
           );
     }).pipe(
-      Effect.catchCause((cause) => {
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.fail(cause),
+      ),
+      Effect.retry({ times: 2, schedule: Schedule.exponential("250 millis") }),
+      Effect.catch((cause) => {
         const event = stored.event;
-        if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt;
-        // Local consumption did not commit; later acknowledgements must not skip this event.
-        halted = true;
         if (event.type === "run.created" || event.type === "run.updated") {
           return appendFailureActivity(
             {
@@ -150,59 +149,68 @@ const make = Effect.gen(function* () {
               startedAt: DateTime.formatIso(event.occurredAt),
             },
             cause,
-          );
+          ).pipe(Effect.andThen(Effect.failCause(cause)));
         }
-        return Effect.logWarning("Ticket execution consumption stopped; restart to retry", {
-          cause: Cause.pretty(cause),
-        });
+        return Effect.failCause(cause);
       }),
     );
-  const worker = yield* makeDrainableWorker(processEventSafely);
   const ready = yield* Deferred.make<void>();
   const seenSequence = yield* SubscriptionRef.make(0);
   const noteSeen = (sequence: number) =>
     SubscriptionRef.update(seenSequence, (seen) => Math.max(seen, sequence));
+  const initialize = tickets.initialize.pipe(
+    Effect.retry({ schedule: Schedule.spaced("1 second") }),
+    Effect.orDie,
+  );
   const start: TicketExecutionReactorShape["start"] = Effect.fn("TicketExecutionReactor.start")(
     function* () {
-      const sequence = yield* tickets.initialize.pipe(Effect.orDie);
+      const sequence = yield* initialize;
       yield* noteSeen(sequence);
-      const events = sink.stream({ afterSequence: sequence });
       yield* forkParked(
         Effect.gen(function* () {
-          // Obligations survive independently of the contiguous local event cursor.
-          yield* Effect.gen(function* () {
-            const pending = yield* tickets.pending;
-            for (const run of pending) {
-              yield* tickets
-                .resume(run)
-                .pipe(
-                  Effect.catchCause((cause) =>
-                    Cause.hasInterruptsOnly(cause)
-                      ? Effect.interrupt
-                      : appendFailureActivity(run, cause),
+          let afterSequence = sequence;
+          let restartDelay = 1_000;
+          while (true) {
+            yield* Effect.gen(function* () {
+              // Obligations survive independently of the contiguous local event cursor.
+              const pending = yield* tickets.pending;
+              for (const run of pending) {
+                yield* tickets
+                  .resume(run)
+                  .pipe(
+                    Effect.catchCause((cause) =>
+                      Cause.hasInterruptsOnly(cause)
+                        ? Effect.interrupt
+                        : appendFailureActivity(run, cause),
+                    ),
+                  );
+              }
+              yield* Deferred.succeed(ready, undefined);
+              yield* Stream.runForEach(sink.stream({ afterSequence }), (stored) =>
+                processEventSafely(stored).pipe(
+                  Effect.andThen(noteSeen(stored.sequence)),
+                  Effect.tap(() =>
+                    Effect.sync(() => {
+                      restartDelay = 1_000;
+                    }),
                   ),
-                );
-            }
-          }).pipe(Effect.ensuring(Deferred.succeed(ready, undefined)));
-          yield* Stream.runForEach(events, (stored) => {
-            const event = stored.event;
-            const relevant =
-              (event.type === "run.created" || event.type === "run.updated") &&
-              event.payload.status === "running" &&
-              event.payload.startedAt !== null &&
-              (event.nodeId === undefined || event.nodeId === event.payload.rootNodeId);
-            // Ordinary native activity does not write Workbench state. The last relevant acknowledgement is a safe replay prefix.
-            return (relevant ? worker.enqueue(stored) : Effect.void).pipe(
-              Effect.andThen(noteSeen(stored.sequence)),
+                ),
+              );
+            }).pipe(
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.interrupt
+                  : Effect.logWarning("Ticket execution consumption will restart", {
+                      cause: Cause.pretty(cause),
+                    }),
+              ),
             );
-          });
-        }).pipe(
-          Effect.catchCause((cause) =>
-            Cause.hasInterruptsOnly(cause)
-              ? Effect.interrupt
-              : Effect.logWarning("Ticket execution event stream failed", { cause }),
-          ),
-        ),
+            yield* Effect.sleep(restartDelay);
+            restartDelay = Math.min(restartDelay * 2, 30_000);
+            // A failed event was never acknowledged; replay must start from persisted progress.
+            afterSequence = yield* initialize;
+          }
+        }).pipe(Effect.orDie, Effect.ensuring(Deferred.succeed(ready, undefined))),
       );
     },
   );
@@ -215,12 +223,15 @@ const make = Effect.gen(function* () {
       Stream.filter((seen) => seen >= target),
       Stream.runHead,
     );
-    yield* worker.drain;
   });
 
   return {
     start,
-    drain: Deferred.await(ready).pipe(Effect.andThen(worker.drain)),
+    drain: Deferred.await(ready).pipe(
+      Effect.andThen(sink.latestSequence()),
+      Effect.orDie,
+      Effect.flatMap(drainThrough),
+    ),
     drainThrough,
   } satisfies TicketExecutionReactorShape;
 });

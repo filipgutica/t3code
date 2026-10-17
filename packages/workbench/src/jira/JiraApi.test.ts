@@ -4,7 +4,11 @@ import {
   WorkbenchTicketId,
   type WorkbenchJiraConnection,
 } from "@t3tools/contracts";
+import * as Deferred from "effect/Deferred";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as TestClock from "effect/testing/TestClock";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest, HttpClientResponse, UrlParams } from "effect/http";
@@ -418,6 +422,146 @@ describe("JiraApi", () => {
           parent: { id: "10000" },
         },
       });
+    }),
+  );
+
+  it.effect("bounds stalled create requests and response bodies with an uncertain outcome", () =>
+    Effect.gen(function* () {
+      for (const stalledAt of ["request", "body"] as const) {
+        const started = yield* Deferred.make<void>();
+        const headersReady = yield* Deferred.make<void>();
+        const completed = yield* Deferred.make<JiraApi.JiraIssueCreateError>();
+        let requestSignal: AbortSignal | undefined;
+        const service = yield* JiraApi.make.pipe(
+          Effect.provideService(WorkbenchJiraRepository, repository),
+          Effect.provideService(JiraAuthService, auth),
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make((request, _url, signal) => {
+              requestSignal = signal;
+              return Deferred.succeed(started, undefined).pipe(
+                Effect.andThen(
+                  stalledAt === "request"
+                    ? Effect.never
+                    : Deferred.await(headersReady).pipe(
+                        Effect.as(
+                          HttpClientResponse.fromWeb(
+                            request,
+                            new Response(new ReadableStream({ pull() {} }), { status: 201 }),
+                          ),
+                        ),
+                      ),
+                ),
+              );
+            }),
+          ),
+        );
+        const fiber = yield* service
+          .createIssue({
+            connectionId,
+            projectKey: "WB",
+            ticket: {
+              id: "ticket-timeout",
+              title: "Stalled create",
+              markdown: "Details",
+              kind: "story",
+            },
+            issueTypeId: "story",
+            accountId: "account-1",
+          })
+          .pipe(
+            Effect.flip,
+            Effect.flatMap((error) => Deferred.succeed(completed, error)),
+            Effect.forkChild,
+          );
+        yield* Deferred.await(started);
+        if (stalledAt === "body") {
+          yield* TestClock.adjust("20 seconds");
+          yield* Deferred.succeed(headersReady, undefined);
+        }
+        yield* TestClock.adjust(stalledAt === "body" ? "10 seconds" : "30 seconds");
+        assert.isTrue(
+          yield* Deferred.isDone(completed),
+          `${stalledAt} must finish at its deadline`,
+        );
+        assert.isTrue(requestSignal?.aborted);
+        const error = yield* Deferred.await(completed);
+        assert.strictEqual(error.outcome, "unknown");
+        yield* Fiber.join(fiber);
+      }
+    }),
+  );
+
+  it.effect("bounds Jira read and write response consumption", () =>
+    Effect.gen(function* () {
+      for (const write of [false, true]) {
+        const started = yield* Deferred.make<void>();
+        const completed = yield* Deferred.make<void>();
+        const service = yield* JiraApi.make.pipe(
+          Effect.provideService(WorkbenchJiraRepository, repository),
+          Effect.provideService(JiraAuthService, auth),
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make((request) =>
+              Deferred.succeed(started, undefined).pipe(
+                Effect.as(
+                  HttpClientResponse.fromWeb(
+                    request,
+                    new Response(new ReadableStream({ pull() {} })),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        const operation = write
+          ? service.addIssueToSprint({ connectionId, sprintId: 7, issueKey: "WB-1" })
+          : service.listProjects({ connectionId }).pipe(Effect.asVoid);
+        const fiber = yield* operation.pipe(
+          Effect.flip,
+          Effect.tap((error) =>
+            Effect.sync(() => assert.strictEqual(error.code, "request_failed")),
+          ),
+          Effect.andThen(Deferred.succeed(completed, undefined)),
+          Effect.forkChild,
+        );
+        yield* Deferred.await(started);
+        yield* TestClock.adjust("30 seconds");
+        assert.isTrue(yield* Deferred.isDone(completed));
+        yield* Fiber.join(fiber);
+      }
+    }),
+  );
+
+  it.effect("retains numeric and HTTP-date Retry-After from Jira rate limits", () =>
+    Effect.gen(function* () {
+      const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis);
+      for (const retryAfter of [
+        "45",
+        DateTime.toDateUtc(DateTime.makeUnsafe(now + 45_000)).toUTCString(),
+      ]) {
+        const service = yield* JiraApi.make.pipe(
+          Effect.provideService(WorkbenchJiraRepository, repository),
+          Effect.provideService(JiraAuthService, auth),
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make((request) =>
+              Effect.succeed(
+                HttpClientResponse.fromWeb(
+                  request,
+                  new Response(null, {
+                    status: 429,
+                    headers: { "Retry-After": retryAfter },
+                  }),
+                ),
+              ),
+            ),
+          ),
+        );
+        const error = yield* Effect.flip(service.listProjects({ connectionId }));
+        assert.strictEqual(error.httpStatus, 429);
+        assert.propertyVal(error, "retryAfterMs", 45_000);
+      }
     }),
   );
 

@@ -22,6 +22,7 @@ import {
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as DateTime from "effect/DateTime";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -590,50 +591,48 @@ it.effect(
             }),
           ),
         );
-      const drafts = yield* TicketDraftService.TicketDraftService.pipe(
-        Effect.provide(
-          TicketDraftService.layer.pipe(
-            Layer.provide(Layer.mock(WorkbenchJiraService)({ createTicket: store.createTicket })),
-            Layer.provide(
-              Layer.mock(TicketWorkspaceService)({
-                // Exclude Git worktree creation, but persist preparation through the real store.
-                prepare: ({ ticketId, requestedAt }) =>
-                  Effect.gen(function* () {
-                    const attemptId =
-                      WorkbenchTicketWorkspaceAttemptId.make("composed-preparation");
-                    yield* store.claimTicketWorkspace({
-                      ticketId,
-                      attemptId,
-                      branchName: branch,
-                      claimedAt: requestedAt,
-                      repositories: [
-                        {
-                          projectId,
-                          isPrimary: true,
-                          sourcePath: process.cwd(),
-                          worktreePath,
-                        },
-                      ],
-                    });
-                    yield* store.markTicketWorkspaceRepositoryReady({
-                      ticketId,
-                      attemptId,
-                      projectId,
-                      worktreePath,
-                      branchName: branch,
-                      updatedAt: requestedAt,
-                    });
-                    return yield* store.completeTicketWorkspace({
-                      ticketId,
-                      attemptId,
-                      completedAt: requestedAt,
-                    });
-                  }),
-              }),
-            ),
+      const draftContext = yield* Layer.build(
+        TicketDraftService.layer.pipe(
+          Layer.provide(Layer.mock(WorkbenchJiraService)({ createTicket: store.createTicket })),
+          Layer.provide(
+            Layer.mock(TicketWorkspaceService)({
+              // Exclude Git worktree creation, but persist preparation through the real store.
+              prepare: ({ ticketId, requestedAt }) =>
+                Effect.gen(function* () {
+                  const attemptId = WorkbenchTicketWorkspaceAttemptId.make("composed-preparation");
+                  yield* store.claimTicketWorkspace({
+                    ticketId,
+                    attemptId,
+                    branchName: branch,
+                    claimedAt: requestedAt,
+                    repositories: [
+                      {
+                        projectId,
+                        isPrimary: true,
+                        sourcePath: process.cwd(),
+                        worktreePath,
+                      },
+                    ],
+                  });
+                  yield* store.markTicketWorkspaceRepositoryReady({
+                    ticketId,
+                    attemptId,
+                    projectId,
+                    worktreePath,
+                    branchName: branch,
+                    updatedAt: requestedAt,
+                  });
+                  return yield* store.completeTicketWorkspace({
+                    ticketId,
+                    attemptId,
+                    completedAt: requestedAt,
+                  });
+                }),
+            }),
           ),
         ),
       );
+      const drafts = Context.get(draftContext, TicketDraftService.TicketDraftService);
       const policies = new Map<
         ThreadId,
         Effect.Success<ReturnType<RuntimePolicy.RuntimePolicyV2Shape["resolve"]>>

@@ -12,6 +12,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
+import * as TestClock from "effect/testing/TestClock";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as FileSystem from "effect/FileSystem";
@@ -196,9 +197,9 @@ describe("durable Workbench execution consumption", () => {
       }),
   );
 
-  effectIt.effect(
-    "holds the cursor behind a failed local transition and replays the entire remaining lane on restart",
-    () =>
+  effectIt.effect.each([1, 3])(
+    "recovers after %s local failures without skipping the remaining lane or restarting",
+    (failureCount) =>
       Effect.gen(function* () {
         yield* seed;
         const sql = yield* SqlClient.SqlClient;
@@ -206,31 +207,93 @@ describe("durable Workbench execution consumption", () => {
         const store = yield* WorkbenchStore;
         const projections = yield* ProjectionStoreV2;
         yield* sql`CREATE TRIGGER reject_execution BEFORE UPDATE OF status ON workbench_tickets WHEN NEW.status = 'in_progress' BEGIN SELECT RAISE(ABORT, 'execution fault'); END`;
-        const target = yield* Effect.gen(function* () {
+        const failed = yield* Deferred.make<void>();
+        const attempts = yield* Ref.make(0);
+        const observedStore = WorkbenchStore.of({
+          ...store,
+          consumeTicketExecution: (input) =>
+            store
+              .consumeTicketExecution(input)
+              .pipe(
+                Effect.tapError(() =>
+                  Ref.updateAndGet(attempts, (count) => count + 1).pipe(
+                    Effect.flatMap((count) =>
+                      count === failureCount ? Deferred.succeed(failed, undefined) : Effect.void,
+                    ),
+                  ),
+                ),
+              ),
+        });
+        yield* Effect.gen(function* () {
           const reactor = yield* TicketExecutionReactor;
           yield* reactor.start();
           const events = yield* sink.write({
             events: [runEvent(), runEvent({ id: RunId.make("second-run"), ordinal: 2 })],
           });
+          if (failureCount > 1) yield* TestClock.adjust("750 millis");
+          yield* Deferred.await(failed);
+          expect((yield* ticket(store)).status).toBe("todo");
+          expect(yield* store.initializeTicketExecution).toBe(0);
+          yield* sql`DROP TRIGGER reject_execution`;
+          yield* TestClock.adjust("1 second");
+          expect((yield* ticket(store)).status).toBe("in_progress");
           yield* reactor.drainThrough(events.at(-1)!.sequence);
-          return events.at(-1)!.sequence;
-        }).pipe(Effect.provide(reactorServices), Effect.scoped);
-        expect((yield* ticket(store)).status).toBe("todo");
-        expect(yield* store.initializeTicketExecution).toBe(0);
-        const failures = (yield* projections.getThreadProjection(threadId)).turnItems;
-        expect(failures).toHaveLength(1);
-        expect(failures[0]?.type).toBe("error");
-        yield* sql`DROP TRIGGER reject_execution`;
-        yield* Effect.gen(function* () {
-          const reactor = yield* TicketExecutionReactor;
-          yield* reactor.start();
-          yield* reactor.drainThrough(yield* sink.latestSequence());
-        }).pipe(Effect.provide(reactorServices), Effect.scoped);
-        expect((yield* ticket(store)).status).toBe("in_progress");
-        expect((yield* ticket(store)).revision).toBe(1);
-        expect(yield* store.initializeTicketExecution).toBe(target);
-        expect((yield* projections.getThreadProjection(threadId)).turnItems).toEqual(failures);
+          expect((yield* ticket(store)).revision).toBe(1);
+          expect(yield* store.initializeTicketExecution).toBe(events.at(-1)!.sequence);
+          const failures = (yield* projections.getThreadProjection(threadId)).turnItems;
+          expect(failures).toHaveLength(failureCount === 1 ? 0 : 1);
+        }).pipe(
+          Effect.provide(
+            reactorServices.pipe(Layer.provide(Layer.succeed(WorkbenchStore, observedStore))),
+          ),
+          Effect.scoped,
+        );
       }).pipe(Effect.provide(testLayer), Effect.scoped),
+  );
+
+  effectIt.effect("resubscribes after an event stream failure from the durable cursor", () =>
+    Effect.gen(function* () {
+      yield* seed;
+      const store = yield* WorkbenchStore;
+      const sink = yield* EventSinkV2;
+      const failed = yield* Deferred.make<void>();
+      let subscriptions = 0;
+      const observedSink = EventSinkV2.of({
+        ...sink,
+        stream: (input) => {
+          subscriptions += 1;
+          return subscriptions === 1
+            ? Stream.concat(
+                sink.stream(input).pipe(Stream.take(1)),
+                Stream.fromEffect(Deferred.succeed(failed, undefined)).pipe(
+                  Stream.flatMap(() => Stream.die("stream fault")),
+                ),
+              )
+            : sink.stream(input);
+        },
+      });
+      yield* Effect.gen(function* () {
+        const reactor = yield* TicketExecutionReactor;
+        yield* reactor.start();
+        const first = yield* sink.write({ events: [runEvent()] });
+        yield* Deferred.await(failed);
+        yield* reactor.drainThrough(first[0]!.sequence);
+        expect(yield* store.initializeTicketExecution).toBe(first[0]!.sequence);
+        const events = yield* sink.write({
+          events: [runEvent({ id: RunId.make("after-stream-failure"), ordinal: 2 })],
+        });
+        yield* TestClock.adjust("1 second");
+        expect((yield* ticket(store)).status).toBe("in_progress");
+        expect(yield* store.initializeTicketExecution).toBe(events[0]!.sequence);
+        yield* reactor.drainThrough(events[0]!.sequence);
+        expect((yield* ticket(store)).revision).toBe(1);
+      }).pipe(
+        Effect.provide(
+          reactorServices.pipe(Layer.provide(Layer.succeed(EventSinkV2, observedSink))),
+        ),
+        Effect.scoped,
+      );
+    }).pipe(Effect.provide(testLayer), Effect.scoped),
   );
 
   effectIt.effect(

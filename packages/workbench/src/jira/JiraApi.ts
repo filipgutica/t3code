@@ -20,6 +20,7 @@ import {
   type WorkbenchJiraSprint,
   type WorkbenchCreateTicketInput,
 } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -29,6 +30,7 @@ import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest, HttpClientResponse, UrlParams } from "effect/http";
 
 import { JiraAuthService } from "./JiraAuthService.ts";
+import { JIRA_HTTP_TIMEOUT, makeJiraHttpError } from "./JiraHttp.ts";
 import {
   WorkbenchJiraRepository,
   type WorkbenchJiraRepositoryError,
@@ -337,7 +339,7 @@ export class JiraApi extends Context.Service<JiraApi, JiraApiShape>()(
 ) {}
 
 export const make = Effect.gen(function* () {
-  const httpClient = yield* HttpClient.HttpClient;
+  const httpClient = HttpClient.withScope(yield* HttpClient.HttpClient);
   const auth = yield* JiraAuthService;
   const repository = yield* WorkbenchJiraRepository;
 
@@ -354,6 +356,25 @@ export const make = Effect.gen(function* () {
         accessToken: yield* auth.getAccessToken(connectionId),
       };
     });
+
+  const responseError = (response: HttpClientResponse.HttpClientResponse) =>
+    Clock.currentTimeMillis.pipe(
+      Effect.map((now) =>
+        makeJiraHttpError({
+          httpStatus: response.status,
+          message: httpStatusErrorMessage(response.status),
+          retryAfter: response.headers["retry-after"],
+          now,
+        }),
+      ),
+      Effect.flatMap(Effect.fail),
+    );
+
+  const requestDeadline = Effect.timeoutOrElse({
+    duration: JIRA_HTTP_TIMEOUT,
+    orElse: () =>
+      Effect.fail(apiError("request_failed", "The Jira request timed out. Try again shortly.")),
+  });
 
   const executeJsonRequest = <S extends Schema.Top>(input: {
     readonly path: string;
@@ -372,14 +393,10 @@ export const make = Effect.gen(function* () {
                 ),
               ),
             )
-          : Effect.fail(
-              new WorkbenchJiraOperationError({
-                code: "request_failed",
-                httpStatus: response.status,
-                message: httpStatusErrorMessage(response.status),
-              }),
-            ),
+          : responseError(response),
       ),
+      Effect.scoped,
+      requestDeadline,
     );
   };
 
@@ -388,9 +405,16 @@ export const make = Effect.gen(function* () {
       Effect.mapError(() => apiError("request_failed", "The Jira request could not be sent.")),
       Effect.flatMap((response) =>
         response.status >= 200 && response.status < 300
-          ? Effect.void
-          : Effect.fail(apiError("request_failed", httpStatusErrorMessage(response.status))),
+          ? response.arrayBuffer.pipe(
+              Effect.asVoid,
+              Effect.mapError(() =>
+                apiError("response_invalid", "The Jira response could not be read."),
+              ),
+            )
+          : responseError(response),
       ),
+      Effect.scoped,
+      requestDeadline,
     );
 
   const executeCreateRequest = (input: { readonly request: HttpClientRequest.HttpClientRequest }) =>
@@ -421,6 +445,17 @@ export const make = Effect.gen(function* () {
             message: httpStatusErrorMessage(response.status),
           }),
         );
+      }),
+      Effect.scoped,
+      Effect.timeoutOrElse({
+        duration: JIRA_HTTP_TIMEOUT,
+        orElse: () =>
+          Effect.fail(
+            new JiraIssueCreateError({
+              outcome: "unknown",
+              message: "The Jira issue request timed out. Check Jira before retrying.",
+            }),
+          ),
       }),
     );
 

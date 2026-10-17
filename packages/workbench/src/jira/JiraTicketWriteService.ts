@@ -29,6 +29,7 @@ import * as WorkbenchStore from "../WorkbenchStore.ts";
 import { resolveUncertainCreation } from "./JiraCreationResolution.ts";
 import { JiraApi } from "./JiraApi.ts";
 import { JiraAuthService } from "./JiraAuthService.ts";
+import { JIRA_HTTP_TIMEOUT, makeJiraHttpError } from "./JiraHttp.ts";
 import { JiraSyncService } from "./JiraSyncService.ts";
 import { JiraTicketImporter } from "./JiraTicketImporter.ts";
 import { WorkbenchJiraRepository } from "./WorkbenchJiraRepository.ts";
@@ -236,22 +237,48 @@ export const make = Effect.gen(function* () {
   const workbench = yield* WorkbenchStore.WorkbenchStore;
   const clock = yield* Clock.Clock;
   const sql = yield* SqlClient.SqlClient;
-  const httpClient = yield* HttpClient.HttpClient;
+  const httpClient = HttpClient.withScope(yield* HttpClient.HttpClient);
 
-  const execute = (input: {
+  const execute = <A, R>(input: {
     readonly path: string;
     readonly request: HttpClientRequest.HttpClientRequest;
+    readonly consume: (
+      response: HttpClientResponse.HttpClientResponse,
+    ) => Effect.Effect<A, WorkbenchJiraOperationError, R>;
   }) =>
     httpClient.execute(input.request).pipe(
       Effect.mapError(() => issueWriteError("The Jira write request could not be sent.")),
       Effect.flatMap((response) =>
         response.status >= 200 && response.status < 300
-          ? Effect.succeed(response)
-          : Effect.fail(
-              issueWriteError(
-                `${httpStatusErrorMessage(response.status)} Jira endpoint: ${input.path}`,
+          ? input.consume(response)
+          : clock.currentTimeMillis.pipe(
+              Effect.flatMap((now) =>
+                Effect.fail(
+                  makeJiraHttpError({
+                    httpStatus: response.status,
+                    message: `${httpStatusErrorMessage(response.status)} Jira endpoint: ${input.path}`,
+                    retryAfter: response.headers["retry-after"],
+                    now,
+                  }),
+                ),
               ),
             ),
+      ),
+      Effect.scoped,
+      Effect.timeoutOrElse({
+        duration: JIRA_HTTP_TIMEOUT,
+        orElse: () =>
+          Effect.fail(
+            issueWriteError("The Jira write request timed out. Refresh Jira before trying again."),
+          ),
+      }),
+    );
+
+  const consumeWriteResponse = (response: HttpClientResponse.HttpClientResponse) =>
+    response.arrayBuffer.pipe(
+      Effect.asVoid,
+      Effect.mapError(() =>
+        operationError("response_invalid", "The Jira write response could not be read."),
       ),
     );
 
@@ -469,14 +496,13 @@ export const make = Effect.gen(function* () {
         HttpClientRequest.acceptJson,
         HttpClientRequest.bearerToken(input.accessToken),
       ),
-    }).pipe(
-      Effect.flatMap((response) =>
+      consume: (response) =>
         HttpClientResponse.schemaBodyJson(TransitionPage)(response).pipe(
           Effect.mapError(() =>
             operationError("response_invalid", "Jira returned an unexpected transition response."),
           ),
         ),
-      ),
+    }).pipe(
       Effect.map((page) =>
         page.transitions.map((transition) => ({
           id: String(transition.id),
@@ -502,7 +528,8 @@ export const make = Effect.gen(function* () {
         HttpClientRequest.bearerToken(input.accessToken),
         HttpClientRequest.bodyJsonUnsafe({ fields: { description: input.markdown } }),
       ),
-    }).pipe(Effect.asVoid);
+      consume: consumeWriteResponse,
+    });
   };
 
   const applyTransition = (input: {
@@ -520,7 +547,8 @@ export const make = Effect.gen(function* () {
         HttpClientRequest.bearerToken(input.accessToken),
         HttpClientRequest.bodyJsonUnsafe({ transition: { id: input.transitionId } }),
       ),
-    }).pipe(Effect.asVoid);
+      consume: consumeWriteResponse,
+    });
   };
 
   const persistProjection = (input: {

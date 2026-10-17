@@ -15,6 +15,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as WorkbenchStore from "../WorkbenchStore.ts";
@@ -35,6 +36,27 @@ const repositoryError = (_cause: WorkbenchJiraRepositoryError) =>
 const sqlPersistenceError = () =>
   syncError("persistence_failed", "Jira synchronization state could not be saved or loaded.");
 const BACKGROUND_SYNC_COOLDOWN_MS = 15_000;
+const hasRetryAfter = Schema.is(Schema.Struct({ retryAfterMs: Schema.Number }));
+
+type SyncFailure = {
+  readonly error: WorkbenchJiraOperationError;
+  readonly consecutiveFailures: number;
+  readonly retryAt: number;
+};
+
+const failureDelay = (error: WorkbenchJiraOperationError, consecutiveFailures: number) => {
+  const authorizationFailed =
+    error.httpStatus === 401 ||
+    error.httpStatus === 403 ||
+    error.code === "authorization_failed" ||
+    error.code === "oauth_exchange_failed";
+  const base = authorizationFailed ? 300_000 : BACKGROUND_SYNC_COOLDOWN_MS;
+  const maximum = authorizationFailed ? 900_000 : 300_000;
+  return Math.max(
+    Math.min(maximum, base * 2 ** Math.min(consecutiveFailures - 1, 6)),
+    hasRetryAfter(error) ? error.retryAfterMs : 0,
+  );
+};
 
 const parseTimestamp = (value: string | null) => {
   if (value === null) return null;
@@ -101,9 +123,7 @@ export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const bindingLocks = yield* Ref.make<ReadonlyMap<string, Semaphore.Semaphore>>(new Map());
   const lastAttemptAt = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
-  const lastAttemptErrors = yield* Ref.make<ReadonlyMap<string, WorkbenchJiraOperationError>>(
-    new Map(),
-  );
+  const lastAttemptErrors = yield* Ref.make<ReadonlyMap<string, SyncFailure>>(new Map());
 
   const getBindingLock = Effect.fn("JiraSyncService.getBindingLock")(function* (bindingId: string) {
     const existing = (yield* Ref.get(bindingLocks)).get(bindingId);
@@ -172,7 +192,7 @@ export const make = Effect.gen(function* () {
       inMemoryAttemptAt !== undefined &&
       persistedSyncedAt >= inMemoryAttemptAt
         ? undefined
-        : (yield* Ref.get(lastAttemptErrors)).get(binding.id);
+        : (yield* Ref.get(lastAttemptErrors)).get(binding.id)?.error;
     if (binding.lastSyncError !== null || previousError !== undefined) {
       return yield* (
         previousError ??
@@ -245,6 +265,16 @@ export const make = Effect.gen(function* () {
           ? Number.NEGATIVE_INFINITY
           : (parseTimestamp(binding.updatedAt) ?? Number.NEGATIVE_INFINITY),
       );
+    const previousFailure = (yield* Ref.get(lastAttemptErrors)).get(binding.id);
+    // Manual sync remains a recovery path after reconnecting, but Jira's rate limit
+    // applies to every caller, including an explicit retry.
+    if (
+      previousFailure !== undefined &&
+      now < previousFailure.retryAt &&
+      (input.background === true || previousFailure.error.httpStatus === 429)
+    ) {
+      return yield* previousFailure.error;
+    }
     if (input.background === true && now - recentAttemptAt < BACKGROUND_SYNC_COOLDOWN_MS) {
       return yield* readCoolingDownSyncResult({ binding, inMemoryAttemptAt });
     }
@@ -544,9 +574,25 @@ export const make = Effect.gen(function* () {
         }),
       ),
       Effect.tapError((error) =>
-        Ref.update(lastAttemptErrors, (errors) => new Map(errors).set(binding.id, error)).pipe(
-          Effect.andThen(persistSyncError(error)),
-        ),
+        Effect.gen(function* () {
+          const failedAt = yield* clock.currentTimeMillis;
+          yield* Ref.update(lastAttemptAt, (attempts) =>
+            new Map(attempts).set(binding.id, failedAt),
+          );
+          yield* Ref.update(lastAttemptErrors, (errors) => {
+            const previous = errors.get(binding.id);
+            const consecutiveFailures =
+              previous?.error.code === error.code && previous.error.httpStatus === error.httpStatus
+                ? previous.consecutiveFailures + 1
+                : 1;
+            return new Map(errors).set(binding.id, {
+              error,
+              consecutiveFailures,
+              retryAt: failedAt + failureDelay(error, consecutiveFailures),
+            });
+          });
+          yield* persistSyncError(error);
+        }),
       ),
     );
   });
