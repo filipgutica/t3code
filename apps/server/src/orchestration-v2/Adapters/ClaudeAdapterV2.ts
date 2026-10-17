@@ -23,6 +23,9 @@ import {
   type ForkSessionOptions,
   type ForkSessionResult,
   getSubagentMessages,
+  type HookCallback,
+  type HookJSONOutput,
+  type McpServerStatus,
   query,
   type Options as ClaudeQueryOptions,
   type PermissionMode,
@@ -425,6 +428,12 @@ export interface ClaudeAgentSdkQuerySession {
   readonly backgroundTasks: (
     toolUseId: string,
   ) => Effect.Effect<boolean, ClaudeAgentSdkQueryRunnerError>;
+  // Optional so test sessions need not model it; research denies external MCP
+  // tools when it is absent.
+  readonly mcpServerStatus?: Effect.Effect<
+    ReadonlyArray<McpServerStatus>,
+    ClaudeAgentSdkQueryRunnerError
+  >;
   readonly interrupt: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly close: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
 }
@@ -934,6 +943,10 @@ export const layerQueryRunner: Layer.Layer<
                 }),
               ),
             ),
+          mcpServerStatus: Effect.tryPromise({
+            try: () => queryRuntime.mcpServerStatus(),
+            catch: (cause) => queryRunnerError(cause, "mcpServerStatus"),
+          }),
           interrupt: Effect.tryPromise({
             try: () => queryRuntime.interrupt(),
             catch: (cause) => queryRunnerError(cause, "interrupt"),
@@ -1080,6 +1093,7 @@ export function makeClaudeQueryOptions(input: {
   readonly readOnlySandbox?: boolean;
   readonly researchTools?: boolean;
   readonly canUseTool?: CanUseTool;
+  readonly researchPreToolUse?: HookCallback;
   readonly onUserDialog?: ClaudeQueryOptions["onUserDialog"];
   readonly supportedDialogKinds?: ClaudeQueryOptions["supportedDialogKinds"];
   readonly allowDangerouslySkipPermissions?: boolean;
@@ -1181,7 +1195,12 @@ export function makeClaudeQueryOptions(input: {
     input.readOnlySandbox === true
       ? {
           ...withDirectories,
-          permissionMode: input.researchTools === true ? ("plan" as const) : ("dontAsk" as const),
+          permissionMode:
+            input.researchTools === true
+              ? input.permissionMode === "auto"
+                ? ("auto" as const)
+                : ("plan" as const)
+              : ("dontAsk" as const),
           tools: [
             ...(input.researchTools === true
               ? CLAUDE_RESEARCH_ALLOWED_TOOLS
@@ -1189,6 +1208,16 @@ export function makeClaudeQueryOptions(input: {
           ],
           allowDangerouslySkipPermissions: false,
           strictMcpConfig: input.researchTools !== true,
+          // Auto research has no approval surface: what the classifier and
+          // rules leave undecided is denied instead of prompting the user.
+          ...(input.researchTools === true && input.permissionMode === "auto"
+            ? { permissionPrompts: "none" as const }
+            : {}),
+          // SDK callback hooks still run under disableAllHooks, and a hook deny
+          // applies before the permission mode or its classifier.
+          ...(input.researchTools === true && input.researchPreToolUse !== undefined
+            ? { hooks: { PreToolUse: [{ hooks: [input.researchPreToolUse] }] } }
+            : {}),
           settings: {
             ...(typeof withDirectories.settings === "object" ? withDirectories.settings : {}),
             disableAllHooks: true,
@@ -1198,6 +1227,7 @@ export function makeClaudeQueryOptions(input: {
   return input.cwd === null ? restrictedOptions : { ...restrictedOptions, cwd: input.cwd };
 }
 
+export const CLAUDE_T3_MCP_SERVER_NAME = "t3-code";
 export const CLAUDE_T3_MCP_TOOL_WILDCARD = "mcp__t3-code__*";
 
 // Must stay in sync with the Tool.Readonly annotations on OrchestratorToolkit;
@@ -1223,6 +1253,74 @@ export const CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
   "mcp__t3-code__html_preview",
   "mcp__t3-code__html_render",
 ];
+
+// Research may also read Workbench Jira without review. Other T3 tools go to the
+// permission mode's reviewer, including the HTML renderers: rendered pages load
+// public network resources, so content could leave the sandbox unreviewed.
+export const CLAUDE_RESEARCH_T3_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
+  ...CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS.filter(
+    (tool) => tool !== "mcp__t3-code__html_preview" && tool !== "mcp__t3-code__html_render",
+  ),
+  "mcp__t3-code__workbench_jira_read_issue",
+  "mcp__t3-code__workbench_jira_search_issues",
+];
+
+const CLAUDE_RESEARCH_MCP_TOOL_DENIAL = {
+  hookSpecificOutput: {
+    hookEventName: "PreToolUse",
+    permissionDecision: "deny",
+    permissionDecisionReason:
+      "Research is read-only. This MCP tool is not marked read-only by its server, so it is unavailable here.",
+  },
+} satisfies HookJSONOutput;
+
+// Mirrors Claude Code's MCP name normalization: mcp__<server>__<tool>, with
+// characters outside [A-Za-z0-9_-] replaced by "_", and claude.ai connector
+// names also collapsing and trimming underscores.
+function claudeMcpNameSegment(name: string): string {
+  const normalized = name.replace(/[^A-Za-z0-9_-]/g, "_");
+  return name.startsWith("claude.ai ")
+    ? normalized.replace(/_+/g, "_").replace(/^_|_$/g, "")
+    : normalized;
+}
+
+function claudeMcpToolName(serverName: string, toolName: string): string {
+  return `mcp__${claudeMcpNameSegment(serverName)}__${claudeMcpNameSegment(toolName)}`;
+}
+
+// Research may run an MCP tool from the injected T3 server, identified by its
+// exact name because normalized tool names can collide across servers, or an
+// external tool its server marks read-only and not destructive. Classifier
+// approval alone must not admit writes.
+export function claudeResearchMcpToolIsAllowed(input: {
+  readonly toolName: string;
+  readonly serverName: string | undefined;
+  readonly servers: ReadonlyArray<McpServerStatus>;
+}): boolean {
+  if (input.serverName === CLAUDE_T3_MCP_SERVER_NAME) return true;
+  const matches = input.servers
+    .filter((server) => input.serverName === undefined || server.name === input.serverName)
+    .flatMap((server) =>
+      (server.tools ?? [])
+        .filter(
+          (candidate) =>
+            candidate.name === input.toolName ||
+            claudeMcpToolName(server.name, candidate.name) === input.toolName,
+        )
+        .map((tool) => ({ server, tool })),
+    );
+  const match = matches.length === 1 ? matches[0] : undefined;
+  return (
+    match !== undefined &&
+    (match.server.name === CLAUDE_T3_MCP_SERVER_NAME ||
+      (match.tool.annotations?.readOnly === true && match.tool.annotations.destructive !== true))
+  );
+}
+
+// Research never asks the user, so a dialog takes the CLI's default behavior.
+const cancelClaudeUserDialog: NonNullable<ClaudeQueryOptions["onUserDialog"]> = async () => ({
+  behavior: "cancelled",
+});
 
 // Claude Code aborts an HTTP MCP call after 60 s ("The operation timed out.")
 // unless the server config sets `timeout`. T3's wait tools (t3_thread_wait,
@@ -1250,14 +1348,15 @@ export function claudeMcpQueryOverrides(input: {
   if (session === undefined) {
     return input.allowedTools === undefined ? {} : { allowedTools: input.allowedTools };
   }
-  const mcpAllowedTools =
-    input.readOnlySandbox && input.researchTools !== true
-      ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS
-      : [CLAUDE_T3_MCP_TOOL_WILDCARD];
+  const mcpAllowedTools = !input.readOnlySandbox
+    ? [CLAUDE_T3_MCP_TOOL_WILDCARD]
+    : input.researchTools === true
+      ? CLAUDE_RESEARCH_T3_MCP_ALLOWED_TOOLS
+      : CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS;
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),
     mcpServers: {
-      "t3-code": {
+      [CLAUDE_T3_MCP_SERVER_NAME]: {
         type: "http",
         url: session.endpoint,
         headers: {
@@ -1783,6 +1882,10 @@ function readOnlyPolicyAllowsGlobalReads(
 function permissionModeForClaudeRuntimePolicy(
   runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
 ): PermissionMode {
+  // Research tools stay read-only, so Auto only moves approvals to the classifier.
+  if (runtimePolicy.toolAccess === "research" && runtimePolicy.runtimeMode === "auto") {
+    return "auto";
+  }
   if (runtimePolicy.interactionMode === "plan") {
     return "plan";
   }
@@ -7932,6 +8035,32 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const canUseTool: CanUseTool = (toolName, toolInput, callbackOptions) =>
           runPromise(canUseToolEffect(toolName, toolInput, callbackOptions));
 
+        // Fails closed: a hook that rejects or times out would not block the tool.
+        const researchPreToolUse: HookCallback = (hookInput) =>
+          runPromise(
+            Effect.gen(function* () {
+              if (
+                hookInput.hook_event_name !== "PreToolUse" ||
+                !hookInput.tool_name.startsWith("mcp__")
+              ) {
+                return {} satisfies HookJSONOutput;
+              }
+              const serverName = hookInput.mcp_server?.name;
+              const mcpServerStatus = (yield* Ref.get(queryContext))?.query.mcpServerStatus;
+              const servers =
+                serverName === CLAUDE_T3_MCP_SERVER_NAME || mcpServerStatus === undefined
+                  ? []
+                  : yield* mcpServerStatus.pipe(Effect.timeout("10 seconds"));
+              return claudeResearchMcpToolIsAllowed({
+                toolName: hookInput.tool_name,
+                serverName,
+                servers,
+              })
+                ? ({} satisfies HookJSONOutput)
+                : CLAUDE_RESEARCH_MCP_TOOL_DENIAL;
+            }).pipe(Effect.catchCause(() => Effect.succeed(CLAUDE_RESEARCH_MCP_TOOL_DENIAL))),
+          );
+
         const onUserDialog: NonNullable<ClaudeQueryOptions["onUserDialog"]> = (
           request,
           callbackOptions,
@@ -8131,6 +8260,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             turnInput.nativeThreadHasTurns ?? turnInput.providerTurnOrdinal > 1;
           const shouldResume =
             resumeSessionAt !== undefined || openedWithResume || hasPersistedProviderTurn;
+          const researchTools = turnInput.runtimePolicy.toolAccess === "research";
           const queryOptions = makeClaudeQueryOptions({
             modelSelection: turnInput.modelSelection,
             nativeThreadId,
@@ -8150,14 +8280,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             permissionMode: queryPolicy.permissionMode,
             readOnlySandbox:
               sandboxPolicyKindForClaudeRuntimePolicy(turnInput.runtimePolicy) === "readOnly",
-            researchTools: turnInput.runtimePolicy.toolAccess === "research",
+            researchTools,
             ...(queryPolicy.allowDangerouslySkipPermissions === undefined
               ? {}
               : {
                   allowDangerouslySkipPermissions: queryPolicy.allowDangerouslySkipPermissions,
                 }),
             canUseTool,
-            onUserDialog,
+            researchPreToolUse,
+            onUserDialog: researchTools ? cancelClaudeUserDialog : onUserDialog,
             supportedDialogKinds: ["resume_return"],
           });
           const querySession = yield* queryRunner

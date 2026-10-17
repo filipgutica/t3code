@@ -22,6 +22,7 @@ import * as Stream from "effect/Stream";
 import * as Invocation from "../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { liveThreadShell } from "../../mcp/McpToolAccess.testkit.ts";
+import { CLAUDE_RESEARCH_T3_MCP_ALLOWED_TOOLS } from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import * as Threads from "../../orchestration-v2/ThreadManagementService.ts";
 import * as Store from "../WorkbenchStore.ts";
 import * as Research from "./JiraResearchService.ts";
@@ -191,6 +192,13 @@ const makeHarness = Effect.fnUntraced(function* (
 });
 
 describe("workspace Jira research tools", () => {
+  it("are pre-approved for Claude ticket planning", () => {
+    expect(
+      CLAUDE_RESEARCH_T3_MCP_ALLOWED_TOOLS.filter((name) =>
+        name.startsWith("mcp__t3-code__workbench_jira_"),
+      ),
+    ).toEqual(Object.values(JiraResearchToolkit.tools).map((tool) => `mcp__t3-code__${tool.name}`));
+  });
   it.effect("reads and searches using the authenticated draft's connection in read-only mode", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({

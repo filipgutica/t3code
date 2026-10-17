@@ -1,5 +1,6 @@
 import { assert, it } from "@effect/vitest";
 import {
+  EnvironmentId,
   ModelSelection,
   ProjectId,
   ProviderInstanceId,
@@ -20,6 +21,8 @@ import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import * as JiraRepository from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 
+import * as ClaudeAdapterV2 from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
+import * as CodexAdapterV2 from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import { McpWritePolicy } from "../mcp/McpWritePolicy.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
@@ -185,9 +188,8 @@ it.effect.each(["codex", "claudeAgent"] as const)(
   (driver) =>
     resolve.pipe(
       Effect.map((policy) => {
-        assert.equal(policy.runtimeMode, "approval-required");
+        assert.equal(policy.runtimeMode, "auto");
         assert.equal(policy.interactionMode, "plan");
-        assert.equal(policy.approvalPolicy, "on-request");
         assert.equal(policy.toolAccess, "research");
         assert.deepEqual(policy.sandboxPolicy, {
           type: "readOnly",
@@ -201,6 +203,84 @@ it.effect.each(["codex", "claudeAgent"] as const)(
       }),
       Effect.provide(policyLayer("draft", driver)),
     ),
+);
+it.effect("routes Codex planning approvals to the auto reviewer inside the read-only sandbox", () =>
+  resolve.pipe(
+    Effect.flatMap((runtimePolicy) =>
+      CodexAdapterV2.buildCodexTurnStartParams({
+        nativeThreadId: "native-planning",
+        codexInput: [{ type: "text", text: "Research the ticket." }],
+        runtimePolicy,
+        modelSelection,
+      }),
+    ),
+    Effect.map((params) => {
+      assert.equal(params.approvalsReviewer, "auto_review");
+      assert.deepEqual(params.sandboxPolicy, { type: "readOnly", networkAccess: false });
+      // The reviewer never sees sandbox escapes or permission grants.
+      assert.deepEqual(params.approvalPolicy, {
+        granular: {
+          sandbox_approval: false,
+          rules: false,
+          skill_approval: false,
+          request_permissions: false,
+          mcp_elicitations: true,
+        },
+      });
+      assert.equal(params.collaborationMode?.mode, "plan");
+    }),
+    Effect.provide(policyLayer("draft", "codex")),
+  ),
+);
+it.effect("routes Claude planning approvals to Auto with read-only tools", () =>
+  resolve.pipe(
+    Effect.map((runtimePolicy) => {
+      const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(runtimePolicy);
+      const { allowedTools } = ClaudeAdapterV2.claudeMcpQueryOverrides({
+        mcpSession: {
+          environmentId: EnvironmentId.make("planning-environment"),
+          threadId,
+          providerSessionId: "planning-session",
+          providerInstanceId: instanceId,
+          endpoint: "http://localhost/mcp",
+          authorizationHeader: "Bearer fixture",
+          browserToolsAvailable: true,
+        },
+        readOnlySandbox: true,
+        researchTools: true,
+        ...(queryPolicy.allowedTools === undefined
+          ? {}
+          : { allowedTools: queryPolicy.allowedTools }),
+      });
+      const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+        modelSelection,
+        nativeThreadId: "native-planning",
+        resume: false,
+        cwd: "/repo/first",
+        readOnlySandbox: true,
+        researchTools: true,
+        ...queryPolicy,
+        ...(allowedTools === undefined ? {} : { allowedTools }),
+      });
+      assert.equal(options.permissionMode, "auto");
+      // Approvals the Auto reviewer leaves undecided are denied, never shown to the user.
+      assert.equal(options.permissionPrompts, "none");
+      if (!Array.isArray(options.tools)) return assert.fail("Expected explicit research tools");
+      assert.notIncludeMembers(options.tools, ["Bash", "Edit", "Write", "NotebookEdit", "Agent"]);
+      assert.notInclude(options.allowedTools ?? [], ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD);
+      assert.notInclude(options.allowedTools ?? [], "mcp__t3-code__preview_navigate");
+      assert.includeMembers(options.allowedTools ?? [], [
+        "Read",
+        "mcp__t3-code__workbench_jira_read_issue",
+        "mcp__t3-code__workbench_jira_search_issues",
+      ]);
+      assert.notIncludeMembers(options.allowedTools ?? [], [
+        "mcp__t3-code__html_preview",
+        "mcp__t3-code__html_render",
+      ]);
+    }),
+    Effect.provide(policyLayer("draft", "claudeAgent")),
+  ),
 );
 it.effect("leaves ordinary native Threads unchanged", () =>
   resolve.pipe(
