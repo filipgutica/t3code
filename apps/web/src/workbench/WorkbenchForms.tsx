@@ -1,3 +1,4 @@
+import { useWorkbenchTicketContent } from "./useWorkbenchTicketContent";
 import { WorkbenchRepositoryScopeFields } from "./WorkbenchRepositoryScopeFields";
 import {
   isWorkbenchRepositoryScopeValid,
@@ -882,6 +883,30 @@ export type WorkbenchTicketDetailProps = {
   readonly lifecycleActionsEnabled: boolean;
 };
 export function WorkbenchTicketDetail(props: WorkbenchTicketDetailProps) {
+  const content = useWorkbenchTicketContent(props.environmentId, props.ticket);
+  if (content.ticket === null) {
+    return (
+      <div className="flex flex-col gap-3 p-4">
+        <div>
+          <Button variant="ghost" onClick={props.onBack}>
+            <ArrowLeftIcon /> Back
+          </Button>
+        </div>
+        <p role={content.error ? "alert" : "status"}>{content.error ?? "Loading Ticket…"}</p>
+        {content.error ? (
+          <div>
+            <Button variant="outline" onClick={content.refresh}>
+              Retry
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+  return <WorkbenchLoadedTicketDetail {...props} ticket={content.ticket} />;
+}
+
+function WorkbenchLoadedTicketDetail(props: WorkbenchTicketDetailProps) {
   return (
     <WorkbenchTicketDetailController
       context={{

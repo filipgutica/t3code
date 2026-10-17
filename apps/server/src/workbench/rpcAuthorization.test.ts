@@ -95,6 +95,41 @@ describe("Workbench RPC authorization", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.effect("allows archived Ticket reads with read scope and rejects callers without it", () =>
+    Effect.gen(function* () {
+      const method = WORKBENCH_WS_METHODS.workbenchGetTicket;
+      const group = WsRpcGroup.omit(
+        ...[...WsRpcGroup.requests.keys()].filter(
+          (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, typeof method> => tag !== method,
+        ),
+      );
+      let reads = 0;
+      const handlers = group.toLayerHandler(method, () =>
+        Effect.sync(() => {
+          reads++;
+          return null;
+        }),
+      );
+      const denied = yield* RpcTest.makeClient(group).pipe(
+        Effect.provide(Layer.merge(handlers, rpcScopeAuthorizationLayer([]))),
+      );
+      expect(
+        yield* denied[method]({ ticketId: WorkbenchTicketId.make("archived") }).pipe(Effect.flip),
+      ).toMatchObject({
+        _tag: "EnvironmentAuthorizationError",
+        requiredScope: AuthOrchestrationReadScope,
+      });
+      expect(reads).toBe(0);
+      const reader = yield* RpcTest.makeClient(group).pipe(
+        Effect.provide(
+          Layer.merge(handlers, rpcScopeAuthorizationLayer([AuthOrchestrationReadScope])),
+        ),
+      );
+      expect(yield* reader[method]({ ticketId: WorkbenchTicketId.make("archived") })).toBeNull();
+      expect(reads).toBe(1);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect.each([
     WORKBENCH_WS_METHODS.workbenchArchiveProject,
     WORKBENCH_WS_METHODS.workbenchDeleteProject,

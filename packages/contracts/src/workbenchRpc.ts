@@ -28,6 +28,7 @@ import {
   WorkbenchReplaceAssignmentInput,
   WorkbenchSnapshot,
   WorkbenchTicket,
+  WorkbenchTicketId,
   WorkbenchTicketWorkspace,
   WorkbenchUnlinkAssignmentInput,
   WorkbenchUpdateEpicInput,
@@ -75,6 +76,7 @@ export const WORKBENCH_WS_METHODS = {
   workbenchStartTicketDraftWork: "workbench.ticketDrafts.startWork",
   workbenchGetTicketPreparations: "workbench.ticketPreparations.get",
   workbenchGetSnapshot: "workbench.getSnapshot",
+  workbenchGetTicket: "workbench.tickets.get",
   workbenchCreateProject: "workbench.projects.create",
   workbenchUpdateProject: "workbench.projects.update",
   workbenchArchiveProject: "workbench.projects.archive",
@@ -125,8 +127,14 @@ const WsWorkbenchGetTicketPreparationsRpc = Rpc.make(
   },
 );
 
+const WsWorkbenchGetTicketRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchGetTicket, {
+  payload: Schema.Struct({ ticketId: WorkbenchTicketId }),
+  success: Schema.NullOr(WorkbenchTicket),
+  error: WorkbenchRpcError,
+});
+
 const WsWorkbenchGetSnapshotRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchGetSnapshot, {
-  payload: Schema.Struct({}),
+  payload: Schema.Struct({ compact: Schema.optionalKey(Schema.Boolean) }),
   success: WorkbenchSnapshot,
   error: WorkbenchRpcError,
 });
@@ -397,6 +405,7 @@ export const WorkbenchRpcGroup = RpcGroup.make(
   WsWorkbenchDiscardTicketDraftRpc,
   WsWorkbenchStartTicketDraftWorkRpc,
   WsWorkbenchGetSnapshotRpc,
+  WsWorkbenchGetTicketRpc,
   WsWorkbenchCreateProjectRpc,
   WsWorkbenchUpdateProjectRpc,
   WsWorkbenchArchiveProjectRpc,

@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId, WorkbenchTicketPreparation } from "@t3tools/contracts";
+import * as Equal from "effect/Equal";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useEffect } from "react";
@@ -22,7 +23,7 @@ const preparationIndexAtom = Atom.make((get) => {
     }
   }
   return index;
-});
+}).pipe(Atom.withEquality(Equal.equals));
 
 export const useWorkbenchTicketPreparations = () => useAtomValue(preparationIndexAtom);
 

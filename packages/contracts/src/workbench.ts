@@ -101,6 +101,8 @@ export const WorkbenchTicket = Schema.Struct({
   title: TrimmedNonEmptyString.check(Schema.isMaxLength(240)),
   kind: WorkbenchTicketKind.pipe(Schema.withDecodingDefault(Effect.succeed("story" as const))),
   markdown: TrimmedString.check(Schema.isMaxLength(120_000)),
+  // Compact snapshots replace archived content with an empty string; ticket reads stay complete.
+  markdownOmitted: Schema.optionalKey(Schema.Boolean),
   primaryT3ProjectId: ProjectId,
   repositoryProjectIds: Schema.Array(ProjectId).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),

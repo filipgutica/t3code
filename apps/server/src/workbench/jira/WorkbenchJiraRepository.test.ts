@@ -117,6 +117,7 @@ describe("WorkbenchJiraRepository SQL", () => {
           key: "WB-1",
           url: "https://example.atlassian.net/browse/WB-1",
           summary: "Imported issue",
+          description: "Full Jira markdown stays in persistence.",
           issueType: { id: "10001", name: "Story" },
           status: { id: "2", name: "In Progress" },
           epic: null,
@@ -132,6 +133,12 @@ describe("WorkbenchJiraRepository SQL", () => {
       yield* repository.upsertConnection(connection, "oauth-grant-1");
       yield* repository.upsertBinding(binding);
       yield* repository.replaceIssueLinks(bindingId, [issueLink]);
+      const snapshotLinks = yield* repository.listIssueLinks(bindingId, { snapshot: true });
+      expect(snapshotLinks).toHaveLength(1);
+      expect(snapshotLinks[0]?.issue).not.toHaveProperty("description");
+      expect((yield* repository.listIssueLinks(bindingId))[0]?.issue.description).toBe(
+        issueLink.issue.description,
+      );
       yield* sql`CREATE TEMP TABLE link_changes (operation TEXT)`;
       yield* sql`CREATE TEMP TRIGGER link_insert AFTER INSERT ON workbench_jira_issue_links
         BEGIN INSERT INTO link_changes VALUES ('insert'); END`;
@@ -144,6 +151,9 @@ describe("WorkbenchJiraRepository SQL", () => {
       yield* repository.replaceIssueLinks(bindingId, []);
       expect(yield* repository.listIssueLinks(bindingId)).toEqual([
         { ...issueLink, active: false },
+      ]);
+      expect(yield* repository.listIssueLinks(bindingId, { snapshot: true })).toMatchObject([
+        { ticketId, active: false },
       ]);
       expect(yield* sql`SELECT operation FROM link_changes`).toEqual([{ operation: "update" }]);
       yield* sql`DELETE FROM link_changes`;

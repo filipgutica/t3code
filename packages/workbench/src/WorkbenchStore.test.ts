@@ -99,6 +99,40 @@ const seedTicket = (input: {
   });
 
 describe("WorkbenchStore package boundary", () => {
+  it.effect(
+    "omits archived markdown only from compact snapshots and preserves the ticket read",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* WorkbenchStore;
+        const projectId = ProjectId.make("compact-project");
+        const workspaceId = WorkbenchProjectId.make("compact-workspace");
+        const ticketId = WorkbenchTicketId.make("compact-ticket");
+        const ticket = yield* seedTicket({ store, projectId, workspaceId, ticketId });
+        yield* store.archiveTicket({
+          ticketId,
+          expectedRevision: ticket.revision,
+          archivedAt: "2026-10-17T10:00:00.000Z",
+          updatedAt: "2026-10-17T10:00:00.000Z",
+        });
+        expect((yield* store.getCompactSnapshot).tickets[0]).toMatchObject({
+          id: ticketId,
+          markdown: "",
+          markdownOmitted: true,
+        });
+        expect((yield* store.getSnapshot).tickets[0]?.markdown).toBe(ticket.markdown);
+        expect(Option.getOrThrow(yield* store.getTicket(ticketId)).markdown).toBe(ticket.markdown);
+        yield* store.archiveTicket({
+          ticketId,
+          expectedRevision: ticket.revision + 1,
+          archivedAt: null,
+          updatedAt: "2026-10-17T10:01:00.000Z",
+        });
+        expect((yield* store.getCompactSnapshot).tickets[0]).toMatchObject({
+          markdown: ticket.markdown,
+        });
+      }).pipe(Effect.provide(testLayer({ projects: new Set(["compact-project"]) }))),
+  );
+
   it.effect("atomically starts todo execution and preserves further-along statuses", () =>
     Effect.gen(function* () {
       const store = yield* WorkbenchStore;

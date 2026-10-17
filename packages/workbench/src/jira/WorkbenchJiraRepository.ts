@@ -76,6 +76,7 @@ export interface WorkbenchJiraRepositoryShape {
   }) => Effect.Effect<boolean, WorkbenchJiraRepositoryError>;
   readonly listIssueLinks: (
     bindingId: WorkbenchJiraBindingId,
+    options?: { readonly snapshot: boolean },
   ) => Effect.Effect<ReadonlyArray<WorkbenchJiraIssueLink>, WorkbenchJiraRepositoryError>;
   /** Lists every mapped Epic, including Epics with no child Tickets. */
   readonly listEpicLinks?: (
@@ -281,12 +282,13 @@ export const layerSql = Layer.effect(
 
     const loadIssueLinks = Effect.fn("WorkbenchJiraRepository.loadIssueLinks")(function* (
       bindingId: WorkbenchJiraBindingId,
+      snapshot = false,
     ) {
       const rows = yield* sql<Schema.Schema.Type<typeof IssueLinkRow>>`
         SELECT
           binding_id AS "bindingId",
           ticket_id AS "ticketId",
-          issue_json AS "issueJson",
+          CASE WHEN ${snapshot ? 1 : 0} THEN json_remove(issue_json, '$.description') ELSE issue_json END AS "issueJson",
           active,
           linked_at AS "linkedAt",
           last_seen_at AS "lastSeenAt"
@@ -607,7 +609,7 @@ export const layerSql = Layer.effect(
             return rows.length === 1;
           }),
         ),
-      listIssueLinks: (bindingId) => protect(loadIssueLinks(bindingId)),
+      listIssueLinks: (bindingId, options) => protect(loadIssueLinks(bindingId, options?.snapshot)),
       listEpicLinks: (bindingId) => protect(loadEpicLinks(bindingId)),
       replaceIssueLinks: (bindingId, links) =>
         protect(

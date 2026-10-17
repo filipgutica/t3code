@@ -17,6 +17,7 @@ export const WORKBENCH_RPC_REQUIRED_SCOPES = {
   [WORKBENCH_WS_METHODS.workbenchStartTicketDraftWork]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchGetTicketPreparations]: AuthOrchestrationReadScope,
   [WORKBENCH_WS_METHODS.workbenchGetSnapshot]: AuthOrchestrationReadScope,
+  [WORKBENCH_WS_METHODS.workbenchGetTicket]: AuthOrchestrationReadScope,
   [WORKBENCH_WS_METHODS.workbenchCreateProject]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchUpdateProject]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchArchiveProject]: AuthOrchestrationOperateScope,
@@ -54,6 +55,7 @@ export const WORKBENCH_RPC_REQUIRED_SCOPES = {
 const {
   [WORKBENCH_WS_METHODS.workbenchGetTicketPreparations]: _preparations,
   [WORKBENCH_WS_METHODS.workbenchGetSnapshot]: _snapshot,
+  [WORKBENCH_WS_METHODS.workbenchGetTicket]: _ticket,
   [WORKBENCH_WS_METHODS.workbenchJiraGetSnapshot]: _jiraSnapshot,
   [WORKBENCH_WS_METHODS.workbenchJiraGetTicketTransitions]: _transitions,
   ...mutationScopes
