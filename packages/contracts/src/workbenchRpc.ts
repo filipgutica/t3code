@@ -57,6 +57,8 @@ import {
   WorkbenchJiraOperationError,
   WorkbenchJiraProject,
   WorkbenchJiraSnapshot,
+  WorkbenchJiraResolveCreationInput,
+  WorkbenchJiraResolveCreationResult,
   WorkbenchJiraSprint,
   WorkbenchJiraSyncBindingInput,
   WorkbenchJiraSyncResult,
@@ -104,6 +106,7 @@ export const WORKBENCH_WS_METHODS = {
   workbenchJiraUpdateTicket: "workbench.jira.tickets.update",
   workbenchJiraGetTicketTransitions: "workbench.jira.tickets.transitions",
   workbenchJiraMigrateLocalTickets: "workbench.jira.localTickets.migrate",
+  workbenchJiraResolveCreation: "workbench.jira.creations.resolve",
 } as const;
 
 const WorkbenchRpcError = Schema.Union([WorkbenchOperationError, EnvironmentAuthorizationError]);
@@ -324,6 +327,15 @@ const WsWorkbenchJiraUpdateTicketRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchJi
   error: WorkbenchJiraRpcError,
 });
 
+const WsWorkbenchJiraResolveCreationRpc = Rpc.make(
+  WORKBENCH_WS_METHODS.workbenchJiraResolveCreation,
+  {
+    payload: WorkbenchJiraResolveCreationInput,
+    success: WorkbenchJiraResolveCreationResult,
+    error: WorkbenchJiraRpcError,
+  },
+);
+
 const WsWorkbenchJiraGetTicketTransitionsRpc = Rpc.make(
   WORKBENCH_WS_METHODS.workbenchJiraGetTicketTransitions,
   {
@@ -414,6 +426,7 @@ export const WorkbenchRpcGroup = RpcGroup.make(
   WsWorkbenchJiraUpdateBindingRpc,
   WsWorkbenchJiraSyncBindingRpc,
   WsWorkbenchJiraUpdateTicketRpc,
+  WsWorkbenchJiraResolveCreationRpc,
   WsWorkbenchJiraGetTicketTransitionsRpc,
   WsWorkbenchJiraMigrateLocalTicketsRpc,
 );

@@ -8,6 +8,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   WorkbenchProjectId,
+  WorkbenchJiraBindingId,
   ProjectId,
   WorkbenchTicketId,
   WsRpcGroup,
@@ -22,6 +23,45 @@ import {
 } from "../auth/RpcAuthorization.ts";
 
 describe("Workbench RPC authorization", () => {
+  it.effect("requires operate scope to resolve uncertain Jira creations", () =>
+    Effect.gen(function* () {
+      const method = WORKBENCH_WS_METHODS.workbenchJiraResolveCreation;
+      const group = WsRpcGroup.omit(
+        ...[...WsRpcGroup.requests.keys()].filter(
+          (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, typeof method> => tag !== method,
+        ),
+      );
+      let mutations = 0;
+      const handlers = group.toLayerHandler(method, () =>
+        Effect.sync(() => {
+          mutations++;
+          return { jiraIssueKey: null };
+        }),
+      );
+      const input = {
+        bindingId: WorkbenchJiraBindingId.make("resolve-binding"),
+        kind: "ticket" as const,
+        id: "ticket",
+        outcome: { type: "not_created" as const },
+      };
+      const reader = yield* RpcTest.makeClient(group).pipe(
+        Effect.provide(
+          Layer.merge(handlers, rpcScopeAuthorizationLayer([AuthOrchestrationReadScope])),
+        ),
+      );
+      expect(yield* reader[method](input).pipe(Effect.flip)).toMatchObject({
+        requiredScope: AuthOrchestrationOperateScope,
+      });
+      expect(mutations).toBe(0);
+      const operator = yield* RpcTest.makeClient(group).pipe(
+        Effect.provide(
+          Layer.merge(handlers, rpcScopeAuthorizationLayer([AuthOrchestrationOperateScope])),
+        ),
+      );
+      expect(yield* operator[method](input)).toEqual({ jiraIssueKey: null });
+      expect(mutations).toBe(1);
+    }).pipe(Effect.scoped),
+  );
   it.effect("allows preparation index reads with read scope and rejects callers without it", () =>
     Effect.gen(function* () {
       const method = WORKBENCH_WS_METHODS.workbenchGetTicketPreparations;

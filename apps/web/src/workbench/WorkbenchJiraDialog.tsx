@@ -14,7 +14,7 @@ import {
   type WorkbenchTicketStatus,
 } from "@t3tools/contracts";
 import { ArrowLeftIcon, ExternalLinkIcon, LinkIcon } from "lucide-react";
-import { useState, type Dispatch, type SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction, type ReactNode } from "react";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -104,6 +104,7 @@ export function WorkbenchJiraDialog({
   onCreate,
   onUpdate,
   onSetActive,
+  recovery,
 }: {
   readonly open: boolean;
   readonly connections: ReadonlyArray<WorkbenchJiraConnection>;
@@ -113,6 +114,7 @@ export function WorkbenchJiraDialog({
   readonly localEpics: ReadonlyArray<WorkbenchJiraLocalEpicMigrationItem>;
   readonly pending: boolean;
   readonly error: string | null;
+  readonly recovery?: ReactNode;
   readonly onOpenChange: (open: boolean) => void;
   readonly onBeginAuth: () => Promise<void>;
   readonly onListProjects: (
@@ -137,7 +139,7 @@ export function WorkbenchJiraDialog({
   return (
     <JiraDialogController
       context={{ existingBinding, connections, linkedProjects, localTickets, localEpics }}
-      presentation={{ open, onOpenChange, pending, error }}
+      presentation={{ open, onOpenChange, pending, error, recovery }}
       discovery={{
         onBeginAuth,
         onListProjects,
@@ -1161,7 +1163,7 @@ function JiraDialogController({
     JiraDialogProps,
     "existingBinding" | "connections" | "linkedProjects" | "localTickets" | "localEpics"
   >;
-  presentation: Pick<JiraDialogProps, "open" | "onOpenChange" | "pending" | "error">;
+  presentation: Pick<JiraDialogProps, "open" | "onOpenChange" | "pending" | "error" | "recovery">;
   discovery: Pick<
     JiraDialogProps,
     "onBeginAuth" | "onListProjects" | "onListBoards" | "onListSprints" | "onGetBoardConfiguration"
@@ -1169,7 +1171,7 @@ function JiraDialogController({
   commands: Pick<JiraDialogProps, "onCreate" | "onUpdate" | "onSetActive">;
 }) {
   const { existingBinding, connections, linkedProjects, localTickets, localEpics } = context;
-  const { open, onOpenChange, pending, error } = presentation;
+  const { open, onOpenChange, pending, error, recovery } = presentation;
   const { onBeginAuth, onListProjects, onListBoards, onListSprints, onGetBoardConfiguration } =
     discovery;
   const { onCreate, onUpdate, onSetActive } = commands;
@@ -1375,6 +1377,7 @@ function JiraDialogController({
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="max-h-[70vh] overflow-y-auto">
+          {recovery}
           {error ? (
             <div
               className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive-foreground"

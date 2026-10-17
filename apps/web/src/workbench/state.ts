@@ -230,6 +230,13 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
     onSuccess: refreshWorkbenchAndJiraSnapshots,
   }),
+  jiraResolveCreation: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:jira:resolve-creation",
+    tag: WS_METHODS.workbenchJiraResolveCreation,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshWorkbenchAndJiraSnapshots,
+  }),
   jiraUpdateTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:jira:update-ticket",
     tag: WS_METHODS.workbenchJiraUpdateTicket,

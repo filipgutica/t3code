@@ -423,6 +423,7 @@ describe("Jira lifecycle persistence", () => {
         Effect.provideService(
           JiraTicketWriteService.JiraTicketWriteService,
           JiraTicketWriteService.JiraTicketWriteService.of({
+            resolveCreation: () => Effect.die("unexpected Jira resolution"),
             createTicket: () => Effect.die("unexpected Ticket creation"),
             getTicketTransitions: () => Effect.die("unexpected transition lookup"),
             updateTicket: () => Effect.die("unexpected Ticket write"),

@@ -279,6 +279,14 @@ Select a sprint and, optionally, a Jira Epic, then confirm. Publishing keeps the
 Ticket's linked Threads and worktrees. Jira then controls its description, status,
 and Epic relationship.
 
+If Jira creation cannot be confirmed, check Jira and choose **Resolve** in the Workspace warning or Jira mirror dialog.
+Choose **Not created in Jira** to retry or keep the Ticket local.
+Choose **Created in Jira as KEY** and enter its issue key to finish linking the Ticket or Epic.
+Workbench verifies the issue's project and type before linking it.
+If sync already imported the issue, Workbench keeps that Jira-linked record and leaves the original Ticket or Epic local.
+To link the original record after local edits, restore its saved content before resuming the confirmed creation.
+Resolve uncertain creations before archiving or deleting the Workspace.
+
 If access expires, choose
 **Reconnect Jira**, authorize again, and use the same site to retain the mirror and
 Ticket history. Cancelling authorization leaves the existing mirror unchanged.

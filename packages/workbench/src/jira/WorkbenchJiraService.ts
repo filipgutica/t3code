@@ -1,5 +1,6 @@
 import {
   WorkbenchJiraOperationError,
+  WorkbenchEpicId,
   WorkbenchOperationError,
   type WorkbenchCreateTicketInput,
   type WorkbenchJiraBeginAuthInput,
@@ -14,6 +15,9 @@ import {
   type WorkbenchJiraMigrateLocalTicketsInput,
   type WorkbenchJiraMigrateLocalTicketsResult,
   type WorkbenchJiraSnapshot,
+  type WorkbenchJiraResolveCreationInput,
+  type WorkbenchJiraResolveCreationResult,
+  type WorkbenchJiraUncertainCreation,
   type WorkbenchJiraSelectedSprint,
   type WorkbenchJiraSprint,
   type WorkbenchJiraUpdateBindingInput,
@@ -42,6 +46,7 @@ import {
   type JiraTicketWriteServiceShape,
 } from "./JiraTicketWriteService.ts";
 import { WorkbenchJiraRepository } from "./WorkbenchJiraRepository.ts";
+import { resolveUncertainCreation } from "./JiraCreationResolution.ts";
 
 const operationError = (message: string) =>
   new WorkbenchJiraOperationError({ code: "invalid_binding", message });
@@ -85,6 +90,9 @@ const encodeEpicMigrationFingerprint = Schema.encodeSync(
 );
 
 interface WorkbenchJiraServiceShape {
+  readonly resolveCreation: (
+    input: WorkbenchJiraResolveCreationInput,
+  ) => Effect.Effect<WorkbenchJiraResolveCreationResult, WorkbenchJiraOperationError>;
   readonly getSnapshot: Effect.Effect<WorkbenchJiraSnapshot, WorkbenchJiraOperationError>;
   readonly beginAuth: (
     input: WorkbenchJiraBeginAuthInput,
@@ -187,12 +195,20 @@ export const make = Effect.gen(function* () {
             ? Effect.succeed([])
             : repository.listEpicLinks(binding.id).pipe(Effect.mapError(repositoryError)),
         );
+        const uncertainCreations = yield* sql<WorkbenchJiraUncertainCreation>`
+          SELECT binding_id AS "bindingId", 'ticket' AS kind, ticket_id AS id, title
+          FROM workbench_jira_ticket_creations WHERE state = 'uncertain' AND jira_issue_id IS NULL
+          UNION ALL
+          SELECT binding_id AS "bindingId", 'epic' AS kind, epic_id AS id, title
+          FROM workbench_jira_epic_creations WHERE state = 'uncertain' AND jira_issue_id IS NULL
+        `;
         return {
           supportsLocalOnlyTickets: true,
           connections,
           bindings,
           issueLinks: issueLinks.flat(),
           epicLinks: epicLinks.flat(),
+          uncertainCreations,
         } satisfies WorkbenchJiraSnapshot;
       }),
     )
@@ -596,6 +612,33 @@ export const make = Effect.gen(function* () {
       return ticket;
     });
 
+  const ensureEpicUnchanged = Effect.fnUntraced(function* ({
+    epic,
+    message,
+  }: {
+    readonly epic: WorkbenchEpic;
+    readonly message: string;
+  }) {
+    const rows = yield* sql<{
+      readonly title: string;
+      readonly markdown: string;
+      readonly updatedAt: string;
+      readonly archivedAt: string | null;
+    }>`
+      SELECT title, markdown, updated_at AS "updatedAt", archived_at AS "archivedAt"
+      FROM workbench_epics WHERE epic_id = ${epic.id} LIMIT 1
+    `;
+    const current = rows[0];
+    if (
+      current === undefined ||
+      current.archivedAt !== null ||
+      current.updatedAt !== epic.updatedAt ||
+      current.title !== epic.title ||
+      current.markdown !== epic.markdown
+    )
+      return yield* operationError(message);
+  });
+
   const migrateLocalTickets: WorkbenchJiraServiceShape["migrateLocalTickets"] = (input) =>
     Effect.gen(function* () {
       const bindingOption = yield* repository
@@ -865,33 +908,6 @@ export const make = Effect.gen(function* () {
         return yield* sql.withTransaction(deleteLocalRecords());
       }
 
-      const ensureEpicUnchanged = Effect.fnUntraced(function* ({
-        epic,
-        message,
-      }: {
-        readonly epic: WorkbenchEpic;
-        readonly message: string;
-      }) {
-        const rows = yield* sql<{
-          readonly title: string;
-          readonly markdown: string;
-          readonly updatedAt: string;
-          readonly archivedAt: string | null;
-        }>`
-          SELECT title, markdown, updated_at AS "updatedAt", archived_at AS "archivedAt"
-          FROM workbench_epics WHERE epic_id = ${epic.id} LIMIT 1
-        `;
-        const current = rows[0];
-        if (
-          current === undefined ||
-          current.archivedAt !== null ||
-          current.updatedAt !== epic.updatedAt ||
-          current.title !== epic.title ||
-          current.markdown !== epic.markdown
-        )
-          return yield* operationError(message);
-      });
-
       const publishEpic = (epic: (typeof epics)[number]) =>
         sync.withBindingPermit(
           binding.id,
@@ -1102,6 +1118,68 @@ export const make = Effect.gen(function* () {
       }),
     );
 
+  const resolveCreation: WorkbenchJiraServiceShape["resolveCreation"] = (input) =>
+    sync.withBindingPermit(
+      input.bindingId,
+      Effect.gen(function* () {
+        const bindingOption = yield* repository
+          .getBinding(input.bindingId)
+          .pipe(Effect.mapError(repositoryError));
+        if (Option.isNone(bindingOption))
+          return yield* new WorkbenchJiraOperationError({
+            code: "binding_not_found",
+            message: "The Jira binding was not found.",
+          });
+        const binding = bindingOption.value;
+        yield* requireActiveWorkspace(binding.projectId);
+        if (input.outcome.type === "created" && !binding.active)
+          return yield* new WorkbenchJiraOperationError({
+            code: "binding_inactive",
+            message: "Resume the Jira binding before linking a confirmed creation.",
+          });
+        if (input.kind === "ticket")
+          return yield* ticketWriter.resolveCreation({ ...input, binding });
+        const { row, issue, linkedId } = yield* resolveUncertainCreation(input, binding).pipe(
+          Effect.provideService(JiraApi, api),
+          Effect.provideService(SqlClient.SqlClient, sql),
+          Effect.provideService(WorkbenchStore, workbench),
+        );
+        if (issue === null) return { jiraIssueKey: null };
+        if (linkedId !== null)
+          return { jiraIssueKey: issue.key, alreadyLinkedEpicId: WorkbenchEpicId.make(linkedId) };
+        const snapshot = yield* workbench.getSnapshot.pipe(Effect.mapError(repositoryError));
+        const epic = snapshot.epics.find((candidate) => candidate.id === input.id);
+        const message =
+          "The local Epic changed since Jira creation. Restore its original fields before resuming the saved creation.";
+        if (
+          epic === undefined ||
+          epic.projectId !== binding.projectId ||
+          epic.archivedAt !== null ||
+          row.requestFingerprint !==
+            encodeEpicMigrationFingerprint({
+              bindingId: binding.id,
+              connectionId: binding.connectionId,
+              jiraProjectKey: binding.jiraProjectKey,
+              epicId: epic.id,
+              title: epic.title,
+              markdown: epic.markdown,
+            })
+        )
+          return yield* operationError(message);
+        yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* ensureEpicUnchanged({ epic, message });
+            yield* sql`
+            INSERT INTO workbench_jira_epic_links (binding_id, jira_issue_id, jira_issue_key, epic_id)
+            VALUES (${binding.id}, ${issue.id}, ${issue.key}, ${input.id})
+          `;
+          }),
+        );
+        return { jiraIssueKey: issue.key };
+      }).pipe(Effect.catchTags({ SqlError: () => Effect.fail(repositoryError(undefined)) })),
+      { rejectIfBusy: true },
+    );
+
   const syncActiveBindings = repository.listBindings().pipe(
     Effect.mapError(repositoryError),
     Effect.flatMap((bindings) =>
@@ -1159,6 +1237,7 @@ export const make = Effect.gen(function* () {
     updateTicket: ticketWriter.updateTicket,
     startTicketExecution: ticketWriter.startTicketExecution,
     migrateLocalTickets,
+    resolveCreation,
   });
 });
 

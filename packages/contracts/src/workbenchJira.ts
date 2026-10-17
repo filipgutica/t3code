@@ -410,6 +410,32 @@ export const WorkbenchJiraSyncResult = Schema.Struct({
 });
 export type WorkbenchJiraSyncResult = typeof WorkbenchJiraSyncResult.Type;
 
+export const WorkbenchJiraUncertainCreation = Schema.Struct({
+  bindingId: WorkbenchJiraBindingId,
+  kind: Schema.Literals(["ticket", "epic"]),
+  id: TrimmedNonEmptyString,
+  title: TrimmedNonEmptyString,
+});
+export type WorkbenchJiraUncertainCreation = typeof WorkbenchJiraUncertainCreation.Type;
+
+export const WorkbenchJiraResolveCreationInput = Schema.Struct({
+  bindingId: WorkbenchJiraBindingId,
+  kind: WorkbenchJiraUncertainCreation.fields.kind,
+  id: TrimmedNonEmptyString,
+  outcome: Schema.Union([
+    Schema.Struct({ type: Schema.Literal("not_created") }),
+    Schema.Struct({ type: Schema.Literal("created"), issueKey: TrimmedNonEmptyString }),
+  ]),
+});
+export type WorkbenchJiraResolveCreationInput = typeof WorkbenchJiraResolveCreationInput.Type;
+
+export const WorkbenchJiraResolveCreationResult = Schema.Struct({
+  jiraIssueKey: Schema.NullOr(TrimmedNonEmptyString),
+  alreadyLinkedTicketId: Schema.optionalKey(WorkbenchTicketId),
+  alreadyLinkedEpicId: Schema.optionalKey(WorkbenchEpicId),
+});
+export type WorkbenchJiraResolveCreationResult = typeof WorkbenchJiraResolveCreationResult.Type;
+
 export const WorkbenchJiraSnapshot = Schema.Struct({
   /** Absent on older servers, which ignore localOnly and can create a Jira issue instead. */
   supportsLocalOnlyTickets: Schema.optionalKey(Schema.Boolean),
@@ -418,6 +444,7 @@ export const WorkbenchJiraSnapshot = Schema.Struct({
   issueLinks: Schema.Array(WorkbenchJiraIssueLink),
   /** New snapshots include every mapped Epic, even when it has no Tickets. */
   epicLinks: Schema.optionalKey(Schema.Array(WorkbenchJiraEpicLink)),
+  uncertainCreations: Schema.optionalKey(Schema.Array(WorkbenchJiraUncertainCreation)),
 });
 export type WorkbenchJiraSnapshot = typeof WorkbenchJiraSnapshot.Type;
 
