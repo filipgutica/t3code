@@ -221,6 +221,7 @@ export type WorkbenchTicketDraftActionInput = typeof WorkbenchTicketDraftActionI
 
 export const WorkbenchSnapshot = Schema.Struct({
   projects: Schema.Array(WorkbenchProject),
+  supportsEpicLifecycle: Schema.optionalKey(Schema.Boolean),
   ticketDrafts: Schema.optionalKey(Schema.Array(WorkbenchTicketDraft)),
   epics: Schema.Array(WorkbenchEpic).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   tickets: Schema.Array(WorkbenchTicket),
@@ -290,6 +291,7 @@ export type WorkbenchUpdateEpicInput = typeof WorkbenchUpdateEpicInput.Type;
 export const WorkbenchArchiveEpicInput = Schema.Struct({
   id: WorkbenchEpicId,
   archivedAt: Schema.NullOr(IsoDateTime),
+  expectedUpdatedAt: Schema.optionalKey(IsoDateTime),
 });
 export type WorkbenchArchiveEpicInput = typeof WorkbenchArchiveEpicInput.Type;
 
@@ -411,6 +413,7 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "epic_not_found",
   "epic_project_mismatch",
   "epic_archived",
+  "epic_changed",
   "ticket_not_found",
   "ticket_changed",
   "ticket_archived",

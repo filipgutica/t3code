@@ -633,6 +633,53 @@ describe("Workbench Workspace lifecycle", () => {
     deletedAt: now,
   };
 
+  it.effect("advertises reversible Epic lifecycle support in the host snapshot", () =>
+    Effect.gen(function* () {
+      const store = yield* setup;
+      expect(yield* store.getSnapshot).toHaveProperty("supportsEpicLifecycle", true);
+    }).pipe(Effect.provide(layer())),
+  );
+
+  it.effect("rejects a replayed restore after a newer archive without reopening admission", () =>
+    Effect.gen(function* () {
+      const store = yield* setup;
+      const archived = yield* store.archiveEpic({ id: epicId, archivedAt: now });
+      const restore = yield* decodeArchiveEpicInput({
+        id: epicId,
+        archivedAt: null,
+        expectedUpdatedAt: archived.updatedAt,
+      });
+      const restored = yield* store.archiveEpic(restore);
+      const rearchived = yield* store.archiveEpic(
+        yield* decodeArchiveEpicInput({
+          id: epicId,
+          archivedAt: now,
+          expectedUpdatedAt: restored.updatedAt,
+        }),
+      );
+      const error = yield* Effect.flip(store.archiveEpic(restore));
+      expect(error.code).toBe("epic_changed");
+      expect(restored.updatedAt).not.toBe(archived.updatedAt);
+      expect(rearchived.updatedAt).not.toBe(archived.updatedAt);
+      expect((yield* store.getSnapshot).epics.find((epic) => epic.id === epicId)).toEqual(
+        rearchived,
+      );
+      const admission = yield* Effect.flip(
+        store.createTicket({
+          id: WorkbenchTicketId.make("stale-restore-child"),
+          projectId: workspaceId,
+          epicId,
+          title: "Blocked child",
+          kind: "story",
+          markdown: "",
+          primaryT3ProjectId: projectId,
+          createdAt: now,
+        }),
+      );
+      expect(admission.code).toBe("epic_archived");
+    }).pipe(Effect.provide(layer())),
+  );
+
   it.effect(
     "archives and restores local Epics while preserving children and enforcing admission",
     () =>

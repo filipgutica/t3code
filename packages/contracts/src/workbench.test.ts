@@ -54,6 +54,16 @@ const isWorkbenchAssignment = Schema.is(WorkbenchAssignment);
 const isWorkbenchTicketWorkspace = Schema.is(WorkbenchTicketWorkspace);
 
 describe("Workbench contracts", () => {
+  it.effect("treats snapshots from older hosts as lacking Epic lifecycle support", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* decodeWorkbenchSnapshot({
+        projects: [],
+        tickets: [],
+        assignments: [],
+      });
+      expect(snapshot).not.toHaveProperty("supportsEpicLifecycle", true);
+    }),
+  );
   it.effect("decodes the persisted Project, Ticket, and Assignment snapshot", () =>
     Effect.gen(function* () {
       const snapshot = yield* decodeWorkbenchSnapshot({

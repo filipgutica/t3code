@@ -849,7 +849,12 @@ function WorkbenchPageEpicDetail(
         setError(null);
         closeWorkItem();
       }}
-      actions={{ onSave: saveEpicContent, canArchive: canArchiveEpic, onArchive: setEpicArchived }}
+      actions={{
+        onSave: saveEpicContent,
+        lifecycleSupported: pageData.snapshot?.supportsEpicLifecycle === true,
+        canArchive: canArchiveEpic,
+        onArchive: setEpicArchived,
+      }}
       onOpenTicket={(ticket) => {
         setAwaitingTicketId(null);
         setAwaitingEpicId(null);

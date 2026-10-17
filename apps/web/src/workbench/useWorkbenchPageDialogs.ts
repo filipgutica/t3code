@@ -4,6 +4,7 @@ import {
   type ProjectId,
   type EnvironmentId,
   type WorkbenchEpic,
+  type WorkbenchSnapshot,
 } from "@t3tools/contracts";
 import { useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -20,6 +21,7 @@ import type { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
 
 export function useWorkbenchPageDialogs({
   environmentId,
+  snapshot,
   projects,
   localOnlySupported,
   selection,
@@ -27,6 +29,7 @@ export function useWorkbenchPageDialogs({
   setError,
 }: {
   readonly environmentId: EnvironmentId | null;
+  readonly snapshot: WorkbenchSnapshot | null;
   readonly projects: ReturnType<typeof useWorkbenchPageData>["projects"];
   readonly localOnlySupported: boolean;
   readonly selection: ReturnType<typeof useWorkbenchPageSelection>;
@@ -165,6 +168,7 @@ export function useWorkbenchPageDialogs({
   const setEpicArchived = async (epic: WorkbenchEpic, archivedAt: string | null) => {
     if (
       !canArchiveEpic ||
+      snapshot?.supportsEpicLifecycle !== true ||
       environmentId === null ||
       !selectedProject ||
       selectedProject.archivedAt != null
@@ -172,7 +176,10 @@ export function useWorkbenchPageDialogs({
       return false;
     setPendingAction(`archive-epic:${epic.id}`);
     setError(null);
-    const result = await archiveEpic({ environmentId, input: { id: epic.id, archivedAt } });
+    const result = await archiveEpic({
+      environmentId,
+      input: { id: epic.id, archivedAt, expectedUpdatedAt: epic.updatedAt },
+    });
     setPendingAction(null);
     return !reportWorkbenchCommandFailure(result, setError);
   };

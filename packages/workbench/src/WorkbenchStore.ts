@@ -1325,6 +1325,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           workspaceRepositoriesByTicket.set(repository.ticketId, repositories);
         }
         return WorkbenchSnapshot.make({
+          supportsEpicLifecycle: true,
           ticketDrafts: yield* listTicketDrafts.pipe(
             Effect.provideService(WorkbenchNativeAccess, native),
             Effect.provideService(SqlClient.SqlClient, sql),
@@ -2296,6 +2297,15 @@ const makeWorkbenchStore = Effect.gen(function* () {
         .withTransaction(
           Effect.gen(function* () {
             const current = yield* requireMutableEpic(input.id);
+            if (
+              input.expectedUpdatedAt !== undefined &&
+              input.expectedUpdatedAt !== current.updatedAt
+            ) {
+              return yield* new WorkbenchOperationError({
+                code: "epic_changed",
+                message: "The Workbench Epic changed. Refresh it and try again.",
+              });
+            }
             const links = yield* sql`
               SELECT 1 FROM workbench_jira_epic_links WHERE epic_id = ${input.id} LIMIT 1
             `;
@@ -2305,7 +2315,15 @@ const makeWorkbenchStore = Effect.gen(function* () {
                 message: "Jira-managed Epics cannot be archived or restored locally.",
               });
             }
-            const updatedAt = input.archivedAt ?? DateTime.formatIso(yield* DateTime.now);
+            // Lifecycle versions must advance even within one clock tick or after clock skew.
+            const updatedAt = DateTime.formatIso(
+              DateTime.makeUnsafe(
+                Math.max(
+                  DateTime.toEpochMillis(yield* DateTime.now),
+                  DateTime.toEpochMillis(DateTime.makeUnsafe(current.updatedAt)) + 1,
+                ),
+              ),
+            );
             yield* sql`
       UPDATE workbench_epics
       SET archived_at = ${input.archivedAt}, updated_at = ${updatedAt}

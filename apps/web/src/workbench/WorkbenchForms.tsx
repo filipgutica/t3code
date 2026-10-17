@@ -138,7 +138,6 @@ import {
   getWorkbenchTicketSummaryActionLabel,
   getWorkbenchTicketSummaryPresentation,
   getWorkbenchTicketThreadSections,
-  getVisibleWorkbenchAssignments,
   isWorkbenchThreadArchived,
   WORKBENCH_TICKET_KINDS,
   WORKBENCH_TICKET_KIND_LABELS,
@@ -233,6 +232,7 @@ export function WorkbenchEpicDetail({
   readonly pending: boolean;
   readonly error: string | null;
   readonly actions: {
+    readonly lifecycleSupported: boolean;
     readonly canArchive: boolean;
     readonly onArchive: (epic: WorkbenchEpic, archivedAt: string | null) => Promise<boolean>;
     readonly onSave: (epic: WorkbenchEpic, title: string, markdown: string) => Promise<boolean>;
@@ -1817,7 +1817,13 @@ function WorkbenchThreadOpenButton({
           </span>
         </span>
         <span className="flex shrink-0 items-center text-muted-foreground group-hover:text-foreground">
-          <span className={actionLabel === "Restore and open" ? "text-xs" : "sr-only"}>
+          <span
+            className={
+              actionLabel === "Restore and open" || actionLabel === "Create replacement Thread"
+                ? "text-xs"
+                : "sr-only"
+            }
+          >
             {actionLabel ?? "Open Thread"}
           </span>
           <ArrowRightIcon className="size-3.5" />
@@ -4218,7 +4224,7 @@ function WorkbenchEpicActionsMenu({
   Parameters<typeof WorkbenchEpicDetail>[0],
   "epic" | "actions" | "pending" | "jiraManaged" | "jiraOwnershipKnown"
 >) {
-  if (!jiraOwnershipKnown || jiraManaged) return null;
+  if (!actions.lifecycleSupported || !jiraOwnershipKnown || jiraManaged) return null;
   const archived = epic.archivedAt !== null;
   return (
     <Menu>
@@ -5315,11 +5321,12 @@ function getWorkbenchDetailAssignments({
   WorkbenchTicketDetailProps,
   "assignments" | "threadsById" | "archivedThreadsById" | "threadLookupReady" | "ticket"
 >) {
-  const visibleAssignments = getVisibleWorkbenchAssignments(
-    assignments,
-    new Set(threadsById.keys()),
-    new Set(archivedThreadsById.keys()),
-    threadLookupReady,
+  const visibleAssignments = assignments.filter(
+    (assignment) =>
+      assignment.supersededAt === null ||
+      !threadLookupReady ||
+      threadsById.has(assignment.threadId) ||
+      archivedThreadsById.has(assignment.threadId),
   );
   const threadSections = getWorkbenchTicketThreadSections({
     assignments: visibleAssignments,
@@ -5334,9 +5341,6 @@ function getWorkbenchDetailAssignments({
     threadsById,
     archivedThreadsById,
   });
-  // Match the Workbench page's callback map for available assignments. Missing
-  // assignments stay in that map so a Create Thread action can replace stale
-  // persisted state even after the detail view hides the unavailable row.
   const assignment = getActiveAssignmentsByTicket({
     assignments: activeAssignments,
     liveThreadIds: new Set(threadsById.keys()),
