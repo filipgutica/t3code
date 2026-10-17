@@ -66,20 +66,10 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
   const findProject = Effect.fn("WorkbenchNativeAccess.findProject")(function* (
     projectId: ProjectId,
   ) {
-    return yield* findProjectRow({ projectId }).pipe(
-      Effect.map(Option.map(({ id }) => ({ id }))),
-      Effect.mapError(persistenceError),
-    );
+    return yield* findProjectRow({ projectId }).pipe(Effect.mapError(persistenceError));
   });
-  const isProjectRepository = Effect.fn("WorkbenchNativeAccess.isProjectRepository")(function* (
-    projectId: ProjectId,
-  ) {
-    const project = yield* findProjectRow({ projectId }).pipe(Effect.mapError(persistenceError));
-    if (Option.isNone(project)) return false;
-    return yield* git
-      .isRepository(project.value.workspaceRoot)
-      .pipe(Effect.mapError(persistenceError));
-  });
+  const isRepository = (workspaceRoot: string) =>
+    git.isRepository(workspaceRoot).pipe(Effect.mapError(persistenceError));
   const findThread = Effect.fn("WorkbenchNativeAccess.findThread")(function* (threadId: ThreadId) {
     return yield* findThreadRow({ threadId }).pipe(Effect.mapError(persistenceError));
   });
@@ -121,7 +111,7 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
         Effect.mapError(persistenceError),
       ),
     findProject,
-    isProjectRepository,
+    isRepository,
     findThread,
     hasThreadAtWorktreePath,
   });

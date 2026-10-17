@@ -814,12 +814,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
         message: "A linked T3 Project does not exist on this environment.",
       });
     }
-    if (!(yield* native.isProjectRepository(linkedProjectId))) {
+    if (!(yield* native.isRepository(project.value.workspaceRoot))) {
       return yield* new WorkbenchOperationError({
         code: "linked_project_not_repository",
         message: "A linked T3 Project must point to a Git repository.",
       });
     }
+    return project.value;
   });
   const findProject = SqlSchema.findOneOption({
     Request: Schema.Struct({ id: WorkbenchProjectId }),
@@ -2157,8 +2158,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
       SELECT t3_project_id AS id FROM workbench_project_links WHERE workbench_project_id = ${input.id}
     `.pipe(NodeSqliteClient.readOnly, Effect.mapError(persistenceError));
     const existingIds = new Set(currentLinks.map((link) => link.id));
+    const validatedRoots = new Map<ProjectId, string>();
     for (const linkedProjectId of linkedProjectIds) {
-      if (!existingIds.has(linkedProjectId)) yield* validateLinkedProject({ linkedProjectId });
+      if (!existingIds.has(linkedProjectId)) {
+        const project = yield* validateLinkedProject({ linkedProjectId });
+        validatedRoots.set(linkedProjectId, project.workspaceRoot);
+      }
     }
     return yield* sql
       .withTransaction(
@@ -2196,10 +2201,17 @@ const makeWorkbenchStore = Effect.gen(function* () {
             (linkedProjectId) => !existingProjectIdSet.has(linkedProjectId),
           );
           for (const linkedProjectId of additions) {
-            if (Option.isNone(yield* findT3Project({ linkedProjectId }))) {
+            const project = yield* findT3Project({ linkedProjectId });
+            if (Option.isNone(project)) {
               return yield* new WorkbenchOperationError({
                 code: "linked_project_not_found",
                 message: "A linked T3 Project does not exist on this environment.",
+              });
+            }
+            if (project.value.workspaceRoot !== validatedRoots.get(linkedProjectId)) {
+              return yield* new WorkbenchOperationError({
+                code: "project_changed",
+                message: "A selected repository's workspace root changed. Retry the operation.",
               });
             }
           }

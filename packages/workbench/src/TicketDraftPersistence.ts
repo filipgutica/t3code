@@ -158,7 +158,10 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
           message: "Restore this Ticket before starting work.",
         });
     });
-  const validateFields = (draft: WorkbenchTicketDraft) =>
+  const validateFields = (
+    draft: WorkbenchTicketDraft,
+    validatedRoots: ReadonlyMap<ProjectId, string>,
+  ) =>
     Effect.gen(function* () {
       const linked = yield* requireWorkspace(draft.projectId);
       const selected = draft.fields.repositoryProjectIds;
@@ -191,24 +194,35 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
           });
       }
       for (const id of selected) {
-        if (Option.isNone(yield* native.findProject(id))) {
+        const project = yield* native.findProject(id);
+        if (Option.isNone(project)) {
           return yield* new WorkbenchOperationError({
             code: "linked_project_not_repository",
             message: "A selected repository is no longer available.",
+          });
+        }
+        if (project.value.workspaceRoot !== validatedRoots.get(id)) {
+          return yield* new WorkbenchOperationError({
+            code: "project_changed",
+            message: "A selected repository's workspace root changed. Retry the operation.",
           });
         }
       }
     });
   const validateRepositories = (ids: ReadonlyArray<ProjectId>) =>
     Effect.gen(function* () {
+      const validatedRoots = new Map<ProjectId, string>();
       for (const id of ids) {
-        if (!(yield* native.isProjectRepository(id))) {
+        const project = yield* native.findProject(id);
+        if (Option.isNone(project) || !(yield* native.isRepository(project.value.workspaceRoot))) {
           return yield* new WorkbenchOperationError({
             code: "linked_project_not_repository",
             message: "A selected repository is no longer available.",
           });
         }
+        validatedRoots.set(id, project.value.workspaceRoot);
       }
+      return validatedRoots;
     });
   const readCurrentDraft = (input: WorkbenchTicketDraftActionInput) =>
     Effect.gen(function* () {
@@ -236,12 +250,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
           }),
         )
         .pipe(NodeSqliteClient.readOnly);
-      if (anchor !== undefined && !(yield* native.isProjectRepository(anchor))) {
-        return yield* new WorkbenchOperationError({
-          code: "linked_project_not_repository",
-          message: "This workspace needs an available repository before planning can begin.",
-        });
-      }
+      const validatedRoots = yield* validateRepositories(anchor === undefined ? [] : [anchor]);
       return yield* sql.withTransaction(
         Effect.gen(function* () {
           yield* sql`UPDATE workbench_projects SET updated_at = updated_at WHERE project_id = ${input.projectId}`;
@@ -262,14 +271,18 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
             }
             return draft;
           }
-          if (
-            linked[0] === undefined ||
-            Option.isNone(yield* native.findProject(linked[0])) ||
-            linked[0] !== anchor
-          ) {
+          const project =
+            linked[0] === undefined ? Option.none() : yield* native.findProject(linked[0]);
+          if (linked[0] === undefined || Option.isNone(project) || linked[0] !== anchor) {
             return yield* new WorkbenchOperationError({
               code: "linked_project_not_repository",
               message: "This workspace needs an available repository before planning can begin.",
+            });
+          }
+          if (project.value.workspaceRoot !== validatedRoots.get(linked[0])) {
+            return yield* new WorkbenchOperationError({
+              code: "project_changed",
+              message: "A selected repository's workspace root changed. Retry the operation.",
             });
           }
           if (Option.isSome(yield* native.findThread(input.threadId))) {
@@ -316,7 +329,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
     Effect.gen(function* () {
       const current = yield* readCurrentDraft(input);
       if (current.phase !== "draft") return yield* busy();
-      yield* validateRepositories(input.fields.repositoryProjectIds);
+      const validatedRoots = yield* validateRepositories(input.fields.repositoryProjectIds);
       return yield* sql.withTransaction(
         Effect.gen(function* () {
           yield* sql`UPDATE workbench_ticket_drafts SET revision = revision WHERE draft_id = ${input.id}`;
@@ -329,7 +342,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
             revision: draft.revision + 1,
             updatedAt: yield* now,
           };
-          yield* validateFields(next);
+          yield* validateFields(next, validatedRoots);
           return yield* save(draft, next);
         }),
       );
@@ -341,10 +354,11 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
     },
   ) =>
     Effect.gen(function* () {
+      let validatedRoots = new Map<ProjectId, string>();
       if (input.phase === "draft" || input.phase === "promoting") {
         const current = yield* readCurrentDraft(input);
         if (!input.from.includes(current.phase)) return yield* busy();
-        yield* validateRepositories(current.fields.repositoryProjectIds);
+        validatedRoots = yield* validateRepositories(current.fields.repositoryProjectIds);
       }
       return yield* sql.withTransaction(
         Effect.gen(function* () {
@@ -398,7 +412,8 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
               });
             }
           }
-          if (input.phase === "draft" || input.phase === "promoting") yield* validateFields(draft);
+          if (input.phase === "draft" || input.phase === "promoting")
+            yield* validateFields(draft, validatedRoots);
           return yield* save(draft, {
             ...draft,
             phase: input.phase,

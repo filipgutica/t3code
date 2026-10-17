@@ -144,7 +144,10 @@ const makeIssueLink = (issue: WorkbenchJiraIssueSnapshot): WorkbenchJiraIssueLin
   lastSeenAt: createdAt,
 });
 
-const seedState = (binding: WorkbenchJiraBinding) =>
+const seedState = (
+  binding: WorkbenchJiraBinding,
+  { localTicket = false }: { readonly localTicket?: boolean } = {},
+) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const workbench = yield* WorkbenchStore;
@@ -188,9 +191,11 @@ const seedState = (binding: WorkbenchJiraBinding) =>
     });
     yield* repository.upsertConnection(connection, "lifecycle-credential");
     yield* repository.upsertBinding(binding);
-    yield* repository.replaceIssueLinks(bindingId, [
-      makeIssueLink(makeIssue({ summary: "Seeded issue" })),
-    ]);
+    if (!localTicket) {
+      yield* repository.replaceIssueLinks(bindingId, [
+        makeIssueLink(makeIssue({ summary: "Seeded issue" })),
+      ]);
+    }
 
     return { repository, workbench };
   });
@@ -463,8 +468,7 @@ describe("Jira lifecycle persistence", () => {
           selectedSprints: [{ id: 101, name: "Sprint 101" }],
           observedActiveSprintIds: [101],
         });
-        const { repository, workbench } = yield* seedState(initialBinding);
-        yield* repository.replaceIssueLinks(bindingId, []);
+        const { repository, workbench } = yield* seedState(initialBinding, { localTicket: true });
         yield* repository.upsertConnection(
           {
             ...connection,

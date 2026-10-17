@@ -11,7 +11,9 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -56,8 +58,14 @@ const withStore = <A, E>({
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         return WorkbenchNativeAccess.of({
-          findProject: (id) => Effect.succeed(Option.some({ id })),
-          isProjectRepository: () =>
+          findProject: (id) =>
+            sql<{ readonly id: ProjectId; readonly workspaceRoot: string }>`
+            SELECT id, workspace_root AS "workspaceRoot" FROM contention_native_projects WHERE id = ${id}
+          `.pipe(
+              Effect.map((rows) => Option.fromUndefinedOr(rows[0])),
+              Effect.orDie,
+            ),
+          isRepository: () =>
             Effect.serviceOption(sql.transactionService).pipe(
               Effect.map((transaction) => {
                 gitCalls.push(Option.isSome(transaction));
@@ -77,6 +85,9 @@ const withStore = <A, E>({
     return yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       yield* sql`PRAGMA journal_mode = WAL`;
+      yield* sql`CREATE TABLE contention_native_projects (id TEXT PRIMARY KEY, workspace_root TEXT NOT NULL)`;
+      yield* sql`INSERT INTO contention_native_projects (id, workspace_root)
+        VALUES (${projectId}, '/repos/primary'), (${secondProjectId}, '/repos/secondary')`;
       return yield* use;
     }).pipe(
       Effect.provide(
@@ -250,6 +261,91 @@ describe("Workbench SQLite contention", () => {
           );
           const saved = yield* store.getTicketDraft(draft.id);
           expect(saved.fields.title).toBe(change === "revision" ? "Concurrent edit" : "");
+        }),
+      });
+    },
+  );
+  it.effect.each(["begin", "autosave", "promotion", "workspace update"] as const)(
+    "rejects a concurrent native root change during %s and permits retry",
+    (operation) => {
+      let onRepositoryCheck = Effect.void;
+      return withStore({
+        onRepositoryCheck: () => onRepositoryCheck,
+        use: Effect.gen(function* () {
+          let draft = yield* seed;
+          const store = yield* WorkbenchStore;
+          const sql = yield* SqlClient.SqlClient;
+          draft = yield* store.transitionTicketDraft({
+            id: draft.id,
+            expectedRevision: draft.revision,
+            from: ["creating"],
+            phase: "draft",
+          });
+          draft = yield* store.updateTicketDraft({
+            id: draft.id,
+            expectedRevision: draft.revision,
+            fields: {
+              ...draft.fields,
+              repositoryProjectIds: [projectId],
+              primaryT3ProjectId: projectId,
+            },
+          });
+          const action =
+            operation === "begin"
+              ? store
+                  .beginTicketDraft({
+                    id: WorkbenchTicketId.make("new-draft"),
+                    projectId: workspaceId,
+                    threadId: ThreadId.make("new-thread"),
+                    modelSelection: draft.modelSelection,
+                  })
+                  .pipe(Effect.asVoid)
+              : operation === "autosave"
+                ? store
+                    .updateTicketDraft({
+                      id: draft.id,
+                      expectedRevision: draft.revision,
+                      fields: { ...draft.fields, title: "Updated title" },
+                    })
+                    .pipe(Effect.asVoid)
+                : operation === "promotion"
+                  ? store
+                      .transitionTicketDraft({
+                        id: draft.id,
+                        expectedRevision: draft.revision,
+                        from: ["draft"],
+                        phase: "promoting",
+                      })
+                      .pipe(Effect.asVoid)
+                  : store
+                      .updateProject({
+                        id: workspaceId,
+                        title: "Updated workspace",
+                        linkedProjectIds: [projectId, secondProjectId],
+                        updatedAt: createdAt,
+                      })
+                      .pipe(Effect.asVoid);
+          const before = yield* store.getSnapshot;
+          const validating = yield* Deferred.make<void>();
+          const release = yield* Deferred.make<void>();
+          onRepositoryCheck = Effect.gen(function* () {
+            yield* Deferred.succeed(validating, undefined);
+            yield* Deferred.await(release);
+          });
+          const pending = yield* action.pipe(
+            Effect.match({ onFailure: (error) => error, onSuccess: () => null }),
+            Effect.forkChild,
+          );
+          yield* Deferred.await(validating);
+          const changedId = operation === "workspace update" ? secondProjectId : projectId;
+          yield* sql`UPDATE contention_native_projects SET workspace_root = '/repos/replacement' WHERE id = ${changedId}`;
+          onRepositoryCheck = Effect.void;
+          yield* Deferred.succeed(release, undefined);
+          const error = yield* Fiber.join(pending);
+          expect(error?.code).toBe("project_changed");
+          expect(error?.message).toContain("Retry");
+          expect(yield* store.getSnapshot).toEqual(before);
+          yield* action;
         }),
       });
     },
