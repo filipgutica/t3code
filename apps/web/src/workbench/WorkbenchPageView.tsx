@@ -580,6 +580,7 @@ function getWorkbenchPageTicketState({
       (workspace) => workspace.ticketId === ticketId,
     ),
     pending: pendingAction !== null || pageData.optimisticStatus.pendingTicketIds.has(ticketId),
+    threadMutationsDisabled: !pageData.canOperate,
     threadActionPending: isWorkbenchPageTicketThreadPending({
       assignmentsByTicket: pageData.assignmentsByTicket,
       pendingAction,
@@ -752,7 +753,6 @@ function WorkbenchPageTicketDetail(
       environmentId={environmentId}
       workspaceTitle={selectedProject.title}
       workspaceReadOnly={!pageData.canOperate || selectedProject.archivedAt != null}
-      threadRestoreDisabled={!pageData.canOperate}
       ticket={selectedTicket}
       {...getWorkbenchPageTicketState({ props, ticketId: selectedTicket.id })}
       {...getWorkbenchPageTicketJiraProps({ props, ticket: selectedTicket })}

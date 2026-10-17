@@ -6,7 +6,6 @@ import {
   ThreadPresentationPolicyContext,
   type CommandPaletteContributionsProps,
   type HostIntegrations,
-  type ThreadPresentationPolicy,
 } from "../hostIntegrations";
 import { RenderErrorBoundary } from "../components/RenderErrorBoundary";
 import { WorkbenchComposerPendingReviewComments } from "./WorkbenchComposerPendingReviewComments";
@@ -37,10 +36,13 @@ function WorkbenchCommandPaletteContributions({
   return children(actions);
 }
 
-function containWorkbenchSlot<Props extends object>(Slot: ComponentType<Props>) {
+function containWorkbenchSlot<Props extends object>(
+  Slot: ComponentType<Props>,
+  fallback: (props: Props) => ReactNode = () => null,
+) {
   return function WorkbenchSlot(props: Props) {
     return (
-      <RenderErrorBoundary fallback={null}>
+      <RenderErrorBoundary fallback={fallback(props)}>
         <Slot {...props} />
       </RenderErrorBoundary>
     );
@@ -48,12 +50,17 @@ function containWorkbenchSlot<Props extends object>(Slot: ComponentType<Props>) 
 }
 
 const WORKBENCH_HOST_INTEGRATIONS: HostIntegrations = {
-  SidebarContent: containWorkbenchSlot(WorkbenchSidebarSlot),
+  SidebarContent: containWorkbenchSlot(WorkbenchSidebarSlot, (props) => props.children),
   SidebarUtility: containWorkbenchSlot(WorkbenchSidebarUtilityItem),
-  ThreadRouteContent: containWorkbenchSlot(WorkbenchThreadPreparationGate),
+  ThreadRouteContent: containWorkbenchSlot(
+    WorkbenchThreadPreparationGate,
+    (props) => props.children,
+  ),
   ThreadBreadcrumb: containWorkbenchSlot(WorkbenchThreadBreadcrumb),
   PendingReviewAttachments: containWorkbenchSlot(WorkbenchComposerPendingReviewComments),
-  CommandPaletteContributions: containWorkbenchSlot(WorkbenchCommandPaletteContributions),
+  CommandPaletteContributions: containWorkbenchSlot(WorkbenchCommandPaletteContributions, (props) =>
+    props.children([]),
+  ),
   isReviewCommentReferenceHidden: isWorkbenchTicketReviewComment,
   reviewCommentTitle: resolveWorkbenchReviewCommentTitle,
   ...(import.meta.env.VITE_T3CODE_WORKBENCH_BUILD
@@ -75,13 +82,6 @@ function WorkbenchPreparationRefresh() {
   useWorkbenchTicketPreparationRefresh();
   return null;
 }
-
-// Without a readable preparation index, no Thread can safely be classified as native.
-// Keep the shell usable but hide lists and suppress notifications until a remount.
-const FAILED_PRESENTATION_POLICY: ThreadPresentationPolicy = {
-  isVisible: () => false,
-  canNotify: () => false,
-};
 
 function WorkbenchThreadPresentation({
   children,
@@ -118,13 +118,7 @@ export function WorkbenchHostProvider({
   );
   return (
     <HostIntegrationsContext value={WORKBENCH_HOST_INTEGRATIONS}>
-      <RenderErrorBoundary
-        fallback={
-          <ThreadPresentationPolicyContext value={FAILED_PRESENTATION_POLICY}>
-            {content}
-          </ThreadPresentationPolicyContext>
-        }
-      >
+      <RenderErrorBoundary fallback={content}>
         <WorkbenchThreadPresentation refreshPreparations={refreshPreparations}>
           {content}
         </WorkbenchThreadPresentation>

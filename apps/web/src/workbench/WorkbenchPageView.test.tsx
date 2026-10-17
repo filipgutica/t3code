@@ -32,6 +32,15 @@ import type { Project } from "../types";
 import { WorkbenchPageView } from "./WorkbenchPageView";
 import { useWorkbenchBoardData } from "./useWorkbenchBoardData";
 
+vi.mock("../state/server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../state/server")>();
+  const { Atom } = await import("effect/reactivity");
+  const config = Atom.make({ environment: { capabilities: { threadSettlement: true } } });
+  return {
+    ...actual,
+    serverEnvironment: { ...actual.serverEnvironment, configValueAtom: () => config },
+  };
+});
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn(async () => {}) }));
 vi.mock("../state/query", () => ({
   useEnvironmentQuery: () => ({ data: null, error: null, isPending: false }),
@@ -823,4 +832,27 @@ it("does not start a fresh planning conversation through the URL without operate
   await render({ conversation: "create", canOperate: false });
   expect(document.querySelector("[data-conversation]")).toBeNull();
   expect(button("New Ticket").disabled).toBe(true);
+});
+
+it("disables Ticket Thread mutations when permission is revoked and restores them when granted", async () => {
+  for (const canOperate of [true, false, true]) {
+    await render({ detail: true, canOperate });
+    for (const label of [
+      "Create Thread",
+      "Link existing Thread",
+      "Unlink Thread Release agent",
+      "Delete Thread Release agent",
+      "Settle Thread Release agent",
+    ]) {
+      expect(button(label).disabled, label).toBe(!canOperate);
+    }
+    expect(button("Open Thread for Ship the release").disabled).toBe(false);
+  }
+});
+
+it("requires operate permission to replace a deleted Ticket Thread", async () => {
+  await render({ detail: true, deletedThread: true, canOperate: false });
+  expect(button("Create replacement Thread for Ship the release", { optional: true })).toBeNull();
+  await render({ detail: true, deletedThread: true, canOperate: true });
+  expect(button("Create replacement Thread for Ship the release").disabled).toBe(false);
 });
