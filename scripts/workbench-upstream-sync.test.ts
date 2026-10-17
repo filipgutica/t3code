@@ -241,14 +241,24 @@ gh() {
   echo "$*" >> "$RUNNER_TEMP/dispatches"
   count=$(wc -l < "$RUNNER_TEMP/dispatches")
   if [[ "\${ACCEPT_FAILED_DISPATCH:-}" == 1 && "$count" -eq 1 ]]; then
-    cp "$RUNNER_TEMP/accepted-runs.json" "$RUNNER_TEMP/ci-runs.json"
+    if [[ "\${VISIBILITY_DELAY:-0}" == 0 ]]; then
+      cp "$RUNNER_TEMP/accepted-runs.json" "$RUNNER_TEMP/ci-runs.json"
+    fi
     return 1
   fi
   [[ "$count" -gt "\${FAIL_DISPATCHES:-0}" ]]
 }
 git() { echo "\${REMOTE_SHA:-published-merge-sha} refs/heads/main"; }
 date() { echo "2026-10-17T00:00:00Z"; }
-sleep() { echo "$1" >> "$RUNNER_TEMP/backoffs"; }
+sleep() {
+  echo "$1" >> "$RUNNER_TEMP/backoffs"
+  elapsed=$(cat "$RUNNER_TEMP/elapsed" 2>/dev/null || echo 0)
+  elapsed=$((elapsed + $1))
+  echo "$elapsed" > "$RUNNER_TEMP/elapsed"
+  if [[ "\${ACCEPT_FAILED_DISPATCH:-}" == 1 && "$elapsed" -ge "\${VISIBILITY_DELAY:-0}" ]]; then
+    cp "$RUNNER_TEMP/accepted-runs.json" "$RUNNER_TEMP/ci-runs.json"
+  fi
+}
 `;
 const writeRuns = (root: string, ci: unknown[] = [], quality: unknown[] = []) => {
   for (const [name, runs] of [
@@ -264,8 +274,8 @@ const writeRuns = (root: string, ci: unknown[] = [], quality: unknown[] = []) =>
 const dispatched = (root: string) =>
   NodeFS.readFileSync(NodePath.join(root, "dispatches"), "utf8").trim().split("\n");
 
-it("retries each published-SHA dispatch with bounded backoff and propagates exhaustion", () => {
-  for (const failures of [0, 2, 99])
+it("fails without re-dispatching when acceptance remains unknown after bounded polling", () => {
+  for (const failures of [0, 1])
     workflowFixture((root) => {
       writeRuns(root);
       const result = runStep(
@@ -277,18 +287,23 @@ it("retries each published-SHA dispatch with bounded backoff and propagates exha
           FAIL_DISPATCHES: String(failures),
         },
       );
-      assert.equal(result.status, failures === 99 ? 1 : 0, result.stderr);
+      assert.equal(result.status, failures === 0 ? 0 : 1, result.stderr);
       const calls = dispatched(root);
-      assert.equal(calls.length, failures === 99 ? 5 : failures + 2);
+      assert.equal(calls.length, failures === 0 ? 2 : 1);
       assert.ok(
         calls.every((call) => call.endsWith("--ref main -f expected_sha=published-merge-sha")),
       );
-      if (failures !== 99) assert.match(calls.at(-1)!, /workbench-quality.yml/);
-      if (failures > 0)
+      if (failures === 0) assert.match(calls.at(-1)!, /workbench-quality.yml/);
+      else {
+        assert.match(
+          result.stderr,
+          /Dispatch acceptance unknown.*after 60 seconds.*Rerun this job/,
+        );
         assert.equal(
           NodeFS.readFileSync(NodePath.join(root, "backoffs"), "utf8"),
-          failures === 99 ? "2\n4\n6\n8\n" : "2\n4\n",
+          "5\n".repeat(12),
         );
+      }
     });
 });
 
@@ -330,7 +345,12 @@ it("retains active or successful exact-SHA dispatches but repairs failed or unre
 });
 
 it("does not duplicate a dispatch accepted despite a client failure", () => {
-  for (const status of ["queued", "in_progress", "completed"])
+  for (const [status, delay] of [
+    ["queued", 0],
+    ["in_progress", 3],
+    ["completed", 3],
+    ["queued", 99],
+  ] as const)
     workflowFixture((root) => {
       writeRuns(root);
       NodeFS.writeFileSync(
@@ -359,13 +379,14 @@ it("does not duplicate a dispatch accepted despite a client failure", () => {
         {
           PUBLISHED_SHA: "published-merge-sha",
           ACCEPT_FAILED_DISPATCH: "1",
+          VISIBILITY_DELAY: String(delay),
         },
       );
-      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.status, delay === 99 ? 1 : 0, result.stderr);
       assert.equal(dispatched(root).filter((call) => call.includes("workbench-ci.yml")).length, 1);
       assert.equal(
         dispatched(root).filter((call) => call.includes("workbench-quality.yml")).length,
-        1,
+        delay === 99 ? 0 : 1,
       );
     });
 });
@@ -399,11 +420,10 @@ it("repairs the latest failed run even when an older run succeeded", () => {
         dispatchPreamble,
         {
           PUBLISHED_SHA: "published-merge-sha",
-          FAIL_DISPATCHES: "1",
         },
       );
       assert.equal(result.status, 0, result.stderr);
-      assert.equal(dispatched(root).filter((call) => call.includes("workbench-ci.yml")).length, 2);
+      assert.equal(dispatched(root).filter((call) => call.includes("workbench-ci.yml")).length, 1);
       assert.equal(
         dispatched(root).filter((call) => call.includes("workbench-quality.yml")).length,
         1,

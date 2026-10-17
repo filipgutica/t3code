@@ -372,20 +372,21 @@ jobs:
             existing="$(retained_run "")"
             if [[ -n "$existing" ]]; then continue; fi
             dispatch_started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            for attempt in {1..5}; do
-              product_remote_sha="$(git ls-remote --refs origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
-              test "$product_remote_sha" = "$PUBLISHED_SHA"
-              if gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" \
-                --ref "$PRODUCT_BRANCH" -f "expected_sha=$PUBLISHED_SHA"; then
-                break
-              fi
-              if [[ "$attempt" != 5 ]]; then sleep "$((attempt * 2))"; fi
-              # A failed client response can still have created a run, even one that already failed.
+            product_remote_sha="$(git ls-remote --refs origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
+            test "$product_remote_sha" = "$PUBLISHED_SHA"
+            if gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" \
+              --ref "$PRODUCT_BRANCH" -f "expected_sha=$PUBLISHED_SHA"; then
+              continue
+            fi
+            # A failed client response can still have created a run, even one that already failed.
+            # Run listings are eventually consistent; never re-dispatch while acceptance is unknown.
+            for attempt in {1..12}; do
+              sleep 5
               existing="$(retained_run "$dispatch_started")"
               if [[ -n "$existing" ]]; then break; fi
-              if [[ "$attempt" == 5 ]]; then
-                echo "Failed to dispatch $workflow for $PUBLISHED_SHA after 5 attempts." >&2
-                exit 1
-              fi
             done
+            if [[ -z "$existing" ]]; then
+              echo "Dispatch acceptance unknown for $workflow at $PUBLISHED_SHA after 60 seconds. Rerun this job to repair missing gates; no second dispatch was sent." >&2
+              exit 1
+            fi
           done
