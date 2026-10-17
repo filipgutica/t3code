@@ -1227,6 +1227,7 @@ export function makeClaudeQueryOptions(input: {
   return input.cwd === null ? restrictedOptions : { ...restrictedOptions, cwd: input.cwd };
 }
 
+export const CLAUDE_T3_MCP_SERVER_NAME = "t3-code";
 export const CLAUDE_T3_MCP_TOOL_WILDCARD = "mcp__t3-code__*";
 
 // Must stay in sync with the Tool.Readonly annotations on OrchestratorToolkit;
@@ -1273,10 +1274,6 @@ const CLAUDE_RESEARCH_MCP_TOOL_DENIAL = {
   },
 } satisfies HookJSONOutput;
 
-export function isClaudeExternalMcpTool(toolName: string): boolean {
-  return toolName.startsWith("mcp__") && !toolName.startsWith("mcp__t3-code__");
-}
-
 // Mirrors Claude Code's MCP name normalization: mcp__<server>__<tool>, with
 // characters outside [A-Za-z0-9_-] replaced by "_", and claude.ai connector
 // names also collapsing and trimming underscores.
@@ -1291,28 +1288,39 @@ function claudeMcpToolName(serverName: string, toolName: string): string {
   return `mcp__${claudeMcpNameSegment(serverName)}__${claudeMcpNameSegment(toolName)}`;
 }
 
-// Research may run an external MCP tool only when its server marks it read-only
-// and not destructive. Classifier approval alone must not admit writes.
-export function claudeResearchMcpToolIsReadOnly(input: {
+// Research may run an MCP tool from the injected T3 server, identified by its
+// exact name because normalized tool names can collide across servers, or an
+// external tool its server marks read-only and not destructive. Classifier
+// approval alone must not admit writes.
+export function claudeResearchMcpToolIsAllowed(input: {
   readonly toolName: string;
   readonly serverName: string | undefined;
   readonly servers: ReadonlyArray<McpServerStatus>;
 }): boolean {
+  if (input.serverName === CLAUDE_T3_MCP_SERVER_NAME) return true;
   const matches = input.servers
     .filter((server) => input.serverName === undefined || server.name === input.serverName)
     .flatMap((server) =>
-      (server.tools ?? []).filter(
-        (candidate) =>
-          candidate.name === input.toolName ||
-          claudeMcpToolName(server.name, candidate.name) === input.toolName,
-      ),
+      (server.tools ?? [])
+        .filter(
+          (candidate) =>
+            candidate.name === input.toolName ||
+            claudeMcpToolName(server.name, candidate.name) === input.toolName,
+        )
+        .map((tool) => ({ server, tool })),
     );
+  const match = matches.length === 1 ? matches[0] : undefined;
   return (
-    matches.length === 1 &&
-    matches[0]?.annotations?.readOnly === true &&
-    matches[0].annotations.destructive !== true
+    match !== undefined &&
+    (match.server.name === CLAUDE_T3_MCP_SERVER_NAME ||
+      (match.tool.annotations?.readOnly === true && match.tool.annotations.destructive !== true))
   );
 }
+
+// Research never asks the user, so a dialog takes the CLI's default behavior.
+const cancelClaudeUserDialog: NonNullable<ClaudeQueryOptions["onUserDialog"]> = async () => ({
+  behavior: "cancelled",
+});
 
 // Claude Code aborts an HTTP MCP call after 60 s ("The operation timed out.")
 // unless the server config sets `timeout`. T3's wait tools (t3_thread_wait,
@@ -1348,7 +1356,7 @@ export function claudeMcpQueryOverrides(input: {
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),
     mcpServers: {
-      "t3-code": {
+      [CLAUDE_T3_MCP_SERVER_NAME]: {
         type: "http",
         url: session.endpoint,
         headers: {
@@ -8033,18 +8041,19 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             Effect.gen(function* () {
               if (
                 hookInput.hook_event_name !== "PreToolUse" ||
-                !isClaudeExternalMcpTool(hookInput.tool_name)
+                !hookInput.tool_name.startsWith("mcp__")
               ) {
                 return {} satisfies HookJSONOutput;
               }
+              const serverName = hookInput.mcp_server?.name;
               const mcpServerStatus = (yield* Ref.get(queryContext))?.query.mcpServerStatus;
               const servers =
-                mcpServerStatus === undefined
+                serverName === CLAUDE_T3_MCP_SERVER_NAME || mcpServerStatus === undefined
                   ? []
                   : yield* mcpServerStatus.pipe(Effect.timeout("10 seconds"));
-              return claudeResearchMcpToolIsReadOnly({
+              return claudeResearchMcpToolIsAllowed({
                 toolName: hookInput.tool_name,
-                serverName: hookInput.mcp_server?.name,
+                serverName,
                 servers,
               })
                 ? ({} satisfies HookJSONOutput)
@@ -8251,6 +8260,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             turnInput.nativeThreadHasTurns ?? turnInput.providerTurnOrdinal > 1;
           const shouldResume =
             resumeSessionAt !== undefined || openedWithResume || hasPersistedProviderTurn;
+          const researchTools = turnInput.runtimePolicy.toolAccess === "research";
           const queryOptions = makeClaudeQueryOptions({
             modelSelection: turnInput.modelSelection,
             nativeThreadId,
@@ -8270,7 +8280,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             permissionMode: queryPolicy.permissionMode,
             readOnlySandbox:
               sandboxPolicyKindForClaudeRuntimePolicy(turnInput.runtimePolicy) === "readOnly",
-            researchTools: turnInput.runtimePolicy.toolAccess === "research",
+            researchTools,
             ...(queryPolicy.allowDangerouslySkipPermissions === undefined
               ? {}
               : {
@@ -8278,7 +8288,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 }),
             canUseTool,
             researchPreToolUse,
-            onUserDialog,
+            onUserDialog: researchTools ? cancelClaudeUserDialog : onUserDialog,
             supportedDialogKinds: ["resume_return"],
           });
           const querySession = yield* queryRunner

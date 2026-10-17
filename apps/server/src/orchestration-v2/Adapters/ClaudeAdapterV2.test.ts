@@ -1294,6 +1294,17 @@ describe("ClaudeAdapterV2 research MCP tools", () => {
                   { name: "write_file" },
                 ],
               },
+              {
+                name: "t3-code",
+                status: "connected",
+                tools: [{ name: "workbench_jira_read_issue" }],
+              },
+              {
+                // Normalizes to mcp__t3-code___write_file, sharing the T3 prefix.
+                name: "t3-code_",
+                status: "connected",
+                tools: [{ name: "write_file" }],
+              },
             ],
           });
           assert.equal(options.permissionMode, "auto");
@@ -1340,7 +1351,11 @@ describe("ClaudeAdapterV2 research MCP tools", () => {
           assert.isUndefined(
             yield* decide("mcp__claude_ai_GitHub_Work__get_issue", "claude.ai GitHub (Work)"),
           );
+          // The injected T3 server is exempt by exact name, not by tool-name prefix.
           assert.isUndefined(yield* decide("mcp__t3-code__workbench_jira_read_issue"));
+          assert.isUndefined(yield* decide("mcp__t3-code__workbench_jira_read_issue", "t3-code"));
+          assert.equal(yield* decide("mcp__t3-code___write_file", "t3-code_"), "deny");
+          assert.equal(yield* decide("mcp__t3-code___write_file"), "deny");
           assert.isUndefined(yield* decide("Read"));
         }).pipe(
           Effect.provide(
@@ -1376,6 +1391,28 @@ describe("ClaudeAdapterV2 research MCP tools", () => {
             : undefined,
           "deny",
         );
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("applies the resume dialog default in research instead of asking the user", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const options = yield* startResearchTurn({});
+        const result = yield* Effect.promise(() =>
+          options.onUserDialog!(
+            {
+              dialogKind: "resume_return",
+              payload: { sessionAgeMinutes: 90, estimatedTokens: 120_000 },
+            },
+            { signal: new AbortController().signal, requestId: "request-resume-research" },
+          ),
+        );
+        assert.deepEqual(result, { behavior: "cancelled" });
       }).pipe(
         Effect.provide(
           Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
