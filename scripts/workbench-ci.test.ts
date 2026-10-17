@@ -247,3 +247,26 @@ it("accepts only successful applicable jobs or explicitly irrelevant skips", () 
     1,
   );
 });
+
+it("rejects a moved dispatch checkpoint in both main gates", () => {
+  for (const workflow of ["workbench-ci.yml", "workbench-quality.yml"]) {
+    const source = NodeFS.readFileSync(
+      NodePath.resolve(import.meta.dirname, "../.github/workflows", workflow),
+      "utf8",
+    );
+    const script = source
+      .split("name: Verify dispatched checkpoint\n")[1]
+      ?.split("        run: |\n")[1]
+      ?.split(/\n      - /)[0]
+      ?.replace(/^          /gm, "");
+    assert.ok(script, `Missing checkpoint guard in ${workflow}`);
+    for (const expected of ["", "published-merge", "candidate-merge"]) {
+      const result = NodeChildProcess.spawnSync("bash", ["-e", "-c", script], {
+        encoding: "utf8",
+        env: { ...process.env, EXPECTED_SHA: expected, GITHUB_SHA: "published-merge" },
+      });
+      assert.equal(result.status, expected === "candidate-merge" ? 1 : 0, result.stderr);
+      if (expected === "candidate-merge") assert.match(result.stderr, /Main moved before dispatch/);
+    }
+  }
+});

@@ -321,3 +321,83 @@ it("fails closed on incomplete publication, forged provenance and sources outsid
       expect(f.run([f.stable], { date, sha: merged }).status).toBe(0);
     }
   }));
+
+it("accepts exact-main dispatch proof and rejects stale, unrelated or unsuccessful runs", () => {
+  const workflow = NodeFS.readFileSync(
+    NodePath.resolve(import.meta.dirname, "../.github/workflows/workbench-daily-release.yml"),
+    "utf8",
+  );
+  const resolver = workflow
+    .split("node --input-type=module -e '\n")[1]
+    ?.split("\n            '; then")[0];
+  if (!resolver) throw new Error("Missing daily release checkpoint resolver");
+  const success = {
+    path: ".github/workflows/workbench-ci.yml",
+    event: "push",
+    head_branch: "main",
+    head_sha: "main-sha",
+    run_number: 1,
+    run_attempt: 1,
+    status: "completed",
+    conclusion: "success",
+  };
+  const cases = [
+    { runs: [success], status: 0 },
+    { runs: [{ ...success, event: "workflow_dispatch" }], status: 0 },
+    { runs: [{ ...success, event: "workflow_dispatch", head_sha: "candidate-sha" }], status: 1 },
+    { runs: [{ ...success, event: "workflow_dispatch", head_branch: "feature" }], status: 1 },
+    { runs: [{ ...success, event: "pull_request" }], status: 1 },
+    { runs: [{ ...success, path: ".github/workflows/other.yml" }], status: 1 },
+    { runs: [], status: 1 },
+    {
+      runs: [
+        success,
+        {
+          ...success,
+          event: "workflow_dispatch",
+          run_number: 2,
+          status: "in_progress",
+          conclusion: null,
+        },
+      ],
+      status: 1,
+    },
+    {
+      runs: [
+        success,
+        { ...success, event: "workflow_dispatch", run_number: 2, conclusion: "failure" },
+      ],
+      status: 1,
+    },
+    {
+      runs: [
+        { ...success, event: "workflow_dispatch", run_attempt: 2, conclusion: "cancelled" },
+        success,
+      ],
+      status: 1,
+    },
+  ];
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "workbench-main-proof-"));
+  try {
+    const file = NodePath.join(root, "runs.json");
+    for (const test of cases) {
+      NodeFS.writeFileSync(file, JSON.stringify([{ workflow_runs: test.runs }]));
+      const result = NodeChildProcess.spawnSync(
+        process.execPath,
+        ["--input-type=module", "-e", resolver],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            RUNS_FILE: file,
+            WORKFLOW_PATH: success.path,
+            CAPTURED_SHA: success.head_sha,
+          },
+        },
+      );
+      expect(result.status, result.stderr || result.stdout).toBe(test.status);
+    }
+  } finally {
+    NodeFS.rmSync(root, { recursive: true, force: true });
+  }
+});

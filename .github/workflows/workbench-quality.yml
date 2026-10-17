@@ -28,6 +28,11 @@ on:
       - main
     # Daily releases require quality proof for every captured main checkpoint.
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact published main SHA; fail if the branch moved before dispatch
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -89,6 +94,15 @@ jobs:
           node-version-file: package.json
           cache: true
           run-install: true
+
+      - name: Verify dispatched checkpoint
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          if [[ -n "$EXPECTED_SHA" && "$GITHUB_SHA" != "$EXPECTED_SHA" ]]; then
+            echo "Main moved before dispatch: expected $EXPECTED_SHA, got $GITHUB_SHA" >&2
+            exit 1
+          fi
 
       - name: Typecheck Workbench
         run: vp run --filter @t3tools/workbench typecheck
