@@ -5,6 +5,7 @@ import * as Random from "effect/Random";
 import * as Semaphore from "effect/Semaphore";
 import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
+import * as WorkbenchWorktreeOwnership from "./workbench/worktreeOwnership.ts";
 import {
   WorkbenchServicesLayerLive,
   withWorkbenchHttpRoutes,
@@ -482,8 +483,8 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
   }),
 );
 
-export const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
-  Layer.provideMerge(WorkbenchHostPoliciesLayerLive),
+const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
+  Layer.provide(WorkbenchHostPoliciesLayerLive),
   Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(ProviderEventIngestor.layerAnalytics),
   Layer.provide(layerCheckpointStore),
@@ -548,7 +549,10 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   AgentAwarenessRelay.layer,
   HeldHooksWaker.layer,
   layerThreadSettlementWorker,
-  StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
+  StorageCleanup.layer.pipe(
+    Layer.provide(ProjectionStoreV2.layer),
+    Layer.provide(WorkbenchWorktreeOwnership.layer),
+  ),
   DatabaseStorage.layer.pipe(
     Layer.provide(ProjectionMaintenance.layer),
     Layer.provide(
@@ -674,7 +678,7 @@ const layerCommandReadiness = HttpRouter.middleware(
   { global: true },
 );
 
-export const layerMakeRoutes = Layer.mergeAll(
+const layerMakeRoutes = Layer.mergeAll(
   Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
       Layer.provide(AuthHttp.layer),

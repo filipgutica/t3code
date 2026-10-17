@@ -1,7 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
-  EnvironmentId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -9,202 +8,211 @@ import {
   WorkbenchTicketId,
   type OrchestrationV2AppThread,
 } from "@t3tools/contracts";
-import { WorkbenchJiraService } from "@t3tools/workbench/jira/WorkbenchJiraService";
-import * as Effect from "effect/Effect";
+import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
-import { HttpRouter, HttpServerRequest } from "effect/http";
+import type * as Scope from "effect/Scope";
+import { HttpServerRequest, HttpServerResponse } from "effect/http";
+import * as SqlClient from "effect/sql/SqlClient";
+import { vi } from "vite-plus/test";
 import { McpWritePolicy } from "../mcp/McpWritePolicy.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
-import { ProviderInstanceRegistry } from "../provider/ProviderInstanceRegistry.ts";
 import { WorkspaceCleanupPolicy } from "../workspace/WorkspaceCleanupPolicy.ts";
-import { AcpRegistryCatalog } from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
-import { AcpRegistryRuntimeCoordinator } from "@t3tools/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
-import { AnalyticsService } from "../telemetry/AnalyticsService.ts";
-import { AntigravityInstallation } from "../provider/AntigravityInstallation.ts";
-import { BackgroundPolicy } from "../background/BackgroundPolicy.ts";
-import { BrowserTraceCollector } from "../observability/BrowserTraceCollector.ts";
-import { CheckpointDiffQuery } from "../checkpointing/CheckpointDiffQuery.ts";
-import { CloudLink } from "../cloud/CloudLink.ts";
-import { CodexInstallation } from "../provider/CodexInstallation.ts";
-import { DatabaseStorage } from "../persistence/DatabaseStorage.ts";
-import { DeviceService } from "../device/DeviceService.ts";
-import { DirectEndpoints } from "../environment/DirectEndpoints.ts";
-import { EnvironmentAuth } from "../auth/EnvironmentAuth.ts";
-import { EnvironmentThemeService } from "../environmentTheme.ts";
-import { ExternalLauncher } from "../process/externalLauncher.ts";
-import { GitHubCredentials } from "@t3tools/source-control-github/server/GitHubCredentials";
-import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
-import { GitWorkflowService } from "../git/GitWorkflowService.ts";
-import { HostResources } from "../resourceTelemetry/HostResources.ts";
-import { Keybindings } from "../keybindings.ts";
-import { McpProviderSessions } from "@t3tools/provider-core/server/McpProviderSessions";
-import { McpSessionRegistry } from "../mcp/McpSessionRegistry.ts";
-import { ModelManifest } from "../provider/ModelManifest.ts";
-import { NativeAppIconResolver } from "../assets/NativeAppIconResolver.ts";
-import { PairingGrantStore } from "../auth/PairingGrantStore.ts";
-import { PortDiscovery } from "../preview/PortScanner.ts";
-import { PreviewManager } from "../preview/Manager.ts";
-import { ProcessDiagnostics } from "../diagnostics/ProcessDiagnostics.ts";
-import { ProcessResourceMonitor } from "../diagnostics/ProcessResourceMonitor.ts";
-import { ProjectCloneTracker } from "../project/ProjectCloneTracker.ts";
-import { ProjectEnrichmentService } from "../project/ProjectEnrichmentService.ts";
-import { ProjectFaviconResolver } from "../project/ProjectFaviconResolver.ts";
-import { ProjectSetupScriptRunner } from "../project/ProjectSetupScriptRunner.ts";
-import { ProviderLatestVersions } from "@t3tools/provider-core/server/ProviderLatestVersions";
-import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
-import { PullRequestSyncReactor } from "../orchestration-v2/PullRequestSyncReactor.ts";
-import { RelayClient } from "@t3tools/shared/relayClient";
-import { RemoteOpenTargets } from "../environment/RemoteOpenTargets.ts";
-import { RepositoryIdentityResolver } from "../project/RepositoryIdentityResolver.ts";
-import { ResourceTelemetry } from "../resourceTelemetry/ResourceTelemetry.ts";
-import { ReviewService } from "../review/ReviewService.ts";
-import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
-import { ServerEnvironmentIdentity } from "../environment/ServerEnvironment.ts";
-import { ServerLifecycleEvents } from "../serverLifecycleEvents.ts";
-import { ServerRuntimeStartup } from "../serverRuntimeStartup.ts";
-import * as ServerSecrets from "../auth/ServerSecretStore.ts";
-import { ServiceLauncherClient } from "../cloud/serviceLauncherClient.ts";
-import { SessionStore } from "../auth/SessionStore.ts";
-import { SourceControlRepositoryService } from "../sourceControl/SourceControlRepositoryService.ts";
-import { StorageCleanup } from "../storageCleanup.ts";
-import { TerminalManager } from "../terminal/Manager.ts";
-import { TextGeneration } from "../textGeneration/TextGeneration.ts";
-import { ThreadSearch } from "../orchestration-v2/ThreadSearch.ts";
-import { TicketDraftService } from "@t3tools/workbench/TicketDraftService";
-import { TicketSummaryService } from "@t3tools/workbench/TicketSummaryService";
-import { TicketWorkspaceService } from "@t3tools/workbench/TicketWorkspaceService";
-import { TraceDiagnostics } from "../diagnostics/TraceDiagnostics.ts";
-import { UsageLimitSources } from "../usage/UsageLimitSources.ts";
-import { UsageService } from "../usage/UsageService.ts";
-import { VcsProcess } from "../vcs/VcsProcess.ts";
-import { VcsProvisioningService } from "../vcs/VcsProvisioningService.ts";
-import { VcsStatusBroadcaster } from "../vcs/VcsStatusBroadcaster.ts";
-import { WorkspaceEntries } from "../workspace/WorkspaceEntries.ts";
-import { WorkspaceFileSystem } from "../workspace/WorkspaceFileSystem.ts";
-import { WorkspaceLifecycleService } from "@t3tools/workbench/WorkspaceLifecycleService";
-import { WorkspacePaths } from "../workspace/WorkspacePaths.ts";
-import { WorktreeSetupTracker } from "../project/WorktreeSetupTracker.ts";
-import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
-import * as Etag from "effect/http/Etag";
-import * as OtlpSerialization from "effect/observability/OtlpSerialization";
-import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
-import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
 import * as ServerConfig from "../config.ts";
-import * as SqlitePersistence from "../persistence/Sqlite.ts";
-import * as SqlClient from "effect/sql/SqlClient";
-import * as Settings from "../serverSettings.ts";
-import { HttpClient } from "effect/http";
-import { layerMakeRoutes, layerOrchestrationV2Runtime } from "../server.ts";
+import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
+import { runServer } from "../server.ts";
 
-const dependencies = Layer.mergeAll(
-  Layer.mock(AcpRegistryCatalog)({}),
-  Layer.mock(AcpRegistryRuntimeCoordinator)({}),
-  Layer.mock(AnalyticsService)({}),
-  Layer.mock(AntigravityInstallation)({ managedDirectory: "/unused" }),
-  Layer.mock(BackgroundPolicy)({}),
-  Layer.mock(BrowserTraceCollector)({}),
-  Layer.mock(CheckpointDiffQuery)({}),
-  Layer.mock(CloudLink)({}),
-  Layer.mock(CodexInstallation)({ managedDirectory: "/unused" }),
-  Layer.mock(DatabaseStorage)({}),
-  Layer.mock(DeviceService)({}),
-  Layer.mock(DirectEndpoints)({}),
-  Layer.mock(EnvironmentAuth)({}),
-  Layer.mock(EnvironmentThemeService)({}),
-  Layer.mock(ExternalLauncher)({}),
-  Layer.mock(GitHubCredentials)({}),
-  Layer.mock(GitVcsDriver)({}),
-  Layer.mock(GitWorkflowService)({ isRepository: () => Effect.succeed(true) }),
-  Layer.mock(HostResources)({}),
-  Layer.mock(Keybindings)({}),
-  Layer.mock(McpProviderSessions)({}),
-  Layer.mock(McpSessionRegistry)({}),
-  Layer.mock(ModelManifest)({}),
-  Layer.mock(NativeAppIconResolver)({}),
-  Layer.mock(PairingGrantStore)({}),
-  Layer.mock(PortDiscovery)({}),
-  Layer.mock(PreviewManager)({}),
-  Layer.mock(ProcessDiagnostics)({}),
-  Layer.mock(ProcessResourceMonitor)({}),
-  Layer.mock(ProjectCloneTracker)({}),
-  Layer.mock(ProjectEnrichmentService)({}),
-  Layer.mock(ProjectFaviconResolver)({}),
-  Layer.mock(ProjectSetupScriptRunner)({}),
-  Layer.mock(ProviderLatestVersions)({}),
-  Layer.mock(ProviderRegistry)({}),
-  Layer.mock(PullRequestSyncReactor)({}),
-  Layer.mock(RelayClient)({}),
-  Layer.mock(RemoteOpenTargets)({}),
-  Layer.mock(RepositoryIdentityResolver)({}),
-  Layer.mock(ResourceTelemetry)({}),
-  Layer.mock(ReviewService)({}),
-  Layer.mock(ServerEnvironment)({
-    getEnvironmentId: Effect.succeed(EnvironmentId.make("composition-test")),
-  }),
-  Layer.mock(ServerEnvironmentIdentity)({}),
-  Layer.mock(ServerLifecycleEvents)({}),
-  Layer.mock(ServerRuntimeStartup)({ awaitCommandReady: Effect.void }),
-  Layer.mock(ServiceLauncherClient)({ managed: false }),
-  Layer.mock(SessionStore)({ cookieName: "test", legacyCookieName: undefined }),
-  Layer.mock(SourceControlRepositoryService)({}),
-  Layer.mock(StorageCleanup)({}),
-  Layer.mock(TerminalManager)({}),
-  Layer.mock(TextGeneration)({}),
-  Layer.mock(ThreadSearch)({}),
-  Layer.mock(TicketDraftService)({}),
-  Layer.mock(TicketSummaryService)({}),
-  Layer.mock(TicketWorkspaceService)({}),
-  Layer.mock(TraceDiagnostics)({}),
-  Layer.mock(UsageLimitSources)({}),
-  Layer.mock(UsageService)({}),
-  Layer.mock(VcsProcess)({}),
-  Layer.mock(VcsProvisioningService)({}),
-  Layer.mock(VcsStatusBroadcaster)({}),
-  Layer.mock(WorkspaceEntries)({}),
-  Layer.mock(WorkspaceFileSystem)({}),
-  Layer.mock(WorkspaceLifecycleService)({}),
-  Layer.mock(WorkspacePaths)({}),
-  Layer.mock(WorktreeSetupTracker)({}),
-  Layer.mock(ProviderInstanceRegistry)({
-    getInstance: () => Effect.succeed(undefined),
-    listInstances: Effect.succeed([]),
-  }),
-  Layer.mock(WorkbenchJiraService)({
-    completeAuth: () => Effect.succeed({ connections: [] }),
-  }),
-  Layer.succeed(
-    HttpClient.HttpClient,
-    HttpClient.make(() => Effect.die("Unexpected HTTP request")),
-  ),
-  Settings.layerTest(),
-  NodeHttpPlatform.layer,
-  Etag.layerWeak,
-  OtlpSerialization.layerJson,
-).pipe(
-  Layer.provideMerge(ServerSecrets.layer),
-  Layer.provideMerge(
-    ServerConfig.layerTest(process.cwd(), { prefix: "workbench-server-composition-" }),
-  ),
-  Layer.provideMerge(NodeServices.layer),
-);
+type RuntimeContext = McpWritePolicy | RuntimePolicy.RuntimePolicyDecorator | SqlClient.SqlClient;
+type ServedApp = Effect.Effect<
+  HttpServerResponse.HttpServerResponse,
+  never,
+  HttpServerRequest.HttpServerRequest | Scope.Scope
+>;
 
-it.effect(
-  "production Workbench composition exposes the callback and installs all host policies",
-  () =>
-    Effect.gen(function* () {
-      const handler = yield* HttpRouter.toHttpEffect(layerMakeRoutes);
+// Observe the contexts delivered to existing consumers; all Workbench layers remain real.
+const probes = vi.hoisted(() => ({
+  runtime: vi.fn<(context: Context.Context<RuntimeContext>) => Effect.Effect<void>>(),
+  cleanup: vi.fn<(context: Context.Context<WorkspaceCleanupPolicy>) => Effect.Effect<void>>(),
+  serve: vi.fn<(app: ServedApp) => Effect.Effect<void>>(),
+}));
+
+vi.mock("../orchestration-v2/runtimeLayer.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../orchestration-v2/runtimeLayer.ts")>();
+  const Effect = await import("effect/Effect");
+  const Layer = await import("effect/Layer");
+  return {
+    ...original,
+    layerProduction: Layer.merge(
+      original.layerProduction,
+      Layer.effectDiscard(Effect.context<RuntimeContext>().pipe(Effect.flatMap(probes.runtime))),
+    ),
+  };
+});
+
+vi.mock("../storageCleanup.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../storageCleanup.ts")>();
+  const Effect = await import("effect/Effect");
+  const Layer = await import("effect/Layer");
+  return {
+    ...original,
+    layer: Layer.merge(
+      original.layer,
+      Layer.effectDiscard(
+        Effect.context<WorkspaceCleanupPolicy>().pipe(Effect.flatMap(probes.cleanup)),
+      ),
+    ),
+  };
+});
+
+// Keep startup/background work parked and replace only host I/O boundaries.
+vi.mock("../serverRuntimeStartup.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../serverRuntimeStartup.ts")>();
+  const Effect = await import("effect/Effect");
+  const Layer = await import("effect/Layer");
+  return {
+    ...original,
+    layerWithOptions: () =>
+      Layer.mock(original.ServerRuntimeStartup)({
+        awaitCommandReady: Effect.void,
+        markHttpListening: Effect.void,
+      }),
+  };
+});
+
+vi.mock("@effect/platform-node/NodeHttpServer", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@effect/platform-node/NodeHttpServer")>();
+  const Effect = await import("effect/Effect");
+  const Layer = await import("effect/Layer");
+  const { HttpServer } = await import("effect/http/HttpServer");
+  const NetAddress = await import("effect/net/NetAddress");
+  return {
+    ...original,
+    layer: () =>
+      Layer.succeed(HttpServer, {
+        address: NetAddress.inetAddressUnsafe(NetAddress.ipv4Loopback, 0),
+        serve: <E>(
+          app: Effect.Effect<
+            HttpServerResponse.HttpServerResponse,
+            E,
+            HttpServerRequest.HttpServerRequest | Scope.Scope
+          >,
+        ) =>
+          Effect.gen(function* () {
+            const context = yield* Effect.context<
+              HttpServerRequest.HttpServerRequest | Scope.Scope
+            >();
+            yield* probes.serve(app.pipe(Effect.orDie, Effect.provide(context)));
+          }),
+      }).pipe(Layer.provideMerge(original.layerHttpServices)),
+  };
+});
+
+vi.mock("../provider/ProviderInstanceRegistryHydration.ts", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("../provider/ProviderInstanceRegistryHydration.ts")>();
+  const { layer } = await import("../provider/ProviderInstanceRegistry.ts");
+  return { ...original, layer: layer<never>({ drivers: [], configMap: {} }) };
+});
+
+vi.mock("../provider/ModelManifest.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../provider/ModelManifest.ts")>();
+  return { ...original, layer: original.layerTest };
+});
+
+vi.mock("../resourceTelemetry/NativeTelemetryClient.ts", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("../resourceTelemetry/NativeTelemetryClient.ts")>();
+  return { ...original, layer: original.layerTest() };
+});
+
+vi.mock("effect/http/FetchHttpClient", async (importOriginal) => {
+  const original = await importOriginal<typeof import("effect/http/FetchHttpClient")>();
+  const Effect = await import("effect/Effect");
+  const Layer = await import("effect/Layer");
+  const HttpClient = await import("effect/http/HttpClient");
+  return {
+    ...original,
+    layer: Layer.succeed(
+      HttpClient.HttpClient,
+      HttpClient.make(() => Effect.die("Unexpected outbound HTTP request")),
+    ),
+  };
+});
+
+vi.mock("../git/GitWorkflowService.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../git/GitWorkflowService.ts")>();
+  const Effect = await import("effect/Effect");
+  const Layer = await import("effect/Layer");
+  return {
+    ...original,
+    layer: Layer.mock(original.GitWorkflowService)({
+      isRepository: () => Effect.succeed(true),
+    }),
+  };
+});
+
+vi.mock("@effect/platform-node/NodeChildProcessSpawner", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("@effect/platform-node/NodeChildProcessSpawner")>();
+  const Effect = await import("effect/Effect");
+  const Layer = await import("effect/Layer");
+  const { ChildProcessSpawner } = await import("effect/process/ChildProcessSpawner");
+  return {
+    ...original,
+    layer: Layer.mock(ChildProcessSpawner)({
+      spawn: () => Effect.die("Unexpected child process"),
+    }),
+  };
+});
+
+vi.mock("../os-jank.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../os-jank.ts")>();
+  const Effect = await import("effect/Effect");
+  return { ...original, fixPath: () => Effect.void };
+});
+
+vi.mock("@t3tools/provider-opencode/server/OpenCodeServerLedger", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("@t3tools/provider-opencode/server/OpenCodeServerLedger")>();
+  const Layer = await import("effect/Layer");
+  return { ...original, layer: () => Layer.mock(original.OpenCodeServerLedger)({}) };
+});
+
+it.effect("runServer mounts the Jira callback and installs Workbench host policies", () =>
+  Effect.gen(function* () {
+    const runtime = yield* Deferred.make<Context.Context<RuntimeContext>>();
+    const cleanupContext = yield* Deferred.make<Context.Context<WorkspaceCleanupPolicy>>();
+    const served = yield* Deferred.make<ServedApp>();
+    probes.runtime.mockImplementation((context) =>
+      Deferred.succeed(runtime, context).pipe(Effect.asVoid),
+    );
+    probes.cleanup.mockImplementation((context) =>
+      Deferred.succeed(cleanupContext, context).pipe(Effect.asVoid),
+    );
+    probes.serve.mockImplementation((app) => Deferred.succeed(served, app).pipe(Effect.asVoid));
+    const server = yield* runServer.pipe(Effect.forkScoped);
+    yield* Effect.gen(function* () {
+      const handler = yield* Deferred.await(served);
       const response = yield* handler.pipe(
         Effect.provideService(
           HttpServerRequest.HttpServerRequest,
           HttpServerRequest.fromWeb(
-            new Request(
-              "http://localhost/oauth/workbench/jira/callback?code=code&state=" + "A_-0".repeat(8),
-            ),
+            new Request("http://localhost/oauth/workbench/jira/callback?error=access_denied"),
           ),
         ),
       );
-      assert.strictEqual(response.status, 200);
+      assert.strictEqual(response.status, 400);
+      assert.strictEqual(response.headers["cache-control"], "no-store");
+      assert.deepStrictEqual(
+        response.body,
+        HttpServerResponse.text(
+          "Jira authorization was cancelled. Return to the desktop app and try again.",
+        ).body,
+      );
+
       const nativeResponse = yield* handler.pipe(
         Effect.provideService(
           HttpServerRequest.HttpServerRequest,
@@ -213,84 +221,90 @@ it.effect(
       );
       assert.strictEqual(nativeResponse.status, 503);
 
-      const sql = yield* SqlClient.SqlClient;
-      const store = yield* WorkbenchStore;
-      const threadId = ThreadId.make("planning");
-      const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "test" };
-      const workspaceId = WorkbenchProjectId.make("workspace");
-      const createdAt = "2026-10-17T00:00:00.000Z";
-      yield* sql`INSERT INTO projection_projects
+      const context = yield* Deferred.await(runtime);
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const store = yield* WorkbenchStore;
+        const threadId = ThreadId.make("planning");
+        const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "test" };
+        const workspaceId = WorkbenchProjectId.make("workspace");
+        const createdAt = "2026-10-17T00:00:00.000Z";
+        yield* sql`INSERT INTO projection_projects
         (project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at)
         VALUES ('repo', 'Repository', '/repo', '[]', ${createdAt}, ${createdAt}, NULL)`;
-      yield* store.createProject({
-        id: workspaceId,
-        title: "Planning",
-        linkedProjectIds: [ProjectId.make("repo")],
-        createdAt,
-      });
-      yield* store.beginTicketDraft({
-        id: WorkbenchTicketId.make("draft"),
-        projectId: workspaceId,
-        threadId,
-        modelSelection,
-      });
-      const writePolicy = yield* McpWritePolicy;
-      assert.strictEqual(
-        yield* writePolicy.assertAllowed(threadId).pipe(
-          Effect.match({
-            onFailure: (error) => error.code,
-            onSuccess: () => "allowed",
-          }),
-        ),
-        "capability_denied",
-      );
-      const decorator = yield* RuntimePolicy.RuntimePolicyDecorator;
-      const native = {
-        resolve: () =>
-          Effect.succeed({
-            cwd: "/repo",
-            runtimeMode: "full-access" as const,
-            interactionMode: "default" as const,
-          }),
-      };
-      const now = DateTime.makeUnsafe("2026-10-17T00:00:00Z");
-      const thread: OrchestrationV2AppThread = {
-        id: threadId,
-        projectId: ProjectId.make("repo"),
-        title: "Planning",
-        createdBy: "user",
-        creationSource: "web",
-        providerInstanceId: modelSelection.instanceId,
-        modelSelection,
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        worktreePath: null,
-        branch: null,
-        activeProviderThreadId: null,
-        lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
-        forkedFrom: null,
-        createdAt: now,
-        updatedAt: now,
-        archivedAt: null,
-        deletedAt: null,
-        settledAt: null,
-        settledOverride: null,
-        lastVisitedAt: null,
-      };
-      const input = { thread, modelSelection };
-      assert.strictEqual(
-        yield* decorator
-          .decorate(native)
-          .resolve(input)
-          .pipe(
+        yield* store.createProject({
+          id: workspaceId,
+          title: "Planning",
+          linkedProjectIds: [ProjectId.make("repo")],
+          createdAt,
+        });
+        yield* store.beginTicketDraft({
+          id: WorkbenchTicketId.make("draft"),
+          projectId: workspaceId,
+          threadId,
+          modelSelection,
+        });
+        const writePolicy = yield* McpWritePolicy;
+        assert.strictEqual(
+          yield* writePolicy.assertAllowed(threadId).pipe(
             Effect.match({
-              onFailure: (error) => error._tag,
-              onSuccess: () => "resolved",
+              onFailure: (error) => error.code,
+              onSuccess: () => "allowed",
             }),
           ),
-        "RuntimePolicyResolveError",
+          "capability_denied",
+        );
+        yield* writePolicy.assertAllowed(ThreadId.make("native"));
+        const decorator = yield* RuntimePolicy.RuntimePolicyDecorator;
+        const native = {
+          resolve: () =>
+            Effect.succeed({
+              cwd: "/repo",
+              runtimeMode: "full-access" as const,
+              interactionMode: "default" as const,
+            }),
+        };
+        const now = DateTime.makeUnsafe("2026-10-17T00:00:00Z");
+        const thread: OrchestrationV2AppThread = {
+          id: threadId,
+          projectId: ProjectId.make("repo"),
+          title: "Planning",
+          createdBy: "user",
+          creationSource: "web",
+          providerInstanceId: modelSelection.instanceId,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          worktreePath: null,
+          branch: null,
+          activeProviderThreadId: null,
+          lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+          forkedFrom: null,
+          createdAt: now,
+          updatedAt: now,
+          archivedAt: null,
+          deletedAt: null,
+          settledAt: null,
+          settledOverride: null,
+          lastVisitedAt: null,
+        };
+        const input = { thread, modelSelection };
+        assert.strictEqual(
+          yield* decorator
+            .decorate(native)
+            .resolve(input)
+            .pipe(
+              Effect.match({
+                onFailure: (error) => error.cause,
+                onSuccess: () => "resolved",
+              }),
+            ),
+          "This provider does not support enforced read-only ticket planning.",
+        );
+      }).pipe(
+        Effect.provide(WorkbenchStoreLive.pipe(Layer.provideMerge(Layer.succeedContext(context)))),
       );
-      const cleanup = yield* WorkspaceCleanupPolicy;
+      const cleanup = Context.get(yield* Deferred.await(cleanupContext), WorkspaceCleanupPolicy);
       assert.isFalse(
         yield* cleanup.canRemove({
           worktreesDir: "/worktrees",
@@ -300,14 +314,13 @@ it.effect(
       assert.isTrue(
         yield* cleanup.canRemove({ worktreesDir: "/worktrees", worktreePath: "/worktrees/native" }),
       );
-    }).pipe(
-      Effect.scoped,
-      Effect.provide(
-        layerOrchestrationV2Runtime.pipe(
-          Layer.provideMerge(Layer.mergeAll(WorkbenchStoreLive, ProjectStore.layer)),
-          Layer.provideMerge(SqlitePersistence.layerConfig),
-          Layer.provideMerge(dependencies),
-        ),
+    }).pipe(Effect.raceFirst(Fiber.join(server)));
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      ServerConfig.layerTest(process.cwd(), { prefix: "workbench-server-composition-" }).pipe(
+        Layer.provideMerge(NodeServices.layer),
       ),
     ),
+  ),
 );

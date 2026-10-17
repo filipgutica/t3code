@@ -1,6 +1,5 @@
 import * as Layer from "effect/Layer";
 import { workbenchJiraOAuthRouteLayer } from "./jira/http.ts";
-import * as WorkbenchWorktreeOwnership from "./worktreeOwnership.ts";
 
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
@@ -23,16 +22,13 @@ const WorkbenchStoreLayerLive = WorkbenchStore.WorkbenchStoreLive.pipe(
   Layer.provide(SqlitePersistence.layerConfig),
 );
 
-const WorkbenchHostPoliciesLayer = Layer.mergeAll(
-  TicketPlanningRuntime.layerRuntimePolicyDecorator,
-  TicketPlanningRuntime.layerMcpWritePolicy,
-  WorkbenchWorktreeOwnership.layer,
-);
-
 export const withWorkbenchHttpRoutes = <A, E, R>(routes: Layer.Layer<A, E, R>) =>
   Layer.mergeAll(routes, workbenchJiraOAuthRouteLayer);
 
-export const WorkbenchHostPoliciesLayerLive = WorkbenchHostPoliciesLayer.pipe(
+export const WorkbenchHostPoliciesLayerLive = Layer.mergeAll(
+  TicketPlanningRuntime.layerRuntimePolicyDecorator,
+  TicketPlanningRuntime.layerMcpWritePolicy,
+).pipe(
   Layer.provide(WorkbenchStoreLayerLive),
   Layer.provide(ProjectStore.layer),
   Layer.provide(JiraRepository.layerSql.pipe(Layer.provide(SqlitePersistence.layerConfig))),
