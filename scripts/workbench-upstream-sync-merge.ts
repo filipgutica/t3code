@@ -63,11 +63,16 @@ export function validateVerifiedSyncPullRequest({
 async function fetchPullRequestMergeRef({
   repositoryDir,
   pullRequestNumber,
+  productSha,
+  verifiedSha,
 }: {
   readonly repositoryDir: string;
   readonly pullRequestNumber: number;
+  readonly productSha: string;
+  readonly verifiedSha: string;
 }): Promise<string> {
   const mergeRef = `refs/pull/${pullRequestNumber}/merge`;
+  let published = false;
   for (let attempt = 0; attempt < 12; attempt += 1) {
     const advertised = NodeChildProcess.spawnSync(
       "git",
@@ -75,21 +80,37 @@ async function fetchPullRequestMergeRef({
       { cwd: repositoryDir, encoding: "utf8" },
     );
     if (advertised.error) throw advertised.error;
-    if (advertised.status === 2) {
-      if (attempt < 11) await NodeTimersPromises.setTimeout(5_000);
-      continue;
-    }
-    if (advertised.status !== 0) {
+    if (advertised.status !== 0 && advertised.status !== 2) {
       throw new Error(`Unable to inspect merge ref ${mergeRef}: ${advertised.stderr.trim()}`);
     }
-    NodeChildProcess.execFileSync("git", ["fetch", "--no-tags", "origin", mergeRef], {
-      cwd: repositoryDir,
-      stdio: ["ignore", "ignore", "pipe"],
-    });
-    return NodeChildProcess.execFileSync("git", ["rev-parse", "FETCH_HEAD"], {
-      cwd: repositoryDir,
-      encoding: "utf8",
-    }).trim();
+    if (advertised.status === 0) {
+      published = true;
+      NodeChildProcess.execFileSync("git", ["fetch", "--no-tags", "origin", mergeRef], {
+        cwd: repositoryDir,
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+      const [mergeSha, ...parents] = NodeChildProcess.execFileSync(
+        "git",
+        ["rev-list", "--parents", "-n", "1", "FETCH_HEAD"],
+        { cwd: repositoryDir, encoding: "utf8" },
+      )
+        .trim()
+        .split(" ");
+      if (
+        mergeSha &&
+        parents.length === 2 &&
+        parents[0] === productSha &&
+        parents[1] === verifiedSha
+      ) {
+        return mergeSha;
+      }
+    }
+    if (attempt < 11) await NodeTimersPromises.setTimeout(5_000);
+  }
+  if (published) {
+    throw new Error(
+      `PR merge ref ${mergeRef} did not reach the verified parents after 12 attempts`,
+    );
   }
   throw new Error(`PR merge ref ${mergeRef} was not published after 12 attempts`);
 }
@@ -180,6 +201,8 @@ async function main() {
     const mergeSha = await fetchPullRequestMergeRef({
       repositoryDir: process.cwd(),
       pullRequestNumber,
+      productSha: requiredOption(options, "product-sha"),
+      verifiedSha: requiredOption(options, "verified-sha"),
     });
     process.stdout.write(`${mergeSha}\n`);
     return;

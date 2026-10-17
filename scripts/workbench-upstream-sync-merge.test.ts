@@ -62,11 +62,12 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
 
 const withMergeRemote = (
   test: (fixture: {
-    root: string;
     repository: string;
     remote: string;
     sha: string;
+    staleSha: string;
     run: () => NodeChildProcess.SpawnSyncReturns<string>;
+    publishAfterAdvertisements: (count: number) => void;
   }) => void,
 ) => {
   const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-merge-ref-"));
@@ -80,9 +81,42 @@ const withMergeRemote = (
     NodeFS.writeFileSync(NodePath.join(repository, "file.txt"), "product\n");
     git(repository, ["add", "file.txt"]);
     git(repository, ["commit", "-m", "product"]);
-    const sha = git(repository, ["rev-parse", "HEAD"]);
+    const productSha = git(repository, ["rev-parse", "HEAD"]);
+    git(repository, ["switch", "-c", "sync"]);
+    NodeFS.writeFileSync(NodePath.join(repository, "file.txt"), "previous sync\n");
+    git(repository, ["commit", "-am", "previous sync"]);
+    const previousVerifiedSha = git(repository, ["rev-parse", "HEAD"]);
+    const staleSha = git(repository, [
+      "commit-tree",
+      `${previousVerifiedSha}^{tree}`,
+      "-p",
+      productSha,
+      "-p",
+      previousVerifiedSha,
+      "-m",
+      "previous PR merge",
+    ]);
+    NodeFS.writeFileSync(NodePath.join(repository, "file.txt"), "verified sync\n");
+    git(repository, ["commit", "-am", "verified sync"]);
+    const verifiedSha = git(repository, ["rev-parse", "HEAD"]);
+    const sha = git(repository, [
+      "commit-tree",
+      `${verifiedSha}^{tree}`,
+      "-p",
+      productSha,
+      "-p",
+      verifiedSha,
+      "-m",
+      "PR merge",
+    ]);
     git(repository, ["remote", "add", "origin", remote]);
-    git(repository, ["push", "origin", "main"]);
+    git(repository, [
+      "push",
+      "origin",
+      "main",
+      `${sha}:refs/heads/current-merge`,
+      `${staleSha}:refs/heads/previous-merge`,
+    ]);
     const clock = NodePath.join(root, "clock.mjs");
     NodeFS.writeFileSync(
       clock,
@@ -97,10 +131,25 @@ const withMergeRemote = (
           NodePath.join(import.meta.dirname, "workbench-upstream-sync-merge.ts"),
           "--wait-for-merge-ref",
           "42",
+          "--product-sha",
+          productSha,
+          "--verified-sha",
+          verifiedSha,
         ],
         { cwd: repository, encoding: "utf8" },
       );
-    test({ root, repository, remote, sha, run });
+    const publishAfterAdvertisements = (count: number) => {
+      const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+      const uploadPack = NodePath.join(root, "publish-merge-ref.sh");
+      const counter = quote(NodePath.join(root, "advertisements"));
+      NodeFS.writeFileSync(
+        uploadPack,
+        `#!/bin/sh\nset -e\ngit-upload-pack "$@"\ncount=0\nif [ -f ${counter} ]; then read -r count < ${counter}; fi\ncount=$((count + 1))\nprintf '%s\\n' "$count" > ${counter}\nif [ "$count" -ge ${count} ]; then\n  git --git-dir=${quote(remote)} update-ref refs/pull/42/merge ${quote(sha)}\nfi\n`,
+        { mode: 0o755 },
+      );
+      git(repository, ["config", "remote.origin.uploadpack", quote(uploadPack)]);
+    };
+    test({ repository, remote, sha, staleSha, run, publishAfterAdvertisements });
   } finally {
     NodeFS.rmSync(root, { recursive: true, force: true });
   }
@@ -118,19 +167,33 @@ describe("fetchPullRequestMergeRef", () => {
   });
 
   it("waits for the PR merge ref to appear after the first remote advertisement", () => {
-    withMergeRemote(({ root, repository, remote, sha, run }) => {
-      const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
-      const uploadPack = NodePath.join(root, "publish-merge-ref.sh");
-      NodeFS.writeFileSync(
-        uploadPack,
-        `#!/bin/sh\nset -e\ngit-upload-pack "$@"\ngit --git-dir=${quote(remote)} update-ref refs/pull/42/merge ${quote(sha)}\n`,
-        { mode: 0o755 },
-      );
-      git(repository, ["config", "remote.origin.uploadpack", quote(uploadPack)]);
+    withMergeRemote(({ repository, sha, run, publishAfterAdvertisements }) => {
+      publishAfterAdvertisements(1);
       const result = run();
       assert.equal(result.status, 0, result.stderr);
       assert.equal(result.stdout.trim(), sha);
       assert.equal(git(repository, ["rev-parse", "FETCH_HEAD"]), sha);
+    });
+  });
+
+  it("waits for an existing PR merge ref to reach the verified parents", () => {
+    withMergeRemote(({ repository, remote, sha, staleSha, run, publishAfterAdvertisements }) => {
+      git(remote, ["update-ref", "refs/pull/42/merge", staleSha]);
+      publishAfterAdvertisements(2);
+      const result = run();
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout.trim(), sha);
+      assert.equal(git(repository, ["rev-parse", "FETCH_HEAD"]), sha);
+    });
+  });
+
+  it("rejects a merge ref that never reaches the verified parents", () => {
+    withMergeRemote(({ remote, staleSha, run }) => {
+      git(remote, ["update-ref", "refs/pull/42/merge", staleSha]);
+      const result = run();
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stderr, /merge ref refs\/pull\/42\/merge.*verified parents/);
+      assert.equal(result.stdout, "");
     });
   });
 

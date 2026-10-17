@@ -245,8 +245,12 @@ jobs:
           fi
           test -n "$pr_number"
 
-          # The merge ref can lag PR creation. Check current identity after waiting.
-          merge_sha="$(node scripts/workbench-upstream-sync-merge.ts --wait-for-merge-ref "$pr_number")"
+          # The merge ref can lag PR creation or a sync head update.
+          # Wait for the verified parents, then check current PR identity.
+          merge_sha="$(node scripts/workbench-upstream-sync-merge.ts \
+            --wait-for-merge-ref "$pr_number" \
+            --product-sha "$PRODUCT_SHA" \
+            --verified-sha "$VERIFIED_SHA")"
           product_remote_sha="$(git ls-remote --refs origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
           test "$product_remote_sha" = "$PRODUCT_SHA"
           gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number" > "$RUNNER_TEMP/sync-pr.json"
