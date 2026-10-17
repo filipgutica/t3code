@@ -7,11 +7,11 @@ import {
   type WorkbenchJiraIssueSnapshot,
   type WorkbenchTicketStatus,
   type WorkbenchTicket,
-  type WorkbenchEpic,
   type WorkbenchJiraEpicReference,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -134,9 +134,11 @@ const restoreCreationScope = ({
 }) =>
   Effect.gen(function* () {
     if (input.primaryT3ProjectId === undefined || input.repositoryProjectIds === undefined) return;
-    const current = (yield* workbench.getSnapshot.pipe(
-      Effect.mapError(() => importError("The Jira Ticket scope could not be loaded.")),
-    )).tickets.find((ticket) => ticket.id === ticketId);
+    const current = Option.getOrUndefined(
+      yield* workbench
+        .getTicket(ticketId)
+        .pipe(Effect.mapError(() => importError("The Jira Ticket scope could not be loaded."))),
+    );
     if (
       current &&
       (current.primaryT3ProjectId !== input.primaryT3ProjectId ||
@@ -208,11 +210,9 @@ export const layer = Layer.effect(
     const upsertEpic = Effect.fn("JiraTicketImporter.upsertEpic")(function* ({
       input,
       epic,
-      epics,
     }: {
       input: JiraTicketImportInput;
       epic: WorkbenchJiraEpicReference;
-      epics: ReadonlyArray<WorkbenchEpic>;
     }) {
       const epicTitle = normalizeJiraTitle(epic.summary);
       const epicDescription = epic.description;
@@ -228,7 +228,11 @@ export const layer = Layer.effect(
         LIMIT 1
       `.pipe(Effect.mapError(() => importError("The Jira Epic mapping could not be loaded.")));
       const proposedEpicId = mappedEpic[0]?.epicId ?? jiraEpicId(input.binding.id, epic.id);
-      const existingEpic = epics.find((epic) => epic.id === proposedEpicId);
+      const existingEpic = Option.getOrUndefined(
+        yield* workbench
+          .getEpic(proposedEpicId)
+          .pipe(Effect.mapError(() => importError("The Jira Epic could not be loaded."))),
+      );
       if (existingEpic === undefined) {
         yield* workbench
           .createEpic({
@@ -267,10 +271,13 @@ export const layer = Layer.effect(
       updatedAt: string;
     }) {
       if (input.mappedStatus === "todo" && !input.issue.flagged) return;
-      const refreshed = yield* workbench.getSnapshot.pipe(
-        Effect.mapError(() => importError("The imported Jira Ticket could not be reloaded.")),
+      const created = Option.getOrUndefined(
+        yield* workbench
+          .getTicket(ticketId)
+          .pipe(
+            Effect.mapError(() => importError("The imported Jira Ticket could not be reloaded.")),
+          ),
       );
-      const created = refreshed.tickets.find((ticket) => ticket.id === ticketId);
       if (created) {
         yield* updateJiraOwnedTicketFields({
           id: created.id,
@@ -298,22 +305,16 @@ export const layer = Layer.effect(
           // Match Workbench's TrimmedString decoding before comparing or persisting Jira text.
           const normalizedDescription = input.issue.description?.trim();
           const title = normalizeJiraTitle(input.issue.summary);
-          let snapshot = yield* workbench.getSnapshot.pipe(
-            Effect.mapError(() => importError("Workbench data could not be loaded for Jira sync.")),
-          );
-          let epicId: WorkbenchEpicId | null = null;
-          if (input.issue.epic !== null) {
-            epicId = yield* upsertEpic({ input, epic: input.issue.epic, epics: snapshot.epics });
-            snapshot = yield* workbench.getSnapshot.pipe(
-              Effect.mapError(() =>
-                importError("Workbench data could not be refreshed for Jira sync."),
-              ),
-            );
-          }
+          const epicId =
+            input.issue.epic === null ? null : yield* upsertEpic({ input, epic: input.issue.epic });
 
           const ticketId =
             input.existingTicketId ?? jiraTicketId(input.binding.id, input.issue.issueId);
-          const existingTicket = snapshot.tickets.find((ticket) => ticket.id === ticketId);
+          const existingTicket = Option.getOrUndefined(
+            yield* workbench
+              .getTicket(ticketId)
+              .pipe(Effect.mapError(() => importError("The Jira Ticket could not be loaded."))),
+          );
           const kind = input.issue.issueType.name.trim().toLowerCase() === "bug" ? "bug" : "story";
           const updatedAt = input.issue.remoteUpdatedAt ?? input.binding.updatedAt;
           if (existingTicket === undefined) {

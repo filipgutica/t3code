@@ -12,10 +12,13 @@ export class WorkbenchNativeAccess extends Context.Service<
     readonly startedExecutionRunIds: Effect.Effect<ReadonlyArray<RunId>, WorkbenchOperationError>;
     readonly findProject: (
       projectId: ProjectId,
-    ) => Effect.Effect<Option.Option<{ readonly id: ProjectId }>, WorkbenchOperationError>;
-    /** Whether a native T3 Project points at a Git repository. */
-    readonly isProjectRepository: (
-      projectId: ProjectId,
+    ) => Effect.Effect<
+      Option.Option<{ readonly id: ProjectId; readonly workspaceRoot: string }>,
+      WorkbenchOperationError
+    >;
+    /** Validate the captured native root without re-reading the Project during Git I/O. */
+    readonly isRepository: (
+      workspaceRoot: string,
     ) => Effect.Effect<boolean, WorkbenchOperationError>;
     /** Pending/active native work must keep the planning policy record until provider startup settles. */
     readonly hasPendingThreadWork: (

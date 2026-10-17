@@ -41,8 +41,12 @@ const nativeLayer = (options?: {
     WorkbenchNativeAccess,
     WorkbenchNativeAccess.of({
       findProject: (projectId) =>
-        Effect.succeed(projects.has(projectId) ? Option.some({ id: projectId }) : Option.none()),
-      isProjectRepository: (projectId) => Effect.succeed(repositoryProjects.has(projectId)),
+        Effect.succeed(
+          projects.has(projectId)
+            ? Option.some({ id: projectId, workspaceRoot: `/repos/${projectId}` })
+            : Option.none(),
+        ),
+      isRepository: (root) => Effect.succeed(repositoryProjects.has(root.slice("/repos/".length))),
       findThread: (threadId) => {
         const projectId = threads.get(threadId);
         return Effect.succeed(

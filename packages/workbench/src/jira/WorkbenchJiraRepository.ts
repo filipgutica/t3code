@@ -613,7 +613,17 @@ export const layerSql = Layer.effect(
         protect(
           sql.withTransaction(
             Effect.gen(function* () {
-              yield* sql`DELETE FROM workbench_jira_issue_links WHERE binding_id = ${bindingId}`;
+              const active = yield* sql<{ readonly issueId: string }>`
+                SELECT jira_issue_id AS "issueId" FROM workbench_jira_issue_links
+                WHERE binding_id = ${bindingId} AND active = 1`;
+
+              const incomingIds = new Set(links.map((link) => link.issue.issueId));
+              for (const link of active) {
+                if (!incomingIds.has(link.issueId)) {
+                  yield* sql`UPDATE workbench_jira_issue_links SET active = 0
+                    WHERE binding_id = ${bindingId} AND jira_issue_id = ${link.issueId}`;
+                }
+              }
               for (const link of links) {
                 const issueJson = yield* encodeJson(
                   WorkbenchJiraIssueLink.fields.issue,
@@ -627,6 +637,17 @@ export const layerSql = Layer.effect(
                     ${issueJson}, ${link.active ? 1 : 0}, ${link.linkedAt},
                     ${link.lastSeenAt}
                   )
+                  ON CONFLICT(binding_id, jira_issue_id) DO UPDATE SET
+                    ticket_id = excluded.ticket_id,
+                    issue_json = excluded.issue_json,
+                    active = excluded.active,
+                    linked_at = excluded.linked_at,
+                    last_seen_at = excluded.last_seen_at
+                  WHERE workbench_jira_issue_links.ticket_id IS NOT excluded.ticket_id
+                    OR workbench_jira_issue_links.issue_json IS NOT excluded.issue_json
+                    OR workbench_jira_issue_links.active IS NOT excluded.active
+                    OR workbench_jira_issue_links.linked_at IS NOT excluded.linked_at
+                    OR workbench_jira_issue_links.last_seen_at IS NOT excluded.last_seen_at
                 `;
               }
             }),

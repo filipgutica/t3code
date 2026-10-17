@@ -36,6 +36,7 @@ import {
   type WorkbenchUpdateTicketInput,
   type WorkbenchTicketStatus,
 } from "@t3tools/contracts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { sha256 } from "@noble/hashes/sha2";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -351,6 +352,12 @@ interface WorkbenchStoreShape extends Omit<
     WorkbenchOperationError
   >;
   readonly getSnapshot: Effect.Effect<WorkbenchSnapshot, WorkbenchOperationError>;
+  readonly getTicket: (
+    ticketId: WorkbenchTicketId,
+  ) => Effect.Effect<Option.Option<WorkbenchTicket>, WorkbenchOperationError>;
+  readonly getEpic: (
+    epicId: WorkbenchEpicId,
+  ) => Effect.Effect<Option.Option<WorkbenchEpic>, WorkbenchOperationError>;
   readonly listTicketsNeedingSummary: Effect.Effect<
     ReadonlyArray<WorkbenchTicket>,
     WorkbenchOperationError
@@ -807,12 +814,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
         message: "A linked T3 Project does not exist on this environment.",
       });
     }
-    if (!(yield* native.isProjectRepository(linkedProjectId))) {
+    if (!(yield* native.isRepository(project.value.workspaceRoot))) {
       return yield* new WorkbenchOperationError({
         code: "linked_project_not_repository",
         message: "A linked T3 Project must point to a Git repository.",
       });
     }
+    return project.value;
   });
   const findProject = SqlSchema.findOneOption({
     Request: Schema.Struct({ id: WorkbenchProjectId }),
@@ -847,7 +855,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             );
           }),
         )
-        .pipe(Effect.mapError(workbenchStoreError)),
+        .pipe(NodeSqliteClient.readOnly, Effect.mapError(workbenchStoreError)),
   );
 
   const requireActiveProject: WorkbenchStoreShape["requireActiveProject"] = Effect.fn(
@@ -1374,6 +1382,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       const snapshot = yield* getSnapshot();
       return snapshot.tickets.filter((ticket) => candidateIds.has(ticket.id));
     },
+    NodeSqliteClient.readOnly,
   );
 
   const getTicketSummaryCandidate = Effect.fn("WorkbenchStore.getTicketSummaryCandidate")(
@@ -1407,13 +1416,15 @@ const makeWorkbenchStore = Effect.gen(function* () {
             );
           }),
         )
-        .pipe(Effect.mapError(persistenceError)),
+        .pipe(NodeSqliteClient.readOnly, Effect.mapError(persistenceError)),
   );
 
   const getTicketWorkspace: WorkbenchStoreShape["getTicketWorkspace"] = Effect.fn(
     "WorkbenchStore.getTicketWorkspace",
   )((ticketId) =>
-    sql.withTransaction(loadTicketWorkspace(ticketId)).pipe(Effect.mapError(persistenceError)),
+    sql
+      .withTransaction(loadTicketWorkspace(ticketId))
+      .pipe(NodeSqliteClient.readOnly, Effect.mapError(persistenceError)),
   );
 
   const getTicketWorkspaceRepositoryStates: WorkbenchStoreShape["getTicketWorkspaceRepositoryStates"] =
@@ -1432,7 +1443,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             ORDER BY repository.t3_project_id ASC
           `,
         )
-        .pipe(Effect.mapError(persistenceError)),
+        .pipe(NodeSqliteClient.readOnly, Effect.mapError(persistenceError)),
     );
 
   const validateTicketWorkspaceClaim = Effect.fn("WorkbenchStore.validateTicketWorkspaceClaim")(
@@ -2143,6 +2154,17 @@ const makeWorkbenchStore = Effect.gen(function* () {
     "WorkbenchStore.updateProject",
   )(function* (input) {
     const linkedProjectIds = [...new Set(input.linkedProjectIds)];
+    const currentLinks = yield* sql<{ readonly id: ProjectId }>`
+      SELECT t3_project_id AS id FROM workbench_project_links WHERE workbench_project_id = ${input.id}
+    `.pipe(NodeSqliteClient.readOnly, Effect.mapError(persistenceError));
+    const existingIds = new Set(currentLinks.map((link) => link.id));
+    const validatedRoots = new Map<ProjectId, string>();
+    for (const linkedProjectId of linkedProjectIds) {
+      if (!existingIds.has(linkedProjectId)) {
+        const project = yield* validateLinkedProject({ linkedProjectId });
+        validatedRoots.set(linkedProjectId, project.workspaceRoot);
+      }
+    }
     return yield* sql
       .withTransaction(
         Effect.gen(function* () {
@@ -2179,7 +2201,19 @@ const makeWorkbenchStore = Effect.gen(function* () {
             (linkedProjectId) => !existingProjectIdSet.has(linkedProjectId),
           );
           for (const linkedProjectId of additions) {
-            yield* validateLinkedProject({ linkedProjectId });
+            const project = yield* findT3Project({ linkedProjectId });
+            if (Option.isNone(project)) {
+              return yield* new WorkbenchOperationError({
+                code: "linked_project_not_found",
+                message: "A linked T3 Project does not exist on this environment.",
+              });
+            }
+            if (project.value.workspaceRoot !== validatedRoots.get(linkedProjectId)) {
+              return yield* new WorkbenchOperationError({
+                code: "project_changed",
+                message: "A selected repository's workspace root changed. Retry the operation.",
+              });
+            }
           }
 
           yield* sql`
@@ -3408,8 +3442,28 @@ const makeWorkbenchStore = Effect.gen(function* () {
             return { ...draft, workArea: Option.getOrNull(workArea) };
           }),
         )
-        .pipe(Effect.mapError(workbenchStoreError)),
-    getSnapshot: getSnapshot(),
+        .pipe(NodeSqliteClient.readOnly, Effect.mapError(workbenchStoreError)),
+    getTicket: (ticketId) =>
+      sql
+        .withTransaction(
+          Effect.gen(function* () {
+            const ticket = yield* findTicket({ id: ticketId });
+            if (Option.isNone(ticket)) return Option.none<WorkbenchTicket>();
+            const repositories = yield* listTicketRepositoryRowsByTicket({ ticketId });
+            return Option.some(
+              ticketFromRow(
+                ticket.value,
+                repositories.length > 0
+                  ? repositories.map((repository) => repository.repositoryProjectId)
+                  : [ticket.value.primaryT3ProjectId],
+              ),
+            );
+          }),
+        )
+        .pipe(NodeSqliteClient.readOnly, Effect.mapError(persistenceError)),
+    getEpic: (epicId) =>
+      findEpic({ epicId }).pipe(NodeSqliteClient.readOnly, Effect.mapError(persistenceError)),
+    getSnapshot: getSnapshot().pipe(NodeSqliteClient.readOnly),
     listTicketsNeedingSummary: listTicketsNeedingSummary(),
     getTicketSummaryCandidate,
     recheckTicketSummary,
