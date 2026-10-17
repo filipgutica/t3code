@@ -1,4 +1,5 @@
 import "./WorkbenchPage.css";
+import { WorkbenchJiraCreationRecovery } from "./WorkbenchJiraCreationRecovery";
 
 const formatJiraSyncStatus = (value: string | null) =>
   value === null ? "Jira not synced yet" : `Jira synced ${new Date(value).toLocaleString()}`;
@@ -1216,6 +1217,7 @@ function WorkbenchPageJiraDialog(
   props: Pick<
     WorkbenchPageViewProps,
     | "beginJiraAuthFlow"
+    | "environmentId"
     | "boardData"
     | "handleJiraDialogOpenChange"
     | "jiraBindings"
@@ -1269,6 +1271,13 @@ function WorkbenchPageJiraDialog(
           localEpics={localEpicsForJiraMigration}
           pending={jiraPendingAction !== null || jiraQuery.isPending}
           error={jiraError ?? jiraQuery.error}
+          recovery={
+            <WorkbenchPageJiraRecovery
+              environmentId={props.environmentId}
+              pageData={pageData}
+              boardData={boardData}
+            />
+          }
           onOpenChange={handleJiraDialogOpenChange}
           onBeginAuth={beginJiraAuthFlow}
           onListProjects={listJiraProjectsForConnection}
@@ -1527,9 +1536,34 @@ function WorkbenchPageNoWorkspace(
   );
 }
 
+function WorkbenchPageJiraRecovery({
+  environmentId,
+  pageData,
+  boardData,
+}: Pick<WorkbenchPageViewProps, "environmentId" | "pageData" | "boardData">) {
+  const creations =
+    pageData.jiraSnapshot?.uncertainCreations?.filter(
+      (creation) => creation.bindingId === boardData.jiraBinding?.id,
+    ) ?? [];
+  if (environmentId === null || creations.length === 0) return null;
+  return (
+    <WorkbenchJiraCreationRecovery
+      key={`${environmentId}:${boardData.jiraBinding?.id}`}
+      environmentId={environmentId}
+      creations={creations}
+    />
+  );
+}
+
 export function WorkbenchPageView(props: WorkbenchPageViewProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-workbench-page="">
+      {!props.jiraDialogOpen ? (
+        <WorkbenchPageJiraRecovery
+          key={`${props.environmentId}:${props.selection.selectedProject?.id}`}
+          {...props}
+        />
+      ) : null}
       <WorkbenchPageContent {...props} />
 
       <WorkbenchPageWorkspaceDialogs {...props} />

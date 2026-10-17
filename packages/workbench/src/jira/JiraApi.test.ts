@@ -53,6 +53,37 @@ const auth = JiraAuthService.of({
 const decodeJson = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
 describe("JiraApi", () => {
+  it.effect("reads the authoritative identity, project, and type for creation recovery", () =>
+    Effect.gen(function* () {
+      const service = yield* JiraApi.make.pipe(
+        Effect.provideService(WorkbenchJiraRepository, repository),
+        Effect.provideService(JiraAuthService, auth),
+        Effect.provideService(
+          HttpClient.HttpClient,
+          HttpClient.make((request) =>
+            Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json({
+                  id: "200",
+                  key: "WB-20",
+                  fields: { project: { id: "100" }, issuetype: { id: "story" } },
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+      if (!service.getCreationIssue)
+        return yield* Effect.die("Creation verification is unavailable");
+      assert.deepStrictEqual(yield* service.getCreationIssue({ connectionId, issueKey: "WB-20" }), {
+        id: "200",
+        key: "WB-20",
+        projectId: "100",
+        issueTypeId: "story",
+      });
+    }),
+  );
   it.effect("imports optional descriptions and normalizes numeric and string Epic IDs", () =>
     Effect.gen(function* () {
       for (const { epicId, description } of [

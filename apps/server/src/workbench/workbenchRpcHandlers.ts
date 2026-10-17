@@ -95,4 +95,6 @@ export const makeWorkbenchRpcHandlers = ({
       workbenchJira.getTicketTransitions(input),
     [WORKBENCH_WS_METHODS.workbenchJiraMigrateLocalTickets]: (input) =>
       workbenchJira.migrateLocalTickets(input),
+    [WORKBENCH_WS_METHODS.workbenchJiraResolveCreation]: (input) =>
+      workbenchJira.resolveCreation(input),
   }) satisfies WorkbenchRpcHandlers;

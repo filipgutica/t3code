@@ -41,6 +41,7 @@ const TestLayer = WorkbenchStoreLive.pipe(
   ),
 );
 const ticketWriter = JiraTicketWriteService.of({
+  resolveCreation: () => Effect.die("unexpected Jira resolution"),
   createTicket: () => Effect.die("unexpected Jira Ticket creation"),
   getTicketTransitions: () => Effect.die("unexpected Jira transition lookup"),
   updateTicket: () => Effect.die("unexpected Jira Ticket write"),
@@ -153,6 +154,7 @@ describe("WorkbenchJiraService", () => {
       });
       const createCalls = yield* Ref.make(0);
       const writer = JiraTicketWriteService.of({
+        resolveCreation: () => Effect.die("unexpected Jira resolution"),
         createTicket: (input) =>
           Ref.update(createCalls, (count) => count + 1).pipe(
             Effect.andThen(workbench.createTicket(input).pipe(Effect.orDie)),

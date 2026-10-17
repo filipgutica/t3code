@@ -75,10 +75,14 @@ export const mirrorStatusMappings = (
   );
 
 export interface JiraSyncServiceShape {
-  readonly withBindingPermit: <A, E, R>(
-    bindingId: string,
-    effect: Effect.Effect<A, E, R>,
-  ) => Effect.Effect<A, E, R>;
+  readonly withBindingPermit: {
+    <A, E, R>(bindingId: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R>;
+    <A, E, R>(
+      bindingId: string,
+      effect: Effect.Effect<A, E, R>,
+      options: { readonly rejectIfBusy: boolean },
+    ): Effect.Effect<A, E | WorkbenchJiraOperationError, R>;
+  };
   readonly syncBinding: (
     input: WorkbenchJiraSyncBindingInput,
   ) => Effect.Effect<WorkbenchJiraSyncResult, WorkbenchJiraOperationError>;
@@ -115,8 +119,42 @@ export const make = Effect.gen(function* () {
     });
   });
 
-  const withBindingPermit: JiraSyncServiceShape["withBindingPermit"] = (bindingId, effect) =>
-    getBindingLock(bindingId).pipe(Effect.flatMap((lock) => lock.withPermit(effect)));
+  function withBindingPermit<A, E, R>(
+    bindingId: string,
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E, R>;
+  function withBindingPermit<A, E, R>(
+    bindingId: string,
+    effect: Effect.Effect<A, E, R>,
+    options: { readonly rejectIfBusy: boolean },
+  ): Effect.Effect<A, E | WorkbenchJiraOperationError, R>;
+  function withBindingPermit<A, E, R>(
+    bindingId: string,
+    effect: Effect.Effect<A, E, R>,
+    options?: { readonly rejectIfBusy: boolean },
+  ): Effect.Effect<A, E | WorkbenchJiraOperationError, R> {
+    return getBindingLock(bindingId).pipe(
+      Effect.flatMap((lock) =>
+        options?.rejectIfBusy
+          ? lock
+              .withPermitsIfAvailable(1)(effect)
+              .pipe(
+                Effect.flatMap((result) =>
+                  Option.isSome(result)
+                    ? Effect.succeed(result.value)
+                    : Effect.fail(
+                        new WorkbenchJiraOperationError({
+                          code: "request_failed",
+                          message:
+                            "A Jira operation is in progress. Wait for it to finish before resolving a creation.",
+                        }),
+                      ),
+                ),
+              )
+          : lock.withPermit(effect),
+      ),
+    );
+  }
 
   const syncBinding: JiraSyncServiceShape["syncBinding"] = (input) =>
     withBindingPermit(input.bindingId, syncBindingUnlocked(input));

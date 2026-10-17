@@ -1,5 +1,6 @@
 import {
   WorkbenchJiraOperationError,
+  TrimmedNonEmptyString,
   type WorkbenchJiraReadIssueInput,
   type WorkbenchJiraResearchIssue,
   type WorkbenchJiraResearchIssueSummary,
@@ -261,6 +262,18 @@ type ListAssignedSprintIssuesInput = WorkbenchJiraListAssignedSprintIssuesInput 
 };
 
 export interface JiraApiShape {
+  readonly getCreationIssue?: (input: {
+    readonly connectionId: WorkbenchJiraConnectionId;
+    readonly issueKey: string;
+  }) => Effect.Effect<
+    {
+      readonly id: string;
+      readonly key: string;
+      readonly projectId: string;
+      readonly issueTypeId: string;
+    },
+    WorkbenchJiraOperationError
+  >;
   readonly getIssue: (
     input: WorkbenchJiraReadIssueInput & { readonly connectionId: WorkbenchJiraConnectionId },
   ) => Effect.Effect<WorkbenchJiraResearchIssue, WorkbenchJiraOperationError>;
@@ -459,6 +472,30 @@ export const make = Effect.gen(function* () {
         "response_invalid",
         "Jira pagination exceeded the supported page limit.",
       );
+    });
+
+  const getCreationIssue: JiraApiShape["getCreationIssue"] = (input) =>
+    Effect.gen(function* () {
+      const context = yield* authorized(input.connectionId);
+      const issue = yield* executeJson({
+        ...context,
+        path: `/rest/api/2/issue/${encodeURIComponent(input.issueKey)}`,
+        urlParams: { fields: "project,issuetype" },
+        schema: Schema.Struct({
+          id: TrimmedNonEmptyString,
+          key: TrimmedNonEmptyString,
+          fields: Schema.Struct({
+            project: Schema.Struct({ id: TrimmedNonEmptyString }),
+            issuetype: Schema.Struct({ id: TrimmedNonEmptyString }),
+          }),
+        }),
+      });
+      return {
+        id: issue.id,
+        key: issue.key,
+        projectId: issue.fields.project.id,
+        issueTypeId: issue.fields.issuetype.id,
+      };
     });
 
   const getIssue: JiraApiShape["getIssue"] = (input) =>
@@ -812,6 +849,7 @@ export const make = Effect.gen(function* () {
 
   return JiraApi.of({
     getIssue,
+    getCreationIssue,
     searchIssues,
     listProjects,
     listBoards,
