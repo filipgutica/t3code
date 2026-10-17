@@ -48,7 +48,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk/sdk-tools";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the SDK takes a Node ChildProcess for the CLI.
 import * as NodeChildProcess from "node:child_process";
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- native realpath preserves symlink traversal before parent segments.
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- check native path traversal and dangling symlinks at the SDK boundary.
 import * as NodeFS from "node:fs";
 import { parseCliArgs } from "@t3tools/shared/cliArgs";
 import { AgentScope } from "@t3tools/shared/AgentScope";
@@ -1285,14 +1285,36 @@ const CLAUDE_RESEARCH_FILE_TOOL_DENIAL = {
   },
 } satisfies HookJSONOutput;
 
-// fs.realpath (and Effect's realPath) collapses '..' before following symlinks;
-// native realpath resolves the path that the filesystem read actually opens.
+// Check native traversal as well as lexical resolution for connector arguments.
 const claudeResearchRealPath = (target: string) =>
   Effect.callback<string, NodeJS.ErrnoException>((resume) => {
     NodeFS.realpath.native(target, (error, resolved) => {
       resume(error === null ? Effect.succeed(resolved) : Effect.fail(error));
     });
   });
+
+const claudeResearchPathExists = (target: string) =>
+  Effect.callback<boolean, NodeJS.ErrnoException>((resume) => {
+    NodeFS.lstat(target, (error) => {
+      resume(
+        error === null
+          ? Effect.succeed(true)
+          : error.code === "ENOENT"
+            ? Effect.succeed(false)
+            : Effect.fail(error),
+      );
+    });
+  });
+
+const claudeResearchHasParentSegment = (value: string) => value.split(/[\\/]/).includes("..");
+
+const claudeResearchArgumentStrings = (value: unknown): ReadonlyArray<string> => {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(claudeResearchArgumentStrings);
+  if (value !== null && typeof value === "object")
+    return Object.values(value).flatMap(claudeResearchArgumentStrings);
+  return [];
+};
 
 // Mirrors Claude Code's MCP name normalization: mcp__<server>__<tool>, with
 // characters outside [A-Za-z0-9_-] replaced by "_", and claude.ai connector
@@ -8055,78 +8077,106 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const canUseTool: CanUseTool = (toolName, toolInput, callbackOptions) =>
           runPromise(canUseToolEffect(toolName, toolInput, callbackOptions));
 
+        const researchPathInside = (target: string, root: string) => {
+          const relative = path.relative(root, target);
+          return (
+            relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
+          );
+        };
+
+        const researchExistingAncestor = Effect.fn(function* (target: string) {
+          let ancestor = target;
+          const suffix: string[] = [];
+          while (!(yield* claudeResearchPathExists(ancestor))) {
+            const parent = path.dirname(ancestor);
+            if (parent === ancestor) return yield* claudeResearchRealPath(ancestor);
+            suffix.unshift(path.basename(ancestor));
+            ancestor = parent;
+          }
+          return path.join(yield* claudeResearchRealPath(ancestor), ...suffix);
+        });
+
+        const researchPathsAllowed = Effect.fn(function* (input: {
+          readonly candidates: ReadonlyArray<string>;
+          readonly roots: ReadonlyArray<string>;
+          readonly cwd: string;
+        }) {
+          const home = adapterOptions.environment.HOME ?? (yield* HostProcess.HomeDirectory);
+          const roots = input.roots.map((root) => expandHomePath(root, home));
+          if (roots.length === 0 || roots.some((root) => !path.isAbsolute(root))) return false;
+          const resolvedRoots = yield* Effect.forEach(roots, claudeResearchRealPath);
+          for (const candidate of input.candidates) {
+            if (candidate.startsWith("~") && candidate !== "~" && !/^~[\\/]/.test(candidate))
+              return false;
+            const expanded =
+              candidate === "~"
+                ? home
+                : /^~[\\/]/.test(candidate)
+                  ? `${home}${path.sep}${candidate.slice(2)}`
+                  : candidate;
+            const absolute = path.isAbsolute(expanded)
+              ? expanded
+              : `${input.cwd}${path.sep}${expanded}`;
+            const lexical = path.resolve(absolute);
+            // A configured root can itself be an alias for the repository.
+            if (![...roots, ...resolvedRoots].some((root) => researchPathInside(lexical, root)))
+              return false;
+            for (const target of new Set([absolute, lexical])) {
+              const resolved = yield* researchExistingAncestor(target);
+              if (!resolvedRoots.some((root) => researchPathInside(resolved, root))) return false;
+            }
+          }
+          return true;
+        });
+
         // Fails closed: a hook that rejects or times out would not block the tool.
         const researchPreToolUse: HookCallback = (hookInput) =>
           runPromise(
             Effect.gen(function* () {
               if (hookInput.hook_event_name !== "PreToolUse") return {} satisfies HookJSONOutput;
+              const policy = (yield* Ref.get(activeTurn))?.input.runtimePolicy;
+              const roots = policy?.researchReadRoots;
               if (CLAUDE_READ_ONLY_ALLOWED_TOOLS.some((tool) => tool === hookInput.tool_name)) {
-                return yield* Effect.gen(function* () {
-                  const policy = (yield* Ref.get(activeTurn))?.input.runtimePolicy;
-                  const roots = policy?.researchReadRoots;
-                  if (
-                    policy?.toolAccess !== "research" ||
-                    roots === undefined ||
-                    roots.length === 0
-                  ) {
-                    return CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
-                  }
-                  const rawPath = field(
-                    hookInput.tool_input,
-                    hookInput.tool_name === "Read" ? "file_path" : "path",
-                  );
-                  const target =
-                    rawPath === undefined && hookInput.tool_name !== "Read"
-                      ? hookInput.cwd
-                      : rawPath;
-                  if (typeof target !== "string" || target.length === 0)
-                    return CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
-                  // Absolute Glob patterns replace the search root inside Claude Code.
-                  if (hookInput.tool_name === "Glob") {
-                    const pattern = field(hookInput.tool_input, "pattern");
-                    if (
-                      typeof pattern !== "string" ||
-                      path.isAbsolute(pattern) ||
-                      pattern.split(/[\\/]/).includes("..")
-                    ) {
-                      return CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
-                    }
-                  }
-                  const home =
-                    adapterOptions.environment.HOME ?? (yield* HostProcess.HomeDirectory);
-                  const expand = (value: string) =>
-                    value === "~"
-                      ? home
-                      : value.startsWith("~/") || value.startsWith("~\\")
-                        ? `${home}${path.sep}${value.slice(2)}`
-                        : value;
-                  const expanded = expand(target);
-                  // Preserve parent segments until native realpath follows any preceding symlink.
-                  const absolute = path.isAbsolute(expanded)
-                    ? expanded
-                    : `${hookInput.cwd}${path.sep}${expanded}`;
-                  const resolved = yield* claudeResearchRealPath(absolute);
-                  const expandedRoots = roots.map(expand);
-                  if (expandedRoots.some((root) => !path.isAbsolute(root)))
-                    return CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
-                  const resolvedRoots = yield* Effect.forEach(
-                    expandedRoots,
-                    claudeResearchRealPath,
-                  );
-                  return resolvedRoots.some((root) => {
-                    const relative = path.relative(root, resolved);
-                    return (
-                      relative !== ".." &&
-                      !relative.startsWith(`..${path.sep}`) &&
-                      !path.isAbsolute(relative)
-                    );
-                  })
-                    ? ({} satisfies HookJSONOutput)
-                    : CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
-                }).pipe(
-                  Effect.timeout("10 seconds"),
-                  Effect.catchCause(() => Effect.succeed(CLAUDE_RESEARCH_FILE_TOOL_DENIAL)),
+                if (policy?.toolAccess !== "research" || roots === undefined || roots.length === 0)
+                  return CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
+                const rawPath = field(
+                  hookInput.tool_input,
+                  hookInput.tool_name === "Read" ? "file_path" : "path",
                 );
+                const target =
+                  rawPath === undefined && hookInput.tool_name !== "Read" ? hookInput.cwd : rawPath;
+                if (typeof target !== "string" || target.length === 0)
+                  return CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
+                const candidates = [target];
+                for (const key of ["pattern", "glob"]) {
+                  const pattern = field(hookInput.tool_input, key);
+                  if (
+                    pattern === undefined &&
+                    !(hookInput.tool_name === "Glob" && key === "pattern")
+                  )
+                    continue;
+                  if (
+                    typeof pattern !== "string" ||
+                    path.isAbsolute(pattern) ||
+                    pattern.startsWith("~") ||
+                    claudeResearchHasParentSegment(pattern) ||
+                    /[{}]/.test(pattern)
+                  )
+                    return CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
+                  if (hookInput.tool_name === "Glob" || key === "glob")
+                    candidates.push(path.join(target, pattern));
+                }
+                if (
+                  target.startsWith("~") ||
+                  claudeResearchHasParentSegment(target) ||
+                  /[{}]/.test(target)
+                )
+                  return CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
+                // Preserve the existing fail-closed behavior for absent search paths and files.
+                yield* claudeResearchRealPath(path.resolve(hookInput.cwd, target));
+                return (yield* researchPathsAllowed({ candidates, roots, cwd: hookInput.cwd }))
+                  ? ({} satisfies HookJSONOutput)
+                  : CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
               }
               if (!hookInput.tool_name.startsWith("mcp__")) return {} satisfies HookJSONOutput;
               const serverName = hookInput.mcp_server?.name;
@@ -8135,14 +8185,38 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 serverName === CLAUDE_T3_MCP_SERVER_NAME || mcpServerStatus === undefined
                   ? []
                   : yield* mcpServerStatus.pipe(Effect.timeout("10 seconds"));
-              return claudeResearchMcpToolIsAllowed({
-                toolName: hookInput.tool_name,
-                serverName,
-                servers,
-              })
-                ? ({} satisfies HookJSONOutput)
-                : CLAUDE_RESEARCH_MCP_TOOL_DENIAL;
-            }).pipe(Effect.catchCause(() => Effect.succeed(CLAUDE_RESEARCH_MCP_TOOL_DENIAL))),
+              if (
+                !claudeResearchMcpToolIsAllowed({
+                  toolName: hookInput.tool_name,
+                  serverName,
+                  servers,
+                })
+              )
+                return CLAUDE_RESEARCH_MCP_TOOL_DENIAL;
+              if (serverName !== CLAUDE_T3_MCP_SERVER_NAME && roots !== undefined) {
+                const candidates: string[] = [];
+                for (const value of claudeResearchArgumentStrings(hookInput.tool_input)) {
+                  if (/^file:/i.test(value)) {
+                    candidates.push(yield* path.fromFileUrl(new URL(value)));
+                  } else if (
+                    path.isAbsolute(value) ||
+                    value.startsWith("~") ||
+                    claudeResearchHasParentSegment(value)
+                  ) {
+                    candidates.push(value);
+                  }
+                }
+                if (
+                  candidates.length > 0 &&
+                  !(yield* researchPathsAllowed({ candidates, roots, cwd: hookInput.cwd }))
+                )
+                  return CLAUDE_RESEARCH_FILE_TOOL_DENIAL;
+              }
+              return {} satisfies HookJSONOutput;
+            }).pipe(
+              Effect.timeout("10 seconds"),
+              Effect.catchCause(() => Effect.succeed(CLAUDE_RESEARCH_FILE_TOOL_DENIAL)),
+            ),
           );
 
         const onUserDialog: NonNullable<ClaudeQueryOptions["onUserDialog"]> = (

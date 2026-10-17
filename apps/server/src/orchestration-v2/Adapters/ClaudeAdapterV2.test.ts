@@ -1348,7 +1348,7 @@ describe("ClaudeAdapterV2 research MCP tools", () => {
             yield* decide("mcp__claude_ai_GitHub_Work__delete_branch", "claude.ai GitHub (Work)"),
             "deny",
           );
-          // Read-only tools get no decision, so the Auto reviewer still sees them.
+          // Read-only tools without path arguments remain eligible for Auto review.
           assert.isUndefined(yield* decide("mcp__filesystem__read_file", "filesystem"));
           assert.isUndefined(
             yield* decide("mcp__claude_ai_GitHub_Work__get_issue", "claude.ai GitHub (Work)"),
@@ -1372,7 +1372,9 @@ describe("ClaudeAdapterV2 research MCP tools", () => {
       Effect.gen(function* () {
         const signal = yield* Effect.abortSignal;
         const fs = yield* FileSystem.FileSystem;
-        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-read-scope-" });
+        const root = yield* fs.realPath(
+          yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-read-scope-" }),
+        );
         const repo = NodePath.join(root, "repo");
         const secondRepo = NodePath.join(root, "second-repo");
         const home = NodePath.join(root, "home");
@@ -1409,7 +1411,7 @@ describe("ClaudeAdapterV2 research MCP tools", () => {
         const cases = [
           ["Read", { file_path: `${repo}/canary` }, undefined],
           ["Read", { file_path: "./canary" }, undefined],
-          ["Read", { file_path: "~/../repo/canary" }, undefined],
+          ["Read", { file_path: "~/../repo/canary" }, "deny"],
           ["Read", { file_path: `${secondRepo}/canary` }, undefined],
           ["Read", { file_path: "inside/canary" }, undefined],
           ["Read", { file_path: "~/.ssh/id_ed25519" }, "deny"],
@@ -1461,6 +1463,156 @@ describe("ClaudeAdapterV2 research MCP tools", () => {
             `${tool} ${JSON.stringify(input)}`,
           );
         }
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+    ),
+  );
+
+  it.effect.each([
+    { tool: "Glob", input: { pattern: "{..,src}/secrets/**/*" }, decision: "deny" },
+    { tool: "Glob", input: { path: "jump/../../home/.ssh", pattern: "**/*" }, decision: "deny" },
+    {
+      tool: "Grep",
+      input: { path: "jump/../../home/.ssh/canary", pattern: "fixture" },
+      decision: "deny",
+    },
+    { tool: "Read", input: { file_path: "~/../repo/canary" }, decision: "deny" },
+    { tool: "Glob", input: { pattern: "~/**/*" }, decision: "deny" },
+    {
+      tool: "Grep",
+      input: { glob: "{..,src}/secrets/**/*", pattern: "fixture" },
+      decision: "deny",
+    },
+    { tool: "Grep", input: { glob: "$HOME/**/*", pattern: "fixture" }, decision: "deny" },
+    { tool: "Grep", input: { path: "$HOME/.ssh", pattern: "fixture" }, decision: "deny" },
+    { tool: "mcp__filesystem__read_file", input: { path: "$HOME/.ssh/canary" }, decision: "deny" },
+    { tool: "mcp__filesystem__read_file", input: { path: "$REPO/canary" }, decision: undefined },
+    {
+      tool: "mcp__filesystem__read_file",
+      input: { path: "$REPO/jump/../../home/.ssh/canary" },
+      decision: "deny",
+    },
+    {
+      tool: "mcp__filesystem__read_file",
+      input: { path: "$REPO/parent-escape/../canary" },
+      decision: "deny",
+    },
+    { tool: "Glob", input: { pattern: "outside/**/*" }, decision: "deny" },
+    { tool: "Grep", input: { glob: "outside/**/*", pattern: "fixture" }, decision: "deny" },
+    { tool: "Grep", input: { pattern: "../home" }, decision: "deny" },
+    { tool: "Grep", input: { glob: "~/**/*", pattern: "fixture" }, decision: "deny" },
+    { tool: "Grep", input: { glob: "../home/**/*", pattern: "fixture" }, decision: "deny" },
+    {
+      tool: "mcp__filesystem__read_file",
+      input: { path: "$REPO/deep/../canary" },
+      decision: undefined,
+    },
+    {
+      tool: "mcp__filesystem__read_file",
+      input: { path: "$REPO/missing/canary" },
+      decision: undefined,
+    },
+    {
+      tool: "mcp__filesystem__read_file",
+      input: { path: "$REPO/outside/missing/canary" },
+      decision: "deny",
+    },
+    {
+      tool: "mcp__filesystem__read_file",
+      input: { path: "$REPO/dangling/canary" },
+      decision: "deny",
+    },
+    { tool: "mcp__filesystem__read_file", input: { path: "~somebody/canary" }, decision: "deny" },
+    {
+      tool: "mcp__filesystem__read_file",
+      input: { files: [{ path: "$HOME/.ssh/canary" }] },
+      decision: "deny",
+    },
+    { tool: "mcp__filesystem__read_file", input: { path: "~/.ssh/canary" }, decision: "deny" },
+    {
+      tool: "mcp__filesystem__read_file",
+      input: { path: "file://$HOME/.ssh/canary" },
+      decision: "deny",
+    },
+    {
+      tool: "mcp__filesystem__read_file",
+      input: { path: "file://$REPO/canary" },
+      decision: undefined,
+    },
+    {
+      tool: "mcp__filesystem__read_file",
+      input: { path: "../home/.ssh/canary" },
+      decision: "deny",
+    },
+    {
+      tool: "mcp__filesystem__read_file",
+      input: { path: "$REPO/outside/.ssh/canary" },
+      decision: "deny",
+    },
+  ])("checks scoped research arguments: $tool $input", ({ tool, input, decision }) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-path-regression-" });
+        const repo = NodePath.join(root, "repo");
+        const home = NodePath.join(root, "home");
+        yield* Effect.sync(() => {
+          for (const dir of [
+            `${repo}/deep/a`,
+            `${repo}/home/.ssh`,
+            `${home}/.ssh`,
+            `${home}/sub`,
+          ]) {
+            NodeFS.mkdirSync(dir, { recursive: true });
+            NodeFS.writeFileSync(`${dir}/canary`, "fixture");
+          }
+          NodeFS.writeFileSync(`${repo}/canary`, "fixture");
+          NodeFS.symlinkSync(`${repo}/deep/a`, `${repo}/jump`);
+          NodeFS.symlinkSync(`${home}/sub`, `${repo}/parent-escape`);
+          NodeFS.symlinkSync(home, `${repo}/outside`);
+          NodeFS.symlinkSync(`${home}/missing`, `${repo}/dangling`);
+        });
+        const toolInput: unknown = JSON.parse(
+          JSON.stringify(input).replaceAll("$HOME", home).replaceAll("$REPO", repo),
+        );
+        const options = yield* startResearchTurn({
+          runtimePolicy: { ...runtimePolicy, cwd: repo, researchReadRoots: [repo] },
+          mcpServers: [
+            {
+              name: "filesystem",
+              status: "connected",
+              tools: [{ name: "read_file", annotations: { readOnly: true } }],
+            },
+          ],
+        }).pipe(Effect.provideService(HostProcess.HomeDirectory, home));
+        const output = yield* Effect.promise(() =>
+          options.hooks!.PreToolUse![0]!.hooks[0]!(
+            {
+              hook_event_name: "PreToolUse",
+              session_id: "native-thread-claude-research",
+              transcript_path: "/tmp/transcript.jsonl",
+              cwd: repo,
+              tool_name: tool,
+              tool_input: toolInput,
+              tool_use_id: "path-regression",
+              ...(tool.startsWith("mcp__")
+                ? { mcp_server: { name: "filesystem", source: "user" as const } }
+                : {}),
+            },
+            "path-regression",
+            { signal: new AbortController().signal },
+          ),
+        );
+        assert.equal(
+          "hookSpecificOutput" in output &&
+            output.hookSpecificOutput?.hookEventName === "PreToolUse"
+            ? output.hookSpecificOutput.permissionDecision
+            : undefined,
+          decision,
+        );
       }).pipe(
         Effect.provide(
           Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
