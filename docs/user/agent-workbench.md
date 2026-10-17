@@ -67,7 +67,7 @@ to begin implementation. Read-only planning supports Codex and Claude providers.
 
 The primary repository is where new Threads open. A Ticket can include other
 repositories when the work spans several codebases. Use **Edit Workspace** to
-rename a Workspace or change its repository list; existing Tickets and Threads
+rename a Workspace or add repositories; existing Tickets and Threads
 keep their scope.
 
 <picture>

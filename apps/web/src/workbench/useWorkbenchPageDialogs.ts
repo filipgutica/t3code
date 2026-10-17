@@ -6,6 +6,7 @@ import {
   type WorkbenchEpic,
 } from "@t3tools/contracts";
 import { useRef, useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import { withWorkbenchEnvironmentSearch } from "./workbenchNavigation";
 import type { WorkbenchConversationDraft } from "./workbenchTicketDraft.logic";
@@ -51,6 +52,10 @@ export function useWorkbenchPageDialogs({
   });
   const createEpic = useAtomCommand(workbenchEnvironment.createEpic, { reportFailure: false });
   const updateEpic = useAtomCommand(workbenchEnvironment.updateEpic, { reportFailure: false });
+  const archiveEpic = useAtomCommand(workbenchEnvironment.archiveEpic, { reportFailure: false });
+  const canArchiveEpic = useAtomValue(
+    workbenchEnvironment.archiveEpic.permissionAtom(environmentId),
+  );
   const createTicket = useAtomCommand(workbenchEnvironment.createTicket, { reportFailure: false });
   const navigate = useNavigate();
   const [editWorkspaceOpen, setEditWorkspaceOpen] = useState(false);
@@ -157,6 +162,21 @@ export function useWorkbenchPageDialogs({
     return true;
   };
 
+  const setEpicArchived = async (epic: WorkbenchEpic, archivedAt: string | null) => {
+    if (
+      !canArchiveEpic ||
+      environmentId === null ||
+      !selectedProject ||
+      selectedProject.archivedAt != null
+    )
+      return false;
+    setPendingAction(`archive-epic:${epic.id}`);
+    setError(null);
+    const result = await archiveEpic({ environmentId, input: { id: epic.id, archivedAt } });
+    setPendingAction(null);
+    return !reportWorkbenchCommandFailure(result, setError);
+  };
+
   const submitEpic = async (title: string, markdown: string) => {
     if (environmentId === null || selectedProject === null || selectedProject.archivedAt != null)
       return false;
@@ -261,6 +281,8 @@ export function useWorkbenchPageDialogs({
     saveWorkspace,
     submitTicket,
     saveEpicContent,
+    canArchiveEpic,
+    setEpicArchived,
     submitEpic,
     openTicketDialog,
     conversationEpicId,

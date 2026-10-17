@@ -1,4 +1,5 @@
 import {
+  WorkbenchArchiveEpicInput,
   RunId,
   ProjectId,
   ThreadId,
@@ -16,12 +17,16 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 
 import { WorkbenchNativeAccess } from "./WorkbenchNativeAccess.ts";
 import { ensureWorkbenchSchema } from "./WorkbenchSchema.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
+
+const decodeArchiveEpicInput = Schema.decodeEffect(WorkbenchArchiveEpicInput);
 
 const nativeLayer = (options?: {
   readonly projects?: ReadonlySet<string>;
@@ -628,6 +633,80 @@ describe("Workbench Workspace lifecycle", () => {
     deletedAt: now,
   };
 
+  it.effect(
+    "archives and restores local Epics while preserving children and enforcing admission",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* setup;
+        const child = {
+          id: WorkbenchTicketId.make("epic-child"),
+          projectId: workspaceId,
+          epicId,
+          title: "Child",
+          kind: "story" as const,
+          markdown: "",
+          primaryT3ProjectId: projectId,
+          createdAt: now,
+        };
+        yield* store.createTicket(child);
+        const archived = yield* store.archiveEpic({ id: epicId, archivedAt: now });
+        expect(archived.archivedAt).toBe(now);
+        const blocked = yield* Effect.flip(
+          store.createTicket({ ...child, id: WorkbenchTicketId.make("blocked-child") }),
+        );
+        expect(blocked.code).toBe("epic_archived");
+        const restore = yield* decodeArchiveEpicInput({
+          id: epicId,
+          archivedAt: null,
+        });
+        const restoredAt = "2026-10-10T10:00:00.000Z";
+        yield* TestClock.setTime(Date.parse(restoredAt));
+        const restored = yield* store.archiveEpic(restore);
+        expect(restored).toMatchObject({
+          archivedAt: null,
+          title: "Keep this Epic",
+          markdown: "Planning",
+          createdAt: now,
+        });
+        expect(restored.updatedAt).toBe(restoredAt);
+        expect((yield* store.getSnapshot).epics.find((epic) => epic.id === epicId)).toEqual(
+          restored,
+        );
+        yield* store.createTicket({ ...child, id: WorkbenchTicketId.make("restored-child") });
+        expect(
+          (yield* store.getSnapshot).tickets.find((ticket) => ticket.id === child.id)?.epicId,
+        ).toBe(epicId);
+      }).pipe(Effect.provide(layer())),
+  );
+
+  it.effect("rejects local lifecycle changes for Jira Epics by identity or link", () =>
+    Effect.gen(function* () {
+      const store = yield* setup;
+      const sql = yield* SqlClient.SqlClient;
+      const importedId = WorkbenchEpicId.make("jira:binding:epic:123");
+      yield* store.createEpic({
+        id: importedId,
+        projectId: workspaceId,
+        title: "Imported",
+        markdown: "",
+        createdAt: now,
+      });
+      yield* sql`INSERT INTO workbench_jira_connections (connection_id, cloud_id, credential_id, site_name, site_url, scopes_json, created_at, updated_at)
+        VALUES ('connection', 'cloud', 'credential', 'Jira', 'https://example.atlassian.net', '[]', ${now}, ${now})`;
+      yield* sql`INSERT INTO workbench_jira_bindings (binding_id, workbench_project_id, connection_id, jira_project_id, jira_project_key, jira_project_name, board_id, board_name, sprint_id, sprint_name, default_primary_t3_project_id, default_repository_project_ids_json, status_mappings_json, active, created_at, updated_at)
+        VALUES ('binding', ${workspaceId}, 'connection', '10000', 'PROJ', 'Project', 1, 'Board', 1, 'Sprint', ${projectId}, '[]', '[]', 1, ${now}, ${now})`;
+      yield* sql`INSERT INTO workbench_jira_epic_links (epic_id, binding_id, jira_issue_id, jira_issue_key)
+        VALUES (${epicId}, 'binding', '123', 'PROJ-1')`;
+      for (const id of [epicId, importedId]) {
+        for (const archivedAt of [now, null]) {
+          const error = yield* Effect.flip(store.archiveEpic({ id, archivedAt }));
+          expect(error.code).toBe("jira_managed_epic");
+        }
+      }
+      expect((yield* store.getSnapshot).epics.every((epic) => epic.archivedAt === null)).toBe(true);
+    }).pipe(Effect.provide(layer())),
+  );
+
   it.effect("preserves archived planning and rejects every planning mutation until restored", () =>
     Effect.gen(function* () {
       const store = yield* setup;
@@ -656,6 +735,7 @@ describe("Workbench Workspace lifecycle", () => {
         }),
         store.updateEpic({ id: epicId, title: "Blocked", markdown: "", updatedAt: now }),
         store.archiveEpic({ id: epicId, archivedAt: now }),
+        store.archiveEpic({ id: epicId, archivedAt: null }),
         store.createTicket({
           id: WorkbenchTicketId.make("blocked-ticket"),
           projectId: workspaceId,

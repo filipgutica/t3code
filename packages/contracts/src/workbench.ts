@@ -289,7 +289,7 @@ export type WorkbenchUpdateEpicInput = typeof WorkbenchUpdateEpicInput.Type;
 
 export const WorkbenchArchiveEpicInput = Schema.Struct({
   id: WorkbenchEpicId,
-  archivedAt: IsoDateTime,
+  archivedAt: Schema.NullOr(IsoDateTime),
 });
 export type WorkbenchArchiveEpicInput = typeof WorkbenchArchiveEpicInput.Type;
 
@@ -416,6 +416,7 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "ticket_archived",
   "ticket_summary_generation_failed",
   "jira_managed_ticket",
+  "jira_managed_epic",
   "linked_project_not_found",
   "linked_project_not_repository",
   "primary_project_not_linked",

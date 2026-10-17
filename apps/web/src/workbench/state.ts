@@ -158,6 +158,13 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,
   }),
+  archiveEpic: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:archive-epic",
+    tag: WS_METHODS.workbenchArchiveEpic,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshSnapshot,
+  }),
   jiraBeginAuth: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:jira:begin-auth",
     tag: WS_METHODS.workbenchJiraBeginAuth,

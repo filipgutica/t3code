@@ -817,7 +817,7 @@ function WorkbenchPageEpicDetail(
     closeWorkItem,
   } = selection;
 
-  const { saveEpicContent, openTicketConversation } = dialogs;
+  const { saveEpicContent, openTicketConversation, canArchiveEpic, setEpicArchived } = dialogs;
   const { jiraIssueLinksByTicketId, selectedEpicTickets, jiraBinding, selectedJiraEpicUrl } =
     boardData;
 
@@ -849,7 +849,7 @@ function WorkbenchPageEpicDetail(
         setError(null);
         closeWorkItem();
       }}
-      onSave={saveEpicContent}
+      actions={{ onSave: saveEpicContent, canArchive: canArchiveEpic, onArchive: setEpicArchived }}
       onOpenTicket={(ticket) => {
         setAwaitingTicketId(null);
         setAwaitingEpicId(null);

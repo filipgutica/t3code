@@ -38,6 +38,7 @@ import {
 } from "@t3tools/contracts";
 import { sha256 } from "@noble/hashes/sha2";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -2295,15 +2296,25 @@ const makeWorkbenchStore = Effect.gen(function* () {
         .withTransaction(
           Effect.gen(function* () {
             const current = yield* requireMutableEpic(input.id);
+            const links = yield* sql`
+              SELECT 1 FROM workbench_jira_epic_links WHERE epic_id = ${input.id} LIMIT 1
+            `;
+            if ((input.id.startsWith("jira:") && input.id.includes(":epic:")) || links.length > 0) {
+              return yield* new WorkbenchOperationError({
+                code: "jira_managed_epic",
+                message: "Jira-managed Epics cannot be archived or restored locally.",
+              });
+            }
+            const updatedAt = input.archivedAt ?? DateTime.formatIso(yield* DateTime.now);
             yield* sql`
       UPDATE workbench_epics
-      SET archived_at = ${input.archivedAt}, updated_at = ${input.archivedAt}
+      SET archived_at = ${input.archivedAt}, updated_at = ${updatedAt}
       WHERE epic_id = ${input.id}
     `.pipe(Effect.mapError(persistenceError));
             return WorkbenchEpic.make({
               ...current,
               archivedAt: input.archivedAt,
-              updatedAt: input.archivedAt,
+              updatedAt,
             });
           }),
         )

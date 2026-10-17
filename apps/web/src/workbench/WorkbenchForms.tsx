@@ -216,7 +216,7 @@ export function WorkbenchEpicDetail({
   pending,
   error,
   onBack,
-  onSave,
+  actions,
   onOpenTicket,
   onCreateTicket,
 }: {
@@ -232,8 +232,12 @@ export function WorkbenchEpicDetail({
   readonly jiraOwnershipKnown: boolean;
   readonly pending: boolean;
   readonly error: string | null;
+  readonly actions: {
+    readonly canArchive: boolean;
+    readonly onArchive: (epic: WorkbenchEpic, archivedAt: string | null) => Promise<boolean>;
+    readonly onSave: (epic: WorkbenchEpic, title: string, markdown: string) => Promise<boolean>;
+  };
   readonly onBack: () => void;
-  readonly onSave: (epic: WorkbenchEpic, title: string, markdown: string) => Promise<boolean>;
   readonly onOpenTicket: (ticket: WorkbenchTicket) => void;
   readonly onCreateTicket: () => void;
 }) {
@@ -264,6 +268,8 @@ export function WorkbenchEpicDetail({
         tickets={tickets}
         pending={mutationDisabled}
         onBack={onBack}
+        actions={actions}
+        jiraOwnershipKnown={jiraOwnershipKnown}
         onCreateTicket={onCreateTicket}
         progress={progress}
         blockedCount={blockedCount}
@@ -285,7 +291,7 @@ export function WorkbenchEpicDetail({
                 markdown: markdown,
               }}
               actions={{
-                onSave: onSave,
+                onSave: actions.onSave,
                 setTitle: setTitle,
                 setMarkdown: setMarkdown,
                 setEditing: setEditing,
@@ -1750,6 +1756,7 @@ function WorkbenchThreadMetadataRow({
 
 function WorkbenchThreadOpenButton({
   actions,
+  actionLabel,
   ariaLabel,
   disabled,
   modelLabel,
@@ -1761,6 +1768,7 @@ function WorkbenchThreadOpenButton({
   title,
 }: {
   readonly actions?: ReactNode;
+  readonly actionLabel?: string | undefined;
   readonly ariaLabel: string;
   readonly disabled: boolean;
   readonly modelLabel: string | null;
@@ -1809,7 +1817,9 @@ function WorkbenchThreadOpenButton({
           </span>
         </span>
         <span className="flex shrink-0 items-center text-muted-foreground group-hover:text-foreground">
-          <span className="sr-only">Open Thread</span>
+          <span className={actionLabel === "Restore and open" ? "text-xs" : "sr-only"}>
+            {actionLabel ?? "Open Thread"}
+          </span>
           <ArrowRightIcon className="size-3.5" />
         </span>
       </button>
@@ -1823,12 +1833,14 @@ function WorkbenchThreadOpenButton({
 }
 
 function WorkbenchThreadSettlementButton({
+  archived = false,
   disabled,
   onClick,
   pending,
   settled,
   title,
 }: {
+  readonly archived?: boolean;
   readonly disabled: boolean;
   readonly onClick: () => void;
   readonly pending: boolean;
@@ -1837,26 +1849,34 @@ function WorkbenchThreadSettlementButton({
 }) {
   const actionLabel = settled ? "Un-settle" : "Settle";
   const pendingLabel = settled ? "Un-settling…" : "Settling…";
+  const explanation = archived
+    ? `Restore this archived Thread before ${settled ? "un-settling" : "settling"} it.`
+    : `${actionLabel} Thread`;
   return (
-    <Button
-      aria-busy={pending}
-      aria-label={`${actionLabel} Thread ${title}`}
-      disabled={disabled || pending}
-      onClick={onClick}
-      size="icon-xs"
-      title={`${actionLabel} Thread`}
-      type="button"
-      variant="ghost"
-    >
-      {pending ? (
-        <LoaderCircleIcon className="animate-spin" />
-      ) : settled ? (
-        <RotateCcwIcon />
-      ) : (
-        <CheckIcon />
-      )}
-      <span className="sr-only">{pending ? pendingLabel : actionLabel}</span>
-    </Button>
+    <Tooltip>
+      <TooltipTrigger render={<span tabIndex={archived ? 0 : undefined} />}>
+        <Button
+          aria-busy={pending}
+          aria-label={`${actionLabel} Thread ${title}`}
+          disabled={disabled || pending}
+          onClick={onClick}
+          size="icon-xs"
+          title={explanation}
+          type="button"
+          variant="ghost"
+        >
+          {pending ? (
+            <LoaderCircleIcon className="animate-spin" />
+          ) : settled ? (
+            <RotateCcwIcon />
+          ) : (
+            <CheckIcon />
+          )}
+          <span className="sr-only">{pending ? pendingLabel : actionLabel}</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipPopup>{explanation}</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -3435,6 +3455,7 @@ function WorkbenchTicketPrimaryThread({
       <div className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-2 py-2 hover:bg-muted/45 focus-within:bg-muted/45">
         <WorkbenchThreadOpenButton
           providerKind={threadProviderKind(displayedThread)}
+          actionLabel={thread.actionLabel}
           ariaLabel={`${
             threadActionPending ? thread.pendingActionLabel : thread.actionLabel
           } for ${displayedTitle}`}
@@ -3467,6 +3488,7 @@ function WorkbenchTicketPrimaryThread({
                 </Button>
                 {supportsSettlement ? (
                   <WorkbenchThreadSettlementButton
+                    archived={archivedThread !== undefined}
                     disabled={pending || isArchived || archivedThread !== undefined}
                     onClick={() => void toggleThreadSettlement(displayedThread)}
                     pending={settlementPendingThreadId === displayedThread.id}
@@ -3859,6 +3881,7 @@ function WorkbenchTicketActiveThreadRow({
     >
       <WorkbenchThreadOpenButton
         providerKind={threadProviderKind(displayedActiveThread)}
+        actionLabel={archivedActiveThread ? "Restore and open" : undefined}
         ariaLabel={rowPresentation.ariaLabel}
         disabled={pending || displayedActiveThread === undefined}
         modelLabel={rowPresentation.modelLabel}
@@ -3883,14 +3906,14 @@ function WorkbenchTicketActiveThreadRow({
             />
           ) : threadLookupReady ? (
             <Button
-              aria-label={`Create Thread for ${ticket.title}`}
+              aria-label={`Create replacement Thread for ${ticket.title}`}
               disabled={pending || isArchived}
               onClick={() => onReplaceThread(ticket, activeAssignment.threadId)}
               size="xs"
               type="button"
               variant="ghost"
             >
-              Create Thread
+              Create replacement Thread
             </Button>
           ) : null
         }
@@ -3978,6 +4001,7 @@ function WorkbenchTicketHistoricalThreadRow({
     >
       <WorkbenchThreadOpenButton
         providerKind={threadProviderKind(displayedHistoricalThread)}
+        actionLabel={historicalArchivedThread ? "Restore and open" : undefined}
         ariaLabel={rowPresentation.ariaLabel}
         disabled={pending || !displayedHistoricalThread}
         modelLabel={rowPresentation.modelLabel}
@@ -4038,6 +4062,12 @@ function WorkbenchTicketSettledThreadRow({
   const settledThread = liveThread ?? archivedThreadsById.get(settledAssignment.threadId);
   const executionStatus = liveThread ? getWorkbenchThreadExecutionStatus(liveThread) : null;
   if (!settledThread) return null;
+  const thread = getWorkbenchThreadPresentation(
+    true,
+    true,
+    "Settled",
+    settledThread.archivedAt !== null,
+  );
   return (
     <div
       key={settledAssignment.id}
@@ -4045,12 +4075,13 @@ function WorkbenchTicketSettledThreadRow({
     >
       <WorkbenchThreadOpenButton
         providerKind={threadProviderKind(settledThread)}
-        ariaLabel={`Open Thread ${settledThread.title}`}
+        actionLabel={thread.actionLabel}
+        ariaLabel={`${thread.actionLabel} ${settledThread.title}`}
         disabled={pending}
         modelLabel={getWorkbenchThreadModelLabel(settledThread)}
         recencyLabel={getWorkbenchThreadRecencyLabel(settledThread)}
         onClick={() => onOpenAssignedThread(settledAssignment.threadId)}
-        stateLabel="Settled"
+        stateLabel={thread.stateLabel}
         executionStatus={executionStatus}
         title={settledThread.title}
         actions={
@@ -4068,6 +4099,7 @@ function WorkbenchTicketSettledThreadRow({
             </Button>
             {supportsSettlement ? (
               <WorkbenchThreadSettlementButton
+                archived={settledThread.archivedAt !== null}
                 disabled={pending || isArchived || settledThread.archivedAt !== null}
                 onClick={() => void toggleThreadSettlement(settledThread)}
                 pending={settlementPendingThreadId === settledThread.id}
@@ -4099,6 +4131,8 @@ function WorkbenchEpicHeader({
   jiraUrl,
   pending,
   onBack,
+  actions,
+  jiraOwnershipKnown,
   onCreateTicket,
   progress,
   blockedCount,
@@ -4111,6 +4145,8 @@ function WorkbenchEpicHeader({
   | "tickets"
   | "pending"
   | "onBack"
+  | "actions"
+  | "jiraOwnershipKnown"
   | "onCreateTicket"
 > & { progress: ReturnType<typeof getWorkbenchEpicProgress>; blockedCount: number }) {
   return (
@@ -4160,24 +4196,64 @@ function WorkbenchEpicHeader({
         <Button disabled={pending || epic.archivedAt !== null} onClick={onCreateTicket} size="sm">
           <PlusIcon /> New Ticket
         </Button>
+        <WorkbenchEpicActionsMenu
+          epic={epic}
+          actions={actions}
+          pending={pending}
+          jiraManaged={jiraManaged}
+          jiraOwnershipKnown={jiraOwnershipKnown}
+        />
       </div>
     </header>
   );
 }
 
+function WorkbenchEpicActionsMenu({
+  epic,
+  actions,
+  pending,
+  jiraManaged,
+  jiraOwnershipKnown,
+}: Pick<
+  Parameters<typeof WorkbenchEpicDetail>[0],
+  "epic" | "actions" | "pending" | "jiraManaged" | "jiraOwnershipKnown"
+>) {
+  if (!jiraOwnershipKnown || jiraManaged) return null;
+  const archived = epic.archivedAt !== null;
+  return (
+    <Menu>
+      <MenuTrigger
+        render={<Button aria-label={`Actions for ${epic.title}`} size="icon-sm" variant="ghost" />}
+      >
+        <MoreHorizontalIcon />
+      </MenuTrigger>
+      <MenuPopup align="end">
+        <MenuItem
+          disabled={pending || !actions.canArchive}
+          onClick={() => void actions.onArchive(epic, archived ? null : new Date().toISOString())}
+        >
+          {archived ? <RotateCcwIcon /> : <ArchiveIcon />}
+          {archived ? "Restore Epic" : "Archive Epic"}
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
 type WorkbenchEpicDescriptionProps = Pick<
   Parameters<typeof WorkbenchEpicDetail>[0],
-  "epic" | "jiraManaged" | "pending" | "onSave"
-> & {
-  editing: boolean;
-  startEditing: () => void;
-  cancelEditing: () => void;
-  title: string;
-  setTitle: Dispatch<SetStateAction<string>>;
-  markdown: string;
-  setMarkdown: Dispatch<SetStateAction<string>>;
-  setEditing: Dispatch<SetStateAction<boolean>>;
-};
+  "epic" | "jiraManaged" | "pending"
+> &
+  Pick<Parameters<typeof WorkbenchEpicDetail>[0]["actions"], "onSave"> & {
+    editing: boolean;
+    startEditing: () => void;
+    cancelEditing: () => void;
+    title: string;
+    setTitle: Dispatch<SetStateAction<string>>;
+    markdown: string;
+    setMarkdown: Dispatch<SetStateAction<string>>;
+    setEditing: Dispatch<SetStateAction<boolean>>;
+  };
 function WorkbenchEpicDescription({
   presentation,
   actions,
@@ -4974,11 +5050,13 @@ function getWorkbenchActiveThreadRow({
     : undefined;
   const displayedActiveThread = liveThread ?? archivedActiveThread;
   const activeAgentState = liveThread ? getWorkbenchThreadExecutionStatus(liveThread) : null;
-  const activeThreadState = displayedActiveThread
-    ? "Open"
-    : threadLookupReady
-      ? "No Thread"
-      : "Checking…";
+  const activeThreadState = getWorkbenchThreadPresentation(
+    true,
+    liveThread !== undefined,
+    null,
+    archivedActiveThread !== undefined,
+    threadLookupReady,
+  ).stateLabel;
   const activeThreadModel = getWorkbenchThreadModelLabel(displayedActiveThread);
   const activeThreadRecency = displayedActiveThread
     ? getWorkbenchThreadRecencyLabel(displayedActiveThread)
@@ -5060,6 +5138,7 @@ function WorkbenchActiveThreadActions({
       </Button>
       {supportsSettlement ? (
         <WorkbenchThreadSettlementButton
+          archived={archivedActiveThread !== undefined}
           disabled={pending || isArchived || archivedActiveThread !== undefined}
           onClick={() => void toggleThreadSettlement(displayedActiveThread)}
           pending={settlementPendingThreadId === displayedActiveThread.id}
@@ -5121,6 +5200,7 @@ function WorkbenchHistoricalThreadActions({
       </Button>
       {supportsSettlement ? (
         <WorkbenchThreadSettlementButton
+          archived={historicalArchivedThread !== undefined}
           disabled={pending || isArchived || historicalArchivedThread !== undefined}
           onClick={() => void toggleThreadSettlement(displayedHistoricalThread)}
           pending={settlementPendingThreadId === displayedHistoricalThread.id}
@@ -5589,7 +5669,7 @@ function getWorkbenchActiveThreadRowPresentation({
   | "activeThreadRecency"
 > & { threadLookupReady: boolean }) {
   return {
-    ariaLabel: `${activeThreadState} ${displayedActiveThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…")}`,
+    ariaLabel: `${displayedActiveThread?.archivedAt ? "Restore and open" : "Open Thread"} ${displayedActiveThread?.title ?? (threadLookupReady ? "Thread deleted" : "Checking Thread…")}`,
     modelLabel: activeThreadModel,
     recencyLabel: activeThreadRecency,
     stateLabel: displayedActiveThread?.archivedAt
@@ -5598,7 +5678,8 @@ function getWorkbenchActiveThreadRowPresentation({
         ? null
         : activeThreadState,
     executionStatus: activeAgentState,
-    title: displayedActiveThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…"),
+    title:
+      displayedActiveThread?.title ?? (threadLookupReady ? "Thread deleted" : "Checking Thread…"),
   };
 }
 
@@ -5611,7 +5692,7 @@ function getWorkbenchHistoricalThreadRowPresentation({
   "displayedHistoricalThread" | "historicalAgentState"
 > & { threadLookupReady: boolean }) {
   return {
-    ariaLabel: `${displayedHistoricalThread ? "Open" : "Checking"} ${displayedHistoricalThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…")}`,
+    ariaLabel: `${displayedHistoricalThread?.archivedAt ? "Restore and open" : displayedHistoricalThread ? "Open" : "Checking"} ${displayedHistoricalThread?.title ?? (threadLookupReady ? "Thread deleted" : "Checking Thread…")}`,
     modelLabel: getWorkbenchThreadModelLabel(displayedHistoricalThread),
     recencyLabel: displayedHistoricalThread
       ? getWorkbenchThreadRecencyLabel(displayedHistoricalThread)
@@ -5621,11 +5702,12 @@ function getWorkbenchHistoricalThreadRowPresentation({
         ? "Archived"
         : "Historical"
       : threadLookupReady
-        ? "No Thread"
+        ? "Thread deleted"
         : "Checking…",
     executionStatus: historicalAgentState,
     title:
-      displayedHistoricalThread?.title ?? (threadLookupReady ? "No Thread" : "Checking Thread…"),
+      displayedHistoricalThread?.title ??
+      (threadLookupReady ? "Thread deleted" : "Checking Thread…"),
   };
 }
 

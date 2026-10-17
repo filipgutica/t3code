@@ -454,6 +454,7 @@ function renderWorkbenchBoardSwimlane({
             <span className="text-xs text-muted-foreground tabular-nums">
               {swimlane.tickets.length}
             </span>
+            {swimlane.epic?.archivedAt ? <Badge variant="outline">Archived</Badge> : null}
           </CollapsibleTrigger>
           {swimlane.epic ? (
             <Button

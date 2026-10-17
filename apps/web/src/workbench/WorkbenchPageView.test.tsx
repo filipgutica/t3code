@@ -413,6 +413,8 @@ function Harness({
       saveWorkspace: success,
       submitTicket: success,
       saveEpicContent: success,
+      canArchiveEpic: true,
+      setEpicArchived: success,
       submitEpic: success,
       openTicketDialog: noop,
       conversationEpicId: null,
