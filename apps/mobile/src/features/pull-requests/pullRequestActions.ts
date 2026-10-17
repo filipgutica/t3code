@@ -43,6 +43,7 @@ export const PR_ACTION_LABELS = {
   revert: "Create revert pull request",
   "delete-branch": "Delete branch",
   "approve-workflows": "Approve workflows",
+  "rerun-failed-checks": "Rerun failed checks",
 } as const satisfies Record<PullRequestAction, string>;
 
 export const PR_ACTION_ICONS = {
@@ -57,6 +58,7 @@ export const PR_ACTION_ICONS = {
   revert: "arrow.uturn.backward",
   "delete-branch": "trash",
   "approve-workflows": "checkmark",
+  "rerun-failed-checks": "arrow.clockwise",
 } as const satisfies Record<PullRequestAction, AppSymbolName>;
 
 export const ALL_PR_ACTIONS: readonly PullRequestAction[] = [

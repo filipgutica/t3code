@@ -245,6 +245,8 @@ jobs:
           fi
           test -n "$pr_number"
 
+          # The merge ref can lag PR creation. Check current identity after waiting.
+          merge_sha="$(node scripts/workbench-upstream-sync-merge.ts --wait-for-merge-ref "$pr_number")"
           product_remote_sha="$(git ls-remote --refs origin "refs/heads/$PRODUCT_BRANCH" | awk '{print $1}')"
           test "$product_remote_sha" = "$PRODUCT_SHA"
           gh api "repos/$GITHUB_REPOSITORY/pulls/$pr_number" > "$RUNNER_TEMP/sync-pr.json"
@@ -259,8 +261,6 @@ jobs:
           # GitHub publishes the PR's conflict-checked merge commit at this
           # ref. Use that exact commit so protected-branch rules see a real PR
           # merge, while the normal non-force push rejects a moved base.
-          git fetch --no-tags origin "refs/pull/$pr_number/merge"
-          merge_sha="$(git rev-parse FETCH_HEAD)"
           read -r first_parent second_parent extra <<< "$(git show -s --format='%P' "$merge_sha")"
           test -z "${extra:-}"
           test "$first_parent" = "$PRODUCT_SHA"

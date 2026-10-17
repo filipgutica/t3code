@@ -4,12 +4,16 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { assert, describe, it } from "@effect/vitest";
+import { expect, vi } from "vite-plus/test";
 
 import {
+  fetchPullRequestMergeRef,
   validateVerifiedSyncPullRequest,
   type VerifiedSyncMergeInput,
   type VerifiedSyncPullRequest,
 } from "./workbench-upstream-sync-merge.ts";
+
+vi.mock("node:timers/promises", () => ({ setTimeout: async () => undefined }));
 
 const pullRequest: VerifiedSyncPullRequest = {
   number: 42,
@@ -59,6 +63,82 @@ const assertError = (error: string | undefined, pattern: RegExp) => {
 
 const git = (cwd: string, args: ReadonlyArray<string>) =>
   NodeChildProcess.execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+
+const withMergeRemote = async (
+  test: (fixture: {
+    root: string;
+    repository: string;
+    remote: string;
+    sha: string;
+  }) => Promise<void>,
+) => {
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sync-merge-ref-"));
+  const remote = NodePath.join(root, "remote.git");
+  const repository = NodePath.join(root, "repository");
+  try {
+    git(root, ["init", "--bare", remote]);
+    git(root, ["init", "--initial-branch=main", repository]);
+    git(repository, ["config", "user.name", "Sync Test"]);
+    git(repository, ["config", "user.email", "sync-test@example.invalid"]);
+    NodeFS.writeFileSync(NodePath.join(repository, "file.txt"), "product\n");
+    git(repository, ["add", "file.txt"]);
+    git(repository, ["commit", "-m", "product"]);
+    const sha = git(repository, ["rev-parse", "HEAD"]);
+    git(repository, ["remote", "add", "origin", remote]);
+    git(repository, ["push", "origin", "main"]);
+    await test({ root, repository, remote, sha });
+  } finally {
+    NodeFS.rmSync(root, { recursive: true, force: true });
+  }
+};
+
+describe("fetchPullRequestMergeRef", () => {
+  it("returns the advertised PR merge commit through the workflow CLI", async () => {
+    await withMergeRemote(async ({ repository, remote, sha }) => {
+      git(remote, ["update-ref", "refs/pull/42/merge", sha]);
+      assert.equal(
+        NodeChildProcess.execFileSync(
+          process.execPath,
+          [
+            NodePath.join(import.meta.dirname, "workbench-upstream-sync-merge.ts"),
+            "--wait-for-merge-ref",
+            "42",
+          ],
+          { cwd: repository, encoding: "utf8" },
+        ).trim(),
+        sha,
+      );
+      assert.equal(git(repository, ["rev-parse", "FETCH_HEAD"]), sha);
+    });
+  });
+
+  it("waits for the PR merge ref to appear after the first remote advertisement", async () => {
+    await withMergeRemote(async ({ root, repository, remote, sha }) => {
+      const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+      const uploadPack = NodePath.join(root, "publish-merge-ref.sh");
+      NodeFS.writeFileSync(
+        uploadPack,
+        `#!/bin/sh\nset -e\ngit-upload-pack "$@"\ngit --git-dir=${quote(remote)} update-ref refs/pull/42/merge ${quote(sha)}\n`,
+        { mode: 0o755 },
+      );
+      git(repository, ["config", "remote.origin.uploadpack", quote(uploadPack)]);
+      assert.equal(
+        await fetchPullRequestMergeRef({ repositoryDir: repository, pullRequestNumber: 42 }),
+        sha,
+      );
+      assert.equal(git(repository, ["rev-parse", "FETCH_HEAD"]), sha);
+    });
+  });
+
+  it("rejects an unpublished merge ref instead of returning an earlier fetch", async () => {
+    await withMergeRemote(async ({ repository }) => {
+      git(repository, ["fetch", "origin", "main"]);
+      await expect(
+        fetchPullRequestMergeRef({ repositoryDir: repository, pullRequestNumber: 42 }),
+      ).rejects.toThrow(/refs\/pull\/42\/merge/);
+    });
+  });
+});
 
 describe("validateVerifiedSyncPullRequest", () => {
   it("accepts the exact open verified sync PR", () => {

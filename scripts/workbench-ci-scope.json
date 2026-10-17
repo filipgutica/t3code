@@ -21,6 +21,24 @@
       "verification": ["unit", "typecheck", "browser", "boundary"]
     },
     {
+      "name": "Retained shared mobile controls",
+      "paths": [
+        "apps/mobile/src/components/ui/SegmentedControl.tsx",
+        "apps/mobile/src/components/ui/SegmentedControl.types.ts",
+        "apps/mobile/src/components/ui/SegmentedControl.ios.tsx",
+        "apps/mobile/modules/t3-native-controls/ios/T3SegmentedControlView.swift",
+        "apps/mobile/modules/t3-native-controls/ios/T3NativeControlsModule.swift"
+      ],
+      "tests": [],
+      "verification": ["typecheck"]
+    },
+    {
+      "name": "Mobile PR action compatibility",
+      "paths": ["apps/mobile/src/features/pull-requests/pullRequestActions.ts"],
+      "tests": ["apps/mobile/src/features/pull-requests/pullRequestActions.test.ts"],
+      "verification": ["unit", "typecheck"]
+    },
+    {
       "name": "Native execution and server integration",
       "paths": [
         "apps/server/src/assets/AssetAccess.ts",
@@ -414,6 +432,7 @@
     "packages/workbench": "@t3tools/workbench",
     "apps/server": "t3",
     "apps/web": "@t3tools/web",
+    "apps/mobile": "@t3tools/mobile",
     "apps/desktop": "@t3tools/desktop",
     "packages/contracts": "@t3tools/contracts",
     "packages/shared": "@t3tools/shared",

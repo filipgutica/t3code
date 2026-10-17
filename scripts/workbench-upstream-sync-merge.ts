@@ -1,5 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeTimersPromises from "node:timers/promises";
 
 export interface VerifiedSyncPullRequest {
   readonly number: number;
@@ -56,6 +58,40 @@ export function validateVerifiedSyncPullRequest({
   if (pullRequest.head.sha !== verifiedSha) {
     return `sync branch changed from ${verifiedSha} to ${pullRequest.head.sha}`;
   }
+}
+
+export async function fetchPullRequestMergeRef({
+  repositoryDir,
+  pullRequestNumber,
+}: {
+  readonly repositoryDir: string;
+  readonly pullRequestNumber: number;
+}): Promise<string> {
+  const mergeRef = `refs/pull/${pullRequestNumber}/merge`;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const advertised = NodeChildProcess.spawnSync(
+      "git",
+      ["ls-remote", "--exit-code", "origin", mergeRef],
+      { cwd: repositoryDir, encoding: "utf8" },
+    );
+    if (advertised.error) throw advertised.error;
+    if (advertised.status === 2) {
+      if (attempt < 11) await NodeTimersPromises.setTimeout(5_000);
+      continue;
+    }
+    if (advertised.status !== 0) {
+      throw new Error(`Unable to inspect merge ref ${mergeRef}: ${advertised.stderr.trim()}`);
+    }
+    NodeChildProcess.execFileSync("git", ["fetch", "--no-tags", "origin", mergeRef], {
+      cwd: repositoryDir,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    return NodeChildProcess.execFileSync("git", ["rev-parse", "FETCH_HEAD"], {
+      cwd: repositoryDir,
+      encoding: "utf8",
+    }).trim();
+  }
+  throw new Error(`PR merge ref ${mergeRef} was not published after 12 attempts`);
 }
 
 function parseOptions(argv: ReadonlyArray<string>): Record<string, string> {
@@ -134,8 +170,20 @@ function parsePullRequest(value: unknown): VerifiedSyncPullRequest {
   };
 }
 
-function main() {
+async function main() {
   const options = parseOptions(process.argv.slice(2));
+  if (options["wait-for-merge-ref"] !== undefined) {
+    const pullRequestNumber = numberField(
+      Number(options["wait-for-merge-ref"]),
+      "pull request number",
+    );
+    const mergeSha = await fetchPullRequestMergeRef({
+      repositoryDir: process.cwd(),
+      pullRequestNumber,
+    });
+    process.stdout.write(`${mergeSha}\n`);
+    return;
+  }
   const required = [
     "pr-json",
     "repository",
@@ -168,7 +216,7 @@ function main() {
 
 if (import.meta.main) {
   try {
-    main();
+    await main();
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
