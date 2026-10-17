@@ -1,5 +1,6 @@
 import {
   WorkbenchJiraOperationError,
+  WorkbenchTicketId,
   WorkbenchTicketKind,
   type WorkbenchJiraBinding,
   type WorkbenchJiraResolveCreationInput,
@@ -7,6 +8,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as WorkbenchStore from "../WorkbenchStore.ts";
 import { JiraApi } from "./JiraApi.ts";
 
 interface UncertainCreationRow {
@@ -42,6 +44,39 @@ export const resolveUncertainCreation = (
     const table =
       input.kind === "ticket" ? "workbench_jira_ticket_creations" : "workbench_jira_epic_creations";
     const idColumn = input.kind === "ticket" ? "ticket_id" : "epic_id";
+    const clearUncertainCreation = Effect.gen(function* () {
+      const deleted = yield* sql`
+        DELETE FROM ${sql(table)}
+        WHERE ${sql(idColumn)} = ${input.id} AND binding_id = ${binding.id} AND state = 'uncertain' AND jira_issue_id IS NULL
+        RETURNING ${sql(idColumn)}
+      `;
+      if (deleted.length !== 1)
+        return yield* invalid(
+          "The Jira creation changed. Refresh the Workspace before resolving it.",
+        );
+      if (input.kind !== "ticket") return;
+      const drafts = yield* sql<{ readonly revision: number }>`
+        SELECT revision FROM workbench_ticket_drafts WHERE draft_id = ${input.id} AND phase = 'promoting'
+      `;
+      if (drafts[0]) {
+        const workbench = yield* WorkbenchStore.WorkbenchStore;
+        // A failed restoration must retain the ledger so retry cannot POST a duplicate.
+        yield* workbench
+          .restoreUncreatedTicketDraft({
+            id: WorkbenchTicketId.make(input.id),
+            expectedRevision: drafts[0].revision,
+          })
+          .pipe(
+            Effect.mapError(
+              (error) =>
+                new WorkbenchJiraOperationError({
+                  code: "persistence_failed",
+                  message: error.message,
+                }),
+            ),
+          );
+      }
+    });
     const rows = yield* sql<UncertainCreationRow>`
     SELECT request_fingerprint AS "requestFingerprint",
            ${input.kind === "ticket" ? sql("kind") : sql.literal("'epic'")} AS kind,
@@ -55,7 +90,7 @@ export const resolveUncertainCreation = (
       );
     }
     if (input.outcome.type === "not_created") {
-      yield* sql`DELETE FROM ${sql(table)} WHERE ${sql(idColumn)} = ${input.id} AND binding_id = ${binding.id} AND state = 'uncertain' AND jira_issue_id IS NULL`;
+      yield* sql.withTransaction(clearUncertainCreation);
       return { row, issue: null, linkedId: null };
     }
     const savedBinding = yield* decodeSavedBinding(row.requestFingerprint).pipe(
@@ -127,6 +162,12 @@ export const resolveUncertainCreation = (
       WHERE b.connection_id = ${binding.connectionId} AND l.jira_issue_id = ${issue.id}
         AND NOT (${input.kind === "epic" && existingId !== null ? 1 : 0} AND l.binding_id = ${binding.id} AND l.epic_id = ${existingId})
     ) OR EXISTS (
+      SELECT 1 FROM workbench_epics e JOIN workbench_jira_bindings b
+        ON e.workbench_project_id = b.workbench_project_id
+        AND e.epic_id = 'jira:' || b.binding_id || ':epic:' || ${issue.id}
+      WHERE b.connection_id = ${binding.connectionId}
+        AND NOT (${input.kind === "epic" && existingId !== null ? 1 : 0} AND b.binding_id = ${binding.id} AND e.epic_id = ${existingId})
+    ) OR EXISTS (
       SELECT 1 FROM workbench_jira_ticket_creations c JOIN workbench_jira_bindings b ON b.binding_id = c.binding_id
       WHERE b.connection_id = ${binding.connectionId} AND c.jira_issue_id = ${issue.id}
     ) OR EXISTS (
@@ -139,15 +180,7 @@ export const resolveUncertainCreation = (
             "This Jira issue is already linked to another saved creation or Workbench item.",
           );
         if (existingId !== null) {
-          const deleted = yield* sql`
-            DELETE FROM ${sql(table)}
-            WHERE ${sql(idColumn)} = ${input.id} AND binding_id = ${binding.id} AND state = 'uncertain' AND jira_issue_id IS NULL
-            RETURNING ${sql(idColumn)}
-          `;
-          if (deleted.length !== 1)
-            return yield* invalid(
-              "The Jira creation changed. Refresh the Workspace before resolving it.",
-            );
+          yield* clearUncertainCreation;
           return existingId;
         }
         const updated = yield* sql`

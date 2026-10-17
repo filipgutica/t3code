@@ -1142,6 +1142,7 @@ export const make = Effect.gen(function* () {
         const { row, issue, linkedId } = yield* resolveUncertainCreation(input, binding).pipe(
           Effect.provideService(JiraApi, api),
           Effect.provideService(SqlClient.SqlClient, sql),
+          Effect.provideService(WorkbenchStore, workbench),
         );
         if (issue === null) return { jiraIssueKey: null };
         if (linkedId !== null)

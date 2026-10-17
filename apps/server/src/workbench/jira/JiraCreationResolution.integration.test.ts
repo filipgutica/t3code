@@ -80,6 +80,7 @@ const harness = (
     typeId?: string;
     missing?: boolean;
     localTicket?: boolean;
+    localEpic?: "canonical" | "explicit link";
     epic?: WorkbenchJiraIssueSnapshot["epic"];
   },
 ) =>
@@ -182,6 +183,23 @@ const harness = (
       Effect.provideService(JiraSync.JiraSyncService, sync),
       Effect.provideService(JiraWriter.JiraTicketWriteService, writer),
     );
+    const localEpicId =
+      options?.localEpic === undefined
+        ? undefined
+        : WorkbenchEpicId.make(
+            options.localEpic === "canonical" ? `jira:${binding.id}:epic:300` : "mapped-epic",
+          );
+    if (localEpicId !== undefined) {
+      yield* store.createEpic({
+        id: localEpicId,
+        projectId: workspaceId,
+        title: "Mapped Epic",
+        markdown: "",
+        createdAt: at,
+      });
+      if (options?.localEpic === "explicit link")
+        yield* sql`INSERT INTO workbench_jira_epic_links (binding_id, jira_issue_id, jira_issue_key, epic_id) VALUES (${binding.id}, '300', 'WB-30', ${localEpicId})`;
+    }
     const createInput = {
       id: ticketId,
       projectId: workspaceId,
@@ -191,6 +209,7 @@ const harness = (
       primaryT3ProjectId: nativeId,
       repositoryProjectIds: [nativeId],
       createdAt: at,
+      ...(localEpicId === undefined ? {} : { epicId: localEpicId }),
     };
     if (kind === "ticket") {
       if (options?.localTicket) yield* service.createTicket({ ...createInput, localOnly: true });
@@ -250,6 +269,201 @@ const harness = (
   });
 
 describe("uncertain Jira creation recovery", () => {
+  it.effect("an archived original must be restored before recovery can link it", () =>
+    Effect.gen(function* () {
+      const h = yield* harness("ticket", { localTicket: true });
+      const archived = yield* h.store.archiveTicket({
+        ticketId,
+        expectedRevision: 0,
+        archivedAt: at,
+        updatedAt: at,
+      });
+      expect(
+        yield* h.service
+          .resolveCreation({ ...h.input, outcome: { type: "created", issueKey: "WB-20" } })
+          .pipe(Effect.flip),
+      ).toMatchObject({ code: "invalid_binding", message: expect.stringContaining("Restore") });
+      expect(yield* h.repository.listIssueLinks(binding.id)).toEqual([]);
+      expect(h.sprintMoves).toEqual([]);
+      expect((yield* h.store.getSnapshot).tickets.find((ticket) => ticket.id === ticketId)).toEqual(
+        archived,
+      );
+      yield* h.store.archiveTicket({
+        ticketId,
+        expectedRevision: archived.revision,
+        archivedAt: null,
+        updatedAt: at,
+      });
+      yield* h.service.createTicket({
+        ...h.createInput,
+        existingLocalTicketRevision: archived.revision + 1,
+      });
+      expect((yield* h.repository.listIssueLinks(binding.id))[0]?.ticketId).toBe(ticketId);
+      expect(h.creates()).toBe(1);
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+  it.effect.each(["canonical", "explicit link"] as const)(
+    "recovery preserves a newer local %s Epic selection",
+    (identity) =>
+      Effect.gen(function* () {
+        const h = yield* harness("ticket", { localTicket: true });
+        const newerEpicId = WorkbenchEpicId.make(
+          identity === "canonical" ? `jira:${binding.id}:epic:300` : "newer-epic",
+        );
+        yield* h.store.createEpic({
+          id: newerEpicId,
+          projectId: workspaceId,
+          title: "Newer Epic",
+          markdown: "",
+          createdAt: at,
+        });
+        if (identity === "explicit link")
+          yield* h.sql`INSERT INTO workbench_jira_epic_links (binding_id, jira_issue_id, jira_issue_key, epic_id) VALUES (${binding.id}, '300', 'WB-30', ${newerEpicId})`;
+        const updated = yield* h.store.updateTicket({
+          id: ticketId,
+          expectedRevision: 0,
+          epicId: newerEpicId,
+          updatedAt: at,
+        });
+        expect(
+          yield* h.service
+            .resolveCreation({ ...h.input, outcome: { type: "created", issueKey: "WB-20" } })
+            .pipe(Effect.flip),
+        ).toMatchObject({ code: "invalid_binding" });
+        expect(
+          (yield* h.store.getSnapshot).tickets.find((ticket) => ticket.id === ticketId),
+        ).toEqual(updated);
+        expect(yield* h.repository.listIssueLinks(binding.id)).toEqual([]);
+        expect(h.sprintMoves).toEqual([]);
+        expect(yield* h.rows()).toEqual([{ state: "created", jiraIssueId: "200" }]);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+  it.effect.each(["canonical", "explicit link"] as const)(
+    "removing the original %s Epic preserves the newer local choice",
+    (identity) =>
+      Effect.gen(function* () {
+        const h = yield* harness("ticket", {
+          localTicket: true,
+          localEpic: identity,
+          epic: { id: "300", key: "WB-30", summary: "Mapped Epic", description: "" },
+        });
+        const updated = yield* h.store.updateTicket({
+          id: ticketId,
+          expectedRevision: 0,
+          epicId: null,
+          updatedAt: at,
+        });
+        expect(
+          yield* h.service
+            .resolveCreation({ ...h.input, outcome: { type: "created", issueKey: "WB-20" } })
+            .pipe(Effect.flip),
+        ).toMatchObject({ code: "invalid_binding" });
+        expect(
+          (yield* h.store.getSnapshot).tickets.find((ticket) => ticket.id === ticketId),
+        ).toEqual(updated);
+        expect(h.sprintMoves).toEqual([]);
+        expect(yield* h.repository.listIssueLinks(binding.id)).toEqual([]);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+  it.effect.each(["canonical", "explicit link"] as const)(
+    "an unchanged %s Epic does not block recovery",
+    (identity) =>
+      Effect.gen(function* () {
+        const h = yield* harness("ticket", {
+          localTicket: true,
+          localEpic: identity,
+          epic: { id: "300", key: "WB-30", summary: "Mapped Epic", description: "" },
+        });
+        const before = (yield* h.store.getSnapshot).tickets.find(
+          (ticket) => ticket.id === ticketId,
+        )!;
+        yield* h.service.resolveCreation({
+          ...h.input,
+          outcome: { type: "created", issueKey: "WB-20" },
+        });
+        expect(
+          (yield* h.store.getSnapshot).tickets.find((ticket) => ticket.id === ticketId)?.epicId,
+        ).toBe(before.epicId);
+        expect((yield* h.repository.listIssueLinks(binding.id))[0]?.ticketId).toBe(ticketId);
+        expect(h.creates()).toBe(1);
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+  it.effect.each(["not_created", "created"] as const)(
+    "%s: clearing uncertainty and restoring a draft commit together",
+    (outcome) =>
+      Effect.gen(function* () {
+        const h = yield* harness("ticket");
+        const draft = yield* h.store.beginTicketDraft({
+          id: ticketId,
+          projectId: workspaceId,
+          threadId: ThreadId.make("atomic-draft-thread"),
+          modelSelection: ModelSelection.make({
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-6.1-sol",
+          }),
+        });
+        yield* h.store.transitionTicketDraft({
+          id: ticketId,
+          expectedRevision: draft.revision,
+          from: ["creating"],
+          phase: "promoting",
+        });
+        if (outcome === "created") yield* h.sync.syncBinding({ bindingId: binding.id });
+        const before = yield* h.store.getTicketDraft(ticketId);
+        yield* h.sql`CREATE TRIGGER fail_draft_restore BEFORE UPDATE OF phase ON workbench_ticket_drafts
+          WHEN OLD.phase = 'promoting' AND NEW.phase = 'draft'
+          BEGIN SELECT RAISE(ABORT, 'injected draft restoration failure'); END`;
+        const input = {
+          ...h.input,
+          outcome:
+            outcome === "created"
+              ? { type: "created" as const, issueKey: "WB-20" }
+              : { type: "not_created" as const },
+        };
+        expect(yield* h.service.resolveCreation(input).pipe(Effect.flip)).toMatchObject({
+          code: "persistence_failed",
+        });
+        expect(yield* h.rows()).toEqual([{ state: "uncertain", jiraIssueId: null }]);
+        expect(yield* h.store.getTicketDraft(ticketId)).toEqual(before);
+        yield* h.service.createTicket(h.createInput).pipe(Effect.flip);
+        expect(h.creates()).toBe(1);
+        yield* h.sql`DROP TRIGGER fail_draft_restore`;
+        yield* h.service.resolveCreation(input);
+        expect(yield* h.rows()).toEqual([]);
+        expect((yield* h.store.getTicketDraft(ticketId)).phase).toBe("draft");
+      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
+  it.effect("an Epic imported by sync in another binding cannot be claimed again", () =>
+    Effect.gen(function* () {
+      const h = yield* harness("epic", {
+        epic: { id: "200", key: "WB-20", summary: "Epic", description: "Description" },
+      });
+      const otherWorkspaceId = WorkbenchProjectId.make("other-workspace");
+      const otherBindingId = WorkbenchJiraBindingId.make("other-binding");
+      yield* h.store.createProject({
+        id: otherWorkspaceId,
+        title: "Other",
+        linkedProjectIds: [nativeId],
+        createdAt: at,
+      });
+      yield* h.repository.upsertBinding({
+        ...binding,
+        id: otherBindingId,
+        projectId: otherWorkspaceId,
+      });
+      yield* h.sync.syncBinding({ bindingId: otherBindingId });
+      const before = yield* h.store.getSnapshot;
+      expect(before.epics.some((epic) => epic.id === `jira:${otherBindingId}:epic:200`)).toBe(true);
+      expect(yield* h.repository.listEpicLinks!(otherBindingId)).toEqual([]);
+      expect(
+        yield* h.service
+          .resolveCreation({ ...h.input, outcome: { type: "created", issueKey: "WB-20" } })
+          .pipe(Effect.flip),
+      ).toMatchObject({ code: "invalid_binding" });
+      expect(yield* h.rows()).toEqual([{ state: "uncertain", jiraIssueId: null }]);
+      expect(yield* h.store.getSnapshot).toEqual(before);
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  );
   it.effect("not-created restores a promoting draft to editing", () =>
     Effect.gen(function* () {
       const h = yield* harness("ticket");

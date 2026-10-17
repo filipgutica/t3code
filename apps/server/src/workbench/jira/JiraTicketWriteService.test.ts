@@ -563,6 +563,7 @@ describe("JiraTicketWriteService", () => {
           CREATE TABLE workbench_tickets (
             ticket_id TEXT PRIMARY KEY,
             revision INTEGER NOT NULL,
+            archived_at TEXT,
             deleted_at TEXT
           )
         `;

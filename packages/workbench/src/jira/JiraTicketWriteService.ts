@@ -366,12 +366,21 @@ export const make = Effect.gen(function* () {
   const ensureExistingLocalTicketRevision = (input: WorkbenchCreateTicketInput) =>
     Effect.gen(function* () {
       if (input.existingLocalTicketRevision === undefined) return;
-      const rows = yield* sql<{ readonly revision: number; readonly deletedAt: string | null }>`
-        SELECT revision, deleted_at AS "deletedAt"
+      const rows = yield* sql<{
+        readonly revision: number;
+        readonly deletedAt: string | null;
+        readonly archivedAt: string | null;
+      }>`
+        SELECT revision, deleted_at AS "deletedAt", archived_at AS "archivedAt"
         FROM workbench_tickets
         WHERE ticket_id = ${input.id}
         LIMIT 1
       `;
+      if (rows[0]?.archivedAt != null)
+        return yield* operationError(
+          "invalid_binding",
+          "Restore the local Ticket before publishing it to Jira.",
+        );
       if (rows[0]?.revision !== input.existingLocalTicketRevision || rows[0]?.deletedAt !== null) {
         return yield* operationError(
           "invalid_binding",
@@ -843,23 +852,27 @@ export const make = Effect.gen(function* () {
       );
     });
 
+  const getEpicIssueId = Effect.fnUntraced(function* (
+    epicId: string,
+    bindingId: WorkbenchJiraBinding["id"],
+  ) {
+    const canonicalPrefix = `jira:${bindingId}:epic:`;
+    if (epicId.startsWith(canonicalPrefix)) return epicId.slice(canonicalPrefix.length);
+    const links = yield* sql<{ readonly jiraIssueId: string }>`
+      SELECT jira_issue_id AS "jiraIssueId" FROM workbench_jira_epic_links
+      WHERE binding_id = ${bindingId} AND epic_id = ${epicId}
+    `;
+    return links[0]?.jiraIssueId;
+  });
+
   const resolveCreation: JiraTicketWriteServiceShape["resolveCreation"] = (input) =>
     Effect.gen(function* () {
       const { row, issue, linkedId } = yield* resolveUncertainCreation(input, input.binding).pipe(
         Effect.provideService(JiraApi, api),
         Effect.provideService(SqlClient.SqlClient, sql),
+        Effect.provideService(WorkbenchStore.WorkbenchStore, workbench),
       );
       if (issue === null || linkedId !== null) {
-        const drafts = yield* sql<{
-          readonly revision: number;
-        }>`SELECT revision FROM workbench_ticket_drafts WHERE draft_id = ${input.id} AND phase = 'promoting'`;
-        if (drafts[0])
-          yield* workbench
-            .restoreUncreatedTicketDraft({
-              id: WorkbenchCreateTicketInput.fields.id.make(input.id),
-              expectedRevision: drafts[0].revision,
-            })
-            .pipe(Effect.mapError((error) => operationError("persistence_failed", error.message)));
         return issue !== null && linkedId !== null
           ? { jiraIssueKey: issue.key, alreadyLinkedTicketId: WorkbenchTicketId.make(linkedId) }
           : { jiraIssueKey: null };
@@ -872,11 +885,19 @@ export const make = Effect.gen(function* () {
       const local = (yield* workbench.getSnapshot.pipe(
         Effect.mapError((error) => operationError("persistence_failed", error.message)),
       )).tickets.find((ticket) => ticket.id === input.id);
+      if (local?.archivedAt != null)
+        return yield* operationError(
+          "invalid_binding",
+          "Restore the local Ticket before resuming this saved Jira creation.",
+        );
+      const localEpicIssueId =
+        local?.epicId == null ? null : yield* getEpicIssueId(local.epicId, input.binding.id);
       if (
         local &&
         (local.title !== saved.title ||
           local.markdown !== saved.markdown ||
           local.kind !== saved.kind ||
+          localEpicIssueId !== saved.epicId ||
           local.primaryT3ProjectId !== saved.primaryT3ProjectId ||
           local.repositoryProjectIds.length !== saved.repositoryProjectIds.length ||
           local.repositoryProjectIds.some((id, index) => id !== saved.repositoryProjectIds[index]))
