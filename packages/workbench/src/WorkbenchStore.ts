@@ -69,6 +69,17 @@ const WorkbenchProjectLinkRow = Schema.Struct({
   position: Schema.Number,
 });
 const WorkbenchEpicRow = WorkbenchEpic;
+// Epic versions must advance even within one clock tick or after clock skew.
+const advanceEpicUpdatedAt = (previousUpdatedAt: string, updatedAt: string) =>
+  DateTime.formatIso(
+    DateTime.makeUnsafe(
+      Math.max(
+        DateTime.toEpochMillis(DateTime.makeUnsafe(updatedAt)),
+        DateTime.toEpochMillis(DateTime.makeUnsafe(previousUpdatedAt)) + 1,
+      ),
+    ),
+  );
+
 const WorkbenchTicketRepositoryRow = Schema.Struct({
   ticketId: WorkbenchTicketId,
   repositoryProjectId: ProjectId,
@@ -2255,7 +2266,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
       sql
         .withTransaction(
           Effect.gen(function* () {
-            yield* requireMutableEpic(input.id);
+            const current = yield* requireMutableEpic(input.id);
+            const updatedAt = advanceEpicUpdatedAt(current.updatedAt, input.updatedAt);
             yield* sql`
       UPDATE workbench_epics
       SET
@@ -2279,7 +2291,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           ELSE ${input.title}
         END,
         markdown = ${input.markdown},
-        updated_at = ${input.updatedAt}
+        updated_at = ${updatedAt}
       WHERE epic_id = ${input.id}
     `.pipe(Effect.mapError(persistenceError));
             const updated = yield* findEpic({ epicId: input.id }).pipe(
@@ -2315,14 +2327,9 @@ const makeWorkbenchStore = Effect.gen(function* () {
                 message: "Jira-managed Epics cannot be archived or restored locally.",
               });
             }
-            // Lifecycle versions must advance even within one clock tick or after clock skew.
-            const updatedAt = DateTime.formatIso(
-              DateTime.makeUnsafe(
-                Math.max(
-                  DateTime.toEpochMillis(yield* DateTime.now),
-                  DateTime.toEpochMillis(DateTime.makeUnsafe(current.updatedAt)) + 1,
-                ),
-              ),
+            const updatedAt = advanceEpicUpdatedAt(
+              current.updatedAt,
+              DateTime.formatIso(yield* DateTime.now),
             );
             yield* sql`
       UPDATE workbench_epics

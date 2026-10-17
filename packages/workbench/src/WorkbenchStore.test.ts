@@ -640,15 +640,17 @@ describe("Workbench Workspace lifecycle", () => {
     }).pipe(Effect.provide(layer())),
   );
 
-  it.effect("rejects a replayed restore after a newer archive without reopening admission", () =>
+  it.effect("rejects a replayed restore after a newer archive and clock-skewed content save", () =>
     Effect.gen(function* () {
       const store = yield* setup;
+      yield* TestClock.setTime(Date.parse("2026-10-09T12:00:01.000Z"));
       const archived = yield* store.archiveEpic({ id: epicId, archivedAt: now });
       const restore = yield* decodeArchiveEpicInput({
         id: epicId,
         archivedAt: null,
         expectedUpdatedAt: archived.updatedAt,
       });
+      yield* TestClock.setTime(Date.parse("2026-10-09T12:00:03.000Z"));
       const restored = yield* store.archiveEpic(restore);
       const rearchived = yield* store.archiveEpic(
         yield* decodeArchiveEpicInput({
@@ -657,13 +659,19 @@ describe("Workbench Workspace lifecycle", () => {
           expectedUpdatedAt: restored.updatedAt,
         }),
       );
+      const saved = yield* store.updateEpic({
+        id: epicId,
+        title: "Saved after rearchive",
+        markdown: "Content from a client whose clock is behind",
+        updatedAt: archived.updatedAt,
+      });
       const error = yield* Effect.flip(store.archiveEpic(restore));
       expect(error.code).toBe("epic_changed");
+      expect(Date.parse(saved.updatedAt)).toBeGreaterThan(Date.parse(rearchived.updatedAt));
+      expect(saved.archivedAt).toBe(rearchived.archivedAt);
       expect(restored.updatedAt).not.toBe(archived.updatedAt);
       expect(rearchived.updatedAt).not.toBe(archived.updatedAt);
-      expect((yield* store.getSnapshot).epics.find((epic) => epic.id === epicId)).toEqual(
-        rearchived,
-      );
+      expect((yield* store.getSnapshot).epics.find((epic) => epic.id === epicId)).toEqual(saved);
       const admission = yield* Effect.flip(
         store.createTicket({
           id: WorkbenchTicketId.make("stale-restore-child"),
