@@ -151,6 +151,8 @@ const snapshot: WorkbenchSnapshot = {
 };
 type HookInput = Parameters<typeof useWorkbenchThreadActions>[0];
 type HarnessInput = {
+  canOperate?: boolean;
+  archivedThread?: boolean;
   snapshot: WorkbenchSnapshot;
   environmentId: EnvironmentId | null;
   existingThreadIds: ReadonlySet<ThreadId>;
@@ -172,6 +174,7 @@ function pageData(input: HarnessInput): HookInput["pageData"] {
     { ...repository, id: otherProjectId, title: "Other Repository" },
   ].map((project) => ({ ...project, environmentId: input.environmentId ?? environmentId }));
   return {
+    canOperate: input.canOperate ?? true,
     snapshot: input.snapshot,
     snapshotProjects: input.snapshot.projects,
     projects,
@@ -205,7 +208,21 @@ function pageData(input: HarnessInput): HookInput["pageData"] {
         makeThreadFixture({ id, projectId, environmentId: input.environmentId ?? environmentId }),
       ]),
     ),
-    archivedThreadsById: new Map(),
+    archivedThreadsById: new Map(
+      input.archivedThread
+        ? [
+            [
+              assignment.threadId,
+              makeThreadFixture({
+                id: assignment.threadId,
+                projectId,
+                environmentId,
+                archivedAt: createdAt,
+              }),
+            ],
+          ]
+        : [],
+    ),
     threadLookupReady: true,
     archivedThreadsError: null,
     refreshArchivedThreads: refresh.archived,
@@ -307,6 +324,21 @@ afterEach(async () => {
 });
 
 describe("linked Thread failure recovery", () => {
+  it("does not restore an archived Thread without operate permission and permits a later grant", async () => {
+    const { router, update } = await mount({ canOperate: false, archivedThread: true });
+    await act(async () => actions.openAssignedThread(assignment.threadId));
+    expect(commands.unarchive).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe("/workbench");
+    expect(pending).toBeNull();
+    await update({ canOperate: true });
+    await act(async () => actions.openAssignedThread(assignment.threadId));
+    expect(commands.unarchive).toHaveBeenCalledWith({
+      environmentId,
+      input: { threadId: assignment.threadId },
+    });
+    expect(router.state.location.pathname).toBe(`/${environmentId}/${assignment.threadId}`);
+  });
+
   it("retains a failed attach for retry, then links and opens the selected native Thread", async () => {
     const { router, update } = await mount({ existingThreadIds: new Set([assignment.threadId]) });
     commands.createAssignment.mockResolvedValueOnce(

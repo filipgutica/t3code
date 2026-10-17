@@ -13,6 +13,8 @@ import { useOptimisticWorkbenchStatus } from "./useOptimisticWorkbenchStatus";
 import { workbenchEnvironment } from "./state";
 
 export function useWorkbenchPageData(environmentId: EnvironmentId | null) {
+  // Workbench mutations share orchestration:operate in workbenchRpcPermissions.
+  const canOperate = useAtomValue(workbenchEnvironment.createTicket.permissionAtom(environmentId));
   const allProjects = useProjects();
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const { providers, keybindings, availableEditors } = workbenchEnvironmentConfig(serverConfig);
@@ -47,6 +49,7 @@ export function useWorkbenchPageData(environmentId: EnvironmentId | null) {
   });
   const threadLookup = useWorkbenchThreadLookup({ environmentId, snapshot });
   return {
+    canOperate,
     projects,
     repositoriesById,
     providers,

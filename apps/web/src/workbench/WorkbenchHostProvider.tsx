@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, type ComponentType, type ReactNode } from "react";
 import { codexAuthHandoffUrl } from "@t3tools/shared/codexAuthHandoff";
 
 import {
@@ -6,7 +6,9 @@ import {
   ThreadPresentationPolicyContext,
   type CommandPaletteContributionsProps,
   type HostIntegrations,
+  type ThreadPresentationPolicy,
 } from "../hostIntegrations";
+import { RenderErrorBoundary } from "../components/RenderErrorBoundary";
 import { WorkbenchComposerPendingReviewComments } from "./WorkbenchComposerPendingReviewComments";
 import { WorkbenchPullRequestPreviewProvider } from "./WorkbenchPullRequestPreview";
 import { WorkbenchSidebarSlot } from "./WorkbenchSidebarSlot";
@@ -35,13 +37,23 @@ function WorkbenchCommandPaletteContributions({
   return children(actions);
 }
 
+function containWorkbenchSlot<Props extends object>(Slot: ComponentType<Props>) {
+  return function WorkbenchSlot(props: Props) {
+    return (
+      <RenderErrorBoundary fallback={null}>
+        <Slot {...props} />
+      </RenderErrorBoundary>
+    );
+  };
+}
+
 const WORKBENCH_HOST_INTEGRATIONS: HostIntegrations = {
-  SidebarContent: WorkbenchSidebarSlot,
-  SidebarUtility: WorkbenchSidebarUtilityItem,
-  ThreadRouteContent: WorkbenchThreadPreparationGate,
-  ThreadBreadcrumb: WorkbenchThreadBreadcrumb,
-  PendingReviewAttachments: WorkbenchComposerPendingReviewComments,
-  CommandPaletteContributions: WorkbenchCommandPaletteContributions,
+  SidebarContent: containWorkbenchSlot(WorkbenchSidebarSlot),
+  SidebarUtility: containWorkbenchSlot(WorkbenchSidebarUtilityItem),
+  ThreadRouteContent: containWorkbenchSlot(WorkbenchThreadPreparationGate),
+  ThreadBreadcrumb: containWorkbenchSlot(WorkbenchThreadBreadcrumb),
+  PendingReviewAttachments: containWorkbenchSlot(WorkbenchComposerPendingReviewComments),
+  CommandPaletteContributions: containWorkbenchSlot(WorkbenchCommandPaletteContributions),
   isReviewCommentReferenceHidden: isWorkbenchTicketReviewComment,
   reviewCommentTitle: resolveWorkbenchReviewCommentTitle,
   ...(import.meta.env.VITE_T3CODE_WORKBENCH_BUILD
@@ -63,6 +75,13 @@ function WorkbenchPreparationRefresh() {
   useWorkbenchTicketPreparationRefresh();
   return null;
 }
+
+// Without a readable preparation index, no Thread can safely be classified as native.
+// Keep the shell usable but hide lists and suppress notifications until a remount.
+const FAILED_PRESENTATION_POLICY: ThreadPresentationPolicy = {
+  isVisible: () => false,
+  canNotify: () => false,
+};
 
 function WorkbenchThreadPresentation({
   children,
@@ -92,11 +111,24 @@ export function WorkbenchHostProvider({
   readonly children: ReactNode;
   readonly refreshPreparations?: boolean;
 }) {
+  const content = (
+    <RenderErrorBoundary fallback={children}>
+      <WorkbenchPullRequestPreviewProvider>{children}</WorkbenchPullRequestPreviewProvider>
+    </RenderErrorBoundary>
+  );
   return (
     <HostIntegrationsContext value={WORKBENCH_HOST_INTEGRATIONS}>
-      <WorkbenchThreadPresentation refreshPreparations={refreshPreparations}>
-        <WorkbenchPullRequestPreviewProvider>{children}</WorkbenchPullRequestPreviewProvider>
-      </WorkbenchThreadPresentation>
+      <RenderErrorBoundary
+        fallback={
+          <ThreadPresentationPolicyContext value={FAILED_PRESENTATION_POLICY}>
+            {content}
+          </ThreadPresentationPolicyContext>
+        }
+      >
+        <WorkbenchThreadPresentation refreshPreparations={refreshPreparations}>
+          {content}
+        </WorkbenchThreadPresentation>
+      </RenderErrorBoundary>
     </HostIntegrationsContext>
   );
 }

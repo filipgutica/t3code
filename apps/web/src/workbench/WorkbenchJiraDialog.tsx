@@ -1495,7 +1495,7 @@ function JiraDialogController({
               Cancel
             </AlertDialogClose>
             <Button
-              disabled={saving}
+              disabled={pending || saving}
               onClick={() => {
                 setDeleteConfirmationOpen(false);
                 void save({ allowDelete: true });

@@ -4,6 +4,7 @@ import type { EnvironmentId, PullRequestRef, ScopedThreadRef, ThreadId } from "@
 import { CheckIcon, MessageSquareIcon } from "lucide-react";
 import { useState } from "react";
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
+import { useVisibleThreads } from "~/hostIntegrations";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 
 import { parseChangeRequestUrl } from "~/lib/openPullRequestLink";
@@ -183,7 +184,7 @@ function ThreadPicker({
   pending: boolean;
   onSelect: (threadId: ThreadId) => void;
 }) {
-  const threads = useThreadShells();
+  const threads = useVisibleThreads(useThreadShells());
   const linking = usePullRequestLinking(environmentId);
   const projects = useProjects();
   const [query, setQuery] = useState("");

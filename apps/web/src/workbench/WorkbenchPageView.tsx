@@ -222,7 +222,8 @@ function WorkbenchBoardHeader(
 
   if (selectedProject === null) return null;
   const readOnly = selectedProject.archivedAt != null;
-  const lifecyclePending = pendingAction !== null || jiraPendingAction !== null;
+  const lifecyclePending =
+    !pageData.canOperate || pendingAction !== null || jiraPendingAction !== null;
   const mutationDisabled = readOnly || lifecyclePending;
   const ticketCountLabel = showJiraImportedOnly
     ? `${boardTickets.length} imported tickets`
@@ -386,7 +387,10 @@ function WorkbenchJiraBoardContext({
 }
 
 function WorkbenchJiraSyncNotice(
-  props: Pick<WorkbenchPageViewProps, "boardData" | "environmentId" | "jiraBindings" | "selection">,
+  props: Pick<
+    WorkbenchPageViewProps,
+    "boardData" | "environmentId" | "jiraBindings" | "pageData" | "selection"
+  >,
 ) {
   const { selection, jiraBindings, boardData, environmentId } = props;
 
@@ -424,7 +428,12 @@ function WorkbenchJiraSyncNotice(
           {activeJiraSyncNotice.state === "error" &&
           jiraBinding?.active &&
           selectedProject?.archivedAt == null ? (
-            <Button onClick={() => void syncJiraBinding(jiraBinding)} size="xs" variant="outline">
+            <Button
+              disabled={!props.pageData.canOperate}
+              onClick={() => void syncJiraBinding(jiraBinding)}
+              size="xs"
+              variant="outline"
+            >
               <RefreshCwIcon /> Retry
             </Button>
           ) : activeJiraSyncNotice.state === "success" ? (
@@ -622,19 +631,27 @@ function getWorkbenchPageTicketJiraProps({
         binding={jiraBinding}
         ownershipKnown={jiraOwnershipKnown}
         jiraFieldsManaged={jiraFieldsManaged}
-        pending={pendingAction !== null || selection.selectedProject?.archivedAt != null}
+        pending={
+          !pageData.canOperate ||
+          pendingAction !== null ||
+          selection.selectedProject?.archivedAt != null
+        }
         editing={pageData.ticketDrafts.get(ticket.id)?.mode === "editing"}
         onPublish={ticketActions.openPublication}
       />
     ),
     jiraRefreshing: jiraPendingAction === "sync",
     jiraRefreshDisabled:
+      !pageData.canOperate ||
       jiraPendingAction !== null ||
       !jiraBinding?.active ||
       selection.selectedProject?.archivedAt != null,
     onRefreshJira: jiraBinding ? () => void syncJiraBinding(jiraBinding) : null,
     lifecycleActionsEnabled:
-      jiraOwnershipKnown && !jiraFieldsManaged && selection.selectedProject?.archivedAt == null,
+      pageData.canOperate &&
+      jiraOwnershipKnown &&
+      !jiraFieldsManaged &&
+      selection.selectedProject?.archivedAt == null,
   };
 }
 
@@ -734,7 +751,8 @@ function WorkbenchPageTicketDetail(
       key={selectedTicket.id}
       environmentId={environmentId}
       workspaceTitle={selectedProject.title}
-      workspaceReadOnly={selectedProject.archivedAt != null}
+      workspaceReadOnly={!pageData.canOperate || selectedProject.archivedAt != null}
+      threadRestoreDisabled={!pageData.canOperate}
       ticket={selectedTicket}
       {...getWorkbenchPageTicketState({ props, ticketId: selectedTicket.id })}
       {...getWorkbenchPageTicketJiraProps({ props, ticket: selectedTicket })}
@@ -828,7 +846,7 @@ function WorkbenchPageEpicDetail(
     <WorkbenchEpicDetail
       key={selectedEpic.id}
       workspaceTitle={selectedProject.title}
-      readOnly={selectedProject.archivedAt != null}
+      readOnly={!pageData.canOperate || selectedProject.archivedAt != null}
       epic={selectedEpic}
       jiraUrl={selectedJiraEpicUrl}
       jiraManaged={
@@ -1031,7 +1049,8 @@ function WorkbenchPageBoard(
         ) : null}
         <WorkbenchTicketBoard
           environmentId={environmentId}
-          readOnly={selectedProject.archivedAt != null}
+          readOnly={!pageData.canOperate || selectedProject.archivedAt != null}
+          threadRestoreDisabled={!pageData.canOperate}
           onJiraTransition={(selection) => {
             void changeJiraTransition(selection);
           }}
@@ -1042,7 +1061,9 @@ function WorkbenchPageBoard(
           {...(jiraBinding && boardData.jiraOwnershipKnown
             ? { onPublishToJira: ticketActions.openPublication }
             : {})}
-          jiraPublishDisabled={!jiraBinding?.active || selectedProject.archivedAt != null}
+          jiraPublishDisabled={
+            !pageData.canOperate || !jiraBinding?.active || selectedProject.archivedAt != null
+          }
           jiraStatusMappings={jiraBinding?.statusMappings ?? []}
           projectId={selectedProject.id}
           drafts={getUnsavedConversationDrafts(snapshot, selectedProject.id)}
@@ -1124,13 +1145,14 @@ function WorkbenchPageWorkspace(
     ticketExists: selectedTicket !== null,
     hasSelectedEpic: selectedEpic !== null,
     // An archived Workspace is read-only, so it never starts a conversation.
-    createTicket: props.createTicket === true && selectedProject?.archivedAt == null,
+    createTicket:
+      props.createTicket === true && pageData.canOperate && selectedProject?.archivedAt == null,
     awaitingTicketId: selection.awaitingTicketId,
   });
 
   const { projectJiraIssueLinks } = boardData;
 
-  const pending = pendingAction !== null;
+  const pending = !pageData.canOperate || pendingAction !== null;
   if (environmentId === null) return null;
   return (
     <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -1197,6 +1219,7 @@ function WorkbenchPageWorkspaceDialogs(
           open={createWorkspace}
           projects={projects}
           pending={pending}
+          disabled={!pageData.canOperate}
           error={error ?? query.error}
           onOpenChange={handleWorkspaceDialogOpenChange}
           onSave={submitProject}
@@ -1209,6 +1232,7 @@ function WorkbenchPageWorkspaceDialogs(
           projects={projects}
           initialWorkspace={selectedProject}
           pending={pending}
+          disabled={!pageData.canOperate}
           error={error ?? query.error}
           onOpenChange={setEditWorkspaceOpen}
           onSave={saveWorkspace}
@@ -1274,7 +1298,7 @@ function WorkbenchPageJiraDialog(
           linkedProjects={linkedT3Projects}
           localTickets={localTicketsForJiraMigration}
           localEpics={localEpicsForJiraMigration}
-          pending={jiraPendingAction !== null || jiraQuery.isPending}
+          pending={!pageData.canOperate || jiraPendingAction !== null || jiraQuery.isPending}
           error={jiraError ?? jiraQuery.error}
           recovery={
             <WorkbenchPageJiraRecovery
@@ -1342,6 +1366,7 @@ function WorkbenchPageThreadDialogs(
           error={error}
           providers={providers}
           pending={pending}
+          disabled={!pageData.canOperate}
           onOpenChange={(open) => {
             if (!open) setStartThreadRequest(null);
           }}
@@ -1361,6 +1386,7 @@ function WorkbenchPageThreadDialogs(
               ),
           )}
           pending={pending}
+          disabled={!pageData.canOperate}
           error={error}
           onClose={() => setAttachThreadTicket(null)}
           onAttach={attachExistingThread}
@@ -1410,6 +1436,7 @@ function WorkbenchPageTicketDialogs(
             }),
           )}
           pending={pending}
+          disabled={!pageData.canOperate}
           error={ticketActions.publicationError}
           onClose={ticketActions.closePublication}
           onPublish={ticketActions.publishTicket}
@@ -1419,6 +1446,7 @@ function WorkbenchPageTicketDialogs(
         <WorkbenchEpicDialog
           open={epicDialogOpen}
           pending={pending}
+          disabled={!pageData.canOperate}
           error={error ?? query.error}
           onOpenChange={handleEpicDialogOpenChange}
           onCreate={submitEpic}
@@ -1440,6 +1468,7 @@ function WorkbenchPageTicketDialogs(
           localOnlySupported={jiraSnapshot?.supportsLocalOnlyTickets === true}
           jiraOwnershipKnown={boardData.jiraOwnershipKnown}
           pending={pending}
+          disabled={!pageData.canOperate}
           error={error ?? query.error}
           onOpenChange={handleTicketDialogOpenChange}
           onCreate={submitTicket}
@@ -1532,7 +1561,7 @@ function WorkbenchPageNoWorkspace(
           </EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
-          <Button onClick={openWorkspaceDialog}>
+          <Button disabled={!props.pageData.canOperate} onClick={openWorkspaceDialog}>
             <PlusIcon /> Create Workspace
           </Button>
         </EmptyContent>

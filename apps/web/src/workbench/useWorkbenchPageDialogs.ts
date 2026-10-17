@@ -7,7 +7,6 @@ import {
   type WorkbenchSnapshot,
 } from "@t3tools/contracts";
 import { useRef, useState } from "react";
-import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
 import { withWorkbenchEnvironmentSearch } from "./workbenchNavigation";
 import type { WorkbenchConversationDraft } from "./workbenchTicketDraft.logic";
@@ -23,6 +22,7 @@ export function useWorkbenchPageDialogs({
   environmentId,
   snapshot,
   projects,
+  canOperate,
   localOnlySupported,
   selection,
   setPendingAction,
@@ -31,6 +31,7 @@ export function useWorkbenchPageDialogs({
   readonly environmentId: EnvironmentId | null;
   readonly snapshot: WorkbenchSnapshot | null;
   readonly projects: ReturnType<typeof useWorkbenchPageData>["projects"];
+  readonly canOperate: boolean;
   readonly localOnlySupported: boolean;
   readonly selection: ReturnType<typeof useWorkbenchPageSelection>;
   readonly setPendingAction: (action: string | null) => void;
@@ -56,9 +57,7 @@ export function useWorkbenchPageDialogs({
   const createEpic = useAtomCommand(workbenchEnvironment.createEpic, { reportFailure: false });
   const updateEpic = useAtomCommand(workbenchEnvironment.updateEpic, { reportFailure: false });
   const archiveEpic = useAtomCommand(workbenchEnvironment.archiveEpic, { reportFailure: false });
-  const canArchiveEpic = useAtomValue(
-    workbenchEnvironment.archiveEpic.permissionAtom(environmentId),
-  );
+  const canArchiveEpic = canOperate;
   const createTicket = useAtomCommand(workbenchEnvironment.createTicket, { reportFailure: false });
   const navigate = useNavigate();
   const [editWorkspaceOpen, setEditWorkspaceOpen] = useState(false);
@@ -69,7 +68,7 @@ export function useWorkbenchPageDialogs({
   const [epicDialogOpen, setEpicDialogOpen] = useState(false);
   const epicCreatedRef = useRef<((epicId: WorkbenchEpicId) => void) | null>(null);
   const submitProject = async (title: string, linkedProjectIds: ReadonlyArray<ProjectId>) => {
-    if (environmentId === null) return false;
+    if (!canOperate || environmentId === null) return false;
     setPendingAction("create-project");
     setError(null);
     const id = WorkbenchProjectId.make(randomUUID());
@@ -93,7 +92,12 @@ export function useWorkbenchPageDialogs({
   };
 
   const saveWorkspace = async (title: string, linkedProjectIds: ReadonlyArray<ProjectId>) => {
-    if (environmentId === null || !selectedProject || selectedProject.archivedAt != null)
+    if (
+      !canOperate ||
+      environmentId === null ||
+      !selectedProject ||
+      selectedProject.archivedAt != null
+    )
       return false;
     setPendingAction("update-project");
     setError(null);
@@ -113,7 +117,12 @@ export function useWorkbenchPageDialogs({
   };
 
   const submitTicket = async (draft: WorkbenchCreateTicketDraft) => {
-    if (environmentId === null || selectedProject === null || selectedProject.archivedAt != null)
+    if (
+      !canOperate ||
+      environmentId === null ||
+      selectedProject === null ||
+      selectedProject.archivedAt != null
+    )
       return false;
     if (draft.localOnly && !localOnlySupported) {
       setError("Update this environment before creating local-only Tickets.");
@@ -147,7 +156,12 @@ export function useWorkbenchPageDialogs({
   };
 
   const saveEpicContent = async (epic: WorkbenchEpic, title: string, markdown: string) => {
-    if (environmentId === null || selectedProject?.archivedAt != null || title.trim().length === 0)
+    if (
+      !canOperate ||
+      environmentId === null ||
+      selectedProject?.archivedAt != null ||
+      title.trim().length === 0
+    )
       return false;
     setPendingAction(`update-epic:${epic.id}`);
     setError(null);
@@ -185,7 +199,12 @@ export function useWorkbenchPageDialogs({
   };
 
   const submitEpic = async (title: string, markdown: string) => {
-    if (environmentId === null || selectedProject === null || selectedProject.archivedAt != null)
+    if (
+      !canOperate ||
+      environmentId === null ||
+      selectedProject === null ||
+      selectedProject.archivedAt != null
+    )
       return false;
     const onCreated = epicCreatedRef.current;
     setPendingAction("create-epic");
@@ -217,7 +236,13 @@ export function useWorkbenchPageDialogs({
 
   // New ticket starts a fresh preparation; begin replaces the intent with its durable id.
   const openTicketConversation = (epicId: WorkbenchEpicId | null = null) => {
-    if (environmentId === null || !selectedProject || selectedProject.archivedAt != null) return;
+    if (
+      !canOperate ||
+      environmentId === null ||
+      !selectedProject ||
+      selectedProject.archivedAt != null
+    )
+      return;
     setError(null);
     setConversationEpicId(epicId);
     setAwaitingTicketId(null);
@@ -256,13 +281,13 @@ export function useWorkbenchPageDialogs({
     });
   };
   const openTicketDialog = (epicId: WorkbenchEpicId | null = null) => {
-    if (selectedProject?.archivedAt != null) return;
+    if (!canOperate || selectedProject?.archivedAt != null) return;
     setError(null);
     setTicketDialogEpicId(epicId);
     setTicketDialogOpen(true);
   };
   const openEpicDialog = (onCreated?: (epicId: WorkbenchEpicId) => void) => {
-    if (selectedProject?.archivedAt != null) return;
+    if (!canOperate || selectedProject?.archivedAt != null) return;
     epicCreatedRef.current = onCreated ?? null;
     setError(null);
     setEpicDialogOpen(true);

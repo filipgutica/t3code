@@ -329,6 +329,7 @@ export function WorkbenchWorkspaceDialog({
   open,
   projects,
   pending,
+  disabled,
   error,
   onOpenChange,
   onSave,
@@ -337,6 +338,7 @@ export function WorkbenchWorkspaceDialog({
   readonly open: boolean;
   readonly projects: ReadonlyArray<Project>;
   readonly pending: boolean;
+  readonly disabled?: boolean;
   readonly error: string | null;
   readonly onOpenChange: (open: boolean) => void;
   readonly initialWorkspace?: {
@@ -349,13 +351,16 @@ export function WorkbenchWorkspaceDialog({
   const [linkedProjectIds, setLinkedProjectIds] = useState<ReadonlyArray<ProjectId>>(
     initialWorkspace?.linkedProjectIds ?? [],
   );
+  const saveLabel = pending ? "Saving…" : "Save changes";
+  const cannotSave =
+    disabled || pending || title.trim().length === 0 || linkedProjectIds.length === 0;
   const handleOpenChange = (nextOpen: boolean) => {
     if (pending) return;
     onOpenChange(nextOpen);
   };
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (pending || title.trim().length === 0 || linkedProjectIds.length === 0) return;
+    if (cannotSave) return;
     void (async () => {
       if (!(await onSave(title.trim(), linkedProjectIds))) return;
       onOpenChange(false);
@@ -402,17 +407,9 @@ export function WorkbenchWorkspaceDialog({
           <Button disabled={pending} onClick={() => handleOpenChange(false)} variant="outline">
             Cancel
           </Button>
-          <Button
-            form="workbench-workspace"
-            disabled={pending || title.trim().length === 0 || linkedProjectIds.length === 0}
-            type="submit"
-          >
+          <Button form="workbench-workspace" disabled={cannotSave} type="submit">
             {initialWorkspace ? (
-              pending ? (
-                "Saving…"
-              ) : (
-                "Save changes"
-              )
+              saveLabel
             ) : (
               <>
                 <PlusIcon /> Create Workspace
@@ -428,12 +425,14 @@ export function WorkbenchWorkspaceDialog({
 export function WorkbenchEpicDialog({
   open,
   pending,
+  disabled,
   error,
   onOpenChange,
   onCreate,
 }: {
   readonly open: boolean;
   readonly pending: boolean;
+  readonly disabled?: boolean;
   readonly error: string | null;
   readonly onOpenChange: (open: boolean) => void;
   readonly onCreate: (title: string, markdown: string) => Promise<boolean>;
@@ -449,7 +448,7 @@ export function WorkbenchEpicDialog({
   };
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (title.trim().length === 0) return;
+    if (disabled || pending || title.trim().length === 0) return;
     void (async () => {
       if (!(await onCreate(title.trim(), markdown.trim()))) return;
       handleOpenChange(false);
@@ -501,7 +500,7 @@ export function WorkbenchEpicDialog({
           </Button>
           <Button
             form="create-workbench-epic"
-            disabled={pending || title.trim().length === 0}
+            disabled={disabled || pending || title.trim().length === 0}
             type="submit"
           >
             <PlusIcon /> Create Epic
@@ -528,6 +527,7 @@ export function WorkbenchTicketDialog({
   localOnlySupported = false,
   jiraOwnershipKnown,
   pending,
+  disabled,
   error,
   onOpenChange,
   onCreate,
@@ -542,6 +542,7 @@ export function WorkbenchTicketDialog({
   readonly jiraOwnershipKnown: boolean;
   readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
   readonly pending: boolean;
+  readonly disabled?: boolean;
   readonly error: string | null;
   readonly onOpenChange: (open: boolean) => void;
   readonly onCreate: (draft: WorkbenchCreateTicketDraft) => Promise<boolean>;
@@ -580,19 +581,20 @@ export function WorkbenchTicketDialog({
     repositoryProjectIds,
     primaryProjectId,
   });
-  const { jiraSprints, selectedSprintId, createLabel, description } =
+  const { jiraSprints, selectedSprintId, createLabel, description, creationAvailable } =
     getWorkbenchCreateTicketJiraPresentation({
       jiraBinding: creationBinding,
       jiraSprintId,
       pending,
     });
+  const mutationDisabled = disabled || pending;
   const cannotCreate =
-    pending ||
+    mutationDisabled ||
     !jiraOwnershipKnown ||
     localOnlyUnavailable ||
     title.trim().length === 0 ||
     selectedProjectId === null ||
-    (creationBinding !== null && (!creationBinding.active || selectedSprintId === undefined));
+    !creationAvailable;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (cannotCreate || selectedProjectId === null) return;
@@ -626,7 +628,7 @@ export function WorkbenchTicketDialog({
               jiraBinding={jiraBinding}
               localOnlySupported={localOnlySupported}
               localOnly={localOnly}
-              pending={pending}
+              pending={mutationDisabled}
               setLocalOnly={setLocalOnly}
               sprintSelection={{ jiraSprints, selectedSprintId, setJiraSprintId }}
             />
@@ -650,7 +652,7 @@ export function WorkbenchTicketDialog({
               jiraBinding={creationBinding}
               onCreateEpic={onCreateEpic}
               epics={availableEpics}
-              pending={pending}
+              pending={mutationDisabled}
               epicId={selectedEpicId}
               setEpicId={setEpicId}
             />
@@ -806,6 +808,7 @@ export type WorkbenchTicketDetailProps = {
   readonly environmentId: EnvironmentId;
   readonly workspaceTitle: string;
   readonly workspaceReadOnly?: boolean;
+  readonly threadRestoreDisabled?: boolean;
   readonly ticket: WorkbenchTicket;
   readonly ticketWorkspace: WorkbenchTicketWorkspace | undefined;
   readonly linkedProjects: ReadonlyArray<Project>;
@@ -892,6 +895,7 @@ export function WorkbenchTicketDetail(props: WorkbenchTicketDetailProps) {
       content={{
         workspaceTitle: props.workspaceTitle,
         workspaceReadOnly: props.workspaceReadOnly ?? false,
+        threadRestoreDisabled: props.threadRestoreDisabled ?? false,
         ticket: props.ticket,
         epics: props.epics,
         jiraIssueLink: props.jiraIssueLink,
@@ -971,6 +975,7 @@ function WorkbenchTicketDetailController({
     WorkbenchTicketDetailProps,
     | "workspaceTitle"
     | "workspaceReadOnly"
+    | "threadRestoreDisabled"
     | "ticket"
     | "epics"
     | "jiraIssueLink"
@@ -1042,7 +1047,8 @@ function WorkbenchTicketDetailController({
     pending,
     error,
     lifecycleActionsEnabled,
-    workspaceReadOnly,
+    workspaceReadOnly = false,
+    threadRestoreDisabled = false,
   } = content;
   const {
     ticketWorkspace,
@@ -1219,7 +1225,11 @@ function WorkbenchTicketDetailController({
           workspaceTitle: workspaceTitle,
           displayedTitle: displayedTitle,
           isArchived: isArchived,
-          pending: pending,
+          pending: isWorkbenchThreadOpenDisabled({
+            pending,
+            threadRestoreDisabled,
+            thread: displayedThread,
+          }),
           editing: editing,
           jiraRefreshDisabled: jiraRefreshDisabled,
           jiraRefreshing: jiraRefreshing,
@@ -1272,7 +1282,7 @@ function WorkbenchTicketDetailController({
         className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-gutter-both p-4 @min-[40rem]/ticket:p-6 @min-[64rem]/ticket:overflow-hidden [&_[data-slot=button]>svg]:mx-0"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!editing || !draft) return;
+          if (!editing || !draft || workspaceReadOnly) return;
           const normalizedTitle = jiraFieldsManaged ? projectedContent.title : draft.title.trim();
           const normalizedMarkdown = draft.markdown.trim();
           const submittedContent = draft;
@@ -1336,6 +1346,7 @@ function WorkbenchTicketDetailController({
               }}
               context={{
                 threadProviderKind: threadProviderKind,
+                threadRestoreDisabled,
                 environmentId: environmentId,
                 linkedProjects: linkedProjects,
                 threadsById: threadsById,
@@ -1475,6 +1486,7 @@ function WorkbenchTicketDetailController({
         </div>
       </form>
       <WorkbenchTicketDeleteConfirmation
+        disabled={workspaceReadOnly}
         displayedTitle={displayedTitle}
         error={error}
         pending={pending}
@@ -1484,6 +1496,7 @@ function WorkbenchTicketDetailController({
         setDeleteConfirmationOpen={setDeleteConfirmationOpen}
       />
       <WorkbenchTicketResetConfirmation
+        disabled={workspaceReadOnly}
         displayedTitle={displayedTitle}
         error={error}
         pending={pending}
@@ -1752,6 +1765,18 @@ function WorkbenchThreadMetadataRow({
       {actions ? <span className="flex shrink-0 items-center gap-0.5">{actions}</span> : null}
     </div>
   );
+}
+
+function isWorkbenchThreadOpenDisabled({
+  pending,
+  threadRestoreDisabled,
+  thread,
+}: {
+  pending: boolean;
+  threadRestoreDisabled: boolean;
+  thread: EnvironmentThreadShell | undefined;
+}) {
+  return pending || (threadRestoreDisabled && thread?.archivedAt != null);
 }
 
 function WorkbenchThreadOpenButton({
@@ -2385,6 +2410,7 @@ export function WorkbenchTicketDescriptionEditor({
 
 type WorkbenchTicketThreadsPanelProps = {
   threadPanelCollapsed: boolean;
+  threadRestoreDisabled: boolean;
   setThreadPanelCollapsed: Dispatch<SetStateAction<boolean>>;
   canOpenThread: boolean;
   threadProviderKind: (
@@ -2465,6 +2491,7 @@ function WorkbenchTicketThreadsPanel({
   context: Pick<
     WorkbenchTicketThreadsPanelProps,
     | "threadProviderKind"
+    | "threadRestoreDisabled"
     | "environmentId"
     | "linkedProjects"
     | "threadsById"
@@ -2514,6 +2541,7 @@ function WorkbenchTicketThreadsPanel({
   } = presentation;
   const {
     threadProviderKind,
+    threadRestoreDisabled,
     environmentId,
     linkedProjects,
     threadsById,
@@ -2551,6 +2579,7 @@ function WorkbenchTicketThreadsPanel({
             <WorkbenchTicketPrimaryThread
               context={{
                 threadProviderKind: threadProviderKind,
+                threadRestoreDisabled,
                 environmentId: environmentId,
                 linkedProjects: linkedProjects,
               }}
@@ -2585,13 +2614,14 @@ function WorkbenchTicketThreadsPanel({
             />
           ) : (
             <p className="px-4 pb-3 text-sm text-muted-foreground">
-              This archived Ticket has no Thread.
+              No Thread is available for this Ticket.
             </p>
           )}
           {activeAssignments.length > 1 ? (
             <WorkbenchTicketOtherThreads
               context={{
                 threadProviderKind: threadProviderKind,
+                threadRestoreDisabled,
                 environmentId: environmentId,
                 linkedProjects: linkedProjects,
                 threadsById: threadsById,
@@ -2622,6 +2652,7 @@ function WorkbenchTicketThreadsPanel({
           {settledAssignments.length > 0 ? (
             <WorkbenchTicketSettledThreads
               threadProviderKind={threadProviderKind}
+              threadRestoreDisabled={threadRestoreDisabled}
               pending={pending}
               settledAssignments={settledAssignments}
               isArchived={isArchived}
@@ -2641,6 +2672,7 @@ function WorkbenchTicketThreadsPanel({
           {historicalAssignments.length > 0 ? (
             <WorkbenchTicketHistoricalThreads
               threadProviderKind={threadProviderKind}
+              threadRestoreDisabled={threadRestoreDisabled}
 
               pending={pending}
               isArchived={isArchived}
@@ -3362,6 +3394,7 @@ function WorkbenchTicketLocalDetails({
 type WorkbenchTicketPrimaryThreadProps = Pick<
   WorkbenchTicketThreadsPanelProps,
   | "threadProviderKind"
+  | "threadRestoreDisabled"
   | "displayedThread"
   | "threadActionPending"
   | "thread"
@@ -3394,7 +3427,7 @@ function WorkbenchTicketPrimaryThread({
 }: {
   context: Pick<
     WorkbenchTicketPrimaryThreadProps,
-    "threadProviderKind" | "environmentId" | "linkedProjects"
+    "threadProviderKind" | "threadRestoreDisabled" | "environmentId" | "linkedProjects"
   >;
   records: Pick<
     WorkbenchTicketPrimaryThreadProps,
@@ -3427,7 +3460,7 @@ function WorkbenchTicketPrimaryThread({
     | "onDeleteThread"
   >;
 }) {
-  const { threadProviderKind, environmentId, linkedProjects } = context;
+  const { threadProviderKind, threadRestoreDisabled, environmentId, linkedProjects } = context;
   const {
     displayedThread,
     assignment,
@@ -3465,7 +3498,11 @@ function WorkbenchTicketPrimaryThread({
           ariaLabel={`${
             threadActionPending ? thread.pendingActionLabel : thread.actionLabel
           } for ${displayedTitle}`}
-          disabled={pending}
+          disabled={isWorkbenchThreadOpenDisabled({
+            pending,
+            threadRestoreDisabled,
+            thread: displayedThread,
+          })}
           modelLabel={getWorkbenchThreadModelLabel(displayedThread)}
           recencyLabel={displayedThread ? getWorkbenchThreadRecencyLabel(displayedThread) : null}
           onClick={() => {
@@ -3534,6 +3571,7 @@ function WorkbenchTicketPrimaryThread({
 type WorkbenchTicketOtherThreadsProps = Pick<
   WorkbenchTicketThreadsPanelProps,
   | "threadProviderKind"
+  | "threadRestoreDisabled"
   | "pending"
   | "assignment"
   | "isArchived"
@@ -3562,6 +3600,7 @@ function WorkbenchTicketOtherThreads({
   context: Pick<
     WorkbenchTicketOtherThreadsProps,
     | "threadProviderKind"
+    | "threadRestoreDisabled"
     | "environmentId"
     | "linkedProjects"
     | "threadsById"
@@ -3588,6 +3627,7 @@ function WorkbenchTicketOtherThreads({
 }) {
   const {
     threadProviderKind,
+    threadRestoreDisabled,
     environmentId,
     linkedProjects,
     threadsById,
@@ -3615,6 +3655,7 @@ function WorkbenchTicketOtherThreads({
               key={activeAssignment.id}
               context={{
                 threadProviderKind: threadProviderKind,
+                threadRestoreDisabled,
                 environmentId: environmentId,
                 linkedProjects: linkedProjects,
                 threadsById: threadsById,
@@ -3645,6 +3686,7 @@ function WorkbenchTicketOtherThreads({
 
 function WorkbenchTicketSettledThreads({
   threadProviderKind,
+  threadRestoreDisabled,
   pending,
   settledAssignments,
   isArchived,
@@ -3661,6 +3703,7 @@ function WorkbenchTicketSettledThreads({
 }: Pick<
   WorkbenchTicketThreadsPanelProps,
   | "threadProviderKind"
+  | "threadRestoreDisabled"
   | "pending"
   | "settledAssignments"
   | "isArchived"
@@ -3705,6 +3748,7 @@ function WorkbenchTicketSettledThreads({
             <WorkbenchTicketSettledThreadRow
               key={settledAssignment.id}
               threadProviderKind={threadProviderKind}
+              threadRestoreDisabled={threadRestoreDisabled}
               pending={pending}
               isArchived={isArchived}
               onUnlinkThread={onUnlinkThread}
@@ -3726,6 +3770,7 @@ function WorkbenchTicketSettledThreads({
 
 function WorkbenchTicketHistoricalThreads({
   threadProviderKind,
+  threadRestoreDisabled,
   pending,
   isArchived,
   onUnlinkThread,
@@ -3742,6 +3787,7 @@ function WorkbenchTicketHistoricalThreads({
 }: Pick<
   WorkbenchTicketThreadsPanelProps,
   | "threadProviderKind"
+  | "threadRestoreDisabled"
   | "pending"
   | "isArchived"
   | "onUnlinkThread"
@@ -3765,6 +3811,7 @@ function WorkbenchTicketHistoricalThreads({
             key={historicalAssignment.id}
             context={{
               threadProviderKind: threadProviderKind,
+              threadRestoreDisabled,
               threadsById: threadsById,
               archivedThreadsById: archivedThreadsById,
               threadLookupReady: threadLookupReady,
@@ -3793,6 +3840,7 @@ function WorkbenchTicketHistoricalThreads({
 type WorkbenchTicketActiveThreadRowProps = Pick<
   WorkbenchTicketOtherThreadsProps,
   | "threadProviderKind"
+  | "threadRestoreDisabled"
   | "pending"
   | "isArchived"
   | "onUnlinkThread"
@@ -3819,6 +3867,7 @@ function WorkbenchTicketActiveThreadRow({
   context: Pick<
     WorkbenchTicketActiveThreadRowProps,
     | "threadProviderKind"
+    | "threadRestoreDisabled"
     | "environmentId"
     | "linkedProjects"
     | "threadsById"
@@ -3842,6 +3891,7 @@ function WorkbenchTicketActiveThreadRow({
 }) {
   const {
     threadProviderKind,
+    threadRestoreDisabled,
     environmentId,
     linkedProjects,
     threadsById,
@@ -3889,7 +3939,11 @@ function WorkbenchTicketActiveThreadRow({
         providerKind={threadProviderKind(displayedActiveThread)}
         actionLabel={archivedActiveThread ? "Restore and open" : undefined}
         ariaLabel={rowPresentation.ariaLabel}
-        disabled={pending || displayedActiveThread === undefined}
+        disabled={
+          pending ||
+          displayedActiveThread === undefined ||
+          (threadRestoreDisabled && displayedActiveThread.archivedAt != null)
+        }
         modelLabel={rowPresentation.modelLabel}
         recencyLabel={rowPresentation.recencyLabel}
         onClick={() => onOpenAssignedThread(activeAssignment.threadId)}
@@ -3941,6 +3995,7 @@ function WorkbenchTicketActiveThreadRow({
 type WorkbenchTicketHistoricalThreadRowProps = Pick<
   Parameters<typeof WorkbenchTicketHistoricalThreads>[0],
   | "threadProviderKind"
+  | "threadRestoreDisabled"
   | "pending"
   | "isArchived"
   | "onUnlinkThread"
@@ -3962,7 +4017,11 @@ function WorkbenchTicketHistoricalThreadRow({
 }: {
   context: Pick<
     WorkbenchTicketHistoricalThreadRowProps,
-    "threadProviderKind" | "threadsById" | "archivedThreadsById" | "threadLookupReady"
+    | "threadProviderKind"
+    | "threadRestoreDisabled"
+    | "threadsById"
+    | "archivedThreadsById"
+    | "threadLookupReady"
   >;
   presentation: Pick<
     WorkbenchTicketHistoricalThreadRowProps,
@@ -3978,7 +4037,13 @@ function WorkbenchTicketHistoricalThreadRow({
   >;
   records: Pick<WorkbenchTicketHistoricalThreadRowProps, "ticket">;
 }) {
-  const { threadProviderKind, threadsById, archivedThreadsById, threadLookupReady } = context;
+  const {
+    threadProviderKind,
+    threadRestoreDisabled,
+    threadsById,
+    archivedThreadsById,
+    threadLookupReady,
+  } = context;
   const { pending, isArchived, supportsSettlement, historicalAssignment } = presentation;
   const {
     onUnlinkThread,
@@ -4009,7 +4074,11 @@ function WorkbenchTicketHistoricalThreadRow({
         providerKind={threadProviderKind(displayedHistoricalThread)}
         actionLabel={historicalArchivedThread ? "Restore and open" : undefined}
         ariaLabel={rowPresentation.ariaLabel}
-        disabled={pending || !displayedHistoricalThread}
+        disabled={
+          pending ||
+          !displayedHistoricalThread ||
+          (threadRestoreDisabled && displayedHistoricalThread.archivedAt != null)
+        }
         modelLabel={rowPresentation.modelLabel}
         recencyLabel={rowPresentation.recencyLabel}
         onClick={() => onOpenAssignedThread(historicalAssignment.threadId)}
@@ -4039,6 +4108,7 @@ function WorkbenchTicketHistoricalThreadRow({
 
 function WorkbenchTicketSettledThreadRow({
   threadProviderKind,
+  threadRestoreDisabled,
   pending,
   isArchived,
   onUnlinkThread,
@@ -4053,6 +4123,7 @@ function WorkbenchTicketSettledThreadRow({
 }: Pick<
   Parameters<typeof WorkbenchTicketSettledThreads>[0],
   | "threadProviderKind"
+  | "threadRestoreDisabled"
   | "pending"
   | "isArchived"
   | "onUnlinkThread"
@@ -4074,6 +4145,7 @@ function WorkbenchTicketSettledThreadRow({
     "Settled",
     settledThread.archivedAt !== null,
   );
+  const mutationDisabled = pending || isArchived;
   return (
     <div
       key={settledAssignment.id}
@@ -4083,7 +4155,11 @@ function WorkbenchTicketSettledThreadRow({
         providerKind={threadProviderKind(settledThread)}
         actionLabel={thread.actionLabel}
         ariaLabel={`${thread.actionLabel} ${settledThread.title}`}
-        disabled={pending}
+        disabled={isWorkbenchThreadOpenDisabled({
+          pending,
+          threadRestoreDisabled,
+          thread: settledThread,
+        })}
         modelLabel={getWorkbenchThreadModelLabel(settledThread)}
         recencyLabel={getWorkbenchThreadRecencyLabel(settledThread)}
         onClick={() => onOpenAssignedThread(settledAssignment.threadId)}
@@ -4094,7 +4170,7 @@ function WorkbenchTicketSettledThreadRow({
           <>
             <Button
               aria-label={`Unlink Thread ${settledThread.title}`}
-              disabled={pending || isArchived}
+              disabled={mutationDisabled}
               onClick={() => onUnlinkThread(settledAssignment.threadId)}
               size="icon-xs"
               title="Unlink Thread from Ticket"
@@ -4106,7 +4182,7 @@ function WorkbenchTicketSettledThreadRow({
             {supportsSettlement ? (
               <WorkbenchThreadSettlementButton
                 archived={settledThread.archivedAt !== null}
-                disabled={pending || isArchived || settledThread.archivedAt !== null}
+                disabled={mutationDisabled || settledThread.archivedAt !== null}
                 onClick={() => void toggleThreadSettlement(settledThread)}
                 pending={settlementPendingThreadId === settledThread.id}
                 settled
@@ -4115,7 +4191,7 @@ function WorkbenchTicketSettledThreadRow({
             ) : null}
             <Button
               aria-label={`Delete Thread ${settledThread.title}`}
-              disabled={pending || isArchived}
+              disabled={mutationDisabled}
               onClick={() => onDeleteThread(settledAssignment.threadId)}
               size="icon-xs"
               type="button"
@@ -5895,6 +5971,8 @@ export function getWorkbenchCreateTicketJiraPresentation({
   return {
     jiraSprints,
     selectedSprintId,
+    creationAvailable:
+      jiraBinding === null || (jiraBinding.active && selectedSprintId !== undefined),
     createLabel,
     description: jiraBinding
       ? `Create an issue in ${jiraBinding.jiraProjectKey}, assigned to your connected Jira account.`
@@ -5906,11 +5984,13 @@ function WorkbenchTicketDeleteConfirmation({
   displayedTitle,
   error,
   pending,
+  disabled,
   ticket,
   onDelete,
   deleteConfirmationOpen,
   setDeleteConfirmationOpen,
 }: Pick<WorkbenchTicketDetailProps, "error" | "pending" | "ticket" | "onDelete"> & {
+  disabled: boolean;
   displayedTitle: string;
   deleteConfirmationOpen: boolean;
   setDeleteConfirmationOpen: Dispatch<SetStateAction<boolean>>;
@@ -5929,7 +6009,7 @@ function WorkbenchTicketDeleteConfirmation({
         <AlertDialogFooter>
           <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
           <Button
-            disabled={pending}
+            disabled={disabled || pending}
             onClick={() => {
               void (async () => {
                 if (!(await onDelete(ticket))) return;
@@ -5950,11 +6030,13 @@ function WorkbenchTicketResetConfirmation({
   displayedTitle,
   error,
   pending,
+  disabled,
   ticket,
   onResetWorkspace,
   resetConfirmationOpen,
   setResetConfirmationOpen,
 }: Pick<WorkbenchTicketDetailProps, "error" | "pending" | "ticket" | "onResetWorkspace"> & {
+  disabled: boolean;
   displayedTitle: string;
   resetConfirmationOpen: boolean;
   setResetConfirmationOpen: Dispatch<SetStateAction<boolean>>;
@@ -5977,7 +6059,7 @@ function WorkbenchTicketResetConfirmation({
             Cancel
           </AlertDialogClose>
           <Button
-            disabled={pending}
+            disabled={disabled || pending}
             onClick={() => {
               void (async () => {
                 if (!(await onResetWorkspace(ticket))) return;
