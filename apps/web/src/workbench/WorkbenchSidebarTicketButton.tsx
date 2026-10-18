@@ -1,4 +1,4 @@
-import { ThreadExecutionStatus } from "../components/ThreadExecutionStatus";
+import { WorkbenchThreadExecutionStatus } from "./WorkbenchThreadExecutionStatus";
 import {
   ArchiveIcon,
   BookOpenIcon,
@@ -180,7 +180,7 @@ function WorkbenchSidebarTicketStatus({
             ·
           </span>
           <span data-workbench-sidebar-native-status="ticket">
-            <ThreadExecutionStatus
+            <WorkbenchThreadExecutionStatus
               compact
               status={details.executionStatus.presentation}
               startedAt={details.executionStatus.startedAt}

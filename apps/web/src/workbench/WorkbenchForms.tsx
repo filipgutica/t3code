@@ -71,11 +71,11 @@ import {
   type WorkbenchJiraTransitionSelection,
 } from "./WorkbenchTicketStatusMenu";
 
-import { ThreadExecutionStatus } from "../components/ThreadExecutionStatus";
+import { WorkbenchThreadExecutionStatus } from "./WorkbenchThreadExecutionStatus";
 import {
   getWorkbenchThreadExecutionStatus,
   getWorkbenchTicketExecutionStatuses,
-  type WorkbenchThreadExecutionStatus,
+  type WorkbenchThreadExecutionStatus as WorkbenchThreadExecutionStatusData,
 } from "./workbenchThreadStatus.logic";
 import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
 import { deriveProviderInstanceEntries } from "../providerInstances";
@@ -1824,7 +1824,7 @@ function WorkbenchThreadOpenButton({
   readonly providerKind: ProviderDriverKind | undefined;
   readonly recencyLabel: string | null;
   readonly stateLabel: string | null;
-  readonly executionStatus?: WorkbenchThreadExecutionStatus | null;
+  readonly executionStatus?: WorkbenchThreadExecutionStatusData | null;
   readonly title: string;
 }) {
   return (
@@ -1855,7 +1855,7 @@ function WorkbenchThreadOpenButton({
           />
           <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
             {executionStatus ? (
-              <ThreadExecutionStatus
+              <WorkbenchThreadExecutionStatus
                 status={executionStatus.presentation}
                 startedAt={executionStatus.startedAt}
               />
@@ -1953,7 +1953,7 @@ export function WorkbenchInlineError({ message }: { readonly message: string | n
 }
 
 type WorkbenchTicketHeaderProps = {
-  executionStatus: WorkbenchThreadExecutionStatus | null;
+  executionStatus: WorkbenchThreadExecutionStatusData | null;
   onBack: () => void;
   workspaceTitle: string;
   displayedTitle: string;
@@ -2449,7 +2449,7 @@ type WorkbenchTicketThreadsPanelProps = {
   actionableTicket: WorkbenchTicket;
   onOpenThread: (ticket: WorkbenchTicket, threadId?: ThreadId) => void;
   nativeThread: EnvironmentThreadShell | undefined;
-  nativeStatus: WorkbenchThreadExecutionStatus | null;
+  nativeStatus: WorkbenchThreadExecutionStatusData | null;
 
   agentTitle: string;
   isArchived: boolean;
@@ -4983,7 +4983,7 @@ function WorkbenchTicketHeading({
         {displayedTitle.trim() || ticket.title}
       </h1>
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <ThreadExecutionStatus
+        <WorkbenchThreadExecutionStatus
           status={executionStatus?.presentation}
           startedAt={executionStatus?.startedAt}
         />

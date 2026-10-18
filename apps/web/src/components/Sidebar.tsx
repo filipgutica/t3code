@@ -3,8 +3,6 @@ import type { EnvironmentServerConfig } from "@t3tools/client-runtime/connection
 import { ThreadHoverCard, ThreadHoverCardPopup } from "./ThreadHoverCard";
 import { CollapsibleSectionHeader } from "./ui/collapsible-section-header";
 import { ThreadTerminalStatusButton } from "./ThreadStatusIndicators";
-import { ThreadExecutionStatus } from "./ThreadExecutionStatus";
-import { resolveThreadExecutionStatusPresentation } from "./ThreadExecutionStatus.logic";
 import { useVisibleThreads } from "../hostIntegrations";
 import { ThreadContextDragGhost } from "./chat/ThreadContextDragGhost";
 import {
@@ -76,14 +74,18 @@ import {
   CheckIcon,
   CircleAlertIcon,
   CircleCheckIcon,
+  CircleDashedIcon,
+  CircleDotDashedIcon,
   ClockIcon,
   FolderIcon,
   GitBranchIcon,
   ListFilterIcon,
+  MessageCircleQuestionIcon,
   PinIcon,
   PinOffIcon,
   PlusIcon,
   SettingsIcon,
+  ShieldQuestionIcon,
   SquarePenIcon,
   TerminalIcon,
   Undo2Icon,
@@ -193,6 +195,7 @@ import {
   buildBulkUnpinContextMenuItem,
   deleteSelectedThreadEntries,
   filterSidebarProjectScopeItems,
+  formatWorkingDurationLabel,
   firstValidTimestampMs,
   hasUnseenCompletion,
   isSidebarNestedLinkClick,
@@ -209,7 +212,6 @@ import {
   resolveSidebarRowAccessibility,
   type SidebarDropVerb,
   resolveSidebarThreadStatus,
-  resolveSidebarV2TopStatus,
   resolveThreadLastVisitedAt,
   searchSidebarThreads,
   shouldCreateNewThreadInCurrentProject,
@@ -848,6 +850,18 @@ function JumpHintBadge(props: { label: string }) {
 }
 
 // Self-ticking so only this span re-renders each second, not the whole row.
+function WorkingDuration(props: { startedAt: string | null }) {
+  const startedMs = props.startedAt !== null ? Date.parse(props.startedAt) : Number.NaN;
+  // Mount time is close enough for the first frame; the interval keeps it current.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (Number.isNaN(startedMs)) return;
+    const id = window.setInterval(() => setNowMs(Date.now()), 1_000);
+    return () => window.clearInterval(id);
+  }, [startedMs]);
+  if (Number.isNaN(startedMs)) return null;
+  return <span className="tabular-nums">{formatWorkingDurationLabel(nowMs - startedMs)}</span>;
+}
 
 function terminalProcessLabel(count: number): string {
   return `${count} terminal ${count === 1 ? "process" : "processes"} running`;
@@ -1648,10 +1662,56 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     isActive: props.isActive,
     isSelected,
   });
-  const topStatus = resolveThreadExecutionStatusPresentation({
-    kind: resolveSidebarV2TopStatus({ status, isUnread, isWoke }),
-    goalActive: thread.goal?.status === "active",
-  });
+  const topStatus =
+    status === "working"
+      ? {
+          label: thread.goal?.status === "active" ? "Goal" : "Working",
+          icon: "working" as const,
+          className: "text-info",
+        }
+      : status === "waiting"
+        ? {
+            label: "Waiting",
+            icon: "waiting" as const,
+            className: "text-muted-foreground",
+          }
+        : status === "approval"
+          ? {
+              label: "Approval",
+              icon: "approval" as const,
+              className: "text-warning-foreground",
+            }
+          : status === "input"
+            ? {
+                label: "Input",
+                icon: "input" as const,
+                className: "text-indigo-600 dark:text-indigo-300",
+              }
+            : status === "limited"
+              ? {
+                  label: "Limited",
+                  icon: "failed" as const,
+                  className: "text-warning",
+                }
+              : status === "failed"
+                ? {
+                    label: "Failed",
+                    icon: "failed" as const,
+                    className: "text-error",
+                  }
+                : isWoke
+                  ? {
+                      label: "Woke",
+                      icon: "woke" as const,
+                      className: "text-warning",
+                    }
+                  : isUnread
+                    ? {
+                        label: "Done",
+                        icon: "done" as const,
+                        className: "text-success",
+                      }
+                    : null;
   const isWokeStatus = topStatus?.icon === "woke";
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
@@ -2273,14 +2333,39 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
                         </Tooltip>
                       ) : (
-                        <ThreadExecutionStatus
-                          status={topStatus}
-                          startedAt={
-                            status === "waiting"
-                              ? (thread.latestRun?.completedAt ?? null)
-                              : resolveWorkingStartedAt(thread)
-                          }
-                        />
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1 font-medium",
+                            topStatus.className,
+                          )}
+                        >
+                          {topStatus.icon === "working" ? (
+                            <CircleDashedIcon aria-hidden className="size-4 shrink-0" />
+                          ) : topStatus.icon === "waiting" ? (
+                            <CircleDotDashedIcon aria-hidden className="size-4 shrink-0" />
+                          ) : topStatus.icon === "input" ? (
+                            <MessageCircleQuestionIcon aria-hidden className="size-4 shrink-0" />
+                          ) : topStatus.icon === "approval" ? (
+                            <ShieldQuestionIcon aria-hidden className="size-4 shrink-0" />
+                          ) : topStatus.icon === "failed" ? (
+                            <CircleAlertIcon aria-hidden className="size-4 shrink-0" />
+                          ) : topStatus.icon === "done" ? (
+                            <CircleCheckIcon aria-hidden className="size-4 shrink-0" />
+                          ) : null}
+                          {/* The label alone is the live region: a role="status"
+                            wrapper around the ticking duration would make
+                            screen readers announce every second. */}
+                          <span role="status">{topStatus.label}</span>
+                          {status === "working" ? (
+                            <span aria-hidden>
+                              <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
+                            </span>
+                          ) : status === "waiting" ? (
+                            <span aria-hidden>
+                              <WorkingDuration startedAt={thread.latestRun?.completedAt ?? null} />
+                            </span>
+                          ) : null}
+                        </span>
                       )
                     ) : (
                       <RelativeTimeLabel timestamp={threadTimeTimestamp(thread)} />

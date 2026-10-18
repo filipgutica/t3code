@@ -1,6 +1,6 @@
 import type { ThreadId } from "@t3tools/contracts";
 
-import { resolveThreadExecutionStatusPresentation } from "../components/ThreadExecutionStatus.logic";
+import { resolveWorkbenchThreadExecutionStatusPresentation } from "./WorkbenchThreadExecutionStatus.logic";
 import {
   getWorkbenchAttentionSignalLabel,
   groupWorkbenchAttentionSignals,
@@ -12,7 +12,7 @@ import type { WorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.log
 type ThreadStatusKind = WorkbenchThreadExecutionStatus["kind"] | null;
 
 const nativeAttentionTone = (kind: "input" | "approval" | "failed") =>
-  resolveThreadExecutionStatusPresentation({ kind })?.className ?? "text-muted-foreground";
+  resolveWorkbenchThreadExecutionStatusPresentation({ kind }).className;
 
 const signalPresentations = {
   question: { icon: "input", className: nativeAttentionTone("input"), action: "Open Thread" },

@@ -1,5 +1,3 @@
-import type { SidebarV2TopStatusKind } from "./Sidebar.logic";
-
 const EXECUTION_PRESENTATION = {
   working: { label: "Working", icon: "working", className: "text-info" },
   waiting: { label: "Waiting", icon: "waiting", className: "text-muted-foreground" },
@@ -7,19 +5,15 @@ const EXECUTION_PRESENTATION = {
   input: { label: "Input", icon: "input", className: "text-indigo-600 dark:text-indigo-300" },
   limited: { label: "Limited", icon: "failed", className: "text-warning" },
   failed: { label: "Failed", icon: "failed", className: "text-error" },
-  woke: { label: "Woke", icon: "woke", className: "text-warning" },
-  done: { label: "Done", icon: "done", className: "text-success" },
 } as const;
 
-/** Native status presentation; notification precedence remains with the caller. */
-export function resolveThreadExecutionStatusPresentation({
+export function resolveWorkbenchThreadExecutionStatusPresentation({
   kind,
   goalActive = false,
 }: {
-  kind: SidebarV2TopStatusKind | null;
+  kind: keyof typeof EXECUTION_PRESENTATION;
   goalActive?: boolean;
 }) {
-  if (kind === null) return null;
   const presentation = EXECUTION_PRESENTATION[kind];
   return {
     ...presentation,
@@ -28,6 +22,6 @@ export function resolveThreadExecutionStatusPresentation({
   };
 }
 
-export type ThreadExecutionStatusPresentation = NonNullable<
-  ReturnType<typeof resolveThreadExecutionStatusPresentation>
+export type WorkbenchThreadExecutionStatusPresentation = ReturnType<
+  typeof resolveWorkbenchThreadExecutionStatusPresentation
 >;
