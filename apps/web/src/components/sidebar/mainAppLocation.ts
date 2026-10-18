@@ -1,6 +1,6 @@
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect } from "react";
 import { useHostIntegrations, type HostIntegrations } from "~/hostIntegrations";
+import { useEffect } from "react";
 
 // Utility pages replace the sidebar utility row with a Back button. Legacy
 // `/projects/<key>` links redirect into settings, so they count too and are never
@@ -32,5 +32,5 @@ export function MainAppLocationTracker() {
 
 export function useNavigateToMainApp() {
   const navigate = useNavigate();
-  return useCallback(() => navigate({ href: mainAppHref ?? "/" }), [navigate]);
+  return () => navigate({ href: mainAppHref ?? "/" });
 }

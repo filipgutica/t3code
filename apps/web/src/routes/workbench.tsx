@@ -7,7 +7,7 @@ import { WorkbenchPage } from "../workbench/WorkbenchPage";
 function WorkbenchRoute() {
   const search = Route.useSearch();
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground isolate">
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <WorkbenchPage
         initialEnvironmentId={search.environmentId}
         createWorkspace={search.create === "workspace"}

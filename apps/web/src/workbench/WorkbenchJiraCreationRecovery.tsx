@@ -118,19 +118,23 @@ function ResolveDialog({
   const submit = async () => {
     setPending(true);
     setError(null);
-    try {
-      const result = await onResolve(
-        outcome === "created"
-          ? { type: "created", issueKey: issueKey.trim() }
-          : { type: "not_created" },
-      );
-      if (result._tag === "Failure") setError(failureMessage(result));
-      else onClose();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The Jira creation could not be resolved.");
-    } finally {
+    return (async () => {
+      try {
+        const result = await onResolve(
+          outcome === "created"
+            ? { type: "created", issueKey: issueKey.trim() }
+            : { type: "not_created" },
+        );
+        if (result._tag === "Failure") setError(failureMessage(result));
+        else onClose();
+      } catch (cause) {
+        setError(
+          cause instanceof Error ? cause.message : "The Jira creation could not be resolved.",
+        );
+      }
+    })().finally(() => {
       setPending(false);
-    }
+    });
   };
   return (
     <Dialog

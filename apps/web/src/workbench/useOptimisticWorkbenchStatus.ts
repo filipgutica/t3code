@@ -6,7 +6,7 @@ import type {
   WorkbenchTicketId,
   WorkbenchTicketStatus,
 } from "@t3tools/contracts";
-import { useCallback, useLayoutEffect, useMemo, useState, useRef } from "react";
+import { useLayoutEffect, useState, useRef } from "react";
 
 type JiraStatus = WorkbenchJiraIssueSnapshot["status"];
 
@@ -147,7 +147,7 @@ export function useOptimisticWorkbenchStatus({
     issueLinksByTicketId: new Map(),
   }));
   const stateRef = useRef(stored);
-  const state = useMemo<OptimisticStatusState>(() => {
+  const state: OptimisticStatusState = (() => {
     const next = {
       environmentId,
       overlaysByTicket: new Map(
@@ -158,7 +158,7 @@ export function useOptimisticWorkbenchStatus({
     };
     pruneOverlays(next);
     return next;
-  }, [environmentId, tickets, issueLinks, stored]);
+  })();
   if (
     stored.environmentId !== state.environmentId ||
     stored.overlaysByTicket.size !== state.overlaysByTicket.size
@@ -169,7 +169,7 @@ export function useOptimisticWorkbenchStatus({
     stateRef.current = state;
   }, [state]);
 
-  const begin = useCallback(({ ticketId, status, jiraStatus }: WorkbenchStatusBeginInput) => {
+  const begin = ({ ticketId, status, jiraStatus }: WorkbenchStatusBeginInput) => {
     const currentState = {
       ...stateRef.current,
       overlaysByTicket: new Map(stateRef.current.overlaysByTicket),
@@ -196,38 +196,35 @@ export function useOptimisticWorkbenchStatus({
     stateRef.current = currentState;
     setStored(currentState);
     return token;
-  }, []);
+  };
 
-  const succeed = useCallback(
-    ({ token, status, revision, jiraIssue }: WorkbenchStatusSucceedInput) => {
-      const currentState = {
-        ...stateRef.current,
-        overlaysByTicket: new Map(stateRef.current.overlaysByTicket),
-      };
-      const overlay = findOverlayByToken(currentState.overlaysByTicket, token);
-      if (overlay === undefined) return;
+  const succeed = ({ token, status, revision, jiraIssue }: WorkbenchStatusSucceedInput) => {
+    const currentState = {
+      ...stateRef.current,
+      overlaysByTicket: new Map(stateRef.current.overlaysByTicket),
+    };
+    const overlay = findOverlayByToken(currentState.overlaysByTicket, token);
+    if (overlay === undefined) return;
 
-      const saved: StatusOverlay = {
-        ...overlay,
-        phase: "succeeded",
-        ...(revision !== undefined ? { revision } : {}),
-        ...(status !== undefined ? { status } : {}),
-        ...(jiraIssue !== undefined
-          ? { jiraIssue, jiraStatus: jiraIssue.status, requiresJiraLink: true }
-          : {}),
-      };
-      currentState.overlaysByTicket.set(overlay.ticketId, saved);
+    const saved: StatusOverlay = {
+      ...overlay,
+      phase: "succeeded",
+      ...(revision !== undefined ? { revision } : {}),
+      ...(status !== undefined ? { status } : {}),
+      ...(jiraIssue !== undefined
+        ? { jiraIssue, jiraStatus: jiraIssue.status, requiresJiraLink: true }
+        : {}),
+    };
+    currentState.overlaysByTicket.set(overlay.ticketId, saved);
 
-      if (isAuthoritative(currentState, saved)) {
-        currentState.overlaysByTicket.delete(overlay.ticketId);
-      }
-      stateRef.current = currentState;
-      setStored(currentState);
-    },
-    [],
-  );
+    if (isAuthoritative(currentState, saved)) {
+      currentState.overlaysByTicket.delete(overlay.ticketId);
+    }
+    stateRef.current = currentState;
+    setStored(currentState);
+  };
 
-  const fail = useCallback((token: WorkbenchStatusOperationToken) => {
+  const fail = (token: WorkbenchStatusOperationToken) => {
     const currentState = {
       ...stateRef.current,
       overlaysByTicket: new Map(stateRef.current.overlaysByTicket),
@@ -237,26 +234,18 @@ export function useOptimisticWorkbenchStatus({
     currentState.overlaysByTicket.delete(overlay.ticketId);
     stateRef.current = currentState;
     setStored(currentState);
-  }, []);
+  };
 
-  const pendingTicketIds = useMemo(() => new Set(state.overlaysByTicket.keys()), [state]);
-  const projectedTickets = useMemo(
-    () =>
-      tickets.map((ticket) => {
-        const overlay = state.overlaysByTicket.get(ticket.id);
-        return overlay === undefined ? ticket : { ...ticket, status: overlay.status };
-      }),
-    [state, tickets],
-  );
-  const projectedIssueLinks = useMemo(
-    () =>
-      issueLinks.map((link) => {
-        const overlay = state.overlaysByTicket.get(link.ticketId);
-        const status = overlay?.jiraIssue?.status ?? overlay?.jiraStatus;
-        return status === undefined ? link : { ...link, issue: { ...link.issue, status } };
-      }),
-    [state, issueLinks],
-  );
+  const pendingTicketIds = new Set(state.overlaysByTicket.keys());
+  const projectedTickets = tickets.map((ticket) => {
+    const overlay = state.overlaysByTicket.get(ticket.id);
+    return overlay === undefined ? ticket : { ...ticket, status: overlay.status };
+  });
+  const projectedIssueLinks = issueLinks.map((link) => {
+    const overlay = state.overlaysByTicket.get(link.ticketId);
+    const status = overlay?.jiraIssue?.status ?? overlay?.jiraStatus;
+    return status === undefined ? link : { ...link, issue: { ...link.issue, status } };
+  });
 
   return {
     tickets: projectedTickets,

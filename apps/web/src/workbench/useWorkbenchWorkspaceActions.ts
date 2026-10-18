@@ -91,7 +91,7 @@ export function useWorkbenchWorkspaceActions({
       return;
     setError(null);
     setPendingAction("delete-project");
-    try {
+    return (async () => {
       const result = await deleteProject({
         environmentId,
         input: {
@@ -134,9 +134,9 @@ export function useWorkbenchWorkspaceActions({
           setError(`Workspace deleted, but Workbench could not open another Workspace.${detail}`);
         }
       }
-    } finally {
+    })().finally(() => {
       setPendingAction(null);
-    }
+    });
   };
   const closeDeletion = () => {
     if (pendingAction !== null) return;

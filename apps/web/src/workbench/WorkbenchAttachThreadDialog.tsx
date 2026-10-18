@@ -51,38 +51,40 @@ export function WorkbenchAttachThreadDialog({
             Thread keeps its existing branch and working directory. No prompt is sent.
           </DialogDescription>
         </DialogHeader>
-        <DialogPanel className="min-w-0 space-y-3">
-          <Input
-            aria-label="Find a Thread"
-            placeholder="Find a Thread…"
-            value={search}
-            onChange={(event) => setSearch(event.currentTarget.value)}
-          />
-          <div className="max-h-72 space-y-1 overflow-x-hidden overflow-y-auto">
-            {matching.map((thread) => (
-              <Button
-                key={thread.id}
-                className="w-full min-w-0 justify-start"
-                variant={selectedId === thread.id ? "secondary" : "ghost"}
-                disabled={pending}
-                onClick={() => setSelectedId(thread.id)}
-              >
-                <span className="truncate">{thread.title}</span>
-              </Button>
-            ))}
-            {matching.length === 0 ? (
-              <p className="py-3 text-sm text-muted-foreground">
-                {threads.length === 0
-                  ? "No available Threads in this Ticket’s primary repository. Create a Thread instead."
-                  : "No Threads match your search."}
+        <DialogPanel className="min-w-0">
+          <div className="space-y-3">
+            <Input
+              aria-label="Find a Thread"
+              placeholder="Find a Thread…"
+              value={search}
+              onChange={(event) => setSearch(event.currentTarget.value)}
+            />
+            <div className="max-h-72 space-y-1 overflow-x-hidden overflow-y-auto">
+              {matching.map((thread) => (
+                <Button
+                  key={thread.id}
+                  className="w-full min-w-0 justify-start"
+                  variant={selectedId === thread.id ? "secondary" : "ghost"}
+                  disabled={pending}
+                  onClick={() => setSelectedId(thread.id)}
+                >
+                  <span className="truncate">{thread.title}</span>
+                </Button>
+              ))}
+              {matching.length === 0 ? (
+                <p className="py-3 text-sm text-muted-foreground">
+                  {threads.length === 0
+                    ? "No available Threads in this Ticket’s primary repository. Create a Thread instead."
+                    : "No Threads match your search."}
+                </p>
+              ) : null}
+            </div>
+            {error ? (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
               </p>
             ) : null}
           </div>
-          {error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          ) : null}
         </DialogPanel>
         <DialogFooter>
           <Button variant="outline" disabled={pending} onClick={onClose}>

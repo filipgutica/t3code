@@ -1,3 +1,4 @@
+import { useStableCallback } from "../hooks/useStableCallback";
 import type {
   EnvironmentId,
   ModelSelection,
@@ -7,7 +8,7 @@ import type {
 } from "@t3tools/contracts";
 import { ThreadId, WorkbenchTicketId } from "@t3tools/contracts";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { toastManager } from "../components/ui/toast";
 import { randomUUID } from "../lib/utils";
@@ -94,7 +95,7 @@ export function useTicketDraftBegin({
   const requestRef = useRef<BeginRequest | null>(null);
   const startedScopeRef = useRef<string | null>(null);
 
-  const begin = useCallback(async () => {
+  const begin = async () => {
     const recovering = draft !== null && draft.phase === "creating";
     const selection = recovering ? draft.modelSelection : modelSelection;
     if (!enabled || selection === null) return;
@@ -138,19 +139,7 @@ export function useTicketDraftBegin({
     if (scopeRef.current !== scope) return;
     onDraft(seeded?._tag === "Success" ? seeded.value : result.value);
     setState({ status: "idle" });
-  }, [
-    beginDraft,
-    draft,
-    enabled,
-    environmentId,
-    initialEpicId,
-    modelSelection,
-    onDraft,
-    refreshSnapshot,
-    scope,
-    updateDraft,
-    workspaceId,
-  ]);
+  };
 
   const needsBegin =
     enabled && (draft === null ? modelSelection !== null : draft.phase === "creating");
@@ -161,9 +150,9 @@ export function useTicketDraftBegin({
     void begin();
   }, [begin, needsBegin, beginScope]);
 
-  const retry = useCallback(() => {
+  const retry = () => {
     void begin();
-  }, [begin]);
+  };
   return { state, retry };
 }
 
@@ -207,12 +196,12 @@ export function useTicketDraftEditor({
   const timer = useRef<number | null>(null);
   const editable = draft.phase === "draft";
 
-  const clearTimer = useCallback(() => {
+  const clearTimer = useStableCallback(() => {
     if (timer.current === null) return;
     window.clearTimeout(timer.current);
     timer.current = null;
-  }, []);
-  const flush = useCallback(async () => {
+  });
+  const flush = async () => {
     clearTimer();
     if (!sync.hasPendingEdits()) return sync.flush();
     setSaveState("saving");
@@ -222,27 +211,24 @@ export function useTicketDraftEditor({
     // The server may have rejected the revision; the refreshed snapshot reveals a conflict.
     if (!outcome.ok) refreshSnapshot();
     return outcome;
-  }, [clearTimer, refreshSnapshot, sync]);
-  const edit = useCallback(
-    (patch: Partial<WorkbenchTicketDraftFields>) => {
-      if (!editable) return;
-      sync.edit(patch);
-      clearTimer();
-      // A conflict blocks saving, so a timer would only repeat the conflict message.
-      if (sync.getSnapshot().conflict !== null) return;
-      timer.current = window.setTimeout(() => void flush(), SAVE_DELAY_MS);
-    },
-    [clearTimer, editable, flush, sync],
-  );
-  const reload = useCallback(() => {
+  };
+  const edit = (patch: Partial<WorkbenchTicketDraftFields>) => {
+    if (!editable) return;
+    sync.edit(patch);
+    clearTimer();
+    // A conflict blocks saving, so a timer would only repeat the conflict message.
+    if (sync.getSnapshot().conflict !== null) return;
+    timer.current = window.setTimeout(() => void flush(), SAVE_DELAY_MS);
+  };
+  const reload = () => {
     sync.reload();
     setSaveState("idle");
     setSaveError(null);
-  }, [sync]);
-  const keepMine = useCallback(() => {
+  };
+  const keepMine = () => {
     sync.keepMine();
     void flush();
-  }, [flush, sync]);
+  };
 
   useEffect(() => {
     sync.adopt(draft);
@@ -320,60 +306,43 @@ export function useTicketDraftTransitions({
   const [error, setError] = useState<string | null>(null);
   const { edit, flush, revision, latestRevision, abandon } = editor;
 
-  const flushed = useCallback(async () => {
+  const flushed = async () => {
     const outcome = await flush();
     if (!outcome.ok) setError(outcome.message);
     return outcome.ok;
-  }, [flush]);
+  };
 
   // Every transition ends the same way: clear the busy state, then either show the failure
   // (and refresh, since the server may have moved on) or hand the new draft to the caller.
-  const settle = useCallback(
-    <A>(result: AtomCommandResult<A, unknown>, onSuccess: (value: A) => void) => {
-      setAction(null);
-      if (result._tag === "Failure") {
-        refreshSnapshot();
-        setError(failureMessage(result));
-        return;
-      }
-      onSuccess(result.value);
-    },
-    [refreshSnapshot],
-  );
+  const settle = <A>(result: AtomCommandResult<A, unknown>, onSuccess: (value: A) => void) => {
+    setAction(null);
+    if (result._tag === "Failure") {
+      refreshSnapshot();
+      setError(failureMessage(result));
+      return;
+    }
+    onSuccess(result.value);
+  };
 
-  const promote = useCallback(
-    async (effectiveFields: WorkbenchTicketDraftFields) => {
-      setAction("promote");
-      setError(null);
-      // A draft already in `promoting` has frozen content; only its first attempt saves edits.
-      if (draft.phase === "draft") {
-        edit(effectiveFields);
-        if (!(await flushed())) return setAction(null);
-      }
-      const result = await promoteDraft({
-        environmentId,
-        input: { id: draft.id, expectedRevision: revision() },
-      });
-      settle(result, (created) => {
-        onDraft(created);
-        onTicketCreated(created);
-      });
-    },
-    [
-      draft.id,
-      draft.phase,
-      edit,
+  const promote = async (effectiveFields: WorkbenchTicketDraftFields) => {
+    setAction("promote");
+    setError(null);
+    // A draft already in `promoting` has frozen content; only its first attempt saves edits.
+    if (draft.phase === "draft") {
+      edit(effectiveFields);
+      if (!(await flushed())) return setAction(null);
+    }
+    const result = await promoteDraft({
       environmentId,
-      flushed,
-      onDraft,
-      onTicketCreated,
-      promoteDraft,
-      revision,
-      settle,
-    ],
-  );
+      input: { id: draft.id, expectedRevision: revision() },
+    });
+    settle(result, (created) => {
+      onDraft(created);
+      onTicketCreated(created);
+    });
+  };
 
-  const startWork = useCallback(async () => {
+  const startWork = async () => {
     setAction("start");
     setError(null);
     const result = await startWorkDraft({
@@ -420,21 +389,11 @@ export function useTicketDraftTransitions({
     onDraft(started);
     // The same native Thread continues in its prepared work area; nothing is sent automatically.
     onWorkStarted(started);
-  }, [
-    draft.id,
-    environmentId,
-    onDraft,
-    onWorkStarted,
-    projects,
-    readSnapshot,
-    revision,
-    settle,
-    startWorkDraft,
-  ]);
+  };
 
   // Discard throws the edits away, so a failed flush is not a reason to stop; it only needs the
   // newest revision, which a conflicting saved draft may have advanced.
-  const discard = useCallback(async () => {
+  const discard = async () => {
     setAction("discard");
     setError(null);
     await flush();
@@ -447,32 +406,26 @@ export function useTicketDraftTransitions({
       onDiscarded();
     });
     return result._tag === "Success";
-  }, [abandon, discardDraft, draft.id, environmentId, flush, latestRevision, onDiscarded, settle]);
+  };
 
   // Leaving keeps the draft, so a failed flush keeps the editor open with the edits and the
   // error instead of closing over them. The toast reaches a person on the other tab.
-  const leaveAfterFlush = useCallback(
-    async (leave: () => void) => {
-      const outcome = await flush();
-      if (!outcome.ok) {
-        setError(outcome.message);
-        toastManager.add({
-          type: "warning",
-          title: "Your edits are not saved yet",
-          description: outcome.message,
-        });
-        return false;
-      }
-      leave();
-      return true;
-    },
-    [flush],
-  );
-  const close = useCallback(() => leaveAfterFlush(onClose), [leaveAfterFlush, onClose]);
-  const createManually = useCallback(
-    () => leaveAfterFlush(onCreateManually),
-    [leaveAfterFlush, onCreateManually],
-  );
+  const leaveAfterFlush = async (leave: () => void) => {
+    const outcome = await flush();
+    if (!outcome.ok) {
+      setError(outcome.message);
+      toastManager.add({
+        type: "warning",
+        title: "Your edits are not saved yet",
+        description: outcome.message,
+      });
+      return false;
+    }
+    leave();
+    return true;
+  };
+  const close = () => leaveAfterFlush(onClose);
+  const createManually = () => leaveAfterFlush(onCreateManually);
 
   return { action, error, setError, promote, startWork, discard, close, createManually };
 }

@@ -6,13 +6,15 @@ import {
 } from "@t3tools/shared/sourceControl";
 import {
   pullRequestHostOf,
+  type ProjectId,
   type PullRequestListEntry,
   type PullRequestRef,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { useAtomValue } from "@effect/atom-react";
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { parseChangeRequestUrl } from "~/lib/openPullRequestLink";
 import { parsePullRequestReference } from "~/pullRequestReference";
@@ -121,6 +123,33 @@ export function resolveLinkPullRequestInput(input: {
   };
 }
 
+function resolveOwnProject(
+  environmentProjects: ReturnType<typeof useProjects>,
+  projectId: ProjectId | undefined,
+) {
+  const project = environmentProjects.find((candidate) => candidate.id === projectId);
+  const identity = project?.repositoryIdentity;
+  if (!project || !identity) return null;
+  const repository =
+    identity.displayName ??
+    (identity.owner && identity.name ? `${identity.owner}/${identity.name}` : null);
+  if (repository === null) return null;
+  const definition = sourceControlClients.get(identity.provider ?? "unknown");
+  const host = pullRequestHostOf(identity, definition.kind);
+  return {
+    host,
+    repository,
+    webUrl: (number: number) =>
+      definition.changeRequestUrl({
+        host,
+        repository,
+        number,
+        remoteUrl: identity.locator.remoteUrl,
+        webUrl: identity.webUrl,
+      }),
+  };
+}
+
 /** Hosts without text search return a recent page; narrow those rows locally without claiming
  * the page contains every match. The URL path remains available for older PRs. */
 type LinkCandidate = Pick<
@@ -154,37 +183,14 @@ function LinkPullRequestDialog({
   const [reference, setReference] = useState("");
   const [dirty, setDirty] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
   const projects = useProjects();
-  const environmentProjects = useMemo(
-    () => projects.filter((project) => project.environmentId === threadRef.environmentId),
-    [projects, threadRef.environmentId],
+  const environmentProjects = projects.filter(
+    (project) => project.environmentId === threadRef.environmentId,
   );
-  const ownProject = useMemo(() => {
-    const project = environmentProjects.find((candidate) => candidate.id === thread?.projectId);
-    const identity = project?.repositoryIdentity;
-    if (!project || !identity) return null;
-    const repository =
-      identity.displayName ??
-      (identity.owner && identity.name ? `${identity.owner}/${identity.name}` : null);
-    if (repository === null) return null;
-    const definition = sourceControlClients.get(identity.provider ?? "unknown");
-    const host = pullRequestHostOf(identity, definition.kind);
-    return {
-      host,
-      repository,
-      webUrl: (number: number) =>
-        definition.changeRequestUrl({
-          host,
-          repository,
-          number,
-          remoteUrl: identity.locator.remoteUrl,
-          webUrl: identity.webUrl,
-        }),
-    };
-  }, [environmentProjects, thread?.projectId]);
+  const ownProject = resolveOwnProject(environmentProjects, thread?.projectId);
   const ownUrl = ownProject?.webUrl(1);
   const supportsBareNumber = ownUrl != null && parseChangeRequestUrl(ownUrl) !== null;
+  const [pending, setPending] = useState(false);
   const linking = usePullRequestLinking(threadRef.environmentId);
   const normalizedQuery = query.trim().replace(/^#(?=\d+$)/, "");
   const sentQuery = useDebouncedValue(normalizedQuery, 300);
@@ -193,7 +199,7 @@ function LinkPullRequestDialog({
     parsedNumber !== null && Number.isSafeInteger(parsedNumber) && parsedNumber > 0
       ? parsedNumber
       : null;
-  const numberTargets = useMemo(() => {
+  const numberTargets = (() => {
     if (number === null) return [];
     const seen = new Set<string>();
     const targets: Array<{
@@ -214,7 +220,7 @@ function LinkPullRequestDialog({
       });
     }
     return targets;
-  }, [environmentProjects, number, threadRef.environmentId]);
+  })();
   const numberSearch = usePullRequestNumberSearch(numberTargets);
   const search = usePullRequestList(
     number === null
@@ -232,6 +238,18 @@ function LinkPullRequestDialog({
       : [],
   );
 
+  const [openSeen, setOpenSeen] = useState(open);
+  if (openSeen !== open) {
+    setOpenSeen(open);
+    if (open) {
+      setManual(false);
+      setQuery("");
+      setSelectedUrl(null);
+      setReference("");
+      setDirty(false);
+      setSubmitError(null);
+    }
+  }
   useEffect(() => {
     if (!open) return;
     const frame = window.requestAnimationFrame(() =>
@@ -240,15 +258,12 @@ function LinkPullRequestDialog({
     return () => window.cancelAnimationFrame(frame);
   }, [manual, open]);
 
-  const resolved = useMemo(
-    () =>
-      resolveLinkPullRequestInput({
-        reference,
-        project: ownProject,
-        hasProject: (candidate) => linking.canLink(candidate.url),
-      }),
-    [linking, ownProject, reference],
-  );
+  const resolved = resolveLinkPullRequestInput({
+    reference,
+    project: ownProject,
+    hasProject: (candidate) => linking.canLink(candidate.url),
+  });
+
   const candidates: ReadonlyArray<LinkCandidate> =
     number === null
       ? (search.data?.entries ?? []).filter((entry) => {
@@ -297,21 +312,21 @@ function LinkPullRequestDialog({
       ? resolved.link.url
       : null
     : selectedUrl;
-  const submit = useCallback(async () => {
+
+  const submit = async () => {
     if (manual) setDirty(true);
     if (selectedLink === null || pending) return;
     setSubmitError(null);
     setPending(true);
-    try {
-      await linking.changeLink(threadRef, selectedLink, true);
-    } catch (error) {
+    const result = await settlePromise(() => linking.changeLink(threadRef, selectedLink, true));
+    setPending(false);
+    if (result._tag === "Failure") {
+      const error = squashAtomCommandFailure(result);
       setSubmitError(error instanceof Error ? error.message : "Could not link the pull request.");
       return;
-    } finally {
-      setPending(false);
     }
     onOpenChange(false);
-  }, [linking, manual, onOpenChange, pending, selectedLink, threadRef]);
+  };
 
   const validation =
     !manual || !dirty

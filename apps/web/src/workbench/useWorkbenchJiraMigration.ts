@@ -57,35 +57,37 @@ export function useWorkbenchJiraMigration({
     const targetEnvironmentId = environmentId;
     setJiraPendingAction("migrate-local");
     setJiraError(null);
-    try {
-      const result = await jiraMigrateLocalTickets({
-        environmentId: targetEnvironmentId,
-        input: {
-          bindingId: binding.id,
-          action,
-          tickets,
-          ...(epics.length > 0 ? { epics } : {}),
-        },
-      });
-      if (statusEnvironmentRef.current !== targetEnvironmentId) return null;
-      if (result._tag === "Failure") {
-        if (isAtomCommandInterrupted(result)) return null;
-        setJiraError(failureMessage(result));
+    return (async () => {
+      try {
+        const result = await jiraMigrateLocalTickets({
+          environmentId: targetEnvironmentId,
+          input: {
+            bindingId: binding.id,
+            action,
+            tickets,
+            ...(epics.length > 0 ? { epics } : {}),
+          },
+        });
+        if (statusEnvironmentRef.current !== targetEnvironmentId) return null;
+        if (result._tag === "Failure") {
+          if (isAtomCommandInterrupted(result)) return null;
+          setJiraError(failureMessage(result));
+          return null;
+        }
+        await Promise.all([refreshJiraSnapshot(), refreshWorkbenchSnapshot()]);
+        return result.value;
+      } catch (cause) {
+        if (statusEnvironmentRef.current !== targetEnvironmentId) return null;
+        setJiraError(
+          cause instanceof Error && cause.message.trim().length > 0
+            ? cause.message
+            : "Local Jira migration failed.",
+        );
         return null;
       }
-      await Promise.all([refreshJiraSnapshot(), refreshWorkbenchSnapshot()]);
-      return result.value;
-    } catch (cause) {
-      if (statusEnvironmentRef.current !== targetEnvironmentId) return null;
-      setJiraError(
-        cause instanceof Error && cause.message.trim().length > 0
-          ? cause.message
-          : "Local Jira migration failed.",
-      );
-      return null;
-    } finally {
+    })().finally(() => {
       if (statusEnvironmentRef.current === targetEnvironmentId) setJiraPendingAction(null);
-    }
+    });
   }
 
   return { wasJiraMigrationCommitted, migrateJiraLocalData };

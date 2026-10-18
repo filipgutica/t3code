@@ -52,15 +52,38 @@ export function useWorkbenchJiraSync({
       state: "syncing",
       message: "Syncing tickets from Jira…",
     });
-    try {
-      const result = await jiraSyncBinding({
-        environmentId: targetEnvironmentId,
-        input: { bindingId: binding.id },
-      });
-      if (statusEnvironmentRef.current !== targetEnvironmentId) return null;
-      if (result._tag === "Failure") {
-        if (isAtomCommandInterrupted(result)) return null;
-        const message = failureMessage(result);
+    return (async () => {
+      try {
+        const result = await jiraSyncBinding({
+          environmentId: targetEnvironmentId,
+          input: { bindingId: binding.id },
+        });
+        if (statusEnvironmentRef.current !== targetEnvironmentId) return null;
+        if (result._tag === "Failure") {
+          if (isAtomCommandInterrupted(result)) return null;
+          const message = failureMessage(result);
+          setJiraError(message);
+          setJiraSyncNotice({
+            environmentId: targetEnvironmentId,
+            projectId: binding.projectId,
+            bindingId: binding.id,
+            state: "error",
+            message,
+          });
+          await refreshJiraSnapshot();
+          return null;
+        }
+        setJiraSyncNotice(
+          jiraSyncSuccessNotice({ result: result.value, targetEnvironmentId, binding }),
+        );
+        await Promise.all([refreshJiraSnapshot(), refreshWorkbenchSnapshot()]);
+        return result.value;
+      } catch (cause) {
+        if (statusEnvironmentRef.current !== targetEnvironmentId) return null;
+        const message =
+          cause instanceof Error && cause.message.trim().length > 0
+            ? cause.message
+            : "Jira synchronization failed.";
         setJiraError(message);
         setJiraSyncNotice({
           environmentId: targetEnvironmentId,
@@ -69,32 +92,11 @@ export function useWorkbenchJiraSync({
           state: "error",
           message,
         });
-        await refreshJiraSnapshot();
         return null;
       }
-      setJiraSyncNotice(
-        jiraSyncSuccessNotice({ result: result.value, targetEnvironmentId, binding }),
-      );
-      await Promise.all([refreshJiraSnapshot(), refreshWorkbenchSnapshot()]);
-      return result.value;
-    } catch (cause) {
-      if (statusEnvironmentRef.current !== targetEnvironmentId) return null;
-      const message =
-        cause instanceof Error && cause.message.trim().length > 0
-          ? cause.message
-          : "Jira synchronization failed.";
-      setJiraError(message);
-      setJiraSyncNotice({
-        environmentId: targetEnvironmentId,
-        projectId: binding.projectId,
-        bindingId: binding.id,
-        state: "error",
-        message,
-      });
-      return null;
-    } finally {
+    })().finally(() => {
       if (statusEnvironmentRef.current === targetEnvironmentId) setJiraPendingAction(null);
-    }
+    });
   }
 
   return { jiraSyncBinding, syncJiraBinding };

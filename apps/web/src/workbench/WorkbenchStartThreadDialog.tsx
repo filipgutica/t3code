@@ -8,7 +8,7 @@ import type {
 } from "@t3tools/contracts";
 import { ProviderInstanceId } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
-import { useMemo, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useEnvironmentSettings } from "../hooks/useSettings";
@@ -113,49 +113,24 @@ const useWorkbenchStartThreadSelection = ({
   readonly defaultModelSelection: ModelSelection | null;
   readonly stickyModelSelection: ModelSelection | null;
 }) => {
-  const instanceEntries = useMemo(
-    () =>
-      sortProviderInstanceEntries(
-        applyProviderInstanceSettings(
-          deriveProviderInstanceEntries(providers),
-          settings,
-          projectId,
-        ),
-      ),
-    [providers, settings, projectId],
+  const instanceEntries = sortProviderInstanceEntries(
+    applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, projectId),
   );
-  const availableModelOptionsByInstance = useMemo(
-    () => getCustomModelOptionsByInstance(settings, providers),
-    [providers, settings],
-  );
+  const availableModelOptionsByInstance = getCustomModelOptionsByInstance(settings, providers);
   const [explicitSelection, setExplicitSelection] = useState<ModelSelection | null>(null);
-  const resolvedSelection = useMemo(
-    () =>
-      resolveWorkbenchStartThreadSelectionWithFallback({
-        entries: instanceEntries,
-        explicitSelection,
-        projectSelection: defaultModelSelection,
-        stickySelection: stickyModelSelection,
-        modelOptionsByInstance: availableModelOptionsByInstance,
-      }),
-    [
-      availableModelOptionsByInstance,
-      defaultModelSelection,
-      explicitSelection,
-      instanceEntries,
-      stickyModelSelection,
-    ],
-  );
+  const resolvedSelection = resolveWorkbenchStartThreadSelectionWithFallback({
+    entries: instanceEntries,
+    explicitSelection,
+    projectSelection: defaultModelSelection,
+    stickySelection: stickyModelSelection,
+    modelOptionsByInstance: availableModelOptionsByInstance,
+  });
   const setStickyModelSelection = useComposerDraftStore((store) => store.setStickyModelSelection);
-  const modelOptionsByInstance = useMemo(
-    () =>
-      getCustomModelOptionsByInstance(
-        settings,
-        providers,
-        resolvedSelection?.instanceId,
-        resolvedSelection?.model,
-      ),
-    [providers, resolvedSelection?.instanceId, resolvedSelection?.model, settings],
+  const modelOptionsByInstance = getCustomModelOptionsByInstance(
+    settings,
+    providers,
+    resolvedSelection?.instanceId,
+    resolvedSelection?.model,
   );
   const activeEntry = instanceEntries.find(
     (entry) => entry.instanceId === resolvedSelection?.instanceId,

@@ -4,7 +4,6 @@ import { useWorkbenchThreadLookup } from "./useWorkbenchThreadLookup";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
-import { useMemo } from "react";
 import { useProjects } from "../state/entities";
 import { serverEnvironment } from "../state/server";
 import { useEnvironmentQuery } from "../state/query";
@@ -26,14 +25,8 @@ export function useWorkbenchPageData(environmentId: EnvironmentId | null) {
   );
   const refreshWorkbenchSnapshot = query.refresh;
   const refreshJiraSnapshot = jiraQuery.refresh;
-  const projects = useMemo(
-    () => allProjects.filter((project) => project.environmentId === environmentId),
-    [allProjects, environmentId],
-  );
-  const repositoriesById = useMemo(
-    () => new Map(projects.map((project) => [project.id, project])),
-    [projects],
-  );
+  const projects = allProjects.filter((project) => project.environmentId === environmentId);
+  const repositoriesById = new Map(projects.map((project) => [project.id, project]));
   const snapshot = query.data;
   const snapshotProjects = snapshot?.projects ?? null;
   const jiraSnapshot = jiraQuery.data;

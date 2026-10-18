@@ -6,7 +6,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { ExternalLinkIcon } from "lucide-react";
 import { parseChangeRequestUrl, useOpenChangeRequestLink } from "../lib/openPullRequestLink";
 import type { EnvironmentId, ProjectId, PullRequestState } from "@t3tools/contracts";
-import { useMemo, type MouseEvent } from "react";
+import { type MouseEvent } from "react";
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { linkedPullRequestDetailAtom, useSharedPullRequestSummary } from "../state/pullRequests";
@@ -181,7 +181,7 @@ export function WorkbenchPullRequestLink({
           openWorkbenchPullRequest({ ...selection, ...(linkedThread ? { linkedThread } : {}) })
       : undefined,
   );
-  const reference = useMemo(() => {
+  const reference = (() => {
     if (!pullRequest.projectId || !pullRequest.repository) return null;
     const host = parseChangeRequestUrl(pullRequest.url)?.host;
     return {
@@ -190,7 +190,7 @@ export function WorkbenchPullRequestLink({
       number: pullRequest.number,
       ...(host === undefined ? {} : { host }),
     };
-  }, [pullRequest.projectId, pullRequest.repository, pullRequest.number, pullRequest.url]);
+  })();
   const queried = useEnvironmentQuery(
     pullRequest.state === undefined && reference
       ? linkedPullRequestDetailAtom({ environmentId, input: reference })

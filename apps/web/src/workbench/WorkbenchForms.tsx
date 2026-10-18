@@ -60,7 +60,6 @@ import {
 } from "lucide-react";
 import {
   useEffect,
-  useMemo,
   useState,
   type Dispatch,
   type SetStateAction,
@@ -1219,13 +1218,10 @@ function WorkbenchTicketDetailController({
       }),
     ],
   });
-  const executionStatus = useMemo(
-    () =>
-      getWorkbenchTicketExecutionStatuses({ environmentId, assignments, threadsById }).get(
-        ticket.id,
-      ) ?? null,
-    [environmentId, assignments, threadsById, ticket.id],
-  );
+  const executionStatus =
+    getWorkbenchTicketExecutionStatuses({ environmentId, assignments, threadsById }).get(
+      ticket.id,
+    ) ?? null;
   const linkedEpicId = ticket.epicId;
   const canOpenThread = workspaceReadOnly
     ? assignment !== undefined && displayedThread !== undefined
@@ -5605,7 +5601,7 @@ function useWorkbenchTicketSettlement(environmentId: EnvironmentId) {
     if (!supportsSettlement || settlementPendingThreadId !== null) return;
     const wasSettled = thread.settledOverride === "settled";
     setSettlementPendingThreadId(thread.id);
-    try {
+    return (async () => {
       const result = wasSettled
         ? await unsettleThread(scopeThreadRef(environmentId, thread.id))
         : await settleThread(scopeThreadRef(environmentId, thread.id));
@@ -5619,9 +5615,9 @@ function useWorkbenchTicketSettlement(environmentId: EnvironmentId) {
           }),
         );
       }
-    } finally {
+    })().finally(() => {
       setSettlementPendingThreadId((current) => (current === thread.id ? null : current));
-    }
+    });
   };
   return { supportsSettlement, settlementPendingThreadId, toggleThreadSettlement };
 }

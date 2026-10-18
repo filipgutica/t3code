@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 import {
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -805,26 +804,17 @@ function useWorkbenchSidebarAttentionNavigation({
 >) {
   const { attentionSignalsByTicket, attentionInspectionsByTicket, attentionCoverage } =
     useWorkbenchAttentionData();
-  const prioritizedGroups = useMemo(
-    () =>
-      prioritizeWorkbenchSidebarAttention({
-        ticketGroupsByWorkspace,
-        attentionSignalsByTicket,
-        actionableThreadIdsByTicket,
-        onlyActionable,
-      }),
-    [
-      ticketGroupsByWorkspace,
-      attentionSignalsByTicket,
-      actionableThreadIdsByTicket,
-      onlyActionable,
-    ],
-  );
-  const actionableProjects = useMemo(
-    () =>
-      getWorkbenchSidebarVisibleProjects({ projects, onlyActionable, groups: prioritizedGroups }),
-    [projects, onlyActionable, prioritizedGroups],
-  );
+  const prioritizedGroups = prioritizeWorkbenchSidebarAttention({
+    ticketGroupsByWorkspace,
+    attentionSignalsByTicket,
+    actionableThreadIdsByTicket,
+    onlyActionable,
+  });
+  const actionableProjects = getWorkbenchSidebarVisibleProjects({
+    projects,
+    onlyActionable,
+    groups: prioritizedGroups,
+  });
   const actionableTicketCount = [...attentionSignalsByTicket.values()].filter(
     (signals) => signals.length > 0,
   ).length;
@@ -921,10 +911,7 @@ function WorkbenchSidebarNavigation({
     projects,
     onlyActionable,
   });
-  const jiraKeysByTicketId = useMemo(
-    () => getWorkbenchSidebarJiraKeys(ticketDetailsById),
-    [ticketDetailsById],
-  );
+  const jiraKeysByTicketId = getWorkbenchSidebarJiraKeys(ticketDetailsById);
   const visibleDrafts = onlyActionable ? emptySidebarDrafts : draftsByWorkspace;
   const visibleProjects = actionableProjects;
   const archivedFiltered = {
@@ -993,27 +980,14 @@ function WorkbenchSidebarNavigation({
       navigation={navigation}
     />
   );
-  const searchResults = useMemo(
-    () =>
-      getWorkbenchSidebarSearchResults({
-        query: searchQuery,
-        projects: onlyActionable ? actionableProjects : projects,
-        ticketGroupsByWorkspace: prioritizedGroups,
-        archivedTicketsByWorkspace: onlyActionable ? new Map() : archivedTicketsByWorkspace,
-        jiraKeysByTicketId,
-        draftsByWorkspace: visibleDrafts,
-      }),
-    [
-      searchQuery,
-      onlyActionable,
-      actionableProjects,
-      projects,
-      prioritizedGroups,
-      archivedTicketsByWorkspace,
-      jiraKeysByTicketId,
-      visibleDrafts,
-    ],
-  );
+  const searchResults = getWorkbenchSidebarSearchResults({
+    query: searchQuery,
+    projects: onlyActionable ? actionableProjects : projects,
+    ticketGroupsByWorkspace: prioritizedGroups,
+    archivedTicketsByWorkspace: onlyActionable ? new Map() : archivedTicketsByWorkspace,
+    jiraKeysByTicketId,
+    draftsByWorkspace: visibleDrafts,
+  });
   const selectSearchResult = (result: WorkbenchSidebarSearchResult) => {
     search.onSearchQueryChange("");
     revealAttentionWorkspace(result.workspaceId);
@@ -1994,17 +1968,11 @@ function useWorkbenchSidebarRecordGroups({
   environmentId: EnvironmentId | null;
   selectedTicketId: WorkbenchTicketId | undefined;
 }) {
-  const draftsByWorkspace = useMemo(
-    () => getWorkbenchSidebarDrafts({ snapshot, threadShells, environmentId }),
-    [snapshot, threadShells, environmentId],
-  );
-  const ticketCountsByWorkspace = useMemo(
-    () => getWorkbenchSidebarTicketCounts(snapshot?.tickets ?? []),
-    [snapshot?.tickets],
-  );
-  const archivedTicketsByWorkspace = useMemo(
-    () => getWorkbenchSidebarArchivedTickets(snapshot?.tickets ?? [], selectedTicketId),
-    [selectedTicketId, snapshot?.tickets],
+  const draftsByWorkspace = getWorkbenchSidebarDrafts({ snapshot, threadShells, environmentId });
+  const ticketCountsByWorkspace = getWorkbenchSidebarTicketCounts(snapshot?.tickets ?? []);
+  const archivedTicketsByWorkspace = getWorkbenchSidebarArchivedTickets(
+    snapshot?.tickets ?? [],
+    selectedTicketId,
   );
   return { draftsByWorkspace, ticketCountsByWorkspace, archivedTicketsByWorkspace };
 }
@@ -2024,75 +1992,50 @@ function useWorkbenchSidebarData({
     environmentId === null ? null : workbenchEnvironment.snapshot({ environmentId, input: {} }),
   );
   const snapshot = query.data;
+  const tickets = snapshot?.tickets ?? [];
+  const assignments = snapshot?.assignments ?? [];
+  const threads = getWorkbenchSidebarThreads({ currentThread, threadShells });
   const nativeProjects = useProjects();
   const jiraQuery = useEnvironmentQuery(
     environmentId === null ? null : workbenchEnvironment.jiraSnapshot({ environmentId, input: {} }),
   );
-  const ticketDetailsById = useMemo(
-    () =>
-      snapshot
-        ? getWorkbenchSidebarTicketDetails({
-            environmentId,
-            tickets: snapshot.tickets,
-            assignments: snapshot.assignments,
-            threads: getWorkbenchSidebarThreads({ currentThread, threadShells }),
-            projects: nativeProjects,
-            workbenchProjects: snapshot.projects,
-            epics: snapshot.epics,
-            issueLinks: jiraQuery.data?.issueLinks ?? [],
-          })
-        : new Map<WorkbenchTicketId, WorkbenchSidebarTicketDetails>(),
-    [
-      environmentId,
-      snapshot,
-      threadShells,
-      currentThread,
-      nativeProjects,
-      jiraQuery.data?.issueLinks,
-    ],
-  );
+  const ticketDetailsById = (() =>
+    snapshot
+      ? getWorkbenchSidebarTicketDetails({
+          environmentId,
+          tickets,
+          assignments,
+          threads,
+          projects: nativeProjects,
+          workbenchProjects: snapshot.projects,
+          epics: snapshot.epics,
+          issueLinks: jiraQuery.data?.issueLinks ?? [],
+        })
+      : new Map<WorkbenchTicketId, WorkbenchSidebarTicketDetails>())();
   const { draftsByWorkspace, ticketCountsByWorkspace, archivedTicketsByWorkspace } =
     useWorkbenchSidebarRecordGroups({ snapshot, threadShells, environmentId, selectedTicketId });
-  const selectedTicket = snapshot?.tickets.find((ticket) => ticket.id === selectedTicketId);
+  const selectedTicket = tickets.find((ticket) => ticket.id === selectedTicketId);
   const selectedTicketStatus = selectedTicket?.status;
   const selectedTicketIsDone =
     selectedTicketStatus === "done" && selectedTicket?.archivedAt == null;
   const { attentionSignalsByTicket } = useWorkbenchAttentionData();
   const { sidebarQuery, onlyActionable, setSidebarSearch, setOnlyActionable } =
     useWorkbenchSidebarFilters(environmentId);
-  const actionableThreadIdsByTicket = useMemo(
-    () =>
-      getWorkbenchSidebarActionableThreadIds({
-        environmentId,
-        assignments: snapshot?.assignments ?? [],
-        threads: getWorkbenchSidebarThreads({ currentThread, threadShells }),
-        attentionSignalsByTicket,
-      }),
-    [environmentId, snapshot?.assignments, currentThread, threadShells, attentionSignalsByTicket],
-  );
-  const ticketGroupsByWorkspace = useMemo(
-    () =>
-      getWorkbenchSidebarTicketGroups({
-        environmentId,
-        tickets: snapshot?.tickets ?? [],
-        assignments: snapshot?.assignments ?? [],
-        threads: getWorkbenchSidebarThreads({ currentThread, threadShells }),
-        selectedTicketId,
-        selectedThreadId: context?.threadId,
-        includeUnassignedTickets: sidebarQuery.trim().length > 0 || onlyActionable,
-      }),
-    [
-      environmentId,
-      selectedTicketId,
-      context?.threadId,
-      currentThread,
-      snapshot?.assignments,
-      snapshot?.tickets,
-      threadShells,
-      sidebarQuery,
-      onlyActionable,
-    ],
-  );
+  const actionableThreadIdsByTicket = getWorkbenchSidebarActionableThreadIds({
+    environmentId,
+    assignments,
+    threads,
+    attentionSignalsByTicket,
+  });
+  const ticketGroupsByWorkspace = getWorkbenchSidebarTicketGroups({
+    environmentId,
+    tickets,
+    assignments,
+    threads,
+    selectedTicketId,
+    selectedThreadId: context?.threadId,
+    includeUnassignedTickets: sidebarQuery.trim().length > 0 || onlyActionable,
+  });
 
   return {
     query,

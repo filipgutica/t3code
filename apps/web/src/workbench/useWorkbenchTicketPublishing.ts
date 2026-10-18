@@ -313,30 +313,32 @@ export function useWorkbenchTicketPublishing({
     setError(null);
     const isCurrent = () =>
       matchesPublicationScope({ opened, current: latest.current }) && sessionRef.current === opened;
-    try {
-      const result = await createTicket({ environmentId: opened.environmentId, input });
-      if (!isCurrent()) return false;
-      const failed = reportWorkbenchCommandFailure(result, (message) => {
-        fail(message);
-      });
-      // A failed response can follow a committed Jira issue. Request both snapshot
-      // refreshes; retries retain the same input for resumable creation.
-      refreshWorkbenchSnapshot();
-      refreshJiraSnapshot();
-      if (failed) return false;
-      sessionRef.current = null;
-      setSession(null);
-      return true;
-    } catch (cause) {
-      if (!isCurrent()) return false;
-      fail(cause instanceof Error ? cause.message : "Publishing this Ticket to Jira failed.");
-      refreshWorkbenchSnapshot();
-      refreshJiraSnapshot();
-      return false;
-    } finally {
+    return (async () => {
+      try {
+        const result = await createTicket({ environmentId: opened.environmentId, input });
+        if (!isCurrent()) return false;
+        const failed = reportWorkbenchCommandFailure(result, (message) => {
+          fail(message);
+        });
+        // A failed response can follow a committed Jira issue. Request both snapshot
+        // refreshes; retries retain the same input for resumable creation.
+        refreshWorkbenchSnapshot();
+        refreshJiraSnapshot();
+        if (failed) return false;
+        sessionRef.current = null;
+        setSession(null);
+        return true;
+      } catch (cause) {
+        if (!isCurrent()) return false;
+        fail(cause instanceof Error ? cause.message : "Publishing this Ticket to Jira failed.");
+        refreshWorkbenchSnapshot();
+        refreshJiraSnapshot();
+        return false;
+      }
+    })().finally(() => {
       submitting.current = false;
       setPendingAction((current) => (current === action ? null : current));
-    }
+    });
   };
   const publishTicket = async (selection: PublicationSelection): Promise<boolean> => {
     const opened = sessionRef.current;

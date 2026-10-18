@@ -8,7 +8,7 @@ import {
   type ThreadId,
   type ModelSelection,
 } from "@t3tools/contracts";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomCommand } from "../state/use-atom-command";
 import { threadEnvironment } from "../state/threads";
@@ -122,18 +122,17 @@ export function useWorkbenchThreadActions({
   );
   const [attachThreadTicket, setAttachThreadTicket] = useState<WorkbenchTicket | null>(null);
 
-  const openAssignedThread = useCallback(
-    async (threadId: ThreadId) => {
-      if (environmentId === null) return;
-      const archived = isWorkbenchThreadArchived(threadId, threadsById, archivedThreadsById);
-      if (archived && !canOperate) return;
-      if (archived) {
-        setPendingAction(`restore:${threadId}`);
-        setError(null);
-      }
-      let result: Awaited<ReturnType<typeof openAssignedThreadWithRestore>>;
+  const openAssignedThread = async (threadId: ThreadId) => {
+    if (environmentId === null) return;
+    const archived = isWorkbenchThreadArchived(threadId, threadsById, archivedThreadsById);
+    if (archived && !canOperate) return;
+    if (archived) {
+      setPendingAction(`restore:${threadId}`);
+      setError(null);
+    }
+    const result = await (async () => {
       try {
-        result = await openAssignedThreadWithRestore(
+        return await openAssignedThreadWithRestore(
           { environmentId, threadId, archived },
           {
             unarchive: unarchiveThread,
@@ -153,34 +152,24 @@ export function useWorkbenchThreadActions({
             : "Workbench could not open the assigned Thread.",
         );
         return;
-      } finally {
-        if (archived) setPendingAction(null);
       }
-      if (result.state === "restore-failed" && !isAtomCommandInterrupted(result.failure)) {
-        refreshArchivedThreads();
-        setError(failureMessage(result.failure));
-        return;
-      }
-      if (result.state === "navigation-failed") {
-        setError(
-          result.cause instanceof Error && result.cause.message.trim().length > 0
-            ? result.cause.message
-            : "The Thread is ready, but Workbench could not open it.",
-        );
-      }
-    },
-    [
-      archivedThreadsById,
-      canOperate,
-      environmentId,
-      navigate,
-      refreshArchivedThreads,
-      threadsById,
-      unarchiveThread,
-      setError,
-      setPendingAction,
-    ],
-  );
+    })().finally(() => {
+      if (archived) setPendingAction(null);
+    });
+    if (result === undefined) return;
+    if (result.state === "restore-failed" && !isAtomCommandInterrupted(result.failure)) {
+      refreshArchivedThreads();
+      setError(failureMessage(result.failure));
+      return;
+    }
+    if (result.state === "navigation-failed") {
+      setError(
+        result.cause instanceof Error && result.cause.message.trim().length > 0
+          ? result.cause.message
+          : "The Thread is ready, but Workbench could not open it.",
+      );
+    }
+  };
   const openTicketThread = useStartWorkbenchTicket({
     environmentId,
     projects,
@@ -278,18 +267,18 @@ export function useWorkbenchThreadActions({
     if (environmentId === null || pendingAction !== null) return;
     setPendingAction(`delete-thread:${threadId}`);
     setError(null);
-    try {
+    return (async () => {
       const result = await confirmAndDeleteThread(scopeThreadRef(environmentId, threadId), {
         preserveWorktree: true,
       });
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         setError(failureMessage(result));
       }
-    } finally {
+    })().finally(() => {
       setPendingAction(null);
       refreshArchivedThreads();
       refreshWorkbenchSnapshot();
-    }
+    });
   };
 
   const attachExistingThread = async (threadId: ThreadId) => {

@@ -19,7 +19,7 @@ import {
   TicketPlusIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import ChatView from "../components/ChatView";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
@@ -142,34 +142,26 @@ function usePlanningModelSelection({
   );
   const anchorProjectId = draft?.anchorProjectId ?? workspace.linkedProjectIds[0] ?? null;
   const anchorProject = linkedProjects.find((project) => project.id === anchorProjectId);
-  const entries = useMemo(
-    () =>
-      sortProviderInstanceEntries(
-        applyProviderInstanceSettings(
-          deriveProviderInstanceEntries(providers),
-          settings,
-          anchorProjectId,
-        ),
-      ),
-    [providers, settings, anchorProjectId],
+  const entries = sortProviderInstanceEntries(
+    applyProviderInstanceSettings(
+      deriveProviderInstanceEntries(providers),
+      settings,
+      anchorProjectId,
+    ),
   );
-  const modelSelection = useMemo(
-    () =>
-      resolveTicketPlanningModelSelection({
-        candidates: entries.map((entry) => ({
-          instanceId: entry.instanceId,
-          driverKind: entry.driverKind,
-          ready: isProviderInstancePickerReady(entry),
-          defaultModel:
-            entry.models.find((model) => model.isDefault && !model.isCustom)?.slug ??
-            entry.models.find((model) => !model.isCustom)?.slug ??
-            entry.models[0]?.slug ??
-            null,
-        })),
-        preferred: [anchorProject?.defaultModelSelection, sticky],
-      }),
-    [entries, anchorProject?.defaultModelSelection, sticky],
-  );
+  const modelSelection = resolveTicketPlanningModelSelection({
+    candidates: entries.map((entry) => ({
+      instanceId: entry.instanceId,
+      driverKind: entry.driverKind,
+      ready: isProviderInstancePickerReady(entry),
+      defaultModel:
+        entry.models.find((model) => model.isDefault && !model.isCustom)?.slug ??
+        entry.models.find((model) => !model.isCustom)?.slug ??
+        entry.models[0]?.slug ??
+        null,
+    })),
+    preferred: [anchorProject?.defaultModelSelection, sticky],
+  });
   return { entries, modelSelection };
 }
 

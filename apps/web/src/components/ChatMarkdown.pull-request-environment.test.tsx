@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { AsyncResult } from "effect/reactivity";
@@ -10,9 +11,24 @@ import ChatMarkdown from "./ChatMarkdown";
 
 const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }));
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
-vi.mock("@effect/atom-react", () => ({
-  useAtomValue: () => null,
-}));
+vi.mock("../state/server", async (original) => {
+  const actual = await original<typeof import("../state/server")>();
+  const { Atom } = await import("effect/reactivity");
+  const config = {
+    environment: { capabilities: { pullRequests: true, threadPullRequests: true } },
+    availableEditors: [],
+  };
+  return {
+    ...actual,
+    environmentServerConfigsAtom: Atom.make(
+      new Map(["local", "remote"].map((id) => [EnvironmentId.make(id), config])),
+    ),
+    serverEnvironment: {
+      ...actual.serverEnvironment,
+      configValueAtom: Atom.family(() => Atom.make(config)),
+    },
+  };
+});
 vi.mock("../state/query", () => ({
   useEnvironmentQuery: () => ({
     resultIdentity: AsyncResult.initial(),

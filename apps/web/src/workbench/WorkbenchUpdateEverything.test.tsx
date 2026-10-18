@@ -15,7 +15,12 @@ const state = vi.hoisted(() => ({
   updateProviders: vi.fn(async () => []),
   installLocal: vi.fn(async () => true),
 }));
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => state.machines }));
+vi.mock("@effect/atom-react", () => ({
+  useAtomValue: (kind: string) =>
+    state.machines.map((machine) =>
+      kind === "updates" ? machine.updateState : machine.canMaintain,
+    ),
+}));
 vi.mock("../components/sidebar/updateEverythingRun", () => ({
   setUpdateEverythingRun: vi.fn(),
   settleUpdateRunMachine: vi.fn(),
@@ -32,9 +37,23 @@ vi.mock("../components/sidebar/updateEverythingRun", () => ({
 }));
 vi.mock("~/branding", () => ({ APP_VERSION: "0.0.24" }));
 vi.mock("~/env", () => ({ isElectron: true }));
-vi.mock("~/state/environments", () => ({ useEnvironments: () => ({ environments: [] }) }));
-vi.mock("~/state/session", () => ({ environmentSession: { sessionStateAtom: vi.fn() } }));
-vi.mock("~/state/server", () => ({ serverEnvironment: { updateStateAtom: vi.fn() } }));
+vi.mock("~/state/environments", () => ({
+  useEnvironments: () => ({
+    environments: state.machines.map((machine) => ({
+      environmentId: machine.environmentId,
+      label: machine.label,
+      serverConfig: machine.serverConfig,
+      connection: { phase: machine.connected ? "connected" : "disconnected" },
+      entry: {
+        target: {
+          _tag: machine.hostedByThisApp ? "PrimaryConnectionTarget" : "RemoteConnectionTarget",
+        },
+      },
+    })),
+  }),
+}));
+vi.mock("~/state/session", () => ({ environmentSessionStatesAtom: () => "sessions" }));
+vi.mock("~/state/server", () => ({ environmentUpdateStatesAtom: () => "updates" }));
 vi.mock("~/state/npmRelease", () => ({
   useNpmReleasePublished: (version: string | null) => {
     state.checkNpm(version);
@@ -42,7 +61,7 @@ vi.mock("~/state/npmRelease", () => ({
   },
 }));
 vi.mock("../components/ServerUpdateAction", () => ({
-  canUpdateServer: () => true,
+  canUpdateServer: (allowed: boolean) => allowed,
   useServerUpdate: () => state.updateServer,
 }));
 vi.mock("../components/ProviderUpdatesAction", () => ({
