@@ -452,7 +452,7 @@ const selectCommandPaletteClientSettings = (settings: ClientSettings) => ({
 
 function useSortedProjectGroups(environmentLabelById: ReadonlyMap<EnvironmentId, string>) {
   const projects = useProjects();
-  const threads = useThreadShells();
+  const threads = useVisibleThreads(useThreadShells());
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const clientSettings = useClientSettings(selectCommandPaletteClientSettings);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
