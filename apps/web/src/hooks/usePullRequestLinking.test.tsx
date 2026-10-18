@@ -66,3 +66,19 @@ it("offers Ticket PR linking only when the environment has a linkable Git host",
   act(() => renderer.update(<Probe />));
   expect(observed.onValue).toHaveBeenLastCalledWith(true);
 });
+
+vi.mock("~/state/server", async (original) => {
+  const actual = await original<typeof import("~/state/server")>();
+  const { Atom } = await import("effect/reactivity");
+  return {
+    ...actual,
+    environmentServerConfigsAtom: Atom.make(
+      new Map(
+        ["local", "remote"].map((id) => [
+          EnvironmentId.make(id),
+          { environment: { capabilities: { pullRequests: true, threadPullRequests: true } } },
+        ]),
+      ),
+    ),
+  };
+});
