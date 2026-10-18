@@ -298,6 +298,6 @@ describe("Mirrored Jira columns", () => {
         mirrorColumns: null,
         issueLinks: new Map(),
       }).map((column) => column.title),
-    ).toEqual(["Todo", "In Progress", "Done"]);
+    ).toEqual(["To Do", "In Progress", "Done"]);
   });
 });
