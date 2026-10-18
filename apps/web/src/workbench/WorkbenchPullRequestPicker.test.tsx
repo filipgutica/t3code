@@ -26,6 +26,19 @@ const project = (id: string, canonicalKey: string) => ({
     displayName: canonicalKey.split("/").slice(1).join("/"),
   },
 });
+// Shaped as the server identifies a bare-path remote: no provider, so no pull request host.
+const localPath = "/users/dev/git-remotes/beacon-cli";
+const localProject = {
+  id: ProjectId.make("project-local"),
+  environmentId,
+  repositoryIdentity: {
+    canonicalKey: localPath,
+    locator: { source: "git-remote", remoteName: "origin", remoteUrl: localPath },
+    displayName: localPath.slice(1),
+    owner: "users",
+    name: "beacon-cli",
+  },
+};
 const summaries: Record<string, { url: string; title: string; state: string }> = {
   "acme/web#42": {
     url: "https://github.com/acme/web/pull/42",
@@ -76,6 +89,7 @@ vi.mock("../state/entities", () => ({
     project("project-1", "github.com/acme/web"),
     project("project-2", "github.com/acme/api"),
     project("project-3", "github.com/acme/web"),
+    localProject,
   ],
 }));
 vi.mock("../hooks/usePullRequestLinking", () => ({
@@ -218,3 +232,32 @@ it.each(["42", "#42"])(
     );
   },
 );
+
+it("links the Thread's own repository by number when the Git host returns nothing", async () => {
+  render();
+  type("43");
+  expect(
+    buttons()
+      .map((node) => node.props["aria-label"])
+      .filter((label) => label?.startsWith("Select")),
+  ).toEqual(["Select github.com/acme/web #43: Pull request #43 in this Thread's repository"]);
+  expect(messages()).toContain(
+    "acme/api: no PR #43 returned. It may not exist or the Git host may be unavailable; paste a URL if yours is missing.",
+  );
+  select("Select github.com/acme/web #43: Pull request #43 in this Thread's repository");
+  await act(async () => {
+    await linkButton().props.onClick();
+  });
+  expect(observed.changeLink).toHaveBeenCalledExactlyOnceWith(
+    { environmentId, threadId: thread.id },
+    "https://github.com/acme/web/pull/43",
+    true,
+  );
+});
+
+it("skips number lookups for repositories without a pull request host", () => {
+  render();
+  type("43");
+  const text = [...messages(), ...buttons().map((node) => String(node.props["aria-label"]))];
+  expect(text.filter((line) => line.includes("beacon-cli"))).toEqual([]);
+});

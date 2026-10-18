@@ -1,10 +1,14 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { resolveLinkPullRequestInput } from "@t3tools/client-runtime/pull-request-link-input";
+import {
+  pullRequestLinkProject,
+  resolveLinkPullRequestInput,
+} from "@t3tools/client-runtime/pull-request-link-input";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   PullRequestListEntry,
   PullRequestRef,
+  RepositoryIdentity,
   ScopedThreadRef,
 } from "@t3tools/contracts";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
@@ -37,10 +41,13 @@ import { useDebouncedValue } from "../state/queries";
 
 const CANDIDATE_LIMIT = 50;
 
-type Candidate = Pick<
-  PullRequestListEntry,
-  "host" | "repository" | "number" | "title" | "url" | "state" | "isDraft"
->;
+type Candidate = Pick<PullRequestListEntry, "host" | "repository" | "number" | "title" | "url">;
+
+interface NumberTarget {
+  readonly input: PullRequestRef;
+  readonly url: string;
+  readonly own: boolean;
+}
 
 interface RowProps {
   readonly thread: EnvironmentThreadShell;
@@ -280,6 +287,7 @@ function SearchResults({
             <CandidateRow
               key={`${entry.host}/${entry.repository}#${entry.number}`}
               entry={entry}
+              status={entry.isDraft ? "Draft" : entry.state}
               {...rowProps}
             />
           ))}
@@ -305,7 +313,7 @@ function searchCandidates(
   search: MergedPullRequestListView,
   sentQuery: string,
   canLink: (url: string) => boolean,
-): ReadonlyArray<Candidate> {
+): ReadonlyArray<PullRequestListEntry> {
   const needle = sentQuery.toLowerCase();
   return (search.data?.entries ?? []).filter(
     (entry) =>
@@ -339,16 +347,16 @@ function NumberResults({
   readonly number: number;
   readonly rowProps: RowProps;
 }) {
-  const targets = repositoryTargets(useProjects(), environmentId, number);
+  const targets = repositoryTargets(useProjects(), rowProps.thread, number);
   return (
     <ResultsFrame>
       {targets.length > 0 ? (
         <ul>
-          {targets.map((input) => (
+          {targets.map((target) => (
             <NumberCandidate
-              key={input.projectId}
+              key={target.input.projectId}
               environmentId={environmentId}
-              input={input}
+              target={target}
               {...rowProps}
             />
           ))}
@@ -362,49 +370,83 @@ function NumberResults({
   );
 }
 
-/** One lookup per distinct repository, so the same remote cloned into two projects is read once. */
+/** One lookup per distinct repository, so the same remote cloned into two projects is read once.
+ * Repositories whose host has no pull request URL, such as local remotes, get no lookup. */
 function repositoryTargets(
   projects: ReturnType<typeof useProjects>,
-  environmentId: EnvironmentId,
+  thread: EnvironmentThreadShell,
   number: number,
-): ReadonlyArray<PullRequestRef> {
+): ReadonlyArray<NumberTarget> {
+  const ownIdentity = projects.find(
+    (project) => project.environmentId === thread.environmentId && project.id === thread.projectId,
+  )?.repositoryIdentity;
+  const ownKey = ownIdentity ? repositoryKey(ownIdentity) : null;
   const seen = new Set<string>();
-  const targets: Array<PullRequestRef> = [];
+  const targets: Array<NumberTarget> = [];
   for (const project of projects) {
     const identity = project.repositoryIdentity;
-    if (project.environmentId !== environmentId || !identity || identity.provider === "unknown")
-      continue;
+    if (project.environmentId !== thread.environmentId || !identity) continue;
     const repository = sourceControlRepositorySelector(identity);
-    const key = canonicalRepositoryKey(identity.canonicalKey.toLowerCase());
-    if (repository === null || seen.has(key)) continue;
+    const key = repositoryKey(identity);
+    const url = numberLinkUrl(identity, number);
+    if (repository === null || url === null || seen.has(key)) continue;
     seen.add(key);
-    targets.push({ projectId: project.id, repository, number });
+    targets.push({
+      input: { projectId: project.id, repository, number },
+      url,
+      own: key === ownKey,
+    });
   }
   return targets;
 }
 
+function repositoryKey(identity: RepositoryIdentity): string {
+  return canonicalRepositoryKey(identity.canonicalKey.toLowerCase());
+}
+
+function numberLinkUrl(identity: RepositoryIdentity, number: number): string | null {
+  const resolved = resolveLinkPullRequestInput({
+    reference: String(number),
+    project: pullRequestLinkProject(identity),
+    hasProject: () => false,
+  });
+  return resolved !== null && "link" in resolved ? resolved.link.url : null;
+}
+
+/** The Thread's own repository stays linkable by number, as in the native dialog, even when the
+ * Git host lookup is slow or fails. */
 function NumberCandidate({
   environmentId,
-  input,
+  target,
   ...rowProps
-}: RowProps & { readonly environmentId: EnvironmentId; readonly input: PullRequestRef }) {
+}: RowProps & { readonly environmentId: EnvironmentId; readonly target: NumberTarget }) {
+  const { input } = target;
   const query = useEnvironmentQuery(linkedPullRequestDetailAtom({ environmentId, input }));
   const reference = query.data === null ? null : parseChangeRequestUrl(query.data.url);
   if (query.data !== null && reference !== null) {
     if (!rowProps.linking.canLink(query.data.url)) return null;
     return (
       <CandidateRow
-        entry={{
-          ...reference,
-          title: query.data.title,
-          url: query.data.url,
-          state: query.data.state,
-          isDraft: query.data.isDraft === true,
-        }}
+        entry={{ ...reference, title: query.data.title, url: query.data.url }}
+        status={query.data.isDraft === true ? "Draft" : query.data.state}
         {...rowProps}
       />
     );
   }
+  const ownReference =
+    target.own && rowProps.linking.canLink(target.url) ? parseChangeRequestUrl(target.url) : null;
+  if (ownReference !== null)
+    return (
+      <CandidateRow
+        entry={{
+          ...ownReference,
+          title: `Pull request #${input.number} in this Thread's repository`,
+          url: target.url,
+        }}
+        status={query.isPending ? "Checking…" : "Not verified by the Git host"}
+        {...rowProps}
+      />
+    );
   return (
     <li className="border-b border-border/50 px-3 py-2 text-xs text-muted-foreground last:border-b-0">
       <p role="status">
@@ -418,12 +460,13 @@ function NumberCandidate({
 
 function CandidateRow({
   entry,
+  status,
   thread,
   linking,
   selectedUrl,
   pending,
   onSelect,
-}: RowProps & { readonly entry: Candidate }) {
+}: RowProps & { readonly entry: Candidate; readonly status: string }) {
   const linked = linking.isLinked(thread, entry.url);
   return (
     <li className="border-b border-border/50 last:border-b-0">
@@ -437,8 +480,7 @@ function CandidateRow({
       >
         <span className="w-full truncate">{entry.title}</span>
         <span className="w-full truncate text-xs text-muted-foreground">
-          {entry.host}/{entry.repository} #{entry.number} ·{" "}
-          {linked ? "Linked" : entry.isDraft ? "Draft" : entry.state}
+          {entry.host}/{entry.repository} #{entry.number} · {linked ? "Linked" : status}
         </span>
       </button>
     </li>
