@@ -16,13 +16,14 @@ import { Select } from "../components/ui/select";
 import { WorkbenchLinkPullRequest } from "./WorkbenchLinkPullRequest";
 
 const observed = vi.hoisted(() => ({
-  open: vi.fn(),
   mode: "multiple",
   phase: "connected",
   canLinkAny: true,
 }));
-vi.mock("../components/pullRequest/LinkPullRequestDialog", () => ({
-  openLinkPullRequestDialog: observed.open,
+vi.mock("./WorkbenchPullRequestPicker", () => ({
+  WorkbenchPullRequestPicker: ({ thread }: { thread: EnvironmentThreadShell }) => (
+    <div data-picker-thread={thread.id} />
+  ),
 }));
 vi.mock("../hooks/usePullRequestLinking", () => ({
   usePullRequestLinking: () => ({ mode: observed.mode, canLinkAny: observed.canLinkAny }),
@@ -105,12 +106,15 @@ const props = {
 };
 const button = (renderer: ReactTestRenderer, text: string) =>
   renderer.root.findAllByType("button").find((node) => node.children.includes(text))!;
+const pickerThreads = (renderer: ReactTestRenderer) =>
+  renderer.root
+    .findAll((node) => node.props["data-picker-thread"] !== undefined)
+    .map((node) => node.props["data-picker-thread"]);
 
 describe("Ticket PR linking", () => {
   let renderer: ReactTestRenderer;
   beforeEach(() => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    observed.open.mockClear();
     observed.mode = "multiple";
     observed.phase = "connected";
     observed.canLinkAny = true;
@@ -119,7 +123,7 @@ describe("Ticket PR linking", () => {
     act(() => renderer?.unmount());
     vi.unstubAllGlobals();
   });
-  it("opens the native dialog for the sole eligible Thread in the Ticket's environment", () => {
+  it("opens the PR picker for the sole eligible Thread in the Ticket's environment", () => {
     act(() => {
       renderer = create(
         <WorkbenchLinkPullRequest
@@ -140,7 +144,7 @@ describe("Ticket PR linking", () => {
     });
     expect(button(renderer, "Link PR").props.disabled).toBe(false);
     act(() => button(renderer, "Link PR").props.onClick());
-    expect(observed.open).toHaveBeenCalledExactlyOnceWith({ environmentId, threadId: one.id });
+    expect(pickerThreads(renderer)).toEqual([one.id]);
   });
   it("requires an explicit Thread choice when multiple live Threads are eligible", () => {
     act(() => {
@@ -158,14 +162,14 @@ describe("Ticket PR linking", () => {
       );
     });
     act(() => button(renderer, "Link PR").props.onClick());
-    expect(observed.open).not.toHaveBeenCalled();
+    expect(pickerThreads(renderer)).toEqual([]);
     const labels = renderer.root.findAllByType("span").map((span) => span.children.join(""));
     expect(labels).toContain("Same title · source checkout · first");
     expect(labels).toContain("Same title · source checkout · second");
     expect(button(renderer, "Continue").props.disabled).toBe(true);
     act(() => renderer.root.findByType(Select).props.onValueChange(two.id));
     act(() => button(renderer, "Continue").props.onClick());
-    expect(observed.open).toHaveBeenCalledExactlyOnceWith({ environmentId, threadId: two.id });
+    expect(pickerThreads(renderer)).toEqual([two.id]);
   });
   it.each(["missing", "archived", "settled", "foreign", "unsupported", "offline", "no-host"])(
     "explains why linking is unavailable for %s",
@@ -200,7 +204,8 @@ describe("Ticket PR linking", () => {
         expect(renderer.root.findByProps({ role: "tooltip" }).children.join("")).toContain(
           "supported Git remote",
         );
-      expect(observed.open).not.toHaveBeenCalled();
+      act(() => button(renderer, "Link PR").props.onClick());
+      expect(pickerThreads(renderer)).toEqual([]);
     },
   );
 });
