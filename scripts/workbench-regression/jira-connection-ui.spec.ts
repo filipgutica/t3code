@@ -54,7 +54,17 @@ type RpcMessage = string | Buffer;
 type RpcRequestId = string | number;
 type WebSocketServer = { send: (message: RpcMessage) => void };
 
-const routeMockJira = async (page: Page) => {
+const routeMockJira = async (page: Page, fourColumns = false) => {
+  const boardConfiguration = {
+    ...fakeBoardConfiguration,
+    columns: fourColumns
+      ? [
+          ...fakeBoardConfiguration.columns.slice(0, 2),
+          { name: "In Review", statusIds: ["4"], done: false },
+          fakeBoardConfiguration.columns[2]!,
+        ]
+      : fakeBoardConfiguration.columns,
+  };
   let mode: SyncMode = "normal";
   let migrationMode: MigrationMode = "normal";
   let failRecoveryRead = false;
@@ -120,8 +130,8 @@ const routeMockJira = async (page: Page) => {
       { jiraStatusId: "6", workbenchStatus: "done" },
     ],
     followActiveSprint: true,
-    boardMode: "mapped" as const,
-    boardColumns: fakeBoardConfiguration.columns,
+    boardMode: fourColumns ? "mirror_jira" : "mapped",
+    boardColumns: boardConfiguration.columns,
     active: true,
     lastSyncedAt: null,
     lastSyncError: null,
@@ -336,7 +346,7 @@ const routeMockJira = async (page: Page) => {
         return;
       }
       if (payload.tag === WORKBENCH_WS_METHODS.workbenchJiraGetBoardConfiguration) {
-        sendExit(socket, payload.id, fakeBoardConfiguration);
+        sendExit(socket, payload.id, boardConfiguration);
         return;
       }
       if (payload.tag === WORKBENCH_WS_METHODS.workbenchJiraCreateBinding) {
@@ -543,7 +553,7 @@ const seedLocalEpicAndTicket = async (page: Page, demo: Demo, workspaceId: strin
 const connectJira = async (page: Page) => {
   await page.getByRole("button", { name: "Workspace actions" }).click();
   await page.getByRole("menuitem", { name: "Connect Jira", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: /^(Connect Jira|Jira sprint mirror)$/ });
+  const dialog = page.getByRole("dialog", { name: /^(Connect Jira|Jira sync)$/ });
   await expect(dialog.getByText(fakeConnection.siteName, { exact: true })).toBeVisible();
   await dialog.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(dialog.getByRole("combobox", { name: "Jira project" })).toBeVisible();
@@ -554,11 +564,34 @@ const connectJira = async (page: Page) => {
   await dialog.getByRole("combobox", { name: "Jira board" }).click();
   await page.getByRole("option", { name: /Orbit Regression Board/ }).click();
   await dialog.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(dialog.getByRole("button", { name: "Create mirror", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Create Jira sync", exact: true })).toBeVisible();
   return dialog;
 };
 
 test.describe("Jira connection UI contract", () => {
+  test("fits four Jira columns at 1440px with the sidebar open", async ({ page, demo }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await routeMockJira(page, true);
+    await createWorkspace(page, demo, "Four-column Jira Board");
+    const dialog = await connectJira(page);
+    await dialog.getByRole("button", { name: "Create Jira sync", exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    await page.getByRole("button", { name: "View imported tickets", exact: true }).click();
+    await expect(
+      page.getByRole("list", { name: "Workbench Workspaces", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole("region", { name: "All Tickets", exact: true })
+        .locator("[data-workbench-status]"),
+    ).toHaveCount(4);
+    const done = page.getByRole("region", { name: "Done Tickets", exact: true });
+    await expect(done).toBeVisible();
+    const bounds = await done.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(1440);
+  });
+
   test("refreshes remote Jira changes when returning to Workbench without a manual sync", async ({
     page,
     demo,
@@ -566,7 +599,7 @@ test.describe("Jira connection UI contract", () => {
     const route = await routeMockJira(page);
     await createWorkspace(page, demo, "Foreground Jira Refresh");
     const dialog = await connectJira(page);
-    await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
+    await dialog.getByRole("button", { name: "Create Jira sync", exact: true }).click();
     await expect(dialog).not.toBeVisible();
     await page.getByRole("button", { name: "View imported tickets", exact: true }).click();
     await expect(page.getByText("Jira · ORBIT-999", { exact: true })).toBeVisible();
@@ -592,7 +625,7 @@ test.describe("Jira connection UI contract", () => {
     await createWorkspace(page, demo, "Deterministic Jira Connection");
     const dialog = await connectJira(page);
     route.setMode("hold");
-    await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
+    await dialog.getByRole("button", { name: "Create Jira sync", exact: true }).click();
     await route.waitForSync();
     await expect(page.getByLabel("Jira sync status")).toContainText("Syncing with Jira…");
     route.release();
@@ -624,7 +657,7 @@ test.describe("Jira connection UI contract", () => {
     const route = await routeMockJira(page);
     await createWorkspace(page, demo, "Workbench Jira");
     const dialog = await connectJira(page);
-    await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
+    await dialog.getByRole("button", { name: "Create Jira sync", exact: true }).click();
     await expect(dialog).not.toBeVisible();
     const futureSprintName = "WB-reg-0123456789abcdef0123";
     route.setSelectedSprints([
@@ -643,10 +676,8 @@ test.describe("Jira connection UI contract", () => {
     ]) {
       await page.setViewportSize(viewport);
       await page.getByRole("button", { name: "Workspace actions", exact: true }).click();
-      await page
-        .getByRole("menuitem", { name: "Configure Jira sprint mirror", exact: true })
-        .click();
-      const mirrorDialog = page.getByRole("dialog", { name: "Jira sprint mirror", exact: true });
+      await page.getByRole("menuitem", { name: "Configure Jira sync", exact: true }).click();
+      const mirrorDialog = page.getByRole("dialog", { name: "Jira sync", exact: true });
       await expect(mirrorDialog).toBeVisible();
       await mirrorDialog
         .getByRole("button", { name: "Close", exact: true })
@@ -661,7 +692,7 @@ test.describe("Jira connection UI contract", () => {
     await createWorkspace(page, demo, "Deterministic Jira Retry");
     const dialog = await connectJira(page);
     route.setMode("failure");
-    await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
+    await dialog.getByRole("button", { name: "Create Jira sync", exact: true }).click();
     const status = page
       .getByRole("status")
       .filter({ hasText: "Jira sync failed for deterministic regression." });
@@ -686,7 +717,7 @@ test.describe("Jira connection UI contract", () => {
     await createWorkspace(page, demo, "Deterministic Jira Empty");
     const dialog = await connectJira(page);
     route.setMode("empty");
-    await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
+    await dialog.getByRole("button", { name: "Create Jira sync", exact: true }).click();
     await expect(dialog).not.toBeVisible();
     await expect(
       page.getByRole("status").filter({
@@ -703,7 +734,7 @@ test.describe("Jira connection UI contract", () => {
     const workspaceId = await createWorkspace(page, demo, "Deterministic Jira Delete Choice");
     const { epic, ticket } = await seedLocalEpicAndTicket(page, demo, workspaceId);
     const dialog = await connectJira(page);
-    const createButton = dialog.getByRole("button", { name: "Create mirror", exact: true });
+    const createButton = dialog.getByRole("button", { name: "Create Jira sync", exact: true });
 
     await expect(dialog.getByText("Existing local data", { exact: true })).toBeVisible();
     await expect(createButton).toBeDisabled();
@@ -736,11 +767,11 @@ test.describe("Jira connection UI contract", () => {
     await dialog.getByRole("radio", { name: /Publish local data to Jira/ }).click();
 
     route.setMigrationMode("hold");
-    await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
+    await dialog.getByRole("button", { name: "Create Jira sync", exact: true }).click();
     await route.waitForMigration();
     expect(route.getBackgroundSyncRequestCount()).toBe(0);
     await expect(dialog.getByRole("status")).toContainText(
-      "Saving the mirror and importing Jira tickets…",
+      "Saving Jira sync and importing Jira tickets…",
     );
     await expect(
       dialog.getByRole("button", { name: "Syncing with Jira…", exact: true }),
@@ -762,7 +793,7 @@ test.describe("Jira connection UI contract", () => {
       epics: [{ id: epic.id, updatedAt: epic.updatedAt }],
     });
 
-    await dialog.getByRole("button", { name: "Save mirror", exact: true }).click();
+    await dialog.getByRole("button", { name: "Save Jira sync", exact: true }).click();
     await expect(dialog).not.toBeVisible();
     await expect(
       page.getByRole("status").filter({ hasText: /Synced \d+ Jira tickets?/i }),
@@ -797,7 +828,7 @@ test.describe("Jira connection UI contract", () => {
     await dialog.getByRole("radio", { name: /Delete local data/ }).click();
     route.setMigrationMode("lost-response");
     route.setRecoveryReadFailure(recoveryReadFails);
-    await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
+    await dialog.getByRole("button", { name: "Create Jira sync", exact: true }).click();
     await page
       .getByRole("alertdialog")
       .getByRole("button", { name: "Delete and import", exact: true })
@@ -808,7 +839,7 @@ test.describe("Jira connection UI contract", () => {
       );
       await expect.poll(route.getFailedSnapshotCount).toBeGreaterThan(0);
       route.setRecoveryReadFailure(false);
-      await dialog.getByRole("button", { name: "Save mirror", exact: true }).click();
+      await dialog.getByRole("button", { name: "Save Jira sync", exact: true }).click();
       await page
         .getByRole("alertdialog")
         .getByRole("button", { name: "Delete and import", exact: true })

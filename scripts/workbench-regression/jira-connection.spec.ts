@@ -216,7 +216,7 @@ test.describe("Jira connection UX @live", () => {
     await page.getByRole("button", { name: "Workspace actions" }).click();
     await page.getByRole("menuitem", { name: "Connect Jira", exact: true }).click();
 
-    const dialog = page.getByRole("dialog", { name: /^(Connect Jira|Jira sprint mirror)$/ });
+    const dialog = page.getByRole("dialog", { name: /^(Connect Jira|Jira sync)$/ });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(sourceConnection.siteName, { exact: true })).toBeVisible();
     await dialog.getByRole("button", { name: "Continue", exact: true }).click();
@@ -230,7 +230,9 @@ test.describe("Jira connection UX @live", () => {
       .getByRole("option", { name: new RegExp(escapeRegExp(sourceBinding.boardName)) })
       .click();
     await dialog.getByRole("button", { name: "Continue", exact: true }).click();
-    await expect(dialog.getByRole("button", { name: "Create mirror", exact: true })).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "Create Jira sync", exact: true }),
+    ).toBeVisible();
 
     const followSprints = dialog.getByRole("checkbox", {
       name: "Follow selected sprints automatically",
@@ -247,7 +249,7 @@ test.describe("Jira connection UX @live", () => {
     await sprintCheckbox.check();
 
     syncRoute.setMode("hold");
-    await dialog.getByRole("button", { name: "Create mirror", exact: true }).click();
+    await dialog.getByRole("button", { name: "Create Jira sync", exact: true }).click();
     await syncRoute.requestSeen;
     await expect(page.getByLabel("Jira sync status")).toContainText("Syncing with Jira…");
     syncRoute.release();

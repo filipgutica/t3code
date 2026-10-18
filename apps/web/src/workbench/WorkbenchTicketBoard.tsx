@@ -177,9 +177,18 @@ export function WorkbenchTicketBoard(props: WorkbenchTicketBoardProps) {
   useLayoutEffect(() => {
     const board = boardRef.current;
     if (!board) return;
-    const measure = () => setWideBoard(board.clientWidth >= 768);
+    const root = document.documentElement;
+    const measure = () =>
+      setWideBoard(board.clientWidth >= 48 * Number.parseFloat(getComputedStyle(root).fontSize));
     measure();
-    return observeResize(board, measure);
+    const stopResize = observeResize(board, measure);
+    // Interface font preferences change rem breakpoints without necessarily resizing the Board.
+    const rootStyleObserver = new MutationObserver(measure);
+    rootStyleObserver.observe(root, { attributes: true, attributeFilter: ["style"] });
+    return () => {
+      stopResize();
+      rootStyleObserver.disconnect();
+    };
   }, []);
   const data = useWorkbenchBoardData(props);
   const drag = useWorkbenchBoardDrag({
@@ -304,9 +313,9 @@ function WorkbenchTicketBoardContent({
             />
             <div
               style={boardStyle}
-              className="flex min-w-0 flex-col gap-3 @min-[48rem]/board:min-w-[calc(var(--board-column-count)*18rem+(var(--board-column-count)-1)*0.75rem)]"
+              className="flex min-w-0 flex-col gap-3 @min-[48rem]/board:min-w-[calc(var(--board-column-count)*17rem+(var(--board-column-count)-1)*0.75rem)]"
             >
-              <div className="sticky top-0 z-10 -mx-3 hidden grid-flow-col auto-cols-[minmax(18rem,1fr)] gap-3 border-b border-border/60 bg-background px-3 py-1 shadow-sm sm:-mx-4 sm:px-4 @min-[48rem]/board:grid">
+              <div className="sticky top-0 z-10 -mx-3 hidden grid-flow-col auto-cols-[minmax(17rem,1fr)] gap-3 border-b border-border/60 bg-background px-3 py-1 shadow-sm sm:-mx-4 sm:px-4 @min-[48rem]/board:grid">
                 {columns.map((column) => (
                   <div key={column.id} className="flex min-w-0 items-center gap-2 px-2 py-2">
                     <span
@@ -478,7 +487,7 @@ function renderWorkbenchBoardSwimlane({
         </header>
       ) : null}
       <CollapsiblePanel>
-        <div className="grid min-w-0 grid-cols-1 gap-3 @min-[48rem]/board:auto-cols-[minmax(18rem,1fr)] @min-[48rem]/board:grid-flow-col @min-[48rem]/board:grid-cols-none">
+        <div className="grid min-w-0 grid-cols-1 gap-3 @min-[48rem]/board:auto-cols-[minmax(17rem,1fr)] @min-[48rem]/board:grid-flow-col @min-[48rem]/board:grid-cols-none">
           {columns.map((column) => {
             const laneTickets = orderWorkbenchTicketsByJiraRank(
               column.tickets.filter((ticket) => laneTicketIds.has(ticket.id)),

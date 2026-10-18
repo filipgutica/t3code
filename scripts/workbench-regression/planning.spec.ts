@@ -71,7 +71,7 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
     page.getByRole("heading", { name: "Edited regression ticket", exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Updated full description.", { exact: true })).toBeVisible();
-  for (const to of ["In Progress", "Done", "Todo"]) {
+  for (const to of ["In Progress", "Done", "To Do"]) {
     await page
       .getByRole("button", { name: "Change status of Edited regression ticket", exact: true })
       .click();

@@ -45,8 +45,8 @@ const openJiraDialog = async (page: Page, demo: Demo) => {
   await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=demo-jira"));
   await expect(page.getByRole("heading", { name: "Orbit Jira", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Workspace actions" }).click();
-  await page.getByRole("menuitem", { name: "Configure Jira sprint mirror", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Jira sprint mirror", exact: true });
+  await page.getByRole("menuitem", { name: "Configure Jira sync", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Jira sync", exact: true });
   await expect(dialog).toBeVisible();
   return dialog;
 };
@@ -129,7 +129,9 @@ test.describe("Jira Workbench integration @live", () => {
       .filter({ hasText: new RegExp(`^${escapeRegExp(sprint.name)}\\s`) })
       .getByRole("checkbox");
     await sprintCheckbox.uncheck();
-    await expect(dialog.getByRole("button", { name: "Save mirror", exact: true })).toBeDisabled();
+    await expect(
+      dialog.getByRole("button", { name: "Save Jira sync", exact: true }),
+    ).toBeDisabled();
     await dialog.getByRole("button", { name: "Back", exact: true }).click();
     await dialog
       .getByRole("button", { name: "Close", exact: true })
@@ -152,7 +154,7 @@ test.describe("Jira Workbench integration @live", () => {
       await expect(mirror).toBeChecked();
       await mirror.uncheck();
       await expect(dialog.getByRole("combobox", { name: /Map Jira status/ }).first()).toBeVisible();
-      await dialog.getByRole("button", { name: "Save mirror", exact: true }).click();
+      await dialog.getByRole("button", { name: "Save Jira sync", exact: true }).click();
       await expect(dialog).not.toBeVisible();
 
       let after = await jiraSnapshot(demo);
@@ -167,7 +169,7 @@ test.describe("Jira Workbench integration @live", () => {
       dialog = await openJiraDialog(page, demo);
       await dialog.getByRole("button", { name: "Edit sprints and mappings", exact: true }).click();
       await dialog.getByRole("checkbox", { name: "Mirror Jira states" }).check();
-      await dialog.getByRole("button", { name: "Save mirror", exact: true }).click();
+      await dialog.getByRole("button", { name: "Save Jira sync", exact: true }).click();
       await expect(dialog).not.toBeVisible();
       after = await jiraSnapshot(demo);
       expect(after.bindings.find((binding) => binding.id === before.binding.id)?.boardMode).toBe(
@@ -183,7 +185,7 @@ test.describe("Jira Workbench integration @live", () => {
           .click();
         const mirror = dialog.getByRole("checkbox", { name: "Mirror Jira states" });
         await mirror.setChecked(before.binding.boardMode === "mirror_jira");
-        await dialog.getByRole("button", { name: "Save mirror", exact: true }).click();
+        await dialog.getByRole("button", { name: "Save Jira sync", exact: true }).click();
         await expect(dialog).not.toBeVisible();
       }
     }
@@ -197,15 +199,15 @@ test.describe("Jira Workbench integration @live", () => {
     const beforeWorkbench = await snapshot(demo);
     try {
       let dialog = await openJiraDialog(page, demo);
-      await dialog.getByRole("button", { name: "Pause mirror", exact: true }).click();
+      await dialog.getByRole("button", { name: "Pause Jira sync", exact: true }).click();
       await expect(
-        dialog.getByRole("button", { name: "Resume mirror", exact: true }),
+        dialog.getByRole("button", { name: "Resume Jira sync", exact: true }),
       ).toBeVisible();
       await dialog
         .getByRole("button", { name: "Close", exact: true })
         .filter({ hasText: /^Close$/ })
         .click();
-      await expect(page.getByText("Jira paused", { exact: true })).toBeVisible();
+      await expect(page.getByText("Jira sync paused", { exact: true })).toBeVisible();
 
       await page.getByRole("button", { name: "New Ticket", exact: true }).click();
       await page.getByRole("button", { name: "Create manually", exact: true }).click();
@@ -219,13 +221,15 @@ test.describe("Jira Workbench integration @live", () => {
       await createDialog.getByRole("button", { name: "Cancel", exact: true }).click();
 
       dialog = await openJiraDialog(page, demo);
-      await dialog.getByRole("button", { name: "Resume mirror", exact: true }).click();
-      await expect(dialog.getByRole("button", { name: "Pause mirror", exact: true })).toBeVisible();
+      await dialog.getByRole("button", { name: "Resume Jira sync", exact: true }).click();
+      await expect(
+        dialog.getByRole("button", { name: "Pause Jira sync", exact: true }),
+      ).toBeVisible();
       await dialog
         .getByRole("button", { name: "Close", exact: true })
         .filter({ hasText: /^Close$/ })
         .click();
-      await expect(page.getByText("Jira paused", { exact: true })).not.toBeVisible();
+      await expect(page.getByText("Jira sync paused", { exact: true })).not.toBeVisible();
     } finally {
       const current = await jiraSnapshot(demo);
       const binding = current.bindings.find((candidate) => candidate.id === before.binding.id);
@@ -233,7 +237,7 @@ test.describe("Jira Workbench integration @live", () => {
         const dialog = await openJiraDialog(page, demo);
         await dialog
           .getByRole("button", {
-            name: before.binding.active ? "Resume mirror" : "Pause mirror",
+            name: before.binding.active ? "Resume Jira sync" : "Pause Jira sync",
             exact: true,
           })
           .click();
