@@ -514,7 +514,12 @@ jobs:
           if [[ "${{ matrix.platform }}" == mac && "${{ inputs.sign_macos }}" == true ]]; then
             args+=(--signed)
           fi
-          vp run dist:desktop:artifact "${args[@]}"
+          # Stapling and dependency downloads intermittently lose their network connection;
+          # one rebuild clears those without masking a deterministic failure.
+          if ! vp run dist:desktop:artifact "${args[@]}"; then
+            echo "::warning::Desktop artifact build failed; retrying once."
+            vp run dist:desktop:artifact "${args[@]}"
+          fi
 
       - name: Verify macOS signature and optional notarization
         if: matrix.platform == 'mac'
@@ -528,7 +533,13 @@ jobs:
           codesign --verify --deep --strict "$app"
           if [[ "${{ inputs.sign_macos }}" == true ]]; then
             spctl --assess --type execute --verbose "$app"
-            xcrun stapler validate "$app"
+            # The ticket lookup reaches Apple CloudKit, which intermittently drops connections.
+            for delay in 30 60 120 240 0; do
+              xcrun stapler validate "$app" && break
+              if [[ "$delay" == 0 ]]; then exit 1; fi
+              echo "::warning::stapler validate failed; retrying in ${delay}s."
+              sleep "$delay"
+            done
           fi
 
       - name: Remove notarization key

@@ -70,14 +70,14 @@ GitHub. This procedure does not provision credentials or change repository setti
 
 [Workbench daily desktop release](../../.github/workflows/workbench-daily-release.yml)
 reuses the same quality checks, WSL runtime, four-platform build matrix, and Apple signing requirements.
-Its schedule is nightly at **02:00 America/Vancouver**, using GitHub's
+It runs every six hours, at **02:17, 08:17, 14:17 and 20:17 America/Vancouver**, using GitHub's
 [IANA timezone support](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onschedule).
-Timezone rules determine the UTC offset. If a clock change skips 02:00, GitHub advances the run to the next valid time.
-GitHub may delay or drop scheduled runs, so this is a target time rather than a guaranteed start.
+Timezone rules determine the UTC offset. If a clock change skips a time, GitHub advances the run to the next valid time.
+GitHub may delay or drop scheduled runs, so these are target times rather than guaranteed starts.
 The scheduler requires successful main feature CI and Workbench quality runs for its exact captured SHA.
-Missing, pending, or failed verification skips that day's build.
+Missing, pending, or failed verification skips that run's build until the next schedule.
 **Run workflow** on `main` invokes the same changed-checkpoint path manually,
-with the same CI, unchanged-day, signing, and publication gates. Other branches
+with the same CI, unchanged-checkpoint, signing, and publication gates. Other branches
 do not run the resolver. Rerunning a failed run preserves its original daily identity.
 
 The scheduler captures its main SHA and original run date. It builds only when that
@@ -87,7 +87,9 @@ Each daily version increments the highest published `workbench-v*` version, incl
 For example, `0.0.22-nightly.20261007.9` follows stable `0.0.21`.
 An unsigned preview raises that version floor without advancing the successful signed-build checkpoint.
 The tag is `workbench-daily-v0.0.22-nightly.20261007.9`; the final number is the workflow run number.
-The original UTC date and run number remain fixed on reruns.
+The original UTC date and run number remain fixed on reruns, so several builds on one day differ by run number.
+The macOS notarization ticket lookup and dependency downloads fail intermittently on hosted runners, so a
+platform build retries once and `stapler validate` retries with backoff before the run fails.
 
 Daily releases publish automatically as prereleases after every platform, signature,
 manifest, and checksum check succeeds. They do not become GitHub's latest stable release.
