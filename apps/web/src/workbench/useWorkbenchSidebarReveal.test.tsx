@@ -178,6 +178,11 @@ it("pulses a visible row reached from outside the sidebar, but not one picked in
   act(() => root.render(<Harness activeKey="clicked-thread" />));
   act(() => vi.advanceTimersByTime(32));
   expect(row().hasAttribute("data-workbench-sidebar-reveal")).toBe(false);
+  act(() => root.render(<Harness activeKey="elsewhere" />));
+  row().removeAttribute("data-workbench-sidebar-reveal");
+  act(() => root.render(<Harness activeKey="clicked-thread" />));
+  act(() => vi.advanceTimersByTime(32));
+  expect(row().hasAttribute("data-workbench-sidebar-reveal")).toBe(true);
   expect(scrollIntoView).not.toHaveBeenCalled();
 });
 

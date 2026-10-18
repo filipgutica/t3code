@@ -62,6 +62,8 @@ export function useWorkbenchSidebarReveal({
       selectedInSidebar: row === pointerSurface.current || row.contains(document.activeElement),
     });
     pending.current = null;
+    // A click only explains the destination change it caused.
+    pointerSurface.current = null;
     const scrollTop = viewport.scrollTop;
     if (decision.scroll) {
       // Instant scrolling also avoids an animation competing with subsequent user input.
