@@ -407,6 +407,13 @@ it("prepares a remote PR checkout without writing to the current local Thread", 
 });
 
 describe("copy PR number with a modal open", () => {
+  // The events below use the macOS modifier; CI runs on Linux.
+  let platform: ReturnType<typeof vi.spyOn> | undefined;
+  beforeEach(() => {
+    platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+  });
+  afterEach(() => platform?.mockRestore());
+
   it.each([
     ["background panel", true, false, false],
     ["panel inside the modal", true, true, true],
