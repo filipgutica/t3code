@@ -3,7 +3,9 @@ name: Workbench daily desktop release
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 2 * * *"
+    # Every six hours; unchanged main snapshots resolve to no release. An off-hour minute
+    # avoids the start-of-hour scheduler backlog.
+    - cron: "17 2,8,14,20 * * *"
       timezone: "America/Vancouver"
 
 # Keep successful checkpoints ordered, including when a failed run is retried.
