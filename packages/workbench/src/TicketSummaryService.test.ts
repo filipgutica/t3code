@@ -9,6 +9,8 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Stream from "effect/Stream";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
@@ -38,11 +40,40 @@ const storeLayer = WorkbenchStoreLive.pipe(
   Layer.provideMerge(NodeCrypto.layer),
 );
 
-const testLayer = (host: TicketSummaryHost["Service"]) =>
-  TicketSummaryServiceLive.pipe(
-    Layer.provide(Layer.succeed(TicketSummaryHost, host)),
-    Layer.provideMerge(storeLayer),
-  );
+const withSummaryHost =
+  (host: TicketSummaryHost["Service"]) =>
+  <A, E>(test: Effect.Effect<A, E, WorkbenchStore | TicketSummaryService>) =>
+    Effect.gen(function* () {
+      const workerExited = yield* Deferred.make<never>();
+      const observedStoreLayer = Layer.effect(
+        WorkbenchStore,
+        Effect.gen(function* () {
+          const store = yield* WorkbenchStore;
+          return {
+            ...store,
+            // Propagate a subscription defect to the test waiting for host.generate.
+            ticketChanges: store.ticketChanges.pipe(
+              Stream.onExit((exit) =>
+                Exit.isFailure(exit)
+                  ? Deferred.failCause(workerExited, exit.cause)
+                  : Deferred.die(
+                      workerExited,
+                      "Summary subscription exited before the test completed",
+                    ),
+              ),
+            ),
+          };
+        }),
+      ).pipe(Layer.provideMerge(storeLayer));
+      return yield* Effect.raceFirst(test, Deferred.await(workerExited)).pipe(
+        Effect.provide(
+          TicketSummaryServiceLive.pipe(
+            Layer.provide(Layer.succeed(TicketSummaryHost, host)),
+            Layer.provideMerge(observedStoreLayer),
+          ),
+        ),
+      );
+    });
 
 const createTicket = Effect.gen(function* () {
   const store = yield* WorkbenchStore;
@@ -75,14 +106,12 @@ describe("TicketSummaryService", () => {
         yield* service.awaitIdle;
         expect((yield* store.getSnapshot).tickets[0]?.generatedSummary?.status).toBe("error");
       }).pipe(
-        Effect.provide(
-          testLayer({
-            generate: () =>
-              Deferred.succeed(started, undefined).pipe(
-                Effect.andThen(Effect.die("Unexpected provider failure")),
-              ),
-          }),
-        ),
+        withSummaryHost({
+          generate: () =>
+            Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Effect.die("Unexpected provider failure")),
+            ),
+        }),
       );
     }),
   );
@@ -153,14 +182,12 @@ describe("TicketSummaryService", () => {
         expect(ticket?.revision).toBe(original.revision);
         expect(ticket?.updatedAt).toBe(original.updatedAt);
       }).pipe(
-        Effect.provide(
-          testLayer({
-            generate: () =>
-              Deferred.succeed(started, undefined).pipe(
-                Effect.as("Validate dimensions before querying the provider."),
-              ),
-          }),
-        ),
+        withSummaryHost({
+          generate: () =>
+            Deferred.succeed(started, undefined).pipe(
+              Effect.as("Validate dimensions before querying the provider."),
+            ),
+        }),
       );
     }),
   );
@@ -191,21 +218,19 @@ describe("TicketSummaryService", () => {
         );
         expect(calls).toBe(2);
       }).pipe(
-        Effect.provide(
-          testLayer({
-            generate: (ticket) =>
-              Effect.gen(function* () {
-                calls += 1;
-                if (calls === 1) {
-                  yield* Deferred.succeed(firstStarted, undefined);
-                  yield* Deferred.await(releaseFirst);
-                } else {
-                  yield* Deferred.succeed(secondStarted, undefined);
-                }
-                return ticket.markdown;
-              }),
-          }),
-        ),
+        withSummaryHost({
+          generate: (ticket) =>
+            Effect.gen(function* () {
+              calls += 1;
+              if (calls === 1) {
+                yield* Deferred.succeed(firstStarted, undefined);
+                yield* Deferred.await(releaseFirst);
+              } else {
+                yield* Deferred.succeed(secondStarted, undefined);
+              }
+              return ticket.markdown;
+            }),
+        }),
       );
     }),
   );
@@ -240,20 +265,18 @@ describe("TicketSummaryService", () => {
           text: "Summary after restore.",
         });
       }).pipe(
-        Effect.provide(
-          testLayer({
-            generate: () =>
-              Effect.gen(function* () {
-                calls += 1;
-                if (calls === 1) {
-                  yield* Deferred.succeed(firstStarted, undefined);
-                  yield* Deferred.await(releaseFirst);
-                  return "Obsolete summary.";
-                }
-                return "Summary after restore.";
-              }),
-          }),
-        ),
+        withSummaryHost({
+          generate: () =>
+            Effect.gen(function* () {
+              calls += 1;
+              if (calls === 1) {
+                yield* Deferred.succeed(firstStarted, undefined);
+                yield* Deferred.await(releaseFirst);
+                return "Obsolete summary.";
+              }
+              return "Summary after restore.";
+            }),
+        }),
       );
     }),
   );
@@ -283,21 +306,19 @@ describe("TicketSummaryService", () => {
         );
         expect(calls).toBe(3);
       }).pipe(
-        Effect.provide(
-          testLayer({
-            generate: () =>
-              Effect.gen(function* () {
-                calls += 1;
-                yield* Deferred.succeed(started, undefined);
-                if (calls === 2)
-                  return yield* new WorkbenchOperationError({
-                    code: "ticket_summary_generation_failed",
-                    message: "The selected model is unavailable.",
-                  });
-                return calls === 1 ? "First summary." : "Retried summary.";
-              }),
-          }),
-        ),
+        withSummaryHost({
+          generate: () =>
+            Effect.gen(function* () {
+              calls += 1;
+              yield* Deferred.succeed(started, undefined);
+              if (calls === 2)
+                return yield* new WorkbenchOperationError({
+                  code: "ticket_summary_generation_failed",
+                  message: "The selected model is unavailable.",
+                });
+              return calls === 1 ? "First summary." : "Retried summary.";
+            }),
+        }),
       );
     }),
   );

@@ -30,6 +30,7 @@ import {
 } from "@t3tools/workbench/jira/JiraTicketImporter";
 import {
   WorkbenchJiraRepository,
+  layerSql as jiraRepositoryLayer,
   type WorkbenchJiraRepositoryShape,
 } from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 
@@ -1043,6 +1044,99 @@ describe("JiraSyncService", () => {
       assert.strictEqual(error.code, "status_unmapped");
       assert.strictEqual(yield* Ref.get(importCount), 0);
     }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+  );
+
+  it.effect("rejects a binding changed during synchronization before writing projections", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* WorkbenchStore;
+      const repository = yield* WorkbenchJiraRepository;
+      const importer = yield* JiraTicketImporter;
+      const requestStarted = yield* Deferred.make<void>();
+      const releaseRequest = yield* Deferred.make<void>();
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+        ) VALUES (
+          ${binding.defaultPrimaryT3ProjectId}, 'Primary Repository', '/repos/primary', '[]',
+          ${binding.createdAt}, ${binding.createdAt}, NULL
+        )
+      `;
+      yield* store.createProject({
+        id: binding.projectId,
+        title: "Jira Workspace",
+        linkedProjectIds: [binding.defaultPrimaryT3ProjectId],
+        createdAt: binding.createdAt,
+      });
+      yield* repository.upsertConnection(
+        {
+          id: binding.connectionId,
+          cloudId: "cloud-1",
+          siteName: "Example Jira",
+          siteUrl: "https://example.atlassian.net",
+          avatarUrl: null,
+          scopes: [],
+          createdAt: binding.createdAt,
+          updatedAt: binding.updatedAt,
+        },
+        "credential-1",
+      );
+      const previousSyncedAt = "2026-09-01T01:00:00.000Z";
+      yield* repository.upsertBinding({ ...binding, lastSyncedAt: previousSyncedAt });
+      const before = yield* store.getSnapshot;
+      let projectionWrites = 0;
+      const service = yield* makeSyncService.pipe(
+        Effect.provideService(WorkbenchJiraRepository, repository),
+        Effect.provide(
+          Layer.mock(JiraApi, {
+            listAssignedSprintIssues: () =>
+              Effect.gen(function* () {
+                yield* Deferred.succeed(requestStarted, undefined);
+                yield* Deferred.await(releaseRequest);
+                return [
+                  {
+                    ...oldIssue("10001").issue,
+                    epic: { id: "20001", key: "WB-EPIC", summary: "Imported Epic" },
+                  },
+                ];
+              }),
+          }),
+        ),
+        Effect.provideService(JiraTicketImporter, {
+          upsertJiraProjection: (input) => {
+            projectionWrites++;
+            return importer.upsertJiraProjection(input);
+          },
+        }),
+      );
+      const sync = yield* service.syncBinding({ bindingId }).pipe(Effect.forkChild);
+      yield* Deferred.await(requestStarted);
+      // A repository writer bypasses the service permit while Jira is in flight.
+      yield* repository.upsertBinding({
+        ...binding,
+        boardName: "Changed board",
+        lastSyncedAt: previousSyncedAt,
+        updatedAt: "2026-09-02T00:00:00.000Z",
+      });
+      yield* Deferred.succeed(releaseRequest, undefined);
+      const error = yield* Fiber.join(sync).pipe(Effect.flip);
+      assert.strictEqual(error.code, "invalid_binding");
+      assert.strictEqual(
+        error.message,
+        "The Jira sprint binding changed during synchronization. Refresh it again.",
+      );
+      assert.strictEqual(projectionWrites, 0);
+      const after = yield* store.getSnapshot;
+      assert.deepStrictEqual(after.tickets, before.tickets);
+      assert.deepStrictEqual(after.epics, before.epics);
+      assert.deepStrictEqual(yield* repository.listIssueLinks(bindingId), []);
+      const saved = yield* repository.getBinding(bindingId);
+      assert.isTrue(Option.isSome(saved));
+      if (Option.isSome(saved)) {
+        assert.strictEqual(saved.value.lastSyncedAt, previousSyncedAt);
+        assert.strictEqual(saved.value.boardName, "Changed board");
+      }
+    }).pipe(Effect.provide(jiraRepositoryLayer.pipe(Layer.provideMerge(ImporterIntegrationLayer)))),
   );
 
   it.effect("rolls back projection writes when a later import fails", () =>

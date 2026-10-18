@@ -33,7 +33,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
           cache: true
@@ -68,7 +68,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
           cache: true
@@ -122,7 +122,7 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
           cache: true

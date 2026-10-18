@@ -112,7 +112,7 @@ jobs:
 
       - name: Setup daily resolver Node runtime
         if: inputs.release_channel == 'nightly'
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
           cache: false
@@ -290,7 +290,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
           cache: true
@@ -327,7 +327,7 @@ jobs:
           sudo apt-get install -y build-essential python3 libsecret-1-dev pkg-config
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
           cache: true
@@ -337,7 +337,7 @@ jobs:
               - --filter=@t3tools/scripts...
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: x86_64-unknown-linux-gnu
 
@@ -433,7 +433,7 @@ jobs:
           fetch-depth: 1
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
           cache: ${{ matrix.platform != 'win' }}
@@ -465,7 +465,7 @@ jobs:
           if ($null -eq $proc -or $proc.ExitCode -ne 0) { exit 1 }
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.rust_target }}
 
@@ -649,7 +649,7 @@ jobs:
           printf '%s\n' "$DAILY_METADATA_JSON" > release-assets/workbench-release.json
 
       - name: Setup manifest merge tools
-        uses: voidzero-dev/setup-vp@v1
+        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
           cache: true

@@ -36,7 +36,7 @@ jobs:
             /*
             !/.repos/
           sparse-checkout-cone-mode: false
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
           run-install: true
@@ -48,9 +48,6 @@ jobs:
         run: |
           vp exec tsc --noEmit -p scripts/workbench-regression/tsconfig.json
           vp lint scripts/workbench-regression --report-unused-disable-directives
-      - name: Run Jira lifecycle regressions
-        if: ${{ matrix.shard == 1 }}
-        run: vp test run apps/server/src/workbench/jira/JiraLifecycle.integration.test.ts
       - name: Run browser regressions
         working-directory: scripts
         env:

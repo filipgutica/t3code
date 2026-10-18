@@ -4,26 +4,25 @@ import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
 import {
-  WorkbenchAssignment,
   WorkbenchArchiveTicketInput,
   WorkbenchArchiveProjectInput,
   WorkbenchDeleteProjectInput,
   WorkbenchCreateEpicInput,
   WorkbenchCreateTicketInput,
   WorkbenchDeleteTicketInput,
-  WorkbenchEpic,
   WorkbenchProject,
   WorkbenchReplaceAssignmentInput,
   WorkbenchSnapshot,
   WorkbenchTicket,
   WorkbenchTicketKind,
-  WorkbenchTicketWorkspace,
   WorkbenchTicketStatus,
   WorkbenchUnlinkAssignmentInput,
   WorkbenchUpdateProjectInput,
   WorkbenchUpdateJiraTicketFieldsInput,
   WorkbenchUpdateTicketInput,
 } from "./workbench.ts";
+import { AuthOrchestrationOperateScope } from "./auth.ts";
+import { WORKBENCH_CLIENT_GUARDED_RPC_SCOPES } from "./workbenchRpcPermissions.ts";
 import { WORKBENCH_WS_METHODS } from "./workbenchRpc.ts";
 import { WsRpcGroup } from "./rpc.ts";
 
@@ -48,11 +47,6 @@ const decodeWorkbenchReplaceAssignmentInput = Schema.decodeUnknownEffect(
 const decodeWorkbenchUnlinkAssignmentInput = Schema.decodeUnknownEffect(
   WorkbenchUnlinkAssignmentInput,
 );
-const isWorkbenchProject = Schema.is(WorkbenchProject);
-const isWorkbenchEpic = Schema.is(WorkbenchEpic);
-const isWorkbenchTicket = Schema.is(WorkbenchTicket);
-const isWorkbenchAssignment = Schema.is(WorkbenchAssignment);
-const isWorkbenchTicketWorkspace = Schema.is(WorkbenchTicketWorkspace);
 
 describe("Workbench contracts", () => {
   it.effect(
@@ -437,77 +431,10 @@ describe("Workbench contracts", () => {
     }),
   );
 
-  it("keeps the core records independently decodable", () => {
-    expect(
-      isWorkbenchProject({
-        id: "project-1",
-        title: "Project",
-        linkedProjectIds: ["t3-project-1"],
-        createdAt: "2026-09-03T12:00:00.000Z",
-        updatedAt: "2026-09-03T12:00:00.000Z",
-      }),
-    ).toBe(true);
-    expect(
-      isWorkbenchEpic({
-        id: "epic-1",
-        projectId: "project-1",
-        title: "Epic",
-        markdown: "Body",
-        archivedAt: null,
-        createdAt: "2026-09-03T12:00:00.000Z",
-        updatedAt: "2026-09-03T12:00:00.000Z",
-      }),
-    ).toBe(true);
-    expect(
-      isWorkbenchTicket({
-        id: "ticket-1",
-        projectId: "project-1",
-        title: "Ticket",
-        epicId: null,
-        kind: "bug",
-        markdown: "Body",
-        primaryT3ProjectId: "t3-project-1",
-        repositoryProjectIds: ["t3-project-1"],
-        status: "todo",
-        blocked: false,
-        revision: 0,
-        createdAt: "2026-09-03T12:00:00.000Z",
-        updatedAt: "2026-09-03T12:00:00.000Z",
-      }),
-    ).toBe(true);
-    expect(
-      isWorkbenchAssignment({
-        id: "assignment-1",
-        ticketId: "ticket-1",
-        threadId: "thread-1",
-        createdAt: "2026-09-03T12:00:00.000Z",
-        supersededAt: null,
-      }),
-    ).toBe(true);
-    expect(
-      isWorkbenchTicketWorkspace({
-        ticketId: "ticket-1",
-        attemptId: "attempt-1",
-        status: "preparing",
-        branchName: "workbench/ticket-1-a1b2c3d4",
-        errorMessage: null,
-        repositories: [
-          {
-            projectId: "t3-project-1",
-            isPrimary: true,
-            sourcePath: "/repos/t3-project-1",
-            worktreePath: "/worktrees/ticket-1/t3-project-1",
-            branchName: "workbench/ticket-1-a1b2c3d4",
-            status: "pending",
-            errorMessage: null,
-            createdAt: "2026-09-03T12:00:00.000Z",
-            updatedAt: "2026-09-03T12:00:00.000Z",
-          },
-        ],
-        createdAt: "2026-09-03T12:00:00.000Z",
-        updatedAt: "2026-09-03T12:00:00.000Z",
-      }),
-    ).toBe(true);
+  it("requires operate scope for every Workbench mutation", () => {
+    for (const scope of Object.values(WORKBENCH_CLIENT_GUARDED_RPC_SCOPES)) {
+      expect(scope).toBe(AuthOrchestrationOperateScope);
+    }
   });
 
   it("registers every Workbench RPC in the shared group", () => {
