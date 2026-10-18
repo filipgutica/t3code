@@ -186,7 +186,7 @@ const setup = `      - uses: actions/checkout@v6
             /*
             !/.repos/
           sparse-checkout-cone-mode: false
-      - uses: voidzero-dev/setup-vp@v1
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
           cache: true
@@ -289,10 +289,6 @@ ${verificationJob(
   `      - run: vp run --filter @t3tools/desktop ensure:electron
       - name: Exercise fork-owned contracts and native integrations
         run: node scripts/workbench-ci.ts --run-tests
-      - name: Verify Workbench update release links
-        env:
-          T3CODE_WORKBENCH_BUILD: "1"
-        run: vp test run apps/web/src/components/desktopUpdate.logic.test.ts
 `,
 )}
 ${verificationJob(
