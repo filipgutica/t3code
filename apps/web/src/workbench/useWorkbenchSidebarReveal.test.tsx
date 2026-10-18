@@ -2,9 +2,11 @@
 import { act, StrictMode, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { useWorkbenchSidebarReveal } from "./useWorkbenchSidebarReveal";
+import type { useWorkbenchSidebarReveal as UseWorkbenchSidebarReveal } from "./useWorkbenchSidebarReveal";
 import { getWorkbenchSidebarRevealDecision } from "./workbenchSidebarReveal.logic";
 
+// The hook remembers the last destination across remounts; each test loads a fresh module.
+let useWorkbenchSidebarReveal: typeof UseWorkbenchSidebarReveal;
 let root: Root;
 let host: HTMLDivElement;
 let rowOffset: number;
@@ -45,7 +47,9 @@ function Harness({
 const viewport = () => host.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')!;
 const row = () => host.querySelector<HTMLElement>("[data-workbench-sidebar-surface]")!;
 
-beforeEach(() => {
+beforeEach(async () => {
+  vi.resetModules();
+  ({ useWorkbenchSidebarReveal } = await import("./useWorkbenchSidebarReveal"));
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("matchMedia", () => ({ matches: reducedMotion }));
@@ -213,6 +217,21 @@ it("pulses a new destination after the sidebar remounts, but not the same one", 
   remount("created-thread");
   expect(row().hasAttribute("data-workbench-sidebar-reveal")).toBe(true);
   expect(scrollIntoView).not.toHaveBeenCalled();
+});
+
+it("ignores an earlier click that changed nothing when a later navigation remounts the sidebar", () => {
+  const now = vi.spyOn(performance, "now").mockReturnValue(1_000);
+  const remount = (activeKey: string) => {
+    act(() => root.unmount());
+    root = createRoot(host);
+    act(() => root.render(<Harness activeKey={activeKey} />));
+    act(() => vi.advanceTimersByTime(32));
+  };
+  act(() => root.render(<Harness activeKey="current" />));
+  act(() => row().dispatchEvent(new Event("pointerdown", { bubbles: true })));
+  now.mockReturnValue(5_000);
+  remount("previous");
+  expect(row().hasAttribute("data-workbench-sidebar-reveal")).toBe(true);
 });
 
 it("only requests movement for an offscreen reveal and pulses filters and outside destinations", () => {

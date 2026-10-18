@@ -8,16 +8,19 @@ import {
 } from "./workbenchSidebarReveal.logic";
 
 const scrollQuietMs = 250;
+// Navigation follows a click within a frame or two; older input caused no destination change.
+const inputAttributionMs = 1000;
 const activeRowSelector = '[data-workbench-sidebar-surface][data-active="true"]';
 
 /**
  * Route changes between Workbench pages and Threads remount the sidebar, so the destination
- * and the surface that last received input must outlive a single hook instance.
+ * and the sidebar input that explains a change must outlive a single hook instance.
  */
-const revealMemory: { activeKey: string | null | undefined; inputSurface: Element | null } = {
-  activeKey: undefined,
-  inputSurface: null,
-};
+const revealMemory: {
+  activeKey: string | null | undefined;
+  input: { surface: Element | null; at: number } | null;
+  selectedSurface: Element | null;
+} = { activeKey: undefined, input: null, selectedSurface: null };
 
 export function useWorkbenchSidebarReveal({
   navigationRef,
@@ -36,6 +39,25 @@ export function useWorkbenchSidebarReveal({
   const lastScrollInput = useRef(-Infinity);
   const pulsingRow = useRef<HTMLElement | null>(null);
   const pulseFrame = useRef<number | null>(null);
+
+  const pulse = (row: HTMLElement) => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (pulseFrame.current !== null) cancelAnimationFrame(pulseFrame.current);
+    pulsingRow.current?.removeAttribute("data-workbench-sidebar-reveal");
+    // Separate the removal and addition so a second reveal restarts the finite animation.
+    pulseFrame.current = requestAnimationFrame(() => {
+      pulseFrame.current = requestAnimationFrame(() => {
+        pulseFrame.current = null;
+        // A new Thread's row is re-rendered as its data settles; pulse the row now on screen.
+        const target = row.isConnected
+          ? row
+          : navigationRef.current?.querySelector<HTMLElement>(activeRowSelector);
+        if (!target) return;
+        pulsingRow.current = target;
+        target.setAttribute("data-workbench-sidebar-reveal", "");
+      });
+    });
+  };
 
   const check = useStableCallback(() => {
     const viewport = contentRef.current?.closest<HTMLElement>('[data-slot="scroll-area-viewport"]');
@@ -56,51 +78,31 @@ export function useWorkbenchSidebarReveal({
       getWorkbenchSidebarRevealReason({ previous: previous.current ?? remembered, next }) ??
       pending.current;
     previous.current = next;
-    revealMemory.activeKey = activeKey;
+    rememberDestination(activeKey);
     if (!activeKey || isSearching || userScrolling) {
       pending.current = null;
-      revealMemory.inputSurface = null;
+      revealMemory.selectedSurface = null;
       return;
     }
     if (!pending.current) return;
     const row = navigation?.querySelector<HTMLElement>(activeRowSelector);
     // Wait for the selected Thread's Assignment and disclosure to reach the list.
     if (!row || row.getClientRects().length === 0 || viewport.clientHeight === 0) return;
-    const bounds = row.getBoundingClientRect();
-    const viewportBounds = viewport.getBoundingClientRect();
-    const top = viewportBounds.top + viewport.clientTop;
     const decision = getWorkbenchSidebarRevealDecision({
       reason: pending.current,
-      fullyVisible: bounds.top >= top && bounds.bottom <= top + viewport.clientHeight,
+      fullyVisible: isFullyVisible(row, viewport),
       userScrolling,
       selectedInSidebar: isSelectedInSidebar(row),
     });
     pending.current = null;
-    // Input only explains the destination change it caused.
-    revealMemory.inputSurface = null;
+    revealMemory.selectedSurface = null;
     const scrollTop = viewport.scrollTop;
     if (decision.scroll) {
       // Instant scrolling also avoids an animation competing with subsequent user input.
       // Centering keeps the rows around a revealed destination in view.
       row.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
     }
-    if (!decision.pulse && viewport.scrollTop === scrollTop) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    if (pulseFrame.current !== null) cancelAnimationFrame(pulseFrame.current);
-    pulsingRow.current?.removeAttribute("data-workbench-sidebar-reveal");
-    // Separate the removal and addition so a second reveal restarts the finite animation.
-    pulseFrame.current = requestAnimationFrame(() => {
-      pulseFrame.current = requestAnimationFrame(() => {
-        pulseFrame.current = null;
-        // A new Thread's row is re-rendered as its data settles; pulse the row now on screen.
-        const target = row.isConnected
-          ? row
-          : navigationRef.current?.querySelector<HTMLElement>(activeRowSelector);
-        if (!target) return;
-        pulsingRow.current = target;
-        target.setAttribute("data-workbench-sidebar-reveal", "");
-      });
-    });
+    if (decision.pulse || viewport.scrollTop !== scrollTop) pulse(row);
   });
 
   useLayoutEffect(() => {
@@ -117,10 +119,13 @@ export function useWorkbenchSidebarReveal({
     };
     const onDocumentInput = (event: Event) => {
       if (event instanceof KeyboardEvent && event.key !== "Enter" && event.key !== " ") return;
-      revealMemory.inputSurface =
-        event.target instanceof Element
-          ? event.target.closest("[data-workbench-sidebar-surface]")
-          : null;
+      revealMemory.input = {
+        surface:
+          event.target instanceof Element
+            ? event.target.closest("[data-workbench-sidebar-surface]")
+            : null,
+        at: performance.now(),
+      };
     };
     const onScroll = () => {
       if (performance.now() - lastScrollInput.current < scrollQuietMs) onInput();
@@ -160,9 +165,26 @@ export function useWorkbenchSidebarReveal({
 
 /** A remount replaces the row element, so a disconnected input surface still names this row. */
 function isSelectedInSidebar(row: HTMLElement) {
-  const surface = revealMemory.inputSurface;
+  const surface = revealMemory.selectedSurface;
   return (
     (surface !== null && (surface === row || !surface.isConnected)) ||
     row.contains(document.activeElement)
   );
+}
+
+/** Input explains only the destination change that follows it, not a later one. */
+function rememberDestination(activeKey: string | null) {
+  if (revealMemory.activeKey !== undefined && revealMemory.activeKey !== activeKey) {
+    const input = revealMemory.input;
+    revealMemory.selectedSurface =
+      input && performance.now() - input.at < inputAttributionMs ? input.surface : null;
+    revealMemory.input = null;
+  }
+  revealMemory.activeKey = activeKey;
+}
+
+function isFullyVisible(row: HTMLElement, viewport: HTMLElement) {
+  const bounds = row.getBoundingClientRect();
+  const top = viewport.getBoundingClientRect().top + viewport.clientTop;
+  return bounds.top >= top && bounds.bottom <= top + viewport.clientHeight;
 }
