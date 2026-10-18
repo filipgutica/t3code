@@ -237,7 +237,7 @@ button[data-workbench-sidebar-disclosure] {
 [data-workbench-sidebar-quick-actions] {
   position: absolute;
   z-index: 2;
-  top: 6px;
+  top: var(--sidebar-content-inset);
   inset-inline-end: calc(
     var(--workbench-sidebar-action-width, 20px) + var(--workbench-sidebar-row-end-inset, 8px) + 2px
   );
