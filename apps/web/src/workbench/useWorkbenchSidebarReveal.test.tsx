@@ -165,29 +165,42 @@ it("uses instant scrolling and no pulse with reduced motion", () => {
   expect(row().hasAttribute("data-workbench-sidebar-reveal")).toBe(false);
 });
 
-it("only requests movement for an offscreen reveal and reserves stationary pulses for filters", () => {
-  expect(
-    getWorkbenchSidebarRevealDecision({ reason: null, fullyVisible: false, userScrolling: false }),
-  ).toEqual({ scroll: false, pulse: false });
-  expect(
+it("pulses a visible row reached from outside the sidebar, but not one picked in it", () => {
+  act(() => root.render(<Harness />));
+  act(() => vi.advanceTimersByTime(32));
+  expect(row().hasAttribute("data-workbench-sidebar-reveal")).toBe(false);
+  act(() => root.render(<Harness activeKey="created-thread" />));
+  act(() => vi.advanceTimersByTime(32));
+  expect(row().hasAttribute("data-workbench-sidebar-reveal")).toBe(true);
+  row().removeAttribute("data-workbench-sidebar-reveal");
+  act(() => row().dispatchEvent(new Event("pointerdown", { bubbles: true })));
+  act(() => root.render(<Harness activeKey="clicked-thread" />));
+  act(() => vi.advanceTimersByTime(32));
+  expect(row().hasAttribute("data-workbench-sidebar-reveal")).toBe(false);
+  expect(scrollIntoView).not.toHaveBeenCalled();
+});
+
+it("only requests movement for an offscreen reveal and pulses filters and outside destinations", () => {
+  const decide = (
+    reason: Parameters<typeof getWorkbenchSidebarRevealDecision>[0]["reason"],
+    options: { fullyVisible?: boolean; userScrolling?: boolean; selectedInSidebar?: boolean } = {},
+  ) =>
     getWorkbenchSidebarRevealDecision({
-      reason: "destination",
-      fullyVisible: true,
-      userScrolling: false,
-    }),
-  ).toEqual({ scroll: false, pulse: false });
-  expect(
-    getWorkbenchSidebarRevealDecision({
-      reason: "filter",
-      fullyVisible: true,
-      userScrolling: false,
-    }),
-  ).toEqual({ scroll: false, pulse: true });
-  expect(
-    getWorkbenchSidebarRevealDecision({
-      reason: "reset",
-      fullyVisible: false,
-      userScrolling: true,
-    }),
-  ).toEqual({ scroll: false, pulse: false });
+      reason,
+      fullyVisible: options.fullyVisible ?? true,
+      userScrolling: options.userScrolling ?? false,
+      selectedInSidebar: options.selectedInSidebar ?? false,
+    });
+  expect(decide(null, { fullyVisible: false })).toEqual({ scroll: false, pulse: false });
+  expect(decide("destination", { selectedInSidebar: true })).toEqual({
+    scroll: false,
+    pulse: false,
+  });
+  expect(decide("destination")).toEqual({ scroll: false, pulse: true });
+  expect(decide("filter")).toEqual({ scroll: false, pulse: true });
+  expect(decide("reset")).toEqual({ scroll: false, pulse: false });
+  expect(decide("reset", { fullyVisible: false, userScrolling: true })).toEqual({
+    scroll: false,
+    pulse: false,
+  });
 });

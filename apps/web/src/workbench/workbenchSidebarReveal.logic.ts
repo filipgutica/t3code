@@ -4,15 +4,18 @@ export function getWorkbenchSidebarRevealDecision({
   reason,
   fullyVisible,
   userScrolling,
+  selectedInSidebar,
 }: {
   reason: WorkbenchSidebarRevealReason;
   fullyVisible: boolean;
   userScrolling: boolean;
+  selectedInSidebar: boolean;
 }) {
   const reveal = reason !== null && !userScrolling;
   return {
     scroll: reveal && !fullyVisible,
-    pulse: reveal && reason === "filter",
+    // A row the user just picked in the sidebar is already where they are looking.
+    pulse: reveal && (reason === "filter" || (reason === "destination" && !selectedInSidebar)),
   };
 }
 
@@ -31,7 +34,7 @@ export function getWorkbenchSidebarRevealReason({
   previous: WorkbenchSidebarRevealSnapshot | null;
   next: WorkbenchSidebarRevealSnapshot;
 }): WorkbenchSidebarRevealReason {
-  if (!previous) return "destination";
+  if (!previous) return "reset";
   if (previous.onlyActionable !== next.onlyActionable) return "filter";
   if (previous.activeKey !== next.activeKey) return "destination";
   if (previous.navigation !== next.navigation) return "reset";

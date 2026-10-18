@@ -26,6 +26,7 @@ export function useWorkbenchSidebarReveal({
   const lastScrollInput = useRef(-Infinity);
   const pulsingRow = useRef<HTMLElement | null>(null);
   const pulseFrame = useRef<number | null>(null);
+  const pointerSurface = useRef<Element | null>(null);
 
   const check = useStableCallback(() => {
     const viewport = contentRef.current?.closest<HTMLElement>('[data-slot="scroll-area-viewport"]');
@@ -59,6 +60,7 @@ export function useWorkbenchSidebarReveal({
       reason: pending.current,
       fullyVisible: bounds.top >= top && bounds.bottom <= top + viewport.clientHeight,
       userScrolling,
+      selectedInSidebar: row === pointerSurface.current || row.contains(document.activeElement),
     });
     pending.current = null;
     const scrollTop = viewport.scrollTop;
@@ -93,6 +95,12 @@ export function useWorkbenchSidebarReveal({
         onInput();
       }
     };
+    const onPointerDown = (event: PointerEvent) => {
+      pointerSurface.current =
+        event.target instanceof Element
+          ? event.target.closest("[data-workbench-sidebar-surface]")
+          : null;
+    };
     const onScroll = () => {
       if (performance.now() - lastScrollInput.current < scrollQuietMs) onInput();
       check();
@@ -106,12 +114,14 @@ export function useWorkbenchSidebarReveal({
         pulsingRow.current = null;
       }
     };
+    viewport.addEventListener("pointerdown", onPointerDown, { passive: true });
     viewport.addEventListener("wheel", onInput, { passive: true });
     viewport.addEventListener("touchmove", onInput, { passive: true });
     viewport.addEventListener("keydown", onKeyDown);
     viewport.addEventListener("scroll", onScroll, { passive: true });
     viewport.addEventListener("animationend", onAnimationEnd);
     return () => {
+      viewport.removeEventListener("pointerdown", onPointerDown);
       viewport.removeEventListener("wheel", onInput);
       viewport.removeEventListener("touchmove", onInput);
       viewport.removeEventListener("keydown", onKeyDown);
