@@ -1,3 +1,4 @@
+import { ClaudeQueryOptionsDecorator } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
@@ -25,7 +26,11 @@ import * as ServerConfig from "../config.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
 import { runServer } from "../server.ts";
 
-type RuntimeContext = McpWritePolicy | RuntimePolicy.RuntimePolicyDecorator | SqlClient.SqlClient;
+type RuntimeContext =
+  | McpWritePolicy
+  | RuntimePolicy.RuntimePolicyDecorator
+  | ClaudeQueryOptionsDecorator
+  | SqlClient.SqlClient;
 type ServedApp = Effect.Effect<
   HttpServerResponse.HttpServerResponse,
   never,
@@ -35,6 +40,8 @@ type ServedApp = Effect.Effect<
 // Observe the contexts delivered to existing consumers; all Workbench layers remain real.
 const probes = vi.hoisted(() => ({
   runtime: vi.fn<(context: Context.Context<RuntimeContext>) => Effect.Effect<void>>(),
+  providers:
+    vi.fn<(context: Context.Context<ClaudeQueryOptionsDecorator>) => Effect.Effect<void>>(),
   cleanup: vi.fn<(context: Context.Context<WorkspaceCleanupPolicy>) => Effect.Effect<void>>(),
   serve: vi.fn<(app: ServedApp) => Effect.Effect<void>>(),
 }));
@@ -114,7 +121,17 @@ vi.mock("../provider/ProviderInstanceRegistryHydration.ts", async (importOrigina
   const original =
     await importOriginal<typeof import("../provider/ProviderInstanceRegistryHydration.ts")>();
   const { layer } = await import("../provider/ProviderInstanceRegistry.ts");
-  return { ...original, layer: layer<never>({ drivers: [], configMap: {} }) };
+  const Effect = await import("effect/Effect");
+  const Layer = await import("effect/Layer");
+  return {
+    ...original,
+    layer: Layer.merge(
+      layer<never>({ drivers: [], configMap: {} }),
+      Layer.effectDiscard(
+        Effect.context<ClaudeQueryOptionsDecorator>().pipe(Effect.flatMap(probes.providers)),
+      ),
+    ),
+  };
 });
 
 vi.mock("../provider/ModelManifest.ts", async (importOriginal) => {
@@ -184,10 +201,14 @@ vi.mock("@t3tools/provider-opencode/server/OpenCodeServerLedger", async (importO
 it.effect("runServer mounts the Jira callback and installs Workbench host policies", () =>
   Effect.gen(function* () {
     const runtime = yield* Deferred.make<Context.Context<RuntimeContext>>();
+    const providers = yield* Deferred.make<Context.Context<ClaudeQueryOptionsDecorator>>();
     const cleanupContext = yield* Deferred.make<Context.Context<WorkspaceCleanupPolicy>>();
     const served = yield* Deferred.make<ServedApp>();
     probes.runtime.mockImplementation((context) =>
       Deferred.succeed(runtime, context).pipe(Effect.asVoid),
+    );
+    probes.providers.mockImplementation((context) =>
+      Deferred.succeed(providers, context).pipe(Effect.asVoid),
     );
     probes.cleanup.mockImplementation((context) =>
       Deferred.succeed(cleanupContext, context).pipe(Effect.asVoid),
@@ -221,6 +242,22 @@ it.effect("runServer mounts the Jira callback and installs Workbench host polici
       );
       assert.strictEqual(nativeResponse.status, 503);
 
+      const providerPolicy = Context.get(
+        yield* Deferred.await(providers),
+        ClaudeQueryOptionsDecorator,
+      );
+      const planningPolicy = {
+        runtimeMode: "auto" as const,
+        interactionMode: "plan" as const,
+        cwd: "/repo",
+        toolAccess: "research" as const,
+        sandboxPolicy: { type: "readOnly" },
+      };
+      const research = providerPolicy.decorate({
+        runtimePolicy: planningPolicy,
+        mcpServerStatus: async () => undefined,
+      });
+      assert.equal(research.options?.({}).permissionPrompts, "none");
       const context = yield* Deferred.await(runtime);
       yield* Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
@@ -255,6 +292,7 @@ it.effect("runServer mounts the Jira callback and installs Workbench host polici
           "capability_denied",
         );
         yield* writePolicy.assertAllowed(ThreadId.make("native"));
+        assert.strictEqual(yield* ClaudeQueryOptionsDecorator, providerPolicy);
         const decorator = yield* RuntimePolicy.RuntimePolicyDecorator;
         const native = {
           resolve: () =>

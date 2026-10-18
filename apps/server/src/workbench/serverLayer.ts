@@ -1,3 +1,5 @@
+import { ClaudeQueryOptionsDecorator } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
+import * as ClaudeResearchPolicy from "./providers/ClaudeResearchPolicy.ts";
 import * as Layer from "effect/Layer";
 import { workbenchJiraOAuthRouteLayer } from "./jira/http.ts";
 
@@ -25,7 +27,12 @@ const WorkbenchStoreLayerLive = WorkbenchStore.WorkbenchStoreLive.pipe(
 export const withWorkbenchHttpRoutes = <A, E, R>(routes: Layer.Layer<A, E, R>) =>
   Layer.mergeAll(routes, workbenchJiraOAuthRouteLayer);
 
+export const WorkbenchProviderPoliciesLayerLive = Layer.succeed(ClaudeQueryOptionsDecorator, {
+  decorate: ClaudeResearchPolicy.decorate,
+});
+
 export const WorkbenchHostPoliciesLayerLive = Layer.mergeAll(
+  WorkbenchProviderPoliciesLayerLive,
   TicketPlanningRuntime.layerRuntimePolicyDecorator,
   TicketPlanningRuntime.layerMcpWritePolicy,
 ).pipe(
