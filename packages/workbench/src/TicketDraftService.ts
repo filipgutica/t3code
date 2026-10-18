@@ -10,8 +10,10 @@ import {
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 
 import { TicketDraftHost } from "./TicketDraftHost.ts";
@@ -43,7 +45,21 @@ const make = Effect.gen(function* () {
   const store = yield* WorkbenchStore;
   const host = yield* TicketDraftHost;
   const workspaces = yield* TicketWorkspaceService;
-  const mutations = yield* Semaphore.make(1);
+  const scope = yield* Effect.scope;
+  const mutations = yield* Ref.make<ReadonlyMap<string, Semaphore.Semaphore>>(new Map());
+  const withDraftLock = <A, E>(id: string, effect: Effect.Effect<A, E>) =>
+    Effect.gen(function* () {
+      let lock = (yield* Ref.get(mutations)).get(id);
+      if (!lock) {
+        const proposed = yield* Semaphore.make(1);
+        lock = yield* Ref.modify(mutations, (locks) => {
+          const current = locks.get(id);
+          if (current) return [current, locks] as const;
+          return [proposed, new Map(locks).set(id, proposed)] as const;
+        });
+      }
+      return yield* lock.withPermit(effect);
+    });
   const currentAt = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const requireRevision = (draft: WorkbenchTicketDraft, expected: number) =>
     draft.revision === expected
@@ -240,11 +256,16 @@ const make = Effect.gen(function* () {
     yield* store.removeTicketDraft({ id: draft.id, expectedRevision: draft.revision });
   });
   return TicketDraftService.of({
-    begin: (input) => mutations.withPermits(1)(begin(input)),
-    update: (input) => mutations.withPermits(1)(store.updateTicketDraft(input)),
-    promote: (input) => mutations.withPermits(1)(promote(input)),
-    startWork: (input) => mutations.withPermits(1)(startWork(input)),
-    discard: (input) => mutations.withPermits(1)(discard(input)),
+    begin: (input) => withDraftLock(input.id, begin(input)),
+    update: (input) => store.updateTicketDraft(input),
+    promote: (input) => withDraftLock(input.id, promote(input)),
+    // A disconnected caller must not leave the draft in starting after its workspace finishes.
+    startWork: (input) =>
+      withDraftLock(input.id, startWork(input)).pipe(
+        Effect.forkIn(scope),
+        Effect.flatMap(Fiber.join),
+      ),
+    discard: (input) => withDraftLock(input.id, discard(input)),
   });
 });
 

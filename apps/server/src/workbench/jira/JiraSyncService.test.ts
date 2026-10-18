@@ -22,6 +22,7 @@ import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
 import { JiraApi } from "@t3tools/workbench/jira/JiraApi";
+import { makeJiraHttpError } from "../../../../../packages/workbench/src/jira/JiraHttp.ts";
 import * as JiraSyncService from "@t3tools/workbench/jira/JiraSyncService";
 import {
   JiraTicketImporter,
@@ -111,6 +112,7 @@ const oldIssue = (issueId: string): WorkbenchJiraIssueLink => ({
 const makeSyncHarness = (options?: {
   readonly active?: boolean;
   readonly holdFirstRequest?: boolean;
+  readonly error?: WorkbenchJiraOperationError;
 }) =>
   Effect.gen(function* () {
     const firstRequestStarted = yield* Deferred.make<void>();
@@ -170,10 +172,11 @@ const makeSyncHarness = (options?: {
           }
           if (shouldFail) {
             return yield* Effect.fail(
-              new WorkbenchJiraOperationError({
-                code: "request_failed",
-                message: "Jira could not be read.",
-              }),
+              options?.error ??
+                new WorkbenchJiraOperationError({
+                  code: "request_failed",
+                  message: "Jira could not be read.",
+                }),
             );
           }
           return [];
@@ -839,6 +842,72 @@ describe("JiraSyncService", () => {
       yield* harness.service.syncBinding({ bindingId, background: true });
       assert.strictEqual(harness.getRequestCount(), 3);
       assert.isNull(harness.getBinding().lastSyncError);
+    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistence.layerMemory, TestClock.layer()))),
+  );
+
+  it.effect("backs off repeated background failures exponentially and resets after success", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeSyncHarness();
+      harness.setShouldFail(true);
+      yield* Effect.flip(harness.service.syncBinding({ bindingId, background: true }));
+      yield* TestClock.adjust("15 seconds");
+      yield* Effect.flip(harness.service.syncBinding({ bindingId, background: true }));
+      assert.strictEqual(harness.getRequestCount(), 2);
+      yield* TestClock.adjust("15 seconds");
+      yield* Effect.flip(harness.service.syncBinding({ bindingId, background: true }));
+      assert.strictEqual(harness.getRequestCount(), 2);
+      yield* TestClock.adjust("15 seconds");
+      harness.setShouldFail(false);
+      yield* harness.service.syncBinding({ bindingId, background: true });
+      assert.strictEqual(harness.getRequestCount(), 3);
+      yield* TestClock.adjust("15 seconds");
+      harness.setShouldFail(true);
+      yield* Effect.flip(harness.service.syncBinding({ bindingId, background: true }));
+      yield* TestClock.adjust("15 seconds");
+      yield* Effect.flip(harness.service.syncBinding({ bindingId, background: true }));
+      assert.strictEqual(harness.getRequestCount(), 5);
+    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistence.layerMemory, TestClock.layer()))),
+  );
+
+  it.effect("backs off authorization failures while allowing manual recovery after reconnect", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeSyncHarness({
+        error: new WorkbenchJiraOperationError({
+          code: "request_failed",
+          httpStatus: 401,
+          message: "Reconnect Jira.",
+        }),
+      });
+      harness.setShouldFail(true);
+      yield* Effect.flip(harness.service.syncBinding({ bindingId, background: true }));
+      yield* TestClock.adjust("30 seconds");
+      yield* Effect.flip(harness.service.syncBinding({ bindingId, background: true }));
+      assert.strictEqual(harness.getRequestCount(), 1);
+      harness.setShouldFail(false);
+      yield* harness.service.syncBinding({ bindingId });
+      assert.strictEqual(harness.getRequestCount(), 2);
+    }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistence.layerMemory, TestClock.layer()))),
+  );
+
+  it.effect("honors Jira Retry-After for background and manual rate-limit retries", () =>
+    Effect.gen(function* () {
+      const error = makeJiraHttpError({
+        httpStatus: 429,
+        message: "Jira is rate limiting requests.",
+        retryAfter: "60",
+        now: 0,
+      });
+      const harness = yield* makeSyncHarness({ error });
+      harness.setShouldFail(true);
+      yield* Effect.flip(harness.service.syncBinding({ bindingId, background: true }));
+      yield* TestClock.adjust("59 seconds");
+      yield* Effect.flip(harness.service.syncBinding({ bindingId, background: true }));
+      yield* Effect.flip(harness.service.syncBinding({ bindingId }));
+      assert.strictEqual(harness.getRequestCount(), 1);
+      yield* TestClock.adjust("1 second");
+      harness.setShouldFail(false);
+      yield* harness.service.syncBinding({ bindingId, background: true });
+      assert.strictEqual(harness.getRequestCount(), 2);
     }).pipe(Effect.provide(Layer.mergeAll(SqlitePersistence.layerMemory, TestClock.layer()))),
   );
 

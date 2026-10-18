@@ -17,6 +17,7 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -143,6 +144,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const clock = yield* Clock.Clock;
+  const scope = yield* Effect.scope;
   const workspaceLocks = yield* Ref.make<ReadonlyMap<string, Semaphore.Semaphore>>(new Map());
   const repositoryLabel = ({
     sourcePath,
@@ -1236,7 +1238,11 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     Effect.gen(function* () {
       const lock = yield* getWorkspaceLock(input.ticketId);
       return yield* lock.withPermit(prepareUnlocked(input));
-    });
+    }).pipe(
+      // The service owns both the claim and its permit until completion or shutdown.
+      Effect.forkIn(scope),
+      Effect.flatMap(Fiber.join),
+    );
   const release: TicketWorkspaceServiceShape["release"] = (input) =>
     Effect.gen(function* () {
       const lock = yield* getWorkspaceLock(input.ticketId);

@@ -6,6 +6,7 @@ import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import type { JiraOAuthCredential } from "./JiraCredentialStore.ts";
+import { JIRA_HTTP_TIMEOUT } from "./JiraHttp.ts";
 
 const ATLASSIAN_AUTHORIZE_URL = "https://auth.atlassian.com/authorize";
 const ATLASSIAN_TOKEN_URL = "https://auth.atlassian.com/oauth/token";
@@ -164,7 +165,7 @@ const brokerUrl = (base: string, path: string) => {
 };
 
 const make = Effect.gen(function* () {
-  const httpClient = yield* HttpClient.HttpClient;
+  const httpClient = HttpClient.withScope(yield* HttpClient.HttpClient);
 
   const execute = <S extends Schema.Top>(input: {
     readonly request: HttpClientRequest.HttpClientRequest;
@@ -175,6 +176,8 @@ const make = Effect.gen(function* () {
     httpClient.execute(input.request.pipe(HttpClientRequest.acceptJson)).pipe(
       Effect.flatMap(HttpClientResponse.filterStatusOk),
       Effect.flatMap(HttpClientResponse.schemaBodyJson(input.schema)),
+      Effect.scoped,
+      Effect.timeout(JIRA_HTTP_TIMEOUT),
       Effect.mapError(() => requestError(input.code, input.message)),
     );
 
@@ -198,6 +201,8 @@ const make = Effect.gen(function* () {
       const request = yield* makeRequest;
       return yield* httpClient.execute(request.pipe(HttpClientRequest.acceptJson)).pipe(
         Effect.flatMap(HttpClientResponse.schemaBodyJson(input.schema)),
+        Effect.scoped,
+        Effect.timeout(JIRA_HTTP_TIMEOUT),
         Effect.mapError(() => brokerRequestError("Jira authorization could not be completed.")),
       );
     });

@@ -19,6 +19,7 @@ import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Layer from "effect/Layer";
+import * as TestClock from "effect/testing/TestClock";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -196,6 +197,7 @@ const makeHarness = (options?: {
   readonly bindings?: ReadonlyArray<WorkbenchJiraBinding>;
   readonly bindingAfterPermit?: WorkbenchJiraBinding;
   readonly gatePreflight?: boolean;
+  readonly stall?: "transition_body" | "write_request" | "write_body";
 }) =>
   Effect.gen(function* () {
     const initialIssue = makeIssue({
@@ -222,6 +224,7 @@ const makeHarness = (options?: {
     }> = [];
     const createCalls = yield* Ref.make(0);
     const preflightCalls = yield* Ref.make(0);
+    const httpStarted = yield* Deferred.make<void>();
     const preflightReady = yield* Deferred.make<void>();
     const preflightGate = yield* Deferred.make<void>();
     const sql = yield* SqlClient.SqlClient;
@@ -381,6 +384,13 @@ const makeHarness = (options?: {
         ...(body === undefined ? {} : { body }),
       });
       if (request.method === "GET") {
+        if (options?.stall === "transition_body") {
+          return Deferred.succeed(httpStarted, undefined).pipe(
+            Effect.as(
+              HttpClientResponse.fromWeb(request, new Response(new ReadableStream({ pull() {} }))),
+            ),
+          );
+        }
         return Effect.succeed(
           HttpClientResponse.fromWeb(
             request,
@@ -424,7 +434,24 @@ const makeHarness = (options?: {
             : { status: options?.postStatus ?? { id: "2", name: "In Progress" } }),
           remoteUpdatedAt: "2026-09-05T12:02:00.000Z",
         })).pipe(
-          Effect.as(HttpClientResponse.fromWeb(request, new Response(null, { status: 204 }))),
+          Effect.andThen(
+            options?.stall === "write_request" || options?.stall === "write_body"
+              ? Deferred.succeed(httpStarted, undefined).pipe(
+                  Effect.andThen(
+                    options.stall === "write_request"
+                      ? Effect.never
+                      : Effect.succeed(
+                          HttpClientResponse.fromWeb(
+                            request,
+                            new Response(new ReadableStream({ pull() {} })),
+                          ),
+                        ),
+                  ),
+                )
+              : Effect.succeed(
+                  HttpClientResponse.fromWeb(request, new Response(null, { status: 204 })),
+                ),
+          ),
         );
       }
       return Effect.die(`unexpected HTTP method ${request.method}`);
@@ -448,6 +475,7 @@ const makeHarness = (options?: {
       reconciledIssueIds,
       createCalls,
       preflightCalls,
+      httpStarted,
       preflightReady,
       preflightGate,
     };
@@ -970,6 +998,61 @@ describe("JiraTicketWriteService", () => {
           }),
         { initialStatus: { id: "2", name: "In Progress" } },
       ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
+  );
+
+  it.effect(
+    "bounds transition request and body stalls while preserving execution readback recovery",
+    () =>
+      Effect.gen(function* () {
+        for (const stall of ["transition_body", "write_request", "write_body"] as const) {
+          yield* runWithHarness(
+            (harness) =>
+              Effect.gen(function* () {
+                yield* seedExecution;
+                const completed = yield* Deferred.make<WorkbenchJiraOperationError>();
+                const fiber = yield* harness.service
+                  .startTicketExecution({
+                    ticketId,
+                    execution: { ...execution, readbackOnly: false },
+                  })
+                  .pipe(
+                    Effect.flip,
+                    Effect.flatMap((error) => Deferred.succeed(completed, error)),
+                    Effect.forkChild,
+                  );
+                yield* Deferred.await(harness.httpStarted);
+                yield* TestClock.adjust("30 seconds");
+                assert.isTrue(
+                  yield* Deferred.isDone(completed),
+                  `${stall} must reach its deadline`,
+                );
+                assert.strictEqual((yield* Deferred.await(completed)).code, "request_failed");
+                yield* Fiber.join(fiber);
+                const sql = yield* SqlClient.SqlClient;
+                const pending = yield* sql<{ readonly state: string }>`
+            SELECT state FROM workbench_execution_runs WHERE run_id = ${execution.runId}
+          `;
+                assert.strictEqual(pending[0]?.state, "uncertain");
+                if (stall !== "transition_body") {
+                  const recovered = yield* harness.service.startTicketExecution({
+                    ticketId,
+                    execution,
+                  });
+                  assert.strictEqual(recovered.status.id, "2");
+                  assert.strictEqual(
+                    harness.requests.filter((request) => request.method === "POST").length,
+                    1,
+                  );
+                  const completedRuns = yield* sql<{ readonly state: string }>`
+              SELECT state FROM workbench_execution_runs WHERE run_id = ${execution.runId}
+            `;
+                  assert.strictEqual(completedRuns[0]?.state, "done");
+                }
+              }),
+            { stall },
+          ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory));
+        }
+      }),
   );
 
   it.effect("leaves an interrupted execution uncertain when Jira has returned to Todo", () =>

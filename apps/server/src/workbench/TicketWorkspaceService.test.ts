@@ -14,6 +14,8 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -197,6 +199,7 @@ const makeTestLayer = ({
   onRemoveWorktree,
   removals,
   onListRefs,
+  onCreateWorktree,
   worktreeInputs,
   fetchRemoteTrackingBranchCalls,
   failFetchRemoteTrackingBranch,
@@ -222,6 +225,7 @@ const makeTestLayer = ({
   onRemoveWorktree?: () => Effect.Effect<void, WorkbenchOperationError>;
   removals?: Array<{ readonly cwd: string; readonly force: boolean | undefined }>;
   onListRefs?: () => Effect.Effect<void, WorkbenchOperationError>;
+  onCreateWorktree?: () => Effect.Effect<void>;
   worktreeInputs?: Array<VcsCreateWorktreeInput>;
   fetchRemoteTrackingBranchCalls?: Array<{
     readonly cwd: string;
@@ -411,12 +415,14 @@ const makeTestLayer = ({
       const repositoryBranches = branches.get(input.cwd) ?? new Set<string>();
       repositoryBranches.add(input.newRefName ?? input.refName);
       branches.set(input.cwd, repositoryBranches);
-      return Effect.succeed({
-        worktree: {
-          path: worktreePath,
-          refName: input.newRefName ?? input.refName,
-        },
-      });
+      return (onCreateWorktree?.() ?? Effect.void).pipe(
+        Effect.as({
+          worktree: {
+            path: worktreePath,
+            refName: input.newRefName ?? input.refName,
+          },
+        }),
+      );
     },
     removeWorktree: (input) => {
       const { cwd } = input;
@@ -717,6 +723,71 @@ describe("TicketWorkspaceService", () => {
       ).toBe("workbench/ma-123-ticket-737ce60f");
     }
   });
+
+  it.effect(
+    "finishes preparation after client interruption and lets an immediate retry reuse it",
+    () =>
+      Effect.gen(function* () {
+        const creating = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const events: Array<string> = [];
+        const worktreeInputs: Array<VcsCreateWorktreeInput> = [];
+        yield* Effect.gen(function* () {
+          yield* seedTicket;
+          const service = yield* TicketWorkspaceService;
+          const client = yield* service
+            .prepare({ ticketId, requestedAt: createdAt })
+            .pipe(Effect.forkChild);
+          yield* Deferred.await(creating);
+          const store = yield* WorkbenchStore;
+          const claimed = Option.getOrThrow(yield* store.getTicketWorkspace(ticketId));
+          expect(claimed.status).toBe("preparing");
+          yield* Fiber.interrupt(client);
+          const retry = yield* service
+            .prepare({ ticketId, requestedAt: createdAt })
+            .pipe(Effect.forkChild);
+          yield* Deferred.succeed(release, undefined);
+          const completed = yield* Fiber.join(retry);
+          expect(completed.status).toBe("ready");
+          expect(completed.attemptId).toBe(claimed.attemptId);
+          expect(worktreeInputs).toHaveLength(2);
+        }).pipe(
+          Effect.provide(
+            makeTestLayer({
+              events,
+              worktreeInputs,
+              onCreateWorktree: () =>
+                Deferred.succeed(creating, undefined).pipe(Effect.andThen(Deferred.await(release))),
+            }),
+          ),
+        );
+      }),
+  );
+
+  it.effect("interrupts detached preparation when the service shuts down", () =>
+    Effect.gen(function* () {
+      const creating = yield* Deferred.make<void>();
+      const stopped = yield* Deferred.make<void>();
+      yield* Effect.gen(function* () {
+        yield* seedTicket;
+        const service = yield* TicketWorkspaceService;
+        yield* service.prepare({ ticketId, requestedAt: createdAt }).pipe(Effect.forkChild);
+        yield* Deferred.await(creating);
+      }).pipe(
+        Effect.provide(
+          makeTestLayer({
+            events: [],
+            onCreateWorktree: () =>
+              Deferred.succeed(creating, undefined).pipe(
+                Effect.andThen(Effect.never),
+                Effect.onInterrupt(() => Deferred.succeed(stopped, undefined)),
+              ),
+          }),
+        ),
+      );
+      expect(yield* Deferred.isDone(stopped)).toBe(true);
+    }),
+  );
 
   it.effect("rejects preparation for an archived Ticket before inspecting repositories", () => {
     const events: Array<string> = [];
