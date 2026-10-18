@@ -146,7 +146,7 @@ const ticket = (
   archivedAt: null,
 });
 it.each([false, true])(
-  "stably prioritizes confirmed work and promotes Done once without changing status (attention-only=%s)",
+  "keeps source order, filters confirmed work and promotes Done once without changing status (attention-only=%s)",
   (onlyActionable) => {
     const action = ticket("actionable");
     const second = ticket("second");
@@ -195,20 +195,22 @@ it.each([false, true])(
       onlyActionable
         ? [action.id, second.id, doneAction.id]
         : [
-            action.id,
-            second.id,
-            doneAction.id,
             WorkbenchTicketId.make("newest-clean"),
+            action.id,
             WorkbenchTicketId.make("older-clean"),
+            second.id,
             selectedArchived.id,
+            doneAction.id,
           ],
     );
-    expect(result.active[0]?.threads.map((row) => row.id)).toEqual(
+    expect(
+      result.active.find((group) => group.ticket.id === action.id)?.threads.map((row) => row.id),
+    ).toEqual(
       onlyActionable
         ? [sharedTwo.id, waiting.id, sharedOne.id]
-        : [sharedTwo.id, waiting.id, sharedOne.id, newestClean.id, excluded[0]!.id],
+        : [newestClean.id, sharedTwo.id, waiting.id, sharedOne.id, excluded[0]!.id],
     );
-    expect(result.active[2]?.ticket.status).toBe("done");
+    expect(result.active.at(-1)?.ticket.status).toBe("done");
     expect(result.done.map((group) => group.ticket.id)).toEqual(
       onlyActionable ? [] : [WorkbenchTicketId.make("done-clean")],
     );

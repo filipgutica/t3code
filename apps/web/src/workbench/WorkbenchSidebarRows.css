@@ -1,12 +1,11 @@
-/* The disclosure and its destination share one row surface. */
+/* The disclosure and its destination share one row surface. Like native rows, it stays
+   transparent at rest so the sidebar's grain shows through. */
 [data-workbench-sidebar-surface] {
-  --workbench-sidebar-row-surface: var(--sidebar);
+  --workbench-sidebar-row-surface: transparent;
   --workbench-sidebar-row-end-inset: 8px;
   --workbench-sidebar-action-width: 20px;
   --workbench-sidebar-disclosure-width: 20px;
-  background:
-    linear-gradient(var(--workbench-sidebar-row-surface), var(--workbench-sidebar-row-surface)),
-    var(--sidebar);
+  background: var(--workbench-sidebar-row-surface);
   border-radius: var(--radius-md);
 }
 
