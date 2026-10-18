@@ -7,7 +7,7 @@ import {
 } from "@t3tools/contracts";
 import { Schema } from "effect";
 import { useLocation, useParams, useSearch } from "@tanstack/react-router";
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import { resolveThreadRouteRef } from "../threadRoutes";
 import { useThreadShells } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
@@ -85,16 +85,12 @@ function WorkbenchEnvironmentAttention({
   children: ReactNode;
 }) {
   const shells = useThreadShells();
-  const threadsById = useMemo(
-    () =>
-      new Map(
-        shells
-          .filter((thread) => thread.environmentId === environmentId)
-          .map((thread) => [thread.id, thread]),
-      ),
-    [shells, environmentId],
+  const threadsById = new Map(
+    shells
+      .filter((thread) => thread.environmentId === environmentId)
+      .map((thread) => [thread.id, thread]),
   );
-  const visibleTickets = useMemo(() => {
+  const visibleTickets = (() => {
     const activeWorkspaceIds = new Set(
       snapshot?.projects
         .filter((project) => project.archivedAt == null)
@@ -105,8 +101,8 @@ function WorkbenchEnvironmentAttention({
         (ticket) => ticket.archivedAt == null && activeWorkspaceIds.has(ticket.projectId),
       ) ?? []
     );
-  }, [snapshot?.projects, snapshot?.tickets]);
-  const assignedThreadRef = useMemo(() => {
+  })();
+  const assignedThreadRef = (() => {
     if (!activeThreadRef || activeThreadRef.environmentId !== environmentId) return null;
     const ticketIds = new Set(visibleTickets.map((ticket) => ticket.id));
     const assigned = activeWorkbenchAttentionAssignments({
@@ -118,7 +114,7 @@ function WorkbenchEnvironmentAttention({
         assignment.threadId === activeThreadRef.threadId && ticketIds.has(assignment.ticketId),
     );
     return assigned ? activeThreadRef : null;
-  }, [activeThreadRef, environmentId, snapshot?.assignments, threadsById, visibleTickets]);
+  })();
   const attention = useWorkbenchAttention({
     environmentId,
     projectId: snapshot?.projects.find((project) => project.archivedAt == null)?.id ?? null,

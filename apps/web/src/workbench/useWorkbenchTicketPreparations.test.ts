@@ -6,7 +6,7 @@ import {
   WorkbenchTicketId,
   type WorkbenchTicketPreparation,
 } from "@t3tools/contracts";
-import { createElement, useMemo } from "react";
+import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import { Atom, AsyncResult } from "effect/reactivity";
 import { RegistryContext } from "@effect/atom-react";
@@ -55,7 +55,7 @@ describe("Workbench preparation visibility", () => {
     const observed: Array<ReturnType<typeof createWorkbenchThreadPresentationPolicy>> = [];
     function Consumer() {
       const index = useWorkbenchTicketPreparations();
-      const policy = useMemo(() => createWorkbenchThreadPresentationPolicy(index), [index]);
+      const policy = createWorkbenchThreadPresentationPolicy(index);
       observed.push(policy);
       return null;
     }

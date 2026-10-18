@@ -239,6 +239,7 @@
         "apps/web/src/components/sidebar/SidebarChrome.tsx",
         "apps/web/src/components/sidebar/mainAppLocation.ts",
         "apps/web/src/components/ui/button.tsx",
+        "apps/web/src/components/ui/popover.tsx",
         "apps/web/src/hooks/usePullRequestLinking.ts",
         "apps/web/src/hooks/useThreadActionMenu.ts",
         "apps/web/src/hooks/useThreadActions.ts",

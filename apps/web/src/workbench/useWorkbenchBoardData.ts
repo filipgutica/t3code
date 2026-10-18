@@ -6,7 +6,7 @@ import type {
   WorkbenchJiraLocalTicketMigrationItem,
   WorkbenchJiraLocalEpicMigrationItem,
 } from "@t3tools/contracts";
-import { useMemo, useCallback, useState } from "react";
+import { useState } from "react";
 import { useWorkbenchBoardView } from "./workbenchBoardViewState";
 import { getAssignmentsForTicket } from "./workbench.logic";
 import {
@@ -36,41 +36,27 @@ export function useWorkbenchBoardData({
     projectId: selectedProject?.id ?? null,
   });
   const boardGroupMode = view.groupMode;
-  const setBoardGroupMode = useCallback(
-    (groupMode: "none" | "epic") => setView({ groupMode }),
-    [setView],
-  );
+  const setBoardGroupMode = (groupMode: "none" | "epic") => setView({ groupMode });
   const repositoriesReady = snapshot !== null;
   const [jiraBoardFilter, setJiraBoardFilter] = useState<{
     readonly environmentId: EnvironmentId;
     readonly projectId: WorkbenchProjectId;
   } | null>(null);
-  const jiraIssueLinksByTicketId = useMemo(
-    () => new Map(optimisticStatus.issueLinks.map((link) => [link.ticketId, link])),
-    [optimisticStatus.issueLinks],
+  const jiraIssueLinksByTicketId = new Map(
+    optimisticStatus.issueLinks.map((link) => [link.ticketId, link]),
   );
-  const isTicketVisible = useCallback(
-    (ticket: WorkbenchTicket) =>
-      ticket.archivedAt == null && jiraIssueLinksByTicketId.get(ticket.id)?.active !== false,
-    [jiraIssueLinksByTicketId],
+  const isTicketVisible = (ticket: WorkbenchTicket) =>
+    ticket.archivedAt == null && jiraIssueLinksByTicketId.get(ticket.id)?.active !== false;
+  const projectTickets = optimisticStatus.tickets.filter(
+    (ticket) => ticket.projectId === selectedProject?.id && isTicketVisible(ticket),
   );
-  const projectTickets = useMemo(
-    () =>
-      optimisticStatus.tickets.filter(
-        (ticket) => ticket.projectId === selectedProject?.id && isTicketVisible(ticket),
-      ),
-    [isTicketVisible, selectedProject?.id, optimisticStatus.tickets],
-  );
-  const projectJiraIssueLinks = useMemo(() => {
+  const projectJiraIssueLinks = (() => {
     const ticketIds = new Set(projectTickets.map((ticket) => ticket.id));
     return (jiraSnapshot?.issueLinks ?? []).filter(
       (link) => link.active && ticketIds.has(link.ticketId),
     );
-  }, [jiraSnapshot?.issueLinks, projectTickets]);
-  const selectedEpicTickets = useMemo(
-    () => projectTickets.filter((ticket) => ticket.epicId === selectedEpic?.id),
-    [projectTickets, selectedEpic?.id],
-  );
+  })();
+  const selectedEpicTickets = projectTickets.filter((ticket) => ticket.epicId === selectedEpic?.id);
   const { linkedT3Projects, projectEpics, activeProjectEpics, effectiveBoardGroupMode } =
     getBoardWorkspaceData({ projects, snapshot, selectedProject, boardGroupMode });
   const { jiraBinding, activeJiraSyncNotice, selectedJiraEpicUrl, jiraSprintLinks } =

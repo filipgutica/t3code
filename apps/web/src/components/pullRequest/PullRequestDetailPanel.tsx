@@ -680,7 +680,7 @@ export function PullRequestDetailPanel({
     if (guideOpenRequested) useGuideRunStore.getState().requestOpen(null);
   }, [guideOpenRequested]);
   const tabScopeKey = `${environmentId}:${pullRequestKey}`;
-  const appliedFocus = useRef<{ scope: string; focus: PullRequestDetailFocus } | null>(null);
+  const [appliedFocus, setAppliedFocus] = useState<{ scope: string; focus: typeof focus }>();
   const [tabMountState, setTabMountState] = useState(() => ({
     key: tabScopeKey,
     tabs: new Set<DetailTab>(["summary"]),
@@ -1458,13 +1458,11 @@ export function PullRequestDetailPanel({
     environmentId,
     (settings) => settings.reviewGuidesEnabled,
   );
-  useEffect(() => {
-    if (!focus || !detail) return;
-    if (appliedFocus.current?.scope === tabScopeKey && appliedFocus.current.focus === focus) return;
-    appliedFocus.current = { scope: tabScopeKey, focus };
+  if (focus && detail && (appliedFocus?.scope !== tabScopeKey || appliedFocus.focus !== focus)) {
+    setAppliedFocus({ scope: tabScopeKey, focus });
     setTab(focus.kind === "review-thread" ? "code" : "summary");
     if (focus.kind === "review-thread") setCodeCommitScope({ pullRequestKey, oid: null });
-  }, [focus, detail, tabScopeKey, pullRequestKey]);
+  }
 
   const visibleTabs = TABS.filter(
     (item) =>

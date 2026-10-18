@@ -121,7 +121,7 @@ export function ReviewThreadCard({
   onEditComment,
   onToggleResolved,
   onReacted,
-  defaultExpanded = !thread.isResolved,
+  defaultExpanded,
 }: {
   thread: PullRequestReviewThread;
   workspaceRoot: string;
@@ -143,7 +143,7 @@ export function ReviewThreadCard({
   /** Explicit navigation can reveal a resolved conversation without reopening it on the host. */
   defaultExpanded?: boolean;
 }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  const [expanded, setExpanded] = useState(defaultExpanded ?? !thread.isResolved);
   const [replying, setReplying] = useState(false);
   const [reply, setReply] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);

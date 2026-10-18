@@ -1,6 +1,7 @@
+import { useStableCallback } from "../hooks/useStableCallback";
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   linkedPullRequestDetailAtom,
   pullRequestEnvironment,
@@ -35,28 +36,26 @@ export function WorkbenchAttentionQueries({
   );
   const batchStart = Math.floor(nextIndex / 3) * 3;
   const current = nextIndex === -1 ? [] : references.slice(batchStart, batchStart + 3);
-  const observe = useCallback(
-    (key: string, next: WorkbenchPullRequestAttention) =>
-      setObservations((previous) => {
-        const existing = previous.get(key);
-        if (
-          existing?.inspected === next.inspected &&
-          existing.pullRequestTitle === next.pullRequestTitle &&
-          existing.terminal === next.terminal &&
-          existing.reasons.join("|") === next.reasons.join("|") &&
-          existing.inspectionStatus === next.inspectionStatus &&
-          existing.activityComplete === next.activityComplete &&
-          existing.checksKnown === next.checksKnown &&
-          existing.reviewDecisionKnown === next.reviewDecisionKnown &&
-          JSON.stringify(existing.resolvedReviewThreadIds) ===
-            JSON.stringify(next.resolvedReviewThreadIds) &&
-          JSON.stringify(existing.unresolvedReviewThreads) ===
-            JSON.stringify(next.unresolvedReviewThreads)
-        )
-          return previous;
-        return new Map(previous).set(key, next);
-      }),
-    [],
+  const observe = useStableCallback((key: string, next: WorkbenchPullRequestAttention) =>
+    setObservations((previous) => {
+      const existing = previous.get(key);
+      if (
+        existing?.inspected === next.inspected &&
+        existing.pullRequestTitle === next.pullRequestTitle &&
+        existing.terminal === next.terminal &&
+        existing.reasons.join("|") === next.reasons.join("|") &&
+        existing.inspectionStatus === next.inspectionStatus &&
+        existing.activityComplete === next.activityComplete &&
+        existing.checksKnown === next.checksKnown &&
+        existing.reviewDecisionKnown === next.reviewDecisionKnown &&
+        JSON.stringify(existing.resolvedReviewThreadIds) ===
+          JSON.stringify(next.resolvedReviewThreadIds) &&
+        JSON.stringify(existing.unresolvedReviewThreads) ===
+          JSON.stringify(next.unresolvedReviewThreads)
+      )
+        return previous;
+      return new Map(previous).set(key, next);
+    }),
   );
   useEffect(() => onChange(observations), [observations, onChange]);
   return current.map((reference) => (
@@ -81,7 +80,7 @@ function WorkbenchAttentionQuery({
   readonly refresh: boolean;
   readonly onChange: (key: string, observation: WorkbenchPullRequestAttention) => void;
 }) {
-  const target = useMemo(() => {
+  const target = (() => {
     const host = parseChangeRequestUrl(reference.url)?.host;
     return {
       environmentId,
@@ -92,7 +91,7 @@ function WorkbenchAttentionQuery({
         ...(host === undefined ? {} : { host }),
       },
     };
-  }, [environmentId, reference.projectId, reference.repository, reference.number, reference.url]);
+  })();
   const summaryQuery = useEnvironmentQuery(linkedPullRequestDetailAtom(target));
   const summary = useSharedPullRequestSummary(
     environmentId,

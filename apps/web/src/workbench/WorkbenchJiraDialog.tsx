@@ -1344,7 +1344,7 @@ function JiraDialogController({
       return;
     }
     setSaving(true);
-    try {
+    return (async () => {
       const saved = existingBinding
         ? await onUpdate({
             binding: existingBinding,
@@ -1375,9 +1375,9 @@ function JiraDialogController({
             })
           : false;
       if (saved) onOpenChange(false);
-    } finally {
+    })().finally(() => {
       setSaving(false);
-    }
+    });
   };
 
   return (

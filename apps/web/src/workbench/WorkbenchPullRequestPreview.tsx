@@ -7,7 +7,6 @@ import {
   Suspense,
   useContext,
   useState,
-  useCallback,
   useEffect,
   useRef,
   type ReactNode,
@@ -89,39 +88,36 @@ function WorkbenchPullRequestPreview({ children }: { children: ReactNode }) {
     setOpenedHref(href);
     setSelection(null);
   }
-  const openSelection = useCallback(
-    (next: WorkbenchPullRequestSelection) => {
-      // Focused attention destinations retain the sheet's focus and close-refresh lifecycle.
-      if (routeThreadRef && next.focus === undefined) {
-        setSelection(null);
-        useRightPanelStore.getState().openPullRequest(routeThreadRef, {
-          projectId: next.reference.projectId,
-          repository: next.reference.repository,
-          number: next.reference.number,
-          ...(next.reference.host === undefined ? {} : { host: next.reference.host }),
-          ...(routeThreadRef.environmentId === next.environmentId
-            ? {}
-            : { environmentId: next.environmentId }),
-        });
-        return;
-      }
-      setSelection((current) => ({
-        ...next,
-        ...(next.linkedThread
+  const openSelection = (next: WorkbenchPullRequestSelection) => {
+    // Focused attention destinations retain the sheet's focus and close-refresh lifecycle.
+    if (routeThreadRef && next.focus === undefined) {
+      setSelection(null);
+      useRightPanelStore.getState().openPullRequest(routeThreadRef, {
+        projectId: next.reference.projectId,
+        repository: next.reference.repository,
+        number: next.reference.number,
+        ...(next.reference.host === undefined ? {} : { host: next.reference.host }),
+        ...(routeThreadRef.environmentId === next.environmentId
           ? {}
-          : current?.linkedThread &&
-              current.environmentId === next.environmentId &&
-              current.reference.projectId === next.reference.projectId &&
-              current.reference.host?.toLowerCase() === next.reference.host?.toLowerCase() &&
-              current.reference.repository.toLowerCase() ===
-                next.reference.repository.toLowerCase() &&
-              current.reference.number === next.reference.number
-            ? { linkedThread: current.linkedThread }
-            : {}),
-      }));
-    },
-    [routeThreadRef],
-  );
+          : { environmentId: next.environmentId }),
+      });
+      return;
+    }
+    setSelection((current) => ({
+      ...next,
+      ...(next.linkedThread
+        ? {}
+        : current?.linkedThread &&
+            current.environmentId === next.environmentId &&
+            current.reference.projectId === next.reference.projectId &&
+            current.reference.host?.toLowerCase() === next.reference.host?.toLowerCase() &&
+            current.reference.repository.toLowerCase() ===
+              next.reference.repository.toLowerCase() &&
+            current.reference.number === next.reference.number
+          ? { linkedThread: current.linkedThread }
+          : {}),
+    }));
+  };
   return (
     <OpenWorkbenchPullRequestContext value={openSelection}>
       {children}

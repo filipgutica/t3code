@@ -301,15 +301,15 @@ function Section({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const headingRef = useRef<HTMLDivElement>(null);
+  const [seenReveal, setSeenReveal] = useState<typeof reveal>();
+  if (reveal && seenReveal !== reveal) setOpen(true);
+  if (seenReveal !== reveal) setSeenReveal(reveal);
   useEffect(() => {
     if (!reveal) return;
-    setOpen(true);
-    const heading = headingRef.current;
-    const scroller = heading?.closest<HTMLElement>("[data-pull-request-summary-scroll]");
-    if (heading && scroller) {
-      scroller.scrollTop +=
-        heading.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-    }
+    const el = headingRef.current;
+    const scroller = el?.closest<HTMLElement>("[data-pull-request-summary-scroll]");
+    if (el && scroller)
+      scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
   }, [reveal]);
   const setOpenWithScrollAnchor = (nextOpen: boolean) => {
     if (!nextOpen) {

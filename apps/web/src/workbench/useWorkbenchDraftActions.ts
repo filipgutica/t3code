@@ -85,7 +85,7 @@ export function useWorkbenchDraftActions({
     const failed: WorkbenchConversationDraft[] = [];
     const messages: string[] = [];
     let attempted = false;
-    try {
+    await (async () => {
       for (const draft of confirmation.drafts) {
         if (!eligibility.current.canMutate || eligibility.current.readOnlyDraftIds?.has(draft.id)) {
           failed.push(draft);
@@ -118,14 +118,14 @@ export function useWorkbenchDraftActions({
           `${removed > 0 ? `${removed} discarded. ` : ""}${failed.length} ${failed.length === 1 ? "draft could" : "drafts could"} not be discarded. ${[...new Set(messages)].join(" ") || "This workspace is read-only or your permission changed."} Check the remaining drafts and try again.`,
         );
       }
-    } finally {
+    })().finally(() => {
       if (attempted) {
         refresh();
         refreshPreparations();
       }
       running.current = false;
       setBusy(false);
-    }
+    });
     return false;
   };
   return {

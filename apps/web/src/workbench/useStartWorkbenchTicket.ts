@@ -13,7 +13,6 @@ import {
   type WorkbenchTicket,
   type WorkbenchTicketId,
 } from "@t3tools/contracts";
-import { useCallback } from "react";
 
 import { useComposerDraftStore } from "../composerDraftStore";
 import { newThreadId, randomUUID } from "../lib/utils";
@@ -131,14 +130,13 @@ export function useStartWorkbenchTicket({
   const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
 
-  return useCallback(
-    async (ticket: WorkbenchTicket, options?: StartWorkbenchTicketOptions) => {
-      if (environmentId === null) return;
-      onPendingChange(`start:${ticket.id}:checking-thread`);
-      onError(null);
-      let result: Awaited<ReturnType<typeof coordinateWorkbenchTicketStart>>;
+  return async (ticket: WorkbenchTicket, options?: StartWorkbenchTicketOptions) => {
+    if (environmentId === null) return;
+    onPendingChange(`start:${ticket.id}:checking-thread`);
+    onError(null);
+    const result = await (async () => {
       try {
-        result = await coordinateWorkbenchTicketStart(
+        return await coordinateWorkbenchTicketStart(
           {
             environmentId,
             ticket,
@@ -176,30 +174,13 @@ export function useStartWorkbenchTicket({
             : "The Workbench request failed unexpectedly.",
         );
         return;
-      } finally {
-        onPendingChange(null);
       }
+    })().finally(() => {
+      onPendingChange(null);
+    });
+    if (result === undefined) return;
 
-      reportTicketStartResult({ result, onError, onRefreshThreadLookup });
-      return result;
-    },
-    [
-      assignmentsByTicket,
-      createAssignment,
-      createThread,
-      deleteThread,
-      environmentId,
-      existingThreadIds,
-      onError,
-      onOpenAssignedThread,
-      onPendingChange,
-      onRefreshThreadLookup,
-      prepareTicketWorkspace,
-      projects,
-      updateTicket,
-      providers,
-      replaceAssignment,
-      threadLookupReady,
-    ],
-  );
+    reportTicketStartResult({ result, onError, onRefreshThreadLookup });
+    return result;
+  };
 }

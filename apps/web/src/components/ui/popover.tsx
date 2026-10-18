@@ -8,9 +8,26 @@ const PopoverCreateHandle = PopoverPrimitive.createHandle;
 
 const Popover = PopoverPrimitive.Root;
 
-function PopoverTrigger({ className, children, ...props }: PopoverPrimitive.Trigger.Props) {
+function PopoverTrigger({
+  className,
+  children,
+  variant = "default",
+  ...props
+}: PopoverPrimitive.Trigger.Props & { variant?: "default" | "inline" }) {
+  const inlineClassName =
+    "inline-flex items-center gap-1 rounded-sm text-left outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
   return (
-    <PopoverPrimitive.Trigger className={className} data-slot="popover-trigger" {...props}>
+    <PopoverPrimitive.Trigger
+      className={
+        variant === "default"
+          ? className
+          : typeof className === "function"
+            ? (state) => cn(inlineClassName, className(state))
+            : cn(inlineClassName, className)
+      }
+      data-slot="popover-trigger"
+      {...props}
+    >
       {children}
     </PopoverPrimitive.Trigger>
   );

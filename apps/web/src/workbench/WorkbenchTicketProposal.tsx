@@ -7,7 +7,7 @@ import type {
   WorkbenchTicketDraftFields,
 } from "@t3tools/contracts";
 import { SparklesIcon } from "lucide-react";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import {
   ChatMarkdownCodeBlockRendererContext,
@@ -157,44 +157,37 @@ export function WorkbenchTicketProposalHistory({
   const projects = useProjects();
   const hasTicket =
     threadRef !== null && getWorkbenchContextForThread(data ?? null, threadRef.threadId) !== null;
-  const linkedProjects = useMemo(
-    () => projects.filter((project) => project.environmentId === threadRef?.environmentId),
-    [projects, threadRef?.environmentId],
+  const linkedProjects = projects.filter(
+    (project) => project.environmentId === threadRef?.environmentId,
   );
-  const knownRepositoryProjectIds = useMemo(
-    () => new Set(linkedProjects.map((project) => project.id)),
-    [linkedProjects],
-  );
-  const renderBlock = useCallback(
-    (block: ChatMarkdownCodeBlock) => {
-      if (
-        !hasTicket ||
-        block.language !== "workbench-ticket-draft" ||
-        block.messageId === undefined ||
-        block.sourceOffset === undefined ||
-        block.isStreaming ||
-        !block.isComplete
-      )
-        return undefined;
-      const suggestion = readTicketDraftSuggestion({
-        code: block.code,
-        messageId: block.messageId,
-        sourceOffset: block.sourceOffset,
-        knownRepositoryProjectIds,
-      });
-      if (suggestion === null) return undefined;
-      return (
-        <ProposalCard
-          suggestion={suggestion}
-          linkedProjects={linkedProjects}
-          status="saved"
-          replacesContent={false}
-          canApply={false}
-        />
-      );
-    },
-    [hasTicket, knownRepositoryProjectIds, linkedProjects],
-  );
+  const knownRepositoryProjectIds = new Set(linkedProjects.map((project) => project.id));
+  const renderBlock = (block: ChatMarkdownCodeBlock) => {
+    if (
+      !hasTicket ||
+      block.language !== "workbench-ticket-draft" ||
+      block.messageId === undefined ||
+      block.sourceOffset === undefined ||
+      block.isStreaming ||
+      !block.isComplete
+    )
+      return undefined;
+    const suggestion = readTicketDraftSuggestion({
+      code: block.code,
+      messageId: block.messageId,
+      sourceOffset: block.sourceOffset,
+      knownRepositoryProjectIds,
+    });
+    if (suggestion === null) return undefined;
+    return (
+      <ProposalCard
+        suggestion={suggestion}
+        linkedProjects={linkedProjects}
+        status="saved"
+        replacesContent={false}
+        canApply={false}
+      />
+    );
+  };
   return (
     <ChatMarkdownCodeBlockRendererContext value={renderBlock}>
       {children}
@@ -257,79 +250,60 @@ export function WorkbenchTicketProposalRenderer({
 }) {
   const projection = useThreadProjection(scopeThreadRef(environmentId, threadId));
   const messages = projection?.projection.messages ?? EMPTY_MESSAGES;
-  const knownRepositoryProjectIds = useMemo(
-    () => new Set(linkedProjects.map((project) => project.id)),
-    [linkedProjects],
-  );
-  const latest = useMemo(
-    () => findTicketDraftSuggestion({ messages, knownRepositoryProjectIds }),
-    [messages, knownRepositoryProjectIds],
-  );
+  const knownRepositoryProjectIds = new Set(linkedProjects.map((project) => project.id));
+  const latest = findTicketDraftSuggestion({ messages, knownRepositoryProjectIds });
   const [handled, setHandled] = useState<ReadonlyMap<string, "applied" | "dismissed">>(new Map());
-  const renderBlock = useCallback(
-    (block: ChatMarkdownCodeBlock) => {
-      if (block.language !== "workbench-ticket-draft" || block.messageId === undefined) {
-        return undefined;
-      }
-      if (block.isStreaming) {
-        return (
-          <p role="status" className="my-3 text-sm text-muted-foreground">
-            Preparing proposed ticket…
-          </p>
-        );
-      }
-      const suggestion =
-        block.isComplete && block.sourceOffset !== undefined
-          ? readTicketDraftSuggestion({
-              code: block.code,
-              messageId: block.messageId,
-              sourceOffset: block.sourceOffset,
-              knownRepositoryProjectIds,
-            })
-          : null;
-      if (suggestion === null) {
-        return (
-          <p role="status" className="my-3 text-sm text-muted-foreground">
-            This proposal is incomplete or has invalid repository details. Ask the agent to try
-            again.
-          </p>
-        );
-      }
-      const key = `${suggestion.messageId}:${suggestion.sourceOffset}`;
-      const status = proposalStatus({
-        suggestion,
-        fields,
-        ticketCreated,
-        handled: handled.get(key),
-        latest,
-      });
+  const renderBlock = (block: ChatMarkdownCodeBlock) => {
+    if (block.language !== "workbench-ticket-draft" || block.messageId === undefined) {
+      return undefined;
+    }
+    if (block.isStreaming) {
       return (
-        <ProposalCard
-          suggestion={suggestion}
-          linkedProjects={linkedProjects}
-          status={status}
-          replacesContent={fields.title.trim().length > 0 || fields.markdown.trim().length > 0}
-          canApply={canApply && onApply !== undefined}
-          onApply={() => {
-            if (!canApply || !onApply) return;
-            onApply(suggestion);
-            setHandled((previous) => new Map(previous).set(key, "applied"));
-          }}
-          onDismiss={() => setHandled((previous) => new Map(previous).set(key, "dismissed"))}
-        />
+        <p role="status" className="my-3 text-sm text-muted-foreground">
+          Preparing proposed ticket…
+        </p>
       );
-    },
-    [
-      canApply,
-      ticketCreated,
+    }
+    const suggestion =
+      block.isComplete && block.sourceOffset !== undefined
+        ? readTicketDraftSuggestion({
+            code: block.code,
+            messageId: block.messageId,
+            sourceOffset: block.sourceOffset,
+            knownRepositoryProjectIds,
+          })
+        : null;
+    if (suggestion === null) {
+      return (
+        <p role="status" className="my-3 text-sm text-muted-foreground">
+          This proposal is incomplete or has invalid repository details. Ask the agent to try again.
+        </p>
+      );
+    }
+    const key = `${suggestion.messageId}:${suggestion.sourceOffset}`;
+    const status = proposalStatus({
+      suggestion,
       fields,
-      handled,
-      knownRepositoryProjectIds,
+      ticketCreated,
+      handled: handled.get(key),
       latest,
-      linkedProjects,
-      onApply,
-    ],
-  );
+    });
+    return (
+      <ProposalCard
+        suggestion={suggestion}
+        linkedProjects={linkedProjects}
+        status={status}
+        replacesContent={fields.title.trim().length > 0 || fields.markdown.trim().length > 0}
+        canApply={canApply && onApply !== undefined}
+        onApply={() => {
+          if (!canApply || !onApply) return;
+          onApply(suggestion);
+          setHandled((previous) => new Map(previous).set(key, "applied"));
+        }}
+        onDismiss={() => setHandled((previous) => new Map(previous).set(key, "dismissed"))}
+      />
+    );
+  };
   return (
     <ChatMarkdownCodeBlockRendererContext value={renderBlock}>
       {children}

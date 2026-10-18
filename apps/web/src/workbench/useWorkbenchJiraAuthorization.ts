@@ -1,7 +1,8 @@
+import { useStableCallback } from "../hooks/useStableCallback";
 import { EnvironmentId, type WorkbenchProjectId, type WorkbenchProject } from "@t3tools/contracts";
 import type { NavigateFn } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -177,7 +178,7 @@ export function useWorkbenchJiraAuthorization({
     readPendingJiraBrokerAuth,
   );
   const handledJiraOAuthCallbackRef = useRef<string | null>(null);
-  const resolveJiraOAuthRedirectUri = useCallback(() => {
+  const resolveJiraOAuthRedirectUri = () => {
     if (isElectron && environmentHttpBaseUrl === null) return null;
     return jiraOAuthRedirectUri({
       // Web callbacks use the browser origin. Desktop requires the selected
@@ -185,7 +186,7 @@ export function useWorkbenchJiraAuthorization({
       // the primary server by fallback.
       serverHttpUrl: environmentHttpBaseUrl ?? window.location.origin,
     });
-  }, [environmentHttpBaseUrl]);
+  };
   const beginJiraAuthFlow = async () => {
     if (environmentId === null) return;
     const redirectUri = resolveJiraOAuthRedirectUri();
@@ -268,34 +269,36 @@ export function useWorkbenchJiraAuthorization({
       }
       inFlight = true;
       setJiraPendingAction("complete-auth");
-      try {
-        const result = await jiraClaimAuth({
-          environmentId: jiraBrokerAuth.environmentId,
-          input: { state: jiraBrokerAuth.state },
-        });
-        if (stopped) return;
-        if (reportWorkbenchCommandFailure(result, setJiraError)) {
+      return (async () => {
+        try {
+          const result = await jiraClaimAuth({
+            environmentId: jiraBrokerAuth.environmentId,
+            input: { state: jiraBrokerAuth.state },
+          });
+          if (stopped) return;
+          if (reportWorkbenchCommandFailure(result, setJiraError)) {
+            clearBrokerAuth();
+            return;
+          }
+          if (result.value.status === "pending") return;
           clearBrokerAuth();
-          return;
+          if (result.value.status === "failed") {
+            setJiraError(result.value.error);
+            return;
+          }
+          setJiraError(null);
+          setJiraDialogOpen(true);
+          await refreshJiraSnapshot();
+        } catch (error) {
+          if (stopped) return;
+          clearBrokerAuth();
+          setJiraError(
+            error instanceof Error ? error.message : "Jira authorization could not be completed.",
+          );
         }
-        if (result.value.status === "pending") return;
-        clearBrokerAuth();
-        if (result.value.status === "failed") {
-          setJiraError(result.value.error);
-          return;
-        }
-        setJiraError(null);
-        setJiraDialogOpen(true);
-        await refreshJiraSnapshot();
-      } catch (error) {
-        if (stopped) return;
-        clearBrokerAuth();
-        setJiraError(
-          error instanceof Error ? error.message : "Jira authorization could not be completed.",
-        );
-      } finally {
+      })().finally(() => {
         inFlight = false;
-      }
+      });
     };
     void poll();
     const interval = window.setInterval(() => void poll(), 1_500);
@@ -313,7 +316,7 @@ export function useWorkbenchJiraAuthorization({
     setJiraPendingAction,
   ]);
 
-  const completeAuthorization = useCallback(
+  const completeAuthorization = useStableCallback(
     async ({
       environmentId,
       callback,
@@ -323,7 +326,7 @@ export function useWorkbenchJiraAuthorization({
     }) => {
       setJiraPendingAction("complete-auth");
       setJiraError(null);
-      try {
+      return (async () => {
         if ("error" in callback) {
           setJiraError(callback.error);
           return false;
@@ -342,11 +345,10 @@ export function useWorkbenchJiraAuthorization({
           },
         });
         return !reportWorkbenchCommandFailure(result, setJiraError);
-      } finally {
+      })().finally(() => {
         setJiraPendingAction(null);
-      }
+      });
     },
-    [jiraCompleteAuth, resolveJiraOAuthRedirectUri, setJiraError, setJiraPendingAction],
   );
 
   useEffect(() => {

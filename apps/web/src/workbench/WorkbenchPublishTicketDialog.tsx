@@ -69,11 +69,11 @@ export function WorkbenchPublishTicketDialog({
     if (pending || submitting.current || !canPublish) return;
     submitting.current = true;
     setSubmitted(true);
-    try {
+    return (async () => {
       if (await onPublish({ jiraSprintId: selectedSprintId, epicId: selectedEpicId })) onClose();
-    } finally {
+    })().finally(() => {
       submitting.current = false;
-    }
+    });
   };
   return (
     <Dialog

@@ -1,3 +1,4 @@
+import { useStableCallback } from "../hooks/useStableCallback";
 import type {
   EnvironmentId,
   ThreadId,
@@ -12,7 +13,7 @@ import { useAtomValue } from "@effect/atom-react";
 import type { PendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { Atom } from "effect/reactivity";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { environmentThreadDetails } from "../state/threads";
 import { useUiStateStore } from "../uiStateStore";
 import { resolveThreadStatusPill } from "../components/Sidebar.logic";
@@ -73,7 +74,7 @@ const useWorkbenchThreadNotifications = ({
   readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   readonly activeThreadRef: ScopedThreadRef | null;
 }) => {
-  const pendingThreadIds = useMemo(() => {
+  const pendingThreadIds = (() => {
     const ticketIds = new Set(tickets.map((ticket) => ticket.id));
     const ids = new Set(
       activeAssignments
@@ -85,24 +86,20 @@ const useWorkbenchThreadNotifications = ({
       const thread = threadsById.get(id);
       return thread?.hasPendingUserInput || thread?.hasPendingApprovals;
     });
-  }, [activeAssignments, activeThreadRef, environmentId, threadsById, tickets]);
+  })();
   // Only pending Threads need native details; the server pins their unresolved requests.
   const pendingRequestsByThread = useAtomValue(
-    useMemo(
-      () =>
-        Atom.make((get) => {
-          const requests = new Map<ThreadId, PendingThreadRequests>();
-          if (environmentId === null) return requests;
-          for (const id of pendingThreadIds) {
-            const pending = get(
-              environmentThreadDetails.pendingRequestsAtom(scopeThreadRef(environmentId, id)),
-            );
-            if (pending !== null) requests.set(id, pending);
-          }
-          return requests;
-        }).pipe(Atom.setIdleTTL(0)),
-      [environmentId, pendingThreadIds],
-    ),
+    Atom.make((get) => {
+      const requests = new Map<ThreadId, PendingThreadRequests>();
+      if (environmentId === null) return requests;
+      for (const id of pendingThreadIds) {
+        const pending = get(
+          environmentThreadDetails.pendingRequestsAtom(scopeThreadRef(environmentId, id)),
+        );
+        if (pending !== null) requests.set(id, pending);
+      }
+      return requests;
+    }).pipe(Atom.setIdleTTL(0)),
   );
   const visitedByThread = useUiStateStore((state) => state.threadLastVisitedAtById);
   const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
@@ -187,11 +184,12 @@ export function useWorkbenchAttention({
   readonly activeThreadRef: ScopedThreadRef | null;
 }) {
   const [attentionRefresh, setAttentionRefresh] = useState(0);
-  const refreshAttention = () => setAttentionRefresh((previous) => previous + 1);
-  const activeAssignments = useMemo(
-    () => activeWorkbenchAttentionAssignments({ assignments, threadsById, environmentId }),
-    [assignments, threadsById, environmentId],
-  );
+  const refreshAttention = useStableCallback(() => setAttentionRefresh((previous) => previous + 1));
+  const activeAssignments = activeWorkbenchAttentionAssignments({
+    assignments,
+    threadsById,
+    environmentId,
+  });
   const { pendingRequestsByThread, visitedByThread } = useWorkbenchThreadNotifications({
     environmentId,
     tickets,
@@ -199,7 +197,7 @@ export function useWorkbenchAttention({
     threadsById,
     activeThreadRef,
   });
-  const assignmentsByTicket = useMemo(() => {
+  const assignmentsByTicket = (() => {
     const groups = new Map<WorkbenchTicketId, WorkbenchAssignment[]>();
     for (const assignment of activeAssignments) {
       const group = groups.get(assignment.ticketId) ?? [];
@@ -207,53 +205,43 @@ export function useWorkbenchAttention({
       groups.set(assignment.ticketId, group);
     }
     return groups;
-  }, [activeAssignments]);
-  const attentionReferencesByTicket = useMemo(
-    () =>
-      new Map(
-        tickets.map((ticket) => [
-          ticket.id,
-          getWorkbenchTicketPullRequests({
-            assignments: assignmentsByTicket.get(ticket.id) ?? [],
-            threadsById,
-            archivedThreadsById: new Map(),
-            includeBranchPullRequest: false,
-          }),
-        ]),
-      ),
-    [tickets, assignmentsByTicket, threadsById],
+  })();
+  const attentionReferencesByTicket = new Map(
+    tickets.map((ticket) => [
+      ticket.id,
+      getWorkbenchTicketPullRequests({
+        assignments: assignmentsByTicket.get(ticket.id) ?? [],
+        threadsById,
+        archivedThreadsById: new Map(),
+        includeBranchPullRequest: false,
+      }),
+    ]),
   );
-  const attentionReferences = useMemo(
-    () =>
-      environmentId === null
-        ? []
-        : [
-            ...new Map(
-              [...attentionReferencesByTicket.values()]
-                .flat()
-                .map((row) => row.pullRequest)
-                .filter((reference) => reference.state !== "closed" && reference.state !== "merged")
-                .map((reference) => [
-                  workbenchAttentionIdentity(environmentId, reference),
-                  reference,
-                ]),
-            ).values(),
-          ],
-    [attentionReferencesByTicket, environmentId],
-  );
+  const attentionReferences =
+    environmentId === null
+      ? []
+      : [
+          ...new Map(
+            [...attentionReferencesByTicket.values()]
+              .flat()
+              .map((row) => row.pullRequest)
+              .filter((reference) => reference.state !== "closed" && reference.state !== "merged")
+              .map((reference) => [
+                workbenchAttentionIdentity(environmentId, reference),
+                reference,
+              ]),
+          ).values(),
+        ];
   const attentionEntityScope = JSON.stringify([environmentId, projectId]);
-  const referenceScopes = useMemo(
-    () =>
-      environmentId === null
-        ? new Map<string, string>()
-        : new Map(
-            attentionReferences.map((reference) => [
-              workbenchAttentionIdentity(environmentId, reference),
-              JSON.stringify([reference.state, reference.checksState, reference.reviewDecision]),
-            ]),
-          ),
-    [environmentId, attentionReferences],
-  );
+  const referenceScopes =
+    environmentId === null
+      ? new Map<string, string>()
+      : new Map(
+          attentionReferences.map((reference) => [
+            workbenchAttentionIdentity(environmentId, reference),
+            JSON.stringify([reference.state, reference.checksState, reference.reviewDecision]),
+          ]),
+        );
   const attentionScope = JSON.stringify([
     attentionEntityScope,
     [...referenceScopes],
@@ -268,7 +256,7 @@ export function useWorkbenchAttention({
     entityScope: attentionEntityScope,
     observations: new Map(),
   });
-  const setAttentionObservations = useCallback(
+  const setAttentionObservations = useStableCallback(
     (observations: ReadonlyMap<string, WorkbenchPullRequestAttention>) =>
       setAttentionResult((previous) => {
         const merged = new Map(
@@ -299,92 +287,71 @@ export function useWorkbenchAttention({
           observations: merged,
         };
       }),
-    [attentionScope, attentionEntityScope, referenceScopes],
   );
-  const observations = useMemo(
-    () =>
-      attentionResult.entityScope !== attentionEntityScope
-        ? new Map<string, WorkbenchPullRequestAttention>()
-        : attentionResult.scope === attentionScope
-          ? attentionResult.observations
-          : new Map(
-              [...attentionResult.observations]
-                .filter(([key]) => referenceScopes.has(key))
-                .map(([key, observation]) => [key, pendingObservation(observation)]),
-            ),
-    [attentionResult, attentionEntityScope, attentionScope, referenceScopes],
-  );
-  const attentionByTicket = useMemo(
-    () =>
-      new Map(
-        tickets.map((ticket) => {
-          const { signals, reasons } = getTicketThreadAttention({
-            assignments: assignmentsByTicket.get(ticket.id) ?? [],
-            threadsById,
-            pendingRequestsByThread,
-            visitedByThread,
-            activeThreadRef,
+  const observations =
+    attentionResult.entityScope !== attentionEntityScope
+      ? new Map<string, WorkbenchPullRequestAttention>()
+      : attentionResult.scope === attentionScope
+        ? attentionResult.observations
+        : new Map(
+            [...attentionResult.observations]
+              .filter(([key]) => referenceScopes.has(key))
+              .map(([key, observation]) => [key, pendingObservation(observation)]),
+          );
+  const attentionByTicket = new Map(
+    tickets.map((ticket) => {
+      const { signals, reasons } = getTicketThreadAttention({
+        assignments: assignmentsByTicket.get(ticket.id) ?? [],
+        threadsById,
+        pendingRequestsByThread,
+        visitedByThread,
+        activeThreadRef,
+      });
+      const inspections: WorkbenchAttentionInspection[] = [];
+      for (const row of attentionReferencesByTicket.get(ticket.id) ?? []) {
+        if (environmentId === null) continue;
+        const reference = row.pullRequest;
+        const observation =
+          observations.get(workbenchAttentionIdentity(environmentId, reference)) ??
+          getWorkbenchPullRequestAttention({
+            reference,
+            summary: null,
+            activity: null,
+            loading: true,
+            error: false,
           });
-          const inspections: WorkbenchAttentionInspection[] = [];
-          for (const row of attentionReferencesByTicket.get(ticket.id) ?? []) {
-            if (environmentId === null) continue;
-            const reference = row.pullRequest;
-            const observation =
-              observations.get(workbenchAttentionIdentity(environmentId, reference)) ??
-              getWorkbenchPullRequestAttention({
-                reference,
-                summary: null,
-                activity: null,
-                loading: true,
-                error: false,
-              });
-            observation.reasons.forEach((reason) => reasons.add(reason));
-            const observedRow = getObservedPullRequestRow({
-              row,
-              pullRequestTitle: observation.pullRequestTitle,
-            });
-            for (const kind of observation.signalKinds) {
-              signals.push({
-                kind,
-                source: { type: "pull-request", row: observedRow },
-                unresolvedReviewThreads: observation.unresolvedReviewThreads,
-              });
-            }
-            if (reference.state !== "closed" && reference.state !== "merged") {
-              inspections.push({
-                row: observedRow,
-                status: observation.inspectionStatus,
-                displayStatus: observation.displayInspectionStatus,
-                inspected: observation.inspected,
-              });
-            }
-          }
-          return [ticket.id, { reasons: [...reasons], signals, inspections }];
-        }),
-      ),
-    [
-      tickets,
-      assignmentsByTicket,
-      threadsById,
-      pendingRequestsByThread,
-      visitedByThread,
-      activeThreadRef,
-      attentionReferencesByTicket,
-      observations,
-      environmentId,
-    ],
+        observation.reasons.forEach((reason) => reasons.add(reason));
+        const observedRow = getObservedPullRequestRow({
+          row,
+          pullRequestTitle: observation.pullRequestTitle,
+        });
+        for (const kind of observation.signalKinds) {
+          signals.push({
+            kind,
+            source: { type: "pull-request", row: observedRow },
+            unresolvedReviewThreads: observation.unresolvedReviewThreads,
+          });
+        }
+        if (reference.state !== "closed" && reference.state !== "merged") {
+          inspections.push({
+            row: observedRow,
+            status: observation.inspectionStatus,
+            displayStatus: observation.displayInspectionStatus,
+            inspected: observation.inspected,
+          });
+        }
+      }
+      return [ticket.id, { reasons: [...reasons], signals, inspections }];
+    }),
   );
-  const attentionReasonsByTicket = useMemo(
-    () => new Map([...attentionByTicket].map(([id, result]) => [id, result.reasons])),
-    [attentionByTicket],
+  const attentionReasonsByTicket = new Map(
+    [...attentionByTicket].map(([id, result]) => [id, result.reasons]),
   );
-  const attentionSignalsByTicket = useMemo(
-    () => new Map([...attentionByTicket].map(([id, result]) => [id, result.signals])),
-    [attentionByTicket],
+  const attentionSignalsByTicket = new Map(
+    [...attentionByTicket].map(([id, result]) => [id, result.signals]),
   );
-  const attentionInspectionsByTicket = useMemo(
-    () => new Map([...attentionByTicket].map(([id, result]) => [id, result.inspections])),
-    [attentionByTicket],
+  const attentionInspectionsByTicket = new Map(
+    [...attentionByTicket].map(([id, result]) => [id, result.inspections]),
   );
   const attentionCoverage = `${attentionReferences.filter((reference) => environmentId !== null && observations.get(workbenchAttentionIdentity(environmentId, reference))?.inspected).length} of ${attentionReferences.length} linked PRs inspected`;
   return {

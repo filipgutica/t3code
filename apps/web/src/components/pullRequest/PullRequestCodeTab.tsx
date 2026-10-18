@@ -30,7 +30,6 @@ import {
   createContext,
   use,
   useEffect,
-  useMemo,
   useEffectEvent,
   useRef,
   useState,
@@ -317,18 +316,13 @@ function PullRequestCodeTab({
   const focusedReviewRef = useRef<HTMLElement | null>(null);
 
   const referenceKey = pullRequestReviewKey(reference);
-  const focusedThreads = useMemo(
-    () =>
-      focus ? detail.reviewThreads.filter((thread) => thread.id === focus.reviewThreadId) : [],
-    [detail.reviewThreads, focus],
-  );
-  const focusedThreadIds = useMemo(
-    () => new Set(focusedThreads.map((thread) => thread.id)),
-    [focusedThreads],
-  );
+  const focusedThreads = focus
+    ? detail.reviewThreads.filter((thread) => thread.id === focus.reviewThreadId)
+    : [];
+  const focusedThreadIds = new Set(focusedThreads.map((thread) => thread.id));
   useEffect(() => {
     if (focus && focusedReviewRef.current) focusedReviewRef.current.scrollTop = 0;
-  }, [focus, referenceKey]);
+  }, [focus]);
   const commit = selectedCommitOid;
   const scopeKey = commit === null ? referenceKey : `${referenceKey}@${commit}`;
   // The panel keeps this mounted across pull requests, so an open composer would otherwise

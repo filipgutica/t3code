@@ -14,7 +14,7 @@ import {
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { useAtomValue } from "@effect/atom-react";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { parseChangeRequestUrl } from "~/lib/openPullRequestLink";
 import { parsePullRequestReference } from "~/pullRequestReference";
@@ -199,7 +199,7 @@ function LinkPullRequestDialog({
     parsedNumber !== null && Number.isSafeInteger(parsedNumber) && parsedNumber > 0
       ? parsedNumber
       : null;
-  const numberTargets = useMemo(() => {
+  const numberTargets = (() => {
     if (number === null) return [];
     const seen = new Set<string>();
     const targets: Array<{
@@ -220,7 +220,7 @@ function LinkPullRequestDialog({
       });
     }
     return targets;
-  }, [environmentProjects, number, threadRef.environmentId]);
+  })();
   const numberSearch = usePullRequestNumberSearch(numberTargets);
   const search = usePullRequestList(
     number === null

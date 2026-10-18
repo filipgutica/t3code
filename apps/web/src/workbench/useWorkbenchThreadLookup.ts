@@ -1,6 +1,5 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 
-import { useMemo } from "react";
 import { presentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { useThreadShells } from "../state/entities";
 
@@ -19,59 +18,38 @@ export function useWorkbenchThreadLookup({
   snapshot: WorkbenchSnapshot | null;
 }) {
   const allThreadShells = useThreadShells();
-  const archivedEnvironmentIds = useMemo(
-    () => (environmentId === null ? [] : [environmentId]),
-    [environmentId],
-  );
+  const archivedEnvironmentIds = environmentId === null ? [] : [environmentId];
   const {
     snapshots: archivedSnapshots,
     error: archivedThreadsError,
     isLoading: archivedThreadsLoading,
     refresh: refreshArchivedThreads,
   } = useArchivedThreadSnapshots(archivedEnvironmentIds);
-  const threadsById = useMemo(
-    () =>
-      new Map(
-        allThreadShells
-          .filter((thread) => thread.environmentId === environmentId)
-          .map((thread) => [thread.id, thread]),
-      ),
-    [allThreadShells, environmentId],
+  const threadsById = new Map(
+    allThreadShells
+      .filter((thread) => thread.environmentId === environmentId)
+      .map((thread) => [thread.id, thread]),
   );
-  const archivedThreadsById = useMemo(
-    () =>
-      new Map(
-        archivedSnapshots.flatMap(({ environmentId: archivedEnvironmentId, snapshot }) =>
-          snapshot.threads.map((thread) => [
-            thread.id,
-            presentThreadShell(archivedEnvironmentId, thread),
-          ]),
-        ),
-      ),
-    [archivedSnapshots],
+  const archivedThreadsById = new Map(
+    archivedSnapshots.flatMap(({ environmentId: archivedEnvironmentId, snapshot }) =>
+      snapshot.threads.map((thread) => [
+        thread.id,
+        presentThreadShell(archivedEnvironmentId, thread),
+      ]),
+    ),
   );
-  const existingThreadIds = useMemo(
-    () => new Set([...threadsById.keys(), ...archivedThreadsById.keys()]),
-    [archivedThreadsById, threadsById],
-  );
-  const reservedThreadIds = useMemo(
-    () => new Set(snapshot?.reservedThreadIds ?? []),
-    [snapshot?.reservedThreadIds],
-  );
-  const assignmentsByTicket = useMemo(
-    () =>
-      getActiveAssignmentsByTicket({
-        assignments: snapshot?.assignments ?? [],
-        liveThreadIds: new Set(threadsById.keys()),
-        archivedThreadIds: new Set(archivedThreadsById.keys()),
-        workingThreadIds: new Set(
-          [...threadsById.values()]
-            .filter((thread) => resolveThreadStatusPill({ thread })?.label === "Working")
-            .map((thread) => thread.id),
-        ),
-      }),
-    [archivedThreadsById, snapshot?.assignments, threadsById],
-  );
+  const existingThreadIds = new Set([...threadsById.keys(), ...archivedThreadsById.keys()]);
+  const reservedThreadIds = new Set(snapshot?.reservedThreadIds ?? []);
+  const assignmentsByTicket = getActiveAssignmentsByTicket({
+    assignments: snapshot?.assignments ?? [],
+    liveThreadIds: new Set(threadsById.keys()),
+    archivedThreadIds: new Set(archivedThreadsById.keys()),
+    workingThreadIds: new Set(
+      [...threadsById.values()]
+        .filter((thread) => resolveThreadStatusPill({ thread })?.label === "Working")
+        .map((thread) => thread.id),
+    ),
+  });
   const threadLookupReady = !archivedThreadsLoading && archivedThreadsError === null;
   return {
     threadsById,

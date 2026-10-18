@@ -94,46 +94,58 @@ export function WorkbenchThreadBreadcrumb({
                 onClick={async () => {
                   if (thread === null || attaching) return;
                   setAttaching(true);
-                  try {
-                    let fullTicket = ticket;
-                    if (ticket.markdownOmitted) {
-                      const query = workbenchEnvironment.ticket({
+                  return (async () => {
+                    try {
+                      let fullTicket = ticket;
+                      if (ticket.markdownOmitted) {
+                        const query = workbenchEnvironment.ticket({
+                          environmentId,
+                          input: { ticketId: ticket.id, revision: ticket.revision },
+                        });
+                        registry.refresh(query);
+                        const loaded = await Effect.runPromise(
+                          AtomRegistry.getResult(registry, query, { suspendOnWaiting: true }),
+                        );
+                        if (loaded === null) {
+                          toastManager.add({
+                            type: "error",
+                            title: "Ticket context could not be attached",
+                            description: "This Ticket no longer exists.",
+                          });
+                          return;
+                        }
+                        fullTicket = loaded;
+                      }
+                      attachWorkbenchTicketContext({
                         environmentId,
-                        input: { ticketId: ticket.id, revision: ticket.revision },
+                        thread,
+                        ticket: fullTicket,
+                        projects: projects.filter(
+                          (candidate) => candidate.environmentId === environmentId,
+                        ),
+                        repositories:
+                          data?.ticketWorkspaces.find(
+                            (workspace) => workspace.ticketId === ticket.id,
+                          )?.repositories ?? [],
                       });
-                      registry.refresh(query);
-                      const loaded = await Effect.runPromise(
-                        AtomRegistry.getResult(registry, query, { suspendOnWaiting: true }),
-                      );
-                      if (loaded === null) throw new Error("This Ticket no longer exists.");
-                      fullTicket = loaded;
+                      toastManager.add({
+                        type: "success",
+                        title: "Ticket context attached",
+                        description: "Review it in the composer before sending.",
+                      });
+                    } catch (cause) {
+                      toastManager.add({
+                        type: "error",
+                        title: "Ticket context could not be attached",
+                        description:
+                          cause instanceof Error
+                            ? cause.message
+                            : "The Ticket could not be loaded.",
+                      });
                     }
-                    attachWorkbenchTicketContext({
-                      environmentId,
-                      thread,
-                      ticket: fullTicket,
-                      projects: projects.filter(
-                        (candidate) => candidate.environmentId === environmentId,
-                      ),
-                      repositories:
-                        data?.ticketWorkspaces.find((workspace) => workspace.ticketId === ticket.id)
-                          ?.repositories ?? [],
-                    });
-                    toastManager.add({
-                      type: "success",
-                      title: "Ticket context attached",
-                      description: "Review it in the composer before sending.",
-                    });
-                  } catch (cause) {
-                    toastManager.add({
-                      type: "error",
-                      title: "Ticket context could not be attached",
-                      description:
-                        cause instanceof Error ? cause.message : "The Ticket could not be loaded.",
-                    });
-                  } finally {
+                  })().finally(() => {
                     setAttaching(false);
-                  }
+                  });
                 }}
               />
             }

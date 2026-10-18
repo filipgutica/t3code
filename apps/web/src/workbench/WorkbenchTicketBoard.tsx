@@ -43,7 +43,6 @@ import {
 import {
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -763,44 +762,27 @@ function useWorkbenchBoardData({
     attentionInspectionsByTicket,
     attentionCoverage,
   } = useWorkbenchAttentionData();
-  const incompleteInspection = useMemo(
-    () =>
-      [...attentionInspectionsByTicket.values()].some((rows) =>
-        rows.some((row) => row.status !== "complete"),
-      ),
-    [attentionInspectionsByTicket],
+  const incompleteInspection = [...attentionInspectionsByTicket.values()].some((rows) =>
+    rows.some((row) => row.status !== "complete"),
   );
-  const visibleTickets = useMemo(
-    () =>
-      tickets.filter(
-        (ticket) =>
-          matchesWorkbenchAttention(attentionMode, attentionSignalsByTicket.get(ticket.id) ?? []) &&
-          (repositoryId === null ||
-            getWorkbenchTicketRepositoryProjectIds(ticket).includes(repositoryId)) &&
-          matchesWorkbenchTicketSearch({
-            title: ticket.title,
-            jiraKey: jiraIssueLinksByTicketId.get(ticket.id)?.issue.key,
-            query: search.query,
-          }),
-      ),
-    [
-      tickets,
-      jiraIssueLinksByTicketId,
-      search.query,
-      repositoryId,
-      attentionMode,
-      attentionSignalsByTicket,
-    ],
+  const visibleTickets = tickets.filter(
+    (ticket) =>
+      matchesWorkbenchAttention(attentionMode, attentionSignalsByTicket.get(ticket.id) ?? []) &&
+      (repositoryId === null ||
+        getWorkbenchTicketRepositoryProjectIds(ticket).includes(repositoryId)) &&
+      matchesWorkbenchTicketSearch({
+        title: ticket.title,
+        jiraKey: jiraIssueLinksByTicketId.get(ticket.id)?.issue.key,
+        query: search.query,
+      }),
   );
-  const visibleTicketIds = useMemo(
-    () => new Set(visibleTickets.map((ticket) => ticket.id)),
-    [visibleTickets],
-  );
-  const agentStatesByTicket = useMemo(
-    () => getWorkbenchTicketExecutionStatuses({ environmentId, assignments, threadsById }),
-    [environmentId, assignments, threadsById],
-  );
-  const threadCounts = useMemo(() => {
+  const visibleTicketIds = new Set(visibleTickets.map((ticket) => ticket.id));
+  const agentStatesByTicket = getWorkbenchTicketExecutionStatuses({
+    environmentId,
+    assignments,
+    threadsById,
+  });
+  const threadCounts = (() => {
     const counts = new Map<WorkbenchTicketId, number>();
     for (const assignment of getVisibleWorkbenchAssignments(
       assignments,
@@ -813,29 +795,22 @@ function useWorkbenchBoardData({
       }
     }
     return counts;
-  }, [assignments, threadsById, archivedThreadsById]);
-  const columns = useMemo(
-    () =>
-      getWorkbenchBoardColumns({
-        tickets,
-        mirrorColumns,
-        issueLinks: jiraIssueLinksByTicketId,
-      }).map((column) => ({
-        ...column,
-        tickets: column.tickets.filter((ticket) => visibleTicketIds.has(ticket.id)),
-      })),
-    [tickets, mirrorColumns, jiraIssueLinksByTicketId, visibleTicketIds],
-  );
-  const swimlanes = useMemo(
-    () =>
-      groupMode === "epic"
-        ? groupWorkbenchTicketsByEpic(visibleTickets, epics).filter(
-            (lane) => (!search.query && repositoryId === null) || lane.tickets.length > 0,
-          )
-        : [{ epic: null, tickets: visibleTickets }],
-    [epics, groupMode, visibleTickets, search.query, repositoryId],
-  );
-  const epicsById = useMemo(() => new Map(epics.map((epic) => [epic.id, epic])), [epics]);
+  })();
+  const columns = getWorkbenchBoardColumns({
+    tickets,
+    mirrorColumns,
+    issueLinks: jiraIssueLinksByTicketId,
+  }).map((column) => ({
+    ...column,
+    tickets: column.tickets.filter((ticket) => visibleTicketIds.has(ticket.id)),
+  }));
+  const swimlanes =
+    groupMode === "epic"
+      ? groupWorkbenchTicketsByEpic(visibleTickets, epics).filter(
+          (lane) => (!search.query && repositoryId === null) || lane.tickets.length > 0,
+        )
+      : [{ epic: null, tickets: visibleTickets }];
+  const epicsById = new Map(epics.map((epic) => [epic.id, epic]));
 
   return {
     search,
@@ -1101,25 +1076,21 @@ function useWorkbenchBoardDrag({
   });
   const hasJiraDrop = Boolean(jiraDropTicket && jiraDropLink && jiraDropColumn);
   const dragDisabled = readOnly === true || !wideBoard || pending || hasJiraDrop;
-  const dropTargets = useMemo(
-    () =>
-      new Map(
-        swimlanes.flatMap((lane) =>
-          columns.map(
-            (column) =>
-              [
-                JSON.stringify([lane.epic?.id ?? null, column.id]),
-                {
-                  columnId: column.id,
-                  title: column.title,
-                  status: column.status,
-                  epicId: lane.epic?.id ?? null,
-                },
-              ] as const,
-          ),
-        ),
+  const dropTargets = new Map(
+    swimlanes.flatMap((lane) =>
+      columns.map(
+        (column) =>
+          [
+            JSON.stringify([lane.epic?.id ?? null, column.id]),
+            {
+              columnId: column.id,
+              title: column.title,
+              status: column.status,
+              epicId: lane.epic?.id ?? null,
+            },
+          ] as const,
       ),
-    [columns, swimlanes],
+    ),
   );
   const canDrop = (
     ticket: WorkbenchTicket,

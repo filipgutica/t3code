@@ -99,16 +99,18 @@ export function WorkbenchJiraDropDialog({
           </DialogTitle>
           <DialogDescription>Choose a Jira transition for “{ticket.title}”.</DialogDescription>
         </DialogHeader>
-        <DialogPanel className="space-y-3">
-          <JiraDropOptions
-            error={error}
-            result={result}
-            action={action}
-            isPending={isPending}
-            refresh={refresh}
-            columnTitle={columnTitle}
-            selectTransition={selectTransition}
-          />
+        <DialogPanel>
+          <div className="space-y-3">
+            <JiraDropOptions
+              error={error}
+              result={result}
+              action={action}
+              isPending={isPending}
+              refresh={refresh}
+              columnTitle={columnTitle}
+              selectTransition={selectTransition}
+            />
+          </div>
         </DialogPanel>
         <DialogFooter>
           <Button onClick={onClose} variant="outline">
