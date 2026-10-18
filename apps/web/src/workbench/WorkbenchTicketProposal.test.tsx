@@ -21,7 +21,9 @@ const state = vi.hoisted(() => ({
   messages: [] as WorkbenchSuggestionMessage[],
   snapshot: null as WorkbenchSnapshot | null,
 }));
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
+vi.mock("@effect/atom-react", () => ({
+  useAtomValue: () => ({ availableEditors: [], revealInFileManagerLabel: "Show in file manager" }),
+}));
 vi.mock("../hooks/useTheme", () => ({ useTheme: () => ({ resolvedTheme: "dark" }) }));
 vi.mock("../hooks/useSettings", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../hooks/useSettings")>();

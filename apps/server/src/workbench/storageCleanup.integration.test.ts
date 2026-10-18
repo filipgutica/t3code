@@ -244,12 +244,13 @@ for (const { lifecycle, directory, trigger } of cleanupCases) {
                   execute: (input) =>
                     Effect.gen(function* () {
                       if (input.args[2] === "worktree" && input.args[3] === "remove") {
-                        const worktreePath = input.args[4]!;
+                        const worktreePath = input.args[input.args.indexOf("--") + 1]!;
                         expect(input.args).toEqual([
                           "-c",
                           "status.showUntrackedFiles=normal",
                           "worktree",
                           "remove",
+                          "--",
                           worktreePath,
                         ]);
                         removals.push(worktreePath);
