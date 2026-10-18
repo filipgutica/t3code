@@ -29,6 +29,10 @@ export const isWorkbenchOwned = (path: string) =>
     path,
   ) || /^apps\/web\/src\/routes\/workbench(?:\.tsx)?$/.test(path);
 
+export const isWorkbenchForkPath = (path: string) =>
+  isWorkbenchOwned(path) ||
+  /^(?:\.github\/workflows\/workbench-|docs\/internals\/workbench-)/.test(path);
+
 export const isRuntimeSource = (path: string) =>
   /^(apps|packages|infra|scripts)\//.test(path) &&
   /\.[cm]?[jt]sx?$/.test(path) &&
