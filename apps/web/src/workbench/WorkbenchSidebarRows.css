@@ -442,20 +442,19 @@ button[data-workbench-sidebar-disclosure] {
   }
 }
 
+/* The final keyframe is omitted so the pulse fades back to the row's own fill. */
 @keyframes workbench-sidebar-reveal {
   0%,
-  35% {
+  40% {
     outline-color: var(--ring);
-  }
-  100% {
-    outline-color: transparent;
+    background-color: color-mix(in oklab, var(--ring) 22%, transparent);
   }
 }
 
 [data-workbench-sidebar-surface][data-workbench-sidebar-reveal] {
   outline: 2px solid transparent;
   outline-offset: -2px;
-  animation: workbench-sidebar-reveal 750ms ease-out 1;
+  animation: workbench-sidebar-reveal 1200ms ease-out 1;
 }
 
 @media (prefers-reduced-motion: reduce) {

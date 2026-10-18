@@ -20,7 +20,7 @@ function Harness({
   listKey = "list",
   showRow = true,
 }: {
-  activeKey?: string;
+  activeKey?: string | null;
   onlyActionable?: boolean;
   listKey?: string;
   showRow?: boolean;
@@ -92,7 +92,7 @@ it("leaves a visible destination still, then reveals navigation to an offscreen 
   act(() => root.render(<Harness activeKey="new-thread" />));
   expect(viewport().scrollTop).toBe(220);
   expect(scrollIntoView).toHaveBeenCalledExactlyOnceWith({
-    block: "nearest",
+    block: "center",
     inline: "nearest",
     behavior: "instant",
   });
@@ -180,6 +180,13 @@ it("pulses a visible row reached from outside the sidebar, but not one picked in
   expect(row().hasAttribute("data-workbench-sidebar-reveal")).toBe(false);
   act(() => root.render(<Harness activeKey="elsewhere" />));
   row().removeAttribute("data-workbench-sidebar-reveal");
+  act(() => root.render(<Harness activeKey="clicked-thread" />));
+  act(() => vi.advanceTimersByTime(32));
+  expect(row().hasAttribute("data-workbench-sidebar-reveal")).toBe(true);
+  // A click on the already-active row explains nothing after passing through no selection.
+  row().removeAttribute("data-workbench-sidebar-reveal");
+  act(() => row().dispatchEvent(new Event("pointerdown", { bubbles: true })));
+  act(() => root.render(<Harness activeKey={null} />));
   act(() => root.render(<Harness activeKey="clicked-thread" />));
   act(() => vi.advanceTimersByTime(32));
   expect(row().hasAttribute("data-workbench-sidebar-reveal")).toBe(true);

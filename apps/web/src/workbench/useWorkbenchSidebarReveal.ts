@@ -44,6 +44,7 @@ export function useWorkbenchSidebarReveal({
     previous.current = next;
     if (!activeKey || isSearching || userScrolling) {
       pending.current = null;
+      pointerSurface.current = null;
       return;
     }
     if (!pending.current) return;
@@ -67,7 +68,8 @@ export function useWorkbenchSidebarReveal({
     const scrollTop = viewport.scrollTop;
     if (decision.scroll) {
       // Instant scrolling also avoids an animation competing with subsequent user input.
-      row.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+      // Centering keeps the rows around a revealed destination in view.
+      row.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
     }
     if (!decision.pulse && viewport.scrollTop === scrollTop) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
