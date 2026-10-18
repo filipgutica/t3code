@@ -2,6 +2,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import { Schema } from "effect";
+import { collectNativeDiff, renderNativeDiff } from "./lib/workbench-native-diff.ts";
 import {
   IntegrationPolicy,
   collectWorkbenchImports,
@@ -18,9 +19,28 @@ const git = (args: ReadonlyArray<string>) =>
 const root = process.cwd();
 const args = process.argv.slice(2);
 const report = args[0] === "--report";
-const ref = report && args[1] === "--ref" ? args[2] : undefined;
-if ((!report && args.length) || (report && args.length !== 1 && !(ref && args.length === 3)))
-  throw new Error("Usage: node scripts/workbench-isolation.ts [--report [--ref <commit>]]");
+const options = new Map<string, string>();
+let markdown = false;
+for (let index = report ? 1 : 0; index < args.length; index++) {
+  const option = args[index];
+  if (report && option === "--markdown") {
+    markdown = true;
+  } else if (
+    report &&
+    option &&
+    ["--ref", "--base", "--head"].includes(option) &&
+    args[index + 1]
+  ) {
+    options.set(option, args[++index]!);
+  } else {
+    throw new Error(
+      "Usage: node scripts/workbench-isolation.ts [--report [--ref <commit> | --base <commit> --head <commit>] [--markdown]]",
+    );
+  }
+}
+if (options.has("--ref") && (options.has("--base") || options.has("--head")))
+  throw new Error("--ref cannot be combined with --base/--head");
+const ref = options.get("--ref") ?? options.get("--head");
 const files = [
   ...new Set(
     git(
@@ -71,7 +91,22 @@ const result = {
   imports,
 };
 if (report) {
-  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  try {
+    const nativeDiff = collectNativeDiff({ root, base: options.get("--base"), head: ref });
+    process.stdout.write(
+      markdown
+        ? renderNativeDiff(nativeDiff)
+        : `${JSON.stringify({ ...result, nativeDiff }, null, 2)}\n`,
+    );
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    process.stdout.write(
+      markdown
+        ? `## Native diff (report only)\n\nReport unavailable. Check refs and the integrated upstream baseline.\n`
+        : `${JSON.stringify({ ...result, nativeDiff: { error: detail } }, null, 2)}\n`,
+    );
+    process.stderr.write(`Native diff report unavailable: ${detail}\n`);
+  }
 } else {
   const policy = Schema.decodeUnknownSync(IntegrationPolicy)(
     JSON.parse(NodeFS.readFileSync("scripts/workbench-isolation-policy.json", "utf8")),
