@@ -62,7 +62,7 @@ A planned behavior change needs its intended result recorded before comparison.
 
 Navigation and inspection do not authorize sending a provider message, modifying remote
 Jira/GitHub data or destructive cleanup. Synthetic history proves rendering, not execution.
-Fictional PR inspection fixtures do not prove checkout, rerun or other write actions.
+Fictional PR inspection fixtures do not prove checkout or other write actions.
 A narrow web viewport does not prove native mobile support.
 
 On failure, preserve the route, fixture, action and visible result. Distinguish a product

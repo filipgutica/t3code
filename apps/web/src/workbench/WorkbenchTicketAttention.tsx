@@ -94,7 +94,7 @@ function AttentionDiscussionButton({
   return (
     <button
       type="button"
-      aria-label={`Open review discussion at ${location}, ${sourceLabel}`}
+      aria-label={`Open pull request for review discussion at ${location}, ${sourceLabel}`}
       aria-describedby={descriptionId}
       className="flex min-h-11 w-full cursor-pointer items-start gap-2 rounded-md py-2 pl-7.5 pr-2 text-left text-2xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
       onClick={onOpen}

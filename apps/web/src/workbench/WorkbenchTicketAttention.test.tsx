@@ -98,7 +98,7 @@ it.each([
   "Failed checks",
   "Changes requested",
   "Unresolved feedback",
-  "Open review discussion at src/settings.ts:12",
+  "Open pull request for review discussion at src/settings.ts:12",
 ])("opens %s in the PR panel of the selected environment", async (label) => {
   await act(async () =>
     root.render(
