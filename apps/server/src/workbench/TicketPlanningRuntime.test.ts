@@ -264,7 +264,6 @@ it.effect("routes Claude planning approvals to Auto with read-only tools", () =>
         nativeThreadId: "native-planning",
         resume: false,
         cwd: "/repo/first",
-        readOnlySandbox: true,
         ...queryPolicy,
         ...mcpOverrides,
       });

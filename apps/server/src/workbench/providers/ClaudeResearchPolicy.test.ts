@@ -5,9 +5,69 @@ import type {
   Options as ClaudeQueryOptions,
 } from "@anthropic-ai/claude-agent-sdk";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import { ClaudeSettings, ProviderInstanceId } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import * as ClaudeAdapterV2 from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { decorate } from "./ClaudeResearchPolicy.ts";
+
+const bypassSettings = Schema.decodeSync(ClaudeSettings)({
+  launchArgs: "--dangerously-skip-permissions",
+});
+
+describe("Claude read-only policy", () => {
+  it.each(["full-access", "auto", "auto-accept-edits", "approval-required"] as const)(
+    "restricts non-research %s queries despite user launch overrides and hooks",
+    (runtimeMode) => {
+      const native = ClaudeAdapterV2.makeClaudeQueryOptions({
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("claude"),
+          model: "claude-sonnet-4-6",
+          options: [],
+        },
+        nativeThreadId: "read-only-planning",
+        resume: false,
+        cwd: "/workspace",
+        permissionMode: "plan",
+        settings: bypassSettings,
+        sdkSettings: { disableAllHooks: false },
+        allowDangerouslySkipPermissions: true,
+      });
+      const decoration = decorate({
+        runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode,
+          interactionMode: "plan",
+          cwd: "/workspace",
+          sandboxPolicy: { type: "readOnly", access: { type: "fullAccess" } },
+          approvalPolicy: "on-request",
+        }),
+        mcpServerStatus: async () => undefined,
+      });
+      const options = { ...native, ...decoration.options?.(native) };
+      assert.equal(options.permissionMode, "dontAsk");
+      assert.equal(options.strictMcpConfig, true);
+      assert.isFalse(options.allowDangerouslySkipPermissions);
+      assert.include(options.settings, { disableAllHooks: true, showThinkingSummaries: true });
+      assert.deepEqual(options.tools, ["Read", "Glob", "Grep"]);
+    },
+  );
+
+  it("leaves non-research writable queries to native policy", () => {
+    assert.deepEqual(
+      decorate({
+        runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: "/workspace",
+          sandboxPolicy: { type: "workspaceWrite" },
+        }),
+        mcpServerStatus: async () => undefined,
+      }),
+      {},
+    );
+  });
+});
 
 describe("Claude research policy", () => {
   const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({

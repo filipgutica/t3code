@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import * as NodeStream from "node:stream";
 
 import type {
+  McpServerStatus,
   Query as ClaudeQuery,
   SDKMessage,
   SDKResultMessage,
@@ -215,22 +216,6 @@ function makeClaudeTestTurnInput(input: {
 }
 
 describe("ClaudeAdapterV2 runtime query policy", () => {
-  it("keeps read-only queries restricted despite user launch overrides and hooks", () => {
-    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
-      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-      nativeThreadId: "read-only-planning",
-      resume: false,
-      cwd: "/workspace",
-      readOnlySandbox: true,
-      tools: ClaudeAdapterV2.CLAUDE_READ_ONLY_ALLOWED_TOOLS,
-      permissionMode: "plan",
-      settings: { ...DEFAULT_CLAUDE_SETTINGS, launchArgs: "--dangerously-skip-permissions" },
-    });
-    assert.equal(options.permissionMode, "dontAsk");
-    assert.equal(options.strictMcpConfig, true);
-    assert.include(options.settings, { disableAllHooks: true });
-    assert.deepEqual(options.tools, ["Read", "Glob", "Grep"]);
-  });
   it.each([false, true])("requests thinking summaries with resume=%s", (resume) => {
     const options = ClaudeAdapterV2.makeClaudeQueryOptions({
       modelSelection: CLAUDE_TEST_MODEL_SELECTION,
@@ -2468,6 +2453,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly nativeSessionId?: string;
     readonly settings?: ClaudeSettings;
     readonly freshQueueOnReopen?: boolean;
+    readonly mcpServerStatus?: (
+      processNumber: number,
+    ) => NonNullable<ClaudeAdapterV2.ClaudeAgentSdkQuerySession["mcpServerStatus"]>;
   }) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -2533,6 +2521,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 processQueues.push(processMessages);
                 return {
                   messages: Stream.fromQueue(processMessages),
+                  ...(options.mcpServerStatus === undefined
+                    ? {}
+                    : { mcpServerStatus: options.mcpServerStatus(processQueues.length) }),
                   offer: (message: SDKUserMessage) =>
                     Effect.sync(() => {
                       offeredMessages.push(message);
@@ -2548,6 +2539,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               }
               processQueues.push(sdkMessages);
               return {
+                ...(options?.mcpServerStatus === undefined
+                  ? {}
+                  : { mcpServerStatus: options.mcpServerStatus(processQueues.length) }),
                 messages: Stream.fromQueue(sdkMessages).pipe(
                   Stream.flatMap((message) =>
                     Stream.make(message).pipe(
@@ -2659,6 +2653,68 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       };
     });
   const makeWakeHarness = makeWakeHarnessWithOptions();
+
+  it.effect.each([false, true])(
+    "reuses decorated queries only for a stable policy and reads live inventory (change=%s)",
+    (changePolicy) =>
+      Effect.gen(function* () {
+        let inventoryBridge:
+          | (() => Promise<ReadonlyArray<McpServerStatus> | undefined>)
+          | undefined;
+        const harness = yield* makeWakeHarnessWithOptions({
+          freshQueueOnReopen: true,
+          mcpServerStatus: (processNumber) =>
+            Effect.succeed([{ name: `process-${processNumber}`, status: "connected" }]),
+        }).pipe(
+          Effect.provideService(ClaudeAdapterV2.ClaudeQueryOptionsDecorator, {
+            decorate: ({ runtimePolicy, mcpServerStatus }) => {
+              inventoryBridge ??= mcpServerStatus;
+              return {
+                reuseKey: runtimePolicy.toolAccess ?? "native",
+                options: () => ({ permissionPrompts: "none" }),
+              };
+            },
+          }),
+        );
+        const startTurn = (ordinal: number) =>
+          harness.runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: DateTime.makeUnsafe(0),
+              attemptId: RunAttemptId.make(`decorated-${ordinal}`),
+              providerTurnOrdinal: ordinal,
+              text: "Continue.",
+              attachments: [],
+              runtimePolicy: {
+                ...CLAUDE_TEST_RUNTIME_POLICY,
+                ...(ordinal === 2 && changePolicy ? { toolAccess: "research" as const } : {}),
+              },
+            }),
+          );
+        yield* startTurn(1);
+        if (inventoryBridge === undefined) return assert.fail("Decorator was not consulted");
+        const readInventory = inventoryBridge;
+        assert.deepEqual(yield* Effect.promise(readInventory), [
+          { name: "process-1", status: "connected" },
+        ]);
+        yield* Queue.offer(harness.sdkMessages, turnOneResult);
+        yield* Queue.take(harness.terminalReceipts);
+        const firstOptions = harness.getOpenedOptions();
+        assert.equal(firstOptions?.permissionPrompts, "none");
+        yield* startTurn(2);
+        assert.lengthOf(harness.processQueues, changePolicy ? 2 : 1);
+        assert.equal(harness.getOpenedOptions() === firstOptions, !changePolicy);
+        assert.deepEqual(yield* Effect.promise(readInventory), [
+          { name: `process-${changePolicy ? 2 : 1}`, status: "connected" },
+        ]);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+  );
 
   it.effect.each([
     { isError: false, title: "Check weather" },

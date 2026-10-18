@@ -86,6 +86,17 @@ const cancelClaudeUserDialog: NonNullable<ClaudeQueryOptions["onUserDialog"]> = 
   behavior: "cancelled",
 });
 
+const readOnlyOptions = (options: ClaudeQueryOptions): Partial<ClaudeQueryOptions> => ({
+  permissionMode: "dontAsk",
+  tools: [...CLAUDE_READ_ONLY_ALLOWED_TOOLS],
+  allowDangerouslySkipPermissions: false,
+  strictMcpConfig: true,
+  settings: {
+    ...(typeof options.settings === "object" ? options.settings : {}),
+    disableAllHooks: true,
+  },
+});
+
 export const decorate = (input: {
   readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
   readonly mcpServerStatus: () => Promise<ReadonlyArray<McpServerStatus> | undefined>;
@@ -94,7 +105,6 @@ export const decorate = (input: {
   readonly reuseKey?: string;
   readonly options?: (native: ClaudeQueryOptions) => Partial<ClaudeQueryOptions>;
 } => {
-  if (input.runtimePolicy.toolAccess !== "research") return {};
   const auto = input.runtimePolicy.runtimeMode === "auto";
   const sandbox = input.runtimePolicy.sandboxPolicy;
   const readOnly =
@@ -102,6 +112,9 @@ export const decorate = (input: {
     sandbox !== null &&
     "type" in sandbox &&
     sandbox.type === "readOnly";
+  if (input.runtimePolicy.toolAccess !== "research") {
+    return readOnly ? { reuseKey: "read-only", options: readOnlyOptions } : {};
+  }
   // Fails closed: a hook that rejects or times out would not block the tool.
   const researchPreToolUse: HookCallback = (hookInput) =>
     Effect.runPromise(
@@ -133,6 +146,7 @@ export const decorate = (input: {
       onUserDialog: cancelClaudeUserDialog,
       ...(readOnly
         ? {
+            ...readOnlyOptions(options),
             permissionMode: auto ? ("auto" as const) : ("plan" as const),
             tools: [...CLAUDE_RESEARCH_ALLOWED_TOOLS],
             ...(options.mcpServers?.[CLAUDE_T3_MCP_SERVER_NAME] === undefined
@@ -140,15 +154,10 @@ export const decorate = (input: {
               : {
                   allowedTools: researchAllowedTools(options.allowedTools ?? []),
                 }),
-            allowDangerouslySkipPermissions: false,
             strictMcpConfig: false,
             ...(auto ? { permissionPrompts: "none" as const } : {}),
             // SDK callback hooks still run under disableAllHooks, before the permission classifier.
             hooks: { PreToolUse: [{ hooks: [researchPreToolUse] }] },
-            settings: {
-              ...(typeof options.settings === "object" ? options.settings : {}),
-              disableAllHooks: true,
-            },
           }
         : {}),
     }),
