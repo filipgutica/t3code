@@ -213,7 +213,7 @@ test.describe("Jira Workbench integration @live", () => {
       await page.getByRole("button", { name: "Create manually", exact: true }).click();
       const createDialog = page.getByRole("dialog", { name: "Create Ticket", exact: true });
       await expect(
-        createDialog.getByText("Resume the Jira connection before creating a Ticket."),
+        createDialog.getByText("Resume Jira sync before creating a Ticket."),
       ).toBeVisible();
       await expect(
         createDialog.getByRole("button", { name: "Create Ticket", exact: true }),
