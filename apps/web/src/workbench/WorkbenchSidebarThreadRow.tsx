@@ -1,4 +1,4 @@
-import { ThreadExecutionStatus } from "../components/ThreadExecutionStatus";
+import { WorkbenchThreadExecutionStatus } from "./WorkbenchThreadExecutionStatus";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { WorkbenchTicketId } from "@t3tools/contracts";
 import {
@@ -113,7 +113,7 @@ function WorkbenchSidebarThreadMetadata({
           data-workbench-sidebar-native-status="thread"
           data-workbench-sidebar-status-icon={data.status.presentation.icon ?? "none"}
         >
-          <ThreadExecutionStatus
+          <WorkbenchThreadExecutionStatus
             compact
             status={data.status.presentation}
             startedAt={data.status.startedAt}

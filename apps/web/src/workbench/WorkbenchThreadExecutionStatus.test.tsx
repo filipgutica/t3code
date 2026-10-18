@@ -1,8 +1,8 @@
 import { act, useEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { ThreadExecutionStatus } from "./ThreadExecutionStatus";
-import { resolveThreadExecutionStatusPresentation } from "./ThreadExecutionStatus.logic";
+import { WorkbenchThreadExecutionStatus } from "./WorkbenchThreadExecutionStatus";
+import { resolveWorkbenchThreadExecutionStatusPresentation } from "./WorkbenchThreadExecutionStatus.logic";
 
 let renderer: ReactTestRenderer | undefined;
 beforeEach(() => {
@@ -18,16 +18,16 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("ticks only the hidden duration, preserves the live label and stops when work ends", async () => {
+it("ticks only the hidden duration, preserves the live label and stops when work pauses", async () => {
   let parentRenders = 0;
   const startedAt = "2026-10-09T12:00:00.000Z";
-  function Row({ kind }: { kind: "working" | "waiting" | "done" }) {
+  function Row({ kind }: { kind: "working" | "waiting" }) {
     useEffect(() => {
       parentRenders += 1;
     });
     return (
-      <ThreadExecutionStatus
-        status={resolveThreadExecutionStatusPresentation({ kind })}
+      <WorkbenchThreadExecutionStatus
+        status={resolveWorkbenchThreadExecutionStatusPresentation({ kind })}
         startedAt={startedAt}
       />
     );
@@ -44,25 +44,23 @@ it("ticks only the hidden duration, preserves the live label and stops when work
   expect(renderer!.root.findByProps({ role: "status" }).children).toEqual(["Working"]);
   await act(() => renderer!.update(<Row kind="waiting" />));
   expect(renderer!.root.findByProps({ role: "status" }).children).toEqual(["Waiting"]);
-  expect(vi.getTimerCount()).toBe(1);
-  await act(() => vi.advanceTimersByTime(1_000));
-  expect(duration().children).toEqual(["5s"]);
-  await act(() => renderer!.update(<Row kind="done" />));
-  expect(renderer!.root.findByProps({ role: "status" }).children).toEqual(["Done"]);
   expect(vi.getTimerCount()).toBe(0);
 });
 
 it("does not start a clock for an unknown start and clears the clock on unmount", async () => {
-  const status = resolveThreadExecutionStatusPresentation({ kind: "working", goalActive: true });
+  const status = resolveWorkbenchThreadExecutionStatusPresentation({
+    kind: "working",
+    goalActive: true,
+  });
   await act(() => {
-    renderer = create(<ThreadExecutionStatus status={status} startedAt="invalid" />);
+    renderer = create(<WorkbenchThreadExecutionStatus status={status} startedAt="invalid" />);
   });
   expect(vi.getTimerCount()).toBe(0);
   expect(renderer!.root.findByProps({ role: "status" }).children).toEqual(["Goal"]);
   await act(() => vi.advanceTimersByTime(4_000));
   await act(() =>
     renderer!.update(
-      <ThreadExecutionStatus status={status} startedAt="2026-10-09T12:00:00.000Z" />,
+      <WorkbenchThreadExecutionStatus status={status} startedAt="2026-10-09T12:00:00.000Z" />,
     ),
   );
   expect(vi.getTimerCount()).toBe(1);

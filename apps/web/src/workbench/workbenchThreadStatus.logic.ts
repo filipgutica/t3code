@@ -2,7 +2,7 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, WorkbenchAssignment, WorkbenchTicketId } from "@t3tools/contracts";
 import { resolveSidebarThreadStatus } from "../components/Sidebar.logic";
-import { resolveThreadExecutionStatusPresentation } from "../components/ThreadExecutionStatus.logic";
+import { resolveWorkbenchThreadExecutionStatusPresentation } from "./WorkbenchThreadExecutionStatus.logic";
 
 type ExecutionThread = Pick<
   EnvironmentThreadShell,
@@ -13,11 +13,10 @@ type ExecutionThread = Pick<
 export function getWorkbenchThreadExecutionStatus(thread: ExecutionThread) {
   const kind = resolveSidebarThreadStatus(thread);
   if (kind === "ready") return null;
-  const presentation = resolveThreadExecutionStatusPresentation({
+  const presentation = resolveWorkbenchThreadExecutionStatusPresentation({
     kind,
     goalActive: thread.goal?.status === "active",
   });
-  if (presentation === null) return null;
   return {
     kind,
     presentation,

@@ -64,10 +64,10 @@ import {
   getWorkbenchBoardDropJiraStatusIds,
 } from "./workbenchBoardDrag.logic";
 
-import { ThreadExecutionStatus } from "../components/ThreadExecutionStatus";
+import { WorkbenchThreadExecutionStatus } from "./WorkbenchThreadExecutionStatus";
 import {
   getWorkbenchTicketExecutionStatuses,
-  type WorkbenchThreadExecutionStatus,
+  type WorkbenchThreadExecutionStatus as WorkbenchThreadExecutionStatusData,
 } from "./workbenchThreadStatus.logic";
 
 import { Badge } from "../components/ui/badge";
@@ -422,7 +422,7 @@ type WorkbenchBoardContext = Pick<
     ticket: WorkbenchTicket,
     target: { columnId: string; status: WorkbenchTicketStatus; epicId: WorkbenchEpic["id"] | null },
   ) => boolean;
-  agentStatesByTicket: ReadonlyMap<WorkbenchTicketId, WorkbenchThreadExecutionStatus>;
+  agentStatesByTicket: ReadonlyMap<WorkbenchTicketId, WorkbenchThreadExecutionStatusData>;
   attentionMode: WorkbenchAttentionMode;
   attentionReasonsByTicket: ReadonlyMap<WorkbenchTicketId, ReadonlyArray<string>>;
   threadCounts: ReadonlyMap<WorkbenchTicketId, number>;
@@ -1146,7 +1146,7 @@ function renderWorkbenchBoardTicketThreadStatus(
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-foreground">
       {nativeStatus ? (
-        <ThreadExecutionStatus
+        <WorkbenchThreadExecutionStatus
           status={nativeStatus.presentation}
           startedAt={nativeStatus.startedAt}
         />

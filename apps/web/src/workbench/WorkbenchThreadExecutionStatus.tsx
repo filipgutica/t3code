@@ -1,14 +1,13 @@
 import {
   CircleAlertIcon,
-  CircleCheckIcon,
   CircleDashedIcon,
   CircleDotDashedIcon,
   MessageCircleQuestionIcon,
   ShieldQuestionIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { formatWorkingDurationLabel } from "./Sidebar.logic";
-import type { ThreadExecutionStatusPresentation } from "./ThreadExecutionStatus.logic";
+import { formatWorkingDurationLabel } from "../components/Sidebar.logic";
+import type { WorkbenchThreadExecutionStatusPresentation } from "./WorkbenchThreadExecutionStatus.logic";
 
 const STATUS_ICONS = {
   working: CircleDashedIcon,
@@ -16,7 +15,6 @@ const STATUS_ICONS = {
   input: MessageCircleQuestionIcon,
   approval: ShieldQuestionIcon,
   failed: CircleAlertIcon,
-  done: CircleCheckIcon,
 };
 
 // Only the duration re-renders each second; rows and status labels do not tick.
@@ -36,28 +34,25 @@ function WorkingDuration({ startedAt }: { startedAt: string | null }) {
   );
 }
 
-/** Read-only native status. Clickable wake acknowledgement stays with the native sidebar. */
-export function ThreadExecutionStatus({
+export function WorkbenchThreadExecutionStatus({
   status,
   startedAt = null,
   compact = false,
 }: {
-  status: ThreadExecutionStatusPresentation | null | undefined;
+  status: WorkbenchThreadExecutionStatusPresentation | null | undefined;
   startedAt?: string | null | undefined;
   compact?: boolean;
 }) {
   if (!status) return null;
-  const Icon = status.icon !== null && status.icon !== "woke" ? STATUS_ICONS[status.icon] : null;
+  const Icon = STATUS_ICONS[status.icon];
   return (
     <span
       className={`inline-flex shrink-0 items-center gap-1 ${compact ? "text-2xs font-normal" : "font-medium"} ${status.className}`}
     >
-      {Icon ? <Icon aria-hidden className={`shrink-0 ${compact ? "size-3" : "size-4"}`} /> : null}
+      <Icon aria-hidden className={`shrink-0 ${compact ? "size-3" : "size-4"}`} />
       {/* Keep the clock outside the live label so screen readers do not announce each second. */}
       <span role="status">{status.label}</span>
-      {status.icon === "working" || status.icon === "waiting" ? (
-        <WorkingDuration key={startedAt} startedAt={startedAt} />
-      ) : null}
+      {status.icon === "working" ? <WorkingDuration key={startedAt} startedAt={startedAt} /> : null}
     </span>
   );
 }
