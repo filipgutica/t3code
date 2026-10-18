@@ -63,7 +63,7 @@ export const WORKBENCH_TICKET_STATUSES = [
 ] as const satisfies ReadonlyArray<WorkbenchTicketStatus>;
 
 export const WORKBENCH_TICKET_STATUS_LABELS: Record<WorkbenchTicketStatus, string> = {
-  todo: "Todo",
+  todo: "To Do",
   in_progress: "In Progress",
   done: "Done",
 };

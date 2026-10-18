@@ -289,7 +289,7 @@ describe("Workbench ticket helpers", () => {
 
   it("uses the Board's product-language status labels", () => {
     expect(WORKBENCH_TICKET_STATUS_LABELS).toEqual({
-      todo: "Todo",
+      todo: "To Do",
       in_progress: "In Progress",
       done: "Done",
     });

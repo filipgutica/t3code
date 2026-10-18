@@ -51,7 +51,7 @@ const getCreateBlocker = ({
   if (title.trim().length === 0) return "Add a title to create the ticket.";
   if (!hasRepository) return "Select a repository to create the ticket.";
   if (creationBinding && !creationBinding.active) {
-    return "Resume the Jira connection before creating a ticket.";
+    return "Resume Jira sync before creating a ticket.";
   }
   if (creationBinding && !hasSprint) return "Select a Jira sprint to create the ticket.";
   return null;

@@ -144,7 +144,7 @@ const validatePublicationSelection = ({
   binding: WorkbenchJiraBinding;
   selection: PublicationSelection;
 }): string | null => {
-  if (!binding.active) return "Resume the Jira connection before publishing this Ticket.";
+  if (!binding.active) return "Resume Jira sync before publishing this Ticket.";
   if (binding.localMigrationPending)
     return "Finish the Jira connection’s local data migration before publishing.";
   if (

@@ -2,7 +2,7 @@ import "./WorkbenchPage.css";
 import { WorkbenchJiraCreationRecovery } from "./WorkbenchJiraCreationRecovery";
 
 const formatJiraSyncStatus = (value: string | null) =>
-  value === null ? "Jira not synced yet" : `Jira synced ${new Date(value).toLocaleString()}`;
+  value === null ? "Jira not synced yet" : `Jira synced ${formatRelativeTimeLabel(value)}`;
 
 import { useWorkbenchPageDialogs } from "./useWorkbenchPageDialogs";
 import { useWorkbenchThreadActions } from "./useWorkbenchThreadActions";
@@ -15,9 +15,12 @@ import type { useWorkbenchWorkspaceActions } from "./useWorkbenchWorkspaceAction
 
 import { EnvironmentId, type WorkbenchTicket, type WorkbenchTicketId } from "@t3tools/contracts";
 import { useState } from "react";
+import { formatRelativeTimeLabel } from "../timestampFormat";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 
 import {
   AlertCircleIcon,
+  XIcon,
   ArchiveIcon,
   RotateCcwIcon,
   Trash2Icon,
@@ -129,7 +132,7 @@ function WorkbenchLoading() {
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }, (_, index) => (
-          <Skeleton key={index} className="h-full min-h-72 rounded-xl" />
+          <Skeleton key={index} className="h-full min-h-72" />
         ))}
       </div>
     </div>
@@ -176,7 +179,9 @@ function WorkbenchWorkspaceStateBadges({
   return (
     <>
       {readOnly ? <Badge variant="outline">Archived Workspace</Badge> : null}
-      {jiraBinding && !jiraBinding.active ? <Badge variant="outline">Jira paused</Badge> : null}
+      {jiraBinding && !jiraBinding.active ? (
+        <Badge variant="outline">Jira sync paused</Badge>
+      ) : null}
     </>
   );
 }
@@ -236,9 +241,9 @@ function WorkbenchBoardHeader(
       <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 basis-full flex-col gap-1 sm:basis-auto sm:flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <h2 className="max-w-full min-w-0 truncate text-xl font-semibold">
+            <h1 className="max-w-full min-w-0 truncate text-xl font-semibold">
               {selectedProject.title}
-            </h2>
+            </h1>
             <span className="shrink-0 text-xs text-muted-foreground">{ticketCountLabel}</span>
             <WorkbenchWorkspaceStateBadges readOnly={readOnly} jiraBinding={jiraBinding} />
           </div>
@@ -313,7 +318,7 @@ function WorkbenchBoardHeader(
                       {!jiraBinding.active ? " · Paused" : ""}
                     </MenuGroupLabel>
                     <MenuItem disabled={mutationDisabled} onClick={openJiraDialog}>
-                      <Settings2Icon /> Configure Jira sprint mirror
+                      <Settings2Icon /> Configure Jira sync
                     </MenuItem>
                     <MenuItem
                       disabled={mutationDisabled || !jiraBinding.active}
@@ -379,9 +384,18 @@ function WorkbenchJiraBoardContext({
         {sprintScope} sprint{sprints.length === 1 ? "" : "s"}:{" "}
         {sprints.map((sprint) => sprint.name).join(", ")}
       </span>
-      <span aria-label="Jira sync status" className="break-words">
-        {jiraBindingStatusLabel(binding, pendingAction)}
-      </span>
+      <Tooltip>
+        <TooltipTrigger
+          render={<span aria-label="Jira sync status" className="break-words" tabIndex={0} />}
+        >
+          {jiraBindingStatusLabel(binding, pendingAction)}
+        </TooltipTrigger>
+        <TooltipPopup>
+          {binding.lastSyncedAt
+            ? new Date(binding.lastSyncedAt).toLocaleString()
+            : "Jira not synced yet"}
+        </TooltipPopup>
+      </Tooltip>
     </div>
   );
 }
@@ -461,9 +475,9 @@ function WorkbenchJiraSyncNotice(
 }
 
 function WorkbenchBoardErrors(
-  props: Pick<WorkbenchPageViewProps, "error" | "jiraBindings" | "pageData">,
+  props: Pick<WorkbenchPageViewProps, "error" | "setError" | "jiraBindings" | "pageData">,
 ) {
-  const { pageData, jiraBindings, error } = props;
+  const { pageData, jiraBindings, error, setError } = props;
   const { query, archivedThreadsError, refreshArchivedThreads } = pageData;
 
   const { jiraError } = jiraBindings;
@@ -483,6 +497,16 @@ function WorkbenchBoardErrors(
           ) : archivedThreadsError ? (
             <Button onClick={refreshArchivedThreads} size="xs" variant="outline">
               <RefreshCwIcon /> Retry
+            </Button>
+          ) : null}
+          {error ? (
+            <Button
+              aria-label="Dismiss action error"
+              size="icon-xs"
+              variant="ghost"
+              onClick={() => setError(null)}
+            >
+              <XIcon />
             </Button>
           ) : null}
         </div>
@@ -1155,7 +1179,7 @@ function WorkbenchPageWorkspace(
   const pending = !pageData.canOperate || pendingAction !== null;
   if (environmentId === null) return null;
   return (
-    <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       {selection.selectedProject && selection.selectedProject.archivedAt != null ? (
         <div
           role="status"
@@ -1195,7 +1219,7 @@ function WorkbenchPageWorkspace(
       ) : (
         <WorkbenchPageBoard {...props} />
       )}
-    </main>
+    </div>
   );
 }
 

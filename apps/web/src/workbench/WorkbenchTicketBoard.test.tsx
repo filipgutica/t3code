@@ -1,5 +1,5 @@
 import { act, cloneElement, type ComponentProps, type ReactElement, type ReactNode } from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import { create as createRenderer, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DragEndEvent } from "@dnd-kit/core";
 import {
@@ -14,6 +14,22 @@ import { Atom } from "effect/reactivity";
 import { ToggleGroup } from "../components/ui/toggle-group";
 
 vi.mock("../hooks/useMediaQuery", () => ({ useMediaQuery: () => true }));
+let boardWidth = 1024;
+let resizeBoard = () => {};
+vi.mock("../lib/observeResize", () => ({
+  observeResize: (_element: Element, callback: () => void) => {
+    resizeBoard = callback;
+    return () => {};
+  },
+}));
+const create: typeof createRenderer = (element) =>
+  createRenderer(element, {
+    createNodeMock: () => ({
+      get clientWidth() {
+        return boardWidth;
+      },
+    }),
+  });
 import { Select } from "../components/ui/select";
 import type { Project } from "../types";
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
@@ -118,6 +134,7 @@ const props: ComponentProps<typeof WorkbenchTicketBoard> = {
 describe("Workbench Board view", () => {
   let renderer: ReactTestRenderer;
   beforeEach(() => {
+    boardWidth = 1024;
     vi.useFakeTimers();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   });
@@ -162,6 +179,50 @@ describe("Workbench Board view", () => {
     act(() => renderer.update(<WorkbenchTicketBoard {...props} onMove={onMove} />));
     act(() => dragContext().props.onDragEnd(drop));
     expect(onMove).toHaveBeenCalledExactlyOnceWith(active, "in_progress");
+    onMove.mockClear();
+    act(() => {
+      boardWidth = 767;
+      resizeBoard();
+    });
+    act(() => dragContext().props.onDragEnd(drop));
+    expect(onMove).not.toHaveBeenCalled();
+    act(() => {
+      boardWidth = 768;
+      resizeBoard();
+    });
+    act(() => dragContext().props.onDragEnd(drop));
+    expect(onMove).toHaveBeenCalledExactlyOnceWith(active, "in_progress");
+  });
+  it("offers Thread creation for unfinished cards and hides it after completion", () => {
+    const onOpenThread = vi.fn();
+    const active = ticket("Unassigned");
+    act(() => {
+      renderer = create(
+        <WorkbenchTicketBoard {...props} tickets={[active]} onOpenThread={onOpenThread} />,
+      );
+    });
+    const createThread = () =>
+      renderer.root
+        .findAllByType("button")
+        .filter((node) => node.props["aria-label"] === "Create Thread for Unassigned");
+    act(() => createThread()[0]!.props.onClick());
+    expect(onOpenThread).toHaveBeenCalledExactlyOnceWith(active, undefined);
+    act(() =>
+      renderer.update(
+        <WorkbenchTicketBoard
+          {...props}
+          tickets={[{ ...active, status: "done" }]}
+          onOpenThread={onOpenThread}
+        />,
+      ),
+    );
+    expect(createThread()).toHaveLength(0);
+    act(() =>
+      renderer.update(
+        <WorkbenchTicketBoard {...props} tickets={[active]} onOpenThread={onOpenThread} />,
+      ),
+    );
+    expect(createThread()).toHaveLength(1);
   });
   it("keeps the search and matching Tickets when returning from Ticket detail", () => {
     act(() => {
