@@ -14,48 +14,62 @@
     // Effect services expose separate namespace imports with the conventional layer name.
     { "file": "apps/server/src/workbench/**", "exports": ["layer"] },
   ],
-  // Health and duplication ignores do not support `!` exceptions, so the upstream globs below
-  // match every name except those starting with "workb". Upstream syncs then audit only the
-  // Workbench overlay; keep the two lists identical. `*` and `?` also match `/` here, so an
-  // alternative must not end in a bare `?` that could swallow `src/workbench`.
+  // Health and duplication ignores do not support `!` exceptions, so the upstream globs below use
+  // character classes that match every name except the Workbench ones (prefix "workb", plus
+  // `routes/workbench.tsx` and `resolve-workbench-*`). Upstream syncs then audit only the overlay.
+  // Keep the upstream patterns identical in both lists. A trailing `?` can match `/`, so no
+  // alternative ends in one, and a pattern without `/` matches file names in every directory,
+  // so root files are listed by name.
   "health": {
     // Enforce the inherited 20/15 limits; graph-estimated coverage is not a test gate.
     "maxCrap": 0,
     "ignore": [
-      "apps/{desktop,marketing,mobile,server,web}/src/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*",
-      "apps/{desktop,marketing,mobile,server,web}/src/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "apps/{desktop,marketing,mobile,server,web}/src/{[!rw],r[!o],ro[!u],rou[!t],rout[!e],route[!s],w[!o],wo[!r],wor[!k],work[!b]}*",
+      "apps/{desktop,marketing,mobile,server,web}/src/{[!rw],r[!o],ro[!u],rou[!t],rout[!e],route[!s],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "apps/{desktop,marketing,mobile,server,web}/src/routes/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*",
+      "apps/{desktop,marketing,mobile,server,web}/src/routes/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*/**",
       "apps/{desktop,marketing,mobile,server,web}/{[!s],s[!r],sr[!c]}*",
       "apps/{desktop,marketing,mobile,server,web}/{[!s],s[!r],sr[!c]}*/**",
+      "packages/{[!cw],c[!o],co[!n],con[!t],cont[!r],w[!o],wo[!r],wor[!k],work[!b]}*",
       "packages/{[!cw],c[!o],co[!n],con[!t],cont[!r],w[!o],wo[!r],wor[!k],work[!b]}*/**",
       "packages/contracts/{[!s],s[!r],sr[!c]}*",
       "packages/contracts/{[!s],s[!r],sr[!c]}*/**",
       "packages/contracts/src/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*",
       "packages/contracts/src/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*/**",
-      "scripts/{[!lw],l[!i],li[!b],w[!o],wo[!r],wor[!k],work[!b]}*",
-      "scripts/{[!lw],l[!i],li[!b],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "scripts/{[!lrw],l[!i],li[!b],r[!e],re[!s],res[!o],reso[!l],resol[!v],resolv[!e],resolve[!-],resolve-[!w],resolve-w[!o],resolve-wo[!r],resolve-wor[!k],resolve-work[!b],w[!o],wo[!r],wor[!k],work[!b]}*",
+      "scripts/{[!lrw],l[!i],li[!b],r[!e],re[!s],res[!o],reso[!l],resol[!v],resolv[!e],resolve[!-],resolve-[!w],resolve-w[!o],resolve-wo[!r],resolve-wor[!k],resolve-work[!b],w[!o],wo[!r],wor[!k],work[!b]}*/**",
       "scripts/lib/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*",
+      "scripts/lib/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "infra/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*",
       "infra/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*/**",
-      "{native,oxlint-plugin-t3code}/**",
+      "{native,oxlint-plugin-t3code,.github}/**",
+      "{vite.config,.coderabbit.config}.ts",
       "**/*.{test,spec}.{ts,tsx,js,jsx}",
       "**/{__tests__,test,tests,fixtures,test-support}/**",
     ],
   },
   "duplicates": {
     "ignore": [
-      "apps/{desktop,marketing,mobile,server,web}/src/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*",
-      "apps/{desktop,marketing,mobile,server,web}/src/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "apps/{desktop,marketing,mobile,server,web}/src/{[!rw],r[!o],ro[!u],rou[!t],rout[!e],route[!s],w[!o],wo[!r],wor[!k],work[!b]}*",
+      "apps/{desktop,marketing,mobile,server,web}/src/{[!rw],r[!o],ro[!u],rou[!t],rout[!e],route[!s],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "apps/{desktop,marketing,mobile,server,web}/src/routes/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*",
+      "apps/{desktop,marketing,mobile,server,web}/src/routes/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*/**",
       "apps/{desktop,marketing,mobile,server,web}/{[!s],s[!r],sr[!c]}*",
       "apps/{desktop,marketing,mobile,server,web}/{[!s],s[!r],sr[!c]}*/**",
+      "packages/{[!cw],c[!o],co[!n],con[!t],cont[!r],w[!o],wo[!r],wor[!k],work[!b]}*",
       "packages/{[!cw],c[!o],co[!n],con[!t],cont[!r],w[!o],wo[!r],wor[!k],work[!b]}*/**",
       "packages/contracts/{[!s],s[!r],sr[!c]}*",
       "packages/contracts/{[!s],s[!r],sr[!c]}*/**",
       "packages/contracts/src/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*",
       "packages/contracts/src/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*/**",
-      "scripts/{[!lw],l[!i],li[!b],w[!o],wo[!r],wor[!k],work[!b]}*",
-      "scripts/{[!lw],l[!i],li[!b],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "scripts/{[!lrw],l[!i],li[!b],r[!e],re[!s],res[!o],reso[!l],resol[!v],resolv[!e],resolve[!-],resolve-[!w],resolve-w[!o],resolve-wo[!r],resolve-wor[!k],resolve-work[!b],w[!o],wo[!r],wor[!k],work[!b]}*",
+      "scripts/{[!lrw],l[!i],li[!b],r[!e],re[!s],res[!o],reso[!l],resol[!v],resolv[!e],resolve[!-],resolve-[!w],resolve-w[!o],resolve-wo[!r],resolve-wor[!k],resolve-work[!b],w[!o],wo[!r],wor[!k],work[!b]}*/**",
       "scripts/lib/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*",
+      "scripts/lib/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "infra/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*",
       "infra/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*/**",
-      "{native,oxlint-plugin-t3code}/**",
+      "{native,oxlint-plugin-t3code,.github}/**",
+      "{vite.config,.coderabbit.config}.ts",
     ],
   },
 }
