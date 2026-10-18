@@ -14,22 +14,48 @@
     // Effect services expose separate namespace imports with the conventional layer name.
     { "file": "apps/server/src/workbench/**", "exports": ["layer"] },
   ],
+  // Health and duplication ignores do not support `!` exceptions, so the upstream globs below
+  // match every name except those starting with "workb". Upstream syncs then audit only the
+  // Workbench overlay; keep the two lists identical. `*` and `?` also match `/` here, so an
+  // alternative must not end in a bare `?` that could swallow `src/workbench`.
   "health": {
     // Enforce the inherited 20/15 limits; graph-estimated coverage is not a test gate.
     "maxCrap": 0,
     "ignore": [
-      "apps/server/src/orchestration-v2/**",
-      "apps/server/src/mcp/**",
-      "apps/web/src/components/**",
+      "apps/{desktop,marketing,mobile,server,web}/src/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*",
+      "apps/{desktop,marketing,mobile,server,web}/src/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "apps/{desktop,marketing,mobile,server,web}/{[!s],s[!r],sr[!c]}*",
+      "apps/{desktop,marketing,mobile,server,web}/{[!s],s[!r],sr[!c]}*/**",
+      "packages/{[!cw],c[!o],co[!n],con[!t],cont[!r],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "packages/contracts/{[!s],s[!r],sr[!c]}*",
+      "packages/contracts/{[!s],s[!r],sr[!c]}*/**",
+      "packages/contracts/src/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*",
+      "packages/contracts/src/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "scripts/{[!lw],l[!i],li[!b],w[!o],wo[!r],wor[!k],work[!b]}*",
+      "scripts/{[!lw],l[!i],li[!b],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "scripts/lib/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*",
+      "infra/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "{native,oxlint-plugin-t3code}/**",
       "**/*.{test,spec}.{ts,tsx,js,jsx}",
       "**/{__tests__,test,tests,fixtures,test-support}/**",
     ],
   },
   "duplicates": {
     "ignore": [
-      "apps/server/src/orchestration-v2/**",
-      "apps/server/src/mcp/**",
-      "apps/web/src/components/**",
+      "apps/{desktop,marketing,mobile,server,web}/src/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*",
+      "apps/{desktop,marketing,mobile,server,web}/src/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "apps/{desktop,marketing,mobile,server,web}/{[!s],s[!r],sr[!c]}*",
+      "apps/{desktop,marketing,mobile,server,web}/{[!s],s[!r],sr[!c]}*/**",
+      "packages/{[!cw],c[!o],co[!n],con[!t],cont[!r],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "packages/contracts/{[!s],s[!r],sr[!c]}*",
+      "packages/contracts/{[!s],s[!r],sr[!c]}*/**",
+      "packages/contracts/src/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*",
+      "packages/contracts/src/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "scripts/{[!lw],l[!i],li[!b],w[!o],wo[!r],wor[!k],work[!b]}*",
+      "scripts/{[!lw],l[!i],li[!b],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "scripts/lib/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*",
+      "infra/{[!w],w[!o],wo[!r],wor[!k],work[!b]}*/**",
+      "{native,oxlint-plugin-t3code}/**",
     ],
   },
 }
