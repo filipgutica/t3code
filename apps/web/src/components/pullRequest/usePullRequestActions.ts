@@ -73,7 +73,6 @@ const ACTION_SUCCESS_LABELS: Record<PullRequestAction, string> = {
   revert: "Revert pull request opened",
   "delete-branch": "Branch deleted",
   "approve-workflows": "Workflows approved",
-  "rerun-failed-checks": "Failed checks queued for rerun",
 };
 
 const ACTION_FAILURE_LABELS: Record<PullRequestAction, string> = {
@@ -88,7 +87,6 @@ const ACTION_FAILURE_LABELS: Record<PullRequestAction, string> = {
   revert: "Could not open a revert pull request",
   "delete-branch": "Could not delete this branch",
   "approve-workflows": "Could not approve workflows",
-  "rerun-failed-checks": "Could not rerun failed checks",
 };
 
 const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
@@ -110,8 +108,6 @@ const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
     "The host refused it. Check that you have write access to the source repository and that the branch has not moved since this page loaded.",
   "approve-workflows":
     "The host refused it. Check that you have Actions write access and that these workflow runs are still awaiting approval.",
-  "rerun-failed-checks":
-    "Check that you have Actions write access and that the failed workflow runs can be rerun.",
 };
 
 export function usePullRequestActionRunner({

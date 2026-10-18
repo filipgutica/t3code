@@ -1611,10 +1611,7 @@ describe("which actions need the host read again after they run", () => {
   it("classifies every action the contract knows about", () => {
     expect(PullRequestAction.literals.map(pullRequestActionNeedsHostRefresh)).toEqual(
       PullRequestAction.literals.map(
-        (action) =>
-          action === "update-branch" ||
-          action === "approve-workflows" ||
-          action === "rerun-failed-checks",
+        (action) => action === "update-branch" || action === "approve-workflows",
       ),
     );
   });

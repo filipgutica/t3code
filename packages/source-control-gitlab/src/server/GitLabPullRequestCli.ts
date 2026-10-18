@@ -460,7 +460,6 @@ function actionArgs(
     case "reopen":
       return ["reopen"];
     case "revert":
-    case "rerun-failed-checks":
     case "approve-workflows":
     case "delete-branch":
       throw new Error(`GitLab merge request action ${action} is unsupported`);

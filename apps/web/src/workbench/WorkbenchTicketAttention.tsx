@@ -57,7 +57,7 @@ const signalIcons = {
 const actionDescriptions = {
   question: "Open Thread to answer the question",
   reply: "Open Thread to read the reply",
-  "failed-checks": "View checks, logs, and rerun options",
+  "failed-checks": "View checks and logs",
   "changes-requested": "View the requested changes",
 } as const;
 const waitingActionDescriptions = {
@@ -115,7 +115,7 @@ function AttentionSignalItem({
   onOpenSignal,
 }: {
   signal: WorkbenchAttentionSignal;
-  onOpenSignal: (signal: WorkbenchAttentionSignal, reviewThreadId?: string) => void;
+  onOpenSignal: (signal: WorkbenchAttentionSignal) => void;
 }) {
   const presentation = getWorkbenchAttentionSignalPresentation(signal);
   const Icon = signalIcons[presentation.icon];
@@ -152,7 +152,7 @@ function AttentionSignalItem({
           key={thread.id}
           thread={thread}
           sourceLabel={sourceLabel}
-          onOpen={() => onOpenSignal(signal, thread.id)}
+          onOpen={() => onOpenSignal(signal)}
         />
       ))}
     </div>
@@ -183,7 +183,7 @@ function AttentionItems({
       });
   };
   const groups = groupWorkbenchAttentionSignals(signals);
-  const openSignal = (signal: WorkbenchAttentionSignal, reviewThreadId?: string) => {
+  const openSignal = (signal: WorkbenchAttentionSignal) => {
     if (signal.source.type === "thread") {
       openThread(signal.source.threadId);
       return;
@@ -204,12 +204,6 @@ function AttentionItems({
         title: row.threadTitle,
         onOpen: () => openThread(row.threadId),
       },
-      focus:
-        signal.kind === "failed-checks"
-          ? { kind: "checks" }
-          : reviewThreadId
-            ? { kind: "review-thread", reviewThreadId }
-            : { kind: "review" },
     });
   };
   return (

@@ -39,7 +39,6 @@ import {
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
-import type { PullRequestDetailFocus } from "./PullRequestDetailPanel";
 import { areAllDiffFilesCollapsed } from "~/lib/diffCollapse";
 import { pullRequestFindingKey, type PullRequestFinding } from "./pullRequestDetail.logic";
 import { canEditPullRequestComment, canResolvePullRequestThread } from "./pullRequestEditing.logic";
@@ -252,9 +251,6 @@ function PullRequestCodeTab({
   onAddToAgentSelection,
   onRefresh,
   refreshToken = 0,
-  focus,
-  reviewPending = false,
-  reviewError = null,
   revealRequest = null,
 }: {
   scrollerRef: (node: HTMLDivElement | null) => void;
@@ -269,10 +265,6 @@ function PullRequestCodeTab({
   onAddToAgentSelection?: (input: PullRequestAgentSelectionInput) => void;
   onRefresh: () => void;
   refreshToken?: number;
-  focus?: Extract<PullRequestDetailFocus, { readonly kind: "review-thread" }> | undefined;
-  reviewPending?: boolean;
-  reviewError?: string | null;
-  /** A file another tab asked to show. A new nonce asks again for the same path. */
   revealRequest?: { readonly path: string; readonly nonce: number } | null;
 }) {
   const { resolvedTheme } = useTheme();
@@ -313,16 +305,8 @@ function PullRequestCodeTab({
   const [viewer, setViewer] = useState<CodeViewHandle<ReviewAnnotationGroup, undefined> | null>(
     null,
   );
-  const focusedReviewRef = useRef<HTMLElement | null>(null);
 
   const referenceKey = pullRequestReviewKey(reference);
-  const focusedThreads = focus
-    ? detail.reviewThreads.filter((thread) => thread.id === focus.reviewThreadId)
-    : [];
-  const focusedThreadIds = new Set(focusedThreads.map((thread) => thread.id));
-  useEffect(() => {
-    if (focus && focusedReviewRef.current) focusedReviewRef.current.scrollTop = 0;
-  }, [focus]);
   const commit = selectedCommitOid;
   const scopeKey = commit === null ? referenceKey : `${referenceKey}@${commit}`;
   // The panel keeps this mounted across pull requests, so an open composer would otherwise
@@ -342,16 +326,14 @@ function PullRequestCodeTab({
   const loadedSlices = sliceState.key === scopeKey ? sliceState.slices : NO_SLICES;
   const cursor = sliceState.key === scopeKey ? sliceState.cursor : null;
   const diffQuery = useEnvironmentQuery(
-    detail.capabilities.diff
-      ? pullRequestEnvironment.diff({
-          environmentId,
-          input: {
-            ...reference,
-            ...(cursor === null ? {} : { cursor }),
-            ...(commit === null ? {} : { commit }),
-          },
-        })
-      : null,
+    pullRequestEnvironment.diff({
+      environmentId,
+      input: {
+        ...reference,
+        ...(cursor === null ? {} : { cursor }),
+        ...(commit === null ? {} : { commit }),
+      },
+    }),
   );
   // Pages accumulate into slices as each answer arrives, so the slice list is adjusted while
   // rendering the answer rather than one commit later.
@@ -447,9 +429,9 @@ function PullRequestCodeTab({
     if (appliedRefreshToken.current === refreshToken) return;
     appliedRefreshToken.current = refreshToken;
     setSliceState({ key: scopeKey, cursor: null, slices: NO_SLICES });
-    if (detail.capabilities.diff) refreshFirstDiffPage();
+    refreshFirstDiffPage();
     refreshFilesViewed();
-  }, [refreshToken, scopeKey, refreshFirstDiffPage, refreshFilesViewed, detail.capabilities.diff]);
+  }, [refreshToken, scopeKey, refreshFirstDiffPage, refreshFilesViewed]);
 
   // The sentinel is held as state rather than a ref because the viewer mounts its own footer:
   // an effect reading a ref could run before that node exists and would never arm the observer.
@@ -548,7 +530,6 @@ function PullRequestCodeTab({
     };
 
     for (const thread of detail.reviewThreads) {
-      if (focusedThreadIds.has(thread.id)) continue;
       if (thread.path !== path || thread.line === null) continue;
       if (!placedThreadIds.has(thread.id)) continue;
       groupAt(thread.side, thread.line).threads.push(thread);
@@ -876,7 +857,6 @@ function PullRequestCodeTab({
       environmentId={environmentId}
       reference={reference}
       pending={threadPending}
-      defaultExpanded={focusedThreadIds.has(thread.id) || !thread.isResolved}
       fixPending={pendingFinding === pullRequestFindingKey({ kind: "thread", thread })}
       fixLabel={fixFindingLabel}
       {...(onFixFinding ? { onFix: () => onFixFinding({ kind: "thread", thread }) } : {})}
@@ -928,42 +908,6 @@ function PullRequestCodeTab({
       onReacted={onRefresh}
     />
   );
-
-  const focusedReview = focus ? (
-    <section
-      ref={focusedReviewRef}
-      aria-label="Review conversation"
-      className="max-h-[50%] shrink-0 overflow-auto border-b border-border/60 px-4 py-3"
-    >
-      <h2 className="mb-2 text-xs font-medium text-muted-foreground">Review conversation</h2>
-      {reviewError && focusedThreads.length > 0 ? (
-        <p className="mb-2 text-xs text-muted-foreground">
-          Review conversations could not be refreshed: {reviewError}
-        </p>
-      ) : null}
-      {focusedThreads.length > 0 ? (
-        <div className="space-y-3">
-          {focusedThreads.map((thread) => (
-            <div key={thread.id}>
-              <p className="mb-1 text-xs text-muted-foreground">
-                {thread.path}
-                {thread.line === null ? "" : `:${thread.line}`}
-              </p>
-              {renderThreadCard(thread)}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          {reviewPending
-            ? "Loading review conversations..."
-            : reviewError
-              ? `Review conversations could not be loaded: ${reviewError}`
-              : "This review conversation is not available in the current inspection. Refresh or open the pull request on the host to find it."}
-        </p>
-      )}
-    </section>
-  ) : null;
 
   const renderAnnotation = (annotation: ReviewAnnotation) => (
     <div className="py-1 font-sans text-foreground">
@@ -1351,23 +1295,11 @@ function PullRequestCodeTab({
   const withToolbar = (body: ReactNode) => (
     <div className="flex h-full min-h-0 flex-col">
       {toolbar}
-      {focusedReview}
       <div ref={scrollerRef} className="min-h-0 flex-1 overflow-auto">
         {body}
       </div>
     </div>
   );
-
-  if (!detail.capabilities.diff) {
-    return (
-      <div className="flex h-full min-h-0 flex-col">
-        {focusedReview}
-        <p className="px-4 py-5 text-sm text-muted-foreground">
-          This host does not provide a pull request diff.
-        </p>
-      </div>
-    );
-  }
 
   if (diffQuery.isPending && loadedSlices.length === 0) {
     return withToolbar(<DiffPanelLoadingState label="Loading pull request diff..." />);
@@ -1393,9 +1325,7 @@ function PullRequestCodeTab({
     );
   }
 
-  const orphanThreads = detail.reviewThreads.filter(
-    (thread) => !placedThreadIds.has(thread.id) && !focusedThreadIds.has(thread.id),
-  );
+  const orphanThreads = detail.reviewThreads.filter((thread) => !placedThreadIds.has(thread.id));
   const orphanFiles = new Map<string, PullRequestReviewThread[]>();
   for (const thread of orphanThreads) {
     const existing = orphanFiles.get(thread.path);
@@ -1406,7 +1336,6 @@ function PullRequestCodeTab({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {toolbar}
-      {focusedReview}
       {orphanFiles.size > 0 ? (
         <div className="shrink-0 border-b border-border/60">
           <Collapsible open={orphansOpen} onOpenChange={setOrphansOpen}>

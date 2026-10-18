@@ -13,7 +13,6 @@ import {
 } from "react";
 
 import { useLocation, useParams } from "@tanstack/react-router";
-import type { PullRequestDetailFocus } from "../components/pullRequest/PullRequestDetailPanel";
 import {
   WorkbenchAttentionProvider,
   useWorkbenchAttentionData,
@@ -31,7 +30,6 @@ export interface WorkbenchPullRequestSelection {
   readonly environmentId: EnvironmentId;
   readonly reference: PullRequestRef;
   readonly linkedThread?: WorkbenchLinkedPullRequestThread;
-  readonly focus?: PullRequestDetailFocus;
 }
 
 const WorkbenchPullRequestSheet = lazy(() =>
@@ -89,8 +87,7 @@ function WorkbenchPullRequestPreview({ children }: { children: ReactNode }) {
     setSelection(null);
   }
   const openSelection = (next: WorkbenchPullRequestSelection) => {
-    // Focused attention destinations retain the sheet's focus and close-refresh lifecycle.
-    if (routeThreadRef && next.focus === undefined) {
+    if (routeThreadRef) {
       setSelection(null);
       useRightPanelStore.getState().openPullRequest(routeThreadRef, {
         projectId: next.reference.projectId,

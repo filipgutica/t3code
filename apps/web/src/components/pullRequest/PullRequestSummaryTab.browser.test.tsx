@@ -1,6 +1,6 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
 import { EnvironmentId, ProjectId, type PullRequestDetailView } from "@t3tools/contracts";
-import { act, type ComponentProps } from "react";
+import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
@@ -79,7 +79,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const render = (value = detail, focus?: ComponentProps<typeof PullRequestSummaryTab>["focus"]) =>
+const render = (value = detail) =>
   act(async () =>
     root.render(
       <PullRequestSummaryTab
@@ -91,7 +91,6 @@ const render = (value = detail, focus?: ComponentProps<typeof PullRequestSummary
         activityPending={false}
         activityError={null}
         onRefresh={() => {}}
-        focus={focus}
       />,
     ),
   );
@@ -219,44 +218,4 @@ it("hides bot and resolved comments until the filter shows them, and remembers t
   expect(commentTexts()).toContain("Bot report 11");
   await userEvent.click(filterButton());
   expect(filterItem("Bot comments").getAttribute("aria-checked")).toBe("true");
-});
-
-it("reveals checks on a focus request and lets the reader collapse them again", async () => {
-  await render();
-  expect(expanded("Checks")).toBe("false");
-  const focus = { kind: "checks" } as const;
-  await render(detail, focus);
-  expect(expanded("Checks")).toBe("true");
-  expect(visibleText()).toContain("Unit tests");
-  await click("Checks");
-  await render(detail, focus);
-  expect(expanded("Checks")).toBe("false");
-  await render(detail, { kind: "checks" });
-  expect(expanded("Checks")).toBe("true");
-});
-
-it("reveals the current requested-change review outside the recent window and bot groups", async () => {
-  const value: PullRequestDetailView = {
-    ...detail,
-    commentCount: 13,
-    comments: Array.from({ length: 13 }, (_, index) => ({
-      id: `comment-${index}`,
-      kind: index === 0 ? "review" : "issue-comment",
-      author: {
-        login: index === 0 ? "review-bot" : "human",
-        name: null,
-        avatarUrl: null,
-        isBot: index === 0,
-      },
-      body: index === 0 ? "Please fix the retry handling" : `Conversation ${index}`,
-      createdAt: `2026-09-01T00:00:${String(index).padStart(2, "0")}Z`,
-      url: null,
-      path: null,
-      reviewState: index === 0 ? "CHANGES_REQUESTED" : null,
-    })),
-  };
-  await render(value);
-  expect(commentTexts()).not.toContain("Please fix the retry handling");
-  await render(value, { kind: "review" });
-  expect(commentTexts()).toContain("Please fix the retry handling");
 });

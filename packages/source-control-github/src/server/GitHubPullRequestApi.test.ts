@@ -2850,55 +2850,6 @@ layer("GitHubPullRequestApi.layer", (it) => {
     }),
   );
 
-  it.effect("dispatches failed-check reruns through the host's GitHub API", () =>
-    Effect.gen(function* () {
-      const head = { sha: "abc123", ref: "feature", repo: { id: 22, full_name: "fork/web" } };
-      const base = { sha: "base123", ref: "main", repo: { id: 11, full_name: "acme/web" } };
-      route(
-        ["/pulls/7", { number: 7, state: "open", merged: false, head, base }],
-        [
-          "/actions/runs?",
-          {
-            total_count: 1,
-            workflow_runs: [
-              {
-                id: 10,
-                workflow_id: 4,
-                run_number: 1,
-                run_attempt: 1,
-                event: "pull_request",
-                head_sha: head.sha,
-                head_branch: head.ref,
-                head_repository: head.repo,
-                repository: base.repo,
-                status: "completed",
-                conclusion: "failure",
-                pull_requests: [{ number: 7, head, base }],
-              },
-            ],
-          },
-        ],
-      );
-      const api = yield* GitHubPullRequestApi.GitHubPullRequestApi;
-      yield* api.runPullRequestAction({
-        cwd: "/w",
-        repository: "acme/web",
-        host: "github.enterprise.test",
-        number: 7,
-        action: "rerun-failed-checks",
-      });
-      expect(
-        restCallsTo("rerun-failed-jobs").map(({ host, method, path }) => ({ host, method, path })),
-      ).toEqual([
-        {
-          host: "github.enterprise.test",
-          method: "POST",
-          path: "repos/acme/web/actions/runs/10/rerun-failed-jobs",
-        },
-      ]);
-    }),
-  );
-
   it.effect("does not approve action-required runs for a same-repository pull request", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValueOnce(

@@ -206,12 +206,9 @@ const ACTION_FAILURE_LABELS: Record<PullRequestAction, string> = {
   revert: "Could not open a revert pull request",
   "delete-branch": "Could not delete this branch",
   "approve-workflows": "Could not approve workflows",
-  "rerun-failed-checks": "Could not request every workflow rerun",
 };
 
 const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
-  "rerun-failed-checks":
-    "Check GitHub Actions write permission and that failed runs still belong to the current PR head.",
   merge:
     "The host refused the merge. Check that you have write access, that the checks it requires have passed, and that the branch is not conflicting.",
   ready: "The host refused it. Check that you have write access to this repository.",
@@ -571,12 +568,6 @@ function pullRequestStackReference(
     : { ...reference, host: reference.host ?? parseChangeRequestUrl(detail.url)?.host };
 }
 
-/** A destination within the native pull-request surface. */
-export type PullRequestDetailFocus =
-  | { readonly kind: "checks" }
-  | { readonly kind: "review" }
-  | { readonly kind: "review-thread"; readonly reviewThreadId: string };
-
 export function PullRequestDetailPanel({
   environmentId,
   shortcutsEnabled,
@@ -591,20 +582,12 @@ export function PullRequestDetailPanel({
   composerDraftTarget,
   onBack,
   onSelectPullRequest,
-  focus,
   onGuideShown,
 }: {
   environmentId: EnvironmentId;
   shortcutsEnabled: boolean;
   getShortcutContext: () => ShortcutMatchContext;
   onSelectPullRequest?: ((reference: PullRequestRef) => void) | undefined;
-  focus?: PullRequestDetailFocus | undefined;
-  /**
-   * The thread this panel sits beside, if any. Links that are not the pull
-   * request itself (check details, host permalinks) can open in that thread's
-   * in-app browser when the user has asked for it; the page has no thread, so
-   * there they always go to the system browser.
-   */
   threadRef?: ScopedThreadRef | null;
   reference: PullRequestRef;
   listEntry?: PullRequestListEntry | null;
@@ -680,7 +663,6 @@ export function PullRequestDetailPanel({
     if (guideOpenRequested) useGuideRunStore.getState().requestOpen(null);
   }, [guideOpenRequested]);
   const tabScopeKey = `${environmentId}:${pullRequestKey}`;
-  const [appliedFocus, setAppliedFocus] = useState<{ scope: string; focus: typeof focus }>();
   const [tabMountState, setTabMountState] = useState(() => ({
     key: tabScopeKey,
     tabs: new Set<DetailTab>(["summary"]),
@@ -769,15 +751,8 @@ export function PullRequestDetailPanel({
         description: error.message,
       }),
   });
-  const panelRootRef = useRef<HTMLDivElement | null>(null);
   const copyFromShortcut = useEffectEvent((event: KeyboardEvent) => {
     if (!shortcutsEnabled || event.defaultPrevented || isCommandPaletteOpen()) return;
-    const modal =
-      event.target instanceof HTMLElement
-        ? event.target.closest('[role="dialog"], [aria-modal="true"]')
-        : null;
-    // A foreground modal owns the shortcut; panels behind it must not claim the same key.
-    if (modal && (!panelRootRef.current || !modal.contains(panelRootRef.current))) return;
     const command = resolveShortcutCommand(event, keybindings, {
       context: getShortcutContext(),
     });
@@ -978,7 +953,6 @@ export function PullRequestDetailPanel({
         title: ACTION_FAILURE_LABELS[action],
         description: readableFailure(failure, hint),
       });
-      if (action === "rerun-failed-checks") void refreshFromHost();
       onActed?.(action, "failed");
       return false;
     }
@@ -1458,23 +1432,10 @@ export function PullRequestDetailPanel({
     environmentId,
     (settings) => settings.reviewGuidesEnabled,
   );
-  if (focus && detail && (appliedFocus?.scope !== tabScopeKey || appliedFocus.focus !== focus)) {
-    setAppliedFocus({ scope: tabScopeKey, focus });
-    setTab(focus.kind === "review-thread" ? "code" : "summary");
-    if (focus.kind === "review-thread") setCodeCommitScope({ pullRequestKey, oid: null });
-  }
-
   const visibleTabs = TABS.filter(
     (item) =>
-      (item.value !== "code" ||
-        detail === null ||
-        detail.capabilities.diff ||
-        focus?.kind === "review-thread") &&
+      (item.value !== "code" || detail === null || detail.capabilities.diff) &&
       (item.value !== "guide" || reviewGuidesEnabled),
-  ).map((item) =>
-    item.value === "code" && detail && !detail.capabilities.diff
-      ? { ...item, label: "Review" }
-      : item,
   );
   if (!visibleTabs.some((item) => item.value === tab)) setTab("summary");
   const can = (action: PullRequestAction) =>
@@ -1651,34 +1612,32 @@ export function PullRequestDetailPanel({
 
   if (detailQuery.isPending && !detail) {
     return (
-      <div ref={panelRootRef} className="flex h-full min-h-0 flex-col">
-        <PullRequestDetailGhost
-          seed={matchingListEntry}
-          summary={sharedSummary}
-          checkoutCommand={checkoutCommand}
-          onCheckoutError={reportCheckoutCommandError}
-          number={reference.number}
-          tabs={visibleTabs}
-          activeTab={tab}
-          {...(onBack ? { onBack } : {})}
-          {...(onClose ? { onClose } : {})}
-          actions={
-            handoffSummary ? (
-              <TooltipProvider delay={150} closeDelay={150} timeout={400}>
-                {handoffSummary.state === "open" && handoffSummary.mergeability === "conflicting"
-                  ? resolveConflictsControl
-                  : null}
-                {checkoutControl}
-              </TooltipProvider>
-            ) : undefined
-          }
-        />
-      </div>
+      <PullRequestDetailGhost
+        seed={matchingListEntry}
+        summary={sharedSummary}
+        checkoutCommand={checkoutCommand}
+        onCheckoutError={reportCheckoutCommandError}
+        number={reference.number}
+        tabs={visibleTabs}
+        activeTab={tab}
+        {...(onBack ? { onBack } : {})}
+        {...(onClose ? { onClose } : {})}
+        actions={
+          handoffSummary ? (
+            <TooltipProvider delay={150} closeDelay={150} timeout={400}>
+              {handoffSummary.state === "open" && handoffSummary.mergeability === "conflicting"
+                ? resolveConflictsControl
+                : null}
+              {checkoutControl}
+            </TooltipProvider>
+          ) : undefined
+        }
+      />
     );
   }
 
   return (
-    <div ref={panelRootRef} className="relative flex h-full min-h-0 w-full flex-col bg-background">
+    <div className="relative flex h-full min-h-0 w-full flex-col bg-background">
       {threadPickerOpen && detail ? (
         <PullRequestThreadLinks
           key={`${environmentId}:${detail.url}`}
@@ -2649,94 +2608,74 @@ export function PullRequestDetailPanel({
             }}
           >
             {tab === "summary" ? (
-              <>
-                {showsApproveWorkflows ? (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <span className="ml-auto inline-flex shrink-0">
-                          <Button
-                            size="xs"
-                            variant="warning-outline"
-                            disabled={actionPending}
-                            {...inlineConfirm.props(
-                              "approve-workflows",
-                              () => void perform("approve-workflows"),
-                            )}
-                            aria-label={
-                              pendingAction === "approve-workflows"
+              showsApproveWorkflows ? (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span className="ml-auto inline-flex shrink-0">
+                        <Button
+                          size="xs"
+                          variant="warning-outline"
+                          disabled={actionPending}
+                          {...inlineConfirm.props(
+                            "approve-workflows",
+                            () => void perform("approve-workflows"),
+                          )}
+                          aria-label={
+                            pendingAction === "approve-workflows"
+                              ? "Approving..."
+                              : inlineConfirm.isArmed("approve-workflows")
+                                ? "Confirm approve?"
+                                : "Approve workflows to run"
+                          }
+                        >
+                          <PlayIcon aria-hidden className="size-3.5" />
+                          <span className="inline-grid">
+                            <span aria-hidden className="invisible col-start-1 row-start-1">
+                              Approve workflows to run
+                            </span>
+                            <span aria-hidden className="invisible col-start-1 row-start-1">
+                              Confirm approve?
+                            </span>
+                            <span className="col-start-1 row-start-1">
+                              {pendingAction === "approve-workflows"
                                 ? "Approving..."
                                 : inlineConfirm.isArmed("approve-workflows")
                                   ? "Confirm approve?"
-                                  : "Approve workflows to run"
-                            }
-                          >
-                            <PlayIcon aria-hidden className="size-3.5" />
-                            <span className="inline-grid">
-                              <span aria-hidden className="invisible col-start-1 row-start-1">
-                                Approve workflows to run
-                              </span>
-                              <span aria-hidden className="invisible col-start-1 row-start-1">
-                                Confirm approve?
-                              </span>
-                              <span className="col-start-1 row-start-1">
-                                {pendingAction === "approve-workflows"
-                                  ? "Approving..."
-                                  : inlineConfirm.isArmed("approve-workflows")
-                                    ? "Confirm approve?"
-                                    : "Approve workflows to run"}
-                              </span>
+                                  : "Approve workflows to run"}
                             </span>
-                          </Button>
-                        </span>
-                      }
-                    />
-                    <TooltipPopup side="top">
-                      {pendingAction === "approve-workflows"
-                        ? "Approving..."
-                        : inlineConfirm.isArmed("approve-workflows")
-                          ? "Confirm approve?"
-                          : "Approve workflows to run"}
-                    </TooltipPopup>
-                  </Tooltip>
-                ) : (
-                  <PullRequestChecksStatusLine
-                    className="text-muted-foreground"
-                    aria-label={checksSummary ? `Checks: ${checksSummary}` : "Checks"}
-                    icon={
-                      checksState !== null ? (
-                        <PullRequestChecksPopover
-                          checks={detail.checks}
-                          stale={checksStale}
-                          checksState={checksState}
-                          threadRef={threadRef}
-                        />
-                      ) : (
-                        <CircleDotIcon aria-hidden className="size-3.5" />
-                      )
+                          </span>
+                        </Button>
+                      </span>
                     }
-                    label={checksSummary}
                   />
-                )}
-                {detail.state === "open" &&
-                checksState === "failing" &&
-                !checksStale &&
-                can("rerun-failed-checks") ? (
-                  <span className="ml-2">
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      disabled={actionPending}
-                      onClick={() => void perform("rerun-failed-checks")}
-                    >
-                      <RotateCcwIcon aria-hidden />
-                      {pendingAction === "rerun-failed-checks"
-                        ? "Requesting reruns…"
-                        : "Rerun failed checks"}
-                    </Button>
-                  </span>
-                ) : null}
-              </>
+                  <TooltipPopup side="top">
+                    {pendingAction === "approve-workflows"
+                      ? "Approving..."
+                      : inlineConfirm.isArmed("approve-workflows")
+                        ? "Confirm approve?"
+                        : "Approve workflows to run"}
+                  </TooltipPopup>
+                </Tooltip>
+              ) : (
+                <PullRequestChecksStatusLine
+                  className="text-muted-foreground"
+                  aria-label={checksSummary ? `Checks: ${checksSummary}` : "Checks"}
+                  icon={
+                    checksState !== null ? (
+                      <PullRequestChecksPopover
+                        checks={detail.checks}
+                        stale={checksStale}
+                        checksState={checksState}
+                        threadRef={threadRef}
+                      />
+                    ) : (
+                      <CircleDotIcon aria-hidden className="size-3.5" />
+                    )
+                  }
+                  label={checksSummary}
+                />
+              )
             ) : tab === "timeline" ? (
               <div className="ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                 <PullRequestMetaLine
@@ -2867,7 +2806,6 @@ export function PullRequestDetailPanel({
                   {...(canFixFindings ? { onFixFinding: startFixFinding } : {})}
                   onRefresh={refreshDetail}
                   onRefreshChecks={refreshFromHost}
-                  focus={focus}
                 />
               </div>
             ) : null}
@@ -2937,9 +2875,6 @@ export function PullRequestDetailPanel({
                     {...(canFixFindings ? { onFixFinding: startFixFinding } : {})}
                     onRefresh={refreshDetail}
                     refreshToken={codeRefreshToken}
-                    focus={focus?.kind === "review-thread" ? focus : undefined}
-                    reviewPending={activityPending}
-                    reviewError={activityError}
                     revealRequest={codeRevealRequest}
                   />
                 </Suspense>
