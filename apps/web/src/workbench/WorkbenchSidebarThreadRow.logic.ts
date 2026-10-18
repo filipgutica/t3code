@@ -14,7 +14,7 @@ import {
   resolveThreadCurrentPullRequestLink,
   visibleThreadPullRequests,
 } from "@t3tools/shared/threadPullRequests";
-import { useCallback, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import { hasUnseenCompletion } from "../components/Sidebar.logic";
 import {
@@ -134,18 +134,12 @@ export function useWorkbenchSidebarThreadRowData({
   const project = useProject(shell ? scopeProjectRef(shell.environmentId, shell.projectId) : null);
   const environment = useEnvironment(thread.environmentId);
   const providers = useAtomValue(serverEnvironment.providersValueAtom(thread.environmentId));
-  const providerEntry = useMemo(
-    () => resolveProviderEntry(shell, deriveProviderInstanceEntries(providers ?? [])),
-    [providers, shell],
-  );
+  const providerEntry = resolveProviderEntry(shell, deriveProviderInstanceEntries(providers ?? []));
   const lastVisitedAt = useUiStateStore(
     (state) => state.threadLastVisitedAtById[scopedThreadKey(threadRef)],
   );
   const activityState = resolveThreadActivityState(shell, lastVisitedAt);
-  const pullRequests = useMemo(
-    () => (shell ? resolveWorkbenchSidebarThreadPullRequests(shell) : []),
-    [shell],
-  );
+  const pullRequests = shell ? resolveWorkbenchSidebarThreadPullRequests(shell) : [];
   const pullRequestState = resolveThreadPullRequestState(pullRequests);
 
   return {
@@ -166,17 +160,17 @@ export function useWorkbenchSidebarThreadRename(thread: WorkbenchSidebarThread) 
   const renameCommitted = useRef(false);
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
 
-  const startRename = useCallback(() => {
+  const startRename = () => {
     renameCommitted.current = false;
     setRenameTitle(thread.title);
-  }, [thread.title]);
+  };
 
-  const cancelRename = useCallback(() => {
+  const cancelRename = () => {
     renameCommitted.current = true;
     setRenameTitle(null);
-  }, []);
+  };
 
-  const commitRename = useCallback(() => {
+  const commitRename = () => {
     if (renameCommitted.current || renameTitle === null) return;
     renameCommitted.current = true;
     setRenameTitle(null);
@@ -200,7 +194,7 @@ export function useWorkbenchSidebarThreadRename(thread: WorkbenchSidebarThread) 
         });
       }
     });
-  }, [renameTitle, thread.environmentId, thread.id, thread.title, updateMetadata]);
+  };
 
   return { renameTitle, setRenameTitle, startRename, cancelRename, commitRename };
 }
@@ -236,21 +230,18 @@ export function useWorkbenchSidebarThreadInteraction({
     onStartRename: startRename,
     filterMenuItems: filterWorkbenchThreadActionMenuItems,
   });
-  const handleOpenPullRequest = useCallback(
-    (event: ReactMouseEvent<HTMLElement>) => {
-      const url = currentPullRequest?.url;
-      if (!url) return;
-      const openedInRightPanel = openPrLink(event, url, threadRef);
-      if (openedInRightPanel && !isActive) onOpenThread(thread);
-    },
-    [currentPullRequest?.url, isActive, onOpenThread, openPrLink, thread, threadRef],
-  );
-  const handleOpenPullRequestStack = useCallback(() => {
+  const handleOpenPullRequest = (event: ReactMouseEvent<HTMLElement>) => {
+    const url = currentPullRequest?.url;
+    if (!url) return;
+    const openedInRightPanel = openPrLink(event, url, threadRef);
+    if (openedInRightPanel && !isActive) onOpenThread(thread);
+  };
+  const handleOpenPullRequestStack = () => {
     useRightPanelStore.getState().open(threadRef, "pull-requests");
     if (!isActive) onOpenThread(thread);
-  }, [isActive, onOpenThread, thread, threadRef]);
+  };
 
-  const toggleSettlement = useCallback(() => {
+  const toggleSettlement = () => {
     const current = readThreadShell(threadRef);
     if (
       settlementPending.current ||
@@ -281,7 +272,7 @@ export function useWorkbenchSidebarThreadInteraction({
         settlementPending.current = false;
         setSettlementBusy(false);
       });
-  }, [settleThread, threadRef, unsettleThread]);
+  };
 
   return {
     openMenu,

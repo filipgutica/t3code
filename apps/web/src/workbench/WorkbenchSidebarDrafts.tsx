@@ -155,7 +155,7 @@ export function useWorkbenchSidebarDraftMenu({
     const currentSequence = ++sequence.current;
     pendingMenu.current = { draftId: draft.id, sequence: currentSequence };
     setMenuError(null);
-    try {
+    return (async () => {
       const selected = await api.contextMenu.show(
         [
           {
@@ -174,14 +174,16 @@ export function useWorkbenchSidebarDraftMenu({
       returnFocus.current = request;
       setConfirmedDraft(target);
       latest.current.actions.confirm([target]);
-    } catch (cause) {
-      if (currentSequence === sequence.current && latest.current)
-        setMenuError(
-          `Could not open draft actions. ${cause instanceof Error ? cause.message : "Please try again."}`,
-        );
-    } finally {
-      if (pendingMenu.current?.sequence === currentSequence) pendingMenu.current = null;
-    }
+    })()
+      .catch((cause: unknown) => {
+        if (currentSequence === sequence.current && latest.current)
+          setMenuError(
+            `Could not open draft actions. ${cause instanceof Error ? cause.message : "Please try again."}`,
+          );
+      })
+      .finally(() => {
+        if (pendingMenu.current?.sequence === currentSequence) pendingMenu.current = null;
+      });
   };
   return {
     actions,

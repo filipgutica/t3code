@@ -12,14 +12,7 @@ import { WORKBENCH_TICKET_KIND_LABELS } from "./workbench.logic";
 export function WorkbenchTicketKindBadge({ kind }: { kind: WorkbenchTicketKind }) {
   const Icon = kind === "bug" ? BugIcon : BookOpenIcon;
   return (
-    <Badge
-      size="default"
-      variant={kind === "bug" ? "error" : "info"}
-      className={cn(
-        "font-normal",
-        kind === "bug" && "bg-destructive/5 text-destructive-foreground dark:bg-destructive/8",
-      )}
-    >
+    <Badge size="default" variant={kind === "bug" ? "error" : "info"}>
       <Icon />
       {WORKBENCH_TICKET_KIND_LABELS[kind]}
     </Badge>

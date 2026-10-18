@@ -182,7 +182,7 @@ export function useWorkbenchTicketActions({
     setError(null);
     let savedTicket = draft.ticket;
     const changed = !isWorkbenchRepositoryScopeEqual(draft.ticket, draft.value);
-    try {
+    return (async () => {
       if (changed) {
         const saved = await updateTicket({
           environmentId,
@@ -224,9 +224,9 @@ export function useWorkbenchTicketActions({
       }
       setScopeDraft(null);
       return true;
-    } finally {
+    })().finally(() => {
       setPendingAction(null);
-    }
+    });
   };
   const updateTicketFields = async (
     ticket: WorkbenchTicket,

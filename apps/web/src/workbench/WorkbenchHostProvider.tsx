@@ -1,4 +1,4 @@
-import { useMemo, type ComponentType, type ReactNode } from "react";
+import { type ComponentType, type ReactNode } from "react";
 import { codexAuthHandoffUrl } from "@t3tools/shared/codexAuthHandoff";
 
 import {
@@ -91,10 +91,7 @@ function WorkbenchThreadPresentation({
   readonly refreshPreparations: boolean;
 }) {
   const preparations = useWorkbenchTicketPreparations();
-  const policy = useMemo(
-    () => createWorkbenchThreadPresentationPolicy(preparations),
-    [preparations],
-  );
+  const policy = createWorkbenchThreadPresentationPolicy(preparations);
   return (
     <ThreadPresentationPolicyContext value={policy}>
       {refreshPreparations ? <WorkbenchPreparationRefresh /> : null}

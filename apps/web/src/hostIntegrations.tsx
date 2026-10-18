@@ -6,7 +6,7 @@ import type {
 } from "@t3tools/contracts";
 import type { AsyncResult, Atom } from "effect/reactivity";
 import type { CodexAuthHandoff } from "@t3tools/shared/codexAuthHandoff";
-import { createContext, useContext, useMemo, type ComponentType, type ReactNode } from "react";
+import { createContext, useContext, type ComponentType, type ReactNode } from "react";
 
 import type { CommandPaletteActionItem } from "./components/CommandPalette.logic";
 import type { ReviewCommentContext } from "./reviewCommentContext";
@@ -106,7 +106,7 @@ export function useVisibleThreads<
   T extends { readonly environmentId: EnvironmentId; readonly id: ThreadId },
 >(threads: ReadonlyArray<T>) {
   const policy = useThreadPresentationPolicy();
-  return useMemo(() => filterVisibleThreads(threads, policy), [threads, policy]);
+  return filterVisibleThreads(threads, policy);
 }
 
 export function HostSidebarContent(props: SidebarContentProps) {

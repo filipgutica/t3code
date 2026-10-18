@@ -77,7 +77,8 @@ export function WorkbenchJiraTransitionsPreloader({
     const pump = () => {
       if (disposed || transitions.length === 0) return;
       while (active.size < MAX_CONCURRENT_PRELOADS && nextIndex < transitions.length) {
-        const [key, atom] = transitions[nextIndex++]!;
+        const [key, atom] = transitions[nextIndex]!;
+        nextIndex += 1;
         const unmount = registry.mount(atom);
         let stop = () => {};
         let settled = false;

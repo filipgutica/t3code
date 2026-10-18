@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useWorkbenchBoardView, type WorkbenchBoardScope } from "./workbenchBoardViewState";
 
 export function matchesWorkbenchTicketSearch({
@@ -34,22 +34,19 @@ export function useWorkbenchTicketSearch(scope: WorkbenchBoardScope) {
     [scopeKey],
   );
 
-  const setText = useCallback(
-    (value: string) => {
-      clearTimeout(timer.current?.timeout);
-      setView({ searchText: value });
-      const normalized = value.trim();
-      if (!normalized) {
-        setFilter({ scopeKey, query: "" });
-        return;
-      }
-      timer.current = {
-        scopeKey,
-        timeout: setTimeout(() => setFilter({ scopeKey, query: normalized }), 200),
-      };
-    },
-    [scopeKey, setView],
-  );
+  const setText = (value: string) => {
+    clearTimeout(timer.current?.timeout);
+    setView({ searchText: value });
+    const normalized = value.trim();
+    if (!normalized) {
+      setFilter({ scopeKey, query: "" });
+      return;
+    }
+    timer.current = {
+      scopeKey,
+      timeout: setTimeout(() => setFilter({ scopeKey, query: normalized }), 200),
+    };
+  };
 
   const query = filter.scopeKey === scopeKey ? filter.query : text.trim();
   return { text, query, setText };

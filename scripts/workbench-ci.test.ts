@@ -38,6 +38,7 @@ const fixture = (body: (root: string, base: string) => void) => {
     ]);
     const upstreamBase = git(["rev-parse", "HEAD"]);
     write("apps/server/src/owned.ts", "export const fork = true;\n");
+    write("apps/mobile/src/owned.ts", "export const mobile = true;\n");
     write("apps/server/src/owned.test.ts", "// Owned regression\n");
     write("scripts/packaging.test.ts", "// Packaging regression\n");
     write(".github/workflows/ci.yml", "name: CI\non: pull_request\n");
@@ -49,7 +50,7 @@ const fixture = (body: (root: string, base: string) => void) => {
         groups: [
           {
             name: "Fork",
-            paths: ["apps/server/src/owned.ts"],
+            paths: ["apps/server/src/owned.ts", "apps/mobile/src/owned.ts"],
             tests: ["apps/server/src/owned.test.ts"],
             verification: ["unit", "typecheck"],
           },
@@ -131,6 +132,7 @@ it("detects stale output without modifying upstream workflow sources", () =>
 it.each([
   ["docs/note.md", { verify: false, build: false, packaging: false }],
   ["apps/server/src/owned.ts", { verify: true, build: true, packaging: false }],
+  ["apps/mobile/src/owned.ts", { verify: true, build: false, packaging: false }],
   ["package.json", { verify: true, build: true, packaging: true }],
   ["scripts/packaging.test.ts", { verify: true, build: false, packaging: true }],
 ])("routes %s through the Actions output contract", (path, expected) =>

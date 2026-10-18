@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
@@ -26,7 +25,7 @@ export function WorkbenchDescription({
   readonly markdown: string;
   readonly jira?: boolean;
 }) {
-  const content = useMemo(() => workbenchDescriptionMarkdown(markdown, jira), [markdown, jira]);
+  const content = workbenchDescriptionMarkdown(markdown, jira);
   if (!content.trim())
     return <p className="text-sm text-muted-foreground">No description added yet.</p>;
   return (

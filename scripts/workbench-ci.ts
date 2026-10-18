@@ -144,11 +144,16 @@ const scope = (policy: ScopePolicy, base: string) => {
   const tooling = changed.some(
     (path) => path.startsWith("scripts/") || path.startsWith(".github/workflows/workbench-ci"),
   );
+  const ownedMobile = changed.some(
+    (path) =>
+      path.startsWith("apps/mobile/") &&
+      policy.groups.some((group) => group.paths.some((pattern) => matches(path, pattern))),
+  );
   const ciPolicy = changed.some(
     (path) => path.startsWith("scripts/workbench-ci") || path === workflowPath,
   );
   return {
-    verify: product || tooling,
+    verify: product || tooling || ownedMobile,
     build: product || ciPolicy,
     packaging:
       ciPolicy ||
@@ -198,6 +203,7 @@ const setup = `      - uses: actions/checkout@v6
               - --filter=t3...
               - --filter=@t3tools/web...
               - --filter=@t3tools/desktop...
+              - --filter=@t3tools/mobile...
               - --filter=@t3tools/scripts...
               - --filter=t3code-workbench-auth...
 `;
@@ -287,6 +293,8 @@ ${verificationJob(
   "Integration",
   "verify",
   `      - run: vp run --filter @t3tools/desktop ensure:electron
+      - name: Install Chromium for web integration tests
+        run: node apps/web/node_modules/playwright/cli.js install --with-deps --only-shell chromium
       - name: Exercise fork-owned contracts and native integrations
         run: node scripts/workbench-ci.ts --run-tests
 `,

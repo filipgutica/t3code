@@ -1,3 +1,4 @@
+import { useStableCallback } from "../hooks/useStableCallback";
 import { makeThreadFixture } from "../test-fixtures";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
@@ -12,7 +13,7 @@ import {
   type PullRequestReviewThread,
   type WorkbenchSnapshot,
 } from "@t3tools/contracts";
-import { act, useCallback, useEffect, useState } from "react";
+import { act, useEffect, useState } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, it, vi } from "vite-plus/test";
 
@@ -138,7 +139,7 @@ vi.mock("../state/query", () => ({
       resultIdentity: {},
     });
     const [result, setResult] = useState(read);
-    const refresh = useCallback(() => setResult(read()), [kind]);
+    const refresh = useStableCallback(() => setResult(read()));
     useEffect(() => {
       native.active.add(kind);
       return () => {

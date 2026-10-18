@@ -215,12 +215,13 @@ function CheckoutDetailPopover({
             render={
               <PopoverTrigger
                 aria-label={`${label}: ${fullValue}`}
-                className="inline-flex min-w-0 max-w-full flex-1 items-center gap-1.5 rounded-sm text-left font-medium outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+                variant="inline"
+                className="min-w-0 max-w-full flex-1"
               />
             }
           >
             {icon}
-            <span className={`min-w-0 truncate ${valueClassName}`}>{value}</span>
+            <span className={`min-w-0 truncate font-medium ${valueClassName}`}>{value}</span>
           </TooltipTrigger>
           <TooltipPopup
             side="top"
@@ -244,7 +245,7 @@ function CheckoutDetailPopover({
           aria-label={`${label} value`}
           className="min-w-0 select-text space-y-1"
         >
-          <PopoverTitle className="text-xs text-muted-foreground">{label}</PopoverTitle>
+          <PopoverTitle>{label}</PopoverTitle>
           <p className="whitespace-pre-wrap break-all font-mono text-sm text-foreground">
             {fullValue}
           </p>
@@ -283,12 +284,11 @@ function CheckoutDetailCopyButton({
           <Button
             ref={ref}
             aria-label={statusLabel}
-            className="text-muted-foreground hover:text-foreground"
             disabled={disabled}
             onClick={() => copyToClipboard(value, undefined)}
             size="icon-xs"
             type="button"
-            variant="ghost"
+            variant="ghost-muted"
           />
         }
       >

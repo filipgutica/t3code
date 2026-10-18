@@ -1,5 +1,4 @@
 import type { EnvironmentId, ProjectId, WorkbenchProjectId } from "@t3tools/contracts";
-import { useCallback } from "react";
 import { create } from "zustand";
 
 export interface WorkbenchBoardScope {
@@ -56,11 +55,8 @@ export function useWorkbenchBoardView(scope: WorkbenchBoardScope) {
     key === null ? DEFAULT_VIEW : (state.views.get(key) ?? DEFAULT_VIEW),
   );
   const update = useBoardViews((state) => state.update);
-  const setView = useCallback(
-    (patch: Partial<WorkbenchBoardView>) => {
-      if (key !== null) update(key, patch);
-    },
-    [key, update],
-  );
+  const setView = (patch: Partial<WorkbenchBoardView>) => {
+    if (key !== null) update(key, patch);
+  };
   return { view, setView, scopeKey: key };
 }

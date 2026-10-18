@@ -1,6 +1,6 @@
 import type { EnvironmentId, WorkbenchSnapshot, WorkbenchTicketId } from "@t3tools/contracts";
 import { FolderGit2Icon, Trash2Icon } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "../components/ui/button";
 import {
   AlertDialog,
@@ -41,12 +41,12 @@ export function WorkbenchRetainedWorktrees({
     reportFailure: false,
     reportDefect: false,
   });
-  const workspaces = useMemo(() => {
+  const workspaces = (() => {
     const ticketIds = new Set(snapshot.tickets.map((ticket) => ticket.id));
     return snapshot.ticketWorkspaces.filter(
       (workspace) => !ticketIds.has(workspace.ticketId) && workspace.status !== "released",
     );
-  }, [snapshot]);
+  })();
   const selectedWorkspace = workspaces.find((workspace) => workspace.ticketId === selectedTicketId);
 
   const remove = async () => {
@@ -54,7 +54,7 @@ export function WorkbenchRetainedWorktrees({
     removingRef.current = true;
     setPending(true);
     setError(null);
-    try {
+    return (async () => {
       const result = await release({
         environmentId,
         input: {
@@ -67,10 +67,10 @@ export function WorkbenchRetainedWorktrees({
         setSelectedTicketId(null);
         if (workspaces.length === 1) setOpen(false);
       }
-    } finally {
+    })().finally(() => {
       removingRef.current = false;
       setPending(false);
-    }
+    });
   };
 
   if (workspaces.length === 0) return null;
