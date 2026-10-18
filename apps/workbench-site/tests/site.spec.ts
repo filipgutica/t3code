@@ -235,8 +235,8 @@ test("modifier click preserves the original PNG navigation", async ({ page, cont
   const popup = context.waitForEvent("page");
   await link.click({ modifiers: ["ControlOrMeta"] });
   const opened = await popup;
-  await opened.waitForLoadState();
-  expect(opened.url()).toMatch(/\.png$/);
+  // A background tab can report about:blank after its initial load event.
+  await opened.waitForURL(/\.png$/);
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await opened.close();
 });
