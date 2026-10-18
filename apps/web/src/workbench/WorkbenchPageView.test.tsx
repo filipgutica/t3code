@@ -263,6 +263,7 @@ function Harness({
   syncState = "error",
   grants = defaultGrants,
   error = null,
+  setError = noop,
   dialog,
   conversation,
   deletedThread = false,
@@ -278,6 +279,7 @@ function Harness({
   syncState?: "error" | "success";
   grants?: { archive: boolean; remove: boolean };
   error?: string | null;
+  setError?: PageProps["setError"];
   dialog?: "create" | "publish" | "workspace";
   /** create=ticket in the URL, an unsaved draft to resume, or a saved ticket's draft phase. */
   conversation?: ConversationMode;
@@ -421,7 +423,7 @@ function Harness({
     jiraDialogOpen: false,
     error,
     pendingAction: null,
-    setError: noop,
+    setError,
     beginJiraAuthFlow: idle,
     openJiraDialog: noop,
     handleJiraDialogOpenChange: noop,
@@ -855,4 +857,15 @@ it("requires operate permission to replace a deleted Ticket Thread", async () =>
   expect(button("Create replacement Thread for Ship the release", { optional: true })).toBeNull();
   await render({ detail: true, deletedThread: true, canOperate: true });
   expect(button("Create replacement Thread for Ship the release").disabled).toBe(false);
+});
+
+it("dismisses action errors while leaving Jira retry available", async () => {
+  const setError = vi.fn();
+  await render({ error: "Could not move Ticket", setError });
+  await act(async () => button("Dismiss action error").click());
+  expect(setError).toHaveBeenCalledExactlyOnceWith(null);
+  await render({ error: null, setError });
+  expect(document.body.textContent).not.toContain("Could not move Ticket");
+  expect(button("Dismiss action error", { optional: true })).toBeNull();
+  expect(button("Retry").disabled).toBe(false);
 });

@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -50,7 +51,7 @@ import {
   type RefObject,
 } from "react";
 
-import { useMediaQuery } from "../hooks/useMediaQuery";
+import { observeResize } from "../lib/observeResize";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
 import {
@@ -71,7 +72,7 @@ import {
 } from "./workbenchThreadStatus.logic";
 
 import { Badge } from "../components/ui/badge";
-import { Input } from "../components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "../components/ui/input-group";
 import { matchesWorkbenchTicketSearch, useWorkbenchTicketSearch } from "./useWorkbenchTicketSearch";
 import { useWorkbenchBoardView } from "./workbenchBoardViewState";
 import {
@@ -172,9 +173,27 @@ type WorkbenchTicketBoardProps = {
 
 export function WorkbenchTicketBoard(props: WorkbenchTicketBoardProps) {
   const boardRef = useRef<HTMLElement>(null);
+  const [wideBoard, setWideBoard] = useState(false);
+  useLayoutEffect(() => {
+    const board = boardRef.current;
+    if (!board) return;
+    const root = document.documentElement;
+    const measure = () =>
+      setWideBoard(board.clientWidth >= 48 * Number.parseFloat(getComputedStyle(root).fontSize));
+    measure();
+    const stopResize = observeResize(board, measure);
+    // Interface font preferences change rem breakpoints without necessarily resizing the Board.
+    const rootStyleObserver = new MutationObserver(measure);
+    rootStyleObserver.observe(root, { attributes: true, attributeFilter: ["style"] });
+    return () => {
+      stopResize();
+      rootStyleObserver.disconnect();
+    };
+  }, []);
   const data = useWorkbenchBoardData(props);
   const drag = useWorkbenchBoardDrag({
     ...props,
+    wideBoard,
     columns: data.columns,
     swimlanes: data.swimlanes,
   });
@@ -248,7 +267,7 @@ function WorkbenchTicketBoardContent({
         ref={boardRef}
         tabIndex={-1}
         aria-label="Ticket board"
-        className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+        className="@container/board relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
       >
         {renderWorkbenchBoardControls({
           search,
@@ -270,7 +289,7 @@ function WorkbenchTicketBoardContent({
           setSelectedColumnId,
         })}
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-          <div className="h-full overflow-auto p-3 sm:p-4 md:pt-0">
+          <div className="h-full overflow-auto p-3 sm:p-4 @min-[48rem]/board:pt-0">
             <WorkbenchDraftTickets
               key={`${environmentId}:${props.projectId}`}
               environmentId={environmentId}
@@ -294,9 +313,9 @@ function WorkbenchTicketBoardContent({
             />
             <div
               style={boardStyle}
-              className="flex min-w-0 flex-col gap-3 md:min-w-[calc(var(--board-column-count)*18rem+(var(--board-column-count)-1)*0.75rem)]"
+              className="flex min-w-0 flex-col gap-3 @min-[48rem]/board:min-w-[calc(var(--board-column-count)*17rem+(var(--board-column-count)-1)*0.75rem)]"
             >
-              <div className="sticky top-0 z-10 -mx-3 hidden grid-flow-col auto-cols-[minmax(18rem,1fr)] gap-3 border-b border-border/60 bg-background px-3 py-1 shadow-sm sm:-mx-4 sm:px-4 md:grid">
+              <div className="sticky top-0 z-10 -mx-3 hidden grid-flow-col auto-cols-[minmax(17rem,1fr)] gap-3 border-b border-border/60 bg-background px-3 py-1 shadow-sm sm:-mx-4 sm:px-4 @min-[48rem]/board:grid">
                 {columns.map((column) => (
                   <div key={column.id} className="flex min-w-0 items-center gap-2 px-2 py-2">
                     <span
@@ -309,7 +328,7 @@ function WorkbenchTicketBoardContent({
                     <h2 className="min-w-0 flex-1 break-words text-sm font-semibold">
                       {column.title}
                     </h2>
-                    <span className="text-xs text-muted-foreground tabular-nums">
+                    <span className="text-xs text-foreground tabular-nums">
                       {column.tickets.length}
                     </span>
                   </div>
@@ -453,9 +472,7 @@ function renderWorkbenchBoardSwimlane({
             <h3 className="min-w-0 truncate text-sm font-semibold">
               {swimlane.epic?.title ?? "No Epic"}
             </h3>
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {swimlane.tickets.length}
-            </span>
+            <span className="text-xs text-foreground tabular-nums">{swimlane.tickets.length}</span>
             {swimlane.epic?.archivedAt ? <Badge variant="outline">Archived</Badge> : null}
           </CollapsibleTrigger>
           {swimlane.epic ? (
@@ -469,8 +486,8 @@ function renderWorkbenchBoardSwimlane({
           ) : null}
         </header>
       ) : null}
-      <CollapsiblePanel className="transition-none">
-        <div className="grid min-w-0 grid-cols-1 gap-3 md:auto-cols-[minmax(18rem,1fr)] md:grid-flow-col md:grid-cols-none">
+      <CollapsiblePanel>
+        <div className="grid min-w-0 grid-cols-1 gap-3 @min-[48rem]/board:auto-cols-[minmax(17rem,1fr)] @min-[48rem]/board:grid-flow-col @min-[48rem]/board:grid-cols-none">
           {columns.map((column) => {
             const laneTickets = orderWorkbenchTicketsByJiraRank(
               column.tickets.filter((ticket) => laneTicketIds.has(ticket.id)),
@@ -493,7 +510,7 @@ function renderWorkbenchBoardSwimlane({
                     }))
                 }
                 className={cn(
-                  "min-w-0 flex-col rounded-xl md:flex",
+                  "min-w-0 flex-col rounded-xl @min-[48rem]/board:flex",
                   column.id === visibleColumnId ? "flex" : "hidden",
                 )}
               >
@@ -503,7 +520,7 @@ function renderWorkbenchBoardSwimlane({
                     <p
                       className={cn(
                         "py-3 text-center text-xs text-muted-foreground",
-                        groupMode === "epic" && "md:sr-only",
+                        groupMode === "epic" && "@min-[48rem]/board:sr-only",
                       )}
                     >
                       No tickets in {column.title}
@@ -553,7 +570,7 @@ function renderWorkbenchBoardTicket({
               return;
             listeners?.onMouseDown?.(event);
           }}
-          className={`relative isolate w-full min-w-0 cursor-pointer rounded-lg border bg-foreground/3 p-3 transition-colors hover:bg-foreground/6 ${
+          className={`relative isolate w-full min-w-0 cursor-pointer rounded-lg border bg-background p-3 transition-colors hover:bg-muted ${
             selectedTicketId === ticket.id
               ? "border-primary/50 ring-2 ring-primary/15"
               : "border-foreground/12"
@@ -585,7 +602,7 @@ function renderWorkbenchBoardTicket({
           </div>
           {renderWorkbenchBoardTicketMetadata(presentation)}
           {board.attentionMode !== "all" && attentionReasons.length > 0 ? (
-            <p className="mt-2 text-xs text-muted-foreground">{attentionReasons.join(" · ")}</p>
+            <p className="mt-2 text-xs text-foreground">{attentionReasons.join(" · ")}</p>
           ) : null}
           {renderWorkbenchBoardTicketThreadAction(presentation)}
         </article>
@@ -909,7 +926,7 @@ function renderWorkbenchBoardTicketMetadata(
   const { ticket, board, repositories, epic, jiraIssueLink, summary } = presentation;
   const { pendingTicketIds, groupMode, onSelect, projectId } = board;
   return (
-    <div className="mt-2 flex min-w-0 flex-col gap-2 text-xs text-muted-foreground">
+    <div className="mt-2 flex min-w-0 flex-col gap-2 text-xs text-foreground">
       {pendingTicketIds.has(ticket.id) ? <span role="status">Saving status…</span> : null}
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         <WorkbenchTicketSourceBadge
@@ -949,7 +966,7 @@ function renderWorkbenchBoardTicketMetadata(
         </TooltipPopup>
       </Tooltip>
       {summary.statusLabel ? (
-        <p className="text-2xs text-muted-foreground" role="status">
+        <p className="text-2xs text-foreground" role="status">
           {summary.statusLabel}
         </p>
       ) : null}
@@ -1006,25 +1023,28 @@ function renderWorkbenchBoardTicketThreadAction(
   return (
     <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-2">
       {renderWorkbenchBoardTicketThreadStatus(presentation)}
-      <Button
-        aria-busy={threadActionPending}
-        aria-label={`${threadActionLabel ?? thread.actionLabel} for ${ticket.title}`}
-        data-workbench-no-drag=""
-        className="relative z-10"
-        disabled={
-          pending ||
-          pendingTicketIds.has(ticket.id) ||
-          (board.threadRestoreDisabled === true && thread.state === "archived") ||
-          (board.readOnly === true && (thread.state === "unassigned" || thread.state === "missing"))
-        }
-        onClick={() => onOpenThread(ticket, assignment?.threadId)}
-        size="xs"
-        variant={thread.state === "unassigned" || thread.state === "missing" ? "default" : "ghost"}
-      >
-        {threadActionPending ? <LoaderCircleIcon className="animate-spin" /> : null}
-        {threadActionLabel ?? thread.actionLabel}
-        {threadActionPending ? null : <ArrowRightIcon />}
-      </Button>
+      {ticket.status !== "done" || (thread.state !== "unassigned" && thread.state !== "missing") ? (
+        <Button
+          aria-busy={threadActionPending}
+          aria-label={`${threadActionLabel ?? thread.actionLabel} for ${ticket.title}`}
+          data-workbench-no-drag=""
+          className="relative z-10"
+          disabled={
+            pending ||
+            pendingTicketIds.has(ticket.id) ||
+            (board.threadRestoreDisabled === true && thread.state === "archived") ||
+            (board.readOnly === true &&
+              (thread.state === "unassigned" || thread.state === "missing"))
+          }
+          onClick={() => onOpenThread(ticket, assignment?.threadId)}
+          size="xs"
+          variant="ghost"
+        >
+          {threadActionPending ? <LoaderCircleIcon className="animate-spin" /> : null}
+          {threadActionLabel ?? thread.actionLabel}
+          {threadActionPending ? null : <ArrowRightIcon />}
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -1041,6 +1061,7 @@ function useWorkbenchBoardDrag({
   onMove,
   columns,
   swimlanes,
+  wideBoard,
 }: Pick<
   WorkbenchTicketBoardProps,
   | "projectId"
@@ -1053,14 +1074,15 @@ function useWorkbenchBoardDrag({
   | "onMove"
   | "readOnly"
 > &
-  Pick<ReturnType<typeof useWorkbenchBoardData>, "columns" | "swimlanes">) {
+  Pick<ReturnType<typeof useWorkbenchBoardData>, "columns" | "swimlanes"> & {
+    wideBoard: boolean;
+  }) {
   const { view, setView } = useWorkbenchBoardView({ environmentId, projectId });
   const selectedColumnId = view.mobileColumnId;
   const setSelectedColumnId = (mobileColumnId: string) => setView({ mobileColumnId });
   const visibleColumnId = columns.some((column) => column.id === selectedColumnId)
     ? selectedColumnId
     : columns[0]?.id;
-  const wideBoard = useMediaQuery("md");
   const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 6 } }));
   const [activeTicketId, setActiveTicketId] = useState<WorkbenchTicketId | null>(null);
   const [jiraDrop, setJiraDrop] = useState<{
@@ -1151,7 +1173,7 @@ function renderWorkbenchBoardTicketThreadStatus(
   const { ticket, board, nativeStatus, thread } = presentation;
   const { threadCounts } = board;
   return (
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+    <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-foreground">
       {nativeStatus ? (
         <ThreadExecutionStatus
           status={nativeStatus.presentation}
@@ -1168,7 +1190,7 @@ function renderWorkbenchBoardTicketThreadStatus(
         </>
       )}
       {(threadCounts.get(ticket.id) ?? 0) > 1 ? (
-        <span className="text-muted-foreground/60">· {threadCounts.get(ticket.id)} Threads</span>
+        <span className="text-foreground">· {threadCounts.get(ticket.id)} Threads</span>
       ) : null}
     </div>
   );
@@ -1182,7 +1204,7 @@ function WorkbenchBoardRepositoryFilter({
 }: Pick<ReturnType<typeof useWorkbenchBoardData>, "repositoryId" | "setRepositoryId"> &
   Pick<WorkbenchTicketBoardProps, "repositoryProjectIds" | "repositoriesById">) {
   return (
-    <div className="w-full min-w-0 @min-[42rem]:w-48">
+    <div className="w-full min-w-0 @min-[42rem]/board-controls:w-48">
       <Select
         value={repositoryId ?? "all-repositories"}
         onValueChange={(value) => {
@@ -1336,12 +1358,11 @@ function renderWorkbenchBoardSearch({
 }: Pick<WorkbenchTicketBoardProps, "jiraConnected"> &
   Pick<ReturnType<typeof useWorkbenchBoardData>, "search">) {
   return (
-    <div className="relative min-w-0 flex-1">
-      <SearchIcon
-        aria-hidden
-        className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-      />
-      <Input
+    <InputGroup>
+      <InputGroupAddon>
+        <SearchIcon aria-hidden />
+      </InputGroupAddon>
+      <InputGroupInput
         aria-label="Search tickets"
         placeholder={jiraConnected ? "Search by title or Jira key…" : "Search by title…"}
         value={search.text}
@@ -1352,20 +1373,20 @@ function renderWorkbenchBoardSearch({
             search.setText("");
           }
         }}
-        className="pr-9 pl-9"
       />
       {search.text ? (
-        <Button
-          aria-label="Clear ticket search"
-          variant="ghost"
-          size="icon-xs"
-          className="absolute top-1/2 right-1 -translate-y-1/2"
-          onClick={() => search.setText("")}
-        >
-          <XIcon />
-        </Button>
+        <InputGroupAddon align="inline-end">
+          <Button
+            aria-label="Clear ticket search"
+            variant="ghost"
+            size="icon-xs"
+            onClick={() => search.setText("")}
+          >
+            <XIcon />
+          </Button>
+        </InputGroupAddon>
       ) : null}
-    </div>
+    </InputGroup>
   );
 }
 
@@ -1408,16 +1429,16 @@ function renderWorkbenchBoardControls({
   return (
     <>
       {" "}
-      <div className="@container flex shrink-0 flex-col gap-2 border-b border-border/60 px-3 py-2 sm:px-4">
+      <div className="@container/board-controls flex shrink-0 flex-col gap-2 border-b border-border/60 px-3 py-2 sm:px-4">
         <div className="min-w-0 max-w-full overflow-x-auto">
           {renderWorkbenchAttentionModeControl(attentionMode, setAttentionMode)}
         </div>
         <div
           aria-label="Board filters and grouping"
-          className="grid min-w-0 grid-cols-1 items-center gap-2 @min-[22rem]:grid-cols-[minmax(0,1fr)_auto] @min-[42rem]:grid-cols-[minmax(0,1fr)_auto_auto]"
+          className="grid min-w-0 grid-cols-1 items-center gap-2 @min-[22rem]/board-controls:grid-cols-[minmax(0,1fr)_auto] @min-[42rem]/board-controls:grid-cols-[minmax(0,1fr)_auto_auto]"
           role="group"
         >
-          <div className="min-w-0 @min-[22rem]:col-span-2 @min-[42rem]:col-span-1">
+          <div className="min-w-0 @min-[22rem]/board-controls:col-span-2 @min-[42rem]/board-controls:col-span-1">
             {renderWorkbenchBoardSearch({ jiraConnected, search })}
           </div>
           <WorkbenchBoardRepositoryFilter
@@ -1447,7 +1468,7 @@ function renderWorkbenchBoardControls({
         setRepositoryId,
         setAttentionMode,
       })}
-      <div className="shrink-0 overflow-x-auto border-b border-border/60 px-3 py-2 md:hidden">
+      <div className="shrink-0 overflow-x-auto border-b border-border/60 px-3 py-2 @min-[48rem]/board:hidden">
         <ToggleGroup
           aria-label="Board columns"
           value={visibleColumnId ? [visibleColumnId] : []}
@@ -1459,7 +1480,7 @@ function renderWorkbenchBoardControls({
           {columns.map((column) => (
             <Toggle key={column.id} value={column.id} className="shrink-0">
               {column.title}
-              <span className="text-muted-foreground tabular-nums">{column.tickets.length}</span>
+              <span className="text-foreground tabular-nums">{column.tickets.length}</span>
             </Toggle>
           ))}
         </ToggleGroup>

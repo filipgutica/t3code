@@ -765,7 +765,7 @@ export function WorkbenchCreateTicketDestination({
         <WorkbenchInlineError message="Update this environment before creating local-only Tickets." />
       ) : null}
       {creationBinding && !creationBinding.active ? (
-        <WorkbenchInlineError message="Resume the Jira connection before creating a Ticket." />
+        <WorkbenchInlineError message="Resume Jira sync before creating a Ticket." />
       ) : null}
       {creationBinding ? (
         <WorkbenchJiraSprintSelect pending={pending} {...sprintSelection} />
@@ -1328,6 +1328,45 @@ function WorkbenchTicketDetailController({
         }}
       >
         <div className="mx-auto grid min-h-0 min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-6 @min-[64rem]/ticket:h-full @min-[64rem]/ticket:grid-cols-[minmax(0,1fr)_22rem] @min-[64rem]/ticket:items-stretch @min-[64rem]/ticket:gap-8">
+          <div
+            id="workbench-ticket-reading"
+            role="region"
+            aria-label="Ticket description and summary"
+            tabIndex={0}
+            className="min-h-0 min-w-0 scroll-mt-4 space-y-6 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring @min-[40rem]/ticket:scroll-mt-6 @min-[64rem]/ticket:col-start-1 @min-[64rem]/ticket:row-start-1 @min-[64rem]/ticket:overflow-y-auto @min-[64rem]/ticket:overscroll-y-contain @min-[64rem]/ticket:pr-2 @min-[64rem]/ticket:pb-2"
+          >
+            {error ? <WorkbenchInlineError message={error} /> : null}
+            <WorkbenchTicketDescriptionPanel
+              presentation={{
+                jiraFieldsManaged: jiraFieldsManaged,
+                editing: editing,
+                isArchived: isArchived,
+                pending: pending,
+                startEditing: startEditing,
+                projectedContent: projectedContent,
+                draft: draft,
+                cancelEditing: cancelEditing,
+                dirty: dirty,
+                displayedMarkdown: displayedMarkdown,
+              }}
+              actions={{ setDraft: setDraft }}
+              context={{ environmentId: environmentId }}
+              records={{ ticket: ticket }}
+            />
+            <WorkbenchTicketSummaryPanel
+              key={`${ticket.id}:${summaryFailedEmpty}`}
+              summaryHeaderLabel={summaryHeaderLabel}
+              initiallyCollapsed={summaryFailedEmpty}
+              hasUnsavedChanges={hasUnsavedChanges}
+              summary={summary}
+              ticket={ticket}
+              displayedTitle={displayedTitle}
+              pending={pending}
+              isArchived={isArchived}
+              onRegenerateSummary={onRegenerateSummary}
+            />
+          </div>
+
           <aside
             id="workbench-ticket-work"
             aria-label="Ticket work"
@@ -1469,45 +1508,6 @@ function WorkbenchTicketDetailController({
               records={{ ticket: ticket, actionableTicket: actionableTicket }}
             />
           </aside>
-
-          <div
-            id="workbench-ticket-reading"
-            role="region"
-            aria-label="Ticket description and summary"
-            tabIndex={0}
-            className="min-h-0 min-w-0 scroll-mt-4 space-y-6 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring @min-[40rem]/ticket:scroll-mt-6 @min-[64rem]/ticket:col-start-1 @min-[64rem]/ticket:row-start-1 @min-[64rem]/ticket:overflow-y-auto @min-[64rem]/ticket:overscroll-y-contain @min-[64rem]/ticket:pr-2 @min-[64rem]/ticket:pb-2"
-          >
-            {error ? <WorkbenchInlineError message={error} /> : null}
-            <WorkbenchTicketDescriptionPanel
-              presentation={{
-                jiraFieldsManaged: jiraFieldsManaged,
-                editing: editing,
-                isArchived: isArchived,
-                pending: pending,
-                startEditing: startEditing,
-                projectedContent: projectedContent,
-                draft: draft,
-                cancelEditing: cancelEditing,
-                dirty: dirty,
-                displayedMarkdown: displayedMarkdown,
-              }}
-              actions={{ setDraft: setDraft }}
-              context={{ environmentId: environmentId }}
-              records={{ ticket: ticket }}
-            />
-            <WorkbenchTicketSummaryPanel
-              key={`${ticket.id}:${summaryFailedEmpty}`}
-              summaryHeaderLabel={summaryHeaderLabel}
-              initiallyCollapsed={summaryFailedEmpty}
-              hasUnsavedChanges={hasUnsavedChanges}
-              summary={summary}
-              ticket={ticket}
-              displayedTitle={displayedTitle}
-              pending={pending}
-              isArchived={isArchived}
-              onRegenerateSummary={onRegenerateSummary}
-            />
-          </div>
         </div>
       </form>
       <WorkbenchTicketDeleteConfirmation
@@ -1919,7 +1919,6 @@ function WorkbenchThreadSettlementButton({
           disabled={disabled || pending}
           onClick={onClick}
           size="icon-xs"
-          title={explanation}
           type="button"
           variant="ghost"
         >
@@ -3545,17 +3544,23 @@ function WorkbenchTicketPrimaryThread({
           actions={
             assignment && displayedThread ? (
               <>
-                <Button
-                  aria-label={`Unlink Thread ${displayedThread.title}`}
-                  disabled={pending || threadMutationsDisabled || isArchived}
-                  onClick={() => onUnlinkThread(assignment.threadId)}
-                  size="icon-xs"
-                  title="Unlink Thread from Ticket"
-                  type="button"
-                  variant="ghost"
-                >
-                  <UnlinkIcon />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        aria-label={`Unlink Thread ${displayedThread.title}`}
+                        disabled={pending || threadMutationsDisabled || isArchived}
+                        onClick={() => onUnlinkThread(assignment.threadId)}
+                        size="icon-xs"
+                        type="button"
+                        variant="ghost"
+                      />
+                    }
+                  >
+                    <UnlinkIcon />
+                  </TooltipTrigger>
+                  <TooltipPopup>Unlink Thread from Ticket</TooltipPopup>
+                </Tooltip>
                 {supportsSettlement ? (
                   <WorkbenchThreadSettlementButton
                     archived={archivedThread !== undefined}
@@ -3571,16 +3576,23 @@ function WorkbenchTicketPrimaryThread({
                     title={displayedThread.title}
                   />
                 ) : null}
-                <Button
-                  aria-label={`Delete Thread ${displayedThread.title}`}
-                  disabled={pending || threadMutationsDisabled || isArchived}
-                  onClick={() => onDeleteThread(assignment.threadId)}
-                  size="icon-xs"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Trash2Icon />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        aria-label={`Delete Thread ${displayedThread.title}`}
+                        disabled={pending || threadMutationsDisabled || isArchived}
+                        onClick={() => onDeleteThread(assignment.threadId)}
+                        size="icon-xs"
+                        type="button"
+                        variant="ghost"
+                      />
+                    }
+                  >
+                    <Trash2Icon />
+                  </TooltipTrigger>
+                  <TooltipPopup>Delete Thread</TooltipPopup>
+                </Tooltip>
               </>
             ) : null
           }
@@ -4200,17 +4212,23 @@ function WorkbenchTicketSettledThreadRow({
         title={settledThread.title}
         actions={
           <>
-            <Button
-              aria-label={`Unlink Thread ${settledThread.title}`}
-              disabled={mutationDisabled}
-              onClick={() => onUnlinkThread(settledAssignment.threadId)}
-              size="icon-xs"
-              title="Unlink Thread from Ticket"
-              type="button"
-              variant="ghost"
-            >
-              <UnlinkIcon />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    aria-label={`Unlink Thread ${settledThread.title}`}
+                    disabled={mutationDisabled}
+                    onClick={() => onUnlinkThread(settledAssignment.threadId)}
+                    size="icon-xs"
+                    type="button"
+                    variant="ghost"
+                  />
+                }
+              >
+                <UnlinkIcon />
+              </TooltipTrigger>
+              <TooltipPopup>Unlink Thread from Ticket</TooltipPopup>
+            </Tooltip>
             {supportsSettlement ? (
               <WorkbenchThreadSettlementButton
                 archived={settledThread.archivedAt !== null}
@@ -4221,16 +4239,23 @@ function WorkbenchTicketSettledThreadRow({
                 title={settledThread.title}
               />
             ) : null}
-            <Button
-              aria-label={`Delete Thread ${settledThread.title}`}
-              disabled={mutationDisabled}
-              onClick={() => onDeleteThread(settledAssignment.threadId)}
-              size="icon-xs"
-              type="button"
-              variant="ghost"
-            >
-              <Trash2Icon />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    aria-label={`Delete Thread ${settledThread.title}`}
+                    disabled={mutationDisabled}
+                    onClick={() => onDeleteThread(settledAssignment.threadId)}
+                    size="icon-xs"
+                    type="button"
+                    variant="ghost"
+                  />
+                }
+              >
+                <Trash2Icon />
+              </TooltipTrigger>
+              <TooltipPopup>Delete Thread</TooltipPopup>
+            </Tooltip>
           </>
         }
       />
@@ -5239,17 +5264,23 @@ function WorkbenchActiveThreadActions({
 }) {
   return (
     <>
-      <Button
-        aria-label={`Unlink Thread ${displayedActiveThread.title}`}
-        disabled={pending || isArchived}
-        onClick={() => onUnlinkThread(activeAssignment.threadId)}
-        size="icon-xs"
-        title="Unlink Thread from Ticket"
-        type="button"
-        variant="ghost"
-      >
-        <UnlinkIcon />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              aria-label={`Unlink Thread ${displayedActiveThread.title}`}
+              disabled={pending || isArchived}
+              onClick={() => onUnlinkThread(activeAssignment.threadId)}
+              size="icon-xs"
+              type="button"
+              variant="ghost"
+            />
+          }
+        >
+          <UnlinkIcon />
+        </TooltipTrigger>
+        <TooltipPopup>Unlink Thread from Ticket</TooltipPopup>
+      </Tooltip>
       {supportsSettlement ? (
         <WorkbenchThreadSettlementButton
           archived={archivedActiveThread !== undefined}
@@ -5260,16 +5291,23 @@ function WorkbenchActiveThreadActions({
           title={displayedActiveThread.title}
         />
       ) : null}
-      <Button
-        aria-label={`Delete Thread ${displayedActiveThread.title}`}
-        disabled={pending || isArchived}
-        onClick={() => onDeleteThread(activeAssignment.threadId)}
-        size="icon-xs"
-        type="button"
-        variant="ghost"
-      >
-        <Trash2Icon />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              aria-label={`Delete Thread ${displayedActiveThread.title}`}
+              disabled={pending || isArchived}
+              onClick={() => onDeleteThread(activeAssignment.threadId)}
+              size="icon-xs"
+              type="button"
+              variant="ghost"
+            />
+          }
+        >
+          <Trash2Icon />
+        </TooltipTrigger>
+        <TooltipPopup>Delete Thread</TooltipPopup>
+      </Tooltip>
     </>
   );
 }
@@ -5301,17 +5339,23 @@ function WorkbenchHistoricalThreadActions({
 }) {
   return (
     <>
-      <Button
-        aria-label={`Unlink Thread ${displayedHistoricalThread.title}`}
-        disabled={pending || isArchived}
-        onClick={() => onUnlinkThread(historicalAssignment.threadId)}
-        size="icon-xs"
-        title="Unlink Thread from Ticket"
-        type="button"
-        variant="ghost"
-      >
-        <UnlinkIcon />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              aria-label={`Unlink Thread ${displayedHistoricalThread.title}`}
+              disabled={pending || isArchived}
+              onClick={() => onUnlinkThread(historicalAssignment.threadId)}
+              size="icon-xs"
+              type="button"
+              variant="ghost"
+            />
+          }
+        >
+          <UnlinkIcon />
+        </TooltipTrigger>
+        <TooltipPopup>Unlink Thread from Ticket</TooltipPopup>
+      </Tooltip>
       {supportsSettlement ? (
         <WorkbenchThreadSettlementButton
           archived={historicalArchivedThread !== undefined}
@@ -5322,16 +5366,23 @@ function WorkbenchHistoricalThreadActions({
           title={displayedHistoricalThread.title}
         />
       ) : null}
-      <Button
-        aria-label={`Delete Thread ${displayedHistoricalThread.title}`}
-        disabled={pending || isArchived}
-        onClick={() => onDeleteThread(historicalAssignment.threadId)}
-        size="icon-xs"
-        type="button"
-        variant="ghost"
-      >
-        <Trash2Icon />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              aria-label={`Delete Thread ${displayedHistoricalThread.title}`}
+              disabled={pending || isArchived}
+              onClick={() => onDeleteThread(historicalAssignment.threadId)}
+              size="icon-xs"
+              type="button"
+              variant="ghost"
+            />
+          }
+        >
+          <Trash2Icon />
+        </TooltipTrigger>
+        <TooltipPopup>Delete Thread</TooltipPopup>
+      </Tooltip>
     </>
   );
 }

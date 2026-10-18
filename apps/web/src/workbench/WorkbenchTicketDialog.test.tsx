@@ -225,7 +225,7 @@ describe("Workbench Ticket creation destination", () => {
 
       await select("Create in", "Local only");
       expect(document.querySelector('[aria-label="Jira sprint"]')).toBeNull();
-      expect(document.body.textContent).not.toContain("Resume the Jira connection");
+      expect(document.body.textContent).not.toContain("Resume Jira sync");
       await submit();
       expect(onCreate).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({
@@ -314,7 +314,7 @@ describe("publishing a local Ticket to Jira", () => {
 
   it("blocks publishing a paused connection and displays the recovery action", async () => {
     await renderPublication({ binding: { ...binding, active: false, selectedSprints: [] } });
-    expect(document.body.textContent).toContain("Resume the Jira connection before publishing");
+    expect(document.body.textContent).toContain("Resume Jira sync before publishing");
     expect(button("Publish to Jira").disabled).toBe(true);
     await submit("publish-workbench-ticket");
     expect(onPublish).not.toHaveBeenCalled();

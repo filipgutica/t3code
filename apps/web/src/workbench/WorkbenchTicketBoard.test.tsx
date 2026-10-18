@@ -1,5 +1,7 @@
+// @vitest-environment jsdom
+
 import { act, cloneElement, type ComponentProps, type ReactElement, type ReactNode } from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import { create as createRenderer, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { DragEndEvent } from "@dnd-kit/core";
 import {
@@ -14,6 +16,21 @@ import { Atom } from "effect/reactivity";
 import { ToggleGroup } from "../components/ui/toggle-group";
 
 vi.mock("../hooks/useMediaQuery", () => ({ useMediaQuery: () => true }));
+let boardWidth = 1024;
+let resizeBoard = () => {};
+vi.mock("../lib/observeResize", () => ({
+  observeResize: (_element: Element, callback: () => void) => {
+    resizeBoard = callback;
+    return () => {};
+  },
+}));
+const create: typeof createRenderer = (element) =>
+  createRenderer(element, {
+    createNodeMock: () =>
+      Object.defineProperty(document.createElement("div"), "clientWidth", {
+        get: () => boardWidth,
+      }),
+  });
 import { Select } from "../components/ui/select";
 import type { Project } from "../types";
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
@@ -118,6 +135,8 @@ const props: ComponentProps<typeof WorkbenchTicketBoard> = {
 describe("Workbench Board view", () => {
   let renderer: ReactTestRenderer;
   beforeEach(() => {
+    boardWidth = 1024;
+    document.documentElement.style.fontSize = "16px";
     vi.useFakeTimers();
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   });
@@ -127,41 +146,100 @@ describe("Workbench Board view", () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
-  it("rejects a drag completed after archive and permits it after restore", () => {
-    const onMove = vi.fn();
-    const active = props.tickets[0]!;
-    const drop: DragEndEvent = {
-      activatorEvent: new Event("mousedown"),
-      active: {
-        id: active.id,
-        data: { current: undefined },
-        rect: { current: { initial: null, translated: null } },
-      },
-      over: {
-        id: JSON.stringify([null, "in_progress"]),
-        data: { current: undefined },
-        rect: { top: 0, left: 0, right: 100, bottom: 100, width: 100, height: 100 },
-        disabled: false,
-      },
-      collisions: [],
-      delta: { x: 0, y: 0 },
-    };
+  it.each([12, 16, 20])(
+    "gates dragging at 48rem with a %ipx root and respects archive",
+    async (rootFontSize) => {
+      document.documentElement.style.fontSize = `${rootFontSize}px`;
+      const onMove = vi.fn();
+      const active = props.tickets[0]!;
+      const drop: DragEndEvent = {
+        activatorEvent: new Event("mousedown"),
+        active: {
+          id: active.id,
+          data: { current: undefined },
+          rect: { current: { initial: null, translated: null } },
+        },
+        over: {
+          id: JSON.stringify([null, "in_progress"]),
+          data: { current: undefined },
+          rect: { top: 0, left: 0, right: 100, bottom: 100, width: 100, height: 100 },
+          disabled: false,
+        },
+        collisions: [],
+        delta: { x: 0, y: 0 },
+      };
+      act(() => {
+        renderer = create(<WorkbenchTicketBoard {...props} onMove={onMove} />);
+      });
+      const dragContext = () =>
+        renderer.root.find(
+          (node) =>
+            typeof node.props.onDragStart === "function" &&
+            typeof node.props.onDragEnd === "function",
+        );
+      act(() => dragContext().props.onDragStart(drop));
+      act(() => renderer.update(<WorkbenchTicketBoard {...props} onMove={onMove} readOnly />));
+      act(() => dragContext().props.onDragEnd(drop));
+      expect(onMove).not.toHaveBeenCalled();
+      act(() => renderer.update(<WorkbenchTicketBoard {...props} onMove={onMove} />));
+      act(() => dragContext().props.onDragEnd(drop));
+      expect(onMove).toHaveBeenCalledExactlyOnceWith(active, "in_progress");
+      onMove.mockClear();
+      act(() => {
+        boardWidth = 48 * rootFontSize - 1;
+        resizeBoard();
+      });
+      act(() => dragContext().props.onDragEnd(drop));
+      expect(onMove).not.toHaveBeenCalled();
+      act(() => {
+        boardWidth = 48 * rootFontSize;
+        resizeBoard();
+      });
+      act(() => dragContext().props.onDragEnd(drop));
+      expect(onMove).toHaveBeenCalledExactlyOnceWith(active, "in_progress");
+      onMove.mockClear();
+      await act(async () => {
+        document.documentElement.style.fontSize = `${rootFontSize + 1}px`;
+      });
+      act(() => dragContext().props.onDragEnd(drop));
+      expect(onMove).not.toHaveBeenCalled();
+      await act(async () => {
+        document.documentElement.style.fontSize = `${rootFontSize}px`;
+      });
+      act(() => dragContext().props.onDragEnd(drop));
+      expect(onMove).toHaveBeenCalledExactlyOnceWith(active, "in_progress");
+    },
+  );
+  it("offers Thread creation for unfinished cards and hides it after completion", () => {
+    const onOpenThread = vi.fn();
+    const active = ticket("Unassigned");
     act(() => {
-      renderer = create(<WorkbenchTicketBoard {...props} onMove={onMove} />);
-    });
-    const dragContext = () =>
-      renderer.root.find(
-        (node) =>
-          typeof node.props.onDragStart === "function" &&
-          typeof node.props.onDragEnd === "function",
+      renderer = create(
+        <WorkbenchTicketBoard {...props} tickets={[active]} onOpenThread={onOpenThread} />,
       );
-    act(() => dragContext().props.onDragStart(drop));
-    act(() => renderer.update(<WorkbenchTicketBoard {...props} onMove={onMove} readOnly />));
-    act(() => dragContext().props.onDragEnd(drop));
-    expect(onMove).not.toHaveBeenCalled();
-    act(() => renderer.update(<WorkbenchTicketBoard {...props} onMove={onMove} />));
-    act(() => dragContext().props.onDragEnd(drop));
-    expect(onMove).toHaveBeenCalledExactlyOnceWith(active, "in_progress");
+    });
+    const createThread = () =>
+      renderer.root
+        .findAllByType("button")
+        .filter((node) => node.props["aria-label"] === "Create Thread for Unassigned");
+    act(() => createThread()[0]!.props.onClick());
+    expect(onOpenThread).toHaveBeenCalledExactlyOnceWith(active, undefined);
+    act(() =>
+      renderer.update(
+        <WorkbenchTicketBoard
+          {...props}
+          tickets={[{ ...active, status: "done" }]}
+          onOpenThread={onOpenThread}
+        />,
+      ),
+    );
+    expect(createThread()).toHaveLength(0);
+    act(() =>
+      renderer.update(
+        <WorkbenchTicketBoard {...props} tickets={[active]} onOpenThread={onOpenThread} />,
+      ),
+    );
+    expect(createThread()).toHaveLength(1);
   });
   it("keeps the search and matching Tickets when returning from Ticket detail", () => {
     act(() => {

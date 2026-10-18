@@ -26,8 +26,8 @@ const openJiraDialog = async (page: Page, demo: Demo) => {
   await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=demo-jira"));
   await expect(page.getByRole("heading", { name: "Orbit Jira", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Workspace actions" }).click();
-  await page.getByRole("menuitem", { name: "Configure Jira sprint mirror", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Jira sprint mirror", exact: true });
+  await page.getByRole("menuitem", { name: "Configure Jira sync", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Jira sync", exact: true });
   await expect(dialog).toBeVisible();
   return dialog;
 };
@@ -66,7 +66,7 @@ const saveBindingSprints = async ({
     const createdFuture = sprintCheckbox(dialog, createdFutureName);
     if (await createdFuture.isVisible()) await createdFuture.setChecked(false);
   }
-  await dialog.getByRole("button", { name: "Save mirror", exact: true }).click();
+  await dialog.getByRole("button", { name: "Save Jira sync", exact: true }).click();
   await expect(dialog).not.toBeVisible();
 };
 
@@ -138,7 +138,7 @@ test.describe("Jira multi-sprint selection and client conflicts @live", () => {
       const futureCheckbox = sprintCheckbox(dialog, futureSprintName);
       await expect(futureCheckbox).toBeVisible();
       await futureCheckbox.check();
-      await dialog.getByRole("button", { name: "Save mirror", exact: true }).click();
+      await dialog.getByRole("button", { name: "Save Jira sync", exact: true }).click();
       await expect(dialog).not.toBeVisible();
 
       await expect
@@ -212,7 +212,9 @@ test.describe("Jira multi-sprint selection and client conflicts @live", () => {
         })
         .uncheck();
       await sprintCheckbox(dialogAfterDeselect, futureSprintName).check();
-      await dialogAfterDeselect.getByRole("button", { name: "Save mirror", exact: true }).click();
+      await dialogAfterDeselect
+        .getByRole("button", { name: "Save Jira sync", exact: true })
+        .click();
       await expect(dialogAfterDeselect).not.toBeVisible();
       await expect
         .poll(async () => {

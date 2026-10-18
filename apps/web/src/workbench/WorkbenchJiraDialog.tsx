@@ -1,3 +1,5 @@
+import { formatRelativeTimeLabel } from "../timestampFormat";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { WorkbenchRepositorySelectOptions } from "./WorkbenchRepositorySelectOptions";
 import {
   ProjectId,
@@ -14,7 +16,7 @@ import {
   type WorkbenchTicketStatus,
 } from "@t3tools/contracts";
 import { ArrowLeftIcon, ExternalLinkIcon, LinkIcon } from "lucide-react";
-import { useState, type Dispatch, type SetStateAction, type ReactNode } from "react";
+import { useRef, useState, type Dispatch, type SetStateAction, type ReactNode } from "react";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -84,7 +86,7 @@ export interface WorkbenchJiraUpdateDraft {
 }
 
 const formatLastSynced = (value: string | null) =>
-  value === null ? "Not synced yet" : `Last synced ${new Date(value).toLocaleString()}`;
+  value === null ? "Not synced yet" : `Last synced ${formatRelativeTimeLabel(value)}`;
 
 export function WorkbenchJiraDialog({
   open,
@@ -269,7 +271,7 @@ function JiraConfigureFields({
 
       {saving ? (
         <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
-          Saving the mirror and importing Jira tickets…
+          Saving Jira sync and importing Jira tickets…
         </p>
       ) : null}
 
@@ -372,7 +374,16 @@ function JiraExistingBindingPanel({
             .join(" · ")}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          {formatLastSynced(existingBinding.lastSyncedAt)}
+          <Tooltip>
+            <TooltipTrigger render={<span tabIndex={0} />}>
+              {formatLastSynced(existingBinding.lastSyncedAt)}
+            </TooltipTrigger>
+            <TooltipPopup>
+              {existingBinding.lastSyncedAt
+                ? new Date(existingBinding.lastSyncedAt).toLocaleString()
+                : "Not synced yet"}
+            </TooltipPopup>
+          </Tooltip>
           {existingBinding.followActiveSprint
             ? " · Following selected sprints"
             : " · Pinned sprints"}
@@ -398,7 +409,7 @@ function JiraExistingBindingPanel({
           onClick={() => void onSetActive(existingBinding, !existingBinding.active)}
           variant="outline"
         >
-          {existingBinding.active ? "Pause mirror" : "Resume mirror"}
+          {existingBinding.active ? "Pause Jira sync" : "Resume Jira sync"}
         </Button>
         <Button
           disabled={pending || saving}
@@ -838,7 +849,7 @@ function JiraStatusMappings({
       <p className="text-xs text-muted-foreground">
         {boardMode === "mirror_jira"
           ? "Use Jira board column names and order. Agent activity stays a separate badge."
-          : "Map Jira states to Todo, In Progress, or Done. Agent activity does not change Ticket status."}
+          : "Map Jira states to To Do, In Progress, or Done. Agent activity does not change Ticket status."}
       </p>
       {boardMode === "mapped" ? (
         <div className="divide-y divide-border overflow-hidden rounded-lg border border-border">
@@ -901,11 +912,13 @@ function useJiraDialogState({
   JiraDialogProps,
   "existingBinding" | "connections" | "linkedProjects" | "localTickets" | "localEpics"
 >) {
+  const popupRef = useRef<HTMLDivElement>(null);
   const projectSelection = useJiraProjectSelection({ existingBinding, connections });
   const sprintConfiguration = useJiraSprintConfiguration({ existingBinding });
   const repositorySelection = useJiraRepositorySelection({ existingBinding, linkedProjects });
   const migrationConfirmation = useJiraMigrationConfirmation({ localTickets, localEpics });
   return {
+    popupRef,
     ...projectSelection,
     ...sprintConfiguration,
     ...repositorySelection,
@@ -1147,7 +1160,7 @@ function JiraConfigureActions({
         }
         onClick={() => void save()}
       >
-        {saving ? "Syncing with Jira…" : existingBinding ? "Save mirror" : "Create mirror"}
+        {saving ? "Syncing with Jira…" : existingBinding ? "Save Jira sync" : "Create Jira sync"}
       </Button>
     </div>
   );
@@ -1176,6 +1189,7 @@ function JiraDialogController({
     discovery;
   const { onCreate, onUpdate, onSetActive } = commands;
   const {
+    popupRef,
     step,
     setStep,
     connectionId,
@@ -1368,9 +1382,9 @@ function JiraDialogController({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className="sm:max-w-xl">
+      <DialogPopup className="sm:max-w-xl" ref={popupRef} initialFocus={popupRef}>
         <DialogHeader>
-          <DialogTitle>{existingBinding ? "Jira sprint mirror" : "Connect Jira"}</DialogTitle>
+          <DialogTitle>{existingBinding ? "Jira sync" : "Connect Jira"}</DialogTitle>
           <DialogDescription>
             Mirror your assigned Tickets from selected Jira board sprints. Descriptions and progress
             sync both ways; repositories and Agent Threads stay in Workbench.

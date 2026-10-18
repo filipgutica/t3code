@@ -172,7 +172,7 @@ function PublicationNotices({
       ) : null}
       {!connectionActive ? (
         <p role="alert" className="text-sm text-destructive">
-          Resume the Jira connection before publishing this Ticket.
+          Resume Jira sync before publishing this Ticket.
         </p>
       ) : null}
     </>
