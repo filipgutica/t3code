@@ -441,3 +441,25 @@ button[data-workbench-sidebar-disclosure] {
     min-height: 44px;
   }
 }
+
+@keyframes workbench-sidebar-reveal {
+  0%,
+  35% {
+    outline-color: var(--ring);
+  }
+  100% {
+    outline-color: transparent;
+  }
+}
+
+[data-workbench-sidebar-surface][data-workbench-sidebar-reveal] {
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  animation: workbench-sidebar-reveal 750ms ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-workbench-sidebar-surface][data-workbench-sidebar-reveal] {
+    animation: none;
+  }
+}

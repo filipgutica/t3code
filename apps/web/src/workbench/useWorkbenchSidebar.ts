@@ -12,11 +12,12 @@ export function useWorkbenchSidebar(pathname: string) {
     strict: false,
     select: (params) => resolveThreadRouteRef(params),
   });
-  const snapshot = useEnvironmentQuery(
+  const query = useEnvironmentQuery(
     routeThreadRef === null || search.workbench !== true
       ? null
       : workbenchEnvironment.snapshot({ environmentId: routeThreadRef.environmentId, input: {} }),
-  ).data;
+  );
+  const snapshot = query.data;
   const threadContext =
     routeThreadRef === null
       ? null
@@ -31,12 +32,16 @@ export function useWorkbenchSidebar(pathname: string) {
         }
       : undefined;
 
+  // A new Assignment can still be refreshing when navigation reaches its Thread.
+  // Keep the scroll container mounted until that context query settles.
   return {
     isOnWorkbench: shouldShowWorkbenchSidebar({
       pathname,
       search,
       hasTicketContext: context !== undefined,
+      isContextPending: query.isPending,
     }),
     context,
+    routeEnvironmentId: routeThreadRef?.environmentId,
   };
 }

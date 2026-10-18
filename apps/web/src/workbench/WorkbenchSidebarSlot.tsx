@@ -16,14 +16,14 @@ export function WorkbenchSidebarSlot({
   isElectron: boolean;
   children: ReactNode;
 }) {
-  const { isOnWorkbench, context } = useWorkbenchSidebar(pathname);
+  const { isOnWorkbench, context, routeEnvironmentId } = useWorkbenchSidebar(pathname);
   if (!isOnWorkbench) return children;
 
   return (
     <>
       <SidebarChromeHeader isElectron={isElectron} />
       <Suspense fallback={null}>
-        <WorkbenchSidebar context={context} />
+        <WorkbenchSidebar context={context} routeEnvironmentId={routeEnvironmentId} />
       </Suspense>
     </>
   );
