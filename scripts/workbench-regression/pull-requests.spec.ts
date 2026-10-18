@@ -67,10 +67,8 @@ const requireDemoLinks = async (demo: Demo) => {
 const linkPullRequest = async (page: Page, url: string) => {
   await page.getByRole("button", { name: /^Link(?: pull request)?$/, exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Link pull request", exact: true });
-  await dialog.getByRole("searchbox", { name: "Search pull requests" }).fill(url);
-  await expect(dialog.getByRole("textbox", { name: "Pull request URL or number" })).toHaveValue(
-    url,
-  );
+  // Native Threads use upstream's dialog: one unlabeled URL-or-number input.
+  await dialog.getByPlaceholder("Pull request URL or #42").fill(url);
   await dialog.getByRole("button", { name: "Link", exact: true }).click();
   await expect(dialog).not.toBeVisible();
 };
