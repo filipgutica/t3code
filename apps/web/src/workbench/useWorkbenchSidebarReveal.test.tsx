@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, useRef } from "react";
+import { act, StrictMode, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { useWorkbenchSidebarReveal } from "./useWorkbenchSidebarReveal";
@@ -189,6 +189,28 @@ it("pulses a visible row reached from outside the sidebar, but not one picked in
   act(() => root.render(<Harness activeKey={null} />));
   act(() => root.render(<Harness activeKey="clicked-thread" />));
   act(() => vi.advanceTimersByTime(32));
+  expect(row().hasAttribute("data-workbench-sidebar-reveal")).toBe(true);
+  expect(scrollIntoView).not.toHaveBeenCalled();
+});
+
+it("pulses a new destination after the sidebar remounts, but not the same one", () => {
+  const remount = (activeKey: string) => {
+    act(() => root.unmount());
+    root = createRoot(host);
+    act(() =>
+      root.render(
+        <StrictMode>
+          <Harness activeKey={activeKey} />
+        </StrictMode>,
+      ),
+    );
+    act(() => vi.advanceTimersByTime(32));
+  };
+  remount("ticket");
+  row().removeAttribute("data-workbench-sidebar-reveal");
+  remount("ticket");
+  expect(row().hasAttribute("data-workbench-sidebar-reveal")).toBe(false);
+  remount("created-thread");
   expect(row().hasAttribute("data-workbench-sidebar-reveal")).toBe(true);
   expect(scrollIntoView).not.toHaveBeenCalled();
 });
