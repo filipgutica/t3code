@@ -5352,7 +5352,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             if (context.input.runtimePolicy.toolAccess === "research") {
               return {
                 decision: {
-                  denied: { rejection: "Ticket planning cannot approve this operation." },
+                  denied: { rejection: "Tool access policy does not allow this operation." },
                 },
               } satisfies CodexSchema.ExecCommandApprovalResponse;
             }
@@ -5430,7 +5430,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             if (context.input.runtimePolicy.toolAccess === "research") {
               return {
                 decision: {
-                  denied: { rejection: "Ticket planning cannot approve this operation." },
+                  denied: { rejection: "Tool access policy does not allow this operation." },
                 },
               } satisfies CodexSchema.ApplyPatchApprovalResponse;
             }

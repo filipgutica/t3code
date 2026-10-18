@@ -2703,11 +2703,6 @@ export function resolveDesktopProductName(version: string, workbench = false): s
     .productName;
 }
 
-export function resolveDesktopPackageName(workbench = false): string {
-  return resolveDesktopBuildProduct({ version: "", workbench, platform: "mac", signed: false })
-    .packageName;
-}
-
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   platform: typeof BuildPlatform.Type,
   target: string,

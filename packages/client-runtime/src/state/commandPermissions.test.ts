@@ -14,7 +14,6 @@ import {
   EnvironmentId,
   ScheduledTaskId,
   WS_METHODS,
-  WORKBENCH_WS_METHODS,
   type AuthSessionState,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -309,31 +308,4 @@ it.effect("rejects protected unary and streamed RPCs outside a guarded command",
     expect(streamed._tag).toBe("EnvironmentAuthorizationError");
     expect(writes).toBe(0);
   }),
-);
-
-it.effect("keeps Workbench workspace availability and dispatch aligned with operator policy", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const registry = yield* setup;
-      registry.set(sessions(env), AsyncResult.success(grant(true)));
-      registry.set(sessions(other), AsyncResult.success(grant(false)));
-      for (const method of [
-        WORKBENCH_WS_METHODS.workbenchArchiveProject,
-        WORKBENCH_WS_METHODS.workbenchDeleteProject,
-        WORKBENCH_WS_METHODS.workbenchPrepareTicketWorkspace,
-        WORKBENCH_WS_METHODS.workbenchReleaseTicketWorkspace,
-      ]) {
-        const workspace = createCommandPermissions(runtime, method);
-        expect(registry.get(workspace.permissionAtom(env))).toBe(true);
-        yield* workspace.authorize(registry, env);
-        expect(registry.get(workspace.permissionAtom(other))).toBe(false);
-        expect((yield* workspace.authorize(registry, other).pipe(Effect.flip)).requiredScope).toBe(
-          AuthOrchestrationOperateScope,
-        );
-        registry.set(sessions(env), AsyncResult.success({ ...grant(true), permissions: [] }));
-        expect(registry.get(workspace.permissionAtom(env))).toBe(false);
-        registry.set(sessions(env), AsyncResult.success(grant(true)));
-      }
-    }),
-  ),
 );

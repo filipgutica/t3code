@@ -4100,7 +4100,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           const result = legacy
             ? {
                 decision: {
-                  denied: { rejection: "Ticket planning cannot approve this operation." },
+                  denied: { rejection: "Tool access policy does not allow this operation." },
                 },
               }
             : kind.startsWith("filesystem-grant")
