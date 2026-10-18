@@ -1,3 +1,4 @@
+import * as ClaudeResearchPolicy from "./providers/ClaudeResearchPolicy.ts";
 import { assert, it } from "@effect/vitest";
 import {
   EnvironmentId,
@@ -235,8 +236,15 @@ it.effect("routes Codex planning approvals to the auto reviewer inside the read-
 it.effect("routes Claude planning approvals to Auto with read-only tools", () =>
   resolve.pipe(
     Effect.map((runtimePolicy) => {
-      const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(runtimePolicy);
-      const { allowedTools } = ClaudeAdapterV2.claudeMcpQueryOverrides({
+      const decoration = ClaudeResearchPolicy.decorate({
+        runtimePolicy,
+        mcpServerStatus: async () => undefined,
+      });
+      const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
+        runtimePolicy,
+        decoration.permissionMode,
+      );
+      const mcpOverrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
         mcpSession: {
           environmentId: EnvironmentId.make("planning-environment"),
           threadId,
@@ -247,21 +255,20 @@ it.effect("routes Claude planning approvals to Auto with read-only tools", () =>
           browserToolsAvailable: true,
         },
         readOnlySandbox: true,
-        researchTools: true,
         ...(queryPolicy.allowedTools === undefined
           ? {}
           : { allowedTools: queryPolicy.allowedTools }),
       });
-      const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      const nativeOptions = ClaudeAdapterV2.makeClaudeQueryOptions({
         modelSelection,
         nativeThreadId: "native-planning",
         resume: false,
         cwd: "/repo/first",
         readOnlySandbox: true,
-        researchTools: true,
         ...queryPolicy,
-        ...(allowedTools === undefined ? {} : { allowedTools }),
+        ...mcpOverrides,
       });
+      const options = { ...nativeOptions, ...decoration.options?.(nativeOptions) };
       assert.equal(options.permissionMode, "auto");
       // Approvals the Auto reviewer leaves undecided are denied, never shown to the user.
       assert.equal(options.permissionPrompts, "none");

@@ -11,6 +11,7 @@ import {
   withWorkbenchHttpRoutes,
   WorkbenchRuntimeReactorLayerLive,
   WorkbenchHostPoliciesLayerLive,
+  WorkbenchProviderPoliciesLayerLive,
   WorkbenchMcpLayerLive,
 } from "./workbench/serverLayer.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
@@ -606,7 +607,9 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.mergeAll(Keybindings.layer, EnvironmentTheme.layer, UsageLimitSources.layer),
   ),
   Layer.provideMerge(ProviderRegistry.layer),
-  Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
+  Layer.provideMerge(
+    ProviderInstanceRegistryHydration.layer.pipe(Layer.provide(WorkbenchProviderPoliciesLayerLive)),
+  ),
   Layer.provideMerge(
     Layer.mergeAll(
       AntigravityInstallation.AntigravityInstallation.layer,
