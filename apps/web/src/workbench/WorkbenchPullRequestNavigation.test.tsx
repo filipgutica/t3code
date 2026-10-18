@@ -4,10 +4,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { useOpenChangeRequestLink } from "../lib/openPullRequestLink";
-import {
-  useOpenWorkbenchPullRequest,
-  WorkbenchPullRequestPreviewProvider,
-} from "./WorkbenchPullRequestPreview";
+import { WorkbenchPullRequestPreviewProvider } from "./WorkbenchPullRequestPreview";
 import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanelStore";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -144,76 +141,6 @@ vi.mock("./WorkbenchPullRequestSheet", () => ({
 }));
 
 describe("Workbench pull request navigation", () => {
-  it("keeps focused attention destinations in the preview sheet while a Thread is active", async () => {
-    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    location.href = "/local/thread/reading";
-    location.environmentId = "local";
-    location.threadId = "reading";
-    const threadRef = scopeThreadRef(EnvironmentId.make("local"), ThreadId.make("reading"));
-    const FocusedAttentionLink = () => {
-      const open = useOpenWorkbenchPullRequest();
-      return (
-        <button
-          onClick={() =>
-            open?.({
-              environmentId: EnvironmentId.make("remote"),
-              reference: {
-                projectId: ProjectId.make("other-repo"),
-                repository: "acme/repo",
-                number: 42,
-              },
-              focus: { kind: "checks" },
-            })
-          }
-        >
-          Failed checks
-        </button>
-      );
-    };
-    let renderer: ReactTestRenderer | undefined;
-    try {
-      await act(() => {
-        renderer = create(
-          <WorkbenchPullRequestPreviewProvider>
-            <FocusedAttentionLink />
-          </WorkbenchPullRequestPreviewProvider>,
-        );
-      });
-      await act(() => renderer?.root.findByType("button").props.onClick());
-      expect(renderer?.root.findByProps({ role: "dialog" }).children).toContain("42");
-      expect(
-        selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, threadRef),
-      ).toBeNull();
-      expect(navigate).not.toHaveBeenCalled();
-      await act(() =>
-        renderer?.root.findAllByType("a")[1]?.props.onClick({
-          preventDefault: vi.fn(),
-          stopPropagation: vi.fn(),
-          metaKey: false,
-          ctrlKey: false,
-        }),
-      );
-      expect(renderer?.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
-      expect(
-        selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, threadRef),
-      ).toMatchObject({
-        kind: "pull-request",
-        environmentId: "remote",
-        projectId: "other-repo",
-        number: 43,
-      });
-      expect(navigate).not.toHaveBeenCalled();
-    } finally {
-      await act(() => renderer?.unmount());
-      location.href = "/workbench?ticketId=ticket";
-      location.environmentId = "";
-      location.threadId = "";
-      useRightPanelStore.setState({ byThreadKey: {} });
-      navigate.mockClear();
-      vi.unstubAllGlobals();
-    }
-  });
-
   it.each(["acme/repo", "acme/linked-repo"])(
     "opens %s beside the active thread without changing its route",
     async (repository) => {

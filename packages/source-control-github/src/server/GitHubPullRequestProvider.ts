@@ -64,7 +64,6 @@ export function gitHubViewerPermissions(access: GitHubViewerAccess): PullRequest
             "disable-auto-merge",
             "revert",
             "approve-workflows",
-            "rerun-failed-checks",
           ] as const)
         : []),
       ...(access.canUpdate ? (["ready", "draft", "close", "reopen"] as const) : []),

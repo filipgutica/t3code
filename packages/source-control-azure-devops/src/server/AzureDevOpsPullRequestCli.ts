@@ -290,7 +290,6 @@ function actionArgs(
     case "reopen":
       return ["--status", "active"];
     case "revert":
-    case "rerun-failed-checks":
     case "approve-workflows":
     case "delete-branch":
       throw new Error(`Azure DevOps pull request action ${action} is unsupported`);

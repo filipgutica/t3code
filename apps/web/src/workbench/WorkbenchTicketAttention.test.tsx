@@ -95,49 +95,40 @@ const button = (label: string) => {
 };
 
 it.each([
-  { label: "Failed checks", focus: { kind: "checks" } },
-  { label: "Changes requested", focus: { kind: "review" } },
-  { label: "Unresolved feedback", focus: { kind: "review" } },
-  {
-    label: "Open review discussion at src/settings.ts:12",
-    focus: { kind: "review-thread", reviewThreadId: discussion.id },
-  },
-])(
-  "opens $label at its existing PR focus in the selected environment",
-  async ({ label, focus }) => {
-    await act(async () =>
-      root.render(
-        <WorkbenchTicketAttentionBadge
-          environmentId={environmentId}
-          ticketId={ticketId}
-          ticketTitle="Settings"
-          compact
-        />,
-      ),
-    );
-    const trigger = button("Needs attention, 3 items for Settings");
-    trigger.focus();
-    await act(async () => trigger.click());
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-      "Inspection incomplete",
-    );
-    expect(button("Failed checks").textContent).toContain("View checks");
-    expect(button("Changes requested").textContent).toContain("View changes");
-    await act(async () => button(label).click());
-    expect(mocks.openPullRequest).toHaveBeenCalledExactlyOnceWith({
-      environmentId,
-      reference: {
-        projectId: row.pullRequest.projectId,
-        repository: row.pullRequest.repository,
-        number: row.pullRequest.number,
-        host: "github.com",
-      },
-      linkedThread: { threadId, title: "Review settings", onOpen: expect.any(Function) },
-      focus,
-    });
-    expect(trigger.getAttribute("aria-expanded")).toBe("false");
-  },
-);
+  "Failed checks",
+  "Changes requested",
+  "Unresolved feedback",
+  "Open pull request for review discussion at src/settings.ts:12",
+])("opens %s in the PR panel of the selected environment", async (label) => {
+  await act(async () =>
+    root.render(
+      <WorkbenchTicketAttentionBadge
+        environmentId={environmentId}
+        ticketId={ticketId}
+        ticketTitle="Settings"
+        compact
+      />,
+    ),
+  );
+  const trigger = button("Needs attention, 3 items for Settings");
+  trigger.focus();
+  await act(async () => trigger.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Inspection incomplete");
+  expect(button("Failed checks").textContent).toContain("View checks");
+  expect(button("Changes requested").textContent).toContain("View changes");
+  await act(async () => button(label).click());
+  expect(mocks.openPullRequest).toHaveBeenCalledExactlyOnceWith({
+    environmentId,
+    reference: {
+      projectId: row.pullRequest.projectId,
+      repository: row.pullRequest.repository,
+      number: row.pullRequest.number,
+      host: "github.com",
+    },
+    linkedThread: { threadId, title: "Review settings", onOpen: expect.any(Function) },
+  });
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+});
 
 it("opens the owning remote Thread and counts the remaining notification after suppressing its current Input status", async () => {
   mocks.signals = [

@@ -67,7 +67,6 @@ export const definition = defineSourceControlClient({
     "disable-auto-merge",
     "revert",
     "approve-workflows",
-    "rerun-failed-checks",
   ] as const),
   checkoutCommand: ({ number }) => `gh pr checkout ${number}`,
   authorProfileUrl: (login, repositoryUrl) =>

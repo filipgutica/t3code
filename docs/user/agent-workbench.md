@@ -161,10 +161,11 @@ failed PR checks, and unresolved PR conversations. **Agent replies** narrows the
 view to completed agent work awaiting review. PR inspection covers explicitly
 linked PRs; the Board shows incomplete or unavailable coverage and lets you refresh.
 
-Click a Ticket's attention bell to see each reason and open its Thread, failed
-checks, requested changes, or unresolved discussion. The Ticket page keeps these
-actions in its **Needs attention** section. Counts represent actionable signals,
-not unread messages; opening the list does not clear them.
+Click a Ticket's attention bell to see each reason. Thread reasons open the
+Thread; failed checks, requested changes, and unresolved discussions open the PR.
+The Ticket page keeps these actions in its **Needs attention** section. Counts
+represent actionable signals, not unread messages; opening the list does not
+clear them.
 
 Opening a Thread acknowledges its notification. An unanswered question stays
 **Waiting for input** until you respond. PR actions remain until the checks or review
@@ -183,11 +184,6 @@ PR URL when browsing is unavailable or the PR is not listed. A number such as `#
 refers to the selected Thread's repository. Link PR needs a live assigned Thread and
 a project with a supported Git remote in the same environment. You can also use
 **Link pull request to thread** in the native Thread's command palette.
-
-For a GitHub PR with failing checks, open its native PR panel and choose **Rerun
-failed checks** to request failed-job reruns for its current head. This requires
-GitHub Actions write permission. A successful request does not mean the checks
-have passed; refresh the PR to follow the results.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/pull-request-light.png">

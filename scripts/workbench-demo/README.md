@@ -150,10 +150,7 @@ Synthetic PRs 901–905 belong to the fictional
 `workbench-synthetic/attention-fixtures` repository; PR 906 belongs to the separate
 fictional `workbench-synthetic/attention-api` repository. A credential-free executable
 adapter supplies only their allowlisted inspection data; it never forwards a
-command to GitHub. On Failed PR checks, open the PR and choose **Rerun failed
-checks**: expect a clearly labelled refusal and no success claim. Verify a real
-GitHub rerun separately with an expendable failing PR and Actions write permission.
-Local `run.sh` uses the same adapter for PR inspection and does not link the
+command to GitHub and refuses every write. Local `run.sh` uses the same adapter for PR inspection and does not link the
 configured repositories' real PRs. Setup and maintenance still use the real
 GitHub CLI for those repositories; the disposable run keeps their code and
 remotes.

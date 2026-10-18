@@ -33,12 +33,6 @@
       "verification": ["typecheck"]
     },
     {
-      "name": "Mobile PR action compatibility",
-      "paths": ["apps/mobile/src/features/pull-requests/pullRequestActions.ts"],
-      "tests": ["apps/mobile/src/features/pull-requests/pullRequestActions.test.ts"],
-      "verification": ["unit", "typecheck"]
-    },
-    {
       "name": "Native execution and server integration",
       "paths": [
         "apps/server/src/assets/AssetAccess.ts",
@@ -123,7 +117,6 @@
         "apps/server/src/observability/RpcInstrumentation.ts",
         "apps/server/src/mcp/McpWritePolicy.ts",
         "apps/server/src/orchestration-v2/Adapters/CodexSandboxPolicy.ts",
-        "packages/source-control-github/src/server/githubWorkflowRerun.ts",
         "packages/source-control-github/src/client/definition.ts"
       ],
       "tests": [
@@ -197,8 +190,7 @@
         "packages/provider-core/src/server/textGenerationPrompts.test.ts",
         "packages/provider-muse/src/server/textGeneration.test.ts",
         "apps/server/src/observability/RpcInstrumentation.test.ts",
-        "apps/server/src/orchestration-v2/Adapters/CodexSandboxPolicy.test.ts",
-        "packages/source-control-github/src/server/githubWorkflowRerun.test.ts"
+        "apps/server/src/orchestration-v2/Adapters/CodexSandboxPolicy.test.ts"
       ],
       "verification": ["unit", "typecheck"]
     },
@@ -275,7 +267,6 @@
         "apps/web/src/components/chat/OpenInPicker.test.ts",
         "apps/web/src/components/composerContextPresentation.test.ts",
         "apps/web/src/components/desktopUpdate.logic.test.ts",
-        "apps/web/src/components/pullRequest/PullRequestCodeTab.test.tsx",
         "apps/web/src/components/pullRequest/PullRequestDetailPanel.browser.test.tsx",
         "apps/web/src/components/pullRequest/PullRequestSummaryTab.browser.test.tsx",
         "apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts",

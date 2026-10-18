@@ -388,60 +388,6 @@ it.effect("does not wait for an in-flight detail read to display a preview", () 
   }),
 );
 
-it.effect("starts a fresh detail lookup while an interrupted read is cleaning up", () =>
-  Effect.gen(function* () {
-    const detailStarted = yield* Deferred.make<void>();
-    const cleanupStarted = yield* Deferred.make<void>();
-    const releaseCleanup = yield* Deferred.make<void>();
-    let calls = 0;
-    const service = yield* makeService({
-      projects: [project({ id: "p1", title: "web", workspaceRoot: "/w", repository: "acme/web" })],
-      providers: [
-        fakeProvider(SourceControlProviderKind.make("github"), {
-          getChangeRequest: () => {
-            const call = ++calls;
-            return Effect.gen(function* () {
-              if (call === 1) {
-                yield* Deferred.succeed(detailStarted, undefined);
-                return yield* Effect.never;
-              }
-              return hostedChangeRequest("fresh detail");
-            }).pipe(
-              Effect.ensuring(
-                call === 1
-                  ? Deferred.succeed(cleanupStarted, undefined).pipe(
-                      Effect.andThen(Deferred.await(releaseCleanup)),
-                    )
-                  : Effect.void,
-              ),
-            );
-          },
-        }),
-      ],
-    });
-    const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
-
-    const first = yield* service
-      .detail(reference)
-      .pipe(Effect.forkChild({ startImmediately: true }));
-    yield* Deferred.await(detailStarted);
-    const firstInterrupt = yield* Fiber.interrupt(first).pipe(
-      Effect.forkChild({ startImmediately: true }),
-    );
-    yield* Deferred.await(cleanupStarted);
-
-    const second = yield* service
-      .detail(reference)
-      .pipe(Effect.forkChild({ startImmediately: true }));
-    yield* Deferred.succeed(releaseCleanup, undefined);
-    yield* Fiber.join(firstInterrupt);
-
-    assert.strictEqual((yield* Fiber.join(second)).body, "fresh detail");
-    assert.strictEqual(calls, 2);
-    assert.strictEqual((yield* service.detail(reference)).body, "fresh detail");
-  }),
-);
-
 it.effect("keeps previews warm when another project finishes a turn", () =>
   Effect.gen(function* () {
     const reads: string[] = [];
@@ -1542,60 +1488,6 @@ it.effect("refuses an action the host never claimed it could run", () =>
     assert.strictEqual(error._tag, "PullRequestOperationError");
     assert.isFalse(ran);
   }),
-);
-
-it.effect("refreshes native readers after a partially accepted failed-check rerun", () =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      let reads = 0;
-      const original = fakeProvider(SourceControlProviderKind.make("github"));
-      const service = yield* makeService({
-        projects: [
-          project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" }),
-        ],
-        providers: [
-          fakeProvider(SourceControlProviderKind.make("github"), {
-            capabilities: { ...original.capabilities, actions: ["rerun-failed-checks"] },
-            getViewerPermissions: () =>
-              Effect.succeed({
-                actions: ["rerun-failed-checks"],
-                comment: false,
-                resolve: false,
-                verdicts: [],
-                requestReviewers: false,
-              }),
-            getChangeRequestPreview: () =>
-              Effect.sync(() => {
-                reads++;
-                return changeRequest(1, "2026-07-02T00:00:00Z");
-              }),
-            runAction: () =>
-              Effect.fail(
-                new PullRequestProviderError({
-                  provider: SourceControlProviderKind.make("github"),
-                  operation: "runAction",
-                  reason: "failed",
-                  detail: "Requested 1 workflow rerun. Actions write permission denied.",
-                }),
-              ),
-          }),
-        ],
-      });
-      const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
-      yield* service.preview(reference);
-      const reader = yield* Stream.runHead(service.subscribeRefreshes).pipe(
-        Effect.forkChild({ startImmediately: true }),
-      );
-      const failure = yield* Effect.flip(
-        service.runAction({ ...reference, action: "rerun-failed-checks" }),
-      );
-      assert.include(failure.message, "Requested 1 workflow rerun");
-      const refresh = yield* Fiber.join(reader).pipe(Effect.map(Option.getOrThrow));
-      assert.isAbove(refresh, 0);
-      yield* service.preview(reference);
-      assert.strictEqual(reads, 2);
-    }),
-  ),
 );
 
 it.effect("publishes a merge for immediate settlement only after host confirmation", () =>

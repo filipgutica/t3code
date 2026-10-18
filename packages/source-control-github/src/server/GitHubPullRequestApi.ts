@@ -1,7 +1,3 @@
-import {
-  rerunFailedGitHubWorkflowJobs,
-  type GitHubWorkflowRerunError,
-} from "./githubWorkflowRerun.ts";
 import { removeAgentCredits } from "@t3tools/source-control-core/server/mergeMessage";
 import { KnownWorkflowRuns, makeChecksRevalidator } from "./gitHubConditionalChecks.ts";
 import { runGitHubStackAction, type GitHubStackActionError } from "./githubStackActions.ts";
@@ -299,7 +295,6 @@ export class GitHubBranchDeletionRefusedError extends Schema.TaggedError<GitHubB
 }
 
 export type GitHubPullRequestApiError =
-  | GitHubWorkflowRerunError
   | GitHubBranchDeletionRefusedError
   | GitHubStackActionError
   | GitHubRequestPolicy.GitHubApiError
@@ -2338,12 +2333,6 @@ export const make = Effect.gen(function* () {
           Effect.provideService(SourceControlHost.SourceControlHost, sourceControlHost),
           Effect.provideService(FileSystem.FileSystem, fileSystem),
         );
-      if (input.action === "rerun-failed-checks") {
-        return rerunFailedGitHubWorkflowJobs({
-          ...input,
-          rest: api.rest,
-        });
-      }
       if (input.action === "revert") {
         return pullRequestNodeId({ ...input, operation: "revertPullRequest" }).pipe(
           Effect.flatMap((pullRequestId) =>

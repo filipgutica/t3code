@@ -71,7 +71,6 @@ export const PullRequestAction = Schema.Literals([
   "disable-auto-merge",
   "revert",
   "approve-workflows",
-  "rerun-failed-checks",
 ]);
 export type PullRequestAction = typeof PullRequestAction.Type;
 
