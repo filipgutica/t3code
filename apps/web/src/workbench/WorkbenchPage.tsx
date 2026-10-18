@@ -2,7 +2,6 @@ import { useWorkbenchPageEnvironment } from "./useWorkbenchPageEnvironment";
 import { useWorkbenchPageJira } from "./useWorkbenchPageJira";
 import { useWorkbenchPageTicketWorkflow } from "./useWorkbenchPageTicketWorkflow";
 
-import { LinkPullRequestDialogHost } from "../components/pullRequest/LinkPullRequestDialog";
 import { WorkbenchPageView } from "./WorkbenchPageView";
 import { useWorkbenchPageDialogs } from "./useWorkbenchPageDialogs";
 
@@ -131,7 +130,6 @@ export function WorkbenchPage({
 
   return (
     <>
-      <LinkPullRequestDialogHost />
       <WorkbenchPageDeleteConfirmation
         workspaceActions={workspaceActions}
         pending={pendingAction !== null}

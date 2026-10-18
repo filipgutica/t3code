@@ -6,9 +6,8 @@ import type {
   WorkbenchTicketId,
 } from "@t3tools/contracts";
 import { InfoIcon } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useRef, useState, type RefObject } from "react";
 
-import { openLinkPullRequestDialog } from "../components/pullRequest/LinkPullRequestDialog";
 import { Button } from "../components/ui/button";
 import {
   Dialog,
@@ -29,6 +28,7 @@ import {
 import { usePullRequestLinking } from "../hooks/usePullRequestLinking";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { useEnvironment } from "../state/environments";
+import { WorkbenchPullRequestPicker } from "./WorkbenchPullRequestPicker";
 
 export function WorkbenchLinkPullRequest({
   environmentId,
@@ -44,8 +44,9 @@ export function WorkbenchLinkPullRequest({
   const linking = usePullRequestLinking(environmentId);
   const environment = useEnvironment(environmentId);
   const descriptionId = useId();
+  const linkButtonRef = useRef<HTMLButtonElement>(null);
   const [choosing, setChoosing] = useState(false);
-  const [selectedThreadId, setSelectedThreadId] = useState<ThreadId | null>(null);
+  const [linkingThreadId, setLinkingThreadId] = useState<ThreadId | null>(null);
   const threads = getEligibleThreads({ assignments, threadsById, environmentId, ticketId });
   const eligibleThreads = [...threads.values()];
   const unavailable = getUnavailableReason({
@@ -54,19 +55,19 @@ export function WorkbenchLinkPullRequest({
     hasThreads: eligibleThreads.length > 0,
     canLinkAny: linking.canLinkAny,
   });
-  const threadLabel = (thread: EnvironmentThreadShell) =>
-    `${thread.title} · ${thread.branch ?? "source checkout"} · ${thread.id}`;
-  const selectedThread = selectedThreadId === null ? undefined : threads.get(selectedThreadId);
-  const openNativeDialog = (threadId: ThreadId) => {
+  const linkingThread =
+    unavailable === null && linkingThreadId !== null ? threads.get(linkingThreadId) : undefined;
+  const openPicker = (threadId: ThreadId) => {
     if (unavailable !== null || !threads.has(threadId)) return;
     setChoosing(false);
-    openLinkPullRequestDialog({ environmentId, threadId });
+    setLinkingThreadId(threadId);
   };
 
   return (
     <>
       <div className="flex items-center gap-1">
         <Button
+          ref={linkButtonRef}
           variant="outline"
           size="xs"
           disabled={unavailable !== null}
@@ -74,11 +75,8 @@ export function WorkbenchLinkPullRequest({
           onClick={() => {
             if (unavailable !== null) return;
             const soleThread = eligibleThreads.length === 1 ? eligibleThreads[0] : undefined;
-            if (soleThread) openNativeDialog(soleThread.id);
-            else {
-              setSelectedThreadId(null);
-              setChoosing(true);
-            }
+            if (soleThread) openPicker(soleThread.id);
+            else setChoosing(true);
           }}
         >
           Link PR
@@ -107,60 +105,92 @@ export function WorkbenchLinkPullRequest({
         ) : null}
       </div>
       {choosing ? (
-        <Dialog open onOpenChange={setChoosing}>
-          <DialogPopup>
-            <DialogHeader>
-              <DialogTitle>Choose a Thread</DialogTitle>
-              <DialogDescription>
-                The PR is linked to a native Thread. Bare PR numbers use that Thread’s repository.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogPanel>
-              <Select
-                value={selectedThreadId}
-                onValueChange={(value) =>
-                  setSelectedThreadId(
-                    eligibleThreads.find((thread) => thread.id === value)?.id ?? null,
-                  )
-                }
-              >
-                <SelectTrigger aria-label="Thread for PR link">
-                  <SelectValue>
-                    {selectedThread ? threadLabel(selectedThread) : "Choose a Thread…"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup>
-                  {eligibleThreads.map((thread) => (
-                    <SelectItem key={thread.id} value={thread.id}>
-                      {threadLabel(thread)}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-              {unavailable ? (
-                <p role="status" className="text-xs text-muted-foreground">
-                  {unavailable}
-                </p>
-              ) : null}
-            </DialogPanel>
-            <DialogFooter>
-              <Button variant="outline" size="sm" onClick={() => setChoosing(false)}>
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                disabled={!selectedThread || unavailable !== null}
-                onClick={() => {
-                  if (selectedThread) openNativeDialog(selectedThread.id);
-                }}
-              >
-                Continue
-              </Button>
-            </DialogFooter>
-          </DialogPopup>
-        </Dialog>
+        <ThreadChooserDialog
+          threads={eligibleThreads}
+          unavailable={unavailable}
+          finalFocus={linkButtonRef}
+          onCancel={() => setChoosing(false)}
+          onContinue={openPicker}
+        />
+      ) : null}
+      {linkingThread ? (
+        <WorkbenchPullRequestPicker
+          key={linkingThread.id}
+          thread={linkingThread}
+          finalFocus={linkButtonRef}
+          onClose={() => setLinkingThreadId(null)}
+        />
       ) : null}
     </>
+  );
+}
+
+function ThreadChooserDialog({
+  threads,
+  unavailable,
+  finalFocus,
+  onCancel,
+  onContinue,
+}: {
+  readonly threads: ReadonlyArray<EnvironmentThreadShell>;
+  readonly unavailable: string | null;
+  readonly finalFocus: RefObject<HTMLElement | null>;
+  readonly onCancel: () => void;
+  readonly onContinue: (threadId: ThreadId) => void;
+}) {
+  const [selectedThreadId, setSelectedThreadId] = useState<ThreadId | null>(null);
+  const selectedThread = threads.find((thread) => thread.id === selectedThreadId);
+  const threadLabel = (thread: EnvironmentThreadShell) =>
+    `${thread.title} · ${thread.branch ?? "source checkout"} · ${thread.id}`;
+  return (
+    <Dialog open onOpenChange={(open) => (open ? undefined : onCancel())}>
+      <DialogPopup finalFocus={finalFocus}>
+        <DialogHeader>
+          <DialogTitle>Choose a Thread</DialogTitle>
+          <DialogDescription>The PR is linked to the native Thread you choose.</DialogDescription>
+        </DialogHeader>
+        <DialogPanel>
+          <Select
+            value={selectedThreadId}
+            onValueChange={(value) =>
+              setSelectedThreadId(threads.find((thread) => thread.id === value)?.id ?? null)
+            }
+          >
+            <SelectTrigger aria-label="Thread for PR link">
+              <SelectValue>
+                {selectedThread ? threadLabel(selectedThread) : "Choose a Thread…"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup>
+              {threads.map((thread) => (
+                <SelectItem key={thread.id} value={thread.id}>
+                  {threadLabel(thread)}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+          {unavailable ? (
+            <p role="status" className="text-xs text-muted-foreground">
+              {unavailable}
+            </p>
+          ) : null}
+        </DialogPanel>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            disabled={!selectedThread || unavailable !== null}
+            onClick={() => {
+              if (selectedThread) onContinue(selectedThread.id);
+            }}
+          >
+            Continue
+          </Button>
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
   );
 }
 
