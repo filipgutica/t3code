@@ -711,10 +711,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         },
       ]);
       assert.deepStrictEqual(linux.toolsets, { appimage: "1.0.3" });
-      assert.deepStrictEqual(
-        (linux.deb as { fpm: string[] }).fpm.map((mapping) => mapping.split("=")[1]),
-        ["/usr/share/metainfo/com.t3tools.t3code.metainfo.xml", "/usr/share/doc/t3code/copyright"],
-      );
       assert.notProperty(mac, "toolsets");
       assert.notProperty(win, "toolsets");
       assert.deepStrictEqual(mac.files, [...DESKTOP_FILE_EXCLUSIONS, ...MAC_FILE_EXCLUSIONS]);

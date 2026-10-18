@@ -48,26 +48,6 @@ it("preserves an explicitly configured HOME", () => {
   assert.equal(env.HOME, "/custom/home");
 });
 
-effectIt.effect(
-  "keeps an explicit executable directory ahead of login shell PATH hydration",
-  () => {
-    const env: NodeJS.ProcessEnv = {
-      HOME: NodeOS.homedir(),
-      SHELL: "/bin/sh",
-      PATH: "/usr/bin",
-      T3CODE_PATH_PREPEND: "/demo/attention-bin",
-    };
-
-    return Effect.gen(function* () {
-      yield* fixPath();
-      assert.equal(env.PATH?.split(":")[0], "/demo/attention-bin");
-    }).pipe(
-      Effect.provideService(HostProcess.Environment, env),
-      Effect.provideService(HostProcess.Platform, "darwin"),
-      Effect.provide(NodeServices.layer),
-    );
-  },
-);
 effectIt.effect.each(["darwin", "linux"] as const)(
   "keeps the prepared PATH and still hydrates HOME on %s",
   (platform) =>

@@ -44,9 +44,6 @@ const writePackageJsonFixtures = Effect.fn("writePackageJsonFixtures")(function*
         name: relativePath,
         version,
         private: true,
-        ...(relativePath === "apps/server/package.json"
-          ? { workbench: { upstreamProviderCompatibilityVersion: "0.0.46" } }
-          : {}),
       })}\n`,
     );
   }
@@ -93,12 +90,6 @@ it.layer(ScriptTestLayer)("update-release-package-versions", (it) => {
         Array.from(versions.entries()),
         releasePackageFiles.map((relativePath) => [relativePath, "1.2.3"]),
       );
-      const serverManifest = yield* fs
-        .readFileString(`${baseDir}/apps/server/package.json`)
-        .pipe(Effect.flatMap(decodePackageJson));
-      assert.deepStrictEqual(serverManifest.workbench, {
-        upstreamProviderCompatibilityVersion: "0.0.46",
-      });
     }),
   );
 

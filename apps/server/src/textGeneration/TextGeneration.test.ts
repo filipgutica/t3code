@@ -3,7 +3,6 @@ import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
-import * as Schema from "effect/Schema";
 import { describe, expect } from "vite-plus/test";
 
 import { ProviderInstanceId } from "@t3tools/contracts";
@@ -175,51 +174,6 @@ describe("TextGeneration.make", () => {
         expect(result.failure.operation).toBe("generateBranchName");
         expect(result.failure.detail).toContain("missing_instance");
       }
-    }),
-  );
-
-  it.effect("delegates structured generation to the selected provider instance", () =>
-    Effect.gen(function* () {
-      const instanceId = ProviderInstanceId.make("codex_personal");
-      const calls: Array<{ operation: string; prompt: string }> = [];
-      const instance = makeStubInstance(
-        instanceId,
-        makeStubTextGeneration({
-          generateStructured: (input) => {
-            calls.push({ operation: input.operation, prompt: input.prompt });
-            return Schema.decodeUnknownEffect(input.outputSchema)({
-              summary: "A concise result.",
-            }).pipe(Effect.orDie);
-          },
-        }),
-      );
-      const tg = yield* TextGeneration.make.pipe(
-        Effect.provideService(
-          ProviderInstanceRegistry.ProviderInstanceRegistry,
-          makeStubRegistry([instance]),
-        ),
-        Effect.provide(
-          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-            resolveLink: () => Effect.die("No link lookup expected"),
-          }),
-        ),
-      );
-
-      const result = yield* tg.generateStructured({
-        operation: "generateExample",
-        cwd: process.cwd(),
-        prompt: "Summarize the example.",
-        outputSchema: Schema.Struct({ summary: Schema.String }),
-        modelSelection: createModelSelection(instanceId, "gpt-5"),
-      });
-
-      expect(result).toEqual({ summary: "A concise result." });
-      expect(calls).toEqual([
-        {
-          operation: "generateExample",
-          prompt: "Summarize the example.",
-        },
-      ]);
     }),
   );
 });

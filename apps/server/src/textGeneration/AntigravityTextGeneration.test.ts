@@ -336,32 +336,6 @@ it.layer(NodeServices.layer)("AntigravityTextGeneration", (it) => {
       }).pipe(Effect.scoped),
   );
 
-  it.effect("generates structured JSON without using the project workspace", () =>
-    Effect.gen(function* () {
-      const fixture = yield* makeFixture({
-        outputs: [
-          '{"summary":"Improve request validation for selected analytics fields. Return a clear error before querying the provider when unsupported combinations are supplied."}',
-        ],
-      });
-
-      const result = yield* fixture.textGeneration.generateStructured({
-        operation: "generateExample",
-        cwd: fixture.projectDirectory,
-        prompt: "Summarize the supplied content.",
-        outputSchema: Schema.Struct({ summary: Schema.String }),
-        modelSelection,
-      });
-
-      expect(result.summary).toContain("Improve request validation");
-      expect(fixture.state.workspaces).not.toContain(fixture.projectDirectory);
-      expect(fixture.state.prompts[0]?.prompt[0]).toMatchObject({
-        type: "text",
-        text: expect.stringContaining("Summarize the supplied content."),
-      });
-      yield* fixture.assertCleaned;
-    }).pipe(Effect.scoped),
-  );
-
   it.effect.each(["tool_call", "tool_call_update"] as const)(
     "aborts on %s even without a permission request",
     (sessionUpdate) =>

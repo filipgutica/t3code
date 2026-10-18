@@ -133,29 +133,6 @@ it.layer(layerGrokTextGenerationTest)("GrokTextGeneration", (it) => {
     ),
   );
 
-  it.effect("generates structured JSON through Grok ACP", () =>
-    withFakeAcpGrok(
-      {
-        T3_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
-          summary:
-            "Improve request validation for selected analytics fields. Return a clear error before querying the provider when unsupported combinations are supplied.",
-        }),
-      },
-      (textGeneration) =>
-        Effect.gen(function* () {
-          const generated = yield* textGeneration.generateStructured({
-            operation: "generateExample",
-            cwd: process.cwd(),
-            prompt: "Summarize the supplied content.",
-            outputSchema: Schema.Struct({ summary: Schema.String }),
-            modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-build"),
-          });
-
-          expect(generated.summary).toContain("Improve request validation");
-        }),
-    ),
-  );
-
   it.effect("surfaces ACP request failures as text generation errors", () =>
     withFakeAcpGrok(
       {

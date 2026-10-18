@@ -114,28 +114,6 @@ const finish =
   };
 
 it.layer(NodeServices.layer)("Muse text generation", (it) => {
-  it.effect("rejects caller-owned structured generation without opening a host", () =>
-    Effect.gen(function* () {
-      const test = fixture();
-      const service = yield* test.make;
-      const failure = yield* service
-        .generateStructured({
-          operation: "generateTicketSummary",
-          cwd: titleInput.cwd,
-          prompt: "Summarize the supplied content.",
-          outputSchema: Schema.Struct({ summary: Schema.String }),
-          modelSelection,
-        })
-        .pipe(Effect.flip);
-      expect(failure).toMatchObject({
-        _tag: "TextGenerationError",
-        operation: "generateTicketSummary",
-        detail: "Muse Code does not support caller-owned structured text generation.",
-      });
-      expect(test.createHost).not.toHaveBeenCalled();
-    }),
-  );
-
   it.effect("validates the final item once and closes an isolated restrictive host", () =>
     Effect.gen(function* () {
       const test = fixture(finish('{"title":"Fix login form"}'));

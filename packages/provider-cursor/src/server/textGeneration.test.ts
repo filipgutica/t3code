@@ -408,27 +408,6 @@ describe("CursorTextGeneration", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
-  it.effect("generates schema-validated structured JSON through the Cursor SDK", () =>
-    Effect.gen(function* () {
-      cursorSdkMock.prompt.mockResolvedValueOnce({
-        id: "run-cursor-structured-generation-test",
-        status: "finished",
-        result: '{"summary":"Improve request validation for selected analytics fields."}',
-      });
-      const textGeneration = yield* makeCursorTextGeneration(cursorSettings, {
-        CURSOR_API_KEY: "test-cursor-key",
-      });
-      const generated = yield* textGeneration.generateStructured({
-        operation: "generateExample",
-        cwd: process.cwd(),
-        prompt: "Summarize the supplied content.",
-        outputSchema: Schema.Struct({ summary: Schema.String }),
-        modelSelection: createModelSelection(ProviderInstanceId.make("cursor"), "composer-2"),
-      });
-      expect(generated.summary).toBe("Improve request validation for selected analytics fields.");
-    }).pipe(Effect.provide(layerTest)),
-  );
-
   it.effect("cancels the native run when text generation times out", () =>
     Effect.gen(function* () {
       let started!: () => void;

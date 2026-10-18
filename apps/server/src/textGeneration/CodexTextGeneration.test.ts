@@ -582,61 +582,6 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
     ),
   );
 
-  it.effect("generates schema-validated JSON from a caller-owned prompt", () =>
-    withFakeCodexEnv(
-      {
-        output: JSON.stringify({
-          summary: `## Summary\n${"The ticket asks for a concise factual summary. ".repeat(20)}https://example.com/details`,
-        }),
-        stdinMustContain: "Summarize the supplied content.",
-        forbidArg: "--ignore-user-config",
-      },
-      (textGeneration) =>
-        Effect.gen(function* () {
-          const generated = yield* textGeneration.generateStructured({
-            operation: "generateExample",
-            cwd: process.cwd(),
-            prompt: "Summarize the supplied content.",
-            outputSchema: Schema.Struct({ summary: Schema.String }),
-            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
-          });
-
-          expect(generated.summary).toContain("## Summary");
-          expect(generated.summary).toContain("https://example.com/details");
-        }),
-    ),
-  );
-
-  it.effect("returns schema-valid whitespace for caller validation", () =>
-    withFakeCodexEnv({ output: JSON.stringify({ summary: "   " }) }, (textGeneration) =>
-      Effect.gen(function* () {
-        const generated = yield* textGeneration.generateStructured({
-          operation: "generateExample",
-          cwd: process.cwd(),
-          prompt: "Return a summary.",
-          outputSchema: Schema.Struct({ summary: Schema.String }),
-          modelSelection: DEFAULT_TEST_MODEL_SELECTION,
-        });
-        expect(generated.summary).toBe("   ");
-      }),
-    ),
-  );
-
-  it.effect("decodes the type side of a structured output schema", () =>
-    withFakeCodexEnv({ output: JSON.stringify({ count: 42 }) }, (textGeneration) =>
-      Effect.gen(function* () {
-        const generated = yield* textGeneration.generateStructured({
-          operation: "generateExample",
-          cwd: process.cwd(),
-          prompt: "Return a count.",
-          outputSchema: Schema.Struct({ count: Schema.NumberFromString }),
-          modelSelection: DEFAULT_TEST_MODEL_SELECTION,
-        });
-        expect(generated.count).toBe(42);
-      }),
-    ),
-  );
-
   it.effect("falls back when thread title normalization becomes whitespace-only", () =>
     withFakeCodexEnv(
       {

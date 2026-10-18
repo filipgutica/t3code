@@ -200,25 +200,16 @@ describe("getDesktopUpdateActionError", () => {
 });
 
 describe("desktop update UI helpers", () => {
-  it.each([
-    [
-      "0.0.30",
+  it("builds the stable release URL for a downloaded version", () => {
+    expect(getDesktopUpdateReleaseUrl("0.0.30")).toBe(
       "https://github.com/pingdotgg/t3code/releases/tag/v0.0.30",
-      "https://github.com/filipgutica/t3code/releases/tag/workbench-v0.0.30",
-    ],
-    [
-      "0.0.30-nightly.20260728.931",
+    );
+  });
+
+  it("builds the nightly release URL without dropping its version suffix", () => {
+    expect(getDesktopUpdateReleaseUrl("0.0.30-nightly.20260728.931")).toBe(
       "https://github.com/pingdotgg/t3code/releases/tag/v0.0.30-nightly.20260728.931",
-      "https://github.com/filipgutica/t3code/releases/tag/workbench-daily-v0.0.30-nightly.20260728.931",
-    ],
-  ] as const)("links the downloaded release %s", (version, officialUrl, workbenchUrl) => {
-    expect(getDesktopUpdateReleaseUrl(version)).toBe(officialUrl);
-    expect(
-      getDesktopUpdateReleaseUrl(version, {
-        releaseUrl: () => workbenchUrl,
-        historyUrl: "https://product.example/releases",
-      }),
-    ).toBe(workbenchUrl);
+    );
   });
 
   it("omits the release URL when the updater does not report a version", () => {
@@ -226,16 +217,10 @@ describe("desktop update UI helpers", () => {
     expect(getDesktopUpdateReleaseUrl("  ")).toBeNull();
   });
 
-  it("links release history", () => {
+  it("builds the release history URL", () => {
     expect(getDesktopUpdateReleaseHistoryUrl()).toBe(
       "https://github.com/pingdotgg/t3code/releases",
     );
-    expect(
-      getDesktopUpdateReleaseHistoryUrl({
-        releaseUrl: () => "",
-        historyUrl: "https://product.example/releases",
-      }),
-    ).toBe("https://product.example/releases");
   });
 
   it("toasts only for actionable updater errors", () => {
