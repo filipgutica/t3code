@@ -134,6 +134,7 @@ const make = Effect.gen(function* () {
                 : appendFailureActivity(pending, cause),
             ),
           );
+      return stored.sequence;
     }).pipe(
       Effect.catchCause((cause) =>
         Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.fail(cause),
@@ -188,12 +189,15 @@ const make = Effect.gen(function* () {
               yield* Deferred.succeed(ready, undefined);
               yield* Stream.runForEach(sink.stream({ afterSequence }), (stored) =>
                 processEventSafely(stored).pipe(
-                  Effect.andThen(noteSeen(stored.sequence)),
-                  Effect.tap(() =>
+                  Effect.tap((consumedSequence) =>
                     Effect.sync(() => {
-                      restartDelay = 1_000;
+                      // Replayed ignored events do not advance the durable cursor.
+                      if (consumedSequence !== undefined && consumedSequence > afterSequence) {
+                        restartDelay = 1_000;
+                      }
                     }),
                   ),
+                  Effect.andThen(noteSeen(stored.sequence)),
                 ),
               );
             }).pipe(

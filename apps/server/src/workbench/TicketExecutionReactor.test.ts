@@ -251,6 +251,70 @@ describe("durable Workbench execution consumption", () => {
       }).pipe(Effect.provide(testLayer), Effect.scoped),
   );
 
+  effectIt.effect("backs off across persistent failures after replaying ignored events", () =>
+    Effect.gen(function* () {
+      yield* seed;
+      const sql = yield* SqlClient.SqlClient;
+      const sink = yield* EventSinkV2;
+      const store = yield* WorkbenchStore;
+      yield* sql`CREATE TRIGGER reject_execution BEFORE UPDATE OF status ON workbench_tickets WHEN NEW.status = 'in_progress' BEGIN SELECT RAISE(ABORT, 'execution fault'); END`;
+      const subscriptions: number[] = [];
+      let failAfterRecovery = false;
+      const observedSink = EventSinkV2.of({
+        ...sink,
+        stream: (input) => {
+          subscriptions.push(input?.afterSequence ?? 0);
+          if (failAfterRecovery) {
+            failAfterRecovery = false;
+            return Stream.concat(
+              sink.stream(input).pipe(Stream.take(2)),
+              Stream.die("stream fault"),
+            );
+          }
+          return sink.stream(input);
+        },
+      });
+      yield* Effect.gen(function* () {
+        const reactor = yield* TicketExecutionReactor;
+        yield* reactor.start();
+        const events = yield* sink.write({
+          events: [runEvent({ status: "queued" }), runEvent()],
+        });
+        yield* TestClock.adjust("750 millis");
+        expect(subscriptions).toEqual([0]);
+        for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]) {
+          const count = subscriptions.length;
+          yield* TestClock.adjust(delay - 1);
+          expect(subscriptions).toHaveLength(count);
+          yield* TestClock.adjust(1);
+          expect(subscriptions).toHaveLength(count + 1);
+          yield* TestClock.adjust("750 millis");
+          expect(yield* store.initializeTicketExecution).toBe(0);
+          expect((yield* ticket(store)).status).toBe("todo");
+        }
+        expect(subscriptions.every((sequence) => sequence === 0)).toBe(true);
+        yield* sql`DROP TRIGGER reject_execution`;
+        failAfterRecovery = true;
+        yield* TestClock.adjust("30 seconds");
+        yield* reactor.drainThrough(events.at(-1)!.sequence);
+        expect((yield* ticket(store)).status).toBe("in_progress");
+        expect((yield* ticket(store)).revision).toBe(1);
+        expect(yield* store.initializeTicketExecution).toBe(events.at(-1)!.sequence);
+        const count = subscriptions.length;
+        yield* TestClock.adjust("999 millis");
+        expect(subscriptions).toHaveLength(count);
+        yield* TestClock.adjust("1 milli");
+        expect(subscriptions).toHaveLength(count + 1);
+        expect(subscriptions.at(-1)).toBe(events.at(-1)!.sequence);
+      }).pipe(
+        Effect.provide(
+          reactorServices.pipe(Layer.provide(Layer.succeed(EventSinkV2, observedSink))),
+        ),
+        Effect.scoped,
+      );
+    }).pipe(Effect.provide(testLayer), Effect.scoped),
+  );
+
   effectIt.effect("resubscribes after an event stream failure from the durable cursor", () =>
     Effect.gen(function* () {
       yield* seed;
