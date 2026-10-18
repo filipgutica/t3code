@@ -71,6 +71,37 @@ it("reports inline policy growth and native tests without new imports, using exa
     assert.include(renderNativeDiff(report), "**GROWTH +1**");
   }));
 
+it("excludes changes landed only on base after the PR branched", () =>
+  fixture(({ root, base, write, git, commit }) => {
+    write(
+      "apps/server/src/native.ts",
+      "export const upstream = 1;\nexport const fork = 2;\nexport const policy = 3;\n",
+    );
+    const head = commit();
+    git(["checkout", "-q", base]);
+    write(
+      "apps/server/src/native.ts",
+      "export const upstream = 1;\nexport const fork = 2;\nbase change\nanother base change\n",
+    );
+    write("apps/server/src/base-only.ts", "landed only on base\n");
+    const baseTip = commit();
+    const report = collectNativeDiff({ root, base: baseTip, head });
+    assert.deepEqual(report.files, [
+      {
+        path: "apps/server/src/native.ts",
+        kind: "upstream-owned",
+        change: "modified",
+        newOutsideBoundary: false,
+        pr: { added: 1, deleted: 0, binary: false },
+        base: { added: 1, deleted: 0, binary: false },
+        head: { added: 2, deleted: 0, binary: false },
+        growth: 1,
+      },
+    ]);
+    assert.equal(report.base, base);
+    assert.include(renderNativeDiff(report), `Merge base: ${base}`);
+  }));
+
 it("adds native diff JSON to the isolation report and exits zero on growth", () =>
   fixture(({ root, base, write, commit }) => {
     write(

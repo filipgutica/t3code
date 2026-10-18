@@ -51,7 +51,7 @@ export const collectNativeDiff = ({
     throw new Error("Invalid upstreamBase in scripts/workbench-ci-scope.json at head");
   const upstream = resolve(policy.upstreamBase);
   git(["merge-base", "--is-ancestor", upstream, headSha]);
-  const baseSha = resolve(base ?? upstream);
+  const baseSha = git(["merge-base", resolve(base ?? upstream), headSha]).trim();
   const baselineIntegratedAtBase = git(["merge-base", upstream, baseSha]).trim() === upstream;
   const treePaths = (ref: string) =>
     new Set(git(["ls-tree", "-r", "--name-only", "-z", ref]).split("\0").filter(Boolean));
@@ -122,8 +122,8 @@ export const renderNativeDiff = (report: ReturnType<typeof collectNativeDiff>) =
   return [
     "## Native diff (report only)",
     "",
-    `Base: ${report.base}; head: ${report.head}; integrated upstream: ${report.upstream}.`,
-    "Residual = added + deleted lines against the same upstream baseline. Renames appear as deletion/addition paths; binary sizes are unavailable. No patch-size threshold is enforced.",
+    `Merge base: ${report.base}; head: ${report.head}; integrated upstream: ${report.upstream}.`,
+    "PR changes and base residuals start at the merge base of the requested base and head. Residual = added + deleted lines against the same upstream baseline. Renames appear as deletion/addition paths; binary sizes are unavailable. No patch-size threshold is enforced.",
     ...(!report.baselineIntegratedAtBase
       ? ["**Baseline is not integrated at base; base residuals also include upstream changes.**"]
       : []),
