@@ -416,7 +416,11 @@
         "scripts/release-smoke.ts",
         "scripts/lib/desktop-build-product.ts"
       ],
-      "tests": ["scripts/build-desktop-artifact.test.ts", "scripts/dev-runner.test.ts"],
+      "tests": [
+        "scripts/build-desktop-artifact.test.ts",
+        "scripts/workbench-desktop-build.test.ts",
+        "scripts/dev-runner.test.ts"
+      ],
       "verification": ["unit", "typecheck", "packaging"]
     },
     {
@@ -460,6 +464,7 @@
   "packagingTests": [
     "scripts/build-desktop-artifact.test.ts",
     "scripts/lib/workbench-desktop-product.test.ts",
+    "scripts/workbench-desktop-build.test.ts",
     "scripts/update-release-package-versions.test.ts",
     "scripts/merge-update-manifests.test.ts",
     "scripts/resolve-workbench-daily-release.test.ts",
