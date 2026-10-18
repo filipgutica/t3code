@@ -53,7 +53,8 @@ export function WorkbenchPage({
     jiraOAuthError,
   });
   const pageData = useWorkbenchPageData(environmentId);
-  const { projects, refreshWorkbenchSnapshot, snapshot, optimisticStatus } = pageData;
+  const { projects, refreshWorkbenchSnapshot, refreshJiraSnapshot, snapshot, optimisticStatus } =
+    pageData;
   const { error, setError, pendingAction, setPendingAction, workspaceActions, selection } =
     useWorkbenchWorkspaceSelection({
       environmentId,
@@ -123,6 +124,7 @@ export function WorkbenchPage({
     jiraSyncBinding,
     pendingJiraMigrationBindingsRef,
     hasLocalMigrationData,
+    refreshJiraSnapshot,
     refreshWorkbenchSnapshot,
     setJiraError,
   });

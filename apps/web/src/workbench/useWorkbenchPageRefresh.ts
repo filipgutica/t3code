@@ -15,6 +15,7 @@ export function useWorkbenchPageRefresh({
   jiraSyncBinding,
   pendingJiraMigrationBindingsRef,
   hasLocalMigrationData,
+  refreshJiraSnapshot,
   refreshWorkbenchSnapshot,
   setJiraError,
 }: {
@@ -27,6 +28,7 @@ export function useWorkbenchPageRefresh({
     typeof useWorkbenchJiraBindings
   >["pendingJiraMigrationBindingsRef"];
   readonly hasLocalMigrationData: boolean;
+  readonly refreshJiraSnapshot: () => unknown;
   readonly refreshWorkbenchSnapshot: () => unknown;
   readonly setJiraError: (message: string | null) => void;
 }) {
@@ -42,6 +44,20 @@ export function useWorkbenchPageRefresh({
   const automaticJiraRequestsRef = useRef(new Set<string>());
   const automaticJiraBindingId = jiraBinding?.active ? jiraBinding.id : null;
   const automaticJiraProjectId = jiraBinding?.projectId ?? null;
+  useEffect(() => {
+    if (environmentId === null || automaticJiraBindingId === null) return;
+    const requestKey = `${environmentId}:${automaticJiraBindingId}`;
+    const refresh = () => {
+      if (automaticJiraRequestsRef.current.has(requestKey) || jiraPendingAction === "sync") return;
+      refreshJiraSnapshot();
+    };
+    return subscribeToWorkbenchRefresh({
+      target: window,
+      refresh,
+      intervalMs: WORKBENCH_REFRESH_INTERVAL_MS,
+    });
+  }, [environmentId, automaticJiraBindingId, jiraPendingAction, refreshJiraSnapshot]);
+
   const hasPendingLocalMigrationData =
     jiraBinding?.localMigrationPending === true && hasLocalMigrationData;
   useEffect(() => {

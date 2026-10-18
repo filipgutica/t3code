@@ -189,9 +189,7 @@ export const make = Effect.gen(function* () {
           .pipe(Effect.mapError(repositoryError));
         const bindings = yield* repository.listBindings().pipe(Effect.mapError(repositoryError));
         const issueLinks = yield* Effect.forEach(bindings, (binding) =>
-          repository
-            .listIssueLinks(binding.id, { snapshot: true })
-            .pipe(Effect.mapError(repositoryError)),
+          repository.listIssueLinks(binding.id).pipe(Effect.mapError(repositoryError)),
         );
         const epicLinks = yield* Effect.forEach(bindings, (binding) =>
           repository.listEpicLinks === undefined
