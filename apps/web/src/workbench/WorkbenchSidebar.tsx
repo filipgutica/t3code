@@ -32,6 +32,7 @@ import {
   type RefObject,
 } from "react";
 import { useWorkbenchSidebarReveal } from "./useWorkbenchSidebarReveal";
+import { getWorkbenchSidebarActiveKey } from "./workbenchSidebarReveal.logic";
 import { useWorkbenchSidebarFilters } from "./workbenchSidebarFilterState";
 
 import {
@@ -952,7 +953,7 @@ function WorkbenchSidebarNavigation({
   const onRowFocusCapture = useWorkbenchSidebarRowFocus(navigationRef);
   const contentRef = useWorkbenchSidebarReveal({
     navigationRef,
-    activeKey: JSON.stringify([
+    activeKey: getWorkbenchSidebarActiveKey([
       selectedWorkspaceId,
       selectedTicketId,
       contextThreadId,

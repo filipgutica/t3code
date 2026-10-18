@@ -38,7 +38,6 @@ export function useWorkbenchSidebarReveal({
       onlyActionable,
       isSearching,
       navigation,
-      scrollTop: viewport.scrollTop,
     };
     pending.current =
       getWorkbenchSidebarRevealReason({ previous: previous.current, next }) ?? pending.current;
@@ -67,7 +66,6 @@ export function useWorkbenchSidebarReveal({
     if (decision.scroll) {
       // Instant scrolling also avoids an animation competing with subsequent user input.
       row.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
-      previous.current = { ...next, scrollTop: viewport.scrollTop };
     }
     if (!decision.pulse && viewport.scrollTop === scrollTop) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;

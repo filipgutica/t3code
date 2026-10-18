@@ -24,7 +24,6 @@ export interface WorkbenchSidebarRevealSnapshot {
   readonly onlyActionable: boolean;
   readonly isSearching: boolean;
   readonly navigation: object | null;
-  readonly scrollTop: number;
 }
 
 export function getWorkbenchSidebarRevealReason({
@@ -39,6 +38,10 @@ export function getWorkbenchSidebarRevealReason({
   if (previous.activeKey !== next.activeKey) return "destination";
   if (previous.navigation !== next.navigation) return "reset";
   if (previous.isSearching && !next.isSearching) return "reset";
-  if (previous.scrollTop > 0 && next.scrollTop === 0) return "reset";
   return null;
+}
+
+/** Identifies the sidebar destination, or null when nothing is selected. */
+export function getWorkbenchSidebarActiveKey(ids: ReadonlyArray<string | null | undefined>) {
+  return ids.some(Boolean) ? JSON.stringify(ids) : null;
 }

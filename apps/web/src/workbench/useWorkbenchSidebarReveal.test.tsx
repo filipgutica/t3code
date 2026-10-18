@@ -110,17 +110,18 @@ it("waits for the active row to arrive after navigation", () => {
   expect(viewport().scrollTop).toBe(220);
 });
 
-it("reveals after a list remount or a scroll reset, but not an ordinary refresh", () => {
+it("reveals after a list remount, but not after an ordinary refresh or a focus scroll", () => {
   act(() => root.render(<Harness />));
   rowOffset = 300;
   act(() => root.render(<Harness />));
   expect(scrollIntoView).not.toHaveBeenCalled();
   act(() => root.render(<Harness listKey="remounted" />));
   expect(viewport().scrollTop).toBe(220);
+  // Tabbing to a control near the top scrolls the viewport without user scroll input.
   viewport().scrollTop = 0;
   act(() => viewport().dispatchEvent(new Event("scroll")));
-  expect(viewport().scrollTop).toBe(220);
-  expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  expect(viewport().scrollTop).toBe(0);
+  expect(scrollIntoView).toHaveBeenCalledTimes(1);
 });
 
 it("pulses a visible row on a filter switch and restarts the pulse on the reverse switch", () => {
