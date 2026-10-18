@@ -30,6 +30,8 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { useWorkbenchSidebarReveal } from "./useWorkbenchSidebarReveal";
+import { getWorkbenchSidebarActiveKey } from "./workbenchSidebarReveal.logic";
 import { useWorkbenchSidebarFilters } from "./workbenchSidebarFilterState";
 
 import {
@@ -190,7 +192,9 @@ function useWorkbenchSidebarNavigation({
 
 export function WorkbenchSidebar({
   context,
+  routeEnvironmentId,
 }: {
+  readonly routeEnvironmentId?: EnvironmentId | undefined;
   readonly context?:
     | {
         readonly environmentId: EnvironmentId;
@@ -215,7 +219,8 @@ export function WorkbenchSidebar({
   const selectedWorkspaceId = context?.workspaceId ?? search.workbenchProjectId;
   const selectedTicketId = context?.ticketId ?? search.ticketId;
   const selectedEpicId = context ? undefined : search.epicId;
-  const selectedEnvironmentId = context?.environmentId ?? search.environmentId;
+  const selectedEnvironmentId =
+    context?.environmentId ?? routeEnvironmentId ?? search.environmentId;
   const environmentId = selectedEnvironmentId ?? primaryEnvironmentId;
   const { isMobile, setOpenMobile } = useSidebar();
   const {
@@ -933,6 +938,17 @@ function WorkbenchSidebarNavigation({
     selectedDraft,
   });
   const onRowFocusCapture = useWorkbenchSidebarRowFocus(navigationRef);
+  const contentRef = useWorkbenchSidebarReveal({
+    navigationRef,
+    activeKey: getWorkbenchSidebarActiveKey([
+      selectedWorkspaceId,
+      selectedTicketId,
+      contextThreadId,
+      selectedEpicId,
+    ]),
+    onlyActionable,
+    isSearching,
+  });
   const navigation = {
     contextThreadId,
     jiraOwnershipKnown,
@@ -1009,6 +1025,7 @@ function WorkbenchSidebarNavigation({
     });
   return (
     <SidebarContent
+      ref={contentRef}
       fixedHeader={
         <WorkbenchSidebarFixedHeader
           header={header}

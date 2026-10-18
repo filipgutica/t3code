@@ -1,12 +1,11 @@
-/* The disclosure and its destination share one row surface. */
+/* The disclosure and its destination share one row surface. Like native rows, it stays
+   transparent at rest so the sidebar's grain shows through. */
 [data-workbench-sidebar-surface] {
-  --workbench-sidebar-row-surface: var(--sidebar);
+  --workbench-sidebar-row-surface: transparent;
   --workbench-sidebar-row-end-inset: 8px;
   --workbench-sidebar-action-width: 20px;
   --workbench-sidebar-disclosure-width: 20px;
-  background:
-    linear-gradient(var(--workbench-sidebar-row-surface), var(--workbench-sidebar-row-surface)),
-    var(--sidebar);
+  background: var(--workbench-sidebar-row-surface);
   border-radius: var(--radius-md);
 }
 
@@ -36,10 +35,11 @@ button[data-workbench-sidebar-disclosure] {
   cursor: pointer;
 }
 
+/* Detail rows use the native sidebar row inset; the chevron centers on the title line. */
 [data-workbench-sidebar-disclosure="ticket"] {
-  height: 52px;
+  height: calc(2 * var(--sidebar-content-inset) + 42px);
   align-items: start;
-  padding-top: 9px;
+  padding-top: calc(var(--sidebar-content-inset) + 3px);
 }
 
 [data-workbench-sidebar-detail-row] {
@@ -47,9 +47,10 @@ button[data-workbench-sidebar-disclosure] {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: 20px 18px;
-  gap: 2px;
+  gap: 4px 2px;
   min-width: 0;
-  padding: 6px var(--workbench-sidebar-row-end-inset, 8px) 6px 4px;
+  padding: var(--sidebar-content-inset) var(--workbench-sidebar-row-end-inset, 8px)
+    var(--sidebar-content-inset) 4px;
 }
 
 [data-workbench-sidebar-detail-row="thread"] {
@@ -84,7 +85,7 @@ button[data-workbench-sidebar-disclosure] {
   flex: 1;
   align-items: center;
   gap: 6px;
-  min-height: 32px;
+  min-height: 36px;
   padding-inline: 4px;
 }
 
@@ -235,7 +236,7 @@ button[data-workbench-sidebar-disclosure] {
 [data-workbench-sidebar-quick-actions] {
   position: absolute;
   z-index: 2;
-  top: 6px;
+  top: var(--sidebar-content-inset);
   inset-inline-end: calc(
     var(--workbench-sidebar-action-width, 20px) + var(--workbench-sidebar-row-end-inset, 8px) + 2px
   );
@@ -324,7 +325,7 @@ button[data-workbench-sidebar-disclosure] {
   grid-template-columns: minmax(0, 1fr) var(--workbench-sidebar-action-width, 20px);
   align-items: center;
   min-width: 0;
-  min-height: 32px;
+  min-height: 36px;
   padding-inline-end: var(--workbench-sidebar-row-end-inset, 8px);
 }
 
@@ -403,8 +404,7 @@ button[data-workbench-sidebar-disclosure] {
   }
 
   [data-workbench-sidebar-disclosure="ticket"] {
-    height: 76px;
-    padding-top: 9px;
+    height: calc(2 * var(--sidebar-content-inset) + 64px);
   }
 
   [data-workbench-sidebar-disclosure="workspace"] {
@@ -439,5 +439,26 @@ button[data-workbench-sidebar-disclosure] {
   [data-workbench-sidebar-filter],
   [data-workbench-sidebar-group-toggle] {
     min-height: 44px;
+  }
+}
+
+/* The final keyframe is omitted so the pulse fades back to the row's own fill. */
+@keyframes workbench-sidebar-reveal {
+  0%,
+  40% {
+    outline-color: var(--ring);
+    background-color: color-mix(in oklab, var(--ring) 22%, transparent);
+  }
+}
+
+[data-workbench-sidebar-surface][data-workbench-sidebar-reveal] {
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  animation: workbench-sidebar-reveal 1200ms ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-workbench-sidebar-surface][data-workbench-sidebar-reveal] {
+    animation: none;
   }
 }

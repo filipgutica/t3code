@@ -352,7 +352,6 @@ export function WorkbenchSidebarTicketButton({
             compact
           />
         ) : null}
-        <span data-workbench-sidebar-provider-end="" aria-hidden />
       </span>
       {details?.environmentId ? (
         <WorkbenchSidebarRowActions

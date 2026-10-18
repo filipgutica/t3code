@@ -79,6 +79,19 @@ describe("Workbench navigation context", () => {
     expect(router.state.location.search).toEqual({});
   });
 
+  it("keeps the sidebar mounted while a new Thread's Assignment snapshot is pending", () => {
+    const route = {
+      pathname: "/env/new-thread",
+      search: { workbench: true },
+      hasTicketContext: false,
+    };
+    expect(shouldShowWorkbenchSidebar({ ...route, isContextPending: true })).toBe(true);
+    expect(shouldShowWorkbenchSidebar({ ...route, isContextPending: false })).toBe(false);
+    expect(shouldShowWorkbenchSidebar({ ...route, search: {}, isContextPending: true })).toBe(
+      false,
+    );
+  });
+
   it("requires an explicit flag and a Ticket context for Thread navigation", () => {
     expect(parseWorkbenchThreadSearch({ workbench: true })).toEqual({ workbench: true });
     expect(parseWorkbenchThreadSearch({ workbench: "false" })).toEqual({});

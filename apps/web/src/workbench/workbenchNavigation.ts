@@ -16,8 +16,12 @@ export const shouldShowWorkbenchSidebar = ({
   pathname,
   search,
   hasTicketContext,
+  isContextPending = false,
 }: {
   pathname: string;
   search: Record<string, unknown>;
   hasTicketContext: boolean;
-}) => isWorkbenchSidebarPage(pathname) || (search.workbench === true && hasTicketContext);
+  isContextPending?: boolean;
+}) =>
+  isWorkbenchSidebarPage(pathname) ||
+  (search.workbench === true && (hasTicketContext || isContextPending));

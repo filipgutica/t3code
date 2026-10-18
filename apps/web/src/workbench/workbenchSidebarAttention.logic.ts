@@ -92,13 +92,6 @@ export const getWorkbenchSidebarActionableThreadIds = ({
   return result;
 };
 
-const attentionFirst = <T>(items: ReadonlyArray<T>, matches: (item: T) => boolean) => {
-  const attention: T[] = [];
-  const rest: T[] = [];
-  for (const item of items) (matches(item) ? attention : rest).push(item);
-  return [...attention, ...rest];
-};
-
 export const prioritizeWorkbenchSidebarAttention = ({
   ticketGroupsByWorkspace,
   attentionSignalsByTicket,
@@ -122,19 +115,19 @@ export const prioritizeWorkbenchSidebarAttention = ({
       promoted.push(group);
       visibleIds.add(group.ticket.id);
     }
-    const active = attentionFirst([...sections.active, ...promoted], isActionable).flatMap(
-      (group) => {
-        if (onlyActionable && !isActionable(group)) return [];
-        const ids = actionableThreadIdsByTicket.get(group.ticket.id);
-        const threads = attentionFirst(group.threads, (thread) => ids?.has(thread.id) ?? false);
-        return [
-          {
-            ...group,
-            threads: onlyActionable ? threads.filter((thread) => ids?.has(thread.id)) : threads,
-          },
-        ];
-      },
-    );
+    // Keep source order: reordering on attention moves a row away the moment opening it clears it.
+    const active = [...sections.active, ...promoted].flatMap((group) => {
+      if (onlyActionable && !isActionable(group)) return [];
+      const ids = actionableThreadIdsByTicket.get(group.ticket.id);
+      return [
+        {
+          ...group,
+          threads: onlyActionable
+            ? group.threads.filter((thread) => ids?.has(thread.id))
+            : group.threads,
+        },
+      ];
+    });
     result.set(workspaceId, {
       active,
       done: onlyActionable ? [] : sections.done.filter((group) => !isActionable(group)),
