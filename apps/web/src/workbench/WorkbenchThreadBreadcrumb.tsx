@@ -1,7 +1,11 @@
+import { RegistryContext } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
 import { BlocksIcon, TicketIcon, TicketPlusIcon } from "lucide-react";
+import * as Effect from "effect/Effect";
+import * as AtomRegistry from "effect/reactivity/AtomRegistry";
+import { useContext, useState } from "react";
 
 import {
   WorkspaceBreadcrumbItem,
@@ -24,6 +28,8 @@ export function WorkbenchThreadBreadcrumb({
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
 }) {
+  const registry = useContext(RegistryContext);
+  const [attaching, setAttaching] = useState(false);
   const { data } = useEnvironmentQuery(workbenchEnvironment.snapshot({ environmentId, input: {} }));
   const projects = useProjects();
   const thread = useThreadShell(scopeThreadRef(environmentId, threadId));
@@ -84,25 +90,50 @@ export function WorkbenchThreadBreadcrumb({
                 aria-label="Add ticket context"
                 variant="ghost"
                 size="icon-sm"
-                disabled={thread === null}
-                onClick={() => {
-                  if (thread === null) return;
-                  attachWorkbenchTicketContext({
-                    environmentId,
-                    thread,
-                    ticket,
-                    projects: projects.filter(
-                      (candidate) => candidate.environmentId === environmentId,
-                    ),
-                    repositories:
-                      data?.ticketWorkspaces.find((workspace) => workspace.ticketId === ticket.id)
-                        ?.repositories ?? [],
-                  });
-                  toastManager.add({
-                    type: "success",
-                    title: "Ticket context attached",
-                    description: "Review it in the composer before sending.",
-                  });
+                disabled={thread === null || attaching}
+                onClick={async () => {
+                  if (thread === null || attaching) return;
+                  setAttaching(true);
+                  try {
+                    let fullTicket = ticket;
+                    if (ticket.markdownOmitted) {
+                      const query = workbenchEnvironment.ticket({
+                        environmentId,
+                        input: { ticketId: ticket.id, revision: ticket.revision },
+                      });
+                      registry.refresh(query);
+                      const loaded = await Effect.runPromise(
+                        AtomRegistry.getResult(registry, query, { suspendOnWaiting: true }),
+                      );
+                      if (loaded === null) throw new Error("This Ticket no longer exists.");
+                      fullTicket = loaded;
+                    }
+                    attachWorkbenchTicketContext({
+                      environmentId,
+                      thread,
+                      ticket: fullTicket,
+                      projects: projects.filter(
+                        (candidate) => candidate.environmentId === environmentId,
+                      ),
+                      repositories:
+                        data?.ticketWorkspaces.find((workspace) => workspace.ticketId === ticket.id)
+                          ?.repositories ?? [],
+                    });
+                    toastManager.add({
+                      type: "success",
+                      title: "Ticket context attached",
+                      description: "Review it in the composer before sending.",
+                    });
+                  } catch (cause) {
+                    toastManager.add({
+                      type: "error",
+                      title: "Ticket context could not be attached",
+                      description:
+                        cause instanceof Error ? cause.message : "The Ticket could not be loaded.",
+                    });
+                  } finally {
+                    setAttaching(false);
+                  }
                 }}
               />
             }

@@ -1,8 +1,13 @@
 import {
   EnvironmentId,
+  WS_METHODS,
+  type AuthSessionState,
+  WorkbenchJiraBindingId,
   type WorkbenchJiraGetTicketTransitionsResult,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -41,6 +46,30 @@ vi.mock("../connection/runtime", () => ({
 vi.mock("@t3tools/client-runtime/rpc", () => ({
   request: testModules.request,
 }));
+
+vi.mock("../../../../packages/client-runtime/src/rpc/client.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@t3tools/client-runtime/rpc")>()),
+  requestGuarded: testModules.request,
+}));
+
+vi.mock("../../../../packages/client-runtime/src/state/session.ts", () => ({
+  createEnvironmentSessionAtoms: () => ({ sessionStateAtom: sessions }),
+}));
+const sessions = Atom.family((_id: EnvironmentId) =>
+  Atom.make(
+    AsyncResult.success<AuthSessionState>({
+      authenticated: true,
+      auth: {
+        policy: "remote-reachable",
+        bootstrapMethods: [],
+        sessionMethods: [],
+        sessionCookieName: "test",
+      },
+      scopes: ["orchestration:operate"],
+      permissions: ["orchestration:operate"],
+    }),
+  ),
+);
 
 type WorkbenchEnvironment = (typeof import("./state"))["workbenchEnvironment"];
 
@@ -163,6 +192,75 @@ beforeEach(() => {
 });
 
 describe("Workbench Jira transition query cache", () => {
+  it.effect(
+    "runs a mutation while background Jira sync is pending and orders a subsequent snapshot",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const environment = yield* getWorkbenchEnvironment();
+          const environmentId = EnvironmentId.make(`scheduler-${++nextId}`);
+          const syncStarted = yield* Deferred.make<void>();
+          const releaseSync = yield* Deferred.make<void>();
+          const mutationStarted = yield* Deferred.make<void>();
+          const releaseMutation = yield* Deferred.make<void>();
+          const calls: string[] = [];
+          testModules.request.mockImplementation((tag: string) =>
+            Effect.gen(function* () {
+              calls.push(tag);
+              if (tag === WS_METHODS.workbenchJiraSyncBinding) {
+                yield* Deferred.succeed(syncStarted, undefined);
+                yield* Deferred.await(releaseSync);
+              }
+              if (tag === WS_METHODS.workbenchArchiveTicket) {
+                yield* Deferred.succeed(mutationStarted, undefined);
+                yield* Deferred.await(releaseMutation);
+              }
+              return {};
+            }),
+          );
+          const registry = AtomRegistry.make();
+          yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
+          const sync = yield* Effect.promise(() =>
+            environment.jiraSyncBinding.run(registry, {
+              environmentId,
+              input: { bindingId: WorkbenchJiraBindingId.make("binding"), background: true },
+            }),
+          ).pipe(Effect.forkChild);
+          yield* Deferred.await(syncStarted);
+          const mutation = yield* Effect.promise(() =>
+            environment.archiveTicket.run(registry, {
+              environmentId,
+              input: {
+                ticketId: WorkbenchTicketId.make("ticket"),
+                expectedRevision: 0,
+                archivedAt: null,
+                updatedAt: "2026-10-17T10:00:00.000Z",
+              },
+            }),
+          ).pipe(Effect.forkChild);
+          yield* Deferred.await(mutationStarted);
+          const read = yield* Effect.promise(() =>
+            environment.readSnapshot.run(registry, {
+              environmentId,
+              input: {},
+            }),
+          ).pipe(Effect.forkChild);
+          yield* Effect.yieldNow;
+          expect(calls).toEqual([
+            WS_METHODS.workbenchJiraSyncBinding,
+            WS_METHODS.workbenchArchiveTicket,
+          ]);
+          yield* Deferred.succeed(releaseMutation, undefined);
+          expect((yield* Fiber.join(mutation))._tag).toBe("Success");
+          expect((yield* Fiber.join(read))._tag).toBe("Success");
+          expect(calls).toContain(WS_METHODS.workbenchGetSnapshot);
+          expect(yield* Deferred.isDone(releaseSync)).toBe(false);
+          yield* Deferred.succeed(releaseSync, undefined);
+          yield* Fiber.join(sync);
+        }),
+      ),
+  );
+
   it.effect("reuses fresh rows after remounting while isolating query keys", () =>
     Effect.scoped(
       Effect.gen(function* () {

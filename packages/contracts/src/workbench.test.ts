@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as Struct from "effect/Struct";
 
 import {
   WorkbenchAssignment,
@@ -54,6 +55,45 @@ const isWorkbenchAssignment = Schema.is(WorkbenchAssignment);
 const isWorkbenchTicketWorkspace = Schema.is(WorkbenchTicketWorkspace);
 
 describe("Workbench contracts", () => {
+  it.effect(
+    "keeps compact snapshot markers optional and full snapshots compatible with legacy decoders",
+    () =>
+      Effect.gen(function* () {
+        const legacyTicket = {
+          id: "archived",
+          projectId: "workspace",
+          title: "Archived",
+          markdown: "Full archived body",
+          primaryT3ProjectId: "native",
+          status: "done",
+          blocked: false,
+          archivedAt: "2026-10-17T10:00:00.000Z",
+          createdAt: "2026-10-17T10:00:00.000Z",
+          updatedAt: "2026-10-17T10:00:00.000Z",
+        };
+        const legacySnapshot = { projects: [], tickets: [legacyTicket], assignments: [] };
+        const full = yield* decodeWorkbenchSnapshot(legacySnapshot);
+        expect(full.tickets[0]?.markdownOmitted).toBeUndefined();
+        expect(full.tickets[0]?.markdown).toBe("Full archived body");
+        const compact = yield* decodeWorkbenchSnapshot({
+          ...legacySnapshot,
+          tickets: [{ ...legacyTicket, markdown: "", markdownOmitted: true }],
+        });
+        expect(compact.tickets[0]).toMatchObject({ markdown: "", markdownOmitted: true });
+        const legacyDecoder = Schema.decodeUnknownEffect(
+          Schema.Struct(Struct.omit(WorkbenchTicket.fields, ["markdownOmitted"])),
+        );
+        expect((yield* legacyDecoder(full.tickets[0])).markdown).toBe("Full archived body");
+        const payload = WsRpcGroup.requests.get(
+          WORKBENCH_WS_METHODS.workbenchGetSnapshot,
+        )!.payloadSchema;
+        expect(yield* Schema.decodeUnknownEffect(payload)({})).toEqual({});
+        expect(yield* Schema.decodeUnknownEffect(payload)({ compact: true })).toEqual({
+          compact: true,
+        });
+      }),
+  );
+
   it.effect("treats snapshots from older hosts as lacking Epic lifecycle support", () =>
     Effect.gen(function* () {
       const snapshot = yield* decodeWorkbenchSnapshot({

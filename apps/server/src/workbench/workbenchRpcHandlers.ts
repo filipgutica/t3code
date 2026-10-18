@@ -1,5 +1,6 @@
 import { WORKBENCH_WS_METHODS, WorkbenchRpcGroup } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 
 import * as TicketDraftService from "./TicketDraftService.ts";
@@ -54,7 +55,10 @@ export const makeWorkbenchRpcHandlers = ({
     [WORKBENCH_WS_METHODS.workbenchStartTicketDraftWork]: (input) => ticketDrafts.startWork(input),
     [WORKBENCH_WS_METHODS.workbenchGetTicketPreparations]: (_input) =>
       workbench.getTicketPreparations,
-    [WORKBENCH_WS_METHODS.workbenchGetSnapshot]: (_input) => workbench.getSnapshot,
+    [WORKBENCH_WS_METHODS.workbenchGetSnapshot]: (input) =>
+      input.compact ? workbench.getCompactSnapshot : workbench.getSnapshot,
+    [WORKBENCH_WS_METHODS.workbenchGetTicket]: (input) =>
+      workbench.getTicket(input.ticketId).pipe(Effect.map(Option.getOrNull)),
     [WORKBENCH_WS_METHODS.workbenchCreateProject]: (input) => workbench.createProject(input),
     [WORKBENCH_WS_METHODS.workbenchUpdateProject]: (input) => workbench.updateProject(input),
     [WORKBENCH_WS_METHODS.workbenchArchiveProject]: (input) => workspaceLifecycle.archive(input),

@@ -12,9 +12,10 @@ import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 
-const snapshot = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
+const snapshot = createEnvironmentQueryAtomFamily(connectionAtomRuntime, {
   label: "environment-data:workbench:snapshot",
-  tag: WS_METHODS.workbenchGetSnapshot,
+  execute: (_input: Record<string, never>) =>
+    request(WS_METHODS.workbenchGetSnapshot, { compact: true }),
   staleTimeMs: 5_000,
 });
 
@@ -50,6 +51,8 @@ const jiraTicketTransitionsObserver = Atom.family(
 );
 
 const scheduler = createAtomCommandScheduler();
+const jiraReadScheduler = createAtomCommandScheduler();
+const jiraSyncScheduler = createAtomCommandScheduler();
 const serialPerEnvironment = {
   mode: "serial",
   key: ({ environmentId }: { readonly environmentId: EnvironmentId }) => environmentId,
@@ -99,6 +102,12 @@ const refreshWorkbenchAndJiraSnapshots = (
 
 export const workbenchEnvironment = {
   snapshot,
+  ticket: createEnvironmentQueryAtomFamily(connectionAtomRuntime, {
+    label: "environment-data:workbench:ticket",
+    execute: ({ ticketId }: { ticketId: WorkbenchTicketId; revision: number }) =>
+      request(WS_METHODS.workbenchGetTicket, { ticketId }),
+    staleTimeMs: 5_000,
+  }),
   // Start work needs the saved ticket and prepared paths, rather than a stale query value.
   readSnapshot: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:read-snapshot",
@@ -188,25 +197,25 @@ export const workbenchEnvironment = {
   jiraListProjects: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:jira:list-projects",
     tag: WS_METHODS.workbenchJiraListProjects,
-    scheduler,
+    scheduler: jiraReadScheduler,
     concurrency: serialPerEnvironment,
   }),
   jiraListBoards: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:jira:list-boards",
     tag: WS_METHODS.workbenchJiraListBoards,
-    scheduler,
+    scheduler: jiraReadScheduler,
     concurrency: serialPerEnvironment,
   }),
   jiraListSprints: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:jira:list-sprints",
     tag: WS_METHODS.workbenchJiraListSprints,
-    scheduler,
+    scheduler: jiraReadScheduler,
     concurrency: serialPerEnvironment,
   }),
   jiraGetBoardConfiguration: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:jira:get-board-configuration",
     tag: WS_METHODS.workbenchJiraGetBoardConfiguration,
-    scheduler,
+    scheduler: jiraReadScheduler,
     concurrency: serialPerEnvironment,
   }),
   jiraCreateBinding: createEnvironmentRpcCommand(connectionAtomRuntime, {
@@ -226,9 +235,10 @@ export const workbenchEnvironment = {
   jiraSyncBinding: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:jira:sync-binding",
     tag: WS_METHODS.workbenchJiraSyncBinding,
-    scheduler,
+    scheduler: jiraSyncScheduler,
     concurrency: serialPerEnvironment,
-    onSuccess: refreshWorkbenchAndJiraSnapshots,
+    onSuccess: refreshSnapshot,
+    onSettled: refreshJiraSnapshot,
   }),
   jiraMigrateLocalTickets: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:jira:migrate-local-tickets",

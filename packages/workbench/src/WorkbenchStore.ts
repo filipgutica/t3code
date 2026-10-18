@@ -352,6 +352,7 @@ interface WorkbenchStoreShape extends Omit<
     WorkbenchOperationError
   >;
   readonly getSnapshot: Effect.Effect<WorkbenchSnapshot, WorkbenchOperationError>;
+  readonly getCompactSnapshot: Effect.Effect<WorkbenchSnapshot, WorkbenchOperationError>;
   readonly getTicket: (
     ticketId: WorkbenchTicketId,
   ) => Effect.Effect<Option.Option<WorkbenchTicket>, WorkbenchOperationError>;
@@ -562,16 +563,16 @@ const makeWorkbenchStore = Effect.gen(function* () {
     `,
   });
   const listTicketRows = SqlSchema.findAll({
-    Request: Schema.Void,
+    Request: Schema.Boolean,
     Result: WorkbenchTicketRow,
-    execute: () => sql`
+    execute: (compact) => sql`
       SELECT
         ticket_id AS "id",
         workbench_project_id AS "projectId",
         epic_id AS "epicId",
         title,
         kind,
-        markdown,
+        CASE WHEN ${compact ? 1 : 0} AND archived_at IS NOT NULL THEN '' ELSE markdown END AS markdown,
         primary_t3_project_id AS "primaryT3ProjectId",
         status,
         blocked,
@@ -1295,7 +1296,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     },
   );
 
-  const getSnapshot = Effect.fn("WorkbenchStore.getSnapshot")(function* () {
+  const getSnapshot = Effect.fn("WorkbenchStore.getSnapshot")(function* (compact: boolean) {
     return yield* sql.withTransaction(
       Effect.gen(function* () {
         const [
@@ -1312,7 +1313,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           listProjectRows(),
           listProjectLinkRows(),
           listEpicRows(),
-          listTicketRows(),
+          listTicketRows(compact),
           listTicketRepositoryRows(),
           listAssignmentRows(),
           listReservedThreadIds(),
@@ -1354,12 +1355,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
             linkedProjectIds: linksByProject.get(project.id) ?? [],
           })),
           epics: epicRows,
-          tickets: ticketRows.map((ticket) =>
-            ticketFromRow(
+          tickets: ticketRows.map((ticket) => ({
+            ...ticketFromRow(
               ticket,
               repositoriesByTicket.get(ticket.id) ?? [ticket.primaryT3ProjectId],
             ),
-          ),
+            ...(compact && ticket.archivedAt !== null ? { markdownOmitted: true } : {}),
+          })),
           assignments,
           reservedThreadIds: reservedThreadRows.map((row) => row.id),
           ticketWorkspaces: ticketWorkspaceRows.map((workspace) =>
@@ -1379,7 +1381,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         Effect.mapError(persistenceError),
       );
       const candidateIds = new Set(candidateRows.map(({ ticketId }) => ticketId));
-      const snapshot = yield* getSnapshot();
+      const snapshot = yield* getSnapshot(false);
       return snapshot.tickets.filter((ticket) => candidateIds.has(ticket.id));
     },
     NodeSqliteClient.readOnly,
@@ -3463,7 +3465,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
         .pipe(NodeSqliteClient.readOnly, Effect.mapError(persistenceError)),
     getEpic: (epicId) =>
       findEpic({ epicId }).pipe(NodeSqliteClient.readOnly, Effect.mapError(persistenceError)),
-    getSnapshot: getSnapshot().pipe(NodeSqliteClient.readOnly),
+    getSnapshot: getSnapshot(false).pipe(NodeSqliteClient.readOnly),
+    getCompactSnapshot: getSnapshot(true).pipe(NodeSqliteClient.readOnly),
     listTicketsNeedingSummary: listTicketsNeedingSummary(),
     getTicketSummaryCandidate,
     recheckTicketSummary,

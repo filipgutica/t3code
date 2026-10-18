@@ -117,6 +117,7 @@ describe("WorkbenchJiraRepository SQL", () => {
           key: "WB-1",
           url: "https://example.atlassian.net/browse/WB-1",
           summary: "Imported issue",
+          description: "Full Jira markdown stays in persistence.",
           issueType: { id: "10001", name: "Story" },
           status: { id: "2", name: "In Progress" },
           epic: null,

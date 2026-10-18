@@ -6,13 +6,32 @@ import {
   WorkbenchTicketId,
   type WorkbenchTicketPreparation,
 } from "@t3tools/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { createElement, useMemo } from "react";
+import { act, create } from "react-test-renderer";
+import { Atom, AsyncResult } from "effect/reactivity";
+import { RegistryContext } from "@effect/atom-react";
+import { AtomRegistry } from "effect/reactivity";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { filterVisibleThreads } from "../hostIntegrations";
 
 import {
   createWorkbenchThreadPresentationPolicy,
   isUnsavedTicketPreparation,
+  useWorkbenchTicketPreparations,
 } from "./useWorkbenchTicketPreparations";
+
+vi.mock("../state/presentation", () => ({
+  environmentSummaries: {
+    get connectedEnvironmentIdsAtom() {
+      return connected;
+    },
+  },
+}));
+vi.mock("./state", () => ({
+  workbenchEnvironment: { ticketPreparations: () => preparations },
+}));
+const connected = Atom.make([EnvironmentId.make("one")]);
+const preparations = Atom.make(AsyncResult.success<ReadonlyArray<WorkbenchTicketPreparation>>([]));
 
 const one = EnvironmentId.make("one");
 const two = EnvironmentId.make("two");
@@ -30,6 +49,37 @@ const threads = [
 ];
 
 describe("Workbench preparation visibility", () => {
+  it("retains policy identity on an unchanged refresh and updates changed phases", async () => {
+    const registry = AtomRegistry.make();
+    registry.set(preparations, AsyncResult.success([preparation]));
+    const observed: Array<ReturnType<typeof createWorkbenchThreadPresentationPolicy>> = [];
+    function Consumer() {
+      const index = useWorkbenchTicketPreparations();
+      const policy = useMemo(() => createWorkbenchThreadPresentationPolicy(index), [index]);
+      observed.push(policy);
+      return null;
+    }
+    let root: ReturnType<typeof create>;
+    try {
+      await act(async () => {
+        root = create(
+          createElement(RegistryContext.Provider, { value: registry }, createElement(Consumer)),
+        );
+      });
+      const policy = observed.at(-1);
+      await act(async () => registry.set(preparations, AsyncResult.success([{ ...preparation }])));
+      expect(observed.at(-1)).toBe(policy);
+      await act(async () =>
+        registry.set(preparations, AsyncResult.success([{ ...preparation, phase: "working" }])),
+      );
+      expect(observed.at(-1)).not.toBe(policy);
+      expect(observed.at(-1)?.isVisible(scopeThreadRef(one, threadId))).toBe(true);
+    } finally {
+      await act(async () => root?.unmount());
+      registry.dispose();
+    }
+  });
+
   it.each([
     ["creating", false, false],
     ["draft", false, false],

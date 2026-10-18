@@ -236,6 +236,73 @@ const stubApi = (input: {
 
 describe("Jira lifecycle persistence", () => {
   it.effect(
+    "keeps newer Jira text versioned while an older Ticket snapshot and edit remain open",
+    () =>
+      Effect.gen(function* () {
+        const binding = makeBinding({
+          selectedSprints: [{ id: 101, name: "Sprint 101" }],
+          observedActiveSprintIds: [101],
+        });
+        const { repository, workbench } = yield* seedState(binding);
+        const olderTicket = (yield* workbench.getSnapshot).tickets[0]!;
+        const olderIssue = (yield* repository.listIssueLinks(bindingId))[0]!.issue;
+        const newerIssue = makeIssue({
+          summary: "Changed in Jira",
+          remoteUpdatedAt: "2026-09-01T00:00:02.000Z",
+        });
+        yield* repository.replaceIssueLinks(bindingId, [makeIssueLink(newerIssue)]);
+        const api = stubApi({
+          listSprints: () => Effect.die("unexpected sprint read"),
+          listAssignedSprintIssues: () => Effect.succeed([newerIssue]),
+        });
+        const importer = yield* JiraTicketImporter;
+        const sync = yield* makeSyncService({ api, importer, repository });
+        const auth = JiraAuthService.of({
+          begin: () => Effect.die("unexpected OAuth start"),
+          complete: () => Effect.die("unexpected OAuth completion"),
+          getAccessToken: () => Effect.die("stale edit must not read credentials"),
+        });
+        let writes = 0;
+        const writer = yield* JiraTicketWriteService.make.pipe(
+          Effect.provideService(JiraSyncServiceTag, sync),
+          Effect.provideService(JiraApi, api),
+          Effect.provideService(JiraAuthService, auth),
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make(() => {
+              writes += 1;
+              return Effect.die("unexpected Jira write");
+            }),
+          ),
+        );
+        const service = yield* WorkbenchJiraService.make.pipe(
+          Effect.provideService(JiraSyncServiceTag, sync),
+          Effect.provideService(JiraApi, api),
+          Effect.provideService(JiraAuthService, auth),
+          Effect.provideService(JiraTicketWriteService.JiraTicketWriteService, writer),
+        );
+        const freshIssue = (yield* service.getSnapshot).issueLinks[0]!.issue;
+        // This is the editor's fallback when the Workbench query has not caught up.
+        assert.strictEqual(freshIssue.description ?? olderTicket.markdown, newerIssue.description);
+        assert.strictEqual(freshIssue.remoteUpdatedAt, newerIssue.remoteUpdatedAt);
+        const error = yield* service
+          .updateTicket({
+            ticketId,
+            markdown: olderTicket.markdown,
+            expectedRemoteUpdatedAt: olderIssue.remoteUpdatedAt,
+          })
+          .pipe(Effect.flip);
+        assert.strictEqual(error.code, "invalid_binding");
+        assert.include(error.message, "changed remotely");
+        assert.strictEqual(writes, 0);
+        assert.strictEqual(
+          (yield* repository.listIssueLinks(bindingId))[0]!.issue.description,
+          newerIssue.description,
+        );
+      }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect(
     "serializes Workspace lifecycle with Jira I/O and retains native records and connections",
     () =>
       Effect.gen(function* () {
