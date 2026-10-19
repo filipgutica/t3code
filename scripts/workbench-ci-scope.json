@@ -406,6 +406,7 @@
       ],
       "tests": [
         "scripts/build-desktop-artifact.test.ts",
+        "scripts/build-desktop-artifact.workbench.test.ts",
         "scripts/workbench-desktop-build.test.ts",
         "scripts/dev-runner.test.ts"
       ],
@@ -451,9 +452,11 @@
   },
   "packagingTests": [
     "scripts/build-desktop-artifact.test.ts",
+    "scripts/build-desktop-artifact.workbench.test.ts",
     "scripts/lib/workbench-desktop-product.test.ts",
     "scripts/workbench-desktop-build.test.ts",
     "scripts/update-release-package-versions.test.ts",
+    "scripts/update-release-package-versions.workbench.test.ts",
     "scripts/merge-update-manifests.test.ts",
     "scripts/resolve-workbench-daily-release.test.ts",
     "scripts/workbench-verify-stable-release.test.ts"
