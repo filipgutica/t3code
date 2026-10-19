@@ -22,7 +22,6 @@ const state = vi.hoisted(() => ({
   subagent: false,
   notificationsSuppressed: false,
   background: [] as Array<{ taskId: string; kind: "command" | "monitor" }>,
-  delegatedChild: null as "running" | "approval" | null,
   add: vi.fn(
     (_toast: { title: string; description: string; actionProps: { onClick: () => void } }) =>
       "toast-1",
@@ -89,33 +88,11 @@ function mockThreadShell() {
   };
 }
 
-let stableParent: ReturnType<typeof mockThreadShell> | null = null;
-function mockThreads() {
-  if (state.delegatedChild === null) return [mockThreadShell()];
-  stableParent ??= mockThreadShell();
-  const child = {
-    ...mockThreadShell(),
-    id: "child-1",
-    title: "Review the login form",
-    creationSource: "mcp",
-    lineage: {
-      rootThreadId: "thread-1",
-      parentThreadId: "thread-1",
-      relationshipToParent: "subagent",
-    },
-    pendingRuntimeRequest:
-      state.delegatedChild === "approval"
-        ? { id: "request-2", kind: "command", createdAt: SHELL_NOW }
-        : null,
-  };
-  return [stableParent, child];
-}
-
 vi.mock(import("@effect/atom-react"), async (original) => ({
   ...(await original()),
   useAtomValue: (() => ({
     status: state.live ? "live" : "disconnected",
-    snapshot: Option.some({ threads: mockThreads() }),
+    snapshot: Option.some({ threads: [mockThreadShell()] }),
   })) as never,
 }));
 vi.mock(import("@tanstack/react-router"), async (original) => ({
@@ -192,9 +169,7 @@ beforeEach(() => {
     limited: false,
     subagent: false,
     background: [],
-    delegatedChild: null,
   });
-  stableParent = null;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.spyOn(document, "visibilityState", "get").mockImplementation(
     () => state.visible as DocumentVisibilityState,

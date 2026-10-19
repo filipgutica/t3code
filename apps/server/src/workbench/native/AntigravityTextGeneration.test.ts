@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
-import { ProviderInstanceId, ProviderSetupError } from "@t3tools/contracts";
+import { ProviderInstanceId } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 
@@ -12,7 +12,6 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
-import { type AcpError } from "effect-acp/errors";
 import type * as AcpSchema from "effect-acp/compat";
 import { expect } from "vite-plus/test";
 
@@ -34,27 +33,8 @@ const encodeMetadata = Schema.encodeEffect(
   Schema.fromJsonString(Schema.Struct({ cwd: Schema.String })),
 );
 
-interface PromptContext {
-  readonly emit: (
-    update: AcpSchema.SessionNotification["update"],
-    sessionId?: string,
-  ) => Effect.Effect<void, AcpError>;
-  permission: Parameters<TextRuntime["handleRequestPermission"]>[0];
-  question: Parameters<TextRuntime["handleElicitation"]>[0];
-  readFile: Parameters<TextRuntime["handleReadTextFile"]>[0];
-  createTerminal: Parameters<TextRuntime["handleCreateTerminal"]>[0];
-  extension: Parameters<TextRuntime["handleUnknownExtRequest"]>[0];
-  readonly cwd: string;
-}
-
 const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* (
-  options: {
-    readonly outputs?: ReadonlyArray<string>;
-    readonly prompt?: (context: PromptContext) => Effect.Effect<AcpSchema.PromptResponse, AcpError>;
-    readonly startError?: AcpError;
-    readonly rejectAdmission?: boolean;
-    readonly sessionId?: string;
-  } = {},
+  options: { readonly outputs?: ReadonlyArray<string> } = {},
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -62,14 +42,12 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
   const profileDirectory = path.join(root, "profile");
   const projectDirectory = path.join(root, "project");
   const conversations = path.join(profileDirectory, "antigravity-acp", "conversations");
-  const nativeSessionId = options.sessionId ?? SESSION_ID;
   const sessionBase = path.join(conversations, SESSION_ID);
   const brainDirectory = path.join(profileDirectory, "antigravity-acp", "brain", SESSION_ID);
   yield* fs.makeDirectory(projectDirectory, { recursive: true });
   yield* fs.makeDirectory(conversations, { recursive: true });
   yield* fs.writeFileString(path.join(projectDirectory, "keep.txt"), "untouched");
   yield* fs.writeFileString(path.join(conversations, "user-session.db"), "keep native history");
-  const enteredPrompt = yield* Deferred.make<void>();
   const state = {
     workspaces: [] as Array<string>,
     closed: [] as Array<string>,
@@ -81,23 +59,8 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
     stop: undefined as Effect.Effect<void> | undefined,
   };
   const outputs = [...(options.outputs ?? ['{"title":"Repair login"}'])];
-  const incoming: Omit<PromptContext, "cwd" | "emit"> = {
-    permission: () => Effect.die("No permission handler."),
-    question: () => Effect.die("No question handler."),
-    readFile: () => Effect.die("No file handler."),
-    createTerminal: () => Effect.die("No terminal handler."),
-    extension: () => Effect.die("No extension handler."),
-  };
-
   const withProcess: AntigravityTextGenerationOptions["withProcess"] = (stop, task) =>
     Effect.gen(function* () {
-      if (options.rejectAdmission) {
-        return yield* new ProviderSetupError({
-          instanceId: modelSelection.instanceId,
-          operation: "launch",
-          detail: "Sign in before starting Antigravity.",
-        });
-      }
       const scope = yield* Scope.Scope;
       const child = yield* Effect.forkIn(task, scope);
       state.stop = Fiber.interrupt(child).pipe(Effect.andThen(stop));
@@ -128,7 +91,6 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
       return {
         start: () =>
           Effect.gen(function* () {
-            if (options.startError) return yield* options.startError;
             yield* fs.makeDirectory(brainDirectory, { recursive: true }).pipe(Effect.orDie);
             yield* fs.writeFileString(`${sessionBase}.db`, "helper session").pipe(Effect.orDie);
             yield* fs.writeFileString(`${sessionBase}.db-wal`, "helper journal").pipe(Effect.orDie);
@@ -138,9 +100,9 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
               .writeFileString(path.join(brainDirectory, "output.txt"), "helper artifact")
               .pipe(Effect.orDie);
             return {
-              sessionId: nativeSessionId,
+              sessionId: SESSION_ID,
               initializeResult: { protocolVersion: 1 },
-              sessionSetupResult: { sessionId: nativeSessionId },
+              sessionSetupResult: { sessionId: SESSION_ID },
               modelConfigId: "model",
             };
           }),
@@ -167,16 +129,10 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
         prompt: (request) =>
           Effect.gen(function* () {
             state.prompts.push(request);
-            yield* Deferred.succeed(enteredPrompt, undefined);
-            const emit: PromptContext["emit"] = (update, sessionId = nativeSessionId) =>
-              sessionUpdate({ sessionId, update });
-            if (options.prompt) {
-              return yield* options.prompt({
-                emit,
-                ...incoming,
-                cwd,
-              });
-            }
+            const emit = (
+              update: AcpSchema.SessionNotification["update"],
+              sessionId: string = SESSION_ID,
+            ) => sessionUpdate({ sessionId, update });
             const output = outputs.shift() ?? '{"title":"Repair login"}';
             yield* emit({
               sessionUpdate: "agent_thought_chunk",
@@ -207,31 +163,16 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
           Effect.sync(() => {
             sessionUpdate = handler;
           }),
-        handleRequestPermission: (handler) =>
-          Effect.sync(() => {
-            incoming.permission = handler;
-          }),
-        handleElicitation: (handler) =>
-          Effect.sync(() => {
-            incoming.question = handler;
-          }),
-        handleReadTextFile: (handler) =>
-          Effect.sync(() => {
-            incoming.readFile = handler;
-          }),
+        handleRequestPermission: () => Effect.void,
+        handleElicitation: () => Effect.void,
+        handleReadTextFile: () => Effect.void,
         handleWriteTextFile: () => Effect.void,
-        handleCreateTerminal: (handler) =>
-          Effect.sync(() => {
-            incoming.createTerminal = handler;
-          }),
+        handleCreateTerminal: () => Effect.void,
         handleTerminalOutput: () => Effect.void,
         handleTerminalWaitForExit: () => Effect.void,
         handleTerminalKill: () => Effect.void,
         handleTerminalRelease: () => Effect.void,
-        handleUnknownExtRequest: (handler) =>
-          Effect.sync(() => {
-            incoming.extension = handler;
-          }),
+        handleUnknownExtRequest: () => Effect.void,
       } satisfies TextRuntime;
     });
 
@@ -240,7 +181,6 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
     makeRuntime,
     withProcess,
   });
-  const titleInput = { cwd: projectDirectory, message: "Repair Google login", modelSelection };
   const assertCleaned = Effect.gen(function* () {
     expect(state.closed).toEqual(state.workspaces);
     for (const workspace of state.workspaces) {
@@ -255,20 +195,7 @@ const makeFixture = Effect.fn("makeAntigravityTextGenerationFixture")(function* 
       "keep native history",
     );
   });
-  return {
-    fs,
-    path,
-    profileDirectory,
-    projectDirectory,
-    sessionBase,
-    brainDirectory,
-    state,
-    incoming,
-    enteredPrompt,
-    textGeneration,
-    titleInput,
-    assertCleaned,
-  };
+  return { projectDirectory, state, textGeneration, assertCleaned };
 });
 
 it.layer(NodeServices.layer)("AntigravityTextGeneration", (it) => {
