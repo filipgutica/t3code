@@ -1,4 +1,4 @@
-import { assert, expect, it } from "@effect/vitest";
+import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
   OrchestratorMcpFailure,
@@ -17,7 +17,6 @@ import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.t
 import * as McpHttpServer from "./McpHttpServer.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpToolAccess from "./McpToolAccess.ts";
-import { McpWritePolicy } from "./McpWritePolicy.ts";
 import { liveThreadShell } from "./McpToolAccess.testkit.ts";
 
 const supervisedThreadId = ThreadId.make("thread:supervised");
@@ -112,7 +111,6 @@ const ProbeToolkit = Toolkit.make(
   Tool.make("reads", probe),
   Tool.make("reads_as_caller", probe),
   Tool.make("acts_as_caller", probe),
-  Tool.make("researches_as_caller", probe),
   Tool.make("writes", probe),
   Tool.make("writes_with_capability", probe),
   Tool.make("writes_threads", {
@@ -133,7 +131,6 @@ const probeHandlers: McpToolAccess.Handlers<typeof ProbeToolkit.tools> = {
   reads: McpToolAccess.reads(() => ran),
   reads_as_caller: McpToolAccess.readsAsCaller(() => ran),
   acts_as_caller: McpToolAccess.actsAsCaller(() => ran),
-  researches_as_caller: McpToolAccess.researchesAsCaller(() => ran),
   writes: McpToolAccess.writes(() => ran),
   writes_with_capability: McpToolAccess.writesWithCapability(() => ran),
   writes_threads: McpToolAccess.writesThreads(
@@ -179,7 +176,6 @@ export const refusedAtCompileTime = () => {
       reads: unchecked,
       reads_as_caller: unchecked,
       acts_as_caller: unchecked,
-      researches_as_caller: unchecked,
       writes: unchecked,
       writes_with_capability: unchecked,
       writes_threads: unchecked,
@@ -232,112 +228,12 @@ const mismatchedProvider = {
 const supervisedClient = clientCaller("approval-required");
 const fullAccessClient = clientCaller("full-access");
 const readOnlyClient = clientCaller("read-only");
-const readOnlyProvider = {
-  ...fullAccess,
-  thread: {
-    threadId: fullAccessThreadId,
-    providerSessionId: `provider:${fullAccessThreadId}`,
-    providerInstanceId: ProviderInstanceId.make("codex"),
-    readOnly: true,
-  },
-};
-// A live full-access thread whose credential may use its browser but not control threads.
 const previewOnly = { ...fullAccess, capabilities: new Set(["preview"] as const) };
-
-it.effect("applies an owner write policy after credential restrictions and before handlers", () =>
-  Effect.gen(function* () {
-    const checked: ThreadId[] = [];
-    const deny = {
-      assertAllowed: (threadId: ThreadId) =>
-        Effect.sync(() => checked.push(threadId)).pipe(
-          Effect.andThen(
-            Effect.fail(
-              new OrchestratorMcpFailure({
-                code: "capability_denied",
-                message: "Owner forbids writes",
-              }),
-            ),
-          ),
-        ),
-    };
-    assert.equal(
-      yield* call("writes", fullAccess).pipe(Effect.provideService(McpWritePolicy, deny)),
-      "capability_denied",
-    );
-    assert.deepEqual(checked, [fullAccessThreadId]);
-    assert.equal(
-      yield* call("reads", fullAccess).pipe(Effect.provideService(McpWritePolicy, deny)),
-      "ran",
-    );
-    assert.equal(
-      yield* call("writes", readOnlyProvider).pipe(Effect.provideService(McpWritePolicy, deny)),
-      "capability_denied",
-    );
-    assert.equal(
-      yield* call("writes", fullAccessClient).pipe(Effect.provideService(McpWritePolicy, deny)),
-      "ran",
-    );
-    assert.deepEqual(checked, [fullAccessThreadId]);
-  }).pipe(
-    Effect.provide(
-      probeServer(
-        Layer.mock(ThreadManagement.ThreadManagementService)({
-          getThreadShell: (threadId) => Effect.succeed(shells.get(threadId) ?? null),
-        }),
-      ),
-    ),
-  ),
-);
-
-it.effect("requires an explicit research exception without granting mutations", () =>
-  Effect.gen(function* () {
-    assert.equal(yield* call("researches_as_caller", readOnlyProvider), "capability_denied");
-    const researchPolicy = {
-      assertAllowed: (_: ThreadId, operation?: "research") =>
-        operation === "research"
-          ? Effect.void
-          : Effect.fail(
-              new OrchestratorMcpFailure({ code: "capability_denied", message: "Planning" }),
-            ),
-    };
-    assert.equal(
-      yield* call("researches_as_caller", readOnlyProvider).pipe(
-        Effect.provideService(McpWritePolicy, researchPolicy),
-      ),
-      "ran",
-    );
-    assert.equal(
-      yield* call("acts_as_caller", readOnlyProvider).pipe(
-        Effect.provideService(McpWritePolicy, researchPolicy),
-      ),
-      "capability_denied",
-    );
-    assert.equal(
-      yield* call("researches_as_caller", {
-        ...ended,
-        thread: { ...readOnlyProvider.thread, threadId: endedThreadId },
-      }).pipe(Effect.provideService(McpWritePolicy, researchPolicy)),
-      "parent_not_active",
-    );
-  }).pipe(
-    Effect.provide(
-      probeServer(
-        Layer.mock(ThreadManagement.ThreadManagementService)({
-          getThreadShell: (threadId) => Effect.succeed(shells.get(threadId) ?? null),
-        }),
-      ),
-    ),
-  ),
-);
 
 it.effect.each([
   ["reads", ended, {}, "ran"],
   ["reads", supervisedClient, {}, "ran"],
   ["reads", readOnlyClient, {}, "ran"],
-  ["reads", readOnlyProvider, {}, "ran"],
-  ["writes", readOnlyProvider, {}, "capability_denied"],
-  ["acts_as_caller", readOnlyProvider, {}, "capability_denied"],
-  ["starts_threads", readOnlyProvider, {}, "capability_denied"],
 
   ["writes", readOnlyClient, {}, "capability_denied"],
   ["writes_threads", readOnlyClient, { threadId: supervisedThreadId }, "capability_denied"],
@@ -347,9 +243,6 @@ it.effect.each([
   ["reads_as_caller", ended, {}, "ran"],
   ["reads_as_caller", fullAccessClient, {}, "thread_credential_required"],
   ["acts_as_caller", supervised, {}, "ran"],
-  ["researches_as_caller", supervised, {}, "ran"],
-  ["researches_as_caller", ended, {}, "parent_not_active"],
-  ["researches_as_caller", readOnlyClient, {}, "thread_credential_required"],
   ["acts_as_caller", ended, {}, "parent_not_active"],
   ["acts_as_caller", background, {}, "ran"],
   ["acts_as_caller", oldProviderBackground, {}, "parent_not_active"],

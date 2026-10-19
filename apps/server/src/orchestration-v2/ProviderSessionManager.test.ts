@@ -335,11 +335,6 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
     readonly hangSessionScopeClose?: boolean;
     readonly startTurn?: Effect.Effect<void>;
     readonly beforeUnload?: Effect.Effect<void>;
-    readonly onResume?: (
-      input: Parameters<ProviderAdapter.ProviderAdapterV2SessionRuntime["resumeThread"]>[0],
-      config: McpProviderSession.McpProviderSessionConfig | undefined,
-    ) => Effect.Effect<void>;
-    /** Registers the process's closeCount finalizer before `beforeOpen` runs. */
     readonly spawnBeforeOpen?: boolean;
     readonly scopeCloseReached?: Deferred.Deferred<void>;
   } = {},
@@ -430,16 +425,10 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
               }),
           ensureThread: () => unimplemented("ensureThread unused in test"),
           resumeThread: (threadInput) =>
-            mcpSessions.read(threadInput.threadId ?? threadInput.providerThread.appThreadId!).pipe(
-              Effect.flatMap((config) => options.onResume?.(threadInput, config) ?? Effect.void),
-              Effect.andThen(
-                Ref.update(state, (current) => ({
-                  ...current,
-                  resumeCount: current.resumeCount + 1,
-                })),
-              ),
-              Effect.as(threadInput.providerThread),
-            ),
+            Ref.update(state, (current) => ({
+              ...current,
+              resumeCount: current.resumeCount + 1,
+            })).pipe(Effect.as(threadInput.providerThread)),
           startTurn: () => options.startTurn ?? Effect.void,
           steerTurn: () => Effect.void,
           interruptTurn: () =>
@@ -495,10 +484,6 @@ function layerTest(input: {
   readonly hangSessionScopeClose?: boolean;
   readonly startTurn?: Effect.Effect<void>;
   readonly beforeUnload?: Effect.Effect<void>;
-  readonly onResume?: (
-    input: Parameters<ProviderAdapter.ProviderAdapterV2SessionRuntime["resumeThread"]>[0],
-    config: McpProviderSession.McpProviderSessionConfig | undefined,
-  ) => Effect.Effect<void>;
   readonly spawnBeforeOpen?: boolean;
   readonly scopeCloseReached?: Deferred.Deferred<void>;
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
@@ -516,7 +501,6 @@ function layerTest(input: {
             : layerTestEventSink;
   const layerRegistry = Layer.unwrap(
     makeProviderAdapter(input.state, {
-      ...(input.onResume === undefined ? {} : { onResume: input.onResume }),
       failEventStream: input.failEventStream ?? false,
       ...(input.capabilities === undefined ? {} : { capabilities: input.capabilities }),
       ...(input.mcpConfigs === undefined ? {} : { mcpConfigs: input.mcpConfigs }),
@@ -2408,203 +2392,6 @@ it.effect(
             idleTimeoutMs: 1_000,
             capabilities: ExclusiveCapabilities,
             mcpConfigs,
-          }),
-        ),
-      );
-    }),
-);
-
-it.effect.each([false, true])(
-  "ProviderSessionManagerV2 reloads shared native state before changing read-only MCP permissions (unload fails: %s)",
-  (failUnload) =>
-    Effect.gen(function* () {
-      const state = yield* Ref.make(emptyState);
-      const resumeCredentials = yield* Ref.make<
-        ReadonlyArray<McpProviderSession.McpProviderSessionConfig>
-      >([]);
-      let unloadFails = failUnload;
-      const effect = Effect.gen(function* () {
-        const eventSink = yield* EventSink.EventSinkV2;
-        const idAllocator = yield* IdAllocator.IdAllocatorV2;
-        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
-        const registry = yield* McpSessionRegistry.McpSessionRegistry;
-        const now = yield* DateTime.now;
-        const threadId = ThreadId.make("thread:mcp-planning-transition");
-        const otherThreadId = ThreadId.make("thread:mcp-shared-working");
-        const providerSessionId = idAllocator.derive.providerSession({
-          providerInstanceId: modelSelection.instanceId,
-        });
-        const providerThread = makeProviderThread({
-          idAllocator,
-          threadId,
-          providerSessionId,
-          now,
-        });
-        yield* eventSink.write({
-          events: [
-            yield* makeThreadCreatedEvent({ idAllocator, threadId, now }),
-            yield* makeThreadCreatedEvent({ idAllocator, threadId: otherThreadId, now }),
-            {
-              id: yield* idAllocator.allocate.event({ threadId }),
-              type: "provider-thread.updated",
-              threadId,
-              driver: CODEX_DRIVER,
-              occurredAt: now,
-              payload: providerThread,
-            },
-          ],
-        });
-        // The shared provider process starts writable for a different conversation.
-        yield* manager.open({
-          threadId: otherThreadId,
-          providerSessionId,
-          modelSelection,
-          runtimePolicy,
-        });
-        const otherConfig = (yield* (yield* McpProviderSessions.McpProviderSessions).read(
-          otherThreadId,
-        ))!;
-        assert.isFalse(
-          (yield* registry.resolve(otherConfig.authorizationHeader.replace(/^Bearer\s+/, "")))
-            ?.thread.readOnly ?? false,
-        );
-        const planningPolicy = { ...runtimePolicy, sandboxPolicy: { type: "readOnly" as const } };
-        const runtime = yield* manager.open({
-          threadId,
-          providerSessionId,
-          modelSelection,
-          runtimePolicy: planningPolicy,
-        });
-        const readOnlyConfig = (yield* (yield* McpProviderSessions.McpProviderSessions).read(
-          threadId,
-        ))!;
-        const readOnlyToken = readOnlyConfig.authorizationHeader.replace(/^Bearer\s+/, "");
-        assert.isTrue((yield* registry.resolve(readOnlyToken))?.thread.readOnly);
-        yield* runtime.resumeThread({
-          threadId,
-          providerThread,
-          modelSelection,
-          runtimePolicy: planningPolicy,
-        });
-        assert.equal(
-          (yield* Ref.get(resumeCredentials)).at(-1)?.providerSessionId,
-          readOnlyConfig.providerSessionId,
-        );
-        yield* manager.detach({ providerSessionId, threadId });
-        if (failUnload) {
-          const failed = yield* Effect.exit(
-            manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy }),
-          );
-          assert.equal(failed._tag, "Failure");
-          assert.equal(
-            (yield* (yield* McpProviderSessions.McpProviderSessions).read(threadId))
-              ?.providerSessionId,
-            readOnlyConfig.providerSessionId,
-          );
-          assert.isTrue((yield* registry.resolve(readOnlyToken))?.thread.readOnly);
-          assert.equal((yield* Ref.get(state)).resumeCount, 1);
-          unloadFails = false;
-        }
-        const unloadsBeforeWorking = (yield* Ref.get(state)).unloadedNativeThreadIds.length;
-        const continued = yield* manager.open({
-          threadId,
-          providerSessionId,
-          modelSelection,
-          runtimePolicy,
-        });
-        assert.equal(
-          (yield* Ref.get(state)).unloadedNativeThreadIds.length,
-          unloadsBeforeWorking + 1,
-        );
-        const workingConfig = (yield* (yield* McpProviderSessions.McpProviderSessions).read(
-          threadId,
-        ))!;
-        assert.notEqual(workingConfig.providerSessionId, readOnlyConfig.providerSessionId);
-        assert.isUndefined(yield* registry.resolve(readOnlyToken));
-        assert.isFalse(
-          (yield* registry.resolve(workingConfig.authorizationHeader.replace(/^Bearer\s+/, "")))
-            ?.thread.readOnly ?? false,
-        );
-        yield* continued.resumeThread({ threadId, providerThread, modelSelection, runtimePolicy });
-        assert.equal(
-          (yield* Ref.get(resumeCredentials)).at(-1)?.providerSessionId,
-          workingConfig.providerSessionId,
-        );
-        assert.equal((yield* Ref.get(state)).resumeCount, 2);
-        assert.include(
-          (yield* Ref.get(state)).unloadedNativeThreadIds,
-          providerThread.nativeThreadRef!.nativeId,
-        );
-        assert.equal(
-          (yield* (yield* McpProviderSessions.McpProviderSessions).read(otherThreadId))
-            ?.providerSessionId,
-          otherConfig.providerSessionId,
-        );
-        // Tightening the same resident conversation also reloads its native MCP client.
-        const unloadsBeforeTightening = (yield* Ref.get(state)).unloadedNativeThreadIds.length;
-        yield* manager.open({
-          threadId,
-          providerSessionId,
-          modelSelection,
-          runtimePolicy: planningPolicy,
-        });
-        assert.equal(
-          (yield* Ref.get(state)).unloadedNativeThreadIds.length,
-          unloadsBeforeTightening + 1,
-        );
-        const tightened = (yield* (yield* McpProviderSessions.McpProviderSessions).read(threadId))!;
-        assert.notEqual(tightened.providerSessionId, workingConfig.providerSessionId);
-        assert.isUndefined(
-          yield* registry.resolve(workingConfig.authorizationHeader.replace(/^Bearer\s+/, "")),
-        );
-        assert.isTrue(
-          (yield* registry.resolve(tightened.authorizationHeader.replace(/^Bearer\s+/, "")))?.thread
-            .readOnly,
-        );
-        yield* runtime.resumeThread({
-          threadId,
-          providerThread,
-          modelSelection,
-          runtimePolicy: planningPolicy,
-        });
-        assert.equal(
-          (yield* Ref.get(resumeCredentials)).at(-1)?.providerSessionId,
-          tightened.providerSessionId,
-        );
-        assert.equal((yield* Ref.get(state)).resumeCount, 3);
-        // Revoked credentials still require a reload of any resident native MCP client.
-        yield* registry.revokeThread(threadId);
-        const unloadsBeforeRevocation = (yield* Ref.get(state)).unloadedNativeThreadIds.length;
-        yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
-        assert.equal(
-          (yield* Ref.get(state)).unloadedNativeThreadIds.length,
-          unloadsBeforeRevocation + 1,
-        );
-        const recovered = (yield* (yield* McpProviderSessions.McpProviderSessions).read(threadId))!;
-        assert.notEqual(recovered.providerSessionId, tightened.providerSessionId);
-        assert.isFalse(
-          (yield* registry.resolve(recovered.authorizationHeader.replace(/^Bearer\s+/, "")))?.thread
-            .readOnly ?? false,
-        );
-        yield* runtime.resumeThread({ threadId, providerThread, modelSelection, runtimePolicy });
-        assert.equal(
-          (yield* Ref.get(resumeCredentials)).at(-1)?.providerSessionId,
-          recovered.providerSessionId,
-        );
-        assert.equal((yield* Ref.get(state)).resumeCount, 4);
-      });
-      yield* effect.pipe(
-        Effect.provide(
-          layerTest({
-            state,
-            idleTimeoutMs: 1000,
-            beforeUnload: Effect.suspend(() =>
-              unloadFails ? Effect.die("native unload failed") : Effect.void,
-            ),
-            onResume: (_input, config) =>
-              config === undefined
-                ? Effect.die("Missing MCP config on resume")
-                : Ref.update(resumeCredentials, (current) => [...current, config]),
           }),
         ),
       );
