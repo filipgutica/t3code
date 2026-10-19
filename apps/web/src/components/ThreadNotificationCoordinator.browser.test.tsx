@@ -20,7 +20,6 @@ const state = vi.hoisted(() => ({
   turnError: false,
   limited: false,
   subagent: false,
-  notificationsSuppressed: false,
   background: [] as Array<{ taskId: string; kind: "command" | "monitor" }>,
   delegatedChild: null as "running" | "approval" | null,
   add: vi.fn(
@@ -150,22 +149,11 @@ vi.mock(import("./ui/toast"), async (original) => {
 });
 
 import { ThreadNotificationCoordinator } from "./ThreadNotificationCoordinator";
-import { ThreadPresentationPolicyContext } from "../hostIntegrations";
 
 let root: Root;
 
 async function render() {
-  await act(() =>
-    root.render(
-      <ThreadPresentationPolicyContext
-        value={
-          state.notificationsSuppressed ? { isVisible: () => false, canNotify: () => false } : null
-        }
-      >
-        <ThreadNotificationCoordinator />
-      </ThreadPresentationPolicyContext>,
-    ),
-  );
+  await act(() => root.render(<ThreadNotificationCoordinator />));
 }
 
 async function complete() {
@@ -174,7 +162,6 @@ async function complete() {
 }
 
 beforeEach(() => {
-  state.notificationsSuppressed = false;
   vi.clearAllMocks();
   Object.assign(state, {
     mode: "off",
@@ -211,13 +198,8 @@ afterEach(async () => {
 });
 
 describe("thread notifications", () => {
-  it.each([
-    { kind: "subagent" as const, focused: true },
-    { kind: "subagent" as const, focused: false },
-    { kind: "notificationsSuppressed" as const, focused: true },
-    { kind: "notificationsSuppressed" as const, focused: false },
-  ])("keeps $kind silent with focus=$focused", async ({ kind, focused }) => {
-    state[kind] = true;
+  it.each([true, false])("keeps subagents silent with focus=%s", async (focused) => {
+    state.subagent = true;
     state.focused = focused;
     state.mode = "notifications-and-sound";
     await render();

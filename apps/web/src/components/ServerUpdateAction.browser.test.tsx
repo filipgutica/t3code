@@ -55,8 +55,6 @@ vi.mock(import("./ui/toast"), async (original) => {
   return { ...actual, toastManager: { ...actual.toastManager, add: testState.toast } };
 });
 
-vi.mock("~/hostIntegrations", () => ({ useHostIntegrations: () => ({}) }));
-
 import {
   readConfirmDialogState,
   registerConfirmDialogHost,

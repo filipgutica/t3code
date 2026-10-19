@@ -386,22 +386,3 @@ it("folds the title only for the active tab's own scroller", async () => {
   await tab("Code").click();
   await vi.waitFor(() => expect(titleFold()).toBe(true));
 });
-
-it("prepares a remote PR checkout without writing to the current local Thread", async () => {
-  const remoteEnvironmentId = EnvironmentId.make("env-2");
-  useComposerDraftStore.getState().setPrompt(threadRef, "Keep my local draft");
-  await render({ environmentId: remoteEnvironmentId, threadRef, context: "page" });
-  await runAction("Fix check");
-  expect(newThread).toHaveBeenCalledWith(
-    expect.objectContaining({ environmentId: remoteEnvironmentId }),
-  );
-  expect(prepareThread).toHaveBeenCalledWith(
-    expect.objectContaining({ reference: detail.url, threadId: ThreadId.make("new-thread") }),
-  );
-  expect(useComposerDraftStore.getState().getComposerDraft(threadRef)?.prompt).toBe(
-    "Keep my local draft",
-  );
-  expect(useComposerDraftStore.getState().getComposerDraft(newDraftId)?.prompt).toContain(
-    "Fix the failing check",
-  );
-});

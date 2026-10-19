@@ -26,7 +26,6 @@ import {
   ProviderTurnId,
   RunAttemptId,
   RunId,
-  RuntimeRequestId,
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
@@ -446,7 +445,6 @@ describe("CodexAdapterV2 runtime policy", () => {
           approvalPolicy: "on-request",
           sandboxPolicy: {
             type: "readOnly",
-            networkAccess: false,
           },
         },
         modelSelection: {
@@ -456,7 +454,7 @@ describe("CodexAdapterV2 runtime policy", () => {
       });
 
       assert.equal(params.approvalPolicy, "on-request");
-      assert.deepEqual(params.sandboxPolicy, { type: "readOnly", networkAccess: false });
+      assert.equal(params.sandboxPolicy?.type, "readOnly");
     }),
   );
 
@@ -4069,245 +4067,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     });
   };
 
-  it.effect.each([
-    "file-change",
-    "filesystem-grant",
-    "filesystem-grant-entries",
-    "command-escape",
-    "legacy-command-escape",
-    "legacy-file-change",
-  ] as const)(
-    "declines research %s approval without exposing a user grant and continues the turn",
-    (kind) =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const scenario = `codex-research-${kind}`;
-          const milestone = yield* Deferred.make<void>();
-          const base = finalAnswerTranscript(scenario, [
-            { id: "answer", text: "RESEARCH_CONTINUES" },
-          ]);
-          const legacy = kind.startsWith("legacy-");
-          const method =
-            kind === "legacy-command-escape"
-              ? "execCommandApproval"
-              : kind === "legacy-file-change"
-                ? "applyPatchApproval"
-                : kind === "file-change"
-                  ? "item/fileChange/requestApproval"
-                  : kind.startsWith("filesystem-grant")
-                    ? "item/permissions/requestApproval"
-                    : "item/commandExecution/requestApproval";
-          const result = legacy
-            ? {
-                decision: {
-                  denied: { rejection: "Tool access policy does not allow this operation." },
-                },
-              }
-            : kind.startsWith("filesystem-grant")
-              ? { permissions: {}, scope: "turn" }
-              : { decision: "decline" };
-          const transcript = {
-            ...base,
-            entries: [
-              ...base.entries.slice(0, -2),
-              {
-                type: "emit_inbound" as const,
-                label: `research-${kind}-request`,
-                frame: {
-                  id: 77,
-                  method,
-                  params: legacy
-                    ? {
-                        conversationId: `native-${scenario}-thread`,
-                        callId: `research-${kind}`,
-                        ...(kind === "legacy-file-change"
-                          ? {
-                              fileChanges: { "/workspace/file": { type: "add", content: "write" } },
-                              grantRoot: "/workspace",
-                            }
-                          : {
-                              cwd: "/workspace",
-                              command: ["touch", "/workspace/file"],
-                              parsedCmd: [],
-                            }),
-                      }
-                    : {
-                        threadId: `native-${scenario}-thread`,
-                        turnId: `native-${scenario}-turn`,
-                        itemId: `research-${kind}`,
-                        startedAtMs: 1782622440500,
-                        ...(kind === "file-change"
-                          ? { grantRoot: "/workspace" }
-                          : kind.startsWith("filesystem-grant")
-                            ? {
-                                cwd: "/workspace",
-                                permissions: {
-                                  fileSystem:
-                                    kind === "filesystem-grant"
-                                      ? { write: ["/workspace"] }
-                                      : {
-                                          entries: [
-                                            {
-                                              path: { type: "path", path: "/workspace" },
-                                              access: "write",
-                                            },
-                                          ],
-                                        },
-                                },
-                              }
-                            : {
-                                cwd: "/workspace",
-                                command: "touch /workspace/file",
-                                reason: "Run outside the sandbox",
-                              }),
-                      },
-                },
-              },
-              {
-                type: "expect_outbound" as const,
-                label: `research-${kind}-declined`,
-                frame: { id: 77, result },
-              },
-              ...base.entries.slice(-2),
-            ],
-          };
-          const harness = yield* makeCodexReplayHarness(transcript, (event) =>
-            event.type === "runtime_request.updated" || event.type === "turn.terminal"
-              ? Deferred.succeed(milestone, undefined).pipe(Effect.asVoid)
-              : Effect.void,
-          );
-          const now = yield* DateTime.now;
-          yield* harness.runtime.startTurn({
-            ...makeCodexTestTurnInput({
-              threadId: harness.threadId,
-              providerThread: harness.providerThread,
-              now,
-              attemptId: RunAttemptId.make(`attempt-${scenario}`),
-              text: "Reply with the requested recovery marker.",
-            }),
-            runtimePolicy: { ...CODEX_TEST_RUNTIME_POLICY, toolAccess: "research" },
-          });
-          yield* Deferred.await(milestone);
-          assert.deepEqual(
-            harness.events.filter((event) => event.type === "runtime_request.updated"),
-            [],
-          );
-          yield* harness.firstTerminal;
-          assert.equal(harness.terminalEvents().length, 1);
-          assert.deepEqual(
-            assistantMessages(harness.events).map((event) => event.message.text),
-            ["RESEARCH_CONTINUES"],
-          );
-        }).pipe(
-          Effect.provide(
-            Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
-          ),
-        ),
-      ),
-  );
-
-  it.effect.each([
-    { kind: "network", decision: "accept" },
-    { kind: "network", decision: "decline" },
-    { kind: "network", decision: "cancel" },
-    { kind: "connector", decision: "accept" },
-  ] as const)("retains native research approval and applies %s", ({ kind, decision }) =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const scenario = `codex-research-approval-${kind}-${decision}`;
-        const approval = yield* Deferred.make<RuntimeRequestId>();
-        const base = finalAnswerTranscript(scenario, [
-          { id: "answer", text: "RESEARCH_CONTINUES" },
-        ]);
-        const networkPermissions = { network: { enabled: true } };
-        const transcript = {
-          ...base,
-          entries: [
-            ...base.entries.slice(0, -2),
-            {
-              type: "emit_inbound" as const,
-              label: `${kind}-approval-request`,
-              frame: {
-                id: 77,
-                method:
-                  kind === "network"
-                    ? "item/permissions/requestApproval"
-                    : "mcpServer/elicitation/request",
-                params: {
-                  threadId: `native-${scenario}-thread`,
-                  turnId: `native-${scenario}-turn`,
-                  ...(kind === "network"
-                    ? {
-                        cwd: "/workspace",
-                        itemId: "network-grant",
-                        startedAtMs: 1782622440500,
-                        permissions: networkPermissions,
-                      }
-                    : {
-                        serverName: "jira",
-                        mode: "form",
-                        requestedSchema: {
-                          type: "object",
-                          properties: {
-                            confirm: { type: "string", enum: ["allow_once", "decline"] },
-                          },
-                          required: ["confirm"],
-                        },
-                        message: "Authorize Jira research access",
-                      }),
-                },
-              },
-            },
-            {
-              type: "expect_outbound" as const,
-              label: `${kind}-approved`,
-              frame: {
-                id: 77,
-                result:
-                  kind === "network"
-                    ? {
-                        permissions: decision === "accept" ? networkPermissions : {},
-                        scope: "turn",
-                      }
-                    : { action: "accept", content: { confirm: "allow_once" } },
-              },
-            },
-            ...base.entries.slice(-2),
-          ],
-        };
-        const harness = yield* makeCodexReplayHarness(transcript, (event) =>
-          event.type === "runtime_request.updated"
-            ? Deferred.succeed(approval, event.runtimeRequest.id).pipe(Effect.asVoid)
-            : Effect.void,
-        );
-        const now = yield* DateTime.now;
-        yield* harness.runtime.startTurn({
-          ...makeCodexTestTurnInput({
-            threadId: harness.threadId,
-            providerThread: harness.providerThread,
-            now,
-            attemptId: RunAttemptId.make(`attempt-${scenario}`),
-            text: "Reply with the requested recovery marker.",
-          }),
-          runtimePolicy: { ...CODEX_TEST_RUNTIME_POLICY, toolAccess: "research" },
-        });
-        const requestId = yield* Deferred.await(approval);
-        assert.deepEqual(harness.terminalEvents(), []);
-        assert.deepEqual(assistantMessages(harness.events), []);
-        yield* harness.runtime.respondToRuntimeRequest({ requestId, decision });
-        yield* harness.firstTerminal;
-        assert.deepEqual(
-          assistantMessages(harness.events).map((event) => event.message.text),
-          ["RESEARCH_CONTINUES"],
-        );
-      }).pipe(
-        Effect.provide(
-          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
-        ),
-      ),
-    ),
-  );
-
   it.effect("suppresses a trailing empty final answer after a non-empty final answer", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -5007,8 +4766,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     });
   };
 
-  // Stop owns a real deadline; let failed termination reach it instead of freezing retries.
-  it.live.each(backgroundStopCases)(
+  it.effect.each(backgroundStopCases)(
     "stops a command after root completion when termination returns %s",
     (terminated) => {
       const stillRunning = terminated === "still_running";

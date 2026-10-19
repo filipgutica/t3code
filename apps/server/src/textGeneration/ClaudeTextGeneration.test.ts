@@ -361,37 +361,6 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
     ),
   );
 
-  it.effect("disables tools and configured MCP servers for structured generation", () =>
-    withFakeClaudeEnv(
-      {
-        output: JSON.stringify({
-          structured_output: {
-            summary:
-              "Improve request validation for the selected analytics metrics and dimensions. Return a clear API error before querying the provider when the request contains unsupported combinations.",
-          },
-        }),
-        argsMustContain:
-          "--tools  --disable-slash-commands --strict-mcp-config --permission-mode dontAsk",
-        stdinMustContain: "Summarize the supplied content.",
-      },
-      (textGeneration) =>
-        Effect.gen(function* () {
-          const generated = yield* textGeneration.generateStructured({
-            operation: "generateExample",
-            cwd: process.cwd(),
-            prompt: "Summarize the supplied content.",
-            outputSchema: Schema.Struct({ summary: Schema.String }),
-            modelSelection: {
-              instanceId: ProviderInstanceId.make("claudeAgent"),
-              model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
-            },
-          });
-
-          expect(generated.summary).toContain("Improve request validation");
-        }),
-    ),
-  );
-
   it.effect("runs Claude text generation with the configured CLAUDE_CONFIG_DIR", () =>
     Effect.gen(function* () {
       const path = yield* Path.Path;

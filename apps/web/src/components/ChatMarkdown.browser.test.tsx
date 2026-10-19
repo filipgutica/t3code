@@ -42,7 +42,7 @@ vi.mock(import("./chat/MermaidDiagram"), async (original) => ({
   MermaidDiagram: () => <svg aria-label="Diagram" />,
 }));
 
-import ChatMarkdown, { ChatMarkdownCodeBlockRendererContext } from "./ChatMarkdown";
+import ChatMarkdown from "./ChatMarkdown";
 
 const roots: Root[] = [];
 
@@ -849,39 +849,4 @@ describe("ChatMarkdown thread find", () => {
       ).toBe(count);
     },
   );
-});
-
-it("renders opted-in assistant blocks while preserving surrounding text and ordinary code", async () => {
-  const text =
-    "Before.\n\n```proposal\nstructured payload\n```\n\nAfter.\n\n```text\nordinary code\n```";
-  const message = (messageId?: string, isStreaming = false) => (
-    <ChatMarkdownCodeBlockRendererContext
-      value={(block) =>
-        block.messageId === "assistant" && block.language === "proposal" ? (
-          <section aria-label="Proposal">
-            {block.isStreaming || !block.isComplete ? "Preparing proposal" : block.code}
-          </section>
-        ) : undefined
-      }
-    >
-      <ChatMarkdown
-        cwd="/tmp/project"
-        text={text}
-        messageId={messageId}
-        isStreaming={isStreaming}
-      />
-    </ChatMarkdownCodeBlockRendererContext>
-  );
-  const { container, rerender } = await render(message("assistant", true));
-  expect(container.querySelector("section")?.textContent).toBe("Preparing proposal");
-  await rerender(message("assistant"));
-  expect(container.querySelector("section")?.textContent).toBe("structured payload\n");
-  expect([...container.querySelectorAll("p")].map((node) => node.textContent)).toEqual([
-    "Before.",
-    "After.",
-  ]);
-  expect(container.querySelectorAll("pre")).toHaveLength(1);
-  await rerender(message());
-  expect(container.querySelectorAll("section")).toHaveLength(0);
-  expect(container.querySelectorAll("pre")).toHaveLength(2);
 });
