@@ -451,6 +451,7 @@
     "packages/source-control-gitlab": "@t3tools/source-control-gitlab"
   },
   "packagingTests": [
+    "apps/desktop/src/workbench/releaseNotes.test.ts",
     "scripts/build-desktop-artifact.test.ts",
     "scripts/build-desktop-artifact.workbench.test.ts",
     "scripts/lib/workbench-desktop-product.test.ts",
@@ -462,6 +463,8 @@
     "scripts/workbench-verify-stable-release.test.ts"
   ],
   "packagingPaths": [
+    "scripts/workbench-release-notes.ts",
+    "scripts/lib/workbench-release-notes.ts",
     ".github/workflows/workbench-release.yml",
     ".github/workflows/workbench-daily-release.yml",
     ".github/workflows/workbench-publish-stable.yml",

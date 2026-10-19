@@ -710,6 +710,8 @@ jobs:
 
       - name: Generate release notes from pull requests
         shell: bash
+        env:
+          SIGN_MACOS: ${{ inputs.sign_macos }}
         run: |
           set -euo pipefail
           args=(
@@ -722,32 +724,7 @@ jobs:
             args+=( -f "previous_tag_name=$PREVIOUS_TAG" )
           fi
           generated_notes="$(gh api "${args[@]}" --jq .body)"
-          {
-            printf '# T3 Code Workbench %s\n\n' "$RELEASE_VERSION"
-            if [[ "${{ inputs.sign_macos }}" == true ]]; then
-              printf 'This release has signed and notarized macOS builds. Windows and Linux builds are unsigned.\n\n'
-            else
-              printf 'This is an unsigned preview of T3 Code Workbench.\n\n'
-            fi
-            printf '%s\n' "$generated_notes"
-            printf '\n## Installation\n\n'
-            printf 'Install Workbench alongside official T3 Code. It uses separate saved data. Windows and Linux AppImage builds check published Workbench releases automatically; choose when to download and restart. Signed macOS builds also support updates; unsigned macOS builds require manual downloads. Existing unsigned macOS installations and version 0.0.1 need a manual upgrade to this release to enable updates.\n\n'
-            if [[ "${{ inputs.sign_macos }}" != true ]]; then
-              printf 'macOS may require System Settings → Privacy & Security → Open Anyway.\n\n'
-            fi
-            printf 'Windows may show an unknown-publisher or SmartScreen warning; device policies can block unsigned apps. On Linux, make the AppImage executable.\n\n'
-            printf 'See [Apple installation guidance](https://support.apple.com/en-ca/guide/mac-help/mh40616/mac) and [Windows signing guidance](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).\n'
-            printf '\n## Build provenance\n\n'
-            printf -- '- Selected fork `main` commit: `%s`\n' "$RELEASE_SHA"
-            printf -- '- Previous tag used for generated notes: `%s`\n' "${PREVIOUS_TAG:-none}"
-            printf -- '- Upstream `pingdotgg/t3code` main: `%s`\n' "${UPSTREAM_SHA:-unavailable}"
-            printf -- '- Upstream merge base: `%s`\n' "${UPSTREAM_BASE:-unavailable}"
-            printf -- '- Jira broker: `%s`\n' "$T3_WORKBENCH_JIRA_BROKER_URL"
-            printf '\n## Verification\n\n- macOS arm64 and x64, Linux x64, and Windows x64 artifacts were built and checksummed.\n- See the platform build metadata for signing status.\n'
-            if [[ "$RELEASE_CHANNEL" == nightly ]]; then
-              printf '\n<!-- workbench-daily: %s -->\n' "$DAILY_METADATA_JSON"
-            fi
-          } > "$RUNNER_TEMP/workbench-release-notes.md"
+          printf '%s\n' "$generated_notes" | node scripts/workbench-release-notes.ts > "$RUNNER_TEMP/workbench-release-notes.md"
 
       - name: Create draft release
         if: needs.resolve.outputs.release_channel == 'latest'
