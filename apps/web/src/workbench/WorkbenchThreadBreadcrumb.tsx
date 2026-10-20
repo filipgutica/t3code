@@ -31,6 +31,9 @@ export function WorkbenchThreadBreadcrumb({
   const registry = useContext(RegistryContext);
   const [attaching, setAttaching] = useState(false);
   const { data } = useEnvironmentQuery(workbenchEnvironment.snapshot({ environmentId, input: {} }));
+  const { data: jiraSnapshot } = useEnvironmentQuery(
+    workbenchEnvironment.jiraSnapshot({ environmentId, input: {} }),
+  );
   const projects = useProjects();
   const thread = useThreadShell(scopeThreadRef(environmentId, threadId));
   const context = getWorkbenchContextForThread(data ?? null, threadId);
@@ -119,7 +122,12 @@ export function WorkbenchThreadBreadcrumb({
                       attachWorkbenchTicketContext({
                         environmentId,
                         thread,
-                        ticket: fullTicket,
+                        ticket: {
+                          ...fullTicket,
+                          jiraIssue: jiraSnapshot?.issueLinks.find(
+                            (link) => link.ticketId === ticket.id,
+                          )?.issue,
+                        },
                         projects: projects.filter(
                           (candidate) => candidate.environmentId === environmentId,
                         ),

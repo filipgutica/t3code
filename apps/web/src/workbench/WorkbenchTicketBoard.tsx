@@ -114,9 +114,13 @@ import {
 } from "./workbench.logic";
 import { getWorkbenchBoardTicketPreview } from "./workbenchBoardTicketPreview";
 import {
+  WorkbenchEpicBadge,
+  WorkbenchJiraParentLink,
   WorkbenchTicketSourceBadge,
-  WorkbenchTicketKindBadge,
+  WorkbenchTicketSubtaskBadge,
+  WorkbenchTicketTypeBadge,
   WorkbenchTicketCopyMenuItems,
+  type WorkbenchJiraIssueTicketOpener,
 } from "./WorkbenchTicketMetadata";
 import { getWorkbenchBoardColumns, orderWorkbenchTicketsByJiraRank } from "./workbenchJira.logic";
 import { WorkbenchDraftTickets } from "./WorkbenchDraftTickets";
@@ -149,6 +153,7 @@ type WorkbenchTicketBoardProps = {
   readonly groupMode: "none" | "epic";
   readonly viewControls: ReactNode;
   readonly jiraIssueLinksByTicketId: ReadonlyMap<WorkbenchTicketId, WorkbenchJiraIssueLink>;
+  readonly openJiraIssueTicket: WorkbenchJiraIssueTicketOpener;
   readonly activeJiraTicketIds: ReadonlySet<WorkbenchTicketId>;
   readonly selectedTicketId: WorkbenchTicketId | null;
   readonly repositoryProjectIds: ReadonlyArray<ProjectId>;
@@ -394,6 +399,7 @@ type WorkbenchBoardContext = Pick<
   | "projectId"
   | "groupMode"
   | "jiraIssueLinksByTicketId"
+  | "openJiraIssueTicket"
   | "jiraOwnershipKnown"
   | "onPublishToJira"
   | "jiraPublishDisabled"
@@ -899,22 +905,28 @@ function renderWorkbenchBoardTicketMetadata(
   presentation: ReturnType<typeof getWorkbenchBoardTicketPresentation>,
 ) {
   const { ticket, board, repositories, epic, jiraIssueLink, summary } = presentation;
-  const { pendingTicketIds, groupMode, onSelect, projectId } = board;
+  const { pendingTicketIds, groupMode, onSelect, projectId, openJiraIssueTicket } = board;
+  const parent = jiraIssueLink?.issue.parent;
   return (
     <div className="mt-2 flex min-w-0 flex-col gap-2 text-xs text-foreground">
       {pendingTicketIds.has(ticket.id) ? <span role="status">Saving status…</span> : null}
+      {parent ? (
+        <WorkbenchJiraParentLink
+          parent={parent}
+          openJiraIssueTicket={openJiraIssueTicket}
+          className="relative z-10"
+        />
+      ) : null}
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
         <WorkbenchTicketSourceBadge
           jiraIssueLink={jiraIssueLink}
           jiraOwnershipKnown={board.jiraOwnershipKnown ?? true}
           className="z-10"
         />
-        <WorkbenchTicketKindBadge kind={ticket.kind} />
+        <WorkbenchTicketTypeBadge kind={ticket.kind} jiraIssue={jiraIssueLink?.issue} />
+        <WorkbenchTicketSubtaskBadge subtasks={jiraIssueLink?.issue.subtasks} />
         {groupMode === "none" && epic ? (
-          <Badge className="min-w-0 max-w-full" size="default" variant="outline">
-            <Layers3Icon />
-            <span className="truncate">{epic.title}</span>
-          </Badge>
+          <WorkbenchEpicBadge className="min-w-0 max-w-full" title={epic.title} />
         ) : null}
         {jiraIssueLink?.issue.flagged ? (
           <Badge size="default" variant="warning">

@@ -617,6 +617,90 @@ describe("resetJira", () => {
     });
   });
 
+  const resetSubtaskSprint = (sprintKeys: ReadonlyArray<string>) => {
+    const requests: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+    const issue = (key: string) => {
+      const parent = key === "ORBIT-1" ? null : "ORBIT-1";
+      return {
+        id: key,
+        key,
+        fields: {
+          summary: key,
+          description: null,
+          labels: [],
+          assignee: null,
+          parent: parent === null ? null : { key: parent },
+          status: { name: "To Do" },
+          issuetype: { subtask: parent !== null },
+        },
+      };
+    };
+    const fetcher: typeof fetch = async (input, init) => {
+      const url = new URL(String(input));
+      requests.push({ url: url.pathname, init: init ?? {} });
+      if (url.pathname.endsWith("/project/ORBIT")) return Response.json({ id: "1", key: "ORBIT" });
+      if (url.pathname.endsWith("/board/42"))
+        return Response.json({ id: 42, name: "Orbit board", type: "scrum" });
+      if (url.pathname.endsWith("/sprint/7"))
+        return Response.json({ id: 7, name: "Orbit sprint", state: "ACTIVE" });
+      if (url.pathname.endsWith("/sprint/7/issue") && init?.method === "POST")
+        return Response.json({});
+      if (url.pathname.endsWith("/sprint/7/issue"))
+        return Response.json({ issues: sprintKeys.map(issue) });
+      if (url.pathname.endsWith("/search/jql")) return Response.json({ issues: [], isLast: true });
+      const issueKey = /\/issue\/(ORBIT-\d+)$/.exec(url.pathname)?.[1];
+      if (issueKey && init?.method !== "PUT") return Response.json(issue(issueKey));
+      if (init?.method === "PUT") return Response.json({});
+      throw new Error(`Unexpected Jira request: ${init?.method ?? "GET"} ${url.pathname}`);
+    };
+    const baselineIssue = (key: string, epicKey: string | null) => ({
+      key,
+      summary: key,
+      description: "",
+      labels: [],
+      assigneeAccountId: null,
+      epicKey,
+      state: "todo" as const,
+    });
+    const result = resetJira({
+      baseline: {
+        site: "https://example.atlassian.net",
+        projectKey: "ORBIT",
+        boardId: 42,
+        boardName: "Orbit board",
+        sprintId: 7,
+        sprintName: "Orbit sprint",
+        issues: [baselineIssue("ORBIT-1", null), baselineIssue("ORBIT-2", "ORBIT-1")],
+      },
+      email: "user@example.test",
+      token: "secret",
+      apply: true,
+      fetcher,
+    });
+    return { result, requests };
+  };
+
+  it("leaves a sub-task's parent and sprint to its parent Story", async () => {
+    const { result, requests } = resetSubtaskSprint(["ORBIT-1", "ORBIT-2"]);
+    await result;
+
+    const subtaskUpdate = requests.find(
+      ({ url, init }) => url.endsWith("/issue/ORBIT-2") && init.method === "PUT",
+    );
+    expect(JSON.parse(String(subtaskUpdate?.init.body)).fields).not.toHaveProperty("parent");
+    const sprintMove = requests.find(
+      ({ url, init }) => url.endsWith("/sprint/7/issue") && init.method === "POST",
+    );
+    expect(JSON.parse(String(sprintMove?.init.body))).toEqual({ issues: ["ORBIT-1"] });
+  });
+
+  it("rejects an extra sub-task of a baseline Story before writing to Jira", async () => {
+    const { result, requests } = resetSubtaskSprint(["ORBIT-1", "ORBIT-2", "ORBIT-3"]);
+
+    await expect(result).rejects.toThrow("Jira sub-task(s) ORBIT-3 are not in the baseline");
+    expect(requests.filter(({ init }) => (init.method ?? "GET") !== "GET")).toEqual([]);
+  });
+
   it("verifies the selected project, board, sprint, and issue before re-adding it", async () => {
     const calls: string[] = [];
     const fetcher: typeof fetch = async (input, init) => {

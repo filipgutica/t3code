@@ -11,7 +11,10 @@ import {
   type WorkbenchJiraConnection,
   type WorkbenchJiraConnectionId,
   type WorkbenchJiraGetBoardConfigurationInput,
+  type WorkbenchJiraIssueReference,
   type WorkbenchJiraIssueSnapshot,
+  type WorkbenchJiraStatusCategory,
+  type WorkbenchJiraSubtaskReference,
   type WorkbenchJiraListAssignedSprintIssuesInput,
   type WorkbenchJiraListBoardsInput,
   type WorkbenchJiraListProjectsInput,
@@ -110,6 +113,21 @@ const RawParentIssue = Schema.Struct({
     }),
   ),
 });
+const RawSubtask = Schema.Struct({
+  id: Schema.String,
+  key: Schema.String,
+  fields: Schema.optionalKey(
+    Schema.Struct({
+      summary: Schema.optionalKey(Schema.String),
+      status: Schema.optionalKey(
+        Schema.Struct({
+          name: Schema.String,
+          statusCategory: Schema.optionalKey(Schema.Struct({ key: Schema.String })),
+        }),
+      ),
+    }),
+  ),
+});
 const RawIssue = Schema.Struct({
   id: Schema.String,
   key: Schema.String,
@@ -122,8 +140,65 @@ const RawIssue = Schema.Struct({
     flagged: Schema.optionalKey(Schema.Boolean),
     epic: Schema.optionalKey(Schema.NullOr(RawIssueReference)),
     parent: Schema.optionalKey(Schema.NullOr(RawParentIssue)),
+    subtasks: Schema.optionalKey(Schema.NullOr(Schema.Array(RawSubtask))),
   }),
 });
+
+// Jira's built-in category keys; its "undefined" (No Category) renders like To Do in Jira.
+const statusCategory = (key: string | undefined): WorkbenchJiraStatusCategory =>
+  key === "done" ? "done" : key === "indeterminate" ? "in_progress" : "todo";
+
+const issueReference = (
+  siteUrl: string,
+  related: {
+    readonly id: string;
+    readonly key: string;
+    readonly fields?: { readonly summary?: string };
+  },
+): WorkbenchJiraIssueReference => {
+  const summary = related.fields?.summary?.trim();
+  return {
+    issueId: related.id,
+    key: related.key,
+    url: `${siteUrl}/browse/${encodeURIComponent(related.key)}`,
+    ...(summary ? { summary } : {}),
+  };
+};
+
+const subtaskReference = (
+  siteUrl: string,
+  subtask: typeof RawSubtask.Type,
+): WorkbenchJiraSubtaskReference => {
+  const status = subtask.fields?.status;
+  const name = status?.name.trim();
+  return {
+    ...issueReference(siteUrl, subtask),
+    ...(name ? { status: { name, category: statusCategory(status?.statusCategory?.key) } } : {}),
+  };
+};
+
+/** Epic parents are projected as `epic`; any other parent and all sub-tasks are kept. */
+const issueRelations = ({
+  siteUrl,
+  fields,
+  epicId,
+}: {
+  readonly siteUrl: string;
+  readonly fields: typeof RawIssue.Type.fields;
+  readonly epicId: string | undefined;
+}): Pick<WorkbenchJiraIssueSnapshot, "parent" | "subtasks"> => {
+  const parent = fields.parent;
+  const parentIsEpic = parent?.fields?.issuetype?.name.toLowerCase() === "epic";
+  const subtasks = fields.subtasks ?? [];
+  return {
+    ...(parent != null && !parentIsEpic && parent.id !== epicId
+      ? { parent: issueReference(siteUrl, parent) }
+      : {}),
+    ...(subtasks.length > 0
+      ? { subtasks: subtasks.map((subtask) => subtaskReference(siteUrl, subtask)) }
+      : {}),
+  };
+};
 const ResearchIssueReference = Schema.Struct({
   key: Schema.String.check(Schema.isMaxLength(100)),
   fields: Schema.Struct({ summary: Schema.String }),
@@ -691,7 +766,7 @@ export const make = Effect.gen(function* () {
           path: `/rest/software/1.0/board/${input.boardId}/sprint/${input.sprintId}/issue`,
           urlParams: {
             jql: "assignee = currentUser()",
-            fields: "summary,description,issuetype,status,updated,flagged,epic,parent",
+            fields: "summary,description,issuetype,status,updated,flagged,epic,parent,subtasks",
             maxResults: "100",
             ...(nextPageToken === undefined ? {} : { nextPageToken }),
             ...(input.reconcileIssueIds === undefined
@@ -738,6 +813,7 @@ export const make = Effect.gen(function* () {
           issueType: issue.fields.issuetype,
           status: issue.fields.status,
           epic,
+          ...issueRelations({ siteUrl, fields: issue.fields, epicId: epic?.id }),
           flagged: issue.fields.flagged ?? false,
           rank,
           remoteUpdatedAt: issue.fields.updated ?? null,

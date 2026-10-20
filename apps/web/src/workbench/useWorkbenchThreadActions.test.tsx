@@ -56,6 +56,7 @@ vi.mock("./state", () => ({
     replaceAssignment: "replaceAssignment",
     unlinkAssignment: "unlinkAssignment",
     prepareTicketWorkspace: "prepareTicketWorkspace",
+    jiraSnapshot: () => null,
   },
 }));
 vi.mock("../state/use-atom-command", () => ({

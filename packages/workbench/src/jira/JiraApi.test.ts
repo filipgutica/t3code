@@ -234,6 +234,24 @@ describe("JiraApi", () => {
                             issuetype: { name: "Epic" },
                           },
                         },
+                        subtasks: [
+                          {
+                            id: "10003",
+                            key: "WB-3",
+                            fields: {
+                              summary: "Map parent links",
+                              status: { name: "Done", statusCategory: { key: "done" } },
+                            },
+                          },
+                          {
+                            id: "10004",
+                            key: "WB-4",
+                            fields: {
+                              summary: "Assigned to a teammate",
+                              status: { name: "Review", statusCategory: { key: "indeterminate" } },
+                            },
+                          },
+                        ],
                       },
                     },
                   ],
@@ -251,6 +269,23 @@ describe("JiraApi", () => {
                         updated: "2026-09-03T00:00:00.000Z",
                         flagged: false,
                         epic: { id: 10000, key: "WB-EPIC", summary: "Jira integration" },
+                      },
+                    },
+                    {
+                      id: "10003",
+                      key: "WB-3",
+                      fields: {
+                        summary: "Map parent links",
+                        issuetype: { id: "subtask", name: "Sub-task" },
+                        status: { id: "3", name: "Done" },
+                        parent: {
+                          id: "10001",
+                          key: "WB-1",
+                          fields: {
+                            summary: "Mirror assigned sprint tickets",
+                            issuetype: { name: "Story" },
+                          },
+                        },
                       },
                     },
                   ],
@@ -282,6 +317,31 @@ describe("JiraApi", () => {
       assert.strictEqual(issues[1]?.description, "");
       assert.strictEqual(issues[0]?.epic?.description, "");
       assert.deepStrictEqual(issues[1]?.epic, issues[0]?.epic);
+      // Epic parents stay in `epic`; other parents and every reported sub-task are kept.
+      assert.deepStrictEqual(
+        issues.map((issue) => issue.parent),
+        [
+          undefined,
+          undefined,
+          {
+            issueId: "10001",
+            key: "WB-1",
+            url: "https://example.atlassian.net/browse/WB-1",
+            summary: "Mirror assigned sprint tickets",
+          },
+        ],
+      );
+      assert.deepStrictEqual(
+        issues.map((issue) => issue.subtasks?.map(({ key, status }) => [key, status])),
+        [
+          [
+            ["WB-3", { name: "Done", category: "done" }],
+            ["WB-4", { name: "Review", category: "in_progress" }],
+          ],
+          undefined,
+          undefined,
+        ],
+      );
       assert.strictEqual(
         requests.filter((request) => request.url.includes("/rest/api/2/issue/")).length,
         1,

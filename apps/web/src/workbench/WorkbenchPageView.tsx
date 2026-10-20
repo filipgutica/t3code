@@ -84,6 +84,7 @@ import {
   WorkbenchWorkspaceDialog,
 } from "./WorkbenchForms";
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
+import type { WorkbenchJiraIssueTicketOpener } from "./WorkbenchTicketMetadata";
 import { WorkbenchTicketConversation } from "./WorkbenchTicketConversation";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
@@ -635,6 +636,24 @@ function isWorkbenchPageTicketThreadPending({
   );
 }
 
+function getWorkbenchPageJiraIssueTicketOpener({
+  boardData,
+  selection,
+}: Pick<WorkbenchPageViewProps, "boardData" | "selection">): WorkbenchJiraIssueTicketOpener {
+  return (issueId) => {
+    const ticketId = boardData.jiraTicketIdsByIssueId.get(issueId);
+    const projectId = selection.selectedProject?.id;
+    if (ticketId === undefined || projectId === undefined) return undefined;
+    return () => {
+      selection.setAwaitingTicketId(null);
+      selection.setAwaitingEpicId(null);
+      selection.setSelectedEpicId(null);
+      selection.setSelectedTicketId(ticketId);
+      void selection.updateRouteSelection(projectId, ticketId);
+    };
+  };
+}
+
 function getWorkbenchPageTicketJiraProps({
   props: { boardData, jiraBindings, pageData, pendingAction, ticketActions, selection },
   ticket,
@@ -648,6 +667,7 @@ function getWorkbenchPageTicketJiraProps({
   const jiraFieldsManaged = jiraManagedTicketIds.has(ticket.id);
   return {
     jiraIssueLink: jiraIssueLinksByTicketId.get(ticket.id) ?? null,
+    openJiraIssueTicket: getWorkbenchPageJiraIssueTicketOpener({ boardData, selection }),
     jiraFieldsManaged,
     jiraOwnershipKnown,
     jiraPublicationAction: (
@@ -894,16 +914,17 @@ function WorkbenchPageEpicDetail(
       }}
       actions={{
         onSave: saveEpicContent,
+        openJiraIssueTicket: getWorkbenchPageJiraIssueTicketOpener(props),
         lifecycleSupported: pageData.snapshot?.supportsEpicLifecycle === true,
         canArchive: canArchiveEpic,
         onArchive: setEpicArchived,
       }}
-      onOpenTicket={(ticket) => {
+      onOpenTicket={(ticketId) => {
         setAwaitingTicketId(null);
         setAwaitingEpicId(null);
         setSelectedEpicId(null);
-        setSelectedTicketId(ticket.id);
-        void updateRouteSelection(selectedProject.id, ticket.id);
+        setSelectedTicketId(ticketId);
+        void updateRouteSelection(selectedProject.id, ticketId);
       }}
       onCreateTicket={() => openTicketConversation(selectedEpic.id)}
     />
@@ -1096,6 +1117,7 @@ function WorkbenchPageBoard(
           groupMode={boardGroupModeForView}
           viewControls={<WorkbenchBoardToolbar boardData={boardData} />}
           jiraIssueLinksByTicketId={jiraIssueLinksByTicketId}
+          openJiraIssueTicket={getWorkbenchPageJiraIssueTicketOpener(props)}
           activeJiraTicketIds={activeJiraTicketIds}
           selectedTicketId={null}
           repositoriesById={repositoriesById}

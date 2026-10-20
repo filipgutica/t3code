@@ -182,6 +182,32 @@ describe("Workbench ticket helpers", () => {
     );
   });
 
+  it("describes a Jira sub-task by its Jira type and parent", () => {
+    const context = buildTicketThreadContext(
+      {
+        title: "Add idempotency key",
+        markdown: "",
+        kind: "story",
+        primaryT3ProjectId: ProjectId.make("repository-one"),
+        repositoryProjectIds: [ProjectId.make("repository-one")],
+        jiraIssue: {
+          issueType: { id: "10003", name: "Sub-task" },
+          parent: {
+            issueId: "10012",
+            key: "ABC-12",
+            url: "https://example.atlassian.net/browse/ABC-12",
+            summary: "Retry failed card payments",
+          },
+        },
+      },
+      [],
+    );
+    expect(context.split("\n").slice(2, 4)).toEqual([
+      "Ticket type: Sub-task",
+      "Parent: ABC-12 — Retry failed card payments",
+    ]);
+  });
+
   it("represents ticket context as a removable composer comment attachment", () => {
     const comment = buildTicketReviewComment(
       {
