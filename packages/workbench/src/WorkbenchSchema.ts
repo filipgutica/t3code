@@ -743,8 +743,18 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
     19,
     Effect.gen(function* () {
       yield* sql`ALTER TABLE workbench_ticket_workspaces ADD COLUMN generated_branch_name TEXT`;
-      // Earlier claims created new worktrees on branch_name, so it was the selected name.
-      yield* sql`UPDATE workbench_ticket_workspaces SET generated_branch_name = branch_name`;
+      // All-PR Workspaces used branch_name only as an identity, not as a selected branch.
+      yield* sql`
+        UPDATE workbench_ticket_workspaces SET generated_branch_name = branch_name
+        WHERE NOT EXISTS (
+          SELECT 1 FROM workbench_ticket_workspace_repositories AS repository
+          WHERE repository.ticket_id = workbench_ticket_workspaces.ticket_id
+        ) OR EXISTS (
+          SELECT 1 FROM workbench_ticket_workspace_repositories AS repository
+          WHERE repository.ticket_id = workbench_ticket_workspaces.ticket_id
+            AND repository.branch_name = workbench_ticket_workspaces.branch_name
+        )
+      `;
     }),
   );
   yield* sql`

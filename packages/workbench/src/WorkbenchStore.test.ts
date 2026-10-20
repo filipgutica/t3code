@@ -429,42 +429,68 @@ describe("WorkbenchStore package boundary", () => {
     ),
   );
 
-  it.effect("backfills selected Ticket Workspace branches from recorded names once", () =>
+  it.effect("backfills only selected legacy Workspace branches once", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const store = yield* WorkbenchStore;
       const projectId = ProjectId.make("generated-branch-migration-project");
-      const ticketId = WorkbenchTicketId.make("generated-branch-migration-ticket");
       const createdAt = "2026-09-07T10:00:00.000Z";
+      const cases = [
+        { name: "empty", branches: [], selected: true },
+        { name: "mixed", branches: ["feature/primary", "workbench/mixed"], selected: true },
+        { name: "all-pr", branches: ["feature/primary", "feature/secondary"], selected: false },
+      ];
 
-      yield* seedTicket({
-        store,
-        projectId,
-        workspaceId: WorkbenchProjectId.make("generated-branch-migration-workspace"),
-        ticketId,
-        createdAt,
-      });
       yield* sql`DELETE FROM workbench_schema_migrations WHERE version = 19`;
       yield* sql`ALTER TABLE workbench_ticket_workspaces DROP COLUMN generated_branch_name`;
-      yield* sql`
-        INSERT INTO workbench_ticket_workspaces (
-          ticket_id, attempt_id, status, branch_name, error_message, created_at, updated_at
-        ) VALUES (
-          ${ticketId}, 'legacy-attempt', 'ready', 'workbench/legacy', NULL,
-          ${createdAt}, ${createdAt}
-        )
-      `;
+      for (const { name, branches } of cases) {
+        const ticketId = WorkbenchTicketId.make(`migration-${name}`);
+        yield* seedTicket({
+          store,
+          projectId,
+          workspaceId: WorkbenchProjectId.make(`migration-${name}`),
+          ticketId,
+          createdAt,
+        });
+        yield* sql`
+          INSERT INTO workbench_ticket_workspaces (
+            ticket_id, attempt_id, status, branch_name, error_message, created_at, updated_at
+          ) VALUES (
+            ${ticketId}, 'legacy-attempt', 'ready', ${`workbench/${name}`}, NULL,
+            ${createdAt}, ${createdAt}
+          )
+        `;
+        for (const [index, branch] of branches.entries()) {
+          yield* sql`
+            INSERT INTO workbench_ticket_workspace_repositories (
+              ticket_id, t3_project_id, attempt_id, is_primary, source_path, worktree_path,
+              branch_name, status, error_message, created_at, updated_at
+            ) VALUES (
+              ${ticketId}, ${`repository-${index}`}, 'legacy-attempt', ${index === 0 ? 1 : 0},
+              ${`/repos/${index}`}, ${`/worktrees/${name}/${index}`}, ${branch}, 'ready', NULL,
+              ${createdAt}, ${createdAt}
+            )
+          `;
+        }
+      }
       yield* ensureWorkbenchSchema;
-      expect(yield* store.getTicketWorkspaceGeneratedBranchName(ticketId)).toEqual(
-        Option.some("workbench/legacy"),
-      );
+      for (const { name, selected } of cases) {
+        expect(
+          yield* store.getTicketWorkspaceGeneratedBranchName(
+            WorkbenchTicketId.make(`migration-${name}`),
+          ),
+        ).toEqual(selected ? Option.some(`workbench/${name}`) : Option.none());
+      }
 
-      yield* sql`
-        UPDATE workbench_ticket_workspaces SET generated_branch_name = NULL
-        WHERE ticket_id = ${ticketId}
-      `;
+      yield* sql`UPDATE workbench_ticket_workspaces SET generated_branch_name = NULL`;
       yield* ensureWorkbenchSchema;
-      expect(yield* store.getTicketWorkspaceGeneratedBranchName(ticketId)).toEqual(Option.none());
+      for (const { name } of cases) {
+        expect(
+          yield* store.getTicketWorkspaceGeneratedBranchName(
+            WorkbenchTicketId.make(`migration-${name}`),
+          ),
+        ).toEqual(Option.none());
+      }
     }).pipe(
       Effect.provide(testLayer({ projects: new Set(["generated-branch-migration-project"]) })),
     ),
