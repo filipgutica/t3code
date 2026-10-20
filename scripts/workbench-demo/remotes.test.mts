@@ -617,21 +617,24 @@ describe("resetJira", () => {
     });
   });
 
-  it("leaves a sub-task's parent and sprint to its parent Story", async () => {
+  const resetSubtaskSprint = (sprintKeys: ReadonlyArray<string>) => {
     const requests: Array<{ readonly url: string; readonly init: RequestInit }> = [];
-    const issue = (key: string, subtask: boolean, parent: string | null) => ({
-      id: key,
-      key,
-      fields: {
-        summary: key,
-        description: null,
-        labels: [],
-        assignee: null,
-        parent: parent === null ? null : { key: parent },
-        status: { name: "To Do" },
-        issuetype: { subtask },
-      },
-    });
+    const issue = (key: string) => {
+      const parent = key === "ORBIT-1" ? null : "ORBIT-1";
+      return {
+        id: key,
+        key,
+        fields: {
+          summary: key,
+          description: null,
+          labels: [],
+          assignee: null,
+          parent: parent === null ? null : { key: parent },
+          status: { name: "To Do" },
+          issuetype: { subtask: parent !== null },
+        },
+      };
+    };
     const fetcher: typeof fetch = async (input, init) => {
       const url = new URL(String(input));
       requests.push({ url: url.pathname, init: init ?? {} });
@@ -643,14 +646,10 @@ describe("resetJira", () => {
       if (url.pathname.endsWith("/sprint/7/issue") && init?.method === "POST")
         return Response.json({});
       if (url.pathname.endsWith("/sprint/7/issue"))
-        return Response.json({
-          issues: [issue("ORBIT-1", false, null), issue("ORBIT-2", true, "ORBIT-1")],
-        });
+        return Response.json({ issues: sprintKeys.map(issue) });
       if (url.pathname.endsWith("/search/jql")) return Response.json({ issues: [], isLast: true });
-      if (url.pathname.endsWith("/issue/ORBIT-1") && init?.method !== "PUT")
-        return Response.json(issue("ORBIT-1", false, null));
-      if (url.pathname.endsWith("/issue/ORBIT-2") && init?.method !== "PUT")
-        return Response.json(issue("ORBIT-2", true, "ORBIT-1"));
+      const issueKey = /\/issue\/(ORBIT-\d+)$/.exec(url.pathname)?.[1];
+      if (issueKey && init?.method !== "PUT") return Response.json(issue(issueKey));
       if (init?.method === "PUT") return Response.json({});
       throw new Error(`Unexpected Jira request: ${init?.method ?? "GET"} ${url.pathname}`);
     };
@@ -663,8 +662,7 @@ describe("resetJira", () => {
       epicKey,
       state: "todo" as const,
     });
-
-    await resetJira({
+    const result = resetJira({
       baseline: {
         site: "https://example.atlassian.net",
         projectKey: "ORBIT",
@@ -679,6 +677,12 @@ describe("resetJira", () => {
       apply: true,
       fetcher,
     });
+    return { result, requests };
+  };
+
+  it("leaves a sub-task's parent and sprint to its parent Story", async () => {
+    const { result, requests } = resetSubtaskSprint(["ORBIT-1", "ORBIT-2"]);
+    await result;
 
     const subtaskUpdate = requests.find(
       ({ url, init }) => url.endsWith("/issue/ORBIT-2") && init.method === "PUT",
@@ -688,6 +692,13 @@ describe("resetJira", () => {
       ({ url, init }) => url.endsWith("/sprint/7/issue") && init.method === "POST",
     );
     expect(JSON.parse(String(sprintMove?.init.body))).toEqual({ issues: ["ORBIT-1"] });
+  });
+
+  it("rejects an extra sub-task of a baseline Story before writing to Jira", async () => {
+    const { result, requests } = resetSubtaskSprint(["ORBIT-1", "ORBIT-2", "ORBIT-3"]);
+
+    await expect(result).rejects.toThrow("Jira sub-task(s) ORBIT-3 are not in the baseline");
+    expect(requests.filter(({ init }) => (init.method ?? "GET") !== "GET")).toEqual([]);
   });
 
   it("verifies the selected project, board, sprint, and issue before re-adding it", async () => {

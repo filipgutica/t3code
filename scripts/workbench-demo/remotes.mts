@@ -1468,7 +1468,7 @@ export const resetJira = async ({
   const sprintIssues = await listJiraSprintIssues({
     request,
     sprintId: baseline.sprintId,
-    fields: "project,labels,issuetype",
+    fields: "project,labels,issuetype,parent",
   });
   const baselineKeys = new Set(baseline.issues.map(({ key }) => key));
   const markedIssues = await findMarkedIssues(
@@ -1483,13 +1483,28 @@ export const resetJira = async ({
       issue.fields?.labels?.includes(WORKBENCH_DEMO_CLEANUP_LABEL),
   );
   const removableExtraKeys = new Set(removableExtras.map(({ key }) => key));
-  // Jira moves sub-tasks with their parent and rejects moving them on their own.
-  const sprintBacklogExtras = sprintIssues.filter(
+  const sprintExtras = sprintIssues.filter(
     (issue) =>
       isJiraIssueInProject(issue.key, baseline.projectKey) &&
       !baselineKeys.has(issue.key) &&
-      !removableExtraKeys.has(issue.key) &&
-      issue.fields?.issuetype?.subtask !== true,
+      !removableExtraKeys.has(issue.key),
+  );
+  // Jira moves sub-tasks with their parent and rejects moving them on their own,
+  // so an extra sub-task of a baseline issue can never leave the sprint.
+  const strandedSubtaskKeys = sprintExtras
+    .filter(
+      (issue) =>
+        issue.fields?.issuetype?.subtask === true &&
+        baselineKeys.has(issue.fields.parent?.key ?? ""),
+    )
+    .map(({ key }) => key);
+  if (strandedSubtaskKeys.length > 0) {
+    throw new Error(
+      `Jira sub-task(s) ${strandedSubtaskKeys.join(", ")} are not in the baseline, but their parent is. Delete them or label them ${WORKBENCH_DEMO_CLEANUP_LABEL}, then retry.`,
+    );
+  }
+  const sprintBacklogExtras = sprintExtras.filter(
+    (issue) => issue.fields?.issuetype?.subtask !== true,
   );
 
   const issueKeys: string[] = [];

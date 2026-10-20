@@ -31,6 +31,9 @@ export function WorkbenchThreadBreadcrumb({
   const registry = useContext(RegistryContext);
   const [attaching, setAttaching] = useState(false);
   const { data } = useEnvironmentQuery(workbenchEnvironment.snapshot({ environmentId, input: {} }));
+  const { data: jiraSnapshot } = useEnvironmentQuery(
+    workbenchEnvironment.jiraSnapshot({ environmentId, input: {} }),
+  );
   const projects = useProjects();
   const thread = useThreadShell(scopeThreadRef(environmentId, threadId));
   const context = getWorkbenchContextForThread(data ?? null, threadId);
@@ -116,19 +119,12 @@ export function WorkbenchThreadBreadcrumb({
                         }
                         fullTicket = loaded;
                       }
-                      const jiraSnapshot = await Effect.runPromise(
-                        AtomRegistry.getResult(
-                          registry,
-                          workbenchEnvironment.jiraSnapshot({ environmentId, input: {} }),
-                          { suspendOnWaiting: true },
-                        ),
-                      );
                       attachWorkbenchTicketContext({
                         environmentId,
                         thread,
                         ticket: {
                           ...fullTicket,
-                          jiraIssue: jiraSnapshot.issueLinks.find(
+                          jiraIssue: jiraSnapshot?.issueLinks.find(
                             (link) => link.ticketId === ticket.id,
                           )?.issue,
                         },
