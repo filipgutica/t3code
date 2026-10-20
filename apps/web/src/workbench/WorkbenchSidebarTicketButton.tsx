@@ -12,7 +12,7 @@ import { useState } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
-import { WORKBENCH_TICKET_KIND_LABELS, WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
+import { getWorkbenchTicketTypeLabel, WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
 import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 import { useWorkbenchSidebarTicketActionMenu } from "./useWorkbenchSidebarTicketActionMenu";
 import type { WorkbenchSidebarTicket } from "./workbenchSidebar.logic";
@@ -79,7 +79,12 @@ function TicketPreview({
         {details ? (
           <>
             <dt>Type</dt>
-            <dd>{WORKBENCH_TICKET_KIND_LABELS[details.kind]}</dd>
+            <dd>
+              {getWorkbenchTicketTypeLabel({
+                kind: details.kind,
+                jiraIssue: details.issueLink?.issue,
+              })}
+            </dd>
           </>
         ) : null}
         <dt>Status</dt>

@@ -31,6 +31,7 @@ import {
   type WorkbenchEpic,
   WorkbenchEpicId,
   type WorkbenchJiraIssueLink,
+  type WorkbenchJiraIssueSnapshot,
   type WorkbenchTicket,
   WorkbenchTicketId,
   type WorkbenchTicketKind,
@@ -143,6 +144,7 @@ import {
   WORKBENCH_TICKET_KIND_LABELS,
   WORKBENCH_TICKET_STATUS_LABELS,
   getWorkbenchTicketTemplate,
+  getWorkbenchTicketTypeLabel,
   isWorkbenchTicketKind,
 } from "./workbench.logic";
 import {
@@ -159,9 +161,12 @@ import {
   WorkbenchThreadCheckoutDetails,
 } from "./WorkbenchCheckoutDetails";
 import {
+  WorkbenchJiraParentLink,
+  WorkbenchJiraSubtaskList,
   WorkbenchTicketSourceBadge,
-  WorkbenchTicketKindBadge,
+  WorkbenchTicketTypeBadge,
   WorkbenchTicketCopyMenuItems,
+  type WorkbenchJiraIssueTicketOpener,
 } from "./WorkbenchTicketMetadata";
 import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
 import { WorkbenchJiraSprintSelect } from "./WorkbenchJiraSprintSelect";
@@ -236,9 +241,10 @@ export function WorkbenchEpicDetail({
     readonly canArchive: boolean;
     readonly onArchive: (epic: WorkbenchEpic, archivedAt: string | null) => Promise<boolean>;
     readonly onSave: (epic: WorkbenchEpic, title: string, markdown: string) => Promise<boolean>;
+    readonly openJiraIssueTicket: WorkbenchJiraIssueTicketOpener;
   };
   readonly onBack: () => void;
-  readonly onOpenTicket: (ticket: WorkbenchTicket) => void;
+  readonly onOpenTicket: (ticketId: WorkbenchTicket["id"]) => void;
   readonly onCreateTicket: () => void;
 }) {
   const {
@@ -305,6 +311,7 @@ export function WorkbenchEpicDetail({
               repositoriesById={repositoriesById}
               assignmentsByTicket={assignmentsByTicket}
               jiraIssueLinksByTicketId={jiraIssueLinksByTicketId}
+              openJiraIssueTicket={actions.openJiraIssueTicket}
               jiraOwnershipKnown={jiraOwnershipKnown}
               pending={mutationDisabled}
               onOpenTicket={onOpenTicket}
@@ -857,6 +864,7 @@ export type WorkbenchTicketDetailProps = {
   ) => void;
   readonly onJiraTransition: (selection: WorkbenchJiraTransitionSelection) => void;
   readonly onOpenEpic: (epicId: WorkbenchEpicId) => void;
+  readonly openJiraIssueTicket: WorkbenchJiraIssueTicketOpener;
   readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
   readonly onOpenThread: (ticket: WorkbenchTicket, threadId?: ThreadId) => void;
   readonly onOpenAssignedThread: (threadId: ThreadId) => void;
@@ -947,6 +955,7 @@ function WorkbenchLoadedTicketDetail(props: WorkbenchTicketDetailProps) {
         onUpdate: props.onUpdate,
         onJiraTransition: props.onJiraTransition,
         onOpenEpic: props.onOpenEpic,
+        openJiraIssueTicket: props.openJiraIssueTicket,
         onCreateEpic: props.onCreateEpic,
         onOpenThread: props.onOpenThread,
         onOpenAssignedThread: props.onOpenAssignedThread,
@@ -1029,6 +1038,7 @@ function WorkbenchTicketDetailController({
     | "onUpdate"
     | "onJiraTransition"
     | "onOpenEpic"
+    | "openJiraIssueTicket"
     | "onCreateEpic"
     | "onOpenThread"
     | "onOpenAssignedThread"
@@ -1089,6 +1099,7 @@ function WorkbenchTicketDetailController({
     onUpdate,
     onJiraTransition,
     onOpenEpic,
+    openJiraIssueTicket,
     onCreateEpic,
     onOpenThread,
     onOpenAssignedThread,
@@ -1235,6 +1246,7 @@ function WorkbenchTicketDetailController({
           onUpdate: onUpdate,
           onJiraTransition: onJiraTransition,
           onRefreshJira: onRefreshJira,
+          openJiraIssueTicket: openJiraIssueTicket,
           onReplaceThread: onReplaceThread,
           settledAssignments: settledAssignments,
           onNewThread: onNewThread,
@@ -1498,10 +1510,15 @@ function WorkbenchTicketDetailController({
               actions={{
                 onCreateEpic: onCreateEpic,
                 onOpenEpic: onOpenEpic,
+                openJiraIssueTicket: openJiraIssueTicket,
                 onToggle: () => setDetailsPanelCollapsed((collapsed) => !collapsed),
                 onUpdate: onUpdate,
               }}
-              records={{ ticket: ticket, actionableTicket: actionableTicket }}
+              records={{
+                ticket: ticket,
+                actionableTicket: actionableTicket,
+                jiraIssueLink: jiraIssueLink,
+              }}
             />
           </aside>
         </div>
@@ -1552,11 +1569,13 @@ type WorkbenchTicketDetailsPanelProps = {
   readonly linkedEpicId: WorkbenchEpicId | null;
   readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
   readonly onOpenEpic: (epicId: WorkbenchEpicId) => void;
+  readonly openJiraIssueTicket: WorkbenchJiraIssueTicketOpener;
   readonly onToggle: () => void;
   readonly onUpdate: (ticket: WorkbenchTicket, patch: WorkbenchTicketUpdatePatch) => void;
   readonly pending: boolean;
   readonly ticket: WorkbenchTicket;
   readonly actionableTicket: WorkbenchTicket;
+  readonly jiraIssueLink: WorkbenchJiraIssueLink | null;
 };
 function WorkbenchTicketDetailsPanel({
   presentation,
@@ -1569,13 +1588,13 @@ function WorkbenchTicketDetailsPanel({
   >;
   actions: Pick<
     WorkbenchTicketDetailsPanelProps,
-    "onCreateEpic" | "onOpenEpic" | "onToggle" | "onUpdate"
+    "onCreateEpic" | "onOpenEpic" | "openJiraIssueTicket" | "onToggle" | "onUpdate"
   >;
-  records: Pick<WorkbenchTicketDetailsPanelProps, "ticket" | "actionableTicket">;
+  records: Pick<WorkbenchTicketDetailsPanelProps, "ticket" | "actionableTicket" | "jiraIssueLink">;
 }) {
   const { collapsed, epics, isArchived, jiraFieldsManaged, linkedEpicId, pending } = presentation;
-  const { onCreateEpic, onOpenEpic, onToggle, onUpdate } = actions;
-  const { ticket, actionableTicket } = records;
+  const { onCreateEpic, onOpenEpic, openJiraIssueTicket, onToggle, onUpdate } = actions;
+  const { ticket, actionableTicket, jiraIssueLink } = records;
   return (
     <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/30">
       <WorkbenchTicketPanelHeader
@@ -1595,8 +1614,10 @@ function WorkbenchTicketDetailsPanel({
         {jiraFieldsManaged ? (
           <WorkbenchTicketJiraDetails
             epics={epics}
+            jiraIssue={jiraIssueLink?.issue}
             linkedEpicId={linkedEpicId}
             onOpenEpic={onOpenEpic}
+            openJiraIssueTicket={openJiraIssueTicket}
             ticket={ticket}
           />
         ) : (
@@ -1984,6 +2005,7 @@ type WorkbenchTicketHeaderProps = {
   ) => void;
   onJiraTransition: (selection: WorkbenchJiraTransitionSelection) => void;
   onRefreshJira: (() => void) | null;
+  openJiraIssueTicket: WorkbenchJiraIssueTicketOpener;
   jiraRefreshDisabled: boolean;
   jiraRefreshing: boolean;
   canOpenThread: boolean;
@@ -2012,6 +2034,7 @@ function WorkbenchTicketHeader({
     | "onUpdate"
     | "onJiraTransition"
     | "onRefreshJira"
+    | "openJiraIssueTicket"
     | "onReplaceThread"
     | "settledAssignments"
     | "onNewThread"
@@ -2049,6 +2072,7 @@ function WorkbenchTicketHeader({
     onUpdate,
     onJiraTransition,
     onRefreshJira,
+    openJiraIssueTicket,
     onReplaceThread,
     settledAssignments,
     onNewThread,
@@ -2109,6 +2133,7 @@ function WorkbenchTicketHeader({
             onUpdate: onUpdate,
             onJiraTransition: onJiraTransition,
             onRefreshJira: onRefreshJira,
+            openJiraIssueTicket: openJiraIssueTicket,
           }}
         />
         <WorkbenchTicketHeaderActions
@@ -3294,28 +3319,72 @@ function getWorkbenchWorkspaceDescription({
 
 function WorkbenchTicketJiraDetails({
   epics,
+  jiraIssue,
   linkedEpicId,
   onOpenEpic,
+  openJiraIssueTicket,
   ticket,
-}: Pick<WorkbenchTicketDetailsPanelProps, "epics" | "linkedEpicId" | "onOpenEpic" | "ticket">) {
+}: Pick<
+  WorkbenchTicketDetailsPanelProps,
+  "epics" | "linkedEpicId" | "onOpenEpic" | "openJiraIssueTicket" | "ticket"
+> & { jiraIssue: WorkbenchJiraIssueSnapshot | undefined }) {
+  const parent = jiraIssue?.parent;
+  const openParentTicket = parent ? openJiraIssueTicket(parent.issueId) : undefined;
   return (
-    <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 px-4 pb-4 text-sm">
-      <dt className="text-muted-foreground">Type</dt>
-      <dd className="min-w-0 break-words text-right font-medium [overflow-wrap:anywhere]">
-        {WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}
-      </dd>
-      <dt className="text-muted-foreground">Epic</dt>
-      <dd className="flex min-w-0 flex-wrap items-center justify-end gap-2 text-right">
-        <span className="min-w-0 break-words font-medium [overflow-wrap:anywhere]">
-          {epics.find((epic) => epic.id === ticket.epicId)?.title ?? "No Epic"}
-        </span>
-        {linkedEpicId ? (
-          <Button onClick={() => onOpenEpic(linkedEpicId)} size="xs" type="button" variant="ghost">
-            View Epic <ArrowRightIcon />
-          </Button>
+    <>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 px-4 pb-4 text-sm">
+        <dt className="text-muted-foreground">Type</dt>
+        <dd className="min-w-0 break-words text-right font-medium [overflow-wrap:anywhere]">
+          {getWorkbenchTicketTypeLabel({ kind: ticket.kind, jiraIssue })}
+        </dd>
+        {parent ? (
+          <>
+            <dt className="text-muted-foreground">Parent</dt>
+            <dd className="flex min-w-0 flex-wrap items-center justify-end gap-2 text-right">
+              <span className="min-w-0 break-words font-medium [overflow-wrap:anywhere]">
+                <span className="font-mono font-normal">{parent.key}</span>
+                {parent.summary ? ` ${parent.summary}` : null}
+              </span>
+              {openParentTicket ? (
+                <Button onClick={openParentTicket} size="xs" type="button" variant="ghost">
+                  View ticket <ArrowRightIcon />
+                </Button>
+              ) : (
+                <Button
+                  render={<a href={parent.url} target="_blank" rel="noopener noreferrer" />}
+                  size="xs"
+                  variant="ghost"
+                >
+                  Open in Jira <ExternalLinkIcon />
+                </Button>
+              )}
+            </dd>
+          </>
         ) : null}
-      </dd>
-    </dl>
+        <dt className="text-muted-foreground">Epic</dt>
+        <dd className="flex min-w-0 flex-wrap items-center justify-end gap-2 text-right">
+          <span className="min-w-0 break-words font-medium [overflow-wrap:anywhere]">
+            {epics.find((epic) => epic.id === ticket.epicId)?.title ?? "No Epic"}
+          </span>
+          {linkedEpicId ? (
+            <Button
+              onClick={() => onOpenEpic(linkedEpicId)}
+              size="xs"
+              type="button"
+              variant="ghost"
+            >
+              View Epic <ArrowRightIcon />
+            </Button>
+          ) : null}
+        </dd>
+      </dl>
+      {jiraIssue?.subtasks?.length ? (
+        <WorkbenchJiraSubtaskList
+          subtasks={jiraIssue.subtasks}
+          openJiraIssueTicket={openJiraIssueTicket}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -4505,6 +4574,7 @@ function WorkbenchEpicTickets({
   repositoriesById,
   assignmentsByTicket,
   jiraIssueLinksByTicketId,
+  openJiraIssueTicket,
   jiraOwnershipKnown,
   pending,
   onOpenTicket,
@@ -4522,7 +4592,10 @@ function WorkbenchEpicTickets({
   | "pending"
   | "onOpenTicket"
   | "onCreateTicket"
-> & { progress: ReturnType<typeof getWorkbenchEpicProgress> }) {
+> &
+  Pick<Parameters<typeof WorkbenchEpicDetail>[0]["actions"], "openJiraIssueTicket"> & {
+    progress: ReturnType<typeof getWorkbenchEpicProgress>;
+  }) {
   return (
     <section className="overflow-hidden rounded-xl border border-border bg-card">
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
@@ -4575,7 +4648,7 @@ function WorkbenchEpicTickets({
               >
                 <span className="min-w-0">
                   <span className="flex min-w-0 flex-wrap items-center gap-2">
-                    <WorkbenchTicketKindBadge kind={ticket.kind} />
+                    <WorkbenchTicketTypeBadge kind={ticket.kind} jiraIssue={jiraIssueLink?.issue} />
                     <WorkbenchTicketSourceBadge
                       jiraIssueLink={jiraIssueLink}
                       jiraOwnershipKnown={jiraOwnershipKnown}
@@ -4588,7 +4661,7 @@ function WorkbenchEpicTickets({
                         render={
                           <button
                             type="button"
-                            onClick={() => onOpenTicket(ticket)}
+                            onClick={() => onOpenTicket(ticket.id)}
                             className="min-w-0 cursor-pointer truncate text-left text-sm font-medium outline-none after:absolute after:inset-0 after:z-[1] after:content-[''] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                           />
                         }
@@ -4600,6 +4673,13 @@ function WorkbenchEpicTickets({
                       </TooltipPopup>
                     </Tooltip>
                   </span>
+                  {jiraIssueLink?.issue.parent ? (
+                    <WorkbenchJiraParentLink
+                      parent={jiraIssueLink.issue.parent}
+                      openJiraIssueTicket={openJiraIssueTicket}
+                      className="relative z-10 mt-1"
+                    />
+                  ) : null}
                   <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                     <span>{repository?.title ?? "Repository unavailable"}</span>
                     <span>{assignment ? "Agent assigned" : "Unassigned"}</span>
@@ -4933,6 +5013,7 @@ type WorkbenchTicketHeadingProps = Pick<
   | "onUpdate"
   | "onJiraTransition"
   | "onRefreshJira"
+  | "openJiraIssueTicket"
   | "jiraRefreshDisabled"
   | "jiraRefreshing"
   | "jiraOwnershipKnown"
@@ -4959,7 +5040,10 @@ function WorkbenchTicketHeading({
   >;
   records: Pick<WorkbenchTicketHeadingProps, "ticket" | "jiraIssueLink" | "actionableTicket">;
   context: Pick<WorkbenchTicketHeadingProps, "environmentId">;
-  actions: Pick<WorkbenchTicketHeadingProps, "onUpdate" | "onJiraTransition" | "onRefreshJira">;
+  actions: Pick<
+    WorkbenchTicketHeadingProps,
+    "onUpdate" | "onJiraTransition" | "onRefreshJira" | "openJiraIssueTicket"
+  >;
 }) {
   const {
     executionStatus,
@@ -4975,10 +5059,18 @@ function WorkbenchTicketHeading({
   } = presentation;
   const { ticket, jiraIssueLink, actionableTicket } = records;
   const { environmentId } = context;
-  const { onUpdate, onJiraTransition, onRefreshJira } = actions;
+  const { onUpdate, onJiraTransition, onRefreshJira, openJiraIssueTicket } = actions;
+  const parent = jiraIssueLink?.issue.parent;
   return (
     <div className="col-span-2 row-start-2 min-w-0 @min-[48rem]/ticket:col-span-1 @min-[48rem]/ticket:col-start-2 @min-[48rem]/ticket:row-start-1">
-      <p className="text-xs font-medium text-muted-foreground">{workspaceTitle} · Ticket</p>
+      {parent ? (
+        <div className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <span className="shrink-0">{workspaceTitle} ·</span>
+          <WorkbenchJiraParentLink parent={parent} openJiraIssueTicket={openJiraIssueTicket} />
+        </div>
+      ) : (
+        <p className="text-xs font-medium text-muted-foreground">{workspaceTitle} · Ticket</p>
+      )}
       <h1 className="mt-1 text-xl font-semibold leading-snug [overflow-wrap:anywhere]">
         {displayedTitle.trim() || ticket.title}
       </h1>
@@ -4987,7 +5079,7 @@ function WorkbenchTicketHeading({
           status={executionStatus?.presentation}
           startedAt={executionStatus?.startedAt}
         />
-        <WorkbenchTicketKindBadge kind={ticket.kind} />
+        <WorkbenchTicketTypeBadge kind={ticket.kind} jiraIssue={jiraIssueLink?.issue} />
         <WorkbenchTicketAttentionBadge
           environmentId={environmentId}
           ticketId={ticket.id}

@@ -116,10 +116,22 @@ export function WorkbenchThreadBreadcrumb({
                         }
                         fullTicket = loaded;
                       }
+                      const jiraSnapshot = await Effect.runPromise(
+                        AtomRegistry.getResult(
+                          registry,
+                          workbenchEnvironment.jiraSnapshot({ environmentId, input: {} }),
+                          { suspendOnWaiting: true },
+                        ),
+                      );
                       attachWorkbenchTicketContext({
                         environmentId,
                         thread,
-                        ticket: fullTicket,
+                        ticket: {
+                          ...fullTicket,
+                          jiraIssue: jiraSnapshot.issueLinks.find(
+                            (link) => link.ticketId === ticket.id,
+                          )?.issue,
+                        },
                         projects: projects.filter(
                           (candidate) => candidate.environmentId === environmentId,
                         ),

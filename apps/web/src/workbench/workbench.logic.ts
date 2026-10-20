@@ -4,6 +4,7 @@ import type {
   ThreadId,
   WorkbenchAssignment,
   WorkbenchEpic,
+  WorkbenchJiraIssueSnapshot,
   WorkbenchSnapshot,
   WorkbenchTicket,
   WorkbenchTicketGeneratedSummary,
@@ -22,6 +23,17 @@ export const WORKBENCH_TICKET_KIND_LABELS: Record<WorkbenchTicketKind, string> =
   story: "Story",
   bug: "Bug",
 };
+
+/** Jira's issue type wins for Jira Tickets; local Tickets use their Workbench kind. */
+export function getWorkbenchTicketTypeLabel({
+  kind,
+  jiraIssue,
+}: {
+  readonly kind: WorkbenchTicketKind;
+  readonly jiraIssue: Pick<WorkbenchJiraIssueSnapshot, "issueType"> | undefined;
+}): string {
+  return jiraIssue?.issueType.name ?? WORKBENCH_TICKET_KIND_LABELS[kind];
+}
 
 const WORKBENCH_TICKET_TEMPLATES: Record<WorkbenchTicketKind, string> = {
   story: [
@@ -315,11 +327,15 @@ function neutralizeTicketContextTags(value: string): string {
   return value.replace(/<(?=\/?review_comment\b)/giu, "&lt;");
 }
 
+export type WorkbenchTicketContextSource = Pick<
+  WorkbenchTicket,
+  "title" | "markdown" | "kind" | "repositoryProjectIds" | "primaryT3ProjectId"
+> & {
+  readonly jiraIssue?: Pick<WorkbenchJiraIssueSnapshot, "issueType" | "parent"> | undefined;
+};
+
 export function buildTicketThreadContext(
-  ticket: Pick<
-    WorkbenchTicket,
-    "title" | "markdown" | "kind" | "repositoryProjectIds" | "primaryT3ProjectId"
-  >,
+  ticket: WorkbenchTicketContextSource,
   repositories: ReadonlyArray<{
     readonly id: ProjectId;
     readonly title: string;
@@ -327,6 +343,7 @@ export function buildTicketThreadContext(
   }>,
 ): string {
   const body = ticket.markdown.trim();
+  const parent = ticket.jiraIssue?.parent;
   const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]));
   const repositoryLines = getWorkbenchTicketRepositoryProjectIds(ticket).map((repositoryId) => {
     const repository = repositoriesById.get(repositoryId);
@@ -337,7 +354,8 @@ export function buildTicketThreadContext(
   return [
     `# ${ticket.title}`,
     "",
-    `Ticket type: ${WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}`,
+    `Ticket type: ${getWorkbenchTicketTypeLabel({ kind: ticket.kind, jiraIssue: ticket.jiraIssue })}`,
+    ...(parent ? [`Parent: ${parent.key}${parent.summary ? ` — ${parent.summary}` : ""}`] : []),
     "",
     "## Repository scope",
     "",
@@ -347,10 +365,7 @@ export function buildTicketThreadContext(
 }
 
 export function buildTicketReviewComment(
-  ticket: Pick<
-    WorkbenchTicket,
-    "id" | "title" | "markdown" | "kind" | "repositoryProjectIds" | "primaryT3ProjectId"
-  >,
+  ticket: WorkbenchTicketContextSource & Pick<WorkbenchTicket, "id">,
   repositories: ReadonlyArray<{
     readonly id: ProjectId;
     readonly title: string;

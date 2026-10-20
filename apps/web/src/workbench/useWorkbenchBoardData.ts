@@ -50,6 +50,13 @@ export function useWorkbenchBoardData({
   const projectTickets = optimisticStatus.tickets.filter(
     (ticket) => ticket.projectId === selectedProject?.id && isTicketVisible(ticket),
   );
+  // Related Jira issues open in Workbench only when their Ticket is visible in this Workspace.
+  const jiraTicketIdsByIssueId = new Map(
+    projectTickets.flatMap((ticket) => {
+      const link = jiraIssueLinksByTicketId.get(ticket.id);
+      return link ? [[link.issue.issueId, ticket.id] as const] : [];
+    }),
+  );
   const projectJiraIssueLinks = (() => {
     const ticketIds = new Set(projectTickets.map((ticket) => ticket.id));
     return (jiraSnapshot?.issueLinks ?? []).filter(
@@ -96,6 +103,7 @@ export function useWorkbenchBoardData({
     : [];
   return {
     jiraIssueLinksByTicketId,
+    jiraTicketIdsByIssueId,
     projectTickets,
     projectJiraIssueLinks,
     selectedEpicTickets,

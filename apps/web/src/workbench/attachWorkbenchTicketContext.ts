@@ -8,7 +8,7 @@ import type {
 
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useComposerDraftStore } from "../composerDraftStore";
-import { buildTicketReviewComment } from "./workbench.logic";
+import { buildTicketReviewComment, type WorkbenchTicketContextSource } from "./workbench.logic";
 
 export function attachWorkbenchTicketContext(input: {
   readonly environmentId: EnvironmentId;
@@ -17,10 +17,7 @@ export function attachWorkbenchTicketContext(input: {
     readonly projectId: ProjectId;
     readonly worktreePath: string | null;
   };
-  readonly ticket: Pick<
-    WorkbenchTicket,
-    "id" | "title" | "markdown" | "kind" | "repositoryProjectIds" | "primaryT3ProjectId"
-  >;
+  readonly ticket: WorkbenchTicketContextSource & Pick<WorkbenchTicket, "id">;
   readonly projects: ReadonlyArray<{
     readonly id: ProjectId;
     readonly title: string;

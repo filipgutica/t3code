@@ -108,6 +108,7 @@ const props: ComponentProps<typeof WorkbenchTicketBoard> = {
   viewControls: null,
   mirrorColumns: null,
   jiraConnected: false,
+  openJiraIssueTicket: () => undefined,
   jiraStatusMappings: [],
   jiraIssueLinksByTicketId: new Map(),
   activeJiraTicketIds: new Set(),

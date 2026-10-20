@@ -20,7 +20,11 @@ import { DEFAULT_RUNTIME_MODE } from "@t3tools/contracts";
 import type { ComposerThreadTarget } from "../composerDraftStore";
 import type { ReviewCommentContext } from "../reviewCommentContext";
 import { DEFAULT_INTERACTION_MODE } from "../types";
-import { buildTicketReviewComment, resolveWorkbenchTicketThreadTarget } from "./workbench.logic";
+import {
+  buildTicketReviewComment,
+  resolveWorkbenchTicketThreadTarget,
+  type WorkbenchTicketContextSource,
+} from "./workbench.logic";
 import {
   isWorkbenchRepositoryScopeEqual,
   type WorkbenchRepositoryScope,
@@ -37,6 +41,7 @@ type EnvironmentCommandInput<Input> = {
 interface StartWorkbenchTicketInput {
   readonly environmentId: EnvironmentId;
   readonly ticket: WorkbenchTicket;
+  readonly jiraIssue?: WorkbenchTicketContextSource["jiraIssue"];
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly assignment: WorkbenchAssignment | undefined;
   readonly existingThreadIds: ReadonlySet<ThreadId>;
@@ -345,7 +350,7 @@ const attachTicketContextAndOpen = async ({
       .map((repository) => [repository.projectId, repository.worktreePath]),
   );
   const ticketContext = buildTicketReviewComment(
-    input.ticket,
+    { ...input.ticket, jiraIssue: input.jiraIssue },
     input.projects.map((repository) => ({
       ...repository,
       workspaceRoot: preparedPaths.get(repository.id) ?? repository.workspaceRoot,

@@ -17,6 +17,7 @@ import {
 import { useComposerDraftStore } from "../composerDraftStore";
 import { newThreadId, randomUUID } from "../lib/utils";
 import { resolveDefaultProviderModelSelection } from "../providerInstances";
+import { useEnvironmentQuery } from "../state/query";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
@@ -128,6 +129,9 @@ export function useStartWorkbenchTicket({
     reportFailure: false,
   });
   const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
+  const { data: jiraSnapshot } = useEnvironmentQuery(
+    environmentId === null ? null : workbenchEnvironment.jiraSnapshot({ environmentId, input: {} }),
+  );
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
 
   return async (ticket: WorkbenchTicket, options?: StartWorkbenchTicketOptions) => {
@@ -140,6 +144,7 @@ export function useStartWorkbenchTicket({
           {
             environmentId,
             ticket,
+            jiraIssue: jiraSnapshot?.issueLinks.find((link) => link.ticketId === ticket.id)?.issue,
             projects,
             assignment: options?.assignment ?? assignmentsByTicket.get(ticket.id),
             existingThreadIds,

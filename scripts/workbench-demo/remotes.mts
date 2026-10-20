@@ -590,6 +590,7 @@ type JiraIssue = {
     readonly labels?: readonly string[];
     readonly assignee?: { readonly accountId?: string } | null;
     readonly parent?: { readonly key?: string } | null;
+    readonly issuetype?: { readonly subtask?: boolean };
   };
 };
 type JiraTransition = { readonly id: string; readonly to?: { readonly name?: string } };
@@ -1184,6 +1185,7 @@ export type JiraBaselineIssue = {
   readonly description: string;
   readonly labels: readonly string[];
   readonly assigneeAccountId: string | null;
+  /** The issue's parent: usually an Epic, or the parent Story of a sub-task. */
   readonly epicKey: string | null;
   readonly state: JiraDemoState;
 };
@@ -1466,7 +1468,7 @@ export const resetJira = async ({
   const sprintIssues = await listJiraSprintIssues({
     request,
     sprintId: baseline.sprintId,
-    fields: "project,labels",
+    fields: "project,labels,issuetype",
   });
   const baselineKeys = new Set(baseline.issues.map(({ key }) => key));
   const markedIssues = await findMarkedIssues(
@@ -1481,14 +1483,17 @@ export const resetJira = async ({
       issue.fields?.labels?.includes(WORKBENCH_DEMO_CLEANUP_LABEL),
   );
   const removableExtraKeys = new Set(removableExtras.map(({ key }) => key));
+  // Jira moves sub-tasks with their parent and rejects moving them on their own.
   const sprintBacklogExtras = sprintIssues.filter(
     (issue) =>
       isJiraIssueInProject(issue.key, baseline.projectKey) &&
       !baselineKeys.has(issue.key) &&
-      !removableExtraKeys.has(issue.key),
+      !removableExtraKeys.has(issue.key) &&
+      issue.fields?.issuetype?.subtask !== true,
   );
 
   const issueKeys: string[] = [];
+  const sprintIssueKeys: string[] = [];
   const updates: Array<{
     readonly key: string;
     readonly fields: Record<string, unknown>;
@@ -1497,7 +1502,7 @@ export const resetJira = async ({
   for (const baselineIssue of baseline.issues) {
     const issue = decodeJiraIssue(
       await request<unknown>(
-        `/rest/api/3/issue/${encodeURIComponent(baselineIssue.key)}?fields=project,summary,description,labels,assignee,parent,status`,
+        `/rest/api/3/issue/${encodeURIComponent(baselineIssue.key)}?fields=project,summary,description,labels,assignee,parent,status,issuetype`,
       ),
     );
     if (issue.key !== baselineIssue.key) {
@@ -1506,6 +1511,14 @@ export const resetJira = async ({
       );
     }
     issueKeys.push(issue.key);
+    // A sub-task's parent is fixed when it is created, and its sprint follows that parent.
+    const subtask = issue.fields?.issuetype?.subtask === true;
+    if (subtask && (issue.fields?.parent?.key ?? null) !== baselineIssue.epicKey) {
+      throw new Error(
+        `Jira sub-task ${issue.key} has a different parent than the baseline; refusing to reset it.`,
+      );
+    }
+    if (!subtask) sprintIssueKeys.push(issue.key);
 
     let transitionId: string | undefined;
     if (stateForStatus(issue.fields?.status?.name) !== baselineIssue.state) {
@@ -1533,7 +1546,9 @@ export const resetJira = async ({
           baselineIssue.assigneeAccountId === null
             ? null
             : { accountId: baselineIssue.assigneeAccountId },
-        parent: baselineIssue.epicKey === null ? null : { key: baselineIssue.epicKey },
+        ...(subtask
+          ? {}
+          : { parent: baselineIssue.epicKey === null ? null : { key: baselineIssue.epicKey } }),
       },
       ...(transitionId === undefined ? {} : { transitionId }),
     });
@@ -1561,10 +1576,10 @@ export const resetJira = async ({
     });
     updated.push(update.key);
   }
-  if (issueKeys.length) {
+  if (sprintIssueKeys.length) {
     await request(`/rest/agile/1.0/sprint/${baseline.sprintId}/issue`, {
       method: "POST",
-      body: JSON.stringify({ issues: issueKeys }),
+      body: JSON.stringify({ issues: sprintIssueKeys }),
     });
   }
 

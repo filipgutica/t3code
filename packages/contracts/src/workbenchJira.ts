@@ -208,6 +208,26 @@ export const WorkbenchJiraEpicReference = Schema.Struct({
 });
 export type WorkbenchJiraEpicReference = typeof WorkbenchJiraEpicReference.Type;
 
+/** A related Jira issue. It may be assigned to someone else and absent from Workbench. */
+export const WorkbenchJiraIssueReference = Schema.Struct({
+  issueId: TrimmedNonEmptyString,
+  key: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
+  summary: Schema.optionalKey(TrimmedNonEmptyString),
+});
+export type WorkbenchJiraIssueReference = typeof WorkbenchJiraIssueReference.Type;
+
+export const WorkbenchJiraStatusCategory = Schema.Literals(["todo", "in_progress", "done"]);
+export type WorkbenchJiraStatusCategory = typeof WorkbenchJiraStatusCategory.Type;
+
+export const WorkbenchJiraSubtaskReference = Schema.Struct({
+  ...WorkbenchJiraIssueReference.fields,
+  status: Schema.optionalKey(
+    Schema.Struct({ name: TrimmedNonEmptyString, category: WorkbenchJiraStatusCategory }),
+  ),
+});
+export type WorkbenchJiraSubtaskReference = typeof WorkbenchJiraSubtaskReference.Type;
+
 /** Jira-owned fields captured by a manual sprint refresh. */
 export const WorkbenchJiraIssueSnapshot = Schema.Struct({
   issueId: TrimmedNonEmptyString,
@@ -218,6 +238,10 @@ export const WorkbenchJiraIssueSnapshot = Schema.Struct({
   issueType: WorkbenchJiraIssueType,
   status: WorkbenchJiraIssueStatus,
   epic: Schema.NullOr(WorkbenchJiraEpicReference),
+  /** A non-Epic parent, such as a sub-task's Story. Epic parents populate `epic`. */
+  parent: Schema.optionalKey(WorkbenchJiraIssueReference),
+  /** Every sub-task Jira reports, including ones assigned to other people. */
+  subtasks: Schema.optionalKey(Schema.Array(WorkbenchJiraSubtaskReference)),
   flagged: Schema.Boolean,
   rank: Schema.Int,
   remoteUpdatedAt: Schema.NullOr(IsoDateTime),
