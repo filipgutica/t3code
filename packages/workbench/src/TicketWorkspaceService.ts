@@ -26,6 +26,7 @@ import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Semaphore from "effect/Semaphore";
 import * as Hex from "effect/encoding/Hex";
+import { formatGeneratedBranchName } from "@t3tools/shared/git";
 
 import { TicketWorkspaceHost } from "./TicketWorkspaceHost.ts";
 import { WorkbenchStore, type WorkbenchTicketWorkspaceRepositoryState } from "./WorkbenchStore.ts";
@@ -50,7 +51,7 @@ export interface TicketWorkspaceNamingInput {
   readonly title?: string;
 }
 
-/** Human-readable identity used for new workspace directories and branches. */
+/** Human-readable identity used for new workspace directories. */
 export const ticketWorkspaceDirectoryName = ({
   ticketId,
   jiraIssueKey,
@@ -60,23 +61,35 @@ export const ticketWorkspaceDirectoryName = ({
   return `${slugSegment(readable, "ticket")}-${shortStableSuffix(ticketId)}`;
 };
 
-/** String input remains supported for existing callers that lack Ticket metadata. */
-export const ticketWorkspaceBranchName = (input: string | TicketWorkspaceNamingInput) => {
-  if (typeof input === "string") {
-    return `workbench/${slugSegment(input, "ticket")}-${shortStableSuffix(input)}`;
-  }
-
-  const issueKeySlug = slugSegment(input.jiraIssueKey ?? "", "");
-  const titleSlug = slugSegment(input.title ?? "", "ticket");
-  const descriptorWithoutIssueKey =
-    issueKeySlug && titleSlug.startsWith(`${issueKeySlug}-`)
-      ? titleSlug.slice(issueKeySlug.length + 1)
-      : titleSlug === issueKeySlug
-        ? ""
+export const ticketWorkspaceBranchName = ({
+  ticketId,
+  jiraIssueKey,
+  title,
+  prefix,
+}: TicketWorkspaceNamingInput & { readonly prefix: string }) => {
+  const suffix = shortStableSuffix(ticketId);
+  const issueKey = slugSegment(jiraIssueKey ?? "", "")
+    .slice(0, 64 - suffix.length - 2)
+    .replace(/-+$/g, "");
+  const titleSlug = slugSegment(title ?? "", "ticket");
+  const descriptor =
+    issueKey && titleSlug.startsWith(`${issueKey}-`)
+      ? titleSlug.slice(issueKey.length + 1)
+      : titleSlug === issueKey
+        ? "ticket"
         : titleSlug;
-  const readable = descriptorWithoutIssueKey || titleSlug;
-  const prefix = issueKeySlug ? `${issueKeySlug}-${readable}` : readable;
-  return `workbench/${prefix}-${shortStableSuffix(input.ticketId)}`;
+  const issuePrefix = issueKey ? `${issueKey}-` : "";
+  // Reserve the identity suffix before the native formatter's 64-character limit.
+  const titleLimit = Math.max(0, Math.min(32, 64 - issuePrefix.length - suffix.length - 1));
+  const truncated = descriptor.slice(0, titleLimit);
+  const boundary = descriptor[titleLimit] === "-" ? titleLimit : truncated.lastIndexOf("-");
+  const shortTitle =
+    descriptor.length > titleLimit && boundary > 0 ? truncated.slice(0, boundary) : truncated;
+  return formatGeneratedBranchName(`${issuePrefix}${shortTitle}-${suffix}`, {
+    mode: "static",
+    prefix,
+    instructions: "",
+  });
 };
 
 const preparationError = (message: string) =>
@@ -128,7 +141,7 @@ interface ValidatedRepository {
   readonly isPrimary: boolean;
   readonly sourcePath: string;
   readonly worktreePath: string;
-  /** The branch currently observed at an existing registered worktree. */
+  /** The observed branch or the branch selected for a new worktree. */
   readonly branchName: string | undefined;
   readonly refName: string;
   readonly newRefName: string | undefined;
@@ -139,7 +152,7 @@ interface ValidatedRepository {
 const makeTicketWorkspaceService = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const store = yield* WorkbenchStore;
-  const { git, projections, resolveOpenPullRequestBranch, worktreesDir } =
+  const { git, projections, generateBranchName, resolveOpenPullRequestBranch, worktreesDir } =
     yield* TicketWorkspaceHost;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -656,18 +669,16 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     repositoryTitle,
     branchName,
     refs,
-    searchPages,
   }: {
     readonly cwd: string;
     readonly repositoryTitle: string;
     readonly branchName: string;
     readonly refs: ReadonlyArray<VcsRef>;
-    readonly searchPages: boolean;
   }) {
     const exact = (candidates: typeof refs) =>
       candidates.find((ref) => ref.name === branchName && ref.isRemote !== true);
     const fromInitialPage = exact(refs);
-    if (fromInitialPage !== undefined || !searchPages) return fromInitialPage;
+    if (fromInitialPage !== undefined) return fromInitialPage;
 
     let cursor: number | undefined;
     while (true) {
@@ -705,7 +716,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     }: {
       readonly projectId: ProjectId;
       readonly isPrimary: boolean;
-      readonly branchName: string;
+      readonly branchName: Effect.Effect<string, WorkbenchOperationError>;
       readonly assignedThreadIds: ReadonlyArray<ThreadId>;
       readonly jiraIssueKey: string | null;
       readonly workspaceDirectory: string;
@@ -783,15 +794,18 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       }
       const targetBranchName = Option.isSome(pullRequestBranch)
         ? pullRequestBranch.value.remoteBranch
-        : branchName;
+        : (existingRepository?.branchName ?? (yield* branchName));
       const existingBranch = yield* findExactLocalBranch({
         cwd: project.value.workspaceRoot,
         repositoryTitle: project.value.title,
         branchName: targetBranchName,
         refs: refs.refs,
-        searchPages: Option.isSome(pullRequestBranch),
       });
-      if (existingBranch && Option.isNone(pullRequestBranch) && existingRepository === undefined) {
+      if (
+        existingBranch &&
+        Option.isNone(pullRequestBranch) &&
+        existingRepository?.branchName !== targetBranchName
+      ) {
         return yield* preparationError(
           `${project.value.title} already has the Ticket Workspace branch ${targetBranchName}; it is not recorded for this Ticket.`,
         );
@@ -807,7 +821,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         isPrimary,
         sourcePath: project.value.workspaceRoot,
         worktreePath,
-        branchName: undefined,
+        branchName: targetBranchName,
         refName: existingBranch?.name ?? `${source.remoteName}/${source.remoteBranch}`,
         newRefName: existingBranch ? undefined : targetBranchName,
         baseRefName: existingBranch || Option.isSome(pullRequestBranch) ? undefined : baseRef,
@@ -825,7 +839,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     workspaceDirectory,
   }: {
     readonly ticket: WorkbenchSnapshot["tickets"][number];
-    readonly branchName: string;
+    readonly branchName: Effect.Effect<string, WorkbenchOperationError>;
     readonly assignedThreadIds: ReadonlyArray<ThreadId>;
     readonly jiraIssueKey: string | null;
     readonly existingWorkspace: Option.Option<WorkbenchTicketWorkspace>;
@@ -1110,13 +1124,20 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       jiraIssueKey,
       title: ticket.title,
     });
-    const branchName = Option.isSome(reconciledExisting)
-      ? reconciledExisting.value.branchName
-      : ticketWorkspaceBranchName({
-          ticketId: ticket.id,
-          jiraIssueKey,
-          title: ticket.title,
-        });
+    let generatedBranchName = Option.getOrUndefined(
+      yield* store.getTicketWorkspaceGeneratedBranchName(ticket.id),
+    );
+    const resolveBranchName = Effect.gen(function* () {
+      if (generatedBranchName !== undefined) return generatedBranchName;
+      generatedBranchName = yield* generateBranchName({
+        ticketId: ticket.id,
+        primaryT3ProjectId: ticket.primaryT3ProjectId,
+        jiraIssueKey,
+        title: ticket.title,
+        markdown: ticket.markdown,
+      });
+      return generatedBranchName;
+    });
     const workspaceDirectory =
       !startsNewGeneration &&
       Option.isSome(reconciledExisting) &&
@@ -1152,12 +1173,22 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     }
     const validatedRepositories = yield* validateRepositories({
       ticket,
-      branchName,
+      branchName: resolveBranchName,
       assignedThreadIds,
       jiraIssueKey,
       existingWorkspace: reconciledExisting,
       workspaceDirectory,
     });
+    // PR-only workspaces still need a globally unique Ticket identity, not a shared PR branch.
+    const branchName = Option.isSome(reconciledExisting)
+      ? reconciledExisting.value.branchName
+      : (generatedBranchName ??
+        ticketWorkspaceBranchName({
+          ticketId: ticket.id,
+          jiraIssueKey,
+          title: ticket.title,
+          prefix: "",
+        }));
 
     const attemptId = WorkbenchTicketWorkspaceAttemptId.make(
       yield* crypto.randomUUIDv4().pipe(Effect.orDie),
@@ -1166,6 +1197,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       ticketId: ticket.id,
       attemptId,
       branchName,
+      generatedBranchName: generatedBranchName ?? null,
       repositories: validatedRepositories.map((repository) => ({
         projectId: repository.projectId,
         isPrimary: repository.isPrimary,

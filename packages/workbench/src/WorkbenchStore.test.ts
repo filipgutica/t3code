@@ -429,6 +429,117 @@ describe("WorkbenchStore package boundary", () => {
     ),
   );
 
+  it.effect("backfills selected Ticket Workspace branches from recorded names once", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* WorkbenchStore;
+      const projectId = ProjectId.make("generated-branch-migration-project");
+      const ticketId = WorkbenchTicketId.make("generated-branch-migration-ticket");
+      const createdAt = "2026-09-07T10:00:00.000Z";
+
+      yield* seedTicket({
+        store,
+        projectId,
+        workspaceId: WorkbenchProjectId.make("generated-branch-migration-workspace"),
+        ticketId,
+        createdAt,
+      });
+      yield* sql`DELETE FROM workbench_schema_migrations WHERE version = 19`;
+      yield* sql`ALTER TABLE workbench_ticket_workspaces DROP COLUMN generated_branch_name`;
+      yield* sql`
+        INSERT INTO workbench_ticket_workspaces (
+          ticket_id, attempt_id, status, branch_name, error_message, created_at, updated_at
+        ) VALUES (
+          ${ticketId}, 'legacy-attempt', 'ready', 'workbench/legacy', NULL,
+          ${createdAt}, ${createdAt}
+        )
+      `;
+      yield* ensureWorkbenchSchema;
+      expect(yield* store.getTicketWorkspaceGeneratedBranchName(ticketId)).toEqual(
+        Option.some("workbench/legacy"),
+      );
+
+      yield* sql`
+        UPDATE workbench_ticket_workspaces SET generated_branch_name = NULL
+        WHERE ticket_id = ${ticketId}
+      `;
+      yield* ensureWorkbenchSchema;
+      expect(yield* store.getTicketWorkspaceGeneratedBranchName(ticketId)).toEqual(Option.none());
+    }).pipe(
+      Effect.provide(testLayer({ projects: new Set(["generated-branch-migration-project"]) })),
+    ),
+  );
+
+  it.effect("keeps the Workspace identity while selecting a generated branch once", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const projectId = ProjectId.make("generated-branch-project");
+      const ticketId = WorkbenchTicketId.make("generated-branch-ticket");
+      const now = "2026-09-07T10:00:00.000Z";
+      yield* seedTicket({
+        store,
+        projectId,
+        workspaceId: WorkbenchProjectId.make("generated-branch-workspace"),
+        ticketId,
+        createdAt: now,
+      });
+      const claim = (attemptId: string, generatedBranchName: string | null) =>
+        store.claimTicketWorkspace({
+          ticketId,
+          attemptId: WorkbenchTicketWorkspaceAttemptId.make(attemptId),
+          branchName: "ticket-identity",
+          generatedBranchName,
+          repositories: [
+            {
+              projectId,
+              isPrimary: true,
+              sourcePath: "/repo",
+              worktreePath: "/worktree",
+              branchName: "pr/head",
+            },
+          ],
+          claimedAt: now,
+        });
+      expect(yield* store.getTicketWorkspaceGeneratedBranchName(ticketId)).toEqual(Option.none());
+
+      yield* claim("pull-request-attempt", null);
+      expect(yield* store.getTicketWorkspaceGeneratedBranchName(ticketId)).toEqual(Option.none());
+      yield* store.failTicketWorkspace({
+        ticketId,
+        attemptId: WorkbenchTicketWorkspaceAttemptId.make("pull-request-attempt"),
+        projectId: null,
+        errorMessage: "Interrupted",
+        failedAt: now,
+      });
+
+      const retryAttemptId = WorkbenchTicketWorkspaceAttemptId.make("retry-attempt");
+      const retried = yield* claim(retryAttemptId, "feature/selected");
+      expect(retried.branchName).toBe("ticket-identity");
+      expect(yield* store.getTicketWorkspaceGeneratedBranchName(ticketId)).toEqual(
+        Option.some("feature/selected"),
+      );
+      yield* store.markTicketWorkspaceRepositoryReady({
+        ticketId,
+        attemptId: retryAttemptId,
+        projectId,
+        worktreePath: "/worktree",
+        branchName: "pr/head",
+        updatedAt: now,
+      });
+      yield* store.completeTicketWorkspace({
+        ticketId,
+        attemptId: retryAttemptId,
+        completedAt: now,
+      });
+
+      const reconciled = yield* claim("ready-attempt", "feature/other");
+      expect(reconciled.branchName).toBe("ticket-identity");
+      expect(yield* store.getTicketWorkspaceGeneratedBranchName(ticketId)).toEqual(
+        Option.some("feature/selected"),
+      );
+    }).pipe(Effect.provide(testLayer({ projects: new Set(["generated-branch-project"]) }))),
+  );
+
   it.effect("rolls back a failed ticket update after acquiring the writer lock", () =>
     Effect.gen(function* () {
       const store = yield* WorkbenchStore;
@@ -1018,6 +1129,9 @@ describe("Workbench Workspace lifecycle", () => {
           ],
           claimedAt: now,
         });
+        expect(yield* store.getTicketWorkspaceGeneratedBranchName(ticketId)).toEqual(
+          Option.some("workbench/retained"),
+        );
         expect((yield* Effect.flip(store.archiveProject(archive))).code).toBe(
           "ticket_workspace_in_use",
         );
