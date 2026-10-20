@@ -248,7 +248,13 @@ export interface WorkbenchFailTicketSummaryInput {
 export interface WorkbenchClaimTicketWorkspaceInput {
   readonly ticketId: WorkbenchTicketId;
   readonly attemptId: WorkbenchTicketWorkspaceAttemptId;
+  /** Stable Workspace identity; it may differ from the branch used for new worktrees. */
   readonly branchName: string;
+  /**
+   * Branch selected for new worktrees. `null` means none is selected yet; omitted means
+   * `branchName`. A selected name is kept by later claims.
+   */
+  readonly generatedBranchName?: string | null;
   readonly repositories: ReadonlyArray<{
     readonly projectId: ProjectId;
     readonly isPrimary: boolean;
@@ -451,6 +457,10 @@ interface WorkbenchStoreShape extends Omit<
   ) => Effect.Effect<Option.Option<WorkbenchTicketWorkspace>, WorkbenchOperationError>;
   /** Current Jira issue key, when this Ticket has an active Jira link. */
   readonly getTicketJiraIssueKey: (
+    ticketId: WorkbenchTicketId,
+  ) => Effect.Effect<Option.Option<string>, WorkbenchOperationError>;
+  /** Branch selected for new worktrees, when this Ticket Workspace has one. */
+  readonly getTicketWorkspaceGeneratedBranchName: (
     ticketId: WorkbenchTicketId,
   ) => Effect.Effect<Option.Option<string>, WorkbenchOperationError>;
   /** Internal ownership state used to reconcile a Workspace incrementally. */
@@ -758,6 +768,24 @@ const makeWorkbenchStore = Effect.gen(function* () {
       Effect.mapError(persistenceError),
     ),
   );
+  const findTicketWorkspaceGeneratedBranchName = SqlSchema.findOneOption({
+    Request: FindTicketInput,
+    Result: Schema.Struct({ generatedBranchName: Schema.NullOr(Schema.String) }),
+    execute: ({ ticketId }) => sql`
+      SELECT generated_branch_name AS "generatedBranchName"
+      FROM workbench_ticket_workspaces
+      WHERE ticket_id = ${ticketId}
+    `,
+  });
+  const getTicketWorkspaceGeneratedBranchName: WorkbenchStoreShape["getTicketWorkspaceGeneratedBranchName"] =
+    Effect.fn("WorkbenchStore.getTicketWorkspaceGeneratedBranchName")((ticketId) =>
+      findTicketWorkspaceGeneratedBranchName({ ticketId }).pipe(
+        Effect.map((row) =>
+          Option.flatMap(row, ({ generatedBranchName }) => Option.fromNullOr(generatedBranchName)),
+        ),
+        Effect.mapError(persistenceError),
+      ),
+    );
   const hasThreadAtWorktreePath: WorkbenchStoreShape["hasThreadAtWorktreePath"] = Effect.fn(
     "WorkbenchStore.hasThreadAtWorktreePath",
   )(function* (worktreePath: string) {
@@ -1479,6 +1507,9 @@ const makeWorkbenchStore = Effect.gen(function* () {
     },
   );
 
+  const selectedGeneratedBranchName = (input: WorkbenchClaimTicketWorkspaceInput) =>
+    input.generatedBranchName === undefined ? input.branchName : input.generatedBranchName;
+
   const reconcileReadyTicketWorkspace = Effect.fn("WorkbenchStore.reconcileReadyTicketWorkspace")(
     function* (input: WorkbenchClaimTicketWorkspaceInput) {
       yield* sql`
@@ -1506,7 +1537,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
       }
       yield* sql`
       UPDATE workbench_ticket_workspaces
-      SET error_message = NULL, updated_at = ${input.claimedAt}
+      SET
+        generated_branch_name = COALESCE(
+          generated_branch_name,
+          ${selectedGeneratedBranchName(input)}
+        ),
+        error_message = NULL,
+        updated_at = ${input.claimedAt}
       WHERE ticket_id = ${input.ticketId}
     `;
       return Option.getOrThrow(yield* loadTicketWorkspace(input.ticketId));
@@ -1532,6 +1569,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
           SET
             attempt_id = ${input.attemptId},
             status = 'preparing',
+            generated_branch_name = COALESCE(
+              generated_branch_name,
+              ${selectedGeneratedBranchName(input)}
+            ),
             error_message = NULL,
             updated_at = ${input.claimedAt}
           WHERE ticket_id = ${input.ticketId}
@@ -1544,6 +1585,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           attempt_id,
           status,
           branch_name,
+          generated_branch_name,
           error_message,
           created_at,
           updated_at
@@ -1552,6 +1594,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           ${input.attemptId},
           'preparing',
           ${input.branchName},
+          ${selectedGeneratedBranchName(input)},
           NULL,
           ${input.claimedAt},
           ${input.claimedAt}
@@ -3499,6 +3542,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     hasThreadAtWorktreePath,
     getTicketWorkspace,
     getTicketJiraIssueKey,
+    getTicketWorkspaceGeneratedBranchName,
     getTicketWorkspaceRepositoryStates,
     claimTicketWorkspace,
     claimTicketWorkspaceRecovery,

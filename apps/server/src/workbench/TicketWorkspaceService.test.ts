@@ -1,8 +1,14 @@
 import { nativeThreadShell, seedNativeThread } from "./testing/nativeThreads.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  DEFAULT_SERVER_SETTINGS,
   GitCommandError,
+  type ServerSettings,
+  type ServerProvider,
   ProjectId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  TextGenerationError,
   ThreadId,
   type VcsStatusLocalResult,
   type VcsCreateWorktreeInput,
@@ -27,6 +33,13 @@ import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as TestClock from "effect/testing/TestClock";
 
+import { ProviderRegistry } from "../provider/ProviderRegistry.ts";
+import { ServerSettingsService } from "../serverSettings.ts";
+import {
+  TextGeneration,
+  type BranchNameGenerationInput,
+} from "../textGeneration/TextGeneration.ts";
+
 import * as ServerConfig from "../config.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
@@ -42,6 +55,9 @@ import {
 } from "@t3tools/workbench/TicketWorkspaceService";
 import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
 import { TicketWorkspaceHost } from "@t3tools/workbench/TicketWorkspaceHost";
+
+const legacyBranchName = "workbench/ticket-1-737ce60f";
+const generatedBranchName = "t3/prepare-repositories-737ce60f";
 
 const createdAt = "2026-09-03T12:00:00.000Z";
 const primaryProjectId = ProjectId.make("project-primary");
@@ -128,7 +144,7 @@ const seedReadyTicketWorkspace = Effect.gen(function* () {
   yield* store.claimTicketWorkspace({
     ticketId,
     attemptId,
-    branchName: ticketWorkspaceBranchName(ticketId),
+    branchName: legacyBranchName,
     repositories: [
       {
         projectId: primaryProjectId,
@@ -150,7 +166,7 @@ const seedReadyTicketWorkspace = Effect.gen(function* () {
     attemptId,
     projectId: primaryProjectId,
     worktreePath: "/worktrees/ready-primary",
-    branchName: ticketWorkspaceBranchName(ticketId),
+    branchName: legacyBranchName,
     updatedAt: createdAt,
   });
   yield* store.markTicketWorkspaceRepositoryReady({
@@ -158,7 +174,7 @@ const seedReadyTicketWorkspace = Effect.gen(function* () {
     attemptId,
     projectId: secondaryProjectId,
     worktreePath: "/worktrees/ready-secondary",
-    branchName: ticketWorkspaceBranchName(ticketId),
+    branchName: legacyBranchName,
     updatedAt: createdAt,
   });
   yield* store.completeTicketWorkspace({ ticketId, attemptId, completedAt: createdAt });
@@ -184,6 +200,9 @@ const seedActiveAssignment = Effect.gen(function* () {
 const makeTestLayer = ({
   events,
   failProjectId,
+  settings = { ...DEFAULT_SERVER_SETTINGS, branchNamingMode: "semantic" },
+  providers = [],
+  generateBranchName,
   nonRepositoryPaths,
   initialWorktrees,
   initialWorktreeBranches,
@@ -192,6 +211,7 @@ const makeTestLayer = ({
   realPaths,
   existingPathPattern,
   unownedBranchNames,
+  hiddenBranchNames,
   projectWorkspaceRoots,
   dirtyWorktreePaths,
   liveThreadIds,
@@ -210,6 +230,9 @@ const makeTestLayer = ({
 }: {
   events: Array<string>;
   failProjectId?: ProjectId;
+  settings?: ServerSettings;
+  providers?: ReadonlyArray<ServerProvider>;
+  generateBranchName?: TextGeneration["Service"]["generateBranchName"];
   nonRepositoryPaths?: ReadonlySet<string>;
   initialWorktrees?: ReadonlyArray<{ readonly sourcePath: string; readonly worktreePath: string }>;
   initialWorktreeBranches?: ReadonlyMap<string, string>;
@@ -218,6 +241,7 @@ const makeTestLayer = ({
   realPaths?: ReadonlyMap<string, string>;
   existingPathPattern?: RegExp;
   unownedBranchNames?: ReadonlySet<string>;
+  hiddenBranchNames?: ReadonlySet<string>;
   projectWorkspaceRoots?: ReadonlyMap<ProjectId, string>;
   dirtyWorktreePaths?: ReadonlySet<string>;
   liveThreadIds?: ReadonlySet<ThreadId>;
@@ -247,7 +271,7 @@ const makeTestLayer = ({
   const branches = new Map(
     initialWorktrees?.map(({ sourcePath }) => [
       sourcePath,
-      new Set([initialWorktreeBranches?.get(sourcePath) ?? ticketWorkspaceBranchName(ticketId)]),
+      new Set([initialWorktreeBranches?.get(sourcePath) ?? legacyBranchName]),
     ]),
   );
   const missingPaths = new Set(missingWorktreePaths);
@@ -313,7 +337,7 @@ const makeTestLayer = ({
         isRepo: !nonRepositoryPathsSet.has(cwd),
         hasPrimaryRemote: false,
         isDefaultRef: false,
-        refName: ticketWorkspaceBranchName(ticketId),
+        refName: legacyBranchName,
         hasWorkingTreeChanges:
           dirtyPaths.has(cwd) || [...dirtyPaths].some((path) => cwd.endsWith(path)),
         workingTree: { files: [], insertions: 0, deletions: 0 },
@@ -350,12 +374,14 @@ const makeTestLayer = ({
       const result = {
         refs: [
           { name: "main", current: true, isDefault: true, worktreePath: cwd },
-          ...[...repositoryBranches].map((name) => ({
-            name,
-            current: false,
-            isDefault: false,
-            worktreePath: visibleWorktreePath ?? null,
-          })),
+          ...[...repositoryBranches]
+            .filter((name) => !hiddenBranchNames?.has(name))
+            .map((name) => ({
+              name,
+              current: false,
+              isDefault: false,
+              worktreePath: visibleWorktreePath ?? null,
+            })),
           ...(unownedBranchNames === undefined
             ? []
             : [...unownedBranchNames].map((name) => ({
@@ -483,6 +509,12 @@ const makeTestLayer = ({
     Layer.provide(
       Layer.mergeAll(
         configLayer,
+        Layer.mock(ServerSettingsService)({ getSettings: Effect.succeed(settings) }),
+        Layer.mock(ProviderRegistry)({ getProviders: Effect.succeed(providers) }),
+        Layer.mock(TextGeneration)({
+          generateBranchName:
+            generateBranchName ?? (() => Effect.succeed({ branch: "t3/prepare-repositories" })),
+        }),
         gitLayer,
         projectLayer,
         threadLayer,
@@ -551,7 +583,7 @@ const makePersistentWorkspaceFixture = Effect.gen(function* () {
       "worktree",
       "add",
       "-b",
-      ticketWorkspaceBranchName(ticketId),
+      legacyBranchName,
       repository.worktreePath,
     ]);
   }
@@ -571,6 +603,7 @@ const makePersistentWorkspaceFixture = Effect.gen(function* () {
     TicketWorkspaceHost,
     TicketWorkspaceHost.of({
       worktreesDir: path.join(directory, "worktrees"),
+      generateBranchName: () => Effect.succeed(generatedBranchName),
       resolveOpenPullRequestBranch: () => Effect.succeed(Option.none()),
       projections: {
         getProjectShellById: (id) =>
@@ -698,29 +731,30 @@ describe("TicketWorkspaceService", () => {
     expect(first).toMatch(/^ma-123-[0-9a-f]{8}$/);
     expect(second).toMatch(/^ma-123-[0-9a-f]{8}$/);
     expect(first).not.toBe(second);
-    const firstBranch = ticketWorkspaceBranchName({
-      ticketId: "ticket-1",
-      jiraIssueKey: "MA-123",
-      title: "MA-123-fix-validation",
-    });
-    const secondBranch = ticketWorkspaceBranchName({
-      ticketId: "ticket-2",
-      jiraIssueKey: "MA-123",
-      title: "MA-123-fix-validation",
-    });
-    expect(firstBranch).toMatch(/^workbench\/ma-123-fix-validation-[0-9a-f]{8}$/);
-    expect(firstBranch).not.toBe(secondBranch);
   });
 
-  it("uses a safe fallback when the ticket title is empty or unsafe", () => {
-    for (const title of ["", "../../"]) {
-      expect(
-        ticketWorkspaceBranchName({
-          ticketId: "ticket-1",
-          jiraIssueKey: "MA-123",
-          title,
-        }),
-      ).toBe("workbench/ma-123-ticket-737ce60f");
+  it("shortens Jira branch titles at word boundaries while preserving Ticket identity", () => {
+    const title = "MA-5585 Support AI Gateway version across Explore dashboards and API requests";
+    expect(
+      ticketWorkspaceBranchName({ ticketId, jiraIssueKey: "MA-5585", title, prefix: "team/" }),
+    ).toBe("team/ma-5585-support-ai-gateway-version-737ce60f");
+    expect(
+      ticketWorkspaceBranchName({
+        ticketId: "ticket-2",
+        jiraIssueKey: "MA-5585",
+        title,
+        prefix: "team",
+      }),
+    ).not.toBe(
+      ticketWorkspaceBranchName({ ticketId, jiraIssueKey: "MA-5585", title, prefix: "team" }),
+    );
+    expect(ticketWorkspaceDirectoryName({ ticketId, jiraIssueKey: "MA-5585", title })).toBe(
+      "ma-5585-737ce60f",
+    );
+    for (const title of ["", "../../", "a".repeat(100)]) {
+      const branch = ticketWorkspaceBranchName({ ticketId, title, prefix: "" });
+      expect(branch).toMatch(/^[a-z0-9-]+-737ce60f$/);
+      expect(branch.length).toBeLessThanOrEqual(64);
     }
   });
 
@@ -1396,6 +1430,8 @@ describe("TicketWorkspaceService", () => {
       ]);
       expect(events.filter((event) => event.startsWith("validate:"))).toEqual([
         "validate:/repos/primary",
+        "validate:/repos/primary",
+        "validate:/repos/secondary",
         "validate:/repos/secondary",
       ]);
       expect(events.indexOf("fetch:/repos/primary:origin/main")).toBeLessThan(
@@ -1418,13 +1454,13 @@ describe("TicketWorkspaceService", () => {
         {
           cwd: "/repos/primary",
           refName: "origin/main",
-          newRefName: ticketWorkspaceBranchName({ ticketId, title: "Prepare repositories" }),
+          newRefName: generatedBranchName,
           baseRefName: "origin/main",
         },
         {
           cwd: "/repos/secondary",
           refName: "origin/main",
-          newRefName: ticketWorkspaceBranchName({ ticketId, title: "Prepare repositories" }),
+          newRefName: generatedBranchName,
           baseRefName: "origin/main",
         },
       ]);
@@ -1433,9 +1469,7 @@ describe("TicketWorkspaceService", () => {
       expect(workspace.repositories.every((repository) => repository.status === "ready")).toBe(
         true,
       );
-      expect(workspace.repositories[0]?.branchName).toBe(
-        ticketWorkspaceBranchName({ ticketId, title: "Prepare repositories" }),
-      );
+      expect(workspace.repositories[0]?.branchName).toBe(generatedBranchName);
       expect(workspace.repositories[0]?.worktreePath).toContain("workbench/prepare-repositories-");
     }).pipe(
       Effect.provide(makeTestLayer({ events, fetchRemoteTrackingBranchCalls, worktreeInputs })),
@@ -1454,8 +1488,9 @@ describe("TicketWorkspaceService", () => {
       yield* seedTicket;
       const service = yield* TicketWorkspaceService;
 
-      yield* service.prepare({ ticketId, requestedAt: createdAt });
+      const workspace = yield* service.prepare({ ticketId, requestedAt: createdAt });
 
+      expect(workspace.branchName).toBe("prepare-repositories-737ce60f");
       expect(fetches).toEqual([
         { cwd: "/repos/primary", remoteName: "origin", remoteBranch: "feature/primary" },
         { cwd: "/repos/secondary", remoteName: "upstream", remoteBranch: "feature/secondary" },
@@ -1487,10 +1522,146 @@ describe("TicketWorkspaceService", () => {
           events,
           fetchRemoteTrackingBranchCalls: fetches,
           worktreeInputs,
+          generateBranchName: () => Effect.die("Existing PR branches do not need generation."),
           resolveOpenPullRequestBranches: new Map([
             [primaryProjectId, { remoteName: "origin", remoteBranch: "feature/primary" }],
             [secondaryProjectId, { remoteName: "upstream", remoteBranch: "feature/secondary" }],
           ]),
+        }),
+      ),
+    );
+  });
+
+  it.effect.each(["static", "semantic", "custom"] as const)(
+    "uses %s naming when an all-PR Workspace later needs a new branch",
+    (mode) => {
+      const events: Array<string> = [];
+      const calls: Array<BranchNameGenerationInput> = [];
+      const worktreeInputs: Array<VcsCreateWorktreeInput> = [];
+      const unownedBranches = new Set<string>();
+      const prBranches = new Map([
+        [primaryProjectId, { remoteName: "origin", remoteBranch: "feature/primary" }],
+      ]);
+      const branch =
+        mode === "static"
+          ? "team/prepare-repositories-737ce60f"
+          : mode === "semantic"
+            ? "fix/repair-repositories-737ce60f"
+            : "Team/Repair";
+      return Effect.gen(function* () {
+        yield* seedTicket;
+        const store = yield* WorkbenchStore;
+        yield* store.updateTicket({
+          id: ticketId,
+          expectedRevision: 0,
+          repositoryProjectIds: [primaryProjectId],
+          updatedAt: createdAt,
+        });
+        const service = yield* TicketWorkspaceService;
+        const first = yield* service.prepare({ ticketId, requestedAt: createdAt });
+        expect(calls).toHaveLength(0);
+        expect(Option.isNone(yield* store.getTicketWorkspaceGeneratedBranchName(ticketId))).toBe(
+          true,
+        );
+        yield* store.updateTicket({
+          id: ticketId,
+          expectedRevision: 1,
+          repositoryProjectIds: [primaryProjectId, secondaryProjectId],
+          updatedAt: createdAt,
+        });
+        const extended = yield* service.prepare({ ticketId, requestedAt: createdAt });
+        expect(extended.branchName).toBe(first.branchName);
+        expect(
+          extended.repositories.find((r) => r.projectId === primaryProjectId)?.branchName,
+        ).toBe("feature/primary");
+        expect(
+          extended.repositories.find((r) => r.projectId === secondaryProjectId)?.branchName,
+        ).toBe(branch);
+        expect(worktreeInputs.at(-1)?.newRefName).toBe(branch);
+        expect(Option.getOrNull(yield* store.getTicketWorkspaceGeneratedBranchName(ticketId))).toBe(
+          branch,
+        );
+        unownedBranches.add(branch);
+        yield* service.release({ ticketId, releasedAt: createdAt });
+        prBranches.clear();
+        const recreated = yield* service.prepare({ ticketId, requestedAt: createdAt });
+        expect(
+          recreated.repositories.find((r) => r.projectId === primaryProjectId)?.branchName,
+        ).toBe("feature/primary");
+        expect(
+          recreated.repositories.find((r) => r.projectId === secondaryProjectId)?.branchName,
+        ).toBe(branch);
+        expect(calls).toHaveLength(mode === "static" ? 0 : 1);
+      }).pipe(
+        Effect.provide(
+          makeTestLayer({
+            events,
+            worktreeInputs,
+            unownedBranchNames: unownedBranches,
+            resolveOpenPullRequestBranches: prBranches,
+            settings: {
+              ...DEFAULT_SERVER_SETTINGS,
+              branchNamingMode: mode,
+              branchNamePrefix: "team",
+            },
+            generateBranchName: (input) => {
+              calls.push(input);
+              return Effect.succeed({
+                branch: mode === "custom" ? "Team/Repair" : "fix/repair-repositories",
+              });
+            },
+          }),
+        ),
+      );
+    },
+  );
+
+  it.effect("keeps recorded PR branches after reset when their PRs have closed", () => {
+    const events: Array<string> = [];
+    const worktreeInputs: Array<VcsCreateWorktreeInput> = [];
+    const hiddenBranchNames = new Set<string>();
+    const prBranches = new Map([
+      [primaryProjectId, { remoteName: "origin", remoteBranch: "feature/primary" }],
+      [secondaryProjectId, { remoteName: "origin", remoteBranch: "feature/secondary" }],
+    ]);
+    return Effect.gen(function* () {
+      yield* seedTicket;
+      const service = yield* TicketWorkspaceService;
+      yield* service.prepare({ ticketId, requestedAt: createdAt });
+      yield* service.release({ ticketId, releasedAt: createdAt });
+      prBranches.clear();
+      hiddenBranchNames.add("feature/primary");
+      hiddenBranchNames.add("feature/secondary");
+      const recreated = yield* service.prepare({ ticketId, requestedAt: createdAt });
+      expect(recreated.repositories.map((repository) => repository.branchName)).toEqual([
+        "feature/primary",
+        "feature/secondary",
+      ]);
+      expect(events.filter((event) => event.startsWith("create:"))).toHaveLength(4);
+      expect(worktreeInputs.map((input) => input.newRefName)).toEqual([
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+      ]);
+      const store = yield* WorkbenchStore;
+      expect(Option.isNone(yield* store.getTicketWorkspaceGeneratedBranchName(ticketId))).toBe(
+        true,
+      );
+    }).pipe(
+      Effect.provide(
+        makeTestLayer({
+          events,
+          worktreeInputs,
+          hiddenBranchNames,
+          queryBranchPages: new Map([
+            [primaryProjectId, [["feature/primary-copy"], ["feature/primary"]]],
+            [secondaryProjectId, [["feature/secondary-copy"], ["feature/secondary"]]],
+          ]),
+          resolveOpenPullRequestBranches: prBranches,
+          unownedBranchNames: new Set(["fix/login"]),
+          settings: { ...DEFAULT_SERVER_SETTINGS, branchNamingMode: "custom" },
+          generateBranchName: () => Effect.die("Recorded repository branches must be reused."),
         }),
       ),
     );
@@ -1606,7 +1777,7 @@ describe("TicketWorkspaceService", () => {
 
       const workspace = yield* service.prepare({ ticketId, requestedAt: createdAt });
 
-      expect(workspace.branchName).toBe(ticketWorkspaceBranchName(ticketId));
+      expect(workspace.branchName).toBe(legacyBranchName);
       expect(
         workspace.repositories.every((repository) => repository.branchName === currentBranch),
       ).toBe(true);
@@ -1624,6 +1795,7 @@ describe("TicketWorkspaceService", () => {
             ["/repos/primary", currentBranch],
             ["/repos/secondary", currentBranch],
           ]),
+          generateBranchName: () => Effect.die("Recorded workspaces must keep their branch."),
         }),
       ),
     );
@@ -1637,7 +1809,7 @@ describe("TicketWorkspaceService", () => {
       const service = yield* TicketWorkspaceService;
       const workspace = yield* service.prepare({ ticketId, requestedAt: createdAt });
 
-      expect(workspace.branchName).toBe("workbench/ma-4037-prepare-repositories-737ce60f");
+      expect(workspace.branchName).toBe("t3/ma-4037-prepare-repositories-737ce60f");
       expect(workspace.repositories.map((repository) => repository.worktreePath)).toEqual([
         expect.stringMatching(/workbench\/ma-4037-737ce60f\/primary$/),
         expect.stringMatching(/workbench\/ma-4037-737ce60f\/secondary$/),
@@ -1651,18 +1823,202 @@ describe("TicketWorkspaceService", () => {
     );
   });
 
-  it.effect("uses the Ticket title for a deterministic Workspace branch", () => {
+  it.effect.each(["static", "semantic", "custom"] as const)(
+    "uses the primary repository's %s branch naming settings",
+    (mode) => {
+      const events: Array<string> = [];
+      const calls: Array<BranchNameGenerationInput> = [];
+      const worktreeInputs: Array<VcsCreateWorktreeInput> = [];
+      const projectModel = {
+        ...DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
+        model: "project-branch-writer",
+      };
+      const generatedBranch =
+        mode === "custom"
+          ? "Team/MA-4037_Repair"
+          : `${mode === "static" ? "team" : "fix"}/repair-repositories`;
+      const branch =
+        mode === "static"
+          ? "team/ma-4037-prepare-repositories-737ce60f"
+          : mode === "semantic"
+            ? "fix/ma-4037-repair-repositories-737ce60f"
+            : generatedBranch;
+      return Effect.gen(function* () {
+        yield* seedTicket;
+        yield* seedJiraIssueLink;
+        const service = yield* TicketWorkspaceService;
+        const workspace = yield* service.prepare({ ticketId, requestedAt: createdAt });
+        expect(workspace.branchName).toBe(branch);
+        expect(worktreeInputs.map((input) => input.newRefName)).toEqual([branch, branch]);
+        expect(calls).toEqual(
+          mode === "static"
+            ? []
+            : [
+                {
+                  cwd: "/repos/primary",
+                  message: "MA-4037: Prepare repositories",
+                  naming: { mode, prefix: "team", instructions: "Keep the Jira key." },
+                  modelSelection: projectModel,
+                },
+              ],
+        );
+        yield* service.prepare({ ticketId, requestedAt: createdAt });
+        expect(calls).toHaveLength(mode === "static" ? 0 : 1);
+      }).pipe(
+        Effect.provide(
+          makeTestLayer({
+            events,
+            worktreeInputs,
+            settings: {
+              ...DEFAULT_SERVER_SETTINGS,
+              projectSettingsOverrides: {
+                [primaryProjectId]: {
+                  branchNamingMode: mode,
+                  branchNamePrefix: "team",
+                  branchNameInstructions: "Keep the Jira key.",
+                  textGenerationModelSelection: projectModel,
+                },
+              },
+            },
+            generateBranchName: (input) => {
+              calls.push(input);
+              return Effect.succeed({ branch: generatedBranch });
+            },
+          }),
+        ),
+      );
+    },
+  );
+
+  it.effect(
+    "falls back to the text generation model when the configured writer is unavailable",
+    () => {
+      const events: Array<string> = [];
+      const calls: Array<BranchNameGenerationInput> = [];
+      return Effect.gen(function* () {
+        yield* seedTicket;
+        const service = yield* TicketWorkspaceService;
+        const workspace = yield* service.prepare({ ticketId, requestedAt: createdAt });
+
+        expect(workspace.branchName).toBe(generatedBranchName);
+        expect(calls).toEqual([
+          {
+            cwd: "/repos/primary",
+            message: "Prepare repositories",
+            naming: {
+              mode: "semantic",
+              prefix: DEFAULT_SERVER_SETTINGS.branchNamePrefix,
+              instructions: DEFAULT_SERVER_SETTINGS.branchNameInstructions,
+            },
+            modelSelection: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
+          },
+        ]);
+      }).pipe(
+        Effect.provide(
+          makeTestLayer({
+            events,
+            settings: {
+              ...DEFAULT_SERVER_SETTINGS,
+              branchNamingMode: "semantic",
+              sourceControlWriterModelSelection: {
+                instanceId: ProviderInstanceId.make("unavailable-writer"),
+                model: "writer-model",
+              },
+            },
+            generateBranchName: (input) => {
+              calls.push(input);
+              return Effect.succeed({ branch: "t3/prepare-repositories" });
+            },
+          }),
+        ),
+      );
+    },
+  );
+
+  it.effect("uses the primary repository's available source control writer", () => {
     const events: Array<string> = [];
+    const calls: Array<BranchNameGenerationInput> = [];
+    const instanceId = ProviderInstanceId.make("source-control-writer");
+    const modelSelection = {
+      instanceId,
+      model: "writer-model",
+      options: [{ id: "reasoningEffort", value: "medium" }],
+    };
     return Effect.gen(function* () {
       yield* seedTicket;
+      const store = yield* WorkbenchStore;
+      yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: 0,
+        markdown: "Repair repository setup.",
+        updatedAt: createdAt,
+      });
       const service = yield* TicketWorkspaceService;
-      const workspace = yield* service.prepare({ ticketId, requestedAt: createdAt });
-
-      expect(workspace.branchName).toBe("workbench/prepare-repositories-737ce60f");
+      yield* service.prepare({ ticketId, requestedAt: createdAt });
+      expect(calls[0]?.modelSelection).toEqual(modelSelection);
+      expect(calls[0]?.message).toBe("Prepare repositories\n\nRepair repository setup.");
     }).pipe(
       Effect.provide(
         makeTestLayer({
           events,
+          settings: {
+            ...DEFAULT_SERVER_SETTINGS,
+            branchNamingMode: "semantic",
+            providerInstances: {
+              ...DEFAULT_SERVER_SETTINGS.providerInstances,
+              [instanceId]: { driver: ProviderDriverKind.make("codex"), config: {} },
+            },
+            projectSettingsOverrides: {
+              [primaryProjectId]: { sourceControlWriterModelSelection: modelSelection },
+            },
+          },
+          providers: [
+            {
+              instanceId,
+              driver: ProviderDriverKind.make("codex"),
+              enabled: true,
+              installed: true,
+              version: null,
+              status: "ready",
+              auth: { status: "authenticated" },
+              checkedAt: createdAt,
+              availability: "available",
+              models: [],
+              slashCommands: [],
+              skills: [],
+            },
+          ],
+          generateBranchName: (input) => {
+            calls.push(input);
+            return Effect.succeed({ branch: "t3/prepare-repositories" });
+          },
+        }),
+      ),
+    );
+  });
+
+  it.effect("stops before creating worktrees when branch generation fails", () => {
+    const events: Array<string> = [];
+    return Effect.gen(function* () {
+      yield* seedTicket;
+      const service = yield* TicketWorkspaceService;
+      const error = yield* Effect.flip(service.prepare({ ticketId, requestedAt: createdAt }));
+      expect(error.code).toBe("ticket_workspace_preparation_failed");
+      expect(error.message).toContain("branch name could not be generated");
+      expect(events.filter((event) => event.startsWith("create:"))).toEqual([]);
+      const store = yield* WorkbenchStore;
+      expect(Option.isNone(yield* store.getTicketWorkspace(ticketId))).toBe(true);
+    }).pipe(
+      Effect.provide(
+        makeTestLayer({
+          events,
+          generateBranchName: () =>
+            Effect.fail(
+              new TextGenerationError({
+                operation: "generateBranchName",
+                detail: "Provider unavailable.",
+              }),
+            ),
         }),
       ),
     );
@@ -1690,7 +2046,7 @@ describe("TicketWorkspaceService", () => {
 
   it.effect("rejects an unowned existing branch for a new repository", () => {
     const events: Array<string> = [];
-    const branchName = ticketWorkspaceBranchName({ ticketId, title: "Prepare repositories" });
+    const branchName = generatedBranchName;
     return Effect.gen(function* () {
       yield* seedTicket;
       const service = yield* TicketWorkspaceService;
@@ -2015,7 +2371,7 @@ describe("TicketWorkspaceService", () => {
       yield* store.claimTicketWorkspace({
         ticketId,
         attemptId: WorkbenchTicketWorkspaceAttemptId.make("interrupted-attempt"),
-        branchName: ticketWorkspaceBranchName(ticketId),
+        branchName: legacyBranchName,
         repositories: [
           {
             projectId: primaryProjectId,
@@ -2060,7 +2416,7 @@ describe("TicketWorkspaceService", () => {
         yield* store.claimTicketWorkspace({
           ticketId,
           attemptId: WorkbenchTicketWorkspaceAttemptId.make("interrupted-unlinked-attempt"),
-          branchName: ticketWorkspaceBranchName(ticketId),
+          branchName: legacyBranchName,
           repositories: [
             {
               projectId: primaryProjectId,
@@ -2115,7 +2471,7 @@ describe("TicketWorkspaceService", () => {
       yield* store.claimTicketWorkspace({
         ticketId,
         attemptId: WorkbenchTicketWorkspaceAttemptId.make("interrupted-attempt"),
-        branchName: ticketWorkspaceBranchName(ticketId),
+        branchName: legacyBranchName,
         repositories: [
           {
             projectId: primaryProjectId,
@@ -2429,7 +2785,7 @@ describe("TicketWorkspaceService", () => {
       yield* store.claimTicketWorkspace({
         ticketId,
         attemptId: WorkbenchTicketWorkspaceAttemptId.make("interrupted-attempt"),
-        branchName: ticketWorkspaceBranchName(ticketId),
+        branchName: legacyBranchName,
         repositories: [
           {
             projectId: primaryProjectId,

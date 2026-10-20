@@ -11,6 +11,7 @@ import type {
   VcsStatusLocalResult,
   VcsRemoveWorktreeInput,
   WorkbenchOperationError,
+  WorkbenchTicketId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
@@ -21,6 +22,13 @@ export class TicketWorkspaceHost extends Context.Service<
   TicketWorkspaceHost,
   {
     readonly worktreesDir: string;
+    readonly generateBranchName: (input: {
+      readonly ticketId: WorkbenchTicketId;
+      readonly primaryT3ProjectId: ProjectId | null;
+      readonly title: string;
+      readonly markdown: string;
+      readonly jiraIssueKey: string | null;
+    }) => Effect.Effect<string, WorkbenchOperationError>;
     /** Resolve one safe same-repository open PR head for a new worktree. */
     readonly resolveOpenPullRequestBranch: (input: {
       readonly projectId: ProjectId;

@@ -739,6 +739,24 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
     18,
     sql`DROP INDEX IF EXISTS uq_workbench_active_ticket_draft`.pipe(Effect.asVoid),
   );
+  yield* applyMigration(
+    19,
+    Effect.gen(function* () {
+      yield* sql`ALTER TABLE workbench_ticket_workspaces ADD COLUMN generated_branch_name TEXT`;
+      // All-PR Workspaces used branch_name only as an identity, not as a selected branch.
+      yield* sql`
+        UPDATE workbench_ticket_workspaces SET generated_branch_name = branch_name
+        WHERE NOT EXISTS (
+          SELECT 1 FROM workbench_ticket_workspace_repositories AS repository
+          WHERE repository.ticket_id = workbench_ticket_workspaces.ticket_id
+        ) OR EXISTS (
+          SELECT 1 FROM workbench_ticket_workspace_repositories AS repository
+          WHERE repository.ticket_id = workbench_ticket_workspaces.ticket_id
+            AND repository.branch_name = workbench_ticket_workspaces.branch_name
+        )
+      `;
+    }),
+  );
   yield* sql`
     INSERT OR IGNORE INTO workbench_schema_migrations (version)
     VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13), (14)
