@@ -332,6 +332,17 @@
       "verification": ["unit", "typecheck"]
     },
     {
+      "name": "Shared JSONC configuration",
+      "paths": ["packages/shared/src/schemaJson.ts"],
+      "tests": [
+        "packages/shared/src/schemaJson.test.ts",
+        "packages/shared/src/t3ProjectFile.test.ts",
+        "packages/shared/src/serverSettings.test.ts",
+        "apps/server/src/project/T3ProjectFileLoader.test.ts"
+      ],
+      "verification": ["unit", "typecheck"]
+    },
+    {
       "name": "Shared auth and SQLite",
       "paths": [
         "packages/shared/src/codexAuthHandoff.ts",
