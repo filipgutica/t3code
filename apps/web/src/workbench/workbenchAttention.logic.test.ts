@@ -11,6 +11,7 @@ import {
 import {
   activeWorkbenchAttentionAssignments,
   getWorkbenchPullRequestAttention,
+  getWorkbenchAttentionReasonKind,
   matchesWorkbenchAttention,
   getWorkbenchThreadNotification,
   groupWorkbenchAttentionSignals,
@@ -108,7 +109,7 @@ describe("Workbench attention from active native Threads and linked PRs", () => 
       }),
     ).toBeNull();
   });
-  it("retains the cause of approvals, plans, failed and interrupted runs until a visit", () => {
+  it("retains approval, plan and failure causes until a visit and ignores interrupted runs", () => {
     const createdAt = "2026-10-01T00:01:00Z";
     const approval = {
       nativeLabel: "Pending Approval",
@@ -125,7 +126,6 @@ describe("Workbench attention from active native Threads and linked PRs", () => 
     for (const [nativeLabel, runStatus, cause] of [
       ["Plan Ready", "completed", "plan"],
       [null, "failed", "failed"],
-      [null, "interrupted", "interrupted"],
     ] as const) {
       const run = { nativeLabel, runStatus, completedAt: createdAt };
       expect(getWorkbenchThreadNotification(run)).toEqual({
@@ -135,6 +135,13 @@ describe("Workbench attention from active native Threads and linked PRs", () => 
       });
       expect(getWorkbenchThreadNotification({ ...run, lastVisitedAt: createdAt })).toBeNull();
     }
+    expect(
+      getWorkbenchThreadNotification({
+        nativeLabel: null,
+        runStatus: "interrupted",
+        completedAt: createdAt,
+      }),
+    ).toBeNull();
   });
   it("orders source groups by urgent action while preserving ties, signal counts and every discussion", () => {
     const threadSignal = (id: string, kind: "question" | "reply"): WorkbenchAttentionSignal => ({
@@ -152,6 +159,16 @@ describe("Workbench attention from active native Threads and linked PRs", () => 
     const discussions = Array.from({ length: 6 }, (_, i) => reviewThread(`discussion-${i + 1}`));
     const signals: WorkbenchAttentionSignal[] = [
       threadSignal("reply", "reply"),
+      {
+        kind: "waiting",
+        cause: "plan",
+        source: { type: "thread", threadId: ThreadId.make("plan"), threadTitle: "Plan" },
+      },
+      {
+        kind: "waiting",
+        cause: "approval",
+        source: { type: "thread", threadId: ThreadId.make("approval"), threadTitle: "Approval" },
+      },
       { kind: "unresolved-feedback", source: prSource, unresolvedReviewThreads: discussions },
       {
         kind: "waiting",
@@ -169,19 +186,30 @@ describe("Workbench attention from active native Threads and linked PRs", () => 
     ];
     const groups = groupWorkbenchAttentionSignals(signals);
     expect(groups.map((group) => group.key)).toEqual([
+      "thread:approval",
       "thread:question-one",
       "thread:question-two",
       "thread:failed-run",
       reference.url,
+      "thread:plan",
       "thread:reply",
     ]);
-    expect(groups.flatMap((group) => group.signals).length).toBe(7);
-    expect(groups[3]?.signals.map((signal) => signal.kind)).toEqual([
-      "failed-checks",
-      "changes-requested",
-      "unresolved-feedback",
+    expect(groups.flatMap((group) => group.signals).length).toBe(9);
+    expect(groups.map((group) => getWorkbenchAttentionReasonKind(group.signals[0]!))).toEqual([
+      "approval",
+      "input",
+      "input",
+      "failed",
+      "checks",
+      "plan",
+      "done",
     ]);
-    const feedback = groups[3]?.signals.find((signal) => signal.kind === "unresolved-feedback");
+    expect(groups[4]?.signals.map((signal) => signal.kind)).toEqual([
+      "failed-checks",
+      "unresolved-feedback",
+      "changes-requested",
+    ]);
+    const feedback = groups[4]?.signals.find((signal) => signal.kind === "unresolved-feedback");
     expect(
       feedback?.kind === "unresolved-feedback"
         ? feedback.unresolvedReviewThreads.map((thread) => thread.id)

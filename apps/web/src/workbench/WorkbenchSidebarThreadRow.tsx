@@ -19,15 +19,13 @@ import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
 import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
+import { ProjectFavicon } from "../components/ProjectFavicon";
 import { InlineButton } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { SidebarMenuItem } from "../components/ui/sidebar";
 import type { WorkbenchSidebarThread } from "./workbenchSidebar.logic";
 import { WorkbenchSidebarThreadPreview } from "./WorkbenchSidebarThreadPreview";
-import {
-  WorkbenchSidebarQuickAction,
-  WorkbenchSidebarRowActions,
-} from "./WorkbenchSidebarRowActions";
+import { WorkbenchSidebarQuickAction } from "./WorkbenchSidebarRowActions";
 import { WorkbenchSidebarRowNavigation } from "./WorkbenchSidebarRowNavigation";
 import { WorkbenchThreadAttentionBadge } from "./WorkbenchTicketAttention";
 import {
@@ -85,13 +83,10 @@ function WorkbenchSidebarThreadTitle({
     <span data-workbench-sidebar-title="">
       <MessageSquareIcon aria-hidden className="size-4 shrink-0 text-sidebar-muted-foreground" />
       <span
-        className={`min-w-0 flex-1 truncate ${data.unread || isActive ? "font-medium text-sidebar-foreground" : "font-normal text-sidebar-foreground/85"}`}
+        className={`min-w-0 flex-1 truncate ${isActive ? "font-medium text-sidebar-foreground" : "font-normal text-sidebar-foreground/85"}`}
       >
         {thread.title}
       </span>
-      {data.unread ? (
-        <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-success" />
-      ) : null}
       {data.shell?.pinnedAt ? <PinIcon aria-label="Pinned" className="size-3 shrink-0" /> : null}
       {data.snoozed ? <ClockIcon aria-label="Snoozed" className="size-3 shrink-0" /> : null}
     </span>
@@ -108,28 +103,14 @@ function WorkbenchSidebarThreadMetadata({
   const middle = Math.ceil(context.length / 2);
   return (
     <span data-workbench-sidebar-metadata-label="">
-      {data.status ? (
-        <span
-          data-workbench-sidebar-native-status="thread"
-          data-workbench-sidebar-status-icon={data.status.presentation.icon ?? "none"}
-        >
-          <WorkbenchThreadExecutionStatus
-            compact
-            status={data.status.presentation}
-            startedAt={data.status.startedAt}
-          />
-        </span>
-      ) : (
-        <span data-workbench-sidebar-metadata-icon="" aria-hidden>
+      <span data-workbench-sidebar-metadata-icon="" aria-hidden>
+        {data.project ? (
+          <ProjectFavicon project={data.project} className="size-3.5" />
+        ) : (
           <FolderGit2Icon className="size-3" />
-        </span>
-      )}
+        )}
+      </span>
       <span data-workbench-sidebar-branch="">
-        {data.status ? (
-          <span aria-hidden className="shrink-0">
-            ·
-          </span>
-        ) : null}
         <span data-workbench-sidebar-branch-prefix="">
           {branch ? context.slice(0, middle) : context}
         </span>
@@ -158,7 +139,7 @@ function WorkbenchSidebarThreadNavigation({
 }) {
   return (
     <WorkbenchSidebarRowNavigation
-      label={`${thread.title}${data.unread ? ", unread" : ""}${data.failed ? ", failed" : ""}${data.shell?.pinnedAt ? ", pinned" : ""}${data.snoozed ? ", snoozed" : ""}`}
+      label={`${thread.title}${data.failed ? ", failed" : ""}${data.shell?.pinnedAt ? ", pinned" : ""}${data.snoozed ? ", snoozed" : ""}`}
       isActive={isActive}
       onSelect={() => onOpenThread(thread)}
       openMenu={openMenu}
@@ -299,21 +280,43 @@ function WorkbenchSidebarThreadRowView({
         openMenu={actions.openMenu}
         thread={thread}
       />
+      <span data-workbench-sidebar-slot={actions.canToggleSettlement ? "actions" : ""}>
+        <WorkbenchThreadAttentionBadge
+          environmentId={thread.environmentId}
+          ticketId={ticketId}
+          threadId={thread.id}
+          threadTitle={thread.title}
+          nativeStatusKind={data.status?.kind ?? null}
+          nativeStatus={
+            data.status ? (
+              <span data-workbench-sidebar-native-status="">
+                <WorkbenchThreadExecutionStatus
+                  compact
+                  status={data.status.presentation}
+                  startedAt={data.status.startedAt}
+                />
+              </span>
+            ) : null
+          }
+          side="right"
+        />
+        {actions.canToggleSettlement ? (
+          <span data-workbench-sidebar-quick-actions="">
+            <WorkbenchSidebarQuickAction
+              label={`${actions.isSettled ? "Unsettle" : "Settle"}: ${thread.title}`}
+              Icon={actions.isSettled ? RotateCcwIcon : CheckIcon}
+              onSelect={actions.toggleSettlement}
+              disabled={actions.settlementBusy}
+            />
+          </span>
+        ) : null}
+      </span>
       <span data-workbench-sidebar-metadata-controls="">
         <WorkbenchSidebarThreadPrBadge
           thread={thread}
           data={data}
           onOpenPullRequest={actions.handleOpenPullRequest}
           onOpenPullRequestStack={actions.handleOpenPullRequestStack}
-        />
-        <WorkbenchThreadAttentionBadge
-          environmentId={thread.environmentId}
-          ticketId={ticketId}
-          threadId={thread.id}
-          threadTitle={thread.title}
-          statusKind={data.status?.kind ?? null}
-          side="right"
-          compact
         />
         <span data-workbench-sidebar-provider-end="">
           {data.providerEntry ? (
@@ -326,20 +329,6 @@ function WorkbenchSidebarThreadRowView({
           ) : null}
         </span>
       </span>
-      <WorkbenchSidebarRowActions
-        label={`Actions for Thread ${thread.title}`}
-        openMenu={actions.openMenu}
-      />
-      {actions.canToggleSettlement ? (
-        <span data-workbench-sidebar-quick-actions="">
-          <WorkbenchSidebarQuickAction
-            label={`${actions.isSettled ? "Unsettle" : "Settle"}: ${thread.title}`}
-            Icon={actions.isSettled ? RotateCcwIcon : CheckIcon}
-            onSelect={actions.toggleSettlement}
-            disabled={actions.settlementBusy}
-          />
-        </span>
-      ) : null}
     </div>
   );
 }

@@ -504,14 +504,13 @@ it("keeps inspection across equivalent rerenders and known attention while expli
     ],
   ]);
   act(() => result.setAttentionObservations(observations));
-  expect(result.attentionCoverage).toBe("1 of 1 linked PRs inspected");
+  expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.inspected).toBe(true);
   act(() => renderer.update(<Harness />));
   expect(result.attentionScope).toBe(scope);
-  expect(result.attentionCoverage).toBe("1 of 1 linked PRs inspected");
+  expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.inspected).toBe(true);
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.status).toBe("complete");
   act(() => result.refreshAttention());
   expect(result.attentionScope).not.toBe(scope);
-  expect(result.attentionCoverage).toBe("0 of 1 linked PRs inspected");
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]).toMatchObject({
     status: "loading",
     displayStatus: "complete",
@@ -593,7 +592,7 @@ it("keeps inspection across equivalent rerenders and known attention while expli
   expect(
     result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind),
   ).not.toContain("failed-checks");
-  expect(result.attentionCoverage).toBe("1 of 1 linked PRs inspected");
+  expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.inspected).toBe(true);
   act(() => result.setAttentionObservations(observations));
   expect(result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind)).toContain(
     "failed-checks",
@@ -601,10 +600,9 @@ it("keeps inspection across equivalent rerenders and known attention while expli
   act(() => renderer.update(<Harness environment={EnvironmentId.make("empty-environment")} />));
   expect(result.attentionSignalsByTicket.get(ticket.id)).toEqual([]);
   expect(result.attentionInspectionsByTicket.get(ticket.id)).toEqual([]);
-  expect(result.attentionCoverage).toBe("0 of 0 linked PRs inspected");
 });
 
-it("clears an opened question notification and reacts to a new request rather than metadata", async () => {
+it("uses native server visits to clear questions and reacts to new requests rather than metadata", async () => {
   const waitingRef = scopeThreadRef(environmentId, waiting.id);
   const waitingKey = scopedThreadKey(waitingRef);
   const threadSignals = () =>
@@ -619,10 +617,13 @@ it("clears an opened question notification and reacts to a new request rather th
   expect(threadSignals()?.map((signal) => signal.kind)).toEqual(["question"]);
   await act(async () => renderer.update(<Harness activeThreadRef={waitingRef} />));
   expect(threadSignals()).toEqual([]);
-  expect(useUiStateStore.getState().threadLastVisitedAtById[waitingKey]).toBe(requestAt);
-  await act(async () => renderer.update(<Harness />));
-  const renamed = new Map(threadsById).set(waiting.id, {
+  expect(useUiStateStore.getState().threadLastVisitedAtById[waitingKey]).toBeUndefined();
+  const visited = new Map(threadsById).set(waiting.id, { ...waiting, lastVisitedAt: requestAt });
+  await act(async () => renderer.update(<Harness threads={visited} />));
+  expect(threadSignals()).toEqual([]);
+  const renamed = new Map(visited).set(waiting.id, {
     ...waiting,
+    lastVisitedAt: requestAt,
     title: "Renamed",
     updatedAt: "2026-09-29T00:02:00.000Z",
   });
@@ -639,11 +640,38 @@ it("clears an opened question notification and reacts to a new request rather th
   // A same-ID Thread in another environment cannot acknowledge this request.
   await act(async () =>
     renderer.update(
-      <Harness activeThreadRef={scopeThreadRef(EnvironmentId.make("remote"), waiting.id)} />,
+      <Harness
+        threads={renamed}
+        activeThreadRef={scopeThreadRef(EnvironmentId.make("remote"), waiting.id)}
+      />,
     ),
   );
   expect(threadSignals()?.map((signal) => signal.kind)).toEqual(["question"]);
   await act(async () => renderer.update(<Harness activeThreadRef={waitingRef} />));
   expect(threadSignals()).toEqual([]);
-  expect(useUiStateStore.getState().threadLastVisitedAtById[waitingKey]).toBe(secondAt);
+  expect(useUiStateStore.getState().threadLastVisitedAtById[waitingKey]).toBeUndefined();
+  const visitedAgain = new Map(renamed).set(waiting.id, { ...waiting, lastVisitedAt: secondAt });
+  await act(async () => renderer.update(<Harness threads={visitedAgain} />));
+  expect(threadSignals()).toEqual([]);
+});
+
+it("lets an explicit null server visit restore a question despite a newer local visit", () => {
+  const waitingKey = scopedThreadKey(scopeThreadRef(environmentId, waiting.id));
+  useUiStateStore.setState({
+    threadLastVisitedAtById: { [waitingKey]: "2026-09-29T00:05:00.000Z" },
+  });
+  const visited = new Map(threadsById).set(waiting.id, { ...waiting, lastVisitedAt: requestAt });
+  act(() => {
+    renderer = create(<Harness threads={visited} />);
+  });
+  const threadSignals = () =>
+    result.attentionSignalsByTicket
+      .get(ticket.id)
+      ?.filter(
+        (signal) => signal.source.type === "thread" && signal.source.threadId === waiting.id,
+      );
+  expect(threadSignals()).toEqual([]);
+  const unread = new Map(visited).set(waiting.id, { ...waiting, lastVisitedAt: null });
+  act(() => renderer.update(<Harness threads={unread} />));
+  expect(threadSignals()?.map((signal) => signal.kind)).toEqual(["question"]);
 });

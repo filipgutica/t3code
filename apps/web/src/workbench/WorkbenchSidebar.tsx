@@ -15,8 +15,9 @@ import {
   BellIcon,
   BlocksIcon,
   ChevronRightIcon,
-  InfoIcon,
+  CircleCheckIcon,
   LayoutDashboardIcon,
+  ListFilterIcon,
   PlusIcon,
   RefreshCwIcon,
   XIcon,
@@ -71,7 +72,7 @@ type SidebarDraft = WorkbenchSidebarDraft;
 
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
-import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
+import { Menu, MenuCheckboxItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
 import {
   SidebarContent,
   SidebarGroup,
@@ -363,7 +364,7 @@ type WorkbenchSidebarNavigationFields = {
   readonly onSearchQueryChange: (query: string) => void;
   readonly onlyActionable: boolean;
   readonly onOnlyActionableChange: (value: boolean) => void;
-  readonly actionableThreadIdsByTicket: ReadonlyMap<WorkbenchTicketId, ReadonlySet<ThreadId>>;
+  readonly actionableThreadIdsByTicket: ReturnType<typeof getWorkbenchSidebarActionableThreadIds>;
   readonly selectedEpicId: WorkbenchEpicId | undefined;
   readonly selectedTicketId: WorkbenchTicketId | undefined;
   readonly selectedTicketIsDone: boolean;
@@ -427,8 +428,6 @@ function WorkbenchSidebarFilters({
   search,
   resultCount,
   actionableTicketCount,
-  incompleteInspection,
-  attentionCoverage,
   onSearchKeyDown,
   activeResultIndex,
 }: {
@@ -437,8 +436,6 @@ function WorkbenchSidebarFilters({
   search: WorkbenchSidebarNavigationProps["search"];
   resultCount: number;
   actionableTicketCount: number;
-  incompleteInspection: boolean;
-  attentionCoverage: string;
 }) {
   const { searchQuery, onSearchQueryChange, onlyActionable, onOnlyActionableChange } = search;
   const isSearching = searchQuery.trim().length > 0;
@@ -473,56 +470,51 @@ function WorkbenchSidebarFilters({
             <XIcon />
           </Button>
         ) : null}
+        <Menu>
+          <span className="relative flex shrink-0">
+            <MenuTrigger
+              render={
+                <Button
+                  aria-label={onlyActionable ? "Filter Workbench, filter on" : "Filter Workbench"}
+                  size="icon-xs"
+                  variant={onlyActionable ? "accent-soft" : "ghost"}
+                />
+              }
+            >
+              <ListFilterIcon />
+            </MenuTrigger>
+            {onlyActionable ? <span aria-hidden data-workbench-sidebar-filter-dot="" /> : null}
+          </span>
+          <MenuPopup align="end">
+            <MenuCheckboxItem
+              variant="switch"
+              checked={onlyActionable}
+              onCheckedChange={onOnlyActionableChange}
+            >
+              <span className="flex items-center gap-2">
+                <BellIcon aria-hidden className="size-4" />
+                <span className="flex-1">Needs attention</span>
+                <span className="tabular-nums text-muted-foreground">{actionableTicketCount}</span>
+              </span>
+            </MenuCheckboxItem>
+          </MenuPopup>
+        </Menu>
       </div>
-      <div className="flex min-w-0 items-center gap-1 px-1">
-        <div
-          role="group"
-          aria-label="Workbench filter"
-          className="flex min-w-0 flex-1 gap-0.5 rounded-md border border-sidebar-border p-0.5"
+      {onlyActionable ? (
+        <button
+          type="button"
+          data-workbench-sidebar-filter-chip=""
+          aria-label="Turn off Needs attention filter"
+          onClick={() => onOnlyActionableChange(false)}
         >
-          <button
-            type="button"
-            data-workbench-sidebar-filter=""
-            aria-pressed={!onlyActionable}
-            onClick={() => onOnlyActionableChange(false)}
-          >
-            Work
-          </button>
-          <button
-            type="button"
-            data-workbench-sidebar-filter=""
-            aria-label="Needs attention"
-            aria-pressed={onlyActionable}
-            onClick={() => onOnlyActionableChange(true)}
-          >
-            <BellIcon aria-hidden className="size-3 shrink-0" />
-            <span>Needs attention</span>
-            {actionableTicketCount > 0 ? (
-              <span className="tabular-nums">{actionableTicketCount}</span>
-            ) : null}
-          </button>
-        </div>
-        <span className="flex w-6 shrink-0 justify-center pointer-coarse:w-11 max-md:w-11">
-          {onlyActionable && incompleteInspection ? (
-            <Popover>
-              <PopoverTrigger
-                render={
-                  <Button
-                    size="icon-xs"
-                    variant="ghost-muted"
-                    aria-label="PR inspection coverage"
-                  />
-                }
-              >
-                <InfoIcon />
-              </PopoverTrigger>
-              <PopoverPopup side="right" align="start" width="sm" padding="compact">
-                <p className="text-xs">{attentionCoverage}. Some PR attention may be missing.</p>
-              </PopoverPopup>
-            </Popover>
+          <BellIcon aria-hidden className="size-3 shrink-0" />
+          <span>Needs attention</span>
+          {actionableTicketCount > 0 ? (
+            <span className="tabular-nums">{actionableTicketCount}</span>
           ) : null}
-        </span>
-      </div>
+          <XIcon aria-hidden className="size-3 shrink-0" />
+        </button>
+      ) : null}
       {isSearching || onlyActionable ? (
         <p
           aria-live="polite"
@@ -532,6 +524,29 @@ function WorkbenchSidebarFilters({
         </p>
       ) : null}
     </>
+  );
+}
+
+function WorkbenchSidebarNothingNeedsYou({
+  visible,
+  inspectionIncomplete,
+  onShowAll,
+}: {
+  readonly visible: boolean;
+  readonly inspectionIncomplete: boolean;
+  readonly onShowAll: () => void;
+}) {
+  if (!visible) return null;
+  return (
+    <div className="flex flex-col items-center gap-1 px-4 py-8 text-center text-xs text-sidebar-muted-foreground">
+      <CircleCheckIcon aria-hidden className="mb-1 size-4 text-success-foreground" />
+      <p className="text-sm font-medium text-sidebar-foreground">Nothing needs you</p>
+      <p>Agents are working or done.</p>
+      {inspectionIncomplete ? <p>Some linked PRs couldn't be checked yet.</p> : null}
+      <Button size="xs" variant="link" onClick={onShowAll}>
+        Show all threads
+      </Button>
+    </div>
   );
 }
 
@@ -802,8 +817,7 @@ function useWorkbenchSidebarAttentionNavigation({
   WorkbenchSidebarNavigationFields,
   "ticketGroupsByWorkspace" | "actionableThreadIdsByTicket" | "projects" | "onlyActionable"
 >) {
-  const { attentionSignalsByTicket, attentionInspectionsByTicket, attentionCoverage } =
-    useWorkbenchAttentionData();
+  const { attentionSignalsByTicket, attentionInspectionsByTicket } = useWorkbenchAttentionData();
   const prioritizedGroups = prioritizeWorkbenchSidebarAttention({
     ticketGroupsByWorkspace,
     attentionSignalsByTicket,
@@ -818,8 +832,8 @@ function useWorkbenchSidebarAttentionNavigation({
   const actionableTicketCount = [...attentionSignalsByTicket.values()].filter(
     (signals) => signals.length > 0,
   ).length;
-  const incompleteInspection = [...attentionInspectionsByTicket.values()].some((inspections) =>
-    inspections.some((inspection) => inspection.status !== "complete"),
+  const inspectionIncomplete = [...attentionInspectionsByTicket.values()].some((inspections) =>
+    inspections.some((inspection) => inspection.displayStatus !== "complete"),
   );
   const archivedProjects = onlyActionable
     ? []
@@ -829,8 +843,7 @@ function useWorkbenchSidebarAttentionNavigation({
     prioritizedGroups,
     actionableProjects,
     actionableTicketCount,
-    incompleteInspection,
-    attentionCoverage,
+    inspectionIncomplete,
   };
 }
 
@@ -903,8 +916,7 @@ function WorkbenchSidebarNavigation({
     archivedProjects,
     actionableProjects,
     actionableTicketCount,
-    incompleteInspection,
-    attentionCoverage,
+    inspectionIncomplete,
   } = useWorkbenchSidebarAttentionNavigation({
     ticketGroupsByWorkspace,
     actionableThreadIdsByTicket,
@@ -1037,8 +1049,6 @@ function WorkbenchSidebarNavigation({
             },
             resultCount: searchResults.length,
             actionableTicketCount,
-            incompleteInspection,
-            attentionCoverage,
             onSearchKeyDown,
             activeResultIndex,
           }}
@@ -1073,6 +1083,11 @@ function WorkbenchSidebarNavigation({
               ) : (
                 <>
                   <WorkbenchInlineError message={draftMenu.error} />
+                  <WorkbenchSidebarNothingNeedsYou
+                    visible={onlyActionable && visibleProjects.length === 0}
+                    inspectionIncomplete={inspectionIncomplete}
+                    onShowAll={() => changeAttentionFilter(false)}
+                  />
                   <SidebarMenu aria-label="Workbench Workspaces">
                     {visibleProjects.map(renderWorkspace)}
                   </SidebarMenu>
@@ -1677,7 +1692,7 @@ function WorkbenchSidebarTicketThreads({
     />
   );
   return (
-    <div className="ms-4">
+    <div data-workbench-sidebar-thread-list="">
       <SidebarMenu>{activeThreads.map(renderThread)}</SidebarMenu>
       {settledThreads.length > 0 ? (
         <section aria-label={`Settled Threads in ${ticket.title}`} className="mt-1">

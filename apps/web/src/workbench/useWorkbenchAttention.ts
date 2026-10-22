@@ -13,10 +13,10 @@ import { useAtomValue } from "@effect/atom-react";
 import type { PendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { Atom } from "effect/reactivity";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { environmentThreadDetails } from "../state/threads";
 import { useUiStateStore } from "../uiStateStore";
-import { resolveThreadStatusPill } from "../components/Sidebar.logic";
+import { resolveThreadLastVisitedAt, resolveThreadStatusPill } from "../components/Sidebar.logic";
 import {
   getWorkbenchTicketPullRequests,
   type WorkbenchTicketPullRequest,
@@ -66,13 +66,11 @@ const useWorkbenchThreadNotifications = ({
   tickets,
   activeAssignments,
   threadsById,
-  activeThreadRef,
 }: {
   readonly environmentId: EnvironmentId | null;
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
   readonly activeAssignments: ReadonlyArray<WorkbenchAssignment>;
   readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
-  readonly activeThreadRef: ScopedThreadRef | null;
 }) => {
   const pendingThreadIds = (() => {
     const ticketIds = new Set(tickets.map((ticket) => ticket.id));
@@ -81,7 +79,6 @@ const useWorkbenchThreadNotifications = ({
         .filter((assignment) => ticketIds.has(assignment.ticketId))
         .map((assignment) => assignment.threadId),
     );
-    if (activeThreadRef?.environmentId === environmentId) ids.add(activeThreadRef.threadId);
     return [...ids].filter((id) => {
       const thread = threadsById.get(id);
       return thread?.hasPendingUserInput || thread?.hasPendingApprovals;
@@ -102,25 +99,6 @@ const useWorkbenchThreadNotifications = ({
     }).pipe(Atom.setIdleTTL(0)),
   );
   const visitedByThread = useUiStateStore((state) => state.threadLastVisitedAtById);
-  const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
-  const activeThread =
-    activeThreadRef?.environmentId === environmentId
-      ? threadsById.get(activeThreadRef.threadId)
-      : undefined;
-  const activeNotification = activeThread
-    ? getWorkbenchThreadNotification({
-        nativeLabel: resolveThreadStatusPill({ thread: activeThread })?.label,
-        runStatus: activeThread.latestRun?.status,
-        completedAt: activeThread.latestRun?.completedAt,
-        pendingRequests: pendingRequestsByThread.get(activeThread.id),
-      })
-    : null;
-  const activeNotificationAt = activeNotification?.occurredAt;
-  useEffect(() => {
-    if (activeThreadRef && activeNotificationAt) {
-      markThreadVisited(scopedThreadKey(activeThreadRef), activeNotificationAt);
-    }
-  }, [activeThreadRef, activeNotificationAt, markThreadVisited]);
   return { pendingRequestsByThread, visitedByThread };
 };
 
@@ -150,8 +128,10 @@ const getTicketThreadAttention = ({
       runStatus: thread.latestRun?.status,
       completedAt: thread.latestRun?.completedAt,
       pendingRequests: pendingRequestsByThread.get(thread.id),
-      lastVisitedAt:
+      lastVisitedAt: resolveThreadLastVisitedAt(
+        thread.lastVisitedAt,
         visitedByThread[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))],
+      ),
     });
     const isOpen =
       activeThreadRef?.environmentId === thread.environmentId &&
@@ -195,7 +175,6 @@ export function useWorkbenchAttention({
     tickets,
     activeAssignments,
     threadsById,
-    activeThreadRef,
   });
   const assignmentsByTicket = (() => {
     const groups = new Map<WorkbenchTicketId, WorkbenchAssignment[]>();

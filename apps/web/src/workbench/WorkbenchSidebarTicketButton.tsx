@@ -4,11 +4,10 @@ import {
   BookOpenIcon,
   BugIcon,
   CircleAlertIcon,
-  CircleCheckIcon,
+  FolderGit2Icon,
   PlusIcon,
-  RotateCcwIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
@@ -18,10 +17,7 @@ import { useWorkbenchSidebarTicketActionMenu } from "./useWorkbenchSidebarTicket
 import type { WorkbenchSidebarTicket } from "./workbenchSidebar.logic";
 import type { WorkbenchSidebarTicketDetails } from "./workbenchSidebarContext.logic";
 import { WorkbenchTicketAttentionBadge } from "./WorkbenchTicketAttention";
-import {
-  WorkbenchSidebarQuickAction,
-  WorkbenchSidebarRowActions,
-} from "./WorkbenchSidebarRowActions";
+import { WorkbenchSidebarQuickAction } from "./WorkbenchSidebarRowActions";
 import { WorkbenchSidebarRowNavigation } from "./WorkbenchSidebarRowNavigation";
 import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
 
@@ -162,7 +158,7 @@ function WorkbenchSidebarTicketStatus({
   readonly status: string;
 }) {
   return (
-    <span data-workbench-sidebar-metadata-label="">
+    <span data-workbench-sidebar-metadata-label="" data-workbench-sidebar-line="1">
       <span data-workbench-sidebar-metadata-icon="" aria-hidden>
         {details?.issueLink ? (
           <WorkbenchJiraIcon className="size-3" />
@@ -179,20 +175,6 @@ function WorkbenchSidebarTicketStatus({
         ) : null}
         <span className="truncate">{status}</span>
       </span>
-      {details?.executionStatus ? (
-        <>
-          <span aria-hidden className="shrink-0">
-            ·
-          </span>
-          <span data-workbench-sidebar-native-status="ticket">
-            <WorkbenchThreadExecutionStatus
-              compact
-              status={details.executionStatus.presentation}
-              startedAt={details.executionStatus.startedAt}
-            />
-          </span>
-        </>
-      ) : null}
       {details?.attentionLabel ? (
         <CircleAlertIcon
           aria-label={details.attentionLabel}
@@ -263,39 +245,38 @@ function WorkbenchSidebarTicketPrControl({
   );
 }
 
-function WorkbenchSidebarTicketQuickActions({
-  ticket,
+function WorkbenchSidebarTicketRepositories({
   details,
-  actions,
 }: {
-  readonly ticket: WorkbenchSidebarTicket;
   readonly details: WorkbenchSidebarTicketDetails | undefined;
-  readonly actions: ReturnType<typeof useWorkbenchSidebarTicketActionMenu>;
 }) {
-  if (!actions.canCreateThread && !actions.canChangeStatus) return null;
-  const statusAction = details?.issueLink
-    ? "Change Jira status"
-    : ticket.status === "done"
-      ? "Reopen"
-      : "Mark as done";
   return (
-    <span data-workbench-sidebar-quick-actions="">
-      {actions.canCreateThread ? (
-        <WorkbenchSidebarQuickAction
-          label={`New Thread for ${ticket.title}`}
-          Icon={PlusIcon}
-          onSelect={actions.newThread}
-        />
-      ) : null}
-      {actions.canChangeStatus ? (
-        <WorkbenchSidebarQuickAction
-          label={`${statusAction}: ${ticket.title}`}
-          Icon={ticket.status === "done" ? RotateCcwIcon : CircleCheckIcon}
-          onSelect={actions.changeStatus}
-        />
+    <span data-workbench-sidebar-metadata-label="" data-workbench-sidebar-line="3">
+      {details?.repositories.length ? (
+        <>
+          <span data-workbench-sidebar-metadata-icon="" aria-hidden>
+            <FolderGit2Icon className="size-3" />
+          </span>
+          <span className="truncate">{details.repositories.join(", ")}</span>
+        </>
       ) : null}
     </span>
   );
+}
+
+// Jira reads share a lock with status changes, so passing over rows must not queue reads.
+const TRANSITION_PREFETCH_INTENT_MS = 300;
+
+function usePrefetchIntent(prefetch: () => void) {
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  return {
+    start: () => {
+      clearTimeout(timer.current);
+      timer.current = setTimeout(prefetch, TRANSITION_PREFETCH_INTENT_MS);
+    },
+    cancel: () => clearTimeout(timer.current),
+  };
 }
 
 export function WorkbenchSidebarTicketButton({
@@ -312,6 +293,15 @@ export function WorkbenchSidebarTicketButton({
   readonly onSelect: () => void;
 }) {
   const status = details?.statusLabel ?? WORKBENCH_TICKET_STATUS_LABELS[ticket.status];
+  const executionStatus = details?.executionStatus ? (
+    <span data-workbench-sidebar-native-status="">
+      <WorkbenchThreadExecutionStatus
+        compact
+        status={details.executionStatus.presentation}
+        startedAt={details.executionStatus.startedAt}
+      />
+    </span>
+  ) : null;
   const actions = useWorkbenchSidebarTicketActionMenu({
     environmentId: details?.environmentId,
     ticket,
@@ -319,11 +309,16 @@ export function WorkbenchSidebarTicketButton({
     jiraOwnershipKnown,
     readOnly: details?.readOnly ?? true,
   });
+  const prefetchIntent = usePrefetchIntent(actions.prefetchTransitions);
   return (
     <div
       data-workbench-sidebar-item-row=""
       data-workbench-sidebar-detail-row="ticket"
       className="min-w-0 flex-1"
+      onPointerEnter={prefetchIntent.start}
+      onPointerLeave={prefetchIntent.cancel}
+      onFocus={prefetchIntent.start}
+      onBlur={prefetchIntent.cancel}
       onContextMenu={(event) => {
         event.preventDefault();
         actions.openMenu({ x: event.clientX, y: event.clientY });
@@ -343,28 +338,36 @@ export function WorkbenchSidebarTicketButton({
           />
         }
       >
-        <WorkbenchSidebarTicketTitle ticket={ticket} details={details} />
         <WorkbenchSidebarTicketStatus ticket={ticket} details={details} status={status} />
+        <WorkbenchSidebarTicketTitle ticket={ticket} details={details} />
+        <WorkbenchSidebarTicketRepositories details={details} />
       </WorkbenchSidebarRowNavigation>
-      <span data-workbench-sidebar-metadata-controls="">
-        <WorkbenchSidebarTicketPrControl ticket={ticket} details={details} />
+      <span data-workbench-sidebar-slot={actions.canCreateThread ? "actions" : ""}>
         {details?.environmentId ? (
           <WorkbenchTicketAttentionBadge
             environmentId={details.environmentId}
             ticketId={ticket.id}
             ticketTitle={ticket.title}
+            nativeStatusKind={details.executionStatus?.kind ?? null}
+            nativeStatus={executionStatus}
             side="right"
-            compact
           />
+        ) : (
+          executionStatus
+        )}
+        {actions.canCreateThread ? (
+          <span data-workbench-sidebar-quick-actions="">
+            <WorkbenchSidebarQuickAction
+              label={`New Thread for ${ticket.title}`}
+              Icon={PlusIcon}
+              onSelect={actions.newThread}
+            />
+          </span>
         ) : null}
       </span>
-      {details?.environmentId ? (
-        <WorkbenchSidebarRowActions
-          label={`Actions for Ticket ${ticket.title}`}
-          openMenu={actions.openMenu}
-        />
-      ) : null}
-      <WorkbenchSidebarTicketQuickActions ticket={ticket} details={details} actions={actions} />
+      <span data-workbench-sidebar-metadata-controls="">
+        <WorkbenchSidebarTicketPrControl ticket={ticket} details={details} />
+      </span>
     </div>
   );
 }

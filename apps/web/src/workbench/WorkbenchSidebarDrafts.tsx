@@ -5,7 +5,6 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "re
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
 import { SidebarMenu, SidebarMenuItem } from "../components/ui/sidebar";
 import { WorkbenchSidebarRowNavigation } from "./WorkbenchSidebarRowNavigation";
-import { WorkbenchSidebarRowActions } from "./WorkbenchSidebarRowActions";
 import { toastManager } from "../components/ui/toast";
 import { readLocalApi } from "../localApi";
 import { useWorkbenchDraftActions } from "./useWorkbenchDraftActions";
@@ -271,10 +270,6 @@ export function WorkbenchSidebarDrafts({
                     <FilePenLineIcon aria-hidden className="size-4 shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{draft.title}</span>
                   </WorkbenchSidebarRowNavigation>
-                  <WorkbenchSidebarRowActions
-                    label={`Actions for draft ${draft.title}`}
-                    openMenu={(position, trigger) => openAt(draft, trigger, position)}
-                  />
                 </div>
               </SidebarMenuItem>
             ))}

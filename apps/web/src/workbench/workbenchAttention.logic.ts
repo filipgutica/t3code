@@ -21,6 +21,14 @@ import type {
 } from "./workbenchPullRequests.logic";
 
 export type WorkbenchAttentionMode = "all" | "attention" | "replies";
+export type WorkbenchAttentionReasonKind =
+  | "approval"
+  | "input"
+  | "failed"
+  | "checks"
+  | "feedback"
+  | "plan"
+  | "done";
 export type WorkbenchPullRequestAttentionKind =
   | "failed-checks"
   | "changes-requested"
@@ -31,7 +39,7 @@ const pullRequestReasonLabels = {
   "unresolved-feedback": "Unresolved PR feedback",
 } as const;
 export type WorkbenchInspectionStatus = "loading" | "unavailable" | "incomplete" | "complete";
-type WorkbenchThreadWaitingCause = "approval" | "plan" | "failed" | "interrupted";
+type WorkbenchThreadWaitingCause = "approval" | "plan" | "failed";
 type WorkbenchThreadNotification =
   | { readonly kind: "waiting"; readonly cause: WorkbenchThreadWaitingCause }
   | { readonly kind: "question" | "reply" };
@@ -54,9 +62,7 @@ export const groupWorkbenchAttentionSignals = (
   signals: ReadonlyArray<WorkbenchAttentionSignal>,
 ) => {
   const groups = new Map<string, WorkbenchAttentionSignal[]>();
-  for (const signal of signals.toSorted(
-    (left, right) => attentionPriority(left) - attentionPriority(right),
-  )) {
+  for (const signal of signals.toSorted(compareWorkbenchAttentionSignals)) {
     const key =
       signal.source.type === "thread"
         ? `thread:${signal.source.threadId}`
@@ -68,34 +74,79 @@ export const groupWorkbenchAttentionSignals = (
   return [...groups].map(([key, group]) => ({ key, signals: group }));
 };
 
-const attentionPriority = (signal: WorkbenchAttentionSignal) => {
-  if (signal.kind === "waiting")
-    return signal.cause === "failed" || signal.cause === "interrupted" ? 1 : 0;
-  return {
-    question: 0,
-    "failed-checks": 1,
-    "changes-requested": 2,
-    "unresolved-feedback": 3,
-    reply: 4,
-  }[signal.kind];
+export const getWorkbenchAttentionReasonKind = (
+  signal: WorkbenchAttentionSignal,
+): WorkbenchAttentionReasonKind => {
+  if (signal.kind === "waiting") return signal.cause;
+  return (
+    {
+      question: "input",
+      "failed-checks": "checks",
+      "changes-requested": "feedback",
+      "unresolved-feedback": "feedback",
+      reply: "done",
+    } as const
+  )[signal.kind];
 };
+
+const reasonPriority = {
+  approval: 0,
+  input: 0,
+  failed: 1,
+  checks: 2,
+  feedback: 3,
+  plan: 4,
+  done: 5,
+};
+
+/** Approval wins input ties; other equal priorities preserve source order. Missing signals sort last. */
+export const compareWorkbenchAttentionSignals = (
+  left: WorkbenchAttentionSignal | undefined,
+  right: WorkbenchAttentionSignal | undefined,
+) => {
+  if (!left) return right ? 1 : 0;
+  if (!right) return -1;
+  const leftKind = getWorkbenchAttentionReasonKind(left);
+  const rightKind = getWorkbenchAttentionReasonKind(right);
+  return (
+    reasonPriority[leftKind] - reasonPriority[rightKind] ||
+    Number(rightKind === "approval") - Number(leftKind === "approval")
+  );
+};
+
+const reasonLabels = {
+  approval: "Approval",
+  input: "Input",
+  failed: "Failed",
+  checks: "Checks failed",
+  feedback: "Feedback",
+  plan: "Plan ready",
+  done: "Done",
+} as const;
+
+export const getWorkbenchAttentionReasonLabel = (kind: WorkbenchAttentionReasonKind) =>
+  reasonLabels[kind];
 
 const waitingLabels = {
   approval: "Approval needed",
   plan: "Plan ready for review",
   failed: "Agent run failed",
-  interrupted: "Agent run interrupted",
 } as const;
 const signalLabels = {
-  question: "Waiting for your answer",
+  question: "Input needed",
   reply: "Agent replied",
-  "failed-checks": "Failed checks",
+  "failed-checks": "Checks failed",
   "changes-requested": "Changes requested",
-  "unresolved-feedback": "Unresolved feedback",
 } as const;
 
-export const getWorkbenchAttentionSignalLabel = (signal: WorkbenchAttentionSignal) =>
-  signal.kind === "waiting" ? waitingLabels[signal.cause] : signalLabels[signal.kind];
+export const getWorkbenchAttentionSignalLabel = (signal: WorkbenchAttentionSignal) => {
+  if (signal.kind === "waiting") return waitingLabels[signal.cause];
+  if (signal.kind === "unresolved-feedback") {
+    const count = signal.unresolvedReviewThreads.length;
+    return `${count} unresolved ${count === 1 ? "thread" : "threads"}`;
+  }
+  return signalLabels[signal.kind];
+};
 
 export const getWorkbenchAttentionSourceParts = (source: WorkbenchAttentionSignal["source"]) => {
   if (source.type === "thread")
@@ -372,6 +423,7 @@ export const getWorkbenchThreadNotification = ({
     | undefined;
   readonly lastVisitedAt?: string | undefined;
 }) => {
+  if (runStatus === "interrupted") return null;
   let notification: WorkbenchThreadNotification;
   let occurredAt: string | null | undefined;
   if (nativeLabel === "Awaiting Input") {
@@ -389,8 +441,8 @@ export const getWorkbenchThreadNotification = ({
   } else if (nativeLabel === "Plan Ready") {
     notification = { kind: "waiting", cause: "plan" };
     occurredAt = completedAt;
-  } else if (runStatus === "interrupted" || runStatus === "failed") {
-    notification = { kind: "waiting", cause: runStatus };
+  } else if (runStatus === "failed") {
+    notification = { kind: "waiting", cause: "failed" };
     occurredAt = completedAt;
   } else if (runStatus === "completed") {
     notification = { kind: "reply" };
