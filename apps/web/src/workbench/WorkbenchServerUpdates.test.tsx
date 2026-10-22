@@ -276,16 +276,6 @@ it("rejects a foreign SSH descriptor and can retry the check without updating it
   expect(state.bootstrapSsh).not.toHaveBeenCalled();
 });
 
-it("keeps a rejected SSH availability check visible and retryable", async () => {
-  sshDesktop();
-  state.ensureSsh.mockRejectedValueOnce(new Error("SSH authentication cancelled"));
-  await mount(<OutdatedServerUpdateAction {...desktopTarget} fromVersion="0.0.23" />, false, true);
-  await act(() => renderer!.root.findByType("button").props.onClick());
-  expect(renderer!.root.findByType("button").children).toEqual(["Retry update check"]);
-  expect(state.fetchSsh).not.toHaveBeenCalled();
-  expect(state.update).not.toHaveBeenCalled();
-});
-
 it("does not retry a cancelled SSH check when unrelated catalog or relay state changes", async () => {
   sshDesktop();
   state.ensureSsh.mockRejectedValueOnce(new Error("SSH authentication cancelled"));
@@ -298,6 +288,8 @@ it("does not retry a cancelled SSH check when unrelated catalog or relay state c
   expect(state.ensureSsh).toHaveBeenCalledOnce();
   const retry = renderer!.root.findByType("button");
   expect(retry.children).toEqual(["Retry update check"]);
+  expect(state.fetchSsh).not.toHaveBeenCalled();
+  expect(state.update).not.toHaveBeenCalled();
   await act(() => retry.props.onClick());
   expect(state.ensureSsh).toHaveBeenCalledTimes(2);
   expect(renderer!.root.findByType("button").children).toEqual(["Update"]);

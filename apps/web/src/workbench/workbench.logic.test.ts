@@ -25,10 +25,7 @@ import {
   getVisibleWorkbenchAssignments,
   isWorkbenchTicketKind,
   isWorkbenchThreadArchived,
-  resolveWorkbenchTicketThreadTarget,
-  ticketsByStatus,
   WORKBENCH_TICKET_KIND_LABELS,
-  WORKBENCH_TICKET_STATUS_LABELS,
 } from "./workbench.logic";
 
 describe("Workbench ticket helpers", () => {
@@ -298,27 +295,6 @@ describe("Workbench ticket helpers", () => {
     expect(isWorkbenchTicketKind("story")).toBe(true);
     expect(isWorkbenchTicketKind("bug")).toBe(true);
     expect(isWorkbenchTicketKind("task")).toBe(false);
-  });
-
-  it("keeps blocked tickets in their workflow status", () => {
-    const tickets = [
-      { id: "one", status: "todo", blocked: true },
-      { id: "two", status: "in_progress", blocked: false },
-    ] as const;
-
-    const grouped = ticketsByStatus(tickets);
-
-    expect(grouped.todo).toEqual([tickets[0]]);
-    expect(grouped.in_progress).toEqual([tickets[1]]);
-    expect(grouped.done).toEqual([]);
-  });
-
-  it("uses the Board's product-language status labels", () => {
-    expect(WORKBENCH_TICKET_STATUS_LABELS).toEqual({
-      todo: "To Do",
-      in_progress: "In Progress",
-      done: "Done",
-    });
   });
 
   it("offers every other Board column as a direct Ticket destination", () => {
@@ -650,18 +626,5 @@ describe("Workbench ticket helpers", () => {
     expect(getVisibleWorkbenchAssignments([missing], new Set(), new Set(), false)).toEqual([
       missing,
     ]);
-  });
-
-  it("opens an existing active Thread even when its primary Repository is unavailable", () => {
-    const threadId = ThreadId.make("thread-one");
-
-    expect(
-      resolveWorkbenchTicketThreadTarget(
-        { primaryT3ProjectId: ProjectId.make("missing-repository") },
-        [],
-        { threadId },
-        new Set([threadId]),
-      ),
-    ).toEqual({ state: "open", threadId });
   });
 });

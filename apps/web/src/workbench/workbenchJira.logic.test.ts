@@ -7,7 +7,7 @@ import {
 import { describe, expect, it } from "@effect/vitest";
 
 import {
-  orderWorkbenchTicketLanesByJiraRank,
+  orderWorkbenchTicketsByJiraRank,
   getWorkbenchBoardColumns,
   getWorkbenchJiraBindingSprints,
   isWorkbenchJiraEpic,
@@ -185,19 +185,15 @@ describe("Workbench Jira helpers", () => {
     ]);
   });
 
-  it("orders Jira tickets by rank within lanes without moving local ticket slots", () => {
+  it("orders Jira tickets by rank without moving local ticket slots", () => {
     const jiraLater = { id: WorkbenchTicketId.make("jira-later") };
     const localFirst = { id: WorkbenchTicketId.make("local-first") };
     const jiraEarlier = { id: WorkbenchTicketId.make("jira-earlier") };
     const localSecond = { id: WorkbenchTicketId.make("local-second") };
     const jiraDone = { id: WorkbenchTicketId.make("jira-done") };
 
-    const result = orderWorkbenchTicketLanesByJiraRank(
-      {
-        todo: [jiraLater, localFirst, jiraEarlier, localSecond],
-        in_progress: [],
-        done: [jiraDone],
-      },
+    const result = orderWorkbenchTicketsByJiraRank(
+      [jiraLater, localFirst, jiraEarlier, localSecond],
       new Map([
         [jiraLater.id, { issue: { rank: 20 } }],
         [jiraEarlier.id, { issue: { rank: 10 } }],
@@ -206,11 +202,15 @@ describe("Workbench Jira helpers", () => {
       new Set([jiraLater.id, jiraEarlier.id, jiraDone.id]),
     );
 
-    expect(result).toEqual({
-      todo: [jiraEarlier, localFirst, jiraLater, localSecond],
-      in_progress: [],
-      done: [jiraDone],
-    });
+    expect(result).toEqual([jiraEarlier, localFirst, jiraLater, localSecond]);
+    expect(orderWorkbenchTicketsByJiraRank([], new Map(), new Set())).toEqual([]);
+    expect(
+      orderWorkbenchTicketsByJiraRank(
+        [jiraDone],
+        new Map([[jiraDone.id, { issue: { rank: 1 } }]]),
+        new Set([jiraDone.id]),
+      ),
+    ).toEqual([jiraDone]);
   });
 
   it("preserves Jira-owned fields while applying local instructions and repository changes", () => {

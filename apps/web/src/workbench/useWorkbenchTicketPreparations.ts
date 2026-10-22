@@ -30,7 +30,7 @@ export const useWorkbenchTicketPreparations = () => useAtomValue(preparationInde
 const isUnfinishedTicketPreparation = (preparation: WorkbenchTicketPreparation) =>
   preparation.phase !== "working";
 
-export const isUnsavedTicketPreparation = (
+const isUnsavedTicketPreparation = (
   index: ReadonlyMap<string, WorkbenchTicketPreparation>,
   environmentId: EnvironmentId,
   threadId: ThreadId,

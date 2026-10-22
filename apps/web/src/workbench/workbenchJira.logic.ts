@@ -221,30 +221,6 @@ export function orderWorkbenchTicketsByJiraRank<Ticket extends { readonly id: Wo
   });
 }
 
-export function orderWorkbenchTicketLanesByJiraRank<
-  Ticket extends { readonly id: WorkbenchTicketId },
->(
-  ticketsByLane: Readonly<Record<WorkbenchTicketStatus, ReadonlyArray<Ticket>>>,
-  jiraIssueLinksByTicketId: ReadonlyMap<
-    WorkbenchTicketId,
-    { readonly issue: { readonly rank: number } }
-  >,
-  activeJiraTicketIds: ReadonlySet<WorkbenchTicketId>,
-): Readonly<Record<WorkbenchTicketStatus, ReadonlyArray<Ticket>>> {
-  const orderLane = (status: WorkbenchTicketStatus) =>
-    orderWorkbenchTicketsByJiraRank(
-      ticketsByLane[status],
-      jiraIssueLinksByTicketId,
-      activeJiraTicketIds,
-    );
-
-  return {
-    todo: orderLane("todo"),
-    in_progress: orderLane("in_progress"),
-    done: orderLane("done"),
-  };
-}
-
 export function getWorkbenchBoardColumns<Ticket extends Pick<WorkbenchTicket, "id" | "status">>({
   tickets,
   mirrorColumns,

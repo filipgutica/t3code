@@ -1,5 +1,6 @@
-// @effect-diagnostics nodeBuiltinImport:off - Read the scripted provider's received input for the end-to-end assertion.
+// @effect-diagnostics nodeBuiltinImport:off - Inspect the scripted provider input and disposable worktrees for end-to-end assertions.
 import { test, expect, snapshot, openWorkbench, waitForWorkbench } from "./fixtures.ts";
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import { providerStatePath } from "./provider-settings.mts";
 import * as Schema from "effect/Schema";
@@ -264,6 +265,14 @@ test("R1 R3: multi-repository worktrees persist and reset refuses retained Threa
   const before = await snapshot(demo);
   const workspace = before.ticketWorkspaces.find((w) => w.ticketId === "orbit-001");
   expect(workspace).toBeDefined();
+  for (const repository of workspace!.repositories) {
+    expect(
+      NodeChildProcess.execFileSync("git", ["status", "--porcelain"], {
+        cwd: repository.worktreePath,
+        encoding: "utf8",
+      }),
+    ).toBe("");
+  }
   await openWorkbench(
     page,
     demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-001"),
@@ -285,9 +294,11 @@ test("R1 R3: multi-repository worktrees persist and reset refuses retained Threa
     .getByRole("alertdialog")
     .getByRole("button", { name: "Remove prepared worktrees", exact: true })
     .click();
-  await expect(
-    page.getByText(/Threads.*(exist|linked)|linked.*Threads|Thread.*before.*reset/i).last(),
-  ).toBeVisible();
+  const refusal = page.getByRole("alertdialog").getByRole("alert");
+  await expect(refusal).toBeVisible();
+  await expect(refusal).toContainText(
+    "The Ticket Workspace cannot be reset while it has linked Agent Threads, including archived or historical Threads.",
+  );
   expect((await snapshot(demo)).ticketWorkspaces.find((w) => w.ticketId === "orbit-001")).toEqual(
     workspace,
   );

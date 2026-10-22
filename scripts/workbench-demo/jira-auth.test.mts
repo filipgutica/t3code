@@ -14,7 +14,6 @@ import {
   encodeJiraAuthBundle,
   exportJiraAuth,
   importJiraAuth,
-  readJiraAuthBundleFile,
   type JiraAuthBundle,
   writeJiraAuthBundleFile,
 } from "./jira-auth.mts";
@@ -112,7 +111,7 @@ test("round-trips the base64 bundle file used by CI setup", async () => {
   try {
     const path = NodePath.join(root, "jira-auth.bundle");
     await writeJiraAuthBundleFile({ path, bundle });
-    NodeAssert.deepEqual(await readJiraAuthBundleFile(path), bundle);
+    NodeAssert.deepEqual(decodeJiraAuthBundle(NodeFS.readFileSync(path, "utf8")), bundle);
     NodeAssert.equal(NodeFS.statSync(path).mode & 0o777, 0o600);
   } finally {
     await NodeFSP.rm(root, { recursive: true, force: true });

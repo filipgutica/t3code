@@ -72,7 +72,7 @@ describe("Workbench Jira OAuth callback", () => {
       const completeAuth = () => Effect.die("unexpected auth completion");
       const response = yield* getCallbackResponse(
         completeAuth,
-        "http://localhost/oauth/workbench/jira/callback?state=state-only&tracking=private-value",
+        "http://localhost/oauth/workbench/jira/callback?state=Abcdef01234567_-Abcdef01234567_-&tracking=private-value",
       );
 
       assert.strictEqual(response.status, 400);

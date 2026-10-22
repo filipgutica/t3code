@@ -3,19 +3,16 @@ export type WorkbenchSidebarRevealReason = "destination" | "filter" | "reset" | 
 export function getWorkbenchSidebarRevealDecision({
   reason,
   fullyVisible,
-  userScrolling,
   selectedInSidebar,
 }: {
-  reason: WorkbenchSidebarRevealReason;
+  reason: NonNullable<WorkbenchSidebarRevealReason>;
   fullyVisible: boolean;
-  userScrolling: boolean;
   selectedInSidebar: boolean;
 }) {
-  const reveal = reason !== null && !userScrolling;
   return {
-    scroll: reveal && !fullyVisible,
+    scroll: !fullyVisible,
     // A row the user just picked in the sidebar is already where they are looking.
-    pulse: reveal && (reason === "filter" || (reason === "destination" && !selectedInSidebar)),
+    pulse: reason === "filter" || (reason === "destination" && !selectedInSidebar),
   };
 }
 

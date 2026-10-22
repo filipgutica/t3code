@@ -6,7 +6,6 @@ import {
   getWorkbenchAttentionReasonKind,
   getWorkbenchAttentionReasonLabel,
   getWorkbenchAttentionSignalLabel,
-  type WorkbenchAttentionInspection,
   type WorkbenchAttentionReasonKind,
   type WorkbenchAttentionSignal,
 } from "./workbenchAttention.logic";
@@ -37,11 +36,9 @@ export function getWorkbenchAttentionReasonPresentation(kind: WorkbenchAttention
 
 export function getWorkbenchThreadAttention({
   signals,
-  inspections,
   threadId,
 }: {
   readonly signals: ReadonlyArray<WorkbenchAttentionSignal>;
-  readonly inspections: ReadonlyArray<WorkbenchAttentionInspection>;
   readonly threadId: ThreadId;
 }) {
   return {
@@ -50,7 +47,6 @@ export function getWorkbenchThreadAttention({
         ? signal.source.row.threadId === threadId
         : signal.source.threadId === threadId,
     ),
-    inspections: inspections.filter((inspection) => inspection.row.threadId === threadId),
   };
 }
 
