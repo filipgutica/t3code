@@ -10,7 +10,7 @@ export const withWorkbenchEnvironmentSearch = <Search extends Record<string, unk
 ): Search & { readonly environmentId?: EnvironmentId } =>
   environmentId === null ? search : { environmentId, ...search };
 
-export const isWorkbenchSidebarPage = (pathname: string): boolean => pathname === "/workbench";
+const isWorkbenchSidebarPage = (pathname: string): boolean => pathname === "/workbench";
 
 export const shouldShowWorkbenchSidebar = ({
   pathname,
