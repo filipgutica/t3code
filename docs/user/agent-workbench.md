@@ -156,20 +156,22 @@ the Ticket progress from the Ticket or Board card menu when the work is accepted
 For Jira Tickets, Workbench attempts an available Jira transition first; if it
 fails, the Thread continues and its work log shows a warning.
 
-Use **Needs attention** on the Board to find waiting Threads, work ready for review,
-failed PR checks, and unresolved PR conversations. **Agent replies** narrows the
-view to completed agent work awaiting review. PR inspection covers explicitly
-linked PRs; the Board shows incomplete or unavailable coverage and lets you refresh.
+Use **Needs attention** on the Board, or in the sidebar's filter menu, to find
+approval and input requests, failed runs, failed PR checks, PR feedback, plans
+ready for review, and finished agent turns. The sidebar filter sorts the most
+urgent work first. **Agent replies** narrows the Board to completed agent work
+awaiting review. PR inspection covers explicitly linked PRs; the Board shows
+incomplete or unavailable coverage and lets you refresh.
 
-Click a Ticket's attention bell to see each reason. Thread reasons open the
-Thread; failed checks, requested changes, and unresolved discussions open the PR.
-The Ticket page keeps these actions in its **Needs attention** section. Counts
-represent actionable signals, not unread messages; opening the list does not
-clear them.
+Each Ticket and Thread shows its most urgent reason in the status area, with
+**+N** for other reasons. Click it to see the reasons grouped by Thread and PR.
+Thread reasons open the Thread; failed checks, requested changes, and unresolved
+discussions open the PR. The Ticket page keeps these actions in its **Needs
+attention** section. Opening the list does not clear them.
 
-Opening a Thread acknowledges its notification. An unanswered question stays
-**Waiting for input** until you respond. PR actions remain until the checks or review
-feedback are resolved.
+Opening a Thread acknowledges its notification. A pending question or approval
+stays until you respond, and an interrupted run is not a reason. PR actions
+remain until the checks or review feedback are resolved.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/notifications-light.png">

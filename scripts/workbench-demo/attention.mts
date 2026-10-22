@@ -41,7 +41,7 @@ const BUSY_FEEDBACK_MARKDOWN = [
   "",
   "The original assignment links the failed-check PR and the feedback PR. A second assignment shares the feedback PR because both discussions need the same review context; its duplicate link must not create duplicate PR attention. All three native threads belong to the ticket's primary Orbit Web project. The API contract review thread links a distinct clean PR in the API repository. That PR's repository identity should stay visible even when the thread title or PR title is long.",
   "",
-  "The failed-check fixture has two failing checks in one workflow. The feedback fixture contains a requested-changes review and two unresolved discussions. Two interrupted native turns add separate unanswered questions. These are genuine fixture inputs to the normal notification and attention derivation, rather than static badges placed in the screenshot.",
+  "The failed-check fixture has two failing checks in one workflow. The feedback fixture contains a requested-changes review and two unresolved discussions. Two interrupted native turns hold separate questions; an interrupted run does not raise attention. These are genuine fixture inputs to the normal notification and attention derivation, rather than static badges placed in the screenshot.",
   "",
   "## Repository responsibilities",
   "",
