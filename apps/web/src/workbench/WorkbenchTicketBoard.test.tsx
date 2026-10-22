@@ -358,9 +358,11 @@ describe("Workbench Board view", () => {
       waiting.title,
     ]);
     expect(
-      renderer.root.findAllByProps({
-        "aria-label": "Needs attention, 1 item for Waiting for input: Approval needed",
-      }).length,
+      renderer.root
+        .findAllByType("span")
+        .filter(
+          (node) => node.children.join("") === ", Waiting for input needs attention: Approval",
+        ).length,
     ).toBeGreaterThan(0);
   });
   it("matches secondary repositories, retains the filter while loading, and clears removed repositories", () => {

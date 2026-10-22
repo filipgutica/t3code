@@ -1,8 +1,4 @@
-import {
-  scopeProjectRef,
-  scopedThreadKey,
-  scopeThreadRef,
-} from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useAtomValue } from "@effect/atom-react";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import {
@@ -16,7 +12,6 @@ import {
 } from "@t3tools/shared/threadPullRequests";
 import { useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
-import { hasUnseenCompletion } from "../components/Sidebar.logic";
 import {
   linkedPullRequestSnapshotStatus,
   prStatusIndicator,
@@ -37,7 +32,6 @@ import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
 import { serverEnvironment } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
-import { useUiStateStore } from "../uiStateStore";
 import { toastManager } from "../components/ui/toast";
 import { deriveProviderInstanceEntries, type ProviderInstanceEntry } from "../providerInstances";
 import { getWorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
@@ -59,10 +53,8 @@ export interface WorkbenchSidebarThreadRowData {
   project: ThreadProject;
   environment: ThreadEnvironment;
   providerEntry: ProviderInstanceEntry | null;
-  lastVisitedAt: string | undefined;
   status: ReturnType<typeof getWorkbenchThreadExecutionStatus>;
   failed: boolean;
-  unread: boolean;
   snoozed: boolean;
   pullRequests: ReturnType<typeof resolveWorkbenchSidebarThreadPullRequests>;
   pullRequestBadge: ReturnType<typeof resolveThreadPullRequestBadge>;
@@ -90,15 +82,14 @@ function resolveRepositoryLabel(project: ThreadProject) {
   );
 }
 
-function resolveThreadActivityState(shell: ThreadShell, lastVisitedAt: string | undefined) {
+function resolveThreadActivityState(shell: ThreadShell) {
   if (shell === null) {
-    return { status: null, failed: false, unread: false, snoozed: false };
+    return { status: null, failed: false, snoozed: false };
   }
   const status = getWorkbenchThreadExecutionStatus(shell);
   return {
     status,
     failed: status?.kind === "failed",
-    unread: hasUnseenCompletion({ ...shell, lastVisitedAt }),
     snoozed: effectiveSnoozed(shell, { now: new Date().toISOString() }),
   };
 }
@@ -135,10 +126,7 @@ export function useWorkbenchSidebarThreadRowData({
   const environment = useEnvironment(thread.environmentId);
   const providers = useAtomValue(serverEnvironment.providersValueAtom(thread.environmentId));
   const providerEntry = resolveProviderEntry(shell, deriveProviderInstanceEntries(providers ?? []));
-  const lastVisitedAt = useUiStateStore(
-    (state) => state.threadLastVisitedAtById[scopedThreadKey(threadRef)],
-  );
-  const activityState = resolveThreadActivityState(shell, lastVisitedAt);
+  const activityState = resolveThreadActivityState(shell);
   const pullRequests = shell ? resolveWorkbenchSidebarThreadPullRequests(shell) : [];
   const pullRequestState = resolveThreadPullRequestState(pullRequests);
 
@@ -147,7 +135,6 @@ export function useWorkbenchSidebarThreadRowData({
     project,
     environment,
     providerEntry,
-    lastVisitedAt,
     ...activityState,
     pullRequests,
     ...pullRequestState,

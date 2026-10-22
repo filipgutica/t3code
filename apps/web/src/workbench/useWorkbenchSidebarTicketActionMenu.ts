@@ -5,8 +5,8 @@ import type {
   ContextMenuItem,
   EnvironmentId,
   LocalApi,
+  WorkbenchJiraGetTicketTransitionsResult,
   WorkbenchJiraIssueLink,
-  WorkbenchJiraTicketTransition,
   WorkbenchTicketStatus,
 } from "@t3tools/contracts";
 import { useNavigate, useRouter } from "@tanstack/react-router";
@@ -30,6 +30,7 @@ import {
 type TicketMenuAction =
   | "new-thread"
   | "change-status"
+  | `jira-transition:${string}`
   | `status:${WorkbenchTicketStatus}`
   | "copy-link"
   | "open-jira"
@@ -39,26 +40,32 @@ const menuItems = ({
   ticket,
   issueLink,
   jiraOwnershipKnown,
+  transitions,
 }: {
   readonly ticket: WorkbenchSidebarTicket;
   readonly issueLink: WorkbenchJiraIssueLink | null;
   readonly jiraOwnershipKnown: boolean;
+  readonly transitions: WorkbenchJiraGetTicketTransitionsResult | null;
 }): ReadonlyArray<ContextMenuItem<TicketMenuAction>> => {
   const active = ticket.archivedAt === null;
+  const statusChildren = issueLink
+    ? transitions && active
+      ? jiraTransitionItems(transitions).map((item) => ({
+          ...item,
+          id: `jira-transition:${item.id}` as const,
+        }))
+      : undefined
+    : getWorkbenchTicketStatusMoves(ticket.status).map((status) => ({
+        id: `status:${status}` as const,
+        label: WORKBENCH_TICKET_STATUS_LABELS[status],
+      }));
   return [
     { id: "new-thread", label: "New Thread", disabled: !active },
     {
       id: "change-status",
       label: "Change status",
       disabled: !active,
-      ...(issueLink
-        ? {}
-        : {
-            children: getWorkbenchTicketStatusMoves(ticket.status).map((status) => ({
-              id: `status:${status}` as const,
-              label: WORKBENCH_TICKET_STATUS_LABELS[status],
-            })),
-          }),
+      ...(statusChildren ? { children: statusChildren } : {}),
     },
     { id: "copy-link", label: "Copy Ticket link", separatorBefore: true },
     ...(issueLink ? [{ id: "open-jira" as const, label: "Open in Jira" }] : []),
@@ -80,6 +87,49 @@ function reportMenuFailure(title: string, cause: unknown): void {
     title,
     description: cause instanceof Error ? cause.message : "Please try again.",
   });
+}
+
+function jiraTransitionItems(result: WorkbenchJiraGetTicketTransitionsResult) {
+  if (result.remoteUpdatedAt === null) {
+    return [{ id: "unavailable", label: "Refresh Jira before changing status", disabled: true }];
+  }
+  if (!result.transitions.some((transition) => transition.unavailableReason === null)) {
+    return [{ id: "unavailable", label: "No transitions available", disabled: true }];
+  }
+  return result.transitions.map((transition) => ({
+    id: transition.id,
+    label:
+      transition.name === transition.to.name
+        ? transition.to.name
+        : `${transition.to.name} · ${transition.name}`,
+    disabled: transition.unavailableReason !== null,
+  }));
+}
+
+function jiraTransitionAction({
+  environmentId,
+  ticket,
+  transitions,
+  transitionId,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly ticket: WorkbenchSidebarTicket;
+  readonly transitions: WorkbenchJiraGetTicketTransitionsResult;
+  readonly transitionId: string | null;
+}): WorkbenchSidebarTicketAction | null {
+  const transition = transitions.transitions.find(
+    (candidate) => candidate.id === transitionId && candidate.unavailableReason === null,
+  );
+  return transition && transitions.remoteUpdatedAt !== null
+    ? {
+        environmentId,
+        ticketId: ticket.id,
+        kind: "jira-transition",
+        transitionId: transition.id,
+        destination: transition.to,
+        expectedRemoteUpdatedAt: transitions.remoteUpdatedAt,
+      }
+    : null;
 }
 
 async function selectJiraTransition({
@@ -109,53 +159,14 @@ async function selectJiraTransition({
     return null;
   }
   const transitions = result.value;
-  if (transitions.remoteUpdatedAt === null) {
-    await api.contextMenu.show(
-      [{ id: "unavailable", label: "Refresh Jira before changing status", disabled: true }],
-      position,
-    );
-    return null;
-  }
-  const available = transitions.transitions.filter(
-    (transition) => transition.unavailableReason === null,
-  );
-  if (available.length === 0) {
-    await api.contextMenu.show(
-      [{ id: "unavailable", label: "No transitions available", disabled: true }],
-      position,
-    );
-    return null;
-  }
-  const items: ReadonlyArray<ContextMenuItem<string>> = transitions.transitions.map(
-    (transition) => ({
-      id: transition.id,
-      label:
-        transition.name === transition.to.name
-          ? transition.to.name
-          : `${transition.to.name} · ${transition.name}`,
-      disabled: transition.unavailableReason !== null,
-    }),
-  );
   let transitionId: string | null;
   try {
-    transitionId = await api.contextMenu.show(items, position);
+    transitionId = await api.contextMenu.show(jiraTransitionItems(transitions), position);
   } catch (cause) {
     reportMenuFailure("Could not open Jira transitions", cause);
     return null;
   }
-  const transition: WorkbenchJiraTicketTransition | undefined = available.find(
-    (candidate) => candidate.id === transitionId,
-  );
-  return transition
-    ? {
-        environmentId,
-        ticketId: ticket.id,
-        kind: "jira-transition",
-        transitionId: transition.id,
-        destination: transition.to,
-        expectedRemoteUpdatedAt: transitions.remoteUpdatedAt,
-      }
-    : null;
+  return jiraTransitionAction({ environmentId, ticket, transitions, transitionId });
 }
 
 function localTicketAction({
@@ -227,7 +238,15 @@ export function useWorkbenchSidebarTicketActionMenu({
     workbenchEnvironment.updateTicket.permissionAtom(environmentId ?? null),
   );
   const canMutate = Boolean(environmentId && permission && !readOnly);
-  const runSelected = async (selected: TicketMenuAction, position: { x: number; y: number }) => {
+  const runSelected = async ({
+    selected,
+    position,
+    transitions = null,
+  }: {
+    readonly selected: TicketMenuAction;
+    readonly position: { x: number; y: number };
+    readonly transitions?: WorkbenchJiraGetTicketTransitionsResult | null;
+  }) => {
     if (!environmentId) return;
     const api = readLocalApi();
     if (!api) return;
@@ -244,16 +263,30 @@ export function useWorkbenchSidebarTicketActionMenu({
       return;
     }
     if (readOnly || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return;
-    const action =
-      selected === "change-status" && issueLink && ticket.archivedAt === null
-        ? await selectJiraTransition({ api, environmentId, ticket, issueLink, position })
-        : localTicketAction({
-            selected,
-            environmentId,
-            ticket,
-            issueLink,
-            jiraOwnershipKnown,
-          });
+    let action: WorkbenchSidebarTicketAction | null;
+    if (selected === "change-status" && issueLink && ticket.archivedAt === null) {
+      action = await selectJiraTransition({ api, environmentId, ticket, issueLink, position });
+    } else if (
+      selected.startsWith("jira-transition:") &&
+      issueLink &&
+      transitions &&
+      ticket.archivedAt === null
+    ) {
+      action = jiraTransitionAction({
+        environmentId,
+        ticket,
+        transitions,
+        transitionId: selected.slice("jira-transition:".length),
+      });
+    } else {
+      action = localTicketAction({
+        selected,
+        environmentId,
+        ticket,
+        issueLink,
+        jiraOwnershipKnown,
+      });
+    }
     if (!action || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return;
     enqueueWorkbenchSidebarTicketAction(action);
     if (isMobile) setOpenMobile(false);
@@ -273,36 +306,57 @@ export function useWorkbenchSidebarTicketActionMenu({
     void (async () => {
       const api = readLocalApi();
       if (!api) return;
+      const mutable =
+        !readOnly && readEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+      const cached =
+        mutable && ticket.archivedAt === null && issueLink?.issue.remoteUpdatedAt != null
+          ? appAtomRegistry.get(
+              workbenchEnvironment.jiraGetTicketTransitions({
+                environmentId,
+                input: { ticketId: ticket.id, remoteUpdatedAt: issueLink.issue.remoteUpdatedAt },
+              }),
+            )
+          : null;
+      const transitions = cached?._tag === "Success" ? cached.value : null;
       const selected = await api.contextMenu.show(
-        readOnly || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)
+        !mutable
           ? [
               { id: "copy-link" as const, label: "Copy Ticket link" },
               ...(issueLink ? [{ id: "open-jira" as const, label: "Open in Jira" }] : []),
             ]
-          : menuItems({ ticket, issueLink, jiraOwnershipKnown }),
+          : menuItems({ ticket, issueLink, jiraOwnershipKnown, transitions }),
         position,
       );
-      if (selected !== null) await runSelected(selected, position);
+      if (selected !== null) await runSelected({ selected, position, transitions });
     })().catch((cause: unknown) => reportMenuFailure("Could not complete Ticket action", cause));
   };
-  const quickAction = (selected: TicketMenuAction, position: { x: number; y: number }) => {
-    if (!canMutate || ticket.archivedAt !== null) return;
-    if (selected === "new-thread" && ticket.status === "done") return;
-    void runSelected(selected, position).catch((cause: unknown) =>
+  const newThread = (position: { x: number; y: number }) => {
+    if (!canMutate || ticket.archivedAt !== null || ticket.status === "done") return;
+    void runSelected({ selected: "new-thread", position }).catch((cause: unknown) =>
       reportMenuFailure("Could not complete Ticket action", cause),
     );
   };
   return {
     openMenu,
-    canCreateThread: canMutate && ticket.archivedAt === null && ticket.status !== "done",
-    canChangeStatus: canMutate && ticket.archivedAt === null && jiraOwnershipKnown,
-    newThread: (position: { x: number; y: number }) => quickAction("new-thread", position),
-    changeStatus: (position: { x: number; y: number }) => {
-      if (!jiraOwnershipKnown) return;
-      quickAction(
-        issueLink ? "change-status" : ticket.status === "done" ? "status:todo" : "status:done",
-        position,
+    prefetchTransitions: () => {
+      if (
+        !environmentId ||
+        !issueLink ||
+        !canMutate ||
+        ticket.archivedAt !== null ||
+        !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)
+      )
+        return;
+      void executeAtomQuery(
+        appAtomRegistry,
+        workbenchEnvironment.jiraGetTicketTransitions({
+          environmentId,
+          input: { ticketId: ticket.id, remoteUpdatedAt: issueLink.issue.remoteUpdatedAt },
+        }),
+        { reportFailure: false, reportDefect: false },
       );
     },
+    canCreateThread: canMutate && ticket.archivedAt === null && ticket.status !== "done",
+    newThread,
   };
 }

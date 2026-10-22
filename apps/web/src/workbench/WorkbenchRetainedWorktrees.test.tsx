@@ -109,6 +109,32 @@ vi.mock("../components/ui/tooltip", () => {
     TooltipPopup: Container,
   };
 });
+vi.mock("../components/ui/menu", () => {
+  const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
+  return {
+    Menu: Container,
+    MenuTrigger: ({ render, children }: { render?: ReactNode; children?: ReactNode }) => (
+      <>
+        {render}
+        {children}
+      </>
+    ),
+    MenuPopup: Container,
+    MenuCheckboxItem: ({
+      checked,
+      onCheckedChange,
+      children,
+    }: {
+      checked: boolean;
+      onCheckedChange: (checked: boolean) => void;
+      children?: ReactNode;
+    }) => (
+      <button aria-label="Needs attention" onClick={() => onCheckedChange(!checked)}>
+        {children}
+      </button>
+    ),
+  };
+});
 vi.mock("../components/ui/button", () => ({
   Button: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
 }));
@@ -382,7 +408,7 @@ it("hides archived Workspaces from actionable results and restores their search 
   expect(renderer!.root.findByProps({ "aria-live": "polite" }).children).toEqual([
     "No confirmed actions",
   ]);
-  await act(() => button("Work").props.onClick());
+  await act(() => button("Turn off Needs attention filter").props.onClick());
   expect(renderer!.root.findAllByType("summary")).toHaveLength(1);
   const search = renderer!.root.findByProps({ "aria-label": "Search Workbench sidebar" });
   await act(() => search.props.onChange({ target: { value: "Release Checklist" } }));
@@ -406,7 +432,7 @@ it("hides archived Workspaces from actionable results and restores their search 
       .findAllByType("span")
       .some((node) => node.children.includes("Release Checklist")),
   ).toBe(false);
-  await act(() => button("Work").props.onClick());
+  await act(() => button("Turn off Needs attention filter").props.onClick());
   expect(renderer!.root.findAllByType("summary")).toHaveLength(0);
   expect(renderer!.root.findByProps({ "aria-live": "polite" }).children).toEqual(["1 result"]);
   await act(() => search.props.onChange({ target: { value: "unrelated search" } }));

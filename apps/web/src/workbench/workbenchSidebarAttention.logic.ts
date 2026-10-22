@@ -8,6 +8,7 @@ import type {
 } from "@t3tools/contracts";
 import {
   activeWorkbenchAttentionAssignments,
+  compareWorkbenchAttentionSignals,
   workbenchAttentionIdentity,
   type WorkbenchAttentionSignal,
 } from "./workbenchAttention.logic";
@@ -25,6 +26,7 @@ type AttentionSignalsByTicket = ReadonlyMap<
   ReadonlyArray<WorkbenchAttentionSignal>
 >;
 
+/** Each actionable Thread maps to its most urgent signal, including signals from shared PRs. */
 export const getWorkbenchSidebarActionableThreadIds = ({
   environmentId,
   assignments,
@@ -38,56 +40,42 @@ export const getWorkbenchSidebarActionableThreadIds = ({
       Pick<EnvironmentThreadShell, "environmentId" | "archivedAt" | "settledOverride">
   >;
   readonly attentionSignalsByTicket: AttentionSignalsByTicket;
-}): ReadonlyMap<WorkbenchTicketId, ReadonlySet<ThreadId>> => {
-  const result = new Map<WorkbenchTicketId, Set<ThreadId>>();
+}): ReadonlyMap<WorkbenchTicketId, ReadonlyMap<ThreadId, WorkbenchAttentionSignal>> => {
+  const result = new Map<WorkbenchTicketId, Map<ThreadId, WorkbenchAttentionSignal>>();
   if (environmentId === null) return result;
   const threadsById = new Map(
     threads
       .filter((thread) => thread.environmentId === environmentId)
       .map((thread) => [thread.id, thread]),
   );
-  const sourcesByTicket = new Map(
-    [...attentionSignalsByTicket].map(([ticketId, signals]) => [
-      ticketId,
-      {
-        threadIds: new Set(
-          signals.flatMap((signal) =>
-            signal.source.type === "thread" ? [signal.source.threadId] : [],
-          ),
-        ),
-        pullRequests: new Set(
-          signals.flatMap((signal) =>
-            signal.source.type === "pull-request"
-              ? [workbenchAttentionIdentity(environmentId, signal.source.row.pullRequest)]
-              : [],
-          ),
-        ),
-      },
-    ]),
-  );
   for (const assignment of activeWorkbenchAttentionAssignments({
     assignments,
     threadsById,
     environmentId,
   })) {
-    const sources = sourcesByTicket.get(assignment.ticketId);
-    if (!sources) continue;
-    const references = getWorkbenchTicketPullRequests({
-      assignments: [assignment],
-      threadsById,
-      archivedThreadsById: new Map(),
-      includeBranchPullRequest: false,
-    });
-    if (
-      !sources.threadIds.has(assignment.threadId) &&
-      !references.some((row) =>
-        sources.pullRequests.has(workbenchAttentionIdentity(environmentId, row.pullRequest)),
+    const signals = attentionSignalsByTicket.get(assignment.ticketId);
+    if (!signals?.length) continue;
+    const pullRequests = new Set(
+      getWorkbenchTicketPullRequests({
+        assignments: [assignment],
+        threadsById,
+        archivedThreadsById: new Map(),
+        includeBranchPullRequest: false,
+      }).map((row) => workbenchAttentionIdentity(environmentId, row.pullRequest)),
+    );
+    const [signal] = signals
+      .filter((candidate) =>
+        candidate.source.type === "thread"
+          ? candidate.source.threadId === assignment.threadId
+          : pullRequests.has(
+              workbenchAttentionIdentity(environmentId, candidate.source.row.pullRequest),
+            ),
       )
-    )
-      continue;
-    const ids = result.get(assignment.ticketId) ?? new Set<ThreadId>();
-    ids.add(assignment.threadId);
-    result.set(assignment.ticketId, ids);
+      .toSorted(compareWorkbenchAttentionSignals);
+    if (!signal) continue;
+    const ticketThreads = result.get(assignment.ticketId) ?? new Map();
+    ticketThreads.set(assignment.threadId, signal);
+    result.set(assignment.ticketId, ticketThreads);
   }
   return result;
 };
@@ -100,7 +88,10 @@ export const prioritizeWorkbenchSidebarAttention = ({
 }: {
   readonly ticketGroupsByWorkspace: ReadonlyMap<WorkbenchProjectId, WorkbenchSidebarTicketSections>;
   readonly attentionSignalsByTicket: AttentionSignalsByTicket;
-  readonly actionableThreadIdsByTicket: ReadonlyMap<WorkbenchTicketId, ReadonlySet<ThreadId>>;
+  readonly actionableThreadIdsByTicket: ReadonlyMap<
+    WorkbenchTicketId,
+    ReadonlyMap<ThreadId, WorkbenchAttentionSignal>
+  >;
   readonly onlyActionable: boolean;
 }): ReadonlyMap<WorkbenchProjectId, WorkbenchSidebarTicketSections> => {
   const isActionable = (group: WorkbenchSidebarTicketGroup) =>
@@ -115,19 +106,34 @@ export const prioritizeWorkbenchSidebarAttention = ({
       promoted.push(group);
       visibleIds.add(group.ticket.id);
     }
-    // Keep source order: reordering on attention moves a row away the moment opening it clears it.
+    const priorityByTicket = new Map<WorkbenchTicketId, WorkbenchAttentionSignal | undefined>();
+    // Only the attention filter reorders rows; equally urgent rows retain source order.
     const active = [...sections.active, ...promoted].flatMap((group) => {
-      if (onlyActionable && !isActionable(group)) return [];
+      if (!onlyActionable) return [group];
+      if (!isActionable(group)) return [];
       const ids = actionableThreadIdsByTicket.get(group.ticket.id);
+      const orderedSignals = (attentionSignalsByTicket.get(group.ticket.id) ?? []).toSorted(
+        compareWorkbenchAttentionSignals,
+      );
+      priorityByTicket.set(group.ticket.id, orderedSignals[0]);
       return [
         {
           ...group,
-          threads: onlyActionable
-            ? group.threads.filter((thread) => ids?.has(thread.id))
-            : group.threads,
+          threads: group.threads
+            .filter((thread) => ids?.has(thread.id))
+            .toSorted((left, right) =>
+              compareWorkbenchAttentionSignals(ids?.get(left.id), ids?.get(right.id)),
+            ),
         },
       ];
     });
+    if (onlyActionable)
+      active.sort((left, right) =>
+        compareWorkbenchAttentionSignals(
+          priorityByTicket.get(left.ticket.id),
+          priorityByTicket.get(right.ticket.id),
+        ),
+      );
     result.set(workspaceId, {
       active,
       done: onlyActionable ? [] : sections.done.filter((group) => !isActionable(group)),

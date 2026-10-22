@@ -112,11 +112,10 @@ const actionableThreadIdsByTicket = () =>
   });
 
 it("retains every eligible Thread sharing an actionable PR, plus its independent waiting Thread", () => {
-  expect([...(actionableThreadIdsByTicket().get(ticketId) ?? [])]).toEqual([
-    sharedTwo.id,
-    waiting.id,
-    sharedOne.id,
-  ]);
+  const ticketThreads = actionableThreadIdsByTicket().get(ticketId);
+  expect([...(ticketThreads?.keys() ?? [])]).toEqual([sharedTwo.id, waiting.id, sharedOne.id]);
+  expect(ticketThreads?.get(sharedTwo.id)).toBe(signals[0]);
+  expect(ticketThreads?.get(sharedOne.id)).toBe(signals[0]);
   expect(
     getWorkbenchSidebarActionableThreadIds({
       environmentId: null,
@@ -146,20 +145,26 @@ const ticket = (
   archivedAt: null,
 });
 it.each([false, true])(
-  "keeps source order, filters confirmed work and promotes Done once without changing status (attention-only=%s)",
+  "orders by urgency only under the attention filter and promotes Done once without changing status (attention-only=%s)",
   (onlyActionable) => {
     const action = ticket("actionable");
     const second = ticket("second");
     const doneAction = ticket("done-action", "done");
+    const tiedAction = ticket("tied-action");
+    const tiedWaiting = { ...thread("tied-waiting"), hasPendingUserInput: true };
     const secondThread = { ...thread("second-waiting"), hasPendingUserInput: true };
     const doneThread = thread("done-review");
     const selectedArchived = { ...ticket("archived"), archivedAt: "2026-09-30T00:00:00.000Z" };
     const sections: WorkbenchSidebarTicketSections = {
       active: [
         { ticket: ticket("newest-clean"), threads: [] },
-        { ticket: action, threads: [newestClean, sharedTwo, waiting, sharedOne, excluded[0]!] },
+        {
+          ticket: action,
+          threads: [newestClean, sharedTwo, waiting, tiedWaiting, sharedOne, excluded[0]!],
+        },
         { ticket: ticket("older-clean"), threads: [] },
         { ticket: second, threads: [secondThread] },
+        { ticket: tiedAction, threads: [secondThread] },
         { ticket: selectedArchived, threads: [waiting] },
       ],
       done: [
@@ -169,6 +174,20 @@ it.each([false, true])(
     };
     const original = structuredClone(sections);
     const groupSignals = new Map(attentionSignalsByTicket)
+      .set(action.id, [
+        ...signals,
+        {
+          kind: "question",
+          source: { type: "thread", threadId: tiedWaiting.id, threadTitle: tiedWaiting.title },
+        },
+      ])
+      .set(tiedAction.id, [
+        {
+          kind: "waiting",
+          cause: "approval",
+          source: { type: "thread", threadId: secondThread.id, threadTitle: secondThread.title },
+        },
+      ])
       .set(second.id, [
         {
           kind: "waiting",
@@ -187,18 +206,29 @@ it.each([false, true])(
       ticketGroupsByWorkspace: new Map([[workspaceId, sections]]),
       attentionSignalsByTicket: groupSignals,
       actionableThreadIdsByTicket: new Map(actionableThreadIdsByTicket())
-        .set(second.id, new Set([secondThread.id]))
-        .set(doneAction.id, new Set([doneThread.id])),
+        .set(
+          action.id,
+          new Map([
+            [sharedTwo.id, signals[0]!],
+            [waiting.id, signals[1]!],
+            [tiedWaiting.id, groupSignals.get(action.id)!.at(-1)!],
+            [sharedOne.id, signals[0]!],
+          ]),
+        )
+        .set(tiedAction.id, new Map([[secondThread.id, groupSignals.get(tiedAction.id)![0]!]]))
+        .set(second.id, new Map([[secondThread.id, groupSignals.get(second.id)![0]!]]))
+        .set(doneAction.id, new Map([[doneThread.id, groupSignals.get(doneAction.id)![0]!]])),
       onlyActionable,
     }).get(workspaceId)!;
     expect(result.active.map((group) => group.ticket.id)).toEqual(
       onlyActionable
-        ? [action.id, second.id, doneAction.id]
+        ? [second.id, tiedAction.id, action.id, doneAction.id]
         : [
             WorkbenchTicketId.make("newest-clean"),
             action.id,
             WorkbenchTicketId.make("older-clean"),
             second.id,
+            tiedAction.id,
             selectedArchived.id,
             doneAction.id,
           ],
@@ -207,8 +237,8 @@ it.each([false, true])(
       result.active.find((group) => group.ticket.id === action.id)?.threads.map((row) => row.id),
     ).toEqual(
       onlyActionable
-        ? [sharedTwo.id, waiting.id, sharedOne.id]
-        : [newestClean.id, sharedTwo.id, waiting.id, sharedOne.id, excluded[0]!.id],
+        ? [waiting.id, tiedWaiting.id, sharedTwo.id, sharedOne.id]
+        : [newestClean.id, sharedTwo.id, waiting.id, tiedWaiting.id, sharedOne.id, excluded[0]!.id],
     );
     expect(result.active.at(-1)?.ticket.status).toBe("done");
     expect(result.done.map((group) => group.ticket.id)).toEqual(

@@ -32,73 +32,79 @@ const prSignals: ReadonlyArray<WorkbenchAttentionSignal> = [
 const notifications: ReadonlyArray<WorkbenchAttentionSignal> = [
   { kind: "reply", source: threadSource },
   { kind: "waiting", cause: "plan", source: threadSource },
-  { kind: "waiting", cause: "interrupted", source: threadSource },
 ];
 const question = { kind: "question", source: threadSource } as const;
 const approval = { kind: "waiting", cause: "approval", source: threadSource } as const;
 const failed = { kind: "waiting", cause: "failed", source: threadSource } as const;
 
 describe("Workbench attention badge presentation", () => {
-  it("counts every Ticket reason and uses the first reason at the highest live priority", () => {
-    const signals = [...prSignals, ...notifications, question];
-    const badge = getWorkbenchAttentionBadgePresentation(signals);
-    expect(badge.count).toBe(7);
-    // Plan-ready and input have the same priority; preserve their source's signal order.
-    expect(badge.leading?.label).toBe("Plan ready for review");
-    expect(badge.reasons).toBe(
-      "Plan ready for review, Waiting for your answer, Agent run interrupted, Agent replied, Failed checks, Changes requested, Unresolved feedback",
+  it("orders distinct reason kinds and merges requested changes with unresolved feedback", () => {
+    const signals = [...prSignals, ...notifications, question, failed, approval, question];
+    expect(getWorkbenchAttentionBadgePresentation({ signals, nativeStatusKind: null })).toEqual({
+      kinds: ["approval", "input", "failed", "checks", "feedback", "plan", "done"],
+      leading: "approval",
+      more: 6,
+      reasons: "Approval, Input, Failed, Checks failed, Feedback, Plan ready, Done",
+    });
+    expect(
+      getWorkbenchAttentionBadgePresentation({
+        signals: prSignals.slice(0, 2),
+        nativeStatusKind: null,
+      }),
+    ).toEqual({
+      kinds: ["feedback"],
+      leading: "feedback",
+      more: 0,
+      reasons: "Feedback",
+    });
+    expect(getWorkbenchAttentionBadgePresentation({ signals: [], nativeStatusKind: null })).toEqual(
+      {
+        kinds: [],
+        leading: null,
+        more: 0,
+        reasons: "",
+      },
     );
-    expect(getWorkbenchAttentionBadgePresentation([question, ...prSignals]).leading).toMatchObject({
-      label: "Waiting for your answer",
-      icon: "input",
-    });
-    expect(getWorkbenchAttentionBadgePresentation(prSignals).leading).toMatchObject({
-      label: "Failed checks",
-      icon: "failed",
-      action: "View checks",
-    });
-    expect(getWorkbenchAttentionBadgePresentation([])).toEqual({
-      count: 0,
-      leading: null,
-      reasons: "",
-    });
   });
 
   it.each([
     {
-      statusKind: "input" as const,
-      duplicate: question,
-      remaining: [approval, failed],
+      nativeStatusKind: "input" as const,
+      kinds: ["approval", "failed", "checks", "feedback", "plan", "done"],
     },
     {
-      statusKind: "approval" as const,
-      duplicate: approval,
-      remaining: [question, failed],
+      nativeStatusKind: "approval" as const,
+      kinds: ["input", "failed", "checks", "feedback", "plan", "done"],
     },
     {
-      statusKind: "failed" as const,
-      duplicate: failed,
-      remaining: [question, approval],
+      nativeStatusKind: "failed" as const,
+      kinds: ["approval", "input", "checks", "feedback", "plan", "done"],
+    },
+    {
+      nativeStatusKind: "working" as const,
+      kinds: ["approval", "input", "failed", "checks", "feedback", "plan", "done"],
+    },
+    {
+      nativeStatusKind: "waiting" as const,
+      kinds: ["approval", "input", "failed", "checks", "feedback", "plan", "done"],
+    },
+    {
+      nativeStatusKind: "limited" as const,
+      kinds: ["approval", "input", "failed", "checks", "feedback", "plan", "done"],
     },
   ])(
-    "removes only the notification already shown by the Thread's $statusKind status",
-    ({ statusKind, duplicate, remaining }) => {
-      const attention = getWorkbenchThreadAttention({
-        threadId,
-        statusKind,
+    "lets native $nativeStatusKind own the leading slot and counts only additional kinds",
+    ({ nativeStatusKind, kinds }) => {
+      const badge = getWorkbenchAttentionBadgePresentation({
         signals: [...notifications, question, approval, failed, ...prSignals],
-        inspections: [],
+        nativeStatusKind,
       });
-      expect(attention.signals).toEqual([...notifications, ...remaining, ...prSignals]);
-      expect(getWorkbenchAttentionBadgePresentation(attention.signals).count).toBe(8);
-      expect(
-        getWorkbenchThreadAttention({
-          threadId,
-          statusKind: "waiting",
-          signals: [duplicate],
-          inspections: [],
-        }).signals,
-      ).toEqual([duplicate]);
+      expect(badge.kinds).toEqual(kinds);
+      expect(badge.leading).toBeNull();
+      expect(badge.more).toBe(kinds.length);
+      expect(badge.reasons).toBe(
+        "Approval, Input, Failed, Checks failed, Feedback, Plan ready, Done",
+      );
     },
   );
 
@@ -120,15 +126,13 @@ describe("Workbench attention badge presentation", () => {
     ];
     const attention = getWorkbenchThreadAttention({
       threadId,
-      statusKind: null,
-      signals: [...foreignSignals, ...notifications, ...prSignals],
+      signals: [...foreignSignals, ...notifications, question, approval, failed, ...prSignals],
       inspections: [otherInspection, inspection],
     });
-    expect(attention.signals).toEqual([...notifications, ...prSignals]);
+    expect(attention.signals).toEqual([...notifications, question, approval, failed, ...prSignals]);
     expect(attention.inspections).toEqual([inspection]);
     const unknown = getWorkbenchThreadAttention({
       threadId,
-      statusKind: null,
       signals: [],
       inspections: [inspection],
     });
