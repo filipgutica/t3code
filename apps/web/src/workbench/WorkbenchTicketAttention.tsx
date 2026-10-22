@@ -170,7 +170,7 @@ function AttentionBadge({
   side?: "bottom" | "right";
 }) {
   const [open, setOpen] = useState(false);
-  const { kinds, leading, more, reasons } = getWorkbenchAttentionBadgePresentation({
+  const { leading, more, reasons } = getWorkbenchAttentionBadgePresentation({
     signals,
     nativeStatusKind,
   });
