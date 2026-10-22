@@ -160,6 +160,26 @@ it("keeps the native status in the slot, counts other reasons, and opens the own
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
 });
 
+it("keeps the card reachable when the native status already shows the only reason", async () => {
+  mocks.signals = [{ kind: "question", source: threadSource }];
+  await act(async () =>
+    root.render(
+      <WorkbenchThreadAttentionBadge
+        environmentId={environmentId}
+        ticketId={ticketId}
+        threadId={threadId}
+        threadTitle="Review settings"
+        nativeStatusKind="input"
+        nativeStatus={<span>Input</span>}
+      />,
+    ),
+  );
+  const trigger = button("Review settings needs attention: Input");
+  expect(trigger.textContent).toBe("Input, Review settings needs attention: Input");
+  await act(async () => trigger.click());
+  expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Input needed");
+});
+
 it("leaves a plain native status when no reason needs attention", async () => {
   mocks.signals = [];
   await act(async () =>

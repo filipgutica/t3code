@@ -174,7 +174,8 @@ function AttentionBadge({
     signals,
     nativeStatusKind,
   });
-  if (kinds.length === 0) return nativeStatus;
+  // A reason the native status already shows still opens the card, so its source stays findable.
+  if (signals.length === 0) return nativeStatus;
   const leadingPresentation = leading ? getWorkbenchAttentionReasonPresentation(leading) : null;
   const LeadingIcon = leading ? reasonIcons[leading] : null;
   return (
