@@ -31,15 +31,16 @@ const make = Effect.gen(function* () {
 
   // Jira I/O uses the binding permit before acquiring SQLite's writer lock.
   // Recheck the binding under that writer lock to cover first-time binding creation.
-  const withWorkspacePermit = <A>(
+  const withWorkspacePermit = Effect.fn("WorkspaceLifecycleService.withWorkspacePermit")(function* <
+    A,
+  >(
     id: WorkbenchProjectId,
     operation: (bindingId: string | null) => Effect.Effect<A, WorkbenchOperationError>,
-  ) =>
-    Effect.gen(function* () {
-      const binding = (yield* readBindings).find((candidate) => candidate.projectId === id);
-      const mutate = operation(binding?.id ?? null);
-      return yield* binding ? sync.withBindingPermit(binding.id, mutate) : mutate;
-    });
+  ): Effect.fn.Return<A, WorkbenchOperationError> {
+    const binding = (yield* readBindings).find((candidate) => candidate.projectId === id);
+    const mutate = operation(binding?.id ?? null);
+    return yield* binding ? sync.withBindingPermit(binding.id, mutate) : mutate;
+  });
 
   return WorkspaceLifecycleService.of({
     archive: (input) =>

@@ -28,8 +28,20 @@ import { launchDemo } from "./launch.mts";
 // The backend keeps the launcher's inherited output pipes until it is released.
 const descendantSource = `
   process.on('SIGTERM', () => {});
-  process.stdin.once('data', () => {
-    process.stdout.write('backend shutdown complete\\n', () => process.exit(0));
+  let pending = '';
+  process.stdin.on('data', (chunk) => {
+    pending += chunk.toString();
+    const lines = pending.split('\\n');
+    pending = lines.pop() ?? '';
+    for (const line of lines) {
+      if (line === 'probe shutdown') {
+        process.stdout.write('backend shutdown held\\n');
+      } else if (line === 'finish shutdown') {
+        process.stdout.write('backend shutdown complete\\n', () => process.exit(0));
+      } else {
+        throw new Error('Unexpected shutdown fixture command');
+      }
+    }
   });
   process.send('ready');
 `;
@@ -60,6 +72,16 @@ test.skipIf(HostProcess.Platform.defaultValue() === "win32").each([false, true])
     });
     const closed = NodeEvents.EventEmitter.once(child, "close");
     const launcherExited = NodeEvents.EventEmitter.once(child, "exit");
+    const backendHeld = new Promise<void>((resolve) => {
+      let output = "";
+      const observe = (chunk: Buffer) => {
+        output += chunk.toString();
+        if (!output.includes("backend shutdown held\n")) return;
+        child.stdout!.off("data", observe);
+        resolve();
+      };
+      child.stdout!.on("data", observe);
+    });
     mocks.spawn.mockReturnValueOnce(child);
     mocks.stopDemo.mockImplementationOnce(async () => {
       NodeAssert.ok(child.pid);
@@ -86,9 +108,11 @@ test.skipIf(HostProcess.Platform.defaultValue() === "win32").each([false, true])
         stopCompleted = true;
       });
       await launcherExited;
-      // A fresh I/O turn lets stop's exit continuation run before releasing the
-      // backend. This is an event-loop boundary, not a shutdown delay.
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      // The backend acknowledges that it still owns the output after launcher exit.
+      const pipe = child.stdio[3];
+      NodeAssert.ok(pipe && "write" in pipe);
+      pipe.write("probe shutdown\n");
+      await backendHeld;
       NodeAssert.equal(stopCompleted, false);
       await release();
       await stopped;

@@ -73,7 +73,11 @@ const restoreIssue = async (client: JiraHttpClient, issue: JiraIssue): Promise<v
 };
 
 test.describe("Jira Workbench integration @live", () => {
-  test.skip(!live, "Live Jira regression is opt-in (WORKBENCH_REGRESSION_LIVE=1).");
+  test.beforeAll(() => {
+    if (!live) {
+      throw new Error("Live Jira regression is opt-in (WORKBENCH_REGRESSION_LIVE=1).");
+    }
+  });
 
   test("J2 imports selected sprint issues once and preserves repository scope", async ({
     page,

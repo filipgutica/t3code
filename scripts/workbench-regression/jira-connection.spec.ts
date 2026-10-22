@@ -152,7 +152,11 @@ const openSyncMenu = async (page: Page, demo: Demo, projectId: string) => {
 };
 
 test.describe("Jira connection UX @live", () => {
-  test.skip(!live, "Live Jira regression is opt-in (WORKBENCH_REGRESSION_LIVE=1).");
+  test.beforeAll(() => {
+    if (!live) {
+      throw new Error("Live Jira regression is opt-in (WORKBENCH_REGRESSION_LIVE=1).");
+    }
+  });
 
   test("J1: creating a Jira mirror automatically imports tickets and reports the result", async ({
     page,

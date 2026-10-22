@@ -105,8 +105,8 @@ const make = Effect.gen(function* () {
       );
   };
 
-  const processEventSafely = (stored: OrchestrationV2StoredEvent) =>
-    Effect.gen(function* () {
+  const processEventSafely = Effect.fn("TicketExecutionReactor.processEventSafely")(
+    function* (stored: OrchestrationV2StoredEvent) {
       const event = stored.event;
       const running =
         (event.type === "run.created" || event.type === "run.updated") &&
@@ -135,26 +135,29 @@ const make = Effect.gen(function* () {
             ),
           );
       return stored.sequence;
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.fail(cause),
+    },
+    (effect, stored: OrchestrationV2StoredEvent) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.fail(cause),
+        ),
+        Effect.retry({ times: 2, schedule: Schedule.exponential("250 millis") }),
+        Effect.catch((cause) => {
+          const event = stored.event;
+          if (event.type === "run.created" || event.type === "run.updated") {
+            return appendFailureActivity(
+              {
+                runId: event.payload.id,
+                threadId: event.threadId,
+                startedAt: DateTime.formatIso(event.occurredAt),
+              },
+              cause,
+            ).pipe(Effect.andThen(Effect.failCause(cause)));
+          }
+          return Effect.failCause(cause);
+        }),
       ),
-      Effect.retry({ times: 2, schedule: Schedule.exponential("250 millis") }),
-      Effect.catch((cause) => {
-        const event = stored.event;
-        if (event.type === "run.created" || event.type === "run.updated") {
-          return appendFailureActivity(
-            {
-              runId: event.payload.id,
-              threadId: event.threadId,
-              startedAt: DateTime.formatIso(event.occurredAt),
-            },
-            cause,
-          ).pipe(Effect.andThen(Effect.failCause(cause)));
-        }
-        return Effect.failCause(cause);
-      }),
-    );
+  );
   const ready = yield* Deferred.make<void>();
   const seenSequence = yield* SubscriptionRef.make(0);
   const noteSeen = (sequence: number) =>

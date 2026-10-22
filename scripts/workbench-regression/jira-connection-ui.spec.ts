@@ -1,4 +1,4 @@
-// @effect-diagnostics globalTimers:off globalDate:off - Playwright owns deterministic browser test timing and timestamps.
+// @effect-diagnostics globalDate:off - The RPC fixture creates deterministic timestamps from a fixed epoch.
 import { test, expect, openWorkbench, snapshot, type Demo, waitForWorkbench } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
@@ -111,7 +111,8 @@ const routeMockJira = async (page: Page, fourColumns = false) => {
     payload.payload && typeof payload.payload === "object"
       ? (payload.payload as Record<string, unknown>)
       : {};
-  const now = () => new Date().toISOString();
+  let timestamp = Date.parse(ISO_NOW);
+  const now = () => new Date(++timestamp).toISOString();
   const makeBinding = (input: Record<string, unknown>) => ({
     ...input,
     id: "regression-jira-binding",
@@ -451,28 +452,10 @@ const routeMockJira = async (page: Page, fourColumns = false) => {
       binding = { ...binding, selectedSprints: sprints, followActiveSprint: false };
     },
     waitForSync: async () => {
-      await Promise.race([
-        syncRequestSeen,
-        new Promise<never>((_, reject) => {
-          const timeout = setTimeout(
-            () => reject(new Error("Timed out waiting for the mocked Jira sync RPC.")),
-            15_000,
-          );
-          syncRequestSeen.finally(() => clearTimeout(timeout)).catch(() => undefined);
-        }),
-      ]);
+      await syncRequestSeen;
     },
     waitForMigration: async () => {
-      await Promise.race([
-        migrationRequestSeen,
-        new Promise<never>((_, reject) => {
-          const timeout = setTimeout(
-            () => reject(new Error("Timed out waiting for the mocked Jira migration RPC.")),
-            15_000,
-          );
-          migrationRequestSeen.finally(() => clearTimeout(timeout)).catch(() => undefined);
-        }),
-      ]);
+      await migrationRequestSeen;
     },
     releaseMigration: (nextMode: Exclude<MigrationMode, "hold"> = "normal") => {
       if (!heldMigrationRequestId || !migrationServer) {

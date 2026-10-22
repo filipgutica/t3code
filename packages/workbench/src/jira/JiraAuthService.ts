@@ -73,39 +73,39 @@ export const make = Effect.gen(function* () {
   const completeSemaphore = yield* Semaphore.make(1);
   const connectionMutationSemaphore = yield* Semaphore.make(1);
 
-  const getCredentialLock = (credentialId: string) =>
-    Effect.gen(function* () {
-      const existing = (yield* Ref.get(credentialLocks)).get(credentialId);
-      if (existing !== undefined) return existing;
+  const getCredentialLock = Effect.fn("JiraAuthService.getCredentialLock")(function* (
+    credentialId: string,
+  ) {
+    const existing = (yield* Ref.get(credentialLocks)).get(credentialId);
+    if (existing !== undefined) return existing;
 
-      const lock = yield* Semaphore.make(1);
-      return yield* Ref.modify(credentialLocks, (locks) => {
-        const current = locks.get(credentialId);
-        if (current !== undefined) return [current, locks] as const;
-        const next = new Map(locks);
-        next.set(credentialId, lock);
-        return [lock, next] as const;
-      });
+    const lock = yield* Semaphore.make(1);
+    return yield* Ref.modify(credentialLocks, (locks) => {
+      const current = locks.get(credentialId);
+      if (current !== undefined) return [current, locks] as const;
+      const next = new Map(locks);
+      next.set(credentialId, lock);
+      return [lock, next] as const;
     });
+  });
 
-  const removeCredentialIfUnreferenced = (credentialId: string) =>
-    Effect.gen(function* () {
-      const connections = yield* repository
-        .listConnections()
-        .pipe(Effect.mapError(repositoryError));
-      const currentCredentialIds = yield* Effect.forEach(connections, (connection) =>
-        repository.getCredentialId(connection.id).pipe(Effect.mapError(repositoryError)),
-      );
-      if (
-        currentCredentialIds.some(
-          (currentCredentialId) =>
-            Option.isSome(currentCredentialId) && currentCredentialId.value === credentialId,
-        )
-      ) {
-        return;
-      }
-      yield* credentials.removeCredential(credentialId);
-    });
+  const removeCredentialIfUnreferenced = Effect.fn(
+    "JiraAuthService.removeCredentialIfUnreferenced",
+  )(function* (credentialId: string) {
+    const connections = yield* repository.listConnections().pipe(Effect.mapError(repositoryError));
+    const currentCredentialIds = yield* Effect.forEach(connections, (connection) =>
+      repository.getCredentialId(connection.id).pipe(Effect.mapError(repositoryError)),
+    );
+    if (
+      currentCredentialIds.some(
+        (currentCredentialId) =>
+          Option.isSome(currentCredentialId) && currentCredentialId.value === credentialId,
+      )
+    ) {
+      return;
+    }
+    yield* credentials.removeCredential(credentialId);
+  });
 
   const readConfig = configService.get.pipe(
     Effect.flatMap((config) =>
@@ -127,7 +127,7 @@ export const make = Effect.gen(function* () {
     ),
   );
 
-  const persistToken = ({
+  const persistToken = Effect.fn("JiraAuthService.persistToken")(function* ({
     token,
     now,
     authMode,
@@ -135,94 +135,93 @@ export const make = Effect.gen(function* () {
     readonly token: JiraOAuthCredential;
     readonly now: number;
     readonly authMode?: "direct" | "broker";
-  }): Effect.Effect<WorkbenchJiraCompleteAuthResult, WorkbenchJiraOperationError> =>
-    Effect.gen(function* () {
-      const sites = yield* oauth.listAccessibleSites(token.accessToken);
-      if (sites.length === 0) {
-        return yield* operationError(
-          "authorization_failed",
-          "The Atlassian account does not expose an accessible Jira site.",
-        );
-      }
+  }): Effect.fn.Return<WorkbenchJiraCompleteAuthResult, WorkbenchJiraOperationError> {
+    const sites = yield* oauth.listAccessibleSites(token.accessToken);
+    if (sites.length === 0) {
+      return yield* operationError(
+        "authorization_failed",
+        "The Atlassian account does not expose an accessible Jira site.",
+      );
+    }
 
-      const credentialId = yield* crypto
-        .randomUUIDv4()
-        .pipe(
-          Effect.mapError(() =>
-            operationError(
-              "persistence_failed",
-              "A Jira credential identifier could not be created.",
-            ),
-          ),
-        );
-      const connections: Array<WorkbenchJiraConnection> = [];
-      const previousCredentialIds = new Set<string>();
-      for (const site of sites) {
-        const previous = yield* repository
-          .findConnectionByCloudId(site.cloudId)
-          .pipe(Effect.mapError(repositoryError));
-        if (Option.isSome(previous)) {
-          const previousCredentialId = yield* repository
-            .getCredentialId(previous.value.id)
-            .pipe(Effect.mapError(repositoryError));
-          if (Option.isSome(previousCredentialId)) {
-            previousCredentialIds.add(previousCredentialId.value);
-          }
-        }
-        const id = Option.isSome(previous)
-          ? previous.value.id
-          : WorkbenchJiraConnectionId.make(
-              yield* crypto
-                .randomUUIDv4()
-                .pipe(
-                  Effect.mapError(() =>
-                    operationError(
-                      "persistence_failed",
-                      "A Jira connection identifier could not be created.",
-                    ),
-                  ),
-                ),
-            );
-        connections.push({
-          id,
-          cloudId: site.cloudId,
-          siteName: site.name,
-          siteUrl: site.url,
-          avatarUrl: site.avatarUrl,
-          scopes: site.scopes,
-          createdAt: Option.isSome(previous) ? previous.value.createdAt : isoDate(now),
-          updatedAt: isoDate(now),
-        });
-      }
-
-      const storedToken = authMode === undefined ? token : { ...token, authMode };
-      yield* credentials.setCredential(credentialId, storedToken);
-      yield* connectionMutationSemaphore.withPermit(
-        repository.upsertConnections(connections, credentialId).pipe(
-          Effect.mapError(repositoryError),
-          Effect.catch((cause) =>
-            removeCredentialIfUnreferenced(credentialId).pipe(Effect.andThen(Effect.fail(cause))),
+    const credentialId = yield* crypto
+      .randomUUIDv4()
+      .pipe(
+        Effect.mapError(() =>
+          operationError(
+            "persistence_failed",
+            "A Jira credential identifier could not be created.",
           ),
         ),
       );
-      for (const previousCredentialId of previousCredentialIds) {
-        if (previousCredentialId === credentialId) continue;
-        const lock = yield* getCredentialLock(previousCredentialId);
-        yield* lock.withPermit(removeCredentialIfUnreferenced(previousCredentialId)).pipe(
-          Effect.catch((cause) =>
-            Effect.logWarning("Failed to remove a superseded Jira credential.", {
-              credentialId: previousCredentialId,
-              cause,
-            }),
-          ),
-        );
+    const connections: Array<WorkbenchJiraConnection> = [];
+    const previousCredentialIds = new Set<string>();
+    for (const site of sites) {
+      const previous = yield* repository
+        .findConnectionByCloudId(site.cloudId)
+        .pipe(Effect.mapError(repositoryError));
+      if (Option.isSome(previous)) {
+        const previousCredentialId = yield* repository
+          .getCredentialId(previous.value.id)
+          .pipe(Effect.mapError(repositoryError));
+        if (Option.isSome(previousCredentialId)) {
+          previousCredentialIds.add(previousCredentialId.value);
+        }
       }
+      const id = Option.isSome(previous)
+        ? previous.value.id
+        : WorkbenchJiraConnectionId.make(
+            yield* crypto
+              .randomUUIDv4()
+              .pipe(
+                Effect.mapError(() =>
+                  operationError(
+                    "persistence_failed",
+                    "A Jira connection identifier could not be created.",
+                  ),
+                ),
+              ),
+          );
+      connections.push({
+        id,
+        cloudId: site.cloudId,
+        siteName: site.name,
+        siteUrl: site.url,
+        avatarUrl: site.avatarUrl,
+        scopes: site.scopes,
+        createdAt: Option.isSome(previous) ? previous.value.createdAt : isoDate(now),
+        updatedAt: isoDate(now),
+      });
+    }
 
-      return { connections };
-    });
+    const storedToken = authMode === undefined ? token : { ...token, authMode };
+    yield* credentials.setCredential(credentialId, storedToken);
+    yield* connectionMutationSemaphore.withPermit(
+      repository.upsertConnections(connections, credentialId).pipe(
+        Effect.mapError(repositoryError),
+        Effect.catch((cause) =>
+          removeCredentialIfUnreferenced(credentialId).pipe(Effect.andThen(Effect.fail(cause))),
+        ),
+      ),
+    );
+    for (const previousCredentialId of previousCredentialIds) {
+      if (previousCredentialId === credentialId) continue;
+      const lock = yield* getCredentialLock(previousCredentialId);
+      yield* lock.withPermit(removeCredentialIfUnreferenced(previousCredentialId)).pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("Failed to remove a superseded Jira credential.", {
+            credentialId: previousCredentialId,
+            cause,
+          }),
+        ),
+      );
+    }
 
-  const begin: JiraAuthServiceShape["begin"] = (input) =>
-    Effect.gen(function* () {
+    return { connections };
+  });
+
+  const begin: JiraAuthServiceShape["begin"] = Effect.fn("JiraAuthService.begin")(
+    function* (input) {
       const config = yield* readConfig;
       const now = yield* clock.currentTimeMillis;
       const state = yield* randomState;
@@ -305,7 +304,8 @@ export const make = Effect.gen(function* () {
         expiresAt: isoDate(expiresAtEpochMs),
         mode: "direct" as const,
       };
-    });
+    },
+  );
 
   const complete: JiraAuthServiceShape["complete"] = (input) =>
     completeSemaphore.withPermit(
@@ -414,136 +414,137 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  const loadCredentialId = (connectionId: WorkbenchJiraConnectionId) =>
-    Effect.gen(function* () {
-      const connection = yield* repository
-        .getConnection(connectionId)
-        .pipe(Effect.mapError(repositoryError));
-      if (Option.isNone(connection)) {
-        return yield* operationError("connection_not_found", "The Jira connection was not found.");
-      }
-      const credentialId = yield* repository
-        .getCredentialId(connectionId)
-        .pipe(Effect.mapError(repositoryError));
-      if (Option.isNone(credentialId)) {
-        return yield* operationError(
-          "credential_missing",
-          "The Jira connection no longer has credentials. Reconnect Jira.",
-        );
-      }
-      return credentialId.value;
-    });
+  const loadCredentialId = Effect.fn("JiraAuthService.loadCredentialId")(function* (
+    connectionId: WorkbenchJiraConnectionId,
+  ) {
+    const connection = yield* repository
+      .getConnection(connectionId)
+      .pipe(Effect.mapError(repositoryError));
+    if (Option.isNone(connection)) {
+      return yield* operationError("connection_not_found", "The Jira connection was not found.");
+    }
+    const credentialId = yield* repository
+      .getCredentialId(connectionId)
+      .pipe(Effect.mapError(repositoryError));
+    if (Option.isNone(credentialId)) {
+      return yield* operationError(
+        "credential_missing",
+        "The Jira connection no longer has credentials. Reconnect Jira.",
+      );
+    }
+    return credentialId.value;
+  });
 
-  const loadAccessToken = (
+  const loadAccessToken = Effect.fn("JiraAuthService.loadAccessToken")(function* (
     connectionId: WorkbenchJiraConnectionId,
     initialCredentialId: string,
-  ): Effect.Effect<string, WorkbenchJiraOperationError> =>
-    Effect.gen(function* () {
-      const lock = yield* getCredentialLock(initialCredentialId);
-      const result = yield* lock.withPermit(
-        Effect.gen(function* () {
-          const credentialId = yield* loadCredentialId(connectionId);
-          if (credentialId !== initialCredentialId) {
-            return { _tag: "retry", credentialId } as const;
-          }
+  ): Effect.fn.Return<string, WorkbenchJiraOperationError> {
+    const lock = yield* getCredentialLock(initialCredentialId);
+    const result = yield* lock.withPermit(
+      Effect.gen(function* () {
+        const credentialId = yield* loadCredentialId(connectionId);
+        if (credentialId !== initialCredentialId) {
+          return { _tag: "retry", credentialId } as const;
+        }
 
-          const stored = yield* credentials.getCredential(credentialId);
-          if (Option.isNone(stored)) {
-            return yield* operationError(
-              "credential_missing",
-              "The Jira connection no longer has credentials. Reconnect Jira.",
-            );
-          }
+        const stored = yield* credentials.getCredential(credentialId);
+        if (Option.isNone(stored)) {
+          return yield* operationError(
+            "credential_missing",
+            "The Jira connection no longer has credentials. Reconnect Jira.",
+          );
+        }
 
-          const now = yield* clock.currentTimeMillis;
-          if (stored.value.expiresAtEpochMs > now + REFRESH_EARLY_MS) {
-            return { _tag: "ready", accessToken: stored.value.accessToken } as const;
-          }
+        const now = yield* clock.currentTimeMillis;
+        if (stored.value.expiresAtEpochMs > now + REFRESH_EARLY_MS) {
+          return { _tag: "ready", accessToken: stored.value.accessToken } as const;
+        }
 
-          return yield* connectionMutationSemaphore.withPermit(
-            Effect.gen(function* () {
-              const currentCredentialId = yield* loadCredentialId(connectionId);
-              if (currentCredentialId !== credentialId) {
-                return { _tag: "retry", credentialId: currentCredentialId } as const;
-              }
+        return yield* connectionMutationSemaphore.withPermit(
+          Effect.gen(function* () {
+            const currentCredentialId = yield* loadCredentialId(connectionId);
+            if (currentCredentialId !== credentialId) {
+              return { _tag: "retry", credentialId: currentCredentialId } as const;
+            }
 
-              const currentStored = yield* credentials.getCredential(credentialId);
-              if (Option.isNone(currentStored)) {
-                return yield* operationError(
-                  "credential_missing",
-                  "The Jira connection no longer has credentials. Reconnect Jira.",
-                );
-              }
-              const refreshNow = yield* clock.currentTimeMillis;
-              if (currentStored.value.expiresAtEpochMs > refreshNow + REFRESH_EARLY_MS) {
-                return {
-                  _tag: "ready",
-                  accessToken: currentStored.value.accessToken,
-                } as const;
-              }
-              if (currentStored.value.refreshToken === null) {
-                return yield* operationError(
-                  "credential_missing",
-                  "The Jira connection cannot be refreshed. Reconnect Jira.",
-                );
-              }
+            const currentStored = yield* credentials.getCredential(credentialId);
+            if (Option.isNone(currentStored)) {
+              return yield* operationError(
+                "credential_missing",
+                "The Jira connection no longer has credentials. Reconnect Jira.",
+              );
+            }
+            const refreshNow = yield* clock.currentTimeMillis;
+            if (currentStored.value.expiresAtEpochMs > refreshNow + REFRESH_EARLY_MS) {
+              return {
+                _tag: "ready",
+                accessToken: currentStored.value.accessToken,
+              } as const;
+            }
+            if (currentStored.value.refreshToken === null) {
+              return yield* operationError(
+                "credential_missing",
+                "The Jira connection cannot be refreshed. Reconnect Jira.",
+              );
+            }
 
-              const config = yield* readConfig;
-              const refreshed =
-                currentStored.value.authMode === "broker"
-                  ? config.brokerUrl !== undefined && oauth.refreshBroker !== undefined
-                    ? yield* oauth.refreshBroker({
-                        brokerUrl: config.brokerUrl,
+            const config = yield* readConfig;
+            const refreshed =
+              currentStored.value.authMode === "broker"
+                ? config.brokerUrl !== undefined && oauth.refreshBroker !== undefined
+                  ? yield* oauth.refreshBroker({
+                      brokerUrl: config.brokerUrl,
+                      refreshToken: currentStored.value.refreshToken,
+                      previousScope: currentStored.value.scope,
+                      nowEpochMs: refreshNow,
+                    })
+                  : yield* operationError(
+                      "oauth_exchange_failed",
+                      "The Jira authorization broker is unavailable. Reconnect Jira.",
+                    )
+                : config.clientId !== undefined && config.clientSecret !== undefined
+                  ? yield* oauth
+                      .refresh({
+                        clientId: config.clientId,
+                        clientSecret: config.clientSecret,
                         refreshToken: currentStored.value.refreshToken,
                         previousScope: currentStored.value.scope,
                         nowEpochMs: refreshNow,
                       })
-                    : yield* operationError(
-                        "oauth_exchange_failed",
-                        "The Jira authorization broker is unavailable. Reconnect Jira.",
-                      )
-                  : config.clientId !== undefined && config.clientSecret !== undefined
-                    ? yield* oauth
-                        .refresh({
-                          clientId: config.clientId,
-                          clientSecret: config.clientSecret,
-                          refreshToken: currentStored.value.refreshToken,
-                          previousScope: currentStored.value.scope,
-                          nowEpochMs: refreshNow,
-                        })
-                        .pipe(
-                          Effect.mapError(() =>
-                            operationError(
-                              "oauth_exchange_failed",
-                              "Jira access could not be refreshed. Try again; if the problem persists, reconnect Jira.",
-                            ),
+                      .pipe(
+                        Effect.mapError(() =>
+                          operationError(
+                            "oauth_exchange_failed",
+                            "Jira access could not be refreshed. Try again; if the problem persists, reconnect Jira.",
                           ),
-                        )
-                    : yield* operationError(
-                        "oauth_exchange_failed",
-                        "Jira access could not be refreshed. Reconnect Jira.",
-                      );
-              yield* credentials.setCredential(
-                credentialId,
-                currentStored.value.authMode === undefined
-                  ? refreshed
-                  : { ...refreshed, authMode: currentStored.value.authMode },
-              );
-              return { _tag: "ready", accessToken: refreshed.accessToken } as const;
-            }),
-          );
-        }),
-      );
-      return result._tag === "ready"
-        ? result.accessToken
-        : yield* loadAccessToken(connectionId, result.credentialId);
-    });
+                        ),
+                      )
+                  : yield* operationError(
+                      "oauth_exchange_failed",
+                      "Jira access could not be refreshed. Reconnect Jira.",
+                    );
+            yield* credentials.setCredential(
+              credentialId,
+              currentStored.value.authMode === undefined
+                ? refreshed
+                : { ...refreshed, authMode: currentStored.value.authMode },
+            );
+            return { _tag: "ready", accessToken: refreshed.accessToken } as const;
+          }),
+        );
+      }),
+    );
+    return result._tag === "ready"
+      ? result.accessToken
+      : yield* loadAccessToken(connectionId, result.credentialId);
+  });
 
-  const getAccessToken: JiraAuthServiceShape["getAccessToken"] = (connectionId) =>
-    Effect.gen(function* () {
-      const initialCredentialId = yield* loadCredentialId(connectionId);
-      return yield* loadAccessToken(connectionId, initialCredentialId);
-    });
+  const getAccessToken: JiraAuthServiceShape["getAccessToken"] = Effect.fn(
+    "JiraAuthService.getAccessToken",
+  )(function* (connectionId) {
+    const initialCredentialId = yield* loadCredentialId(connectionId);
+    return yield* loadAccessToken(connectionId, initialCredentialId);
+  });
 
   return JiraAuthService.of({ begin, complete, claim, getAccessToken });
 });

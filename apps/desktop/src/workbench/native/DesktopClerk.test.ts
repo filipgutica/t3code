@@ -57,6 +57,8 @@ const layerDesktopClerk = (
   } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]);
 
   const electronApp = {
+    requestSingleInstanceLock: Effect.succeed(true),
+    on: () => Effect.void,
     setPath: (name: string, value: string) =>
       Effect.sync(() => {
         events.push(`setPath:${name}:${value}`);
@@ -132,6 +134,7 @@ it.effect.each([
     });
     const listeners = new Map<string, (...args: unknown[]) => void>();
     const electronApp = {
+      requestSingleInstanceLock: Effect.succeed(true),
       whenReady: Effect.void,
       on: (name: string, listener: (...args: unknown[]) => void) =>
         Effect.sync(() => {
@@ -181,6 +184,7 @@ it.effect.each([true])(
       createClerkBridgeMock.mockReturnValue({ cleanup: vi.fn(), isPrimaryInstance: true });
       const listeners = new Map<string, (...args: unknown[]) => void>();
       const electronApp = {
+        requestSingleInstanceLock: Effect.succeed(true),
         whenReady: Effect.void,
         on: (name: string, listener: (...args: unknown[]) => void) =>
           Effect.sync(() => {

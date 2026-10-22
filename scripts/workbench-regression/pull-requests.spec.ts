@@ -103,7 +103,11 @@ const setLink = async ({
 };
 
 test.describe("Pull request integration @live", () => {
-  test.skip(!live, "Live pull request regression is opt-in (WORKBENCH_REGRESSION_LIVE=1).");
+  test.beforeAll(() => {
+    if (!live) {
+      throw new Error("Live pull request regression is opt-in (WORKBENCH_REGRESSION_LIVE=1).");
+    }
+  });
 
   test("P1: links and unlinks a real GitHub PR from a native Thread", async ({ page, demo }) => {
     const { links } = await requireDemoLinks(demo);

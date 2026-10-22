@@ -84,7 +84,11 @@ const liveJira = async (demo: Demo) => {
 };
 
 test.describe("Jira multi-sprint selection and client conflicts @live", () => {
-  test.skip(!live, "Live Jira regression is opt-in (WORKBENCH_REGRESSION_LIVE=1).");
+  test.beforeAll(() => {
+    if (!live) {
+      throw new Error("Live Jira regression is opt-in (WORKBENCH_REGRESSION_LIVE=1).");
+    }
+  });
 
   test("J9 maps a future sprint with the original sprint and restores Ticket identity", async ({
     page,

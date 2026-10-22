@@ -121,7 +121,7 @@ const makeJiraTicketFieldPatch = ({
   };
 };
 
-const restoreCreationScope = ({
+const restoreCreationScope = Effect.fn("JiraTicketImporter.restoreCreationScope")(function* ({
   workbench,
   ticketId,
   input,
@@ -131,37 +131,32 @@ const restoreCreationScope = ({
   readonly ticketId: WorkbenchTicketId;
   readonly input: JiraTicketImportInput;
   readonly updatedAt: string;
-}) =>
-  Effect.gen(function* () {
-    if (input.primaryT3ProjectId === undefined || input.repositoryProjectIds === undefined) return;
-    const current = Option.getOrUndefined(
-      yield* workbench
-        .getTicket(ticketId)
-        .pipe(Effect.mapError(() => importError("The Jira Ticket scope could not be loaded."))),
-    );
-    if (
-      current &&
-      (current.primaryT3ProjectId !== input.primaryT3ProjectId ||
-        current.repositoryProjectIds.length !== input.repositoryProjectIds.length ||
-        current.repositoryProjectIds.some(
-          (id, index) => id !== input.repositoryProjectIds?.[index],
-        ))
-    ) {
-      yield* workbench
-        .updateTicket({
-          id: ticketId,
-          expectedRevision: current.revision,
-          primaryT3ProjectId: input.primaryT3ProjectId,
-          repositoryProjectIds: input.repositoryProjectIds,
-          updatedAt,
-        })
-        .pipe(
-          Effect.mapError(() =>
-            importError("The Jira Ticket repository scope could not be saved."),
-          ),
-        );
-    }
-  });
+}) {
+  if (input.primaryT3ProjectId === undefined || input.repositoryProjectIds === undefined) return;
+  const current = Option.getOrUndefined(
+    yield* workbench
+      .getTicket(ticketId)
+      .pipe(Effect.mapError(() => importError("The Jira Ticket scope could not be loaded."))),
+  );
+  if (
+    current &&
+    (current.primaryT3ProjectId !== input.primaryT3ProjectId ||
+      current.repositoryProjectIds.length !== input.repositoryProjectIds.length ||
+      current.repositoryProjectIds.some((id, index) => id !== input.repositoryProjectIds?.[index]))
+  ) {
+    yield* workbench
+      .updateTicket({
+        id: ticketId,
+        expectedRevision: current.revision,
+        primaryT3ProjectId: input.primaryT3ProjectId,
+        repositoryProjectIds: input.repositoryProjectIds,
+        updatedAt,
+      })
+      .pipe(
+        Effect.mapError(() => importError("The Jira Ticket repository scope could not be saved.")),
+      );
+  }
+});
 
 const recheckPendingTicketSummary = ({
   workbench,
@@ -294,75 +289,73 @@ export const layer = Layer.effect(
     });
 
     return JiraTicketImporter.of({
-      upsertJiraProjection: (input) =>
-        Effect.gen(function* () {
-          const description = input.issue.description ?? "";
-          if (description.length > WORKBENCH_MARKDOWN_MAX_LENGTH) {
-            return yield* importError(
-              `Jira issue ${input.issue.key} description exceeds Workbench's ${WORKBENCH_MARKDOWN_MAX_LENGTH} character limit. Shorten it in Jira, then sync again.`,
-            );
-          }
-          // Match Workbench's TrimmedString decoding before comparing or persisting Jira text.
-          const normalizedDescription = input.issue.description?.trim();
-          const title = normalizeJiraTitle(input.issue.summary);
-          const epicId =
-            input.issue.epic === null ? null : yield* upsertEpic({ input, epic: input.issue.epic });
-
-          const ticketId =
-            input.existingTicketId ?? jiraTicketId(input.binding.id, input.issue.issueId);
-          const existingTicket = Option.getOrUndefined(
-            yield* workbench
-              .getTicket(ticketId)
-              .pipe(Effect.mapError(() => importError("The Jira Ticket could not be loaded."))),
+      upsertJiraProjection: Effect.fn("JiraTicketImporter.upsertJiraProjection")(function* (input) {
+        const description = input.issue.description ?? "";
+        if (description.length > WORKBENCH_MARKDOWN_MAX_LENGTH) {
+          return yield* importError(
+            `Jira issue ${input.issue.key} description exceeds Workbench's ${WORKBENCH_MARKDOWN_MAX_LENGTH} character limit. Shorten it in Jira, then sync again.`,
           );
-          const kind = input.issue.issueType.name.trim().toLowerCase() === "bug" ? "bug" : "story";
-          const updatedAt = input.issue.remoteUpdatedAt ?? input.binding.updatedAt;
-          if (existingTicket === undefined) {
-            yield* workbench
-              .createTicket({
-                id: ticketId,
-                projectId: input.binding.projectId,
-                epicId,
-                title,
-                kind,
-                markdown: normalizedDescription ?? "",
-                primaryT3ProjectId:
-                  input.primaryT3ProjectId ?? input.binding.defaultPrimaryT3ProjectId,
-                repositoryProjectIds:
-                  input.repositoryProjectIds ?? input.binding.defaultRepositoryProjectIds,
-                createdAt: updatedAt,
-              })
-              .pipe(
-                Effect.mapError(() =>
-                  importError(`Jira issue ${input.issue.key} could not be imported.`),
-                ),
-              );
-          } else {
-            const patch = makeJiraTicketFieldPatch({
-              ticket: existingTicket,
+        }
+        // Match Workbench's TrimmedString decoding before comparing or persisting Jira text.
+        const normalizedDescription = input.issue.description?.trim();
+        const title = normalizeJiraTitle(input.issue.summary);
+        const epicId =
+          input.issue.epic === null ? null : yield* upsertEpic({ input, epic: input.issue.epic });
+
+        const ticketId =
+          input.existingTicketId ?? jiraTicketId(input.binding.id, input.issue.issueId);
+        const existingTicket = Option.getOrUndefined(
+          yield* workbench
+            .getTicket(ticketId)
+            .pipe(Effect.mapError(() => importError("The Jira Ticket could not be loaded."))),
+        );
+        const kind = input.issue.issueType.name.trim().toLowerCase() === "bug" ? "bug" : "story";
+        const updatedAt = input.issue.remoteUpdatedAt ?? input.binding.updatedAt;
+        if (existingTicket === undefined) {
+          yield* workbench
+            .createTicket({
+              id: ticketId,
+              projectId: input.binding.projectId,
               epicId,
               title,
               kind,
-              status: input.mappedStatus,
-              blocked: input.issue.flagged,
-              description: normalizedDescription,
-              updatedAt,
-            });
-            if (patch !== undefined) {
-              yield* updateJiraOwnedTicketFields(patch).pipe(
-                Effect.mapError(() =>
-                  importError(`Jira issue ${input.issue.key} could not be updated.`),
-                ),
-              );
-            }
+              markdown: normalizedDescription ?? "",
+              primaryT3ProjectId:
+                input.primaryT3ProjectId ?? input.binding.defaultPrimaryT3ProjectId,
+              repositoryProjectIds:
+                input.repositoryProjectIds ?? input.binding.defaultRepositoryProjectIds,
+              createdAt: updatedAt,
+            })
+            .pipe(
+              Effect.mapError(() =>
+                importError(`Jira issue ${input.issue.key} could not be imported.`),
+              ),
+            );
+        } else {
+          const patch = makeJiraTicketFieldPatch({
+            ticket: existingTicket,
+            epicId,
+            title,
+            kind,
+            status: input.mappedStatus,
+            blocked: input.issue.flagged,
+            description: normalizedDescription,
+            updatedAt,
+          });
+          if (patch !== undefined) {
+            yield* updateJiraOwnedTicketFields(patch).pipe(
+              Effect.mapError(() =>
+                importError(`Jira issue ${input.issue.key} could not be updated.`),
+              ),
+            );
           }
-          if (existingTicket === undefined)
-            yield* positionNewJiraTicket({ input, ticketId, updatedAt });
-          if (existingTicket)
-            yield* restoreCreationScope({ workbench, ticketId, input, updatedAt });
-          yield* recheckPendingTicketSummary({ workbench, ticketId, ticket: existingTicket });
-          return ticketId;
-        }),
+        }
+        if (existingTicket === undefined)
+          yield* positionNewJiraTicket({ input, ticketId, updatedAt });
+        if (existingTicket) yield* restoreCreationScope({ workbench, ticketId, input, updatedAt });
+        yield* recheckPendingTicketSummary({ workbench, ticketId, ticket: existingTicket });
+        return ticketId;
+      }),
     });
   }),
 );

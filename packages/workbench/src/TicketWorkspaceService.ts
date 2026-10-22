@@ -1266,20 +1266,22 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     return yield* releaseClaimedWorkspace({ workspace: releasing, releasedAt: operationAt });
   });
 
-  const prepare: TicketWorkspaceServiceShape["prepare"] = (input) =>
-    Effect.gen(function* () {
+  const prepare: TicketWorkspaceServiceShape["prepare"] = Effect.fn(
+    "TicketWorkspaceService.prepare",
+  )(
+    function* (input) {
       const lock = yield* getWorkspaceLock(input.ticketId);
       return yield* lock.withPermit(prepareUnlocked(input));
-    }).pipe(
-      // The service owns both the claim and its permit until completion or shutdown.
-      Effect.forkIn(scope),
-      Effect.flatMap(Fiber.join),
-    );
-  const release: TicketWorkspaceServiceShape["release"] = (input) =>
-    Effect.gen(function* () {
-      const lock = yield* getWorkspaceLock(input.ticketId);
-      return yield* lock.withPermit(releaseUnlocked(input));
-    });
+    },
+    Effect.forkIn(scope),
+    Effect.flatMap(Fiber.join),
+  );
+  const release: TicketWorkspaceServiceShape["release"] = Effect.fn(
+    "TicketWorkspaceService.release",
+  )(function* (input) {
+    const lock = yield* getWorkspaceLock(input.ticketId);
+    return yield* lock.withPermit(releaseUnlocked(input));
+  });
 
   return TicketWorkspaceService.of({ prepare, release });
 });

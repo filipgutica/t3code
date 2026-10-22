@@ -2,6 +2,7 @@
 !package.json
 !pnpm-lock.yaml
 !pnpm-workspace.yaml
+!.pnpmfile.cjs
 !third-party-licenses.config.json
 !LICENSE
 !.generated/

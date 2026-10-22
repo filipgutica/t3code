@@ -418,19 +418,20 @@ export const make = Effect.gen(function* () {
   const auth = yield* JiraAuthService;
   const repository = yield* WorkbenchJiraRepository;
 
-  const authorized = (connectionId: WorkbenchJiraConnectionId) =>
-    Effect.gen(function* () {
-      const connection = yield* repository
-        .getConnection(connectionId)
-        .pipe(Effect.mapError(repositoryError));
-      if (Option.isNone(connection)) {
-        return yield* apiError("connection_not_found", "The Jira connection was not found.");
-      }
-      return {
-        connection: connection.value,
-        accessToken: yield* auth.getAccessToken(connectionId),
-      };
-    });
+  const authorized = Effect.fn("JiraApi.authorized")(function* (
+    connectionId: WorkbenchJiraConnectionId,
+  ) {
+    const connection = yield* repository
+      .getConnection(connectionId)
+      .pipe(Effect.mapError(repositoryError));
+    if (Option.isNone(connection)) {
+      return yield* apiError("connection_not_found", "The Jira connection was not found.");
+    }
+    return {
+      connection: connection.value,
+      accessToken: yield* auth.getAccessToken(connectionId),
+    };
+  });
 
   const responseError = (response: HttpClientResponse.HttpClientResponse) =>
     Clock.currentTimeMillis.pipe(
@@ -549,7 +550,10 @@ export const make = Effect.gen(function* () {
     return executeJsonRequest({ path: input.path, schema: input.schema, request });
   };
 
-  const collectPages = <S extends Schema.Top, A>(input: {
+  const collectPages = Effect.fn("JiraApi.collectPages")(function* <
+    S extends Schema.Top,
+    A,
+  >(input: {
     readonly connection: WorkbenchJiraConnection;
     readonly accessToken: string;
     readonly path: string;
@@ -557,35 +561,34 @@ export const make = Effect.gen(function* () {
     readonly schema: S;
     readonly values: (page: S["Type"]) => ReadonlyArray<A>;
     readonly isLast: (page: S["Type"], received: number) => boolean;
-  }) =>
-    Effect.gen(function* () {
-      const values: Array<A> = [];
-      let startAt = 0;
-      for (let pageNumber = 0; pageNumber < 100; pageNumber += 1) {
-        const page = yield* executeJson({
-          connection: input.connection,
-          accessToken: input.accessToken,
-          path: input.path,
-          urlParams: {
-            ...input.baseParams,
-            startAt: String(startAt),
-            maxResults: "100",
-          },
-          schema: input.schema,
-        });
-        const received = input.values(page);
-        values.push(...received);
-        if (input.isLast(page, received.length) || received.length === 0) return values;
-        startAt += received.length;
-      }
-      return yield* apiError(
-        "response_invalid",
-        "Jira pagination exceeded the supported page limit.",
-      );
-    });
+  }): Effect.fn.Return<Array<A>, WorkbenchJiraOperationError, S["DecodingServices"]> {
+    const values: Array<A> = [];
+    let startAt = 0;
+    for (let pageNumber = 0; pageNumber < 100; pageNumber += 1) {
+      const page = yield* executeJson({
+        connection: input.connection,
+        accessToken: input.accessToken,
+        path: input.path,
+        urlParams: {
+          ...input.baseParams,
+          startAt: String(startAt),
+          maxResults: "100",
+        },
+        schema: input.schema,
+      });
+      const received = input.values(page);
+      values.push(...received);
+      if (input.isLast(page, received.length) || received.length === 0) return values;
+      startAt += received.length;
+    }
+    return yield* apiError(
+      "response_invalid",
+      "Jira pagination exceeded the supported page limit.",
+    );
+  });
 
-  const getCreationIssue: JiraApiShape["getCreationIssue"] = (input) =>
-    Effect.gen(function* () {
+  const getCreationIssue: JiraApiShape["getCreationIssue"] = Effect.fn("JiraApi.getCreationIssue")(
+    function* (input) {
       const context = yield* authorized(input.connectionId);
       const issue = yield* executeJson({
         ...context,
@@ -606,29 +609,29 @@ export const make = Effect.gen(function* () {
         projectId: issue.fields.project.id,
         issueTypeId: issue.fields.issuetype.id,
       };
-    });
+    },
+  );
 
-  const getIssue: JiraApiShape["getIssue"] = (input) =>
-    Effect.gen(function* () {
-      const context = yield* authorized(input.connectionId);
-      // V2 supplies Jira's text description rather than an Atlassian document tree.
-      const issue = yield* executeJson({
-        ...context,
-        path: `/rest/api/2/issue/${encodeURIComponent(input.issueKey)}`,
-        urlParams: { fields: `${researchFields},description` },
-        schema: ResearchIssue,
-      });
-      const summary = researchSummary(issue, context.connection.siteUrl);
-      const description = issue.fields.description ?? "";
-      return {
-        ...summary,
-        description: description.slice(0, 30_000),
-        truncated: summary.truncated || description.length > 30_000,
-      };
+  const getIssue: JiraApiShape["getIssue"] = Effect.fn("JiraApi.getIssue")(function* (input) {
+    const context = yield* authorized(input.connectionId);
+    // V2 supplies Jira's text description rather than an Atlassian document tree.
+    const issue = yield* executeJson({
+      ...context,
+      path: `/rest/api/2/issue/${encodeURIComponent(input.issueKey)}`,
+      urlParams: { fields: `${researchFields},description` },
+      schema: ResearchIssue,
     });
+    const summary = researchSummary(issue, context.connection.siteUrl);
+    const description = issue.fields.description ?? "";
+    return {
+      ...summary,
+      description: description.slice(0, 30_000),
+      truncated: summary.truncated || description.length > 30_000,
+    };
+  });
 
-  const searchIssues: JiraApiShape["searchIssues"] = (input) =>
-    Effect.gen(function* () {
+  const searchIssues: JiraApiShape["searchIssues"] = Effect.fn("JiraApi.searchIssues")(
+    function* (input) {
       const context = yield* authorized(input.connectionId);
       const page = yield* executeJson({
         ...context,
@@ -651,10 +654,11 @@ export const make = Effect.gen(function* () {
         issues: page.issues.map((issue) => researchSummary(issue, context.connection.siteUrl)),
         nextPageToken: page.isLast === true ? null : (page.nextPageToken ?? null),
       };
-    });
+    },
+  );
 
-  const listProjects: JiraApiShape["listProjects"] = (input) =>
-    Effect.gen(function* () {
+  const listProjects: JiraApiShape["listProjects"] = Effect.fn("JiraApi.listProjects")(
+    function* (input) {
       const context = yield* authorized(input.connectionId);
       const projects = yield* collectPages({
         ...context,
@@ -675,34 +679,34 @@ export const make = Effect.gen(function* () {
             avatarUrl: project.avatarUrls?.["48x48"] ?? null,
           }) satisfies WorkbenchJiraProject,
       );
-    });
+    },
+  );
 
-  const listBoards: JiraApiShape["listBoards"] = (input) =>
-    Effect.gen(function* () {
-      const context = yield* authorized(input.connectionId);
-      const boards = yield* collectPages({
-        ...context,
-        path: "/rest/agile/1.0/board",
-        baseParams: { projectKeyOrId: input.projectKeyOrId },
-        schema: BoardPage,
-        values: (page) => page.values,
-        isLast: (page, received) =>
-          page.isLast === true ||
-          (page.total !== undefined && (page.startAt ?? 0) + received >= page.total),
-      });
-      return boards.map(
-        (board) =>
-          ({
-            id: board.id,
-            name: board.name,
-            type: boardType(board.type),
-            projectKeyOrId: board.location?.projectKeyOrId ?? null,
-          }) satisfies WorkbenchJiraBoard,
-      );
+  const listBoards: JiraApiShape["listBoards"] = Effect.fn("JiraApi.listBoards")(function* (input) {
+    const context = yield* authorized(input.connectionId);
+    const boards = yield* collectPages({
+      ...context,
+      path: "/rest/agile/1.0/board",
+      baseParams: { projectKeyOrId: input.projectKeyOrId },
+      schema: BoardPage,
+      values: (page) => page.values,
+      isLast: (page, received) =>
+        page.isLast === true ||
+        (page.total !== undefined && (page.startAt ?? 0) + received >= page.total),
     });
+    return boards.map(
+      (board) =>
+        ({
+          id: board.id,
+          name: board.name,
+          type: boardType(board.type),
+          projectKeyOrId: board.location?.projectKeyOrId ?? null,
+        }) satisfies WorkbenchJiraBoard,
+    );
+  });
 
-  const listSprints: JiraApiShape["listSprints"] = (input) =>
-    Effect.gen(function* () {
+  const listSprints: JiraApiShape["listSprints"] = Effect.fn("JiraApi.listSprints")(
+    function* (input) {
       const context = yield* authorized(input.connectionId);
       const sprints = yield* collectPages({
         ...context,
@@ -726,193 +730,198 @@ export const make = Effect.gen(function* () {
             completeDate: sprint.completeDate ?? null,
           }) satisfies WorkbenchJiraSprint,
       );
-    });
+    },
+  );
 
-  const getBoardConfiguration: JiraApiShape["getBoardConfiguration"] = (input) =>
-    Effect.gen(function* () {
-      const context = yield* authorized(input.connectionId);
-      const config = yield* executeJson({
+  const getBoardConfiguration: JiraApiShape["getBoardConfiguration"] = Effect.fn(
+    "JiraApi.getBoardConfiguration",
+  )(function* (input) {
+    const context = yield* authorized(input.connectionId);
+    const config = yield* executeJson({
+      ...context,
+      path: `/rest/agile/1.0/board/${input.boardId}/configuration`,
+      schema: RawBoardConfiguration,
+    });
+    const lastMappedColumn = config.columnConfig.columns.findLastIndex(
+      (column) => column.statuses.length > 0,
+    );
+    return {
+      boardId: config.id,
+      name: config.name,
+      type: boardType(config.type),
+      columns: config.columnConfig.columns.map((column, index) => ({
+        name: column.name,
+        statusIds: column.statuses.map((status) => status.id),
+        done: index === lastMappedColumn,
+      })),
+      rankFieldId:
+        config.ranking?.rankCustomFieldId === undefined
+          ? null
+          : String(config.ranking.rankCustomFieldId),
+    } satisfies WorkbenchJiraBoardConfiguration;
+  });
+
+  const listAssignedSprintIssues: JiraApiShape["listAssignedSprintIssues"] = Effect.fn(
+    "JiraApi.listAssignedSprintIssues",
+  )(function* (input) {
+    const context = yield* authorized(input.connectionId);
+    const issues: Array<typeof RawIssue.Type> = [];
+    let nextPageToken: string | undefined;
+    for (let pageNumber = 0; pageNumber < 100; pageNumber += 1) {
+      const page = yield* executeJson({
         ...context,
-        path: `/rest/agile/1.0/board/${input.boardId}/configuration`,
-        schema: RawBoardConfiguration,
+        path: `/rest/software/1.0/board/${input.boardId}/sprint/${input.sprintId}/issue`,
+        urlParams: {
+          jql: "assignee = currentUser()",
+          fields: "summary,description,issuetype,status,updated,flagged,epic,parent,subtasks",
+          maxResults: "100",
+          ...(nextPageToken === undefined ? {} : { nextPageToken }),
+          ...(input.reconcileIssueIds === undefined
+            ? {}
+            : { reconcileIssues: input.reconcileIssueIds }),
+        },
+        schema: IssuePage,
       });
-      const lastMappedColumn = config.columnConfig.columns.findLastIndex(
-        (column) => column.statuses.length > 0,
-      );
-      return {
-        boardId: config.id,
-        name: config.name,
-        type: boardType(config.type),
-        columns: config.columnConfig.columns.map((column, index) => ({
-          name: column.name,
-          statusIds: column.statuses.map((status) => status.id),
-          done: index === lastMappedColumn,
-        })),
-        rankFieldId:
-          config.ranking?.rankCustomFieldId === undefined
-            ? null
-            : String(config.ranking.rankCustomFieldId),
-      } satisfies WorkbenchJiraBoardConfiguration;
-    });
-
-  const listAssignedSprintIssues: JiraApiShape["listAssignedSprintIssues"] = (input) =>
-    Effect.gen(function* () {
-      const context = yield* authorized(input.connectionId);
-      const issues: Array<typeof RawIssue.Type> = [];
-      let nextPageToken: string | undefined;
-      for (let pageNumber = 0; pageNumber < 100; pageNumber += 1) {
-        const page = yield* executeJson({
-          ...context,
-          path: `/rest/software/1.0/board/${input.boardId}/sprint/${input.sprintId}/issue`,
-          urlParams: {
-            jql: "assignee = currentUser()",
-            fields: "summary,description,issuetype,status,updated,flagged,epic,parent,subtasks",
-            maxResults: "100",
-            ...(nextPageToken === undefined ? {} : { nextPageToken }),
-            ...(input.reconcileIssueIds === undefined
-              ? {}
-              : { reconcileIssues: input.reconcileIssueIds }),
-          },
-          schema: IssuePage,
-        });
-        issues.push(...page.issues);
-        if (page.isLast === true || page.nextPageToken === undefined) break;
-        nextPageToken = page.nextPageToken;
-        if (pageNumber === 99) {
-          return yield* apiError(
-            "response_invalid",
-            "Jira pagination exceeded the supported page limit.",
-          );
-        }
+      issues.push(...page.issues);
+      if (page.isLast === true || page.nextPageToken === undefined) break;
+      nextPageToken = page.nextPageToken;
+      if (pageNumber === 99) {
+        return yield* apiError(
+          "response_invalid",
+          "Jira pagination exceeded the supported page limit.",
+        );
       }
-      const siteUrl = context.connection.siteUrl.replace(/\/+$/u, "");
-      const snapshots = issues.map((issue, rank) => {
-        const parentIsEpic = issue.fields.parent?.fields?.issuetype?.name.toLowerCase() === "epic";
-        const directEpic = issue.fields.epic;
-        const parentEpic = parentIsEpic ? issue.fields.parent : null;
-        const epic =
-          directEpic !== null && directEpic !== undefined
+    }
+    const siteUrl = context.connection.siteUrl.replace(/\/+$/u, "");
+    const snapshots = issues.map((issue, rank) => {
+      const parentIsEpic = issue.fields.parent?.fields?.issuetype?.name.toLowerCase() === "epic";
+      const directEpic = issue.fields.epic;
+      const parentEpic = parentIsEpic ? issue.fields.parent : null;
+      const epic =
+        directEpic !== null && directEpic !== undefined
+          ? {
+              id: String(directEpic.id),
+              key: directEpic.key,
+              summary: directEpic.summary ?? directEpic.name ?? directEpic.key,
+            }
+          : parentEpic !== null && parentEpic !== undefined
             ? {
-                id: String(directEpic.id),
-                key: directEpic.key,
-                summary: directEpic.summary ?? directEpic.name ?? directEpic.key,
+                id: parentEpic.id,
+                key: parentEpic.key,
+                summary: parentEpic.fields?.summary ?? parentEpic.key,
               }
-            : parentEpic !== null && parentEpic !== undefined
-              ? {
-                  id: parentEpic.id,
-                  key: parentEpic.key,
-                  summary: parentEpic.fields?.summary ?? parentEpic.key,
-                }
-              : null;
-        return {
-          issueId: issue.id,
-          key: issue.key,
-          url: `${siteUrl}/browse/${encodeURIComponent(issue.key)}`,
-          summary: issue.fields.summary,
-          description: issue.fields.description ?? "",
-          issueType: issue.fields.issuetype,
-          status: issue.fields.status,
-          epic,
-          ...issueRelations({ siteUrl, fields: issue.fields, epicId: epic?.id }),
-          flagged: issue.fields.flagged ?? false,
-          rank,
-          remoteUpdatedAt: issue.fields.updated ?? null,
-        } satisfies WorkbenchJiraIssueSnapshot;
-      });
-      const epicIds = [
-        ...new Set(snapshots.flatMap((issue) => (issue.epic === null ? [] : [issue.epic.id]))),
-      ];
-      const epicDetails = yield* Effect.forEach(
-        epicIds,
-        (id) =>
-          executeJson({
-            ...context,
-            path: `/rest/api/2/issue/${encodeURIComponent(id)}`,
-            urlParams: { fields: "summary,description" },
-            schema: RawEpicDetails,
-          }).pipe(Effect.map((details) => [id, details.fields] as const)),
-        { concurrency: 4 },
-      );
-      const epicById = new Map(epicDetails);
-      return snapshots.map((issue) => {
-        const details = issue.epic === null ? undefined : epicById.get(issue.epic.id);
-        return {
-          ...issue,
-          epic:
-            issue.epic === null || details === undefined
-              ? issue.epic
-              : {
-                  ...issue.epic,
-                  summary: details.summary,
-                  ...(details.description === undefined
-                    ? {}
-                    : { description: details.description ?? "" }),
-                },
-        };
-      });
+            : null;
+      return {
+        issueId: issue.id,
+        key: issue.key,
+        url: `${siteUrl}/browse/${encodeURIComponent(issue.key)}`,
+        summary: issue.fields.summary,
+        description: issue.fields.description ?? "",
+        issueType: issue.fields.issuetype,
+        status: issue.fields.status,
+        epic,
+        ...issueRelations({ siteUrl, fields: issue.fields, epicId: epic?.id }),
+        flagged: issue.fields.flagged ?? false,
+        rank,
+        remoteUpdatedAt: issue.fields.updated ?? null,
+      } satisfies WorkbenchJiraIssueSnapshot;
     });
-
-  const prepareIssueCreation: JiraApiShape["prepareIssueCreation"] = (input) =>
-    Effect.gen(function* () {
-      const context = yield* authorized(input.connectionId);
-      const issueTypes = yield* collectPages({
-        ...context,
-        path: `/rest/api/3/issue/createmeta/${encodeURIComponent(input.projectKey)}/issuetypes`,
-        schema: IssueTypePage,
-        values: (page) => page.issueTypes,
-        isLast: (page, received) =>
-          page.isLast === true ||
-          (page.total !== undefined && (page.startAt ?? 0) + received >= page.total),
-      });
-      const desiredType = input.kind === "bug" ? "bug" : "story";
-      const issueType = issueTypes.find(
-        (candidate) => candidate.name.trim().toLowerCase() === desiredType,
-      );
-      if (issueType === undefined) {
-        return yield* apiError(
-          "request_failed",
-          `Jira project ${input.projectKey} does not expose a ${desiredType} issue type for this account.`,
-        );
-      }
-      const currentUser = yield* executeJson({
-        ...context,
-        path: "/rest/api/3/myself",
-        schema: CurrentUser,
-      });
-      return { issueTypeId: issueType.id, accountId: currentUser.accountId };
+    const epicIds = [
+      ...new Set(snapshots.flatMap((issue) => (issue.epic === null ? [] : [issue.epic.id]))),
+    ];
+    const epicDetails = yield* Effect.forEach(
+      epicIds,
+      (id) =>
+        executeJson({
+          ...context,
+          path: `/rest/api/2/issue/${encodeURIComponent(id)}`,
+          urlParams: { fields: "summary,description" },
+          schema: RawEpicDetails,
+        }).pipe(Effect.map((details) => [id, details.fields] as const)),
+      { concurrency: 4 },
+    );
+    const epicById = new Map(epicDetails);
+    return snapshots.map((issue) => {
+      const details = issue.epic === null ? undefined : epicById.get(issue.epic.id);
+      return {
+        ...issue,
+        epic:
+          issue.epic === null || details === undefined
+            ? issue.epic
+            : {
+                ...issue.epic,
+                summary: details.summary,
+                ...(details.description === undefined
+                  ? {}
+                  : { description: details.description ?? "" }),
+              },
+      };
     });
+  });
 
-  const prepareEpicCreation: NonNullable<JiraApiShape["prepareEpicCreation"]> = (input) =>
-    Effect.gen(function* () {
-      const context = yield* authorized(input.connectionId);
-      const issueTypes = yield* collectPages({
-        ...context,
-        path: `/rest/api/3/issue/createmeta/${encodeURIComponent(input.projectKey)}/issuetypes`,
-        schema: IssueTypePage,
-        values: (page) => page.issueTypes,
-        isLast: (page, received) =>
-          page.isLast === true ||
-          (page.total !== undefined && (page.startAt ?? 0) + received >= page.total),
-      });
-      const issueType = issueTypes.find(
-        (candidate) => candidate.name.trim().toLowerCase() === "epic",
-      );
-      if (issueType === undefined) {
-        return yield* apiError(
-          "request_failed",
-          `Jira project ${input.projectKey} does not expose an Epic issue type for this account.`,
-        );
-      }
-      const currentUser = yield* executeJson({
-        ...context,
-        path: "/rest/api/3/myself",
-        schema: CurrentUser,
-      });
-      return { issueTypeId: issueType.id, accountId: currentUser.accountId };
+  const prepareIssueCreation: JiraApiShape["prepareIssueCreation"] = Effect.fn(
+    "JiraApi.prepareIssueCreation",
+  )(function* (input) {
+    const context = yield* authorized(input.connectionId);
+    const issueTypes = yield* collectPages({
+      ...context,
+      path: `/rest/api/3/issue/createmeta/${encodeURIComponent(input.projectKey)}/issuetypes`,
+      schema: IssueTypePage,
+      values: (page) => page.issueTypes,
+      isLast: (page, received) =>
+        page.isLast === true ||
+        (page.total !== undefined && (page.startAt ?? 0) + received >= page.total),
     });
+    const desiredType = input.kind === "bug" ? "bug" : "story";
+    const issueType = issueTypes.find(
+      (candidate) => candidate.name.trim().toLowerCase() === desiredType,
+    );
+    if (issueType === undefined) {
+      return yield* apiError(
+        "request_failed",
+        `Jira project ${input.projectKey} does not expose a ${desiredType} issue type for this account.`,
+      );
+    }
+    const currentUser = yield* executeJson({
+      ...context,
+      path: "/rest/api/3/myself",
+      schema: CurrentUser,
+    });
+    return { issueTypeId: issueType.id, accountId: currentUser.accountId };
+  });
 
-  const createIssue: JiraApiShape["createIssue"] = (input) =>
-    Effect.gen(function* () {
+  const prepareEpicCreation: NonNullable<JiraApiShape["prepareEpicCreation"]> = Effect.fn(
+    "JiraApi.prepareEpicCreation",
+  )(function* (input) {
+    const context = yield* authorized(input.connectionId);
+    const issueTypes = yield* collectPages({
+      ...context,
+      path: `/rest/api/3/issue/createmeta/${encodeURIComponent(input.projectKey)}/issuetypes`,
+      schema: IssueTypePage,
+      values: (page) => page.issueTypes,
+      isLast: (page, received) =>
+        page.isLast === true ||
+        (page.total !== undefined && (page.startAt ?? 0) + received >= page.total),
+    });
+    const issueType = issueTypes.find(
+      (candidate) => candidate.name.trim().toLowerCase() === "epic",
+    );
+    if (issueType === undefined) {
+      return yield* apiError(
+        "request_failed",
+        `Jira project ${input.projectKey} does not expose an Epic issue type for this account.`,
+      );
+    }
+    const currentUser = yield* executeJson({
+      ...context,
+      path: "/rest/api/3/myself",
+      schema: CurrentUser,
+    });
+    return { issueTypeId: issueType.id, accountId: currentUser.accountId };
+  });
+
+  const createIssue: JiraApiShape["createIssue"] = Effect.fn("JiraApi.createIssue")(
+    function* (input) {
       const context = yield* authorized(input.connectionId).pipe(
         Effect.mapError(
           (error) =>
@@ -940,7 +949,8 @@ export const make = Effect.gen(function* () {
           }),
         ),
       });
-    });
+    },
+  );
 
   const addIssueToSprint: NonNullable<JiraApiShape["addIssueToSprint"]> = (input) => {
     const path = `/rest/agile/1.0/sprint/${input.sprintId}/issue`;

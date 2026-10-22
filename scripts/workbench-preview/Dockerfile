@@ -1,4 +1,4 @@
-FROM node:24.13.1-bookworm-slim AS github-cli
+FROM node:26.12.1-bookworm-slim AS github-cli
 ARG TARGETARCH
 # Digests verified against cli/cli v2.101.0 release metadata and its checksums asset.
 RUN case "$TARGETARCH" in \
@@ -10,9 +10,9 @@ RUN case "$TARGETARCH" in \
     tar -xzf /tmp/gh.tar.gz -C /usr/local/bin --strip-components=2 "gh_2.101.0_linux_${TARGETARCH}/bin/gh" && \
     gh --version
 
-FROM node:24.13.1-bookworm-slim AS build
+FROM node:26.12.1-bookworm-slim AS build
 RUN apt-get update && apt-get install -y --no-install-recommends git python3 make g++ ca-certificates && rm -rf /var/lib/apt/lists/*
-RUN npm install --global pnpm@11.10.0 opencode-ai@1.18.33
+RUN npm install --global pnpm@12.14.0 opencode-ai@1.18.33
 WORKDIR /app
 COPY . .
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
@@ -20,7 +20,7 @@ RUN pnpm --filter @t3tools/monorepo --filter t3... --filter @t3tools/scripts... 
 ENV T3_WORKBENCH_JIRA_BROKER_URL=https://workbench-auth.fgutica.workers.dev
 RUN pnpm exec vp run --filter t3 build
 
-FROM node:24.13.1-bookworm-slim
+FROM node:26.12.1-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=github-cli /usr/local/bin/gh /usr/local/bin/gh
 COPY --from=build /usr/local/lib/node_modules/opencode-ai /usr/local/lib/node_modules/opencode-ai
