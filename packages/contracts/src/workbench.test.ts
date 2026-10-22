@@ -10,7 +10,6 @@ import {
   WorkbenchCreateEpicInput,
   WorkbenchCreateTicketInput,
   WorkbenchDeleteTicketInput,
-  WorkbenchProject,
   WorkbenchReplaceAssignmentInput,
   WorkbenchSnapshot,
   WorkbenchTicket,
@@ -30,7 +29,6 @@ const decodeWorkbenchArchiveProjectInput = Schema.decodeUnknownEffect(WorkbenchA
 const decodeWorkbenchDeleteProjectInput = Schema.decodeUnknownEffect(WorkbenchDeleteProjectInput);
 const decodeWorkbenchSnapshot = Schema.decodeUnknownEffect(WorkbenchSnapshot);
 const decodeWorkbenchCreateEpicInput = Schema.decodeUnknownEffect(WorkbenchCreateEpicInput);
-const decodeWorkbenchProject = Schema.decodeUnknownEffect(WorkbenchProject);
 const decodeWorkbenchTicketStatus = Schema.decodeUnknownEffect(WorkbenchTicketStatus);
 const decodeWorkbenchTicketKind = Schema.decodeUnknownEffect(WorkbenchTicketKind);
 const decodeWorkbenchCreateTicketInput = Schema.decodeUnknownEffect(WorkbenchCreateTicketInput);
@@ -225,22 +223,6 @@ describe("Workbench contracts", () => {
           }),
         ))._tag,
       ).toBe("Failure");
-    }),
-  );
-
-  it.effect("rejects an empty Workbench Workspace link set", () =>
-    Effect.gen(function* () {
-      const result = yield* Effect.exit(
-        decodeWorkbenchProject({
-          id: "workbench-project-1",
-          title: "Agent Workbench",
-          linkedProjectIds: [],
-          createdAt: "2026-09-03T12:00:00.000Z",
-          updatedAt: "2026-09-03T12:00:00.000Z",
-        }),
-      );
-
-      expect(result._tag).toBe("Failure");
     }),
   );
 

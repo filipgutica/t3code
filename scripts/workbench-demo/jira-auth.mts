@@ -179,10 +179,6 @@ export const decodeJiraAuthBundle = (input: JiraAuthBundleInput): JiraAuthBundle
 export const encodeJiraAuthBundle = (input: JiraAuthBundleInput): string =>
   Buffer.from(JSON.stringify(decodeJiraAuthBundle(input)), "utf8").toString("base64");
 
-/** Read either raw JSON or the base64 form used by CI from a private file. */
-export const readJiraAuthBundleFile = async (path: string): Promise<JiraAuthBundle> =>
-  decodeJiraAuthBundle(await NodeFSP.readFile(path, "utf8"));
-
 /** Write the one-line base64 form with the same permissions as a server secret. */
 export const writeJiraAuthBundleFile = async (input: {
   readonly path: string;

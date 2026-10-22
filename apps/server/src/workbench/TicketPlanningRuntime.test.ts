@@ -145,13 +145,12 @@ const policyLayer = (
   driver = "codex",
   missingRepository = false,
 ) =>
-  TicketPlanningRuntime.layer.pipe(
+  TicketPlanningRuntime.layerRuntimePolicyDecorator.pipe(
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(JiraRepository.WorkbenchJiraRepository)({
           listBindings: () => Effect.succeed([]),
         }),
-        Layer.succeed(RuntimePolicy.RuntimePolicyV2, { resolve: () => Effect.succeed(basePolicy) }),
         Layer.mock(WorkbenchStore)({
           getTicketDraftForThread: () => Effect.succeed(phase === null ? null : draft(phase)),
         }),
@@ -180,8 +179,10 @@ const policyLayer = (
       ),
     ),
   );
-const resolve = Effect.flatMap(RuntimePolicy.RuntimePolicyV2, (policy) =>
-  policy.resolve({ thread, modelSelection }),
+const resolve = Effect.flatMap(RuntimePolicy.RuntimePolicyDecorator, (decorator) =>
+  decorator
+    .decorate({ resolve: () => Effect.succeed(basePolicy) })
+    .resolve({ thread, modelSelection }),
 );
 
 it.effect.each(["codex", "claudeAgent"] as const)(

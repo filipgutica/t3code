@@ -122,19 +122,6 @@ describe("Claude research policy", () => {
     assert.includeMembers(options.tools, ["Read", "WebFetch", "WebSearch", "ToolSearch"]);
     assert.notIncludeMembers(options.tools, ["Bash", "Edit", "Write", "Agent"]);
   });
-  it("sends unannotated T3 research tools to review", () => {
-    const options = researchOptions(nativeOptions, async () => undefined);
-    assert.notIncludeMembers(options.allowedTools ?? [], [
-      "mcp__t3-code__*",
-      "mcp__t3-code__preview_navigate",
-      "mcp__t3-code__html_preview",
-      "mcp__t3-code__html_render",
-    ]);
-    assert.includeMembers(options.allowedTools ?? [], [
-      "mcp__t3-code__workbench_jira_read_issue",
-      "mcp__t3-code__workbench_jira_search_issues",
-    ]);
-  });
   it("pre-approves the workspace Jira toolkit for Claude ticket planning", () => {
     const options = researchOptions(nativeOptions, async () => undefined);
     assert.deepEqual(

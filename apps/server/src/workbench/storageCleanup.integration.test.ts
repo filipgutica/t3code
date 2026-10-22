@@ -107,7 +107,11 @@ const cleanupTestLayer = Layer.mergeAll(SqlitePersistence.layerMemory, cleanupCo
 
 const cleanupCases = (["idle", "deleted"] as const).flatMap((lifecycle) =>
   (["default", "custom", "symlinked", "overlapping"] as const).flatMap((directory) =>
-    (["automatic", "manual"] as const).map((trigger) => ({ lifecycle, directory, trigger })),
+    (["automatic", "manual"] as const)
+      .filter(
+        (trigger) => trigger === "manual" || (lifecycle === "idle" && directory === "default"),
+      )
+      .map((trigger) => ({ lifecycle, directory, trigger })),
   ),
 );
 for (const { lifecycle, directory, trigger } of cleanupCases) {

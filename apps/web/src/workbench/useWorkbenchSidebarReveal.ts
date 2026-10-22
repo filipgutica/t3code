@@ -91,7 +91,6 @@ export function useWorkbenchSidebarReveal({
     const decision = getWorkbenchSidebarRevealDecision({
       reason: pending.current,
       fullyVisible: isFullyVisible(row, viewport),
-      userScrolling,
       selectedInSidebar: isSelectedInSidebar(row),
     });
     pending.current = null;

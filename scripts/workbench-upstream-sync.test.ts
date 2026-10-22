@@ -101,7 +101,7 @@ const workflow = NodeFS.readFileSync(
 );
 const stepScript = (name: string) => {
   const step = workflow.split(`name: ${name}\n`)[1]?.split(/\n      - /)[0];
-  const script = step?.split("        run: |\n")[1];
+  const script = step?.split("        run: |\n")[1]?.split(/\n(?= {0,8}\S)/)[0];
   if (!script) throw new Error(`Missing workflow shell step: ${name}`);
   return script.replace(/^          /gm, "");
 };
@@ -137,6 +137,76 @@ const runStep = (root: string, name: string, preamble = "", env = {}) =>
       },
     },
   );
+
+it.each([
+  {
+    advanceBase: false,
+    name: "publishes a verified merge when the product base is unchanged",
+  },
+  {
+    advanceBase: true,
+    name: "rejects publishing a verified merge after the product base advances",
+  },
+])("$name", ({ advanceBase }) => {
+  const fixture = createFixture([]);
+  const { root, repository, productSha } = fixture;
+  try {
+    const remote = NodePath.join(root, "remote.git");
+    runGit(root, ["init", "--bare", remote]);
+    runGit(repository, ["remote", "add", "origin", remote]);
+    runGit(repository, ["push", "origin", `${productSha}:refs/heads/main`]);
+    runGit(repository, ["switch", "product"]);
+    runGit(repository, ["merge", "--no-ff", "--no-edit", "main"]);
+    const verifiedSha = runGit(repository, ["rev-parse", "HEAD"]);
+    const verifiedTree = runGit(repository, ["rev-parse", "HEAD^{tree}"]);
+    // GitHub's merge ref has the checked base and candidate as parents, and the candidate tree.
+    const mergeSha = runGit(repository, [
+      "commit-tree",
+      verifiedTree,
+      "-p",
+      productSha,
+      "-p",
+      verifiedSha,
+      "-m",
+      "verified PR merge",
+    ]);
+    runGit(repository, ["fetch", "--no-tags", ".", mergeSha]);
+
+    let remoteSha = productSha;
+    if (advanceBase) {
+      remoteSha = runGit(repository, [
+        "commit-tree",
+        `${productSha}^{tree}`,
+        "-p",
+        productSha,
+        "-m",
+        "product follow-up",
+      ]);
+      runGit(repository, ["push", "origin", `${remoteSha}:refs/heads/main`]);
+    }
+
+    const result = runStep(repository, "Publish the verified merge", "", {
+      PRODUCT_SHA: productSha,
+      VERIFIED_SHA: verifiedSha,
+    });
+    if (advanceBase) {
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /\[rejected\].*non-fast-forward/);
+    } else {
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(
+        NodeFS.readFileSync(NodePath.join(repository, "outputs"), "utf8"),
+        `merge_sha=${mergeSha}\n`,
+      );
+    }
+    assert.equal(
+      runGit(repository, ["ls-remote", "origin", "refs/heads/main"]),
+      `${advanceBase ? remoteSha : mergeSha}\trefs/heads/main`,
+    );
+  } finally {
+    NodeFS.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 it("reports expected preview conflicts successfully but preserves real failures", () => {
   const fixture = createFixture(["source.txt"]);

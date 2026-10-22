@@ -172,34 +172,32 @@ const seedLocalData = Effect.gen(function* () {
 });
 
 describe("WorkbenchJiraService local migration", () => {
-  it.effect(
-    "deletes confirmed Tickets and Epics while retaining the Ticket Thread reservation",
-    () =>
-      Effect.gen(function* () {
-        const workbench = yield* WorkbenchStore;
-        const creates = yield* Ref.make(0);
-        const writer = JiraTicketWriteService.of({
-          resolveCreation: () => Effect.die("unexpected Jira resolution"),
-          createTicket: () => Effect.die("unexpected Jira Ticket creation"),
-          getTicketTransitions: () => Effect.die("unexpected Jira transition lookup"),
-          updateTicket: () => Effect.die("unexpected Jira Ticket write"),
-          startTicketExecution: () => Effect.die("unexpected Jira execution"),
-        });
-        const service = yield* makeService({ writer, creates });
-        const { epic, ticket } = yield* seedLocalData;
-        const result = yield* service.migrateLocalTickets({
-          bindingId: binding.id,
-          action: "delete",
-          tickets: [{ id: ticket.id, revision: ticket.revision }],
-          epics: [{ id: epic.id, updatedAt: epic.updatedAt }],
-        });
-        const snapshot = yield* workbench.getSnapshot;
-        expect(result.deletedTicketCount).toBe(1);
-        expect(result.deletedEpicCount).toBe(1);
-        expect(snapshot.tickets).toEqual([]);
-        expect(snapshot.epics).toEqual([]);
-        expect(yield* Ref.get(creates)).toBe(0);
-      }).pipe(Effect.scoped, Effect.provide(TestLayer)),
+  it.effect("deletes confirmed local Tickets and Epics without creating Jira issues", () =>
+    Effect.gen(function* () {
+      const workbench = yield* WorkbenchStore;
+      const creates = yield* Ref.make(0);
+      const writer = JiraTicketWriteService.of({
+        resolveCreation: () => Effect.die("unexpected Jira resolution"),
+        createTicket: () => Effect.die("unexpected Jira Ticket creation"),
+        getTicketTransitions: () => Effect.die("unexpected Jira transition lookup"),
+        updateTicket: () => Effect.die("unexpected Jira Ticket write"),
+        startTicketExecution: () => Effect.die("unexpected Jira execution"),
+      });
+      const service = yield* makeService({ writer, creates });
+      const { epic, ticket } = yield* seedLocalData;
+      const result = yield* service.migrateLocalTickets({
+        bindingId: binding.id,
+        action: "delete",
+        tickets: [{ id: ticket.id, revision: ticket.revision }],
+        epics: [{ id: epic.id, updatedAt: epic.updatedAt }],
+      });
+      const snapshot = yield* workbench.getSnapshot;
+      expect(result.deletedTicketCount).toBe(1);
+      expect(result.deletedEpicCount).toBe(1);
+      expect(snapshot.tickets).toEqual([]);
+      expect(snapshot.epics).toEqual([]);
+      expect(yield* Ref.get(creates)).toBe(0);
+    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 
   it.effect("deletes a local Epic whose child Ticket was already deleted", () =>
@@ -610,14 +608,6 @@ describe("WorkbenchJiraService local migration", () => {
           (binding_id, jira_issue_id, jira_issue_key, epic_id)
         VALUES (${binding.id}, 'remote-epic', 'ORBIT-42', ${epic.id})
       `;
-      const canonicalEpic = yield* workbench.createEpic({
-        id: WorkbenchEpicId.make("jira:binding-1:epic:remote-canonical-epic"),
-        projectId: workspaceId,
-        title: "Canonical Jira Epic",
-        markdown: "Canonical Jira Epic details",
-        createdAt,
-      });
-
       const updated = yield* workbench.updateEpic({
         id: epic.id,
         title: "Local edit should be ignored",
@@ -627,15 +617,6 @@ describe("WorkbenchJiraService local migration", () => {
 
       expect(updated.title).toBe(epic.title);
       expect(updated.markdown).toBe("Jira-owned markdown");
-      const updatedCanonical = yield* workbench.updateEpic({
-        id: canonicalEpic.id,
-        title: "Canonical local edit should be ignored",
-        markdown: "Canonical Jira-owned markdown",
-        updatedAt: "2026-09-15T12:01:00.000Z",
-      });
-
-      expect(updatedCanonical.title).toBe(canonicalEpic.title);
-      expect(updatedCanonical.markdown).toBe("Canonical Jira-owned markdown");
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 

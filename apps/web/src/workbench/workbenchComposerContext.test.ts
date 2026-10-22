@@ -5,12 +5,10 @@ import {
   reviewCommentContextId,
   reviewCommentContextReference,
 } from "../lib/composerContextRecords";
-import { composerContextRecordsFromDraft } from "../components/composerContextPresentation";
 import { formatInlineContextReference } from "../lib/composerContextReferences";
-import { isWorkbenchTicketReviewComment } from "./workbenchTicketContext";
 
 describe("Workbench ticket context presentation", () => {
-  it("hides only the inline chip while retaining the canonical review context record", () => {
+  it("retains the canonical Ticket review context record and parses its reference", () => {
     const ticketContext = {
       id: "workbench-ticket:ticket-1",
       sectionId: "workbench-ticket:ticket-1",
@@ -36,22 +34,6 @@ describe("Workbench ticket context presentation", () => {
         contextId: reviewCommentContextId(ticketContext.id),
       }),
     ]);
-    const draftRecord = composerContextRecordsFromDraft({
-      terminalContexts: [],
-      reviewComments: [ticketContext],
-    }).get(reviewCommentContextId(ticketContext.id));
-    expect(
-      draftRecord?.kind === "review-comment" && isWorkbenchTicketReviewComment(draftRecord.record),
-    ).toBe(true);
-    expect(isWorkbenchTicketReviewComment(undefined)).toBe(false);
-    const ordinaryRecord = composerContextRecordsFromDraft({
-      terminalContexts: [],
-      reviewComments: [{ ...ticketContext, id: "file-comment-1", sectionId: "file:a.ts" }],
-    }).get(reviewCommentContextId("file-comment-1"));
-    expect(
-      ordinaryRecord?.kind === "review-comment" &&
-        isWorkbenchTicketReviewComment(ordinaryRecord.record),
-    ).toBe(false);
     expect(context?.records).toHaveLength(1);
     expect(context?.records[0]).toMatchObject({
       kind: "review-comment",

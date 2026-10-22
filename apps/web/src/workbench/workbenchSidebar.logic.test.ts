@@ -102,31 +102,42 @@ describe("Workbench sidebar ticket groups", () => {
     expect(groups.has(otherWorkspaceId)).toBe(false);
   });
 
-  it("retains replaced thread history but ignores archived tickets", () => {
+  it("retains replaced thread history after un-settling but ignores archived tickets", () => {
     const supersededTicket = ticket("superseded-ticket");
     const archivedTicket = { ...ticket("archived-ticket"), archivedAt: "2026-01-01" };
+    const historyTicket = ticket("history");
     const supersededThread = thread("superseded-thread");
     const archivedTicketThread = thread("archived-ticket-thread");
+    const historicalThread = { ...thread("historical"), settledOverride: "active" as const };
 
     const groups = getWorkbenchSidebarTicketGroups({
       environmentId,
-      tickets: [supersededTicket, archivedTicket],
+      tickets: [supersededTicket, archivedTicket, historyTicket],
       assignments: [
         {
           ...assignment("superseded", supersededTicket.id, supersededThread.id, "2026-01-01"),
           supersededAt: "2026-01-02",
         },
         assignment("archived-ticket", archivedTicket.id, archivedTicketThread.id, "2026-01-01"),
+        {
+          ...assignment("old", historyTicket.id, historicalThread.id, "2026-01-01"),
+          supersededAt: "2026-01-02",
+        },
       ],
-      threads: [supersededThread, archivedTicketThread],
-      selectedTicketId: undefined,
+      threads: [supersededThread, archivedTicketThread, historicalThread],
+      selectedTicketId: historyTicket.id,
+      selectedThreadId: historicalThread.id,
     });
 
     expect(groups.get(workspaceId)).toEqual({
-      active: [{ ticket: supersededTicket, threads: [supersededThread] }],
+      active: [
+        { ticket: supersededTicket, threads: [supersededThread] },
+        { ticket: historyTicket, threads: [historicalThread] },
+      ],
       done: [],
     });
   });
+
   it("keeps active and settled threads under one ticket", () => {
     const mixed = ticket("mixed");
     const active = thread("active");
@@ -165,25 +176,7 @@ describe("Workbench sidebar ticket groups", () => {
     });
   });
 
-  it("keeps a selected settled thread in its ticket context", () => {
-    const selectedTicket = ticket("selected");
-    const settled = { ...thread("settled"), settledOverride: "settled" as const };
-    const groups = getWorkbenchSidebarTicketGroups({
-      environmentId,
-      tickets: [selectedTicket],
-      assignments: [assignment("settled", selectedTicket.id, settled.id, "2026-01-01")],
-      threads: [settled],
-      selectedTicketId: selectedTicket.id,
-      selectedThreadId: settled.id,
-    });
-
-    expect(groups.get(workspaceId)).toEqual({
-      active: [{ ticket: selectedTicket, threads: [settled] }],
-      done: [],
-    });
-  });
-
-  it("hides settled threads from unselected archived tickets", () => {
+  it("omits a workspace containing only an unselected archived ticket", () => {
     const archivedTicket = { ...ticket("archived"), archivedAt: "2026-01-01" };
     const settled = { ...thread("settled"), settledOverride: "settled" as const };
     const groups = getWorkbenchSidebarTicketGroups({
@@ -220,28 +213,6 @@ describe("Workbench sidebar ticket groups", () => {
     });
   });
 
-  it("keeps a historical thread in its ticket after un-settling", () => {
-    const historyTicket = ticket("history");
-    const historicalThread = { ...thread("historical"), settledOverride: "active" as const };
-    const groups = getWorkbenchSidebarTicketGroups({
-      environmentId,
-      tickets: [historyTicket],
-      assignments: [
-        {
-          ...assignment("old", historyTicket.id, historicalThread.id, "2026-01-01"),
-          supersededAt: "2026-01-02",
-        },
-      ],
-      threads: [historicalThread],
-      selectedTicketId: historyTicket.id,
-      selectedThreadId: historicalThread.id,
-    });
-    expect(groups.get(workspaceId)).toEqual({
-      active: [{ ticket: historyTicket, threads: [historicalThread] }],
-      done: [],
-    });
-  });
-
   it("groups every nonarchived done ticket, including tickets without threads", () => {
     const doneWithoutThread = ticket("done-without-thread", workspaceId, "done");
     const doneInOtherWorkspace = ticket("done-other-workspace", otherWorkspaceId, "done");
@@ -264,39 +235,26 @@ describe("Workbench sidebar ticket groups", () => {
     });
   });
 
-  it("keeps settled history inside a done ticket without duplicating it", () => {
-    const doneTicket = ticket("done-history", workspaceId, "done");
-    const settled = { ...thread("settled"), settledOverride: "settled" as const };
-    const groups = getWorkbenchSidebarTicketGroups({
-      environmentId,
-      tickets: [doneTicket],
-      assignments: [assignment("settled", doneTicket.id, settled.id, "2026-01-01")],
-      threads: [settled],
-      selectedTicketId: doneTicket.id,
-      selectedThreadId: settled.id,
-    });
-    expect(groups.get(workspaceId)).toEqual({
-      active: [],
-      done: [{ ticket: doneTicket, threads: [settled] }],
-    });
-  });
+  it.each([null, "settled"] as const)(
+    "keeps done tickets with %s threads out of the active section",
+    (settledOverride) => {
+      const doneTicket = ticket("done", workspaceId, "done");
+      const doneThread = { ...thread("done-thread"), settledOverride };
+      const groups = getWorkbenchSidebarTicketGroups({
+        environmentId,
+        tickets: [doneTicket],
+        assignments: [assignment("a", doneTicket.id, doneThread.id, "2026-01-01")],
+        threads: [doneThread],
+        selectedTicketId: doneTicket.id,
+        selectedThreadId: settledOverride === "settled" ? doneThread.id : undefined,
+      });
 
-  it("keeps done tickets out of the active section", () => {
-    const doneTicket = ticket("done", workspaceId, "done");
-    const activeThread = thread("active");
-    const groups = getWorkbenchSidebarTicketGroups({
-      environmentId,
-      tickets: [doneTicket],
-      assignments: [assignment("a", doneTicket.id, activeThread.id, "2026-01-01")],
-      threads: [activeThread],
-      selectedTicketId: doneTicket.id,
-    });
-
-    expect(groups.get(workspaceId)).toEqual({
-      active: [],
-      done: [{ ticket: doneTicket, threads: [activeThread] }],
-    });
-  });
+      expect(groups.get(workspaceId)).toEqual({
+        active: [],
+        done: [{ ticket: doneTicket, threads: [doneThread] }],
+      });
+    },
+  );
 
   it("retains the current archived thread and its ticket", () => {
     const currentTicket = { ...ticket("current"), archivedAt: "2026-01-01" };

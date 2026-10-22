@@ -16,7 +16,6 @@ import { filterVisibleThreads } from "../hostIntegrations";
 
 import {
   createWorkbenchThreadPresentationPolicy,
-  isUnsavedTicketPreparation,
   useWorkbenchTicketPreparations,
 } from "./useWorkbenchTicketPreparations";
 
@@ -117,48 +116,9 @@ describe("Workbench preparation visibility", () => {
   });
   it("hides an unsaved conversation only in its owning environment", () => {
     const index = new Map([[key, preparation]]);
-    expect(filterVisibleThreads(threads, createWorkbenchThreadPresentationPolicy(index))).toEqual([
-      threads[1],
-    ]);
-    expect(isUnsavedTicketPreparation(index, two, threadId)).toBe(false);
-  });
-
-  it.each(["planning", "starting"] as const)(
-    "hides %s conversations until Start work succeeds",
-    (phase) => {
-      const index = new Map([
-        [key, { ...preparation, ticketId: WorkbenchTicketId.make("saved"), phase }],
-      ]);
-      expect(filterVisibleThreads(threads, createWorkbenchThreadPresentationPolicy(index))).toEqual(
-        [threads[1]],
-      );
-      expect(isUnsavedTicketPreparation(index, one, threadId)).toBe(false);
-    },
-  );
-
-  it("hides a partial creation until promotion finishes, even when the ticket exists", () => {
-    const index = new Map([
-      [
-        key,
-        { ...preparation, ticketId: WorkbenchTicketId.make("saved"), phase: "promoting" as const },
-      ],
-    ]);
-    expect(filterVisibleThreads(threads, createWorkbenchThreadPresentationPolicy(index))).toEqual([
-      threads[1],
-    ]);
-    expect(isUnsavedTicketPreparation(index, one, threadId)).toBe(true);
-  });
-
-  it("reveals the same Thread when work starts", () => {
-    const index = new Map([
-      [
-        key,
-        { ...preparation, ticketId: WorkbenchTicketId.make("saved"), phase: "working" as const },
-      ],
-    ]);
-    expect(filterVisibleThreads(threads, createWorkbenchThreadPresentationPolicy(index))).toEqual(
-      threads,
-    );
+    const policy = createWorkbenchThreadPresentationPolicy(index)!;
+    expect(filterVisibleThreads(threads, policy)).toEqual([threads[1]]);
+    expect(policy.canNotify(scopeThreadRef(two, threadId))).toBe(true);
   });
 
   it("leaves native lists unchanged outside Workbench or on older hosts", () => {

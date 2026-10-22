@@ -119,7 +119,11 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
     .getByRole("alertdialog")
     .getByRole("button", { name: "Remove prepared worktrees", exact: true })
     .click();
-  await expect(page.getByText(/has local changes/).last()).toBeVisible();
+  const refusal = page.getByRole("alertdialog").getByRole("alert");
+  await expect(refusal).toBeVisible();
+  await expect(refusal).toContainText(
+    "has local changes. Commit or remove them before resetting the Workspace.",
+  );
   expect(await NodeFSP.readFile(marker, "utf8")).toBe("Keep this local work.\n");
   await NodeFSP.unlink(marker);
 });

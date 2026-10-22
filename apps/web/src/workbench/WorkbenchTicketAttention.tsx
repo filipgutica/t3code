@@ -254,7 +254,6 @@ export function WorkbenchThreadAttentionBadge({
   const { signals } = getWorkbenchThreadAttention({
     threadId,
     signals: attentionSignalsByTicket.get(ticketId) ?? [],
-    inspections: [],
   });
   return <AttentionBadge {...props} signals={signals} title={threadTitle} />;
 }
