@@ -79,7 +79,10 @@ export function SidebarUpdateReleaseNotes({
       </div>
       <div className="min-h-0 max-h-[min(28rem,calc(100vh-6rem))] overflow-y-auto px-1 pt-4 pb-1">
         {state.releaseNotes.map((releaseNote, index) => {
-          const releaseUrl = getDesktopUpdateReleaseUrl(releaseNote.version, releaseLinks);
+          const version = releaseNote.version.trim();
+          const releaseUrl = version
+            ? (releaseLinks?.releaseUrl(version) ?? getDesktopUpdateReleaseUrl(version))
+            : null;
           const omittedItemCount = Math.max(0, releaseNote.totalItems - releaseNote.items.length);
           const linkLabel =
             omittedItemCount === 0
@@ -112,7 +115,10 @@ export function SidebarUpdateReleaseNotes({
         {state.omittedReleaseCount > 0 ? (
           <div>
             <Separator className="my-3" />
-            <ReleaseLink releaseUrl={getDesktopUpdateReleaseHistoryUrl(releaseLinks)} shell={shell}>
+            <ReleaseLink
+              releaseUrl={releaseLinks?.historyUrl ?? getDesktopUpdateReleaseHistoryUrl()}
+              shell={shell}
+            >
               {`${state.omittedReleaseCount} older ${state.omittedReleaseCount === 1 ? "release" : "releases"} on GitHub`}
             </ReleaseLink>
           </div>

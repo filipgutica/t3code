@@ -34,6 +34,7 @@ import * as ProviderEventIngestor from "../../orchestration-v2/ProviderEventInge
 import * as McpAppModelContext from "../../mcpApps/McpAppModelContext.ts";
 import * as RunExecutionService from "../../orchestration-v2/RunExecutionService.ts";
 import * as RunFinalizationService from "../../orchestration-v2/RunFinalizationService.ts";
+import * as TurnItemPositionStore from "../../orchestration-v2/TurnItemPositionStore.ts";
 
 const driver = ProviderDriverKind.make("codex");
 
@@ -99,6 +100,9 @@ function captureCheckpointFreeRootRun(status: TerminalStatus) {
       Layer.provide(
         Layer.mergeAll(
           McpAppModelContext.layerEmpty,
+          Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({
+            allocate: () => Effect.succeed(1),
+          }),
           Layer.mock(CheckpointService.CheckpointServiceV2)({
             captureBaseline: () => Ref.update(baselineCaptures, (count) => count + 1),
           }),

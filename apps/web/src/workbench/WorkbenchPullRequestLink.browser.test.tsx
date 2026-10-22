@@ -1,0 +1,148 @@
+import { render } from "../../test/render";
+import type { ReactNode } from "react";
+import { describe, expect, it, vi } from "vite-plus/test";
+import {
+  EnvironmentId,
+  ProjectId,
+  SourceControlProviderKind,
+  type PullRequestSummary,
+} from "@t3tools/contracts";
+
+import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
+
+const observed = vi.hoisted(() => ({
+  queried: null as PullRequestSummary | null,
+  cached: null as PullRequestSummary | null,
+}));
+
+vi.mock("../lib/openPullRequestLink", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/openPullRequestLink")>()),
+  useOpenChangeRequestLink: () => () => false,
+}));
+vi.mock("../components/ui/tooltip", () => {
+  const Passthrough = ({ children }: { children?: ReactNode }) => <>{children}</>;
+  return { Tooltip: Passthrough, TooltipPopup: Passthrough, TooltipTrigger: Passthrough };
+});
+vi.mock("../state/pullRequests", () => ({
+  linkedPullRequestDetailAtom: (target: unknown) => target,
+  useSharedPullRequestSummary: (_environmentId: unknown, _reference: unknown, current: unknown) =>
+    observed.cached ?? current,
+}));
+vi.mock("../state/query", () => ({
+  useEnvironmentQuery: (atom: { input: { host?: string } } | null) => {
+    const summary = observed.queried;
+    return {
+      data: summary && atom?.input.host === new URL(summary.url).hostname ? summary : null,
+      dataUpdatedAt: null,
+    };
+  },
+}));
+
+const environmentId = EnvironmentId.make("local");
+const projectId = ProjectId.make("repo");
+const pullRequest = {
+  projectId,
+  repository: "acme/repo",
+  number: 42,
+  url: "https://github.com/acme/repo/pull/42",
+};
+
+function setup() {
+  observed.queried = null;
+  observed.cached = null;
+}
+
+describe("Workbench ticket pull request link", () => {
+  it.each([
+    ["single PR badge", true, pullRequest],
+    [
+      "multi-PR popover",
+      false,
+      { ...pullRequest, url: "https://github.enterprise.test/acme/repo/pull/42" },
+    ],
+  ] as const)(
+    "updates a state-less %s to the merged glyph and color",
+    async (_label, compact, reference) => {
+      setup();
+      observed.queried = null;
+      observed.cached = null;
+      await using screen = await render(
+        <WorkbenchPullRequestLink
+          compact={compact}
+          environmentId={environmentId}
+          pullRequest={reference}
+        />,
+      );
+      expect(screen.container.querySelectorAll("svg.lucide-git-merge")).toHaveLength(0);
+
+      observed.queried = {
+        provider: SourceControlProviderKind.make("github"),
+        ...reference,
+        title: "Finished work",
+        state: "merged",
+        headBranch: "feature",
+        baseBranch: "main",
+        updatedAt: "2026-09-25T00:00:00.000Z",
+      };
+      await screen.rerender(
+        <WorkbenchPullRequestLink
+          compact={compact}
+          environmentId={environmentId}
+          pullRequest={reference}
+        />,
+      );
+
+      expect(screen.container.querySelectorAll("svg.lucide-git-merge")).toHaveLength(1);
+      expect(
+        Array.from(screen.container.querySelectorAll("span")).some((span) =>
+          span.className.includes("text-violet-600"),
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it("keeps an explicit closed state when a shared summary is stale and open", async () => {
+    setup();
+    observed.cached = {
+      provider: SourceControlProviderKind.make("github"),
+      ...pullRequest,
+      title: "Old draft",
+      state: "open",
+      isDraft: true,
+      headBranch: "feature",
+      baseBranch: "main",
+      updatedAt: "2026-09-24T00:00:00.000Z",
+    };
+    await using screen = await render(
+      <WorkbenchPullRequestLink
+        compact
+        environmentId={environmentId}
+        pullRequest={{ ...pullRequest, state: "closed", isDraft: false }}
+      />,
+    );
+    expect(screen.container.querySelectorAll("svg.lucide-git-pull-request-closed")).toHaveLength(1);
+    expect(screen.container.querySelectorAll("svg.lucide-git-pull-request-draft")).toHaveLength(0);
+  });
+
+  it("keeps a known merged summary when the supplied state is stale and open", async () => {
+    setup();
+    observed.queried = null;
+    observed.cached = {
+      provider: SourceControlProviderKind.make("github"),
+      ...pullRequest,
+      title: "Merged work",
+      state: "merged",
+      headBranch: "feature",
+      baseBranch: "main",
+      updatedAt: "2026-09-25T00:00:00.000Z",
+    };
+    await using screen = await render(
+      <WorkbenchPullRequestLink
+        compact
+        environmentId={environmentId}
+        pullRequest={{ ...pullRequest, state: "open", isDraft: false }}
+      />,
+    );
+    expect(screen.container.querySelectorAll("svg.lucide-git-merge")).toHaveLength(1);
+  });
+});

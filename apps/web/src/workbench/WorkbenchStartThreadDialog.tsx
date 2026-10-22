@@ -543,8 +543,6 @@ function WorkbenchStartThreadModelFields({
           instanceId={resolvedSelection.instanceId}
           models={activeEntry.models}
           model={resolvedSelection.model}
-          prompt=""
-          onPromptChange={() => {}}
           modelOptions={resolvedSelection.options ?? []}
           allowPromptInjectedEffort={false}
           planModeEnabled={planModeEnabled}

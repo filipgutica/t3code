@@ -1972,7 +1972,7 @@ function getWorkbenchSidebarTicketCounts(tickets: ReadonlyArray<WorkbenchSidebar
   return counts;
 }
 
-function useWorkbenchSidebarRecordGroups({
+function getWorkbenchSidebarRecordGroups({
   snapshot,
   threadShells,
   environmentId,
@@ -2028,7 +2028,7 @@ function useWorkbenchSidebarData({
         })
       : new Map<WorkbenchTicketId, WorkbenchSidebarTicketDetails>())();
   const { draftsByWorkspace, ticketCountsByWorkspace, archivedTicketsByWorkspace } =
-    useWorkbenchSidebarRecordGroups({ snapshot, threadShells, environmentId, selectedTicketId });
+    getWorkbenchSidebarRecordGroups({ snapshot, threadShells, environmentId, selectedTicketId });
   const selectedTicket = tickets.find((ticket) => ticket.id === selectedTicketId);
   const selectedTicketStatus = selectedTicket?.status;
   const selectedTicketIsDone =

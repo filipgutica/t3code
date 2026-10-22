@@ -324,23 +324,40 @@ describe("Workbench Jira transition query cache", () => {
     Effect.scoped(
       Effect.gen(function* () {
         const environment = yield* getWorkbenchEnvironment();
+        const refreshStarted = yield* Deferred.make<void>();
         const id = ++nextId;
         const environmentId = EnvironmentId.make(`jira-stale-environment-${id}`);
         const ticketId = WorkbenchTicketId.make(`jira-stale-ticket-${id}`);
         const revision = "2026-09-10T03:00:00.000Z";
         const first = transitionResult(revision, "Start work");
         const updated = transitionResult(revision, "Continue work");
-        let resolveRefresh!: (value: WorkbenchJiraGetTicketTransitionsResult) => void;
-        const refresh = new Promise<WorkbenchJiraGetTicketTransitionsResult>((resolve) => {
-          resolveRefresh = resolve;
-        });
+        const refresh = yield* Deferred.make<WorkbenchJiraGetTicketTransitionsResult>();
         testModules.request
           .mockReturnValueOnce(Effect.succeed(first))
-          .mockReturnValueOnce(Effect.promise(() => refresh));
+          .mockReturnValueOnce(
+            Deferred.succeed(refreshStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(refresh)),
+            ),
+          );
 
         const atom = target(environment, environmentId, ticketId, revision);
-        const registry = AtomRegistry.make();
+        const tasks = new Set<() => void>();
+        const registry = AtomRegistry.make({
+          scheduleTask: (task) => {
+            tasks.add(task);
+            return () => {
+              tasks.delete(task);
+            };
+          },
+        });
+        const flush = () => {
+          for (const task of tasks) {
+            tasks.delete(task);
+            task();
+          }
+        };
         let unmount = registry.mount(atom);
+        flush();
         let dateNowSpy: ReturnType<typeof vi.spyOn> | undefined;
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => {
@@ -357,11 +374,12 @@ describe("Workbench Jira transition query cache", () => {
         if (cached._tag !== "Success")
           return yield* Effect.die("Expected cached Jira transitions.");
         unmount();
-        yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
+        flush();
         const staleNow = cached.timestamp + 30_001;
         dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(staleNow);
         unmount = registry.mount(atom);
-        yield* Effect.yieldNow;
+        flush();
+        yield* Deferred.await(refreshStarted);
         expect(testModules.request).toHaveBeenCalledTimes(2);
         expect(registry.get(atom)).toMatchObject({
           _tag: "Success",
@@ -369,7 +387,8 @@ describe("Workbench Jira transition query cache", () => {
           waiting: true,
         });
 
-        resolveRefresh(updated);
+        yield* Deferred.succeed(refresh, updated);
+        flush();
         expect(yield* AtomRegistry.getResult(registry, atom, { suspendOnWaiting: true })).toEqual(
           updated,
         );

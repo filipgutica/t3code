@@ -1,6 +1,6 @@
-import { act, type ReactElement } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { expect, it, vi } from "vite-plus/test";
+
+import { render } from "../../../test/render";
 
 // Atoms derived from the server config run in the real registry over a missing config.
 vi.mock(import("../../state/server"), async (original) => {
@@ -36,31 +36,6 @@ vi.mock(import("../../components/chat/MermaidDiagram"), async (original) => ({
 
 import ChatMarkdown, { ChatMarkdownCodeBlockRendererContext } from "../../components/ChatMarkdown";
 
-const roots: Root[] = [];
-
-beforeEach(() => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-});
-
-afterEach(async () => {
-  for (const root of roots.splice(0)) await act(async () => root.unmount());
-  document.body.replaceChildren();
-  CSS.highlights.clear();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
-
-async function render(element: ReactElement) {
-  const container = document.body.appendChild(document.createElement("div"));
-  const root = createRoot(container);
-  roots.push(root);
-  await act(async () => root.render(element));
-  return {
-    container,
-    rerender: (next: ReactElement) => act(async () => root.render(next)),
-  };
-}
-
 it("renders opted-in assistant blocks while preserving surrounding text and ordinary code", async () => {
   const text =
     "Before.\n\n```proposal\nstructured payload\n```\n\nAfter.\n\n```text\nordinary code\n```";
@@ -82,7 +57,8 @@ it("renders opted-in assistant blocks while preserving surrounding text and ordi
       />
     </ChatMarkdownCodeBlockRendererContext>
   );
-  const { container, rerender } = await render(message("assistant", true));
+  await using screen = await render(message("assistant", true));
+  const { container, rerender } = screen;
   expect(container.querySelector("section")?.textContent).toBe("Preparing proposal");
   await rerender(message("assistant"));
   expect(container.querySelector("section")?.textContent).toBe("structured payload\n");

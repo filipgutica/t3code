@@ -45,19 +45,15 @@ function ReleaseNotesLink({
   );
 }
 
-export function showDesktopUpdateDownloadedToast({
-  shell,
-  state,
-  releaseLinks,
-}: {
-  readonly shell: DesktopUpdateShell;
-  readonly state: DesktopUpdateState;
-  readonly releaseLinks?: DesktopReleaseLinks | undefined;
-}): void {
-  const releaseUrl = getDesktopUpdateReleaseUrl(
-    getDesktopUpdateDownloadedVersion(state),
-    releaseLinks,
-  );
+export function showDesktopUpdateDownloadedToast(
+  shell: DesktopUpdateShell,
+  state: DesktopUpdateState,
+  releaseLinks?: DesktopReleaseLinks,
+): void {
+  const version = getDesktopUpdateDownloadedVersion(state)?.trim();
+  const releaseUrl = version
+    ? (releaseLinks?.releaseUrl(version) ?? getDesktopUpdateReleaseUrl(version))
+    : null;
   toastManager.add({
     type: "success",
     title: "Update downloaded",

@@ -1,4 +1,5 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@t3tools/client-runtime/state/threads";
 import {
   EnvironmentId,
   ProjectId,
@@ -228,8 +229,8 @@ describe("coordinateWorkbenchTicketStart", () => {
       projectId: secondaryId,
       worktreePath: "/worktrees/ticket-one/api",
     });
-    expect(comments[0]?.diff).toContain("API (primary) — /worktrees/ticket-one/api");
-    expect(comments[0]?.diff).toContain("T3 Code — /worktrees/ticket-one/t3code");
+    expect(comments[0]?.diff).toContain("API (primary) · /worktrees/ticket-one/api");
+    expect(comments[0]?.diff).toContain("T3 Code · /worktrees/ticket-one/t3code");
   });
 
   it("does not prepare repositories or create a Thread when the reviewed scope cannot be saved", async () => {
@@ -306,6 +307,7 @@ describe("coordinateWorkbenchTicketStart", () => {
           bootstrapComplete: true,
           serverThreadExists: shellExists,
           serverThreadDeleted: false,
+          unlistedThreadDetail: EMPTY_ENVIRONMENT_THREAD_STATE,
           draftThreadExists: false,
         });
       },

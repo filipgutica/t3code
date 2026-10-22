@@ -35,7 +35,7 @@ function TicketPullRequestPreview({
           {pullRequest.state
             ? ` · ${pullRequest.state === "open" && pullRequest.isDraft ? "draft" : pullRequest.state}`
             : ""}
-          {pullRequest.title ? ` — ${pullRequest.title}` : ""}
+          {pullRequest.title ? ` · ${pullRequest.title}` : ""}
         </p>
       ))}
     </div>

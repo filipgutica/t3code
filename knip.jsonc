@@ -12,24 +12,37 @@
         // CodeRabbit loads its configuration by filename.
         ".coderabbit.config.ts",
         ".github/scripts/thread-transfer-report.cjs",
+        // Archived upstream release workflows invoke this mirror by filename.
+        ".github/scripts/mirror-play-apk.cjs",
       ],
       "vite": { "entry": [".github/**/*.test.cjs"] },
       "vitest": { "entry": [".github/**/*.test.cjs"] },
     },
     "scripts": {
       // Knip loads its preprocessor through a CLI option; native verification and
-      // worktree setup (from t3.json) run directly.
+      // worktree setup (from t3.json) run directly. release-desktop.yml bundles the
+      // Windows verify script with esbuild through a path knip does not trace, and
+      // electron-builder loads the macOS signer by path.
       "entry": [
+        // These fixture scripts are injected into a browser page by path.
+        "fixtures/issue-16534/*.js",
         "knip-schemas.ts",
         "mobile-native-client.ts",
+        // Release smoke invokes the retained nightly resolver by filename.
+        "resolve-nightly-release.ts",
         "setup-worktree.ts",
+        "sign-macos.ts",
+        "verify-windows-desktop-artifact.ts",
         // Docker and Vercel Sandbox invoke the disposable preview runtime directly.
         "workbench-preview/start.mts",
         // Disposable startup invokes this credential-free CLI adapter by filename.
         "workbench-demo/gh-attention.mjs",
+        // The attention demo loads this transport as a Node preload by file URL.
+        "workbench-demo/attention-fetch.mjs",
         // CI invokes the Workbench browser suite through Playwright's config path.
         "workbench-regression/playwright.config.ts",
       ],
+      "ignoreDependencies": ["esbuild"],
       // The `t3` npm package's files: copied into the package, never imported.
       "ignore": ["npm-launcher/**"],
     },
@@ -40,12 +53,17 @@
         "src/claude-history-worker.ts!",
         "scripts/cli.ts",
         "scripts/evaluate-thread-titles.ts",
+        "scripts/fetch-expo-schema.ts",
         "scripts/measure-pr-preview.ts",
         "scripts/probe-claude-fork-local-rollback-replay.ts",
         "scripts/update-test-shard-weights.ts",
         "scripts/verify-background-live.ts",
         "src/provider/testFixtures/*.mjs",
+        // graphqlgen reads its config.
+        "graphql.config.ts",
       ],
+      // The generated operations export every selection's class.
+      "ignoreIssues": { "**/*.graphql.ts": ["exports", "types", "namespaceMembers"] },
       // Keep the transitive Effect runtime pinned for standalone npm installs.
       // The Vite+ web build prerequisite.
       // Native and disk-loaded provider packages stay external to the bundle; the
@@ -74,12 +92,17 @@
       "ignoreDependencies": ["playwright-core", "electron-builder"],
     },
     "apps/web": {
-      // Worktree setup (scripts/setup-worktree.ts) runs this directly.
-      "entry": ["scripts/warm-dep-cache.ts"],
+      // Worktree setup (scripts/setup-worktree.ts) runs this directly, and evidence
+      // fixtures run under node.
+      "entry": ["scripts/warm-dep-cache.ts", "test/fixtures/**/*.mjs"],
       // UI component modules are copied and adapted as cohesive sets. Keep their
       // named subcomponents even before they have callers; the file audit still
       // reports an entire component module when nothing imports it.
       "ignoreIssues": { "src/components/ui/*.tsx": ["exports", "nsExports", "duplicates"] },
+    },
+    "apps/marketing": {
+      // `astro check` runs from the typecheck task in vite.config.ts, which knip does not read.
+      "ignoreDependencies": ["@astrojs/check"],
     },
     "apps/mobile": {
       // Expo loads plugins and the fingerprint config by string; Metro embeds the browser entry in the native WebView.

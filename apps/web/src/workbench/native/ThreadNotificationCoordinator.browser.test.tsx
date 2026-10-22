@@ -1,9 +1,9 @@
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
-import { act } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
+
+import { render, stubGlobal } from "../../../test/render";
 
 const state = vi.hoisted(() => ({
   mode: "off" as ClientSettings["notificationMode"],
@@ -129,28 +129,19 @@ vi.mock(import("../../components/ui/toast"), async (original) => {
 import { ThreadNotificationCoordinator } from "../../components/ThreadNotificationCoordinator";
 import { ThreadPresentationPolicyContext } from "../../hostIntegrations";
 
-let root: Root;
-
-async function render() {
-  await act(() =>
-    root.render(
-      <ThreadPresentationPolicyContext
-        value={
-          state.notificationsSuppressed ? { isVisible: () => false, canNotify: () => false } : null
-        }
-      >
-        <ThreadNotificationCoordinator />
-      </ThreadPresentationPolicyContext>,
-    ),
+function coordinator() {
+  return (
+    <ThreadPresentationPolicyContext
+      value={
+        state.notificationsSuppressed ? { isVisible: () => false, canNotify: () => false } : null
+      }
+    >
+      <ThreadNotificationCoordinator />
+    </ThreadPresentationPolicyContext>
   );
 }
 
-async function complete() {
-  state.completedAt = "2026-09-13T10:00:00.000Z";
-  await render();
-}
-
-beforeEach(() => {
+function setup() {
   state.notificationsSuppressed = false;
   vi.clearAllMocks();
   Object.assign(state, {
@@ -170,33 +161,33 @@ beforeEach(() => {
     subagent: false,
     background: [],
   });
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.spyOn(document, "visibilityState", "get").mockImplementation(
-    () => state.visible as DocumentVisibilityState,
+  const disposables = new DisposableStack();
+  disposables.use(
+    vi
+      .spyOn(document, "visibilityState", "get")
+      .mockImplementation(() => state.visible as DocumentVisibilityState),
   );
-  vi.spyOn(document, "hasFocus").mockImplementation(() => state.focused);
-  vi.stubGlobal("Notification", Object.assign(state.notification, { permission: "granted" }));
-  root = createRoot(document.createElement("div"));
-});
-
-afterEach(async () => {
-  await act(() => root.unmount());
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
+  disposables.use(vi.spyOn(document, "hasFocus").mockImplementation(() => state.focused));
+  disposables.use(
+    stubGlobal("Notification", Object.assign(state.notification, { permission: "granted" })),
+  );
+  return disposables;
+}
 
 describe("thread notifications", () => {
   it.each([
     { kind: "notificationsSuppressed" as const, focused: true },
     { kind: "notificationsSuppressed" as const, focused: false },
   ])("keeps $kind silent with focus=$focused", async ({ kind, focused }) => {
+    using _state = setup();
     state[kind] = true;
     state.focused = focused;
     state.mode = "notifications-and-sound";
-    await render();
-    await complete();
+    await using screen = await render(coordinator(), { router: false });
+    state.completedAt = "2026-09-13T10:00:00.000Z";
+    await screen.rerender(coordinator());
     state.input = true;
-    await render();
+    await screen.rerender(coordinator());
     expect(state.sound).not.toHaveBeenCalled();
     expect(state.add).not.toHaveBeenCalled();
     expect(state.notification).not.toHaveBeenCalled();

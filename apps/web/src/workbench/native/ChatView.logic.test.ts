@@ -46,12 +46,7 @@ describe("proactive panels", () => {
 
     const threadEnvironmentId = EnvironmentId.make("local");
     const retarget = (next: typeof current | null, selected: RightPanelSurface = surface) =>
-      shouldRetargetThreadPullRequestPanel({
-        previous,
-        current: next,
-        surface: selected,
-        threadEnvironmentId,
-      });
+      shouldRetargetThreadPullRequestPanel(previous, next, selected, threadEnvironmentId);
     expect(retarget(current, { ...surface, environmentId: "local" })).toBe(true);
     expect(retarget(current, { ...surface, environmentId: "remote" })).toBe(false);
   });
