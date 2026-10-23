@@ -344,7 +344,10 @@ describe("Workbench Board view", () => {
     expect(context.titles()).toEqual([waiting.title]);
     await expect
       .element(
-        context.screen.getByRole("button", { name: "Waiting for input needs attention: Approval" }),
+        context.screen.getByRole("button", {
+          name: "Approval, Waiting for input needs attention: Approval",
+          exact: true,
+        }),
       )
       .toBeVisible();
   });

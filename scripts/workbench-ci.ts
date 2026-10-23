@@ -383,7 +383,14 @@ try {
     } else if (command === "--run-tests") {
       for (const [name, files] of tests) {
         process.stdout.write(`${name}: ${files.length} owned/integration test files\n`);
-        run("vp", ["run", "--filter", name, "test", ...files]);
+        run("vp", [
+          "run",
+          "--filter",
+          name,
+          "test",
+          ...(name === "@t3tools/web" ? ["--reporter=verbose"] : []),
+          ...files,
+        ]);
       }
     } else if (command === "--typecheck") {
       for (const name of Object.values(policy.packages))

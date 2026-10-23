@@ -52,12 +52,29 @@ const classifyDiagnosticError = (error: Pick<Error, "name" | "message">) => {
       ? "dynamic-import"
       : /failed to fetch|failed to load module script|cannot find module/i.test(error.message)
         ? "fetch"
-        : name === "ReferenceError"
-          ? "reference"
-          : name === "TypeError"
-            ? "type"
-            : "other";
-  return { name, category };
+        : /PrimaryEnvironmentRequestError|Primary environment request failed/i.test(error.message)
+          ? "environment-request"
+          : /ParseError|SchemaError|schema.*decod|decod.*schema/i.test(error.message)
+            ? "schema-decode"
+            : /service not found|missing service|no service found/i.test(error.message)
+              ? "missing-service"
+              : /invalid hook call|rendered (?:more|fewer) hooks|useEffectEvent/i.test(
+                    error.message,
+                  )
+                ? "react-hooks"
+                : name === "ReferenceError" || /\bReferenceError\b/.test(error.message)
+                  ? "reference"
+                  : name === "TypeError" || /\bTypeError\b/.test(error.message)
+                    ? "type"
+                    : /error occurred in the|error boundary/i.test(error.message)
+                      ? "react-render"
+                      : "other";
+  const operation = [
+    "fetch-session-state",
+    "exchange-bootstrap-credential",
+    "fetch-environment-descriptor",
+  ].find((value) => error.message.includes(value));
+  return { name, category, ...(operation === undefined ? {} : { operation }) };
 };
 
 type Runtime = { pid: number; startedAt: string; devUrl: string };
@@ -250,7 +267,13 @@ export const prepareStartup = (input: {
         record({ kind: "page-error", ...classifyDiagnosticError(error) });
       });
       page.on("console", (message) => {
-        if (message.type() === "error") consoleErrors = Math.min(consoleErrors + 1, 10_000);
+        if (message.type() === "error") {
+          consoleErrors = Math.min(consoleErrors + 1, 10_000);
+          record({
+            kind: "console-error",
+            ...classifyDiagnosticError({ name: "Error", message: message.text() }),
+          });
+        }
       });
       page.on("response", (response) => {
         const path = safePath(response.url(), diagnosticHttpPaths);

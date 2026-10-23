@@ -114,11 +114,9 @@ vi.mock("../components/ui/tooltip", () => {
     TooltipPopup: Container,
   };
 });
-vi.mock("../components/ui/menu", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../components/ui/menu")>();
+vi.mock("../components/ui/menu", () => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
-    ...actual,
     Menu: Container,
     MenuGroup: Container,
     MenuRadioGroup: Container,
@@ -152,9 +150,10 @@ vi.mock("../components/ui/menu", async (importOriginal) => {
     ),
   };
 });
-vi.mock("../components/ui/button", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../components/ui/button")>()),
+vi.mock("../components/ui/button", () => ({
   Button: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
+  // Real style helpers pull the composer and menu graph back into this primitive mock.
+  buttonVariants: ({ className }: { className?: string } = {}) => className ?? "",
 }));
 vi.mock("../components/ui/dialog", () => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;

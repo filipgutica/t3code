@@ -43,9 +43,10 @@ const state = vi.hoisted(() => ({
   fetchSsh: vi.fn(),
   bootstrapSsh: vi.fn(),
 }));
-vi.mock("../components/ui/button", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../components/ui/button")>()),
+vi.mock("../components/ui/button", () => ({
   Button: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
+  // Real style helpers pull the composer and menu graph back into this primitive mock.
+  buttonVariants: ({ className }: { className?: string } = {}) => className ?? "",
 }));
 vi.mock("@effect/atom-react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@effect/atom-react")>();

@@ -9,61 +9,106 @@ import {
 } from "@t3tools/contracts";
 import { codexAuthHandoffUrl } from "@t3tools/shared/codexAuthHandoff";
 import { useEffect, type ReactNode } from "react";
-import { render as renderUI } from "../../test/render";
+import { act, render as renderUI } from "../../test/render";
 import { expect, it, vi } from "vite-plus/test";
 import { reviewCommentContextId } from "../lib/composerContextRecords";
 
-const state = vi.hoisted(() => ({
-  preparations: new Map<string, WorkbenchTicketPreparation>(),
-  refresh: vi.fn(),
-  failPolicy: false,
-  failPreview: false,
-  failSlot: false,
-}));
-vi.mock("./useWorkbenchTicketPreparations", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./useWorkbenchTicketPreparations")>()),
-  useWorkbenchTicketPreparations: () => {
-    if (state.failPolicy) throw new Error("Policy failed");
-    return state.preparations;
-  },
-  useWorkbenchTicketPreparationRefresh: () => state.refresh(),
-}));
-vi.mock("./WorkbenchPullRequestPreview", () => ({
-  WorkbenchPullRequestPreviewProvider: ({ children }: { readonly children: ReactNode }) => {
-    if (state.failPreview) throw new Error("Preview failed");
-    return children;
-  },
-}));
+// Browser components are compiled: drive their mocked inputs through a React
+// subscription rather than relying on an unrelated root rerender to observe mutation.
+const state = vi.hoisted(() => {
+  const initial = () => ({
+    preparations: new Map<string, WorkbenchTicketPreparation>(),
+    failPolicy: false,
+    failPreview: false,
+    failSlot: false,
+  });
+  let snapshot = initial();
+  const listeners = new Set<() => void>();
+  return {
+    refresh: vi.fn(),
+    getSnapshot: () => snapshot,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    update: (patch: Partial<typeof snapshot>) => {
+      snapshot = { ...snapshot, ...patch };
+      for (const listener of listeners) listener();
+    },
+    reset: () => {
+      snapshot = initial();
+      listeners.clear();
+    },
+  };
+});
+vi.mock("./useWorkbenchTicketPreparations", async (importOriginal) => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    ...(await importOriginal<typeof import("./useWorkbenchTicketPreparations")>()),
+    useWorkbenchTicketPreparations: () => {
+      const snapshot = useSyncExternalStore(state.subscribe, state.getSnapshot);
+      if (snapshot.failPolicy) throw new Error("Policy failed");
+      return snapshot.preparations;
+    },
+    useWorkbenchTicketPreparationRefresh: () => state.refresh(),
+  };
+});
+vi.mock("./WorkbenchPullRequestPreview", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    WorkbenchPullRequestPreviewProvider: ({ children }: { readonly children: ReactNode }) => {
+      const snapshot = useSyncExternalStore(state.subscribe, state.getSnapshot);
+      if (snapshot.failPreview) throw new Error("Preview failed");
+      return children;
+    },
+  };
+});
 // UI slots have their own interaction suites; this suite exercises installed policy
 // through native consumers without mounting a board or a live environment connection.
-vi.mock("./WorkbenchSidebarSlot", () => ({
-  WorkbenchSidebarSlot: ({ children }: { children: ReactNode }) => {
-    if (state.failSlot) throw new Error("Sidebar failed");
-    return children;
-  },
-}));
+vi.mock("./WorkbenchSidebarSlot", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    WorkbenchSidebarSlot: ({ children }: { children: ReactNode }) => {
+      const snapshot = useSyncExternalStore(state.subscribe, state.getSnapshot);
+      if (snapshot.failSlot) throw new Error("Sidebar failed");
+      return children;
+    },
+  };
+});
 vi.mock("./WorkbenchSidebarUtilityItem", () => ({ WorkbenchSidebarUtilityItem: () => null }));
-vi.mock("./WorkbenchThreadBreadcrumb", () => ({
-  WorkbenchThreadBreadcrumb: () => {
-    if (state.failSlot) throw new Error("Slot failed");
-    return <span>Workbench breadcrumb</span>;
-  },
-}));
-vi.mock("./WorkbenchThreadPreparationGate", () => ({
-  WorkbenchThreadPreparationGate: ({ children }: { children: ReactNode }) => {
-    if (state.failSlot) throw new Error("Route failed");
-    return children;
-  },
-}));
+vi.mock("./WorkbenchThreadBreadcrumb", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    WorkbenchThreadBreadcrumb: () => {
+      const snapshot = useSyncExternalStore(state.subscribe, state.getSnapshot);
+      if (snapshot.failSlot) throw new Error("Slot failed");
+      return <span>Workbench breadcrumb</span>;
+    },
+  };
+});
+vi.mock("./WorkbenchThreadPreparationGate", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    WorkbenchThreadPreparationGate: ({ children }: { children: ReactNode }) => {
+      const snapshot = useSyncExternalStore(state.subscribe, state.getSnapshot);
+      if (snapshot.failSlot) throw new Error("Route failed");
+      return children;
+    },
+  };
+});
 vi.mock("./WorkbenchComposerPendingReviewComments", () => ({
   WorkbenchComposerPendingReviewComments: () => null,
 }));
-vi.mock("./useWorkbenchCommandPaletteActions", () => ({
-  useWorkbenchCommandPaletteActions: () => {
-    if (state.failSlot) throw new Error("Command palette failed");
-    return [];
-  },
-}));
+vi.mock("./useWorkbenchCommandPaletteActions", async () => {
+  const { useSyncExternalStore } = await import("react");
+  return {
+    useWorkbenchCommandPaletteActions: () => {
+      const snapshot = useSyncExternalStore(state.subscribe, state.getSnapshot);
+      if (snapshot.failSlot) throw new Error("Command palette failed");
+      return [];
+    },
+  };
+});
 vi.mock("./state", () => ({ workbenchEnvironment: { ticketPreparations: vi.fn() } }));
 vi.mock("./workbenchOutdatedServerDescriptor", () => ({
   workbenchOutdatedServerDescriptor: vi.fn(),
@@ -128,10 +173,7 @@ async function setup() {
   vi.stubEnv("VITE_T3CODE_WORKBENCH_BUILD", "true");
   // CI supplies GITHUB_REPOSITORY; pin the native baseline independently of that ambient override.
   vi.stubEnv("T3CODE_DESKTOP_UPDATE_REPOSITORY", "");
-  state.preparations = new Map();
-  state.failPolicy = false;
-  state.failPreview = false;
-  state.failSlot = false;
+  state.reset();
   state.refresh.mockClear();
   try {
     const [host, provider, composer, notes] = await Promise.all([
@@ -251,23 +293,31 @@ it("updates scoped native lists through preparation promotion without repainting
     </>
   );
   const view = () => <provider.WorkbenchHostProvider>{children}</provider.WorkbenchHostProvider>;
-  state.preparations = new Map([[key, preparation]]);
+  state.update({ preparations: new Map([[key, preparation]]) });
   // This provider-policy case has no navigation consumer or router dependency.
   await using screen = await renderUI(view(), { router: false });
   expect(Array.from(screen.container.querySelectorAll("li"), (item) => item.textContent)).toEqual([
     "two",
   ]);
   const initialStaticRenders = onStaticRender.mock.calls.length;
-  state.preparations = new Map([
-    [key, { ...preparation, ticketId: WorkbenchTicketId.make("saved"), phase: "planning" }],
-  ]);
+  await act(() =>
+    state.update({
+      preparations: new Map([
+        [key, { ...preparation, ticketId: WorkbenchTicketId.make("saved"), phase: "planning" }],
+      ]),
+    }),
+  );
   await screen.rerender(view());
   expect(Array.from(screen.container.querySelectorAll("li"), (item) => item.textContent)).toEqual([
     "two",
   ]);
-  state.preparations = new Map([
-    [key, { ...preparation, ticketId: WorkbenchTicketId.make("saved"), phase: "working" }],
-  ]);
+  await act(() =>
+    state.update({
+      preparations: new Map([
+        [key, { ...preparation, ticketId: WorkbenchTicketId.make("saved"), phase: "working" }],
+      ]),
+    }),
+  );
   await screen.rerender(view());
   expect(Array.from(screen.container.querySelectorAll("li"), (item) => item.textContent)).toEqual([
     "one",
@@ -420,7 +470,7 @@ it.each(["slot", "preview", "policy"])(
     using scope = await setup();
     const { host, provider } = scope;
     using _errors = vi.spyOn(console, "error").mockImplementation(() => {});
-    state.preparations = new Map([[key, preparation]]);
+    state.update({ preparations: new Map([[key, preparation]]) });
     function NativeUI() {
       const visible = host.useVisibleThreads(threads);
       const policy = host.useThreadPresentationPolicy();
@@ -450,9 +500,13 @@ it.each(["slot", "preview", "policy"])(
     );
     // Every route-aware slot is replaced above; this case tests only error containment.
     await using screen = await renderUI(view(), { router: false });
-    state.failSlot = failure === "slot";
-    state.failPreview = failure === "preview";
-    state.failPolicy = failure === "policy";
+    await act(() =>
+      state.update({
+        failSlot: failure === "slot",
+        failPreview: failure === "preview",
+        failPolicy: failure === "policy",
+      }),
+    );
     await screen.rerender(view());
     expect(screen.container.textContent).toContain("Native conversation");
     expect(screen.container.textContent).toContain("Native sidebar");
