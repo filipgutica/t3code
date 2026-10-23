@@ -172,9 +172,9 @@ jobs:
 
       - name: Verify simulated Workbench regressions
         if: steps.preview.outputs.proceed == 'true'
+        # Unbundled dev: upstream's bundled dev (T3CODE_BUNDLED_DEV) crashes on first load with
+        # `factory.fn is not a function` as of 52bb5c8.
         working-directory: scripts
-        env:
-          T3CODE_BUNDLED_DEV: "1"
         run: vp exec playwright test --config workbench-regression/playwright.config.ts
 
       - name: Bundle the verified merge

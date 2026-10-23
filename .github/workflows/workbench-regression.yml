@@ -49,9 +49,9 @@ jobs:
           vp exec tsc --noEmit -p scripts/workbench-regression/tsconfig.json
           vp lint scripts/workbench-regression --report-unused-disable-directives
       - name: Run browser regressions
+        # Unbundled dev: upstream's bundled dev (T3CODE_BUNDLED_DEV) crashes on first load with
+        # `factory.fn is not a function` as of 52bb5c8.
         working-directory: scripts
-        env:
-          T3CODE_BUNDLED_DEV: "1"
         run: vp exec playwright test --config workbench-regression/playwright.config.ts --shard=${{ matrix.shard }}/3
       - name: Upload browser evidence
         if: failure()
