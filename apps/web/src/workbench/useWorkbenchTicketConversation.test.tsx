@@ -542,8 +542,8 @@ describe("useTicketDraftTransitions", () => {
       expect(composer?.prompt).toMatch(/^Keep my unsent request /);
       expect(composer?.reviewComments).toHaveLength(1);
       expect(composer?.reviewComments[0]?.diff).toContain("Requirements revised after promotion");
-      expect(composer?.reviewComments[0]?.diff).toContain("Docs (primary) — /prepared/docs");
-      expect(composer?.reviewComments[0]?.diff).toContain("API — /prepared/repo");
+      expect(composer?.reviewComments[0]?.diff).toContain("Docs (primary): /prepared/docs");
+      expect(composer?.reviewComments[0]?.diff).toContain("API: /prepared/repo");
       expect(composer?.reviewComments[0]?.diff).not.toContain("/source/");
     });
     try {

@@ -43,7 +43,7 @@ export function attachWorkbenchTicketContext(input: {
         "",
         "## Current Thread checkout",
         "",
-        `${threadProject?.title ?? thread.projectId} — ${checkout}`,
+        `${threadProject?.title ?? thread.projectId}: ${checkout}`,
       ].join("\n"),
     },
     projects.map((project) => ({

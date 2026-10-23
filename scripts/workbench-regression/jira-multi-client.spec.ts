@@ -5,8 +5,6 @@ import { validateJiraBaseline } from "../workbench-demo/remotes.mts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 import { JiraHttpClient, createJiraRegressionSuffix, type JiraSprint } from "./jira-http.mts";
 
-const live = process.env.WORKBENCH_REGRESSION_LIVE === "1";
-
 const jiraConfig = (home: string) => {
   const config = readConfig(home);
   const site = config.DEMO_JIRA_SITE_URL?.trim();
@@ -84,8 +82,6 @@ const liveJira = async (demo: Demo) => {
 };
 
 test.describe("Jira multi-sprint selection and client conflicts @live", () => {
-  test.skip(!live, "Live Jira regression is opt-in (WORKBENCH_REGRESSION_LIVE=1).");
-
   test("J9 maps a future sprint with the original sprint and restores Ticket identity", async ({
     page,
     demo,

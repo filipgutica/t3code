@@ -814,7 +814,11 @@ it.effect(
       const admitted = yield* invokeWorktreeDelegation("working-worktree-admitted");
       assert.isFalse(admitted.isError ?? false);
       const delegated = yield* decodeDelegateTaskResult(admitted.structuredContent);
-      assert.deepEqual(headLookups, [{ cwd: worktreePath, revision: "HEAD" }]);
+      assert.deepEqual(headLookups, [
+        { cwd: worktreePath, revision: "HEAD" },
+        // Native delegation checks that the project root contains the parent checkout's commit.
+        { cwd: process.cwd(), revision: baseCommit },
+      ]);
       assert.isNotNull(delegated.childThreadId);
       if (delegated.childThreadId === null) return yield* Effect.die("Missing delegated child");
       const child = yield* threads.getThreadProjection(delegated.childThreadId);

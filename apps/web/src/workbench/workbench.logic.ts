@@ -349,13 +349,13 @@ export function buildTicketThreadContext(
     const repository = repositoriesById.get(repositoryId);
     const title = repository?.title ?? repositoryId;
     const workspaceRoot = repository?.workspaceRoot ?? "Repository unavailable";
-    return `- ${title}${repositoryId === ticket.primaryT3ProjectId ? " (primary)" : ""} — ${workspaceRoot}`;
+    return `- ${title}${repositoryId === ticket.primaryT3ProjectId ? " (primary)" : ""}: ${workspaceRoot}`;
   });
   return [
     `# ${ticket.title}`,
     "",
     `Ticket type: ${getWorkbenchTicketTypeLabel({ kind: ticket.kind, jiraIssue: ticket.jiraIssue })}`,
-    ...(parent ? [`Parent: ${parent.key}${parent.summary ? ` — ${parent.summary}` : ""}`] : []),
+    ...(parent ? [`Parent: ${parent.key}${parent.summary ? `: ${parent.summary}` : ""}`] : []),
     "",
     "## Repository scope",
     "",

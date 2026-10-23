@@ -12,7 +12,6 @@ import type { Page } from "@playwright/test";
 import { readConfig } from "../workbench-demo/environment.mts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 
-const live = process.env.WORKBENCH_REGRESSION_LIVE === "1";
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const jiraSite = (home: string) => {
@@ -152,8 +151,6 @@ const openSyncMenu = async (page: Page, demo: Demo, projectId: string) => {
 };
 
 test.describe("Jira connection UX @live", () => {
-  test.skip(!live, "Live Jira regression is opt-in (WORKBENCH_REGRESSION_LIVE=1).");
-
   test("J1: creating a Jira mirror automatically imports tickets and reports the result", async ({
     page,
     demo,

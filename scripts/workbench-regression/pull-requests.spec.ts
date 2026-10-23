@@ -17,8 +17,6 @@ type PullRequestLink = {
   } | null;
 };
 
-const live = process.env.WORKBENCH_REGRESSION_LIVE === "1";
-
 const nativeThreadRoute = async (home: string, threadId: string): Promise<string> => {
   const environmentId = (await NodeFSP.readFile(`${home}/userdata/environment-id`, "utf8")).trim();
   if (!environmentId) throw new Error("The live demo has no environment ID.");
@@ -103,8 +101,6 @@ const setLink = async ({
 };
 
 test.describe("Pull request integration @live", () => {
-  test.skip(!live, "Live pull request regression is opt-in (WORKBENCH_REGRESSION_LIVE=1).");
-
   test("P1: links and unlinks a real GitHub PR from a native Thread", async ({ page, demo }) => {
     const { links } = await requireDemoLinks(demo);
     const first = links[0]!;

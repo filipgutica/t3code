@@ -28,6 +28,9 @@ it.each(["real file", "directory", "missing", "broken symlink", "main checkout",
       const warmScript = NodePath.join(checkout, "apps", "web", "scripts", "warm-dep-cache.ts");
       NodeFS.mkdirSync(NodePath.dirname(warmScript), { recursive: true });
       NodeFS.writeFileSync(warmScript, "process.exit(0);\n");
+      // The stub install writes no pnpm state; setup reads it to compare store devices.
+      NodeFS.mkdirSync(NodePath.join(checkout, "node_modules"), { recursive: true });
+      NodeFS.writeFileSync(NodePath.join(checkout, "node_modules", ".modules.yaml"), "{}\n");
       NodeFS.writeFileSync(
         NodePath.join(bin, windows ? "vp.cmd" : "vp"),
         windows ? "@exit /b 0\r\n" : "#!/bin/sh\nexit 0\n",

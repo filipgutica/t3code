@@ -356,8 +356,12 @@ describe("Workbench Jira transition query cache", () => {
         const cached = registry.get(atom);
         if (cached._tag !== "Success")
           return yield* Effect.die("Expected cached Jira transitions.");
+        const observerRemoved = yield* Deferred.make<void>();
+        registry.onNodeRemoved = (node) => {
+          if (node.atom === atom) Deferred.doneUnsafe(observerRemoved, Effect.void);
+        };
         unmount();
-        yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
+        yield* Deferred.await(observerRemoved);
         const staleNow = cached.timestamp + 30_001;
         dateNowSpy = vi.spyOn(Date, "now").mockReturnValue(staleNow);
         unmount = registry.mount(atom);

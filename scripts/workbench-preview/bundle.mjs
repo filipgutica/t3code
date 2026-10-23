@@ -20,7 +20,7 @@ const child = NodeChildProcess.spawn(
       "cp /usr/local/bin/gh /tmp/workbench-bundle/node-bin/gh",
       "cp -a /usr/local/lib/node_modules/opencode-ai /tmp/workbench-bundle/opencode",
       "ln -s ../opencode/bin/opencode.exe /tmp/workbench-bundle/node-bin/opencode",
-      "tar --exclude=app/node_modules/.tmp -czf - -C / app -C /tmp/workbench-bundle node-bin opencode",
+      "tar --exclude=app/node_modules/.tmp --exclude=app/node_modules/.pnpm-workspace-state-v1.json -czf - -C / app -C /tmp/workbench-bundle node-bin opencode",
     ].join(" && "),
   ],
   { stdio: ["ignore", "pipe", "inherit"] },

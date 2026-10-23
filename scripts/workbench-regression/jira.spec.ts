@@ -9,8 +9,6 @@ import {
   type JiraIssue,
 } from "./jira-http.mts";
 
-const live = process.env.WORKBENCH_REGRESSION_LIVE === "1";
-
 const jiraConfig = (home: string) => {
   const config = readConfig(home);
   const site = config.DEMO_JIRA_SITE_URL?.trim();
@@ -73,8 +71,6 @@ const restoreIssue = async (client: JiraHttpClient, issue: JiraIssue): Promise<v
 };
 
 test.describe("Jira Workbench integration @live", () => {
-  test.skip(!live, "Live Jira regression is opt-in (WORKBENCH_REGRESSION_LIVE=1).");
-
   test("J2 imports selected sprint issues once and preserves repository scope", async ({
     page,
     demo,
@@ -288,9 +284,8 @@ test.describe("Jira Workbench integration @live", () => {
       const link = jira.issueLinks.find(
         (candidate) => candidate.ticketId === ticket?.id && candidate.active,
       );
-      expect(link).toBeDefined();
-      key = link?.issue.key;
-      if (!key) throw new Error("Workbench created a Ticket without a Jira issue link.");
+      if (!link) throw new Error("Workbench created a Ticket without a Jira issue link.");
+      key = link.issue.key;
       await client.updateIssue(key, { labels: [JIRA_REGRESSION_CLEANUP_LABEL] });
       expect(ticket?.primaryT3ProjectId).toBe("orbit-api");
       expect(ticket?.repositoryProjectIds).toEqual(["orbit-api"]);
@@ -299,7 +294,12 @@ test.describe("Jira Workbench integration @live", () => {
       expect(issue.description).toBe(description);
       expect(issue.labels).toContain("workbench-regression");
       expect(issue.assigneeAccountId).toBe(await client.currentUserAccountId());
-      expect(await client.sprintIssueKeys(binding.sprintId)).toContain(key);
+      expect(
+        await client.sprintIssueKeys(binding.sprintId, {
+          boardId: binding.boardId,
+          issueId: link.issue.issueId,
+        }),
+      ).toContain(key);
     } finally {
       const keys = key
         ? [key]

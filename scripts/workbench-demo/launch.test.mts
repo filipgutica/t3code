@@ -28,7 +28,11 @@ import { launchDemo } from "./launch.mts";
 // The backend keeps the launcher's inherited output pipes until it is released.
 const descendantSource = `
   process.on('SIGTERM', () => {});
-  process.stdin.once('data', () => {
+  process.stdin.on('data', (data) => {
+    if (data.toString().trim() === 'check') {
+      process.stdout.write('backend still running\\n');
+      return;
+    }
     process.stdout.write('backend shutdown complete\\n', () => process.exit(0));
   });
   process.send('ready');
@@ -86,9 +90,15 @@ test.skipIf(HostProcess.Platform.defaultValue() === "win32").each([false, true])
         stopCompleted = true;
       });
       await launcherExited;
-      // A fresh I/O turn lets stop's exit continuation run before releasing the
-      // backend. This is an event-loop boundary, not a shutdown delay.
-      await new Promise<void>((resolve) => setImmediate(resolve));
+      // A backend reply proves its inherited output pipe is still open after
+      // the launcher's exit continuations have run.
+      NodeAssert.ok(child.stdout);
+      const backendReply = NodeEvents.EventEmitter.once(child.stdout, "data");
+      const pipe = child.stdio[3];
+      NodeAssert.ok(pipe && "write" in pipe);
+      pipe.write("check\n");
+      const [reply] = await backendReply;
+      NodeAssert.match(reply.toString(), /backend still running/);
       NodeAssert.equal(stopCompleted, false);
       await release();
       await stopped;

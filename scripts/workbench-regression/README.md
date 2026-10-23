@@ -65,9 +65,10 @@ GitHub branches and PRs are read, not reset. The public Orbit revisions are pinn
 Beacon repositories are synthetic. Temporary homes remain available for diagnosis.
 Snapshot checks reuse one short-lived RPC credential per worker, while each check
 still reads current server state. The credential is revoked before server shutdown.
-CI enables the existing bundled-dev mode to reduce source-module loading costs.
-Use `T3CODE_BUNDLED_DEV=1` with the local browser command to reproduce that mode;
-set it to `0` to compare unbundled development behavior.
+CI runs unbundled dev because bundled dev (`T3CODE_BUNDLED_DEV=1`) fails on first load
+with `factory.fn is not a function` on vite-plus 1.3, which serves the dev runtime from
+whichever `rolldown` pnpm hoists. vite-plus 1.4 fixes this; re-enable bundled dev in the
+regression workflows after an upstream sync brings that version.
 
 ## GitHub Actions setup
 

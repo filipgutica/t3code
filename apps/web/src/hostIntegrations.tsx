@@ -63,7 +63,6 @@ export interface HostIntegrations {
   readonly ThreadBreadcrumb?: ComponentType<ThreadBreadcrumbProps>;
   readonly PendingReviewAttachments?: ComponentType<PendingReviewAttachmentsProps>;
   readonly CommandPaletteContributions?: ComponentType<CommandPaletteContributionsProps>;
-  readonly isSidebarUtilityPage?: (pathname: string) => boolean;
   readonly isReviewCommentReferenceHidden?: (comment: ReviewCommentContext) => boolean;
   readonly reviewCommentTitle?: (comment: ReviewCommentContext) => string | null;
   readonly desktopReleaseLinks?: DesktopReleaseLinks;

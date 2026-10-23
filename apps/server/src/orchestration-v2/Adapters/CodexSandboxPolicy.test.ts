@@ -286,6 +286,11 @@ describe("Codex read-only sandbox integration", () => {
         const nativeThreadId = `native-${scenario}`;
         const endpoint = "http://127.0.0.1:43123/mcp";
         const authorization = "Bearer readonly-protocol-token";
+        const t3Server = {
+          url: endpoint,
+          tool_timeout_sec: 3900,
+          http_headers: { Authorization: authorization },
+        };
         const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
         if (nativeMcp)
           yield* mcpSessions.set({
@@ -318,20 +323,18 @@ describe("Codex read-only sandbox integration", () => {
                   "features.multi_agent": false,
                 }
               : {}),
-            mcp_servers: {
-              ...(isolateIntegrations
-                ? { jira: { enabled: false }, "github.external": { enabled: false } }
+            // Native config adds T3's server by dotted key; isolation replaces the whole table.
+            ...(isolateIntegrations
+              ? {
+                  mcp_servers: {
+                    jira: { enabled: false },
+                    "github.external": { enabled: false },
+                    "t3-code": nativeMcp ? t3Server : { enabled: false },
+                  },
+                }
+              : nativeMcp
+                ? { "mcp_servers.t3-code": t3Server }
                 : {}),
-              ...(nativeMcp
-                ? {
-                    "t3-code": {
-                      url: endpoint,
-                      tool_timeout_sec: 3900,
-                      http_headers: { Authorization: authorization },
-                    },
-                  }
-                : { "t3-code": { enabled: false } }),
-            },
           },
         };
         const preamble = replayPreamble(nativeThreadId);

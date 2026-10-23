@@ -86,7 +86,6 @@ jobs:
           DEMO_JIRA_BOARD_ID: ${{ vars.DEMO_JIRA_BOARD_ID || secrets.DEMO_JIRA_BOARD_ID }}
           DEMO_JIRA_BASELINE: ${{ secrets.DEMO_JIRA_BASELINE }}
           DEMO_JIRA_OAUTH_BUNDLE: ${{ secrets.DEMO_JIRA_OAUTH_BUNDLE }}
-          T3CODE_BUNDLED_DEV: "1"
           # Native PR discovery needs a user identity; the Actions token has no /user login.
           GH_TOKEN: ${{ secrets.DEMO_CREDENTIALS_TOKEN }}
         run: vp exec playwright test --config workbench-regression/playwright.config.ts

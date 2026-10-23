@@ -21,9 +21,8 @@ vi.mock("@tanstack/react-router", () => ({
   useParams: ({ select }: { select: (params: typeof location) => unknown }) => select(location),
 }));
 const emptyThreadShells: never[] = [];
-vi.mock("../state/entities", () => ({
-  useThreadShells: () => emptyThreadShells,
-  useProjects: () => [
+vi.mock("../state/entities", () => {
+  const projects = () => [
     {
       id: ProjectId.make("other-repo"),
       environmentId: EnvironmentId.make("remote"),
@@ -52,19 +51,24 @@ vi.mock("../state/entities", () => ({
         },
       },
     },
-  ],
-  useServerConfigs: () =>
-    new Map([
-      [
-        EnvironmentId.make("remote"),
-        { environment: { capabilities: { pullRequests: true, threadPullRequests: true } } },
-      ],
-      [
-        EnvironmentId.make("local"),
-        { environment: { capabilities: { pullRequests: true, threadPullRequests: true } } },
-      ],
-    ]),
-}));
+  ];
+  return {
+    useThreadShells: () => emptyThreadShells,
+    readProjects: projects,
+    useProjects: projects,
+    useServerConfigs: () =>
+      new Map([
+        [
+          EnvironmentId.make("remote"),
+          { environment: { capabilities: { pullRequests: true, threadPullRequests: true } } },
+        ],
+        [
+          EnvironmentId.make("local"),
+          { environment: { capabilities: { pullRequests: true, threadPullRequests: true } } },
+        ],
+      ]),
+  };
+});
 vi.mock("../state/environments", () => ({
   usePrimaryEnvironmentId: () => EnvironmentId.make("remote"),
 }));

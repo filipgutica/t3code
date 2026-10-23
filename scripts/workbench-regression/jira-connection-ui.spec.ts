@@ -111,7 +111,7 @@ const routeMockJira = async (page: Page, fourColumns = false) => {
     payload.payload && typeof payload.payload === "object"
       ? (payload.payload as Record<string, unknown>)
       : {};
-  const now = () => new Date().toISOString();
+  const now = () => "2026-10-22T00:00:00.000Z";
   const makeBinding = (input: Record<string, unknown>) => ({
     ...input,
     id: "regression-jira-binding",
@@ -450,30 +450,8 @@ const routeMockJira = async (page: Page, fourColumns = false) => {
       if (!binding) throw new Error("Expected a connected Jira mirror.");
       binding = { ...binding, selectedSprints: sprints, followActiveSprint: false };
     },
-    waitForSync: async () => {
-      await Promise.race([
-        syncRequestSeen,
-        new Promise<never>((_, reject) => {
-          const timeout = setTimeout(
-            () => reject(new Error("Timed out waiting for the mocked Jira sync RPC.")),
-            15_000,
-          );
-          syncRequestSeen.finally(() => clearTimeout(timeout)).catch(() => undefined);
-        }),
-      ]);
-    },
-    waitForMigration: async () => {
-      await Promise.race([
-        migrationRequestSeen,
-        new Promise<never>((_, reject) => {
-          const timeout = setTimeout(
-            () => reject(new Error("Timed out waiting for the mocked Jira migration RPC.")),
-            15_000,
-          );
-          migrationRequestSeen.finally(() => clearTimeout(timeout)).catch(() => undefined);
-        }),
-      ]);
-    },
+    waitForSync: () => syncRequestSeen,
+    waitForMigration: () => migrationRequestSeen,
     releaseMigration: (nextMode: Exclude<MigrationMode, "hold"> = "normal") => {
       if (!heldMigrationRequestId || !migrationServer) {
         throw new Error("Expected mocked Jira migration RPC was not held.");

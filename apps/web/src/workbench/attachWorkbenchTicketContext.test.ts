@@ -42,8 +42,8 @@ describe("refreshing Ticket context in a native composer", () => {
     const ticketComment = first.reviewComments[0];
     if (!ticketComment) throw new Error("Ticket context was not staged");
     expect(ticketComment.diff).toContain("Use the new API contract.");
-    expect(ticketComment.diff).toContain("Web (primary) — /remote/prepared-web");
-    expect(ticketComment.diff).toContain("API — /remote/old-api-checkout");
+    expect(ticketComment.diff).toContain("Web (primary): /remote/prepared-web");
+    expect(ticketComment.diff).toContain("API: /remote/old-api-checkout");
     expect(first.prompt).toContain("Keep my unsent request");
     const unrelated = {
       ...ticketComment,
