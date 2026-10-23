@@ -29,6 +29,27 @@ const diagnosticRoutePaths = new Set([
   "/connect",
   "/connect-agent",
 ]);
+const diagnosticSourcePaths = new Set([
+  "/src/AppRoot.tsx",
+  "/src/main.tsx",
+  "/src/bootstrap.ts",
+  "/src/router.ts",
+  "/src/routes/__root.tsx",
+  "/src/routes/pair.tsx",
+  "/src/components/auth/PairingRouteSurface.tsx",
+  "/src/components/promptLinks/HostedPromptLinkLanding.tsx",
+  "/src/components/ui/input.tsx",
+  "/src/components/ui/button.tsx",
+  "/src/components/ui/standalone-page.tsx",
+  "/src/environments/primary/auth.ts",
+  "/src/environments/primary/context.ts",
+  "/src/environments/primary/httpClient.ts",
+  "/src/environments/primary/httpLayer.ts",
+  "/src/browser/BrowserProfileReporter.tsx",
+  "/src/browser/ElectronBrowserHost.tsx",
+  "/src/state/query.ts",
+  "/src/lib/runtime.ts",
+]);
 const safeDiagnosticPath = (value: string, origin: string, allowlist: ReadonlySet<string>) => {
   try {
     const url = new URL(value);
@@ -37,6 +58,17 @@ const safeDiagnosticPath = (value: string, origin: string, allowlist: ReadonlySe
   } catch {
     return undefined;
   }
+};
+const diagnosticSource = (stack: string, origin: string) => {
+  for (const match of stack.matchAll(/https?:\/\/[^\s)]+/g)) {
+    const path = safeDiagnosticPath(
+      match[0].replace(/:\d+:\d+$/, ""),
+      origin,
+      diagnosticSourcePaths,
+    );
+    if (path !== undefined && path !== "OTHER") return path;
+  }
+  return undefined;
 };
 const classifyDiagnosticError = (error: Pick<Error, "name" | "message">) => {
   const name = ["Error", "TypeError", "ReferenceError", "SyntaxError", "RangeError"].includes(
@@ -74,7 +106,29 @@ const classifyDiagnosticError = (error: Pick<Error, "name" | "message">) => {
     "exchange-bootstrap-credential",
     "fetch-environment-descriptor",
   ].find((value) => error.message.includes(value));
-  return { name, category, ...(operation === undefined ? {} : { operation }) };
+  const typeDetail = /cannot read properties of null|cannot read property .* of null/i.test(
+    error.message,
+  )
+    ? "null-property"
+    : /cannot read properties of undefined|cannot read property .* of undefined/i.test(
+          error.message,
+        )
+      ? "undefined-property"
+      : /is not a function|not callable/i.test(error.message)
+        ? "not-callable"
+        : /is not a constructor/i.test(error.message)
+          ? "not-constructor"
+          : /not iterable/i.test(error.message)
+            ? "not-iterable"
+            : /incompatible receiver|illegal invocation/i.test(error.message)
+              ? "incompatible-receiver"
+              : "other";
+  return {
+    name,
+    category,
+    ...(operation === undefined ? {} : { operation }),
+    ...(category === "type" ? { typeDetail } : {}),
+  };
 };
 
 type Runtime = { pid: number; startedAt: string; devUrl: string };
@@ -254,6 +308,16 @@ export const prepareStartup = (input: {
       let droppedEvents = 0;
       let consoleErrors = 0;
       let reported = false;
+      let snapshotPending = false;
+      let domSnapshot:
+        | {
+            bootError: boolean;
+            routeError: boolean;
+            pairingInput: boolean;
+            pairingInputDisabled?: boolean;
+            pendingPairing: boolean;
+          }
+        | undefined;
       const record = (event: (typeof events)[number]) => {
         if (events.length === 32) {
           events.shift();
@@ -263,16 +327,85 @@ export const prepareStartup = (input: {
       };
       const safePath = (value: string, allowlist: ReadonlySet<string>) =>
         safeDiagnosticPath(value, runtime.devUrl, allowlist);
+      const captureDomSnapshot = () => {
+        if (reported || snapshotPending) return;
+        snapshotPending = true;
+        // Never await diagnostics during failure cleanup: browser closure cancels pending reads.
+        void Promise.all([
+          page.locator("#boot-error").count(),
+          page.getByRole("heading", { name: "Something went wrong.", exact: true }).count(),
+          page.locator("#pairing-token").evaluateAll((elements) => {
+            const input = elements[0];
+            return input instanceof HTMLInputElement
+              ? { present: true, disabled: input.disabled }
+              : { present: false };
+          }),
+          page.getByRole("heading", { name: "Pairing with this environment", exact: true }).count(),
+        ])
+          .then(([bootError, routeError, pairingInput, pendingPairing]) => {
+            if (reported) return;
+            domSnapshot = {
+              bootError: bootError > 0,
+              routeError: routeError > 0,
+              pairingInput: pairingInput.present,
+              ...(pairingInput.disabled === undefined
+                ? {}
+                : { pairingInputDisabled: pairingInput.disabled }),
+              pendingPairing: pendingPairing > 0,
+            };
+          })
+          .catch(() => {})
+          .finally(() => {
+            snapshotPending = false;
+          });
+      };
       page.on("pageerror", (error) => {
         record({ kind: "page-error", ...classifyDiagnosticError(error) });
       });
       page.on("console", (message) => {
         if (message.type() === "error") {
           consoleErrors = Math.min(consoleErrors + 1, 10_000);
+          const source = safePath(message.location().url, diagnosticSourcePaths);
           record({
             kind: "console-error",
             ...classifyDiagnosticError({ name: "Error", message: message.text() }),
+            ...(source === undefined || source === "OTHER" ? {} : { source }),
           });
+          if (consoleErrors <= 8) {
+            captureDomSnapshot();
+            for (const argument of message.args().slice(0, 3)) {
+              void argument
+                .evaluate((value: unknown) => {
+                  if (!(value instanceof Error)) return undefined;
+                  const message = Object.getOwnPropertyDescriptor(value, "message");
+                  const stack = Object.getOwnPropertyDescriptor(value, "stack");
+                  const name = Object.getOwnPropertyDescriptor(
+                    Object.getPrototypeOf(value),
+                    "name",
+                  );
+                  // Skip accessors and coercion; raw fields remain transient and bounded.
+                  return {
+                    name: typeof name?.value === "string" ? name.value.slice(0, 64) : "Error",
+                    message:
+                      typeof message?.value === "string" ? message.value.slice(0, 8_192) : "",
+                    ...(typeof stack?.value === "string"
+                      ? { stack: stack.value.slice(0, 16_384) }
+                      : {}),
+                  };
+                })
+                .then((error) => {
+                  if (reported || error === undefined) return;
+                  const source = diagnosticSource(error.stack ?? "", runtime.devUrl);
+                  record({
+                    kind: "console-error-detail",
+                    ...classifyDiagnosticError(error),
+                    stackAvailable: error.stack === undefined ? 0 : 1,
+                    ...(source === undefined ? {} : { source }),
+                  });
+                })
+                .catch(() => {});
+            }
+          }
         }
       });
       page.on("response", (response) => {
@@ -295,6 +428,10 @@ export const prepareStartup = (input: {
               finalPath: safePath(page.url(), diagnosticRoutePaths) ?? "OTHER",
               consoleErrors,
               droppedEvents,
+              domSnapshot:
+                domSnapshot === undefined
+                  ? { captured: false }
+                  : { captured: true, observedAt: "console-error", ...domSnapshot },
               events,
             }),
           ),

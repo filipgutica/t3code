@@ -19,51 +19,90 @@ import type { WorkbenchSuggestionMessage } from "./workbenchTicketDraft.logic";
 const state = vi.hoisted(() => ({
   messages: [] as WorkbenchSuggestionMessage[],
   snapshot: null as WorkbenchSnapshot | null,
+  threadRefs: [],
 }));
-vi.mock("@effect/atom-react", () => ({
+vi.mock("@effect/atom-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@effect/atom-react")>()),
   useAtomValue: () => ({ availableEditors: [], revealInFileManagerLabel: "Show in file manager" }),
 }));
-vi.mock("../hooks/useTheme", () => ({ useTheme: () => ({ resolvedTheme: "dark" }) }));
+vi.mock("../hooks/useTheme", () => ({
+  useTheme: () => ({ resolvedTheme: "dark" }),
+  useRenderedAppearance: () => "dark",
+}));
 vi.mock("../hooks/useSettings", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../hooks/useSettings")>();
-  const settings = actual.getClientSettings();
-  return {
-    ...actual,
-    useClientSettings: (select?: (value: typeof settings) => unknown) =>
-      select ? select(settings) : settings,
-  };
+  try {
+    const actual = await importOriginal<typeof import("../hooks/useSettings")>();
+    const settings = actual.getClientSettings();
+    return {
+      ...actual,
+      useClientSettings: (select?: (value: typeof settings) => unknown) =>
+        select ? select(settings) : settings,
+    };
+  } catch (error) {
+    console.error("WorkbenchTicketProposal mock factory failed: ../hooks/useSettings");
+    throw error;
+  }
 });
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
 vi.mock("../state/session", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../state/session")>();
-  return {
-    ...actual,
-    useEnvironmentScope: () => false,
-    readEnvironmentScope: () => false,
-    usePreparedConnection: () => ({ _tag: "Loading" }),
-  };
+  try {
+    const actual = await importOriginal<typeof import("../state/session")>();
+    return {
+      ...actual,
+      useEnvironmentScope: () => false,
+      readEnvironmentScope: () => false,
+      usePreparedConnection: () => ({ _tag: "Loading" }),
+    };
+  } catch (error) {
+    console.error("WorkbenchTicketProposal mock factory failed: ../state/session");
+    throw error;
+  }
 });
-vi.mock("../remoteOpen", () => ({
+vi.mock("../remoteOpen", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../remoteOpen")>()),
   useRemoteOpenResolution: () => ({ state: { mode: "local-exec" }, isResolved: true }),
 }));
-vi.mock("../editorPreferences", () => ({
+vi.mock("../editorPreferences", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../editorPreferences")>()),
   useOpenInPreferredEditor: () => vi.fn(),
   usePreferredEditor: () => [null, vi.fn()],
 }));
-vi.mock("~/lib/openPullRequestLink", () => ({
-  findProjectOnChangeRequestHost: () => undefined,
-  parseChangeRequestUrl: () => null,
-  resolvePullRequestPreviewTarget: () => null,
-  useOpenChangeRequestLink: () => vi.fn(),
-}));
+vi.mock("~/lib/openPullRequestLink", async () => {
+  const { matchesLinkedPullRequestUrl, pullRequestCandidateUrlFromReferenceAutolink } =
+    await import("@t3tools/shared/changeRequestUrl");
+  return {
+    findProjectOnChangeRequestHost: () => undefined,
+    findProjectForChangeRequest: () => undefined,
+    matchesLinkedPullRequestUrl,
+    parseChangeRequestUrl: () => null,
+    pullRequestCandidateUrlFromReferenceAutolink,
+    resolvePullRequestPreviewTarget: () => null,
+    usePullRequestPreviewTarget: () => null,
+    useOpenChangeRequestLink: () => vi.fn(),
+  };
+});
 vi.mock("../state/entities", () => ({
   readThreadShell: () => null,
+  readProjects: () => projects,
+  readEnvironmentSupportsServerBrowser: () => false,
+  useEnvironmentSupportsServerBrowser: () => false,
+  useProject: (ref: { environmentId: EnvironmentId; projectId: ProjectId } | null) =>
+    ref === null
+      ? null
+      : (projects.find(
+          (project) => project.environmentId === ref.environmentId && project.id === ref.projectId,
+        ) ?? null),
   useServerConfigs: () => new Map(),
+  useThreadRefs: () => state.threadRefs,
+  useThreadShell: () => null,
   useThreadProjection: () => ({ projection: { messages: state.messages } }),
   useProjects: () => projects,
 }));
-vi.mock("../state/query", () => ({ useEnvironmentQuery: () => ({ data: state.snapshot }) }));
+vi.mock("../state/query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/query")>()),
+  useEnvironmentQuery: () => ({ data: state.snapshot }),
+}));
 vi.mock("./state", () => ({ workbenchEnvironment: { snapshot: vi.fn() } }));
 
 import ChatMarkdown, { ChatMarkdownCodeBlockRendererContext } from "../components/ChatMarkdown";
