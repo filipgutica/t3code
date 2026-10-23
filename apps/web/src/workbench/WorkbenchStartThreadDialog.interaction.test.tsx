@@ -198,6 +198,9 @@ it("adds a repository to a prepared work area and submits the reviewed choices",
   await render();
   await addRepository("Additional");
   expect(repositoryList()).toContain("Adding");
+  expect(document.body.textContent).toContain(
+    "Creating the Thread prepares a worktree for Additional. Prepared worktrees are reused.",
+  );
   expect(onOpenChange).not.toHaveBeenCalled();
   await act(async () => button("Create work area and Thread").click());
   expect(onStart).toHaveBeenCalledWith({
