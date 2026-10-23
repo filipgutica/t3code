@@ -2,11 +2,12 @@ import { WorkbenchThreadExecutionStatus } from "./WorkbenchThreadExecutionStatus
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { WorkbenchTicketId } from "@t3tools/contracts";
 import {
+  AlarmClockOffIcon,
   CheckIcon,
-  ClockIcon,
   FolderGit2Icon,
   MessageSquareIcon,
   PinIcon,
+  PinOffIcon,
   RotateCcwIcon,
 } from "lucide-react";
 import { useState, type Dispatch, type MouseEvent, type SetStateAction } from "react";
@@ -17,6 +18,7 @@ import {
 } from "../components/ThreadStatusIndicators";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
 import { ProjectFavicon } from "../components/ProjectFavicon";
@@ -72,11 +74,9 @@ function WorkbenchSidebarThreadRenameInput({
 
 function WorkbenchSidebarThreadTitle({
   thread,
-  data,
   isActive,
 }: {
   readonly thread: WorkbenchSidebarThread;
-  readonly data: WorkbenchSidebarThreadRowData;
   readonly isActive: boolean;
 }) {
   return (
@@ -87,8 +87,6 @@ function WorkbenchSidebarThreadTitle({
       >
         {thread.title}
       </span>
-      {data.shell?.pinnedAt ? <PinIcon aria-label="Pinned" className="size-3 shrink-0" /> : null}
-      {data.snoozed ? <ClockIcon aria-label="Snoozed" className="size-3 shrink-0" /> : null}
     </span>
   );
 }
@@ -154,9 +152,54 @@ function WorkbenchSidebarThreadNavigation({
         />
       }
     >
-      <WorkbenchSidebarThreadTitle data={data} isActive={isActive} thread={thread} />
+      <WorkbenchSidebarThreadTitle isActive={isActive} thread={thread} />
       <WorkbenchSidebarThreadMetadata data={data} />
     </WorkbenchSidebarRowNavigation>
+  );
+}
+
+/** Native's pin indicator: hover reveals Unpin when the user can operate the Thread. */
+function WorkbenchSidebarThreadPinIndicator({
+  onUnpin,
+}: {
+  readonly onUnpin: (() => void) | null;
+}) {
+  if (!onUnpin) {
+    return (
+      <PinIcon
+        aria-label="Pinned"
+        role="img"
+        className="size-3 shrink-0 text-muted-foreground/65"
+      />
+    );
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label="Unpin thread"
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onUnpin();
+            }}
+            className="group/unpin inline-flex cursor-pointer items-center rounded-sm text-muted-foreground/65 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          />
+        }
+      >
+        <PinIcon
+          aria-hidden
+          className="size-3 shrink-0 group-hover/unpin:hidden group-focus-visible/unpin:hidden"
+        />
+        <PinOffIcon
+          aria-hidden
+          className="hidden size-3 shrink-0 group-hover/unpin:block group-focus-visible/unpin:block"
+        />
+      </TooltipTrigger>
+      <TooltipPopup>Unpin thread</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -245,6 +288,119 @@ function WorkbenchSidebarThreadPrBadge({
   );
 }
 
+function WorkbenchSidebarThreadMetadataControls({
+  thread,
+  isActive,
+  data,
+  actions,
+}: {
+  readonly thread: WorkbenchSidebarThread;
+  readonly isActive: boolean;
+  readonly data: WorkbenchSidebarThreadRowData;
+  readonly actions: ReturnType<typeof useWorkbenchSidebarThreadInteraction>;
+}) {
+  return (
+    <span data-workbench-sidebar-metadata-controls="">
+      {data.shell?.pinnedAt ? (
+        <WorkbenchSidebarThreadPinIndicator onUnpin={actions.canUnpin ? actions.unpin : null} />
+      ) : null}
+      <WorkbenchSidebarThreadPrBadge
+        thread={thread}
+        data={data}
+        onOpenPullRequest={actions.handleOpenPullRequest}
+        onOpenPullRequestStack={actions.handleOpenPullRequestStack}
+      />
+      <span data-workbench-sidebar-provider-end="">
+        {data.providerEntry ? (
+          <ProviderInstanceIcon
+            driverKind={data.providerEntry.driverKind}
+            displayName={data.providerEntry.displayName}
+            className={`size-3.5 ${isActive ? "" : "opacity-75"}`}
+            iconClassName="size-3.5"
+          />
+        ) : null}
+      </span>
+    </span>
+  );
+}
+
+type WorkbenchSidebarThreadSlotProps = {
+  readonly thread: WorkbenchSidebarThread;
+  readonly data: WorkbenchSidebarThreadRowData;
+  readonly actions: ReturnType<typeof useWorkbenchSidebarThreadInteraction>;
+};
+
+function WorkbenchSidebarThreadSlotStatus({ data }: Pick<WorkbenchSidebarThreadSlotProps, "data">) {
+  if (data.wakeLabel !== null) {
+    return (
+      <span data-workbench-sidebar-native-status="" className="text-info-foreground tabular-nums">
+        {data.wakeLabel}
+      </span>
+    );
+  }
+  if (!data.status) return null;
+  return (
+    <span data-workbench-sidebar-native-status="">
+      <WorkbenchThreadExecutionStatus
+        compact
+        status={data.status.presentation}
+        startedAt={data.status.startedAt}
+      />
+    </span>
+  );
+}
+
+function WorkbenchSidebarThreadSlotAction({
+  thread,
+  data,
+  actions,
+}: WorkbenchSidebarThreadSlotProps) {
+  if (data.wakeLabel !== null) {
+    return (
+      <WorkbenchSidebarQuickAction
+        label={`Wake thread now: ${thread.title}`}
+        Icon={AlarmClockOffIcon}
+        onSelect={actions.wake}
+      />
+    );
+  }
+  return (
+    <WorkbenchSidebarQuickAction
+      label={`${actions.isSettled ? "Unsettle" : "Settle"}: ${thread.title}`}
+      Icon={actions.isSettled ? RotateCcwIcon : CheckIcon}
+      onSelect={actions.toggleSettlement}
+      disabled={actions.settlementBusy}
+    />
+  );
+}
+
+/** Like native, a snoozed row shows its wake time and offers Wake instead of Settle on hover. */
+function WorkbenchSidebarThreadStatusSlot({
+  ticketId,
+  ...props
+}: WorkbenchSidebarThreadSlotProps & { readonly ticketId: WorkbenchTicketId }) {
+  const { thread, data, actions } = props;
+  const hasAction = data.wakeLabel !== null ? actions.canWake : actions.canToggleSettlement;
+  return (
+    <span data-workbench-sidebar-slot={hasAction ? "actions" : ""}>
+      <WorkbenchThreadAttentionBadge
+        environmentId={thread.environmentId}
+        ticketId={ticketId}
+        threadId={thread.id}
+        threadTitle={thread.title}
+        nativeStatusKind={data.status?.kind ?? null}
+        nativeStatus={<WorkbenchSidebarThreadSlotStatus data={data} />}
+        side="right"
+      />
+      {hasAction ? (
+        <span data-workbench-sidebar-quick-actions="">
+          <WorkbenchSidebarThreadSlotAction {...props} />
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function WorkbenchSidebarThreadRowView({
   thread,
   ticketId,
@@ -280,55 +436,18 @@ function WorkbenchSidebarThreadRowView({
         openMenu={actions.openMenu}
         thread={thread}
       />
-      <span data-workbench-sidebar-slot={actions.canToggleSettlement ? "actions" : ""}>
-        <WorkbenchThreadAttentionBadge
-          environmentId={thread.environmentId}
-          ticketId={ticketId}
-          threadId={thread.id}
-          threadTitle={thread.title}
-          nativeStatusKind={data.status?.kind ?? null}
-          nativeStatus={
-            data.status ? (
-              <span data-workbench-sidebar-native-status="">
-                <WorkbenchThreadExecutionStatus
-                  compact
-                  status={data.status.presentation}
-                  startedAt={data.status.startedAt}
-                />
-              </span>
-            ) : null
-          }
-          side="right"
-        />
-        {actions.canToggleSettlement ? (
-          <span data-workbench-sidebar-quick-actions="">
-            <WorkbenchSidebarQuickAction
-              label={`${actions.isSettled ? "Unsettle" : "Settle"}: ${thread.title}`}
-              Icon={actions.isSettled ? RotateCcwIcon : CheckIcon}
-              onSelect={actions.toggleSettlement}
-              disabled={actions.settlementBusy}
-            />
-          </span>
-        ) : null}
-      </span>
-      <span data-workbench-sidebar-metadata-controls="">
-        <WorkbenchSidebarThreadPrBadge
-          thread={thread}
-          data={data}
-          onOpenPullRequest={actions.handleOpenPullRequest}
-          onOpenPullRequestStack={actions.handleOpenPullRequestStack}
-        />
-        <span data-workbench-sidebar-provider-end="">
-          {data.providerEntry ? (
-            <ProviderInstanceIcon
-              driverKind={data.providerEntry.driverKind}
-              displayName={data.providerEntry.displayName}
-              className={`size-3.5 ${isActive ? "" : "opacity-75"}`}
-              iconClassName="size-3.5"
-            />
-          ) : null}
-        </span>
-      </span>
+      <WorkbenchSidebarThreadStatusSlot
+        actions={actions}
+        data={data}
+        thread={thread}
+        ticketId={ticketId}
+      />
+      <WorkbenchSidebarThreadMetadataControls
+        actions={actions}
+        data={data}
+        isActive={isActive}
+        thread={thread}
+      />
     </div>
   );
 }

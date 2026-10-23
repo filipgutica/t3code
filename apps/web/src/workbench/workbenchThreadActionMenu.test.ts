@@ -41,7 +41,11 @@ describe("filterWorkbenchThreadActionMenuItems", () => {
     );
 
     expect(ids).toEqual([
+      "unpin",
       "settle",
+      "snooze",
+      "snooze:hour",
+      "snooze:custom",
       "rename",
       "regenerate-title",
       "mark-unread",
@@ -67,8 +71,7 @@ describe("filterWorkbenchThreadActionMenuItems", () => {
     );
     const ids = flatten(items);
 
-    expect(ids).toContain("unsettle");
-    expect(ids).not.toEqual(expect.arrayContaining(["unpin", "unsnooze"]));
+    expect(ids).toEqual(expect.arrayContaining(["unpin", "unsettle", "unsnooze"]));
     expect(items.find((item) => item.id === "auto-settle")?.children).toMatchObject([
       { id: "auto-settle:enabled", checked: false },
       { id: "auto-settle:disabled", checked: true },
