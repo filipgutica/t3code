@@ -219,8 +219,9 @@ repository** to add one, and a repository's **⋯** menu to make it primary or
 remove it. Changes stay marked as Adding or Removing until you choose **Save
 changes**; **Cancel** restores the saved choices. Adding repositories to a
 prepared work area prepares their worktrees together after saving. **Create
-Thread** can add repositories, but prepared repositories and the primary can only
-be changed in **Work area**.
+Thread** can change any repository while the Ticket has no prepared worktrees.
+After preparation, it can only add repositories; change the primary or remove a
+prepared repository in **Work area**.
 
 Threads using the same Ticket worktree share its files, branch, and uncommitted
 changes. Existing Threads keep their working directory and sent context when the
