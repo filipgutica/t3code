@@ -394,3 +394,22 @@ it("points a locked unavailable repository to relinking instead of removal", asy
   expect(alert).toContain("Link it again");
   expect(alert).not.toContain("Remove");
 });
+
+it("ignores an open row menu once edits become disabled", async () => {
+  const savedTicket = { ...ticket, repositoryProjectIds: projects.map((project) => project.id) };
+  await render({ savedTicket, unprepared: true });
+  await act(async () => labelledButton("Actions for Additional").click());
+  await render({ savedTicket, unprepared: true, pending: true });
+  await act(async () => menuAction("Remove from ticket").click());
+  expect(repositoryList()).not.toContain("Removing");
+});
+
+it("keeps keyboard focus on the row when staging and undoing a removal", async () => {
+  const savedTicket = { ...ticket, repositoryProjectIds: projects.map((project) => project.id) };
+  await render({ savedTicket, unprepared: true });
+  await act(async () => labelledButton("Actions for Additional").click());
+  await act(async () => menuAction("Remove from ticket").click());
+  expect(document.activeElement).toBe(button("Undo"));
+  await act(async () => button("Undo").click());
+  expect(document.activeElement).toBe(labelledButton("Actions for Additional"));
+});

@@ -7,7 +7,7 @@ import {
   TriangleAlertIcon,
   XIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Project } from "../types";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -106,22 +106,48 @@ export function WorkbenchRepositoryScopeFields({
   const candidates = projects.filter(
     (project) => !selectedIds.includes(project.id) && !removedIds.includes(project.id),
   );
+  const fieldsetRef = useRef<HTMLFieldSetElement>(null);
+  const focusRowIdRef = useRef<ProjectId | null>(null);
+  // Removing or restoring a row replaces its action control, so focus the replacement, or
+  // Add repository when the row is gone.
+  useEffect(() => {
+    const id = focusRowIdRef.current;
+    if (id === null) return;
+    focusRowIdRef.current = null;
+    const fieldset = fieldsetRef.current;
+    const row = [...(fieldset?.querySelectorAll<HTMLElement>("[data-repository-id]") ?? [])].find(
+      (candidate) => candidate.dataset.repositoryId === id,
+    );
+    (
+      row?.querySelector<HTMLElement>("button") ??
+      fieldset?.querySelector<HTMLElement>("[data-repository-add]")
+    )?.focus();
+  });
+  // An already open menu or picker outlives its disabled trigger, so mutations check here too.
+  const change = (next: WorkbenchRepositoryScope, focusRowId: ProjectId | null = null) => {
+    if (disabled) return;
+    focusRowIdRef.current = focusRowId;
+    onChange(next);
+  };
   // Saved repositories keep their saved order so undoing a removal restores an unchanged scope.
-  const include = (id: ProjectId) => {
+  const include = (id: ProjectId, focusRowId: ProjectId | null = null) => {
     const ids = new Set([...selectedIds, id]);
-    onChange({
-      ...value,
-      repositoryProjectIds: [
-        ...savedScope.repositoryProjectIds.filter((savedId) => ids.has(savedId)),
-        ...[...ids].filter((selectedId) => !savedScope.repositoryProjectIds.includes(selectedId)),
-      ],
-    });
+    change(
+      {
+        ...value,
+        repositoryProjectIds: [
+          ...savedScope.repositoryProjectIds.filter((savedId) => ids.has(savedId)),
+          ...[...ids].filter((selectedId) => !savedScope.repositoryProjectIds.includes(selectedId)),
+        ],
+      },
+      focusRowId,
+    );
   };
   const remove = (id: ProjectId) =>
-    onChange({
-      ...value,
-      repositoryProjectIds: selectedIds.filter((selectedId) => selectedId !== id),
-    });
+    change(
+      { ...value, repositoryProjectIds: selectedIds.filter((selectedId) => selectedId !== id) },
+      id,
+    );
   const primaryTitle =
     projects.find((project) => project.id === value.primaryT3ProjectId)?.title ??
     "The current primary";
@@ -143,11 +169,15 @@ export function WorkbenchRepositoryScopeFields({
     };
   });
   return (
-    <fieldset className="min-w-0 space-y-2">
+    <fieldset ref={fieldsetRef} className="min-w-0 space-y-2">
       <legend className="sr-only">Workspace repositories</legend>
       <ul aria-label="Work area repositories" className="divide-y divide-border/50">
         {rows.map((row) => (
-          <li key={row.id} className="flex min-w-0 items-start gap-2 py-2 text-sm">
+          <li
+            key={row.id}
+            data-repository-id={row.id}
+            className="flex min-w-0 items-start gap-2 py-2 text-sm"
+          >
             <div className="min-w-0 flex-1 space-y-1">
               <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                 {row.title ? (
@@ -174,15 +204,19 @@ export function WorkbenchRepositoryScopeFields({
               locked={lockedScope !== undefined}
               primaryTitle={primaryTitle}
               disabled={disabled}
-              onInclude={include}
+              onUndo={(id) => include(id, id)}
               onRemove={remove}
-              onMakePrimary={(id) => onChange({ ...value, primaryT3ProjectId: id })}
+              onMakePrimary={(id) => change({ ...value, primaryT3ProjectId: id })}
             />
           </li>
         ))}
       </ul>
       {projects.length > 0 ? (
-        <WorkbenchAddRepositoryPicker candidates={candidates} disabled={disabled} onAdd={include} />
+        <WorkbenchAddRepositoryPicker
+          candidates={candidates}
+          disabled={disabled}
+          onAdd={(id) => include(id)}
+        />
       ) : null}
       {lockedScope ? (
         <p className="text-xs text-muted-foreground">
@@ -267,7 +301,7 @@ function RepositoryRowAction({
   locked,
   primaryTitle,
   disabled,
-  onInclude,
+  onUndo,
   onRemove,
   onMakePrimary,
 }: {
@@ -275,7 +309,7 @@ function RepositoryRowAction({
   readonly locked: boolean;
   readonly primaryTitle: string;
   readonly disabled: boolean;
-  readonly onInclude: (id: ProjectId) => void;
+  readonly onUndo: (id: ProjectId) => void;
   readonly onRemove: (id: ProjectId) => void;
   readonly onMakePrimary: (id: ProjectId) => void;
 }) {
@@ -284,7 +318,7 @@ function RepositoryRowAction({
     return (
       <Button
         disabled={disabled}
-        onClick={() => onInclude(row.id)}
+        onClick={() => onUndo(row.id)}
         size="xs"
         type="button"
         variant="ghost"
@@ -323,7 +357,10 @@ function RepositoryRowAction({
       <MenuPopup align="end">
         {row.isPrimary ? null : (
           <>
-            <MenuItem disabled={row.title === undefined} onClick={() => onMakePrimary(row.id)}>
+            <MenuItem
+              disabled={disabled || row.title === undefined}
+              onClick={() => onMakePrimary(row.id)}
+            >
               <StarIcon />
               <span className="flex flex-col">
                 Make primary
@@ -335,7 +372,7 @@ function RepositoryRowAction({
             <MenuSeparator />
           </>
         )}
-        <MenuItem disabled={row.isPrimary} onClick={() => onRemove(row.id)}>
+        <MenuItem disabled={disabled || row.isPrimary} onClick={() => onRemove(row.id)}>
           <XIcon />
           <span className="flex flex-col">
             Remove from ticket
@@ -381,7 +418,10 @@ function WorkbenchAddRepositoryPicker({
         if (project) onAdd(project.id);
       }}
     >
-      <ComboboxTrigger render={<Button size="xs" type="button" variant="ghost" />}>
+      <ComboboxTrigger
+        data-repository-add=""
+        render={<Button size="xs" type="button" variant="ghost" />}
+      >
         <PlusIcon />
         Add repository
       </ComboboxTrigger>
@@ -399,7 +439,7 @@ function WorkbenchAddRepositoryPicker({
         </ComboboxEmpty>
         <ComboboxList>
           {(project: RepositoryOption) => (
-            <ComboboxItem key={project.id} value={project}>
+            <ComboboxItem key={project.id} value={project} disabled={disabled}>
               <FolderGit2Icon />
               <span className="min-w-0 flex-1 truncate">{project.title}</span>
             </ComboboxItem>
