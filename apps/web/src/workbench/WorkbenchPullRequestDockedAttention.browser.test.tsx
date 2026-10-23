@@ -120,8 +120,20 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
     select: (params: { environmentId: string; threadId: string }) => unknown;
   }) => select({ environmentId: "local", threadId: "reading" }),
 }));
-vi.mock("../state/entities", () => ({ useThreadShells: () => shells }));
-vi.mock("../state/environments", () => ({ usePrimaryEnvironmentId: () => environmentId }));
+vi.mock("../state/entities", () => {
+  const projects: never[] = [];
+  return {
+    useThreadShells: () => shells,
+    readProjects: () => projects,
+    useProjects: () => projects,
+    readEnvironmentSupportsServerBrowser: () => false,
+    useEnvironmentSupportsServerBrowser: () => false,
+  };
+});
+vi.mock("../state/environments", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/environments")>()),
+  usePrimaryEnvironmentId: () => environmentId,
+}));
 vi.mock("./state", () => ({ workbenchEnvironment: { snapshot: () => ({ kind: "snapshot" }) } }));
 vi.mock("../state/pullRequests", () => ({
   linkedPullRequestDetailAtom: () => ({ kind: "summary" }),

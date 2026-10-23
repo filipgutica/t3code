@@ -15,7 +15,10 @@ const observed = vi.hoisted(() => ({
   settings: null as ServerSettings | null,
   beginInput: vi.fn(),
 }));
-vi.mock("../hooks/useSettings", () => ({ useEnvironmentSettings: () => observed.settings }));
+vi.mock("../hooks/useSettings", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/useSettings")>()),
+  useEnvironmentSettings: () => observed.settings,
+}));
 vi.mock("../components/ChatView", () => ({ default: () => null }));
 vi.mock("../components/WorkspacePageHeader", () => ({
   WorkspacePageHeader: ({ children }: { children?: ReactNode }) => children,

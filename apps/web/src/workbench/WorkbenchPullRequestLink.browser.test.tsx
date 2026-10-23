@@ -23,12 +23,14 @@ vi.mock("../components/ui/tooltip", () => {
   const Passthrough = ({ children }: { children?: ReactNode }) => <>{children}</>;
   return { Tooltip: Passthrough, TooltipPopup: Passthrough, TooltipTrigger: Passthrough };
 });
-vi.mock("../state/pullRequests", () => ({
+vi.mock("../state/pullRequests", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/pullRequests")>()),
   linkedPullRequestDetailAtom: (target: unknown) => target,
   useSharedPullRequestSummary: (_environmentId: unknown, _reference: unknown, current: unknown) =>
     observed.cached ?? current,
 }));
-vi.mock("../state/query", () => ({
+vi.mock("../state/query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/query")>()),
   useEnvironmentQuery: (atom: { input: { host?: string } } | null) => {
     const summary = observed.queried;
     return {

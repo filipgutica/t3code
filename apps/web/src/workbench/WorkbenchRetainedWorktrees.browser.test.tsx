@@ -415,7 +415,7 @@ it("hides archived Workspaces from actionable results and restores their search 
     .toHaveTextContent("No confirmed actions");
   await act(() => button(screen, "Turn off Needs attention filter").click());
   expect(screen.container.querySelectorAll("summary")).toHaveLength(1);
-  const search = screen.getByRole("searchbox", { name: "Search Workbench sidebar" });
+  const search = screen.getByRole("combobox", { name: "Search Workbench sidebar", exact: true });
   await search.fill("Release Checklist");
   expect(screen.container.querySelectorAll("summary")).toHaveLength(0);
   await expect

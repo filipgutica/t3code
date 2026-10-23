@@ -30,7 +30,8 @@ const mocks = vi.hoisted(() => ({
   show: vi.fn(),
   close: vi.fn(),
 }));
-vi.mock("@effect/atom-react", () => ({
+vi.mock("@effect/atom-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@effect/atom-react")>()),
   useAtomValue: () => mocks.permission,
   useAtomRefresh: () => mocks.refresh,
 }));

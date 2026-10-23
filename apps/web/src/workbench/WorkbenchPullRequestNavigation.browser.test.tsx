@@ -55,6 +55,8 @@ vi.mock("../state/entities", async () => {
     },
   ] as const;
   return {
+    readEnvironmentSupportsServerBrowser: () => false,
+    useEnvironmentSupportsServerBrowser: () => false,
     useThreadShells: () => emptyThreadShells,
     useProjects: () => projects,
     readProjects: () => projects,
@@ -71,14 +73,17 @@ vi.mock("../state/entities", async () => {
       ]),
   };
 });
-vi.mock("../state/environments", () => ({
+vi.mock("../state/environments", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/environments")>()),
   usePrimaryEnvironmentId: () => EnvironmentId.make("remote"),
 }));
-vi.mock("../state/pullRequests", () => ({
+vi.mock("../state/pullRequests", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/pullRequests")>()),
   linkedPullRequestDetailAtom: () => null,
   useSharedPullRequestSummary: () => null,
 }));
-vi.mock("../state/query", () => ({
+vi.mock("../state/query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/query")>()),
   useEnvironmentQuery: () => ({ data: null, dataUpdatedAt: null }),
 }));
 vi.mock("../components/ui/tooltip", () => {

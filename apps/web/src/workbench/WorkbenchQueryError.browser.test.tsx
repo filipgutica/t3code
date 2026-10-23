@@ -10,6 +10,7 @@ import { WorkbenchQueryError } from "./WorkbenchQueryError";
 
 vi.mock("../components/ui/button", () => ({
   Button: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
+  buttonVariants: ({ className }: { className?: string } = {}) => className ?? "",
 }));
 const snapshot: WorkbenchSnapshot = {
   projects: [],

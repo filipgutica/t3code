@@ -32,7 +32,8 @@ vi.mock("../state/server", async (original) => {
     },
   };
 });
-vi.mock("../state/query", () => ({
+vi.mock("../state/query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/query")>()),
   useEnvironmentQuery: () => ({
     resultIdentity: AsyncResult.initial(),
     data: null,
@@ -44,7 +45,10 @@ vi.mock("../state/query", () => ({
     refresh: vi.fn(),
   }),
 }));
-vi.mock("../hooks/useTheme", () => ({ useTheme: () => ({ resolvedTheme: "dark" }) }));
+vi.mock("../hooks/useTheme", () => ({
+  useTheme: () => ({ resolvedTheme: "dark" }),
+  useRenderedAppearance: () => "dark",
+}));
 vi.mock("../hooks/useSettings", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../hooks/useSettings")>();
   const settings = actual.getClientSettings();
@@ -70,7 +74,8 @@ vi.mock("./ui/tooltip", async () => {
 });
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
-vi.mock("../assets/assetUrls", () => ({
+vi.mock("../assets/assetUrls", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../assets/assetUrls")>()),
   useAssetUrlRefresh: () => vi.fn(),
   useAssetUrlState: (environmentId: EnvironmentId) => ({
     _tag: "Success",
@@ -99,7 +104,18 @@ vi.mock("../state/entities", async () => {
       },
     },
   }));
+  const threadRefs: never[] = [];
   return {
+    useThreadRefs: () => threadRefs,
+    useThreadShell: () => null,
+    useEnvironmentSupportsServerBrowser: () => false,
+    useProject: (ref: { environmentId: string; projectId: string } | null) =>
+      ref === null
+        ? null
+        : (projects.find(
+            (project) =>
+              project.environmentId === ref.environmentId && project.id === ref.projectId,
+          ) ?? null),
     readEnvironmentSupportsServerBrowser: () => false,
     readThreadShell: () => null,
     useProjects: () => projects,
@@ -113,13 +129,16 @@ vi.mock("../state/entities", async () => {
       ),
   };
 });
-vi.mock("../state/environments", () => ({
+vi.mock("../state/environments", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/environments")>()),
   usePrimaryEnvironmentId: () => EnvironmentId.make("remote"),
 }));
-vi.mock("../remoteOpen", () => ({
+vi.mock("../remoteOpen", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../remoteOpen")>()),
   useRemoteOpenResolution: () => ({ state: { mode: "local-exec" }, isResolved: true }),
 }));
-vi.mock("../editorPreferences", () => ({
+vi.mock("../editorPreferences", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../editorPreferences")>()),
   useOpenInPreferredEditor: () => vi.fn(),
   usePreferredEditor: () => [null, vi.fn()],
 }));

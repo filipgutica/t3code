@@ -3,10 +3,12 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, WorkbenchTicketId } from "@t3tools/contracts";
 import { WorkbenchTicketPullRequests } from "./WorkbenchTicketPullRequests";
 
-vi.mock("@effect/atom-react", () => ({
+vi.mock("@effect/atom-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@effect/atom-react")>()),
   useAtomValue: () => ({ pullRequests: [], errors: [], isPending: false }),
 }));
-vi.mock("../state/pullRequests", () => ({
+vi.mock("../state/pullRequests", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/pullRequests")>()),
   usePullRequestList: () => ({ data: null, isPending: false, error: null }),
 }));
 vi.mock("./WorkbenchLinkPullRequest", () => ({

@@ -23,6 +23,9 @@ vi.mock("../state/entities", () => ({
         { environment: { capabilities: { threadPullRequests: true } } },
       ],
     ]),
+  readProjects: () => [],
+  readEnvironmentSupportsServerBrowser: () => false,
+  useEnvironmentSupportsServerBrowser: () => false,
 }));
 vi.mock("../hooks/usePullRequestLinking", () => ({
   usePullRequestLinking: () => ({

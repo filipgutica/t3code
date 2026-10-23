@@ -17,7 +17,8 @@ import {
   createWorkbenchThreadPresentationPolicy,
   useWorkbenchTicketPreparations,
 } from "./useWorkbenchTicketPreparations";
-vi.mock("../state/presentation", () => ({
+vi.mock("../state/presentation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/presentation")>()),
   environmentSummaries: {
     get connectedEnvironmentIdsAtom() {
       return connected;

@@ -15,7 +15,8 @@ const state = vi.hoisted(() => ({
   active: true,
   route: null as ScopedThreadRef | null,
 }));
-vi.mock("@tanstack/react-router", () => ({
+vi.mock("@tanstack/react-router", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-router")>()),
   useLocation: () => ({ pathname: "/workbench" }),
   useParams: () => state.route,
   useSearch: () => ({}),

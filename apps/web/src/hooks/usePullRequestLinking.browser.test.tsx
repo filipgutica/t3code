@@ -9,6 +9,9 @@ vi.mock("~/state/entities", () => ({
   useProjects: () => observed.projects,
   useServerConfigs: () =>
     new Map([["local", { environment: { capabilities: { threadPullRequests: true } } }]]),
+  readProjects: () => observed.projects,
+  readEnvironmentSupportsServerBrowser: () => false,
+  useEnvironmentSupportsServerBrowser: () => false,
 }));
 vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
 vi.mock("~/state/threads", () => ({ threadEnvironment: {} }));

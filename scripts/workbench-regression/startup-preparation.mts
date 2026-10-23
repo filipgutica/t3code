@@ -365,10 +365,13 @@ export const prepareStartup = (input: {
       page.on("console", (message) => {
         if (message.type() === "error") {
           consoleErrors = Math.min(consoleErrors + 1, 10_000);
-          const source = safePath(message.location().url, diagnosticSourcePaths);
+          const text = message.text();
+          const source =
+            diagnosticSource(text.slice(0, 16_384), runtime.devUrl) ??
+            safePath(message.location().url, diagnosticSourcePaths);
           record({
             kind: "console-error",
-            ...classifyDiagnosticError({ name: "Error", message: message.text() }),
+            ...classifyDiagnosticError({ name: "Error", message: text }),
             ...(source === undefined || source === "OTHER" ? {} : { source }),
           });
           if (consoleErrors <= 8) {

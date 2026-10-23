@@ -30,7 +30,12 @@ vi.mock("../components/ui/dialog", async () => {
 });
 vi.mock("../components/ui/button", () => ({ Button: "button" }));
 vi.mock("../components/chat/ProviderModelPicker", () => ({ ProviderModelPicker: () => null }));
-vi.mock("../components/chat/TraitsPicker", () => ({ TraitsPicker: () => null }));
+vi.mock("../components/chat/TraitsPicker", () => ({
+  TraitsPicker: () => null,
+  getReasoningTraitStep: () => null,
+  shouldRenderTraitsControls: () => false,
+  TraitsMenuContent: () => null,
+}));
 vi.mock("./WorkbenchRepositoryScopeFields", () => ({
   WorkbenchRepositoryScopeFields: ({
     value,

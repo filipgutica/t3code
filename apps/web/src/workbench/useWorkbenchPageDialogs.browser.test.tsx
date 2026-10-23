@@ -25,7 +25,10 @@ import { parseWorkbenchThreadSearch } from "./workbenchNavigation";
 import { parseWorkbenchSearch } from "./workbenchSearch";
 const command = vi.hoisted(() => vi.fn());
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => command }));
-vi.mock("@effect/atom-react", () => ({ useAtomValue: () => true }));
+vi.mock("@effect/atom-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@effect/atom-react")>()),
+  useAtomValue: () => true,
+}));
 const environmentId = EnvironmentId.make("remote");
 const workspaceId = WorkbenchProjectId.make("workspace");
 const time = "2026-09-27T00:00:00.000Z";
