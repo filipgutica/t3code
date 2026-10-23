@@ -23,6 +23,7 @@ import { useRightPanelStore } from "../rightPanelStore";
 import { useEnvironment } from "../state/environments";
 import { useThreadActionMenu } from "../hooks/useThreadActionMenu";
 import { useNowMinute } from "../hooks/useNowMinute";
+import { scheduleSnoozeWake } from "../components/Sidebar";
 import { useThreadActions } from "../hooks/useThreadActions";
 import {
   readEnvironmentSupportsSettlement,
@@ -102,16 +103,6 @@ function resolveThreadActivityState(shell: ThreadShell, _clockKey: string) {
     wakeLabel:
       snoozed && shell.snoozedUntil != null ? snoozeWakeLabel(shell.snoozedUntil, { now }) : null,
   };
-}
-
-// Native's scheduleSnoozeWake: wake times are second-precise, and setTimeout delays are signed
-// 32-bit, so far-future wakes are capped instead of firing immediately.
-function scheduleSnoozeWake(wakeAt: string | null, onWake: () => void): (() => void) | undefined {
-  const wakeAtMs = wakeAt === null ? Number.NaN : Date.parse(wakeAt);
-  if (Number.isNaN(wakeAtMs)) return undefined;
-  const delayMs = Math.min(Math.max(0, wakeAtMs - Date.now()) + 50, 2_147_483_647);
-  const id = window.setTimeout(onWake, delayMs);
-  return () => window.clearTimeout(id);
 }
 
 function resolveThreadPullRequestState(
