@@ -3,16 +3,19 @@
 See [Workbench verification](../../docs/operations/workbench-verification.md)
 to see when CI runs each lane and what each result proves.
 
-Run browser regressions against an isolated Orbit/Beacon demo:
+Run browser regressions against an isolated Orbit/Beacon demo. The suite runs the
+built server and its bundled web client, as users do, so build first and rebuild
+after changing app code:
 
 ```sh
+T3CODE_WORKBENCH_BUILD=1 vp run --filter t3 build
 cd scripts
 vp exec playwright install chromium
 vp exec playwright test --config workbench-regression/playwright.config.ts
 ```
 
 The fixture uses the same reset implementation as the demo wizard. It creates a
-separate home, starts the current checkout, pairs the browser, seeds repositories
+separate home, starts the built server, pairs the browser, seeds repositories
 and Workbench data, and stops its server after the tests. It does not use your
 installed T3 home. Failed runs retain screenshots and traces in `.test-results/`.
 
@@ -65,10 +68,8 @@ GitHub branches and PRs are read, not reset. The public Orbit revisions are pinn
 Beacon repositories are synthetic. Temporary homes remain available for diagnosis.
 Snapshot checks reuse one short-lived RPC credential per worker, while each check
 still reads current server state. The credential is revoked before server shutdown.
-CI runs unbundled dev because bundled dev (`T3CODE_BUNDLED_DEV=1`) fails on first load
-with `factory.fn is not a function` on vite-plus 1.3, which serves the dev runtime from
-whichever `rolldown` pnpm hoists. vite-plus 1.4 fixes this; re-enable bundled dev in the
-regression workflows after an upstream sync brings that version.
+Each CI workflow builds the server once and its regression jobs download that
+build. The upstream-sync workflow reuses the build from its desktop verification.
 
 ## GitHub Actions setup
 

@@ -15,7 +15,7 @@ import { configureProvider } from "./provider-settings.mts";
 const root = NodeURL.fileURLToPath(new URL("../../", import.meta.url));
 const decodeRuntime = Schema.decodeUnknownSync(PersistedServerRuntimeState);
 
-type Runtime = { pid: number; startedAt: string; devUrl: string };
+type Runtime = { pid: number; startedAt: string; origin: string };
 const readRuntime = async (home: string): Promise<Runtime | undefined> => {
   const directory = NodePath.join(home, "userdata");
   const file = NodePath.join(directory, "server-runtime.json");
@@ -25,13 +25,13 @@ const readRuntime = async (home: string): Promise<Runtime | undefined> => {
     if ((await NodeFSP.lstat(file)).isSymbolicLink())
       throw new Error("Demo runtime receipt is a symlink.");
     const value = decodeRuntime(JSON.parse(await NodeFSP.readFile(file, "utf8")));
-    if (!value.devUrl) throw new Error("The demo runtime has no public dev origin.");
-    const url = new URL(value.devUrl);
+    // A dev runtime pairs through its Vite origin; a built server serves its own client.
+    const url = new URL(value.devUrl ?? value.origin);
     if (url.protocol !== "http:" || !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) {
       throw new Error("Browser preparation requires the owned local demo origin.");
     }
     process.kill(value.pid, 0);
-    return { pid: value.pid, startedAt: value.startedAt, devUrl: url.origin };
+    return { pid: value.pid, startedAt: value.startedAt, origin: url.origin };
   } catch (error) {
     if (
       error instanceof Error &&
@@ -43,7 +43,7 @@ const readRuntime = async (home: string): Promise<Runtime | undefined> => {
   }
 };
 const sameRuntime = (a: Runtime, b: Runtime | undefined) =>
-  b !== undefined && a.pid === b.pid && a.startedAt === b.startedAt && a.devUrl === b.devUrl;
+  b !== undefined && a.pid === b.pid && a.startedAt === b.startedAt && a.origin === b.origin;
 
 /** Keep this browser alive through worker use; its pairing credential is separate from the launcher's. */
 export const prepareStartup = (input: {
@@ -177,7 +177,7 @@ export const prepareStartup = (input: {
       });
       remaining();
       const pairing = new URL(pairingUrl);
-      if (pairing.origin !== runtime.devUrl || pairing.pathname !== "/pair") {
+      if (pairing.origin !== runtime.origin || pairing.pathname !== "/pair") {
         throw new Error("Owned preparation pairing URL does not match its runtime.");
       }
       const pending = new Set<object>();
@@ -214,29 +214,14 @@ export const prepareStartup = (input: {
       } catch {
         throw new Error("Owned browser preparation could not load the pairing document.");
       }
-      await page
-        .getByRole("button", { name: "Toggle main sidebar", exact: true })
-        .waitFor({ state: "visible", timeout: remaining() });
+      // The built client renders before the reset seeds projects, so it can open
+      // first-run setup or select another Workspace. Pairing is the startup check;
+      // verify() checks the seeded Workbench once the reset has finished.
+      await page.waitForURL((url) => url.pathname !== "/pair", { timeout: remaining() });
       await scriptIdle();
-      const environmentId = (
-        await NodeFSP.readFile(NodePath.join(home, "userdata", "environment-id"), "utf8")
-      ).trim();
-      const workbench = new URL("/workbench", runtime.devUrl);
-      workbench.searchParams.set("environmentId", environmentId);
-      workbench.searchParams.set("workbenchProjectId", "orbit");
-      await page.goto(workbench.href, { timeout: remaining() });
-      await page
-        .getByRole("heading", { name: "Orbit", exact: true })
-        .waitFor({ state: "visible", timeout: remaining() });
-      await page
-        .getByRole("list", { name: "Workbench Workspaces", exact: true })
-        .waitFor({ state: "visible", timeout: remaining() });
-      await scriptIdle();
-      if (!sameRuntime(runtime, await readRuntime(home)))
-        throw new Error("Demo runtime changed during browser preparation.");
+      remaining();
+      return { runtime, page, scriptIdle };
     }
-    remaining();
-    return runtime;
   })()
     .catch(async (error) => {
       await fail(error);
@@ -251,9 +236,25 @@ export const prepareStartup = (input: {
       await fail(error);
       await ready.catch(() => {});
     },
-    verify: async (runtime: Runtime) => {
+    verify: async ({ runtime, page, scriptIdle }: Awaited<typeof ready>) => {
       if (!sameRuntime(runtime, await readRuntime(home)))
         throw new Error("The reset completed on a different demo runtime.");
+      const environmentId = (
+        await NodeFSP.readFile(NodePath.join(home, "userdata", "environment-id"), "utf8")
+      ).trim();
+      const workbench = new URL("/workbench", runtime.origin);
+      workbench.searchParams.set("environmentId", environmentId);
+      workbench.searchParams.set("workbenchProjectId", "orbit");
+      await page.goto(workbench.href, { timeout: remaining() });
+      await page
+        .getByRole("heading", { name: "Orbit", exact: true })
+        .waitFor({ state: "visible", timeout: remaining() });
+      await page
+        .getByRole("list", { name: "Workbench Workspaces", exact: true })
+        .waitFor({ state: "visible", timeout: remaining() });
+      await scriptIdle();
+      if (!sameRuntime(runtime, await readRuntime(home)))
+        throw new Error("Demo runtime changed during browser preparation.");
     },
     close: async () => {
       clearTimeout(timeout);

@@ -108,6 +108,7 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
           home,
           remoteApply: live,
           configure: preparation.configure,
+          built: true,
           ...(oauthBundle ? { oauthBundle, onAuthImported: preparation.onAuthImported } : {}),
         }).catch(async (error) => {
           await preparation.cancel(error);
@@ -190,7 +191,7 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
         await expect(page).not.toHaveURL(/\/pair/, { timeout: 30_000 });
         try {
           // The pairing redirect precedes the first app render. Navigating again here
-          // can abort Vite's lazy module requests and strand bundled dev on its splash.
+          // can abort lazy chunk requests and strand the app on its splash.
           await expect(
             page.getByRole("button", { name: "Toggle main sidebar", exact: true }),
           ).toBeVisible({

@@ -38,6 +38,7 @@ export const resetToBaseline = async (input: {
   oauthBundle?: JiraAuthBundle;
   configure?: (home: string) => Promise<void>;
   onAuthImported?: (home: string) => Promise<void>;
+  built?: boolean;
 }) => {
   const home = requireHome(input.home);
   const plan = planBaselineReset({ home });
@@ -52,14 +53,14 @@ export const resetToBaseline = async (input: {
   await NodeFSP.mkdir(NodePath.join(home, "userdata"), { recursive: true, mode: 0o700 });
   if (settings) await NodeFSP.writeFile(settingsPath, settings, { mode: 0o600 });
   await input.configure?.(home);
-  let server = await launchDemo({ home });
+  let server = await launchDemo({ home, built: input.built });
   try {
     if (oauthBundle) {
       // The first boot migrates a new database. Credentials are imported only while stopped.
       await server.stop();
       await importJiraAuth({ home, bundle: oauthBundle });
       await input.onAuthImported?.(home);
-      server = await launchDemo({ home });
+      server = await launchDemo({ home, built: input.built });
     }
     const config = readConfig(home);
     const names = (config.DEMO_GITHUB_REPOSITORIES ?? "")

@@ -8,11 +8,21 @@ import { stopDemo } from "./lifecycle.mts";
 import { requireHome } from "./environment.mts";
 
 const root = NodeURL.fileURLToPath(new URL("../../", import.meta.url));
-export const launchDemo = async (input: { home: string; env?: NodeJS.ProcessEnv }) => {
+export const launchDemo = async (input: {
+  home: string;
+  env?: NodeJS.ProcessEnv;
+  built?: boolean | undefined;
+}) => {
   const home = requireHome(input.home);
   const child = NodeChildProcess.spawn(
     process.execPath,
-    ["scripts/workbench-demo/cli.mts", "start", "--home", home],
+    [
+      "scripts/workbench-demo/cli.mts",
+      "start",
+      "--home",
+      home,
+      ...(input.built ? ["--built"] : []),
+    ],
     {
       cwd: root,
       env: {
