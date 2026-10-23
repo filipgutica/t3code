@@ -269,15 +269,21 @@ export class JiraHttpClient {
     });
   }
 
-  async sprintIssueKeys(sprintId: number): Promise<readonly string[]> {
+  async sprintIssueKeys(
+    sprintId: number,
+    reconcile?: { readonly boardId: number; readonly issueId: string },
+  ): Promise<readonly string[]> {
     if (!Number.isSafeInteger(sprintId) || sprintId <= 0) {
       throw new Error("Jira sprint ID must be a positive integer.");
     }
-    return parseSprintKeys(
-      await this.#request<unknown>(
-        `/rest/agile/1.0/sprint/${encodeURIComponent(String(sprintId))}/issue?maxResults=100&fields=key`,
-      ),
-    );
+    const sprint = encodeURIComponent(String(sprintId));
+    // Sprint issue lists come from Jira's search index, which lags just after a sprint move.
+    // Only the board-scoped endpoint can reconcile a just-moved issue with strong consistency.
+    const path =
+      reconcile === undefined
+        ? `/rest/agile/1.0/sprint/${sprint}/issue?maxResults=100&fields=key`
+        : `/rest/software/1.0/board/${encodeURIComponent(String(reconcile.boardId))}/sprint/${sprint}/issue?maxResults=100&fields=key&reconcileIssues=${encodeURIComponent(reconcile.issueId)}`;
+    return parseSprintKeys(await this.#request<unknown>(path));
   }
 
   async createFutureSprint(boardId: number, name: string): Promise<JiraSprint> {
