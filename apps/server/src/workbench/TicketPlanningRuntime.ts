@@ -59,34 +59,34 @@ export const layerMcpWritePolicy = Layer.effect(
   Effect.gen(function* () {
     const store = yield* WorkbenchStore.WorkbenchStore;
     return {
-      assertAllowed: Effect.fn("TicketPlanningRuntime.assertAllowed")(function* (
-        threadId: ThreadId,
-        operation?: "research",
-      ) {
-        const draft = yield* store.getTicketDraftForThread(threadId).pipe(
-          Effect.mapError(
-            () =>
-              new OrchestratorMcpFailure({
+      assertAllowed: Effect.fn("TicketPlanningRuntime.assertAllowed")(
+        (threadId: ThreadId, operation?: "research") =>
+          Effect.gen(function* () {
+            const draft = yield* store.getTicketDraftForThread(threadId).pipe(
+              Effect.mapError(
+                () =>
+                  new OrchestratorMcpFailure({
+                    code: "capability_denied",
+                    message: "Ticket planning permissions could not be verified.",
+                  }),
+              ),
+            );
+            if (operation === "research") {
+              if (draft !== null && (draft.phase === "draft" || draft.phase === "planning")) return;
+              return yield* new OrchestratorMcpFailure({
                 code: "capability_denied",
-                message: "Ticket planning permissions could not be verified.",
-              }),
-          ),
-        );
-        if (operation === "research") {
-          if (draft !== null && (draft.phase === "draft" || draft.phase === "planning")) return;
-          return yield* new OrchestratorMcpFailure({
-            code: "capability_denied",
-            message: "Browser research requires an active ticket planning conversation.",
-          });
-        }
-        if (draft !== null && draft.phase !== "working") {
-          return yield* new OrchestratorMcpFailure({
-            code: "capability_denied",
-            message:
-              "This conversation is preparing a ticket. Start work before changing repositories or the environment.",
-          });
-        }
-      }),
+                message: "Browser research requires an active ticket planning conversation.",
+              });
+            }
+            if (draft !== null && draft.phase !== "working") {
+              return yield* new OrchestratorMcpFailure({
+                code: "capability_denied",
+                message:
+                  "This conversation is preparing a ticket. Start work before changing repositories or the environment.",
+              });
+            }
+          }),
+      ),
     };
   }),
 );
@@ -99,8 +99,8 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
   const jira = yield* JiraRepository.WorkbenchJiraRepository;
   return {
     decorate: (base: RuntimePolicy.RuntimePolicyV2Shape): RuntimePolicy.RuntimePolicyV2Shape => ({
-      resolve: Effect.fn("TicketPlanningRuntime.resolve")(
-        function* (input) {
+      resolve: Effect.fn("TicketPlanningRuntime.resolve")((input) =>
+        Effect.gen(function* () {
           const policy = yield* base.resolve(input);
           const draft = yield* store.getTicketDraftForThread(input.thread.id);
           if (draft === null) return policy;
@@ -205,19 +205,17 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
                 : "The ticket has not been created yet.",
             ].join("\n\n"),
           };
-        },
-        (effect, input) =>
-          effect.pipe(
-            Effect.mapError((cause) =>
-              isRuntimePolicyResolveError(cause)
-                ? cause
-                : new RuntimePolicy.RuntimePolicyResolveError({
-                    projectId: input.thread.projectId,
-                    providerInstanceId: input.modelSelection.instanceId,
-                    cause,
-                  }),
-            ),
+        }).pipe(
+          Effect.mapError((cause) =>
+            isRuntimePolicyResolveError(cause)
+              ? cause
+              : new RuntimePolicy.RuntimePolicyResolveError({
+                  projectId: input.thread.projectId,
+                  providerInstanceId: input.modelSelection.instanceId,
+                  cause,
+                }),
           ),
+        ),
       ),
     }),
   };

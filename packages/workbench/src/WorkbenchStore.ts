@@ -2137,17 +2137,18 @@ const makeWorkbenchStore = Effect.gen(function* () {
   });
 
   const requireIdlePlanningThreads = Effect.fn("WorkbenchStore.requireIdlePlanningThreads")(
-    function* (threadIds: ReadonlyArray<ThreadId>) {
-      for (const threadId of threadIds) {
-        if (yield* native.hasPendingThreadWork(threadId)) {
-          return yield* new WorkbenchOperationError({
-            code: "ticket_draft_busy",
-            message:
-              "Stop or finish the planning conversation before deleting its Ticket or workspace.",
-          });
+    (threadIds: ReadonlyArray<ThreadId>) =>
+      Effect.gen(function* () {
+        for (const threadId of threadIds) {
+          if (yield* native.hasPendingThreadWork(threadId)) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_draft_busy",
+              message:
+                "Stop or finish the planning conversation before deleting its Ticket or workspace.",
+            });
+          }
         }
-      }
-    },
+      }),
   );
 
   const deleteProject: WorkbenchStoreShape["deleteProject"] = Effect.fn(

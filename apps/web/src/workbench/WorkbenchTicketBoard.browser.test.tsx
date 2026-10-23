@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import type { DndContext, DragEndEvent } from "@dnd-kit/core";
@@ -44,14 +44,20 @@ vi.mock(import("@dnd-kit/core"), async (original) => {
     }),
   };
 });
-vi.mock(import("./WorkbenchAttentionProvider"), { spy: true });
-vi.mock("../state/query", () => ({
+// Attention is supplied by the host. Keep the board's fixture independent of its PR query graph.
+vi.mock("./WorkbenchAttentionProvider", () => ({
+  WorkbenchAttentionProvider: ({ children }: { children: ReactNode }) => children,
+  useWorkbenchAttentionData: vi.fn(),
+}));
+vi.mock("../state/query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/query")>()),
   useEnvironmentQuery: () => ({ data: null, error: null, isPending: false }),
 }));
 vi.mock("../state/pullRequests", () => ({
   linkedPullRequestDetailAtom: () => null,
   pullRequestEnvironment: { activity: () => null },
   useSharedPullRequestSummary: () => null,
+  usePullRequestList: () => ({ data: null, isPending: false, error: null, refresh: vi.fn() }),
 }));
 vi.mock("./state", () => ({
   workbenchEnvironment: {

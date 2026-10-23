@@ -50,15 +50,16 @@ const encodeDraft = Schema.encodeEffect(DraftJson);
 // Detached saved planning conversations retain their runtime guard, but no longer own
 // the Ticket's preparation UI. Native reads share the caller's SQL transaction.
 const hasLivePreparationThread = Effect.fn("TicketDraftPersistence.hasLivePreparationThread")(
-  function* (threadId: ThreadId, ticketId: WorkbenchTicketId) {
-    const sql = yield* SqlClient.SqlClient;
-    const native = yield* WorkbenchNativeAccess;
-    const assignments = yield* sql`SELECT 1 FROM workbench_assignments
+  (threadId: ThreadId, ticketId: WorkbenchTicketId) =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const native = yield* WorkbenchNativeAccess;
+      const assignments = yield* sql`SELECT 1 FROM workbench_assignments
       WHERE ticket_id = ${ticketId} AND thread_id = ${threadId} AND superseded_at IS NULL LIMIT 1`;
-    if (assignments.length === 0) return false;
-    const thread = yield* native.findThread(threadId);
-    return Option.isSome(thread) && thread.value.archivedAt == null;
-  },
+      if (assignments.length === 0) return false;
+      const thread = yield* native.findThread(threadId);
+      return Option.isSome(thread) && thread.value.archivedAt == null;
+    }),
 );
 
 /** Snapshot and lifecycle reads use the same SQL transaction as the caller. */
@@ -108,330 +109,341 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
       Effect.mapError(operationError),
     );
   const getTicketDraft = Effect.fn("TicketDraftPersistence.getTicketDraft")(
-    function* (id: WorkbenchTicketId) {
-      const rows = yield* sql<{ readonly payload: string }>`
+    (id: WorkbenchTicketId) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ readonly payload: string }>`
       SELECT d.payload_json AS payload FROM workbench_ticket_drafts d
       JOIN workbench_projects p ON p.project_id = d.workbench_project_id
       WHERE d.draft_id = ${id} AND p.deleted_at IS NULL`;
-      if (!rows[0])
-        return yield* new WorkbenchOperationError({
-          code: "ticket_draft_not_found",
-          message: "This ticket draft is no longer available.",
-        });
-      return yield* decodeDraft(rows[0].payload);
-    },
-    NodeSqliteClient.readOnly,
-    Effect.mapError(operationError),
+        if (!rows[0])
+          return yield* new WorkbenchOperationError({
+            code: "ticket_draft_not_found",
+            message: "This ticket draft is no longer available.",
+          });
+        return yield* decodeDraft(rows[0].payload);
+      }).pipe(NodeSqliteClient.readOnly, Effect.mapError(operationError)),
   );
-  const requireWorkspace = Effect.fn("TicketDraftPersistence.requireWorkspace")(function* (
-    projectId: WorkbenchProjectId,
-  ) {
-    const rows = yield* sql<{
-      readonly archivedAt: string | null;
-    }>`SELECT archived_at AS "archivedAt"
+  const requireWorkspace = Effect.fn("TicketDraftPersistence.requireWorkspace")(
+    (projectId: WorkbenchProjectId) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{
+          readonly archivedAt: string | null;
+        }>`SELECT archived_at AS "archivedAt"
       FROM workbench_projects WHERE project_id = ${projectId} AND deleted_at IS NULL`;
-    if (!rows[0])
-      return yield* new WorkbenchOperationError({
-        code: "project_not_found",
-        message: "The Workbench workspace is unavailable.",
-      });
-    if (rows[0].archivedAt !== null)
-      return yield* new WorkbenchOperationError({
-        code: "project_archived",
-        message: "Restore this Workbench workspace before preparing a ticket.",
-      });
-    const links = yield* sql<{ readonly id: ProjectId }>`SELECT t3_project_id AS id
+        if (!rows[0])
+          return yield* new WorkbenchOperationError({
+            code: "project_not_found",
+            message: "The Workbench workspace is unavailable.",
+          });
+        if (rows[0].archivedAt !== null)
+          return yield* new WorkbenchOperationError({
+            code: "project_archived",
+            message: "Restore this Workbench workspace before preparing a ticket.",
+          });
+        const links = yield* sql<{ readonly id: ProjectId }>`SELECT t3_project_id AS id
       FROM workbench_project_links WHERE workbench_project_id = ${projectId} ORDER BY position`;
-    return links.map((link) => link.id);
-  });
+        return links.map((link) => link.id);
+      }),
+  );
   const requireActiveDraftTicket = Effect.fn("TicketDraftPersistence.requireActiveDraftTicket")(
-    function* (draft: WorkbenchTicketDraft) {
-      yield* requireWorkspace(draft.projectId);
-      const tickets = yield* sql<{
-        readonly archivedAt: string | null;
-      }>`SELECT archived_at AS "archivedAt"
+    (draft: WorkbenchTicketDraft) =>
+      Effect.gen(function* () {
+        yield* requireWorkspace(draft.projectId);
+        const tickets = yield* sql<{
+          readonly archivedAt: string | null;
+        }>`SELECT archived_at AS "archivedAt"
         FROM workbench_tickets WHERE ticket_id = ${draft.id}
           AND workbench_project_id = ${draft.projectId} AND deleted_at IS NULL`;
-      if (!tickets[0])
-        return yield* new WorkbenchOperationError({
-          code: "ticket_not_found",
-          message: "This Ticket is no longer available for starting work.",
-        });
-      if (tickets[0].archivedAt !== null)
-        return yield* new WorkbenchOperationError({
-          code: "ticket_archived",
-          message: "Restore this Ticket before starting work.",
-        });
-    },
+        if (!tickets[0])
+          return yield* new WorkbenchOperationError({
+            code: "ticket_not_found",
+            message: "This Ticket is no longer available for starting work.",
+          });
+        if (tickets[0].archivedAt !== null)
+          return yield* new WorkbenchOperationError({
+            code: "ticket_archived",
+            message: "Restore this Ticket before starting work.",
+          });
+      }),
   );
-  const validateFields = Effect.fn("TicketDraftPersistence.validateFields")(function* (
-    draft: WorkbenchTicketDraft,
-    validatedRoots: ReadonlyMap<ProjectId, string>,
-  ) {
-    const linked = yield* requireWorkspace(draft.projectId);
-    const selected = draft.fields.repositoryProjectIds;
-    if (new Set(selected).size !== selected.length || selected.some((id) => !linked.includes(id))) {
-      return yield* new WorkbenchOperationError({
-        code: "repository_not_linked",
-        message: "Choose repositories linked to this Workbench workspace.",
-      });
-    }
-    if (
-      draft.fields.primaryT3ProjectId !== null &&
-      !selected.includes(draft.fields.primaryT3ProjectId)
-    ) {
-      return yield* new WorkbenchOperationError({
-        code: "primary_repository_not_selected",
-        message: "The primary repository must be in the ticket's repository scope.",
-      });
-    }
-    if (draft.fields.epicId !== null) {
-      const epics =
-        yield* sql`SELECT epic_id FROM workbench_epics WHERE epic_id = ${draft.fields.epicId}
-        AND workbench_project_id = ${draft.projectId} AND archived_at IS NULL`;
-      if (epics.length === 0)
-        return yield* new WorkbenchOperationError({
-          code: "epic_project_mismatch",
-          message: "Choose an active Epic from this Workbench workspace.",
-        });
-    }
-    for (const id of selected) {
-      const project = yield* native.findProject(id);
-      if (Option.isNone(project)) {
-        return yield* new WorkbenchOperationError({
-          code: "linked_project_not_repository",
-          message: "A selected repository is no longer available.",
-        });
-      }
-      if (project.value.workspaceRoot !== validatedRoots.get(id)) {
-        return yield* new WorkbenchOperationError({
-          code: "project_changed",
-          message: "A selected repository's workspace root changed. Retry the operation.",
-        });
-      }
-    }
-  });
-  const validateRepositories = Effect.fn("TicketDraftPersistence.validateRepositories")(function* (
-    ids: ReadonlyArray<ProjectId>,
-  ) {
-    const validatedRoots = new Map<ProjectId, string>();
-    for (const id of ids) {
-      const project = yield* native.findProject(id);
-      if (Option.isNone(project) || !(yield* native.isRepository(project.value.workspaceRoot))) {
-        return yield* new WorkbenchOperationError({
-          code: "linked_project_not_repository",
-          message: "A selected repository is no longer available.",
-        });
-      }
-      validatedRoots.set(id, project.value.workspaceRoot);
-    }
-    return validatedRoots;
-  });
-  const readCurrentDraft = Effect.fn("TicketDraftPersistence.readCurrentDraft")(function* (
-    input: WorkbenchTicketDraftActionInput,
-  ) {
-    const draft = yield* getTicketDraft(input.id);
-    if (draft.revision !== input.expectedRevision) return yield* changed();
-    return draft;
-  });
-  const save = Effect.fn("TicketDraftPersistence.save")(function* (
-    current: WorkbenchTicketDraft,
-    next: WorkbenchTicketDraft,
-  ) {
-    const rows = yield* sql`UPDATE workbench_ticket_drafts SET phase = ${next.phase},
-      revision = ${next.revision}, payload_json = ${yield* encodeDraft(next)}
-      WHERE draft_id = ${current.id} AND revision = ${current.revision} RETURNING draft_id`;
-    if (rows.length === 0) return yield* changed();
-    return next;
-  });
-  const beginTicketDraft = Effect.fn("TicketDraftPersistence.beginTicketDraft")(function* (
-    input: WorkbenchBeginTicketDraftInput,
-  ) {
-    const anchor = yield* sql
-      .withTransaction(
-        Effect.gen(function* () {
-          const existing =
-            yield* sql`SELECT 1 FROM workbench_ticket_drafts WHERE draft_id = ${input.id} OR thread_id = ${input.threadId}`;
-          if (existing.length > 0) return undefined;
-          return (yield* requireWorkspace(input.projectId))[0];
-        }),
-      )
-      .pipe(NodeSqliteClient.readOnly);
-    const validatedRoots = yield* validateRepositories(anchor === undefined ? [] : [anchor]);
-    return yield* sql.withTransaction(
+  const validateFields = Effect.fn("TicketDraftPersistence.validateFields")(
+    (draft: WorkbenchTicketDraft, validatedRoots: ReadonlyMap<ProjectId, string>) =>
       Effect.gen(function* () {
-        yield* sql`UPDATE workbench_projects SET updated_at = updated_at WHERE project_id = ${input.projectId}`;
-        const linked = yield* requireWorkspace(input.projectId);
-        const existing = yield* sql<{ readonly payload: string }>`SELECT payload_json AS payload
-      FROM workbench_ticket_drafts WHERE draft_id = ${input.id} OR thread_id = ${input.threadId}`;
-        if (existing[0]) {
-          const draft = yield* decodeDraft(existing[0].payload);
-          if (
-            draft.id !== input.id ||
-            draft.threadId !== input.threadId ||
-            draft.projectId !== input.projectId
-          ) {
+        const linked = yield* requireWorkspace(draft.projectId);
+        const selected = draft.fields.repositoryProjectIds;
+        if (
+          new Set(selected).size !== selected.length ||
+          selected.some((id) => !linked.includes(id))
+        ) {
+          return yield* new WorkbenchOperationError({
+            code: "repository_not_linked",
+            message: "Choose repositories linked to this Workbench workspace.",
+          });
+        }
+        if (
+          draft.fields.primaryT3ProjectId !== null &&
+          !selected.includes(draft.fields.primaryT3ProjectId)
+        ) {
+          return yield* new WorkbenchOperationError({
+            code: "primary_repository_not_selected",
+            message: "The primary repository must be in the ticket's repository scope.",
+          });
+        }
+        if (draft.fields.epicId !== null) {
+          const epics =
+            yield* sql`SELECT epic_id FROM workbench_epics WHERE epic_id = ${draft.fields.epicId}
+        AND workbench_project_id = ${draft.projectId} AND archived_at IS NULL`;
+          if (epics.length === 0)
             return yield* new WorkbenchOperationError({
-              code: "ticket_draft_invalid",
-              message: "This draft or Thread identity already belongs to another preparation.",
+              code: "epic_project_mismatch",
+              message: "Choose an active Epic from this Workbench workspace.",
+            });
+        }
+        for (const id of selected) {
+          const project = yield* native.findProject(id);
+          if (Option.isNone(project)) {
+            return yield* new WorkbenchOperationError({
+              code: "linked_project_not_repository",
+              message: "A selected repository is no longer available.",
             });
           }
-          return draft;
+          if (project.value.workspaceRoot !== validatedRoots.get(id)) {
+            return yield* new WorkbenchOperationError({
+              code: "project_changed",
+              message: "A selected repository's workspace root changed. Retry the operation.",
+            });
+          }
         }
-        const project =
-          linked[0] === undefined ? Option.none() : yield* native.findProject(linked[0]);
-        if (linked[0] === undefined || Option.isNone(project) || linked[0] !== anchor) {
-          return yield* new WorkbenchOperationError({
-            code: "linked_project_not_repository",
-            message: "This workspace needs an available repository before planning can begin.",
-          });
-        }
-        if (project.value.workspaceRoot !== validatedRoots.get(linked[0])) {
-          return yield* new WorkbenchOperationError({
-            code: "project_changed",
-            message: "A selected repository's workspace root changed. Retry the operation.",
-          });
-        }
-        if (Option.isSome(yield* native.findThread(input.threadId))) {
-          return yield* new WorkbenchOperationError({
-            code: "assignment_already_exists",
-            message: "Choose a new Thread identity for this ticket draft.",
-          });
-        }
-        const usedTicketIds =
-          yield* sql`SELECT ticket_id FROM workbench_tickets WHERE ticket_id = ${input.id}`;
-        const usedThreadIds =
-          yield* sql`SELECT assignment_id FROM workbench_assignments WHERE thread_id = ${input.threadId}`;
-        if (usedTicketIds.length > 0 || usedThreadIds.length > 0)
-          return yield* new WorkbenchOperationError({
-            code: "ticket_draft_invalid",
-            message: "Choose a new ticket and Thread identity for this draft.",
-          });
-        const createdAt = yield* now;
-        const draft = WorkbenchTicketDraft.make({
-          ...input,
-          anchorProjectId: linked[0],
-          phase: "creating",
-          revision: 0,
-          fields: {
-            title: "",
-            markdown: "",
-            kind: "story",
-            epicId: null,
-            repositoryProjectIds: [],
-            primaryT3ProjectId: null,
-            localOnly: true,
-            jiraSprintId: null,
-          },
-          createdAt,
-          updatedAt: createdAt,
-        });
-        yield* sql`INSERT INTO workbench_ticket_drafts (draft_id, workbench_project_id, thread_id, phase, revision, payload_json)
-      VALUES (${draft.id}, ${draft.projectId}, ${draft.threadId}, ${draft.phase}, ${draft.revision}, ${yield* encodeDraft(draft)})`;
-        return draft;
       }),
-    );
-  }, Effect.mapError(operationError));
-  const updateTicketDraft = Effect.fn("TicketDraftPersistence.updateTicketDraft")(function* (
-    input: WorkbenchUpdateTicketDraftInput,
-  ) {
-    const current = yield* readCurrentDraft(input);
-    if (current.phase !== "draft") return yield* busy();
-    const validatedRoots = yield* validateRepositories(input.fields.repositoryProjectIds);
-    return yield* sql.withTransaction(
+  );
+  const validateRepositories = Effect.fn("TicketDraftPersistence.validateRepositories")(
+    (ids: ReadonlyArray<ProjectId>) =>
       Effect.gen(function* () {
-        yield* sql`UPDATE workbench_ticket_drafts SET revision = revision WHERE draft_id = ${input.id}`;
+        const validatedRoots = new Map<ProjectId, string>();
+        for (const id of ids) {
+          const project = yield* native.findProject(id);
+          if (
+            Option.isNone(project) ||
+            !(yield* native.isRepository(project.value.workspaceRoot))
+          ) {
+            return yield* new WorkbenchOperationError({
+              code: "linked_project_not_repository",
+              message: "A selected repository is no longer available.",
+            });
+          }
+          validatedRoots.set(id, project.value.workspaceRoot);
+        }
+        return validatedRoots;
+      }),
+  );
+  const readCurrentDraft = Effect.fn("TicketDraftPersistence.readCurrentDraft")(
+    (input: WorkbenchTicketDraftActionInput) =>
+      Effect.gen(function* () {
         const draft = yield* getTicketDraft(input.id);
         if (draft.revision !== input.expectedRevision) return yield* changed();
-        if (draft.phase !== "draft") return yield* busy();
-        const next = {
-          ...draft,
-          fields: input.fields,
-          revision: draft.revision + 1,
-          updatedAt: yield* now,
-        };
-        yield* validateFields(next, validatedRoots);
-        return yield* save(draft, next);
+        return draft;
       }),
-    );
-  }, Effect.mapError(operationError));
+  );
+  const save = Effect.fn("TicketDraftPersistence.save")(
+    (current: WorkbenchTicketDraft, next: WorkbenchTicketDraft) =>
+      Effect.gen(function* () {
+        const rows = yield* sql`UPDATE workbench_ticket_drafts SET phase = ${next.phase},
+      revision = ${next.revision}, payload_json = ${yield* encodeDraft(next)}
+      WHERE draft_id = ${current.id} AND revision = ${current.revision} RETURNING draft_id`;
+        if (rows.length === 0) return yield* changed();
+        return next;
+      }),
+  );
+  const beginTicketDraft = Effect.fn("TicketDraftPersistence.beginTicketDraft")(
+    (input: WorkbenchBeginTicketDraftInput) =>
+      Effect.gen(function* () {
+        const anchor = yield* sql
+          .withTransaction(
+            Effect.gen(function* () {
+              const existing =
+                yield* sql`SELECT 1 FROM workbench_ticket_drafts WHERE draft_id = ${input.id} OR thread_id = ${input.threadId}`;
+              if (existing.length > 0) return undefined;
+              return (yield* requireWorkspace(input.projectId))[0];
+            }),
+          )
+          .pipe(NodeSqliteClient.readOnly);
+        const validatedRoots = yield* validateRepositories(anchor === undefined ? [] : [anchor]);
+        return yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* sql`UPDATE workbench_projects SET updated_at = updated_at WHERE project_id = ${input.projectId}`;
+            const linked = yield* requireWorkspace(input.projectId);
+            const existing = yield* sql<{ readonly payload: string }>`SELECT payload_json AS payload
+      FROM workbench_ticket_drafts WHERE draft_id = ${input.id} OR thread_id = ${input.threadId}`;
+            if (existing[0]) {
+              const draft = yield* decodeDraft(existing[0].payload);
+              if (
+                draft.id !== input.id ||
+                draft.threadId !== input.threadId ||
+                draft.projectId !== input.projectId
+              ) {
+                return yield* new WorkbenchOperationError({
+                  code: "ticket_draft_invalid",
+                  message: "This draft or Thread identity already belongs to another preparation.",
+                });
+              }
+              return draft;
+            }
+            const project =
+              linked[0] === undefined ? Option.none() : yield* native.findProject(linked[0]);
+            if (linked[0] === undefined || Option.isNone(project) || linked[0] !== anchor) {
+              return yield* new WorkbenchOperationError({
+                code: "linked_project_not_repository",
+                message: "This workspace needs an available repository before planning can begin.",
+              });
+            }
+            if (project.value.workspaceRoot !== validatedRoots.get(linked[0])) {
+              return yield* new WorkbenchOperationError({
+                code: "project_changed",
+                message: "A selected repository's workspace root changed. Retry the operation.",
+              });
+            }
+            if (Option.isSome(yield* native.findThread(input.threadId))) {
+              return yield* new WorkbenchOperationError({
+                code: "assignment_already_exists",
+                message: "Choose a new Thread identity for this ticket draft.",
+              });
+            }
+            const usedTicketIds =
+              yield* sql`SELECT ticket_id FROM workbench_tickets WHERE ticket_id = ${input.id}`;
+            const usedThreadIds =
+              yield* sql`SELECT assignment_id FROM workbench_assignments WHERE thread_id = ${input.threadId}`;
+            if (usedTicketIds.length > 0 || usedThreadIds.length > 0)
+              return yield* new WorkbenchOperationError({
+                code: "ticket_draft_invalid",
+                message: "Choose a new ticket and Thread identity for this draft.",
+              });
+            const createdAt = yield* now;
+            const draft = WorkbenchTicketDraft.make({
+              ...input,
+              anchorProjectId: linked[0],
+              phase: "creating",
+              revision: 0,
+              fields: {
+                title: "",
+                markdown: "",
+                kind: "story",
+                epicId: null,
+                repositoryProjectIds: [],
+                primaryT3ProjectId: null,
+                localOnly: true,
+                jiraSprintId: null,
+              },
+              createdAt,
+              updatedAt: createdAt,
+            });
+            yield* sql`INSERT INTO workbench_ticket_drafts (draft_id, workbench_project_id, thread_id, phase, revision, payload_json)
+      VALUES (${draft.id}, ${draft.projectId}, ${draft.threadId}, ${draft.phase}, ${draft.revision}, ${yield* encodeDraft(draft)})`;
+            return draft;
+          }),
+        );
+      }).pipe(Effect.mapError(operationError)),
+  );
+  const updateTicketDraft = Effect.fn("TicketDraftPersistence.updateTicketDraft")(
+    (input: WorkbenchUpdateTicketDraftInput) =>
+      Effect.gen(function* () {
+        const current = yield* readCurrentDraft(input);
+        if (current.phase !== "draft") return yield* busy();
+        const validatedRoots = yield* validateRepositories(input.fields.repositoryProjectIds);
+        return yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* sql`UPDATE workbench_ticket_drafts SET revision = revision WHERE draft_id = ${input.id}`;
+            const draft = yield* getTicketDraft(input.id);
+            if (draft.revision !== input.expectedRevision) return yield* changed();
+            if (draft.phase !== "draft") return yield* busy();
+            const next = {
+              ...draft,
+              fields: input.fields,
+              revision: draft.revision + 1,
+              updatedAt: yield* now,
+            };
+            yield* validateFields(next, validatedRoots);
+            return yield* save(draft, next);
+          }),
+        );
+      }).pipe(Effect.mapError(operationError)),
+  );
   const transitionTicketDraft = Effect.fn("TicketDraftPersistence.transitionTicketDraft")(
-    function* (
+    (
       input: WorkbenchTicketDraftActionInput & {
         readonly from: ReadonlyArray<WorkbenchTicketDraftPhase>;
         readonly phase: WorkbenchTicketDraftPhase;
       },
-    ) {
-      let validatedRoots = new Map<ProjectId, string>();
-      if (input.phase === "draft" || input.phase === "promoting") {
-        const current = yield* readCurrentDraft(input);
-        if (!input.from.includes(current.phase)) return yield* busy();
-        validatedRoots = yield* validateRepositories(current.fields.repositoryProjectIds);
-      }
-      return yield* sql.withTransaction(
-        Effect.gen(function* () {
-          yield* sql`UPDATE workbench_ticket_drafts SET revision = revision WHERE draft_id = ${input.id}`;
-          const draft = yield* getTicketDraft(input.id);
-          if (draft.revision !== input.expectedRevision) return yield* changed();
-          if (!input.from.includes(draft.phase)) return yield* busy();
-          if (input.phase === "discarding" && draft.phase === "promoting") {
-            const tickets =
-              yield* sql`SELECT ticket_id FROM workbench_tickets WHERE ticket_id = ${draft.id} AND deleted_at IS NULL`;
-            if (tickets.length > 0)
-              return yield* new WorkbenchOperationError({
-                code: "ticket_draft_busy",
-                message:
-                  "This ticket is already saved. Retry linking its planning Thread before discarding anything.",
-              });
-          }
-          if (input.phase === "starting") yield* requireActiveDraftTicket(draft);
-          if (
-            input.phase === "starting" &&
-            !(yield* hasLivePreparationThread(draft.threadId, draft.id).pipe(
-              Effect.provideService(SqlClient.SqlClient, sql),
-              Effect.provideService(WorkbenchNativeAccess, native),
-            ))
-          ) {
-            return yield* new WorkbenchOperationError({
-              code: "assignment_changed",
-              message:
-                "The planning conversation no longer owns this Ticket. Open its current conversation before starting work.",
-            });
-          }
-          if (input.phase === "planning") {
-            const tickets = yield* sql<{
-              readonly primary: ProjectId;
-            }>`SELECT primary_t3_project_id AS "primary"
-              FROM workbench_tickets WHERE ticket_id = ${draft.id} AND deleted_at IS NULL AND archived_at IS NULL`;
-            const thread = yield* native.findThread(draft.threadId);
-            const assignments = yield* sql`SELECT assignment_id FROM workbench_assignments
-              WHERE ticket_id = ${draft.id} AND thread_id = ${draft.threadId} AND superseded_at IS NULL`;
+    ) =>
+      Effect.gen(function* () {
+        let validatedRoots = new Map<ProjectId, string>();
+        if (input.phase === "draft" || input.phase === "promoting") {
+          const current = yield* readCurrentDraft(input);
+          if (!input.from.includes(current.phase)) return yield* busy();
+          validatedRoots = yield* validateRepositories(current.fields.repositoryProjectIds);
+        }
+        return yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* sql`UPDATE workbench_ticket_drafts SET revision = revision WHERE draft_id = ${input.id}`;
+            const draft = yield* getTicketDraft(input.id);
+            if (draft.revision !== input.expectedRevision) return yield* changed();
+            if (!input.from.includes(draft.phase)) return yield* busy();
+            if (input.phase === "discarding" && draft.phase === "promoting") {
+              const tickets =
+                yield* sql`SELECT ticket_id FROM workbench_tickets WHERE ticket_id = ${draft.id} AND deleted_at IS NULL`;
+              if (tickets.length > 0)
+                return yield* new WorkbenchOperationError({
+                  code: "ticket_draft_busy",
+                  message:
+                    "This ticket is already saved. Retry linking its planning Thread before discarding anything.",
+                });
+            }
+            if (input.phase === "starting") yield* requireActiveDraftTicket(draft);
             if (
-              !tickets[0] ||
-              Option.isNone(thread) ||
-              thread.value.projectId !== tickets[0].primary ||
-              thread.value.worktreePath !== null ||
-              assignments.length !== 1
+              input.phase === "starting" &&
+              !(yield* hasLivePreparationThread(draft.threadId, draft.id).pipe(
+                Effect.provideService(SqlClient.SqlClient, sql),
+                Effect.provideService(WorkbenchNativeAccess, native),
+              ))
             ) {
               return yield* new WorkbenchOperationError({
-                code: "ticket_changed",
+                code: "assignment_changed",
                 message:
-                  "The saved ticket or Thread changed during linking. Reload and retry ticket creation.",
+                  "The planning conversation no longer owns this Ticket. Open its current conversation before starting work.",
               });
             }
-          }
-          if (input.phase === "draft" || input.phase === "promoting")
-            yield* validateFields(draft, validatedRoots);
-          return yield* save(draft, {
-            ...draft,
-            phase: input.phase,
-            revision: draft.revision + 1,
-            updatedAt: yield* now,
-          });
-        }),
-      );
-    },
-    Effect.mapError(operationError),
+            if (input.phase === "planning") {
+              const tickets = yield* sql<{
+                readonly primary: ProjectId;
+              }>`SELECT primary_t3_project_id AS "primary"
+              FROM workbench_tickets WHERE ticket_id = ${draft.id} AND deleted_at IS NULL AND archived_at IS NULL`;
+              const thread = yield* native.findThread(draft.threadId);
+              const assignments = yield* sql`SELECT assignment_id FROM workbench_assignments
+              WHERE ticket_id = ${draft.id} AND thread_id = ${draft.threadId} AND superseded_at IS NULL`;
+              if (
+                !tickets[0] ||
+                Option.isNone(thread) ||
+                thread.value.projectId !== tickets[0].primary ||
+                thread.value.worktreePath !== null ||
+                assignments.length !== 1
+              ) {
+                return yield* new WorkbenchOperationError({
+                  code: "ticket_changed",
+                  message:
+                    "The saved ticket or Thread changed during linking. Reload and retry ticket creation.",
+                });
+              }
+            }
+            if (input.phase === "draft" || input.phase === "promoting")
+              yield* validateFields(draft, validatedRoots);
+            return yield* save(draft, {
+              ...draft,
+              phase: input.phase,
+              revision: draft.revision + 1,
+              updatedAt: yield* now,
+            });
+          }),
+        );
+      }).pipe(Effect.mapError(operationError)),
   );
   const restoreUncreatedTicketDraft = (input: WorkbenchTicketDraftActionInput) =>
     sql
@@ -532,47 +544,47 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
       )
       .pipe(Effect.mapError(operationError));
   const getTicketDraftForThread = Effect.fn("TicketDraftPersistence.getTicketDraftForThread")(
-    function* (threadId: ThreadId) {
-      const rows = yield* sql<{ readonly payload: string }>`SELECT payload_json AS payload
+    (threadId: ThreadId) =>
+      Effect.gen(function* () {
+        const rows = yield* sql<{ readonly payload: string }>`SELECT payload_json AS payload
       FROM workbench_ticket_drafts WHERE thread_id = ${threadId}`;
-      if (!rows[0]) return null;
-      const draft = yield* decodeDraft(rows[0].payload);
-      // Keep restrictions even when a parent workspace has been archived or deleted.
-      const linked = yield* sql<{ readonly id: ProjectId }>`SELECT t3_project_id AS id
+        if (!rows[0]) return null;
+        const draft = yield* decodeDraft(rows[0].payload);
+        // Keep restrictions even when a parent workspace has been archived or deleted.
+        const linked = yield* sql<{ readonly id: ProjectId }>`SELECT t3_project_id AS id
       FROM workbench_project_links WHERE workbench_project_id = ${draft.projectId} ORDER BY position`;
-      if (draft.phase === "planning" || draft.phase === "starting" || draft.phase === "working") {
-        const tickets = yield* sql<{
-          readonly title: string;
-          readonly markdown: string;
-          readonly primary: ProjectId;
-          readonly epicId: WorkbenchTicketDraft["fields"]["epicId"];
-          readonly kind: WorkbenchTicketDraft["fields"]["kind"];
-        }>`SELECT title, markdown,
+        if (draft.phase === "planning" || draft.phase === "starting" || draft.phase === "working") {
+          const tickets = yield* sql<{
+            readonly title: string;
+            readonly markdown: string;
+            readonly primary: ProjectId;
+            readonly epicId: WorkbenchTicketDraft["fields"]["epicId"];
+            readonly kind: WorkbenchTicketDraft["fields"]["kind"];
+          }>`SELECT title, markdown,
         primary_t3_project_id AS "primary", epic_id AS "epicId", kind FROM workbench_tickets
         WHERE ticket_id = ${draft.id} AND deleted_at IS NULL`;
-        const ticket = tickets[0];
-        if (ticket) {
-          const repos = yield* sql<{ readonly id: ProjectId }>`SELECT t3_project_id AS id
+          const ticket = tickets[0];
+          if (ticket) {
+            const repos = yield* sql<{ readonly id: ProjectId }>`SELECT t3_project_id AS id
           FROM workbench_ticket_repositories WHERE ticket_id = ${draft.id} ORDER BY position`;
-          const ids = repos.length > 0 ? repos.map((row) => row.id) : [ticket.primary];
-          return {
-            ...draft,
-            fields: {
-              ...draft.fields,
-              title: ticket.title,
-              markdown: ticket.markdown,
-              primaryT3ProjectId: ticket.primary,
-              epicId: ticket.epicId,
-              kind: ticket.kind,
-              repositoryProjectIds: ids,
-            },
-            planningRepositoryProjectIds: ids,
-          };
+            const ids = repos.length > 0 ? repos.map((row) => row.id) : [ticket.primary];
+            return {
+              ...draft,
+              fields: {
+                ...draft.fields,
+                title: ticket.title,
+                markdown: ticket.markdown,
+                primaryT3ProjectId: ticket.primary,
+                epicId: ticket.epicId,
+                kind: ticket.kind,
+                repositoryProjectIds: ids,
+              },
+              planningRepositoryProjectIds: ids,
+            };
+          }
         }
-      }
-      return { ...draft, planningRepositoryProjectIds: linked.map((row) => row.id) };
-    },
-    Effect.mapError(operationError),
+        return { ...draft, planningRepositoryProjectIds: linked.map((row) => row.id) };
+      }).pipe(Effect.mapError(operationError)),
   );
   return {
     getTicketPreparations,

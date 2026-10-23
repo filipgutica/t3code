@@ -14,6 +14,51 @@ import { requireHome } from "../workbench-demo/environment.mts";
 import { configureProvider } from "./provider-settings.mts";
 const root = NodeURL.fileURLToPath(new URL("../../", import.meta.url));
 const decodeRuntime = Schema.decodeUnknownSync(PersistedServerRuntimeState);
+const diagnosticHttpPaths = new Set([
+  "/api/auth/session",
+  "/api/auth/browser-session",
+  "/.well-known/t3/environment",
+]);
+const diagnosticScriptPaths = new Set(["/@vite/client", "/src/bootstrap.ts", "/src/main.tsx"]);
+const diagnosticRoutePaths = new Set([
+  "/",
+  "/pair",
+  "/welcome",
+  "/workbench",
+  "/settings",
+  "/connect",
+  "/connect-agent",
+]);
+const safeDiagnosticPath = (value: string, origin: string, allowlist: ReadonlySet<string>) => {
+  try {
+    const url = new URL(value);
+    if (url.origin !== origin) return undefined;
+    return allowlist.has(url.pathname) ? url.pathname : "OTHER";
+  } catch {
+    return undefined;
+  }
+};
+const classifyDiagnosticError = (error: Pick<Error, "name" | "message">) => {
+  const name = ["Error", "TypeError", "ReferenceError", "SyntaxError", "RangeError"].includes(
+    error.name,
+  )
+    ? error.name
+    : "Error";
+  const category = /does not provide an export named|has no exported member/i.test(error.message)
+    ? "missing-module-export"
+    : /failed to fetch dynamically imported module|importing a module script failed|loading chunk/i.test(
+          error.message,
+        )
+      ? "dynamic-import"
+      : /failed to fetch|failed to load module script|cannot find module/i.test(error.message)
+        ? "fetch"
+        : name === "ReferenceError"
+          ? "reference"
+          : name === "TypeError"
+            ? "type"
+            : "other";
+  return { name, category };
+};
 
 type Runtime = { pid: number; startedAt: string; devUrl: string };
 const readRuntime = async (home: string): Promise<Runtime | undefined> => {
@@ -56,6 +101,7 @@ export const prepareStartup = (input: {
   let eligibleAfter = input.live ? Infinity : -Infinity;
   let watcher: NodeFS.FSWatcher | undefined;
   let context: BrowserContext | undefined;
+  let reportBrowserFailure: (() => void) | undefined;
   let settled = false;
   const {
     promise: receipt,
@@ -86,6 +132,11 @@ export const prepareStartup = (input: {
   const fail = async (error: unknown) => {
     rejectRuntime(error);
     watcher?.close();
+    try {
+      reportBrowserFailure?.();
+    } catch {
+      // Diagnostic emission must not replace the original startup failure.
+    }
     // This Browser belongs to the failed fixture's worker, before fresh tests run.
     // Closing it also rejects pending newContext/newPage operations.
     await Promise.allSettled([stopPairChild(), input.browser.close()]);
@@ -180,6 +231,52 @@ export const prepareStartup = (input: {
       if (pairing.origin !== runtime.devUrl || pairing.pathname !== "/pair") {
         throw new Error("Owned preparation pairing URL does not match its runtime.");
       }
+      // Failure logs contain only fixed labels, allowlisted paths and numeric
+      // statuses/counts. Never publish URLs, messages, stacks or browser content.
+      const events: Array<Readonly<Record<string, string | number>>> = [];
+      let droppedEvents = 0;
+      let consoleErrors = 0;
+      let reported = false;
+      const record = (event: (typeof events)[number]) => {
+        if (events.length === 32) {
+          events.shift();
+          droppedEvents = Math.min(droppedEvents + 1, 10_000);
+        }
+        events.push(event);
+      };
+      const safePath = (value: string, allowlist: ReadonlySet<string>) =>
+        safeDiagnosticPath(value, runtime.devUrl, allowlist);
+      page.on("pageerror", (error) => {
+        record({ kind: "page-error", ...classifyDiagnosticError(error) });
+      });
+      page.on("console", (message) => {
+        if (message.type() === "error") consoleErrors = Math.min(consoleErrors + 1, 10_000);
+      });
+      page.on("response", (response) => {
+        const path = safePath(response.url(), diagnosticHttpPaths);
+        if (path !== undefined && path !== "OTHER") {
+          record({ kind: "http-response", path, status: response.status() });
+        } else if (response.status() >= 400 && response.request().resourceType() === "script") {
+          const script = safePath(response.url(), diagnosticScriptPaths);
+          if (script !== undefined)
+            record({ kind: "script-response", path: script, status: response.status() });
+        }
+      });
+      reportBrowserFailure = () => {
+        if (reported) return;
+        reported = true;
+        Effect.runSync(
+          Effect.logInfo(
+            JSON.stringify({
+              stage: "preparation-browser-failure",
+              finalPath: safePath(page.url(), diagnosticRoutePaths) ?? "OTHER",
+              consoleErrors,
+              droppedEvents,
+              events,
+            }),
+          ),
+        );
+      };
       const pending = new Set<object>();
       const idleWaiters = new Set<() => void>();
       page.on("request", (request) => {
@@ -206,6 +303,10 @@ export const prepareStartup = (input: {
         for (const done of idleWaiters) done();
       });
       page.on("requestfailed", (request) => {
+        if (request.resourceType() === "script") {
+          const path = safePath(request.url(), diagnosticScriptPaths);
+          if (path !== undefined) record({ kind: "script-failed", path });
+        }
         pending.delete(request);
         for (const done of idleWaiters) done();
       });

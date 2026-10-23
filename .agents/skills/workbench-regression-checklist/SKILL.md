@@ -38,7 +38,7 @@ ask only for missing authorization, and continue independent checks.
   screenshot, URL, test, or log evidence. State why a case is not applicable.
 - A Thread-opening check is incomplete until an authorized test message is sent
   and the turn finishes. Use: `Do not edit files or run commands. Reply exactly:
-Workbench regression passed.` Verify progress and retained context afterward.
+  Workbench regression passed.` Verify progress and retained context afterward.
 - Append text normally in the composer. Replacing its entire editable value can
   remove the hidden Ticket context token and invalidate the attachment check.
 - Exercise both entry points when a behavior exists on Board and Ticket detail.

@@ -669,22 +669,22 @@ export const runRpc = async <A, E>(
   );
 };
 
-export const dispatch = Effect.fn("WorkbenchDemo.dispatch")(function* (
-  client: LocalRpcClient,
-  command: OrchestrationV2Command,
-) {
-  const receipt = yield* client[ORCHESTRATION_V2_WS_METHODS.dispatchCommand](command);
-  yield* client[ORCHESTRATION_V2_WS_METHODS.subscribeShell]({
-    afterSequence: receipt.sequence,
-    requestCompletionMarker: true,
-  }).pipe(
-    // The receipt is an application-event cursor. Some commands produce no shell delta.
-    Stream.filter((item) => item.kind === "synchronized"),
-    Stream.take(1),
-    Stream.runDrain,
-  );
-  return receipt;
-});
+export const dispatch = Effect.fn("WorkbenchDemo.dispatch")(
+  (client: LocalRpcClient, command: OrchestrationV2Command) =>
+    Effect.gen(function* () {
+      const receipt = yield* client[ORCHESTRATION_V2_WS_METHODS.dispatchCommand](command);
+      yield* client[ORCHESTRATION_V2_WS_METHODS.subscribeShell]({
+        afterSequence: receipt.sequence,
+        requestCompletionMarker: true,
+      }).pipe(
+        // The receipt is an application-event cursor. Some commands produce no shell delta.
+        Stream.filter((item) => item.kind === "synchronized"),
+        Stream.take(1),
+        Stream.runDrain,
+      );
+      return receipt;
+    }),
+);
 
 export const readShellSnapshot = async (
   wsUrl: string,

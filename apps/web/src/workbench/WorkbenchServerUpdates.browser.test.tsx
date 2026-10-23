@@ -43,7 +43,8 @@ const state = vi.hoisted(() => ({
   fetchSsh: vi.fn(),
   bootstrapSsh: vi.fn(),
 }));
-vi.mock("../components/ui/button", () => ({
+vi.mock("../components/ui/button", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../components/ui/button")>()),
   Button: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
 }));
 vi.mock("@effect/atom-react", async (importOriginal) => {
@@ -72,9 +73,11 @@ vi.mock("../state/relay", async () => {
     relayEnvironmentDiscovery: { stateValueAtom: Atom.make(() => ({ environments: state.relay })) },
   };
 });
-vi.mock("@t3tools/client-runtime/environment", async () => {
+vi.mock("@t3tools/client-runtime/environment", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@t3tools/client-runtime/environment")>();
   const Effect = await import("effect/Effect");
   return {
+    ...actual,
     fetchRemoteEnvironmentDescriptor: ({ httpBaseUrl }: { httpBaseUrl: string }) =>
       Effect.suspend(() => {
         state.fetchDescriptor(httpBaseUrl);

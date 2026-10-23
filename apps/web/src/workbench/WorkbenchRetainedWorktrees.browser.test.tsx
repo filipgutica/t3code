@@ -33,7 +33,8 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
   useSearch: () => ({}),
 }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => release }));
-vi.mock("@effect/atom-react", () => ({
+vi.mock("@effect/atom-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@effect/atom-react")>()),
   useAtomValue: () => true,
   useAtomRefresh: () => vi.fn(),
 }));
@@ -46,15 +47,18 @@ vi.mock("./state", () => ({
     jiraSnapshot: () => "jira",
   },
 }));
-vi.mock("../state/environments", () => ({
+vi.mock("../state/environments", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/environments")>()),
   usePrimaryEnvironmentId: () => EnvironmentId.make(sidebarHost.environmentId),
 }));
-vi.mock("../state/entities", () => ({
+vi.mock("../state/entities", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/entities")>()),
   useThreadShells: () => [],
   useThreadShell: () => null,
   useProjects: () => [],
 }));
-vi.mock("../state/query", () => ({
+vi.mock("../state/query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/query")>()),
   useEnvironmentQuery: (target: string) => ({
     data: target === "workbench" ? sidebarHost.snapshot : { issueLinks: [] },
     error: null,
@@ -63,6 +67,7 @@ vi.mock("../state/query", () => ({
   }),
 }));
 vi.mock("./WorkbenchAttentionProvider", () => ({
+  WorkbenchAttentionProvider: ({ children }: { children: ReactNode }) => children,
   useWorkbenchAttentionData: () => ({
     attentionSignalsByTicket: new Map(),
     attentionInspectionsByTicket: new Map(),
@@ -109,10 +114,22 @@ vi.mock("../components/ui/tooltip", () => {
     TooltipPopup: Container,
   };
 });
-vi.mock("../components/ui/menu", () => {
+vi.mock("../components/ui/menu", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../components/ui/menu")>();
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
+    ...actual,
     Menu: Container,
+    MenuGroup: Container,
+    MenuRadioGroup: Container,
+    MenuRadioItem: Container,
+    MenuSeparator: Container,
+    MenuItem: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
+    MenuItemLabel: Container,
+    MenuShortcut: Container,
+    MenuSub: Container,
+    MenuSubTrigger: Container,
+    MenuSubPopup: Container,
     MenuTrigger: ({ render, children }: { render?: ReactNode; children?: ReactNode }) => (
       <>
         {render}
@@ -135,7 +152,8 @@ vi.mock("../components/ui/menu", () => {
     ),
   };
 });
-vi.mock("../components/ui/button", () => ({
+vi.mock("../components/ui/button", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../components/ui/button")>()),
   Button: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
 }));
 vi.mock("../components/ui/dialog", () => {

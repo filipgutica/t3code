@@ -106,38 +106,37 @@ const make = Effect.gen(function* () {
   };
 
   const processEventSafely = Effect.fn("TicketExecutionReactor.processEventSafely")(
-    function* (stored: OrchestrationV2StoredEvent) {
-      const event = stored.event;
-      const running =
-        (event.type === "run.created" || event.type === "run.updated") &&
-        event.payload.status === "running" &&
-        event.payload.startedAt !== null &&
-        (event.nodeId === undefined || event.nodeId === event.payload.rootNodeId);
-      if (!running) return;
-      const thread = yield* orchestrationEngine.getThreadShell(event.threadId);
-      if (thread === null || thread.lineage.parentThreadId !== null) return;
-      const pending = yield* tickets.consume({
-        sequence: stored.sequence,
-        run: {
-          id: event.payload.id,
-          threadId: event.threadId,
-          startedAt: DateTime.formatIso(event.payload.startedAt ?? event.occurredAt),
-        },
-      });
-      if (pending !== null)
-        yield* tickets
-          .resume(pending)
-          .pipe(
-            Effect.catchCause((cause) =>
-              Cause.hasInterruptsOnly(cause)
-                ? Effect.interrupt
-                : appendFailureActivity(pending, cause),
-            ),
-          );
-      return stored.sequence;
-    },
-    (effect, stored: OrchestrationV2StoredEvent) =>
-      effect.pipe(
+    (stored: OrchestrationV2StoredEvent) =>
+      Effect.gen(function* () {
+        const event = stored.event;
+        const running =
+          (event.type === "run.created" || event.type === "run.updated") &&
+          event.payload.status === "running" &&
+          event.payload.startedAt !== null &&
+          (event.nodeId === undefined || event.nodeId === event.payload.rootNodeId);
+        if (!running) return;
+        const thread = yield* orchestrationEngine.getThreadShell(event.threadId);
+        if (thread === null || thread.lineage.parentThreadId !== null) return;
+        const pending = yield* tickets.consume({
+          sequence: stored.sequence,
+          run: {
+            id: event.payload.id,
+            threadId: event.threadId,
+            startedAt: DateTime.formatIso(event.payload.startedAt ?? event.occurredAt),
+          },
+        });
+        if (pending !== null)
+          yield* tickets
+            .resume(pending)
+            .pipe(
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.interrupt
+                  : appendFailureActivity(pending, cause),
+              ),
+            );
+        return stored.sequence;
+      }).pipe(
         Effect.catchCause((cause) =>
           Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.fail(cause),
         ),

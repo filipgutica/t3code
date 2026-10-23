@@ -158,6 +158,7 @@
         "apps/server/src/provider/Drivers/CodexHomeLayout.test.ts",
         "packages/provider-opencode/src/server/driver.test.ts",
         "apps/server/src/provider/ModelManifest.test.ts",
+        "apps/server/src/provider/ProviderInstanceRegistry.test.ts",
         "packages/provider-opencode/src/server/OpenCodeServerLedger.test.ts",
         "apps/server/src/provider/providerCompatibility.test.ts",
         "packages/source-control-azure-devops/src/server/AzureDevOpsPullRequestCli.test.ts",

@@ -1,6 +1,6 @@
 import { page } from "vite-plus/test/browser";
 import { act, render as renderBrowser } from "../../test/render";
-import { useRef, type ComponentProps } from "react";
+import { useRef, type ComponentProps, type ReactNode } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import {
   EnvironmentId,
@@ -34,8 +34,24 @@ vi.mock("../state/server", async (importOriginal) => {
   };
 });
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn(async () => {}) }));
-vi.mock("../state/query", () => ({
+vi.mock("../state/query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/query")>()),
   useEnvironmentQuery: () => ({ data: null, error: null, isPending: false }),
+}));
+// Page lifecycle cases run without the host's attention observer or native PR query graph.
+vi.mock("./WorkbenchAttentionProvider", () => ({
+  WorkbenchAttentionProvider: ({ children }: { children: ReactNode }) => children,
+  useWorkbenchAttentionData: () => ({
+    attentionRefresh: 0,
+    refreshAttention: () => {},
+    attentionReferences: [],
+    attentionScope: "",
+    setAttentionObservations: () => {},
+    attentionReasonsByTicket: new Map(),
+    attentionSignalsByTicket: new Map(),
+    attentionInspectionsByTicket: new Map(),
+    attentionCoverage: "0 of 0 linked PRs inspected",
+  }),
 }));
 // The conversation embeds the native ChatView; this suite only proves when the Workspace shows it.
 vi.mock("./WorkbenchTicketConversation", async () => {

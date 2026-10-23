@@ -124,7 +124,10 @@ const ticketComment = {
 
 async function setup() {
   const previous = import.meta.env.VITE_T3CODE_WORKBENCH_BUILD;
+  const previousRepository = import.meta.env.T3CODE_DESKTOP_UPDATE_REPOSITORY;
   vi.stubEnv("VITE_T3CODE_WORKBENCH_BUILD", "true");
+  // CI supplies GITHUB_REPOSITORY; pin the native baseline independently of that ambient override.
+  vi.stubEnv("T3CODE_DESKTOP_UPDATE_REPOSITORY", "");
   state.preparations = new Map();
   state.failPolicy = false;
   state.failPreview = false;
@@ -143,10 +146,12 @@ async function setup() {
       composer,
       notes,
       [Symbol.dispose]() {
+        vi.stubEnv("T3CODE_DESKTOP_UPDATE_REPOSITORY", previousRepository);
         vi.stubEnv("VITE_T3CODE_WORKBENCH_BUILD", previous);
       },
     };
   } catch (error) {
+    vi.stubEnv("T3CODE_DESKTOP_UPDATE_REPOSITORY", previousRepository);
     vi.stubEnv("VITE_T3CODE_WORKBENCH_BUILD", previous);
     throw error;
   }
@@ -247,7 +252,8 @@ it("updates scoped native lists through preparation promotion without repainting
   );
   const view = () => <provider.WorkbenchHostProvider>{children}</provider.WorkbenchHostProvider>;
   state.preparations = new Map([[key, preparation]]);
-  await using screen = await renderUI(view());
+  // This provider-policy case has no navigation consumer or router dependency.
+  await using screen = await renderUI(view(), { router: false });
   expect(Array.from(screen.container.querySelectorAll("li"), (item) => item.textContent)).toEqual([
     "two",
   ]);
@@ -359,7 +365,8 @@ it.each([
         />
       );
     }
-    await using screen = await renderUI(<NativeReleaseNotes />);
+    // Native release anchors do not consume router context.
+    await using screen = await renderUI(<NativeReleaseNotes />, { router: false });
     expect(Array.from(screen.container.querySelectorAll("a"), (anchor) => anchor.href)).toEqual([
       `https://github.com/pingdotgg/t3code/releases/tag/v${version}`,
       "https://github.com/pingdotgg/t3code/releases",
@@ -441,7 +448,8 @@ it.each(["slot", "preview", "policy"])(
         <NativeUI />
       </provider.WorkbenchHostProvider>
     );
-    await using screen = await renderUI(view());
+    // Every route-aware slot is replaced above; this case tests only error containment.
+    await using screen = await renderUI(view(), { router: false });
     state.failSlot = failure === "slot";
     state.failPreview = failure === "preview";
     state.failPolicy = failure === "policy";

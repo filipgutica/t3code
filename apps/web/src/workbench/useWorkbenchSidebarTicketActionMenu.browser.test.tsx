@@ -26,7 +26,8 @@ vi.mock("@effect/atom-react", () => ({
   useAtomValue: (environmentId: string | null) =>
     environmentId !== null && mocks.grants.get(environmentId) === true,
 }));
-vi.mock("@tanstack/react-router", () => ({
+vi.mock("@tanstack/react-router", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-router")>()),
   useNavigate: () => mocks.navigate,
   useRouter: () => ({ buildLocation: () => ({ href: "/workbench" }) }),
 }));
