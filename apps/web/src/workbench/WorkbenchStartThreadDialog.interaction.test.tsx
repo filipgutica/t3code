@@ -413,3 +413,21 @@ it("keeps keyboard focus on the row when staging and undoing a removal", async (
   await act(async () => button("Undo").click());
   expect(document.activeElement).toBe(labelledButton("Actions for Additional"));
 });
+
+it("leaves focus on the control that dismissed a row menu", async () => {
+  const savedTicket = { ...ticket, repositoryProjectIds: projects.map((project) => project.id) };
+  await render({ savedTicket, unprepared: true });
+  await act(async () => labelledButton("Actions for Additional").click());
+  const outside = button("Cancel");
+  await act(async () => {
+    // A real click focuses the target on mousedown, before the menu dismisses on click.
+    outside.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    outside.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    outside.focus();
+    outside.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+    outside.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    outside.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+  expect(document.querySelector('[role="menu"]')).toBeNull();
+  expect(document.activeElement).toBe(outside);
+});

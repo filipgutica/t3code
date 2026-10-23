@@ -209,9 +209,17 @@ export function WorkbenchRepositoryScopeFields({
               primaryTitle={primaryTitle}
               disabled={disabled}
               onUndo={(id) => include(id, id)}
-              getMenuFinalFocus={(id) =>
-                focusRowIdRef.current === null ? (getRowFocusTarget(id) ?? true) : false
-              }
+              getMenuFinalFocus={(id) => {
+                // A callback overrides Base UI's check for focus that already moved elsewhere, so
+                // a click on another control keeps its focus.
+                const active = document.activeElement;
+                const movedOutside =
+                  active instanceof HTMLElement &&
+                  active !== document.body &&
+                  active.closest('[role="menu"]') === null;
+                if (movedOutside || focusRowIdRef.current !== null) return false;
+                return getRowFocusTarget(id) ?? true;
+              }}
               onRemove={remove}
               onMakePrimary={(id) => change({ ...value, primaryT3ProjectId: id })}
             />
