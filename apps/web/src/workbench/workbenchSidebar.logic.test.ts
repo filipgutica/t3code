@@ -167,8 +167,8 @@ describe("Workbench sidebar ticket groups", () => {
     const oldest = thread("oldest");
     const middle = thread("middle");
     const newest = thread("newest");
-    const pinnedLater = { ...oldest, pinnedAt: "2026-03-01T00:00:00.000Z", pinOrderKey: "b" };
-    const pinnedFirst = { ...middle, pinnedAt: "2026-03-02T00:00:00.000Z", pinOrderKey: "a" };
+    const pinnedFirst = { ...oldest, pinnedAt: "2026-03-01T00:00:00.000Z", pinOrderKey: "a" };
+    const pinnedLater = { ...middle, pinnedAt: "2026-03-02T00:00:00.000Z", pinOrderKey: "b" };
     const groups = getWorkbenchSidebarTicketGroups({
       environmentId,
       tickets: [pinnedTicket],
@@ -182,8 +182,8 @@ describe("Workbench sidebar ticket groups", () => {
     });
 
     expect(groups.get(workspaceId)?.active[0]?.threads.map((item) => item.id)).toEqual([
-      middle.id,
       oldest.id,
+      middle.id,
       newest.id,
     ]);
   });
