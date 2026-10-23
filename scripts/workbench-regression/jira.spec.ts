@@ -9,8 +9,6 @@ import {
   type JiraIssue,
 } from "./jira-http.mts";
 
-const live = process.env.WORKBENCH_REGRESSION_LIVE === "1";
-
 const jiraConfig = (home: string) => {
   const config = readConfig(home);
   const site = config.DEMO_JIRA_SITE_URL?.trim();
@@ -73,8 +71,6 @@ const restoreIssue = async (client: JiraHttpClient, issue: JiraIssue): Promise<v
 };
 
 test.describe("Jira Workbench integration @live", () => {
-  test.skip(!live, "Live Jira regression is opt-in (WORKBENCH_REGRESSION_LIVE=1).");
-
   test("J2 imports selected sprint issues once and preserves repository scope", async ({
     page,
     demo,

@@ -242,6 +242,7 @@ it.effect("routes Claude planning approvals to Auto with read-only tools", () =>
       });
       const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
         runtimePolicy,
+        undefined,
         decoration.permissionMode,
       );
       const mcpOverrides = ClaudeAdapterV2.claudeMcpQueryOverrides({

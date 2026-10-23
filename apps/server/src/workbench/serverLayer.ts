@@ -14,6 +14,7 @@ import * as TicketPlanningRuntime from "./TicketPlanningRuntime.ts";
 import * as TicketSummaryService from "./TicketSummaryService.ts";
 import * as TicketWorkspaceService from "./TicketWorkspaceService.ts";
 import * as WorkbenchStore from "./WorkbenchStore.ts";
+import * as WorkbenchWorktreeOwnership from "./worktreeOwnership.ts";
 import * as WorkbenchJiraService from "./jira/WorkbenchJiraService.ts";
 import * as JiraRepository from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 import * as JiraResearch from "./mcp/JiraResearchService.ts";
@@ -35,6 +36,7 @@ export const WorkbenchHostPoliciesLayerLive = Layer.mergeAll(
   WorkbenchProviderPoliciesLayerLive,
   TicketPlanningRuntime.layerRuntimePolicyDecorator,
   TicketPlanningRuntime.layerMcpWritePolicy,
+  WorkbenchWorktreeOwnership.layer,
 ).pipe(
   Layer.provide(WorkbenchStoreLayerLive),
   Layer.provide(ProjectStore.layer),

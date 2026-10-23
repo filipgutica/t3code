@@ -163,8 +163,8 @@ export const make = Effect.gen(function* () {
       )
       .pipe(Effect.catchTags({ SqlError: () => Effect.fail(repositoryError(undefined)) }));
 
-  const completeLocalMigration = (binding: WorkbenchJiraBinding) =>
-    Effect.gen(function* () {
+  const completeLocalMigration = Effect.fn("WorkbenchJiraService.completeLocalMigration")(
+    function* (binding: WorkbenchJiraBinding) {
       if (binding.localMigrationPending !== true) return;
       if (repository.completeLocalMigrationIfReady === undefined) return;
       yield* lockActiveWorkspace(binding.projectId);
@@ -176,10 +176,10 @@ export const make = Effect.gen(function* () {
           "Finish migrating all active local Tickets and Epics before importing Jira issues.",
         );
       }
-    }).pipe(
-      sql.withTransaction,
-      Effect.catchTags({ SqlError: () => Effect.fail(repositoryError(undefined)) }),
-    );
+    },
+    sql.withTransaction,
+    Effect.catchTags({ SqlError: () => Effect.fail(repositoryError(undefined)) }),
+  );
 
   const getSnapshot = sql
     .withTransaction(
@@ -329,60 +329,61 @@ export const make = Effect.gen(function* () {
     return { activeSprints, selectedSprints: input.selectedSprints };
   });
 
-  const createBinding: WorkbenchJiraServiceShape["createBinding"] = (input) =>
-    Effect.gen(function* () {
-      yield* requireActiveWorkspace(input.projectId);
-      if (input.selectedSprints !== undefined && input.selectedSprints.length === 0) {
-        return yield* operationError("Select at least one Jira sprint.");
-      }
-      const selectedSprints =
-        input.selectedSprints ??
-        legacySelectedSprints({ sprintId: input.sprintId, sprintName: input.sprintName });
-      const representativeSprint = selectedSprints[0]!;
-      const normalizedInput = {
-        ...input,
-        sprintId: representativeSprint.id,
-        sprintName: representativeSprint.name,
-        selectedSprints,
-      };
-      const followActiveSprint = input.followActiveSprint ?? true;
-      const boardMode = input.boardMode ?? "mapped";
-      const validation = yield* validateBinding({
-        ...normalizedInput,
-        followActiveSprint,
-        boardMode,
-        verifyRemote: true,
-      });
-      const existingBindings = yield* repository
-        .listBindings()
-        .pipe(Effect.mapError(repositoryError));
-      if (existingBindings.some((binding) => binding.projectId === input.projectId)) {
-        return yield* operationError("This Workbench Workspace already has a Jira binding.");
-      }
-      const configuration = yield* api.getBoardConfiguration({
-        connectionId: input.connectionId,
-        boardId: input.boardId,
-      });
-      const binding = {
-        ...normalizedInput,
-        sprintId: validation.selectedSprints[0]!.id,
-        sprintName: validation.selectedSprints[0]!.name,
-        followActiveSprint,
-        selectedSprints: validation.selectedSprints,
-        observedActiveSprintIds: validation.activeSprints.map((sprint) => sprint.id),
-        boardMode,
-        boardColumns: configuration.columns,
-        statusMappings:
-          boardMode === "mirror_jira" ? mirrorStatusMappings(configuration) : input.statusMappings,
-        localMigrationPending: input.localMigrationPending ?? false,
-        active: true,
-        lastSyncedAt: null,
-        lastSyncError: null,
-        updatedAt: input.createdAt,
-      } satisfies WorkbenchJiraBinding;
-      yield* saveBinding(binding);
-      return binding;
+  const createBinding: WorkbenchJiraServiceShape["createBinding"] = Effect.fn(
+    "WorkbenchJiraService.createBinding",
+  )(function* (input: Parameters<WorkbenchJiraServiceShape["createBinding"]>[0]) {
+    yield* requireActiveWorkspace(input.projectId);
+    if (input.selectedSprints !== undefined && input.selectedSprints.length === 0) {
+      return yield* operationError("Select at least one Jira sprint.");
+    }
+    const selectedSprints =
+      input.selectedSprints ??
+      legacySelectedSprints({ sprintId: input.sprintId, sprintName: input.sprintName });
+    const representativeSprint = selectedSprints[0]!;
+    const normalizedInput = {
+      ...input,
+      sprintId: representativeSprint.id,
+      sprintName: representativeSprint.name,
+      selectedSprints,
+    };
+    const followActiveSprint = input.followActiveSprint ?? true;
+    const boardMode = input.boardMode ?? "mapped";
+    const validation = yield* validateBinding({
+      ...normalizedInput,
+      followActiveSprint,
+      boardMode,
+      verifyRemote: true,
     });
+    const existingBindings = yield* repository
+      .listBindings()
+      .pipe(Effect.mapError(repositoryError));
+    if (existingBindings.some((binding) => binding.projectId === input.projectId)) {
+      return yield* operationError("This Workbench Workspace already has a Jira binding.");
+    }
+    const configuration = yield* api.getBoardConfiguration({
+      connectionId: input.connectionId,
+      boardId: input.boardId,
+    });
+    const binding = {
+      ...normalizedInput,
+      sprintId: validation.selectedSprints[0]!.id,
+      sprintName: validation.selectedSprints[0]!.name,
+      followActiveSprint,
+      selectedSprints: validation.selectedSprints,
+      observedActiveSprintIds: validation.activeSprints.map((sprint) => sprint.id),
+      boardMode,
+      boardColumns: configuration.columns,
+      statusMappings:
+        boardMode === "mirror_jira" ? mirrorStatusMappings(configuration) : input.statusMappings,
+      localMigrationPending: input.localMigrationPending ?? false,
+      active: true,
+      lastSyncedAt: null,
+      lastSyncError: null,
+      updatedAt: input.createdAt,
+    } satisfies WorkbenchJiraBinding;
+    yield* saveBinding(binding);
+    return binding;
+  });
 
   const updateBinding: WorkbenchJiraServiceShape["updateBinding"] = (input) =>
     sync.withBindingPermit(
@@ -462,157 +463,157 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  const createTicket: WorkbenchJiraServiceShape["createTicket"] = (input) =>
-    Effect.gen(function* () {
-      yield* requireActiveWorkspace(input.projectId);
-      if (input.localOnly) {
-        if (input.existingLocalTicketRevision !== undefined) {
-          return yield* operationError("Publishing an existing Ticket requires Jira creation.");
-        }
-        const creation = yield* sql<{ readonly ticketId: string }>`
+  const createTicket: WorkbenchJiraServiceShape["createTicket"] = Effect.fn(
+    "WorkbenchJiraService.createTicket",
+  )(function* (input: Parameters<WorkbenchJiraServiceShape["createTicket"]>[0]) {
+    yield* requireActiveWorkspace(input.projectId);
+    if (input.localOnly) {
+      if (input.existingLocalTicketRevision !== undefined) {
+        return yield* operationError("Publishing an existing Ticket requires Jira creation.");
+      }
+      const creation = yield* sql<{ readonly ticketId: string }>`
           SELECT ticket_id AS "ticketId" FROM workbench_jira_ticket_creations
           WHERE ticket_id = ${input.id}
           LIMIT 1
         `.pipe(Effect.mapError(repositoryError));
-        if (creation.length > 0) {
-          return yield* operationError(
-            "This Ticket creation has already started in Jira. Resolve it before starting a new local Ticket.",
-          );
-        }
-        return yield* workbench.createTicket(input);
-      }
-      const bindings = yield* repository.listBindings().pipe(Effect.mapError(repositoryError));
-      const matches = bindings.filter((binding) => binding.projectId === input.projectId);
-      if (matches.length === 0) {
-        if (input.existingLocalTicketRevision !== undefined) {
-          return yield* operationError(
-            "Connect this Workspace to Jira before publishing local Tickets.",
-          );
-        }
-        return yield* workbench.createTicket(input);
-      }
-      if (matches.length > 1) {
+      if (creation.length > 0) {
         return yield* operationError(
-          "This Workbench Workspace is linked to more than one Jira binding. Repair the binding before creating Tickets.",
+          "This Ticket creation has already started in Jira. Resolve it before starting a new local Ticket.",
         );
       }
-      const binding = matches[0]!;
-      if (!binding.active) {
-        return yield* new WorkbenchJiraOperationError({
-          code: "binding_inactive",
-          message:
-            "This Jira Workspace is paused. Resume the Jira binding before creating Tickets.",
-        });
-      }
-      const before = yield* workbench.getSnapshot;
-      const project = before.projects.find((candidate) => candidate.id === input.projectId);
-      const repositories = input.repositoryProjectIds ?? [input.primaryT3ProjectId];
-      if (
-        !project ||
-        repositories.length === 0 ||
-        !repositories.includes(input.primaryT3ProjectId) ||
-        new Set(repositories).size !== repositories.length ||
-        repositories.some((id) => !project.linkedProjectIds.includes(id))
-      ) {
+      return yield* workbench.createTicket(input);
+    }
+    const bindings = yield* repository.listBindings().pipe(Effect.mapError(repositoryError));
+    const matches = bindings.filter((binding) => binding.projectId === input.projectId);
+    if (matches.length === 0) {
+      if (input.existingLocalTicketRevision !== undefined) {
         return yield* operationError(
-          "Select valid linked repositories and a primary repository before creating a Jira Ticket.",
+          "Connect this Workspace to Jira before publishing local Tickets.",
         );
       }
-      const resolveTicketEpic = Effect.fnUntraced(function* () {
-        let remoteEpicIssueId: string | undefined;
-        if (input.epicId) {
-          const canonicalPrefix = `jira:${binding.id}:epic:`;
-          if (input.epicId.startsWith(canonicalPrefix)) {
-            remoteEpicIssueId = input.epicId.slice(canonicalPrefix.length);
-          } else {
-            const mappedEpic = yield* sql<{ readonly jiraIssueId: string }>`
+      return yield* workbench.createTicket(input);
+    }
+    if (matches.length > 1) {
+      return yield* operationError(
+        "This Workbench Workspace is linked to more than one Jira binding. Repair the binding before creating Tickets.",
+      );
+    }
+    const binding = matches[0]!;
+    if (!binding.active) {
+      return yield* new WorkbenchJiraOperationError({
+        code: "binding_inactive",
+        message: "This Jira Workspace is paused. Resume the Jira binding before creating Tickets.",
+      });
+    }
+    const before = yield* workbench.getSnapshot;
+    const project = before.projects.find((candidate) => candidate.id === input.projectId);
+    const repositories = input.repositoryProjectIds ?? [input.primaryT3ProjectId];
+    if (
+      !project ||
+      repositories.length === 0 ||
+      !repositories.includes(input.primaryT3ProjectId) ||
+      new Set(repositories).size !== repositories.length ||
+      repositories.some((id) => !project.linkedProjectIds.includes(id))
+    ) {
+      return yield* operationError(
+        "Select valid linked repositories and a primary repository before creating a Jira Ticket.",
+      );
+    }
+    const resolveTicketEpic = Effect.fnUntraced(function* () {
+      let remoteEpicIssueId: string | undefined;
+      if (input.epicId) {
+        const canonicalPrefix = `jira:${binding.id}:epic:`;
+        if (input.epicId.startsWith(canonicalPrefix)) {
+          remoteEpicIssueId = input.epicId.slice(canonicalPrefix.length);
+        } else {
+          const mappedEpic = yield* sql<{ readonly jiraIssueId: string }>`
             SELECT jira_issue_id AS "jiraIssueId"
             FROM workbench_jira_epic_links
             WHERE binding_id = ${binding.id} AND epic_id = ${input.epicId}
             LIMIT 1
           `.pipe(Effect.mapError(repositoryError));
-            remoteEpicIssueId = mappedEpic[0]?.jiraIssueId;
-          }
-          if (
-            remoteEpicIssueId === undefined ||
-            !before.epics.some(
-              (epic) =>
-                epic.id === input.epicId &&
-                epic.projectId === input.projectId &&
-                epic.archivedAt === null,
-            )
-          ) {
-            return yield* operationError(
-              "Select an active Jira Epic from this Workspace before creating the Ticket.",
-            );
-          }
+          remoteEpicIssueId = mappedEpic[0]?.jiraIssueId;
         }
-        return remoteEpicIssueId;
-      });
-      const validateLocalTicketPublication = Effect.fnUntraced(function* () {
-        const localTicket = before.tickets.find((ticket) => ticket.id === input.id);
-        if (input.existingLocalTicketRevision !== undefined && localTicket === undefined) {
-          return yield* operationError("The local Ticket no longer exists. Refresh the Workspace.");
+        if (
+          remoteEpicIssueId === undefined ||
+          !before.epics.some(
+            (epic) =>
+              epic.id === input.epicId &&
+              epic.projectId === input.projectId &&
+              epic.archivedAt === null,
+          )
+        ) {
+          return yield* operationError(
+            "Select an active Jira Epic from this Workspace before creating the Ticket.",
+          );
         }
-        if (localTicket) {
-          const creation = yield* sql<{ readonly bindingId: string }>`
+      }
+      return remoteEpicIssueId;
+    });
+    const validateLocalTicketPublication = Effect.fnUntraced(function* () {
+      const localTicket = before.tickets.find((ticket) => ticket.id === input.id);
+      if (input.existingLocalTicketRevision !== undefined && localTicket === undefined) {
+        return yield* operationError("The local Ticket no longer exists. Refresh the Workspace.");
+      }
+      if (localTicket) {
+        const creation = yield* sql<{ readonly bindingId: string }>`
           SELECT binding_id AS "bindingId" FROM workbench_jira_ticket_creations WHERE ticket_id = ${input.id}
         `.pipe(Effect.mapError(repositoryError));
-          if (creation[0]?.bindingId !== binding.id) {
-            if (input.existingLocalTicketRevision === undefined) {
-              return yield* operationError(
-                "This Ticket ID is already in use. Start a new Ticket creation.",
-              );
-            }
-            const links = yield* Effect.forEach(bindings, (candidate) =>
-              repository.listIssueLinks(candidate.id).pipe(Effect.mapError(repositoryError)),
+        if (creation[0]?.bindingId !== binding.id) {
+          if (input.existingLocalTicketRevision === undefined) {
+            return yield* operationError(
+              "This Ticket ID is already in use. Start a new Ticket creation.",
             );
-            if (links.some((entries) => entries.some((link) => link.ticketId === input.id))) {
-              return yield* operationError("This Ticket is already managed by Jira.");
-            }
-            if (
-              localTicket.projectId !== input.projectId ||
-              localTicket.archivedAt !== null ||
-              localTicket.revision !== input.existingLocalTicketRevision ||
-              localTicket.title !== input.title ||
-              localTicket.markdown !== input.markdown ||
-              localTicket.kind !== input.kind ||
-              localTicket.primaryT3ProjectId !== input.primaryT3ProjectId ||
-              localTicket.repositoryProjectIds.length !== repositories.length ||
-              localTicket.repositoryProjectIds.some((id, index) => id !== repositories[index])
-            ) {
-              return yield* operationError(
-                "The local Ticket changed. Refresh before publishing it to Jira.",
-              );
-            }
+          }
+          const links = yield* Effect.forEach(bindings, (candidate) =>
+            repository.listIssueLinks(candidate.id).pipe(Effect.mapError(repositoryError)),
+          );
+          if (links.some((entries) => entries.some((link) => link.ticketId === input.id))) {
+            return yield* operationError("This Ticket is already managed by Jira.");
+          }
+          if (
+            localTicket.projectId !== input.projectId ||
+            localTicket.archivedAt !== null ||
+            localTicket.revision !== input.existingLocalTicketRevision ||
+            localTicket.title !== input.title ||
+            localTicket.markdown !== input.markdown ||
+            localTicket.kind !== input.kind ||
+            localTicket.primaryT3ProjectId !== input.primaryT3ProjectId ||
+            localTicket.repositoryProjectIds.length !== repositories.length ||
+            localTicket.repositoryProjectIds.some((id, index) => id !== repositories[index])
+          ) {
+            return yield* operationError(
+              "The local Ticket changed. Refresh before publishing it to Jira.",
+            );
           }
         }
-      });
-      const remoteEpicIssueId = yield* resolveTicketEpic();
-      yield* validateLocalTicketPublication();
-      const ticketId = yield* ticketWriter.createTicket({
-        ...input,
-        binding,
-        ...(remoteEpicIssueId === undefined ? {} : { remoteEpicIssueId }),
-      });
-      const snapshot = yield* workbench.getSnapshot.pipe(
-        Effect.mapError(
-          () =>
-            new WorkbenchOperationError({
-              code: "persistence_failed",
-              message: "Jira created the Ticket, but Workbench could not reload it.",
-            }),
-        ),
-      );
-      const ticket = snapshot.tickets.find((candidate) => candidate.id === ticketId);
-      if (ticket === undefined) {
-        return yield* new WorkbenchOperationError({
-          code: "persistence_failed",
-          message: "Jira created the Ticket, but Workbench could not find its local projection.",
-        });
       }
-      return ticket;
     });
+    const remoteEpicIssueId = yield* resolveTicketEpic();
+    yield* validateLocalTicketPublication();
+    const ticketId = yield* ticketWriter.createTicket({
+      ...input,
+      binding,
+      ...(remoteEpicIssueId === undefined ? {} : { remoteEpicIssueId }),
+    });
+    const snapshot = yield* workbench.getSnapshot.pipe(
+      Effect.mapError(
+        () =>
+          new WorkbenchOperationError({
+            code: "persistence_failed",
+            message: "Jira created the Ticket, but Workbench could not reload it.",
+          }),
+      ),
+    );
+    const ticket = snapshot.tickets.find((candidate) => candidate.id === ticketId);
+    if (ticket === undefined) {
+      return yield* new WorkbenchOperationError({
+        code: "persistence_failed",
+        message: "Jira created the Ticket, but Workbench could not find its local projection.",
+      });
+    }
+    return ticket;
+  });
 
   const ensureEpicUnchanged = Effect.fnUntraced(function* ({
     epic,
@@ -641,8 +642,10 @@ export const make = Effect.gen(function* () {
       return yield* operationError(message);
   });
 
-  const migrateLocalTickets: WorkbenchJiraServiceShape["migrateLocalTickets"] = (input) =>
-    Effect.gen(function* () {
+  const migrateLocalTickets: WorkbenchJiraServiceShape["migrateLocalTickets"] = Effect.fn(
+    "WorkbenchJiraService.migrateLocalTickets",
+  )(
+    function* (input: Parameters<WorkbenchJiraServiceShape["migrateLocalTickets"]>[0]) {
       const bindingOption = yield* repository
         .getBinding(input.bindingId)
         .pipe(Effect.mapError(repositoryError));
@@ -1108,17 +1111,17 @@ export const make = Effect.gen(function* () {
         ticketIds: tickets.map((ticket) => ticket.id),
         epicIds: epics.map((epic) => epic.id),
       } satisfies WorkbenchJiraMigrateLocalTicketsResult;
-    }).pipe(
-      Effect.catchTags({
-        SqlError: () =>
-          Effect.fail(
-            new WorkbenchJiraOperationError({
-              code: "persistence_failed",
-              message: "Jira migration state could not be saved or loaded.",
-            }),
-          ),
-      }),
-    );
+    },
+    Effect.catchTags({
+      SqlError: () =>
+        Effect.fail(
+          new WorkbenchJiraOperationError({
+            code: "persistence_failed",
+            message: "Jira migration state could not be saved or loaded.",
+          }),
+        ),
+    }),
+  );
 
   const resolveCreation: WorkbenchJiraServiceShape["resolveCreation"] = (input) =>
     sync.withBindingPermit(

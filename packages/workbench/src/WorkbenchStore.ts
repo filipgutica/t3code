@@ -2136,8 +2136,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
     return project;
   });
 
-  const requireIdlePlanningThreads = (threadIds: ReadonlyArray<ThreadId>) =>
-    Effect.gen(function* () {
+  const requireIdlePlanningThreads = Effect.fn("WorkbenchStore.requireIdlePlanningThreads")(
+    function* (threadIds: ReadonlyArray<ThreadId>) {
       for (const threadId of threadIds) {
         if (yield* native.hasPendingThreadWork(threadId)) {
           return yield* new WorkbenchOperationError({
@@ -2147,7 +2147,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
           });
         }
       }
-    });
+    },
+  );
 
   const deleteProject: WorkbenchStoreShape["deleteProject"] = Effect.fn(
     "WorkbenchStore.deleteProject",

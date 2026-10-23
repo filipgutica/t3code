@@ -27,8 +27,8 @@ class DescriptorLookup extends Data.Class<{
   readonly includeSsh: boolean;
 }> {}
 
-const readSshDescriptor = (route: ConnectionRoute) =>
-  Effect.gen(function* () {
+const readSshDescriptor = Effect.fn("WorkbenchOutdatedServerDescriptor.readSshDescriptor")(
+  function* (route: ConnectionRoute) {
     const profile = Option.getOrNull(route.profile);
     const bridge = typeof window === "undefined" ? undefined : window.desktopBridge;
     if (profile?._tag !== "SshConnectionProfile" || !bridge) {
@@ -53,7 +53,8 @@ const readSshDescriptor = (route: ConnectionRoute) =>
           message: cause instanceof Error ? cause.message : String(cause),
         }),
     });
-  });
+  },
+);
 
 /** Incompatible hosts do not deliver a server config. Read their public descriptor instead. */
 const descriptors = Atom.family(({ environmentId, includeSsh }: DescriptorLookup) =>

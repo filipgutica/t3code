@@ -61,6 +61,8 @@ const layerDesktopClerk = (
       Effect.sync(() => {
         events.push(`setPath:${name}:${value}`);
       }),
+    requestSingleInstanceLock: Effect.succeed(true),
+    on: () => Effect.void,
   } as unknown as ElectronApp.ElectronApp["Service"];
 
   return DesktopClerk.layer.pipe(
@@ -133,6 +135,7 @@ it.effect.each([
     const listeners = new Map<string, (...args: unknown[]) => void>();
     const electronApp = {
       whenReady: Effect.void,
+      requestSingleInstanceLock: Effect.succeed(true),
       on: (name: string, listener: (...args: unknown[]) => void) =>
         Effect.sync(() => {
           listeners.set(name, listener);
@@ -182,6 +185,7 @@ it.effect.each([false, true])(
       const listeners = new Map<string, (...args: unknown[]) => void>();
       const electronApp = {
         whenReady: Effect.void,
+        requestSingleInstanceLock: Effect.succeed(true),
         on: (name: string, listener: (...args: unknown[]) => void) =>
           Effect.sync(() => {
             listeners.set(name, listener);

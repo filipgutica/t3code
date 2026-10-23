@@ -41,7 +41,10 @@ vi.mock("../state/query", () => ({
     refresh: vi.fn(),
   }),
 }));
-vi.mock("../hooks/useTheme", () => ({ useTheme: () => ({ resolvedTheme: "dark" }) }));
+vi.mock("../hooks/useTheme", () => ({
+  useTheme: () => ({ resolvedTheme: "dark" }),
+  useRenderedAppearance: () => "dark",
+}));
 vi.mock("../hooks/useSettings", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../hooks/useSettings")>();
   const settings = actual.getClientSettings();
@@ -80,10 +83,8 @@ vi.mock("../state/session", async (importOriginal) => ({
   useEnvironmentScope: () => true,
   readEnvironmentScope: () => true,
 }));
-vi.mock("../state/entities", () => ({
-  readEnvironmentSupportsServerBrowser: () => false,
-  readThreadShell: () => null,
-  useProjects: () =>
+vi.mock("../state/entities", () => {
+  const projects = () =>
     ["local", "remote"].map((environmentId) => ({
       id: ProjectId.make("repo"),
       environmentId: EnvironmentId.make(environmentId),
@@ -97,15 +98,21 @@ vi.mock("../state/entities", () => ({
           remoteUrl: "https://github.com/acme/repo.git",
         },
       },
-    })),
-  useServerConfigs: () =>
-    new Map(
-      ["local", "remote"].map((environmentId) => [
-        EnvironmentId.make(environmentId),
-        { environment: { capabilities: { pullRequests: true, threadPullRequests: true } } },
-      ]),
-    ),
-}));
+    }));
+  return {
+    readEnvironmentSupportsServerBrowser: () => false,
+    readThreadShell: () => null,
+    readProjects: projects,
+    useProjects: projects,
+    useServerConfigs: () =>
+      new Map(
+        ["local", "remote"].map((environmentId) => [
+          EnvironmentId.make(environmentId),
+          { environment: { capabilities: { pullRequests: true, threadPullRequests: true } } },
+        ]),
+      ),
+  };
+});
 vi.mock("../state/environments", () => ({
   usePrimaryEnvironmentId: () => EnvironmentId.make("remote"),
 }));

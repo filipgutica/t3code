@@ -1,5 +1,5 @@
 {
-  "upstreamBase": "3ff5b3c82a62baddc0c2b1b227e9d3a06190c426",
+  "upstreamBase": "52bb5c8c4e0908e4ef10428c12258be55b964f39",
   "groups": [
     {
       "name": "Workbench domain, adapters, UI and contracts",
@@ -78,7 +78,6 @@
         "packages/provider-opencode/src/server/driver.ts",
         "apps/server/src/provider/ModelManifest.ts",
         "packages/provider-opencode/src/server/OpenCodeServerLedger.ts",
-        "packages/provider-opencode/src/server/OpenCodeRuntime.ts",
         "apps/server/src/provider/providerCompatibility.ts",
         "packages/source-control-azure-devops/src/server/AzureDevOpsPullRequestCli.ts",
         "packages/source-control-github/src/server/GitHubPullRequestApi.ts",
@@ -149,7 +148,6 @@
         "apps/server/src/orchestration-v2/RestartContinuation.test.ts",
         "apps/server/src/orchestration-v2/SteeringCompletion.integration.test.ts",
         "apps/server/src/orchestration-v2/SubagentProjection.test.ts",
-        "packages/provider-core/src/server/orchestrationInstructions.test.ts",
         "apps/server/src/orchestration-v2/runtimeLayer.test.ts",
         "apps/server/src/orchestration-v2/testkit/OrchestratorReplayRestartBackgroundNote.integration.test.ts",
         "apps/server/src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts",
@@ -181,7 +179,6 @@
         "packages/provider-cursor/src/server/textGeneration.test.ts",
         "apps/server/src/textGeneration/GrokTextGeneration.test.ts",
         "packages/provider-opencode/src/server/textGeneration.test.ts",
-        "apps/server/src/textGeneration/TextGeneration.test.ts",
         "apps/server/src/usage/UsageLimitSources.test.ts",
         "apps/server/src/usage/UsageService.test.ts",
         "apps/server/src/vcs/GitVcsDriver.test.ts",
@@ -189,7 +186,6 @@
         "apps/server/src/ws.test.ts",
         "packages/provider-core/src/server/textGenerationPrompts.test.ts",
         "packages/provider-muse/src/server/textGeneration.test.ts",
-        "apps/server/src/observability/RpcInstrumentation.test.ts",
         "apps/server/src/orchestration-v2/Adapters/CodexSandboxPolicy.test.ts"
       ],
       "verification": ["unit", "typecheck"]
@@ -227,7 +223,6 @@
         "apps/web/src/components/settings/ConnectionsSettings.tsx",
         "apps/web/src/components/settings/settingsSearch.ts",
         "apps/web/src/components/sidebar/SidebarChrome.tsx",
-        "apps/web/src/components/sidebar/mainAppLocation.ts",
         "apps/web/src/components/ui/button.tsx",
         "apps/web/src/components/ui/popover.tsx",
         "apps/web/src/hooks/usePullRequestLinking.ts",
@@ -250,7 +245,15 @@
         "apps/web/src/components/sidebar/useUpdateEverything.ts",
         "apps/web/src/components/ServerUpdateAction.tsx",
         "apps/web/src/components/chat/RightPanelSurfaceContent.tsx",
-        "apps/web/src/hooks/useProactivePanels.ts"
+        "apps/web/src/hooks/useProactivePanels.ts",
+        "apps/web/src/components/CommandPaletteLookups.ts",
+        "apps/web/src/components/CommandPaletteThreadItems.tsx",
+        "apps/web/src/components/ThreadStatusIndicators.tsx",
+        "apps/web/src/components/chat/ComposerControlsBar.tsx",
+        "apps/web/src/components/chat/ComposerFooterControls.tsx",
+        "apps/web/src/components/chat/TimelineAssistantRows.tsx",
+        "apps/web/src/components/chat/useComposerSend.ts",
+        "apps/web/src/components/settings/SavedEnvironmentRows.tsx"
       ],
       "tests": [
         "apps/web/src/components/ServerUpdateAction.browser.test.tsx",
@@ -260,14 +263,10 @@
         "apps/web/src/components/ChatView.logic.test.ts",
         "apps/web/src/components/CommandPalette.logic.test.ts",
         "apps/web/src/components/Sidebar.logic.test.ts",
-        "apps/web/src/components/ThreadNotificationCoordinator.browser.test.tsx",
         "apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.tsx",
-        "apps/web/src/components/chat/ChatHeader.test.ts",
         "apps/web/src/components/chat/MessagesTimeline.browser.test.tsx",
-        "apps/web/src/components/chat/OpenInPicker.test.ts",
         "apps/web/src/components/composerContextPresentation.test.ts",
         "apps/web/src/components/desktopUpdate.logic.test.ts",
-        "apps/web/src/components/pullRequest/PullRequestDetailPanel.browser.test.tsx",
         "apps/web/src/components/pullRequest/PullRequestSummaryTab.browser.test.tsx",
         "apps/web/src/components/pullRequest/pullRequestDetail.logic.test.ts",
         "apps/web/src/components/settings/SettingsPanels.logic.test.ts",

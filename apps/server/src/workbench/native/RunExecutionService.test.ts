@@ -28,6 +28,7 @@ import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter"
 
 import * as ServerSettings from "../../serverSettings.ts";
 import * as CheckpointService from "../../orchestration-v2/CheckpointService.ts";
+import * as TurnItemPositionStore from "../../orchestration-v2/TurnItemPositionStore.ts";
 import type { PendingOrchestrationEffectV2 } from "../../orchestration-v2/EffectOutbox.ts";
 import * as EventSink from "../../orchestration-v2/EventSink.ts";
 import * as ProviderEventIngestor from "../../orchestration-v2/ProviderEventIngestor.ts";
@@ -121,6 +122,9 @@ function captureCheckpointFreeRootRun(status: TerminalStatus) {
               }),
           }),
           IdAllocator.layer,
+          Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({
+            allocate: () => Effect.succeed(1),
+          }),
           Layer.mock(ProviderEventIngestor.ProviderEventIngestorV2)({
             ingestNormalized: () => Effect.succeed([]),
           }),

@@ -172,8 +172,8 @@ describe("Workbench ticket helpers", () => {
         "",
         "## Repository scope",
         "",
-        "- T3 Code (primary) — /repos/t3code",
-        "- Agent Workbench — /repos/agent-workbench",
+        "- T3 Code (primary): /repos/t3code",
+        "- Agent Workbench: /repos/agent-workbench",
         "",
         "## Goal",
         "",
@@ -204,7 +204,7 @@ describe("Workbench ticket helpers", () => {
     );
     expect(context.split("\n").slice(2, 4)).toEqual([
       "Ticket type: Sub-task",
-      "Parent: ABC-12 — Retry failed card payments",
+      "Parent: ABC-12: Retry failed card payments",
     ]);
   });
 

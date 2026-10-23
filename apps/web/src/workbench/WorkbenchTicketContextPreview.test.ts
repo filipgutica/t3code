@@ -13,7 +13,7 @@ describe("Workbench Ticket context preview", () => {
         "",
         "## Repository scope",
         "",
-        "- kanalytics (primary) — /worktrees/kanalytics",
+        "- kanalytics (primary): /worktrees/kanalytics",
         "",
         "h2. Root cause",
         "",
@@ -35,7 +35,7 @@ describe("Workbench Ticket context preview", () => {
         "",
         "## Repository scope",
         "",
-        "- kanalytics (primary) — /worktrees/kanalytics",
+        "- kanalytics (primary): /worktrees/kanalytics",
       ].join("\n"),
     );
     expect(workbenchDescriptionMarkdown(headerMarkdown, false)).toContain(
@@ -89,7 +89,7 @@ describe("Workbench Ticket context preview", () => {
       "",
       "## Repository scope",
       "",
-      "- repository (primary) — /worktree",
+      "- repository (primary): /worktree",
     ].join("\n");
     expect(splitWorkbenchTicketContext(emptyDescription)).toEqual({
       headerMarkdown: emptyDescription,
@@ -106,7 +106,7 @@ describe("Workbench Ticket context preview", () => {
         "",
         "## Repository scope",
         "",
-        "- repository (primary) — /worktree",
+        "- repository (primary): /worktree",
         "",
         "h2. Literal syntax",
         "",

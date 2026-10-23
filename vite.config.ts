@@ -549,6 +549,21 @@ export default defineConfig({
           ],
         },
       },
+      {
+        // Workbench tests predate upstream's disposable-render and browser-only DOM rules.
+        // Keep them visible as warnings until those tests migrate; the rest of the app
+        // keeps upstream's errors.
+        files: [
+          "apps/web/src/workbench/**",
+          "apps/web/src/components/ChatMarkdown.pull-request-environment.test.tsx",
+          "apps/web/src/hooks/usePullRequestLinking.test.tsx",
+          "apps/web/src/hostIntegrations.test.tsx",
+        ],
+        rules: {
+          "t3code/require-disposable-render": "warn",
+          "t3code/no-dom-test-environment": "warn",
+        },
+      },
     ],
     options: {
       reportUnusedDisableDirectives: "error",

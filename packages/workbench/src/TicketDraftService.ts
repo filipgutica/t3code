@@ -47,19 +47,21 @@ const make = Effect.gen(function* () {
   const workspaces = yield* TicketWorkspaceService;
   const scope = yield* Effect.scope;
   const mutations = yield* Ref.make<ReadonlyMap<string, Semaphore.Semaphore>>(new Map());
-  const withDraftLock = <A, E>(id: string, effect: Effect.Effect<A, E>) =>
-    Effect.gen(function* () {
-      let lock = (yield* Ref.get(mutations)).get(id);
-      if (!lock) {
-        const proposed = yield* Semaphore.make(1);
-        lock = yield* Ref.modify(mutations, (locks) => {
-          const current = locks.get(id);
-          if (current) return [current, locks] as const;
-          return [proposed, new Map(locks).set(id, proposed)] as const;
-        });
-      }
-      return yield* lock.withPermit(effect);
-    });
+  const withDraftLock = Effect.fn("TicketDraftService.withDraftLock")(function* <A, E>(
+    id: string,
+    effect: Effect.Effect<A, E>,
+  ) {
+    let lock = (yield* Ref.get(mutations)).get(id);
+    if (!lock) {
+      const proposed = yield* Semaphore.make(1);
+      lock = yield* Ref.modify(mutations, (locks) => {
+        const current = locks.get(id);
+        if (current) return [current, locks] as const;
+        return [proposed, new Map(locks).set(id, proposed)] as const;
+      });
+    }
+    return yield* lock.withPermit(effect);
+  });
   const currentAt = DateTime.now.pipe(Effect.map(DateTime.formatIso));
   const requireRevision = (draft: WorkbenchTicketDraft, expected: number) =>
     draft.revision === expected

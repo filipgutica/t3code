@@ -6,7 +6,7 @@ import {
   ShieldQuestionIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { formatWorkingDurationLabel } from "../components/Sidebar.logic";
+import { formatWorkingDurationLabel } from "@t3tools/client-runtime/state/models";
 import type { WorkbenchThreadExecutionStatusPresentation } from "./WorkbenchThreadExecutionStatus.logic";
 
 const STATUS_ICONS = {
