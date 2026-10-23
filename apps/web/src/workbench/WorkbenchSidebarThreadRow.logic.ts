@@ -11,7 +11,7 @@ import {
   resolveThreadCurrentPullRequestLink,
   visibleThreadPullRequests,
 } from "@t3tools/shared/threadPullRequests";
-import { useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import {
   linkedPullRequestSnapshotStatus,
@@ -22,6 +22,7 @@ import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { useRightPanelStore } from "../rightPanelStore";
 import { useEnvironment } from "../state/environments";
 import { useThreadActionMenu } from "../hooks/useThreadActionMenu";
+import { useNowMinute } from "../hooks/useNowMinute";
 import { useThreadActions } from "../hooks/useThreadActions";
 import {
   readEnvironmentSupportsSettlement,
@@ -57,7 +58,7 @@ export interface WorkbenchSidebarThreadRowData {
   status: ReturnType<typeof getWorkbenchThreadExecutionStatus>;
   failed: boolean;
   snoozed: boolean;
-  /** Native's snoozed-row label, such as "Mon 9:00 AM". */
+  /** Native's snoozed-row countdown, such as "23h". */
   wakeLabel: string | null;
   pullRequests: ReturnType<typeof resolveWorkbenchSidebarThreadPullRequests>;
   pullRequestBadge: ReturnType<typeof resolveThreadPullRequestBadge>;
@@ -85,7 +86,9 @@ function resolveRepositoryLabel(project: ThreadProject) {
   );
 }
 
-function resolveThreadActivityState(shell: ThreadShell) {
+// Like native's sidebar partition, the clock key is an input so the React Compiler recomputes
+// snooze state when the minute or a wake deadline passes.
+function resolveThreadActivityState(shell: ThreadShell, _clockKey: string) {
   if (shell === null) {
     return { status: null, failed: false, snoozed: false, wakeLabel: null };
   }
@@ -99,6 +102,16 @@ function resolveThreadActivityState(shell: ThreadShell) {
     wakeLabel:
       snoozed && shell.snoozedUntil != null ? snoozeWakeLabel(shell.snoozedUntil, { now }) : null,
   };
+}
+
+// Native's scheduleSnoozeWake: wake times are second-precise, and setTimeout delays are signed
+// 32-bit, so far-future wakes are capped instead of firing immediately.
+function scheduleSnoozeWake(wakeAt: string | null, onWake: () => void): (() => void) | undefined {
+  const wakeAtMs = wakeAt === null ? Number.NaN : Date.parse(wakeAt);
+  if (Number.isNaN(wakeAtMs)) return undefined;
+  const delayMs = Math.min(Math.max(0, wakeAtMs - Date.now()) + 50, 2_147_483_647);
+  const id = window.setTimeout(onWake, delayMs);
+  return () => window.clearTimeout(id);
 }
 
 function resolveThreadPullRequestState(
@@ -133,7 +146,14 @@ export function useWorkbenchSidebarThreadRowData({
   const environment = useEnvironment(thread.environmentId);
   const providers = useAtomValue(serverEnvironment.providersValueAtom(thread.environmentId));
   const providerEntry = resolveProviderEntry(shell, deriveProviderInstanceEntries(providers ?? []));
-  const activityState = resolveThreadActivityState(shell);
+  const nowMinute = useNowMinute();
+  const [wakeTick, bumpWakeTick] = useState(0);
+  const snoozedUntil = shell?.snoozedUntil ?? null;
+  useEffect(
+    () => scheduleSnoozeWake(snoozedUntil, () => bumpWakeTick((tick) => tick + 1)),
+    [snoozedUntil],
+  );
+  const activityState = resolveThreadActivityState(shell, `${nowMinute}:${wakeTick}`);
   const pullRequests = shell ? resolveWorkbenchSidebarThreadPullRequests(shell) : [];
   const pullRequestState = resolveThreadPullRequestState(pullRequests);
 

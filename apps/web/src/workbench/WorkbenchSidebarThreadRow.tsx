@@ -388,7 +388,8 @@ function WorkbenchSidebarThreadStatusSlot({
         ticketId={ticketId}
         threadId={thread.id}
         threadTitle={thread.title}
-        nativeStatusKind={data.status?.kind ?? null}
+        // The wake time replaces the run status, so attention must not treat that status as shown.
+        nativeStatusKind={data.wakeLabel !== null ? null : (data.status?.kind ?? null)}
         nativeStatus={<WorkbenchSidebarThreadSlotStatus data={data} />}
         side="right"
       />
