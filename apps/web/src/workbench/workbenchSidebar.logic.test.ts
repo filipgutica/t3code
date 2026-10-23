@@ -56,6 +56,9 @@ const thread = (
   title,
   archivedAt,
   settledOverride: null,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  pinnedAt: null,
+  pinOrderKey: null,
 });
 
 describe("Workbench sidebar ticket groups", () => {
@@ -157,6 +160,32 @@ describe("Workbench sidebar ticket groups", () => {
       active: [{ ticket: mixed, threads: [settled, active] }],
       done: [],
     });
+  });
+
+  it("lists pinned threads first in native pin order, then the rest newest-first", () => {
+    const pinnedTicket = ticket("pinned");
+    const oldest = thread("oldest");
+    const middle = thread("middle");
+    const newest = thread("newest");
+    const pinnedLater = { ...oldest, pinnedAt: "2026-03-01T00:00:00.000Z", pinOrderKey: "b" };
+    const pinnedFirst = { ...middle, pinnedAt: "2026-03-02T00:00:00.000Z", pinOrderKey: "a" };
+    const groups = getWorkbenchSidebarTicketGroups({
+      environmentId,
+      tickets: [pinnedTicket],
+      assignments: [
+        assignment("oldest", pinnedTicket.id, oldest.id, "2026-01-01"),
+        assignment("middle", pinnedTicket.id, middle.id, "2026-02-01"),
+        assignment("newest", pinnedTicket.id, newest.id, "2026-03-01"),
+      ],
+      threads: [pinnedLater, pinnedFirst, newest],
+      selectedTicketId: undefined,
+    });
+
+    expect(groups.get(workspaceId)?.active[0]?.threads.map((item) => item.id)).toEqual([
+      middle.id,
+      oldest.id,
+      newest.id,
+    ]);
   });
 
   it("keeps settled-only tickets in their ticket section", () => {
