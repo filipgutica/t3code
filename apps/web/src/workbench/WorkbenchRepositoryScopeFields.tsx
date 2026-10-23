@@ -108,20 +108,24 @@ export function WorkbenchRepositoryScopeFields({
   );
   const fieldsetRef = useRef<HTMLFieldSetElement>(null);
   const focusRowIdRef = useRef<ProjectId | null>(null);
-  // Removing or restoring a row replaces its action control, so focus the replacement, or
-  // Add repository when the row is gone.
-  useEffect(() => {
-    const id = focusRowIdRef.current;
-    if (id === null) return;
-    focusRowIdRef.current = null;
+  // Removing or restoring a row replaces its action control, so focus moves to the row's current
+  // control, or to Add repository when the row is gone.
+  const getRowFocusTarget = (id: ProjectId) => {
     const fieldset = fieldsetRef.current;
     const row = [...(fieldset?.querySelectorAll<HTMLElement>("[data-repository-id]") ?? [])].find(
       (candidate) => candidate.dataset.repositoryId === id,
     );
-    (
+    return (
       row?.querySelector<HTMLElement>("button") ??
-      fieldset?.querySelector<HTMLElement>("[data-repository-add]")
-    )?.focus();
+      fieldset?.querySelector<HTMLElement>("[data-repository-add]") ??
+      null
+    );
+  };
+  useEffect(() => {
+    const id = focusRowIdRef.current;
+    if (id === null) return;
+    focusRowIdRef.current = null;
+    getRowFocusTarget(id)?.focus();
   });
   // An already open menu or picker outlives its disabled trigger, so mutations check here too.
   const change = (next: WorkbenchRepositoryScope, focusRowId: ProjectId | null = null) => {
@@ -205,6 +209,9 @@ export function WorkbenchRepositoryScopeFields({
               primaryTitle={primaryTitle}
               disabled={disabled}
               onUndo={(id) => include(id, id)}
+              getMenuFinalFocus={(id) =>
+                focusRowIdRef.current === null ? (getRowFocusTarget(id) ?? true) : false
+              }
               onRemove={remove}
               onMakePrimary={(id) => change({ ...value, primaryT3ProjectId: id })}
             />
@@ -302,6 +309,7 @@ function RepositoryRowAction({
   primaryTitle,
   disabled,
   onUndo,
+  getMenuFinalFocus,
   onRemove,
   onMakePrimary,
 }: {
@@ -310,6 +318,7 @@ function RepositoryRowAction({
   readonly primaryTitle: string;
   readonly disabled: boolean;
   readonly onUndo: (id: ProjectId) => void;
+  readonly getMenuFinalFocus: (id: ProjectId) => HTMLElement | boolean;
   readonly onRemove: (id: ProjectId) => void;
   readonly onMakePrimary: (id: ProjectId) => void;
 }) {
@@ -354,7 +363,8 @@ function RepositoryRowAction({
       >
         <MoreHorizontalIcon />
       </MenuTrigger>
-      <MenuPopup align="end">
+      {/* The menu closes while its trigger unmounts, so it defers to the row's pending focus. */}
+      <MenuPopup align="end" finalFocus={() => getMenuFinalFocus(row.id)}>
         {row.isPrimary ? null : (
           <>
             <MenuItem
