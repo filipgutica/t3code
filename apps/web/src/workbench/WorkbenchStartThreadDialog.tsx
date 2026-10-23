@@ -396,6 +396,8 @@ function WorkbenchStartThreadFooter({
   );
 }
 
+const repositoryListFormat = new Intl.ListFormat("en", { type: "conjunction" });
+
 const getWorkAreaStatus = ({
   ready,
   workspace,
@@ -412,10 +414,42 @@ const getWorkAreaStatus = ({
     case "failed":
       return { label: "Failed", variant: "error" };
     case "ready":
-      return { label: "Needs update", variant: "warning" };
+      return { label: "Needs preparation", variant: "warning" };
     default:
       return { label: "Not prepared", variant: "secondary" };
   }
+};
+
+const getWorkAreaDescription = ({
+  ready,
+  workspace,
+  projects,
+  savedScope,
+  scope,
+}: {
+  ready: boolean;
+  workspace: WorkbenchTicketWorkspace | undefined;
+  projects: readonly Project[];
+  savedScope: WorkbenchRepositoryScope;
+  scope: WorkbenchRepositoryScope;
+}) => {
+  if (ready) return "This Thread reuses the prepared worktrees.";
+  if (workspace?.status === "ready") {
+    const unprepared = scope.repositoryProjectIds
+      .filter(
+        (id) =>
+          !workspace.repositories.some(
+            (repository) => repository.projectId === id && repository.status === "ready",
+          ),
+      )
+      .map((id) => projects.find((project) => project.id === id)?.title ?? id);
+    if (unprepared.length > 0) {
+      return `Creating the Thread prepares ${unprepared.length === 1 ? "a worktree" : "worktrees"} for ${repositoryListFormat.format(unprepared)}. Prepared worktrees are reused.`;
+    }
+  }
+  return isWorkbenchRepositoryScopeEqual(savedScope, scope)
+    ? null
+    : "Repository changes apply to this ticket’s work area when you create the Thread.";
 };
 
 function WorkbenchStartThreadWorkspaceReview({
@@ -439,65 +473,31 @@ function WorkbenchStartThreadWorkspaceReview({
   locked: boolean;
   pending: boolean;
 }) {
-  const [editingRepositories, setEditingRepositories] = useState(false);
   const status = getWorkAreaStatus({ ready, workspace });
-  const toggleRepositoryEditing = () => {
-    if (editingRepositories) repositorySelection.onChange(getWorkbenchRepositoryScope(ticket));
-    setEditingRepositories((editing) => !editing);
-  };
+  const savedScope = getWorkbenchRepositoryScope(ticket);
+  const description = getWorkAreaDescription({
+    ready,
+    workspace,
+    projects,
+    savedScope,
+    scope: repositorySelection.value,
+  });
   return (
     <section className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="space-y-1">
         <div className="flex items-center gap-2">
           <p className="text-sm font-medium">Work area</p>
           <Badge variant={status.variant}>{status.label}</Badge>
         </div>
-        {ready || editingRepositories ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="xs"
-            disabled={pending || locked}
-            onClick={toggleRepositoryEditing}
-          >
-            {editingRepositories ? "Cancel repository edits" : "Edit repositories"}
-          </Button>
-        ) : null}
+        {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
       </div>
-      {ready && !editingRepositories ? (
-        <div className="space-y-2">
-          <ul aria-label="Work area repositories" className="flex flex-wrap gap-1.5">
-            {[
-              ticket.primaryT3ProjectId,
-              ...ticket.repositoryProjectIds.filter((id) => id !== ticket.primaryT3ProjectId),
-            ].map((id) => (
-              <Badge key={id} render={<li />} variant="outline" size="lg">
-                <span className="max-w-56 truncate">
-                  {projects.find((project) => project.id === id)?.title ?? "Repository unavailable"}
-                </span>
-                {id === ticket.primaryT3ProjectId ? (
-                  <span className="text-muted-foreground">· Primary</span>
-                ) : null}
-              </Badge>
-            ))}
-          </ul>
-          <p className="text-xs text-muted-foreground">
-            This Thread reuses the prepared worktrees.
-          </p>
-        </div>
-      ) : (
-        <WorkbenchRepositoryScopeFields
-          projects={projects}
-          {...repositorySelection}
-          disabled={pending || locked}
-          idPrefix={`start-thread-${ticket.id}`}
-        />
-      )}
-      {editingRepositories ? (
-        <p className="text-xs text-muted-foreground">
-          Repository changes apply to this ticket’s work area when you create the Thread.
-        </p>
-      ) : null}
+      <WorkbenchRepositoryScopeFields
+        projects={projects}
+        {...repositorySelection}
+        savedScope={savedScope}
+        workspace={workspace}
+        disabled={pending || locked}
+      />
       {locked ? (
         <p role="status" className="text-xs text-muted-foreground">
           Wait for work area preparation or release to finish.

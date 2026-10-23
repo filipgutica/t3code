@@ -1,6 +1,10 @@
 import { useWorkbenchTicketContent } from "./useWorkbenchTicketContent";
-import { WorkbenchRepositoryScopeFields } from "./WorkbenchRepositoryScopeFields";
 import {
+  WorkbenchRepositoryScopeFields,
+  WorkbenchTicketRepositoryStatus,
+} from "./WorkbenchRepositoryScopeFields";
+import {
+  getWorkbenchRepositoryScope,
   isWorkbenchRepositoryScopeValid,
   type WorkbenchRepositoryScope,
   type WorkbenchRepositoryScopeDraft,
@@ -1733,37 +1737,6 @@ function WorkbenchTicketRepositoryIdentity({
   );
 }
 
-function getWorkbenchTicketRepositoryStatusLabel(
-  repository: WorkbenchTicketRepositoryEntry["workspaceRepository"],
-) {
-  switch (repository?.status) {
-    case "failed":
-      return "Preparation failed";
-    case "pending":
-      return "Pending preparation";
-    case "released":
-      return "Released";
-    case "ready":
-      return null;
-    default:
-      return "Not prepared";
-  }
-}
-
-function WorkbenchTicketRepositoryStatus({
-  repository,
-}: {
-  readonly repository: WorkbenchTicketRepositoryEntry["workspaceRepository"];
-}) {
-  const label = getWorkbenchTicketRepositoryStatusLabel(repository);
-  if (label === null) return null;
-  return (
-    <Badge size="sm" variant={repository?.status === "failed" ? "warning" : "outline"}>
-      {label}
-    </Badge>
-  );
-}
-
 function WorkbenchThreadTitle({
   className,
   title,
@@ -2882,7 +2855,6 @@ function WorkbenchTicketWorkspacePanel({
         presentation={presentation}
         actions={actions}
         draft={draft}
-        linkedProjects={linkedProjects}
         disabled={disabled}
         collapsed={collapsed}
         openRepositoryReview={openRepositoryReview}
@@ -2895,12 +2867,19 @@ function WorkbenchTicketWorkspacePanel({
         {draft ? (
           <WorkbenchTicketWorkspaceRepositoryEditor
             draft={draft}
-            repositories={repositories}
-            context={context}
-            isArchived={isArchived}
+            ticketWorkspace={ticketWorkspace}
+            linkedProjects={linkedProjects}
             disabled={disabled}
             onRepositoryScopeChange={onRepositoryScopeChange}
-          />
+          >
+            <WorkbenchTicketWorkspaceReviewActions
+              draft={draft}
+              presentation={presentation}
+              actions={actions}
+              disabled={disabled}
+              linkedProjects={linkedProjects}
+            />
+          </WorkbenchTicketWorkspaceRepositoryEditor>
         ) : (
           <WorkbenchTicketWorkspaceRepositories
             repositories={repositories}
@@ -2913,13 +2892,15 @@ function WorkbenchTicketWorkspacePanel({
             retainedRepositories={retainedRepositories}
           />
         )}
-        <p className="text-xs text-muted-foreground">
-          {getWorkbenchWorkspaceDescription({
-            workspaceIsPreparing,
-            ticketWorkspace,
-            workspaceHasSelectedRepositories,
-          })}
-        </p>
+        {draft ? null : (
+          <p className="text-xs text-muted-foreground">
+            {getWorkbenchWorkspaceDescription({
+              workspaceIsPreparing,
+              ticketWorkspace,
+              workspaceHasSelectedRepositories,
+            })}
+          </p>
+        )}
         {ticketWorkspace?.errorMessage ? (
           <p className="break-words text-xs text-destructive" role="alert">
             {ticketWorkspace.errorMessage}
@@ -2945,13 +2926,11 @@ function WorkbenchTicketWorkspaceHeader({
   presentation,
   actions,
   draft,
-  linkedProjects,
   disabled,
   collapsed,
   openRepositoryReview,
 }: Pick<WorkbenchTicketWorkspacePanelInput, "presentation" | "actions"> & {
   readonly draft: WorkbenchRepositoryScopeDraft | null;
-  readonly linkedProjects: ReadonlyArray<Project>;
   readonly disabled: boolean;
   readonly collapsed: boolean;
   readonly openRepositoryReview: (prepare: boolean) => void;
@@ -2985,36 +2964,34 @@ function WorkbenchTicketWorkspaceHeader({
         contentId="workbench-ticket-repositories"
         toggleDisabled={draft !== null}
         actions={
-          !draft && !workspaceIsReady ? (
-            <Button
-              aria-busy={workspaceIsPreparing || pending}
-              disabled={disabled}
-              onClick={() => openRepositoryReview(true)}
-              size="xs"
-              type="button"
-              variant="outline"
-            >
-              <FolderGit2Icon /> {workspacePreparationActionLabel}
-            </Button>
-          ) : undefined
+          draft ? undefined : (
+            <>
+              {workspaceIsReady ? null : (
+                <Button
+                  aria-busy={workspaceIsPreparing || pending}
+                  disabled={disabled}
+                  onClick={() => openRepositoryReview(true)}
+                  size="xs"
+                  type="button"
+                  variant="outline"
+                >
+                  <FolderGit2Icon /> {workspacePreparationActionLabel}
+                </Button>
+              )}
+              <Button
+                aria-label="Edit repositories"
+                disabled={disabled}
+                onClick={() => openRepositoryReview(false)}
+                size="xs"
+                type="button"
+                variant="ghost"
+              >
+                <PencilIcon /> Edit
+              </Button>
+            </>
+          )
         }
       />
-      <div className="flex flex-wrap items-center gap-1 px-4 pb-3">
-        {draft ? (
-          <WorkbenchTicketWorkspaceReviewActions
-            draft={draft}
-            presentation={presentation}
-            actions={actions}
-            disabled={disabled}
-            linkedProjects={linkedProjects}
-          />
-        ) : (
-          <WorkbenchTicketWorkspaceBrowseActions
-            disabled={disabled}
-            openRepositoryReview={openRepositoryReview}
-          />
-        )}
-      </div>
     </>
   );
 }
@@ -3065,80 +3042,35 @@ function WorkbenchTicketWorkspaceReviewActions({
   );
 }
 
-function WorkbenchTicketWorkspaceBrowseActions({
-  disabled,
-  openRepositoryReview,
-}: {
-  readonly disabled: boolean;
-  readonly openRepositoryReview: (prepare: boolean) => void;
-}) {
-  return (
-    <Button
-      disabled={disabled}
-      onClick={() => openRepositoryReview(false)}
-      size="xs"
-      type="button"
-      variant="ghost"
-    >
-      <PencilIcon /> Edit repositories
-    </Button>
-  );
-}
-
 function WorkbenchTicketWorkspaceRepositoryEditor({
   draft,
-  repositories,
-  context,
-  isArchived,
+  ticketWorkspace,
+  linkedProjects,
   disabled,
   onRepositoryScopeChange,
-}: Pick<WorkbenchTicketWorkspacePanelInput, "context"> &
-  Pick<
-    WorkbenchTicketWorkspacePanelProps,
-    "repositories" | "isArchived" | "onRepositoryScopeChange"
-  > & {
-    readonly draft: WorkbenchRepositoryScopeDraft;
-    readonly disabled: boolean;
-  }) {
-  const { environmentId, keybindings, availableEditors, linkedProjects } = context;
-  const ticket = draft.ticket;
-  const failedRepositories = repositories.filter(
-    (entry) => entry.workspaceRepository?.status === "failed",
-  );
+  children,
+}: Pick<WorkbenchTicketWorkspacePanelProps, "ticketWorkspace" | "onRepositoryScopeChange"> & {
+  readonly draft: WorkbenchRepositoryScopeDraft;
+  readonly linkedProjects: ReadonlyArray<Project>;
+  readonly disabled: boolean;
+  readonly children: ReactNode;
+}) {
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">
-        {draft.prepare
-          ? "Review the primary and additional repositories before preparing this work area."
-          : "Save repository choices together. Existing threads keep their working directories and context."}
-      </p>
       <WorkbenchRepositoryScopeFields
         projects={linkedProjects}
         value={draft.value}
+        savedScope={getWorkbenchRepositoryScope(draft.ticket)}
+        workspace={ticketWorkspace}
         onChange={onRepositoryScopeChange}
         disabled={disabled}
-        idPrefix={`ticket-workspace-${ticket.id}`}
       />
-      <p className="text-xs text-muted-foreground">
-        Removing a repository changes this ticket’s scope for future threads. Its existing worktrees
-        remain on disk, and existing threads keep their working directories and context.
-      </p>
-      {failedRepositories.length > 0 ? (
-        <div className="divide-y divide-border/50 border-t border-border/50 pt-2">
-          {failedRepositories.map((entry) => (
-            <WorkbenchTicketRepositoryRow
-              key={entry.id}
-              environmentId={environmentId}
-              entry={entry}
-              keybindings={keybindings}
-              availableEditors={availableEditors}
-              isArchived={isArchived}
-              isRetained={false}
-              canOpen={false}
-            />
-          ))}
-        </div>
-      ) : null}
+      <div className="space-y-2 border-t border-border pt-3">
+        <p className="text-xs text-muted-foreground">
+          Changes apply to future threads. Existing threads and worktrees stay unchanged.
+        </p>
+        <div className="flex flex-wrap justify-end gap-1">{children}</div>
+      </div>
     </div>
   );
 }
