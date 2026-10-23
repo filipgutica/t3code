@@ -23,8 +23,44 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Build outside the secrets environment; the live job only runs the result.
+  build:
+    name: Build server and web client
+    if: >-
+      github.repository == 'filipgutica/t3code' &&
+      (github.event_name != 'pull_request' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login == github.repository_owner))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          run-install: true
+      - name: Build server with bundled web client
+        env:
+          T3CODE_WORKBENCH_BUILD: "1"
+        run: vp run --filter t3 build
+      - name: Upload built server
+        uses: actions/upload-artifact@v7
+        with:
+          name: workbench-live-regression-server
+          path: apps/server/dist/
+          # The server reads the client's .vite/manifest.json at runtime.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
   jira-github:
     name: Real Jira and GitHub integration
+    needs: build
     if: >-
       github.repository == 'filipgutica/t3code' &&
       (github.event_name != 'pull_request' ||
@@ -72,6 +108,13 @@ jobs:
           }
           JS
           node scripts/workbench-demo/jira-auth-ci.mts --preflight --repository "$GITHUB_REPOSITORY" --secret-environment workbench-demo
+      - name: Download built server
+        uses: actions/download-artifact@v8
+        with:
+          name: workbench-live-regression-server
+          path: apps/server/dist
+      - name: Check built server
+        run: test -f apps/server/dist/bin.mjs && test -f apps/server/dist/client/.vite/manifest.json
       - name: Install Chromium
         working-directory: scripts
         run: vp exec playwright install --with-deps chromium

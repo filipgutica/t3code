@@ -82,6 +82,7 @@ const { values, positionals } = NodeUtil.parseArgs({
     run: { type: "string" },
     help: { type: "boolean", short: "h", default: false },
     maintenance: { type: "boolean", default: false },
+    built: { type: "boolean", default: false },
   },
 });
 const main = async () => {
@@ -145,7 +146,7 @@ const main = async () => {
     return;
   }
   if (command === "start") {
-    process.exitCode = await startDemo(home);
+    process.exitCode = await startDemo(home, { built: values.built });
     return;
   }
   if (command === "run") {

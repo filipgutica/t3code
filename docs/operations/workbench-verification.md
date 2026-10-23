@@ -50,7 +50,7 @@ job uses a selected `main` controller commit and deployment credentials.
 ## Follow the state
 
 The default browser fixture creates a temporary T3 home, seeds repositories and
-Workbench records through native RPCs, starts the current checkout's server,
+Workbench records through native RPCs, starts the current checkout's built server,
 and pairs Chromium. Web, server, WebSocket, SQLite, and Git are real. The scripted
 provider and controlled Jira responses make the default lane repeatable. Each
 test gets a fresh browser page and context, but the server, database, and paired

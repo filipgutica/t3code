@@ -14,8 +14,36 @@ const socketPath = (home: string) =>
     ? `\\\\.\\pipe\\workbench-demo-${NodeCrypto.createHash("sha256").update(home).digest("hex").slice(0, 24)}`
     : NodePath.join(home, "control.sock");
 
-export const startDemo = async (input: string): Promise<number> => {
+/** `built` runs the production server and its bundled client instead of the Vite dev stack. */
+const serverArgs = (home: string, built: boolean) => {
+  if (!built) return ["scripts/dev-runner.ts", "dev", "--home-dir", home];
+  const dist = NodePath.join(root, "apps", "server", "dist");
+  for (const file of ["bin.mjs", "client/index.html", "client/.vite/manifest.json"])
+    if (!NodeFS.existsSync(NodePath.join(dist, file)))
+      throw new Error(
+        `The built server is missing ${file}. Run \`T3CODE_WORKBENCH_BUILD=1 vp run --filter t3 build\` first.`,
+      );
+  // The pairing URL and runtime origin must stay on loopback for the browser checks.
+  return [
+    NodePath.join(dist, "bin.mjs"),
+    "start",
+    "--mode",
+    "web",
+    "--host",
+    "127.0.0.1",
+    "--base-dir",
+    home,
+    "--no-browser",
+  ];
+};
+
+export const startDemo = async (
+  input: string,
+  options: { built?: boolean } = {},
+): Promise<number> => {
   const home = requireHome(input);
+  const built = options.built ?? false;
+  const args = serverArgs(home, built);
   const disposableLock = NodePath.join(home, ".disposable-demo.lock");
   if (NodeFS.existsSync(disposableLock))
     throw new Error(
@@ -57,7 +85,7 @@ export const startDemo = async (input: string): Promise<number> => {
     });
     if (HostProcess.Platform.defaultValue() !== "win32") NodeFS.chmodSync(socketPath(home), 0o600);
     const config = readConfig(home);
-    const env = {
+    const env: NodeJS.ProcessEnv = {
       ...process.env,
       PATH: `${NodePath.join(root, "node_modules", ".bin")}${NodePath.delimiter}${process.env.PATH ?? ""}`,
       T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "0",
@@ -71,18 +99,21 @@ export const startDemo = async (input: string): Promise<number> => {
     ]) {
       if (config[key] !== undefined) Object.assign(env, { [key]: config[key] });
     }
-    const child = NodeChildProcess.spawn(
-      process.execPath,
-      ["scripts/dev-runner.ts", "dev", "--home-dir", home],
-      {
-        cwd: root,
-        env,
-        stdio: "inherit",
-        // Own one process group so a stopped launcher cannot leave Vite or the
-        // backend watcher running with this demo's credentials.
-        detached: HostProcess.Platform.defaultValue() !== "win32",
-      },
-    );
+    if (built) {
+      // Flags set mode, host, home and browser; these ambient keys would still
+      // switch the server to dev mode, pin its port, or make it read bootstrap input.
+      delete env.VITE_DEV_SERVER_URL;
+      delete env.T3CODE_PORT;
+      delete env.T3CODE_BOOTSTRAP_FD;
+    }
+    const child = NodeChildProcess.spawn(process.execPath, args, {
+      cwd: root,
+      env,
+      stdio: "inherit",
+      // Own one process group so a stopped launcher cannot leave Vite or a
+      // server running with this demo's credentials.
+      detached: HostProcess.Platform.defaultValue() !== "win32",
+    });
     let stopping = false;
     const stop = () => {
       stopping = true;

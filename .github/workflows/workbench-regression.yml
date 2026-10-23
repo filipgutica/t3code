@@ -21,8 +21,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build:
+    name: Build server and web client
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        with:
+          node-version-file: package.json
+          run-install: true
+      - name: Build server with bundled web client
+        env:
+          T3CODE_WORKBENCH_BUILD: "1"
+        run: vp run --filter t3 build
+      - name: Upload built server
+        uses: actions/upload-artifact@v7
+        with:
+          name: workbench-regression-server
+          path: apps/server/dist/
+          # The server reads the client's .vite/manifest.json at runtime.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
   browser:
     name: UI flows and Jira lifecycle (simulated services) ${{ matrix.shard }}/3
+    needs: build
     strategy:
       fail-fast: false
       matrix:
@@ -40,6 +70,13 @@ jobs:
         with:
           node-version-file: package.json
           run-install: true
+      - name: Download built server
+        uses: actions/download-artifact@v8
+        with:
+          name: workbench-regression-server
+          path: apps/server/dist
+      - name: Check built server
+        run: test -f apps/server/dist/bin.mjs && test -f apps/server/dist/client/.vite/manifest.json
       - name: Install Chromium
         working-directory: scripts
         run: vp exec playwright install --with-deps chromium
@@ -49,8 +86,6 @@ jobs:
           vp exec tsc --noEmit -p scripts/workbench-regression/tsconfig.json
           vp lint scripts/workbench-regression --report-unused-disable-directives
       - name: Run browser regressions
-        # Unbundled dev: upstream's bundled dev (T3CODE_BUNDLED_DEV) crashes on first load with
-        # `factory.fn is not a function` as of 52bb5c8.
         working-directory: scripts
         run: vp exec playwright test --config workbench-regression/playwright.config.ts --shard=${{ matrix.shard }}/3
       - name: Upload browser evidence
