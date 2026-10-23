@@ -46,6 +46,13 @@ const PageMetadata = {
   isLast: Schema.optionalKey(Schema.Boolean),
 };
 
+const offsetPageIsLast = (
+  page: { readonly isLast?: boolean; readonly total?: number; readonly startAt?: number },
+  received: number,
+) =>
+  page.isLast === true ||
+  (page.total !== undefined && (page.startAt ?? 0) + received >= page.total);
+
 const RawProject = Schema.Struct({
   id: Schema.String,
   key: Schema.String,
@@ -668,9 +675,7 @@ export const make = Effect.gen(function* () {
       path: "/rest/api/3/project/search",
       schema: ProjectPage,
       values: (page) => page.values,
-      isLast: (page, received) =>
-        page.isLast === true ||
-        (page.total !== undefined && (page.startAt ?? 0) + received >= page.total),
+      isLast: offsetPageIsLast,
     });
     return projects.map(
       (project) =>
@@ -694,9 +699,7 @@ export const make = Effect.gen(function* () {
       baseParams: { projectKeyOrId: input.projectKeyOrId },
       schema: BoardPage,
       values: (page) => page.values,
-      isLast: (page, received) =>
-        page.isLast === true ||
-        (page.total !== undefined && (page.startAt ?? 0) + received >= page.total),
+      isLast: offsetPageIsLast,
     });
     return boards.map(
       (board) =>
@@ -719,9 +722,7 @@ export const make = Effect.gen(function* () {
       baseParams: { state: "active,future" },
       schema: SprintPage,
       values: (page) => page.values,
-      isLast: (page, received) =>
-        page.isLast === true ||
-        (page.total !== undefined && (page.startAt ?? 0) + received >= page.total),
+      isLast: offsetPageIsLast,
     });
     return sprints.map(
       (sprint) =>
@@ -863,19 +864,23 @@ export const make = Effect.gen(function* () {
     });
   });
 
+  const listIssueTypes = (
+    context: { readonly connection: WorkbenchJiraConnection; readonly accessToken: string },
+    projectKey: string,
+  ) =>
+    collectPages({
+      ...context,
+      path: `/rest/api/3/issue/createmeta/${encodeURIComponent(projectKey)}/issuetypes`,
+      schema: IssueTypePage,
+      values: (page) => page.issueTypes,
+      isLast: offsetPageIsLast,
+    });
+
   const prepareIssueCreation: JiraApiShape["prepareIssueCreation"] = Effect.fn(
     "JiraApi.prepareIssueCreation",
   )(function* (input: Parameters<JiraApiShape["prepareIssueCreation"]>[0]) {
     const context = yield* authorized(input.connectionId);
-    const issueTypes = yield* collectPages({
-      ...context,
-      path: `/rest/api/3/issue/createmeta/${encodeURIComponent(input.projectKey)}/issuetypes`,
-      schema: IssueTypePage,
-      values: (page) => page.issueTypes,
-      isLast: (page, received) =>
-        page.isLast === true ||
-        (page.total !== undefined && (page.startAt ?? 0) + received >= page.total),
-    });
+    const issueTypes = yield* listIssueTypes(context, input.projectKey);
     const desiredType = input.kind === "bug" ? "bug" : "story";
     const issueType = issueTypes.find(
       (candidate) => candidate.name.trim().toLowerCase() === desiredType,
@@ -898,15 +903,7 @@ export const make = Effect.gen(function* () {
     "JiraApi.prepareEpicCreation",
   )(function* (input: Parameters<NonNullable<JiraApiShape["prepareEpicCreation"]>>[0]) {
     const context = yield* authorized(input.connectionId);
-    const issueTypes = yield* collectPages({
-      ...context,
-      path: `/rest/api/3/issue/createmeta/${encodeURIComponent(input.projectKey)}/issuetypes`,
-      schema: IssueTypePage,
-      values: (page) => page.issueTypes,
-      isLast: (page, received) =>
-        page.isLast === true ||
-        (page.total !== undefined && (page.startAt ?? 0) + received >= page.total),
-    });
+    const issueTypes = yield* listIssueTypes(context, input.projectKey);
     const issueType = issueTypes.find(
       (candidate) => candidate.name.trim().toLowerCase() === "epic",
     );

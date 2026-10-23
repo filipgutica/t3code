@@ -1059,6 +1059,21 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const rereadManagedIssue = Effect.fn("JiraTicketWriteService.rereadManagedIssue")(function* (
+    ticketId: WorkbenchJiraUpdateTicketInput["ticketId"],
+    initial: ManagedIssue,
+    changedMessage: string,
+  ) {
+    const managed = yield* findManagedIssue(ticketId);
+    if (
+      !sameBindingConfiguration(managed.binding, initial.binding) ||
+      managed.link.issue.issueId !== initial.link.issue.issueId
+    ) {
+      return yield* operationError("invalid_binding", changedMessage);
+    }
+    return managed;
+  });
+
   const getTicketTransitions: JiraTicketWriteServiceShape["getTicketTransitions"] = Effect.fn(
     "JiraTicketWriteService.getTicketTransitions",
   )(function* (input: Parameters<JiraTicketWriteServiceShape["getTicketTransitions"]>[0]) {
@@ -1066,16 +1081,11 @@ export const make = Effect.gen(function* () {
     return yield* sync.withBindingPermit(
       initial.binding.id,
       Effect.gen(function* () {
-        const managed = yield* findManagedIssue(input.ticketId);
-        if (
-          !sameBindingConfiguration(managed.binding, initial.binding) ||
-          managed.link.issue.issueId !== initial.link.issue.issueId
-        ) {
-          return yield* operationError(
-            "invalid_binding",
-            "The Jira Ticket link changed while transitions were loading. Refresh the Ticket and try again.",
-          );
-        }
+        const managed = yield* rereadManagedIssue(
+          input.ticketId,
+          initial,
+          "The Jira Ticket link changed while transitions were loading. Refresh the Ticket and try again.",
+        );
         // Choices are background-cache data. The write path rereads Jira and
         // validates this revision before applying a selected transition.
         const current = managed.link.issue;
@@ -1119,16 +1129,11 @@ export const make = Effect.gen(function* () {
         // The lookup above only identifies the lock. Re-read inside the permit so a sync or
         // binding edit that was already queued cannot turn this request into a write against a
         // stale issue link or sprint selection.
-        const managed = yield* findManagedIssue(input.ticketId);
-        if (
-          !sameBindingConfiguration(managed.binding, initial.binding) ||
-          managed.link.issue.issueId !== initial.link.issue.issueId
-        ) {
-          return yield* operationError(
-            "invalid_binding",
-            "The Jira Ticket link changed while the update was waiting. Refresh the Ticket and try again.",
-          );
-        }
+        const managed = yield* rereadManagedIssue(
+          input.ticketId,
+          initial,
+          "The Jira Ticket link changed while the update was waiting. Refresh the Ticket and try again.",
+        );
         const current = yield* readAssignedIssue(managed);
         if (current.remoteUpdatedAt === null || input.expectedRemoteUpdatedAt === null) {
           return yield* operationError(
