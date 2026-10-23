@@ -227,13 +227,3 @@ export const layerRuntimePolicyDecorator = Layer.effect(
   RuntimePolicy.RuntimePolicyDecorator,
   makeRuntimePolicyDecorator,
 );
-
-/** Standalone composition for callers that already supply a native resolver. */
-export const layer = Layer.effect(
-  RuntimePolicy.RuntimePolicyV2,
-  Effect.gen(function* () {
-    const base = yield* RuntimePolicy.RuntimePolicyV2;
-    const decorator = yield* makeRuntimePolicyDecorator;
-    return decorator.decorate(base);
-  }),
-);

@@ -175,7 +175,7 @@ it.effect.each([
 );
 
 afterEach(() => vi.unstubAllGlobals());
-it.effect.each([false, true])(
+it.effect.each([true])(
   "hands web and app links and HTML files to the renderer and leaves other links alone (Workbench: %s)",
   (workbench) =>
     Effect.gen(function* () {

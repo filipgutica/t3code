@@ -1490,7 +1490,7 @@ describe("JiraTicketWriteService", () => {
     ).pipe(Effect.scoped, Effect.provide(SqlitePersistence.layerMemory)),
   );
 
-  it.effect("requires the write scope and assigned issue membership", () =>
+  it.effect("requires Jira write scope before updating a Ticket", () =>
     runWithHarness(
       (harness) =>
         Effect.gen(function* () {

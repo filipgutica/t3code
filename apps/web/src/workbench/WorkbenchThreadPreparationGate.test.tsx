@@ -64,29 +64,18 @@ it("returns an unsaved preparation link to its owning environment and workspace"
   expect(renderer!.toJSON()).toBeNull();
 });
 
-it("returns a saved planning Thread link to the ticket", async () => {
-  state.query.data = [
-    { ...preparation, ticketId: WorkbenchTicketId.make("ticket"), phase: "planning" },
-  ];
-  await render();
-  expect(state.navigate).toHaveBeenCalledWith({
-    to: "/workbench",
-    search: { environmentId: "remote", workbenchProjectId: "workbench", ticketId: "ticket" },
-    replace: true,
-  });
-});
-
-it("keeps a partially promoted ticket in the retryable creation view", async () => {
-  state.query.data = [
-    { ...preparation, ticketId: WorkbenchTicketId.make("ticket"), phase: "promoting" },
-  ];
-  await render();
-  expect(state.navigate).toHaveBeenCalledWith({
-    to: "/workbench",
-    search: { environmentId: "remote", workbenchProjectId: "workbench", ticketId: "ticket" },
-    replace: true,
-  });
-});
+it.each(["planning", "promoting"])(
+  "returns a saved %s Thread link to its Ticket",
+  async (phase) => {
+    state.query.data = [{ ...preparation, ticketId: WorkbenchTicketId.make("ticket"), phase }];
+    await render();
+    expect(state.navigate).toHaveBeenCalledWith({
+      to: "/workbench",
+      search: { environmentId: "remote", workbenchProjectId: "workbench", ticketId: "ticket" },
+      replace: true,
+    });
+  },
+);
 
 it("does not redirect using stale preparation data while Start work refreshes", async () => {
   state.query = { isPending: true, isSuccess: true, data: [preparation] };

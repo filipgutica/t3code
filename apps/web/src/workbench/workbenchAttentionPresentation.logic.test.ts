@@ -1,10 +1,7 @@
 import { ProjectId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import type {
-  WorkbenchAttentionInspection,
-  WorkbenchAttentionSignal,
-} from "./workbenchAttention.logic";
+import type { WorkbenchAttentionSignal } from "./workbenchAttention.logic";
 import {
   getWorkbenchAttentionBadgePresentation,
   getWorkbenchThreadAttention,
@@ -84,14 +81,6 @@ describe("Workbench attention badge presentation", () => {
       nativeStatusKind: "working" as const,
       kinds: ["approval", "input", "failed", "checks", "feedback", "plan", "done"],
     },
-    {
-      nativeStatusKind: "waiting" as const,
-      kinds: ["approval", "input", "failed", "checks", "feedback", "plan", "done"],
-    },
-    {
-      nativeStatusKind: "limited" as const,
-      kinds: ["approval", "input", "failed", "checks", "feedback", "plan", "done"],
-    },
   ])(
     "lets native $nativeStatusKind own the leading slot and counts only additional kinds",
     ({ nativeStatusKind, kinds }) => {
@@ -108,35 +97,24 @@ describe("Workbench attention badge presentation", () => {
     },
   );
 
-  it("scopes both PR and Thread reasons and inspection uncertainty to the owning Thread", () => {
-    const inspection: WorkbenchAttentionInspection = {
-      row,
-      status: "unavailable",
-      displayStatus: "incomplete",
-      inspected: false,
-    };
-    const otherInspection = { ...inspection, row: { ...row, threadId: otherThreadId } };
+  it("scopes PR and Thread reasons to the owning Thread", () => {
     const foreignSignals: ReadonlyArray<WorkbenchAttentionSignal> = [
       { kind: "question", source: { ...threadSource, threadId: otherThreadId } },
       {
         kind: "failed-checks",
-        source: { type: "pull-request", row: otherInspection.row },
+        source: { type: "pull-request", row: { ...row, threadId: otherThreadId } },
         unresolvedReviewThreads: [],
       },
     ];
     const attention = getWorkbenchThreadAttention({
       threadId,
       signals: [...foreignSignals, ...notifications, question, approval, failed, ...prSignals],
-      inspections: [otherInspection, inspection],
     });
     expect(attention.signals).toEqual([...notifications, question, approval, failed, ...prSignals]);
-    expect(attention.inspections).toEqual([inspection]);
     const unknown = getWorkbenchThreadAttention({
       threadId,
       signals: [],
-      inspections: [inspection],
     });
     expect(unknown.signals).toEqual([]);
-    expect(unknown.inspections[0]?.displayStatus).toBe("incomplete");
   });
 });

@@ -413,15 +413,3 @@ export function groupWorkbenchTicketsByEpic<
     ? [...lanes, { epic: null, tickets: unassignedTickets }]
     : lanes;
 }
-
-export function ticketsByStatus<Ticket extends Pick<WorkbenchTicket, "status">>(
-  tickets: ReadonlyArray<Ticket>,
-): Record<WorkbenchTicketStatus, ReadonlyArray<Ticket>> {
-  const grouped: Record<WorkbenchTicketStatus, Array<Ticket>> = {
-    todo: [],
-    in_progress: [],
-    done: [],
-  };
-  for (const ticket of tickets) grouped[ticket.status].push(ticket);
-  return grouped;
-}

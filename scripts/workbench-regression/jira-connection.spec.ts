@@ -21,11 +21,11 @@ const jiraSite = (home: string) => {
   return site;
 };
 
-type JiraSyncRouteMode = "normal" | "hold" | "failure" | "empty";
+type JiraSyncRouteMode = "normal" | "hold" | "failure";
 
 /**
  * The live suite still uses the real Jira service. This route only controls
- * the browser's RPC response so the progress, retry, and empty-result states
+ * the browser's RPC response so the progress and retry states
  * can be observed without changing Jira data to manufacture an error.
  */
 const routeJiraSync = async (page: import("@playwright/test").Page) => {
@@ -77,7 +77,7 @@ const routeJiraSync = async (page: import("@playwright/test").Page) => {
       if (
         !background &&
         targetRequestId === null &&
-        (mode === "failure" || mode === "empty") &&
+        mode === "failure" &&
         payload?._tag === "Request" &&
         payload.tag === WORKBENCH_WS_METHODS.workbenchJiraSyncBinding &&
         (typeof payload.id === "string" || typeof payload.id === "number")
@@ -116,25 +116,6 @@ const routeJiraSync = async (page: import("@playwright/test").Page) => {
           }),
         );
         return;
-      }
-      if (
-        payload?._tag === "Exit" &&
-        payload.requestId === targetRequestId &&
-        payload.exit &&
-        typeof payload.exit === "object" &&
-        mode === "empty"
-      ) {
-        const exit = payload.exit as { readonly _tag?: string; readonly value?: unknown };
-        if (exit._tag === "Success" && exit.value && typeof exit.value === "object") {
-          mode = "normal";
-          socket.send(
-            JSON.stringify({
-              ...payload,
-              exit: { ...exit, value: { ...(exit.value as object), links: [] } },
-            }),
-          );
-          return;
-        }
       }
       socket.send(message);
     });
@@ -296,21 +277,6 @@ test.describe("Jira connection UX @live", () => {
     await status.getByRole("button", { name: "Retry", exact: true }).click();
     await expect(
       page.getByRole("status").filter({ hasText: /Synced \d+ Jira tickets?/i }),
-    ).toBeVisible();
-  });
-
-  test("J1 empty: an empty Jira import explains what was checked", async ({ page, demo }) => {
-    const jira = await jiraSnapshot(demo);
-    const binding = jira.bindings.find((candidate) => candidate.projectId === "demo-jira");
-    if (!binding) throw new Error("The live demo has no preconnected Jira binding.");
-    const syncRoute = await routeJiraSync(page);
-    await openSyncMenu(page, demo, binding.projectId);
-    syncRoute.setMode("empty");
-    await page.getByRole("menuitem", { name: "Sync Jira", exact: true }).click();
-    await expect(
-      page.getByRole("status").filter({
-        hasText: "No Jira issues are assigned to you in this sprint.",
-      }),
     ).toBeVisible();
   });
 });

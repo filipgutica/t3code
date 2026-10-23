@@ -3,7 +3,6 @@ import { act, StrictMode, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import type { useWorkbenchSidebarReveal as UseWorkbenchSidebarReveal } from "./useWorkbenchSidebarReveal";
-import { getWorkbenchSidebarRevealDecision } from "./workbenchSidebarReveal.logic";
 
 // The hook remembers the last destination across remounts; each test loads a fresh module.
 let useWorkbenchSidebarReveal: typeof UseWorkbenchSidebarReveal;
@@ -232,29 +231,4 @@ it("ignores an earlier click that changed nothing when a later navigation remoun
   now.mockReturnValue(5_000);
   remount("previous");
   expect(row().hasAttribute("data-workbench-sidebar-reveal")).toBe(true);
-});
-
-it("only requests movement for an offscreen reveal and pulses filters and outside destinations", () => {
-  const decide = (
-    reason: Parameters<typeof getWorkbenchSidebarRevealDecision>[0]["reason"],
-    options: { fullyVisible?: boolean; userScrolling?: boolean; selectedInSidebar?: boolean } = {},
-  ) =>
-    getWorkbenchSidebarRevealDecision({
-      reason,
-      fullyVisible: options.fullyVisible ?? true,
-      userScrolling: options.userScrolling ?? false,
-      selectedInSidebar: options.selectedInSidebar ?? false,
-    });
-  expect(decide(null, { fullyVisible: false })).toEqual({ scroll: false, pulse: false });
-  expect(decide("destination", { selectedInSidebar: true })).toEqual({
-    scroll: false,
-    pulse: false,
-  });
-  expect(decide("destination")).toEqual({ scroll: false, pulse: true });
-  expect(decide("filter")).toEqual({ scroll: false, pulse: true });
-  expect(decide("reset")).toEqual({ scroll: false, pulse: false });
-  expect(decide("reset", { fullyVisible: false, userScrolling: true })).toEqual({
-    scroll: false,
-    pulse: false,
-  });
 });

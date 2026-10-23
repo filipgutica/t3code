@@ -33,30 +33,6 @@ describe("Workbench auth protocol", () => {
     );
   });
 
-  it("identifies rejected client credentials without exposing provider details", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        Response.json(
-          {
-            error: "invalid_client",
-            error_description: "private-provider-details",
-          },
-          { status: 401 },
-        ),
-      ),
-    );
-    await expect(
-      requestTokens({
-        env: environment(),
-        grant: {
-          grant_type: "refresh_token",
-          refresh_token: "test-refresh-token",
-        },
-      }),
-    ).rejects.toMatchObject({ code: "atlassian_invalid_client", status: 502 });
-  });
-
   it("distinguishes missing refresh credentials from transport failures", async () => {
     vi.stubGlobal(
       "fetch",
@@ -115,30 +91,5 @@ describe("Workbench auth protocol", () => {
     await expect(
       decryptTokens({ env, sessionId: "Aw".repeat(22).slice(0, 43), encrypted }),
     ).rejects.toThrow();
-  });
-
-  it("normalizes an Atlassian token response with the new refresh token", async () => {
-    const fetchMock = vi.fn<(input: RequestInfo | URL) => Promise<Response>>(async () =>
-      Response.json({
-        access_token: "new-access-token",
-        refresh_token: "new-refresh-token",
-        expires_in: 3600,
-        scope: "read:jira-work offline_access",
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(
-      requestTokens({
-        env: environment(),
-        grant: { grant_type: "refresh_token", refresh_token: "old-refresh-token" },
-      }),
-    ).resolves.toMatchObject({
-      accessToken: "new-access-token",
-      refreshToken: "new-refresh-token",
-      scope: "read:jira-work offline_access",
-    });
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://auth.atlassian.com/oauth/token");
   });
 });

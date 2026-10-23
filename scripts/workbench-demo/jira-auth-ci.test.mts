@@ -14,7 +14,6 @@ import {
   JIRA_OAUTH_BUNDLE_SECRET,
   publishJiraAuthBundle,
   preflightJiraAuthPersistence,
-  type GhSecretSetInput,
 } from "./jira-auth-ci.mts";
 import { decodeJiraAuthBundle, encodeJiraAuthBundle } from "./jira-auth.mts";
 
@@ -152,42 +151,6 @@ const makeConnectedHome = async (): Promise<{ readonly root: string; readonly ho
   return { root, home };
 };
 
-test("publishes the exported bundle through stdin contract without putting credentials in argv", async () => {
-  const { root, home } = await makeConnectedHome();
-  try {
-    const calls: GhSecretSetInput[] = [];
-    await publishJiraAuthBundle({
-      home,
-      repository: "filipgutica/t3code",
-      secretEnvironment: "workbench-demo",
-      environment: {
-        [DEMO_CREDENTIALS_TOKEN]: "github-secret-token",
-        PATH: "/usr/bin",
-      },
-      commandRunner: async (input) => {
-        calls.push(input);
-      },
-    });
-    const call = calls[0];
-    NodeAssert.ok(call);
-    NodeAssert.equal(call.repository, "filipgutica/t3code");
-    NodeAssert.equal(call.secretName, JIRA_OAUTH_BUNDLE_SECRET);
-    NodeAssert.equal(call.environment.GH_TOKEN, "github-secret-token");
-    NodeAssert.equal(call.environment[DEMO_CREDENTIALS_TOKEN], undefined);
-    NodeAssert.equal(
-      decodeJiraAuthBundle(call.secretValue).credentials[0]?.value.accessToken,
-      "access-token",
-    );
-    NodeAssert.equal(
-      decodeJiraAuthBundle(call.secretValue).credentials[0]?.value.refreshToken,
-      "refresh-token",
-    );
-    NodeAssert.equal(call.repository.includes(call.secretValue), false);
-  } finally {
-    await NodeFSP.rm(root, { recursive: true, force: true });
-  }
-});
-
 test("passes the bundle to gh on stdin and the credential only as GH_TOKEN", async () => {
   const { root, home } = await makeConnectedHome();
   try {
@@ -195,10 +158,11 @@ test("passes the bundle to gh on stdin and the credential only as GH_TOKEN", asy
     const inputPath = NodePath.join(root, "stdin");
     const argsPath = NodePath.join(root, "args");
     const tokenPath = NodePath.join(root, "token");
+    const credentialsTokenPresencePath = NodePath.join(root, "credentials-token-presence");
     await NodeFSP.mkdir(fakeBin);
     await NodeFSP.writeFile(
       NodePath.join(fakeBin, "gh"),
-      "#!/bin/sh\ncat > $TEST_INPUT_PATH\nprintf '%s\\n' \"$@\" > $TEST_ARGS_PATH\nprintf '%s' \"$GH_TOKEN\" > $TEST_TOKEN_PATH\n",
+      "#!/bin/sh\ncat > $TEST_INPUT_PATH\nprintf '%s\\n' \"$@\" > $TEST_ARGS_PATH\nprintf '%s' \"$GH_TOKEN\" > $TEST_TOKEN_PATH\nprintf '%s' \"${DEMO_CREDENTIALS_TOKEN+x}\" > $TEST_CREDENTIALS_TOKEN_PRESENCE_PATH\n",
       { mode: 0o700 },
     );
     await publishJiraAuthBundle({
@@ -211,11 +175,15 @@ test("passes the bundle to gh on stdin and the credential only as GH_TOKEN", asy
         TEST_INPUT_PATH: inputPath,
         TEST_ARGS_PATH: argsPath,
         TEST_TOKEN_PATH: tokenPath,
+        TEST_CREDENTIALS_TOKEN_PRESENCE_PATH: credentialsTokenPresencePath,
       },
     });
     const input = (await NodeFSP.readFile(inputPath, "utf8")).trim();
     const args = await NodeFSP.readFile(argsPath, "utf8");
-    NodeAssert.equal(decodeJiraAuthBundle(input).connections[0]?.cloudId, "cloud-1");
+    const bundle = decodeJiraAuthBundle(input);
+    NodeAssert.equal(bundle.connections[0]?.cloudId, "cloud-1");
+    NodeAssert.equal(bundle.credentials[0]?.value.accessToken, "access-token");
+    NodeAssert.equal(bundle.credentials[0]?.value.refreshToken, "refresh-token");
     NodeAssert.equal(
       args,
       "secret\nset\nDEMO_JIRA_OAUTH_BUNDLE\n--repo\nfilipgutica/t3code\n--env\nworkbench-demo\n",
@@ -223,6 +191,7 @@ test("passes the bundle to gh on stdin and the credential only as GH_TOKEN", asy
     NodeAssert.equal(args.includes("access-token"), false);
     NodeAssert.equal(args.includes("refresh-token"), false);
     NodeAssert.equal(await NodeFSP.readFile(tokenPath, "utf8"), "github-secret-token");
+    NodeAssert.equal(await NodeFSP.readFile(credentialsTokenPresencePath, "utf8"), "");
   } finally {
     await NodeFSP.rm(root, { recursive: true, force: true });
   }

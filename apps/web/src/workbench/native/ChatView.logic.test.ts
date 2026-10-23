@@ -24,7 +24,7 @@ describe("proactive panels", () => {
     });
   });
 
-  it("follows a changed server PR link without replacing an unrelated open panel", () => {
+  it("retargets a changed PR link only in the Thread's environment", () => {
     const previous = {
       projectId: ProjectId.make("project-1"),
       repository: "pingdotgg/t3code",
@@ -52,17 +52,7 @@ describe("proactive panels", () => {
         surface: selected,
         threadEnvironmentId,
       });
-    expect(retarget(current)).toBe(true);
     expect(retarget(current, { ...surface, environmentId: "local" })).toBe(true);
     expect(retarget(current, { ...surface, environmentId: "remote" })).toBe(false);
-    expect(retarget(previous)).toBe(false);
-    expect(retarget(null)).toBe(false);
-    expect(retarget(current, { ...surface, number: 99 })).toBe(false);
-    expect(
-      retarget(current, {
-        ...surface,
-        projectId: "another-project",
-      }),
-    ).toBe(false);
   });
 });

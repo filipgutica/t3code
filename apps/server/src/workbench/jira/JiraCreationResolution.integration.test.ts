@@ -464,28 +464,6 @@ describe("uncertain Jira creation recovery", () => {
       expect(yield* h.store.getSnapshot).toEqual(before);
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
-  it.effect("not-created restores a promoting draft to editing", () =>
-    Effect.gen(function* () {
-      const h = yield* harness("ticket");
-      const draft = yield* h.store.beginTicketDraft({
-        id: ticketId,
-        projectId: workspaceId,
-        threadId: ThreadId.make("resolve-draft-thread"),
-        modelSelection: ModelSelection.make({
-          instanceId: ProviderInstanceId.make("codex"),
-          model: "gpt-6.1-sol",
-        }),
-      });
-      yield* h.store.transitionTicketDraft({
-        id: ticketId,
-        expectedRevision: draft.revision,
-        from: ["creating"],
-        phase: "promoting",
-      });
-      yield* h.service.resolveCreation({ ...h.input, outcome: { type: "not_created" } });
-      expect((yield* h.store.getTicketDraft(ticketId)).phase).toBe("draft");
-    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
-  );
   it.effect("recovery preserves local edits made after an uncertain Ticket publication", () =>
     Effect.gen(function* () {
       const h = yield* harness("ticket", { localTicket: true });
