@@ -3,14 +3,15 @@ import { useAtomValue } from "@effect/atom-react";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
+  type AtomCommandResult,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import { effectiveSnoozed, snoozeWakeLabel } from "@t3tools/client-runtime/state/thread-settled";
 import {
   resolveThreadCurrentPullRequestLink,
   visibleThreadPullRequests,
 } from "@t3tools/shared/threadPullRequests";
-import { useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import {
   linkedPullRequestSnapshotStatus,
@@ -21,6 +22,8 @@ import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { useRightPanelStore } from "../rightPanelStore";
 import { useEnvironment } from "../state/environments";
 import { useThreadActionMenu } from "../hooks/useThreadActionMenu";
+import { useNowMinute } from "../hooks/useNowMinute";
+import { scheduleSnoozeWake } from "../components/Sidebar";
 import { useThreadActions } from "../hooks/useThreadActions";
 import {
   readEnvironmentSupportsSettlement,
@@ -56,6 +59,8 @@ export interface WorkbenchSidebarThreadRowData {
   status: ReturnType<typeof getWorkbenchThreadExecutionStatus>;
   failed: boolean;
   snoozed: boolean;
+  /** Native's snoozed-row countdown, such as "23h". */
+  wakeLabel: string | null;
   pullRequests: ReturnType<typeof resolveWorkbenchSidebarThreadPullRequests>;
   pullRequestBadge: ReturnType<typeof resolveThreadPullRequestBadge>;
   currentPullRequest: CurrentPullRequest;
@@ -82,15 +87,21 @@ function resolveRepositoryLabel(project: ThreadProject) {
   );
 }
 
-function resolveThreadActivityState(shell: ThreadShell) {
+// Like native's sidebar partition, the clock key is an input so the React Compiler recomputes
+// snooze state when the minute or a wake deadline passes.
+function resolveThreadActivityState(shell: ThreadShell, _clockKey: string) {
   if (shell === null) {
-    return { status: null, failed: false, snoozed: false };
+    return { status: null, failed: false, snoozed: false, wakeLabel: null };
   }
   const status = getWorkbenchThreadExecutionStatus(shell);
+  const now = new Date().toISOString();
+  const snoozed = effectiveSnoozed(shell, { now });
   return {
     status,
     failed: status?.kind === "failed",
-    snoozed: effectiveSnoozed(shell, { now: new Date().toISOString() }),
+    snoozed,
+    wakeLabel:
+      snoozed && shell.snoozedUntil != null ? snoozeWakeLabel(shell.snoozedUntil, { now }) : null,
   };
 }
 
@@ -126,7 +137,14 @@ export function useWorkbenchSidebarThreadRowData({
   const environment = useEnvironment(thread.environmentId);
   const providers = useAtomValue(serverEnvironment.providersValueAtom(thread.environmentId));
   const providerEntry = resolveProviderEntry(shell, deriveProviderInstanceEntries(providers ?? []));
-  const activityState = resolveThreadActivityState(shell);
+  const nowMinute = useNowMinute();
+  const [wakeTick, bumpWakeTick] = useState(0);
+  const snoozedUntil = shell?.snoozedUntil ?? null;
+  useEffect(
+    () => scheduleSnoozeWake(snoozedUntil, () => bumpWakeTick((tick) => tick + 1)),
+    [snoozedUntil],
+  );
+  const activityState = resolveThreadActivityState(shell, `${nowMinute}:${wakeTick}`);
   const pullRequests = shell ? resolveWorkbenchSidebarThreadPullRequests(shell) : [];
   const pullRequestState = resolveThreadPullRequestState(pullRequests);
 
@@ -206,7 +224,8 @@ export function useWorkbenchSidebarThreadInteraction({
   shell: ThreadShell;
 }) {
   const openPrLink = useOpenPrLink(threadRef);
-  const { settleThread, unsettleThread } = useThreadActions();
+  const { settleThread, unsettleThread, confirmAndUnpinThread, unsnoozeThread } =
+    useThreadActions();
   const config = useAtomValue(serverEnvironment.configValueAtom(thread.environmentId));
   const canOperate = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
   const settlementPending = useRef(false);
@@ -261,6 +280,22 @@ export function useWorkbenchSidebarThreadInteraction({
       });
   };
 
+  const runNativeAction = (
+    failureTitle: string,
+    action: (target: ThreadRef) => Promise<AtomCommandResult<unknown, unknown>>,
+  ) => {
+    void action(threadRef).then((result) => {
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add({
+          type: "error",
+          title: failureTitle,
+          description: error instanceof Error ? error.message : "Please try again.",
+        });
+      }
+    });
+  };
+
   return {
     openMenu,
     handleOpenPullRequest,
@@ -273,5 +308,9 @@ export function useWorkbenchSidebarThreadInteraction({
     isSettled: shell?.settledOverride === "settled",
     settlementBusy,
     toggleSettlement,
+    canUnpin: canOperate && config?.environment.capabilities.threadPinning === true,
+    canWake: canOperate && config?.environment.capabilities.threadSnooze === true,
+    unpin: () => runNativeAction("Failed to unpin thread", confirmAndUnpinThread),
+    wake: () => runNativeAction("Failed to wake thread", unsnoozeThread),
   };
 }

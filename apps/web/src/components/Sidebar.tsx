@@ -712,7 +712,10 @@ function useSidebarLookups() {
   };
 }
 
-function scheduleSnoozeWake(wakeAt: string | null, onWake: () => void): (() => void) | undefined {
+export function scheduleSnoozeWake(
+  wakeAt: string | null,
+  onWake: () => void,
+): (() => void) | undefined {
   const wakeAtMs = wakeAt === null ? Number.NaN : Date.parse(wakeAt);
   if (Number.isNaN(wakeAtMs)) return undefined;
   // setTimeout delays are signed 32-bit: anything larger overflows and fires

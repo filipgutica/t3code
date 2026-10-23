@@ -168,8 +168,9 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
     .getByRole("button", { name: nativeThread.title, exact: true })
     .click({ button: "right" });
   await expect(page.getByRole("button", { name: /^New thread on / })).not.toBeVisible();
-  await expect(page.getByRole("button", { name: "Pin thread", exact: true })).not.toBeVisible();
-  await expect(page.getByRole("button", { name: "Snooze", exact: true })).not.toBeVisible();
+  // Pin and Snooze match native rows; the row shows and reverses both states.
+  await expect(page.getByRole("button", { name: "Pin thread", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Snooze", exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Project settings", exact: true }),
   ).not.toBeVisible();

@@ -25,6 +25,9 @@ const thread = {
   title: "Investigate slow plans",
   archivedAt: null,
   settledOverride: null,
+  createdAt: "2026-10-01T00:00:00Z",
+  pinnedAt: null,
+  pinOrderKey: null,
 };
 const draft = {
   id: WorkbenchTicketId.make("unsaved-ticket"),

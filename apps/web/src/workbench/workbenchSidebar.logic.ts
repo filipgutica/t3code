@@ -1,4 +1,5 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { sortPinnedThreadsByOrderKey } from "@t3tools/client-runtime/state/thread-sort";
 import type {
   EnvironmentId,
   ThreadId,
@@ -15,7 +16,14 @@ export type WorkbenchSidebarTicket = Pick<
 
 export type WorkbenchSidebarThread = Pick<
   EnvironmentThreadShell,
-  "id" | "environmentId" | "title" | "archivedAt" | "settledOverride"
+  | "id"
+  | "environmentId"
+  | "title"
+  | "archivedAt"
+  | "settledOverride"
+  | "createdAt"
+  | "pinnedAt"
+  | "pinOrderKey"
 >;
 
 export type WorkbenchSidebarAssignment = Pick<
@@ -196,7 +204,7 @@ const getTicketThreads = ({
   readonly liveThreadsById: ReadonlyMap<ThreadId, WorkbenchSidebarThread>;
 }) => {
   const seenThreadIds = new Set<ThreadId>();
-  return ticketAssignments
+  const threads = ticketAssignments
     .toSorted(
       (left, right) =>
         right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id),
@@ -207,6 +215,13 @@ const getTicketThreads = ({
       seenThreadIds.add(thread.id);
       return [thread];
     });
+  // Pinning keeps a Thread at the top, in native's pinned order; the rest stay newest-first.
+  const pinned = threads.filter((thread) => thread.pinnedAt != null);
+  if (pinned.length === 0) return threads;
+  return [
+    ...sortPinnedThreadsByOrderKey(pinned),
+    ...threads.filter((thread) => thread.pinnedAt == null),
+  ];
 };
 
 /** Groups native Threads under one Ticket, retaining its settled history. */
