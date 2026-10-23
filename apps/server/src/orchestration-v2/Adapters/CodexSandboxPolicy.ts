@@ -40,10 +40,13 @@ export const prepareCodexThreadRuntimeParams = Effect.fn(
   });
   const inherited = yield* decodeServers(response.config.mcp_servers ?? {});
   const native = yield* decodeServers(params.config.mcp_servers ?? {});
+  // Native Codex now emits its owned server as a dotted override. Fold only
+  // that entry into this branch's isolated map so inherited settings cannot conflict.
+  const { "mcp_servers.t3-code": ownedT3Server, ...config } = params.config;
   return {
     ...params,
     config: {
-      ...params.config,
+      ...config,
       ...lifecycleRestrictions,
       "features.plugins": false,
       "features.apps": false,
@@ -51,6 +54,7 @@ export const prepareCodexThreadRuntimeParams = Effect.fn(
       mcp_servers: {
         ...Object.fromEntries(Object.keys(inherited).map((name) => [name, { enabled: false }])),
         ...native,
+        ...(ownedT3Server === undefined ? {} : { "t3-code": ownedT3Server }),
       },
     },
   };

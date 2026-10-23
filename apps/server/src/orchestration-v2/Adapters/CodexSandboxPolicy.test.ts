@@ -303,6 +303,11 @@ describe("Codex read-only sandbox integration", () => {
           ...(readOnly ? { sandboxPolicy: { type: "readOnly" as const } } : {}),
           ...(research ? { toolAccess: "research" as const } : {}),
         };
+        const nativeMcpConfig = {
+          url: endpoint,
+          tool_timeout_sec: 3900,
+          http_headers: { Authorization: authorization },
+        };
         const expectedParams = {
           cwd: "/workspace",
           model: "gpt-5.4",
@@ -318,20 +323,16 @@ describe("Codex read-only sandbox integration", () => {
                   "features.multi_agent": false,
                 }
               : {}),
-            mcp_servers: {
-              ...(isolateIntegrations
-                ? { jira: { enabled: false }, "github.external": { enabled: false } }
+            ...(isolateIntegrations
+              ? {
+                  mcp_servers: {
+                    ...restrictedParams.config.mcp_servers,
+                    ...(nativeMcp ? { "t3-code": nativeMcpConfig } : {}),
+                  },
+                }
+              : nativeMcp
+                ? { "mcp_servers.t3-code": nativeMcpConfig }
                 : {}),
-              ...(nativeMcp
-                ? {
-                    "t3-code": {
-                      url: endpoint,
-                      tool_timeout_sec: 3900,
-                      http_headers: { Authorization: authorization },
-                    },
-                  }
-                : { "t3-code": { enabled: false } }),
-            },
           },
         };
         const preamble = replayPreamble(nativeThreadId);
