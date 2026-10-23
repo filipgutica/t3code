@@ -12,6 +12,8 @@
         // CodeRabbit loads its configuration by filename.
         ".coderabbit.config.ts",
         ".github/scripts/thread-transfer-report.cjs",
+        // Retained upstream workflows load this executable by filename.
+        ".github/scripts/mirror-play-apk.cjs",
       ],
       "vite": { "entry": [".github/**/*.test.cjs"] },
       "vitest": { "entry": [".github/**/*.test.cjs"] },
@@ -25,6 +27,8 @@
         // These fixture scripts are injected into a browser page by path.
         "fixtures/issue-16534/*.js",
         "knip-schemas.ts",
+        // Release smoke and retained upstream workflows invoke this by filename.
+        "resolve-nightly-release.ts",
         "mobile-native-client.ts",
         "setup-worktree.ts",
         "sign-macos.ts",
@@ -33,6 +37,8 @@
         "workbench-preview/start.mts",
         // Disposable startup invokes this credential-free CLI adapter by filename.
         "workbench-demo/gh-attention.mjs",
+        // The attention fixture loads this through NODE_OPTIONS --import.
+        "workbench-demo/attention-fetch.mjs",
         // CI invokes the Workbench browser suite through Playwright's config path.
         "workbench-regression/playwright.config.ts",
       ],
