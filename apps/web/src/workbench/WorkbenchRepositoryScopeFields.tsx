@@ -437,6 +437,7 @@ function WorkbenchAddRepositoryPicker({
       }}
     >
       <ComboboxTrigger
+        aria-label="Add repository"
         data-repository-add=""
         render={<Button size="xs" type="button" variant="ghost" />}
       >

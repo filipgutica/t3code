@@ -21,7 +21,7 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   await page.screenshot({ path: testInfo.outputPath("unprepared.png"), fullPage: true });
   const before = await snapshot(demo);
   await page.getByRole("button", { name: "Prepare work area", exact: true }).click();
-  await expect(page.getByRole("combobox", { name: "Primary repository" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Add repository", exact: true })).toBeVisible();
   expect((await snapshot(demo)).ticketWorkspaces).toEqual(before.ticketWorkspaces);
   await page.getByRole("button", { name: "Prepare work area", exact: true }).click();
   await expect(page.getByText("Ready", { exact: true }).first()).toBeVisible();
@@ -35,14 +35,18 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   const original = workspace.repositories[0]!;
   const marker = NodePath.join(original.worktreePath, "retained-work.txt");
   await NodeFSP.writeFile(marker, "Keep this local work.\n");
-  const additionalRepositories = page.getByRole("combobox", { name: "Additional repositories" });
+  const repositories = page.getByRole("list", { name: "Work area repositories" });
+  const addRepository = page.getByRole("combobox", { name: "Add repository", exact: true });
   const orbitApi = page.getByRole("option", { name: "Orbit API", exact: true });
   const orbitWeb = page.getByRole("option", { name: "Orbit Web", exact: true });
+  const chooseRowAction = async (repository: string, action: string) => {
+    await page.getByRole("button", { name: `Actions for ${repository}`, exact: true }).click();
+    await page.getByRole("menuitem", { name: action }).click();
+  };
   await page.getByRole("button", { name: "Edit repositories", exact: true }).click();
-  await additionalRepositories.click();
+  await addRepository.click();
   await orbitApi.click();
-  await expect(orbitApi).toHaveAttribute("aria-selected", "true");
-  await page.keyboard.press("Escape");
+  await expect(repositories.getByText("Adding", { exact: true })).toBeVisible();
   const staged = await snapshot(demo);
   expect(staged.ticketWorkspaces).toEqual(prepared.ticketWorkspaces);
   expect(staged.tickets.find((ticket) => ticket.id === "orbit-007")).toEqual(
@@ -50,10 +54,9 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   );
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("button", { name: "Edit repositories", exact: true }).click();
-  await additionalRepositories.click();
-  await expect(orbitApi).toHaveAttribute("aria-selected", "false");
+  await expect(repositories.getByText("Orbit API", { exact: true })).toHaveCount(0);
+  await addRepository.click();
   await orbitApi.click();
-  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(page.getByRole("button", { name: "Choose editor", exact: true })).toHaveCount(2);
   const extended = (await snapshot(demo)).ticketWorkspaces.find(
@@ -65,13 +68,9 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
       ?.worktreePath,
   ).toBe(original.worktreePath);
   await page.getByRole("button", { name: "Edit repositories", exact: true }).click();
-  await page.getByRole("combobox", { name: "Primary repository" }).click();
-  await page.getByRole("option", { name: "Orbit API", exact: true }).click();
-  await additionalRepositories.click();
-  await expect(orbitWeb).toHaveAttribute("aria-selected", "true");
-  await orbitWeb.click();
-  await expect(orbitWeb).toHaveAttribute("aria-selected", "false");
-  await page.keyboard.press("Escape");
+  await chooseRowAction("Orbit API", "Make primary");
+  await chooseRowAction("Orbit Web", "Remove from ticket");
+  await expect(repositories.getByText("Removing", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   const ticketRepositories = page.locator("#workbench-ticket-repositories");
   const retainedWorktrees = ticketRepositories.getByText("Retained worktrees (1)", {
@@ -84,10 +83,8 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   ).toBeVisible();
   expect(await NodeFSP.readFile(marker, "utf8")).toBe("Keep this local work.\n");
   await page.getByRole("button", { name: "Edit repositories", exact: true }).click();
-  await additionalRepositories.click();
+  await addRepository.click();
   await orbitWeb.click();
-  await expect(orbitWeb).toHaveAttribute("aria-selected", "true");
-  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(retainedWorktrees).not.toBeVisible();
   await expect(page.getByRole("button", { name: "Choose editor", exact: true })).toHaveCount(2);
@@ -263,7 +260,7 @@ test("standalone preparation shows progress immediately and retries a failed req
     demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-003"),
   );
   await page.getByRole("button", { name: "Prepare work area", exact: true }).click();
-  await expect(page.getByRole("combobox", { name: "Primary repository" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Add repository", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Prepare work area", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Preparing work area…", exact: true }),
