@@ -374,6 +374,11 @@ const EMPTY_AUTO_UPDATE_ENVIRONMENTS: ReadonlyArray<EnvironmentPresentation> = [
 
 const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 
+interface ChatViewEmbedding {
+  /** Each new value focuses the composer once; null leaves focus alone. */
+  readonly composerFocusRequest: number | null;
+}
+
 /**
  * `readOnlyPlanning` presents a conversation whose runtime policy restricts it to
  * planning. Runtime enforcement stays on the server; this hides incompatible controls.
@@ -383,11 +388,6 @@ const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
  * window-wide input handling, and focuses the composer only for a new host focus request.
  * Persisted per-Thread panel state is left untouched for the Thread route.
  */
-interface ChatViewEmbedding {
-  /** Each new value focuses the composer once; null leaves focus alone. */
-  readonly composerFocusRequest: number | null;
-}
-
 type ChatViewProps =
   | {
       environmentId: EnvironmentId;

@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - Inspect the scripted provider input and disposable worktrees for end-to-end assertions.
-import { test, expect, snapshot, openWorkbench, waitForWorkbench } from "./fixtures.ts";
+import { test, expect, snapshot, openWorkbench, ticketChat, waitForWorkbench } from "./fixtures.ts";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import { providerStatePath } from "./provider-settings.mts";
@@ -40,20 +40,20 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
     .getByRole("dialog")
     .getByRole("button", { name: "Create work area and Thread", exact: true })
     .click();
-  await expect(page).toHaveURL(
-    (url) => url.pathname !== "/workbench" && url.searchParams.get("workbench") === "true",
-  );
+  const chat = ticketChat(page);
+  const editor = chat.locator('[contenteditable="true"]');
+  await expect(editor).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe("/workbench");
   const prepared = await snapshot(demo);
   expect(prepared.tickets.find((t) => t.id === "orbit-004")?.status).toBe("todo");
   expect(prepared.assignments.filter((a) => a.ticketId === "orbit-004")).toHaveLength(1);
-  const editor = page.locator('[contenteditable="true"]').first();
   await editor.click();
   await editor.press("End");
   await editor.pressSequentially(
     "Do not edit files or run commands. Reply exactly: Workbench regression passed.",
   );
-  await page.getByRole("button", { name: "Submit message", exact: true }).click();
-  await expect(page.getByText("Workbench regression passed.", { exact: true })).toBeVisible();
+  await chat.getByRole("button", { name: "Submit message", exact: true }).click();
+  await expect(chat.getByText("Workbench regression passed.", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Stop generation", exact: true }),
   ).not.toBeVisible();
@@ -74,6 +74,10 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
   ).toBe(true);
   expect(complete.tickets.find((t) => t.id === "orbit-004")?.status).toBe("in_progress");
   expect(complete.assignments.filter((a) => a.ticketId === "orbit-004")).toHaveLength(1);
+  await chat.getByRole("button", { name: "Open full Thread", exact: true }).click();
+  await expect(page).toHaveURL(
+    (url) => url.pathname !== "/workbench" && url.searchParams.get("workbench") === "true",
+  );
   const workspaceBreadcrumb = page.getByRole("link", {
     name: "Back to Workspace Orbit Board",
     exact: true,

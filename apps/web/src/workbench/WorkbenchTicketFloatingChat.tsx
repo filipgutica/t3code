@@ -23,7 +23,7 @@ export const getWorkbenchFloatingChatInset = (enabled: boolean) =>
   enabled
     ? {
         // One scroll container below 64rem; each column scrolls on its own from there.
-        form: "pb-32 @min-[40rem]/ticket:pb-32 @min-[64rem]/ticket:pb-6",
+        form: "pb-32 @min-[64rem]/ticket:pb-6",
         column: "@min-[64rem]/ticket:pb-32",
       }
     : { form: undefined, column: undefined };

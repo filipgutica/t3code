@@ -89,7 +89,7 @@ describe("resolveWorkbenchFloatingChat", () => {
     expect(ids(result.settled)).toEqual(["s1"]);
   });
 
-  it("gives every active Thread a tab; the tab strip scrolls instead of hiding any", () => {
+  it("gives every active Thread a tab and keeps the explicit selection", () => {
     const active = [thread("a"), thread("b"), thread("c"), thread("d"), thread("e")];
     const result = resolveWorkbenchFloatingChat({
       active,

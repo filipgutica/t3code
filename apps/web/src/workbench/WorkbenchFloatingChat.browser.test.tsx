@@ -54,6 +54,8 @@ const thread = (id: string): WorkbenchFloatingChatThread => ({
 
 function Harness(props: {
   readonly threads: ReadonlyArray<WorkbenchFloatingChatThread>;
+  readonly settled?: ReadonlyArray<WorkbenchFloatingChatThread>;
+  readonly archived?: ReadonlyArray<WorkbenchFloatingChatThread>;
   readonly primaryThreadId?: ThreadId;
   readonly onNewThread?: () => void;
   readonly onOpenThread?: (threadId: ThreadId) => void;
@@ -65,8 +67,8 @@ function Harness(props: {
       label="PAY-1"
       chat={resolveWorkbenchFloatingChat({
         active: props.threads,
-        archived: [],
-        settled: [],
+        archived: props.archived ?? [],
+        settled: props.settled ?? [],
         primaryThreadId: props.primaryThreadId ?? null,
         explicitThreadId,
       })}
@@ -140,14 +142,45 @@ it("returns focus to the control that brings the panel back", async () => {
   await expect.element(screen.getByRole("button", { name: "Expand ticket chat" })).toHaveFocus();
 });
 
-it("offers Start Thread when the ticket has no Threads", async () => {
+it("offers Start Thread when the ticket has no Threads, without a history menu", async () => {
   setup();
-  const onNewThread = vi.fn();
-  await using screen = await render(<Harness threads={[]} onNewThread={onNewThread} />);
+  await using screen = await render(<Harness threads={[]} />);
 
-  await userEvent.click(screen.getByRole("button", { name: "Start Thread" }));
+  await expect
+    .element(screen.getByText("No Threads on PAY-1 yet.", { exact: false }))
+    .toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Start Thread" })).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Settled and archived Threads" }))
+    .not.toBeInTheDocument();
+});
 
-  expect(onNewThread).toHaveBeenCalledOnce();
+it("opens a settled Thread when the ticket has no active Threads", async () => {
+  setup();
+  await using screen = await render(<Harness threads={[]} settled={[thread("s")]} />);
+  await expect
+    .element(screen.getByText("No active Threads on PAY-1.", { exact: false }))
+    .toBeVisible();
+
+  await userEvent.click(screen.getByRole("button", { name: "Settled and archived Threads" }));
+  await userEvent.click(screen.getByRole("menuitem", { name: "Thread s" }));
+
+  await expect
+    .element(screen.getByRole("tab", { name: "Thread s" }))
+    .toHaveAttribute("aria-selected", "true");
+});
+
+it("restores an archived Thread when the ticket has no active Threads", async () => {
+  setup();
+  const onOpenThread = vi.fn();
+  await using screen = await render(
+    <Harness threads={[]} archived={[thread("x")]} onOpenThread={onOpenThread} />,
+  );
+
+  await userEvent.click(screen.getByRole("button", { name: "Settled and archived Threads" }));
+  await userEvent.click(screen.getByRole("menuitem", { name: /Thread x/ }));
+
+  expect(onOpenThread).toHaveBeenCalledExactlyOnceWith(ThreadId.make("x"));
 });
 
 it("does not replay a focus request when the primary Thread changes and changes back", async () => {

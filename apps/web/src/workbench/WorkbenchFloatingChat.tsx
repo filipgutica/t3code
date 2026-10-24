@@ -295,17 +295,21 @@ function FloatingChatMenu({
 
 function FloatingChatEmpty({
   label,
+  hasHistory,
   disabled,
   onNewThread,
 }: {
   readonly label: string;
+  readonly hasHistory: boolean;
   readonly disabled: boolean;
   readonly onNewThread: () => void;
 }) {
   return (
     <div className="flex flex-col items-start gap-3 p-4">
       <p className="text-xs text-muted-foreground">
-        No Threads on {label} yet. A Thread works in this ticket's workspace.
+        {hasHistory
+          ? `No active Threads on ${label}. Settled and archived Threads are in the menu above.`
+          : `No Threads on ${label} yet. A Thread works in this ticket's workspace.`}
       </p>
       <Button size="sm" disabled={disabled} onClick={onNewThread}>
         <PlusIcon />
@@ -389,6 +393,7 @@ function FloatingChatBody({
   environmentId,
   label,
   selected,
+  hasHistory,
   expanded,
   composerFocusRequest,
   onExpand,
@@ -399,6 +404,7 @@ function FloatingChatBody({
   readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly selected: WorkbenchFloatingChatThread | null;
+  readonly hasHistory: boolean;
   readonly expanded: boolean;
   readonly composerFocusRequest: number | null;
   readonly onExpand: () => void;
@@ -408,7 +414,12 @@ function FloatingChatBody({
 }) {
   if (selected === null) {
     return (
-      <FloatingChatEmpty label={label} disabled={newThreadDisabled} onNewThread={onNewThread} />
+      <FloatingChatEmpty
+        label={label}
+        hasHistory={hasHistory}
+        disabled={newThreadDisabled}
+        onNewThread={onNewThread}
+      />
     );
   }
   if (!expanded) return <FloatingChatPlaceholder title={selected.title} onExpand={onExpand} />;
@@ -573,7 +584,10 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
     <FloatingChatFrame label={label} expanded={expanded}>
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border/60 px-2">
         {selected === null ? (
-          <span className="min-w-0 flex-1 truncate ps-2 text-xs font-medium">Ticket chat</span>
+          <>
+            <span className="min-w-0 flex-1 truncate ps-2 text-xs font-medium">Ticket chat</span>
+            <FloatingChatMenu chat={chat} onSelect={selectThread} onOpenThread={onOpenThread} />
+          </>
         ) : (
           <>
             <FloatingChatTabs
@@ -635,6 +649,7 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
         environmentId={environmentId}
         label={label}
         selected={selected}
+        hasHistory={chat.settled.length > 0 || chat.archived.length > 0}
         expanded={expanded}
         composerFocusRequest={composerFocus.requestFor(selected?.threadId ?? null)}
         onExpand={() => expand()}
