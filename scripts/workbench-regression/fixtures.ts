@@ -42,6 +42,9 @@ export const openWorkbench = async (page: Page, url: string) => {
   await waitForWorkbench(page);
 };
 
+/** The floating chat on a Ticket page, where a Thread created from that page opens. */
+export const ticketChat = (page: Page) => page.getByRole("region", { name: / chat$/ });
+
 export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
   // Playwright requires an explicit destructuring pattern for fixture dependencies.
   demo: [

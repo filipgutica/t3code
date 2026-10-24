@@ -86,11 +86,17 @@ import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
 import { deriveProviderInstanceEntries } from "../providerInstances";
 import { serverEnvironment } from "../state/server";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
+import { cn } from "../lib/utils";
+import {
+  getWorkbenchFloatingChatInset,
+  WorkbenchTicketFloatingChat,
+} from "./WorkbenchTicketFloatingChat";
 import { isElectron } from "../env";
 
 import { Badge } from "../components/ui/badge";
 import { OpenInPicker } from "../components/chat/OpenInPicker";
 import { Button } from "../components/ui/button";
+import { ScrollArea } from "../components/ui/scroll-area";
 import {
   Menu,
   MenuGroup,
@@ -286,7 +292,7 @@ export function WorkbenchEpicDetail({
       />
 
       <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-gutter-both p-4 sm:p-6">
-        <div className="mx-auto grid min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="mx-auto grid min-w-0 max-w-7xl grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <div className="min-w-0 space-y-4">
             <WorkbenchInlineError message={error} />
             <WorkbenchEpicDescription
@@ -892,6 +898,8 @@ export type WorkbenchTicketDetailProps = {
   readonly onSaveRepositories: () => Promise<boolean>;
   readonly onResetWorkspace: (ticket: WorkbenchTicket) => Promise<boolean>;
   readonly lifecycleActionsEnabled: boolean;
+  /** Shows the ticket's Threads in a floating chat; planning mode keeps its own conversation. */
+  readonly floatingChat?: boolean;
 };
 export function WorkbenchTicketDetail(props: WorkbenchTicketDetailProps) {
   const content = useWorkbenchTicketContent(props.environmentId, props.ticket);
@@ -943,6 +951,7 @@ function WorkbenchLoadedTicketDetail(props: WorkbenchTicketDetailProps) {
         pending: props.pending,
         error: props.error,
         lifecycleActionsEnabled: props.lifecycleActionsEnabled,
+        floatingChat: props.floatingChat ?? false,
       }}
       workspace={{
         ticketWorkspace: props.ticketWorkspace,
@@ -989,7 +998,10 @@ function WorkbenchLoadedTicketDetail(props: WorkbenchTicketDetailProps) {
 const focusWorkbenchTicketPane = (pane: HTMLElement | null) => {
   if (!pane) return;
   pane.scrollIntoView({ block: "start" });
-  pane.focus({ preventScroll: true });
+  // The pane's scroll viewport is its tab stop, so arrow keys scroll the pane.
+  pane
+    .querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')
+    ?.focus({ preventScroll: true });
 };
 
 function WorkbenchTicketDetailController({
@@ -1024,6 +1036,7 @@ function WorkbenchTicketDetailController({
     | "pending"
     | "error"
     | "lifecycleActionsEnabled"
+    | "floatingChat"
   >;
   workspace: Pick<
     WorkbenchTicketDetailProps,
@@ -1087,6 +1100,7 @@ function WorkbenchTicketDetailController({
     lifecycleActionsEnabled,
     workspaceReadOnly = false,
     threadMutationsDisabled = false,
+    floatingChat = false,
   } = content;
   const {
     ticketWorkspace,
@@ -1233,6 +1247,7 @@ function WorkbenchTicketDetailController({
       }),
     ],
   });
+  const floatingChatInset = getWorkbenchFloatingChatInset(floatingChat);
   const executionStatus =
     getWorkbenchTicketExecutionStatuses({ environmentId, assignments, threadsById }).get(
       ticket.id,
@@ -1243,7 +1258,7 @@ function WorkbenchTicketDetailController({
     : !isArchived || assignment !== undefined;
 
   return (
-    <article className="@container/ticket flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [&_[data-slot=button]>svg]:mx-0">
+    <article className="@container/ticket relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden [&_[data-slot=button]>svg]:mx-0">
       <WorkbenchTicketHeader
         actions={{
           onBack: onBack,
@@ -1291,7 +1306,7 @@ function WorkbenchTicketDetailController({
 
       <nav
         aria-label="Ticket sections"
-        className="flex shrink-0 items-center gap-1 border-b border-border/60 px-4 py-1 @min-[40rem]/ticket:px-6 @min-[64rem]/ticket:hidden"
+        className="flex shrink-0 items-center gap-1 border-b border-border/60 px-4 py-1 @min-[64rem]/ticket:hidden"
       >
         <Button
           aria-controls="workbench-ticket-work"
@@ -1316,7 +1331,10 @@ function WorkbenchTicketDetailController({
       </nav>
 
       <form
-        className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-gutter-both p-4 @min-[40rem]/ticket:p-6 @min-[64rem]/ticket:overflow-hidden [&_[data-slot=button]>svg]:mx-0"
+        className={cn(
+          "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto scrollbar-gutter-both p-4 @min-[64rem]/ticket:overflow-hidden @min-[64rem]/ticket:scrollbar-gutter-auto @min-[64rem]/ticket:pe-2 [&_[data-slot=button]>svg]:mx-0",
+          floatingChatInset.form,
+        )}
         onSubmit={(event) => {
           event.preventDefault();
           if (!editing || !draft || workspaceReadOnly) return;
@@ -1339,192 +1357,211 @@ function WorkbenchTicketDetailController({
           })();
         }}
       >
-        <div className="mx-auto grid min-h-0 min-w-0 max-w-6xl grid-cols-[minmax(0,1fr)] items-start gap-6 @min-[64rem]/ticket:h-full @min-[64rem]/ticket:grid-cols-[minmax(0,1fr)_22rem] @min-[64rem]/ticket:items-stretch @min-[64rem]/ticket:gap-8">
-          <div
+        {/* Cards sit 1rem apart both ways: side by side, the column gap plus the reading
+            column's scrollbar padding (pr-2) make the same 1rem. */}
+        <div className="mx-auto grid min-h-0 min-w-0 max-w-7xl grid-cols-[minmax(0,1fr)] items-start gap-4 @min-[64rem]/ticket:h-full @min-[64rem]/ticket:grid-cols-[minmax(0,1fr)_22rem] @min-[64rem]/ticket:items-stretch @min-[64rem]/ticket:gap-2">
+          {/* Side by side, each column scrolls on its own; ScrollArea's overlay scrollbar
+              takes no width and shows only while the pointer is over the column or it scrolls. */}
+          <ScrollArea
             id="workbench-ticket-reading"
             role="region"
             aria-label="Ticket description and summary"
-            tabIndex={0}
-            className="min-h-0 min-w-0 scroll-mt-4 space-y-6 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring @min-[40rem]/ticket:scroll-mt-6 @min-[64rem]/ticket:col-start-1 @min-[64rem]/ticket:row-start-1 @min-[64rem]/ticket:overflow-y-auto @min-[64rem]/ticket:overscroll-y-contain @min-[64rem]/ticket:pr-2 @min-[64rem]/ticket:pb-2"
+            viewportTabIndex={0}
+            className="min-w-0 scroll-mt-4 @min-[64rem]/ticket:col-start-1 @min-[64rem]/ticket:row-start-1"
           >
-            {error ? <WorkbenchInlineError message={error} /> : null}
-            <WorkbenchTicketDescriptionPanel
-              presentation={{
-                jiraFieldsManaged: jiraFieldsManaged,
-                editing: editing,
-                isArchived: isArchived,
-                pending: pending,
-                startEditing: startEditing,
-                projectedContent: projectedContent,
-                draft: draft,
-                cancelEditing: cancelEditing,
-                dirty: dirty,
-                displayedMarkdown: displayedMarkdown,
-              }}
-              actions={{ setDraft: setDraft }}
-              context={{ environmentId: environmentId }}
-              records={{ ticket: ticket }}
-            />
-            <WorkbenchTicketSummaryPanel
-              key={`${ticket.id}:${summaryFailedEmpty}`}
-              summaryHeaderLabel={summaryHeaderLabel}
-              initiallyCollapsed={summaryFailedEmpty}
-              hasUnsavedChanges={hasUnsavedChanges}
-              summary={summary}
-              ticket={ticket}
-              displayedTitle={displayedTitle}
-              pending={pending}
-              isArchived={isArchived}
-              onRegenerateSummary={onRegenerateSummary}
-            />
-          </div>
+            <div
+              className={cn(
+                "space-y-4 @min-[64rem]/ticket:pr-2 @min-[64rem]/ticket:pb-2",
+                floatingChatInset.column,
+              )}
+            >
+              {error ? <WorkbenchInlineError message={error} /> : null}
+              <WorkbenchTicketDescriptionPanel
+                presentation={{
+                  jiraFieldsManaged: jiraFieldsManaged,
+                  editing: editing,
+                  isArchived: isArchived,
+                  pending: pending,
+                  startEditing: startEditing,
+                  projectedContent: projectedContent,
+                  draft: draft,
+                  cancelEditing: cancelEditing,
+                  dirty: dirty,
+                  displayedMarkdown: displayedMarkdown,
+                }}
+                actions={{ setDraft: setDraft }}
+                context={{ environmentId: environmentId }}
+                records={{ ticket: ticket }}
+              />
+              <WorkbenchTicketSummaryPanel
+                key={`${ticket.id}:${summaryFailedEmpty}`}
+                summaryHeaderLabel={summaryHeaderLabel}
+                initiallyCollapsed={summaryFailedEmpty}
+                hasUnsavedChanges={hasUnsavedChanges}
+                summary={summary}
+                ticket={ticket}
+                displayedTitle={displayedTitle}
+                pending={pending}
+                isArchived={isArchived}
+                onRegenerateSummary={onRegenerateSummary}
+              />
+            </div>
+          </ScrollArea>
 
-          <aside
+          <ScrollArea
+            render={<aside />}
             id="workbench-ticket-work"
             aria-label="Ticket work"
-            tabIndex={0}
-            className="flex min-h-0 min-w-0 scroll-mt-4 flex-col gap-6 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring @min-[40rem]/ticket:scroll-mt-6 @min-[64rem]/ticket:col-start-2 @min-[64rem]/ticket:row-start-1 @min-[64rem]/ticket:overflow-y-auto @min-[64rem]/ticket:overscroll-y-contain @min-[64rem]/ticket:pr-2 @min-[64rem]/ticket:pb-2"
+            viewportTabIndex={0}
+            className="min-w-0 scroll-mt-4 @min-[64rem]/ticket:col-start-2 @min-[64rem]/ticket:row-start-1"
           >
-            <WorkbenchTicketAttentionPanel
-              environmentId={environmentId}
-              ticketId={ticket.id}
-              ticketTitle={ticket.title}
-              onOpenThread={onOpenAssignedThread}
-            />
-            <WorkbenchTicketThreadsPanel
-              expansion={{ threadPanelCollapsed: threadPanelCollapsed }}
-              actions={{
-                setThreadPanelCollapsed: setThreadPanelCollapsed,
-                settledAssignments: settledAssignments,
-                onNewThread: onNewThread,
-                onOpenThread: onOpenThread,
-                onUnlinkThread: onUnlinkThread,
-                toggleThreadSettlement: toggleThreadSettlement,
-                settlementPendingThreadId: settlementPendingThreadId,
-                onDeleteThread: onDeleteThread,
-                onOpenAssignedThread: onOpenAssignedThread,
-                onReplaceThread: onReplaceThread,
-                settledThreadsCollapsed: settledThreadsCollapsed,
-                setSettledThreadsCollapsed: setSettledThreadsCollapsed,
-                onAttachThread: onAttachThread,
-              }}
-              presentation={{
-                canOpenThread: canOpenThread,
-                threadActionPending: threadActionPending,
-                thread: thread,
-                displayedTitle: displayedTitle,
-                pending: pending,
-                nativeStatus: nativeStatus,
+            <div
+              className={cn(
+                "flex flex-col gap-4 @min-[64rem]/ticket:pr-2 @min-[64rem]/ticket:pb-2",
+                floatingChatInset.column,
+              )}
+            >
+              <WorkbenchTicketAttentionPanel
+                environmentId={environmentId}
+                ticketId={ticket.id}
+                ticketTitle={ticket.title}
+                onOpenThread={onOpenAssignedThread}
+              />
+              <WorkbenchTicketThreadsPanel
+                expansion={{ threadPanelCollapsed: threadPanelCollapsed }}
+                actions={{
+                  setThreadPanelCollapsed: setThreadPanelCollapsed,
+                  settledAssignments: settledAssignments,
+                  onNewThread: onNewThread,
+                  onOpenThread: onOpenThread,
+                  onUnlinkThread: onUnlinkThread,
+                  toggleThreadSettlement: toggleThreadSettlement,
+                  settlementPendingThreadId: settlementPendingThreadId,
+                  onDeleteThread: onDeleteThread,
+                  onOpenAssignedThread: onOpenAssignedThread,
+                  onReplaceThread: onReplaceThread,
+                  settledThreadsCollapsed: settledThreadsCollapsed,
+                  setSettledThreadsCollapsed: setSettledThreadsCollapsed,
+                  onAttachThread: onAttachThread,
+                }}
+                presentation={{
+                  canOpenThread: canOpenThread,
+                  threadActionPending: threadActionPending,
+                  thread: thread,
+                  displayedTitle: displayedTitle,
+                  pending: pending,
+                  nativeStatus: nativeStatus,
 
-                agentTitle: agentTitle,
-                isArchived: isArchived,
-                supportsSettlement: supportsSettlement,
-              }}
-              context={{
-                threadProviderKind: threadProviderKind,
-                threadMutationsDisabled,
-                environmentId: environmentId,
-                linkedProjects: linkedProjects,
-                threadsById: threadsById,
-                archivedThreadsById: archivedThreadsById,
-                threadLookupReady: threadLookupReady,
-              }}
-              records={{
-                displayedThread: displayedThread,
-                assignment: assignment,
-                actionableTicket: actionableTicket,
-                nativeThread: nativeThread,
-                archivedThread: archivedThread,
-                ticketWorkspace: ticketWorkspace,
-                activeAssignments: activeAssignments,
-                ticket: ticket,
-                historicalAssignments: historicalAssignments,
-              }}
-            />
+                  agentTitle: agentTitle,
+                  isArchived: isArchived,
+                  supportsSettlement: supportsSettlement,
+                }}
+                context={{
+                  threadProviderKind: threadProviderKind,
+                  threadMutationsDisabled,
+                  environmentId: environmentId,
+                  linkedProjects: linkedProjects,
+                  threadsById: threadsById,
+                  archivedThreadsById: archivedThreadsById,
+                  threadLookupReady: threadLookupReady,
+                }}
+                records={{
+                  displayedThread: displayedThread,
+                  assignment: assignment,
+                  actionableTicket: actionableTicket,
+                  nativeThread: nativeThread,
+                  archivedThread: archivedThread,
+                  ticketWorkspace: ticketWorkspace,
+                  activeAssignments: activeAssignments,
+                  ticket: ticket,
+                  historicalAssignments: historicalAssignments,
+                }}
+              />
 
-            <WorkbenchTicketPullRequests
-              readOnly={workspaceReadOnly ?? false}
-              onOpenThread={onOpenAssignedThread}
-              environmentId={environmentId}
-              ticketId={ticket.id}
-              assignments={activeAssignments}
-              threadsById={threadsById}
-              ticketKey={jiraIssueLink?.issue.key ?? null}
-              workspaceRepositoryProjectIds={linkedProjects.map((project) => project.id)}
-              pullRequests={associatedPullRequests}
-              checkouts={getWorkbenchTicketPullRequestCheckouts({
-                workspace: ticketWorkspace,
-                repositories: repositories.map(({ id, repository }) => ({
-                  projectId: id,
-                  title: repository?.title ?? "Repository",
-                })),
-              })}
-            />
+              <WorkbenchTicketPullRequests
+                readOnly={workspaceReadOnly ?? false}
+                onOpenThread={onOpenAssignedThread}
+                environmentId={environmentId}
+                ticketId={ticket.id}
+                assignments={activeAssignments}
+                threadsById={threadsById}
+                ticketKey={jiraIssueLink?.issue.key ?? null}
+                workspaceRepositoryProjectIds={linkedProjects.map((project) => project.id)}
+                pullRequests={associatedPullRequests}
+                checkouts={getWorkbenchTicketPullRequestCheckouts({
+                  workspace: ticketWorkspace,
+                  repositories: repositories.map(({ id, repository }) => ({
+                    projectId: id,
+                    title: repository?.title ?? "Repository",
+                  })),
+                })}
+              />
 
-            <WorkbenchTicketWorkspacePanel
-              expansion={{
-                repositoryScopePanelCollapsed: repositoryScopePanelCollapsed,
-                advancedWorkspaceSettingsCollapsed: advancedWorkspaceSettingsCollapsed,
-              }}
-              presentation={{
-                workspaceStatusLabel: workspaceStatusLabel,
-                workspaceIsReady: workspaceIsReady,
-                workspaceIsPreparing: workspaceIsPreparing,
-                pending: pending,
-                preparationPending: preparationPending,
-                isArchived: isArchived,
-                repositoryScopeLocked: repositoryScopeLocked,
-                workspacePreparationActionLabel: workspacePreparationActionLabel,
-                workspaceHasSelectedRepositories: workspaceHasSelectedRepositories,
-              }}
-              actions={{
-                onEditRepositories,
-                onRepositoryScopeChange,
-                onCancelRepositories,
-                onSaveRepositories,
-                setRepositoryScopePanelCollapsed: setRepositoryScopePanelCollapsed,
-                setAdvancedWorkspaceSettingsCollapsed: setAdvancedWorkspaceSettingsCollapsed,
-                setResetConfirmationOpen: setResetConfirmationOpen,
-              }}
-              records={{
-                ticket: ticket,
-                repositories: repositories,
-                ticketWorkspace: ticketWorkspace,
-                retainedRepositories: retainedRepositories,
-                activeAssignments: activeAssignments,
-                repositoryScopeDraft,
-              }}
-              context={{
-                environmentId: environmentId,
-                keybindings: keybindings,
-                availableEditors: availableEditors,
-                linkedProjects: linkedProjects,
-              }}
-            />
+              <WorkbenchTicketWorkspacePanel
+                expansion={{
+                  repositoryScopePanelCollapsed: repositoryScopePanelCollapsed,
+                  advancedWorkspaceSettingsCollapsed: advancedWorkspaceSettingsCollapsed,
+                }}
+                presentation={{
+                  workspaceStatusLabel: workspaceStatusLabel,
+                  workspaceIsReady: workspaceIsReady,
+                  workspaceIsPreparing: workspaceIsPreparing,
+                  pending: pending,
+                  preparationPending: preparationPending,
+                  isArchived: isArchived,
+                  repositoryScopeLocked: repositoryScopeLocked,
+                  workspacePreparationActionLabel: workspacePreparationActionLabel,
+                  workspaceHasSelectedRepositories: workspaceHasSelectedRepositories,
+                }}
+                actions={{
+                  onEditRepositories,
+                  onRepositoryScopeChange,
+                  onCancelRepositories,
+                  onSaveRepositories,
+                  setRepositoryScopePanelCollapsed: setRepositoryScopePanelCollapsed,
+                  setAdvancedWorkspaceSettingsCollapsed: setAdvancedWorkspaceSettingsCollapsed,
+                  setResetConfirmationOpen: setResetConfirmationOpen,
+                }}
+                records={{
+                  ticket: ticket,
+                  repositories: repositories,
+                  ticketWorkspace: ticketWorkspace,
+                  retainedRepositories: retainedRepositories,
+                  activeAssignments: activeAssignments,
+                  repositoryScopeDraft,
+                }}
+                context={{
+                  environmentId: environmentId,
+                  keybindings: keybindings,
+                  availableEditors: availableEditors,
+                  linkedProjects: linkedProjects,
+                }}
+              />
 
-            <WorkbenchTicketDetailsPanel
-              presentation={{
-                collapsed: detailsPanelCollapsed,
-                epics: epics,
-                isArchived: isArchived,
-                jiraFieldsManaged: jiraFieldsManaged,
-                linkedEpicId: linkedEpicId,
-                pending: pending,
-              }}
-              actions={{
-                onCreateEpic: onCreateEpic,
-                onOpenEpic: onOpenEpic,
-                openJiraIssueTicket: openJiraIssueTicket,
-                onToggle: () => setDetailsPanelCollapsed((collapsed) => !collapsed),
-                onUpdate: onUpdate,
-              }}
-              records={{
-                ticket: ticket,
-                actionableTicket: actionableTicket,
-                jiraIssueLink: jiraIssueLink,
-              }}
-            />
-          </aside>
+              <WorkbenchTicketDetailsPanel
+                presentation={{
+                  collapsed: detailsPanelCollapsed,
+                  epics: epics,
+                  isArchived: isArchived,
+                  jiraFieldsManaged: jiraFieldsManaged,
+                  linkedEpicId: linkedEpicId,
+                  pending: pending,
+                }}
+                actions={{
+                  onCreateEpic: onCreateEpic,
+                  onOpenEpic: onOpenEpic,
+                  openJiraIssueTicket: openJiraIssueTicket,
+                  onToggle: () => setDetailsPanelCollapsed((collapsed) => !collapsed),
+                  onUpdate: onUpdate,
+                }}
+                records={{
+                  ticket: ticket,
+                  actionableTicket: actionableTicket,
+                  jiraIssueLink: jiraIssueLink,
+                }}
+              />
+            </div>
+          </ScrollArea>
         </div>
       </form>
       <WorkbenchTicketDeleteConfirmation
@@ -1546,6 +1583,22 @@ function WorkbenchTicketDetailController({
         onResetWorkspace={onResetWorkspace}
         resetConfirmationOpen={resetConfirmationOpen}
         setResetConfirmationOpen={setResetConfirmationOpen}
+      />
+      <WorkbenchTicketFloatingChat
+        enabled={floatingChat}
+        environmentId={environmentId}
+        ticket={actionableTicket}
+        ticketKey={jiraIssueLink?.issue.key}
+        activeAssignments={activeAssignments}
+        settledAssignments={settledAssignments}
+        primaryAssignment={assignment}
+        threadsById={threadsById}
+        archivedThreadsById={archivedThreadsById}
+        onOpenThread={onOpenAssignedThread}
+        onNewThread={onNewThread}
+        pending={pending}
+        threadMutationsDisabled={threadMutationsDisabled}
+        isArchived={isArchived}
       />
     </article>
   );
@@ -2078,7 +2131,7 @@ function WorkbenchTicketHeader({
       electron={isElectron}
       className="h-auto! min-h-0! max-h-none! items-start border-b border-border py-4"
     >
-      <div className="mx-auto grid w-full min-w-0 max-w-6xl grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 @min-[48rem]/ticket:grid-cols-[auto_minmax(0,1fr)_auto]">
+      <div className="mx-auto grid w-full min-w-0 max-w-7xl grid-cols-[auto_minmax(0,1fr)] items-start gap-x-4 gap-y-3 @min-[48rem]/ticket:grid-cols-[auto_minmax(0,1fr)_auto]">
         <Button aria-label="Back to Board" onClick={onBack} size="sm" variant="ghost">
           <ArrowLeftIcon data-icon="inline-start" />
           Board
@@ -4287,7 +4340,7 @@ function WorkbenchEpicHeader({
 > & { progress: ReturnType<typeof getWorkbenchEpicProgress>; blockedCount: number }) {
   return (
     <header className="shrink-0 border-b border-border px-4 py-4 sm:px-6">
-      <div className="mx-auto flex min-w-0 max-w-6xl flex-wrap items-start gap-3">
+      <div className="mx-auto flex min-w-0 max-w-7xl flex-wrap items-start gap-3">
         <Button aria-label="Back to Board" onClick={onBack} size="sm" variant="ghost">
           <ArrowLeftIcon />
           <span className="hidden sm:inline">Board</span>
@@ -5011,7 +5064,11 @@ function WorkbenchTicketHeading({
           status={executionStatus?.presentation}
           startedAt={executionStatus?.startedAt}
         />
-        <WorkbenchTicketTypeBadge kind={ticket.kind} jiraIssue={jiraIssueLink?.issue} />
+        <WorkbenchTicketTypeBadge
+          kind={ticket.kind}
+          jiraIssue={jiraIssueLink?.issue}
+          size="control"
+        />
         <WorkbenchTicketAttentionBadge
           environmentId={environmentId}
           ticketId={ticket.id}
@@ -5020,9 +5077,14 @@ function WorkbenchTicketHeading({
         <WorkbenchTicketSourceBadge
           jiraIssueLink={jiraIssueLink}
           jiraOwnershipKnown={jiraOwnershipKnown ?? true}
+          size="control"
         />
         {jiraPublicationAction}
-        {ticket.archivedAt != null ? <Badge variant="outline">Archived</Badge> : null}
+        {ticket.archivedAt != null ? (
+          <Badge size="control" variant="outline">
+            Archived
+          </Badge>
+        ) : null}
         <WorkbenchTicketStatusMenu
           key={`${environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
           environmentId={environmentId}
@@ -5041,7 +5103,7 @@ function WorkbenchTicketHeading({
           }
         />
         {jiraIssueLink?.issue.flagged ? (
-          <Badge variant="warning">
+          <Badge size="control" variant="warning">
             <CircleAlertIcon /> Jira flagged
           </Badge>
         ) : null}

@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - Inspect only this test's disposable worktrees.
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
-import { test, expect, openWorkbench, snapshot } from "./fixtures.ts";
+import { test, expect, openWorkbench, snapshot, ticketChat } from "./fixtures.ts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 
 test("prepare without a thread, extend context, and reuse retained worktrees", async ({
@@ -141,9 +141,7 @@ test("unlink preserves a native thread and its workspace, and permits relinking"
     .getByRole("dialog")
     .getByRole("button", { name: "Create work area and Thread", exact: true })
     .click();
-  await expect(page).toHaveURL(
-    (url) => url.pathname !== "/workbench" && url.searchParams.get("workbench") === "true",
-  );
+  await expect(ticketChat(page).locator('[contenteditable="true"]')).toBeVisible();
   const initial = await snapshot(demo);
   const assignment = initial.assignments.find((candidate) => candidate.ticketId === "orbit-008")!;
   const thread = (await demo.shellSnapshot()).threads.find(

@@ -56,3 +56,13 @@ export function WorkbenchThreadExecutionStatus({
     </span>
   );
 }
+
+/** The status icon alone, for places too narrow for the label; callers name it accessibly. */
+export function WorkbenchThreadExecutionStatusIcon({
+  status,
+}: {
+  status: WorkbenchThreadExecutionStatusPresentation;
+}) {
+  const Icon = STATUS_ICONS[status.icon];
+  return <Icon aria-hidden className={`size-3.5 shrink-0 ${status.className}`} />;
+}

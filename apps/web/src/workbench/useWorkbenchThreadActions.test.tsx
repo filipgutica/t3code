@@ -28,6 +28,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { makeThreadFixture } from "../test-fixtures";
 import { useWorkbenchThreadActions } from "./useWorkbenchThreadActions";
+import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import type { WorkbenchRepositoryScopeDraft } from "./workbenchRepositoryScope";
 
 const commands = vi.hoisted(() => ({
@@ -317,6 +318,7 @@ beforeEach(() => {
   nativeDelete.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   refresh.workbench.mockReset();
   refresh.archived.mockReset();
+  useWorkbenchFloatingChatStore.setState({ ticketChat: null });
 });
 afterEach(async () => {
   await act(async () => renderer?.unmount());
@@ -511,6 +513,22 @@ describe("Thread repository review", () => {
       expectNoStartEffects();
     },
   );
+
+  it("shows a Thread created on the ticket page in its floating chat instead of navigating", async () => {
+    const showThread = vi.fn();
+    useWorkbenchFloatingChatStore.setState({ ticketChat: { ticketId: ticket.id, showThread } });
+    const { router } = await mount({
+      snapshot: { ...snapshot, ticketWorkspaces: [readyWorkspace] },
+    });
+    await act(async () => actions.requestNewThread(ticket));
+    await confirm();
+    expect(commands.createThread).toHaveBeenCalledOnce();
+    expect(showThread).toHaveBeenCalledExactlyOnceWith(
+      commands.createThread.mock.calls[0]?.[0].input.threadId,
+    );
+    expect(router.state.location.pathname).toBe("/workbench");
+    expect(actions.startThreadRequest).toBeNull();
+  });
 
   it("refreshes changed repository choices before allowing a second confirmation", async () => {
     const { update, router } = await mount();
