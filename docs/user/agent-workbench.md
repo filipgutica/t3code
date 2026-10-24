@@ -137,6 +137,15 @@ or Ticket links to return to the work, or choose **Back to Threads** to restore 
 regular T3 sidebar. The command palette also offers **Open Workbench**, **New
 Ticket** for the current Workspace, and **Back to Ticket** from a linked Thread.
 
+To talk to a Ticket's Threads without leaving the Ticket, use the ticket chat in its
+bottom-right corner. Each active Thread has a tab; settled and archived Threads are
+under **⋯**. A Thread you create from the Ticket opens here. Select the message field
+to expand the conversation, or choose **Show ticket chat** in the command palette.
+Drag the chat's left edge, top edge, or top-left corner to resize it. The chat leaves out the Thread's side panels:
+opening a file or diff from it, or choosing **Open full Thread**, opens the Thread itself.
+The ticket chat is not available on narrow screens or while a Ticket is still being
+planned.
+
 ## Follow progress and review results
 
 Ticket progress and agent activity describe different states:

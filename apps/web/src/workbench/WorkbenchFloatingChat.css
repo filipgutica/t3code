@@ -1,0 +1,34 @@
+/*
+ * The chat lanes widen their inline padding to 3rem from a 640px viewport. The floating
+ * panel is about 448px wide on any viewport, so it keeps the narrow padding. Unlayered,
+ * these rules win over the lane rules in index.css's components layer.
+ */
+[data-workbench-floating-chat] .chat-composer-lane {
+  padding-inline: calc(0.75rem + var(--chat-lane-inset-start, 0px))
+    calc(0.75rem + var(--chat-lane-inset-end, 0px));
+}
+
+[data-workbench-floating-chat] .messages-timeline-scroll {
+  padding-inline: calc(
+      0.75rem + var(--chat-lane-inset-start, 0px) - var(--chat-timeline-gutter, 0px)
+    )
+    calc(0.75rem + var(--chat-lane-inset-end, 0px) - var(--chat-timeline-gutter, 0px));
+}
+
+/*
+ * The panel is short, so the composer starts at two lines instead of three and trims its
+ * padding. The resting layout, a one-line composer while reading history, sets its own
+ * fixed sizes (max-h-8, py-2, an absolute footer), so these rules leave it alone.
+ */
+[data-workbench-floating-chat] .composer-tiptap:not(.max-h-8) {
+  min-height: 3rem;
+  max-height: 9rem;
+}
+
+[data-workbench-floating-chat] [data-chat-composer-body]:not(.py-2) {
+  padding-top: 0.625rem;
+}
+
+[data-workbench-floating-chat] [data-chat-composer-footer]:not(.absolute) {
+  padding-bottom: 0.625rem;
+}

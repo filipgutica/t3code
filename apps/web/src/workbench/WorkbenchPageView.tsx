@@ -810,6 +810,7 @@ function WorkbenchPageTicketDetail(
       keybindings={keybindings}
       availableEditors={availableEditors}
       assignments={selectedAssignments}
+      floatingChat={!planning}
       threadsById={threadsById}
       archivedThreadsById={archivedThreadsById}
       threadLookupReady={threadLookupReady}

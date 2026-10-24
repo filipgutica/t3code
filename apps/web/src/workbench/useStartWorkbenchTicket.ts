@@ -134,7 +134,12 @@ export function useStartWorkbenchTicket({
   );
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
 
-  return async (ticket: WorkbenchTicket, options?: StartWorkbenchTicketOptions) => {
+  /** `openThread` replaces `onOpenAssignedThread` for this start, such as to stay on the page. */
+  return async (
+    ticket: WorkbenchTicket,
+    options?: StartWorkbenchTicketOptions,
+    openThread: (threadId: ThreadId) => Promise<void> = onOpenAssignedThread,
+  ) => {
     if (environmentId === null) return;
     onPendingChange(`start:${ticket.id}:checking-thread`);
     onError(null);
@@ -161,7 +166,7 @@ export function useStartWorkbenchTicket({
               useComposerDraftStore.getState().addReviewComment(threadRef, comment),
             waitForThread: (threadId) =>
               waitForWorkbenchThread(scopeThreadRef(environmentId, threadId)),
-            openThread: onOpenAssignedThread,
+            openThread,
             resolveModelSelection: (project) =>
               resolveDefaultProviderModelSelection(providers, project.defaultModelSelection),
             makeThreadId: newThreadId,

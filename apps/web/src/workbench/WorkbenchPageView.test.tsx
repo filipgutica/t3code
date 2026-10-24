@@ -750,6 +750,15 @@ it("returns to planning instead of opening a second Thread from the planning tic
   expect(document.querySelector('[data-conversation="planning"]')).not.toBeNull();
 });
 
+it("shows the ticket's Threads in the floating chat except in planning ticket details", async () => {
+  await render({ detail: true });
+  expect(document.querySelector('[role="tablist"][aria-label="Ticket Threads"]')).not.toBeNull();
+  await render({ conversation: "planning" });
+  await act(async () => button("Ticket details").click());
+  expect(document.querySelector("article")).not.toBeNull();
+  expect(document.querySelector("[data-workbench-floating-chat]")).toBeNull();
+});
+
 it("tells the conversation when the host predates conversation drafts", async () => {
   await render({ conversation: "legacy" });
   expect(document.querySelector('[data-drafts-supported="false"]')).not.toBeNull();
