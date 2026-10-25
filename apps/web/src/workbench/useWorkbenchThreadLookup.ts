@@ -6,6 +6,7 @@ import { useThreadShells } from "../state/entities";
 import { useArchivedThreadSnapshots } from "../lib/archivedThreadsState";
 import { resolveThreadStatusPill } from "../components/Sidebar.logic";
 
+import { useWorkbenchOmittedThreads } from "./useWorkbenchOmittedThreads";
 import { getActiveAssignmentsByTicket } from "./workbench.logic";
 
 import type { WorkbenchSnapshot } from "@t3tools/contracts";
@@ -25,6 +26,7 @@ export function useWorkbenchThreadLookup({
     isLoading: archivedThreadsLoading,
     refresh: refreshArchivedThreads,
   } = useArchivedThreadSnapshots(archivedEnvironmentIds);
+  const omittedThreadsRead = useWorkbenchOmittedThreads(environmentId, snapshot?.assignments ?? []);
   const threadsById = new Map(
     allThreadShells
       .filter((thread) => thread.environmentId === environmentId)
@@ -50,7 +52,8 @@ export function useWorkbenchThreadLookup({
         .map((thread) => thread.id),
     ),
   });
-  const threadLookupReady = !archivedThreadsLoading && archivedThreadsError === null;
+  const threadLookupReady =
+    omittedThreadsRead && !archivedThreadsLoading && archivedThreadsError === null;
   return {
     threadsById,
     archivedThreadsById,

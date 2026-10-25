@@ -1,4 +1,5 @@
 import type {
+  OrchestrationV2ShellSnapshot,
   OrchestrationV2ThreadShell,
   ProjectId,
   ThreadId,
@@ -266,6 +267,26 @@ export function getWorkbenchTicketThreadSections({
   }
 
   return { active, history, settled };
+}
+
+/**
+ * Assigned Threads a shell left out as older settled. Those shells keep only the newest settled
+ * Threads, so Workbench must read the rest before it can treat a missing Thread as deleted.
+ */
+export function getWorkbenchOmittedThreadIds({
+  threadIds,
+  shell,
+}: {
+  readonly threadIds: ReadonlyArray<ThreadId>;
+  readonly shell:
+    | (Pick<OrchestrationV2ShellSnapshot, "olderSettled"> & {
+        readonly threads: ReadonlyArray<Pick<OrchestrationV2ThreadShell, "id">>;
+      })
+    | null;
+}): ReadonlyArray<ThreadId> {
+  if (shell?.olderSettled === undefined) return [];
+  const shellThreadIds = new Set(shell.threads.map((thread) => thread.id));
+  return [...new Set(threadIds)].filter((threadId) => !shellThreadIds.has(threadId)).toSorted();
 }
 
 export function getVisibleWorkbenchAssignments(

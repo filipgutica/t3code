@@ -23,6 +23,7 @@ import {
   getWorkbenchThreadPresentation,
   getWorkbenchTicketStatusMoves,
   getVisibleWorkbenchAssignments,
+  getWorkbenchOmittedThreadIds,
   isWorkbenchTicketKind,
   isWorkbenchThreadArchived,
   WORKBENCH_TICKET_KIND_LABELS,
@@ -626,5 +627,24 @@ describe("Workbench ticket helpers", () => {
     expect(getVisibleWorkbenchAssignments([missing], new Set(), new Set(), false)).toEqual([
       missing,
     ]);
+  });
+
+  it("reads assigned Threads only when the shell left them out as older settled", () => {
+    const kept = ThreadId.make("thread-kept");
+    const omitted = ThreadId.make("thread-omitted");
+    const olderOmitted = ThreadId.make("thread-older-omitted");
+    const threads = [{ id: kept }];
+    const olderSettled = { before: "2026-10-01T00:00:00.000Z", asOfSequence: 1, counts: [] };
+
+    expect(
+      getWorkbenchOmittedThreadIds({
+        threadIds: [omitted, kept, olderOmitted, omitted],
+        shell: { threads, olderSettled },
+      }),
+    ).toEqual([olderOmitted, omitted]);
+    expect(
+      getWorkbenchOmittedThreadIds({ threadIds: [omitted, kept], shell: { threads } }),
+    ).toEqual([]);
+    expect(getWorkbenchOmittedThreadIds({ threadIds: [omitted], shell: null })).toEqual([]);
   });
 });

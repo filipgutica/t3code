@@ -14,6 +14,7 @@ import { usePrimaryEnvironmentId } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
 import { WorkbenchAttentionQueries } from "./WorkbenchAttentionQueries";
 import { useWorkbenchAttention } from "./useWorkbenchAttention";
+import { useWorkbenchOmittedThreads } from "./useWorkbenchOmittedThreads";
 import { useWorkbenchSidebar } from "./useWorkbenchSidebar";
 import { workbenchEnvironment } from "./state";
 import { activeWorkbenchAttentionAssignments } from "./workbenchAttention.logic";
@@ -84,6 +85,7 @@ function WorkbenchEnvironmentAttention({
   isOnWorkbench: boolean;
   children: ReactNode;
 }) {
+  useWorkbenchOmittedThreads(environmentId, snapshot?.assignments ?? []);
   const shells = useThreadShells();
   const threadsById = new Map(
     shells
