@@ -372,7 +372,8 @@ function FloatingChatThread({
   readonly onOpenThread: (threadId: ThreadId) => void;
 }) {
   const threadRef = scopeThreadRef(environmentId, thread.threadId);
-  useOpenThreadOnPanelAction(threadRef, () => onOpenThread(thread.threadId));
+  const openThread = () => onOpenThread(thread.threadId);
+  useOpenThreadOnPanelAction(threadRef, openThread);
   return (
     <div role="tabpanel" aria-label={thread.title} className="flex min-h-0 flex-1 flex-col">
       <WorkbenchTicketProposalHistory threadRef={threadRef}>
@@ -382,7 +383,7 @@ function FloatingChatThread({
           threadId={thread.threadId}
           routeKind="server"
           hideHeader
-          embedded={{ composerFocusRequest }}
+          embedded={{ composerFocusRequest, openThread }}
         />
       </WorkbenchTicketProposalHistory>
     </div>

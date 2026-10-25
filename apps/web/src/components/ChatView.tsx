@@ -377,6 +377,8 @@ const EMPTY_PENDING_FILE_SURFACE_IDS: ReadonlySet<string> = new Set();
 interface ChatViewEmbedding {
   /** Each new value focuses the composer once; null leaves focus alone. */
   readonly composerFocusRequest: number | null;
+  /** Shows the full Thread, where the surfaces the embed leaves out live. */
+  readonly openThread: () => void;
 }
 
 /**
@@ -386,7 +388,8 @@ interface ChatViewEmbedding {
  * `embedded` mounts the Thread inside another page, such as Workbench's floating ticket
  * chat. The host page owns the window, so the view leaves out its side panels and
  * window-wide input handling, and focuses the composer only for a new host focus request.
- * Persisted per-Thread panel state is left untouched for the Thread route.
+ * Actions that open a terminal hand off to the full Thread. Persisted per-Thread panel
+ * state is left untouched for the Thread route.
  */
 type ChatViewProps =
   | {
@@ -1910,6 +1913,19 @@ export default function ChatView(props: ChatViewProps) {
     setTerminalUiLaunchContext,
     setThreadError,
   });
+  // The embed has no terminal drawer, so terminal actions continue on the full Thread. The
+  // launch is placed and started before the embed unmounts.
+  const runShellCommandInViewStable = useStableCallback((command: string) => {
+    runShellCommandStable(command);
+    embedded?.openThread();
+  });
+  const openWorktreeSetupTerminalInView =
+    embedded && onOpenWorktreeSetupTerminal
+      ? (terminalId: string) => {
+          onOpenWorktreeSetupTerminal(terminalId);
+          embedded.openThread();
+        }
+      : onOpenWorktreeSetupTerminal;
   const {
     saveProjectScript: saveProjectScriptStable,
     updateProjectScript: updateProjectScriptStable,
@@ -3316,7 +3332,7 @@ export default function ChatView(props: ChatViewProps) {
                 {...(!paintOnlyDisplayedTimeline
                   ? {
                       onCiteAssistantText: citeAssistantTextStable,
-                      ...(activeProject ? { onRunShellCommand: runShellCommandStable } : {}),
+                      ...(activeProject ? { onRunShellCommand: runShellCommandInViewStable } : {}),
                     }
                   : {})}
                 isWorking={!paintOnlyDisplayedTimeline && isWorking}
@@ -3355,7 +3371,9 @@ export default function ChatView(props: ChatViewProps) {
                 {...(draftId
                   ? { onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocallyStable }
                   : {})}
-                {...(onOpenWorktreeSetupTerminal ? { onOpenWorktreeSetupTerminal } : {})}
+                {...(openWorktreeSetupTerminalInView
+                  ? { onOpenWorktreeSetupTerminal: openWorktreeSetupTerminalInView }
+                  : {})}
                 isPreparingWorktree={!paintOnlyDisplayedTimeline && isPreparingWorktree}
                 footer={
                   paintOnlyDisplayedTimeline ? null : pendingHandoff === null ? (
