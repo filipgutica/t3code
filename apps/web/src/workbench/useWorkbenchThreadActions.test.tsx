@@ -226,8 +226,9 @@ function pageData(input: HarnessInput): HookInput["pageData"] {
         : [],
     ),
     threadLookupReady: true,
-    archivedThreadsError: null,
+    threadLookupError: null,
     refreshArchivedThreads: refresh.archived,
+    refreshThreadLookup: vi.fn(),
   };
 }
 

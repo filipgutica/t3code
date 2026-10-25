@@ -26,7 +26,7 @@ export function useWorkbenchThreadLookup({
     isLoading: archivedThreadsLoading,
     refresh: refreshArchivedThreads,
   } = useArchivedThreadSnapshots(archivedEnvironmentIds);
-  const omittedThreadsRead = useWorkbenchOmittedThreads(environmentId, snapshot?.assignments ?? []);
+  const omittedThreads = useWorkbenchOmittedThreads(environmentId, snapshot?.assignments ?? []);
   const threadsById = new Map(
     allThreadShells
       .filter((thread) => thread.environmentId === environmentId)
@@ -52,8 +52,11 @@ export function useWorkbenchThreadLookup({
         .map((thread) => thread.id),
     ),
   });
+  const threadLookupError =
+    archivedThreadsError ??
+    (omittedThreads.status === "failed" ? "Could not load some older settled Threads." : null);
   const threadLookupReady =
-    omittedThreadsRead && !archivedThreadsLoading && archivedThreadsError === null;
+    omittedThreads.status === "ready" && !archivedThreadsLoading && archivedThreadsError === null;
   return {
     threadsById,
     archivedThreadsById,
@@ -61,7 +64,11 @@ export function useWorkbenchThreadLookup({
     reservedThreadIds,
     assignmentsByTicket,
     threadLookupReady,
-    archivedThreadsError,
+    threadLookupError,
     refreshArchivedThreads,
+    refreshThreadLookup: () => {
+      refreshArchivedThreads();
+      omittedThreads.retry();
+    },
   };
 }

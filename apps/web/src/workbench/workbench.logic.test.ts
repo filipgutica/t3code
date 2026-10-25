@@ -22,9 +22,9 @@ import {
   getWorkbenchTicketThreadSections,
   getWorkbenchThreadPresentation,
   getWorkbenchTicketStatusMoves,
-  areWorkbenchOmittedThreadsRead,
   getVisibleWorkbenchAssignments,
   getWorkbenchOmittedThreadIds,
+  getWorkbenchOmittedThreadsStatus,
   isWorkbenchTicketKind,
   isWorkbenchThreadArchived,
   WORKBENCH_TICKET_KIND_LABELS,
@@ -654,26 +654,29 @@ describe("Workbench ticket helpers", () => {
     const cached = ThreadId.make("thread-cached");
     const deleted = ThreadId.make("thread-deleted");
     const removed = ThreadId.make("thread-removed");
-    const family = (threadId: ThreadId) => ({ snapshotSequence: 5, threads: [{ id: threadId }] });
-    const reads = new Map([
-      [merged, family(merged)],
-      [cached, family(cached)],
-      [deleted, { snapshotSequence: 5, threads: [] }],
-      [removed, family(removed)],
-    ]);
+    const failed = ThreadId.make("thread-failed");
+    const family = (...threadIds: ReadonlyArray<ThreadId>) => ({
+      snapshotSequence: 5,
+      threads: threadIds.map((id) => ({ id })),
+    });
     const input = {
-      reads,
+      reads: new Map<ThreadId, ReturnType<typeof family> | "failed">([
+        [merged, family(merged)],
+        [cached, family(cached)],
+        [deleted, family()],
+        [removed, family(removed)],
+        [failed, "failed"],
+      ]),
       mergedThreadIds: new Set([merged]),
       removedAt: new Map([[removed, 6]]),
     };
+    const status = (threadIds: ReadonlyArray<ThreadId>) =>
+      getWorkbenchOmittedThreadsStatus({ ...input, threadIds });
 
-    expect(
-      areWorkbenchOmittedThreadsRead({ ...input, threadIds: [merged, deleted, removed] }),
-    ).toBe(true);
+    expect(status([merged, deleted, removed])).toBe("ready");
     // A cached read is settled before its rows merge back in.
-    expect(areWorkbenchOmittedThreadsRead({ ...input, threadIds: [merged, cached] })).toBe(false);
-    expect(
-      areWorkbenchOmittedThreadsRead({ ...input, threadIds: [ThreadId.make("thread-pending")] }),
-    ).toBe(false);
+    expect(status([merged, cached])).toBe("pending");
+    expect(status([ThreadId.make("thread-pending")])).toBe("pending");
+    expect(status([merged, cached, failed])).toBe("failed");
   });
 });

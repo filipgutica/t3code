@@ -479,24 +479,24 @@ function WorkbenchBoardErrors(
   props: Pick<WorkbenchPageViewProps, "error" | "setError" | "jiraBindings" | "pageData">,
 ) {
   const { pageData, jiraBindings, error, setError } = props;
-  const { query, archivedThreadsError, refreshArchivedThreads } = pageData;
+  const { query, threadLookupError, refreshThreadLookup } = pageData;
 
   const { jiraError } = jiraBindings;
 
   return (
     <>
-      {query.error || error || archivedThreadsError || jiraError ? (
+      {query.error || error || threadLookupError || jiraError ? (
         <div className="mx-3 mt-3 flex shrink-0 items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive-foreground sm:mx-4">
           <AlertCircleIcon className="size-4 shrink-0" />
           <span className="min-w-0 flex-1">
-            {error ?? query.error ?? archivedThreadsError ?? jiraError}
+            {error ?? query.error ?? threadLookupError ?? jiraError}
           </span>
           {query.error ? (
             <Button onClick={query.refresh} size="xs" variant="outline">
               <RefreshCwIcon /> Retry
             </Button>
-          ) : archivedThreadsError ? (
-            <Button onClick={refreshArchivedThreads} size="xs" variant="outline">
+          ) : threadLookupError ? (
+            <Button onClick={refreshThreadLookup} size="xs" variant="outline">
               <RefreshCwIcon /> Retry
             </Button>
           ) : null}
@@ -612,7 +612,7 @@ function getWorkbenchPageTicketState({
       ticketId,
     }),
     threadActionLabel: getWorkbenchTicketStartProgressLabel(pendingAction, ticketId),
-    error: error ?? pageData.query.error ?? pageData.archivedThreadsError ?? jiraBindings.jiraError,
+    error: error ?? pageData.query.error ?? pageData.threadLookupError ?? jiraBindings.jiraError,
     preparationFailed: ticketActions.workspacePreparationFailure === ticketId,
     preparationPending:
       pendingAction === `prepare-workspace:${ticketId}` ||

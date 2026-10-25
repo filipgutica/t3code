@@ -351,8 +351,9 @@ function Harness({
     reservedThreadIds: new Set(),
     assignmentsByTicket: new Map([[ticket.id, assignment]]),
     threadLookupReady: true,
-    archivedThreadsError: null,
+    threadLookupError: null,
     refreshArchivedThreads: noop,
+    refreshThreadLookup: noop,
   };
   const selection: PageProps["selection"] = {
     awaitingTicketId: null,
