@@ -33,6 +33,9 @@ vi.mock("../hooks/usePullRequestLinking", () => ({
   }),
 }));
 vi.mock("../state/query", () => ({ useEnvironmentQuery: () => ({ data: null, error: null }) }));
+vi.mock("../state/queries", () => ({
+  useThreadSearch: () => ({ matches: [], query: "", isPending: false }),
+}));
 vi.mock("../state/pullRequests", () => ({ pullRequestEnvironment: { linkedThreads: () => null } }));
 vi.mock("../rpc/atomRegistry", () => ({ appAtomRegistry: { refresh: vi.fn() } }));
 vi.mock("./state", () => ({ workbenchEnvironment: { ticketPreparations: vi.fn() } }));
