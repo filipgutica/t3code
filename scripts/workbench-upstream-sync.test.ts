@@ -126,6 +126,14 @@ describe("workbench upstream sync merge preview", () => {
       ".github/workflows/relay-preview.yml",
     ]);
     assert.include(active.result.stderr, "Upstream changes active CI");
+
+    // Publication follows the product's policy, so upstream cannot exempt its own workflows.
+    const claimed = preview([], {
+      "scripts/workbench-ci-scope.json": JSON.stringify({ inertUpstreamCI: [".github/"] }),
+      ".github/workflows/relay-preview.yml": "name: Relay preview\n",
+    });
+    assert.equal(claimed.result.status, 2);
+    assert.deepEqual(claimed.output.ciReviewPaths, [".github/workflows/relay-preview.yml"]);
   });
 });
 
@@ -242,10 +250,30 @@ it.each([
   }
 });
 
-it("reports expected preview conflicts successfully but preserves real failures", () => {
-  const fixture = createFixture(["source.txt"], {
-    ".github/workflows/relay-preview.yml": "name: Relay preview\n",
-  });
+it.each([
+  {
+    name: "a source conflict",
+    conflicts: ["source.txt"] as const,
+    files: { ".github/workflows/relay-preview.yml": "name: Relay preview\n" },
+    proceed: false,
+    summary: /source\.txt[\s\S]*relay-preview\.yml/,
+  },
+  {
+    name: "a clean merge that changes active CI",
+    conflicts: [] as const,
+    files: { ".github/workflows/relay-preview.yml": "name: Relay preview\n" },
+    proceed: false,
+    summary: /relay-preview\.yml/,
+  },
+  {
+    name: "a clean merge that changes only inert CI",
+    conflicts: [] as const,
+    files: { ".github/workflows/ci.yml": "name: CI\n" },
+    proceed: true,
+    summary: null,
+  },
+])("previews $name successfully but preserves real failures", (testCase) => {
+  const fixture = createFixture(testCase.conflicts, testCase.files);
   try {
     // The preview reads the committed policy, so the working tree can run the real scripts.
     NodeFS.rmSync(NodePath.join(fixture.repository, "scripts"), { recursive: true });
@@ -255,20 +283,47 @@ it("reports expected preview conflicts successfully but preserves real failures"
     runGit(fixture.repository, ["switch", "product"]);
     const result = runStep(fixture.repository, "Preview merge");
     assert.equal(result.status, 0, result.stderr);
-    assert.equal(
+    assert.include(
       NodeFS.readFileSync(NodePath.join(fixture.repository, "outputs"), "utf8"),
-      "proceed=false\n",
+      `proceed=${testCase.proceed}\n`,
     );
-    assert.match(
-      NodeFS.readFileSync(NodePath.join(fixture.repository, "summary"), "utf8"),
-      /source\.txt[\s\S]*relay-preview\.yml/,
-    );
+    if (testCase.summary)
+      assert.match(
+        NodeFS.readFileSync(NodePath.join(fixture.repository, "summary"), "utf8"),
+        testCase.summary,
+      );
 
     const failed = runStep(fixture.repository, "Preview merge", "node() { return 1; }");
     assert.equal(failed.status, 1);
   } finally {
     NodeFS.rmSync(fixture.root, { recursive: true, force: true });
   }
+});
+
+it("publishes with a repository-scoped App token that the verify job never receives", () => {
+  const verify = workflow.slice(
+    workflow.indexOf("\n  verify:\n"),
+    workflow.indexOf("\n  publish:\n"),
+  );
+  const publish = workflow.slice(
+    workflow.indexOf("\n  publish:\n"),
+    workflow.indexOf("\n  dispatch:\n"),
+  );
+  assert.notMatch(verify, /app-token|WORKBENCH_SYNC_APP/);
+  assert.include(publish, "\n    environment: workbench-upstream-sync\n");
+  for (const input of [
+    "repositories: ${{ github.event.repository.name }}",
+    "permission-contents: write",
+    "permission-pull-requests: write",
+    "permission-workflows: write",
+  ])
+    assert.include(publish, input);
+  // GITHUB_TOKEN pushes cannot carry workflow changes, so every write must use the App token.
+  assert.notMatch(publish, /github\.token|secrets\.GITHUB_TOKEN/);
+  assert.deepEqual(
+    [...publish.matchAll(/^\s+(?:token|GH_TOKEN): (.+)$/gm)].map((match) => match[1]),
+    Array(3).fill("${{ steps.app-token.outputs.token }}"),
+  );
 });
 
 const waitPreamble = `

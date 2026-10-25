@@ -6,7 +6,12 @@ import { resolveWorkbenchThreadExecutionStatusPresentation } from "./WorkbenchTh
 
 type ExecutionThread = Pick<
   EnvironmentThreadShell,
-  "hasPendingApprovals" | "hasPendingUserInput" | "runtime" | "latestRun" | "goal"
+  | "hasPendingApprovals"
+  | "hasPendingUserInput"
+  | "pendingGuestMessageCount"
+  | "runtime"
+  | "latestRun"
+  | "goal"
 >;
 
 /** Native execution state stays independent of Workbench planning and notifications. */
