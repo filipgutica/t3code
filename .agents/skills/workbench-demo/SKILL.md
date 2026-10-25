@@ -1,6 +1,6 @@
 ---
 name: workbench-demo
-description: Run disposable T3 Code Workbench demos for screenshots, videos, or checks requiring seeded Tickets, native Threads, GitHub PRs, and connected Jira.
+description: Run disposable T3 Code Workbench demos for screenshots, videos, PR evidence, or checks requiring seeded Tickets, native Threads, GitHub PRs, and connected Jira.
 ---
 
 # Workbench demo
@@ -37,3 +37,20 @@ and Epic relationships depend on that sprint.
 Local Orbit and Beacon records are fixtures. Use actual rendered UI for product
 screenshots and videos. Provider execution requires authorization; seeded Threads
 and synthetic history do not prove that an agent ran.
+
+## Browser
+
+Verify, capture screenshots and record videos in the Browser panel of the T3 Code
+Workbench app running this thread, through its preview tools (`preview_open`,
+`preview_snapshot`, `preview_upload`). That browser carries the user's sign-ins,
+GitHub included, so upload PR evidence from it as well:
+
+1. Open a fresh tab on the PR (`reuseExistingTab: false`) and scroll to the bottom;
+   GitHub loads the comment form lazily.
+2. Upload the images into `#fc-new_comment_field` and wait until the field holds
+   every `user-attachments` URL.
+3. Clear the field without posting, then put those URLs in the PR body.
+
+Judge GitHub sign-in from a screenshot of the header avatar. If a tab looks signed
+out, open another fresh tab: GitHub's PR page shows an empty `user-login` meta tag
+and hidden login links even while signed in.

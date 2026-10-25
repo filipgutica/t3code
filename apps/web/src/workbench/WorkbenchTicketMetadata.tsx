@@ -47,23 +47,28 @@ const TICKET_TYPES = new Map<string, { readonly color: string; readonly Icon: Lu
 
 const labelColor = (color: string) => ({ "--label": color }) as CSSProperties;
 
+/** `control` matches the height of an `xs` button in the same row. */
+type WorkbenchTicketBadgeSize = "default" | "control";
+
 export function WorkbenchTicketTypeBadge({
   kind,
   jiraIssue,
+  size = "default",
 }: {
   kind: WorkbenchTicketKind;
   jiraIssue: Pick<WorkbenchJiraIssueSnapshot, "issueType"> | undefined;
+  size?: WorkbenchTicketBadgeSize;
 }) {
   const label = getWorkbenchTicketTypeLabel({ kind, jiraIssue });
   const type = TICKET_TYPES.get(label.toLowerCase());
   const Icon = type?.Icon ?? CircleDotIcon;
   return type ? (
-    <Badge size="default" variant="label" style={labelColor(type.color)}>
+    <Badge size={size} variant="label" style={labelColor(type.color)}>
       <Icon />
       {label}
     </Badge>
   ) : (
-    <Badge size="default" variant="outline">
+    <Badge size={size} variant="outline">
       <Icon />
       {label}
     </Badge>
@@ -219,17 +224,19 @@ export function WorkbenchJiraSubtaskList({
 export function WorkbenchTicketSourceBadge({
   jiraIssueLink,
   jiraOwnershipKnown = true,
+  size = "default",
   className = "",
 }: {
   jiraIssueLink: WorkbenchJiraIssueLink | null | undefined;
   jiraOwnershipKnown?: boolean;
+  size?: WorkbenchTicketBadgeSize;
   className?: string;
 }) {
   const issue = jiraIssueLink?.issue;
   if (issue)
     return (
       <Badge
-        size="default"
+        size={size}
         variant="info"
         render={<a href={issue.url} target="_blank" rel="noopener noreferrer" />}
         aria-label={`Open Jira issue ${issue.key}`}
@@ -243,7 +250,7 @@ export function WorkbenchTicketSourceBadge({
       </Badge>
     );
   return (
-    <Badge size="default" variant="outline" className={className}>
+    <Badge size={size} variant="outline" className={className}>
       {jiraOwnershipKnown ? "Local" : "Checking Jira…"}
     </Badge>
   );

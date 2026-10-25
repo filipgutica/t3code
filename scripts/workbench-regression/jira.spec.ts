@@ -1,4 +1,12 @@
-import { test, expect, jiraSnapshot, openWorkbench, snapshot, type Demo } from "./fixtures.ts";
+import {
+  test,
+  expect,
+  jiraSnapshot,
+  openWorkbench,
+  snapshot,
+  ticketChat,
+  type Demo,
+} from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 import { readConfig } from "../workbench-demo/environment.mts";
 import { validateJiraBaseline } from "../workbench-demo/remotes.mts";
@@ -417,28 +425,20 @@ test.describe("Jira Workbench integration @live", () => {
         .getByRole("dialog")
         .getByRole("button", { name: "Create work area and Thread", exact: true })
         .click();
-      await expect(page).toHaveURL(
-        (url) => url.pathname !== "/workbench" && url.searchParams.get("workbench") === "true",
-      );
-      const editor = page.locator('[contenteditable="true"]').first();
+      const chat = ticketChat(page);
+      const editor = chat.locator('[contenteditable="true"]');
       await editor.click();
       await editor.press("End");
       await editor.pressSequentially(
         "Do not edit files or run commands. Reply exactly: Workbench regression passed.",
       );
-      await page.getByRole("button", { name: "Submit message", exact: true }).click();
-      await expect(page.getByText("Workbench regression passed.", { exact: true })).toBeVisible();
+      await chat.getByRole("button", { name: "Submit message", exact: true }).click();
+      await expect(chat.getByText("Workbench regression passed.", { exact: true })).toBeVisible();
       await expect(
         page.getByRole("button", { name: "Stop generation", exact: true }),
       ).not.toBeVisible();
       // The provider can finish before the Ticket execution reactor finishes its
-      // Jira write. The Ticket status reflects the reactor's confirmed readback.
-      await page
-        .getByRole("link", {
-          name: `Back to Ticket ${issue.summary} in Workspace Orbit Jira`,
-          exact: true,
-        })
-        .click();
+      // Jira write. The Ticket status, beside the chat, reflects the reactor's confirmed readback.
       await expect(
         page.getByRole("button", { name: `Change status of ${issue.summary}`, exact: true }),
       ).toHaveText(transition.to.name);

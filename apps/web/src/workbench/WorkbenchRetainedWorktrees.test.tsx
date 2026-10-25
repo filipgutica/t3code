@@ -74,6 +74,8 @@ vi.mock("./WorkbenchSidebarFooter", () => ({
     retainedWorktrees,
 }));
 vi.mock("./WorkbenchSidebarThreadRow", () => ({ WorkbenchSidebarThreadRow: () => null }));
+// The sidebar reaches ChatView through WorkbenchForms; its diff worker cannot load under Node.
+vi.mock("../components/ChatView", () => ({ default: () => null }));
 vi.mock("../components/ui/sidebar", () => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
