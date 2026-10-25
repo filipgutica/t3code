@@ -2,11 +2,38 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 
 import { createBuildConfig } from "./build-desktop-artifact.ts";
 import { selectWorkbenchDesktopBuildProduct } from "./lib/workbench-desktop-product.ts";
 
 it.layer(NodeServices.layer)("Workbench desktop packaging", (it) => {
+  it.effect("uses package.json for the Node version in Workbench release workflows", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      for (const filename of [
+        "workbench-release.yml",
+        "workbench-daily-release.yml",
+        "workbench-publish-stable.yml",
+      ]) {
+        const workflow = yield* fs.readFileString(
+          `${import.meta.dirname}/../.github/workflows/${filename}`,
+        );
+        assert.notMatch(workflow, /VP_NODE_VERSION/, filename);
+        assert.notMatch(workflow, /^\s*node-version:/m, filename);
+        // Counting avoids parsing step structure; every setup step needs its own version file.
+        const setupSteps = workflow.match(
+          /^[\s-]*uses:\s*["']?(?:voidzero-dev\/setup-vp|actions\/setup-node)@/gm,
+        );
+        const versionFiles = workflow.match(/^[\s-]*node-version-file:.*$/gm) ?? [];
+        assert.isNotEmpty(setupSteps, filename);
+        assert.lengthOf(versionFiles, setupSteps?.length ?? 0, filename);
+        for (const line of versionFiles)
+          assert.match(line, /:\s*(["']?)package\.json\1\s*(?:#.*)?$/, filename);
+      }
+    }),
+  );
+
   it("keeps the Workbench updater cache separate from official T3 Code", () => {
     const input = { updateChannel: "latest", platform: "mac", signed: false } as const;
     assert.isNull(selectWorkbenchDesktopBuildProduct({ ...input, workbench: false }));
