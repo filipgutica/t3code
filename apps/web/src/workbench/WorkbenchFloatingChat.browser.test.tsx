@@ -63,6 +63,7 @@ function Harness(props: {
   return (
     <WorkbenchFloatingChat
       environmentId={EnvironmentId.make("environment")}
+      kind="ticket"
       label="PAY-1"
       chat={resolveWorkbenchFloatingChat({
         active: props.threads,

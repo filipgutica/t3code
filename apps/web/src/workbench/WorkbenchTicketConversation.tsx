@@ -43,18 +43,10 @@ import {
 } from "../components/ui/empty";
 import { Skeleton } from "../components/ui/skeleton";
 import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
-import { useComposerDraftStore } from "../composerDraftStore";
 import { isElectron } from "../env";
-import { useEnvironmentSettings } from "../hooks/useSettings";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { cn } from "../lib/utils";
 import { toastManager } from "../components/ui/toast";
-import {
-  applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
-  isProviderInstancePickerReady,
-  sortProviderInstanceEntries,
-} from "../providerInstances";
 import { useThreadShell } from "../state/entities";
 import type { Project } from "../types";
 import { WorkbenchDescription } from "./WorkbenchDescription";
@@ -69,6 +61,7 @@ import {
   getTicketDraftCreateState,
 } from "./WorkbenchTicketDraftPanel";
 import { workbenchEnvironment } from "./state";
+import { usePlanningModelSelection } from "./usePlanningModelSelection";
 import {
   useTicketDraftBegin,
   useTicketDraftEditor,
@@ -78,7 +71,6 @@ import { DRAFT_CONFLICT_MESSAGE } from "./workbenchTicketDraftSync";
 import {
   canDiscardConversationDraft,
   pickNewestConversationDraft,
-  resolveTicketPlanningModelSelection,
   supportsEnforcedTicketPlanning,
   type WorkbenchConversationDraft,
 } from "./workbenchTicketDraft.logic";
@@ -122,48 +114,6 @@ const PHASE_LABELS: Record<WorkbenchConversationDraft["phase"], string> = {
   working: "Working",
   discarding: "Discarding",
 };
-
-/** The Thread starts on the first provider the server can restrict to read-only planning. */
-function usePlanningModelSelection({
-  environmentId,
-  providers,
-  linkedProjects,
-  workspace,
-  draft,
-}: Pick<
-  WorkbenchTicketConversationProps,
-  "environmentId" | "providers" | "linkedProjects" | "workspace" | "draft"
->) {
-  const settings = useEnvironmentSettings(environmentId);
-  const sticky = useComposerDraftStore((store) =>
-    store.stickyActiveProvider === null
-      ? null
-      : (store.stickyModelSelectionByProvider[store.stickyActiveProvider] ?? null),
-  );
-  const anchorProjectId = draft?.anchorProjectId ?? workspace.linkedProjectIds[0] ?? null;
-  const anchorProject = linkedProjects.find((project) => project.id === anchorProjectId);
-  const entries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(
-      deriveProviderInstanceEntries(providers),
-      settings,
-      anchorProjectId,
-    ),
-  );
-  const modelSelection = resolveTicketPlanningModelSelection({
-    candidates: entries.map((entry) => ({
-      instanceId: entry.instanceId,
-      driverKind: entry.driverKind,
-      ready: isProviderInstancePickerReady(entry),
-      defaultModel:
-        entry.models.find((model) => model.isDefault && !model.isCustom)?.slug ??
-        entry.models.find((model) => !model.isCustom)?.slug ??
-        entry.models[0]?.slug ??
-        null,
-    })),
-    preferred: [anchorProject?.defaultModelSelection, sticky],
-  });
-  return { entries, modelSelection };
-}
 
 /**
  * Keyed by environment and Workspace: the same Workspace id can exist in two environments, and

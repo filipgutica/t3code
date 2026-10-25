@@ -152,6 +152,8 @@ type WorkbenchTicketBoardProps = {
   readonly epics: ReadonlyArray<WorkbenchEpic>;
   readonly groupMode: "none" | "epic";
   readonly viewControls: ReactNode;
+  /** Floats over the board's lower-right corner; the board leaves room to scroll past it. */
+  readonly floatingChat?: ReactNode;
   readonly jiraIssueLinksByTicketId: ReadonlyMap<WorkbenchTicketId, WorkbenchJiraIssueLink>;
   readonly openJiraIssueTicket: WorkbenchJiraIssueTicketOpener;
   readonly activeJiraTicketIds: ReadonlySet<WorkbenchTicketId>;
@@ -293,7 +295,12 @@ function WorkbenchTicketBoardContent({
           setSelectedColumnId,
         })}
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-          <div className="h-full overflow-auto p-3 sm:p-4 @min-[48rem]/board:pt-0">
+          <div
+            className={cn(
+              "h-full overflow-auto p-3 sm:p-4 @min-[48rem]/board:pt-0",
+              props.floatingChat != null && "pb-32 sm:pb-32",
+            )}
+          >
             <WorkbenchDraftTickets
               key={`${environmentId}:${props.projectId}`}
               environmentId={environmentId}
@@ -368,6 +375,7 @@ function WorkbenchTicketBoardContent({
               </div>
             </div>
           ) : null}
+          {props.floatingChat}
         </div>
       </section>
       <DragOverlay dropAnimation={null}>

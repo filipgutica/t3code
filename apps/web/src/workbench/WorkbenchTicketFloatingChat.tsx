@@ -93,6 +93,7 @@ function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabl
   return (
     <WorkbenchFloatingChat
       environmentId={props.environmentId}
+      kind="ticket"
       label={props.ticketKey ?? ticket.title}
       chat={chat}
       onSelectThread={setExplicitThreadId}

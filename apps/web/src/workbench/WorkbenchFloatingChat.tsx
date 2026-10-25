@@ -56,8 +56,30 @@ import {
 
 type FloatingChat = ReturnType<typeof resolveWorkbenchFloatingChat>;
 
+/** The page the chat belongs to; the board's New Thread starts a ticket draft. */
+type WorkbenchFloatingChatKind = "ticket" | "board";
+
+const CHAT_COPY = {
+  ticket: {
+    title: "Ticket chat",
+    threads: "Ticket Threads",
+    newThread: "New Thread",
+    startThread: "Start Thread",
+    emptyHint: "A Thread works in this ticket's workspace.",
+  },
+  board: {
+    title: "Board chat",
+    threads: "Board Threads",
+    newThread: "New ticket draft",
+    startThread: "Draft a ticket",
+    emptyHint: "A ticket draft starts a planning Thread here.",
+  },
+} satisfies Record<WorkbenchFloatingChatKind, Record<string, string>>;
+type ChatCopy = (typeof CHAT_COPY)[WorkbenchFloatingChatKind];
+
 export interface WorkbenchFloatingChatProps {
   readonly environmentId: EnvironmentId;
+  readonly kind: WorkbenchFloatingChatKind;
   /** Names the panel for assistive technology, such as the ticket key. */
   readonly label: string;
   readonly chat: FloatingChat;
@@ -111,11 +133,13 @@ const scrollTabsSideways = (event: WheelEvent<HTMLDivElement>) => {
 };
 
 function FloatingChatLauncher({
+  copy,
   label,
   attentionCount,
   buttonRef,
   onRestore,
 }: {
+  readonly copy: ChatCopy;
   readonly label: string;
   readonly attentionCount: number;
   readonly buttonRef: Ref<HTMLButtonElement>;
@@ -148,16 +172,18 @@ function FloatingChatLauncher({
           </span>
         ) : null}
       </TooltipTrigger>
-      <TooltipPopup>Ticket chat</TooltipPopup>
+      <TooltipPopup>{copy.title}</TooltipPopup>
     </Tooltip>
   );
 }
 
 function FloatingChatTabs({
+  label,
   tabs,
   selectedThreadId,
   onSelect,
 }: {
+  readonly label: string;
   readonly tabs: ReadonlyArray<WorkbenchFloatingChatThread>;
   readonly selectedThreadId: ThreadId | null;
   readonly onSelect: (threadId: ThreadId) => void;
@@ -185,7 +211,7 @@ function FloatingChatTabs({
     <div
       ref={listRef}
       role="tablist"
-      aria-label="Ticket Threads"
+      aria-label={label}
       className="relative flex min-w-0 flex-1 gap-0.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       onWheel={scrollTabsSideways}
     >
@@ -294,11 +320,13 @@ function FloatingChatMenu({
 }
 
 function FloatingChatEmpty({
+  copy,
   label,
   hasHistory,
   disabled,
   onNewThread,
 }: {
+  readonly copy: ChatCopy;
   readonly label: string;
   readonly hasHistory: boolean;
   readonly disabled: boolean;
@@ -309,11 +337,11 @@ function FloatingChatEmpty({
       <p className="text-xs text-muted-foreground">
         {hasHistory
           ? `No active Threads on ${label}. Settled and archived Threads are in the menu above.`
-          : `No Threads on ${label} yet. A Thread works in this ticket's workspace.`}
+          : `No Threads on ${label} yet. ${copy.emptyHint}`}
       </p>
       <Button size="sm" disabled={disabled} onClick={onNewThread}>
         <PlusIcon />
-        Start Thread
+        {copy.startThread}
       </Button>
     </div>
   );
@@ -392,6 +420,7 @@ function FloatingChatThread({
 
 function FloatingChatBody({
   environmentId,
+  copy,
   label,
   selected,
   hasHistory,
@@ -403,6 +432,7 @@ function FloatingChatBody({
   newThreadDisabled,
 }: {
   readonly environmentId: EnvironmentId;
+  readonly copy: ChatCopy;
   readonly label: string;
   readonly selected: WorkbenchFloatingChatThread | null;
   readonly hasHistory: boolean;
@@ -416,6 +446,7 @@ function FloatingChatBody({
   if (selected === null) {
     return (
       <FloatingChatEmpty
+        copy={copy}
         label={label}
         hasHistory={hasHistory}
         disabled={newThreadDisabled}
@@ -435,15 +466,18 @@ function FloatingChatBody({
 }
 
 function FloatingChatToggle({
+  copy,
   expanded,
   buttonRef,
   onToggle,
 }: {
+  readonly copy: ChatCopy;
   readonly expanded: boolean;
   readonly buttonRef: Ref<HTMLButtonElement>;
   readonly onToggle: () => void;
 }) {
-  const label = expanded ? "Collapse ticket chat" : "Expand ticket chat";
+  const chatName = copy.title.toLowerCase();
+  const label = expanded ? `Collapse ${chatName}` : `Expand ${chatName}`;
   return (
     <FloatingChatAction
       label={label}
@@ -539,6 +573,7 @@ function useComposerFocusRequest(
 
 export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
   const { environmentId, label, chat, onOpenThread, onNewThread, newThreadDisabled } = props;
+  const copy = CHAT_COPY[props.kind];
   const { mode, focusRequest, expand, collapse, minimize, restore } =
     useWorkbenchFloatingChatStore();
   const expandButtonRef = useRef<HTMLButtonElement>(null);
@@ -565,6 +600,7 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
   if (mode === "launcher") {
     return (
       <FloatingChatLauncher
+        copy={copy}
         label={label}
         attentionCount={chat.attentionCount}
         buttonRef={launcherRef}
@@ -580,23 +616,24 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border/60 px-2">
         {selected === null ? (
           <>
-            <span className="min-w-0 flex-1 truncate ps-2 text-xs font-medium">Ticket chat</span>
+            <span className="min-w-0 flex-1 truncate ps-2 text-xs font-medium">{copy.title}</span>
             <FloatingChatMenu chat={chat} onSelect={selectThread} onOpenThread={onOpenThread} />
           </>
         ) : (
           <>
             <FloatingChatTabs
+              label={copy.threads}
               tabs={chat.tabs}
               selectedThreadId={selected.threadId}
               onSelect={selectThread}
             />
             <FloatingChatAction
-              label="New Thread"
+              label={copy.newThread}
               render={
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  aria-label="New Thread"
+                  aria-label={copy.newThread}
                   disabled={newThreadDisabled}
                   onClick={onNewThread}
                 />
@@ -620,6 +657,7 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
               <SquareArrowOutUpRightIcon />
             </FloatingChatAction>
             <FloatingChatToggle
+              copy={copy}
               expanded={expanded}
               buttonRef={expandButtonRef}
               onToggle={expanded ? () => changeMode(collapse) : () => expand()}
@@ -627,12 +665,12 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
           </>
         )}
         <FloatingChatAction
-          label="Minimize ticket chat"
+          label={`Minimize ${copy.title.toLowerCase()}`}
           render={
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="Minimize ticket chat"
+              aria-label={`Minimize ${copy.title.toLowerCase()}`}
               onClick={() => changeMode(minimize)}
             />
           }
@@ -642,6 +680,7 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
       </div>
       <FloatingChatBody
         environmentId={environmentId}
+        copy={copy}
         label={label}
         selected={selected}
         hasHistory={chat.settled.length > 0 || chat.archived.length > 0}
