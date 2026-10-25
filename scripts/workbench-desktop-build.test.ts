@@ -21,14 +21,19 @@ it.layer(NodeServices.layer)("Workbench desktop packaging", (it) => {
         );
         assert.notMatch(workflow, /VP_NODE_VERSION/, filename);
         assert.notMatch(workflow, /^\s*node-version:/m, filename);
+        // Steps may start with `- uses:` or carry quoted values and trailing comments.
         const setupSteps = workflow
-          .split(/\n(?= {6}- )/)
+          .split(/\n(?=\s*- )/)
           .filter((step) =>
-            /^\s*uses: (?:voidzero-dev\/setup-vp|actions\/setup-node)@/m.test(step),
+            /^[\s-]*uses:\s*["']?(?:voidzero-dev\/setup-vp|actions\/setup-node)@/m.test(step),
           );
         assert.isNotEmpty(setupSteps, filename);
         for (const step of setupSteps) {
-          assert.match(step, /^\s*node-version-file: package\.json\s*$/m, filename);
+          assert.match(
+            step,
+            /^\s*node-version-file:\s*(["']?)package\.json\1\s*(?:#.*)?$/m,
+            `${filename}: ${step}`,
+          );
         }
       }
     }),
