@@ -55,13 +55,8 @@ export class WorkbenchMacBuildReuseError extends Schema.TaggedError<WorkbenchMac
 }
 
 /**
- * Workbench uses a Developer ID certificate and App Store Connect API key for
- * distribution signing. It deliberately does not use the upstream app's
- * Associated Domains entitlement or provisioning profile.
- *
- * `APPLE_API_KEY` is the path to the temporary `.p8` file consumed by
- * electron-builder's notarytool integration. CI writes that file from the
- * secret contents before invoking this script.
+ * Developer ID and App Store Connect key signing, without upstream's Associated Domains or
+ * provisioning profile. `APPLE_API_KEY` is the temporary `.p8` path CI writes for notarytool.
  */
 export function resolveMacWorkbenchSigningConfiguration(
   env: Readonly<Record<string, string | undefined>>,

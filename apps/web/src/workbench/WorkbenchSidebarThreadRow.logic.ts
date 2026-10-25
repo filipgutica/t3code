@@ -10,7 +10,7 @@ import { effectiveSnoozed, snoozeWakeLabel } from "@t3tools/client-runtime/state
 import {
   resolveThreadCurrentPullRequestLink,
   visibleThreadPullRequests,
-} from "@t3tools/shared/threadPullRequests";
+} from "@t3tools/client-runtime/thread-pull-requests";
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import {
@@ -234,6 +234,8 @@ export function useWorkbenchSidebarThreadInteraction({
     threadRef,
     projectCwd,
     onStartRename: startRename,
+    // The Workbench action allowlist omits guest sharing; the Thread header still offers it.
+    canShareWithGuest: false,
     filterMenuItems: filterWorkbenchThreadActionMenuItems,
   });
   const handleOpenPullRequest = (event: ReactMouseEvent<HTMLElement>) => {

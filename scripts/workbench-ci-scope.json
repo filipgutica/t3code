@@ -1,5 +1,5 @@
 {
-  "upstreamBase": "9a391eb3f55b738113b61768cf2d8263b4f3ac2e",
+  "upstreamBase": "5b35402623d7d1d88eaa472807272a6c2e78012a",
   "groups": [
     {
       "name": "Workbench domain, adapters, UI and contracts",
@@ -275,7 +275,7 @@
         "apps/web/src/hooks/usePullRequestLinking.test.tsx",
         "apps/web/src/hooks/useThreadActions.test.ts",
         "apps/web/src/hooks/useThreadActions.undo.test.ts",
-        "apps/web/src/lib/openPullRequestLink.test.ts",
+        "packages/client-runtime/src/changeRequestLinks.test.ts",
         "apps/web/src/rightPanelStore.test.ts",
         "apps/web/src/state/pullRequests.test.ts"
       ],

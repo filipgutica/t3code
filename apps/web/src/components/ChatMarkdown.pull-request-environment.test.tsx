@@ -150,7 +150,7 @@ describe("Markdown pull request links beside a Thread", () => {
                   : EnvironmentId.make(explicitEnvironment)
               }
               text="![private](https://github.com/user-attachments/assets/2f8c1a90-1b2c-4d5e-8f90-abcdef123456)"
-              githubMedia
+              sourceControlMedia
             />,
           );
         });

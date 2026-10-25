@@ -14,7 +14,7 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import {
   legacyThreadPullRequestKey,
   threadPullRequestKeyOf,
-} from "@t3tools/shared/threadPullRequests";
+} from "@t3tools/client-runtime/thread-pull-requests";
 import type {
   TicketPullRequestReference,
   WorkbenchTicketPullRequest,

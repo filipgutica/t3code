@@ -4,7 +4,8 @@ import {
 } from "./WorkbenchPullRequestPreview";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { ExternalLinkIcon } from "lucide-react";
-import { parseChangeRequestUrl, useOpenChangeRequestLink } from "../lib/openPullRequestLink";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { useOpenChangeRequestLink } from "../lib/openPullRequestLink";
 import type { EnvironmentId, ProjectId, PullRequestState } from "@t3tools/contracts";
 import { type MouseEvent } from "react";
 
@@ -183,7 +184,7 @@ export function WorkbenchPullRequestLink({
   );
   const reference = (() => {
     if (!pullRequest.projectId || !pullRequest.repository) return null;
-    const host = parseChangeRequestUrl(pullRequest.url)?.host;
+    const host = sourceControlClients.parseChangeRequestUrl(pullRequest.url)?.link.host;
     return {
       projectId: pullRequest.projectId,
       repository: pullRequest.repository,

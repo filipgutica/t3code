@@ -387,13 +387,9 @@ export const make = Effect.gen(function* () {
         .listIssueLinks(binding.id)
         .pipe(Effect.mapError(repositoryError));
       const existingByIssueId = new Map(existing.map((link) => [link.issue.issueId, link]));
-      // A Ticket creation is recorded before the remote POST. If the POST
-      // succeeds but the local projection transaction is interrupted, the
-      // creation row is the only durable owner of that Jira issue until the
-      // writer resumes. Prefer that identity during sync so an automatic sync
-      // cannot create a second local Ticket for the same remote issue.
-      // Keep sync usable against a pre-migration in-memory database. Normal
-      // Workbench startup creates this table before Jira sync begins.
+      // Creation rows precede the remote POST and own the Jira issue until an interrupted
+      // projection resumes; prefer them so sync cannot create a duplicate Ticket. The table
+      // check keeps sync usable on a pre-migration in-memory database.
       const creationTable = yield* sql<{ readonly name: string }>`
         SELECT name FROM sqlite_master
         WHERE type = 'table' AND name = 'workbench_jira_ticket_creations'

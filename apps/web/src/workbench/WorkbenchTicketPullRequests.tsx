@@ -6,7 +6,7 @@ import {
   type WorkbenchAssignment,
   type WorkbenchTicketId,
 } from "@t3tools/contracts";
-import { changeRequestRepositoryUrl } from "@t3tools/shared/changeRequestUrl";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -272,7 +272,8 @@ function WorkbenchTicketPullRequestRepository({
   pullRequest: ReturnType<typeof mergeWorkbenchTicketPullRequests>[number]["pullRequest"];
 }) {
   if (pullRequest.title === undefined || pullRequest.title === pullRequest.repository) return null;
-  const repositoryUrl = changeRequestRepositoryUrl(pullRequest.url);
+  const repositoryUrl = sourceControlClients.parseChangeRequestUrl(pullRequest.url)?.link
+    .repositoryUrl;
   return repositoryUrl ? (
     <a
       href={repositoryUrl}

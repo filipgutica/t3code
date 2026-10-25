@@ -19,15 +19,9 @@ export const DRAFT_CONFLICT_MESSAGE =
   "This draft changed elsewhere. Reload the saved draft or keep your edits.";
 
 /**
- * Owns the editable fields of one conversation draft and keeps them consistent with the
- * server's revisions. Saves run one at a time with the revision the server last returned, and
- * Create ticket, Start work, and Close wait for `flush()` before they use `revision()`.
- *
- * A newer revision never replaces local edits. With nothing unsaved it is adopted into the
- * fields; with unsaved edits it becomes a `conflict` that the person resolves with `reload()`
- * (take the saved draft) or `keepMine()` (overwrite it). A snapshot that arrives while a save
- * is running is held back: it is either that save's own echo or, if the save fails, a foreign
- * write. Content is never compared, because the server trims fields.
+ * Serializes one draft's saves against the server's last revision; actions `flush()` first. A newer
+ * revision is adopted only without unsaved edits, otherwise it is a `conflict` (`reload()` or
+ * `keepMine()`). Snapshots during a save wait: they are its echo or a foreign write if it fails.
  */
 export const createTicketDraftFieldSync = ({
   initial,

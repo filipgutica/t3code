@@ -112,11 +112,9 @@ function makeNoUpdateInfo(version: string, tag = `workbench-v${version}`): Workb
 }
 
 /**
- * electron-updater's built-in GitHub provider uses `/releases/latest`, which
- * excludes prereleases and does not filter the tag namespace. Workbench releases use a
- * separate stable and daily namespaces and may be published as prereleases, so
- * resolve the release explicitly before delegating manifest/file handling to
- * electron-updater's shared provider helpers.
+ * electron-updater's GitHub provider reads `/releases/latest`, which skips prereleases and
+ * ignores tag namespaces. Workbench's stable and daily namespaces can be prereleases, so
+ * resolve the release here and delegate manifests and files to the shared helpers.
  */
 export class WorkbenchGithubProvider extends Provider<WorkbenchUpdateInfo> {
   private readonly options: WorkbenchGithubOptions;

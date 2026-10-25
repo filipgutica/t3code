@@ -1,6 +1,6 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { ThreadPullRequestLink } from "@t3tools/contracts";
-import { legacyThreadPullRequestKey } from "@t3tools/shared/threadPullRequests";
+import { legacyThreadPullRequestKey } from "@t3tools/client-runtime/thread-pull-requests";
 import { isAbsolutePath } from "@t3tools/shared/path";
 
 /**
