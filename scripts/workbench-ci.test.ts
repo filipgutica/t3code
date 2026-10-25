@@ -58,6 +58,8 @@ const fixture = (body: (root: string, base: string) => void) => {
         packages: { "apps/server": "t3", scripts: "@t3tools/scripts" },
         packagingTests: ["scripts/packaging.test.ts"],
         packagingPaths: ["package.json"],
+        activeWorkflows: ["ci.yml", "thread-transfer-report.yml", "workbench-ci.yml"],
+        inertUpstreamCI: [".github/workflows/ci.yml"],
       }),
     );
     git(["add", "."]);
@@ -70,6 +72,8 @@ const fixture = (body: (root: string, base: string) => void) => {
       "-qm",
       "fork",
     ]);
+    // The generator owns this untracked file; the workflow allowlist requires it to exist.
+    write(".github/workflows/workbench-ci.yml", "");
     assert.equal(execute(root, []).status, 0);
     body(root, git(["rev-parse", "HEAD"]));
   } finally {
@@ -105,6 +109,26 @@ it("rejects unmapped additions, deletions and renames before replacing verified 
       assert.equal(NodeFS.readFileSync(output, "utf8"), verified);
     });
 });
+
+it.each([
+  ["a new upstream workflow", "relay-preview.yml", "activeWorkflows: relay-preview.yml"],
+  ["a removed active workflow", "thread-transfer-report.yml", "Missing active workflows"],
+  ["an active workflow that calls inert CI", "workbench-ci.yml", "uses inert upstream CI"],
+])("rejects %s before replacing verified CI", (_case, name, message) =>
+  fixture((root) => {
+    const output = NodePath.join(root, ".github/workflows/workbench-ci.yml");
+    const workflow = NodePath.join(root, ".github/workflows", name);
+    if (name === "thread-transfer-report.yml") NodeFS.unlinkSync(workflow);
+    else NodeFS.appendFileSync(workflow, "    uses: ./.github/workflows/ci.yml\n");
+    const verified = NodeFS.readFileSync(output, "utf8");
+    for (const args of [["--check"], []]) {
+      const rejected = execute(root, args);
+      assert.equal(rejected.status, 1);
+      assert.include(rejected.stderr, message);
+    }
+    assert.equal(NodeFS.readFileSync(output, "utf8"), verified);
+  }),
+);
 
 it("detects stale output without modifying upstream workflow sources", () =>
   fixture((root) => {

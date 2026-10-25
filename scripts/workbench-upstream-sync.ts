@@ -44,24 +44,59 @@ function parseMergeTreeConflictPaths(output: string): ReadonlyArray<string> {
   return fields.slice(1, end === -1 ? fields.length : end);
 }
 
+// Matches the scope policy's path patterns: a trailing slash selects a directory.
+const matchesPattern = (path: string, pattern: string) =>
+  pattern.endsWith("/") ? path.startsWith(pattern) : path === pattern;
+
+// The product's policy decides which upstream CI changes publish without review;
+// the incoming upstream tree cannot widen that list.
+function ciReviewPaths(productSha: string, changedCIPaths: ReadonlyArray<string>) {
+  const policy = JSON.parse(
+    git(["show", `${productSha}:scripts/workbench-ci-scope.json`]).stdout,
+  ) as { readonly inertUpstreamCI?: unknown };
+  const inert = policy.inertUpstreamCI;
+  if (!Array.isArray(inert) || !inert.every((pattern) => typeof pattern === "string"))
+    throw new Error("scripts/workbench-ci-scope.json has no inertUpstreamCI list");
+  return changedCIPaths.filter((path) => !inert.some((pattern) => matchesPattern(path, pattern)));
+}
+
 function previewMerge(productSha: string, upstreamSha: string) {
   const objectDirectory = NodeFS.mkdtempSync(
     NodePath.join(NodeOS.tmpdir(), "t3-workbench-merge-tree-"),
   );
   const existingObjectDirectory = git(["rev-parse", "--git-path", "objects"]).stdout.trim();
+  const env = {
+    ...process.env,
+    GIT_OBJECT_DIRECTORY: objectDirectory,
+    GIT_ALTERNATE_OBJECT_DIRECTORIES: existingObjectDirectory,
+  };
   try {
-    return NodeChildProcess.spawnSync(
+    const merge = NodeChildProcess.spawnSync(
       "git",
       ["merge-tree", "--write-tree", "--name-only", "-z", "--no-messages", productSha, upstreamSha],
-      {
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          GIT_OBJECT_DIRECTORY: objectDirectory,
-          GIT_ALTERNATE_OBJECT_DIRECTORIES: existingObjectDirectory,
-        },
-      },
+      { encoding: "utf8", env },
     );
+    if (merge.status !== 0 && merge.status !== 1) return { merge, ciPaths: [] };
+    // merge-tree writes a tree even with conflicts; its CI files are what the sync would publish.
+    const mergedTree = merge.stdout.split("\0")[0] ?? "";
+    const diff = NodeChildProcess.spawnSync(
+      "git",
+      [
+        "diff-tree",
+        "-r",
+        "--no-renames",
+        "--name-only",
+        "-z",
+        productSha,
+        mergedTree,
+        "--",
+        ".github/workflows",
+        ".github/actions",
+      ],
+      { encoding: "utf8", env },
+    );
+    if (diff.status !== 0) throw new Error(`git diff-tree failed: ${diff.stderr.trim()}`);
+    return { merge, ciPaths: diff.stdout.split("\0").filter(Boolean) };
   } finally {
     NodeFS.rmSync(objectDirectory, { recursive: true, force: true });
   }
@@ -87,7 +122,7 @@ function main() {
     lines(git(["diff", "--name-only", `${mergeBase}..${productSha}`]).stdout),
   );
   const overlappingFiles = [...upstreamFiles].filter((file) => productFiles.has(file)).sort();
-  const mergePreview = previewMerge(productSha, upstreamSha);
+  const { merge: mergePreview, ciPaths } = previewMerge(productSha, upstreamSha);
   if (mergePreview.status !== 0 && mergePreview.status !== 1) {
     const detail = mergePreview.stderr.trim() || mergePreview.stdout.trim();
     throw new Error(`git merge-tree failed: ${detail}`);
@@ -96,7 +131,8 @@ function main() {
   const conflictPaths = clean ? [] : parseMergeTreeConflictPaths(mergePreview.stdout);
   const generatedLockfileConflict =
     conflictPaths.length === 1 && conflictPaths[0] === generatedLockfilePath;
-  const acceptable = clean || generatedLockfileConflict;
+  const reviewPaths = ciReviewPaths(productSha, ciPaths);
+  const mergeAcceptable = clean || generatedLockfileConflict;
 
   process.stdout.write(
     `${JSON.stringify(
@@ -115,15 +151,17 @@ function main() {
             ? "generated-lockfile"
             : "conflict",
         conflictPaths,
+        ciReviewPaths: reviewPaths,
       },
       null,
       2,
     )}\n`,
   );
-  if (!acceptable) {
+  if (!mergeAcceptable)
     process.stderr.write(`Merge conflicts: ${conflictPaths.join(", ") || "unknown paths"}\n`);
-    process.exitCode = 2;
-  }
+  if (reviewPaths.length > 0)
+    process.stderr.write(`Upstream changes active CI: ${reviewPaths.join(", ")}\n`);
+  if (!mergeAcceptable || reviewPaths.length > 0) process.exitCode = 2;
 }
 
 try {

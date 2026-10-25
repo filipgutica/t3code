@@ -14,6 +14,8 @@ interface ScopePolicy {
   packages: Record<string, string>;
   packagingTests: Array<string>;
   packagingPaths: Array<string>;
+  activeWorkflows: Array<string>;
+  inertUpstreamCI: Array<string>;
 }
 const policyPath = "scripts/workbench-ci-scope.json";
 const workflowPath = ".github/workflows/workbench-ci.yml";
@@ -61,7 +63,9 @@ const loadPolicy = (): ScopePolicy => {
     !policy.packages ||
     !Object.entries(policy.packages).every(([path, name]) => path && typeof name === "string") ||
     !strings(policy.packagingTests) ||
-    !strings(policy.packagingPaths)
+    !strings(policy.packagingPaths) ||
+    !strings(policy.activeWorkflows) ||
+    !strings(policy.inertUpstreamCI)
   ) {
     throw new Error("Invalid Workbench CI ownership policy");
   }
@@ -88,6 +92,31 @@ const validateOwnership = (policy: ScopePolicy) => {
   if (unmapped.length > 0)
     throw new Error(`Unmapped fork sources; add an owner and verification: ${unmapped.join(", ")}`);
   return paths;
+};
+// GitHub runs every workflow in this directory. Upstream automation the fork does not
+// run stays in .github/upstream-workflows, so a new or restored upstream workflow fails
+// here until someone reviews its triggers. The sync workflow publishes upstream changes to
+// inert CI without review, so active workflows must not reach that code.
+const validateWorkflows = (policy: ScopePolicy) => {
+  const directory = ".github/workflows";
+  const present = NodeFS.readdirSync(directory).sort();
+  const unreviewed = present.filter((name) => !policy.activeWorkflows.includes(name));
+  if (unreviewed.length > 0)
+    throw new Error(
+      `Unreviewed active workflows; move them to .github/upstream-workflows or review their triggers and add them to activeWorkflows: ${unreviewed.join(", ")}`,
+    );
+  const missing = policy.activeWorkflows.filter((name) => !present.includes(name));
+  if (missing.length > 0) throw new Error(`Missing active workflows: ${missing.join(", ")}`);
+  for (const name of present) {
+    const path = `${directory}/${name}`;
+    if (policy.inertUpstreamCI.some((pattern) => matches(path, pattern))) continue;
+    const source = NodeFS.readFileSync(path, "utf8");
+    const reached = policy.inertUpstreamCI.filter((pattern) =>
+      source.includes(`./${pattern.replace(/\/$/, "")}`),
+    );
+    if (reached.length > 0)
+      throw new Error(`${path} uses inert upstream CI: ${reached.join(", ")}`);
+  }
 };
 const selectTests = (policy: ScopePolicy) => {
   const selected = new Set(
@@ -363,6 +392,7 @@ try {
       git(["merge-base", "--is-ancestor", policy.upstreamBase, upstream]);
       policy.upstreamBase = upstream;
     }
+    validateWorkflows(policy);
     validateOwnership(policy);
     const tests = selectTests(policy);
     for (const path of policy.packagingTests)

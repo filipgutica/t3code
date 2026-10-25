@@ -481,5 +481,35 @@
     "pnpm-workspace.yaml",
     "scripts/lib/desktop-build-product.ts",
     "scripts/lib/workbench-desktop-product.ts"
+  ],
+  "activeWorkflows": [
+    "ci.yml",
+    "issue-labels.yml",
+    "mobile-showcase-screenshots.yml",
+    "pr-size.yml",
+    "pr-vouch.yml",
+    "publish-aur.yml",
+    "release-desktop.yml",
+    "thread-transfer-report.yml",
+    "web-preview.yml",
+    "windows-tests.yml",
+    "workbench-ci.yml",
+    "workbench-daily-release.yml",
+    "workbench-demo.yml",
+    "workbench-pages.yml",
+    "workbench-preview-check.yml",
+    "workbench-preview.yml",
+    "workbench-publish-stable.yml",
+    "workbench-quality.yml",
+    "workbench-regression-live.yml",
+    "workbench-regression.yml",
+    "workbench-release.yml",
+    "workbench-upstream-sync.yml"
+  ],
+  "inertUpstreamCI": [
+    ".github/workflows/ci.yml",
+    ".github/workflows/release-desktop.yml",
+    ".github/actions/ci-changes/",
+    ".github/actions/setup-ci-deps/"
   ]
 }

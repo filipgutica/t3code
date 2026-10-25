@@ -5,9 +5,10 @@ workflows in `.github/workflows`, so files here do not start builds, deployments
 scheduled runs, or manual Actions dispatches.
 
 The files retain their previous contents. Git renames allow upstream edits to
-follow the source into this directory. Review any new or restored active
-workflow during upstream sync; this directory does not block a newly introduced
-workflow elsewhere.
+follow the source into this directory. A new or restored file in
+`.github/workflows` fails `node scripts/workbench-ci.ts --check` until it is
+moved here or reviewed and added to `activeWorkflows` in
+`scripts/workbench-ci-scope.json`.
 
 Workbench CI, quality, browser and desktop verification, private PR previews,
 the static showcase, and manual Workbench packaging remain active. See

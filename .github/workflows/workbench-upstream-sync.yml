@@ -82,9 +82,11 @@ jobs:
           if [[ "$status" == 2 ]]; then
             echo "proceed=false" >> "$GITHUB_OUTPUT"
             {
-              echo "### Upstream sync needs manual conflict resolution"
+              echo "### Upstream sync needs a manual merge"
               echo "No merge was published. Conflicting paths:"
               jq -r '.conflictPaths[] | "- " + .' "$RUNNER_TEMP/upstream-sync-preview.json"
+              echo "Upstream changes to active workflows or actions, which need review:"
+              jq -r '.ciReviewPaths[] | "- " + .' "$RUNNER_TEMP/upstream-sync-preview.json"
             } >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$status" == 0 ]]; then
             echo "proceed=true" >> "$GITHUB_OUTPUT"
@@ -204,21 +206,38 @@ jobs:
     needs: verify
     if: needs.verify.outputs.needed == 'true'
     runs-on: ubuntu-24.04
+    # The App's private key is an environment secret, available only to runs from main.
+    environment: workbench-upstream-sync
+    # Writes use the App token below; GITHUB_TOKEN cannot push upstream commits that touch
+    # workflow files.
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     outputs:
       merge_sha: ${{ steps.publish.outputs.merge_sha }}
     env:
-      GH_TOKEN: ${{ github.token }}
       PRODUCT_SHA: ${{ needs.verify.outputs.product_sha }}
       VERIFIED_SHA: ${{ needs.verify.outputs.verified_sha }}
     steps:
+      # Minted only in this job, which runs the product branch's scripts and fetches the
+      # verified merge as data. The verify job, which executes the upstream tree, never sees it.
+      - id: app-token
+        name: Create the sync App token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.WORKBENCH_SYNC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.WORKBENCH_SYNC_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+
       - name: Checkout product branch
         uses: actions/checkout@v6
         with:
           ref: ${{ env.PRODUCT_BRANCH }}
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Download the verified merge
         uses: actions/download-artifact@v8
@@ -233,6 +252,8 @@ jobs:
 
       - id: prepare
         name: Prepare the verified sync PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$PRODUCT_SHA"
@@ -266,6 +287,7 @@ jobs:
 
       - name: Wait for the verified sync merge ref
         env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_NUMBER: ${{ steps.prepare.outputs.pr_number }}
         run: |
           set -euo pipefail

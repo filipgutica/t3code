@@ -11,7 +11,10 @@ const runGit = (cwd: string, args: ReadonlyArray<string>) =>
 
 type ConflictPath = "pnpm-lock.yaml" | "source.txt";
 
-function createFixture(conflicts: ReadonlyArray<ConflictPath>) {
+function createFixture(
+  conflicts: ReadonlyArray<ConflictPath>,
+  upstreamFiles: Record<string, string> = {},
+) {
   const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-workbench-sync-test-"));
   const repository = NodePath.join(root, "repository");
   NodeFS.mkdirSync(repository);
@@ -20,6 +23,11 @@ function createFixture(conflicts: ReadonlyArray<ConflictPath>) {
   runGit(repository, ["config", "user.email", "sync-test@example.invalid"]);
   NodeFS.writeFileSync(NodePath.join(repository, "pnpm-lock.yaml"), "base lockfile\n");
   NodeFS.writeFileSync(NodePath.join(repository, "source.txt"), "base source\n");
+  NodeFS.mkdirSync(NodePath.join(repository, "scripts"));
+  NodeFS.writeFileSync(
+    NodePath.join(repository, "scripts/workbench-ci-scope.json"),
+    JSON.stringify({ inertUpstreamCI: [".github/workflows/ci.yml", ".github/actions/ci-only/"] }),
+  );
   runGit(repository, ["add", "."]);
   runGit(repository, ["commit", "-m", "base"]);
 
@@ -41,6 +49,10 @@ function createFixture(conflicts: ReadonlyArray<ConflictPath>) {
   if (conflicts.length === 0) {
     NodeFS.writeFileSync(NodePath.join(repository, "upstream.txt"), "upstream\n");
   }
+  for (const [path, content] of Object.entries(upstreamFiles)) {
+    NodeFS.mkdirSync(NodePath.dirname(NodePath.join(repository, path)), { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(repository, path), content);
+  }
   runGit(repository, ["add", "."]);
   runGit(repository, ["commit", "-m", "upstream"]);
   const upstreamSha = runGit(repository, ["rev-parse", "HEAD"]);
@@ -48,8 +60,8 @@ function createFixture(conflicts: ReadonlyArray<ConflictPath>) {
   return { root, repository, productSha, upstreamSha };
 }
 
-function preview(conflicts: ReadonlyArray<ConflictPath>) {
-  const fixture = createFixture(conflicts);
+function preview(conflicts: ReadonlyArray<ConflictPath>, upstreamFiles?: Record<string, string>) {
+  const fixture = createFixture(conflicts, upstreamFiles);
   try {
     const result = NodeChildProcess.spawnSync(
       process.execPath,
@@ -92,6 +104,28 @@ describe("workbench upstream sync merge preview", () => {
     assert.equal(mixed.result.status, 2);
     assert.equal(mixed.output.mergePreview, "conflict");
     assert.deepEqual(mixed.output.conflictPaths, ["pnpm-lock.yaml", "source.txt"]);
+  });
+
+  it("publishes upstream changes to inert CI but holds active CI for review", () => {
+    const inert = preview([], {
+      ".github/workflows/ci.yml": "name: CI\n",
+      ".github/actions/ci-only/action.yml": "name: CI only\n",
+    });
+    assert.equal(inert.result.status, 0, inert.result.stderr);
+    assert.deepEqual(inert.output.ciReviewPaths, []);
+
+    const active = preview(["pnpm-lock.yaml"], {
+      ".github/workflows/ci.yml": "name: CI\n",
+      ".github/workflows/relay-preview.yml": "name: Relay preview\n",
+      ".github/actions/setup-apt-mirrors/action.yml": "name: APT\n",
+    });
+    assert.equal(active.result.status, 2);
+    assert.equal(active.output.mergePreview, "generated-lockfile");
+    assert.deepEqual(active.output.ciReviewPaths, [
+      ".github/actions/setup-apt-mirrors/action.yml",
+      ".github/workflows/relay-preview.yml",
+    ]);
+    assert.include(active.result.stderr, "Upstream changes active CI");
   });
 });
 
@@ -209,8 +243,12 @@ it.each([
 });
 
 it("reports expected preview conflicts successfully but preserves real failures", () => {
-  const fixture = createFixture(["source.txt"]);
+  const fixture = createFixture(["source.txt"], {
+    ".github/workflows/relay-preview.yml": "name: Relay preview\n",
+  });
   try {
+    // The preview reads the committed policy, so the working tree can run the real scripts.
+    NodeFS.rmSync(NodePath.join(fixture.repository, "scripts"), { recursive: true });
     NodeFS.symlinkSync(import.meta.dirname, NodePath.join(fixture.repository, "scripts"));
     // The workflow previews HEAD against upstream/main.
     runGit(fixture.repository, ["update-ref", "refs/remotes/upstream/main", fixture.upstreamSha]);
@@ -223,7 +261,7 @@ it("reports expected preview conflicts successfully but preserves real failures"
     );
     assert.match(
       NodeFS.readFileSync(NodePath.join(fixture.repository, "summary"), "utf8"),
-      /source.txt/,
+      /source\.txt[\s\S]*relay-preview\.yml/,
     );
 
     const failed = runStep(fixture.repository, "Preview merge", "node() { return 1; }");
