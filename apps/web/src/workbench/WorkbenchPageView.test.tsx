@@ -263,6 +263,8 @@ function Harness({
   syncState = "error",
   grants = defaultGrants,
   error = null,
+  queryError = null,
+  threadLookupError = null,
   setError = noop,
   dialog,
   conversation,
@@ -279,6 +281,8 @@ function Harness({
   syncState?: "error" | "success";
   grants?: { archive: boolean; remove: boolean };
   error?: string | null;
+  queryError?: string | null;
+  threadLookupError?: string | null;
   setError?: PageProps["setError"];
   dialog?: "create" | "publish" | "workspace";
   /** create=ticket in the URL, an unsaved draft to resume, or a saved ticket's draft phase. */
@@ -326,7 +330,7 @@ function Harness({
     providers: [],
     keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
     availableEditors: [],
-    query: { ...query, data: currentSnapshot },
+    query: { ...query, data: currentSnapshot, error: queryError },
     jiraQuery: { ...query, data: jiraSnapshot },
     refreshWorkbenchSnapshot: noop,
     refreshJiraSnapshot: noop,
@@ -351,7 +355,7 @@ function Harness({
     reservedThreadIds: new Set(),
     assignmentsByTicket: new Map([[ticket.id, assignment]]),
     threadLookupReady: true,
-    threadLookupError: null,
+    threadLookupError,
     refreshArchivedThreads: noop,
     refreshThreadLookup: noop,
   };
@@ -705,6 +709,24 @@ it("shows the deleted assignment and a visible replacement action in Ticket deta
     thread.id,
   );
 });
+
+it.each(["queryError", "threadLookupError"] as const)(
+  "retries the Ticket's %s only when that error is displayed",
+  async (errorSource) => {
+    const props = { detail: true, [errorSource]: "Could not load Ticket data" };
+    await render({ ...props, error: "Could not move Ticket" });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not move Ticket",
+    );
+    expect(container.querySelector('[role="alert"] button')).toBeNull();
+
+    await render(props);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not load Ticket data",
+    );
+    expect(container.querySelector('[role="alert"] button')?.textContent).toContain("Retry");
+  },
+);
 
 it("opens the planning conversation for create=ticket instead of the board", async () => {
   await render({ conversation: "create" });
