@@ -7,27 +7,6 @@ import * as FileSystem from "effect/FileSystem";
 import { createBuildConfig } from "./build-desktop-artifact.ts";
 import { selectWorkbenchDesktopBuildProduct } from "./lib/workbench-desktop-product.ts";
 
-// The list items directly under each `steps:` key; nested input lists stay inside their step.
-const workflowSteps = (workflow: string) => {
-  const steps: Array<Array<string>> = [];
-  let stepsKeyDepth: number | null = null;
-  let stepDepth: number | null = null;
-  for (const line of workflow.split("\n")) {
-    const depth = line.search(/\S/);
-    if (depth === -1) continue;
-    if (stepsKeyDepth !== null && depth <= stepsKeyDepth) stepsKeyDepth = stepDepth = null;
-    if (/^\s*steps:\s*(?:#.*)?$/.test(line)) {
-      stepsKeyDepth = depth;
-      continue;
-    }
-    if (stepsKeyDepth === null) continue;
-    stepDepth ??= depth;
-    if (depth === stepDepth && line.trimStart().startsWith("- ")) steps.push([]);
-    steps.at(-1)?.push(line);
-  }
-  return steps.map((step) => step.join("\n"));
-};
-
 it.layer(NodeServices.layer)("Workbench desktop packaging", (it) => {
   it.effect("uses package.json for the Node version in Workbench release workflows", () =>
     Effect.gen(function* () {
@@ -42,17 +21,15 @@ it.layer(NodeServices.layer)("Workbench desktop packaging", (it) => {
         );
         assert.notMatch(workflow, /VP_NODE_VERSION/, filename);
         assert.notMatch(workflow, /^\s*node-version:/m, filename);
-        const setupSteps = workflowSteps(workflow).filter((step) =>
-          /^[\s-]*uses:\s*["']?(?:voidzero-dev\/setup-vp|actions\/setup-node)@/m.test(step),
+        // Counting avoids parsing step structure; every setup step needs its own version file.
+        const setupSteps = workflow.match(
+          /^[\s-]*uses:\s*["']?(?:voidzero-dev\/setup-vp|actions\/setup-node)@/gm,
         );
+        const versionFiles = workflow.match(/^[\s-]*node-version-file:.*$/gm) ?? [];
         assert.isNotEmpty(setupSteps, filename);
-        for (const step of setupSteps) {
-          assert.match(
-            step,
-            /^\s*node-version-file:\s*(["']?)package\.json\1\s*(?:#.*)?$/m,
-            `${filename}: ${step}`,
-          );
-        }
+        assert.lengthOf(versionFiles, setupSteps?.length ?? 0, filename);
+        for (const line of versionFiles)
+          assert.match(line, /:\s*(["']?)package\.json\1\s*(?:#.*)?$/, filename);
       }
     }),
   );
