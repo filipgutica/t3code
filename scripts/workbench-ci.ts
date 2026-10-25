@@ -3,6 +3,8 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
+import { matchesScopePattern as matches } from "./lib/workbench-ci-scope.ts";
+
 interface ScopePolicy {
   upstreamBase: string;
   groups: Array<{
@@ -26,10 +28,6 @@ const git = (args: ReadonlyArray<string>) => {
   return result.stdout;
 };
 const pathsFrom = (value: string) => value.split("\0").filter(Boolean);
-const matches = (path: string, pattern: string) =>
-  pattern.endsWith("/") || pattern.endsWith("-") || !NodePath.extname(pattern)
-    ? path.startsWith(pattern)
-    : path === pattern;
 const isTest = (path: string) => /\.(test|spec)\.[cm]?[jt]sx?$/.test(path);
 // Playwright owns these journeys in the separate Workbench regression workflow.
 const isCentralTest = (path: string) =>

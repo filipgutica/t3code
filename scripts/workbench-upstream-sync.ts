@@ -4,6 +4,8 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
+import { matchesScopePattern } from "./lib/workbench-ci-scope.ts";
+
 interface SyncOptions {
   readonly productRef: string;
   readonly upstreamRef: string;
@@ -44,10 +46,6 @@ function parseMergeTreeConflictPaths(output: string): ReadonlyArray<string> {
   return fields.slice(1, end === -1 ? fields.length : end);
 }
 
-// Matches the scope policy's path patterns: a trailing slash selects a directory.
-const matchesPattern = (path: string, pattern: string) =>
-  pattern.endsWith("/") ? path.startsWith(pattern) : path === pattern;
-
 // The product's policy decides which upstream CI changes publish without review;
 // the incoming upstream tree cannot widen that list.
 function ciReviewPaths(productSha: string, changedCIPaths: ReadonlyArray<string>) {
@@ -57,7 +55,9 @@ function ciReviewPaths(productSha: string, changedCIPaths: ReadonlyArray<string>
   const inert = policy.inertUpstreamCI;
   if (!Array.isArray(inert) || !inert.every((pattern) => typeof pattern === "string"))
     throw new Error("scripts/workbench-ci-scope.json has no inertUpstreamCI list");
-  return changedCIPaths.filter((path) => !inert.some((pattern) => matchesPattern(path, pattern)));
+  return changedCIPaths.filter(
+    (path) => !inert.some((pattern) => matchesScopePattern(path, pattern)),
+  );
 }
 
 function previewMerge(productSha: string, upstreamSha: string) {
