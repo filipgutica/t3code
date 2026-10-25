@@ -7,6 +7,27 @@ import * as FileSystem from "effect/FileSystem";
 import { createBuildConfig } from "./build-desktop-artifact.ts";
 import { selectWorkbenchDesktopBuildProduct } from "./lib/workbench-desktop-product.ts";
 
+// The list items directly under each `steps:` key; nested input lists stay inside their step.
+const workflowSteps = (workflow: string) => {
+  const steps: Array<Array<string>> = [];
+  let stepsKeyDepth: number | null = null;
+  let stepDepth: number | null = null;
+  for (const line of workflow.split("\n")) {
+    const depth = line.search(/\S/);
+    if (depth === -1) continue;
+    if (stepsKeyDepth !== null && depth <= stepsKeyDepth) stepsKeyDepth = stepDepth = null;
+    if (/^\s*steps:\s*(?:#.*)?$/.test(line)) {
+      stepsKeyDepth = depth;
+      continue;
+    }
+    if (stepsKeyDepth === null) continue;
+    stepDepth ??= depth;
+    if (depth === stepDepth && line.trimStart().startsWith("- ")) steps.push([]);
+    steps.at(-1)?.push(line);
+  }
+  return steps.map((step) => step.join("\n"));
+};
+
 it.layer(NodeServices.layer)("Workbench desktop packaging", (it) => {
   it.effect("uses package.json for the Node version in Workbench release workflows", () =>
     Effect.gen(function* () {
@@ -21,12 +42,9 @@ it.layer(NodeServices.layer)("Workbench desktop packaging", (it) => {
         );
         assert.notMatch(workflow, /VP_NODE_VERSION/, filename);
         assert.notMatch(workflow, /^\s*node-version:/m, filename);
-        // Steps may start with `- uses:` or carry quoted values and trailing comments.
-        const setupSteps = workflow
-          .split(/\n(?=\s*- )/)
-          .filter((step) =>
-            /^[\s-]*uses:\s*["']?(?:voidzero-dev\/setup-vp|actions\/setup-node)@/m.test(step),
-          );
+        const setupSteps = workflowSteps(workflow).filter((step) =>
+          /^[\s-]*uses:\s*["']?(?:voidzero-dev\/setup-vp|actions\/setup-node)@/m.test(step),
+        );
         assert.isNotEmpty(setupSteps, filename);
         for (const step of setupSteps) {
           assert.match(
