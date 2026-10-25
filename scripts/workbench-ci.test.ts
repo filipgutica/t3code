@@ -144,6 +144,12 @@ it.each([
     "triggers on: workflow_call, push",
   ],
   [
+    "a nested active action that calls inert CI",
+    "../actions/group/helper/action.yml",
+    "    - uses: ./.github/actions/ci-only\n",
+    "uses inert upstream CI: .github/actions/ci-only",
+  ],
+  [
     "an active action that calls inert CI through an indirect path",
     "../actions/setup/action.yml",
     "    - uses: ./.github/actions/./ci-only\n",
@@ -154,7 +160,10 @@ it.each([
     const output = NodePath.join(root, ".github/workflows/workbench-ci.yml");
     const workflow = NodePath.join(root, ".github/workflows", name);
     if (append === null) NodeFS.unlinkSync(workflow);
-    else NodeFS.appendFileSync(workflow, append);
+    else {
+      NodeFS.mkdirSync(NodePath.dirname(workflow), { recursive: true });
+      NodeFS.appendFileSync(workflow, append);
+    }
     const verified = NodeFS.readFileSync(output, "utf8");
     for (const args of [["--check"], []]) {
       const rejected = execute(root, args);

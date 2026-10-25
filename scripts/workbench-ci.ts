@@ -134,12 +134,11 @@ const validateWorkflows = (policy: ScopePolicy) => {
     );
   const missing = policy.activeWorkflows.filter((name) => !present.includes(name));
   if (missing.length > 0) throw new Error(`Missing active workflows: ${missing.join(", ")}`);
+  // Composite actions may live at any depth, and each can call another.
   const actions = NodeFS.existsSync(".github/actions")
-    ? NodeFS.readdirSync(".github/actions").flatMap((name) =>
-        ["action.yml", "action.yaml"]
-          .map((file) => `.github/actions/${name}/${file}`)
-          .filter((path) => NodeFS.existsSync(path)),
-      )
+    ? NodeFS.readdirSync(".github/actions", { recursive: true, encoding: "utf8" })
+        .filter((path) => /(?:^|\/)action\.ya?ml$/.test(path))
+        .map((path) => `.github/actions/${path}`)
     : [];
   const isInert = (path: string) =>
     policy.inertUpstreamCI.some((pattern) => matches(path, pattern));
