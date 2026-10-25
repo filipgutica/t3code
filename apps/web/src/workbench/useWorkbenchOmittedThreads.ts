@@ -1,14 +1,20 @@
 import { useAtomValue } from "@effect/atom-react";
 import { threadFamilyRead } from "@t3tools/client-runtime/state/threads";
-import type { EnvironmentId, ThreadId, WorkbenchAssignment } from "@t3tools/contracts";
-import { Atom } from "effect/reactivity";
+import type {
+  EnvironmentId,
+  OrchestrationV2ThreadFamily,
+  ThreadId,
+  WorkbenchAssignment,
+} from "@t3tools/contracts";
+import * as Option from "effect/Option";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { useEffect } from "react";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { environmentSnapshotAtom } from "../state/shell";
+import { environmentShell, environmentSnapshotAtom } from "../state/shell";
 import { threadFamilies } from "../state/threads";
 
-import { getWorkbenchOmittedThreadIds } from "./workbench.logic";
+import { areWorkbenchOmittedThreadsRead, getWorkbenchOmittedThreadIds } from "./workbench.logic";
 
 const NO_OMITTED_THREADS = Atom.make("[]").pipe(Atom.withLabel("workbench-omitted-threads:none"));
 
@@ -25,21 +31,34 @@ const omittedThreadIdsAtom = Atom.family((key: string) => {
   ).pipe(Atom.withLabel(`workbench-omitted-threads:${key}`));
 });
 
+const NO_REMOVALS: ReadonlyMap<ThreadId, number> = new Map();
+
 const omittedThreadsReadAtom = Atom.family((key: string) => {
   const [environmentId, threadIds] = JSON.parse(key) as [EnvironmentId | null, ThreadId[]];
-  return Atom.make((get) =>
-    environmentId === null
-      ? true
-      : threadIds.every(
-          (threadId) =>
-            threadFamilyRead(get(threadFamilies.familyAtom(environmentId, threadId))) === "settled",
-        ),
-  ).pipe(Atom.withLabel(`workbench-omitted-threads-read:${key}`));
+  return Atom.make((get) => {
+    if (environmentId === null || threadIds.length === 0) return true;
+    const reads = new Map<ThreadId, OrchestrationV2ThreadFamily>();
+    for (const threadId of threadIds) {
+      const read = get(threadFamilies.familyAtom(environmentId, threadId));
+      const family = Option.getOrNull(AsyncResult.value(read));
+      if (threadFamilyRead(read) === "settled" && family !== null) reads.set(threadId, family);
+    }
+    const shellState = Option.getOrNull(
+      AsyncResult.value(get(environmentShell.stateAtom(environmentId))),
+    );
+    const merged = get(threadFamilies.snapshotAtom(environmentId));
+    return areWorkbenchOmittedThreadsRead({
+      threadIds,
+      reads,
+      mergedThreadIds: new Set(merged?.threads.map((thread) => thread.id)),
+      removedAt: shellState?.removedAt ?? NO_REMOVALS,
+    });
+  }).pipe(Atom.withLabel(`workbench-omitted-threads-read:${key}`));
 });
 
 /**
  * Keeps assigned Threads the shell left out as older settled in the Thread rows, and reports
- * whether they have all been read, so callers do not show an unread Thread as deleted.
+ * whether they have all been read and merged, so callers do not show one as deleted.
  */
 export function useWorkbenchOmittedThreads(
   environmentId: EnvironmentId | null,

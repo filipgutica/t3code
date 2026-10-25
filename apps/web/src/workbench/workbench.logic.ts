@@ -1,5 +1,6 @@
 import type {
   OrchestrationV2ShellSnapshot,
+  OrchestrationV2ThreadFamily,
   OrchestrationV2ThreadShell,
   ProjectId,
   ThreadId,
@@ -287,6 +288,38 @@ export function getWorkbenchOmittedThreadIds({
   if (shell?.olderSettled === undefined) return [];
   const shellThreadIds = new Set(shell.threads.map((thread) => thread.id));
   return [...new Set(threadIds)].filter((threadId) => !shellThreadIds.has(threadId)).toSorted();
+}
+
+/**
+ * Whether every omitted Thread has been read and its row merged back in. A cached read settles
+ * before its rows merge; a Thread its read lacks, or that was removed after it, is gone.
+ */
+export function areWorkbenchOmittedThreadsRead({
+  threadIds,
+  reads,
+  mergedThreadIds,
+  removedAt,
+}: {
+  readonly threadIds: ReadonlyArray<ThreadId>;
+  /** Each Thread's settled family read; absent while it is pending or failed. */
+  readonly reads: ReadonlyMap<
+    ThreadId,
+    Pick<OrchestrationV2ThreadFamily, "snapshotSequence"> & {
+      readonly threads: ReadonlyArray<Pick<OrchestrationV2ThreadShell, "id">>;
+    }
+  >;
+  readonly mergedThreadIds: ReadonlySet<ThreadId>;
+  readonly removedAt: ReadonlyMap<ThreadId, number>;
+}): boolean {
+  return threadIds.every((threadId) => {
+    const read = reads.get(threadId);
+    if (read === undefined) return false;
+    return (
+      mergedThreadIds.has(threadId) ||
+      !read.threads.some((thread) => thread.id === threadId) ||
+      (removedAt.get(threadId) ?? -1) > read.snapshotSequence
+    );
+  });
 }
 
 export function getVisibleWorkbenchAssignments(
