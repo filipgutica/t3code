@@ -88,6 +88,16 @@ export interface WorkbenchFloatingChatProps {
   readonly onOpenThread: (threadId: ThreadId) => void;
   readonly onNewThread: () => void;
   readonly newThreadDisabled: boolean;
+  readonly planning?: WorkbenchFloatingChatPlanning;
+}
+
+/**
+ * Ticket draft Threads stay read-only until work starts, and `render` replaces the ticket
+ * proposal history around their conversation with the draft's own proposals and actions.
+ */
+export interface WorkbenchFloatingChatPlanning {
+  readonly threadIds: ReadonlySet<ThreadId>;
+  readonly render: (threadId: ThreadId, conversation: ReactNode) => ReactNode;
 }
 
 const tabLabel = (thread: WorkbenchFloatingChatThread) =>
@@ -393,27 +403,38 @@ function FloatingChatThread({
   thread,
   composerFocusRequest,
   onOpenThread,
+  planning,
 }: {
   readonly environmentId: EnvironmentId;
   readonly thread: WorkbenchFloatingChatThread;
   readonly composerFocusRequest: number | null;
   readonly onOpenThread: (threadId: ThreadId) => void;
+  readonly planning: WorkbenchFloatingChatPlanning | undefined;
 }) {
   const threadRef = scopeThreadRef(environmentId, thread.threadId);
   const openThread = () => onOpenThread(thread.threadId);
   useOpenThreadOnPanelAction(threadRef, openThread);
+  const planningThread = planning?.threadIds.has(thread.threadId) === true;
+  const conversation = (
+    <ChatView
+      key={thread.threadId}
+      environmentId={environmentId}
+      threadId={thread.threadId}
+      routeKind="server"
+      hideHeader
+      readOnlyPlanning={planningThread}
+      embedded={{ composerFocusRequest, openThread }}
+    />
+  );
   return (
     <div role="tabpanel" aria-label={thread.title} className="flex min-h-0 flex-1 flex-col">
-      <WorkbenchTicketProposalHistory threadRef={threadRef}>
-        <ChatView
-          key={thread.threadId}
-          environmentId={environmentId}
-          threadId={thread.threadId}
-          routeKind="server"
-          hideHeader
-          embedded={{ composerFocusRequest, openThread }}
-        />
-      </WorkbenchTicketProposalHistory>
+      {planning && planningThread ? (
+        planning.render(thread.threadId, conversation)
+      ) : (
+        <WorkbenchTicketProposalHistory threadRef={threadRef}>
+          {conversation}
+        </WorkbenchTicketProposalHistory>
+      )}
     </div>
   );
 }
@@ -430,6 +451,7 @@ function FloatingChatBody({
   onOpenThread,
   onNewThread,
   newThreadDisabled,
+  planning,
 }: {
   readonly environmentId: EnvironmentId;
   readonly copy: ChatCopy;
@@ -442,6 +464,7 @@ function FloatingChatBody({
   readonly onOpenThread: (threadId: ThreadId) => void;
   readonly onNewThread: () => void;
   readonly newThreadDisabled: boolean;
+  readonly planning: WorkbenchFloatingChatPlanning | undefined;
 }) {
   if (selected === null) {
     return (
@@ -461,6 +484,7 @@ function FloatingChatBody({
       thread={selected}
       composerFocusRequest={composerFocusRequest}
       onOpenThread={onOpenThread}
+      planning={planning}
     />
   );
 }
@@ -690,6 +714,7 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
         onOpenThread={onOpenThread}
         onNewThread={onNewThread}
         newThreadDisabled={newThreadDisabled}
+        planning={props.planning}
       />
     </FloatingChatFrame>
   );

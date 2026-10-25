@@ -1213,6 +1213,18 @@ function WorkbenchPageBoardChat({
       drafts={snapshot?.ticketDrafts ?? []}
       threadsById={pageData.threadsById}
       archivedThreadsById={pageData.archivedThreadsById}
+      createContext={{
+        linkedProjects: boardData.linkedT3Projects,
+        epics: boardData.activeProjectEpics,
+        jiraEpics: getCreationEpics({
+          jiraBinding: boardData.jiraBinding,
+          activeProjectEpics: boardData.activeProjectEpics,
+          epicLinks: pageData.jiraSnapshot?.epicLinks,
+        }),
+        jiraBinding: boardData.jiraBinding,
+        localOnlySupported: pageData.jiraSnapshot?.supportsLocalOnlyTickets === true,
+        jiraOwnershipKnown: boardData.jiraOwnershipKnown,
+      }}
       ticketKeysById={
         new Map(
           [...boardData.jiraIssueLinksByTicketId].map(([ticketId, link]) => [

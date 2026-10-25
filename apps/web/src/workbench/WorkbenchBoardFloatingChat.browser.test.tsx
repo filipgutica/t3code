@@ -21,22 +21,46 @@ import { makeThreadFixture } from "../test-fixtures";
 import { WorkbenchBoardFloatingChat } from "./WorkbenchBoardFloatingChat";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 
-const mocks = vi.hoisted(() => ({ begin: vi.fn() }));
-vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => mocks.begin }));
-vi.mock("./state", () => ({ workbenchEnvironment: { beginTicketDraft: {} } }));
+const mocks = vi.hoisted(() => ({ begin: vi.fn(), otherCommand: vi.fn() }));
+vi.mock("../state/use-atom-command", () => ({
+  useAtomCommand: (command: { readonly name: string }) =>
+    command.name === "begin" ? mocks.begin : mocks.otherCommand,
+}));
+vi.mock("@effect/atom-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@effect/atom-react")>()),
+  useAtomValue: () => true,
+}));
+vi.mock("./state", () => {
+  const command = (name: string) => ({ name, permissionAtom: () => name });
+  return {
+    workbenchEnvironment: {
+      beginTicketDraft: command("begin"),
+      updateTicketDraft: command("update"),
+      promoteTicketDraft: command("promote"),
+      startTicketDraftWork: command("start"),
+      discardTicketDraft: command("discard"),
+      readSnapshot: command("read"),
+    },
+  };
+});
 vi.mock("./usePlanningModelSelection", () => ({
   usePlanningModelSelection: () => ({
     entries: [],
     modelSelection: { instanceId: "codex", model: "gpt-5" },
   }),
 }));
+// The real ChatView needs a connected environment; a read-only planning composer stays read-only.
 vi.mock("../components/ChatView", () => ({
-  default: (props: { threadId: string }) => (
-    <textarea aria-label={`Composer for ${props.threadId}`} />
+  default: (props: { threadId: string; readOnlyPlanning?: boolean }) => (
+    <textarea
+      aria-label={`Composer for ${props.threadId}`}
+      readOnly={props.readOnlyPlanning === true}
+    />
   ),
 }));
 vi.mock("./WorkbenchTicketProposal", () => ({
   WorkbenchTicketProposalHistory: (props: { children: ReactNode }) => props.children,
+  WorkbenchTicketProposalRenderer: (props: { children: ReactNode }) => props.children,
 }));
 
 const environmentId = EnvironmentId.make("local");
@@ -128,6 +152,14 @@ function Harness(props: {
       threadsById={new Map(threadIds.map((id) => [ThreadId.make(id), liveThread(id)]))}
       archivedThreadsById={new Map()}
       ticketKeysById={new Map([[WorkbenchTicketId.make("ticket-a"), "PAY-1"]])}
+      createContext={{
+        linkedProjects: [],
+        epics: [],
+        jiraEpics: [],
+        jiraBinding: null,
+        localOnlySupported: true,
+        jiraOwnershipKnown: true,
+      }}
       canStartDrafts
       refreshSnapshot={() => {}}
       onOpenDraft={() => {}}
@@ -140,6 +172,7 @@ function Harness(props: {
 const setup = async () => {
   await page.viewport(1280, 900);
   mocks.begin.mockReset();
+  mocks.otherCommand.mockReset();
   useWorkbenchFloatingChatStore.setState({
     mode: "collapsed",
     restoreMode: "collapsed",
@@ -212,4 +245,42 @@ it("repeats a failed begin with the same ids instead of starting a second draft"
   await expect
     .element(screen.getByRole("textbox", { name: `Composer for ${retried?.threadId}` }))
     .toBeVisible();
+});
+
+it("keeps a draft's conversation read-only with the draft's actions, and ticket Threads open", async () => {
+  const { onSnapshot } = await setup();
+  await using screen = await render(
+    <Harness
+      initialDrafts={[draft("draft", "draft-thread", "Plan exports")]}
+      onSnapshot={onSnapshot}
+    />,
+  );
+  await userEvent.click(screen.getByRole("tab", { name: "Plan exports" }));
+  await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
+  await expect
+    .element(screen.getByRole("textbox", { name: "Composer for draft-thread" }))
+    .toHaveAttribute("readonly");
+  const strip = screen.getByRole("group", { name: "Ticket draft" });
+  await expect.element(strip.getByRole("button", { name: "Create ticket" })).toBeDisabled();
+  await expect
+    .element(strip.getByRole("status"))
+    .toHaveTextContent("Select a repository to create the ticket.");
+
+  await userEvent.click(screen.getByRole("tab", { name: "PAY-1 · Thread first" }));
+  await expect
+    .element(screen.getByRole("textbox", { name: "Composer for first" }))
+    .not.toHaveAttribute("readonly");
+  await expect.element(screen.getByRole("group", { name: "Ticket draft" })).not.toBeInTheDocument();
+});
+
+it.each([
+  ["planning", "Start work"],
+  ["starting", "Retry start work"],
+] as const)("offers %s drafts the %s action", async (phase, action) => {
+  const { onSnapshot } = await setup();
+  const saved = { ...draft("ticket-a", "draft-thread", "Refunds"), phase };
+  await using screen = await render(<Harness initialDrafts={[saved]} onSnapshot={onSnapshot} />);
+  await userEvent.click(screen.getByRole("tab", { name: "PAY-1 · Thread draft-thread" }));
+  await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
+  await expect.element(screen.getByRole("button", { name: action })).toBeEnabled();
 });
