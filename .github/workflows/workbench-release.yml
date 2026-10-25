@@ -349,8 +349,6 @@ jobs:
 
       # Match release-desktop.yml: package the complete Linux CLI for WSL.
       - name: Build CLI single-executable
-        env:
-          VP_NODE_VERSION: "26.8.2"
         run: node apps/server/scripts/cli.ts build-exe --verbose
 
       - name: Build and stage resource monitor
