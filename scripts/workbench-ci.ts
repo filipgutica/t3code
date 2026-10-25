@@ -16,6 +16,7 @@ interface ScopePolicy {
   packagingPaths: Array<string>;
   activeWorkflows: Array<string>;
   inertUpstreamCI: Array<string>;
+  disabledWorkflows: Array<string>;
 }
 const policyPath = "scripts/workbench-ci-scope.json";
 const workflowPath = ".github/workflows/workbench-ci.yml";
@@ -65,7 +66,8 @@ const loadPolicy = (): ScopePolicy => {
     !strings(policy.packagingTests) ||
     !strings(policy.packagingPaths) ||
     !strings(policy.activeWorkflows) ||
-    !strings(policy.inertUpstreamCI)
+    !strings(policy.inertUpstreamCI) ||
+    !strings(policy.disabledWorkflows)
   ) {
     throw new Error("Invalid Workbench CI ownership policy");
   }
@@ -93,10 +95,35 @@ const validateOwnership = (policy: ScopePolicy) => {
     throw new Error(`Unmapped fork sources; add an owner and verification: ${unmapped.join(", ")}`);
   return paths;
 };
+// Top-level `on:` entries. Anything other than a plain key is kept verbatim so it fails the
+// reusable-only comparison instead of being skipped.
+const workflowTriggers = (source: string) => {
+  const lines = source.split("\n");
+  const start = lines.findIndex((line) => /^["']?on["']?:/.test(line));
+  if (start === -1) return [];
+  const inline = lines[start]!.replace(/^[^:]+:/, "")
+    .replace(/#.*/, "")
+    .trim();
+  if (inline) return [inline];
+  const entries = lines
+    .slice(start + 1)
+    .filter((line) => line.trim() && !line.trim().startsWith("#"));
+  const end = entries.findIndex((line) => /^\S/.test(line));
+  const block = end === -1 ? entries : entries.slice(0, end);
+  const indent = /^\s*/.exec(block[0] ?? "")![0].length;
+  return block
+    .filter((line) => /^\s*/.exec(line)![0].length === indent)
+    .map((line) => /^\s*([\w-]+):/.exec(line)?.[1] ?? line.trim());
+};
+// Local paths an Actions file reaches, so `./.github/actions/./x` and `.github/actions/x` match.
+const localReferences = (source: string) =>
+  [...source.matchAll(/(?:\.\/)?\.github\/[\w./-]+/g)].map((match) =>
+    NodePath.posix.normalize(match[0]),
+  );
 // GitHub runs every workflow in this directory. Upstream automation the fork does not
 // run stays in .github/upstream-workflows, so a new or restored upstream workflow fails
 // here until someone reviews its triggers. The sync workflow publishes upstream changes to
-// inert CI without review, so active workflows must not reach that code.
+// inert CI without review, so inert CI must stay unreachable and unable to start on its own.
 const validateWorkflows = (policy: ScopePolicy) => {
   const directory = ".github/workflows";
   const present = NodeFS.readdirSync(directory).sort();
@@ -107,15 +134,33 @@ const validateWorkflows = (policy: ScopePolicy) => {
     );
   const missing = policy.activeWorkflows.filter((name) => !present.includes(name));
   if (missing.length > 0) throw new Error(`Missing active workflows: ${missing.join(", ")}`);
-  for (const name of present) {
-    const path = `${directory}/${name}`;
-    if (policy.inertUpstreamCI.some((pattern) => matches(path, pattern))) continue;
+  const actions = NodeFS.existsSync(".github/actions")
+    ? NodeFS.readdirSync(".github/actions").flatMap((name) =>
+        ["action.yml", "action.yaml"]
+          .map((file) => `.github/actions/${name}/${file}`)
+          .filter((path) => NodeFS.existsSync(path)),
+      )
+    : [];
+  const isInert = (path: string) =>
+    policy.inertUpstreamCI.some((pattern) => matches(path, pattern));
+  for (const path of [...present.map((name) => `${directory}/${name}`), ...actions]) {
     const source = NodeFS.readFileSync(path, "utf8");
-    const reached = policy.inertUpstreamCI.filter((pattern) =>
-      source.includes(`./${pattern.replace(/\/$/, "")}`),
+    if (isInert(path)) {
+      const triggers = workflowTriggers(source);
+      const reusable = triggers.length === 1 && triggers[0] === "workflow_call";
+      if (
+        path.startsWith(directory) &&
+        !reusable &&
+        !policy.disabledWorkflows.includes(NodePath.basename(path))
+      )
+        throw new Error(`${path} is inert upstream CI but triggers on: ${triggers.join(", ")}`);
+      continue;
+    }
+    const reached = localReferences(source).filter((reference) =>
+      [reference, `${reference}/`].some(isInert),
     );
     if (reached.length > 0)
-      throw new Error(`${path} uses inert upstream CI: ${reached.join(", ")}`);
+      throw new Error(`${path} uses inert upstream CI: ${[...new Set(reached)].join(", ")}`);
   }
 };
 const selectTests = (policy: ScopePolicy) => {

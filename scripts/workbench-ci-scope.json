@@ -511,5 +511,6 @@
     ".github/workflows/release-desktop.yml",
     ".github/actions/ci-changes/",
     ".github/actions/setup-ci-deps/"
-  ]
+  ],
+  "disabledWorkflows": ["ci.yml"]
 }
