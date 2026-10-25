@@ -319,7 +319,7 @@ beforeEach(() => {
   nativeDelete.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   refresh.workbench.mockReset();
   refresh.archived.mockReset();
-  useWorkbenchFloatingChatStore.setState({ ticketChat: null });
+  useWorkbenchFloatingChatStore.setState({ pageChat: null });
 });
 afterEach(async () => {
   await act(async () => renderer?.unmount());
@@ -517,7 +517,9 @@ describe("Thread repository review", () => {
 
   it("shows a Thread created on the ticket page in its floating chat instead of navigating", async () => {
     const showThread = vi.fn();
-    useWorkbenchFloatingChatStore.setState({ ticketChat: { ticketId: ticket.id, showThread } });
+    useWorkbenchFloatingChatStore.setState({
+      pageChat: { environmentId, kind: "ticket", ticketId: ticket.id, showThread },
+    });
     const { router } = await mount({
       snapshot: { ...snapshot, ticketWorkspaces: [readyWorkspace] },
     });
@@ -530,6 +532,88 @@ describe("Thread repository review", () => {
     expect(router.state.location.pathname).toBe("/workbench");
     expect(actions.startThreadRequest).toBeNull();
   });
+
+  it("shows a board-created Thread in the Workspace's floating chat", async () => {
+    const showThread = vi.fn();
+    useWorkbenchFloatingChatStore.setState({
+      pageChat: { environmentId, kind: "board", projectId: workspace.id, showThread },
+    });
+    const { router } = await mount({
+      snapshot: { ...snapshot, ticketWorkspaces: [readyWorkspace] },
+    });
+    await act(async () => actions.requestNewThread(ticket));
+    await confirm();
+    expect(showThread).toHaveBeenCalledExactlyOnceWith(
+      commands.createThread.mock.calls[0]?.[0].input.threadId,
+    );
+    expect(router.state.location.pathname).toBe("/workbench");
+    expect(actions.startThreadRequest).toBeNull();
+  });
+
+  it("navigates when another Workspace's board chat is mounted", async () => {
+    const showThread = vi.fn();
+    useWorkbenchFloatingChatStore.setState({
+      pageChat: {
+        environmentId,
+        kind: "board",
+        projectId: WorkbenchProjectId.make("other-workspace"),
+        showThread,
+      },
+    });
+    const { router } = await mount({
+      snapshot: { ...snapshot, ticketWorkspaces: [readyWorkspace] },
+    });
+    await act(async () => actions.requestNewThread(ticket));
+    await confirm();
+    expect(commands.createThread).toHaveBeenCalledOnce();
+    expect(showThread).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe(
+      `/remote/${commands.createThread.mock.calls[0]?.[0].input.threadId}`,
+    );
+  });
+
+  it.each(["ticket", "board"] as const)(
+    "navigates to the original environment when its pending creation finishes in another environment's %s chat",
+    async (kind) => {
+      const originalChat = vi.fn();
+      const otherChat = vi.fn();
+      const owner =
+        kind === "ticket" ? { kind, ticketId: ticket.id } : { kind, projectId: workspace.id };
+      useWorkbenchFloatingChatStore.setState({
+        pageChat: { environmentId, ...owner, showThread: originalChat },
+      });
+      const { update, router } = await mount({
+        snapshot: { ...snapshot, ticketWorkspaces: [readyWorkspace] },
+      });
+      await act(async () => actions.requestNewThread(ticket));
+      const created = AsyncResult.success(undefined);
+      let finishCreation: (result: typeof created) => void = () => {};
+      commands.createThread.mockReturnValueOnce(
+        new Promise<typeof created>((resolve) => {
+          finishCreation = resolve;
+        }),
+      );
+      let start: Promise<void> | undefined;
+      await act(() => {
+        start = actions.startSelectedThread({ modelSelection });
+      });
+      expect(commands.createThread).toHaveBeenCalledOnce();
+      const otherEnvironmentId = EnvironmentId.make("other-host");
+      useWorkbenchFloatingChatStore.setState({
+        pageChat: { environmentId: otherEnvironmentId, ...owner, showThread: otherChat },
+      });
+      await update({ environmentId: otherEnvironmentId });
+      await act(async () => {
+        finishCreation(created);
+        await start;
+      });
+      expect(originalChat).not.toHaveBeenCalled();
+      expect(otherChat).not.toHaveBeenCalled();
+      expect(router.state.location.pathname).toBe(
+        `/remote/${commands.createThread.mock.calls[0]?.[0].input.threadId}`,
+      );
+    },
+  );
 
   it("refreshes changed repository choices before allowing a second confirmation", async () => {
     const { update, router } = await mount();

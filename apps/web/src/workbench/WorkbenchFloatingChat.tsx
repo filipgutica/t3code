@@ -539,14 +539,8 @@ function useComposerFocusRequest(
 
 export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
   const { environmentId, label, chat, onOpenThread, onNewThread, newThreadDisabled } = props;
-  const { mode, focusRequest, setAvailable, expand, collapse, minimize, restore } =
+  const { mode, focusRequest, expand, collapse, minimize, restore } =
     useWorkbenchFloatingChatStore();
-  const hasThread = chat.selectedThreadId !== null;
-  useEffect(() => {
-    if (!hasThread) return;
-    setAvailable(true);
-    return () => setAvailable(false);
-  }, [hasThread, setAvailable]);
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   // Set by the control that changes the mode, so focus moves only after a user action.
