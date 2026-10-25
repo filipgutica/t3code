@@ -613,6 +613,11 @@ function getWorkbenchPageTicketState({
     }),
     threadActionLabel: getWorkbenchTicketStartProgressLabel(pendingAction, ticketId),
     error: error ?? pageData.query.error ?? pageData.threadLookupError ?? jiraBindings.jiraError,
+    onRetryError: pageData.query.error
+      ? pageData.query.refresh
+      : pageData.threadLookupError
+        ? pageData.refreshThreadLookup
+        : undefined,
     preparationFailed: ticketActions.workspacePreparationFailure === ticketId,
     preparationPending:
       pendingAction === `prepare-workspace:${ticketId}` ||
