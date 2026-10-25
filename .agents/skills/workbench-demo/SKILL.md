@@ -13,8 +13,10 @@ another profile. Keep it separate from the developer's live `~/.t3/userdata`.
 
 1. Run `bash scripts/workbench-demo/run.sh` from the checkout under test. Startup
    creates disposable state, seeds fixtures, and checks Jira before reporting ready.
-2. Use the printed pairing URL. Give the human their own unconsumed pairing URL
-   when they need to connect. Track the launcher for this run.
+2. Open the printed pairing URL in the Workbench browser with `preview_open`.
+   Give the human their own unconsumed pairing URL when they need to connect.
+   Track the launcher for this run. The server reloads on file changes in the
+   checkout, so do not run tests or builds there until you stop the demo.
 3. Stop with Ctrl-C when finished. Confirm cleanup succeeds: the run is removed
    and refreshed Jira authorization is saved to the profile.
 
@@ -40,9 +42,10 @@ and synthetic history do not prove that an agent ran.
 
 ## Browser
 
-Verify, capture screenshots and record videos in the Browser panel of the T3 Code
-Workbench app running this thread, through its preview tools (`preview_open`,
-`preview_snapshot`, `preview_upload`). That browser carries the user's sign-ins,
+Verify, capture screenshots and record videos of the local demo in the Browser panel
+of the T3 Code Workbench app running this thread, through its preview tools (`preview_open`,
+`preview_snapshot`, `preview_upload`). The Vercel demo linked from a PR is for
+human reviewers; agents do not use it. That browser carries the user's sign-ins,
 GitHub included, so upload PR evidence from it as well:
 
 1. Open a fresh tab on the PR (`reuseExistingTab: false`) and scroll to the bottom;
