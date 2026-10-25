@@ -1142,7 +1142,6 @@ function WorkbenchPageBoard(
               pageData={pageData}
               boardData={boardData}
               threadActions={threadActions}
-              ticketActions={ticketActions}
               environmentId={environmentId}
               workspace={selectedProject}
               onOpenDraft={(draftId) => selectTicket(selectedProject.id, draftId)}
@@ -1192,11 +1191,10 @@ function WorkbenchPageBoardChat({
   pageData,
   boardData,
   threadActions,
-  ticketActions,
   environmentId,
   workspace,
   onOpenDraft,
-}: Pick<WorkbenchPageViewProps, "pageData" | "boardData" | "threadActions" | "ticketActions"> & {
+}: Pick<WorkbenchPageViewProps, "pageData" | "boardData" | "threadActions"> & {
   readonly environmentId: EnvironmentId;
   readonly workspace: NonNullable<WorkbenchPageViewProps["selection"]["selectedProject"]>;
   readonly onOpenDraft: (draftId: WorkbenchTicketId) => void;
@@ -1208,7 +1206,8 @@ function WorkbenchPageBoardChat({
       workspace={workspace}
       providers={pageData.providers}
       linkedProjects={boardData.linkedT3Projects}
-      tickets={boardData.boardTickets}
+      // Unfiltered: a Thread keeps its tab when the board shows only Jira-imported tickets.
+      tickets={boardData.projectTickets}
       assignments={snapshot?.assignments ?? []}
       drafts={snapshot?.ticketDrafts ?? []}
       threadsById={pageData.threadsById}
@@ -1238,9 +1237,7 @@ function WorkbenchPageBoardChat({
       }
       refreshSnapshot={pageData.refreshWorkbenchSnapshot}
       onOpenDraft={onOpenDraft}
-      onOpenTicketThread={(ticket, threadId) =>
-        threadActions.requestTicketThread(ticketActions.ticketForBoardAction(ticket), threadId)
-      }
+      onOpenThread={(threadId) => void threadActions.openAssignedThread(threadId)}
     />
   );
 }

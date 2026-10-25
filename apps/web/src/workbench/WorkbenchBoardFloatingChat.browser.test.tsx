@@ -60,7 +60,35 @@ vi.mock("../components/ChatView", () => ({
 }));
 vi.mock("./WorkbenchTicketProposal", () => ({
   WorkbenchTicketProposalHistory: (props: { children: ReactNode }) => props.children,
-  WorkbenchTicketProposalRenderer: (props: { children: ReactNode }) => props.children,
+  // Stands in for a proposal card: Apply hands the proposal to the chat's draft editor.
+  WorkbenchTicketProposalRenderer: (props: {
+    children: ReactNode;
+    canApply: boolean;
+    onApply: (suggestion: {
+      title: string;
+      markdown: string;
+      repositoryProjectIds: ReadonlyArray<string>;
+      primaryT3ProjectId: string | null;
+    }) => void;
+  }) => (
+    <>
+      {props.children}
+      <button
+        type="button"
+        disabled={!props.canApply}
+        onClick={() =>
+          props.onApply({
+            title: "Export refunds",
+            markdown: "",
+            repositoryProjectIds: [],
+            primaryT3ProjectId: null,
+          })
+        }
+      >
+        Apply to draft
+      </button>
+    </>
+  ),
 }));
 
 const environmentId = EnvironmentId.make("local");
@@ -134,6 +162,8 @@ type BeginInput = { readonly id: WorkbenchTicketId; readonly threadId: ThreadId 
 function Harness(props: {
   readonly initialDrafts?: ReadonlyArray<WorkbenchTicketDraft>;
   readonly onSnapshot: (add: (input: BeginInput) => void) => void;
+  readonly onOpenDraft?: (draftId: WorkbenchTicketId) => void;
+  readonly onOpenThread?: (threadId: ThreadId) => void;
 }) {
   const [drafts, setDrafts] = useState(props.initialDrafts ?? []);
   props.onSnapshot((input) =>
@@ -162,8 +192,8 @@ function Harness(props: {
       }}
       canStartDrafts
       refreshSnapshot={() => {}}
-      onOpenDraft={() => {}}
-      onOpenTicketThread={() => {}}
+      onOpenDraft={props.onOpenDraft ?? (() => {})}
+      onOpenThread={props.onOpenThread ?? (() => {})}
     />
   );
 }
@@ -283,4 +313,48 @@ it.each([
   await userEvent.click(screen.getByRole("tab", { name: "PAY-1 · Thread draft-thread" }));
   await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
   await expect.element(screen.getByRole("button", { name: action })).toBeEnabled();
+});
+
+it("opens a draft only after its applied proposal saves", async () => {
+  const { onSnapshot } = await setup();
+  mocks.otherCommand.mockResolvedValue({
+    _tag: "Failure",
+    cause: Cause.fail(new Error("Saving the draft failed")),
+  });
+  const onOpenDraft = vi.fn();
+  await using screen = await render(
+    <Harness
+      initialDrafts={[draft("draft", "draft-thread", "Plan exports")]}
+      onSnapshot={onSnapshot}
+      onOpenDraft={onOpenDraft}
+    />,
+  );
+  await userEvent.click(screen.getByRole("tab", { name: "Plan exports" }));
+  await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
+  await userEvent.click(screen.getByRole("button", { name: "Apply to draft" }));
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("Saving the draft failed");
+
+  await userEvent.click(screen.getByRole("button", { name: "Open draft" }));
+  await expect.element(screen.getByRole("alert")).toBeVisible();
+  expect(onOpenDraft).not.toHaveBeenCalled();
+});
+
+it("opens ticket Threads, including settled ones, as Threads and drafts as drafts", async () => {
+  const { onSnapshot } = await setup();
+  const onOpenDraft = vi.fn();
+  const onOpenThread = vi.fn();
+  await using screen = await render(
+    <Harness
+      initialDrafts={[draft("draft", "draft-thread", "Plan exports")]}
+      onSnapshot={onSnapshot}
+      onOpenDraft={onOpenDraft}
+      onOpenThread={onOpenThread}
+    />,
+  );
+  await userEvent.click(screen.getByRole("tab", { name: "PAY-1 · Thread first" }));
+  await userEvent.click(screen.getByRole("button", { name: "Open full Thread" }));
+  expect(onOpenThread).toHaveBeenCalledWith("first");
+  await userEvent.click(screen.getByRole("tab", { name: "Plan exports" }));
+  await userEvent.click(screen.getByRole("button", { name: "Open full Thread" }));
+  expect(onOpenDraft).toHaveBeenCalledWith("draft");
 });

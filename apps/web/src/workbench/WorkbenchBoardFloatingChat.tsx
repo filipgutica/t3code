@@ -56,7 +56,8 @@ interface WorkbenchBoardFloatingChatProps extends Pick<
   readonly refreshSnapshot: () => void;
   /** Opens a draft's planning conversation; promoted drafts share the ticket's id. */
   readonly onOpenDraft: (draftId: WorkbenchTicketId) => void;
-  readonly onOpenTicketThread: (ticket: WorkbenchTicket, threadId: ThreadId) => void;
+  /** Opens a ticket's Thread on its route, restoring it first when archived. */
+  readonly onOpenThread: (threadId: ThreadId) => void;
 }
 
 /** The Workspace's ticket Threads and ticket drafts in the floating chat. Hidden on narrow screens. */
@@ -187,10 +188,8 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
   );
   const openThread = (threadId: ThreadId) => {
     const draft = planningDrafts.get(threadId);
-    if (draft) return props.onOpenDraft(draft.id);
-    const assignment = props.assignments.find((candidate) => candidate.threadId === threadId);
-    const ticket = props.tickets.find((candidate) => candidate.id === assignment?.ticketId);
-    if (ticket) props.onOpenTicketThread(ticket, threadId);
+    if (draft) props.onOpenDraft(draft.id);
+    else props.onOpenThread(threadId);
   };
   return (
     <WorkbenchFloatingChat
@@ -231,6 +230,20 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
   );
 }
 
+/** The full draft page's rule: the grant, and nothing archived. */
+const useCanOperateDraft = ({
+  environmentId,
+  workspace,
+  ticket,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly workspace: WorkbenchBoardFloatingChatProps["workspace"];
+  readonly ticket: WorkbenchTicket | null;
+}) =>
+  useAtomValue(workbenchEnvironment.promoteTicketDraft.permissionAtom(environmentId)) &&
+  workspace.archivedAt == null &&
+  ticket?.archivedAt == null;
+
 /**
  * A draft's conversation in the chat: proposals apply to the draft, and the strip below offers
  * the draft page's actions. Fields are edited on the full draft page, so no edits stay pending.
@@ -262,10 +275,7 @@ function BoardDraftThread({
   const [fromCommand, setFromCommand] = useState<WorkbenchConversationDraft | null>(null);
   const draft = pickNewestConversationDraft(snapshotDraft, fromCommand) ?? snapshotDraft;
   const [discardOpen, setDiscardOpen] = useState(false);
-  const canOperate =
-    useAtomValue(workbenchEnvironment.promoteTicketDraft.permissionAtom(environmentId)) &&
-    workspace.archivedAt == null &&
-    ticket?.archivedAt == null;
+  const canOperate = useCanOperateDraft({ environmentId, workspace, ticket });
   const editor = useTicketDraftEditor({
     environmentId,
     draft,
@@ -302,7 +312,7 @@ function BoardDraftThread({
       >
         {children}
       </WorkbenchTicketProposalRenderer>
-      <BoardDraftStrip error={transitions.error} onOpenDraft={onOpenDraft}>
+      <BoardDraftStrip editor={editor} transitions={transitions} onOpenDraft={onOpenDraft}>
         <WorkbenchDraftActions
           draft={draft}
           editor={editor}
@@ -326,14 +336,27 @@ function BoardDraftThread({
 }
 
 function BoardDraftStrip({
-  error,
+  editor,
+  transitions,
   onOpenDraft,
   children,
 }: {
-  readonly error: string | null;
+  readonly editor: Pick<
+    ReturnType<typeof useTicketDraftEditor>,
+    "conflict" | "saveError" | "flush"
+  >;
+  readonly transitions: Pick<ReturnType<typeof useTicketDraftTransitions>, "error" | "setError">;
   readonly onOpenDraft: () => void;
   readonly children: ReactNode;
 }) {
+  // A conflict explains itself in the actions' status line.
+  const error = transitions.error ?? (editor.conflict ? null : editor.saveError);
+  // An applied proposal may still be saving; the full draft page reads only saved fields.
+  const openSavedDraft = async () => {
+    const outcome = await editor.flush();
+    if (outcome.ok) onOpenDraft();
+    else transitions.setError(outcome.message);
+  };
   return (
     <div
       role="group"
@@ -346,7 +369,7 @@ function BoardDraftStrip({
         </p>
       ) : null}
       {children}
-      <Button size="xs" variant="ghost" onClick={onOpenDraft}>
+      <Button size="xs" variant="ghost" onClick={() => void openSavedDraft()}>
         <SquareArrowOutUpRightIcon />
         Open draft
       </Button>
