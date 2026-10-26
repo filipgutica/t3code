@@ -8,7 +8,7 @@ import type {
 import { ThreadId, WorkbenchTicketId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { SquareArrowOutUpRightIcon } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
@@ -128,6 +128,8 @@ function useBeginBoardDraft({
   return { begin, pending, ready: modelSelection !== null };
 }
 
+type MountedDraftOpen = { readonly threadId: ThreadId; readonly open: () => Promise<void> };
+
 function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
   const { environmentId, workspace } = props;
   const [explicitThreadId, setExplicitThreadId] = useState<ThreadId | null>(null);
@@ -186,7 +188,11 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
       .filter((draft) => draft.projectId === projectId && draft.phase !== "working")
       .map((draft) => [draft.threadId, draft]),
   );
+  // The mounted draft must save an applied proposal before the full draft page replaces it.
+  const mountedDraftOpenRef = useRef<MountedDraftOpen | null>(null);
   const openThread = (threadId: ThreadId) => {
+    const mounted = mountedDraftOpenRef.current;
+    if (mounted?.threadId === threadId) return void mounted.open();
     const draft = planningDrafts.get(threadId);
     if (draft) props.onOpenDraft(draft.id);
     else props.onOpenThread(threadId);
@@ -219,6 +225,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
               createContext={props.createContext}
               refreshSnapshot={props.refreshSnapshot}
               onOpenDraft={() => props.onOpenDraft(draft.id)}
+              openRef={mountedDraftOpenRef}
               onDiscarded={() => setExplicitThreadId(null)}
             >
               {conversation}
@@ -228,6 +235,44 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
       }}
     />
   );
+}
+
+const canApplyProposal = (
+  canOperate: boolean,
+  editor: Pick<ReturnType<typeof useTicketDraftEditor>, "editable" | "conflict">,
+  transitions: Pick<ReturnType<typeof useTicketDraftTransitions>, "action">,
+) => canOperate && editor.editable && editor.conflict === null && transitions.action === null;
+
+/**
+ * An applied proposal may still be saving, and the full draft page reads only saved fields.
+ * Registers the guard so the chat header's Open full Thread waits for the same save.
+ */
+function useOpenSavedDraft({
+  threadId,
+  flush,
+  setError,
+  onOpenDraft,
+  openRef,
+}: {
+  readonly threadId: ThreadId;
+  readonly flush: ReturnType<typeof useTicketDraftEditor>["flush"];
+  readonly setError: (message: string) => void;
+  readonly onOpenDraft: () => void;
+  readonly openRef: RefObject<MountedDraftOpen | null>;
+}) {
+  const open = async () => {
+    const outcome = await flush();
+    if (outcome.ok) onOpenDraft();
+    else setError(outcome.message);
+  };
+  useEffect(() => {
+    const mounted = { threadId, open };
+    openRef.current = mounted;
+    return () => {
+      if (openRef.current === mounted) openRef.current = null;
+    };
+  });
+  return open;
 }
 
 /** The full draft page's rule: the grant, and nothing archived. */
@@ -257,6 +302,7 @@ function BoardDraftThread({
   createContext,
   refreshSnapshot,
   onOpenDraft,
+  openRef,
   onDiscarded,
   children,
 }: {
@@ -268,6 +314,7 @@ function BoardDraftThread({
   readonly createContext: WorkbenchBoardFloatingChatProps["createContext"];
   readonly refreshSnapshot: () => void;
   readonly onOpenDraft: () => void;
+  readonly openRef: RefObject<MountedDraftOpen | null>;
   readonly onDiscarded: () => void;
   readonly children: ReactNode;
 }) {
@@ -297,6 +344,13 @@ function BoardDraftThread({
     onCreateManually: onOpenDraft,
     refreshSnapshot,
   });
+  const openSavedDraft = useOpenSavedDraft({
+    threadId: draft.threadId,
+    flush: editor.flush,
+    setError: transitions.setError,
+    onOpenDraft,
+    openRef,
+  });
   return (
     <>
       <WorkbenchTicketProposalRenderer
@@ -305,14 +359,12 @@ function BoardDraftThread({
         linkedProjects={linkedProjects}
         fields={editor.fields}
         ticketCreated={ticket !== null}
-        canApply={
-          canOperate && editor.editable && editor.conflict === null && transitions.action === null
-        }
+        canApply={canApplyProposal(canOperate, editor, transitions)}
         onApply={applyTicketProposal(editor)}
       >
         {children}
       </WorkbenchTicketProposalRenderer>
-      <BoardDraftStrip editor={editor} transitions={transitions} onOpenDraft={onOpenDraft}>
+      <BoardDraftStrip editor={editor} error={transitions.error} onOpenDraft={openSavedDraft}>
         <WorkbenchDraftActions
           draft={draft}
           editor={editor}
@@ -337,26 +389,17 @@ function BoardDraftThread({
 
 function BoardDraftStrip({
   editor,
-  transitions,
+  error: transitionError,
   onOpenDraft,
   children,
 }: {
-  readonly editor: Pick<
-    ReturnType<typeof useTicketDraftEditor>,
-    "conflict" | "saveError" | "flush"
-  >;
-  readonly transitions: Pick<ReturnType<typeof useTicketDraftTransitions>, "error" | "setError">;
-  readonly onOpenDraft: () => void;
+  readonly editor: Pick<ReturnType<typeof useTicketDraftEditor>, "conflict" | "saveError">;
+  readonly error: string | null;
+  readonly onOpenDraft: () => Promise<void>;
   readonly children: ReactNode;
 }) {
   // A conflict explains itself in the actions' status line.
-  const error = transitions.error ?? (editor.conflict ? null : editor.saveError);
-  // An applied proposal may still be saving; the full draft page reads only saved fields.
-  const openSavedDraft = async () => {
-    const outcome = await editor.flush();
-    if (outcome.ok) onOpenDraft();
-    else transitions.setError(outcome.message);
-  };
+  const error = transitionError ?? (editor.conflict ? null : editor.saveError);
   return (
     <div
       role="group"
@@ -369,7 +412,7 @@ function BoardDraftStrip({
         </p>
       ) : null}
       {children}
-      <Button size="xs" variant="ghost" onClick={() => void openSavedDraft()}>
+      <Button size="xs" variant="ghost" onClick={() => void onOpenDraft()}>
         <SquareArrowOutUpRightIcon />
         Open draft
       </Button>

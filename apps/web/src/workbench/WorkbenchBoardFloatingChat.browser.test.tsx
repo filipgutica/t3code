@@ -315,29 +315,32 @@ it.each([
   await expect.element(screen.getByRole("button", { name: action })).toBeEnabled();
 });
 
-it("opens a draft only after its applied proposal saves", async () => {
-  const { onSnapshot } = await setup();
-  mocks.otherCommand.mockResolvedValue({
-    _tag: "Failure",
-    cause: Cause.fail(new Error("Saving the draft failed")),
-  });
-  const onOpenDraft = vi.fn();
-  await using screen = await render(
-    <Harness
-      initialDrafts={[draft("draft", "draft-thread", "Plan exports")]}
-      onSnapshot={onSnapshot}
-      onOpenDraft={onOpenDraft}
-    />,
-  );
-  await userEvent.click(screen.getByRole("tab", { name: "Plan exports" }));
-  await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
-  await userEvent.click(screen.getByRole("button", { name: "Apply to draft" }));
-  await expect.element(screen.getByRole("alert")).toHaveTextContent("Saving the draft failed");
+it.each(["Open draft", "Open full Thread"])(
+  "%s opens a draft only after its applied proposal saves",
+  async (action) => {
+    const { onSnapshot } = await setup();
+    mocks.otherCommand.mockResolvedValue({
+      _tag: "Failure",
+      cause: Cause.fail(new Error("Saving the draft failed")),
+    });
+    const onOpenDraft = vi.fn();
+    await using screen = await render(
+      <Harness
+        initialDrafts={[draft("draft", "draft-thread", "Plan exports")]}
+        onSnapshot={onSnapshot}
+        onOpenDraft={onOpenDraft}
+      />,
+    );
+    await userEvent.click(screen.getByRole("tab", { name: "Plan exports" }));
+    await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
+    await userEvent.click(screen.getByRole("button", { name: "Apply to draft" }));
+    await expect.element(screen.getByRole("alert")).toHaveTextContent("Saving the draft failed");
 
-  await userEvent.click(screen.getByRole("button", { name: "Open draft" }));
-  await expect.element(screen.getByRole("alert")).toBeVisible();
-  expect(onOpenDraft).not.toHaveBeenCalled();
-});
+    await userEvent.click(screen.getByRole("button", { name: action }));
+    await expect.element(screen.getByRole("alert")).toBeVisible();
+    expect(onOpenDraft).not.toHaveBeenCalled();
+  },
+);
 
 it("opens ticket Threads, including settled ones, as Threads and drafts as drafts", async () => {
   const { onSnapshot } = await setup();
