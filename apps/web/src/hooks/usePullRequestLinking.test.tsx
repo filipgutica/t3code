@@ -53,6 +53,12 @@ it("offers Ticket PR linking only when the environment has a linkable Git host",
   expect(observed.onValue).toHaveBeenLastCalledWith(true);
 
   observed.projects = [
+    { ...(observed.projects[0] as object), environmentId: EnvironmentId.make("remote") },
+  ];
+  act(() => renderer.update(<Probe />));
+  expect(observed.onValue).toHaveBeenLastCalledWith(false);
+
+  observed.projects = [
     {
       environmentId,
       repositoryIdentity: {

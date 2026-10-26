@@ -1,4 +1,6 @@
 import type {
+  OrchestrationV2ShellSnapshot,
+  OrchestrationV2ThreadFamily,
   OrchestrationV2ThreadShell,
   ProjectId,
   ThreadId,
@@ -266,6 +268,61 @@ export function getWorkbenchTicketThreadSections({
   }
 
   return { active, history, settled };
+}
+
+/**
+ * Assigned Threads a shell left out as older settled. Those shells keep only the newest settled
+ * Threads, so Workbench must read the rest before it can treat a missing Thread as deleted.
+ */
+export function getWorkbenchOmittedThreadIds({
+  threadIds,
+  shell,
+}: {
+  readonly threadIds: ReadonlyArray<ThreadId>;
+  readonly shell:
+    | (Pick<OrchestrationV2ShellSnapshot, "olderSettled"> & {
+        readonly threads: ReadonlyArray<Pick<OrchestrationV2ThreadShell, "id">>;
+      })
+    | null;
+}): ReadonlyArray<ThreadId> {
+  if (shell?.olderSettled === undefined) return [];
+  const shellThreadIds = new Set(shell.threads.map((thread) => thread.id));
+  return [...new Set(threadIds)].filter((threadId) => !shellThreadIds.has(threadId)).toSorted();
+}
+
+/**
+ * Ready once every omitted Thread has been read and its row merged back in. A cached read settles
+ * before its rows merge; a Thread its read lacks, or that was removed after it, is gone.
+ */
+export function getWorkbenchOmittedThreadsStatus({
+  threadIds,
+  reads,
+  mergedThreadIds,
+  removedAt,
+}: {
+  readonly threadIds: ReadonlyArray<ThreadId>;
+  /** Each Thread's settled family read, or "failed"; absent while it is pending. */
+  readonly reads: ReadonlyMap<
+    ThreadId,
+    | "failed"
+    | (Pick<OrchestrationV2ThreadFamily, "snapshotSequence"> & {
+        readonly threads: ReadonlyArray<Pick<OrchestrationV2ThreadShell, "id">>;
+      })
+  >;
+  readonly mergedThreadIds: ReadonlySet<ThreadId>;
+  readonly removedAt: ReadonlyMap<ThreadId, number>;
+}): "ready" | "pending" | "failed" {
+  if (threadIds.some((threadId) => reads.get(threadId) === "failed")) return "failed";
+  const ready = threadIds.every((threadId) => {
+    const read = reads.get(threadId);
+    if (read === undefined || read === "failed") return false;
+    return (
+      mergedThreadIds.has(threadId) ||
+      !read.threads.some((thread) => thread.id === threadId) ||
+      (removedAt.get(threadId) ?? -1) > read.snapshotSequence
+    );
+  });
+  return ready ? "ready" : "pending";
 }
 
 export function getVisibleWorkbenchAssignments(

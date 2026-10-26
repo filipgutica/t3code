@@ -3,6 +3,7 @@ const EXECUTION_PRESENTATION = {
   waiting: { label: "Waiting", icon: "waiting", className: "text-muted-foreground" },
   approval: { label: "Approval", icon: "approval", className: "text-warning-foreground" },
   input: { label: "Input", icon: "input", className: "text-indigo-600 dark:text-indigo-300" },
+  request: { label: "Request", icon: "request", className: "text-guest-foreground" },
   limited: { label: "Limited", icon: "failed", className: "text-warning" },
   failed: { label: "Failed", icon: "failed", className: "text-error" },
 } as const;

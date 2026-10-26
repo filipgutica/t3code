@@ -1,10 +1,7 @@
 #!/usr/bin/env node
-// Deterministic Codex executable for the Workbench regression environment.
-//
-// It implements the small app-server and `codex exec` surfaces used by T3.
-// The real provider process is never launched: scenarios are selected from
-// CODEX_HOME/workbench-regression.json and thread history is persisted beside
-// that control file so a new server process can resume it.
+// Deterministic Codex stand-in for Workbench regressions: the app-server and `codex exec`
+// surfaces T3 uses, driven by CODEX_HOME/workbench-regression.json, with thread history
+// persisted beside it so a new server process can resume.
 import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";

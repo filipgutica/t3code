@@ -18,6 +18,7 @@ const baseState: ThreadActionMenuState = {
   canSnoozeNow: true,
   isRegeneratingTitle: false,
   isRunning: false,
+  canShareWithGuest: true,
   supports: {
     settlement: true,
     autoSettleOptOut: true,

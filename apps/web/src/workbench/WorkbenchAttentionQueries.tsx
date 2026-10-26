@@ -1,5 +1,5 @@
 import { useStableCallback } from "../hooks/useStableCallback";
-import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -81,7 +81,7 @@ function WorkbenchAttentionQuery({
   readonly onChange: (key: string, observation: WorkbenchPullRequestAttention) => void;
 }) {
   const target = (() => {
-    const host = parseChangeRequestUrl(reference.url)?.host;
+    const host = sourceControlClients.parseChangeRequestUrl(reference.url)?.link.host;
     return {
       environmentId,
       input: {

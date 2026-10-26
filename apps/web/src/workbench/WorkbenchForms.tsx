@@ -849,6 +849,7 @@ export type WorkbenchTicketDetailProps = {
   readonly threadActionPending: boolean;
   readonly threadActionLabel?: string | null;
   readonly error: string | null;
+  readonly onRetryError?: (() => void) | undefined;
   readonly onBack: () => void;
   readonly onSave: (
     ticket: WorkbenchTicket,
@@ -950,6 +951,7 @@ function WorkbenchLoadedTicketDetail(props: WorkbenchTicketDetailProps) {
         jiraRefreshDisabled: props.jiraRefreshDisabled,
         pending: props.pending,
         error: props.error,
+        onRetryError: props.onRetryError,
         lifecycleActionsEnabled: props.lifecycleActionsEnabled,
         floatingChat: props.floatingChat ?? false,
       }}
@@ -1035,6 +1037,7 @@ function WorkbenchTicketDetailController({
     | "jiraRefreshDisabled"
     | "pending"
     | "error"
+    | "onRetryError"
     | "lifecycleActionsEnabled"
     | "floatingChat"
   >;
@@ -1097,6 +1100,7 @@ function WorkbenchTicketDetailController({
     jiraRefreshDisabled,
     pending,
     error,
+    onRetryError,
     lifecycleActionsEnabled,
     workspaceReadOnly = false,
     threadMutationsDisabled = false,
@@ -1375,7 +1379,7 @@ function WorkbenchTicketDetailController({
                 floatingChatInset.column,
               )}
             >
-              {error ? <WorkbenchInlineError message={error} /> : null}
+              {error ? <WorkbenchInlineError message={error} onRetry={onRetryError} /> : null}
               <WorkbenchTicketDescriptionPanel
                 presentation={{
                   jiraFieldsManaged: jiraFieldsManaged,
@@ -1986,7 +1990,13 @@ function getWorkbenchThreadRecencyLabel(thread: EnvironmentThreadShell): string 
   );
 }
 
-export function WorkbenchInlineError({ message }: { readonly message: string | null }) {
+export function WorkbenchInlineError({
+  message,
+  onRetry,
+}: {
+  readonly message: string | null;
+  readonly onRetry?: (() => void) | undefined;
+}) {
   if (message === null) return null;
   return (
     <div
@@ -1994,7 +2004,12 @@ export function WorkbenchInlineError({ message }: { readonly message: string | n
       role="alert"
     >
       <CircleAlertIcon className="mt-0.5 size-4 shrink-0" />
-      <span>{message}</span>
+      <span className="min-w-0 flex-1">{message}</span>
+      {onRetry ? (
+        <Button onClick={onRetry} size="xs" variant="outline">
+          <RefreshCwIcon /> Retry
+        </Button>
+      ) : null}
     </div>
   );
 }

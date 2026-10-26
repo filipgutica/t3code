@@ -89,6 +89,14 @@ describe("Workbench native execution indicators", () => {
     expect(summarize([input, working])?.presentation.label).toBe("Input");
     expect(summarize([working, failed])?.presentation.label).toBe("Failed");
     expect(summarize([working, waiting])?.presentation.label).toBe("Working");
+    const request = { ...waiting, id: ThreadId.make("request"), pendingGuestMessageCount: 1 };
+    expect(getWorkbenchThreadExecutionStatus(request)).toMatchObject({
+      presentation: { label: "Request", icon: "request" },
+      startedAt: null,
+    });
+    expect(summarize([failed, request])?.presentation.label).toBe("Request");
+    expect(summarize([request, failed])?.presentation.label).toBe("Request");
+    expect(summarize([request, input])?.presentation.label).toBe("Input");
     expect(
       summarize([working, input, failed, { ...waiting, hasPendingApprovals: true }])?.presentation
         .label,

@@ -4,12 +4,7 @@ import {
   type ProjectId,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
-import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
-import {
-  canonicalRepositoryKey,
-  sourceControlRepositorySelector,
-} from "@t3tools/shared/sourceControl";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import type { TicketWorkspaceHost } from "@t3tools/workbench/TicketWorkspaceHost";
 import * as Context from "effect/Context";
@@ -24,6 +19,7 @@ import {
   type SourceControlProviderHandle,
   SourceControlProviderRegistry,
 } from "../sourceControl/SourceControlProviderRegistry.ts";
+import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 
 export class TicketWorkspacePullRequestResolver extends Context.Service<
   TicketWorkspacePullRequestResolver,
@@ -58,7 +54,7 @@ const validatePullRequestHead = ({
 }) => {
   const headRepository = request.headRepositoryNameWithOwner?.toLowerCase();
   const sameRepository = headRepository
-    ? headRepository === sourceControlRepositorySelector(identity)?.toLowerCase()
+    ? headRepository === sourceControlDefinitions.repositorySelector(identity)?.toLowerCase()
     : request.isCrossRepository === false;
   if (request.isCrossRepository === true || !sameRepository)
     return preparationError(
@@ -169,10 +165,11 @@ export const make = Effect.gen(function* () {
           ),
         );
       if (request.state !== "open") continue;
-      const parsed = parseChangeRequestUrl(request.url);
+      const parsed = sourceControlDefinitions.parseChangeRequestUrl(request.url)?.link;
       if (
         !parsed ||
-        canonicalRepositoryKey(`${parsed.host}/${parsed.repository}`) !== repositoryKey
+        sourceControlDefinitions.canonicalRepositoryKey(`${parsed.host}/${parsed.repository}`) !==
+          repositoryKey
       )
         return yield* preparationError(`A linked PR does not belong to ${projectTitle}.`);
       openRequests.push(request);
@@ -196,13 +193,16 @@ export const make = Effect.gen(function* () {
       const identity = project.repositoryIdentity;
       // Local repositories without a hosting identity keep the existing origin/main path.
       if (!identity) return Option.none();
-      const repositoryKey = canonicalRepositoryKey(identity.canonicalKey.toLowerCase());
+      const repositoryKey = sourceControlDefinitions.canonicalRepositoryKey(
+        identity.canonicalKey.toLowerCase(),
+      );
       const candidates = new Map<string, string>();
       const addCandidate = (url: string) => {
-        const parsed = parseChangeRequestUrl(url);
+        const parsed = sourceControlDefinitions.parseChangeRequestUrl(url)?.link;
         if (
           parsed &&
-          canonicalRepositoryKey(`${parsed.host}/${parsed.repository}`) === repositoryKey
+          sourceControlDefinitions.canonicalRepositoryKey(`${parsed.host}/${parsed.repository}`) ===
+            repositoryKey
         )
           candidates.set(`${repositoryKey}#${parsed.number}`, url);
       };

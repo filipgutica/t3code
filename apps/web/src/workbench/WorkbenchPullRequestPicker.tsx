@@ -11,11 +11,7 @@ import type {
   RepositoryIdentity,
   ScopedThreadRef,
 } from "@t3tools/contracts";
-import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
-import {
-  canonicalRepositoryKey,
-  sourceControlRepositorySelector,
-} from "@t3tools/shared/sourceControl";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { useId, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { Button } from "../components/ui/button";
@@ -178,7 +174,7 @@ function resolvePastedUrl(
   query: string,
   canLink: (url: string) => boolean,
 ): { readonly url: string | null; readonly message: string } | null {
-  if (parseChangeRequestUrl(query.trim()) === null) return null;
+  if (!sourceControlClients.parseChangeRequestUrl(query.trim())) return null;
   const resolved = resolveLinkPullRequestInput({
     reference: query,
     project: null,
@@ -386,7 +382,7 @@ function repositoryTargets(
   for (const project of projects) {
     const identity = project.repositoryIdentity;
     if (project.environmentId !== thread.environmentId || !identity) continue;
-    const repository = sourceControlRepositorySelector(identity);
+    const repository = sourceControlClients.repositorySelector(identity);
     const key = repositoryKey(identity);
     const url = numberLinkUrl(identity, number);
     if (repository === null || url === null || seen.has(key)) continue;
@@ -400,8 +396,12 @@ function repositoryTargets(
   return targets;
 }
 
+function parseChangeRequestLink(url: string) {
+  return sourceControlClients.parseChangeRequestUrl(url)?.link ?? null;
+}
+
 function repositoryKey(identity: RepositoryIdentity): string {
-  return canonicalRepositoryKey(identity.canonicalKey.toLowerCase());
+  return sourceControlClients.canonicalRepositoryKey(identity.canonicalKey.toLowerCase());
 }
 
 function numberLinkUrl(identity: RepositoryIdentity, number: number): string | null {
@@ -422,7 +422,7 @@ function NumberCandidate({
 }: RowProps & { readonly environmentId: EnvironmentId; readonly target: NumberTarget }) {
   const { input } = target;
   const query = useEnvironmentQuery(linkedPullRequestDetailAtom({ environmentId, input }));
-  const reference = query.data === null ? null : parseChangeRequestUrl(query.data.url);
+  const reference = query.data === null ? null : parseChangeRequestLink(query.data.url);
   if (query.data !== null && reference !== null) {
     if (!rowProps.linking.canLink(query.data.url)) return null;
     return (
@@ -434,7 +434,7 @@ function NumberCandidate({
     );
   }
   const ownReference =
-    target.own && rowProps.linking.canLink(target.url) ? parseChangeRequestUrl(target.url) : null;
+    target.own && rowProps.linking.canLink(target.url) ? parseChangeRequestLink(target.url) : null;
   if (ownReference !== null)
     return (
       <CandidateRow

@@ -4,6 +4,7 @@ import {
   CircleDotDashedIcon,
   MessageCircleQuestionIcon,
   ShieldQuestionIcon,
+  UserRoundIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { formatWorkingDurationLabel } from "@t3tools/client-runtime/state/models";
@@ -13,6 +14,7 @@ const STATUS_ICONS = {
   working: CircleDashedIcon,
   waiting: CircleDotDashedIcon,
   input: MessageCircleQuestionIcon,
+  request: UserRoundIcon,
   approval: ShieldQuestionIcon,
   failed: CircleAlertIcon,
 };

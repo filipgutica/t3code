@@ -49,12 +49,9 @@ const beginRequestFor = ({
 };
 
 /**
- * Starts the Workspace's planning conversation once per environment and Workspace. The request
- * ids are kept so a retry after a lost reply repeats the same begin instead of opening a second
- * draft; they belong to one scope, so another environment's Workspace with the same id never
- * reuses them, and a reply that arrives after the scope changed is dropped. A draft stuck in
- * `creating` (the page closed mid-begin) is recovered with its own ids. `enabled` is false for a
- * host that predates conversation drafts, which never receives the RPC.
+ * Begins a Workspace's planning conversation once per environment and Workspace. Scoped request
+ * ids make a retry repeat the same begin and recover a draft stuck in `creating`; late replies for
+ * another scope are dropped. `enabled` is false for hosts that predate conversation drafts.
  */
 export function useTicketDraftBegin({
   environmentId,

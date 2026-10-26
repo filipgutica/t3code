@@ -142,7 +142,10 @@ function captureCheckpointFreeRootRun(status: TerminalStatus) {
       const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
       yield* runExecution.startRootRun({
         commandId: CommandId.make(`command:${key}`),
-        appThread: { id: ids.threadId } as OrchestrationV2AppThread,
+        appThread: {
+          id: ids.threadId,
+          lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: ids.threadId },
+        } as OrchestrationV2AppThread,
         providerSessionId: ProviderSessionId.make(`session:${key}`),
         session: {
           events: Stream.empty,

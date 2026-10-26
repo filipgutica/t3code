@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId, ThreadId, WorkbenchTicketId } from "@t3tools/contracts";
-import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import {
   ChevronRightIcon,
   CircleAlertIcon,
@@ -108,7 +108,7 @@ function AttentionItems({
       return;
     }
     const { row } = signal.source;
-    const host = parseChangeRequestUrl(row.pullRequest.url)?.host;
+    const host = sourceControlClients.parseChangeRequestUrl(row.pullRequest.url)?.link.host;
     onNavigate?.();
     openPullRequest?.({
       environmentId,

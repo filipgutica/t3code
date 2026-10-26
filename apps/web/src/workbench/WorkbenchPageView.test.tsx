@@ -247,6 +247,9 @@ const query = {
   refresh: vi.fn(),
 };
 const noop = vi.fn();
+const refreshQuery = vi.fn();
+const refreshThreadLookup = vi.fn();
+const retries = { queryError: refreshQuery, threadLookupError: refreshThreadLookup };
 const success = vi.fn(async () => true);
 const idle = vi.fn(async () => {});
 const syncJiraBinding = vi.fn<PageProps["jiraBindings"]["syncJiraBinding"]>(async () => null);
@@ -263,6 +266,8 @@ function Harness({
   syncState = "error",
   grants = defaultGrants,
   error = null,
+  queryError = null,
+  threadLookupError = null,
   setError = noop,
   dialog,
   conversation,
@@ -279,6 +284,8 @@ function Harness({
   syncState?: "error" | "success";
   grants?: { archive: boolean; remove: boolean };
   error?: string | null;
+  queryError?: string | null;
+  threadLookupError?: string | null;
   setError?: PageProps["setError"];
   dialog?: "create" | "publish" | "workspace";
   /** create=ticket in the URL, an unsaved draft to resume, or a saved ticket's draft phase. */
@@ -326,7 +333,7 @@ function Harness({
     providers: [],
     keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
     availableEditors: [],
-    query: { ...query, data: currentSnapshot },
+    query: { ...query, data: currentSnapshot, error: queryError, refresh: refreshQuery },
     jiraQuery: { ...query, data: jiraSnapshot },
     refreshWorkbenchSnapshot: noop,
     refreshJiraSnapshot: noop,
@@ -351,8 +358,9 @@ function Harness({
     reservedThreadIds: new Set(),
     assignmentsByTicket: new Map([[ticket.id, assignment]]),
     threadLookupReady: true,
-    archivedThreadsError: null,
+    threadLookupError,
     refreshArchivedThreads: noop,
+    refreshThreadLookup,
   };
   const selection: PageProps["selection"] = {
     awaitingTicketId: null,
@@ -704,6 +712,42 @@ it("shows the deleted assignment and a visible replacement action in Ticket deta
     thread.id,
   );
 });
+
+it.each(["queryError", "threadLookupError"] as const)(
+  "retries the Ticket's %s only when that error is displayed",
+  async (errorSource) => {
+    const props = { detail: true, [errorSource]: "Could not load Ticket data" };
+    await render({ ...props, error: "Could not move Ticket" });
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not move Ticket",
+    );
+    expect(container.querySelector('[role="alert"] button')).toBeNull();
+
+    await render(props);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not load Ticket data",
+    );
+    await act(async () => button("Retry").click());
+    expect(retries[errorSource]).toHaveBeenCalledOnce();
+    expect(Object.values(retries).filter((retry) => retry.mock.calls.length > 0)).toHaveLength(1);
+  },
+);
+
+it.each(["queryError", "threadLookupError"] as const)(
+  "retries the board's %s only when that error is displayed",
+  async (errorSource) => {
+    const props = { syncState: "success" as const, [errorSource]: "Could not load board data" };
+    await render({ ...props, error: "Could not move Ticket" });
+    expect(container.textContent).toContain("Could not move Ticket");
+    expect(button("Retry", { optional: true })).toBeNull();
+
+    await render(props);
+    expect(container.textContent).toContain("Could not load board data");
+    await act(async () => button("Retry").click());
+    expect(retries[errorSource]).toHaveBeenCalledOnce();
+    expect(Object.values(retries).filter((retry) => retry.mock.calls.length > 0)).toHaveLength(1);
+  },
+);
 
 it("opens the planning conversation for create=ticket instead of the board", async () => {
   await render({ conversation: "create" });

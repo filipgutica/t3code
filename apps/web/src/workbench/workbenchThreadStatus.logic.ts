@@ -6,7 +6,12 @@ import { resolveWorkbenchThreadExecutionStatusPresentation } from "./WorkbenchTh
 
 type ExecutionThread = Pick<
   EnvironmentThreadShell,
-  "hasPendingApprovals" | "hasPendingUserInput" | "runtime" | "latestRun" | "goal"
+  | "hasPendingApprovals"
+  | "hasPendingUserInput"
+  | "pendingGuestMessageCount"
+  | "runtime"
+  | "latestRun"
+  | "goal"
 >;
 
 /** Native execution state stays independent of Workbench planning and notifications. */
@@ -31,8 +36,9 @@ export type WorkbenchThreadExecutionStatus = NonNullable<
 // A Ticket can own concurrent Threads. Surface actionable states before progress;
 // the individual rows still show every Thread's own state.
 const TICKET_EXECUTION_PRIORITY = {
-  approval: 6,
-  input: 5,
+  approval: 7,
+  input: 6,
+  request: 5,
   failed: 4,
   limited: 3,
   working: 2,

@@ -43,6 +43,9 @@ const fixture = (body: (root: string, base: string) => void) => {
     write("scripts/packaging.test.ts", "// Packaging regression\n");
     write(".github/workflows/ci.yml", "name: CI\non: pull_request\n");
     write(".github/workflows/thread-transfer-report.yml", "name: Thread Transfer Report\n");
+    write(".github/workflows/release-desktop.yml", "name: Release\non:\n  workflow_call:\n");
+    write(".github/actions/ci-only/action.yml", "name: CI only\n");
+    write(".github/actions/setup/action.yml", "name: Setup\nruns:\n  steps:\n");
     write(
       "scripts/workbench-ci-scope.json",
       JSON.stringify({
@@ -58,6 +61,18 @@ const fixture = (body: (root: string, base: string) => void) => {
         packages: { "apps/server": "t3", scripts: "@t3tools/scripts" },
         packagingTests: ["scripts/packaging.test.ts"],
         packagingPaths: ["package.json"],
+        activeWorkflows: [
+          "ci.yml",
+          "release-desktop.yml",
+          "thread-transfer-report.yml",
+          "workbench-ci.yml",
+        ],
+        inertUpstreamCI: [
+          ".github/workflows/ci.yml",
+          ".github/workflows/release-desktop.yml",
+          ".github/actions/ci-only/",
+        ],
+        disabledWorkflows: ["ci.yml"],
       }),
     );
     git(["add", "."]);
@@ -70,6 +85,8 @@ const fixture = (body: (root: string, base: string) => void) => {
       "-qm",
       "fork",
     ]);
+    // The generator owns this untracked file; the workflow allowlist requires it to exist.
+    write(".github/workflows/workbench-ci.yml", "");
     assert.equal(execute(root, []).status, 0);
     body(root, git(["rev-parse", "HEAD"]));
   } finally {
@@ -105,6 +122,57 @@ it("rejects unmapped additions, deletions and renames before replacing verified 
       assert.equal(NodeFS.readFileSync(output, "utf8"), verified);
     });
 });
+
+it.each([
+  [
+    "a new upstream workflow",
+    "relay-preview.yml",
+    "on: push\n",
+    "activeWorkflows: relay-preview.yml",
+  ],
+  ["a removed active workflow", "thread-transfer-report.yml", null, "Missing active workflows"],
+  [
+    "an active workflow that calls inert CI",
+    "workbench-ci.yml",
+    "    uses: ./.github/workflows/ci.yml\n",
+    "uses inert upstream CI: .github/workflows/ci.yml",
+  ],
+  [
+    "an inert workflow that can start on its own",
+    "release-desktop.yml",
+    "  push:\n",
+    "triggers on: workflow_call, push",
+  ],
+  [
+    "a nested active action that calls inert CI",
+    "../actions/group/helper/action.yml",
+    "    - uses: ./.github/actions/ci-only\n",
+    "uses inert upstream CI: .github/actions/ci-only",
+  ],
+  [
+    "an active action that calls inert CI through an indirect path",
+    "../actions/setup/action.yml",
+    "    - uses: ./.github/actions/./ci-only\n",
+    "uses inert upstream CI: .github/actions/ci-only",
+  ],
+])("rejects %s before replacing verified CI", (_case, name, append, message) =>
+  fixture((root) => {
+    const output = NodePath.join(root, ".github/workflows/workbench-ci.yml");
+    const workflow = NodePath.join(root, ".github/workflows", name);
+    if (append === null) NodeFS.unlinkSync(workflow);
+    else {
+      NodeFS.mkdirSync(NodePath.dirname(workflow), { recursive: true });
+      NodeFS.appendFileSync(workflow, append);
+    }
+    const verified = NodeFS.readFileSync(output, "utf8");
+    for (const args of [["--check"], []]) {
+      const rejected = execute(root, args);
+      assert.equal(rejected.status, 1);
+      assert.include(rejected.stderr, message);
+    }
+    assert.equal(NodeFS.readFileSync(output, "utf8"), verified);
+  }),
+);
 
 it("detects stale output without modifying upstream workflow sources", () =>
   fixture((root) => {

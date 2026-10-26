@@ -11,7 +11,7 @@ import {
   legacyThreadPullRequestKey,
   threadPullRequestKeyOf,
   visibleThreadPullRequests,
-} from "@t3tools/shared/threadPullRequests";
+} from "@t3tools/client-runtime/thread-pull-requests";
 
 export type WorkbenchPullRequestThread = Pick<
   EnvironmentThreadShell,

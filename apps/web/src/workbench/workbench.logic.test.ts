@@ -23,6 +23,8 @@ import {
   getWorkbenchThreadPresentation,
   getWorkbenchTicketStatusMoves,
   getVisibleWorkbenchAssignments,
+  getWorkbenchOmittedThreadIds,
+  getWorkbenchOmittedThreadsStatus,
   isWorkbenchTicketKind,
   isWorkbenchThreadArchived,
   WORKBENCH_TICKET_KIND_LABELS,
@@ -626,5 +628,55 @@ describe("Workbench ticket helpers", () => {
     expect(getVisibleWorkbenchAssignments([missing], new Set(), new Set(), false)).toEqual([
       missing,
     ]);
+  });
+
+  it("reads assigned Threads only when the shell left them out as older settled", () => {
+    const kept = ThreadId.make("thread-kept");
+    const omitted = ThreadId.make("thread-omitted");
+    const olderOmitted = ThreadId.make("thread-older-omitted");
+    const threads = [{ id: kept }];
+    const olderSettled = { before: "2026-10-01T00:00:00.000Z", asOfSequence: 1, counts: [] };
+
+    expect(
+      getWorkbenchOmittedThreadIds({
+        threadIds: [omitted, kept, olderOmitted, omitted],
+        shell: { threads, olderSettled },
+      }),
+    ).toEqual([olderOmitted, omitted]);
+    expect(
+      getWorkbenchOmittedThreadIds({ threadIds: [omitted, kept], shell: { threads } }),
+    ).toEqual([]);
+    expect(getWorkbenchOmittedThreadIds({ threadIds: [omitted], shell: null })).toEqual([]);
+  });
+
+  it("waits for omitted Threads to be read and merged before treating them as gone", () => {
+    const merged = ThreadId.make("thread-merged");
+    const cached = ThreadId.make("thread-cached");
+    const deleted = ThreadId.make("thread-deleted");
+    const removed = ThreadId.make("thread-removed");
+    const failed = ThreadId.make("thread-failed");
+    const family = (...threadIds: ReadonlyArray<ThreadId>) => ({
+      snapshotSequence: 5,
+      threads: threadIds.map((id) => ({ id })),
+    });
+    const input = {
+      reads: new Map<ThreadId, ReturnType<typeof family> | "failed">([
+        [merged, family(merged)],
+        [cached, family(cached)],
+        [deleted, family()],
+        [removed, family(removed)],
+        [failed, "failed"],
+      ]),
+      mergedThreadIds: new Set([merged]),
+      removedAt: new Map([[removed, 6]]),
+    };
+    const status = (threadIds: ReadonlyArray<ThreadId>) =>
+      getWorkbenchOmittedThreadsStatus({ ...input, threadIds });
+
+    expect(status([merged, deleted, removed])).toBe("ready");
+    // A cached read is settled before its rows merge back in.
+    expect(status([merged, cached])).toBe("pending");
+    expect(status([ThreadId.make("thread-pending")])).toBe("pending");
+    expect(status([merged, cached, failed])).toBe("failed");
   });
 });

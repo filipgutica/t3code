@@ -226,6 +226,7 @@ function codexReplayPreamble(input: {
           model: "gpt-5.4",
           approvalPolicy: "never",
           approvalsReviewer: "user",
+          collaborationMode: { mode: "default", settings: { model: "gpt-5.4" } },
           sandboxPolicy: { type: "dangerFullAccess" },
           summary: "detailed",
         },
