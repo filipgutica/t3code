@@ -171,16 +171,11 @@ it.each(["/settings", "/pull-requests", "/usage"])(
       createRouter,
       RouterContextProvider,
     } = await import("@tanstack/react-router");
-    const { MainAppLocationTracker, useNavigateToMainApp } =
+    const { startMainAppLocationTracking, useNavigateToMainApp } =
       await import("../components/sidebar/mainAppLocation");
     function Navigation() {
       const back = useNavigateToMainApp();
-      return (
-        <>
-          <MainAppLocationTracker />
-          <button onClick={back}>Back</button>
-        </>
-      );
+      return <button onClick={back}>Back</button>;
     }
     const root = createRootRoute();
     const routes = [
@@ -202,6 +197,7 @@ it.each(["/settings", "/pull-requests", "/usage"])(
       history: createMemoryHistory({ initialEntries: ["/"] }),
     });
     await router.load();
+    using _tracking = { [Symbol.dispose]: startMainAppLocationTracking(router) };
     const view = () => (
       <provider.WorkbenchHostProvider>
         <RouterContextProvider router={router}>
@@ -211,7 +207,18 @@ it.each(["/settings", "/pull-requests", "/usage"])(
     );
     await render(view());
     const go = async (href: string) => {
+      const fromLocation = router.state.location;
       await router.navigate({ href });
+      const toLocation = router.state.location;
+      // Node routers run in server mode and never emit onResolved themselves.
+      router.emit({
+        type: "onResolved",
+        fromLocation,
+        toLocation,
+        pathChanged: fromLocation.pathname !== toLocation.pathname,
+        hrefChanged: fromLocation.href !== toLocation.href,
+        hashChanged: fromLocation.hash !== toLocation.hash,
+      });
       // Node uses the router's server snapshot, so render the new location explicitly.
       await render(view());
     };

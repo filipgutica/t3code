@@ -125,7 +125,8 @@ vi.mock("./state", () => ({ workbenchEnvironment: { snapshot: () => ({ kind: "sn
 vi.mock("../state/pullRequests", () => ({
   linkedPullRequestDetailAtom: () => ({ kind: "summary" }),
   pullRequestEnvironment: { activity: () => ({ kind: "activity" }) },
-  useSharedPullRequestSummary: (_environment: unknown, _input: unknown, data: unknown) => data,
+  // Native summary reads record their answers in the shared summary.
+  useSharedPullRequestSummary: () => native.summary,
 }));
 vi.mock("../state/query", () => ({
   useEnvironmentQuery: (target: { kind: string } | null) => {

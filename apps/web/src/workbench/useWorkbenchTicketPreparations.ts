@@ -61,6 +61,11 @@ export function createWorkbenchThreadPresentationPolicy(
   };
 }
 
+/** App-lifetime notifications read the same policy outside React. */
+export const workbenchThreadPresentationPolicyAtom = Atom.make((get) =>
+  createWorkbenchThreadPresentationPolicy(get(preparationIndexAtom)),
+);
+
 /** One shared observer refreshes the compact index while the client is visible and online. */
 export function useWorkbenchTicketPreparationRefresh() {
   const environmentIds = useConnectedEnvironmentIds();

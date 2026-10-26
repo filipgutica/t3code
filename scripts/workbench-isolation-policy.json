@@ -48,6 +48,12 @@
       "reason": "Compose typed Workbench handlers and RPC groups with native middleware."
     },
     {
+      "source": "apps/web/src/appInit.tsx",
+      "target": "apps/web/src/workbench/useWorkbenchTicketPreparations",
+      "symbols": ["workbenchThreadPresentationPolicyAtom"],
+      "reason": "Supply Workbench notification policy to the native application-lifetime notification service."
+    },
+    {
       "source": "apps/web/src/routeTree.gen.ts",
       "target": "apps/web/src/routes/workbench",
       "symbols": ["Route"],

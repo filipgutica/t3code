@@ -86,8 +86,9 @@ describe("Workbench contracts", () => {
         const payload = WsRpcGroup.requests.get(
           WORKBENCH_WS_METHODS.workbenchGetSnapshot,
         )!.payloadSchema;
-        expect(yield* Schema.decodeUnknownEffect(payload)({})).toEqual({});
-        expect(yield* Schema.decodeUnknownEffect(payload)({ compact: true })).toEqual({
+        const decodePayload = Schema.decodeEffect(payload);
+        expect(yield* decodePayload({})).toEqual({});
+        expect(yield* decodePayload({ compact: true })).toEqual({
           compact: true,
         });
       }),

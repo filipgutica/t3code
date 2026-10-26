@@ -27,9 +27,9 @@ const createdAt = "2026-09-07T10:00:00.000Z";
 const storeLayer = WorkbenchStoreLive.pipe(
   Layer.provide(
     Layer.succeed(WorkbenchNativeAccess, {
-      findProject: (id) => Effect.succeed(Option.some({ id, workspaceRoot: `/repos/${id}` })),
+      findProject: (id) => Effect.succeedSome({ id, workspaceRoot: `/repos/${id}` }),
       isRepository: () => Effect.succeed(true),
-      findThread: () => Effect.succeed(Option.none()),
+      findThread: () => Effect.succeedNone,
       hasThreadAtWorktreePath: () => Effect.succeed(false),
       executionSequence: Effect.succeed(0),
       startedExecutionRunIds: Effect.succeed([]),

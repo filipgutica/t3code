@@ -64,12 +64,13 @@ export class RuntimePolicyDecorator extends Context.Reference<{
 }) {}
 
 export const layer: Layer.Layer<RuntimePolicyV2> = Layer.succeed(RuntimePolicyV2, {
-  resolve: (input) =>
-    Effect.succeed({
+  resolve: Effect.fn("RuntimePolicyV2.resolve")(function (input) {
+    return Effect.succeed({
       runtimeMode: input.thread.runtimeMode,
       interactionMode: input.thread.interactionMode,
       cwd: input.thread.worktreePath,
-    }),
+    });
+  }),
 });
 
 function providerRuntimeMode(

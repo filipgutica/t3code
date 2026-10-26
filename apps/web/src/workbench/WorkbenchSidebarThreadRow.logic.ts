@@ -11,7 +11,7 @@ import {
   resolveThreadCurrentPullRequestLink,
   visibleThreadPullRequests,
 } from "@t3tools/client-runtime/thread-pull-requests";
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import {
   linkedPullRequestSnapshotStatus,
@@ -23,7 +23,7 @@ import { useRightPanelStore } from "../rightPanelStore";
 import { useEnvironment } from "../state/environments";
 import { useThreadActionMenu } from "../hooks/useThreadActionMenu";
 import { useNowMinute } from "../hooks/useNowMinute";
-import { scheduleSnoozeWake } from "../components/Sidebar";
+import { useSnoozeWakeClock } from "../components/Sidebar.logic";
 import { useThreadActions } from "../hooks/useThreadActions";
 import {
   readEnvironmentSupportsSettlement,
@@ -138,13 +138,8 @@ export function useWorkbenchSidebarThreadRowData({
   const providers = useAtomValue(serverEnvironment.providersValueAtom(thread.environmentId));
   const providerEntry = resolveProviderEntry(shell, deriveProviderInstanceEntries(providers ?? []));
   const nowMinute = useNowMinute();
-  const [wakeTick, bumpWakeTick] = useState(0);
-  const snoozedUntil = shell?.snoozedUntil ?? null;
-  useEffect(
-    () => scheduleSnoozeWake(snoozedUntil, () => bumpWakeTick((tick) => tick + 1)),
-    [snoozedUntil],
-  );
-  const activityState = resolveThreadActivityState(shell, `${nowMinute}:${wakeTick}`);
+  const snoozeWakeClock = useSnoozeWakeClock(shell ? [shell] : []);
+  const activityState = resolveThreadActivityState(shell, `${nowMinute}:${snoozeWakeClock}`);
   const pullRequests = shell ? resolveWorkbenchSidebarThreadPullRequests(shell) : [];
   const pullRequestState = resolveThreadPullRequestState(pullRequests);
 

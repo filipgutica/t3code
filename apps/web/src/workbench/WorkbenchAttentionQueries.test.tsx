@@ -34,7 +34,9 @@ vi.mock("../state/pullRequests", () => ({
       return { kind: "activity", number: input.number };
     },
   },
-  useSharedPullRequestSummary: (_environment: unknown, _input: unknown, data: unknown) => data,
+  // Native summary reads record their answers in the shared summary.
+  useSharedPullRequestSummary: (_environment: unknown, input: { number: number }) =>
+    state.completed.has(input.number) ? summaryFor(input.number) : null,
 }));
 vi.mock("../state/query", () => ({
   useEnvironmentQuery: ({ kind, number }: { kind: string; number: number }) => {
@@ -51,12 +53,7 @@ vi.mock("../state/query", () => ({
       resultIdentity: state.resultIdentity,
       data: complete
         ? kind === "summary"
-          ? {
-              title: state.title,
-              state: state.closed.has(number) ? "closed" : "open",
-              checksState: state.failed.has(number) ? "failing" : "passing",
-              reviewDecision: "approved",
-            }
+          ? summaryFor(number)
           : { reviewThreads: state.reviewThreads, commentsTruncated: false }
         : null,
       dataUpdatedAt: complete ? state.updatedAt : null,
@@ -69,6 +66,15 @@ vi.mock("../state/query", () => ({
     };
   },
 }));
+
+function summaryFor(number: number) {
+  return {
+    title: state.title,
+    state: state.closed.has(number) ? "closed" : "open",
+    checksState: state.failed.has(number) ? "failing" : "passing",
+    reviewDecision: "approved",
+  };
+}
 
 let renderer: ReactTestRenderer;
 beforeEach(() => {

@@ -72,9 +72,8 @@ describe("TextGeneration.make", () => {
         makeStubTextGeneration({
           generateStructured: (input) => {
             calls.push({ operation: input.operation, prompt: input.prompt });
-            return Schema.decodeUnknownEffect(input.outputSchema)({
-              summary: "A concise result.",
-            }).pipe(Effect.orDie);
+            const decodeOutput = Schema.decodeEffect(input.outputSchema);
+            return decodeOutput({ summary: "A concise result." }).pipe(Effect.orDie);
           },
         }),
       );

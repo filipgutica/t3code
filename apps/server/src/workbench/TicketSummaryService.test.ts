@@ -12,7 +12,6 @@ import { TicketSummaryHost } from "@t3tools/workbench/TicketSummaryHost";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
@@ -57,17 +56,15 @@ describe("TicketSummaryHost", () => {
             Layer.provide(
               Layer.mock(ProjectStoreV2)({
                 getShell: (id) =>
-                  Effect.succeed(
-                    Option.some({
-                      id,
-                      title: "Primary",
-                      workspaceRoot: "/repos/primary",
-                      defaultModelSelection: null,
-                      scripts: [],
-                      createdAt: "2026-09-07T10:00:00.000Z",
-                      updatedAt: "2026-09-07T10:00:00.000Z",
-                    }),
-                  ),
+                  Effect.succeedSome({
+                    id,
+                    title: "Primary",
+                    workspaceRoot: "/repos/primary",
+                    defaultModelSelection: null,
+                    scripts: [],
+                    createdAt: "2026-09-07T10:00:00.000Z",
+                    updatedAt: "2026-09-07T10:00:00.000Z",
+                  }),
               }),
             ),
             Layer.provide(
@@ -77,14 +74,14 @@ describe("TicketSummaryHost", () => {
             ),
             Layer.provide(
               Layer.mock(TextGeneration)({
-                generateStructured: (input) =>
-                  detail
+                generateStructured: (input) => {
+                  const decodeOutput = Schema.decodeEffect(input.outputSchema);
+                  return detail
                     ? Effect.fail(
                         new TextGenerationError({ operation: "generateTicketSummary", detail }),
                       )
-                    : Schema.decodeUnknownEffect(input.outputSchema)({ summary: "  \n " }).pipe(
-                        Effect.orDie,
-                      ),
+                    : decodeOutput({ summary: "  \n " }).pipe(Effect.orDie);
+                },
               }),
             ),
           ),
@@ -128,17 +125,15 @@ describe("TicketSummaryHost", () => {
               Layer.provide(
                 Layer.mock(ProjectStoreV2)({
                   getShell: (id) =>
-                    Effect.succeed(
-                      Option.some({
-                        id,
-                        title: "Primary",
-                        workspaceRoot: "/repos/primary",
-                        defaultModelSelection: null,
-                        scripts: [],
-                        createdAt: "2026-09-07T10:00:00.000Z",
-                        updatedAt: "2026-09-07T10:00:00.000Z",
-                      }),
-                    ),
+                    Effect.succeedSome({
+                      id,
+                      title: "Primary",
+                      workspaceRoot: "/repos/primary",
+                      defaultModelSelection: null,
+                      scripts: [],
+                      createdAt: "2026-09-07T10:00:00.000Z",
+                      updatedAt: "2026-09-07T10:00:00.000Z",
+                    }),
                 }),
               ),
               Layer.provide(
@@ -161,8 +156,9 @@ describe("TicketSummaryHost", () => {
               ),
               Layer.provide(
                 Layer.mock(TextGeneration)({
-                  generateStructured: (input) =>
-                    Effect.sync(() => {
+                  generateStructured: (input) => {
+                    const decodeOutput = Schema.decodeEffect(input.outputSchema);
+                    return Effect.sync(() => {
                       calls.push({
                         operation: input.operation,
                         cwd: input.cwd,
@@ -171,11 +167,12 @@ describe("TicketSummaryHost", () => {
                       });
                     }).pipe(
                       Effect.andThen(
-                        Schema.decodeUnknownEffect(input.outputSchema)({
+                        decodeOutput({
                           summary: "## Summary\nA generated summary. https://example.com/details",
                         }).pipe(Effect.orDie),
                       ),
-                    ),
+                    );
+                  },
                 }),
               ),
             ),
@@ -239,17 +236,15 @@ describe("TicketSummaryHost", () => {
               Layer.provide(
                 Layer.mock(ProjectStoreV2)({
                   getShell: (id) =>
-                    Effect.succeed(
-                      Option.some({
-                        id,
-                        title: "Primary",
-                        workspaceRoot: "/repos/primary",
-                        defaultModelSelection: null,
-                        scripts: [],
-                        createdAt: "2026-09-07T10:00:00.000Z",
-                        updatedAt: "2026-09-07T10:00:00.000Z",
-                      }),
-                    ),
+                    Effect.succeedSome({
+                      id,
+                      title: "Primary",
+                      workspaceRoot: "/repos/primary",
+                      defaultModelSelection: null,
+                      scripts: [],
+                      createdAt: "2026-09-07T10:00:00.000Z",
+                      updatedAt: "2026-09-07T10:00:00.000Z",
+                    }),
                 }),
               ),
               Layer.provide(

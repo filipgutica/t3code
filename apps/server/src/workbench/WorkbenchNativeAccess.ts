@@ -99,7 +99,7 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
       Effect.map((rows) => rows.map((row) => row.id)),
       Effect.mapError(persistenceError),
     ),
-    hasPendingThreadWork: (threadId) =>
+    hasPendingThreadWork: Effect.fn("WorkbenchNativeAccess.hasPendingThreadWork")((threadId) =>
       sql`SELECT 1 WHERE EXISTS (
       SELECT 1 FROM orchestration_v2_projection_runs WHERE thread_id = ${threadId}
         AND status IN ('preparing', 'queued', 'starting', 'running', 'waiting')
@@ -110,6 +110,7 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
         Effect.map((rows) => rows.length > 0),
         Effect.mapError(persistenceError),
       ),
+    ),
     findProject,
     isRepository,
     findThread,

@@ -93,12 +93,7 @@ function WorkbenchAttentionQuery({
     };
   })();
   const summaryQuery = useEnvironmentQuery(linkedPullRequestDetailAtom(target));
-  const summary = useSharedPullRequestSummary(
-    environmentId,
-    target.input,
-    summaryQuery.data,
-    summaryQuery.dataUpdatedAt,
-  );
+  const summary = useSharedPullRequestSummary(environmentId, target.input);
   const activityQuery = useEnvironmentQuery(pullRequestEnvironment.activity(target));
   const initialResult = useRef({
     summary: summaryQuery.resultIdentity,

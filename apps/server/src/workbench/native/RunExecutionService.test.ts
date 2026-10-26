@@ -33,6 +33,7 @@ import type { PendingOrchestrationEffectV2 } from "../../orchestration-v2/Effect
 import * as EventSink from "../../orchestration-v2/EventSink.ts";
 import * as ProviderEventIngestor from "../../orchestration-v2/ProviderEventIngestor.ts";
 import * as McpAppModelContext from "../../mcpApps/McpAppModelContext.ts";
+import * as PreviewAgentActivity from "../../preview/PreviewAgentActivity.ts";
 import * as RunExecutionService from "../../orchestration-v2/RunExecutionService.ts";
 import * as RunFinalizationService from "../../orchestration-v2/RunFinalizationService.ts";
 
@@ -100,6 +101,7 @@ function captureCheckpointFreeRootRun(status: TerminalStatus) {
       Layer.provide(
         Layer.mergeAll(
           McpAppModelContext.layerEmpty,
+          PreviewAgentActivity.layer,
           Layer.mock(CheckpointService.CheckpointServiceV2)({
             captureBaseline: () => Ref.update(baselineCaptures, (count) => count + 1),
           }),
