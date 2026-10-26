@@ -45,8 +45,9 @@ Planning can inspect the workspace's repositories but cannot change them. Ask
 follow-up questions to refine the proposal. Applying a new proposal replaces the
 draft's title, description, and repository selection; it does not create the Ticket.
 
-In a Jira-connected workspace, ask the agent to read an issue or search Jira using
-the workspace connection. No browser login is needed. Planning can also use your
+In a Jira-connected workspace, the agent searches Jira for existing tickets that
+cover your request before it proposes one. You can also ask it to read an issue or
+search Jira using the workspace connection. No browser login is needed. Planning can also use your
 configured connectors, web tools, and the browser for research. During planning,
 the provider's automatic reviewer handles approval requests instead of you.
 Planning has no shell network access, so CLI research such as `gh` is unavailable;
@@ -60,6 +61,12 @@ to explore another idea in a separate draft. Planning conversations stay in
 Workbench until you start work.
 
 **Create manually** opens the form when you already know the requirements.
+
+To plan without leaving the Board, use the chat in its lower-right corner. It
+lists the Threads of the Workspace's Tickets and drafts. Choose **New ticket draft**
+(**+**) to start a planning conversation there. A draft's tab offers **Create
+ticket** and then **Start work**, and keeps the same Thread throughout. Choose
+**Open draft** to edit its fields.
 
 Creating the Ticket keeps the same conversation for further planning. Choose
 **Start work** when ready to prepare its work area and continue that Thread in the

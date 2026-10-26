@@ -13,7 +13,12 @@ import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
 import { useWorkbenchJiraBindings } from "./useWorkbenchJiraBindings";
 import type { useWorkbenchWorkspaceActions } from "./useWorkbenchWorkspaceActions";
 
-import { EnvironmentId, type WorkbenchTicket, type WorkbenchTicketId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  type WorkbenchProjectId,
+  type WorkbenchTicket,
+  type WorkbenchTicketId,
+} from "@t3tools/contracts";
 import { useState } from "react";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
@@ -84,6 +89,7 @@ import {
   WorkbenchWorkspaceDialog,
 } from "./WorkbenchForms";
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
+import { WorkbenchBoardFloatingChat } from "./WorkbenchBoardFloatingChat";
 import type { WorkbenchJiraIssueTicketOpener } from "./WorkbenchTicketMetadata";
 import { WorkbenchTicketConversation } from "./WorkbenchTicketConversation";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
@@ -1083,6 +1089,13 @@ function WorkbenchPageBoard(
   const { requestTicketThread } = threadActions;
   const pending = pendingAction !== null;
   if (environmentId === null || selectedProject === null) return null;
+  const selectTicket = (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => {
+    setAwaitingTicketId(null);
+    setAwaitingEpicId(null);
+    setSelectedEpicId(null);
+    setSelectedTicketId(ticketId);
+    void updateRouteSelection(projectId, ticketId);
+  };
   return (
     <>
       <WorkbenchBoardHeader {...props} />
@@ -1124,6 +1137,16 @@ function WorkbenchPageBoard(
           epics={boardEpics}
           groupMode={boardGroupModeForView}
           viewControls={<WorkbenchBoardToolbar boardData={boardData} />}
+          floatingChat={
+            <WorkbenchPageBoardChat
+              pageData={pageData}
+              boardData={boardData}
+              threadActions={threadActions}
+              environmentId={environmentId}
+              workspace={selectedProject}
+              onOpenDraft={(draftId) => selectTicket(selectedProject.id, draftId)}
+            />
+          }
           jiraIssueLinksByTicketId={jiraIssueLinksByTicketId}
           openJiraIssueTicket={getWorkbenchPageJiraIssueTicketOpener(props)}
           activeJiraTicketIds={activeJiraTicketIds}
@@ -1139,13 +1162,7 @@ function WorkbenchPageBoard(
           pending={pending}
           pendingAction={pendingAction}
           pendingTicketIds={optimisticStatus.pendingTicketIds}
-          onSelect={(projectId, ticketId) => {
-            setAwaitingTicketId(null);
-            setAwaitingEpicId(null);
-            setSelectedEpicId(null);
-            setSelectedTicketId(ticketId);
-            void updateRouteSelection(projectId, ticketId);
-          }}
+          onSelect={selectTicket}
           onSelectEpic={(projectId, epicId) => {
             setAwaitingTicketId(null);
             setAwaitingEpicId(null);
@@ -1166,6 +1183,62 @@ function WorkbenchPageBoard(
         />
       </div>
     </>
+  );
+}
+
+/** The board's floating chat, fed from the same page data as the board. */
+function WorkbenchPageBoardChat({
+  pageData,
+  boardData,
+  threadActions,
+  environmentId,
+  workspace,
+  onOpenDraft,
+}: Pick<WorkbenchPageViewProps, "pageData" | "boardData" | "threadActions"> & {
+  readonly environmentId: EnvironmentId;
+  readonly workspace: NonNullable<WorkbenchPageViewProps["selection"]["selectedProject"]>;
+  readonly onOpenDraft: (draftId: WorkbenchTicketId) => void;
+}) {
+  const { snapshot } = pageData;
+  return (
+    <WorkbenchBoardFloatingChat
+      environmentId={environmentId}
+      workspace={workspace}
+      providers={pageData.providers}
+      linkedProjects={boardData.linkedT3Projects}
+      // Unfiltered: a Thread keeps its tab when the board shows only Jira-imported tickets.
+      tickets={boardData.projectTickets}
+      assignments={snapshot?.assignments ?? []}
+      drafts={snapshot?.ticketDrafts ?? []}
+      threadsById={pageData.threadsById}
+      archivedThreadsById={pageData.archivedThreadsById}
+      createContext={{
+        linkedProjects: boardData.linkedT3Projects,
+        epics: boardData.activeProjectEpics,
+        jiraEpics: getCreationEpics({
+          jiraBinding: boardData.jiraBinding,
+          activeProjectEpics: boardData.activeProjectEpics,
+          epicLinks: pageData.jiraSnapshot?.epicLinks,
+        }),
+        jiraBinding: boardData.jiraBinding,
+        localOnlySupported: pageData.jiraSnapshot?.supportsLocalOnlyTickets === true,
+        jiraOwnershipKnown: boardData.jiraOwnershipKnown,
+      }}
+      ticketKeysById={
+        new Map(
+          [...boardData.jiraIssueLinksByTicketId].map(([ticketId, link]) => [
+            ticketId,
+            link.issue.key,
+          ]),
+        )
+      }
+      canStartDrafts={
+        pageData.canOperate && workspace.archivedAt == null && supportsConversationDrafts(snapshot)
+      }
+      refreshSnapshot={pageData.refreshWorkbenchSnapshot}
+      onOpenDraft={onOpenDraft}
+      onOpenThread={(threadId) => void threadActions.openAssignedThread(threadId)}
+    />
   );
 }
 

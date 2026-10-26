@@ -21,7 +21,7 @@ import { useStartWorkbenchTicket } from "./useStartWorkbenchTicket";
 import type { StartWorkbenchTicketOptions } from "./startWorkbenchTicket";
 import { isWorkbenchThreadArchived } from "./workbench.logic";
 import type { useWorkbenchPageData } from "./useWorkbenchPageData";
-import { showWorkbenchTicketChatThread } from "./workbenchFloatingChatState";
+import { showWorkbenchPageChatThread } from "./workbenchFloatingChatState";
 import {
   getWorkbenchRepositoryScope,
   isWorkbenchRepositoryScopeEqual,
@@ -364,9 +364,15 @@ export function useWorkbenchThreadActions({
         assignments: snapshot?.assignments ?? [],
         existingThreadIds,
       }),
-      // A Thread created from the ticket page opens in the ticket's floating chat.
       async (threadId) => {
-        if (!showWorkbenchTicketChatThread(request.ticket.id, threadId)) {
+        if (
+          !showWorkbenchPageChatThread({
+            environmentId: request.environmentId,
+            ticketId: request.ticket.id,
+            projectId: request.ticket.projectId,
+            threadId,
+          })
+        ) {
           await openAssignedThread(threadId);
         }
       },

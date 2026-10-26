@@ -1,12 +1,89 @@
-import type { ThreadId } from "@t3tools/contracts";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type {
+  ThreadId,
+  WorkbenchAssignment,
+  WorkbenchProjectId,
+  WorkbenchTicket,
+  WorkbenchTicketDraft,
+  WorkbenchTicketId,
+} from "@t3tools/contracts";
 
-import type { WorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
+import { getAssignmentsForTicket } from "./workbench.logic";
+import { getConversationDraftTitle } from "./workbenchTicketDraft.logic";
+import {
+  getWorkbenchThreadExecutionStatus,
+  type WorkbenchThreadExecutionStatus,
+} from "./workbenchThreadStatus.logic";
 
 export interface WorkbenchFloatingChatThread {
   readonly threadId: ThreadId;
   readonly title: string;
   readonly status: WorkbenchThreadExecutionStatus | null;
 }
+
+export const getWorkbenchBoardChatThreads = ({
+  projectId,
+  tickets,
+  assignments,
+  drafts,
+  threadsById,
+  archivedThreadsById,
+  ticketKeysById,
+}: {
+  readonly projectId: WorkbenchProjectId;
+  /** Tickets in board order, before any board search or status filtering. */
+  readonly tickets: ReadonlyArray<WorkbenchTicket>;
+  readonly assignments: ReadonlyArray<WorkbenchAssignment>;
+  readonly drafts: ReadonlyArray<WorkbenchTicketDraft>;
+  readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
+  readonly archivedThreadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
+  readonly ticketKeysById: ReadonlyMap<WorkbenchTicketId, string>;
+}) => {
+  const boardTickets = tickets.filter((ticket) => ticket.projectId === projectId);
+  const ticketsById = new Map(boardTickets.map((ticket) => [ticket.id, ticket]));
+  const active: WorkbenchFloatingChatThread[] = [];
+  const settled: WorkbenchFloatingChatThread[] = [];
+  const archived: WorkbenchFloatingChatThread[] = [];
+  const seen = new Set<ThreadId>();
+  const addThread = (threadId: ThreadId, title: (thread: EnvironmentThreadShell) => string) => {
+    if (seen.has(threadId)) return;
+    const live = threadsById.get(threadId);
+    const thread = live ?? archivedThreadsById.get(threadId);
+    if (!thread) return;
+    seen.add(threadId);
+    const entry = {
+      threadId,
+      title: title(thread),
+      status: getWorkbenchThreadExecutionStatus(thread),
+    };
+    if (!live) archived.push(entry);
+    else if (thread.settledOverride === "settled") settled.push(entry);
+    else active.push(entry);
+  };
+  // Several Threads can share a ticket, so the Thread title tells them apart.
+  const ticketThreadTitle = (ticket: WorkbenchTicket) => (thread: EnvironmentThreadShell) =>
+    `${ticketKeysById.get(ticket.id) ?? ticket.title} · ${thread.title}`;
+
+  for (const draft of drafts) {
+    if (draft.projectId !== projectId || draft.phase === "working") continue;
+    const ticket = ticketsById.get(draft.id);
+    addThread(
+      draft.threadId,
+      ticket
+        ? ticketThreadTitle(ticket)
+        : (thread) => getConversationDraftTitle(draft, thread.title),
+    );
+  }
+  for (const ticket of boardTickets) {
+    for (const assignment of getAssignmentsForTicket(assignments, ticket.id)) {
+      const thread =
+        threadsById.get(assignment.threadId) ?? archivedThreadsById.get(assignment.threadId);
+      if (assignment.supersededAt !== null && thread?.settledOverride !== "settled") continue;
+      addThread(assignment.threadId, ticketThreadTitle(ticket));
+    }
+  }
+  return { active, settled, archived };
+};
 
 const ATTENTION_KINDS: ReadonlySet<WorkbenchThreadExecutionStatus["kind"]> = new Set([
   "approval",

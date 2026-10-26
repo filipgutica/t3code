@@ -9,17 +9,18 @@ import { parseWorkbenchSearch } from "./workbenchSearch";
 import { getWorkbenchCommandPaletteTargets } from "./workbenchCommandPalette.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 
-const selectTicketChatAvailable = (state: { readonly available: boolean }) => state.available;
+const selectPageChatAvailable = (
+  state: ReturnType<typeof useWorkbenchFloatingChatStore.getState>,
+) => state.pageChat !== null;
 
-// Offered only while a ticket's floating chat is on screen; it listens to this store.
-const ticketChatActions = (available: boolean): CommandPaletteActionItem[] =>
+const pageChatActions = (available: boolean): CommandPaletteActionItem[] =>
   available
     ? [
         {
           kind: "action",
           value: "workbench:show-ticket-chat",
-          title: "Show ticket chat",
-          searchTerms: ["Show ticket chat", "workbench", "thread", "floating"],
+          title: "Show chat",
+          searchTerms: ["Show chat", "workbench", "thread", "floating"],
           icon: <MessageCircleIcon className="size-4 text-icon-muted" />,
           run: async () => useWorkbenchFloatingChatStore.getState().expand(),
         },
@@ -70,7 +71,7 @@ export const useWorkbenchCommandPaletteActions = ({
   const navigate = useNavigate();
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const ticketChatAvailable = useWorkbenchFloatingChatStore(selectTicketChatAvailable);
+  const pageChatAvailable = useWorkbenchFloatingChatStore(selectPageChatAvailable);
   const onWorkbench = location.pathname === "/workbench";
   const search = onWorkbench ? parseWorkbenchSearch(location.search) : {};
   const environmentId =
@@ -101,6 +102,6 @@ export const useWorkbenchCommandPaletteActions = ({
     },
   ];
   items.push(...ticketActions(targets, navigate));
-  items.push(...ticketChatActions(ticketChatAvailable));
+  items.push(...pageChatActions(pageChatAvailable));
   return items;
 };

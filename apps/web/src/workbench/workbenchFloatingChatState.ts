@@ -1,4 +1,9 @@
-import type { ThreadId, WorkbenchTicketId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ThreadId,
+  WorkbenchProjectId,
+  WorkbenchTicketId,
+} from "@t3tools/contracts";
 import { create } from "zustand";
 
 type WorkbenchFloatingChatPanel = "collapsed" | "expanded";
@@ -10,23 +15,23 @@ export interface WorkbenchFloatingChatFocusRequest {
   readonly threadId: ThreadId | null;
 }
 
-interface WorkbenchTicketChat {
-  readonly ticketId: WorkbenchTicketId;
+type WorkbenchPageChat = {
+  readonly environmentId: EnvironmentId;
   readonly showThread: (threadId: ThreadId) => void;
-}
+} & (
+  | { readonly kind: "ticket"; readonly ticketId: WorkbenchTicketId }
+  | { readonly kind: "board"; readonly projectId: WorkbenchProjectId }
+);
 
-// A client-session preference shared by every ticket, like the board view state.
+// A client-session preference shared by page chats, like the board view state.
 export const useWorkbenchFloatingChatStore = create<{
   readonly mode: WorkbenchFloatingChatMode;
   /** The panel the launcher restores. */
   readonly restoreMode: WorkbenchFloatingChatPanel;
   readonly focusRequest: WorkbenchFloatingChatFocusRequest;
-  /** A floating chat with a Thread is on screen, so entry points elsewhere can show it. */
-  readonly available: boolean;
-  /** The ticket chat on screen, which shows a new Thread instead of navigating to it. */
-  readonly ticketChat: WorkbenchTicketChat | null;
-  readonly setAvailable: (available: boolean) => void;
-  readonly setTicketChat: (ticketChat: WorkbenchTicketChat | null) => void;
+  /** The page chat on screen, which shows a new Thread instead of navigating to it. */
+  readonly pageChat: WorkbenchPageChat | null;
+  readonly setPageChat: (pageChat: WorkbenchPageChat | null) => void;
   readonly expand: (threadId?: ThreadId) => void;
   readonly collapse: () => void;
   readonly minimize: () => void;
@@ -35,10 +40,8 @@ export const useWorkbenchFloatingChatStore = create<{
   mode: "collapsed",
   restoreMode: "collapsed",
   focusRequest: { id: 0, threadId: null },
-  available: false,
-  ticketChat: null,
-  setAvailable: (available) => set({ available }),
-  setTicketChat: (ticketChat) => set({ ticketChat }),
+  pageChat: null,
+  setPageChat: (pageChat) => set({ pageChat }),
   expand: (threadId) =>
     set((state) => ({
       mode: "expanded",
@@ -50,10 +53,24 @@ export const useWorkbenchFloatingChatStore = create<{
   restore: () => set((state) => ({ mode: state.restoreMode })),
 }));
 
-/** Shows a ticket's Thread in its floating chat. False when that chat is not on screen. */
-export const showWorkbenchTicketChatThread = (ticketId: WorkbenchTicketId, threadId: ThreadId) => {
-  const { ticketChat } = useWorkbenchFloatingChatStore.getState();
-  if (ticketChat?.ticketId !== ticketId) return false;
-  ticketChat.showThread(threadId);
+/** Resolves the mounted page after creation, since the user may have changed pages or hosts. */
+export const showWorkbenchPageChatThread = ({
+  environmentId,
+  ticketId,
+  projectId,
+  threadId,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly ticketId: WorkbenchTicketId;
+  readonly projectId: WorkbenchProjectId;
+  readonly threadId: ThreadId;
+}) => {
+  const { pageChat } = useWorkbenchFloatingChatStore.getState();
+  if (
+    pageChat?.environmentId !== environmentId ||
+    (pageChat.kind === "ticket" ? pageChat.ticketId !== ticketId : pageChat.projectId !== projectId)
+  )
+    return false;
+  pageChat.showThread(threadId);
   return true;
 };

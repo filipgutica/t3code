@@ -40,8 +40,7 @@ const setup = () => {
     mode: "collapsed",
     restoreMode: "collapsed",
     focusRequest: { id: 0, threadId: null },
-    available: false,
-    ticketChat: null,
+    pageChat: null,
   });
   useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} });
 };
@@ -64,6 +63,7 @@ function Harness(props: {
   return (
     <WorkbenchFloatingChat
       environmentId={EnvironmentId.make("environment")}
+      kind="ticket"
       label="PAY-1"
       chat={resolveWorkbenchFloatingChat({
         active: props.threads,
@@ -230,19 +230,6 @@ it("opens the full Thread when the user opens a right-panel surface from the emb
   await act(() => useRightPanelStore.getState().openFile(threadRef, "src/index.ts"));
 
   expect(onOpenThread).toHaveBeenCalledExactlyOnceWith(ThreadId.make("a"));
-});
-
-it("offers the ticket chat to other entry points only while a chat with a Thread is on screen", async () => {
-  setup();
-  const available = () => useWorkbenchFloatingChatStore.getState().available;
-  {
-    await using screen = await render(<Harness threads={[]} />);
-    expect(available()).toBe(false);
-
-    await screen.rerender(<Harness threads={[thread("a")]} />);
-    expect(available()).toBe(true);
-  }
-  expect(available()).toBe(false);
 });
 
 it("focuses a requested Thread's composer once its tab appears, such as a Thread just created", async () => {

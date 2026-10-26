@@ -67,20 +67,22 @@ export function WorkbenchTicketFloatingChat({
 }
 
 function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabled">) {
-  const { ticket, onNewThread } = props;
+  const { ticket, onNewThread, environmentId } = props;
   const [explicitThreadId, setExplicitThreadId] = useState<ThreadId | null>(null);
   const ticketId = ticket.id;
   useEffect(() => {
-    const { setTicketChat, expand } = useWorkbenchFloatingChatStore.getState();
-    setTicketChat({
+    const { setPageChat, expand } = useWorkbenchFloatingChatStore.getState();
+    setPageChat({
+      environmentId,
+      kind: "ticket",
       ticketId,
       showThread: (threadId) => {
         setExplicitThreadId(threadId);
         expand(threadId);
       },
     });
-    return () => setTicketChat(null);
-  }, [ticketId]);
+    return () => setPageChat(null);
+  }, [environmentId, ticketId]);
   const chat = resolveWorkbenchFloatingChat({
     active: chatThreads(props.activeAssignments, props.threadsById),
     archived: chatThreads(props.activeAssignments, props.archivedThreadsById),
@@ -91,6 +93,7 @@ function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabl
   return (
     <WorkbenchFloatingChat
       environmentId={props.environmentId}
+      kind="ticket"
       label={props.ticketKey ?? ticket.title}
       chat={chat}
       onSelectThread={setExplicitThreadId}
