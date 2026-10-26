@@ -1507,164 +1507,6 @@ describe("WorkbenchStore", () => {
     );
   });
 
-  it.effect("preserves Jira-owned fields when updating local execution context", () =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      const store = yield* WorkbenchStore;
-      const firstProjectId = ProjectId.make("jira-local-project-1");
-      const secondProjectId = ProjectId.make("jira-local-project-2");
-      const projectId = WorkbenchProjectId.make("jira-local-workspace");
-      const ticketId = WorkbenchTicketId.make("jira-local-ticket");
-      const epicId = WorkbenchEpicId.make("jira:binding-1:epic:10002");
-      const createdAt = "2026-09-03T12:00:00.000Z";
-      yield* sql`
-        INSERT INTO projection_projects (
-          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
-        ) VALUES
-          (${firstProjectId}, 'First', '/repos/first', '[]', ${createdAt}, ${createdAt}, NULL),
-          (${secondProjectId}, 'Second', '/repos/second', '[]', ${createdAt}, ${createdAt}, NULL)
-      `;
-      yield* store.createProject({
-        id: projectId,
-        title: "Jira Workspace",
-        linkedProjectIds: [firstProjectId, secondProjectId],
-        createdAt,
-      });
-      yield* store.createTicket({
-        id: ticketId,
-        projectId,
-        title: "Jira summary",
-        kind: "story",
-        markdown: "Original instructions",
-        primaryT3ProjectId: firstProjectId,
-        repositoryProjectIds: [firstProjectId],
-        createdAt,
-      });
-      yield* store.createEpic({
-        id: epicId,
-        projectId,
-        title: "Jira Epic summary",
-        markdown: "Original Epic description",
-        createdAt,
-      });
-      yield* sql`
-        INSERT INTO workbench_jira_connections (
-          connection_id, cloud_id, credential_id, site_name, site_url, avatar_url,
-          scopes_json, created_at, updated_at
-        ) VALUES (
-          'connection-1', 'cloud-1', 'credential-1', 'Jira', 'https://example.atlassian.net',
-          NULL, '[]', ${createdAt}, ${createdAt}
-        )
-      `;
-      yield* sql`
-        INSERT INTO workbench_jira_bindings (
-          binding_id, workbench_project_id, connection_id, jira_project_id, jira_project_key,
-          jira_project_name, board_id, board_name, sprint_id, sprint_name,
-          default_primary_t3_project_id, default_repository_project_ids_json,
-          status_mappings_json, active, last_synced_at, created_at, updated_at
-        ) VALUES (
-          'binding-1', ${projectId}, 'connection-1', '10000', 'WB', 'Workbench',
-          42, 'Board', 7, 'Sprint', ${firstProjectId}, '["jira-local-project-1"]',
-          '[]', 1, NULL, ${createdAt}, ${createdAt}
-        )
-      `;
-      yield* sql`
-        INSERT INTO workbench_jira_issue_links (
-          binding_id, jira_issue_id, ticket_id, issue_json, active, linked_at, last_seen_at
-        ) VALUES ('binding-1', '10001', ${ticketId}, '{}', 0, ${createdAt}, ${createdAt})
-      `;
-
-      yield* store.updateTicket({
-        id: ticketId,
-        expectedRevision: 0,
-        title: "Stale browser title",
-        kind: "bug",
-        markdown: "Updated local instructions",
-        primaryT3ProjectId: secondProjectId,
-        repositoryProjectIds: [secondProjectId, firstProjectId],
-        status: "done",
-        blocked: true,
-        updatedAt: "2026-09-03T13:00:00.000Z",
-      });
-      yield* store.updateEpic({
-        id: epicId,
-        title: "Stale browser Epic title",
-        markdown: "Updated local Epic description",
-        updatedAt: "2026-09-03T13:00:00.000Z",
-      });
-
-      const snapshot = yield* store.getSnapshot;
-      const ticket = snapshot.tickets.find((candidate) => candidate.id === ticketId);
-      expect(ticket).toMatchObject({
-        title: "Jira summary",
-        kind: "story",
-        markdown: "Original instructions",
-        primaryT3ProjectId: secondProjectId,
-        repositoryProjectIds: [secondProjectId, firstProjectId],
-        status: "todo",
-        blocked: false,
-      });
-      expect(snapshot.epics.find((candidate) => candidate.id === epicId)).toMatchObject({
-        title: "Jira Epic summary",
-        markdown: "Updated local Epic description",
-      });
-    }).pipe(Effect.provide(TestLayer)),
-  );
-
-  it.effect("keeps Jira-owned Board status unchanged when work is assigned", () =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      const store = yield* WorkbenchStore;
-      const repositoryId = ProjectId.make("jira-assignment-repository");
-      const workspaceId = WorkbenchProjectId.make("jira-assignment-workspace");
-      const ticketId = WorkbenchTicketId.make("jira:binding-assignment:issue:10001");
-      const threadId = ThreadId.make("jira-assignment-thread");
-      const createdAt = "2026-09-03T12:00:00.000Z";
-
-      yield* sql`
-        INSERT INTO projection_projects (
-          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
-        ) VALUES (
-          ${repositoryId}, 'Repository', '/repos/jira-assignment', '[]',
-          ${createdAt}, ${createdAt}, NULL
-        )
-      `;
-      yield* store.createProject({
-        id: workspaceId,
-        title: "Jira Workspace",
-        linkedProjectIds: [repositoryId],
-        createdAt,
-      });
-      yield* store.createTicket({
-        id: ticketId,
-        projectId: workspaceId,
-        title: "Jira Todo",
-        kind: "story",
-        markdown: "",
-        primaryT3ProjectId: repositoryId,
-        repositoryProjectIds: [repositoryId],
-        createdAt,
-      });
-      yield* seedNativeThread({
-        threadId: threadId,
-        projectId: repositoryId,
-        title: "Jira Todo",
-        createdAt: createdAt,
-        deletedAt: null,
-      });
-
-      yield* store.createAssignment({
-        id: WorkbenchAssignmentId.make("jira-assignment"),
-        ticketId,
-        threadId,
-        createdAt,
-      });
-
-      const snapshot = yield* store.getSnapshot;
-      expect(snapshot.tickets.find((ticket) => ticket.id === ticketId)?.status).toBe("todo");
-    }).pipe(Effect.provide(TestLayer)),
-  );
-
   it.effect("serializes Workspace release claims with Assignment creation", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -1950,14 +1792,14 @@ describe("WorkbenchStore", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
-  it.effect("archives and deletes local Tickets without touching Jira or native work", () =>
+  it.effect("archives and deletes local Tickets without touching others or native work", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const store = yield* WorkbenchStore;
       const projectId = ProjectId.make("ticket-lifecycle-project");
       const workbenchProjectId = WorkbenchProjectId.make("ticket-lifecycle-workspace");
       const localTicketId = WorkbenchTicketId.make("ticket-lifecycle-local");
-      const jiraTicketId = WorkbenchTicketId.make("jira:binding-lifecycle:issue:MA-123");
+      const otherTicketId = WorkbenchTicketId.make("ticket-lifecycle-other");
       const createdAt = "2026-09-05T12:00:00.000Z";
       const archivedAt = "2026-09-05T12:01:00.000Z";
       const restoredAt = "2026-09-05T12:02:00.000Z";
@@ -1986,11 +1828,11 @@ describe("WorkbenchStore", () => {
         createdAt,
       });
       yield* store.createTicket({
-        id: jiraTicketId,
+        id: otherTicketId,
         projectId: workbenchProjectId,
-        title: "Mirrored Jira Ticket",
+        title: "Other Ticket",
         kind: "bug",
-        markdown: "Jira owns this.",
+        markdown: "Keep this too.",
         primaryT3ProjectId: projectId,
         createdAt,
       });
@@ -2118,7 +1960,7 @@ describe("WorkbenchStore", () => {
         expect.arrayContaining([expect.objectContaining({ id: localTicketId })]),
       );
       expect(afterDelete.tickets).toEqual(
-        expect.arrayContaining([expect.objectContaining({ id: jiraTicketId })]),
+        expect.arrayContaining([expect.objectContaining({ id: otherTicketId })]),
       );
       expect(afterDelete.assignments).not.toEqual(
         expect.arrayContaining([expect.objectContaining({ ticketId: localTicketId })]),
@@ -2139,20 +1981,6 @@ describe("WorkbenchStore", () => {
       `;
       expect(nativeRows[0]?.count).toBe(1);
       expect(worktreeRows[0]?.count).toBe(1);
-
-      const jiraArchiveError = yield* Effect.flip(
-        store.archiveTicket({
-          ticketId: jiraTicketId,
-          expectedRevision: 0,
-          archivedAt,
-          updatedAt: archivedAt,
-        }),
-      );
-      const jiraDeleteError = yield* Effect.flip(
-        store.deleteTicket({ ticketId: jiraTicketId, expectedRevision: 0, deletedAt }),
-      );
-      expect(jiraArchiveError.code).toBe("jira_managed_ticket");
-      expect(jiraDeleteError.code).toBe("jira_managed_ticket");
 
       const missingArchiveError = yield* Effect.flip(
         store.archiveTicket({
@@ -2364,45 +2192,6 @@ describe("WorkbenchStore", () => {
           WHERE ticket_id = 'ticket-v1'
         `;
         expect(migratedRevision).toEqual([{ revision: 0 }]);
-        const migratedMapping = yield* sql<{ readonly statusMappingsJson: string }>`
-          SELECT status_mappings_json AS "statusMappingsJson"
-          FROM workbench_jira_bindings
-          WHERE binding_id = 'binding-v1'
-        `;
-        expect(migratedMapping).toEqual([
-          {
-            statusMappingsJson:
-              '[{"jiraStatusId":"review","workbenchStatus":"in_progress"},{"jiraStatusId":"todo","workbenchStatus":"todo"}]',
-          },
-        ]);
-        const migratedBinding = yield* sql<{
-          readonly followActiveSprint: number;
-          readonly selectedSprintsJson: string;
-          readonly observedActiveSprintIdsJson: string;
-          readonly boardMode: string;
-          readonly boardColumnsJson: string;
-          readonly lastSyncError: string | null;
-        }>`
-          SELECT
-            follow_active_sprint AS "followActiveSprint",
-            selected_sprints_json AS "selectedSprintsJson",
-            observed_active_sprint_ids_json AS "observedActiveSprintIdsJson",
-            board_mode AS "boardMode",
-            board_columns_json AS "boardColumnsJson",
-            last_sync_error AS "lastSyncError"
-          FROM workbench_jira_bindings
-          WHERE binding_id = 'binding-v1'
-        `;
-        expect(migratedBinding).toEqual([
-          {
-            followActiveSprint: 1,
-            selectedSprintsJson: "[]",
-            observedActiveSprintIdsJson: "[]",
-            boardMode: "mapped",
-            boardColumnsJson: "[]",
-            lastSyncError: null,
-          },
-        ]);
         const migration = yield* sql<{ readonly version: number }>`
           SELECT version
           FROM workbench_schema_migrations

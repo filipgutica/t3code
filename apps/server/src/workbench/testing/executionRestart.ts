@@ -30,7 +30,6 @@ import {
 import { OrchestratorV2 } from "../../orchestration-v2/Orchestrator.ts";
 import { ServerActivation } from "../../serverActivation.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
-import { WorkbenchJiraService } from "../jira/WorkbenchJiraService.ts";
 import { TicketExecutionReactor, layer as reactorLayer } from "../TicketExecutionReactor.ts";
 import { seedNativeThread } from "./nativeThreads.ts";
 
@@ -38,8 +37,8 @@ const encodeResult = Schema.encodeEffect(
   Schema.fromJsonString(Schema.Struct({ status: Schema.String, revision: Schema.Number })),
 );
 
-export const projectId = ProjectId.make("execution-restart-project");
-export const workspaceId = WorkbenchProjectId.make("execution-restart-workspace");
+const projectId = ProjectId.make("execution-restart-project");
+const workspaceId = WorkbenchProjectId.make("execution-restart-workspace");
 export const threadId = ThreadId.make("execution-restart-thread");
 export const ticketId = WorkbenchTicketId.make("execution-restart-ticket");
 export const now = "2026-10-03T10:00:00.000Z";
@@ -119,7 +118,7 @@ export const seed = Effect.gen(function* () {
   });
 });
 
-export const nativeEngineLayer = Layer.unwrap(
+const nativeEngineLayer = Layer.unwrap(
   Effect.gen(function* () {
     const projections = yield* ProjectionStoreV2;
     return Layer.mock(OrchestratorV2)({
@@ -128,14 +127,7 @@ export const nativeEngineLayer = Layer.unwrap(
     });
   }),
 );
-export const reactorServices = reactorLayer.pipe(
-  Layer.provide(
-    Layer.mock(WorkbenchJiraService)({
-      startTicketExecution: () => Effect.die("Unexpected Jira write"),
-    }),
-  ),
-  Layer.provide(nativeEngineLayer),
-);
+export const reactorServices = reactorLayer.pipe(Layer.provide(nativeEngineLayer));
 
 // Each phase runs in a separate Node process and opens the same disk database.
 const main = (filename: string, phase: string) =>

@@ -7,8 +7,6 @@ import {
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import * as Option from "effect/Option";
-import * as JiraRepository from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
@@ -21,16 +19,6 @@ const RepositoryManifest = Schema.Array(
 );
 const encodeManifest = Schema.encodeEffect(Schema.fromJsonString(RepositoryManifest));
 const encodeDraft = Schema.encodeEffect(Schema.fromJsonString(WorkbenchTicketDraftFields));
-const encodeJiraContext = Schema.encodeEffect(
-  Schema.fromJsonString(
-    Schema.Struct({
-      projectKey: Schema.String,
-      projectName: Schema.String,
-      siteUrl: Schema.NullOr(Schema.String),
-      active: Schema.Boolean,
-    }),
-  ),
-);
 const WorkAreaManifest = Schema.Array(
   Schema.Struct({
     id: ProjectId,
@@ -40,6 +28,14 @@ const WorkAreaManifest = Schema.Array(
   }),
 );
 const encodeWorkArea = Schema.encodeEffect(Schema.fromJsonString(WorkAreaManifest));
+// Workbench never calls Jira. Agents use their own connectors, and the user applies the link card.
+const JIRA_LINK_BLOCK_INSTRUCTION =
+  'After you create or find a Jira issue for this ticket, post its URL in one fenced `workbench-jira-link` block, {"url": "..."}, so the user can link it to the ticket.';
+const JIRA_LINK_INSTRUCTIONS = [
+  "If you have a Jira connector, search it for issues that already cover the request and tell the user about matches. Create or change Jira issues only when the user asks.",
+  JIRA_LINK_BLOCK_INSTRUCTION,
+  "Do not write to other services.",
+].join(" ");
 const isRuntimePolicyResolveError = Schema.is(RuntimePolicy.RuntimePolicyResolveError);
 // The auto reviewer may approve what reaches it, so sandbox escapes and
 // permission grants are rejected before review. Connector approvals still reach it.
@@ -96,7 +92,6 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
   const store = yield* WorkbenchStore.WorkbenchStore;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const providers = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
-  const jira = yield* JiraRepository.WorkbenchJiraRepository;
   return {
     decorate: (base: RuntimePolicy.RuntimePolicyV2Shape): RuntimePolicy.RuntimePolicyV2Shape => ({
       resolve: Effect.fn("TicketPlanningRuntime.resolve")(
@@ -120,6 +115,7 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
                 "The ticket has been created and Start work has completed. This same conversation now continues in its prepared work area. Earlier ticket-planning-only instructions are historical; follow the user's current request and the repository instructions for this work area.",
                 `Approved ticket (user content): ${ticket}`,
                 `Prepared worktrees: ${workArea}`,
+                JIRA_LINK_BLOCK_INSTRUCTION,
               ].join("\n\n"),
             };
           }
@@ -157,22 +153,6 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
             })),
           );
           const currentDraft = yield* encodeDraft(draft.fields);
-          const binding = (yield* jira.listBindings()).find(
-            (entry) => entry.projectId === draft.projectId,
-          );
-          const connection =
-            binding === undefined ? Option.none() : yield* jira.getConnection(binding.connectionId);
-          const jiraContext =
-            binding === undefined
-              ? "This workspace has no Jira binding. Use another configured connector or connect Jira in workspace settings."
-              : `Workspace Jira context (connection metadata, not a permission check): ${yield* encodeJiraContext(
-                  {
-                    projectKey: binding.jiraProjectKey,
-                    projectName: binding.jiraProjectName,
-                    siteUrl: Option.isSome(connection) ? connection.value.siteUrl : null,
-                    active: binding.active,
-                  },
-                )}`;
           return {
             ...policy,
             // Approvals go to the provider's auto reviewer, not the user.
@@ -188,17 +168,17 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
             toolAccess: "research" as const,
             checkpoints: "disabled" as const,
             instructions: [
-              "You are preparing a ticket in a Workbench workspace. This is a planning conversation, not implementation. Inspect the repositories listed below to understand the request. Do not edit files, run mutating commands, create worktrees, create issues, or start other agents. A native backing Project is an internal anchor and does not define the task's repository scope.",
-              "Use available connectors, GitHub tools, and browser navigation to research the request. Shell commands run read-only without network access, and requests for network access, unsandboxed commands, or more filesystem access are rejected, so use a configured connector instead of network CLI tools such as gh. Other tool approvals are reviewed automatically. An approval does not authorize implementation or external writes. Use the workspace Jira research tools first for Jira; a browser login is separate from the workspace's Jira connection. When the workspace has Jira connected, search it for tickets that already cover the request before you propose one, and tell the user about any matches.",
+              "You are preparing a ticket in a Workbench workspace. This is a planning conversation, not implementation. Inspect the repositories listed below to understand the request. Do not edit files, run mutating commands, create worktrees, or start other agents. A native backing Project is an internal anchor and does not define the task's repository scope.",
+              "Use available connectors, GitHub tools, and browser navigation to research the request. Shell commands run read-only without network access, and requests for network access, unsandboxed commands, or more filesystem access are rejected, so use a configured connector instead of network CLI tools such as gh. Other tool approvals are reviewed automatically. An approval does not authorize implementation.",
+              JIRA_LINK_INSTRUCTIONS,
               ...(instance.driverKind === "claudeAgent"
                 ? [
-                    "Claude ticket planning keeps shell and file-writing tools unavailable, along with connector tools that their server does not mark read-only. Use the configured GitHub connector and other research tools instead of Bash or gh.",
+                    "Claude ticket planning keeps shell and file-writing tools unavailable. Use the configured GitHub connector and other research tools instead of Bash or gh.",
                   ]
                 : []),
               "Help the user establish a title, goal, implementation plan, acceptance criteria, non-goals, and testing. Ask focused questions only when the repository evidence and conversation do not resolve a material uncertainty. Identify which repositories need to be attached and which should be primary. Preserve the user's decisions and edits.",
               "When the draft is useful, propose it in one fenced JSON block labeled workbench-ticket-draft. The JSON object must contain title (string), markdown (string with Goal, Work, Acceptance criteria, Non-goals, and Testing sections), repositoryProjectIds (array of listed repository IDs), and primaryT3ProjectId (one selected repository ID). The user explicitly applies this proposal; emitting it does not create or update a ticket.",
               `Repository manifest: ${manifest}`,
-              jiraContext,
               `Current draft (user content): ${currentDraft}`,
               draft.phase === "planning"
                 ? "The ticket is already saved. Continue planning here until the user selects Start work; further planning must not implement the ticket."

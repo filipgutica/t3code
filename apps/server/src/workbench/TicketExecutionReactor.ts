@@ -21,10 +21,7 @@ import { forkParked } from "../serverActivation.ts";
 import { OrchestratorV2 } from "../orchestration-v2/Orchestrator.ts";
 import { EventSinkV2 } from "../orchestration-v2/EventSink.ts";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
-import {
-  TicketExecutionService,
-  layer as ticketExecutionLayer,
-} from "@t3tools/workbench/TicketExecutionService";
+import { WorkbenchStore } from "./WorkbenchStore.ts";
 
 type ExecutionFailure = {
   readonly runId: RunId;
@@ -45,7 +42,7 @@ export class TicketExecutionReactor extends Context.Service<
 
 const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestratorV2;
-  const tickets = yield* TicketExecutionService;
+  const store = yield* WorkbenchStore;
   const sink = yield* EventSinkV2;
 
   const appendFailureActivity = (execution: ExecutionFailure, cause: Cause.Cause<unknown>) => {
@@ -116,7 +113,7 @@ const make = Effect.gen(function* () {
       if (!running) return;
       const thread = yield* orchestrationEngine.getThreadShell(event.threadId);
       if (thread === null || thread.lineage.parentThreadId !== null) return;
-      const pending = yield* tickets.consume({
+      yield* store.consumeTicketExecution({
         sequence: stored.sequence,
         run: {
           id: event.payload.id,
@@ -124,16 +121,6 @@ const make = Effect.gen(function* () {
           startedAt: DateTime.formatIso(event.payload.startedAt ?? event.occurredAt),
         },
       });
-      if (pending !== null)
-        yield* tickets
-          .resume(pending)
-          .pipe(
-            Effect.catchCause((cause) =>
-              Cause.hasInterruptsOnly(cause)
-                ? Effect.interrupt
-                : appendFailureActivity(pending, cause),
-            ),
-          );
       return stored.sequence;
     },
     (effect, stored) =>
@@ -162,7 +149,7 @@ const make = Effect.gen(function* () {
   const seenSequence = yield* SubscriptionRef.make(0);
   const noteSeen = (sequence: number) =>
     SubscriptionRef.update(seenSequence, (seen) => Math.max(seen, sequence));
-  const initialize = tickets.initialize.pipe(
+  const initialize = store.initializeTicketExecution.pipe(
     Effect.retry({ schedule: Schedule.spaced("1 second") }),
     Effect.orDie,
   );
@@ -176,19 +163,6 @@ const make = Effect.gen(function* () {
           let restartDelay = 1_000;
           while (true) {
             yield* Effect.gen(function* () {
-              // Obligations survive independently of the contiguous local event cursor.
-              const pending = yield* tickets.pending;
-              for (const run of pending) {
-                yield* tickets
-                  .resume(run)
-                  .pipe(
-                    Effect.catchCause((cause) =>
-                      Cause.hasInterruptsOnly(cause)
-                        ? Effect.interrupt
-                        : appendFailureActivity(run, cause),
-                    ),
-                  );
-              }
               yield* Deferred.succeed(ready, undefined);
               yield* Stream.runForEach(sink.stream({ afterSequence }), (stored) =>
                 processEventSafely(stored).pipe(
@@ -243,6 +217,4 @@ const make = Effect.gen(function* () {
   } satisfies TicketExecutionReactorShape;
 });
 
-export const layer = Layer.effect(TicketExecutionReactor, make).pipe(
-  Layer.provide(ticketExecutionLayer),
-);
+export const layer = Layer.effect(TicketExecutionReactor, make);

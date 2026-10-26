@@ -28,7 +28,6 @@ import {
   type ForkSessionResult,
   getSessionMessages,
   getSubagentMessages,
-  type McpServerStatus,
   query,
   resolveSettings as resolveClaudeSettings,
   type Options as ClaudeQueryOptions,
@@ -496,7 +495,6 @@ export type ClaudeAgentSdkQueryOptions = Omit<
 export class ClaudeQueryOptionsDecorator extends Context.Reference<{
   readonly decorate: (input: {
     readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
-    readonly mcpServerStatus: () => Promise<ReadonlyArray<McpServerStatus> | undefined>;
   }) => {
     readonly permissionMode?: PermissionMode;
     readonly options?: (
@@ -540,10 +538,6 @@ export interface ClaudeAgentSdkQuerySession {
   readonly backgroundTasks: (
     toolUseId: string,
   ) => Effect.Effect<boolean, ClaudeAgentSdkQueryRunnerError>;
-  readonly mcpServerStatus?: Effect.Effect<
-    ReadonlyArray<McpServerStatus>,
-    ClaudeAgentSdkQueryRunnerError
-  >;
   readonly interrupt: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly close: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
 }
@@ -1136,10 +1130,6 @@ export const layerQueryRunner: Layer.Layer<
                 }),
               ),
             ),
-          mcpServerStatus: Effect.tryPromise({
-            try: () => queryRuntime.mcpServerStatus(),
-            catch: (cause) => queryRunnerError(cause, "mcpServerStatus"),
-          }),
           interrupt: Effect.tryPromise({
             try: () => queryRuntime.interrupt(),
             catch: (cause) => queryRunnerError(cause, "interrupt"),
@@ -9277,13 +9267,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         ) {
           const decorated = queryOptionsDecorator.decorate({
             runtimePolicy: turnInput.runtimePolicy,
-            mcpServerStatus: () =>
-              runPromise(
-                Effect.gen(function* () {
-                  const status = (yield* Ref.get(queryContext))?.query.mcpServerStatus;
-                  return status === undefined ? undefined : yield* status;
-                }),
-              ),
           });
           const queryPolicy = yield* queryPolicyForTurn(turnInput, decorated.permissionMode);
           const mcpOverrides = claudeMcpQueryOverrides({

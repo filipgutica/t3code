@@ -30,7 +30,6 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import * as JiraRepository from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 import { McpSchema, McpServer } from "effect/ai";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as ServerConfig from "../config.ts";
@@ -62,7 +61,6 @@ import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexA
 import * as TicketPlanningRuntime from "./TicketPlanningRuntime.ts";
 import * as TicketDraftService from "./TicketDraftService.ts";
 import { TicketWorkspaceService } from "@t3tools/workbench/TicketWorkspaceService";
-import { WorkbenchJiraService } from "./jira/WorkbenchJiraService.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
 
 const projectId = ProjectId.make("repo:composed-policy");
@@ -130,8 +128,6 @@ const draft = {
     epicId: null,
     repositoryProjectIds: [projectId],
     primaryT3ProjectId: projectId,
-    localOnly: true,
-    jiraSprintId: null,
   },
   planningRepositoryProjectIds: [projectId],
   workArea: null,
@@ -159,15 +155,7 @@ const makeLayerTest = <A, E, R>(policies: Layer.Layer<A, E, R>) =>
     ProjectStore.layer,
     CommandReceiptStore.layer,
   ).pipe(
-    Layer.provideMerge(
-      policies.pipe(
-        Layer.provide(
-          Layer.mock(JiraRepository.WorkbenchJiraRepository)({
-            listBindings: () => Effect.succeed([]),
-          }),
-        ),
-      ),
-    ),
+    Layer.provideMerge(policies),
     Layer.provide(McpSessionRegistryTestkit.layer),
     Layer.provide(McpProviderSessions.layer),
     Layer.provide(SqlitePersistence.layerMemory),
@@ -248,7 +236,6 @@ it.effect("uses native project enablement for planning creation, retries and tur
             }),
           ),
           Layer.provide(Layer.mock(TicketWorkspaceService)({})),
-          Layer.provide(Layer.mock(WorkbenchJiraService)({ createTicket: () => unused })),
         ),
       ),
     );
@@ -593,7 +580,6 @@ it.effect(
         );
       const draftContext = yield* Layer.build(
         TicketDraftService.layer.pipe(
-          Layer.provide(Layer.mock(WorkbenchJiraService)({ createTicket: store.createTicket })),
           Layer.provide(
             Layer.mock(TicketWorkspaceService)({
               // Exclude Git worktree creation, but persist preparation through the real store.

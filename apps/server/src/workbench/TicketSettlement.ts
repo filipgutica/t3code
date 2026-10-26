@@ -99,8 +99,8 @@ export const settleDoneTicketThreads = Effect.fn("Workbench.settleDoneTicketThre
   }
 });
 
-// Reconcile on activation and periodically: both Jira imports and local status changes
-// write the Workbench projection, including Tickets already Done before this server starts.
+// Reconcile on activation and periodically: local status changes write the Workbench
+// projection, including Tickets already Done before this server starts.
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const workbench = yield* WorkbenchStore;

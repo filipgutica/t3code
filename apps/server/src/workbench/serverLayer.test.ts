@@ -198,7 +198,7 @@ vi.mock("@t3tools/provider-opencode/server/OpenCodeServerLedger", async (importO
   return { ...original, layer: () => Layer.mock(original.OpenCodeServerLedger)({}) };
 });
 
-it.effect("runServer mounts the Jira callback and installs Workbench host policies", () =>
+it.effect("runServer installs Workbench host policies", () =>
   Effect.gen(function* () {
     const runtime = yield* Deferred.make<Context.Context<RuntimeContext>>();
     const providers = yield* Deferred.make<Context.Context<ClaudeQueryOptionsDecorator>>();
@@ -217,23 +217,6 @@ it.effect("runServer mounts the Jira callback and installs Workbench host polici
     const server = yield* runServer.pipe(Effect.forkScoped);
     yield* Effect.gen(function* () {
       const handler = yield* Deferred.await(served);
-      const response = yield* handler.pipe(
-        Effect.provideService(
-          HttpServerRequest.HttpServerRequest,
-          HttpServerRequest.fromWeb(
-            new Request("http://localhost/oauth/workbench/jira/callback?error=access_denied"),
-          ),
-        ),
-      );
-      assert.strictEqual(response.status, 400);
-      assert.strictEqual(response.headers["cache-control"], "no-store");
-      assert.deepStrictEqual(
-        response.body,
-        HttpServerResponse.text(
-          "Jira authorization was cancelled. Return to the desktop app and try again.",
-        ).body,
-      );
-
       const nativeResponse = yield* handler.pipe(
         Effect.provideService(
           HttpServerRequest.HttpServerRequest,
@@ -255,7 +238,6 @@ it.effect("runServer mounts the Jira callback and installs Workbench host polici
       };
       const research = providerPolicy.decorate({
         runtimePolicy: planningPolicy,
-        mcpServerStatus: async () => undefined,
       });
       assert.equal(research.options?.({}).permissionPrompts, "none");
       const context = yield* Deferred.await(runtime);

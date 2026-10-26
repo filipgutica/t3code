@@ -3,7 +3,8 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   WORKBENCH_WS_METHODS,
-  WorkbenchJiraBindingId,
+  WorkbenchEpicId,
+  WorkbenchProjectId,
   WorkbenchTicketId,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -16,10 +17,20 @@ import {
   layer as rpcScopeAuthorizationLayer,
 } from "../auth/RpcAuthorization.ts";
 
+const epic = {
+  id: WorkbenchEpicId.make("scope-epic"),
+  projectId: WorkbenchProjectId.make("scope-workspace"),
+  title: "Scope Epic",
+  markdown: "",
+  archivedAt: null,
+  createdAt: "2026-10-25T00:00:00.000Z",
+  updatedAt: "2026-10-25T00:00:00.000Z",
+};
+
 describe("Workbench RPC authorization", () => {
-  it.effect("requires operate scope to resolve uncertain Jira creations", () =>
+  it.effect("requires operate scope to change a Jira issue link", () =>
     Effect.gen(function* () {
-      const method = WORKBENCH_WS_METHODS.workbenchJiraResolveCreation;
+      const method = WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink;
       const group = WsRpcGroup.omit(
         ...[...WsRpcGroup.requests.keys()].filter(
           (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, typeof method> => tag !== method,
@@ -29,14 +40,14 @@ describe("Workbench RPC authorization", () => {
       const handlers = group.toLayerHandler(method, () =>
         Effect.sync(() => {
           mutations++;
-          return { jiraIssueKey: null };
+          return { kind: "epic" as const, epic };
         }),
       );
       const input = {
-        bindingId: WorkbenchJiraBindingId.make("resolve-binding"),
-        kind: "ticket" as const,
-        id: "ticket",
-        outcome: { type: "not_created" as const },
+        kind: "epic" as const,
+        epicId: epic.id,
+        url: null,
+        expectedUpdatedAt: epic.updatedAt,
       };
       const reader = yield* RpcTest.makeClient(group).pipe(
         Effect.provide(
@@ -52,7 +63,7 @@ describe("Workbench RPC authorization", () => {
           Layer.merge(handlers, rpcScopeAuthorizationLayer([AuthOrchestrationOperateScope])),
         ),
       );
-      expect(yield* operator[method](input)).toEqual({ jiraIssueKey: null });
+      expect(yield* operator[method](input)).toEqual({ kind: "epic", epic });
       expect(mutations).toBe(1);
     }).pipe(Effect.scoped),
   );
