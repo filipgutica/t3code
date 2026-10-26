@@ -115,8 +115,7 @@
         "packages/provider-muse/src/server/textGeneration.ts",
         "apps/server/src/observability/RpcInstrumentation.ts",
         "apps/server/src/mcp/McpWritePolicy.ts",
-        "apps/server/src/orchestration-v2/Adapters/CodexSandboxPolicy.ts",
-        "packages/source-control-github/src/client/definition.ts"
+        "apps/server/src/orchestration-v2/Adapters/CodexSandboxPolicy.ts"
       ],
       "tests": [
         "apps/server/src/assets/AssetAccess.test.ts",
