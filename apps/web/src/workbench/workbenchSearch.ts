@@ -18,34 +18,22 @@ export interface WorkbenchSearch {
   readonly ticketId?: WorkbenchTicketId;
   readonly epicId?: WorkbenchEpicId;
   readonly create?: "workspace" | "ticket";
-  readonly jiraOAuthCode?: string;
-  readonly jiraOAuthState?: string;
-  readonly jiraOAuthError?: string;
 }
 
-const nonemptySearchText = (value: unknown): value is string =>
-  typeof value === "string" && value.trim().length > 0;
-
 export const parseWorkbenchSearch = (raw: Record<string, unknown>): WorkbenchSearch => {
-  // Accept existing links and the standard Jira callback keys only at this boundary.
+  // Accept existing links that use the legacy `projectId` key only at this boundary.
   const projectId = raw.workbenchProjectId ?? raw.projectId;
-  const code = raw.jiraOAuthCode ?? raw.code;
-  const state = raw.jiraOAuthState ?? raw.state;
-  const error = raw.jiraOAuthError ?? raw.error;
   const ticketId = isWorkbenchTicketId(raw.ticketId) ? raw.ticketId : undefined;
   return {
     ...(isEnvironmentId(raw.environmentId) ? { environmentId: raw.environmentId } : {}),
     ...(isWorkbenchProjectId(projectId) ? { workbenchProjectId: projectId } : {}),
     ...(ticketId ? { ticketId } : isWorkbenchEpicId(raw.epicId) ? { epicId: raw.epicId } : {}),
     ...(raw.create === "workspace" || raw.create === "ticket" ? { create: raw.create } : {}),
-    ...(nonemptySearchText(code) ? { jiraOAuthCode: code } : {}),
-    ...(nonemptySearchText(state) ? { jiraOAuthState: state } : {}),
-    ...(nonemptySearchText(error) ? { jiraOAuthError: error } : {}),
   };
 };
 
 export const redirectLegacyWorkbenchSearch = (search: Record<string, unknown>) => {
-  if (["projectId", "code", "state", "error"].some((key) => key in search)) {
+  if ("projectId" in search) {
     throw redirect({ to: "/workbench", search: parseWorkbenchSearch(search), replace: true });
   }
 };

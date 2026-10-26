@@ -106,36 +106,12 @@ const seedTicket = Effect.gen(function* () {
 });
 
 const seedJiraIssueLink = Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient;
-  yield* sql`
-    INSERT INTO workbench_jira_connections (
-      connection_id, cloud_id, credential_id, site_name, site_url, avatar_url,
-      scopes_json, created_at, updated_at
-    ) VALUES (
-      'connection-1', 'cloud-1', 'credential-1', 'Jira', 'https://example.atlassian.net',
-      NULL, '[]', ${createdAt}, ${createdAt}
-    )
-  `;
-  yield* sql`
-    INSERT INTO workbench_jira_bindings (
-      binding_id, workbench_project_id, connection_id, jira_project_id, jira_project_key,
-      jira_project_name, board_id, board_name, sprint_id, sprint_name,
-      default_primary_t3_project_id, default_repository_project_ids_json,
-      status_mappings_json, active, last_synced_at, created_at, updated_at
-    ) VALUES (
-      'binding-1', ${workspaceId}, 'connection-1', '10000', 'MA', 'Main',
-      42, 'Board', 7, 'Sprint', ${primaryProjectId}, '["project-primary","project-secondary"]',
-      '[]', 1, NULL, ${createdAt}, ${createdAt}
-    )
-  `;
-  yield* sql`
-    INSERT INTO workbench_jira_issue_links (
-      binding_id, jira_issue_id, ticket_id, issue_json, active, linked_at, last_seen_at
-    ) VALUES (
-      'binding-1', '10001', ${ticketId}, '{"key":"MA-4037"}', 1,
-      ${createdAt}, ${createdAt}
-    )
-  `;
+  const store = yield* WorkbenchStore;
+  yield* store.setTicketJiraIssueLink({
+    ticketId,
+    jiraIssue: { key: "MA-4037", url: "https://example.atlassian.net/browse/MA-4037" },
+    expectedRevision: 0,
+  });
 });
 
 const seedReadyTicketWorkspace = Effect.gen(function* () {
@@ -1801,7 +1777,7 @@ describe("TicketWorkspaceService", () => {
     );
   });
 
-  it.effect("uses the active Jira key and repository basenames for a new Workspace", () => {
+  it.effect("uses the linked Jira key and repository basenames for a new Workspace", () => {
     const events: Array<string> = [];
     return Effect.gen(function* () {
       yield* seedTicket;

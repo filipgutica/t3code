@@ -17,9 +17,6 @@ import type {
   ThreadId,
   WorkbenchAssignment,
   WorkbenchEpic,
-  WorkbenchJiraIssueLink,
-  WorkbenchJiraBoardColumn,
-  WorkbenchJiraStatusMapping,
   WorkbenchProjectId,
   WorkbenchTicket,
   WorkbenchTicketId,
@@ -29,7 +26,6 @@ import {
   ArrowRightIcon,
   BotIcon,
   ChevronDownIcon,
-  CircleAlertIcon,
   FolderGit2Icon,
   LayoutDashboardIcon,
   Layers3Icon,
@@ -51,18 +47,12 @@ import {
 } from "react";
 
 import { observeResize } from "../lib/observeResize";
-import { useEnvironmentQuery } from "../state/query";
-import { workbenchEnvironment } from "./state";
 import {
   WorkbenchDraggableTicket,
   WorkbenchDropColumn,
   type WorkbenchDraggableTicketRenderProps,
 } from "./WorkbenchBoardDrag";
-import { WorkbenchJiraDropDialog } from "./WorkbenchJiraDropDialog";
-import {
-  canMoveWorkbenchBoardTicket,
-  getWorkbenchBoardDropJiraStatusIds,
-} from "./workbenchBoardDrag.logic";
+import { canMoveWorkbenchBoardTicket } from "./workbenchBoardDrag.logic";
 
 import { WorkbenchThreadExecutionStatus } from "./WorkbenchThreadExecutionStatus";
 import {
@@ -94,10 +84,7 @@ import {
   EmptyTitle,
 } from "../components/ui/empty";
 import { MenuItem, MenuSeparator } from "../components/ui/menu";
-import {
-  WorkbenchTicketStatusMenu,
-  type WorkbenchJiraTransitionSelection,
-} from "./WorkbenchTicketStatusMenu";
+import { WorkbenchTicketStatusMenu } from "./WorkbenchTicketStatusMenu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import type { Project } from "../types";
 import {
@@ -105,6 +92,7 @@ import {
   isWorkbenchTicketStartPending,
 } from "./startWorkbenchTicket";
 import {
+  getWorkbenchBoardColumns,
   getWorkbenchThreadPresentation,
   getVisibleWorkbenchAssignments,
   getWorkbenchTicketRepositoryProjectIds,
@@ -115,14 +103,10 @@ import {
 import { getWorkbenchBoardTicketPreview } from "./workbenchBoardTicketPreview";
 import {
   WorkbenchEpicBadge,
-  WorkbenchJiraParentLink,
-  WorkbenchTicketSourceBadge,
-  WorkbenchTicketSubtaskBadge,
+  WorkbenchJiraIssueKeyLink,
   WorkbenchTicketTypeBadge,
   WorkbenchTicketCopyMenuItems,
-  type WorkbenchJiraIssueTicketOpener,
 } from "./WorkbenchTicketMetadata";
-import { getWorkbenchBoardColumns, orderWorkbenchTicketsByJiraRank } from "./workbenchJira.logic";
 import { WorkbenchDraftTickets } from "./WorkbenchDraftTickets";
 import {
   getConversationDraftTitle,
@@ -139,14 +123,7 @@ type WorkbenchTicketBoardProps = {
   readonly readOnly?: boolean;
   readonly threadRestoreDisabled?: boolean;
   readonly environmentId: EnvironmentId;
-  readonly onJiraTransition: (selection: WorkbenchJiraTransitionSelection) => void;
   readonly projectId: WorkbenchProjectId;
-  readonly mirrorColumns: ReadonlyArray<WorkbenchJiraBoardColumn> | null;
-  readonly jiraConnected: boolean;
-  readonly jiraOwnershipKnown?: boolean;
-  readonly onPublishToJira?: (ticket: WorkbenchTicket) => void;
-  readonly jiraPublishDisabled?: boolean;
-  readonly jiraStatusMappings: ReadonlyArray<WorkbenchJiraStatusMapping>;
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
   readonly drafts?: ReadonlyArray<WorkbenchConversationDraft>;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
@@ -154,9 +131,6 @@ type WorkbenchTicketBoardProps = {
   readonly viewControls: ReactNode;
   /** Floats over the board's lower-right corner; the board leaves room to scroll past it. */
   readonly floatingChat?: ReactNode;
-  readonly jiraIssueLinksByTicketId: ReadonlyMap<WorkbenchTicketId, WorkbenchJiraIssueLink>;
-  readonly openJiraIssueTicket: WorkbenchJiraIssueTicketOpener;
-  readonly activeJiraTicketIds: ReadonlySet<WorkbenchTicketId>;
   readonly selectedTicketId: WorkbenchTicketId | null;
   readonly repositoryProjectIds: ReadonlyArray<ProjectId>;
   readonly repositoriesReady: boolean;
@@ -228,16 +202,7 @@ function WorkbenchTicketBoardContent({
   drag: ReturnType<typeof useWorkbenchBoardDrag>;
   board: WorkbenchBoardContext;
 }) {
-  const {
-    environmentId,
-    tickets,
-    groupMode,
-    epics,
-    onCreateTicket,
-    mirrorColumns,
-    jiraStatusMappings,
-    onJiraTransition,
-  } = props;
+  const { environmentId, tickets, groupMode, epics, onCreateTicket } = props;
   const { search, visibleTickets, columns, swimlanes } = data;
   const {
     sensors,
@@ -248,10 +213,6 @@ function WorkbenchTicketBoardContent({
     activeTicket,
     visibleColumnId,
     setSelectedColumnId,
-    jiraDropTicket,
-    jiraDropLink,
-    jiraDropColumn,
-    setJiraDrop,
   } = drag;
   const boardStyle: CSSProperties & { "--board-column-count": number } = {
     "--board-column-count": columns.length,
@@ -277,7 +238,6 @@ function WorkbenchTicketBoardContent({
       >
         {renderWorkbenchBoardControls({
           search,
-          jiraConnected: props.jiraConnected,
           viewControls: props.viewControls,
           attentionMode: data.attentionMode,
           setAttentionMode: data.setAttentionMode,
@@ -385,16 +345,6 @@ function WorkbenchTicketBoardContent({
           </div>
         ) : null}
       </DragOverlay>
-      {renderWorkbenchBoardJiraDrop({
-        environmentId,
-        jiraDropTicket: props.readOnly ? undefined : jiraDropTicket,
-        jiraDropLink,
-        jiraDropColumn,
-        mirrorColumns,
-        jiraStatusMappings,
-        onJiraTransition,
-        setJiraDrop,
-      })}
     </DndContext>
   );
 }
@@ -406,12 +356,6 @@ type WorkbenchBoardContext = Pick<
   | "environmentId"
   | "projectId"
   | "groupMode"
-  | "jiraIssueLinksByTicketId"
-  | "openJiraIssueTicket"
-  | "jiraOwnershipKnown"
-  | "onPublishToJira"
-  | "jiraPublishDisabled"
-  | "activeJiraTicketIds"
   | "selectedTicketId"
   | "repositoriesById"
   | "assignmentsByTicket"
@@ -424,7 +368,6 @@ type WorkbenchBoardContext = Pick<
   | "onSelect"
   | "onSelectEpic"
   | "onMove"
-  | "onJiraTransition"
   | "onRegenerateSummary"
   | "onOpenThread"
 > & {
@@ -453,8 +396,6 @@ function renderWorkbenchBoardSwimlane({
   const {
     projectId,
     groupMode,
-    jiraIssueLinksByTicketId,
-    activeJiraTicketIds,
     onSelectEpic,
     columns,
     visibleColumnId,
@@ -502,11 +443,7 @@ function renderWorkbenchBoardSwimlane({
       <CollapsiblePanel>
         <div className="grid min-w-0 grid-cols-1 gap-3 @min-[48rem]/board:auto-cols-[minmax(17rem,1fr)] @min-[48rem]/board:grid-flow-col @min-[48rem]/board:grid-cols-none">
           {columns.map((column) => {
-            const laneTickets = orderWorkbenchTicketsByJiraRank(
-              column.tickets.filter((ticket) => laneTicketIds.has(ticket.id)),
-              jiraIssueLinksByTicketId,
-              activeJiraTicketIds,
-            );
+            const laneTickets = column.tickets.filter((ticket) => laneTicketIds.has(ticket.id));
             return (
               <WorkbenchDropColumn
                 key={column.id}
@@ -663,7 +600,7 @@ function WorkbenchBoardTicketTitle({
 }
 
 function WorkbenchBoardTicketActions({
-  presentation: { ticket, board, jiraIssueLink },
+  presentation: { ticket, board },
   disabled,
 }: {
   presentation: ReturnType<typeof getWorkbenchBoardTicketPresentation>;
@@ -671,25 +608,15 @@ function WorkbenchBoardTicketActions({
 }) {
   return (
     <WorkbenchTicketStatusMenu
-      key={`${board.environmentId}:${ticket.id}:${jiraIssueLink?.issue.remoteUpdatedAt ?? "local"}`}
-      environmentId={board.environmentId}
       ticket={ticket}
-      jiraIssueLink={jiraIssueLink ?? null}
       disabled={disabled}
       onStatusChange={(status) => board.onMove(ticket, status)}
-      onJiraTransition={board.onJiraTransition}
       trigger={
         <Button className="-mr-1 -mt-1 shrink-0" size="icon-xs" variant="ghost">
           <MoreHorizontalIcon />
         </Button>
       }
     >
-      <WorkbenchBoardTicketPublicationAction
-        ticket={ticket}
-        board={board}
-        jiraIssueLink={jiraIssueLink}
-        disabled={disabled}
-      />
       <MenuItem
         disabled={disabled || ticket.generatedSummary?.status === "pending"}
         onClick={() => board.onRegenerateSummary(ticket)}
@@ -697,31 +624,8 @@ function WorkbenchBoardTicketActions({
         {getWorkbenchTicketSummaryActionLabel(ticket.generatedSummary)}
       </MenuItem>
       <MenuSeparator />
-      <WorkbenchTicketCopyMenuItems ticketId={ticket.id} jiraIssueLink={jiraIssueLink} />
+      <WorkbenchTicketCopyMenuItems ticketId={ticket.id} jiraIssue={ticket.jiraIssue} />
     </WorkbenchTicketStatusMenu>
-  );
-}
-
-function WorkbenchBoardTicketPublicationAction({
-  ticket,
-  board,
-  jiraIssueLink,
-  disabled,
-}: Pick<
-  ReturnType<typeof getWorkbenchBoardTicketPresentation>,
-  "ticket" | "board" | "jiraIssueLink"
-> & {
-  disabled: boolean;
-}) {
-  const { onPublishToJira } = board;
-  if (jiraIssueLink || !onPublishToJira) return null;
-  return (
-    <MenuItem
-      disabled={disabled || board.jiraPublishDisabled}
-      onClick={() => onPublishToJira(ticket)}
-    >
-      Publish to Jira…
-    </MenuItem>
   );
 }
 
@@ -731,11 +635,9 @@ function useWorkbenchBoardData({
   repositoryProjectIds,
   repositoriesReady,
   tickets,
-  jiraIssueLinksByTicketId,
   assignments,
   threadsById,
   archivedThreadsById,
-  mirrorColumns,
   groupMode,
   epics,
 }: Pick<
@@ -745,11 +647,9 @@ function useWorkbenchBoardData({
   | "repositoryProjectIds"
   | "repositoriesReady"
   | "tickets"
-  | "jiraIssueLinksByTicketId"
   | "assignments"
   | "threadsById"
   | "archivedThreadsById"
-  | "mirrorColumns"
   | "groupMode"
   | "epics"
 >) {
@@ -786,11 +686,10 @@ function useWorkbenchBoardData({
         getWorkbenchTicketRepositoryProjectIds(ticket).includes(repositoryId)) &&
       matchesWorkbenchTicketSearch({
         title: ticket.title,
-        jiraKey: jiraIssueLinksByTicketId.get(ticket.id)?.issue.key,
+        jiraKey: ticket.jiraIssue?.key,
         query: search.query,
       }),
   );
-  const visibleTicketIds = new Set(visibleTickets.map((ticket) => ticket.id));
   const agentStatesByTicket = getWorkbenchTicketExecutionStatuses({
     environmentId,
     assignments,
@@ -810,14 +709,7 @@ function useWorkbenchBoardData({
     }
     return counts;
   })();
-  const columns = getWorkbenchBoardColumns({
-    tickets,
-    mirrorColumns,
-    issueLinks: jiraIssueLinksByTicketId,
-  }).map((column) => ({
-    ...column,
-    tickets: column.tickets.filter((ticket) => visibleTicketIds.has(ticket.id)),
-  }));
+  const columns = getWorkbenchBoardColumns(visibleTickets);
   const swimlanes =
     groupMode === "epic"
       ? groupWorkbenchTicketsByEpic(visibleTickets, epics).filter(
@@ -861,7 +753,6 @@ function getWorkbenchBoardTicketPresentation({
     repositoriesById,
     epicsById,
     agentStatesByTicket,
-    jiraIssueLinksByTicketId,
   } = board;
   const assignment = assignmentsByTicket.get(ticket.id);
   const nativeThread = assignment ? threadsById.get(assignment.threadId) : undefined;
@@ -888,11 +779,7 @@ function getWorkbenchBoardTicketPresentation({
     title: repositoriesById.get(id)?.title ?? "Repository unavailable",
   }));
   const epic = ticket.epicId ? epicsById.get(ticket.epicId) : undefined;
-  const jiraIssueLink = jiraIssueLinksByTicketId.get(ticket.id);
-  const summary = getWorkbenchBoardTicketPreview({
-    ticket,
-    ...(jiraIssueLink ? { jiraIssue: jiraIssueLink.issue } : {}),
-  });
+  const summary = getWorkbenchBoardTicketPreview({ ticket });
 
   return {
     ticket,
@@ -904,7 +791,6 @@ function getWorkbenchBoardTicketPresentation({
     threadActionLabel,
     repositories,
     epic,
-    jiraIssueLink,
     summary,
   };
 }
@@ -912,34 +798,16 @@ function getWorkbenchBoardTicketPresentation({
 function renderWorkbenchBoardTicketMetadata(
   presentation: ReturnType<typeof getWorkbenchBoardTicketPresentation>,
 ) {
-  const { ticket, board, repositories, epic, jiraIssueLink, summary } = presentation;
-  const { pendingTicketIds, groupMode, onSelect, projectId, openJiraIssueTicket } = board;
-  const parent = jiraIssueLink?.issue.parent;
+  const { ticket, board, repositories, epic, summary } = presentation;
+  const { pendingTicketIds, groupMode, onSelect, projectId } = board;
   return (
     <div className="mt-2 flex min-w-0 flex-col gap-2 text-xs text-foreground">
       {pendingTicketIds.has(ticket.id) ? <span role="status">Saving status…</span> : null}
-      {parent ? (
-        <WorkbenchJiraParentLink
-          parent={parent}
-          openJiraIssueTicket={openJiraIssueTicket}
-          className="relative z-10"
-        />
-      ) : null}
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <WorkbenchTicketSourceBadge
-          jiraIssueLink={jiraIssueLink}
-          jiraOwnershipKnown={board.jiraOwnershipKnown ?? true}
-          className="z-10"
-        />
-        <WorkbenchTicketTypeBadge kind={ticket.kind} jiraIssue={jiraIssueLink?.issue} />
-        <WorkbenchTicketSubtaskBadge subtasks={jiraIssueLink?.issue.subtasks} />
+        <WorkbenchJiraIssueKeyLink jiraIssue={ticket.jiraIssue} className="z-10" />
+        <WorkbenchTicketTypeBadge kind={ticket.kind} />
         {groupMode === "none" && epic ? (
           <WorkbenchEpicBadge className="min-w-0 max-w-full" title={epic.title} />
-        ) : null}
-        {jiraIssueLink?.issue.flagged ? (
-          <Badge size="default" variant="warning">
-            <CircleAlertIcon /> Jira flagged
-          </Badge>
         ) : null}
       </div>
       <Tooltip>
@@ -1048,7 +916,6 @@ function useWorkbenchBoardDrag({
   projectId,
   environmentId,
   tickets,
-  jiraIssueLinksByTicketId,
   groupMode,
   pending,
   readOnly,
@@ -1062,7 +929,6 @@ function useWorkbenchBoardDrag({
   | "projectId"
   | "environmentId"
   | "tickets"
-  | "jiraIssueLinksByTicketId"
   | "groupMode"
   | "pending"
   | "pendingTicketIds"
@@ -1080,22 +946,8 @@ function useWorkbenchBoardDrag({
     : columns[0]?.id;
   const sensors = useSensors(useSensor(MouseSensor, { activationConstraint: { distance: 6 } }));
   const [activeTicketId, setActiveTicketId] = useState<WorkbenchTicketId | null>(null);
-  const [jiraDrop, setJiraDrop] = useState<{
-    ticketId: WorkbenchTicketId;
-    columnId: string;
-  } | null>(null);
   const activeTicket = tickets.find((ticket) => ticket.id === activeTicketId);
-  const jiraDropTicket = tickets.find((ticket) => ticket.id === jiraDrop?.ticketId);
-  const jiraDropLink = jiraDropTicket ? jiraIssueLinksByTicketId.get(jiraDropTicket.id) : undefined;
-  const jiraDropColumn = columns.find((column) => column.id === jiraDrop?.columnId);
-  useWorkbenchBoardTransitionDiscovery({
-    environmentId,
-    activeTicket,
-    jiraDropTicket,
-    jiraIssueLinksByTicketId,
-  });
-  const hasJiraDrop = Boolean(jiraDropTicket && jiraDropLink && jiraDropColumn);
-  const dragDisabled = readOnly === true || !wideBoard || pending || hasJiraDrop;
+  const dragDisabled = readOnly === true || !wideBoard || pending;
   const dropTargets = new Map(
     swimlanes.flatMap((lane) =>
       columns.map(
@@ -1124,7 +976,6 @@ function useWorkbenchBoardDrag({
         column.tickets.some((candidate) => candidate.id === ticket.id),
       )?.id,
       target,
-      jiraManaged: jiraIssueLinksByTicketId.has(ticket.id),
       groupByEpic: groupMode === "epic",
       pending,
     });
@@ -1133,11 +984,7 @@ function useWorkbenchBoardDrag({
     const ticket = tickets.find((candidate) => candidate.id === active.id);
     const target = over ? dropTargets.get(String(over.id)) : undefined;
     if (!ticket || !target || !canDrop(ticket, target)) return;
-    if (jiraIssueLinksByTicketId.has(ticket.id)) {
-      setJiraDrop({ ticketId: ticket.id, columnId: target.columnId });
-    } else {
-      onMove(ticket, target.status);
-    }
+    onMove(ticket, target.status);
   };
 
   return {
@@ -1151,10 +998,6 @@ function useWorkbenchBoardDrag({
     canDrop,
     handleDragEnd,
     setActiveTicketId,
-    jiraDropTicket,
-    jiraDropLink,
-    jiraDropColumn,
-    setJiraDrop,
   };
 }
 
@@ -1344,10 +1187,9 @@ function renderWorkbenchBoardStatus({
 }
 
 function renderWorkbenchBoardSearch({
-  jiraConnected,
+  hasJiraKeys,
   search,
-}: Pick<WorkbenchTicketBoardProps, "jiraConnected"> &
-  Pick<ReturnType<typeof useWorkbenchBoardData>, "search">) {
+}: { hasJiraKeys: boolean } & Pick<ReturnType<typeof useWorkbenchBoardData>, "search">) {
   return (
     <InputGroup>
       <InputGroupAddon>
@@ -1355,7 +1197,7 @@ function renderWorkbenchBoardSearch({
       </InputGroupAddon>
       <InputGroupInput
         aria-label="Search tickets"
-        placeholder={jiraConnected ? "Search by title or Jira key…" : "Search by title…"}
+        placeholder={hasJiraKeys ? "Search by title or Jira key…" : "Search by title…"}
         value={search.text}
         onChange={(event) => search.setText(event.target.value)}
         onKeyDown={(event) => {
@@ -1382,7 +1224,6 @@ function renderWorkbenchBoardSearch({
 }
 
 function renderWorkbenchBoardControls({
-  jiraConnected,
   viewControls,
   attentionMode,
   setAttentionMode,
@@ -1414,7 +1255,7 @@ function renderWorkbenchBoardControls({
 > &
   Pick<
     WorkbenchTicketBoardProps,
-    "jiraConnected" | "viewControls" | "tickets" | "repositoryProjectIds" | "repositoriesById"
+    "viewControls" | "tickets" | "repositoryProjectIds" | "repositoriesById"
   > &
   Pick<ReturnType<typeof useWorkbenchBoardDrag>, "visibleColumnId" | "setSelectedColumnId">) {
   return (
@@ -1430,7 +1271,10 @@ function renderWorkbenchBoardControls({
           role="group"
         >
           <div className="min-w-0 @min-[22rem]/board-controls:col-span-2 @min-[42rem]/board-controls:col-span-1">
-            {renderWorkbenchBoardSearch({ jiraConnected, search })}
+            {renderWorkbenchBoardSearch({
+              hasJiraKeys: tickets.some((ticket) => ticket.jiraIssue),
+              search,
+            })}
           </div>
           <WorkbenchBoardRepositoryFilter
             repositoryId={repositoryId}
@@ -1480,33 +1324,6 @@ function renderWorkbenchBoardControls({
   );
 }
 
-function useWorkbenchBoardTransitionDiscovery({
-  environmentId,
-  activeTicket,
-  jiraDropTicket,
-  jiraIssueLinksByTicketId,
-}: Pick<WorkbenchTicketBoardProps, "environmentId" | "jiraIssueLinksByTicketId"> & {
-  activeTicket: WorkbenchTicket | undefined;
-  jiraDropTicket: WorkbenchTicket | undefined;
-}) {
-  const transitionTicket = activeTicket ?? jiraDropTicket;
-  const transitionLink = transitionTicket
-    ? jiraIssueLinksByTicketId.get(transitionTicket.id)
-    : undefined;
-  // Start discovery during the drag and keep the shared query alive through the drop.
-  useEnvironmentQuery(
-    transitionTicket && transitionLink
-      ? workbenchEnvironment.jiraGetTicketTransitions({
-          environmentId,
-          input: {
-            ticketId: transitionTicket.id,
-            remoteUpdatedAt: transitionLink.issue.remoteUpdatedAt,
-          },
-        })
-      : null,
-  );
-}
-
 function getWorkbenchBoardAccessibility({
   tickets,
   dropTargets,
@@ -1532,40 +1349,4 @@ function getWorkbenchBoardAccessibility({
       onDragCancel: () => "Status change canceled.",
     },
   };
-}
-
-function renderWorkbenchBoardJiraDrop({
-  environmentId,
-  jiraDropTicket,
-  jiraDropLink,
-  jiraDropColumn,
-  mirrorColumns,
-  jiraStatusMappings,
-  onJiraTransition,
-  setJiraDrop,
-}: Pick<
-  WorkbenchTicketBoardProps,
-  "environmentId" | "mirrorColumns" | "jiraStatusMappings" | "onJiraTransition"
-> &
-  Pick<
-    ReturnType<typeof useWorkbenchBoardDrag>,
-    "jiraDropTicket" | "jiraDropLink" | "jiraDropColumn" | "setJiraDrop"
-  >) {
-  return jiraDropTicket && jiraDropLink && jiraDropColumn ? (
-    <WorkbenchJiraDropDialog
-      key={`${jiraDropTicket.id}:${jiraDropColumn.id}:${jiraDropLink.issue.remoteUpdatedAt}`}
-      environmentId={environmentId}
-      ticket={jiraDropTicket}
-      jiraIssueLink={jiraDropLink}
-      columnTitle={jiraDropColumn.title}
-      jiraStatusIds={getWorkbenchBoardDropJiraStatusIds({
-        columnId: jiraDropColumn.id,
-        status: jiraDropColumn.status,
-        mirrorColumns,
-        statusMappings: jiraStatusMappings,
-      })}
-      onTransition={onJiraTransition}
-      onClose={() => setJiraDrop(null)}
-    />
-  ) : null;
 }

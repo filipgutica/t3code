@@ -60,20 +60,17 @@ test("reset previews, refuses running homes, archives data and retains configura
       NodePath.join(home, ".disposable-demo.lock"),
       JSON.stringify({ runHome: NodePath.join(home, "runs", "run-test") }),
     );
-    NodeAssert.throws(() => resetHome({ home, apply: true }), /disposable demo run owns/);
+    NodeAssert.throws(() => resetHome({ home, apply: true }), /disposable demo run is using/);
     NodeFS.rmSync(NodePath.join(home, ".disposable-demo.lock"));
     NodeFS.writeFileSync(NodePath.join(home, "run.lock"), "lock");
     NodeAssert.throws(() => resetHome({ home, apply: true }), /Stop/);
     NodeFS.rmSync(NodePath.join(home, "run.lock"));
     NodeFS.mkdirSync(NodePath.join(home, "userdata", "secrets"), { recursive: true });
     NodeFS.writeFileSync(
-      NodePath.join(home, "userdata", "secrets", "workbench-jira-credential-demo.bin"),
+      NodePath.join(home, "userdata", "secrets", "provider-credential-demo.bin"),
       "encrypted fixture",
     );
-    NodeAssert.match(
-      resetHome({ home, apply: true }),
-      /Use reset-baseline to preserve the Jira connection/,
-    );
+    NodeAssert.match(resetHome({ home, apply: true }), /Configuration retained/);
     NodeAssert.equal(readConfig(home).DEMO_OWNER, "literal$(not-executed)");
     NodeAssert.equal(NodeFS.existsSync(NodePath.join(home, "fixture")), false);
     NodeAssert.equal(NodeFS.existsSync(NodePath.join(home, "userdata", "secrets")), false);
@@ -81,7 +78,7 @@ test("reset previews, refuses running homes, archives data and retains configura
     NodeAssert.ok(backup);
     NodeAssert.equal(
       NodeFS.readFileSync(
-        NodePath.join(root, backup, "userdata", "secrets", "workbench-jira-credential-demo.bin"),
+        NodePath.join(root, backup, "userdata", "secrets", "provider-credential-demo.bin"),
         "utf8",
       ),
       "encrypted fixture",

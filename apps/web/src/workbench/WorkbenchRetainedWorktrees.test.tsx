@@ -43,7 +43,6 @@ vi.mock("./state", () => ({
     discardTicketDraftInBatch: { permissionAtom: () => null },
     ticketPreparations: () => "preparations",
     snapshot: () => "workbench",
-    jiraSnapshot: () => "jira",
   },
 }));
 vi.mock("../state/environments", () => ({

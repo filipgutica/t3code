@@ -49,8 +49,6 @@ const makeDraft = (
     epicId: null,
     repositoryProjectIds: [],
     primaryT3ProjectId: null,
-    localOnly: false,
-    jiraSprintId: null,
   },
   createdAt: time,
   updatedAt: time,

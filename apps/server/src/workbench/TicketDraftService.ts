@@ -14,7 +14,7 @@ import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts
 
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
-import * as WorkbenchJiraService from "./jira/WorkbenchJiraService.ts";
+import * as WorkbenchStore from "./WorkbenchStore.ts";
 
 export { TicketDraftService } from "@t3tools/workbench/TicketDraftService";
 
@@ -28,7 +28,7 @@ const makeHost = Effect.gen(function* () {
   const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const providers = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
-  const jira = yield* WorkbenchJiraService.WorkbenchJiraService;
+  const store = yield* WorkbenchStore.WorkbenchStore;
   const ownsThread = (draft: WorkbenchTicketDraft) =>
     receipts.getByCommandId(CommandId.make(`ticket-draft:${draft.id}:create`)).pipe(
       Effect.map(
@@ -184,7 +184,7 @@ const makeHost = Effect.gen(function* () {
         })
         .pipe(Effect.mapError(nativeFailure));
     }),
-    createTicket: jira.createTicket,
+    createTicket: store.createTicket,
   });
 });
 

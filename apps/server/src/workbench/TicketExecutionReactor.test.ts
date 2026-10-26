@@ -1,11 +1,4 @@
-import {
-  NodeId,
-  RunId,
-  ThreadId,
-  WorkbenchAssignmentId,
-  WorkbenchJiraOperationError,
-  WorkbenchTicketId,
-} from "@t3tools/contracts";
+import { NodeId, RunId, WorkbenchAssignmentId } from "@t3tools/contracts";
 import { it as effectIt } from "@effect/vitest";
 import * as NodeURL from "node:url";
 import * as Deferred from "effect/Deferred";
@@ -26,13 +19,8 @@ import { EventSinkV2 } from "../orchestration-v2/EventSink.ts";
 import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
 import { ServerActivation } from "../serverActivation.ts";
 import { WorkbenchStore } from "./WorkbenchStore.ts";
-import { WorkbenchJiraService } from "./jira/WorkbenchJiraService.ts";
-import { seedNativeThread } from "./testing/nativeThreads.ts";
-import { TicketExecutionReactor, layer as reactorLayer } from "./TicketExecutionReactor.ts";
+import { TicketExecutionReactor } from "./TicketExecutionReactor.ts";
 import {
-  nativeEngineLayer,
-  projectId,
-  workspaceId,
   now,
   persistenceLayer,
   reactorServices,
@@ -78,13 +66,6 @@ const ticket = (store: WorkbenchStore["Service"]) =>
   store.getSnapshot.pipe(
     Effect.map((snapshot) => snapshot.tickets.find((candidate) => candidate.id === ticketId)!),
   );
-
-const seedJiraOwnership = Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient;
-  yield* sql`INSERT INTO workbench_jira_connections (connection_id, cloud_id, credential_id, site_name, site_url, scopes_json, created_at, updated_at) VALUES ('connection', 'cloud', 'credential', 'Site', 'https://example.test', '[]', ${now}, ${now})`;
-  yield* sql`INSERT INTO workbench_jira_bindings (binding_id, workbench_project_id, connection_id, jira_project_id, jira_project_key, jira_project_name, board_id, board_name, sprint_id, sprint_name, default_primary_t3_project_id, default_repository_project_ids_json, status_mappings_json, active, created_at, updated_at) VALUES ('binding', ${workspaceId}, 'connection', 'project', 'WB', 'Jira', 1, 'Board', 1, 'Sprint', ${projectId}, '[]', '[]', 0, ${now}, ${now})`;
-  yield* sql`INSERT INTO workbench_jira_issue_links (binding_id, jira_issue_id, ticket_id, issue_json, active, linked_at, last_seen_at) VALUES ('binding', 'issue', ${ticketId}, '{}', 0, ${now}, ${now})`;
-});
 
 describe("durable Workbench execution consumption", () => {
   effectIt.effect.each(["running", "completed"])(
@@ -358,129 +339,6 @@ describe("durable Workbench execution consumption", () => {
         Effect.scoped,
       );
     }).pipe(Effect.provide(testLayer), Effect.scoped),
-  );
-
-  effectIt.effect(
-    "retains uncertain Jira outcomes independently of later local Tickets and resumes through readback only",
-    () =>
-      Effect.gen(function* () {
-        yield* seed;
-        const store = yield* WorkbenchStore;
-        const sink = yield* EventSinkV2;
-        yield* seedJiraOwnership;
-        const otherThread = ThreadId.make("local-execution-thread");
-        const otherTicket = WorkbenchTicketId.make("local-execution-ticket");
-        yield* seedNativeThread({ threadId: otherThread, projectId, createdAt: now });
-        yield* store.createTicket({
-          id: otherTicket,
-          projectId: workspaceId,
-          title: "Local",
-          kind: "story",
-          markdown: "",
-          primaryT3ProjectId: projectId,
-          createdAt: now,
-        });
-        yield* store.createAssignment({
-          id: WorkbenchAssignmentId.make("local-assignment"),
-          ticketId: otherTicket,
-          threadId: otherThread,
-          createdAt: now,
-        });
-        const attempts = yield* Ref.make<ReadonlyArray<boolean>>([]);
-        const services = reactorLayer.pipe(
-          Layer.provide(nativeEngineLayer),
-          Layer.provide(
-            Layer.mock(WorkbenchJiraService)({
-              startTicketExecution: (input) =>
-                Ref.update(attempts, (values) => [
-                  ...values,
-                  input.execution?.readbackOnly ?? false,
-                ]).pipe(
-                  Effect.andThen(
-                    Effect.fail(
-                      new WorkbenchJiraOperationError({
-                        code: "request_failed",
-                        message: "Possibly reached Jira",
-                      }),
-                    ),
-                  ),
-                ),
-            }),
-          ),
-        );
-        yield* Effect.gen(function* () {
-          const reactor = yield* TicketExecutionReactor;
-          yield* reactor.start();
-          const other = runEvent({ id: RunId.make("local-run") });
-          const committed = yield* sink.write({
-            events: [
-              runEvent(),
-              {
-                ...other,
-                threadId: otherThread,
-                payload: { ...other.payload, threadId: otherThread },
-              },
-            ],
-          });
-          yield* reactor.drainThrough(committed.at(-1)!.sequence);
-        }).pipe(Effect.provide(services), Effect.scoped);
-        expect((yield* ticket(store)).status).toBe("todo");
-        expect(
-          (yield* store.getSnapshot).tickets.find((candidate) => candidate.id === otherTicket)
-            ?.status,
-        ).toBe("in_progress");
-        expect((yield* store.pendingTicketExecutions).map((run) => run.state)).toEqual([
-          "uncertain",
-        ]);
-        expect(yield* Ref.get(attempts)).toEqual([false]);
-        yield* Effect.gen(function* () {
-          const reactor = yield* TicketExecutionReactor;
-          yield* reactor.start();
-          yield* reactor.drain;
-        }).pipe(Effect.provide(services), Effect.scoped);
-        expect(yield* Ref.get(attempts)).toEqual([false, true]);
-        expect((yield* store.pendingTicketExecutions).map((run) => run.state)).toEqual([
-          "uncertain",
-        ]);
-      }).pipe(Effect.provide(testLayer), Effect.scoped),
-  );
-
-  effectIt.effect(
-    "retires uncertain execution obligations invalidated by archive, deletion, supersession or a reset",
-    () =>
-      Effect.gen(function* () {
-        for (const invalidation of ["archive", "delete", "supersede", "reset"] as const) {
-          yield* Effect.gen(function* () {
-            yield* seed;
-            yield* seedJiraOwnership;
-            const sql = yield* SqlClient.SqlClient;
-            const store = yield* WorkbenchStore;
-            const sink = yield* EventSinkV2;
-            yield* store.initializeTicketExecution;
-            const event = runEvent();
-            const committed = yield* sink.write({ events: [event] });
-            const sequence = committed[0]!.sequence;
-            const pending = yield* store.consumeTicketExecution({
-              sequence,
-              run: { id: event.payload.id, threadId, startedAt: now },
-            });
-            expect(pending?.state).toBe("pending");
-            expect(yield* store.beginTicketExecutionJira(event.payload.id)).toBe("start");
-            expect((yield* store.pendingTicketExecutions)[0]?.state).toBe("uncertain");
-            // These rows represent lifecycle changes made by other Workbench writers before resumption.
-            if (invalidation === "archive")
-              yield* sql`UPDATE workbench_tickets SET archived_at = ${now} WHERE ticket_id = ${ticketId}`;
-            if (invalidation === "delete")
-              yield* sql`UPDATE workbench_tickets SET deleted_at = ${now} WHERE ticket_id = ${ticketId}`;
-            if (invalidation === "supersede")
-              yield* sql`UPDATE workbench_assignments SET superseded_at = ${now} WHERE ticket_id = ${ticketId}`;
-            if (invalidation === "reset")
-              yield* sql`UPDATE workbench_tickets SET execution_after_sequence = ${sequence} WHERE ticket_id = ${ticketId}`;
-            expect(yield* store.beginTicketExecutionJira(event.payload.id)).toBe("skip");
-            expect(yield* store.pendingTicketExecutions).toEqual([]);
-          }).pipe(Effect.provide(testLayer), Effect.scoped);
-        }
-      }),
   );
 
   effectIt.effect(

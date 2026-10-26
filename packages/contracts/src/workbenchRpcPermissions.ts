@@ -35,29 +35,13 @@ export const WORKBENCH_RPC_REQUIRED_SCOPES = {
   [WORKBENCH_WS_METHODS.workbenchReplaceAssignment]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchPrepareTicketWorkspace]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchReleaseTicketWorkspace]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchJiraGetSnapshot]: AuthOrchestrationReadScope,
-  [WORKBENCH_WS_METHODS.workbenchJiraBeginAuth]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchJiraCompleteAuth]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchJiraClaimAuth]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchJiraListProjects]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchJiraListBoards]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchJiraListSprints]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchJiraGetBoardConfiguration]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchJiraCreateBinding]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchJiraUpdateBinding]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchJiraSyncBinding]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchJiraUpdateTicket]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchJiraGetTicketTransitions]: AuthOrchestrationReadScope,
-  [WORKBENCH_WS_METHODS.workbenchJiraMigrateLocalTickets]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchJiraResolveCreation]: AuthOrchestrationOperateScope,
+  [WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink]: AuthOrchestrationOperateScope,
 } as const satisfies Record<WorkbenchRpcMethod, AuthEnvironmentScope>;
 
 const {
   [WORKBENCH_WS_METHODS.workbenchGetTicketPreparations]: _preparations,
   [WORKBENCH_WS_METHODS.workbenchGetSnapshot]: _snapshot,
   [WORKBENCH_WS_METHODS.workbenchGetTicket]: _ticket,
-  [WORKBENCH_WS_METHODS.workbenchJiraGetSnapshot]: _jiraSnapshot,
-  [WORKBENCH_WS_METHODS.workbenchJiraGetTicketTransitions]: _transitions,
   ...mutationScopes
 } = WORKBENCH_RPC_REQUIRED_SCOPES;
 

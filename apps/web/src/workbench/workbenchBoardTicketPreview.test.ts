@@ -38,7 +38,6 @@ describe("Workbench Board Ticket preview", () => {
     expect(
       getWorkbenchBoardTicketPreview({
         ticket: {
-          title: "Welcome checklist",
           markdown: "A newer description.",
           generatedSummary: {
             text: "The earlier generated summary.",
@@ -55,14 +54,13 @@ describe("Workbench Board Ticket preview", () => {
     });
   });
 
-  it("uses the current Jira description and a bounded plain-text excerpt", () => {
+  it("adapts a linked Ticket's Jira wiki text into a bounded plain-text excerpt", () => {
     const preview = getWorkbenchBoardTicketPreview({
-      ticket: { title: "API check", markdown: "Old local description." },
-      jiraIssue: {
-        summary: "API check",
-        description:
+      ticket: {
+        markdown:
           "h2. Goal\n\n* Show {{POST /v4}} and [API docs|https://example.com]. " +
           "Explain the next action. ".repeat(20),
+        jiraIssue: { key: "API-1", url: "https://example.atlassian.net/browse/API-1" },
       },
     });
     expect(preview.source).toBe("description");
@@ -76,7 +74,7 @@ describe("Workbench Board Ticket preview", () => {
   it("distinguishes an unexcerptable description from an empty one", () => {
     expect(
       getWorkbenchBoardTicketPreview({
-        ticket: { title: "Empty", markdown: "## Goal\n\n---\n\n```text\n```" },
+        ticket: { markdown: "## Goal\n\n---\n\n```text\n```" },
       }),
     ).toEqual({
       text: "Description available",
@@ -85,7 +83,7 @@ describe("Workbench Board Ticket preview", () => {
     });
     expect(
       getWorkbenchBoardTicketPreview({
-        ticket: { title: "Empty", markdown: "  \n " },
+        ticket: { markdown: "  \n " },
       }),
     ).toEqual({
       text: "No description added yet",

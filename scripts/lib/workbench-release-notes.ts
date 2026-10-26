@@ -6,7 +6,6 @@ export function formatWorkbenchReleaseNotes({
   previousTag,
   upstreamSha,
   upstreamBase,
-  jiraBrokerUrl,
   dailyMetadata,
 }: {
   readonly version: string;
@@ -16,7 +15,6 @@ export function formatWorkbenchReleaseNotes({
   readonly previousTag: string;
   readonly upstreamSha: string;
   readonly upstreamBase: string;
-  readonly jiraBrokerUrl: string;
   readonly dailyMetadata: string | undefined;
 }): string {
   const lines = generatedNotes.trim().split(/\r?\n/);
@@ -55,7 +53,6 @@ export function formatWorkbenchReleaseNotes({
         `- Previous tag used for generated notes: \`${previousTag || "none"}\``,
         `- Upstream \`pingdotgg/t3code\` main: \`${upstreamSha || "unavailable"}\``,
         `- Upstream merge base: \`${upstreamBase || "unavailable"}\``,
-        `- Jira broker: \`${jiraBrokerUrl}\``,
       ].join("\n"),
       "## Verification",
       "- macOS arm64 and x64, Linux x64, and Windows x64 artifacts were built and checksummed.\n- See the platform build metadata for signing status.",

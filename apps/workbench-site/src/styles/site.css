@@ -266,9 +266,6 @@ figcaption {
 .review-heading > .walkthrough-note {
   font-size: var(--text-xs);
 }
-.jira-section .media-stage {
-  max-width: 860px;
-}
 .closing > .section-body {
   justify-items: start;
   gap: var(--space-4);

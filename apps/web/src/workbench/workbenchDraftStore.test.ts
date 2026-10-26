@@ -119,31 +119,6 @@ describe("Workbench Ticket drafts", () => {
     store.clearDraft(environmentId, ticketId);
   });
 
-  it("advances the Jira version without replacing text typed during a save", () => {
-    const ticketId = WorkbenchTicketId.make("ticket-jira-save-again");
-    const submitted = {
-      title: "Jira Ticket",
-      markdown: "Submitted",
-      mode: "editing" as const,
-      revision: 3,
-      jiraRemoteUpdatedAt: "2026-09-05T01:00:00.000Z",
-    };
-    const store = useWorkbenchDraftStore.getState();
-    store.setDraft(environmentId, ticketId, { ...submitted, markdown: "Newer typing" });
-    store.markDraftSaved(
-      environmentId,
-      ticketId,
-      { ...submitted, jiraRemoteUpdatedAt: "2026-09-05T01:01:00.000Z" },
-      submitted,
-    );
-    expect(useWorkbenchDraftStore.getState().drafts.get(environmentId)?.get(ticketId)).toEqual({
-      ...submitted,
-      markdown: "Newer typing",
-      jiraRemoteUpdatedAt: "2026-09-05T01:01:00.000Z",
-    });
-    store.clearDraft(environmentId, ticketId);
-  });
-
   it("does not acknowledge an old response against a draft with a different base revision", () => {
     const ticketId = WorkbenchTicketId.make("ticket-stale-save-response");
     const current = { title: "Ticket", markdown: "Current", mode: "editing" as const, revision: 6 };
@@ -182,22 +157,5 @@ describe("Workbench Ticket drafts", () => {
       }),
     ).toBe(false);
     store.clearDraft(environmentId, ticketId);
-  });
-
-  it("waits for the saved Jira version and accepts a newer Jira projection", () => {
-    const draft = {
-      title: "Ticket",
-      markdown: "B",
-      mode: "saved" as const,
-      revision: 3,
-      savedVersion: { jiraRemoteUpdatedAt: "2026-09-05T02:00:00.000Z" },
-    };
-    const ticket = { title: "Ticket", markdown: "C", revision: 5 };
-    expect(
-      isWorkbenchDraftProjected({ draft, ticket, jiraRemoteUpdatedAt: "2026-09-05T01:00:00.000Z" }),
-    ).toBe(false);
-    expect(
-      isWorkbenchDraftProjected({ draft, ticket, jiraRemoteUpdatedAt: "2026-09-05T03:00:00.000Z" }),
-    ).toBe(true);
   });
 });

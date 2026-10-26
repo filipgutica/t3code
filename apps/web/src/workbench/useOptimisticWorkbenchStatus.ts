@@ -1,39 +1,31 @@
 import type {
   EnvironmentId,
-  WorkbenchJiraIssueLink,
-  WorkbenchJiraIssueSnapshot,
   WorkbenchTicket,
   WorkbenchTicketId,
   WorkbenchTicketStatus,
 } from "@t3tools/contracts";
 import { useLayoutEffect, useState, useRef } from "react";
 
-type JiraStatus = WorkbenchJiraIssueSnapshot["status"];
-
 export type WorkbenchStatusOperationToken = symbol;
 
 export interface UseOptimisticWorkbenchStatusOptions {
   readonly environmentId: EnvironmentId | null;
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
-  readonly issueLinks: ReadonlyArray<WorkbenchJiraIssueLink>;
 }
 
 export interface WorkbenchStatusBeginInput {
   readonly ticketId: WorkbenchTicketId;
   readonly status: WorkbenchTicketStatus;
-  readonly jiraStatus?: JiraStatus;
 }
 
 export interface WorkbenchStatusSucceedInput {
   readonly token: WorkbenchStatusOperationToken;
   readonly status?: WorkbenchTicketStatus;
   readonly revision?: number;
-  readonly jiraIssue?: WorkbenchJiraIssueSnapshot;
 }
 
 export interface OptimisticWorkbenchStatus {
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
-  readonly issueLinks: ReadonlyArray<WorkbenchJiraIssueLink>;
   readonly pendingTicketIds: ReadonlySet<WorkbenchTicketId>;
   readonly begin: (input: WorkbenchStatusBeginInput) => WorkbenchStatusOperationToken | false;
   readonly succeed: (input: WorkbenchStatusSucceedInput) => void;
@@ -44,11 +36,7 @@ interface StatusOverlay {
   readonly token: WorkbenchStatusOperationToken;
   readonly ticketId: WorkbenchTicketId;
   status: WorkbenchTicketStatus;
-  jiraStatus?: JiraStatus;
-  jiraIssue?: WorkbenchJiraIssueSnapshot;
-  requiresJiraLink: boolean;
   phase: "pending" | "succeeded";
-  readonly initialRevision: number;
   revision?: number;
 }
 
@@ -56,27 +44,7 @@ interface OptimisticStatusState {
   environmentId: EnvironmentId | null;
   readonly overlaysByTicket: Map<WorkbenchTicketId, StatusOverlay>;
   ticketsById: ReadonlyMap<WorkbenchTicketId, WorkbenchTicket>;
-  issueLinksByTicketId: ReadonlyMap<WorkbenchTicketId, WorkbenchJiraIssueLink>;
 }
-
-const parseTimestamp = (timestamp: string | null | undefined): number | undefined => {
-  if (timestamp === null || timestamp === undefined) return undefined;
-  const parsed = Date.parse(timestamp);
-  return Number.isFinite(parsed) ? parsed : undefined;
-};
-
-const isTimestampAtLeast = ({
-  current,
-  expected,
-}: {
-  readonly current: string | null | undefined;
-  readonly expected: string | null | undefined;
-}): boolean => {
-  if (expected === null) return current === null;
-  const currentTime = parseTimestamp(current);
-  const expectedTime = parseTimestamp(expected);
-  return currentTime !== undefined && expectedTime !== undefined && currentTime >= expectedTime;
-};
 
 const findOverlayByToken = (
   overlaysByTicket: ReadonlyMap<WorkbenchTicketId, StatusOverlay>,
@@ -94,40 +62,12 @@ const isAuthoritative = (state: OptimisticStatusState, overlay: StatusOverlay): 
   const ticket = state.ticketsById.get(overlay.ticketId);
   if (ticket === undefined) return false;
 
-  if (overlay.revision !== undefined) {
-    if (ticket.revision < overlay.revision) return false;
-  }
-
-  if (overlay.jiraIssue !== undefined) {
-    const link = state.issueLinksByTicketId.get(overlay.ticketId);
-    if (
-      !isTimestampAtLeast({
-        current: link?.issue.remoteUpdatedAt,
-        expected: overlay.jiraIssue.remoteUpdatedAt,
-      })
-    )
-      return false;
-    if (ticket.status === overlay.status) return true;
-    const currentTime = parseTimestamp(link?.issue.remoteUpdatedAt);
-    const savedTime = parseTimestamp(overlay.jiraIssue.remoteUpdatedAt);
-    return (
-      currentTime !== undefined &&
-      savedTime !== undefined &&
-      currentTime > savedTime &&
-      ticket.revision > overlay.initialRevision
-    );
-  }
-
-  return true;
+  return overlay.revision === undefined || ticket.revision >= overlay.revision;
 };
 
 const pruneOverlays = (state: OptimisticStatusState) => {
   for (const [ticketId, overlay] of state.overlaysByTicket) {
     if (!state.ticketsById.has(ticketId)) {
-      state.overlaysByTicket.delete(ticketId);
-      continue;
-    }
-    if (overlay.requiresJiraLink && state.issueLinksByTicketId.get(ticketId)?.active !== true) {
       state.overlaysByTicket.delete(ticketId);
       continue;
     }
@@ -138,13 +78,11 @@ const pruneOverlays = (state: OptimisticStatusState) => {
 export function useOptimisticWorkbenchStatus({
   environmentId,
   tickets,
-  issueLinks,
 }: UseOptimisticWorkbenchStatusOptions): OptimisticWorkbenchStatus {
   const [stored, setStored] = useState<OptimisticStatusState>(() => ({
     environmentId,
     overlaysByTicket: new Map(),
     ticketsById: new Map(),
-    issueLinksByTicketId: new Map(),
   }));
   const stateRef = useRef(stored);
   const state: OptimisticStatusState = (() => {
@@ -154,7 +92,6 @@ export function useOptimisticWorkbenchStatus({
         stored.environmentId === environmentId ? stored.overlaysByTicket : [],
       ),
       ticketsById: new Map(tickets.map((ticket) => [ticket.id, ticket])),
-      issueLinksByTicketId: new Map(issueLinks.map((link) => [link.ticketId, link])),
     };
     pruneOverlays(next);
     return next;
@@ -169,7 +106,7 @@ export function useOptimisticWorkbenchStatus({
     stateRef.current = state;
   }, [state]);
 
-  const begin = ({ ticketId, status, jiraStatus }: WorkbenchStatusBeginInput) => {
+  const begin = ({ ticketId, status }: WorkbenchStatusBeginInput) => {
     const currentState = {
       ...stateRef.current,
       overlaysByTicket: new Map(stateRef.current.overlaysByTicket),
@@ -188,17 +125,14 @@ export function useOptimisticWorkbenchStatus({
       token,
       ticketId,
       status,
-      ...(jiraStatus === undefined ? {} : { jiraStatus }),
-      requiresJiraLink: jiraStatus !== undefined,
       phase: "pending",
-      initialRevision: currentState.ticketsById.get(ticketId)?.revision ?? 0,
     });
     stateRef.current = currentState;
     setStored(currentState);
     return token;
   };
 
-  const succeed = ({ token, status, revision, jiraIssue }: WorkbenchStatusSucceedInput) => {
+  const succeed = ({ token, status, revision }: WorkbenchStatusSucceedInput) => {
     const currentState = {
       ...stateRef.current,
       overlaysByTicket: new Map(stateRef.current.overlaysByTicket),
@@ -211,9 +145,6 @@ export function useOptimisticWorkbenchStatus({
       phase: "succeeded",
       ...(revision !== undefined ? { revision } : {}),
       ...(status !== undefined ? { status } : {}),
-      ...(jiraIssue !== undefined
-        ? { jiraIssue, jiraStatus: jiraIssue.status, requiresJiraLink: true }
-        : {}),
     };
     currentState.overlaysByTicket.set(overlay.ticketId, saved);
 
@@ -241,15 +172,8 @@ export function useOptimisticWorkbenchStatus({
     const overlay = state.overlaysByTicket.get(ticket.id);
     return overlay === undefined ? ticket : { ...ticket, status: overlay.status };
   });
-  const projectedIssueLinks = issueLinks.map((link) => {
-    const overlay = state.overlaysByTicket.get(link.ticketId);
-    const status = overlay?.jiraIssue?.status ?? overlay?.jiraStatus;
-    return status === undefined ? link : { ...link, issue: { ...link.issue, status } };
-  });
-
   return {
     tickets: projectedTickets,
-    issueLinks: projectedIssueLinks,
     pendingTicketIds,
     begin,
     succeed,

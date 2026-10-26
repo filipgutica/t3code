@@ -57,7 +57,6 @@ vi.mock("./state", () => ({
     replaceAssignment: "replaceAssignment",
     unlinkAssignment: "unlinkAssignment",
     prepareTicketWorkspace: "prepareTicketWorkspace",
-    jiraSnapshot: () => null,
   },
 }));
 vi.mock("../state/use-atom-command", () => ({
@@ -185,15 +184,11 @@ function pageData(input: HarnessInput): HookInput["pageData"] {
     keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
     availableEditors: [],
     query,
-    jiraQuery: { ...query, data: null },
-    jiraSnapshot: null,
     refreshWorkbenchSnapshot: query.refresh,
-    refreshJiraSnapshot: vi.fn(),
     ticketDrafts: new Map(),
     clearTicketDraft: vi.fn(),
     optimisticStatus: {
       tickets: input.snapshot.tickets,
-      issueLinks: [],
       pendingTicketIds: new Set(),
       begin: () => false,
       succeed: vi.fn(),

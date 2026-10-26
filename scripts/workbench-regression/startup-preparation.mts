@@ -46,14 +46,8 @@ const sameRuntime = (a: Runtime, b: Runtime | undefined) =>
   b !== undefined && a.pid === b.pid && a.startedAt === b.startedAt && a.origin === b.origin;
 
 /** Keep this browser alive through worker use; its pairing credential is separate from the launcher's. */
-export const prepareStartup = (input: {
-  browser: Browser;
-  home: string;
-  live: boolean;
-  deadline: number;
-}) => {
+export const prepareStartup = (input: { browser: Browser; home: string; deadline: number }) => {
   const home = requireHome(input.home);
-  let eligibleAfter = input.live ? Infinity : -Infinity;
   let watcher: NodeFS.FSWatcher | undefined;
   let context: BrowserContext | undefined;
   let settled = false;
@@ -97,7 +91,7 @@ export const prepareStartup = (input: {
   const check = async () => {
     try {
       const runtime = await readRuntime(home);
-      if (!settled && runtime && Date.parse(runtime.startedAt) >= eligibleAfter) {
+      if (!settled && runtime) {
         settled = true;
         watcher?.close();
         resolveRuntime(runtime);
@@ -110,12 +104,6 @@ export const prepareStartup = (input: {
     await configureProvider(directory);
     watcher = NodeFS.watch(NodePath.join(home, "userdata"), () => void check());
     watcher.on("error", rejectRuntime);
-    await check();
-  };
-  const onAuthImported = async () => {
-    // resetToBaseline invokes this while the migration boot is stopped.
-    // Only the subsequently persisted server receipt is eligible for browser auth.
-    eligibleAfter = Effect.runSync(Clock.currentTimeMillis);
     await check();
   };
   const ready = (async () => {
@@ -230,7 +218,6 @@ export const prepareStartup = (input: {
     .finally(() => clearTimeout(timeout));
   return {
     configure,
-    onAuthImported,
     ready,
     cancel: async (error: unknown) => {
       await fail(error);

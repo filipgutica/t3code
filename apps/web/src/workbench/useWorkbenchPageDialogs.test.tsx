@@ -72,7 +72,6 @@ function Harness({
     snapshot: data,
     projects: [],
     canOperate,
-    localOnlySupported: false,
     selection,
     setError,
     setPendingAction,
@@ -104,8 +103,6 @@ const draft: WorkbenchTicketDraft = {
     epicId: null,
     repositoryProjectIds: [ProjectId.make("repo")],
     primaryT3ProjectId: ProjectId.make("repo"),
-    localOnly: false,
-    jiraSprintId: null,
   },
   createdAt: time,
   updatedAt: time,
@@ -275,34 +272,6 @@ describe("ticket planning conversation navigation", () => {
       expect(router.state.location.search).toEqual({ workbench: true });
       // Navigation only: no Thread is created or started from this path.
       expect(command).not.toHaveBeenCalled();
-    } finally {
-      await unmount();
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it("still refuses local-only tickets on hosts that cannot store them", async () => {
-    const { settle, unmount } = await mount(workspaceEntry);
-    try {
-      await settle();
-      await act(async () => {
-        expect(
-          await latestDialogs.submitTicket({
-            id: WorkbenchTicketId.make("local-ticket"),
-            title: "Keep local",
-            markdown: "",
-            kind: "story",
-            epicId: null,
-            primaryT3ProjectId: ProjectId.make("repo"),
-            repositoryProjectIds: [ProjectId.make("repo")],
-            localOnly: true,
-          }),
-        ).toBe(false);
-      });
-      expect(command).not.toHaveBeenCalled();
-      expect(setError).toHaveBeenLastCalledWith(
-        "Update this environment before creating local-only Tickets.",
-      );
     } finally {
       await unmount();
       vi.unstubAllGlobals();

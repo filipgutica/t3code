@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, useRef, type ComponentProps } from "react";
+import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
   createMemoryHistory,
@@ -16,12 +16,8 @@ import {
   ThreadId,
   WorkbenchAssignmentId,
   WorkbenchEpicId,
-  WorkbenchJiraBindingId,
-  WorkbenchJiraConnectionId,
   WorkbenchProjectId,
   WorkbenchTicketId,
-  type WorkbenchJiraBinding,
-  type WorkbenchJiraIssueLink,
   type WorkbenchSnapshot,
   type WorkbenchTicket,
   type WorkbenchTicketDraft,
@@ -107,50 +103,7 @@ const ticket: WorkbenchTicket = {
   createdAt: timestamp,
   updatedAt: timestamp,
 };
-const binding: WorkbenchJiraBinding = {
-  id: WorkbenchJiraBindingId.make("binding"),
-  projectId: workspace.id,
-  connectionId: WorkbenchJiraConnectionId.make("connection"),
-  jiraProjectId: "10000",
-  jiraProjectKey: "WB",
-  jiraProjectName: "Workbench",
-  boardId: 42,
-  boardName: "Delivery Board",
-  sprintId: 7,
-  sprintName: "Sprint 7",
-  selectedSprints: [{ id: 7, name: "Sprint 7" }],
-  defaultPrimaryT3ProjectId: repository.id,
-  defaultRepositoryProjectIds: [repository.id],
-  statusMappings: [],
-  followActiveSprint: false,
-  observedActiveSprintIds: [],
-  boardMode: "mapped",
-  boardColumns: [],
-  active: true,
-  lastSyncedAt: null,
-  lastSyncError: null,
-  createdAt: timestamp,
-  updatedAt: timestamp,
-};
-const issueLink: WorkbenchJiraIssueLink = {
-  bindingId: binding.id,
-  ticketId: ticket.id,
-  active: true,
-  linkedAt: timestamp,
-  lastSeenAt: timestamp,
-  issue: {
-    issueId: "10001",
-    key: "WB-1",
-    url: "https://example.atlassian.net/browse/WB-1",
-    summary: ticket.title,
-    issueType: { id: "story", name: "Story" },
-    status: { id: "todo", name: "To Do" },
-    epic: null,
-    flagged: false,
-    rank: 0,
-    remoteUpdatedAt: timestamp,
-  },
-};
+const jiraIssue = { key: "WB-1", url: "https://example.atlassian.net/browse/WB-1" };
 const thread = makeThreadFixture({
   id: ThreadId.make("native-thread"),
   environmentId,
@@ -182,8 +135,6 @@ const conversationDraft = (
     epicId: null,
     repositoryProjectIds: [],
     primaryT3ProjectId: null,
-    localOnly: false,
-    jiraSprintId: null,
   },
   createdAt: timestamp,
   updatedAt: timestamp,
@@ -222,13 +173,6 @@ const workspaceFixture = (workspaceState: "active" | "archived" | "deleted") => 
     selectedProject: workspaceState === "deleted" ? null : currentWorkspace,
   };
 };
-const ticketsFixture = (snapshotTickets: ReadonlyArray<WorkbenchTicket>, includeLocal: boolean) =>
-  includeLocal
-    ? [
-        ...snapshotTickets,
-        { ...ticket, id: WorkbenchTicketId.make("local-ticket"), title: "Local follow-up" },
-      ]
-    : snapshotTickets;
 const snapshot: WorkbenchSnapshot = {
   projects: [workspace],
   tickets: [ticket],
@@ -252,7 +196,6 @@ const refreshThreadLookup = vi.fn();
 const retries = { queryError: refreshQuery, threadLookupError: refreshThreadLookup };
 const success = vi.fn(async () => true);
 const idle = vi.fn(async () => {});
-const syncJiraBinding = vi.fn<PageProps["jiraBindings"]["syncJiraBinding"]>(async () => null);
 const openAssignedThread = vi.fn();
 const requestTicketThread = vi.fn();
 const defaultGrants = { archive: true, remove: true };
@@ -261,9 +204,7 @@ function Harness({
   canOperate = true,
   workspaceState = "active",
   detail = false,
-  mirrored = false,
-  includeLocalTicket = false,
-  syncState = "error",
+  linked = false,
   grants = defaultGrants,
   error = null,
   queryError = null,
@@ -279,15 +220,14 @@ function Harness({
   canOperate?: boolean;
   workspaceState?: "active" | "archived" | "deleted";
   detail?: boolean;
-  mirrored?: boolean;
-  includeLocalTicket?: boolean;
-  syncState?: "error" | "success";
+  /** The Ticket links a Jira issue. */
+  linked?: boolean;
   grants?: { archive: boolean; remove: boolean };
   error?: string | null;
   queryError?: string | null;
   threadLookupError?: string | null;
   setError?: PageProps["setError"];
-  dialog?: "create" | "publish" | "workspace";
+  dialog?: "create" | "workspace";
   /** create=ticket in the URL, an unsaved draft to resume, or a saved ticket's draft phase. */
   conversation?: ConversationMode;
   deletedThread?: boolean;
@@ -295,21 +235,19 @@ function Harness({
   epicState?: "active" | "archived";
   epicLifecycleSupported?: boolean;
 }) {
-  const statusEnvironmentRef = useRef(environmentId);
-  const pendingJiraMigrationBindingsRef = useRef<
-    PageProps["jiraBindings"]["pendingJiraMigrationBindingsRef"]["current"]
-  >(new Map());
   const { currentWorkspace, selectedProject } = workspaceFixture(workspaceState);
-  const { selectedTicket, ticketDrafts, createTicket } = conversationFixture({
+  const {
+    selectedTicket: fixtureTicket,
+    ticketDrafts,
+    createTicket,
+  } = conversationFixture({
     conversation,
     detail,
   });
+  const linkedTicket = linked ? { ...ticket, jiraIssue } : ticket;
+  const selectedTicket = fixtureTicket && linkedTicket;
   const selectedTicketId = selectedTicket?.id ?? null;
-  const publication = dialog === "publish" ? { ticket, binding } : null;
-  const jiraSyncMessage =
-    syncState === "success" ? "Jira sync completed" : "Jira sync needs a retry";
-  const issueLinks = mirrored ? [issueLink] : [];
-  const tickets = ticketsFixture(snapshot.tickets, includeLocalTicket);
+  const tickets = [linkedTicket];
   const currentSnapshot = {
     ...snapshot,
     ...(epicLifecycleSupported === undefined
@@ -319,13 +257,6 @@ function Harness({
     tickets,
     ...(ticketDrafts === undefined ? {} : { ticketDrafts }),
   };
-  const jiraSnapshot: NonNullable<PageProps["pageData"]["jiraSnapshot"]> = {
-    connections: [],
-    bindings: [binding],
-    issueLinks,
-    epicLinks: [],
-    supportsLocalOnlyTickets: true,
-  };
   const pageData: PageProps["pageData"] = {
     canOperate,
     projects: [repository],
@@ -334,17 +265,13 @@ function Harness({
     keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
     availableEditors: [],
     query: { ...query, data: currentSnapshot, error: queryError, refresh: refreshQuery },
-    jiraQuery: { ...query, data: jiraSnapshot },
     refreshWorkbenchSnapshot: noop,
-    refreshJiraSnapshot: noop,
     ticketDrafts: new Map(),
     clearTicketDraft: noop,
     snapshot: currentSnapshot,
     snapshotProjects: currentSnapshot.projects,
-    jiraSnapshot,
     optimisticStatus: {
       tickets,
-      issueLinks: jiraSnapshot.issueLinks,
       pendingTicketIds: new Set(),
       begin: vi.fn(),
       succeed: noop,
@@ -393,51 +320,16 @@ function Harness({
     openWorkspaceDialog: noop,
     handleWorkspaceDialogOpenChange: noop,
   };
-  const jiraBindings: PageProps["jiraBindings"] = {
-    jiraError: null,
-    setJiraError: noop,
-    jiraPendingAction: null,
-    setJiraPendingAction: noop,
-    jiraSyncNotice: null,
-    setJiraSyncNotice: noop,
-    statusEnvironmentRef,
-    pendingJiraMigrationBindingsRef,
-    jiraSyncBinding: vi.fn<PageProps["jiraBindings"]["jiraSyncBinding"]>(),
-    listJiraProjectsForConnection: vi.fn(async () => []),
-    listJiraBoardsForProject: vi.fn(async () => []),
-    listJiraSprintsForBoard: vi.fn(async () => []),
-    getJiraBoardConfiguration: vi.fn(async () => null),
-    createJiraBindingForWorkspace: success,
-    updateJiraBindingForWorkspace: success,
-    setJiraBindingActive: success,
-    syncJiraBinding,
-  };
-  const boardData = useWorkbenchBoardData({
-    environmentId,
-    pageData,
-    selection,
-    jiraSyncNotice: {
-      environmentId,
-      projectId: workspace.id,
-      bindingId: binding.id,
-      state: syncState,
-      message: jiraSyncMessage,
-    },
-  });
+  const boardData = useWorkbenchBoardData({ environmentId, pageData, selection });
   const props: PageProps = {
     environmentId,
     createWorkspace: false,
     createTicket,
-    jiraDialogOpen: false,
     error,
     pendingAction: null,
     setError,
-    beginJiraAuthFlow: idle,
-    openJiraDialog: noop,
-    handleJiraDialogOpenChange: noop,
     pageData,
     selection,
-    jiraBindings,
     boardData,
     workspaceActions: {
       canArchive: grants.archive,
@@ -473,11 +365,6 @@ function Harness({
       handleEpicDialogOpenChange: noop,
     },
     ticketActions: {
-      publication,
-      publicationError: null,
-      openPublication: noop,
-      closePublication: noop,
-      publishTicket: success,
       repositoryScopeDraft: null,
       editRepositories: noop,
       changeRepositoryScope: noop,
@@ -487,7 +374,6 @@ function Harness({
       saveRepositories: success,
       workspacePreparationFailure: null,
       changeTicket: noop,
-      changeJiraTransition: idle,
       setTicketArchived: success,
       removeTicket: success,
       resetTicketWorkspace: success,
@@ -562,20 +448,15 @@ function button(label: string, options?: { optional: true }) {
   return found;
 }
 
-it("suspends planning and Jira retry on archive and restores their availability", async () => {
+it("suspends planning on archive and restores its availability", async () => {
   await render();
   expect(button("New Ticket").disabled).toBe(false);
-  expect(button("Retry").disabled).toBe(false);
   await render({ workspaceState: "archived" });
   expect(button("New Ticket").disabled).toBe(true);
-  expect(document.body.textContent).toContain("Planning is read-only and Jira sync is paused");
-  expect(document.body.textContent).toContain("Jira sync needs a retry");
-  expect(document.body.textContent).not.toContain("Retry");
+  expect(document.body.textContent).toContain("Planning is read-only");
   expect(button("Restore Workspace").disabled).toBe(false);
   await render();
   expect(button("New Ticket").disabled).toBe(false);
-  await act(async () => button("Retry").click());
-  expect(syncJiraBinding).toHaveBeenCalledOnce();
 });
 
 it("shows navigation failure after deletion removes the last selected Workspace", async () => {
@@ -586,31 +467,6 @@ it("shows navigation failure after deletion removes the last selected Workspace"
   expect(document.body.textContent).toContain(error);
   expect(document.body.textContent).not.toContain("Retry");
   expect(button("Create Workspace").disabled).toBe(false);
-});
-
-it("blocks Jira refresh for a mirrored Ticket in an archived Workspace", async () => {
-  await render({ detail: true, mirrored: true });
-  expect(button("Refresh from Jira").disabled).toBe(false);
-  expect(document.body.textContent).not.toContain("Publish to Jira…");
-  await render({ detail: true, mirrored: true, workspaceState: "archived" });
-  expect(button("Refresh from Jira").disabled).toBe(true);
-  await act(async () => button("Refresh from Jira").click());
-  expect(syncJiraBinding).not.toHaveBeenCalled();
-  await render({ detail: true, mirrored: true });
-  await act(async () => button("Refresh from Jira").click());
-  expect(syncJiraBinding).toHaveBeenCalledOnce();
-});
-
-it("shows imported Tickets after a successful sync and can return to all planning", async () => {
-  await render({ mirrored: true, includeLocalTicket: true, syncState: "success" });
-  const titles = () =>
-    [...document.querySelectorAll("article h3")].map((heading) => heading.textContent);
-  expect(titles()).toEqual([ticket.title, "Local follow-up"]);
-  await act(async () => button("View imported tickets").click());
-  expect(titles()).toEqual([ticket.title]);
-  expect(document.body.textContent).toContain("1 imported tickets");
-  await act(async () => button("Show all Workbench tickets").click());
-  expect(titles()).toEqual([ticket.title, "Local follow-up"]);
 });
 
 it.each([
@@ -651,23 +507,16 @@ it.each([
   },
 );
 
-it.each(["create", "publish"] as const)(
-  "closes an already open %s dialog when its Workspace is archived",
-  async (dialog) => {
-    await render({ dialog });
-    const formId = dialog === "create" ? "create-workbench-ticket" : "publish-workbench-ticket";
-    expect(document.getElementById(formId)).not.toBeNull();
-    await render({ workspaceState: "archived", dialog });
-    expect(document.getElementById(formId)).toBeNull();
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-  },
-);
+it("closes an already open create dialog when its Workspace is archived", async () => {
+  await render({ dialog: "create" });
+  expect(document.getElementById("create-workbench-ticket")).not.toBeNull();
+  await render({ workspaceState: "archived", dialog: "create" });
+  expect(document.getElementById("create-workbench-ticket")).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+});
 
-it("keeps linked native Threads openable while archived Ticket publication is disabled", async () => {
-  await render({ detail: true });
-  expect(button("Publish to Jira…").disabled).toBe(false);
+it("keeps linked native Threads openable in an archived Workspace", async () => {
   await render({ detail: true, workspaceState: "archived" });
-  expect(button("Publish to Jira…").disabled).toBe(true);
   const openThread = button("Open Thread for Ship the release");
   expect(openThread.disabled).toBe(false);
   await act(async () => openThread.click());
@@ -736,7 +585,7 @@ it.each(["queryError", "threadLookupError"] as const)(
 it.each(["queryError", "threadLookupError"] as const)(
   "retries the board's %s only when that error is displayed",
   async (errorSource) => {
-    const props = { syncState: "success" as const, [errorSource]: "Could not load board data" };
+    const props = { [errorSource]: "Could not load board data" };
     await render({ ...props, error: "Could not move Ticket" });
     expect(container.textContent).toContain("Could not move Ticket");
     expect(button("Retry", { optional: true })).toBeNull();
@@ -769,7 +618,6 @@ it("shows a draft on the board while New Ticket remains available", async () => 
 it("keeps a planning ticket in the conversation and shows the ordinary ticket once work starts", async () => {
   await render({ conversation: "planning" });
   expect(document.querySelector('[data-conversation="planning"]')).not.toBeNull();
-  expect(document.body.textContent).not.toContain("Publish to Jira…");
   await render({ conversation: "working" });
   expect(document.querySelector("[data-conversation]")).toBeNull();
   expect(button("Open Thread for Ship the release").disabled).toBe(false);
@@ -781,7 +629,6 @@ it("opens the ticket details from a planning conversation and returns to the sam
   expect(document.querySelector("[data-conversation]")).toBeNull();
   // The ordinary ticket view brings back editing and repositories that planning hides.
   expect(document.body.textContent).toContain(ticket.title);
-  expect(button("Publish to Jira…").disabled).toBe(false);
   await act(async () => button("Continue planning").click());
   expect(document.querySelector('[data-conversation="planning"]')).not.toBeNull();
 });
@@ -813,21 +660,18 @@ it("tells the conversation when the host predates conversation drafts", async ()
 it("disables board mutations without operate permission and restores them when granted", async () => {
   await render({ canOperate: false });
   expect(button("New Ticket").disabled).toBe(true);
-  expect(button("Retry").disabled).toBe(true);
-  await act(async () => button("Retry").click());
-  expect(syncJiraBinding).not.toHaveBeenCalled();
   await render({ canOperate: true });
   expect(button("New Ticket").disabled).toBe(false);
-  await act(async () => button("Retry").click());
-  expect(syncJiraBinding).toHaveBeenCalledOnce();
 });
 
-it("keeps Ticket inspection available while denying edits and Jira refresh", async () => {
-  await render({ detail: true, mirrored: true, canOperate: false });
+it("links a Ticket's Jira issue from read-only Ticket detail and hides it once unlinked", async () => {
+  const issueLink = () =>
+    document.querySelector<HTMLAnchorElement>('a[aria-label="Open Jira issue WB-1"]');
+  await render({ detail: true, linked: true, canOperate: false });
   expect(document.body.textContent).toContain(ticket.title);
-  expect(button("Refresh from Jira").disabled).toBe(true);
-  await act(async () => button("Refresh from Jira").click());
-  expect(syncJiraBinding).not.toHaveBeenCalled();
+  expect(issueLink()?.href).toBe(jiraIssue.url);
+  await render({ detail: true, canOperate: false });
+  expect(issueLink()).toBeNull();
 });
 
 it("blocks saving an already open Workspace dialog after permission is revoked", async () => {
@@ -912,7 +756,7 @@ it("requires operate permission to replace a deleted Ticket Thread", async () =>
   expect(button("Create replacement Thread for Ship the release").disabled).toBe(false);
 });
 
-it("dismisses action errors while leaving Jira retry available", async () => {
+it("dismisses action errors", async () => {
   const setError = vi.fn();
   await render({ error: "Could not move Ticket", setError });
   await act(async () => button("Dismiss action error").click());
@@ -920,5 +764,4 @@ it("dismisses action errors while leaving Jira retry available", async () => {
   await render({ error: null, setError });
   expect(document.body.textContent).not.toContain("Could not move Ticket");
   expect(button("Dismiss action error", { optional: true })).toBeNull();
-  expect(button("Retry").disabled).toBe(false);
 });

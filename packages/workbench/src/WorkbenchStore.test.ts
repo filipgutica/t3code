@@ -27,6 +27,10 @@ import { ensureWorkbenchSchema } from "./WorkbenchSchema.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
 
 const decodeArchiveEpicInput = Schema.decodeEffect(WorkbenchArchiveEpicInput);
+const orbitIssue = (number: number) => ({
+  key: `ORBIT-${number}`,
+  url: `https://acme.atlassian.net/browse/ORBIT-${number}`,
+});
 
 const nativeLayer = (options?: {
   readonly projects?: ReadonlySet<string>;
@@ -909,10 +913,9 @@ describe("Workbench Workspace lifecycle", () => {
       }).pipe(Effect.provide(layer())),
   );
 
-  it.effect("rejects local lifecycle changes for Jira Epics by identity or link", () =>
+  it.effect("lets former Jira Epics archive, restore, and rename like local Epics", () =>
     Effect.gen(function* () {
       const store = yield* setup;
-      const sql = yield* SqlClient.SqlClient;
       const importedId = WorkbenchEpicId.make("jira:binding:epic:123");
       yield* store.createEpic({
         id: importedId,
@@ -921,19 +924,56 @@ describe("Workbench Workspace lifecycle", () => {
         markdown: "",
         createdAt: now,
       });
-      yield* sql`INSERT INTO workbench_jira_connections (connection_id, cloud_id, credential_id, site_name, site_url, scopes_json, created_at, updated_at)
-        VALUES ('connection', 'cloud', 'credential', 'Jira', 'https://example.atlassian.net', '[]', ${now}, ${now})`;
-      yield* sql`INSERT INTO workbench_jira_bindings (binding_id, workbench_project_id, connection_id, jira_project_id, jira_project_key, jira_project_name, board_id, board_name, sprint_id, sprint_name, default_primary_t3_project_id, default_repository_project_ids_json, status_mappings_json, active, created_at, updated_at)
-        VALUES ('binding', ${workspaceId}, 'connection', '10000', 'PROJ', 'Project', 1, 'Board', 1, 'Sprint', ${projectId}, '[]', '[]', 1, ${now}, ${now})`;
-      yield* sql`INSERT INTO workbench_jira_epic_links (epic_id, binding_id, jira_issue_id, jira_issue_key)
-        VALUES (${epicId}, 'binding', '123', 'PROJ-1')`;
-      for (const id of [epicId, importedId]) {
-        for (const archivedAt of [now, null]) {
-          const error = yield* Effect.flip(store.archiveEpic({ id, archivedAt }));
-          expect(error.code).toBe("jira_managed_epic");
-        }
-      }
-      expect((yield* store.getSnapshot).epics.every((epic) => epic.archivedAt === null)).toBe(true);
+      const archived = yield* store.archiveEpic({ id: importedId, archivedAt: now });
+      expect(archived.archivedAt).toBe(now);
+      expect(
+        (yield* store.archiveEpic({ id: importedId, archivedAt: null })).archivedAt,
+      ).toBeNull();
+      const renamed = yield* store.updateEpic({
+        id: importedId,
+        title: "Renamed locally",
+        markdown: "Local body",
+        updatedAt: now,
+      });
+      expect(renamed).toMatchObject({ title: "Renamed locally", markdown: "Local body" });
+    }).pipe(Effect.provide(layer())),
+  );
+
+  it.effect("links, changes, and unlinks a Jira issue on an Epic by its version", () =>
+    Effect.gen(function* () {
+      const store = yield* setup;
+      const epic = Option.getOrThrow(yield* store.getEpic(epicId));
+      expect(epic.jiraIssue).toBeNull();
+      const linked = yield* store.setEpicJiraIssueLink({
+        epicId,
+        jiraIssue: orbitIssue(375),
+        expectedUpdatedAt: epic.updatedAt,
+      });
+      expect(linked.jiraIssue).toEqual(orbitIssue(375));
+      expect(linked.updatedAt).not.toBe(epic.updatedAt);
+      const stale = yield* Effect.flip(
+        store.setEpicJiraIssueLink({
+          epicId,
+          jiraIssue: orbitIssue(376),
+          expectedUpdatedAt: epic.updatedAt,
+        }),
+      );
+      expect(stale.code).toBe("epic_changed");
+      const changed = yield* store.setEpicJiraIssueLink({
+        epicId,
+        jiraIssue: orbitIssue(376),
+        expectedUpdatedAt: linked.updatedAt,
+      });
+      expect(
+        (yield* store.getSnapshot).epics.find((candidate) => candidate.id === epicId)?.jiraIssue,
+      ).toEqual(orbitIssue(376));
+      const unlinked = yield* store.setEpicJiraIssueLink({
+        epicId,
+        jiraIssue: null,
+        expectedUpdatedAt: changed.updatedAt,
+      });
+      expect(Option.getOrThrow(yield* store.getEpic(epicId))).toEqual(unlinked);
+      expect(unlinked.jiraIssue).toBeNull();
     }).pipe(Effect.provide(layer())),
   );
 
@@ -981,11 +1021,15 @@ describe("Workbench Workspace lifecycle", () => {
           title: "Blocked",
           updatedAt: now,
         }),
-        store.updateJiraTicketFields({
-          id: ticketId,
+        store.setTicketJiraIssueLink({
+          ticketId,
+          jiraIssue: orbitIssue(1),
           expectedRevision: request.revision,
-          title: "Blocked",
-          updatedAt: now,
+        }),
+        store.setEpicJiraIssueLink({
+          epicId,
+          jiraIssue: orbitIssue(1),
+          expectedUpdatedAt: now,
         }),
         store.archiveTicket({
           ticketId,
@@ -1116,19 +1160,15 @@ describe("Workbench Workspace lifecycle", () => {
         yield* store.initializeTicketExecution;
         yield* store.archiveProject(archive);
         yield* Ref.set(sequence, 3);
-        expect(
-          yield* store.consumeTicketExecution({
-            sequence: 1,
-            run: { id: RunId.make("archived-run"), threadId, startedAt: now },
-          }),
-        ).toBeNull();
+        yield* store.consumeTicketExecution({
+          sequence: 1,
+          run: { id: RunId.make("archived-run"), threadId, startedAt: now },
+        });
         yield* store.archiveProject({ ...archive, expectedRevision: 1, archivedAt: null });
-        expect(
-          yield* store.consumeTicketExecution({
-            sequence: 2,
-            run: { id: RunId.make("delayed-run"), threadId, startedAt: now },
-          }),
-        ).toBeNull();
+        yield* store.consumeTicketExecution({
+          sequence: 2,
+          run: { id: RunId.make("delayed-run"), threadId, startedAt: now },
+        });
         expect((yield* store.getSnapshot).tickets[0]?.status).toBe("todo");
         yield* store.consumeTicketExecution({
           sequence: 4,
@@ -1234,115 +1274,200 @@ describe("Workbench Workspace lifecycle", () => {
     },
   );
 
-  it.effect("retains Jira ledgers and rejects binding drift and unresolved remote creations", () =>
+  it.effect("links, changes, and unlinks a Jira issue on a Ticket by its revision", () =>
     Effect.gen(function* () {
       const store = yield* setup;
-      const sql = yield* SqlClient.SqlClient;
-      yield* sql`INSERT INTO workbench_jira_connections (connection_id, cloud_id, credential_id, site_name, site_url, scopes_json, created_at, updated_at)
-        VALUES ('connection', 'cloud', 'credential', 'Site', 'https://example.atlassian.net', '[]', ${now}, ${now})`;
-      yield* sql`INSERT INTO workbench_jira_bindings (binding_id, workbench_project_id, connection_id, jira_project_id, jira_project_key, jira_project_name,
-        board_id, board_name, sprint_id, sprint_name, default_primary_t3_project_id, default_repository_project_ids_json, status_mappings_json, active, created_at, updated_at)
-        VALUES ('binding', ${workspaceId}, 'connection', 'project', 'KEY', 'Project', 1, 'Board', 1, 'Sprint', ${projectId}, json_array(${projectId}), '[]', 0, ${now}, ${now})`;
-      expect(
-        (yield* Effect.flip(store.archiveProject({ ...archive, expectedJiraBindingId: null })))
-          .code,
-      ).toBe("project_changed");
-      expect(
-        (yield* Effect.flip(
-          store.deleteProject({ ...deletion, expectedJiraBindingId: "previous-binding" }),
-        )).code,
-      ).toBe("project_changed");
-      yield* sql`INSERT INTO workbench_jira_ticket_creations (ticket_id, binding_id, title, kind, markdown, state, created_at, updated_at)
-        VALUES (${ticketId}, 'binding', 'Ticket', 'story', '', 'pending', ${now}, ${now})`;
-      expect((yield* Effect.flip(store.deleteProject(deletion))).code).toBe(
-        "jira_operation_pending",
-      );
-      expect((yield* Effect.flip(store.archiveProject(archive))).code).toBe(
-        "jira_operation_pending",
-      );
-      yield* sql`UPDATE workbench_jira_ticket_creations SET state = 'uncertain' WHERE ticket_id = ${ticketId}`;
-      expect((yield* Effect.flip(store.deleteProject(deletion))).code).toBe(
-        "jira_operation_pending",
-      );
-      expect((yield* Effect.flip(store.archiveProject(archive))).code).toBe(
-        "jira_operation_pending",
-      );
-      yield* sql`UPDATE workbench_jira_ticket_creations SET state = 'created' WHERE ticket_id = ${ticketId}`;
-      yield* sql`INSERT INTO workbench_jira_epic_creations (epic_id, binding_id, title, markdown, state, created_at, updated_at)
-        VALUES (${epicId}, 'binding', 'Epic', '', 'uncertain', ${now}, ${now})`;
-      expect((yield* Effect.flip(store.deleteProject(deletion))).code).toBe(
-        "jira_operation_pending",
-      );
-      expect((yield* Effect.flip(store.archiveProject(archive))).code).toBe(
-        "jira_operation_pending",
-      );
-      yield* sql`UPDATE workbench_jira_epic_creations SET state = 'created' WHERE epic_id = ${epicId}`;
-      yield* store.archiveProject({ ...archive, expectedJiraBindingId: "binding" });
-      expect(yield* sql`SELECT active FROM workbench_jira_bindings`).toEqual([{ active: 0 }]);
-      yield* store.archiveProject({
-        ...archive,
-        archivedAt: null,
-        expectedRevision: 1,
-        expectedJiraBindingId: "binding",
+      const ticket = Option.getOrThrow(yield* store.getTicket(ticketId));
+      expect(ticket.jiraIssue).toBeNull();
+      expect(yield* store.getTicketJiraIssueKey(ticketId)).toEqual(Option.none());
+      const linked = yield* store.setTicketJiraIssueLink({
+        ticketId,
+        jiraIssue: orbitIssue(375),
+        expectedRevision: ticket.revision,
       });
-      expect(yield* sql`SELECT active FROM workbench_jira_bindings`).toEqual([{ active: 0 }]);
-      yield* store.deleteProject({
-        ...deletion,
-        expectedRevision: 2,
-        expectedJiraBindingId: "binding",
+      expect(linked).toMatchObject({ jiraIssue: orbitIssue(375), revision: ticket.revision + 1 });
+      expect(yield* store.getTicketJiraIssueKey(ticketId)).toEqual(Option.some("ORBIT-375"));
+      const stale = yield* Effect.flip(
+        store.setTicketJiraIssueLink({
+          ticketId,
+          jiraIssue: orbitIssue(376),
+          expectedRevision: ticket.revision,
+        }),
+      );
+      expect(stale.code).toBe("ticket_changed");
+      yield* store.setTicketJiraIssueLink({
+        ticketId,
+        jiraIssue: orbitIssue(376),
+        expectedRevision: linked.revision,
       });
-      expect(yield* sql`SELECT binding_id FROM workbench_jira_bindings`).toEqual([
-        { binding_id: "binding" },
-      ]);
-      expect(yield* sql`SELECT state FROM workbench_jira_ticket_creations`).toEqual([
-        { state: "created" },
-      ]);
-      expect(yield* sql`SELECT state FROM workbench_jira_epic_creations`).toEqual([
-        { state: "created" },
-      ]);
-      expect(yield* sql`SELECT credential_id FROM workbench_jira_connections`).toEqual([
-        { credential_id: "credential" },
-      ]);
+      expect((yield* store.getSnapshot).tickets[0]?.jiraIssue).toEqual(orbitIssue(376));
+      const unlinked = yield* store.setTicketJiraIssueLink({
+        ticketId,
+        jiraIssue: null,
+        expectedRevision: linked.revision + 1,
+      });
+      expect(Option.getOrThrow(yield* store.getTicket(ticketId))).toEqual(unlinked);
+      expect(unlinked.jiraIssue).toBeNull();
+      expect(yield* store.getTicketJiraIssueKey(ticketId)).toEqual(Option.none());
     }).pipe(Effect.provide(layer())),
   );
 
-  it.effect(
-    "blocks lifecycle changes with uncertain Jira execution and restores legacy readback only",
-    () =>
-      Effect.gen(function* () {
-        const sequence = yield* Ref.make(0);
-        yield* Effect.gen(function* () {
-          const store = yield* setup;
-          const sql = yield* SqlClient.SqlClient;
-          const runId = RunId.make("uncertain-workspace-run");
-          yield* sql`INSERT INTO workbench_execution_runs (run_id, sequence, thread_id, ticket_id, assignment_id, started_at, state)
-          VALUES (${runId}, 1, ${threadId}, ${ticketId}, 'lifecycle-assignment', ${now}, 'uncertain')`;
-          expect((yield* Effect.flip(store.archiveProject(archive))).code).toBe(
-            "jira_operation_pending",
-          );
-          expect((yield* Effect.flip(store.deleteProject(deletion))).code).toBe(
-            "jira_operation_pending",
-          );
-          // An older install may already have archived an uncertain operation.
-          yield* sql`UPDATE workbench_projects SET archived_at = ${now} WHERE project_id = ${workspaceId}`;
-          expect(yield* store.beginTicketExecutionJira(runId)).toBe("skip");
-          expect((yield* store.pendingTicketExecutions)[0]?.state).toBe("uncertain");
-          yield* Ref.set(sequence, 3);
-          yield* store.archiveProject({ ...archive, archivedAt: null });
-          expect(yield* store.beginTicketExecutionJira(runId)).toBe("resume");
-          expect((yield* store.pendingTicketExecutions)[0]?.state).toBe("uncertain");
-          const pendingRunId = RunId.make("unsent-workspace-run");
-          yield* sql`INSERT INTO workbench_execution_runs (run_id, sequence, thread_id, ticket_id, assignment_id, started_at, state)
-            VALUES (${pendingRunId}, 2, ${threadId}, ${ticketId}, 'lifecycle-assignment', ${now}, 'pending')`;
-          expect(yield* store.beginTicketExecutionJira(pendingRunId)).toBe("skip");
-          expect((yield* store.pendingTicketExecutions).map((run) => run.runId)).toEqual([runId]);
-          // A later explicit Ticket reset still retires the old obligation.
-          yield* sql`UPDATE workbench_tickets SET execution_after_sequence = 3 WHERE ticket_id = ${ticketId}`;
-          expect(yield* store.beginTicketExecutionJira(runId)).toBe("skip");
-          expect(yield* store.pendingTicketExecutions).toEqual([]);
-          yield* store.deleteProject({ ...deletion, expectedRevision: 1 });
-        }).pipe(Effect.provide(layer(Ref.get(sequence))));
-      }),
+  it.effect("edits, archives, and deletes a former Jira Ticket like a local Ticket", () =>
+    Effect.gen(function* () {
+      const store = yield* setup;
+      const importedId = WorkbenchTicketId.make("jira:binding:issue:9");
+      const imported = yield* store.createTicket({
+        id: importedId,
+        projectId: workspaceId,
+        title: "Imported",
+        kind: "story",
+        markdown: "",
+        primaryT3ProjectId: projectId,
+        createdAt: now,
+      });
+      const linked = yield* store.setTicketJiraIssueLink({
+        ticketId: importedId,
+        jiraIssue: orbitIssue(9),
+        expectedRevision: imported.revision,
+      });
+      const edited = yield* store.updateTicket({
+        id: importedId,
+        expectedRevision: linked.revision,
+        title: "Edited locally",
+        status: "done",
+        updatedAt: now,
+      });
+      expect(edited).toMatchObject({
+        title: "Edited locally",
+        status: "done",
+        jiraIssue: orbitIssue(9),
+      });
+      const archived = yield* store.archiveTicket({
+        ticketId: importedId,
+        archivedAt: now,
+        expectedRevision: edited.revision,
+        updatedAt: now,
+      });
+      expect(archived).toMatchObject({ archivedAt: now, jiraIssue: orbitIssue(9) });
+      const restored = yield* store.archiveTicket({
+        ticketId: importedId,
+        archivedAt: null,
+        expectedRevision: archived.revision,
+        updatedAt: now,
+      });
+      yield* store.deleteTicket({
+        ticketId: importedId,
+        expectedRevision: restored.revision,
+        deletedAt: now,
+      });
+      expect(yield* store.getTicket(importedId)).toEqual(Option.none());
+    }).pipe(Effect.provide(layer())),
+  );
+
+  it.effect("settles held execution runs at startup through local admission", () =>
+    Effect.gen(function* () {
+      const store = yield* setup;
+      const sql = yield* SqlClient.SqlClient;
+      const startedAt = "2026-10-09T11:00:00.000Z";
+      const ticketFor = (id: string) =>
+        Effect.gen(function* () {
+          const ticket = yield* store.createTicket({
+            id: WorkbenchTicketId.make(id),
+            projectId: workspaceId,
+            title: id,
+            kind: "story",
+            markdown: "",
+            primaryT3ProjectId: projectId,
+            createdAt: now,
+          });
+          const assignment = yield* store.createAssignment({
+            id: WorkbenchAssignmentId.make(`${id}-assignment`),
+            ticketId: ticket.id,
+            threadId: ThreadId.make(`${id}-thread`),
+            createdAt: now,
+          });
+          return { ticket, assignment };
+        });
+      const holdRun = (input: {
+        readonly runId: string;
+        readonly sequence: number;
+        readonly assignment: { readonly id: string; readonly ticketId: string };
+        readonly state: "pending" | "uncertain";
+      }) => sql`INSERT INTO workbench_execution_runs
+            (run_id, sequence, thread_id, ticket_id, assignment_id, started_at, state)
+          VALUES (${input.runId}, ${input.sequence}, 'held-thread', ${input.assignment.ticketId},
+            ${input.assignment.id}, ${startedAt}, ${input.state})`;
+      const eligible = yield* ticketFor("held-eligible");
+      const uncertain = yield* ticketFor("held-uncertain");
+      const archived = yield* ticketFor("held-archived");
+      const superseded = yield* ticketFor("held-superseded");
+      const reset = yield* ticketFor("held-reset");
+      const advanced = yield* ticketFor("held-advanced");
+      yield* store.archiveTicket({
+        ticketId: archived.ticket.id,
+        archivedAt: now,
+        expectedRevision: archived.ticket.revision,
+        updatedAt: now,
+      });
+      yield* sql`UPDATE workbench_assignments SET superseded_at = ${now}
+          WHERE assignment_id = ${superseded.assignment.id}`;
+      yield* sql`UPDATE workbench_tickets SET execution_after_sequence = 9
+          WHERE ticket_id = ${reset.ticket.id}`;
+      yield* store.updateTicket({
+        id: advanced.ticket.id,
+        expectedRevision: advanced.ticket.revision,
+        status: "done",
+        updatedAt: now,
+      });
+
+      // Startup with an existing cursor is the path a restarted server takes.
+      yield* store.initializeTicketExecution;
+      yield* holdRun({ runId: "eligible-1", sequence: 1, ...eligible, state: "pending" });
+      yield* holdRun({ runId: "eligible-2", sequence: 2, ...eligible, state: "uncertain" });
+      yield* holdRun({ runId: "uncertain", sequence: 3, ...uncertain, state: "uncertain" });
+      yield* holdRun({ runId: "archived", sequence: 4, ...archived, state: "pending" });
+      yield* holdRun({ runId: "superseded", sequence: 5, ...superseded, state: "pending" });
+      yield* holdRun({ runId: "reset", sequence: 6, ...reset, state: "pending" });
+      yield* holdRun({ runId: "advanced", sequence: 7, ...advanced, state: "pending" });
+      const before = yield* store.getSnapshot;
+      yield* store.initializeTicketExecution;
+
+      expect(yield* sql`SELECT state FROM workbench_execution_runs WHERE state <> 'done'`).toEqual(
+        [],
+      );
+      const after = yield* store.getSnapshot;
+      const statusOf = (snapshot: typeof after, id: WorkbenchTicketId) =>
+        snapshot.tickets.find((ticket) => ticket.id === id);
+      for (const { ticket } of [eligible, uncertain]) {
+        expect(statusOf(after, ticket.id)).toMatchObject({
+          status: "in_progress",
+          revision: statusOf(before, ticket.id)!.revision + 1,
+          updatedAt: startedAt,
+        });
+      }
+      for (const { ticket } of [archived, superseded, reset, advanced]) {
+        expect(statusOf(after, ticket.id)).toEqual(statusOf(before, ticket.id));
+      }
+    }).pipe(
+      Effect.provide(
+        layer(
+          undefined,
+          new Map(
+            [
+              threadId,
+              ...[
+                "held-eligible",
+                "held-uncertain",
+                "held-archived",
+                "held-superseded",
+                "held-reset",
+                "held-advanced",
+              ].map((id) => ThreadId.make(`${id}-thread`)),
+            ].map((thread) => [thread, projectId]),
+          ),
+        ),
+      ),
+    ),
   );
 
   it.effect(

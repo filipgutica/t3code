@@ -46,7 +46,6 @@ it("keeps upstream production and Workbench test fixtures out of the complexity 
     upstream,
     "apps/web/src/workbench/Example.test.tsx",
     "packages/workbench/src/fixtures/example.ts",
-    "infra/workbench-auth/test/session.test.ts",
   ]) {
     expect(evaluateWorkbenchComplexity(health([finding({ path, cyclomatic: 50 })]))).toEqual([]);
   }
@@ -67,7 +66,7 @@ it("excludes inherited clones and clones outside changed Workbench lines", () =>
   expect(evaluateWorkbenchQuality({ report: report([], clones), diff })).toEqual([]);
 });
 
-it("covers every shipped Workbench owner including extracted helpers and auth", () => {
+it("covers every shipped Workbench owner including extracted helpers", () => {
   for (const path of [
     "packages/workbench/src/test.ts",
     "apps/server/src/workbench/test.ts",
@@ -77,7 +76,6 @@ it("covers every shipped Workbench owner including extracted helpers and auth", 
     "apps/web/src/routes/workbench.tsx",
     "apps/desktop/src/workbench/updates.ts",
     "apps/mobile/src/workbench/helper.ts",
-    "infra/workbench-auth/src/session.ts",
   ]) {
     expect(evaluateWorkbenchComplexity(health([finding({ path, cognitive: 16 })]))).toHaveLength(1);
   }

@@ -15,9 +15,6 @@ function WorkbenchRoute() {
         initialProjectId={search.workbenchProjectId}
         initialTicketId={search.ticketId}
         initialEpicId={search.epicId}
-        jiraOAuthCode={search.jiraOAuthCode}
-        jiraOAuthState={search.jiraOAuthState}
-        jiraOAuthError={search.jiraOAuthError}
       />
     </SidebarInset>
   );

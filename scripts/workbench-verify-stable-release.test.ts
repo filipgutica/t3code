@@ -45,7 +45,7 @@ function setup() {
     }
     const infoName = `WORKBENCH-BUILD-INFO-${platform}.txt`;
     payload[infoName] = files[infoName] =
-      `T3 Code Workbench desktop build\nVersion: 0.0.22\nCommit: ${sha}\nPlatform: ${os}\nArchitecture: ${arch}\nSigning status: ${os === "mac" ? "SIGNED AND NOTARIZED" : "UNSIGNED"}\nJira broker: https://workbench-auth.fgutica.workers.dev\n`;
+      `T3 Code Workbench desktop build\nVersion: 0.0.22\nCommit: ${sha}\nPlatform: ${os}\nArchitecture: ${arch}\nSigning status: ${os === "mac" ? "SIGNED AND NOTARIZED" : "UNSIGNED"}\n`;
     const manifestName =
       os === "mac"
         ? `latest-mac${arch === "x64" ? "-x64" : ""}.yml`

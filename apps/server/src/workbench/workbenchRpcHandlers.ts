@@ -1,4 +1,11 @@
-import { WORKBENCH_WS_METHODS, WorkbenchRpcGroup } from "@t3tools/contracts";
+import {
+  WORKBENCH_JIRA_ISSUE_URL_ERROR,
+  WORKBENCH_WS_METHODS,
+  WorkbenchOperationError,
+  WorkbenchRpcGroup,
+  parseJiraIssueUrl,
+  type WorkbenchSetJiraIssueLinkInput,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as RpcGroup from "effect/rpc/RpcGroup";
@@ -7,7 +14,6 @@ import * as TicketDraftService from "./TicketDraftService.ts";
 import * as TicketSummaryService from "./TicketSummaryService.ts";
 import * as TicketWorkspaceService from "./TicketWorkspaceService.ts";
 import * as WorkbenchStore from "./WorkbenchStore.ts";
-import * as WorkbenchJiraService from "./jira/WorkbenchJiraService.ts";
 import * as WorkspaceLifecycleService from "@t3tools/workbench/WorkspaceLifecycleService";
 
 type WorkbenchRpcHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof WorkbenchRpcGroup>>;
@@ -16,7 +22,6 @@ export type WorkbenchRpcServices = {
   readonly ticketDrafts: TicketDraftService.TicketDraftService["Service"];
   readonly workbench: WorkbenchStore.WorkbenchStore["Service"];
   readonly ticketWorkspaces: TicketWorkspaceService.TicketWorkspaceService["Service"];
-  readonly workbenchJira: WorkbenchJiraService.WorkbenchJiraService["Service"];
   readonly ticketSummaries: TicketSummaryService.TicketSummaryService["Service"];
   readonly workspaceLifecycle: WorkspaceLifecycleService.WorkspaceLifecycleService["Service"];
 };
@@ -25,7 +30,6 @@ export const acquireWorkbenchRpcServices = Effect.gen(function* () {
   const ticketDrafts = yield* TicketDraftService.TicketDraftService;
   const workbench = yield* WorkbenchStore.WorkbenchStore;
   const ticketWorkspaces = yield* TicketWorkspaceService.TicketWorkspaceService;
-  const workbenchJira = yield* WorkbenchJiraService.WorkbenchJiraService;
   const ticketSummaries = yield* TicketSummaryService.TicketSummaryService;
   const workspaceLifecycle = yield* WorkspaceLifecycleService.WorkspaceLifecycleService;
 
@@ -33,17 +37,50 @@ export const acquireWorkbenchRpcServices = Effect.gen(function* () {
     ticketDrafts,
     workbench,
     ticketWorkspaces,
-    workbenchJira,
     ticketSummaries,
     workspaceLifecycle,
   } satisfies WorkbenchRpcServices;
+});
+
+const decodeJiraIssue = (url: string | null) => {
+  if (url === null) return Effect.succeed(null);
+  const issue = parseJiraIssueUrl(url);
+  return issue === null
+    ? Effect.fail(
+        new WorkbenchOperationError({
+          code: "jira_issue_url_invalid",
+          message: WORKBENCH_JIRA_ISSUE_URL_ERROR,
+        }),
+      )
+    : Effect.succeed(issue);
+};
+
+// Untraced: RPC instrumentation already spans every Workbench call, and the store spans the write.
+const setJiraIssueLink = Effect.fnUntraced(function* (
+  workbench: WorkbenchStore.WorkbenchStore["Service"],
+  input: WorkbenchSetJiraIssueLinkInput,
+) {
+  const jiraIssue = yield* decodeJiraIssue(input.url);
+  if (input.kind === "ticket") {
+    const ticket = yield* workbench.setTicketJiraIssueLink({
+      ticketId: input.ticketId,
+      jiraIssue,
+      expectedRevision: input.expectedRevision,
+    });
+    return { kind: "ticket" as const, ticket };
+  }
+  const epic = yield* workbench.setEpicJiraIssueLink({
+    epicId: input.epicId,
+    jiraIssue,
+    expectedUpdatedAt: input.expectedUpdatedAt,
+  });
+  return { kind: "epic" as const, epic };
 });
 
 export const makeWorkbenchRpcHandlers = ({
   ticketDrafts,
   workbench,
   ticketWorkspaces,
-  workbenchJira,
   ticketSummaries,
   workspaceLifecycle,
 }: WorkbenchRpcServices) =>
@@ -66,7 +103,7 @@ export const makeWorkbenchRpcHandlers = ({
     [WORKBENCH_WS_METHODS.workbenchCreateEpic]: (input) => workbench.createEpic(input),
     [WORKBENCH_WS_METHODS.workbenchUpdateEpic]: (input) => workbench.updateEpic(input),
     [WORKBENCH_WS_METHODS.workbenchArchiveEpic]: (input) => workbench.archiveEpic(input),
-    [WORKBENCH_WS_METHODS.workbenchCreateTicket]: (input) => workbenchJira.createTicket(input),
+    [WORKBENCH_WS_METHODS.workbenchCreateTicket]: (input) => workbench.createTicket(input),
     [WORKBENCH_WS_METHODS.workbenchUpdateTicket]: (input) => workbench.updateTicket(input),
     [WORKBENCH_WS_METHODS.workbenchRegenerateTicketSummary]: (input) =>
       ticketSummaries.regenerate(input),
@@ -80,25 +117,5 @@ export const makeWorkbenchRpcHandlers = ({
       ticketWorkspaces.prepare(input),
     [WORKBENCH_WS_METHODS.workbenchReleaseTicketWorkspace]: (input) =>
       ticketWorkspaces.release(input),
-    [WORKBENCH_WS_METHODS.workbenchJiraGetSnapshot]: (_input) => workbenchJira.getSnapshot,
-    [WORKBENCH_WS_METHODS.workbenchJiraBeginAuth]: (input) => workbenchJira.beginAuth(input),
-    [WORKBENCH_WS_METHODS.workbenchJiraCompleteAuth]: (input) => workbenchJira.completeAuth(input),
-    [WORKBENCH_WS_METHODS.workbenchJiraClaimAuth]: (input) => workbenchJira.claimAuth(input),
-    [WORKBENCH_WS_METHODS.workbenchJiraListProjects]: (input) => workbenchJira.listProjects(input),
-    [WORKBENCH_WS_METHODS.workbenchJiraListBoards]: (input) => workbenchJira.listBoards(input),
-    [WORKBENCH_WS_METHODS.workbenchJiraListSprints]: (input) => workbenchJira.listSprints(input),
-    [WORKBENCH_WS_METHODS.workbenchJiraGetBoardConfiguration]: (input) =>
-      workbenchJira.getBoardConfiguration(input),
-    [WORKBENCH_WS_METHODS.workbenchJiraCreateBinding]: (input) =>
-      workbenchJira.createBinding(input),
-    [WORKBENCH_WS_METHODS.workbenchJiraUpdateBinding]: (input) =>
-      workbenchJira.updateBinding(input),
-    [WORKBENCH_WS_METHODS.workbenchJiraSyncBinding]: (input) => workbenchJira.syncBinding(input),
-    [WORKBENCH_WS_METHODS.workbenchJiraUpdateTicket]: (input) => workbenchJira.updateTicket(input),
-    [WORKBENCH_WS_METHODS.workbenchJiraGetTicketTransitions]: (input) =>
-      workbenchJira.getTicketTransitions(input),
-    [WORKBENCH_WS_METHODS.workbenchJiraMigrateLocalTickets]: (input) =>
-      workbenchJira.migrateLocalTickets(input),
-    [WORKBENCH_WS_METHODS.workbenchJiraResolveCreation]: (input) =>
-      workbenchJira.resolveCreation(input),
+    [WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink]: (input) => setJiraIssueLink(workbench, input),
   }) satisfies WorkbenchRpcHandlers;

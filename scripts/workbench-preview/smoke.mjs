@@ -119,7 +119,7 @@ try {
       "node",
       "--input-type=module",
       "-e",
-      "import fs from 'node:fs';import {DatabaseSync} from 'node:sqlite';const userdata=process.argv[1]+'/userdata/';const v2=fs.existsSync(userdata+'statev2.sqlite');const db=new DatabaseSync(userdata+(v2?'statev2.sqlite':'state.sqlite'),{readOnly:true});console.log(JSON.stringify({v2,tickets:db.prepare('SELECT COUNT(*) AS count FROM workbench_tickets').get().count,selections:db.prepare(v2?'SELECT payload_json FROM orchestration_v2_projection_threads':'SELECT model_selection_json FROM projection_threads').all().map(x=>v2?JSON.parse(x.payload_json).modelSelection:JSON.parse(x.model_selection_json)),jira:db.prepare('SELECT COUNT(*) AS count FROM workbench_jira_connections').get().count}));db.close();",
+      "import fs from 'node:fs';import {DatabaseSync} from 'node:sqlite';const userdata=process.argv[1]+'/userdata/';const v2=fs.existsSync(userdata+'statev2.sqlite');const db=new DatabaseSync(userdata+(v2?'statev2.sqlite':'state.sqlite'),{readOnly:true});console.log(JSON.stringify({v2,tickets:db.prepare('SELECT COUNT(*) AS count FROM workbench_tickets').get().count,selections:db.prepare(v2?'SELECT payload_json FROM orchestration_v2_projection_threads':'SELECT model_selection_json FROM projection_threads').all().map(x=>v2?JSON.parse(x.payload_json).modelSelection:JSON.parse(x.model_selection_json))}));db.close();",
       home,
     ),
   );
@@ -134,7 +134,6 @@ try {
       { instanceId: "opencode", model: "opencode/big-pickle" },
       "Seeded native Threads use the free preview provider",
     );
-  NodeAssert.equal(counts.jira, 0, "Preview starts without a connected Jira account");
   NodeAssert.equal(
     docker(
       "exec",
@@ -342,7 +341,7 @@ try {
     "Old reviewer sessions cannot access replacement state",
   );
   console.log(
-    "Preview container smoke passed: seeded native state, disconnected Jira, pinned unauthenticated GitHub CLI, pairing, HTTP/WebSocket denial, and crash recovery without retained credentials.",
+    "Preview container smoke passed: seeded native state, pinned unauthenticated GitHub CLI, pairing, HTTP/WebSocket denial, and crash recovery without retained credentials.",
   );
 } finally {
   if (created) docker("rm", "--force", name);

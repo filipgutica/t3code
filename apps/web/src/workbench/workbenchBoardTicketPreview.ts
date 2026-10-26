@@ -1,8 +1,7 @@
-import type { WorkbenchJiraIssueSnapshot, WorkbenchTicket } from "@t3tools/contracts";
+import type { WorkbenchTicket } from "@t3tools/contracts";
 
 import { getWorkbenchTicketSummaryPresentation } from "./workbench.logic";
 import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
-import { resolveWorkbenchTicketContent } from "./workbenchJira.logic";
 
 const MAX_EXCERPT_LENGTH = 180;
 const MAX_DESCRIPTION_SCAN_LENGTH = 4_000;
@@ -48,20 +47,17 @@ function descriptionExcerpt(markdown: string): string {
 
 export function getWorkbenchBoardTicketPreview({
   ticket,
-  jiraIssue,
 }: {
-  ticket: Pick<WorkbenchTicket, "title" | "markdown" | "generatedSummary">;
-  jiraIssue?: Pick<WorkbenchJiraIssueSnapshot, "summary" | "description">;
+  ticket: Pick<WorkbenchTicket, "markdown" | "generatedSummary" | "jiraIssue">;
 }) {
   const summary = getWorkbenchTicketSummaryPresentation(ticket.generatedSummary);
   if (summary.hasText) {
     return { text: summary.text, source: "summary" as const, statusLabel: summary.statusLabel };
   }
-  const currentDescription = resolveWorkbenchTicketContent({ ticket, jiraIssue }).markdown;
   const excerpt = descriptionExcerpt(
     workbenchDescriptionMarkdown(
-      currentDescription.slice(0, MAX_DESCRIPTION_SCAN_LENGTH),
-      !!jiraIssue,
+      ticket.markdown.slice(0, MAX_DESCRIPTION_SCAN_LENGTH),
+      Boolean(ticket.jiraIssue),
     ),
   );
   if (excerpt) {
@@ -77,7 +73,7 @@ export function getWorkbenchBoardTicketPreview({
   return ticket.generatedSummary?.status === "pending"
     ? { text: "Generating summary…", source: "summary" as const, statusLabel: null }
     : {
-        text: currentDescription.trim() ? "Description available" : "No description added yet",
+        text: ticket.markdown.trim() ? "Description available" : "No description added yet",
         source: "description" as const,
         statusLabel: null,
       };

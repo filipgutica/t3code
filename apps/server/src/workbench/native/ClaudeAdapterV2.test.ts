@@ -1,4 +1,4 @@
-import type { McpServerStatus, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ClaudeSettings,
@@ -210,10 +210,9 @@ describe("ClaudeAdapterV2 query options decorator", () => {
         let consulted = false;
         const decorated = yield* startPolicyTurn().pipe(
           Effect.provideService(ClaudeAdapterV2.ClaudeQueryOptionsDecorator, {
-            decorate: ({ runtimePolicy, mcpServerStatus }) => {
+            decorate: ({ runtimePolicy }) => {
               consulted = true;
               assert.equal(runtimePolicy.runtimeMode, "full-access");
-              assert.isFunction(mcpServerStatus);
               return {
                 options: (options) => {
                   assert.equal(options.permissionMode, "bypassPermissions");
@@ -261,13 +260,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     terminal_reason: "completed",
   } as unknown as SDKMessage;
 
-  // Each reopened process gets its own queue and reports its own MCP inventory.
-  const makeWakeHarnessWithOptions = (options: {
-    readonly freshQueueOnReopen: true;
-    readonly mcpServerStatus: (
-      processNumber: number,
-    ) => NonNullable<ClaudeAdapterV2.ClaudeAgentSdkQuerySession["mcpServerStatus"]>;
-  }) =>
+  // Each reopened process gets its own queue.
+  const makeWakeHarnessWithOptions = (options: { readonly freshQueueOnReopen: true }) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -303,7 +297,6 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               processQueues.push(processMessages);
               return {
                 messages: Stream.fromQueue(processMessages),
-                mcpServerStatus: options.mcpServerStatus(processQueues.length),
                 offer: (message: SDKUserMessage) =>
                   Effect.sync(() => {
                     offeredMessages.push(message);
@@ -353,20 +346,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     });
 
   it.effect.each([false, true])(
-    "reuses decorated queries only for a stable policy and reads live inventory (change=%s)",
+    "reuses decorated queries only for a stable policy (change=%s)",
     (changePolicy) =>
       Effect.gen(function* () {
-        let inventoryBridge:
-          | (() => Promise<ReadonlyArray<McpServerStatus> | undefined>)
-          | undefined;
-        const harness = yield* makeWakeHarnessWithOptions({
-          freshQueueOnReopen: true,
-          mcpServerStatus: (processNumber) =>
-            Effect.succeed([{ name: `process-${processNumber}`, status: "connected" }]),
-        }).pipe(
+        const harness = yield* makeWakeHarnessWithOptions({ freshQueueOnReopen: true }).pipe(
           Effect.provideService(ClaudeAdapterV2.ClaudeQueryOptionsDecorator, {
-            decorate: ({ runtimePolicy, mcpServerStatus }) => {
-              inventoryBridge ??= mcpServerStatus;
+            decorate: ({ runtimePolicy }) => {
               return {
                 reuseKey: runtimePolicy.toolAccess ?? "native",
                 options: () => ({ permissionPrompts: "none" }),
@@ -391,11 +376,6 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             }),
           );
         yield* startTurn(1);
-        if (inventoryBridge === undefined) return assert.fail("Decorator was not consulted");
-        const readInventory = inventoryBridge;
-        assert.deepEqual(yield* Effect.promise(readInventory), [
-          { name: "process-1", status: "connected" },
-        ]);
         yield* Queue.offer(harness.sdkMessages, turnOneResult);
         yield* Queue.take(harness.terminalReceipts);
         const firstOptions = harness.getOpenedOptions();
@@ -403,9 +383,6 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         yield* startTurn(2);
         assert.lengthOf(harness.processQueues, changePolicy ? 2 : 1);
         assert.equal(harness.getOpenedOptions() === firstOptions, !changePolicy);
-        assert.deepEqual(yield* Effect.promise(readInventory), [
-          { name: `process-${changePolicy ? 2 : 1}`, status: "connected" },
-        ]);
       }).pipe(
         Effect.scoped,
         Effect.provide(

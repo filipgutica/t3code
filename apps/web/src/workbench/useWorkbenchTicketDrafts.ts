@@ -1,9 +1,4 @@
-import type {
-  EnvironmentId,
-  WorkbenchTicketId,
-  WorkbenchSnapshot,
-  WorkbenchJiraSnapshot,
-} from "@t3tools/contracts";
+import type { EnvironmentId, WorkbenchTicketId, WorkbenchSnapshot } from "@t3tools/contracts";
 import { useEffect } from "react";
 import {
   isWorkbenchDraftProjected,
@@ -14,11 +9,9 @@ const EMPTY_TICKET_DRAFTS = new Map<WorkbenchTicketId, WorkbenchTicketDraft>();
 export function useWorkbenchTicketDrafts({
   environmentId,
   snapshot,
-  jiraSnapshot,
 }: {
   environmentId: EnvironmentId | null;
   snapshot: WorkbenchSnapshot | null;
-  jiraSnapshot: WorkbenchJiraSnapshot | null;
 }) {
   const ticketDrafts = useWorkbenchDraftStore((state) =>
     environmentId === null
@@ -30,18 +23,10 @@ export function useWorkbenchTicketDrafts({
     for (const [ticketId, draft] of ticketDrafts) {
       if (draft.mode !== "saved") continue;
       const projectedTicket = snapshot?.tickets.find((ticket) => ticket.id === ticketId);
-      if (
-        isWorkbenchDraftProjected({
-          draft,
-          ticket: projectedTicket,
-          jiraRemoteUpdatedAt: jiraSnapshot?.issueLinks.find((link) => link.ticketId === ticketId)
-            ?.issue.remoteUpdatedAt,
-        })
-      ) {
-        if (environmentId !== null) clearTicketDraft(environmentId, ticketId);
-      }
+      if (isWorkbenchDraftProjected({ draft, ticket: projectedTicket }) && environmentId !== null)
+        clearTicketDraft(environmentId, ticketId);
     }
-  }, [clearTicketDraft, environmentId, jiraSnapshot?.issueLinks, snapshot?.tickets, ticketDrafts]);
+  }, [clearTicketDraft, environmentId, snapshot?.tickets, ticketDrafts]);
 
   return { ticketDrafts, clearTicketDraft };
 }

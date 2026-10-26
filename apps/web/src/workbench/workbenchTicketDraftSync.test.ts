@@ -13,8 +13,6 @@ const fieldsWith = (
   epicId: null,
   repositoryProjectIds: [],
   primaryT3ProjectId: null,
-  localOnly: false,
-  jiraSprintId: null,
   ...patch,
 });
 const draftAt = (

@@ -8,75 +8,15 @@ An independent fork of [T3 Code](https://github.com/pingdotgg/t3code) that adds 
 
 - **Plan work:** group repositories into Workspaces, organize Tickets into Epics, and track progress.
 - **Start implementation:** create native Threads with Ticket context and Git worktrees for the selected repositories.
-- **Connect Jira:** mirror your assigned sprint issues, edit descriptions, and update Jira statuses from Workbench.
+- **Link Jira issues:** attach an issue to a Ticket or Epic by hand, or apply the link your agent proposes after it finds or creates the issue with its own Jira connector.
 
 ![Workbench Board with repository context, attention filters, and Tickets across workflow statuses.](./docs/user/media/workbench/board.png)
 
 Follow a Ticket through [prepared worktrees and a native Thread](./docs/user/agent-workbench.md#start-agent-work), then [review pull requests and attention items](./docs/user/agent-workbench.md#follow-progress-and-review-results). The walkthrough uses screenshots from a fictional demo.
 
-Workbench is available in the web and desktop clients. Jira is optional; local Tickets work without a connection. The desktop previews include the hosted Jira connection: choose **Connect Jira** in a Workspace and authorize access on Atlassian's website.
+Workbench is available in the web and desktop clients.
 
 The desktop app installs as **T3 Code Workbench**, alongside official T3 Code, with separate saved data in `~/.t3-workbench`. For downloads and update limitations, read the selected release's notes. To develop the fork, see [Run locally](#run-locally).
-
-<details>
-<summary>Jira setup for local development</summary>
-
-### Set up Jira for local development
-
-Jira is optional. A fresh clone runs without Jira credentials or 1Password.
-To test Workbench's Jira integration, configure an Atlassian OAuth app for your development environment:
-
-1. Create or select an OAuth 2.0 integration in the [Atlassian developer console](https://developer.atlassian.com/console/myapps/).
-2. Add the Jira API permissions requested by [JIRA_OAUTH_SCOPES](./packages/workbench/src/jira/JiraOAuthClient.ts):
-   `read:project:jira`, `read:jira-work`, `write:jira-work`, `read:board-scope:jira-software`,
-   `read:board-scope.admin:jira-software`, `read:sprint:jira-software`, `read:issue-details:jira`, and `read:jql:jira`.
-   The authorization request also includes `offline_access` to refresh the connection.
-3. Under **Authorization → OAuth 2.0 (3LO)**, register the callback for your running client:
-
-   | Client  | Callback URL                                                                                                            |
-   | ------- | ----------------------------------------------------------------------------------------------------------------------- |
-   | Web     | Browser origin plus `/workbench`, for example `http://localhost:5733/workbench`                                         |
-   | Desktop | Server origin plus `/oauth/workbench/jira/callback`, for example `http://127.0.0.1:13773/oauth/workbench/jira/callback` |
-
-   Use the actual origin and port printed by your dev runner. Worktree ports can differ.
-   Atlassian requires an exact callback match; update it when switching origins or ports.
-   See [Atlassian's OAuth setup guide](https://developer.atlassian.com/cloud/jira/software/oauth-2-3lo-apps/).
-
-4. Copy the app's client ID and secret from **Settings** into an ignored `.env.local` at the repository root:
-
-   ```dotenv
-   T3_WORKBENCH_JIRA_CLIENT_ID="your-client-id"
-   T3_WORKBENCH_JIRA_CLIENT_SECRET="your-client-secret"
-   ```
-
-   You can export these variables instead. Keep the secret on the server; never use a `VITE_` or `EXPO_PUBLIC_` prefix.
-
-5. Restart `pnpm dev` or `pnpm dev:desktop`. Open a Workbench Workspace and select **Connect Jira**.
-   Authorize access, then choose the site, board, sprints, status mappings, and repository scope.
-
-#### Optional: load credentials from 1Password in each new worktree
-
-Install and authorize the [1Password CLI](https://developer.1password.com/docs/cli/get-started/).
-Create an item named `t3code-workbench-dev-jira-credentials` with fields named
-`T3_WORKBENCH_JIRA_CLIENT_ID` and `T3_WORKBENCH_JIRA_CLIENT_SECRET`.
-Export its vault ID once in your shell configuration, then open a new terminal:
-
-```sh
-export T3_WORKBENCH_JIRA_VAULT="your-vault-id"
-# Optional, if you used a different item name:
-export T3_WORKBENCH_JIRA_ITEM="your-item-name"
-```
-
-Run `pnpm dev`, `pnpm dev:server`, or `pnpm dev:desktop` normally.
-The first run creates `.env.local` from the two references in `.env.example`; no per-worktree configuration copy is required.
-The runner detects the vault's account. You can override it with `OP_ACCOUNT` without changing the CLI's global default.
-1Password may ask you to authorize access. The callback URL still needs to match the current client's origin and port.
-
-Existing `.env.local` files are never overwritten. If one already exists, add any missing credentials there.
-Explicit environment values take precedence. Without the vault setting, no 1Password commands run.
-Failed injection prints a setup warning and lets development continue. Frontend-only runs, help, and dry runs skip injection.
-
-</details>
 
 ## T3 Code
 

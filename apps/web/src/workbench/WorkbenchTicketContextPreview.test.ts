@@ -55,6 +55,7 @@ describe("Workbench Ticket context preview", () => {
     expect(splitWorkbenchTicketContext(markdown)).toEqual({
       headerMarkdown: markdown,
       bodyMarkdown: "",
+      jira: false,
     });
     expect(workbenchDescriptionMarkdown(markdown, false)).toBe(markdown);
   });
@@ -80,6 +81,7 @@ describe("Workbench Ticket context preview", () => {
         "",
       ].join("\n"),
       bodyMarkdown: "h2. Description",
+      jira: false,
     });
 
     const emptyDescription = [
@@ -94,30 +96,43 @@ describe("Workbench Ticket context preview", () => {
     expect(splitWorkbenchTicketContext(emptyDescription)).toEqual({
       headerMarkdown: emptyDescription,
       bodyMarkdown: "",
+      jira: false,
     });
   });
 
-  it("preserves wiki-looking local text while converting Jira text", () => {
-    const { bodyMarkdown } = splitWorkbenchTicketContext(
-      [
-        "# Local Ticket",
-        "",
-        "Ticket type: Story",
-        "",
-        "## Repository scope",
-        "",
-        "- repository (primary): /worktree",
-        "",
-        "h2. Literal syntax",
-        "",
-        "The template uses {{name}} literally.",
-      ].join("\n"),
-    );
+  it("converts wiki text only when the preamble names a linked Jira issue", () => {
+    const context = (jiraLines: ReadonlyArray<string>) =>
+      splitWorkbenchTicketContext(
+        [
+          "# Ticket",
+          "",
+          "Ticket type: Story",
+          ...jiraLines,
+          "",
+          "## Jira",
+          "",
+          "Use your Jira connector.",
+          "",
+          "## Repository scope",
+          "",
+          "- repository (primary): /worktree",
+          "",
+          "h2. Literal syntax",
+          "",
+          "The template uses {{name}} literally.",
+        ].join("\n"),
+      );
 
-    expect(workbenchDescriptionMarkdown(bodyMarkdown, false)).toBe(bodyMarkdown);
-    expect(workbenchDescriptionMarkdown(bodyMarkdown, true)).toContain("## Literal syntax");
-    expect(workbenchDescriptionMarkdown(bodyMarkdown, true)).toContain(
-      "The template uses `name` literally.",
-    );
+    const local = context([]);
+    expect(local.headerMarkdown).toContain("Use your Jira connector.");
+    expect(local.jira).toBe(false);
+    expect(workbenchDescriptionMarkdown(local.bodyMarkdown, local.jira)).toBe(local.bodyMarkdown);
+
+    const linked = context(["Jira issue: ABC-1 (https://example.atlassian.net/browse/ABC-1)"]);
+    expect(linked.bodyMarkdown).toBe(local.bodyMarkdown);
+    expect(linked.jira).toBe(true);
+    const preview = workbenchDescriptionMarkdown(linked.bodyMarkdown, linked.jira);
+    expect(preview).toContain("## Literal syntax");
+    expect(preview).toContain("The template uses `name` literally.");
   });
 });

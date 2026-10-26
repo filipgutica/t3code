@@ -11,14 +11,17 @@ import {
   WorkbenchCreateTicketInput,
   WorkbenchDeleteTicketInput,
   WorkbenchReplaceAssignmentInput,
+  WorkbenchSetJiraIssueLinkInput,
+  WorkbenchSetJiraIssueLinkResult,
   WorkbenchSnapshot,
   WorkbenchTicket,
+  WorkbenchTicketDraft,
   WorkbenchTicketKind,
   WorkbenchTicketStatus,
   WorkbenchUnlinkAssignmentInput,
   WorkbenchUpdateProjectInput,
-  WorkbenchUpdateJiraTicketFieldsInput,
   WorkbenchUpdateTicketInput,
+  parseJiraIssueUrl,
 } from "./workbench.ts";
 import { AuthOrchestrationOperateScope } from "./auth.ts";
 import { WORKBENCH_CLIENT_GUARDED_RPC_SCOPES } from "./workbenchRpcPermissions.ts";
@@ -35,9 +38,13 @@ const decodeWorkbenchCreateTicketInput = Schema.decodeUnknownEffect(WorkbenchCre
 const decodeWorkbenchArchiveTicketInput = Schema.decodeUnknownEffect(WorkbenchArchiveTicketInput);
 const decodeWorkbenchDeleteTicketInput = Schema.decodeUnknownEffect(WorkbenchDeleteTicketInput);
 const decodeWorkbenchUpdateProjectInput = Schema.decodeUnknownEffect(WorkbenchUpdateProjectInput);
-const decodeWorkbenchUpdateJiraTicketFieldsInput = Schema.decodeUnknownEffect(
-  WorkbenchUpdateJiraTicketFieldsInput,
+const decodeWorkbenchSetJiraIssueLinkInput = Schema.decodeUnknownEffect(
+  WorkbenchSetJiraIssueLinkInput,
 );
+const decodeWorkbenchSetJiraIssueLinkResult = Schema.decodeUnknownEffect(
+  WorkbenchSetJiraIssueLinkResult,
+);
+const decodeWorkbenchTicketDraft = Schema.decodeUnknownEffect(WorkbenchTicketDraft);
 const decodeWorkbenchUpdateTicketInput = Schema.decodeUnknownEffect(WorkbenchUpdateTicketInput);
 const decodeWorkbenchReplaceAssignmentInput = Schema.decodeUnknownEffect(
   WorkbenchReplaceAssignmentInput,
@@ -293,12 +300,6 @@ describe("Workbench contracts", () => {
         primaryT3ProjectId: "t3-project-1",
         createdAt: "2026-09-03T12:00:00.000Z",
       });
-      expect(createInput.localOnly).toBeUndefined();
-      const localCreateInput = yield* decodeWorkbenchCreateTicketInput({
-        ...createInput,
-        localOnly: true,
-      });
-      expect(localCreateInput.localOnly).toBe(true);
       const updateInput = yield* decodeWorkbenchUpdateTicketInput({
         id: "ticket-1",
         expectedRevision: 0,
@@ -313,16 +314,6 @@ describe("Workbench contracts", () => {
         expectedRevision: 0,
         status: "in_progress",
         updatedAt: "2026-09-03T12:01:30.000Z",
-      });
-      const jiraUpdateInput = yield* decodeWorkbenchUpdateJiraTicketFieldsInput({
-        id: "ticket-1",
-        expectedRevision: 0,
-        epicId: null,
-        title: "Jira Ticket",
-        kind: "bug",
-        status: "in_progress",
-        blocked: true,
-        updatedAt: "2026-09-03T12:02:00.000Z",
       });
       const replaceInput = yield* decodeWorkbenchReplaceAssignmentInput({
         ticketId: "ticket-1",
@@ -363,7 +354,6 @@ describe("Workbench contracts", () => {
         status: "in_progress",
         updatedAt: "2026-09-03T12:01:30.000Z",
       });
-      expect(jiraUpdateInput.markdown).toBeUndefined();
       expect(updateInput.primaryT3ProjectId).toBeUndefined();
       expect(updateInput.repositoryProjectIds).toBeUndefined();
       expect(replaceInput.id).toBeUndefined();
@@ -383,6 +373,115 @@ describe("Workbench contracts", () => {
           }),
         ))._tag,
       ).toBe("Failure");
+    }),
+  );
+
+  it.effect("decodes Jira links and keeps snapshots without them compatible", () =>
+    Effect.gen(function* () {
+      const jiraIssue = {
+        key: "ORBIT-375",
+        url: "https://acme.atlassian.net/browse/ORBIT-375",
+      };
+      const ticket = {
+        id: "ticket-1",
+        projectId: "workspace",
+        title: "Linked",
+        markdown: "",
+        primaryT3ProjectId: "native",
+        status: "todo",
+        blocked: false,
+        createdAt: "2026-10-25T10:00:00.000Z",
+        updatedAt: "2026-10-25T10:00:00.000Z",
+      };
+      const epic = {
+        id: "epic-1",
+        projectId: "workspace",
+        title: "Linked",
+        markdown: "",
+        archivedAt: null,
+        createdAt: "2026-10-25T10:00:00.000Z",
+        updatedAt: "2026-10-25T10:00:00.000Z",
+      };
+      const linked = yield* decodeWorkbenchSnapshot({
+        projects: [],
+        epics: [{ ...epic, jiraIssue }],
+        tickets: [{ ...ticket, jiraIssue }],
+        assignments: [],
+      });
+      expect(linked.tickets[0]?.jiraIssue).toEqual(jiraIssue);
+      expect(linked.epics[0]?.jiraIssue).toEqual(jiraIssue);
+      const legacy = yield* decodeWorkbenchSnapshot({
+        projects: [],
+        epics: [epic],
+        tickets: [ticket],
+        assignments: [],
+      });
+      expect(legacy.tickets[0]?.jiraIssue).toBeUndefined();
+      expect(legacy.epics[0]?.jiraIssue).toBeUndefined();
+
+      // A Ticket carries every Epic field, so the result must stay tagged.
+      const result = yield* decodeWorkbenchSetJiraIssueLinkResult({
+        kind: "ticket",
+        ticket: { ...ticket, jiraIssue },
+      });
+      expect(result.kind === "ticket" && result.ticket.primaryT3ProjectId).toBe("native");
+    }),
+  );
+
+  it.effect("requires the record version that matches each Jira link target", () =>
+    Effect.gen(function* () {
+      const ticketLink = {
+        kind: "ticket",
+        ticketId: "ticket-1",
+        url: "https://acme.atlassian.net/browse/ORBIT-375",
+        expectedRevision: 2,
+      };
+      const epicUnlink = {
+        kind: "epic",
+        epicId: "epic-1",
+        url: null,
+        expectedUpdatedAt: "2026-10-25T10:00:00.000Z",
+      };
+      expect(yield* decodeWorkbenchSetJiraIssueLinkInput(ticketLink)).toEqual(ticketLink);
+      expect(yield* decodeWorkbenchSetJiraIssueLinkInput(epicUnlink)).toEqual(epicUnlink);
+      for (const invalid of [
+        { ...ticketLink, expectedRevision: undefined },
+        { ...epicUnlink, expectedUpdatedAt: undefined },
+        { ...ticketLink, kind: "epic" },
+        { ...ticketLink, url: " " },
+      ]) {
+        expect((yield* Effect.exit(decodeWorkbenchSetJiraIssueLinkInput(invalid)))._tag).toBe(
+          "Failure",
+        );
+      }
+    }),
+  );
+
+  it.effect("decodes stored drafts that still carry removed Jira fields", () =>
+    Effect.gen(function* () {
+      const draft = yield* decodeWorkbenchTicketDraft({
+        id: "draft-1",
+        projectId: "workspace",
+        threadId: "thread-1",
+        anchorProjectId: "native",
+        modelSelection: { instanceId: "codex", model: "gpt-5" },
+        revision: 1,
+        phase: "draft",
+        fields: {
+          title: "Draft",
+          markdown: "",
+          kind: "story",
+          epicId: null,
+          repositoryProjectIds: ["native"],
+          primaryT3ProjectId: "native",
+          localOnly: false,
+          jiraSprintId: 12,
+        },
+        createdAt: "2026-10-25T10:00:00.000Z",
+        updatedAt: "2026-10-25T10:00:00.000Z",
+      });
+      expect(draft.fields).not.toHaveProperty("localOnly");
+      expect(draft.fields).not.toHaveProperty("jiraSprintId");
     }),
   );
 
@@ -423,5 +522,39 @@ describe("Workbench contracts", () => {
     expect(
       new Set([...WsRpcGroup.requests.keys()].filter((method) => method.startsWith("workbench."))),
     ).toEqual(new Set(Object.values(WORKBENCH_WS_METHODS)));
+  });
+});
+
+describe("parseJiraIssueUrl", () => {
+  it.each([
+    ["https://acme.atlassian.net/browse/ORBIT-375", "ORBIT-375"],
+    ["  https://acme.atlassian.net/browse/ORBIT-375  ", "ORBIT-375"],
+    ["https://acme.atlassian.net/browse/orbit-375", "ORBIT-375"],
+    ["https://acme.atlassian.net/browse/ORBIT-375/", "ORBIT-375"],
+    ["https://acme.atlassian.net/browse/ORBIT-375?focusedCommentId=1", "ORBIT-375"],
+    ["http://jira.internal:8080/jira/browse/OPS_2-9/activity", "OPS_2-9"],
+    [
+      "https://acme.atlassian.net/jira/software/projects/ORBIT/boards/1?selectedIssue=orbit-12",
+      "ORBIT-12",
+    ],
+  ])("reads the issue key from %s", (input, key) => {
+    expect(parseJiraIssueUrl(input)).toEqual({ key, url: new URL(input.trim()).href });
+  });
+
+  it.each([
+    "",
+    "ORBIT-375",
+    "https://acme.atlassian.net/",
+    "https://acme.atlassian.net/jira/software/projects/ORBIT/boards/1",
+    "https://acme.atlassian.net/browse/",
+    "https://acme.atlassian.net/browse/ORBIT",
+    "https://acme.atlassian.net/browse/375-ORBIT",
+    "https://acme.atlassian.net/issues/ORBIT-375",
+    "https://acme.atlassian.net/board?selectedIssue=not a key",
+    "javascript:alert('https://acme.atlassian.net/browse/ORBIT-375')",
+    "ftp://acme.atlassian.net/browse/ORBIT-375",
+    "data:text/html,https://acme.atlassian.net/browse/ORBIT-375",
+  ])("rejects %s", (input) => {
+    expect(parseJiraIssueUrl(input)).toBeNull();
   });
 });

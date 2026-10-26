@@ -61,8 +61,6 @@ source alone does not explain. Most code changes do not need an internal documen
 - [Workbench architecture](./internals/workbench-architecture.md)
 - [Workbench data model](./internals/workbench-data-model.md)
 - [Ticket execution and workspace lifecycle](./internals/workbench-ticket-lifecycle.md)
-- [Jira sprint mirrors](./internals/workbench-jira-mirror.md)
-- [Jira OAuth credential custody](./internals/workbench-jira-oauth.md)
 - [Maintaining the Agent Workbench fork](./internals/workbench-fork.md)
 
 ### Runbooks

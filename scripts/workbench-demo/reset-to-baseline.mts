@@ -2,66 +2,36 @@
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
-import * as NodeSqlite from "node:sqlite";
 import { applyBaselineReset, planBaselineReset } from "./baseline.mts";
-import { demoDatabasePath, readConfig, requireHome } from "./environment.mts";
-import { exportJiraAuth, importJiraAuth, type JiraAuthBundle } from "./jira-auth.mts";
+import { readConfig, requireHome } from "./environment.mts";
 import { launchDemo } from "./launch.mts";
 import { stopDemo } from "./lifecycle.mts";
 import { withDemoAccess } from "./access.mts";
 import { setupLocal, verifyLocal } from "./local.mts";
-import { syncDemoJira, linkDemoPullRequests } from "./integrations.mts";
+import { linkDemoPullRequests } from "./integrations.mts";
 import { inspectGitHub } from "./remotes.mts";
 import { DEMO_REPOSITORIES } from "./repositories.mts";
-
-export const hasJiraConnection = (home: string) => {
-  const file = demoDatabasePath(home);
-  if (!NodeFS.existsSync(file)) return false;
-  const db = new NodeSqlite.DatabaseSync(file, { readOnly: true });
-  try {
-    const table = db
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workbench_jira_connections'",
-      )
-      .get();
-    return Boolean(table && db.prepare("SELECT 1 FROM workbench_jira_connections LIMIT 1").get());
-  } finally {
-    db.close();
-  }
-};
 
 /** Return the ready server so the wizard and Playwright share the complete reset lifecycle. */
 export const resetToBaseline = async (input: {
   home: string;
-  remoteApply: boolean;
   linkPullRequests?: boolean;
-  oauthBundle?: JiraAuthBundle;
   configure?: (home: string) => Promise<void>;
-  onAuthImported?: (home: string) => Promise<void>;
   built?: boolean;
 }) => {
   const home = requireHome(input.home);
   const plan = planBaselineReset({ home });
   if (NodeFS.existsSync(NodePath.join(home, "run.lock"))) await stopDemo(home);
-  const oauthBundle =
-    input.oauthBundle ?? (hasJiraConnection(home) ? await exportJiraAuth({ home }) : undefined);
   const settingsPath = NodePath.join(home, "userdata", "settings.json");
   const settings = NodeFS.existsSync(settingsPath)
     ? await NodeFSP.readFile(settingsPath)
     : undefined;
-  await applyBaselineReset({ home, remoteApply: input.remoteApply });
+  applyBaselineReset({ home });
   await NodeFSP.mkdir(NodePath.join(home, "userdata"), { recursive: true, mode: 0o700 });
   if (settings) await NodeFSP.writeFile(settingsPath, settings, { mode: 0o600 });
   await input.configure?.(home);
-  let server = await launchDemo({ home, built: input.built });
+  const server = await launchDemo({ home, built: input.built });
   try {
-    if (oauthBundle) {
-      // The first boot migrates a new database. Credentials are imported only while stopped.
-      await server.stop();
-      await importJiraAuth({ home, bundle: oauthBundle });
-      await input.onAuthImported?.(home);
-      server = await launchDemo({ home, built: input.built });
-    }
     const config = readConfig(home);
     const names = (config.DEMO_GITHUB_REPOSITORIES ?? "")
       .split(",")
@@ -104,19 +74,6 @@ export const resetToBaseline = async (input: {
         linkDemoPullRequests({
           ...access,
           urls: inspected.repositories.flatMap((repo) => repo.pullRequests.map((pr) => pr.url)),
-        }),
-      );
-    }
-    const jira = plan.jira;
-    if (jira) {
-      if (!oauthBundle) throw new Error("The Jira baseline needs a preconnected OAuth bundle.");
-      await withDemoAccess(home, (access) =>
-        syncDemoJira({
-          ...access,
-          site: jira.site,
-          projectKey: jira.projectKey,
-          boardId: jira.boardId,
-          sprintId: jira.sprintId,
         }),
       );
     }

@@ -4,6 +4,7 @@ import type {
   EnvironmentId,
   ScopedThreadRef,
   ThreadId,
+  WorkbenchTicket,
   WorkbenchTicketDraftFields,
 } from "@t3tools/contracts";
 import { SparklesIcon } from "lucide-react";
@@ -19,6 +20,7 @@ import { useProjects, useThreadProjection } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import type { Project } from "../types";
 import { WorkbenchDescription } from "./WorkbenchDescription";
+import { WorkbenchJiraLinkCard } from "./WorkbenchJiraIssueLink";
 import { workbenchEnvironment } from "./state";
 import { getWorkbenchContextForThread } from "./workbench.logic";
 import {
@@ -155,13 +157,30 @@ export function WorkbenchTicketProposalHistory({
       : workbenchEnvironment.snapshot({ environmentId: threadRef.environmentId, input: {} }),
   );
   const projects = useProjects();
-  const hasTicket =
-    threadRef !== null && getWorkbenchContextForThread(data ?? null, threadRef.threadId) !== null;
+  const context =
+    threadRef === null ? null : getWorkbenchContextForThread(data ?? null, threadRef.threadId);
+  const hasTicket = context !== null;
+  // A superseded Thread keeps its history, but it can no longer change the Ticket.
+  const liveTicket = context?.assignment.supersededAt == null ? (context?.ticket ?? null) : null;
   const linkedProjects = projects.filter(
     (project) => project.environmentId === threadRef?.environmentId,
   );
   const knownRepositoryProjectIds = new Set(linkedProjects.map((project) => project.id));
   const renderBlock = (block: ChatMarkdownCodeBlock) => {
+    if (
+      threadRef !== null &&
+      liveTicket !== null &&
+      block.language === "workbench-jira-link" &&
+      block.messageId !== undefined
+    ) {
+      return (
+        <WorkbenchJiraLinkCard
+          environmentId={threadRef.environmentId}
+          block={block}
+          ticket={liveTicket}
+        />
+      );
+    }
     if (
       !hasTicket ||
       block.language !== "workbench-ticket-draft" ||
@@ -231,7 +250,7 @@ export function WorkbenchTicketProposalRenderer({
   threadId,
   linkedProjects,
   fields,
-  ticketCreated,
+  ticket,
   canApply,
   onApply,
   children,
@@ -243,7 +262,7 @@ export function WorkbenchTicketProposalRenderer({
     WorkbenchTicketDraftFields,
     "title" | "markdown" | "repositoryProjectIds" | "primaryT3ProjectId"
   >;
-  readonly ticketCreated: boolean;
+  readonly ticket: WorkbenchTicket | null;
   readonly canApply: boolean;
   readonly onApply?: (suggestion: WorkbenchTicketDraftSuggestion) => void;
   readonly children: ReactNode;
@@ -254,6 +273,9 @@ export function WorkbenchTicketProposalRenderer({
   const latest = findTicketDraftSuggestion({ messages, knownRepositoryProjectIds });
   const [handled, setHandled] = useState<ReadonlyMap<string, "applied" | "dismissed">>(new Map());
   const renderBlock = (block: ChatMarkdownCodeBlock) => {
+    if (block.language === "workbench-jira-link" && block.messageId !== undefined) {
+      return <WorkbenchJiraLinkCard environmentId={environmentId} block={block} ticket={ticket} />;
+    }
     if (block.language !== "workbench-ticket-draft" || block.messageId === undefined) {
       return undefined;
     }
@@ -284,7 +306,7 @@ export function WorkbenchTicketProposalRenderer({
     const status = proposalStatus({
       suggestion,
       fields,
-      ticketCreated,
+      ticketCreated: ticket !== null,
       handled: handled.get(key),
       latest,
     });

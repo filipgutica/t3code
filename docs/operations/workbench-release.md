@@ -136,7 +136,6 @@ metadata attached while installed clients can still select that release.
 The workflow exports these values into every desktop build:
 
 - `T3CODE_WORKBENCH_BUILD=1`
-- `T3_WORKBENCH_JIRA_BROKER_URL=https://workbench-auth.fgutica.workers.dev`
 - `T3CODE_DESKTOP_UPDATE_REPOSITORY=${{ github.repository }}`
 
 The updater is restricted to this fork even if another updater repository is
@@ -216,15 +215,6 @@ Confirm the Azure service's current pricing and eligibility in its account
 before relying on it for distribution. These values are documentation for the
 future signed workflow; the current preview workflow does not read
 them.
-
-## Jira production app prerequisite
-
-The personal Jira site proves the OAuth callback and token exchange for the
-owner's account. Before other users can authorize the integration, open the
-[Atlassian OAuth app management guide](https://developer.atlassian.com/cloud/oauth/getting-started/managing-oauth-apps/)
-and enable **Sharing** for the production OAuth app in its Distribution
-settings. This is an Atlassian app setting; it is separate from the Workbench
-release workflow and the Cloudflare Worker deployment.
 
 ## Installing the unsigned preview
 

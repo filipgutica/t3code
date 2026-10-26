@@ -26,7 +26,6 @@ const { images, walkthrough, base, repository, guide, downloads } = defineProps<
 const main = useTemplateRef<HTMLElement>("main");
 const activeId = useActiveSection({ targetIds: sections.map((section) => section.id) });
 useTrace({ main, activeId });
-const jiraImage = walkthrough.find((step) => step.id === "jira")?.image;
 const selected = ref(walkthrough[0]?.id ?? "ticket");
 const enhanced = ref(false);
 const viewer = ref(false);
@@ -188,25 +187,8 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section class="section jira-section" aria-labelledby="jira-heading" data-trace-section>
-            <CommitBranch lane="fork" />
-            <div class="section-body">
-              <div class="section-copy">
-                <h2 id="jira-heading">Jira, optional.</h2>
-                <p>
-                  Sync assigned sprint issues and update descriptions and statuses. Local Tickets
-                  need no Jira account.
-                </p>
-                <a class="text-link" :href="`${guide}#connect-jira`">Jira guide</a>
-              </div>
-              <figure v-if="jiraImage" class="media-stage">
-                <ProductImage :image="jiraImage" @open="openImage" />
-              </figure>
-            </div>
-          </section>
-
           <section class="closing section" aria-labelledby="closing-heading" data-trace-section>
-            <CommitBranch lane="merge" terminal />
+            <CommitBranch lane="main" terminal />
             <div class="section-body">
               <h2 id="closing-heading">Install Workbench alongside T3 Code</h2>
               <p>Workbench stores its data separately from the official app.</p>

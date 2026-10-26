@@ -17,7 +17,7 @@ on:
 permissions:
   contents: read
 
-# Every run changes the same dedicated ORBIT fixtures and rotates the same OAuth credential.
+# Every run uses the same dedicated demo repositories and pull requests.
 concurrency:
   group: workbench-regression-live
   cancel-in-progress: false
@@ -58,8 +58,8 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  jira-github:
-    name: Real Jira and GitHub integration
+  github:
+    name: Real GitHub integration
     needs: build
     if: >-
       github.repository == 'filipgutica/t3code' &&
@@ -73,10 +73,6 @@ jobs:
     timeout-minutes: 25
     env:
       WORKBENCH_REGRESSION_LIVE: "1"
-      T3_WORKBENCH_JIRA_CLIENT_ID: ""
-      T3_WORKBENCH_JIRA_CLIENT_SECRET: ""
-      T3_WORKBENCH_JIRA_BROKER_URL: https://workbench-auth.fgutica.workers.dev
-      T3_WORKBENCH_JIRA_VAULT: ""
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Set demo home
@@ -93,21 +89,12 @@ jobs:
           run-install: true
       - name: Check live configuration
         env:
-          DEMO_JIRA_EMAIL: ${{ secrets.DEMO_JIRA_EMAIL }}
-          DEMO_JIRA_API_TOKEN: ${{ secrets.DEMO_JIRA_API_TOKEN }}
-          DEMO_JIRA_SITE_URL: ${{ vars.DEMO_JIRA_SITE_URL || secrets.DEMO_JIRA_SITE_URL }}
-          DEMO_JIRA_PROJECT_KEY: ${{ vars.DEMO_JIRA_PROJECT_KEY || secrets.DEMO_JIRA_PROJECT_KEY }}
-          DEMO_JIRA_BOARD_ID: ${{ vars.DEMO_JIRA_BOARD_ID || secrets.DEMO_JIRA_BOARD_ID }}
-          DEMO_JIRA_BASELINE: ${{ secrets.DEMO_JIRA_BASELINE }}
-          DEMO_JIRA_OAUTH_BUNDLE: ${{ secrets.DEMO_JIRA_OAUTH_BUNDLE }}
           DEMO_CREDENTIALS_TOKEN: ${{ secrets.DEMO_CREDENTIALS_TOKEN }}
         run: |
-          node --input-type=module - <<'JS'
-          for (const key of ['DEMO_JIRA_EMAIL', 'DEMO_JIRA_API_TOKEN', 'DEMO_JIRA_SITE_URL', 'DEMO_JIRA_PROJECT_KEY', 'DEMO_JIRA_BOARD_ID', 'DEMO_JIRA_BASELINE', 'DEMO_JIRA_OAUTH_BUNDLE', 'DEMO_CREDENTIALS_TOKEN']) {
-            if (!process.env[key]) throw new Error(`Missing repository configuration: ${key}`);
-          }
-          JS
-          node scripts/workbench-demo/jira-auth-ci.mts --preflight --repository "$GITHUB_REPOSITORY" --secret-environment workbench-demo
+          if [ -z "$DEMO_CREDENTIALS_TOKEN" ]; then
+            echo "Missing repository configuration: DEMO_CREDENTIALS_TOKEN" >&2
+            exit 1
+          fi
       - name: Download built server
         uses: actions/download-artifact@v8
         with:
@@ -119,28 +106,11 @@ jobs:
         working-directory: scripts
         run: vp exec playwright install --with-deps chromium
       - name: Run live Workbench regressions
-        id: regression
         working-directory: scripts
         env:
-          DEMO_JIRA_EMAIL: ${{ secrets.DEMO_JIRA_EMAIL }}
-          DEMO_JIRA_API_TOKEN: ${{ secrets.DEMO_JIRA_API_TOKEN }}
-          DEMO_JIRA_SITE_URL: ${{ vars.DEMO_JIRA_SITE_URL || secrets.DEMO_JIRA_SITE_URL }}
-          DEMO_JIRA_PROJECT_KEY: ${{ vars.DEMO_JIRA_PROJECT_KEY || secrets.DEMO_JIRA_PROJECT_KEY }}
-          DEMO_JIRA_BOARD_ID: ${{ vars.DEMO_JIRA_BOARD_ID || secrets.DEMO_JIRA_BOARD_ID }}
-          DEMO_JIRA_BASELINE: ${{ secrets.DEMO_JIRA_BASELINE }}
-          DEMO_JIRA_OAUTH_BUNDLE: ${{ secrets.DEMO_JIRA_OAUTH_BUNDLE }}
           # Native PR discovery needs a user identity; the Actions token has no /user login.
           GH_TOKEN: ${{ secrets.DEMO_CREDENTIALS_TOKEN }}
         run: vp exec playwright test --config workbench-regression/playwright.config.ts
-      - name: Preserve rotated Jira credentials
-        if: always() && steps.regression.outcome != '' && steps.regression.outcome != 'skipped'
-        env:
-          DEMO_CREDENTIALS_TOKEN: ${{ secrets.DEMO_CREDENTIALS_TOKEN }}
-        run: |
-          if [ -e "$DEMO_HOME/run.lock" ]; then
-            node scripts/workbench-demo/cli.mts stop --home "$DEMO_HOME"
-          fi
-          node scripts/workbench-demo/jira-auth-ci.mts --export --home "$DEMO_HOME" --repository "$GITHUB_REPOSITORY" --secret-environment workbench-demo
       - name: Upload browser evidence
         if: failure()
         uses: actions/upload-artifact@v4

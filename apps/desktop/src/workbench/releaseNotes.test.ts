@@ -13,7 +13,6 @@ const options = {
   previousTag,
   upstreamSha: "1451e7cb23034d29774338608368a15d8845df36",
   upstreamBase: "3ff5b3c82a62baddc0c2b1b227e9d3a06190c426",
-  jiraBrokerUrl: "https://workbench-auth.example.com",
   dailyMetadata: '{"schemaVersion":1,"channel":"nightly"}',
 };
 
@@ -35,7 +34,6 @@ describe("Workbench release notes consumed by the desktop updater", () => {
     expect(body).toContain(options.sourceSha);
     expect(body).toContain(options.upstreamSha);
     expect(body).toContain(options.upstreamBase);
-    expect(body).toContain(options.jiraBrokerUrl);
     expect(body).toContain(`<!-- workbench-daily: ${options.dailyMetadata} -->`);
     expect(body).toContain("Apple installation guidance");
     expect(body).toContain("artifacts were built and checksummed");

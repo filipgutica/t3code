@@ -27,7 +27,6 @@ if (import.meta.main) {
       previousTag: process.env.PREVIOUS_TAG ?? "",
       upstreamSha: process.env.UPSTREAM_SHA ?? "",
       upstreamBase: process.env.UPSTREAM_BASE ?? "",
-      jiraBrokerUrl: requiredEnv("T3_WORKBENCH_JIRA_BROKER_URL"),
       dailyMetadata: channel === "nightly" ? requiredEnv("DAILY_METADATA_JSON") : undefined,
     }),
   );

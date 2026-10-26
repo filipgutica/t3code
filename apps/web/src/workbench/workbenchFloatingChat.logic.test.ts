@@ -52,6 +52,7 @@ const ticket: WorkbenchTicket = {
   status: "todo",
   blocked: false,
   archivedAt: null,
+  jiraIssue: { key: "WB-42", url: "https://example.atlassian.net/browse/WB-42" },
   revision: 0,
   createdAt,
   updatedAt: createdAt,
@@ -71,8 +72,6 @@ const draft: WorkbenchTicketDraft = {
     epicId: null,
     repositoryProjectIds: [],
     primaryT3ProjectId: null,
-    localOnly: true,
-    jiraSprintId: null,
   },
   createdAt,
   updatedAt: createdAt,
@@ -98,12 +97,16 @@ const boardInput = () => ({
   drafts: [],
   threadsById: new Map([liveThread("first"), liveThread("second")].map((t) => [t.id, t])),
   archivedThreadsById: new Map<ThreadId, ReturnType<typeof liveThread>>(),
-  ticketKeysById: new Map([[ticket.id, "WB-42"]]),
 });
 
 describe("getWorkbenchBoardChatThreads", () => {
   it("includes every live Thread per ticket, with drafts first and tickets in board order", () => {
-    const secondTicket = { ...ticket, id: WorkbenchTicketId.make("second-ticket"), title: "Next" };
+    const secondTicket = {
+      ...ticket,
+      id: WorkbenchTicketId.make("second-ticket"),
+      title: "Next",
+      jiraIssue: null,
+    };
     const input = boardInput();
     const result = getWorkbenchBoardChatThreads({
       ...input,

@@ -6,7 +6,6 @@ export type {
   WorkbenchReleaseTicketWorkspaceRepositoryInput,
   WorkbenchCompleteTicketWorkspaceInput,
   WorkbenchConsumeTicketExecutionInput,
-  WorkbenchExecutionRun,
   WorkbenchClaimTicketWorkspaceReleaseInput,
 } from "@t3tools/workbench/WorkbenchStore";
 

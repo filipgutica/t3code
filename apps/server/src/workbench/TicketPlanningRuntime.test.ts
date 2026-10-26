@@ -20,7 +20,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
-import * as JiraRepository from "@t3tools/workbench/jira/WorkbenchJiraRepository";
 
 import * as ClaudeAdapterV2 from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import * as CodexAdapterV2 from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
@@ -75,8 +74,6 @@ const draft = (phase: WorkbenchTicketDraft["phase"]) => ({
     epicId: null,
     repositoryProjectIds: [second],
     primaryT3ProjectId: second,
-    localOnly: true,
-    jiraSprintId: null,
   },
   createdAt: DateTime.formatIso(now),
   updatedAt: DateTime.formatIso(now),
@@ -148,9 +145,6 @@ const policyLayer = (
   TicketPlanningRuntime.layerRuntimePolicyDecorator.pipe(
     Layer.provide(
       Layer.mergeAll(
-        Layer.mock(JiraRepository.WorkbenchJiraRepository)({
-          listBindings: () => Effect.succeed([]),
-        }),
         Layer.mock(WorkbenchStore)({
           getTicketDraftForThread: () => Effect.succeed(phase === null ? null : draft(phase)),
         }),
@@ -202,6 +196,7 @@ it.effect.each(["codex", "claudeAgent"] as const)(
         assert.include(policy.instructions ?? "", "/repo/repo:first");
         assert.include(policy.instructions ?? "", "/repo/repo:second");
         assert.include(policy.instructions ?? "", "workbench-ticket-draft");
+        assert.include(policy.instructions ?? "", "workbench-jira-link");
       }),
       Effect.provide(policyLayer("draft", driver)),
     ),
@@ -239,7 +234,6 @@ it.effect("routes Claude planning approvals to Auto with read-only tools", () =>
     Effect.map((runtimePolicy) => {
       const decoration = ClaudeResearchPolicy.decorate({
         runtimePolicy,
-        mcpServerStatus: async () => undefined,
       });
       const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
         runtimePolicy,
@@ -277,11 +271,7 @@ it.effect("routes Claude planning approvals to Auto with read-only tools", () =>
       assert.notIncludeMembers(options.tools, ["Bash", "Edit", "Write", "NotebookEdit", "Agent"]);
       assert.notInclude(options.allowedTools ?? [], ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD);
       assert.notInclude(options.allowedTools ?? [], "mcp__t3-code__preview_navigate");
-      assert.includeMembers(options.allowedTools ?? [], [
-        "Read",
-        "mcp__t3-code__workbench_jira_read_issue",
-        "mcp__t3-code__workbench_jira_search_issues",
-      ]);
+      assert.include(options.allowedTools ?? [], "Read");
       assert.notIncludeMembers(options.allowedTools ?? [], [
         "mcp__t3-code__html_preview",
         "mcp__t3-code__html_render",
@@ -320,6 +310,8 @@ it.effect(
         assert.include(policy.instructions ?? "", "/work-area/repo:first");
         assert.include(policy.instructions ?? "", "/work-area/repo:second");
         assert.include(policy.instructions ?? "", "ticket/approved");
+        // Planning instructions are historical here, so the link card instruction is repeated.
+        assert.include(policy.instructions ?? "", "workbench-jira-link");
       }),
       Effect.provide(policyLayer("working")),
     ),

@@ -22,7 +22,6 @@ import { ChildProcess } from "effect/process";
 
 import { type DevShareError, shareDevServer, unshareDevServer } from "./lib/dev-share.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
-import { prepareWorkbenchJiraDevEnv } from "./lib/workbench-jira-dev-env.ts";
 
 Object.assign(process.env, loadRepoEnv());
 
@@ -970,18 +969,7 @@ const devRunnerCli = Command.make("dev-runner", {
   ),
 }).pipe(
   Command.withDescription("Run monorepo development modes with deterministic port/env wiring."),
-  Command.withHandler((input) =>
-    Effect.gen(function* () {
-      const baseEnv = yield* HostProcess.Environment;
-      const prepared = yield* Effect.sync(() =>
-        prepareWorkbenchJiraDevEnv({ mode: input.mode, dryRun: input.dryRun, baseEnv }),
-      );
-      if (prepared.warning) yield* Effect.logWarning(`[dev-runner] ${prepared.warning}`);
-      return yield* runDevRunnerWithInput(input).pipe(
-        Effect.provideService(HostProcess.Environment, prepared.env),
-      );
-    }),
-  ),
+  Command.withHandler((input) => runDevRunnerWithInput(input)),
 );
 
 const cliRuntimeLayer = Layer.mergeAll(

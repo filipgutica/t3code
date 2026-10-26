@@ -4,7 +4,6 @@ import {
   ProviderInstanceId,
   ProjectId,
   ThreadId,
-  WorkbenchJiraBindingId,
   WorkbenchProjectId,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
@@ -69,54 +68,11 @@ describe("Workbench sidebar ticket context", () => {
       projects: [],
       workbenchProjects,
       epics: [],
-      issueLinks: [],
     };
     expect(getWorkbenchSidebarTicketDetails(inputs).get(ticketId)?.readOnly).toBe(readOnly);
     expect(
       getWorkbenchSidebarTicketDetails({ ...inputs, environmentId: null }).get(ticketId)?.readOnly,
     ).toBe(true);
-  });
-
-  it("uses Jira status and flagged state instead of stale local attention", () => {
-    const issueLink = {
-      bindingId: WorkbenchJiraBindingId.make("binding"),
-      ticketId,
-      active: false,
-      linkedAt: "2026-09-22T00:00:00.000Z",
-      lastSeenAt: "2026-09-22T00:00:00.000Z",
-      issue: {
-        issueId: "123",
-        key: "WB-123",
-        url: "https://example.atlassian.net/browse/WB-123",
-        summary: "Fix bug",
-        issueType: { id: "bug", name: "Bug" },
-        status: { id: "review", name: "In Review" },
-        epic: null,
-        flagged: false,
-        rank: 1,
-        remoteUpdatedAt: null,
-      },
-    };
-    const inputs = {
-      environmentId,
-      tickets: [ticket],
-      assignments: [],
-      threads: [],
-      projects: [],
-      workbenchProjects: [],
-      epics: [],
-      issueLinks: [issueLink],
-    };
-    const details = getWorkbenchSidebarTicketDetails(inputs).get(ticketId);
-    expect(details?.statusLabel).toBe("In Review");
-    expect(details?.attentionLabel).toBeNull();
-    expect(details?.issueLink?.active).toBe(false);
-    expect(
-      getWorkbenchSidebarTicketDetails({
-        ...inputs,
-        issueLinks: [{ ...issueLink, issue: { ...issueLink.issue, flagged: true } }],
-      }).get(ticketId)?.attentionLabel,
-    ).toBe("Jira flagged");
   });
 
   it("keeps repository and PR context in the selected environment and deduplicates known PRs", () => {
@@ -141,7 +97,6 @@ describe("Workbench sidebar ticket context", () => {
       ],
       workbenchProjects: [],
       epics: [],
-      issueLinks: [],
     }).get(ticketId);
     expect(details?.repositories).toEqual(["Local repo"]);
     expect(details?.pullRequests.map(({ pullRequest }) => pullRequest.number)).toEqual([12]);
@@ -159,7 +114,6 @@ describe("Workbench sidebar ticket context", () => {
       projects: [],
       workbenchProjects: [],
       epics: [],
-      issueLinks: [],
     }).get(ticketId);
     expect(details?.pullRequests).toEqual([]);
     expect(details?.repositories).toEqual([]);
@@ -192,7 +146,6 @@ describe("Workbench sidebar ticket context", () => {
       projects: [],
       workbenchProjects: [],
       epics: [],
-      issueLinks: [],
     };
     const details = getWorkbenchSidebarTicketDetails(inputs).get(ticketId);
     expect(details?.executionStatus?.presentation.label).toBe("Working");

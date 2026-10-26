@@ -1,5 +1,5 @@
 const isOwned = (path: string) =>
-  /^(packages\/workbench\/|apps\/(server|web|desktop|mobile)\/src\/workbench\/|packages\/contracts\/src\/workbench|apps\/web\/src\/routes\/workbench\.tsx$|infra\/workbench-auth\/src\/)/.test(
+  /^(packages\/workbench\/|apps\/(server|web|desktop|mobile)\/src\/workbench\/|packages\/contracts\/src\/workbench|apps\/web\/src\/routes\/workbench\.tsx$)/.test(
     path,
   );
 

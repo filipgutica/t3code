@@ -7,7 +7,6 @@ import type {
   ThreadId,
   WorkbenchEpic,
   WorkbenchEpicId,
-  WorkbenchJiraBinding,
   WorkbenchProject,
   WorkbenchTicket,
 } from "@t3tools/contracts";
@@ -80,10 +79,6 @@ export interface WorkbenchTicketConversationProps {
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly linkedProjects: ReadonlyArray<Project>;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
-  readonly jiraEpics: ReadonlyArray<WorkbenchEpic>;
-  readonly jiraBinding: WorkbenchJiraBinding | null;
-  readonly localOnlySupported: boolean;
-  readonly jiraOwnershipKnown: boolean;
   readonly initialEpicId: WorkbenchEpicId | null;
   readonly refreshSnapshot: () => void;
   readonly onClose: () => void;
@@ -461,10 +456,6 @@ function WorkbenchDraftAside({
             }
             linkedProjects={linkedProjects}
             epics={props.epics}
-            jiraEpics={props.jiraEpics}
-            jiraBinding={props.jiraBinding}
-            localOnlySupported={props.localOnlySupported}
-            jiraOwnershipKnown={props.jiraOwnershipKnown}
             onChange={edit}
             onCreateEpic={props.onCreateEpic}
           />
@@ -564,10 +555,6 @@ function WorkbenchTicketConversationBody(props: DraftBodyProps) {
     fields: editor.fields,
     linkedProjects: props.linkedProjects,
     epics: props.epics,
-    jiraEpics: props.jiraEpics,
-    jiraBinding: props.jiraBinding,
-    localOnlySupported: props.localOnlySupported,
-    jiraOwnershipKnown: props.jiraOwnershipKnown,
   });
   const transitions = useTicketDraftTransitions({
     environmentId,
@@ -626,7 +613,7 @@ function WorkbenchTicketConversationBody(props: DraftBodyProps) {
                 threadId={draft.threadId}
                 linkedProjects={props.linkedProjects}
                 fields={editor.fields}
-                ticketCreated={ticket !== null}
+                ticket={ticket}
                 canApply={
                   canOperate &&
                   props.workspace.archivedAt == null &&
@@ -666,7 +653,6 @@ function WorkbenchTicketConversationBody(props: DraftBodyProps) {
       <WorkbenchDiscardDraftDialog
         open={discardOpen}
         busy={transitions.action !== null}
-        creationUncertain={phase === "promoting" && createState.createsInJira}
         error={transitions.error}
         onOpenChange={setDiscardOpen}
         onDiscard={transitions.discard}

@@ -30,8 +30,6 @@
       "symbols": [
         "WorkbenchHostPoliciesLayerLive",
         "WorkbenchProviderPoliciesLayerLive",
-        "withWorkbenchHttpRoutes",
-        "WorkbenchMcpLayerLive",
         "WorkbenchRuntimeReactorLayerLive",
         "WorkbenchServicesLayerLive"
       ],
@@ -81,18 +79,6 @@
     },
     {
       "source": "packages/contracts/src/index.ts",
-      "target": "packages/contracts/src/workbenchJiraResearch",
-      "symbols": ["*"],
-      "reason": "Expose caller-scoped Workbench Jira research tool schemas."
-    },
-    {
-      "source": "packages/contracts/src/index.ts",
-      "target": "packages/contracts/src/workbenchJira",
-      "symbols": ["*"],
-      "reason": "Preserve public Workbench wire schema exports."
-    },
-    {
-      "source": "packages/contracts/src/index.ts",
       "target": "packages/contracts/src/workbenchRpc",
       "symbols": ["*"],
       "reason": "Preserve public Workbench wire schema exports."
@@ -114,12 +100,6 @@
       "target": "scripts/lib/workbench-desktop-product",
       "symbols": ["selectWorkbenchDesktopBuildProduct"],
       "reason": "Select Workbench packaging policy before native installer mechanics run."
-    },
-    {
-      "source": "scripts/dev-runner.ts",
-      "target": "scripts/lib/workbench-jira-dev-env",
-      "symbols": ["prepareWorkbenchJiraDevEnv"],
-      "reason": "Prepare Workbench Jira callback configuration in the development launcher."
     },
     {
       "source": "apps/desktop/vite.config.ts",

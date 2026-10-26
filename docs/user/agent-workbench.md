@@ -4,9 +4,9 @@ Workbench gives you one view of work across repositories: what’s to do, in pro
 and done. Each Ticket brings together its context, agents, pull requests, and an
 isolated work area with worktrees for the repositories involved.
 
-Workbench is available in the web and desktop clients. Jira is optional. Each T3
-environment has its own Workspaces and Tickets, so records do not appear across
-environments. There is no dedicated Workbench mobile interface yet.
+Workbench is available in the web and desktop clients. Each T3 environment has its
+own Workspaces and Tickets, so records do not appear across environments. There is
+no dedicated Workbench mobile interface yet.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/board-light.png">
@@ -33,7 +33,7 @@ related Tickets. A Ticket's **work area** contains its prepared repository workt
    model using the native conversation controls.
 5. Review the proposed title, plan, acceptance criteria, and repository scope.
    Choose **Apply to draft**, then edit any field. Use **Write** or **Preview** for the description.
-6. Choose **Create ticket** to save it locally or in Jira.
+6. Choose **Create ticket** to save it.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/planning-light.png">
@@ -45,15 +45,12 @@ Planning can inspect the workspace's repositories but cannot change them. Ask
 follow-up questions to refine the proposal. Applying a new proposal replaces the
 draft's title, description, and repository selection; it does not create the Ticket.
 
-In a Jira-connected workspace, the agent searches Jira for existing tickets that
-cover your request before it proposes one. You can also ask it to read an issue or
-search Jira using the workspace connection. No browser login is needed. Planning can also use your
-configured connectors, web tools, and the browser for research. During planning,
-the provider's automatic reviewer handles approval requests instead of you.
-Planning has no shell network access, so CLI research such as `gh` is unavailable;
-use a configured connector instead. Claude can use only the connector tools that
-the connector marks read-only. An approved research step does not start
-implementation.
+Planning can use your configured connectors, web tools, and the browser for
+research. With a Jira connector, the agent looks for existing issues that cover
+your request; see [Jira links](#jira-links). During planning, the provider's
+automatic reviewer handles approval requests instead of you. Planning has no shell
+network access, so CLI research such as `gh` is unavailable; use a configured
+connector instead. An approved research step does not start implementation.
 
 Leaving the view keeps the draft in the Board’s **Drafts** section and the Workbench
 sidebar. Open it to resume its conversation and saved fields. Choose **New Ticket**
@@ -87,15 +84,14 @@ keep their scope.
 
 Choose **Archive Workspace** from the Workspace actions menu to hide it from the
 active list and attention counts. Open **Archived Workspaces** in the sidebar to
-inspect its Tickets and Epics. Archived planning is read-only, Jira sync is paused,
-and linked native Threads remain available. Choose **Restore Workspace** to resume
-planning. Restoration keeps individual Ticket and Epic archive states and the
-Jira sync's previous active or paused setting.
+inspect its Tickets and Epics. Archived planning is read-only, and linked native
+Threads remain available. Choose **Restore Workspace** to resume planning.
+Restoration keeps individual Ticket and Epic archive states.
 
 Choose **Delete Workspace** from the same menu and review the Ticket and Epic
 counts before confirming. Deletion permanently removes the Workspace's planning
-data and Jira mirror from Workbench. Native Projects, Threads, Git worktrees,
-branches, commits, and Jira issues remain. There is no undo. **Retained worktrees**
+data from Workbench. Native Projects, Threads, Git worktrees, branches, commits,
+and linked Jira issues remain. There is no undo. **Retained worktrees**
 in the sidebar remains available for cleanup even after deleting the last Workspace.
 
 ## Start agent work
@@ -104,7 +100,7 @@ For a Ticket prepared through a conversation, choose **Start work** to continue
 that same Thread in its prepared work area. Review the Ticket context chip in the
 composer, add your next instruction, and send when ready.
 
-For a manually created or imported Ticket, or an additional conversation:
+For a manually created Ticket, or an additional conversation:
 
 1. Open a Ticket and choose **Create Thread**.
 2. If the work area is not prepared, review the primary and additional repositories.
@@ -169,8 +165,6 @@ and **Needs attention** remain available separately for reviewing results.
 When a linked Thread starts a turn, a To Do Ticket moves to In Progress. **A
 completed agent turn does not mark the Ticket Done.** Review the result, then set
 the Ticket progress from the Ticket or Board card menu when the work is accepted.
-For Jira Tickets, Workbench attempts an available Jira transition first; if it
-fails, the Thread continues and its work log shows a warning.
 
 Use **Needs attention** on the Board, or in the sidebar's filter menu, to find
 approval and input requests, failed runs, failed PR checks, PR feedback, plans
@@ -195,13 +189,14 @@ remain until the checks or review feedback are resolved.
 </picture>
 
 The Ticket's **Pull Requests** section collects PRs reported by linked Threads and
-prepared worktrees. For Jira Tickets, it also searches linked repositories for the
-issue key. To attach a PR yourself, choose **Link PR** from the Ticket, select a
-Thread if prompted, then choose a listed PR or search by title. You can paste a full
-PR URL when browsing is unavailable or the PR is not listed. A number such as `#42`
-refers to the selected Thread's repository. Link PR needs a live assigned Thread and
-a project with a supported Git remote in the same environment. You can also use
-**Link pull request to thread** in the native Thread's command palette.
+prepared worktrees. For a Ticket with a Jira link, it also searches linked
+repositories for the issue key. To attach a PR yourself, choose **Link PR** from
+the Ticket, select a Thread if prompted, then choose a listed PR or search by
+title. You can paste a full PR URL when browsing is unavailable or the PR is not
+listed. A number such as `#42` refers to the selected Thread's repository. Link PR
+needs a live assigned Thread and a project with a supported Git remote in the same
+environment. You can also use **Link pull request to thread** in the native
+Thread's command palette.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/pull-request-light.png">
@@ -210,23 +205,22 @@ a project with a supported Git remote in the same environment. You can also use
 
 ## Edit and organize Tickets
 
-Use Board search to find loaded Tickets by title, or by Jira key on connected
-Boards. Filter by any repository in their scope. Search, repository filtering,
-grouping, and the selected Board column are retained per Workspace when returning
-from a Ticket. Open a Ticket and choose **Edit** to change its title or description.
-Saved descriptions display formatting; imported Jira descriptions are also written
-to Jira. Board previews use a separate summary generated from **Settings → General → Text generation
-model**. Regenerate it from the Ticket menu when needed; the summary does not
-replace the full description sent to the agent.
+Use Board search to find loaded Tickets by title or Jira issue key. Filter by any
+repository in their scope. Search, repository filtering, grouping, and the
+selected Board column are retained per Workspace when returning from a Ticket.
+Open a Ticket and choose **Edit** to change its title or description. Saved
+descriptions display formatting. Board previews use a separate summary generated
+from **Settings → General → Text generation model**. Regenerate it from the Ticket
+menu when needed; the summary does not replace the full description sent to the
+agent.
 
 Choose **New Epic** from the Workspace actions menu, assign related Tickets, and
-use the Board's **Group** toggle to show Epic swimlanes. On desktop, drag local
-Tickets between status columns. Jira-managed Tickets use Jira's transition flow.
+use the Board's **Group** toggle to show Epic swimlanes. On desktop, drag
+Tickets between status columns.
 
-Archive a local Ticket to hide it from the active Board, or restore it from
-**Archived**. Deleting a local Ticket removes it from Workbench but keeps its
-native Threads and repository worktrees. Imported Jira Tickets cannot be archived
-or deleted locally.
+Archive a Ticket to hide it from the active Board, or restore it from
+**Archived**. Deleting a Ticket removes it from Workbench but keeps its native
+Threads and repository worktrees.
 
 ## Manage repositories and worktrees
 
@@ -247,8 +241,8 @@ changes so it can be added again later.
 
 Creating a Workspace groups existing Projects; it does not create repository
 directories. **Prepare work area** creates worktrees without opening a Thread, and
-**Create Thread** prepares missing worktrees and reuses existing ones. Creating,
-importing, or viewing a Ticket alone does not prepare worktrees.
+**Create Thread** prepares missing worktrees and reuses existing ones. Creating or
+viewing a Ticket alone does not prepare worktrees.
 
 To remove prepared worktrees, delete Threads that still use them, including archived
 Threads. Unlink Threads working elsewhere. Commit or preserve local changes, then open **Ticket
@@ -259,66 +253,44 @@ After deleting a Ticket or Workspace, open **Retained worktrees** in the Workben
 remove its kept worktrees. Review the listed repository paths, choose **Remove**,
 and confirm. The same Thread ownership and local-change checks apply.
 
-## Connect Jira
+## Jira links
 
-A Workspace can import issues assigned to the connected Jira user from a board and
-selected sprints. Imported issues become Tickets and show a Jira link; importing
-does not create worktrees. A published Workbench desktop release uses a hosted Jira
-connection, so authorization happens on Atlassian's website without creating an
-OAuth app. For a source-based environment, see the [local Jira setup
-instructions](../../README.md#set-up-jira-for-local-development).
+Workbench does not connect to Jira. A Ticket or Epic can link to one Jira issue,
+and your agent does any Jira work through its own Jira connector.
 
-To connect a Workspace, choose **Connect Jira → Connect Atlassian**, authorize on
-Atlassian's website, then select the site, board, sprints, default repository scope,
-and status mapping. **Mirror Jira states** uses the board's column names and order.
-If the Workspace has local Tickets or Epics, choose whether to publish them to Jira
-or delete them before importing. Deleting requires an exact-count confirmation;
-native Agent Threads remain in history. Save the configuration to start the first
-sync.
+To link an issue yourself, open the Ticket or Epic details and choose **Link
+issue** under **Jira issue**. Paste the issue's URL, such as
+`https://your-site.atlassian.net/browse/PROJ-123`. Use **Change** or **Unlink** to
+replace or remove the link.
 
-<picture>
-  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/jira-light.png">
-  <img src="./media/workbench/jira.png" alt="Orbit Jira Board showing its Jira board name, selected sprint, sync status, and imported Tickets.">
-</picture>
+If your agent has a Jira connector, ask it to find, create, or update an issue in
+a planning or work conversation. Workbench tells the agent to change Jira only
+when you ask. When it has the issue, it posts a link card; choose **Link** to
+link the issue to the Ticket. In a draft, the card waits until you choose
+**Create ticket**.
 
-Use **Sync Jira** for an immediate refresh. Jira controls issue descriptions,
-status, Epic relationships, and sprint membership. Workbench controls repository
-selection, Ticket worktrees, linked Threads, and generated summaries. Changes made
-in Jira appear on the next successful sync; issues that leave the selected sprints
-leave the active Board but remain in Workbench history.
+The issue key appears on the Board, in the sidebar, and in Ticket details, and
+Board search matches it. The Ticket's **Pull Requests** section also finds PRs
+that mention the key. Branch names include the key when the work area is
+prepared, so link the issue before you prepare it.
 
-**New Ticket** in a Jira-linked Workspace lets you choose **Jira** or **Local only**.
-Jira creates an issue in the configured project and selected sprint, assigned to the
-connected account. Local-only Tickets stay in Workbench and can be created while
-Jira sync is paused. Tickets show **Local** or their Jira issue key on the Board,
-in the sidebar, and in Ticket details.
-
-To publish a local Ticket, choose **Publish to Jira** in its details or Board menu.
-Select a sprint and, optionally, a Jira Epic, then confirm. Publishing keeps the
-Ticket's linked Threads and worktrees. Jira then controls its description, status,
-and Epic relationship.
-
-If Jira creation cannot be confirmed, check Jira and choose **Resolve** in the Workspace warning or Jira mirror dialog.
-Choose **Not created in Jira** to retry or keep the Ticket local.
-Choose **Created in Jira as KEY** and enter its issue key to finish linking the Ticket or Epic.
-Workbench verifies the issue's project and type before linking it.
-If sync already imported the issue, Workbench keeps that Jira-linked record and leaves the original Ticket or Epic local.
-To link the original record after local edits, restore its saved content before resuming the confirmed creation.
-Resolve uncertain creations before archiving or deleting the Workspace.
-
-If access expires, choose
-**Reconnect Jira**, authorize again, and use the same site to retain the mirror and
-Ticket history. Cancelling authorization leaves the existing mirror unchanged.
+Workspaces that synced with Jira in an earlier version keep their Tickets and
+Epics as ordinary records with their issue links. Workbench no longer updates
+them from Jira; edit, move, archive, or delete them like any other record.
+Tickets whose issues had left the selected sprints are archived. If an earlier
+version could not confirm that it created a Jira issue, the Ticket or Epic stays
+a local record, linked only if its issue key was known. Check Jira and link the
+issue yourself if needed.
 
 ## Troubleshooting
 
-| Problem                                           | What to check                                                                                |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| The agent has not started after creating a Thread | Send a message; creation only prepares the conversation.                                     |
-| A completed turn leaves the Ticket In Progress    | Review the result and update progress yourself.                                              |
-| A repository is missing from a Workspace          | Add its directory as a T3 Project first.                                                     |
-| A prepared worktree is missing                    | Remove Threads that use it, reset the Ticket work area, then prepare again.                  |
-| Jira cannot advance or import issues              | Check the selected board, sprints, assignment, and Jira permissions, then reconnect or sync. |
-| Workspaces or Tickets seem to be missing          | Check the connected environment; each environment has separate records and saved data.       |
+| Problem                                           | What to check                                                                          |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| The agent has not started after creating a Thread | Send a message; creation only prepares the conversation.                               |
+| A completed turn leaves the Ticket In Progress    | Review the result and update progress yourself.                                        |
+| A repository is missing from a Workspace          | Add its directory as a T3 Project first.                                               |
+| A prepared worktree is missing                    | Remove Threads that use it, reset the Ticket work area, then prepare again.            |
+| The agent cannot find or create Jira issues       | Set up a Jira connector for that provider; Workbench does not connect to Jira itself.  |
+| Workspaces or Tickets seem to be missing          | Check the connected environment; each environment has separate records and saved data. |
 
 For connecting another device, see [Remote access](./remote-access.md).

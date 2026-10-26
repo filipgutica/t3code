@@ -3,26 +3,17 @@ import type {
   WorkbenchTicketId,
   WorkbenchTicket,
   WorkbenchSnapshot,
-  WorkbenchJiraSnapshot,
-  WorkbenchProjectId,
 } from "@t3tools/contracts";
-import { useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
 import { reportWorkbenchCommandFailure } from "./workbenchPageCommands";
-import {
-  resolveWorkbenchTicketContent,
-  resolveWorkbenchTicketUpdateFields,
-} from "./workbenchJira.logic";
 import {
   isWorkbenchDraftProjected,
   type WorkbenchTicketDraft,
   type WorkbenchTicketSavedVersion,
 } from "./workbenchDraftStore";
 import type { useOptimisticWorkbenchStatus } from "./useOptimisticWorkbenchStatus";
-import type { useWorkbenchJiraBindings } from "./useWorkbenchJiraBindings";
-import type { WorkbenchJiraTransitionSelection } from "./WorkbenchTicketStatusMenu";
-import { useWorkbenchTicketPublishing } from "./useWorkbenchTicketPublishing";
 import {
   getWorkbenchRepositoryScope,
   isWorkbenchRepositoryScopeEqual,
@@ -46,63 +37,34 @@ type WorkbenchTicketPatch = Partial<
 
 export function useWorkbenchTicketActions({
   environmentId,
-  selectedProjectId,
   pendingAction,
   setPendingAction,
   setError,
   optimisticStatus,
-  jiraOwnershipKnown,
   ticketDrafts,
-  jiraIssueLinksByTicketId,
-  jiraManagedTicketIds,
-  statusEnvironmentRef,
   snapshot,
-  jiraSnapshot,
   refreshWorkbenchSnapshot,
-  refreshJiraSnapshot,
-  syncJiraBinding,
   clearTicketDraft,
   closeWorkItem,
 }: {
   readonly environmentId: EnvironmentId | null;
-  readonly selectedProjectId: WorkbenchProjectId | null;
   readonly pendingAction: string | null;
   readonly setPendingAction: Dispatch<SetStateAction<string | null>>;
   readonly setError: (message: string | null) => void;
   readonly optimisticStatus: ReturnType<typeof useOptimisticWorkbenchStatus>;
-  readonly jiraOwnershipKnown: boolean;
   readonly ticketDrafts: ReadonlyMap<WorkbenchTicketId, WorkbenchTicketDraft>;
-  readonly jiraIssueLinksByTicketId: ReadonlyMap<
-    WorkbenchTicketId,
-    WorkbenchJiraSnapshot["issueLinks"][number]
-  >;
-  readonly jiraManagedTicketIds: ReadonlySet<WorkbenchTicketId>;
-  readonly statusEnvironmentRef: RefObject<EnvironmentId | null>;
   readonly snapshot: WorkbenchSnapshot | null;
-  readonly jiraSnapshot: WorkbenchJiraSnapshot | null;
   readonly refreshWorkbenchSnapshot: () => unknown;
-  readonly refreshJiraSnapshot: () => unknown;
-  readonly syncJiraBinding: ReturnType<typeof useWorkbenchJiraBindings>["syncJiraBinding"];
   readonly clearTicketDraft: (environmentId: EnvironmentId, ticketId: WorkbenchTicketId) => void;
   readonly closeWorkItem: () => void;
 }) {
-  const ticketPublishing = useWorkbenchTicketPublishing({
-    environmentId,
-    selectedProjectId,
-    snapshot,
-    jiraSnapshot,
-    ticketDrafts,
-    pendingAction,
-    setPendingAction,
-    setError,
-    refreshWorkbenchSnapshot,
-    refreshJiraSnapshot,
-  });
+  // Status results that settle after an environment switch must not touch the new environment.
+  const statusEnvironmentRef = useRef(environmentId);
+  useEffect(() => {
+    statusEnvironmentRef.current = environmentId;
+  }, [environmentId]);
   const updateTicket = useAtomCommand(workbenchEnvironment.updateTicket, { reportFailure: false });
   const regenerateTicketSummary = useAtomCommand(workbenchEnvironment.regenerateTicketSummary, {
-    reportFailure: false,
-  });
-  const updateJiraTicket = useAtomCommand(workbenchEnvironment.jiraUpdateTicket, {
     reportFailure: false,
   });
   const archiveTicket = useAtomCommand(workbenchEnvironment.archiveTicket, {
@@ -238,54 +200,12 @@ export function useWorkbenchTicketActions({
       optimisticStatus.pendingTicketIds.has(ticket.id)
     )
       return false;
-    const jiraFieldsChanged = patch.markdown !== undefined || patch.status !== undefined;
-    if (jiraFieldsChanged && !jiraOwnershipKnown) {
-      setError("Jira ownership is still loading. Try again in a moment.");
-      return false;
-    }
     const draft = ticketDrafts.get(ticket.id);
     if (patch.status !== undefined && draft?.mode === "editing") {
       setError("Save or cancel this Ticket's edits before changing its status.");
       return false;
     }
-    const jiraIssueLink = jiraIssueLinksByTicketId.get(ticket.id);
-    if (jiraIssueLink !== undefined && jiraFieldsChanged) {
-      return saveJiraTicketFields({ environmentId, ticket, patch, draft, jiraIssueLink });
-    }
     return saveLocalTicketFields({ environmentId, ticket, patch, draft });
-  };
-
-  const saveJiraTicketFields = async ({
-    environmentId,
-    ticket,
-    patch,
-    draft,
-    jiraIssueLink,
-  }: {
-    environmentId: EnvironmentId;
-    ticket: WorkbenchTicket;
-    patch: WorkbenchTicketPatch;
-    draft: WorkbenchTicketDraft | undefined;
-    jiraIssueLink: WorkbenchJiraSnapshot["issueLinks"][number];
-  }): Promise<WorkbenchTicketSavedVersion | false> => {
-    const expectedRemoteUpdatedAt =
-      patch.markdown !== undefined && draft?.mode === "editing"
-        ? (draft.jiraRemoteUpdatedAt ?? null)
-        : jiraIssueLink.issue.remoteUpdatedAt;
-    setPendingAction(`jira-update:${ticket.id}`);
-    setError(null);
-    const result = await updateJiraTicket({
-      environmentId,
-      input: {
-        ticketId: ticket.id,
-        ...(patch.markdown !== undefined ? { markdown: patch.markdown } : {}),
-        ...(patch.status !== undefined ? { status: patch.status } : {}),
-        expectedRemoteUpdatedAt,
-      },
-    });
-    setPendingAction(null);
-    if (reportWorkbenchCommandFailure(result, setError)) return false;
-    return { jiraRemoteUpdatedAt: result.value.remoteUpdatedAt };
   };
 
   const saveLocalTicketFields = async ({
@@ -299,10 +219,6 @@ export function useWorkbenchTicketActions({
     patch: WorkbenchTicketPatch;
     draft: WorkbenchTicketDraft | undefined;
   }): Promise<WorkbenchTicketSavedVersion | false> => {
-    const fields = resolveWorkbenchTicketUpdateFields({
-      patch,
-      jiraFieldsManaged: jiraManagedTicketIds.has(ticket.id),
-    });
     const statusToken =
       patch.status !== undefined
         ? optimisticStatus.begin({ ticketId: ticket.id, status: patch.status })
@@ -316,7 +232,7 @@ export function useWorkbenchTicketActions({
       input: {
         id: ticket.id,
         expectedRevision,
-        ...fields,
+        ...patch,
         updatedAt: new Date().toISOString(),
       },
     });
@@ -372,72 +288,12 @@ export function useWorkbenchTicketActions({
     }
   };
 
-  const changeJiraTransition = async ({
-    ticket,
-    transitionId,
-    destination,
-    expectedRemoteUpdatedAt,
-  }: WorkbenchJiraTransitionSelection) => {
-    if (environmentId === null || pendingAction !== null) return;
-    if (!jiraOwnershipKnown || !jiraIssueLinksByTicketId.has(ticket.id)) {
-      setError("Jira ownership changed. Refresh the Ticket and try again.");
-      return;
-    }
-    if (ticketDrafts.get(ticket.id)?.mode === "editing") {
-      setError("Save or cancel this Ticket's description edits before changing its status.");
-      return;
-    }
-    const link = jiraSnapshot?.issueLinks.find((candidate) => candidate.ticketId === ticket.id);
-    const binding = jiraSnapshot?.bindings.find((candidate) => candidate.id === link?.bindingId);
-    const mappedStatus = binding?.statusMappings.find(
-      (mapping) => mapping.jiraStatusId === destination.id,
-    )?.workbenchStatus;
-    if (mappedStatus === undefined) {
-      setError("This Jira status is no longer mapped to the board. Refresh Jira and try again.");
-      return;
-    }
-    const token = optimisticStatus.begin({
-      ticketId: ticket.id,
-      status: mappedStatus,
-      jiraStatus: destination,
-    });
-    if (token === false) return;
-    setError(null);
-    const result = await updateJiraTicket({
-      environmentId,
-      input: { ticketId: ticket.id, transitionId, expectedRemoteUpdatedAt },
-    });
-    if (statusEnvironmentRef.current !== environmentId) return;
-    if (
-      reportWorkbenchCommandFailure(result, (message) => setError(`${ticket.title}: ${message}`))
-    ) {
-      optimisticStatus.fail(token);
-      refreshWorkbenchSnapshot();
-      refreshJiraSnapshot();
-      if (binding) void syncJiraBinding(binding);
-      return;
-    }
-    optimisticStatus.succeed({
-      token,
-      jiraIssue: result.value,
-      status:
-        binding?.statusMappings.find((mapping) => mapping.jiraStatusId === result.value.status.id)
-          ?.workbenchStatus ?? mappedStatus,
-    });
-  };
-
   const changeTicket = (ticket: WorkbenchTicket, patch: WorkbenchTicketPatch) => {
     void updateTicketFields(ticket, patch);
   };
 
   const setTicketArchived = async (ticket: WorkbenchTicket, archivedAt: string | null) => {
-    if (
-      environmentId === null ||
-      !jiraOwnershipKnown ||
-      jiraManagedTicketIds.has(ticket.id) ||
-      pendingAction !== null
-    )
-      return false;
+    if (environmentId === null || pendingAction !== null) return false;
     setPendingAction(`archive:${ticket.id}`);
     setError(null);
     const result = await archiveTicket({
@@ -457,13 +313,7 @@ export function useWorkbenchTicketActions({
   };
 
   const removeTicket = async (ticket: WorkbenchTicket) => {
-    if (
-      environmentId === null ||
-      !jiraOwnershipKnown ||
-      jiraManagedTicketIds.has(ticket.id) ||
-      pendingAction !== null
-    )
-      return false;
+    if (environmentId === null || pendingAction !== null) return false;
     setPendingAction(`delete:${ticket.id}`);
     setError(null);
     const result = await deleteTicket({
@@ -495,25 +345,9 @@ export function useWorkbenchTicketActions({
 
   const ticketForBoardAction = (ticket: WorkbenchTicket) => {
     const draft = ticketDrafts.get(ticket.id);
-    const projectedTicket = {
-      ...ticket,
-      ...resolveWorkbenchTicketContent({
-        ticket,
-        jiraIssue: jiraIssueLinksByTicketId.get(ticket.id)?.issue,
-      }),
-    };
-    return draft?.mode === "saved" &&
-      !isWorkbenchDraftProjected({
-        draft,
-        ticket: projectedTicket,
-        jiraRemoteUpdatedAt: jiraIssueLinksByTicketId.get(ticket.id)?.issue.remoteUpdatedAt,
-      })
-      ? {
-          ...projectedTicket,
-          title: jiraManagedTicketIds.has(ticket.id) ? projectedTicket.title : draft.title,
-          markdown: draft.markdown,
-        }
-      : projectedTicket;
+    return draft?.mode === "saved" && !isWorkbenchDraftProjected({ draft, ticket })
+      ? { ...ticket, title: draft.title, markdown: draft.markdown }
+      : ticket;
   };
 
   const saveTicketContent = (ticket: WorkbenchTicket, title: string, markdown: string) => {
@@ -524,17 +358,9 @@ export function useWorkbenchTicketActions({
   const regenerateSummary = async (ticket: WorkbenchTicket) => {
     if (environmentId === null || pendingAction !== null || ticket.archivedAt != null) return;
     const draft = ticketDrafts.get(ticket.id);
-    const projectedTicket = {
-      ...ticket,
-      ...resolveWorkbenchTicketContent({
-        ticket,
-        jiraIssue: jiraIssueLinksByTicketId.get(ticket.id)?.issue,
-      }),
-    };
     const hasUnsavedChanges =
       draft?.mode === "editing" &&
-      (draft.markdown !== projectedTicket.markdown ||
-        (!jiraManagedTicketIds.has(ticket.id) && draft.title !== projectedTicket.title));
+      (draft.markdown !== ticket.markdown || draft.title !== ticket.title);
     if (hasUnsavedChanges) {
       setError("Save changes to update summary.");
       return;
@@ -550,7 +376,6 @@ export function useWorkbenchTicketActions({
   };
 
   return {
-    ...ticketPublishing,
     repositoryScopeDraft,
     editRepositories,
     changeRepositoryScope,
@@ -560,7 +385,6 @@ export function useWorkbenchTicketActions({
     saveRepositories,
     workspacePreparationFailure,
     changeTicket,
-    changeJiraTransition,
     setTicketArchived,
     removeTicket,
     resetTicketWorkspace,

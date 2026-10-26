@@ -362,12 +362,6 @@
       "verification": ["unit", "typecheck"]
     },
     {
-      "name": "Workbench auth broker",
-      "paths": ["infra/workbench-auth/"],
-      "tests": ["infra/workbench-auth/test/"],
-      "verification": ["unit", "typecheck"]
-    },
-    {
       "name": "Workbench tooling",
       "paths": ["scripts/workbench-", "scripts/lib/workbench-"],
       "tests": ["scripts/workbench-*", "scripts/lib/workbench-*"],
@@ -432,7 +426,6 @@
     "packages/contracts": "@t3tools/contracts",
     "packages/shared": "@t3tools/shared",
     "packages/client-runtime": "@t3tools/client-runtime",
-    "infra/workbench-auth": "t3code-workbench-auth",
     "scripts": "@t3tools/scripts",
     "packages/provider-core": "@t3tools/provider-core",
     "packages/provider-acp": "@t3tools/provider-acp",

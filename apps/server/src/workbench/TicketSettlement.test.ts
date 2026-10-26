@@ -256,7 +256,7 @@ describe("Done Ticket settlement", () => {
       assert.deepEqual(commands, []);
     }),
   );
-  it.effect("runs on activation and reconciles later Jira/local snapshot changes", () =>
+  it.effect("runs on activation and reconciles later snapshot changes", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const threads = [makeThread("initial"), makeThread("later")];

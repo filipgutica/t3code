@@ -206,7 +206,7 @@ const scope = (policy: ScopePolicy, base: string) => {
   const changed = pathsFrom(git(["diff", "--no-renames", "--name-only", "-z", base, "--"]));
   const product = changed.some(
     (path) =>
-      /^(apps\/(server|web|desktop)|packages|infra\/workbench-auth)\//.test(path) ||
+      /^(apps\/(server|web|desktop)|packages)\//.test(path) ||
       /^(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig\.base\.json|vite\.config\.ts)$/.test(
         path,
       ) ||
@@ -276,7 +276,6 @@ const setup = `      - uses: actions/checkout@v6
               - --filter=@t3tools/desktop...
               - --filter=@t3tools/mobile...
               - --filter=@t3tools/scripts...
-              - --filter=t3code-workbench-auth...
 `;
 const verificationJob = (id: string, name: string, flag: string, steps: string) => `  ${id}:
     name: Workbench ${name}

@@ -7,11 +7,11 @@ import {
   FolderGit2Icon,
   PlusIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
-import { getWorkbenchTicketTypeLabel, WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
+import { WORKBENCH_TICKET_KIND_LABELS, WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
 import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 import { useWorkbenchSidebarTicketActionMenu } from "./useWorkbenchSidebarTicketActionMenu";
 import type { WorkbenchSidebarTicket } from "./workbenchSidebar.logic";
@@ -46,41 +46,26 @@ function TicketPreview({
   ticket,
   details,
   status,
-  jiraOwnershipKnown,
 }: {
   readonly ticket: WorkbenchSidebarTicket;
   readonly details: WorkbenchSidebarTicketDetails | undefined;
   readonly status: string;
-  readonly jiraOwnershipKnown: boolean;
 }) {
   const pullRequests = details?.pullRequests ?? [];
   return (
     <div className="flex flex-col gap-2 text-xs">
       <p className="font-medium text-foreground break-words">{ticket.title}</p>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-muted-foreground">
-        {details?.issueLink ? (
+        {details?.jiraIssue ? (
           <>
             <dt>Jira</dt>
-            <dd>
-              {details.issueLink.issue.key}
-              {!details.issueLink.active ? " · Outside selected sprints" : ""}
-            </dd>
+            <dd>{details.jiraIssue.key}</dd>
           </>
-        ) : (
-          <>
-            <dt>Source</dt>
-            <dd>{jiraOwnershipKnown ? "Local" : "Checking Jira…"}</dd>
-          </>
-        )}
+        ) : null}
         {details ? (
           <>
             <dt>Type</dt>
-            <dd>
-              {getWorkbenchTicketTypeLabel({
-                kind: details.kind,
-                jiraIssue: details.issueLink?.issue,
-              })}
-            </dd>
+            <dd>{WORKBENCH_TICKET_KIND_LABELS[details.kind]}</dd>
           </>
         ) : null}
         <dt>Status</dt>
@@ -160,16 +145,16 @@ function WorkbenchSidebarTicketStatus({
   return (
     <span data-workbench-sidebar-metadata-label="" data-workbench-sidebar-line="1">
       <span data-workbench-sidebar-metadata-icon="" aria-hidden>
-        {details?.issueLink ? (
+        {details?.jiraIssue ? (
           <WorkbenchJiraIcon className="size-3" />
         ) : (
           <span className={`size-1.5 rounded-full ${TICKET_STATUS_DOT_TONE[ticket.status]}`} />
         )}
       </span>
       <span data-workbench-sidebar-ticket-planning="">
-        {details?.issueLink ? (
+        {details?.jiraIssue ? (
           <>
-            <span className="shrink-0 font-mono">{details.issueLink.issue.key}</span>
+            <span className="shrink-0 font-mono">{details.jiraIssue.key}</span>
             <span aria-hidden>·</span>
           </>
         ) : null}
@@ -264,31 +249,14 @@ function WorkbenchSidebarTicketRepositories({
   );
 }
 
-// Jira reads share a lock with status changes, so passing over rows must not queue reads.
-const TRANSITION_PREFETCH_INTENT_MS = 300;
-
-function usePrefetchIntent(prefetch: () => void) {
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
-  return {
-    start: () => {
-      clearTimeout(timer.current);
-      timer.current = setTimeout(prefetch, TRANSITION_PREFETCH_INTENT_MS);
-    },
-    cancel: () => clearTimeout(timer.current),
-  };
-}
-
 export function WorkbenchSidebarTicketButton({
   ticket,
   details,
-  jiraOwnershipKnown,
   isActive,
   onSelect,
 }: {
   readonly ticket: WorkbenchSidebarTicket;
   readonly details: WorkbenchSidebarTicketDetails | undefined;
-  readonly jiraOwnershipKnown: boolean;
   readonly isActive: boolean;
   readonly onSelect: () => void;
 }) {
@@ -305,20 +273,14 @@ export function WorkbenchSidebarTicketButton({
   const actions = useWorkbenchSidebarTicketActionMenu({
     environmentId: details?.environmentId,
     ticket,
-    issueLink: details?.issueLink ?? null,
-    jiraOwnershipKnown,
+    jiraIssue: details?.jiraIssue ?? null,
     readOnly: details?.readOnly ?? true,
   });
-  const prefetchIntent = usePrefetchIntent(actions.prefetchTransitions);
   return (
     <div
       data-workbench-sidebar-item-row=""
       data-workbench-sidebar-detail-row="ticket"
       className="min-w-0 flex-1"
-      onPointerEnter={prefetchIntent.start}
-      onPointerLeave={prefetchIntent.cancel}
-      onFocus={prefetchIntent.start}
-      onBlur={prefetchIntent.cancel}
       onContextMenu={(event) => {
         event.preventDefault();
         actions.openMenu({ x: event.clientX, y: event.clientY });
@@ -329,14 +291,7 @@ export function WorkbenchSidebarTicketButton({
         isActive={isActive}
         onSelect={onSelect}
         openMenu={actions.openMenu}
-        preview={
-          <TicketPreview
-            ticket={ticket}
-            details={details}
-            status={status}
-            jiraOwnershipKnown={jiraOwnershipKnown}
-          />
-        }
+        preview={<TicketPreview ticket={ticket} details={details} status={status} />}
       >
         <WorkbenchSidebarTicketStatus ticket={ticket} details={details} status={status} />
         <WorkbenchSidebarTicketTitle ticket={ticket} details={details} />

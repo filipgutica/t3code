@@ -28,7 +28,7 @@ pointer outside the page and close popovers that expose local paths.
 
 The walkthrough starts with a native planning conversation and editable draft.
 It then shows the saved Ticket, prepared work area, and continuation of the same
-Thread. A second demo Ticket demonstrates linked PRs and attention; Jira is optional.
+Thread. A second demo Ticket demonstrates linked PRs and attention.
 Readers select each screenshot with tabs; arrow keys, Home, and End move between
 them. Without JavaScript, all steps remain visible. Each screenshot opens in the
 existing lightbox. The planning conversation is real; it does not show completed implementation work.

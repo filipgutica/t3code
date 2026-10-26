@@ -228,7 +228,6 @@ export function WorkbenchSidebar({
     query,
     snapshot,
     draftsByWorkspace,
-    jiraQuery,
     ticketDetailsById,
     selectedTicketIsDone,
     sidebarQuery,
@@ -287,7 +286,6 @@ export function WorkbenchSidebar({
           data={{
             environmentId,
             archivedTicketsByWorkspace,
-            jiraOwnershipKnown: jiraQuery.data !== null,
             projects: snapshot?.projects ?? [],
             draftsByWorkspace,
             ticketCountsByWorkspace,
@@ -351,7 +349,6 @@ type WorkbenchSidebarNavigationFields = {
   >;
   readonly ticketDetailsById: ReadonlyMap<WorkbenchTicketId, WorkbenchSidebarTicketDetails>;
   readonly contextThreadId: ThreadId | undefined;
-  readonly jiraOwnershipKnown: boolean;
   readonly onOpenThread: (thread: {
     readonly environmentId: EnvironmentId;
     readonly id: ThreadId;
@@ -381,7 +378,6 @@ type WorkbenchSidebarNavigationProps = {
     WorkbenchSidebarNavigationFields,
     | "archivedTicketsByWorkspace"
     | "environmentId"
-    | "jiraOwnershipKnown"
     | "projects"
     | "draftsByWorkspace"
     | "ticketCountsByWorkspace"
@@ -852,7 +848,7 @@ function getWorkbenchSidebarJiraKeys(
 ) {
   return new Map(
     [...ticketDetailsById].flatMap(([ticketId, details]) =>
-      details.issueLink ? [[ticketId, details.issueLink.issue.key] as const] : [],
+      details.jiraIssue ? [[ticketId, details.jiraIssue.key] as const] : [],
     ),
   );
 }
@@ -870,7 +866,6 @@ function WorkbenchSidebarNavigation({
     environmentId,
     archivedTicketsByWorkspace,
     ticketDetailsById,
-    jiraOwnershipKnown,
     projects,
     ticketCountsByWorkspace,
     ticketGroupsByWorkspace,
@@ -963,7 +958,6 @@ function WorkbenchSidebarNavigation({
   });
   const navigation = {
     contextThreadId,
-    jiraOwnershipKnown,
     onOpenThread,
     onSelectTicket,
     onSelectWorkspace,
@@ -1104,7 +1098,6 @@ function WorkbenchSidebarNavigation({
                 title={draftMenu.confirmationTitle}
                 open={draftMenu.actions.confirmation?.open === true}
                 busy={draftMenu.actions.busy}
-                creationUncertain={draftMenu.creationUncertain}
                 error={null}
                 finalFocus={draftMenu.finalFocus}
                 onOpenChange={(open) => {
@@ -1167,7 +1160,6 @@ type WorkbenchSidebarWorkspaceRowProps = {
   readonly navigation: Pick<
     WorkbenchSidebarNavigationFields,
     | "contextThreadId"
-    | "jiraOwnershipKnown"
     | "onOpenThread"
     | "onSelectTicket"
     | "onSelectWorkspace"
@@ -1197,7 +1189,6 @@ function WorkbenchSidebarWorkspaceRow({
   const workspaceButtonRef = useRef<HTMLButtonElement>(null);
   const {
     contextThreadId,
-    jiraOwnershipKnown,
     onOpenThread,
     onSelectTicket,
     selectedEpicId,
@@ -1247,7 +1238,6 @@ function WorkbenchSidebarWorkspaceRow({
             contextThreadId={contextThreadId}
             doneTicketGroups={doneTicketGroups}
             expansion={expansion}
-            jiraOwnershipKnown={jiraOwnershipKnown}
             onOpenThread={onOpenThread}
             onSelectTicket={onSelectTicket}
             onToggle={onToggle}
@@ -1360,7 +1350,6 @@ function WorkbenchSidebarWorkspacePanel({
 type WorkbenchSidebarWorkspaceContentsProps = Pick<
   WorkbenchSidebarNavigationFields,
   | "contextThreadId"
-  | "jiraOwnershipKnown"
   | "onOpenThread"
   | "onSelectTicket"
   | "selectedEpicId"
@@ -1381,7 +1370,6 @@ function WorkbenchSidebarWorkspaceContents({
   contextThreadId,
   doneTicketGroups,
   expansion,
-  jiraOwnershipKnown,
   onOpenThread,
   onSelectTicket,
   onToggle,
@@ -1406,7 +1394,6 @@ function WorkbenchSidebarWorkspaceContents({
           selectedEpicId={selectedEpicId}
           selectedTicketId={selectedTicketId}
           contextThreadId={contextThreadId}
-          jiraOwnershipKnown={jiraOwnershipKnown}
           expansion={expansion}
           workspaceId={workspaceId}
         />
@@ -1423,7 +1410,6 @@ function WorkbenchSidebarWorkspaceContents({
           selectedEpicId={selectedEpicId}
           selectedTicketId={selectedTicketId}
           contextThreadId={contextThreadId}
-          jiraOwnershipKnown={jiraOwnershipKnown}
           expansion={expansion}
           workspaceId={workspaceId}
           panelId={`workbench-sidebar-done-${workspaceId}`}
@@ -1440,7 +1426,6 @@ function WorkbenchSidebarWorkspaceContents({
           selectedTicketId={selectedTicketId}
           panelId={`workbench-sidebar-archived-${workspaceId}`}
           contextThreadId={contextThreadId}
-          jiraOwnershipKnown={jiraOwnershipKnown}
         />
       ) : null}
     </>
@@ -1449,7 +1434,6 @@ function WorkbenchSidebarWorkspaceContents({
 
 type WorkbenchSidebarTicketGroupsProps = {
   readonly contextThreadId: ThreadId | undefined;
-  readonly jiraOwnershipKnown: boolean;
   readonly expansion: WorkbenchSidebarExpansion;
   readonly groups: ReadonlyArray<WorkbenchSidebarTicketGroup>;
   readonly ticketDetailsById: ReadonlyMap<WorkbenchTicketId, WorkbenchSidebarTicketDetails>;
@@ -1468,7 +1452,6 @@ type WorkbenchSidebarTicketGroupsProps = {
 function WorkbenchSidebarTicketGroups({
   ticketDetailsById,
   contextThreadId,
-  jiraOwnershipKnown,
   expansion,
   groups,
   isDone,
@@ -1485,7 +1468,6 @@ function WorkbenchSidebarTicketGroups({
         <WorkbenchSidebarTicketGroupRow
           ticketDetailsById={ticketDetailsById}
           contextThreadId={contextThreadId}
-          jiraOwnershipKnown={jiraOwnershipKnown}
           expansion={expansion}
           group={group}
           isDone={isDone || (group.ticket.status === "done" && group.ticket.archivedAt == null)}
@@ -1533,7 +1515,6 @@ function useWorkbenchSidebarTicketThreadDisclosure({
 function WorkbenchSidebarTicketGroupRow({
   ticketDetailsById,
   contextThreadId,
-  jiraOwnershipKnown,
   expansion,
   group,
   isDone,
@@ -1590,7 +1571,6 @@ function WorkbenchSidebarTicketGroupRow({
         <WorkbenchSidebarTicketButton
           ticket={ticket}
           details={ticketDetailsById.get(ticket.id)}
-          jiraOwnershipKnown={jiraOwnershipKnown}
           isActive={ticketIsDestination}
           onSelect={selectTicket}
         />
@@ -1612,7 +1592,6 @@ function WorkbenchSidebarTicketGroupRow({
 function WorkbenchSidebarDoneTickets({
   ticketDetailsById,
   contextThreadId,
-  jiraOwnershipKnown,
   expansion,
   expanded,
   groups,
@@ -1650,7 +1629,6 @@ function WorkbenchSidebarDoneTickets({
           <WorkbenchSidebarTicketGroups
             ticketDetailsById={ticketDetailsById}
             contextThreadId={contextThreadId}
-            jiraOwnershipKnown={jiraOwnershipKnown}
             expansion={expansion}
             groups={groups}
             isDone
@@ -1758,7 +1736,6 @@ function WorkbenchSidebarArchivedTickets({
   ticketDetailsById,
   archivedTickets,
   contextThreadId,
-  jiraOwnershipKnown,
   expanded,
   onSelectTicket,
   onToggle,
@@ -1769,7 +1746,6 @@ function WorkbenchSidebarArchivedTickets({
   readonly archivedTickets: ReadonlyArray<WorkbenchSidebarTicket>;
   readonly ticketDetailsById: ReadonlyMap<WorkbenchTicketId, WorkbenchSidebarTicketDetails>;
   readonly contextThreadId: ThreadId | undefined;
-  readonly jiraOwnershipKnown: boolean;
   readonly expanded: boolean;
   readonly onSelectTicket: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
   readonly onToggle: () => void;
@@ -1816,7 +1792,6 @@ function WorkbenchSidebarArchivedTickets({
                     <WorkbenchSidebarTicketButton
                       ticket={ticket}
                       details={ticketDetailsById.get(ticket.id)}
-                      jiraOwnershipKnown={jiraOwnershipKnown}
                       isActive={isActive}
                       onSelect={() => onSelectTicket(ticket.projectId, ticket.id)}
                     />
@@ -2011,9 +1986,6 @@ function useWorkbenchSidebarData({
   const assignments = snapshot?.assignments ?? [];
   const threads = getWorkbenchSidebarThreads({ currentThread, threadShells });
   const nativeProjects = useProjects();
-  const jiraQuery = useEnvironmentQuery(
-    environmentId === null ? null : workbenchEnvironment.jiraSnapshot({ environmentId, input: {} }),
-  );
   const ticketDetailsById = (() =>
     snapshot
       ? getWorkbenchSidebarTicketDetails({
@@ -2024,7 +1996,6 @@ function useWorkbenchSidebarData({
           projects: nativeProjects,
           workbenchProjects: snapshot.projects,
           epics: snapshot.epics,
-          issueLinks: jiraQuery.data?.issueLinks ?? [],
         })
       : new Map<WorkbenchTicketId, WorkbenchSidebarTicketDetails>())();
   const { draftsByWorkspace, ticketCountsByWorkspace, archivedTicketsByWorkspace } =
@@ -2056,7 +2027,6 @@ function useWorkbenchSidebarData({
     query,
     snapshot,
     draftsByWorkspace,
-    jiraQuery,
     ticketDetailsById,
     selectedTicketIsDone,
     sidebarQuery,

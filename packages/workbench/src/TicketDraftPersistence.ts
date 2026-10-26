@@ -320,8 +320,6 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
             epicId: null,
             repositoryProjectIds: [],
             primaryT3ProjectId: null,
-            localOnly: true,
-            jiraSprintId: null,
           },
           createdAt,
           updatedAt: createdAt,
@@ -440,11 +438,9 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
           yield* sql`UPDATE workbench_ticket_drafts SET revision = revision WHERE draft_id = ${input.id}`;
           const draft = yield* getTicketDraft(input.id);
           if (draft.revision !== input.expectedRevision || draft.phase !== "promoting") return;
-          // Jira records uncertainty before POST. No local ticket and no ledger prove creation never took effect.
-          const effects =
-            yield* sql`SELECT 1 WHERE EXISTS (SELECT 1 FROM workbench_tickets WHERE ticket_id = ${draft.id})
-      OR EXISTS (SELECT 1 FROM workbench_jira_ticket_creations WHERE ticket_id = ${draft.id})`;
-          if (effects.length > 0) return;
+          // A saved ticket means creation took effect; promotion resumes instead.
+          const created = yield* sql`SELECT 1 FROM workbench_tickets WHERE ticket_id = ${draft.id}`;
+          if (created.length > 0) return;
           yield* save(draft, {
             ...draft,
             phase: "draft",

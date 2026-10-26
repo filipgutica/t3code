@@ -5,11 +5,9 @@ import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import {
   WorkbenchServicesLayerLive,
-  withWorkbenchHttpRoutes,
   WorkbenchRuntimeReactorLayerLive,
   WorkbenchHostPoliciesLayerLive,
   WorkbenchProviderPoliciesLayerLive,
-  WorkbenchMcpLayerLive,
 } from "./workbench/serverLayer.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
 import * as PullRequestWatchReactor from "./orchestration-v2/PullRequestWatchReactor.ts";
@@ -735,13 +733,11 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerHttp.layerStaticAndDevRoute,
     Ws.layer,
   ),
-  WorkbenchMcpLayerLive.pipe(
-    Layer.provideMerge(McpHttpServer.layer),
+  McpHttpServer.layer.pipe(
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
     Layer.provide(McpOAuth.layerMcpClientAuthenticator),
   ),
 ).pipe(
-  withWorkbenchHttpRoutes,
   Layer.provide(
     PullRequestReviewGuideService.layer.pipe(Layer.provide(PullRequestReviewGuides.layer)),
   ),

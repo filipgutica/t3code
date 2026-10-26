@@ -23,7 +23,6 @@ export function useWorkbenchPageDialogs({
   snapshot,
   projects,
   canOperate,
-  localOnlySupported,
   selection,
   setPendingAction,
   setError,
@@ -32,7 +31,6 @@ export function useWorkbenchPageDialogs({
   readonly snapshot: WorkbenchSnapshot | null;
   readonly projects: ReturnType<typeof useWorkbenchPageData>["projects"];
   readonly canOperate: boolean;
-  readonly localOnlySupported: boolean;
   readonly selection: ReturnType<typeof useWorkbenchPageSelection>;
   readonly setPendingAction: (action: string | null) => void;
   readonly setError: (message: string | null) => void;
@@ -124,10 +122,6 @@ export function useWorkbenchPageDialogs({
       selectedProject.archivedAt != null
     )
       return false;
-    if (draft.localOnly && !localOnlySupported) {
-      setError("Update this environment before creating local-only Tickets.");
-      return false;
-    }
     setPendingAction("create-ticket");
     setError(null);
     const primaryProject = projects.find((project) => project.id === draft.primaryT3ProjectId);

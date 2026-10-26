@@ -183,7 +183,7 @@ finish() {
 # STAGES: author this section. One stage() per step the human takes.
 # The wizard stores this profile separately from the checkout so several
 # worktrees can use the same demo home without copying credentials into git.
-TOTAL_STAGES=5
+TOTAL_STAGES=2
 
 DEMO_HOME="${DEMO_HOME:-${HOME}/.t3-workbench-demos/guide}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -203,11 +203,10 @@ source "$SCRIPT_DIR/setup-defaults.sh"
 if demo_profile_complete; then
   note "Saved demo profile: $ENV_FILE"
   note "GitHub owner: $(demo_saved DEMO_GITHUB_OWNER)"
-  note "Jira: $(demo_saved DEMO_JIRA_SITE_URL) / $(demo_saved DEMO_JIRA_PROJECT_KEY)"
   demo_ask DEMO_SETUP_ACTION "Press Enter to keep this profile, or type edit" "reuse"
   case "$DEMO_SETUP_ACTION" in
     reuse)
-      note "Validating the saved Jira authorization and refreshing the disposable baseline."
+      note "Checking the saved GitHub repositories and refreshing the disposable baseline."
       node "$SCRIPT_DIR/cli.mts" prepare --home "$DEMO_HOME"
       finish
       say "Start a fresh demo: bash scripts/workbench-demo/run.sh --home \"$DEMO_HOME\""
@@ -222,7 +221,7 @@ if demo_profile_complete; then
 fi
 
 banner "T3 Code Workbench demo setup"
-note "This wizard saves the profile, prepares one connected baseline, then stops the setup server."
+note "This wizard saves the profile, prepares one seeded baseline, then stops the setup server."
 note "Usage and field meanings: $SCRIPT_DIR/README.md"
 
 stage "GitHub: account and owner"
@@ -271,112 +270,8 @@ demo_ask DEMO_GITHUB_REPO_PREFIX "Repository name prefix" "workbench-demo"
 DEMO_GITHUB_REPO_PREFIX="${DEMO_GITHUB_REPO_PREFIX:-workbench-demo}"
 write_env DEMO_GITHUB_REPO_PREFIX "$DEMO_GITHUB_REPO_PREFIX"
 
-stage "Jira: site and sign-in"
-say "Connect Jira so the wizard can list your projects, Scrum boards, and sprints by name."
-step "Open Jira and paste the address from your browser. A full board or ticket URL is fine; the wizard extracts the site."
-note "Example: https://example.atlassian.net. Use your Jira site, not admin.atlassian.com."
-demo_ask DEMO_JIRA_SITE_URL "Jira site URL"
-DEMO_JIRA_SITE_URL=$(node --input-type=module - "$SCRIPT_DIR/jira-select.mts" "$DEMO_JIRA_SITE_URL" <<'JS'
-import { pathToFileURL } from 'node:url';
-const { jiraOrigin } = await import(pathToFileURL(process.argv[2]).href);
-try { console.log(jiraOrigin(process.argv[3])); }
-catch (error) { console.error(error.message); process.exitCode = 1; }
-JS
-)
-note "Using Jira site: $DEMO_JIRA_SITE_URL"
-write_env DEMO_JIRA_SITE_URL "$DEMO_JIRA_SITE_URL"
-step "reuse: use existing assigned sprint issues. provision: create demo issues later with jira --apply."
-demo_ask DEMO_JIRA_RESOURCE_MODE "Jira resource mode (reuse/provision)" "reuse"
-case "$DEMO_JIRA_RESOURCE_MODE" in
-  reuse|provision) ;;
-  *) warn "Jira resource mode must be reuse or provision."; exit 1 ;;
-esac
-write_env DEMO_JIRA_RESOURCE_MODE "$DEMO_JIRA_RESOURCE_MODE"
-say "A classic API token lets this wizard read the available choices without asking for IDs."
-[[ -n "$(demo_saved DEMO_JIRA_API_TOKEN)" || -n "${DEMO_JIRA_API_TOKEN:-}" ]] || open_url "https://id.atlassian.com/manage-profile/security/api-tokens"
-step "If needed, create a classic API token (without scopes) for the account that can access your demo site."
-note "Scoped API tokens use a different endpoint and are not supported by this kit."
-demo_ask DEMO_JIRA_EMAIL "Atlassian account email"
-if [[ -z "$DEMO_JIRA_EMAIL" ]]; then
-  warn "An account email is required to list Jira choices."
-  exit 1
-fi
-write_env DEMO_JIRA_EMAIL "$DEMO_JIRA_EMAIL"
-demo_ask DEMO_JIRA_API_TOKEN "Classic Jira API token" "" secret
-if [[ -z "$DEMO_JIRA_API_TOKEN" ]]; then
-  warn "An API token is required to list Jira choices."
-  exit 1
-fi
-write_env DEMO_JIRA_API_TOKEN "$DEMO_JIRA_API_TOKEN"
-note "Credentials are retained privately in $ENV_FILE. This step does not create or update Jira resources."
-
-stage "Jira: choose project, board, and sprint"
-say "Choose from the names below. Enter accepts the displayed default; no Jira IDs are needed."
-note "For a new site, create a Software Scrum project in Jira first, then rerun setup."
-node "$SCRIPT_DIR/jira-select.mts" --home "$DEMO_HOME"
-DEMO_JIRA_PROJECT_KEY=$(demo_saved DEMO_JIRA_PROJECT_KEY)
-DEMO_JIRA_BOARD_ID=$(demo_saved DEMO_JIRA_BOARD_ID)
-DEMO_JIRA_SPRINT_ID=$(demo_saved DEMO_JIRA_SPRINT_ID)
-note "The selected sprint must contain issues assigned to the account you later connect in Workbench."
-
-stage "Workbench Jira: OAuth app and callback"
-JIRA_OAUTH_MODE_DEFAULT="broker"
-if [[ -n "$(demo_saved T3_WORKBENCH_JIRA_CLIENT_ID)" && -n "$(demo_saved T3_WORKBENCH_JIRA_CLIENT_SECRET)" ]]; then
-  JIRA_OAUTH_MODE_DEFAULT="direct"
-fi
-step "broker (recommended): use the hosted Workbench OAuth broker; its Atlassian app and callback are already configured."
-step "direct: use your own Atlassian OAuth 2.0 (3LO) app and register the callback for this demo server."
-demo_ask DEMO_JIRA_OAUTH_MODE "OAuth configuration (broker/direct)" "$JIRA_OAUTH_MODE_DEFAULT"
-case "$DEMO_JIRA_OAUTH_MODE" in
-  broker)
-    demo_ask T3_WORKBENCH_JIRA_BROKER_URL "Workbench OAuth broker URL" "$DEMO_JIRA_BROKER_DEFAULT_URL"
-    if [[ ! "$T3_WORKBENCH_JIRA_BROKER_URL" =~ ^https://[^[:space:]]+$ ]]; then
-      warn "The broker URL must start with https:// and contain no spaces."
-      exit 1
-    fi
-    write_env T3_WORKBENCH_JIRA_BROKER_URL "$T3_WORKBENCH_JIRA_BROKER_URL"
-    write_env T3_WORKBENCH_JIRA_CLIENT_ID ""
-    write_env T3_WORKBENCH_JIRA_CLIENT_SECRET ""
-    write_env DEMO_JIRA_CALLBACK_URL ""
-    note "The hosted broker owns the Atlassian callback; no client ID, secret, or callback registration is needed."
-    ;;
-  direct)
-    say "Create or select an Atlassian OAuth 2.0 (3LO) app for this local Workbench server."
-    open_url "https://developer.atlassian.com/console/myapps/"
-    step "Under Permissions → Jira API, add read:project:jira, read:jira-user, read:jira-work, write:jira-work, read:board-scope:jira-software, read:board-scope.admin:jira-software, read:sprint:jira-software, write:sprint:jira-software, read:issue-details:jira, and read:jql:jira."
-    step "Under Authorization → OAuth 2.0 (3LO), add the callback URL below. Workbench requests offline_access in its authorization request."
-    step "Start the demo once to learn its actual web origin, then register that exact origin plus /workbench as the web callback."
-    step "For desktop testing, register the server origin plus /oauth/workbench/jira/callback instead."
-    write_env T3_WORKBENCH_JIRA_BROKER_URL ""
-    demo_ask T3_WORKBENCH_JIRA_CLIENT_ID "OAuth client ID:"
-    if [[ -z "$T3_WORKBENCH_JIRA_CLIENT_ID" ]]; then
-      warn "An OAuth client ID is required."
-      exit 1
-    fi
-    write_env T3_WORKBENCH_JIRA_CLIENT_ID "$T3_WORKBENCH_JIRA_CLIENT_ID"
-    demo_ask T3_WORKBENCH_JIRA_CLIENT_SECRET "OAuth client secret" "" secret
-    if [[ -z "$T3_WORKBENCH_JIRA_CLIENT_SECRET" ]]; then
-      warn "An OAuth client secret is required."
-      exit 1
-    fi
-    write_env T3_WORKBENCH_JIRA_CLIENT_SECRET "$T3_WORKBENCH_JIRA_CLIENT_SECRET"
-    demo_ask DEMO_JIRA_CALLBACK_URL "Registered callback URL:"
-    if [[ ! "$DEMO_JIRA_CALLBACK_URL" =~ ^https?:// ]]; then
-      warn "The callback URL must start with http:// or https://."
-      exit 1
-    fi
-    write_env DEMO_JIRA_CALLBACK_URL "$DEMO_JIRA_CALLBACK_URL"
-    note "The callback is recorded for verification and documentation; the running server still derives its redirect URI from the selected client surface."
-    ;;
-  *)
-    warn "OAuth configuration must be broker or direct."
-    exit 1
-    ;;
-esac
-
-stage "Workbench Jira: browser authorization"
-say "The setup command now starts the seeded demo, prints one pairing URL, and waits while you connect Jira."
-say "After you press Enter, it verifies the workspace, captures the Jira baseline, and stops the setup server."
+stage "Prepare the demo"
+say "The setup command now starts the seeded demo, links the GitHub pull requests, verifies the workspace, and stops the setup server."
 node "$SCRIPT_DIR/cli.mts" prepare --home "$DEMO_HOME"
 
 finish

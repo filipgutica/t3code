@@ -71,8 +71,6 @@ const makeDraft = (overrides: Partial<WorkbenchTicketDraft> = {}): WorkbenchTick
     epicId: null,
     repositoryProjectIds: [],
     primaryT3ProjectId: null,
-    localOnly: false,
-    jiraSprintId: null,
   },
   createdAt: time,
   updatedAt: time,
@@ -465,7 +463,7 @@ describe("useTicketDraftEditor", () => {
     }
   });
 
-  it("becomes editable again when a Jira failure that wrote nothing restores the draft phase", async () => {
+  it("becomes editable again when a failed promotion restores the draft phase", async () => {
     commands.update.mockResolvedValue(AsyncResult.success(makeDraft({ revision: 4 })));
     const harness = await mountEditor(makeDraft({ revision: 1 }));
     try {

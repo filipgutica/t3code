@@ -17,7 +17,6 @@ WORKDIR /app
 COPY . .
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
 RUN pnpm --filter @t3tools/monorepo --filter t3... --filter @t3tools/scripts... install --frozen-lockfile
-ENV T3_WORKBENCH_JIRA_BROKER_URL=https://workbench-auth.fgutica.workers.dev
 RUN pnpm exec vp run --filter t3 build
 
 FROM node:24.13.1-bookworm-slim
