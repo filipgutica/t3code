@@ -613,7 +613,7 @@ function WorkbenchTicketConversationBody(props: DraftBodyProps) {
                 threadId={draft.threadId}
                 linkedProjects={props.linkedProjects}
                 fields={editor.fields}
-                ticketCreated={ticket !== null}
+                ticket={ticket}
                 canApply={
                   canOperate &&
                   props.workspace.archivedAt == null &&

@@ -356,7 +356,7 @@ function BoardDraftThread({
         threadId={draft.threadId}
         linkedProjects={linkedProjects}
         fields={editor.fields}
-        ticketCreated={ticket !== null}
+        ticket={ticket}
         canApply={canApplyProposal(canOperate, editor, transitions)}
         onApply={applyTicketProposal(editor)}
       >

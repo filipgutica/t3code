@@ -8,6 +8,7 @@ import {
   WorkbenchProjectId,
   WorkbenchTicketId,
   type WorkbenchSnapshot,
+  type WorkbenchTicket,
 } from "@t3tools/contracts";
 import { act, use, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -20,6 +21,7 @@ import type { WorkbenchSuggestionMessage } from "./workbenchTicketDraft.logic";
 const state = vi.hoisted(() => ({
   messages: [] as WorkbenchSuggestionMessage[],
   snapshot: null as WorkbenchSnapshot | null,
+  setJiraIssueLink: vi.fn(),
 }));
 vi.mock("@effect/atom-react", () => ({
   useAtomValue: () => ({ availableEditors: [], revealInFileManagerLabel: "Show in file manager" }),
@@ -38,7 +40,7 @@ vi.mock("../hooks/useSettings", async (importOriginal) => {
   };
 });
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
-vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
+vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => state.setJiraIssueLink }));
 vi.mock("../state/session", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../state/session")>();
   return {
@@ -68,7 +70,9 @@ vi.mock("../state/entities", () => ({
   useProjects: () => projects,
 }));
 vi.mock("../state/query", () => ({ useEnvironmentQuery: () => ({ data: state.snapshot }) }));
-vi.mock("./state", () => ({ workbenchEnvironment: { snapshot: vi.fn() } }));
+vi.mock("./state", () => ({
+  workbenchEnvironment: { snapshot: vi.fn(), setJiraIssueLink: { permissionAtom: () => null } },
+}));
 
 import ChatMarkdown, { ChatMarkdownCodeBlockRendererContext } from "../components/ChatMarkdown";
 import {
@@ -107,6 +111,28 @@ const block: ChatMarkdownCodeBlock = {
   isComplete: true,
 };
 const defaultBlocks = [block];
+const jiraUrl = "https://acme.atlassian.net/browse/ORBIT-375";
+const jiraBlock: ChatMarkdownCodeBlock = {
+  ...block,
+  language: "workbench-jira-link",
+  code: JSON.stringify({ url: jiraUrl }),
+};
+const workspaceId = WorkbenchProjectId.make("workspace");
+const ticketId = WorkbenchTicketId.make("ticket");
+const timestamp = "2026-10-09T00:00:00.000Z";
+const ticket: WorkbenchTicket = {
+  ...payload,
+  id: ticketId,
+  projectId: workspaceId,
+  primaryT3ProjectId: repo,
+  epicId: null,
+  kind: "story",
+  status: "in_progress",
+  blocked: false,
+  revision: 1,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+};
 
 function NativeBlock({ block }: { readonly block: ChatMarkdownCodeBlock }) {
   const render = use(ChatMarkdownCodeBlockRendererContext);
@@ -115,11 +141,11 @@ function NativeBlock({ block }: { readonly block: ChatMarkdownCodeBlock }) {
 
 function Harness({
   blocks = defaultBlocks,
-  ticketCreated = false,
+  ticket = null,
   canApply = true,
 }: {
   readonly blocks?: ReadonlyArray<ChatMarkdownCodeBlock>;
-  readonly ticketCreated?: boolean;
+  readonly ticket?: WorkbenchTicket | null;
   readonly canApply?: boolean;
 }) {
   const [fields, setFields] = useState({
@@ -134,7 +160,7 @@ function Harness({
       threadId={ThreadId.make("thread")}
       linkedProjects={projects}
       fields={fields}
-      ticketCreated={ticketCreated}
+      ticket={ticket}
       canApply={canApply}
       onApply={(suggestion) =>
         setFields({ ...suggestion, repositoryProjectIds: [...suggestion.repositoryProjectIds] })
@@ -159,6 +185,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.messages = [{ id: "assistant", role: "assistant", text, streaming: false }];
   state.snapshot = null;
+  state.setJiraIssueLink = vi.fn(async () => ({ _tag: "Success", value: undefined }));
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -184,7 +211,7 @@ describe("inline ticket proposal", () => {
             threadId={ThreadId.make("thread")}
             linkedProjects={projects}
             fields={{ title: "", markdown: "", repositoryProjectIds: [], primaryT3ProjectId: null }}
-            ticketCreated={false}
+            ticket={null}
             canApply
             onApply={apply}
           >
@@ -262,7 +289,7 @@ describe("inline ticket proposal", () => {
     expect(button("Apply to draft")?.disabled).toBe(true);
     await act(async () => button("Apply to draft")!.click());
     expect(container.querySelector("output")?.textContent).toBe("My draft");
-    await render({ ticketCreated: true });
+    await render({ ticket });
     expect(button("Apply to draft")).toBeUndefined();
     expect(container.textContent).toContain("Ticket already created");
     expect(container.textContent).toContain("Retry failed requests.");
@@ -344,5 +371,88 @@ describe("inline ticket proposal", () => {
     );
     expect(container.querySelector("pre")).not.toBeNull();
     expect(container.querySelector("input")).toBe(composer);
+  });
+});
+
+describe("agent Jira link card", () => {
+  const heading = () => container.querySelector('[aria-label="Jira link"] h3')?.textContent;
+  const liveSnapshot = (supersededAt: string | null): WorkbenchSnapshot => ({
+    projects: [
+      {
+        id: workspaceId,
+        title: "Workbench",
+        linkedProjectIds: [repo],
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      },
+    ],
+    tickets: [ticket],
+    assignments: [
+      {
+        id: WorkbenchAssignmentId.make("assignment"),
+        ticketId,
+        threadId: ThreadId.make("thread"),
+        supersededAt,
+        createdAt: timestamp,
+      },
+    ],
+    epics: [],
+    reservedThreadIds: [],
+    ticketWorkspaces: [],
+  });
+
+  it("waits for Create ticket before a draft can link its issue", async () => {
+    await render({ blocks: [jiraBlock] });
+    expect(heading()).toBe("Create the ticket to link ORBIT-375");
+    expect(button("Link")?.disabled).toBe(true);
+  });
+
+  it("links the issue to the Ticket version the user saw", async () => {
+    await render({ blocks: [jiraBlock], ticket });
+    expect(heading()).toBe("Link ORBIT-375 to this Ticket");
+    await act(async () => button("Link")!.click());
+    expect(state.setJiraIssueLink).toHaveBeenCalledWith({
+      environmentId,
+      input: { kind: "ticket", ticketId, url: jiraUrl, expectedRevision: 1 },
+    });
+  });
+
+  it("offers to replace a different link and confirms an existing one", async () => {
+    const linkedTo = (key: string) => ({
+      ...ticket,
+      jiraIssue: { key, url: `https://acme.atlassian.net/browse/${key}` },
+    });
+    await render({ blocks: [jiraBlock], ticket: linkedTo("ORBIT-3") });
+    expect(heading()).toBe("Replace ORBIT-3 with ORBIT-375?");
+    expect(button("Replace")?.disabled).toBe(false);
+    await render({ blocks: [jiraBlock], ticket: linkedTo("ORBIT-375") });
+    expect(heading()).toBe("Linked ORBIT-375");
+    expect(button("Link")).toBeUndefined();
+  });
+
+  it("rejects a block that is not a Jira issue URL", async () => {
+    await render({
+      blocks: [{ ...jiraBlock, code: JSON.stringify({ url: "javascript:alert(1)" }) }],
+      ticket,
+    });
+    expect(container.textContent).toContain("not a Jira issue URL");
+    expect(button("Link")).toBeUndefined();
+  });
+
+  it("offers the link only in the live Thread of a Ticket", async () => {
+    const history = () => (
+      <WorkbenchTicketProposalHistory
+        threadRef={{ environmentId, threadId: ThreadId.make("thread") }}
+      >
+        <NativeBlock block={jiraBlock} />
+      </WorkbenchTicketProposalHistory>
+    );
+    state.snapshot = liveSnapshot(null);
+    await act(async () => root.render(history()));
+    expect(heading()).toBe("Link ORBIT-375 to this Ticket");
+    state.snapshot = liveSnapshot(timestamp);
+    await act(async () => root.render(history()));
+    expect(heading()).toBeUndefined();
+    expect(container.querySelector("pre")).not.toBeNull();
   });
 });

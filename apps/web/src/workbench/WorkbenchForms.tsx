@@ -167,6 +167,7 @@ import {
   WorkbenchTicketTypeBadge,
   WorkbenchTicketCopyMenuItems,
 } from "./WorkbenchTicketMetadata";
+import { WorkbenchJiraIssueLinkField } from "./WorkbenchJiraIssueLink";
 import { WorkbenchTicketPullRequests } from "./WorkbenchTicketPullRequests";
 import {
   WorkbenchTicketPanelHeader,
@@ -203,6 +204,7 @@ function useWorkbenchEpicEditor(epic: WorkbenchEpic) {
 }
 
 export function WorkbenchEpicDetail({
+  environmentId,
   workspaceTitle,
   readOnly = false,
   epic,
@@ -216,6 +218,7 @@ export function WorkbenchEpicDetail({
   onOpenTicket,
   onCreateTicket,
 }: {
+  readonly environmentId: EnvironmentId;
   readonly workspaceTitle: string;
   readonly readOnly?: boolean;
   readonly epic: WorkbenchEpic;
@@ -294,7 +297,16 @@ export function WorkbenchEpicDetail({
             />
           </div>
 
-          <WorkbenchEpicCounts progress={progress} />
+          <WorkbenchEpicCounts
+            progress={progress}
+            linkField={
+              <WorkbenchJiraIssueLinkField
+                environmentId={environmentId}
+                target={{ kind: "epic", epic }}
+                disabled={mutationDisabled || epic.archivedAt !== null}
+              />
+            }
+          />
         </div>
       </div>
     </article>
@@ -1304,6 +1316,7 @@ function WorkbenchTicketDetailController({
               <WorkbenchTicketDetailsPanel
                 presentation={{
                   collapsed: detailsPanelCollapsed,
+                  environmentId: environmentId,
                   epics: epics,
                   isArchived: isArchived,
                   linkedEpicId: linkedEpicId,
@@ -1380,6 +1393,7 @@ type WorkbenchTicketUpdatePatch = Partial<
 
 type WorkbenchTicketDetailsPanelProps = {
   readonly collapsed: boolean;
+  readonly environmentId: EnvironmentId;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
   readonly isArchived: boolean;
   readonly linkedEpicId: WorkbenchEpicId | null;
@@ -1398,7 +1412,7 @@ function WorkbenchTicketDetailsPanel({
 }: {
   presentation: Pick<
     WorkbenchTicketDetailsPanelProps,
-    "collapsed" | "epics" | "isArchived" | "linkedEpicId" | "pending"
+    "collapsed" | "environmentId" | "epics" | "isArchived" | "linkedEpicId" | "pending"
   >;
   actions: Pick<
     WorkbenchTicketDetailsPanelProps,
@@ -1406,7 +1420,7 @@ function WorkbenchTicketDetailsPanel({
   >;
   records: Pick<WorkbenchTicketDetailsPanelProps, "ticket" | "actionableTicket">;
 }) {
-  const { collapsed, epics, isArchived, linkedEpicId, pending } = presentation;
+  const { collapsed, environmentId, epics, isArchived, linkedEpicId, pending } = presentation;
   const { onCreateEpic, onOpenEpic, onToggle, onUpdate } = actions;
   const { ticket, actionableTicket } = records;
   return (
@@ -1419,6 +1433,7 @@ function WorkbenchTicketDetailsPanel({
       />
       <div id="workbench-ticket-details" className="min-w-0" hidden={collapsed}>
         <WorkbenchTicketLocalDetails
+          environmentId={environmentId}
           epics={epics}
           isArchived={isArchived}
           linkedEpicId={linkedEpicId}
@@ -3002,6 +3017,7 @@ function getWorkbenchWorkspaceDescription({
 }
 
 function WorkbenchTicketLocalDetails({
+  environmentId,
   epics,
   isArchived,
   linkedEpicId,
@@ -3013,6 +3029,7 @@ function WorkbenchTicketLocalDetails({
   actionableTicket,
 }: Pick<
   WorkbenchTicketDetailsPanelProps,
+  | "environmentId"
   | "epics"
   | "isArchived"
   | "linkedEpicId"
@@ -3091,6 +3108,11 @@ function WorkbenchTicketLocalDetails({
           </SelectPopup>
         </Select>
       </div>
+      <WorkbenchJiraIssueLinkField
+        environmentId={environmentId}
+        target={{ kind: "ticket", ticket: actionableTicket }}
+        disabled={pending || isArchived}
+      />
     </div>
   );
 }
@@ -5212,8 +5234,10 @@ function getWorkbenchDetailThread({
 
 function WorkbenchEpicCounts({
   progress,
+  linkField,
 }: {
   progress: ReturnType<typeof getWorkbenchEpicProgress>;
+  linkField: ReactNode;
 }) {
   return (
     <aside className="space-y-4">
@@ -5230,6 +5254,7 @@ function WorkbenchEpicCounts({
           <dt className="text-muted-foreground">Child Tickets</dt>
           <dd className="text-right font-medium">{progress.total}</dd>
         </dl>
+        <div className="border-t border-border p-4">{linkField}</div>
       </section>
     </aside>
   );

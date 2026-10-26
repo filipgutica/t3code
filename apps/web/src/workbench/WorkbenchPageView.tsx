@@ -524,10 +524,18 @@ function WorkbenchPageTicketDetail(
 function WorkbenchPageEpicDetail(
   props: Pick<
     WorkbenchPageViewProps,
-    "boardData" | "dialogs" | "error" | "pageData" | "pendingAction" | "selection" | "setError"
+    | "boardData"
+    | "dialogs"
+    | "environmentId"
+    | "error"
+    | "pageData"
+    | "pendingAction"
+    | "selection"
+    | "setError"
   >,
 ) {
-  const { pageData, selection, dialogs, boardData, error, pendingAction, setError } = props;
+  const { pageData, selection, dialogs, boardData, environmentId, error, pendingAction, setError } =
+    props;
   const { repositoriesById, query, assignmentsByTicket } = pageData;
   const {
     setSelectedTicketId,
@@ -544,10 +552,11 @@ function WorkbenchPageEpicDetail(
   const { selectedEpicTickets } = boardData;
 
   const pending = pendingAction !== null;
-  if (selectedProject === null || selectedEpic === null) return null;
+  if (environmentId === null || selectedProject === null || selectedEpic === null) return null;
   return (
     <WorkbenchEpicDetail
       key={selectedEpic.id}
+      environmentId={environmentId}
       workspaceTitle={selectedProject.title}
       readOnly={!pageData.canOperate || selectedProject.archivedAt != null}
       epic={selectedEpic}
