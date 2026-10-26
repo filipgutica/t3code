@@ -73,6 +73,30 @@ const repository = "filipgutica/t3code";
 function requireCondition(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
+
+function parseLinuxUpdateManifest(raw: string) {
+  let inFile = false;
+  let hasBlockMapSize = false;
+  const lines = raw.split(/\r?\n/).map((line) => {
+    if (/^  - url:\s*.+$/.test(line)) {
+      inFile = true;
+      hasBlockMapSize = false;
+    } else if (/^\S/.test(line)) {
+      inFile = false;
+    }
+    if (!line.startsWith("    blockMapSize:")) return line;
+    const size = line.slice("    blockMapSize:".length).trim();
+    requireCondition(
+      inFile && !hasBlockMapSize && /^\d+$/.test(size) && Number.isSafeInteger(Number(size)),
+      "Invalid Linux blockMapSize.",
+    );
+    hasBlockMapSize = true;
+    return "";
+  });
+  // The native Mac/Windows parser has no AppImage block-map metadata; artifact bytes stay intact.
+  return parseUpdateManifest(lines.join("\n"), "latest-linux.yml", "Linux");
+}
+
 function textFile(text: string): File {
   return {
     size: Buffer.byteLength(text),
@@ -313,7 +337,11 @@ async function main() {
     ["latest-linux.yml", ["x86_64.AppImage"]],
     ["latest.yml", ["x64.exe"]],
   ] as const) {
-    const manifest = parseUpdateManifest(files.get(name)?.text ?? "", name, name);
+    const raw = files.get(name)?.text ?? "";
+    const manifest =
+      name === "latest-linux.yml"
+        ? parseLinuxUpdateManifest(raw)
+        : parseUpdateManifest(raw, name, name);
     requireCondition(
       manifest.version === version &&
         manifest.files.length === installers.length &&

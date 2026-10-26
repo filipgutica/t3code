@@ -13,8 +13,8 @@ const hash = (data: string, algorithm = "sha256") =>
     .update(data)
     .digest(algorithm === "sha512" ? "base64" : "hex");
 
-function fixture(body: (f: ReturnType<typeof setup>) => void) {
-  const f = setup();
+function fixture(body: (f: ReturnType<typeof setup>) => void, linuxBlockMapSize = "12") {
+  const f = setup(linuxBlockMapSize);
   try {
     body(f);
   } finally {
@@ -22,7 +22,7 @@ function fixture(body: (f: ReturnType<typeof setup>) => void) {
   }
 }
 
-function setup() {
+function setup(linuxBlockMapSize: string) {
   const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "workbench-stable-"));
   const files: Record<string, string> = {};
   const manifest = (names: string[]) =>
@@ -52,7 +52,14 @@ function setup() {
         : os === "linux"
           ? "latest-linux.yml"
           : "latest.yml";
-    payload[manifestName] = files[manifestName] = manifest(names);
+    const updateManifest = manifest(names);
+    payload[manifestName] = files[manifestName] =
+      os === "linux" && linuxBlockMapSize !== ""
+        ? updateManifest.replace(
+            "\nreleaseDate:",
+            `\n    blockMapSize: ${linuxBlockMapSize}\nreleaseDate:`,
+          )
+        : updateManifest;
     payload[`SHA256SUMS-${platform}.txt`] = Object.keys(payload)
       .sort()
       .map((name) => `${hash(payload[name]!)}  ${name}\n`)
@@ -209,6 +216,17 @@ it("verifies existing signed Stable assets without changing them and recognizes 
     f.release.draft = false;
     expect(JSON.parse(f.invoke().stdout).action).toBe("already-published");
   }));
+
+it("verifies Linux manifests without optional block-map metadata", () =>
+  fixture((f) => {
+    const result = f.invoke();
+    expect(result.status, result.stderr).toBe(0);
+  }, ""));
+
+it.each(["-1", "1.5", "invalid", "12\n    blockMapSize: 13"])(
+  "rejects malformed Linux block-map size %s",
+  (size) => fixture((f) => rejects(f, "Invalid Linux blockMapSize"), size),
+);
 
 it("rejects asset corruption, missing assets, and a different release source", () =>
   fixture((f) => {
