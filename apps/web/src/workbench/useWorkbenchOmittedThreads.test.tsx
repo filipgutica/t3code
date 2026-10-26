@@ -2,7 +2,7 @@ import { RegistryContext } from "@effect/atom-react";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
-import { act } from "react";
+import { act, useLayoutEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
@@ -57,10 +57,13 @@ let renderer: ReactTestRenderer | null = null;
 let result: ReturnType<typeof useWorkbenchOmittedThreads>;
 
 function Harness({ threadIds }: { readonly threadIds: ReadonlyArray<ThreadId> }) {
-  result = useWorkbenchOmittedThreads(
+  const value = useWorkbenchOmittedThreads(
     environmentId,
     threadIds.map((threadId) => ({ threadId })),
   );
+  useLayoutEffect(() => {
+    result = value;
+  });
   return null;
 }
 
