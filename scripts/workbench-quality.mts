@@ -20,7 +20,8 @@ const ownedPaths = [
 const diff = NodeChildProcess.execFileSync(
   "git",
   ["diff", "--no-ext-diff", "--unified=0", baseRef, "--", ...ownedPaths],
-  { cwd: root, encoding: "utf8" },
+  // Large removals exceed execFileSync's 1 MiB default.
+  { cwd: root, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 },
 );
 
 // Full production complexity is enforced even when no Workbench file changed.
