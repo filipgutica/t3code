@@ -236,6 +236,47 @@ const linkEpicsFromEpicLinks = Effect.gen(function* () {
   }
 });
 
+const importedEpicLink = (
+  bindingId: string,
+  siteUrl: string,
+  epic: unknown,
+): (JiraIssueLink & { readonly id: string }) | null => {
+  const jiraIssueId = isRecord(epic) ? nonEmptyString(epic.id) : null;
+  const key = isRecord(epic) ? nonEmptyString(epic.key) : null;
+  if (jiraIssueId === null || key === null) return null;
+  return { id: `jira:${bindingId}:epic:${jiraIssueId}`, key, url: jiraBrowseUrl(siteUrl, key) };
+};
+
+/**
+ * Sprint sync imported an unmapped Epic under its `jira:` ID and kept the Epic's key only on
+ * its child issues. Runs after explicit Epic mappings, which win.
+ */
+const linkImportedEpicsFromIssueLinks = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const issueLinks = yield* sql<{
+    readonly bindingId: string;
+    readonly issueJson: string;
+    readonly siteUrl: string;
+  }>`
+    SELECT link.binding_id AS "bindingId", link.issue_json AS "issueJson",
+      connection.site_url AS "siteUrl"
+    FROM workbench_jira_issue_links AS link
+    JOIN workbench_jira_bindings AS binding ON binding.binding_id = link.binding_id
+    JOIN workbench_jira_connections AS connection
+      ON connection.connection_id = binding.connection_id
+    ORDER BY link.active DESC, link.last_seen_at DESC, link.jira_issue_id ASC
+  `;
+  for (const link of issueLinks) {
+    const issue = parseJsonOrNull(link.issueJson);
+    const epic = importedEpicLink(
+      link.bindingId,
+      link.siteUrl,
+      isRecord(issue) ? issue.epic : null,
+    );
+    if (epic !== null) yield* linkEpic(epic);
+  }
+});
+
 const foldEpicCreations = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const creations = yield* sql<{
@@ -300,6 +341,7 @@ const migrateJiraStateToLinks = Effect.gen(function* () {
     )`;
   yield* foldTicketCreations;
   yield* linkEpicsFromEpicLinks;
+  yield* linkImportedEpicsFromIssueLinks;
   yield* foldEpicCreations;
   // Children first, so dropping a parent never runs a foreign-key action.
   for (const table of [

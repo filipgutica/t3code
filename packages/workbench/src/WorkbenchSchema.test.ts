@@ -10,7 +10,8 @@ const now = "2026-10-20T10:00:00.000Z";
 const later = "2026-10-21T10:00:00.000Z";
 const site = "https://acme.atlassian.net/";
 const browse = (key: string) => `https://acme.atlassian.net/browse/${key}`;
-const issueJson = (key: string) => JSON.stringify({ key, url: browse(key) });
+const issueJson = (key: string, epic?: { readonly id: string; readonly key: string }) =>
+  JSON.stringify({ key, url: browse(key), ...(epic ? { epic } : {}) });
 
 const withForeignKeys = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.gen(function* () {
@@ -128,9 +129,10 @@ const seedV19 = Effect.gen(function* () {
     readonly key: string;
     readonly active: number;
     readonly lastSeenAt: string;
+    readonly epic?: { readonly id: string; readonly key: string };
   }) => sql`INSERT INTO workbench_jira_issue_links (binding_id, jira_issue_id, ticket_id,
       issue_json, active, linked_at, last_seen_at)
-    VALUES ('binding', ${input.issueId}, ${input.ticketId}, ${issueJson(input.key)},
+    VALUES ('binding', ${input.issueId}, ${input.ticketId}, ${issueJson(input.key, input.epic)},
       ${input.active}, ${now}, ${input.lastSeenAt})`;
   yield* link({
     issueId: "1",
@@ -138,6 +140,8 @@ const seedV19 = Effect.gen(function* () {
     key: "ORBIT-1",
     active: 1,
     lastSeenAt: now,
+    // Sprint sync recorded an imported Epic's key only on its child issues.
+    epic: { id: "20", key: "ORBIT-20" },
   });
   yield* link({
     issueId: "101",
@@ -207,8 +211,8 @@ const seedV19 = Effect.gen(function* () {
   });
   yield* creation({ ticketId: "reserved-created", key: "ORBIT-5", state: "created" });
 
-  // Epics: a Jira Epic, a published local Epic, and a reservation without a local Epic.
-  for (const id of ["jira:binding:epic:10", "local-epic"]) {
+  // Epics: two Jira Epics, a published local Epic, and a reservation without a local Epic.
+  for (const id of ["jira:binding:epic:10", "jira:binding:epic:20", "local-epic"]) {
     yield* sql`INSERT INTO workbench_epics (epic_id, workbench_project_id, title, markdown,
         archived_at, created_at, updated_at)
       VALUES (${id}, 'workspace', ${`Epic ${id}`}, ${`Epic body ${id}`}, NULL, ${now}, ${now})`;
@@ -370,6 +374,13 @@ describe("ensureWorkbenchSchema", () => {
             markdown: "Epic body jira:binding:epic:10",
             key: "ORBIT-10",
             url: browse("ORBIT-10"),
+          },
+          {
+            id: "jira:binding:epic:20",
+            title: "Epic jira:binding:epic:20",
+            markdown: "Epic body jira:binding:epic:20",
+            key: "ORBIT-20",
+            url: browse("ORBIT-20"),
           },
           {
             id: "local-epic",
