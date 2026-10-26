@@ -196,7 +196,7 @@ Use the ownership rules above to assess the changed code and its callers. Workbe
 
 - **Native integration:** Preserve native Project and Thread lifecycle and behavior outside Workbench. Check shared integrations for duplicated native logic or Workbench rules that belong in the overlay.
 - **Environment and authorization:** Trace the selected environment through client queries, cache keys, RPC authorization, and host effects. Project and Thread IDs must resolve in the owning environment.
-- **Persistence and side effects:** Read [Workbench data model](docs/internals/workbench-data-model.md) for transaction or schema changes. Native reads participating in Workbench writes must use the caller's SQL client and transaction. For Git, Thread creation, or Jira effects, check failure and retry behavior across the external boundary.
+- **Persistence and side effects:** Read [Workbench data model](docs/internals/workbench-data-model.md) for transaction or schema changes. Native reads participating in Workbench writes must use the caller's SQL client and transaction. For Git or Thread creation effects, check failure and retry behavior across the external boundary.
 - **Compatibility and lifecycle:** Trace changed wire contracts through affected clients and services. Check snapshot defaults, migration ownership, stale-write handling, and preservation of Ticket IDs and Assignment history where applicable.
 - **Fork CI and distribution:** For workflow or packaging changes, read the CI ownership rules in [Maintaining the Workbench fork](docs/internals/workbench-fork.md). Verify that fork checks still cover changed native integrations and that Workbench retains its own release and updater identity.
 

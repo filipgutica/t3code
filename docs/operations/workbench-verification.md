@@ -9,9 +9,9 @@ events for eligible owner PRs, including docs-only updates.
 
 ## CI coverage and triggers
 
-[Workbench feature CI](../../.github/workflows/workbench-ci.yml) checks ownership and scope on every PR and `main` push. Product and tooling changes run tests for Workbench and mapped native server, web, desktop, contract, shared-runtime, and auth-broker integrations, with package boundary and application typechecks. Product changes also build the Workbench desktop/server composition. Packaging or CI-policy changes run the shared packaging/version/manifest tests. Docs-only changes skip those jobs after successful scope detection. `Workbench Check` fails for applicable failures, cancellations, missing scope decisions, or unexplained skips. The [ownership policy](../../scripts/workbench-ci-scope.json) and generator own the precise selection; new unmapped fork sources fail for review.
+[Workbench feature CI](../../.github/workflows/workbench-ci.yml) checks ownership and scope on every PR and `main` push. Product and tooling changes run tests for Workbench and mapped native server, web, desktop, contract, and shared-runtime integrations, with package boundary and application typechecks. Product changes also build the Workbench desktop/server composition. Packaging or CI-policy changes run the shared packaging/version/manifest tests. Docs-only changes skip those jobs after successful scope detection. `Workbench Check` fails for applicable failures, cancellations, missing scope decisions, or unexplained skips. The [ownership policy](../../scripts/workbench-ci-scope.json) and generator own the precise selection; new unmapped fork sources fail for review.
 
-Unchanged upstream mobile, Rust, relay, nightly release, and unrelated package suites are covered upstream. The synthetic native transfer-budget suite and fork reporter are also outside routine Workbench CI. Existing Workbench quality, browser/Jira, desktop smoke for upstream syncs, and private preview checks below remain separate.
+Unchanged upstream mobile, Rust, relay, nightly release, and unrelated package suites are covered upstream. The synthetic native transfer-budget suite and fork reporter are also outside routine Workbench CI. Existing Workbench quality, browser regression, desktop smoke for upstream syncs, and private preview checks below remain separate.
 
 Upstream-only mobile delivery and fingerprint checks, relay deployment, release trains, and macOS preview publication are archived outside GitHub's workflow directory. They do not queue runs in this fork. [CI ownership](../internals/workbench-fork.md#ci-ownership) explains the retained sources and upstream-sync review requirement.
 
@@ -19,8 +19,8 @@ Upstream-only mobile delivery and fingerprint checks, relay deployment, release 
 | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | [Workbench quality](../../.github/workflows/workbench-quality.yml)           | PR or `main` push with Workbench, package, or quality-tool changes; manual dispatch                                            | Package typecheck and boundary, tests, and quality gates pass. Upstream-sync PRs also get a desktop smoke. | No Workbench browser journey or hosted preview                    |
 | [Demo kit](../../.github/workflows/workbench-demo.yml)                       | PR or `main` push with demo scripts, demo skill, or contract changes                                                           | Demo CLI, types, lint, tests, and shell syntax pass                                                        | No rendered Board or deployed environment                         |
-| [Local browser regression](../../.github/workflows/workbench-regression.yml) | PR with web, server, package, demo, or regression changes; manual dispatch                                                     | Three Playwright shards and SQL-backed Jira lifecycle tests pass against the checkout                      | Provider responses are scripted; Jira UI responses are controlled |
-| [Live regression](../../.github/workflows/workbench-regression-live.yml)     | Eligible owner PR with Workbench changes; daily schedule; manual dispatch                                                      | Selected browser flows pass against a dedicated Jira baseline and public GitHub repositories               | Provider responses remain scripted; the lane does not test Vercel |
+| [Local browser regression](../../.github/workflows/workbench-regression.yml) | PR with web, server, package, demo, or regression changes; manual dispatch                                                     | Three Playwright shards pass against the checkout                                                          | Provider responses are scripted                                   |
+| [Live regression](../../.github/workflows/workbench-regression-live.yml)     | Eligible owner PR with Workbench changes; daily schedule; manual dispatch                                                      | Selected browser flows pass against dedicated public GitHub repositories and pull requests                 | Provider responses remain scripted; the lane does not test Vercel |
 | [Preview checks](../../.github/workflows/workbench-preview-check.yml)        | PR with preview scripts, launcher, local seed, or preview-workflow changes                                                     | Launcher tests, Linux build, native pairing, seeded state, and crash recovery pass locally                 | No Vercel routing or browser interaction                          |
 | [PR preview](../../.github/workflows/workbench-preview.yml)                  | When previews are enabled: eligible owner PR opened, reopened, or updated; manual dispatch. Closing the PR retires its bundle. | Exact PR build and native smoke pass before protected publication from `main`                              | A published link alone does not prove the hosted Board works      |
 
@@ -40,7 +40,7 @@ private Workbench PR demo instead launches a temporary Sandbox with seeded state
 The [hosted browser smoke](../../scripts/workbench-preview/README.md#hosted-browser-smoke)
 is a separate manual check. It covers protected launch, automatic pairing, a
 rendered seed, and one persisted Board write after reload. It does not cover
-Sandbox expiry, separate-launch isolation, Jira, or provider execution. CI has
+Sandbox expiry, separate-launch isolation, or provider execution. CI has
 no reviewer Vercel login session, and the publisher rejects protection bypasses.
 
 The PR preview workflow accepts only repository-owner PRs from this repository.
@@ -52,15 +52,14 @@ job uses a selected `main` controller commit and deployment credentials.
 The default browser fixture creates a temporary T3 home, seeds repositories and
 Workbench records through native RPCs, starts the current checkout's built server,
 and pairs Chromium. Web, server, WebSocket, SQLite, and Git are real. The scripted
-provider and controlled Jira responses make the default lane repeatable. Each
+provider makes the default lane repeatable. Each
 test gets a fresh browser page and context, but the server, database, and paired
 storage are worker-scoped. Tests on one shard can observe earlier writes; CI
 shards run in separate jobs. The [regression guide](../../scripts/workbench-regression/README.md)
 explains the fixture and failure traces.
 
-The live lane uses one dedicated Jira baseline and rotates its OAuth grant.
-Its workflow serializes runs against that shared remote state and restores the
-baseline after tests. Use the [demo guide](../../scripts/workbench-demo/README.md)
+The live lane uses dedicated demo GitHub repositories and pull requests. Its
+workflow serializes runs against that shared remote state. Use the [demo guide](../../scripts/workbench-demo/README.md)
 to update synthetic records or prepare a human demo. Keep existing fixture IDs
 when editing titles or moving rows, because tests and prepared worktrees refer
 to those IDs.
@@ -72,9 +71,9 @@ creates `orbit-001` through Workbench RPC. The [Board filter](../../apps/web/src
 uses the search query. The test checks the rendered card count, empty state,
 and unchanged Ticket statuses.
 
-Each fresh hosted demo has its own temporary Sandbox filesystem. Jira starts
-disconnected. Local state expires with the Sandbox; writes to a service that a
-reviewer later connects can persist outside it. The [preview guide](../../scripts/workbench-preview/README.md)
+Each fresh hosted demo has its own temporary Sandbox filesystem. Local state
+expires with the Sandbox; writes to a service that a reviewer later connects can
+persist outside it. The [preview guide](../../scripts/workbench-preview/README.md)
 owns deployment setup, protection, and the hosted check.
 
 ## Track the revision and evidence

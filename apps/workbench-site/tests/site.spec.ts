@@ -125,7 +125,7 @@ test("section anchors, active state, and history retain native scrolling", async
   await page.evaluate(() =>
     scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }),
   );
-  await expect(nav.getByRole("link", { name: "Jira", exact: true })).toHaveAttribute(
+  await expect(nav.getByRole("link", { name: "Review", exact: true })).toHaveAttribute(
     "aria-current",
     "location",
   );
@@ -166,10 +166,10 @@ test("tabs support keyboard controls and retained original screenshot links", as
   await expect(page.getByRole("tab", { name: "Ticket", exact: true })).toBeFocused();
   await expect(page.locator("#walkthrough-ticket")).toBeVisible();
   await page.keyboard.press("End");
-  await expect(page.getByRole("tab", { name: "Jira (optional)", exact: true })).toBeFocused();
+  await expect(page.getByRole("tab", { name: "Notifications", exact: true })).toBeFocused();
   await page.keyboard.press("Home");
   await expect(first).toBeFocused();
-  expect(await page.locator("[data-walkthrough-frame]").count()).toBe(7);
+  expect(await page.locator("[data-walkthrough-frame]").count()).toBe(6);
   for (const link of await page.locator("[data-product-image]").all())
     await expect(link).toHaveAttribute("href", /\/t3code\/_astro\/.*\.png$/);
 });
@@ -244,21 +244,21 @@ test("phone section navigation stays keyboard accessible across breakpoints", as
   await page.setViewportSize({ width: 320, height: 844 });
   await load(page);
   const nav = page.getByRole("navigation", { name: "On this page" });
-  const jira = nav.getByRole("link", { name: "Jira", exact: true });
-  await jira.focus();
-  await expect(jira).toBeFocused();
-  await expect(jira).toBeInViewport();
+  const review = nav.getByRole("link", { name: "Review", exact: true });
+  await review.focus();
+  await expect(review).toBeFocused();
+  await expect(review).toBeInViewport();
   await markScrollEnd(page);
   await page.keyboard.press("Enter");
   await ended(page);
-  await atReadingTop(page, "jira-heading");
-  await expect(page).toHaveURL(/#jira-heading$/);
-  await jira.focus();
-  await expect(jira).toBeFocused();
+  await atReadingTop(page, "review-heading");
+  await expect(page).toHaveURL(/#review-heading$/);
+  await review.focus();
+  await expect(review).toBeFocused();
   await page.setViewportSize({ width: 1280, height: 900 });
-  await expect(jira).toBeFocused();
+  await expect(review).toBeFocused();
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(jira).toBeFocused();
+  await expect(review).toBeFocused();
   await noOverflow(page);
 });
 test("themes switch screenshot previews, originals, and an open lightbox", async ({

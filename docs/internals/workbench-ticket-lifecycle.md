@@ -29,7 +29,7 @@ The [client coordinator](../../apps/web/src/workbench/startWorkbenchTicket.ts) p
 
 The native Thread must exist before the [store accepts its Assignment](../../packages/workbench/src/WorkbenchStore.ts). The store verifies that the Thread belongs to the Ticket's primary Project and is not already assigned. A Ticket can have several active Assignments, but a Thread belongs to only one Assignment. Replacing an Assignment atomically supersedes the selected active link and retains its Thread ID as history. If Assignment persistence fails after Thread creation, the client requests deletion of that orphan Thread. Once assigned, a failed first turn does not delete the Assignment or Thread. Ticket context waits in the composer until the user sends.
 
-Creating an Assignment does not change Ticket progress. A [reactor](../../apps/server/src/workbench/TicketExecutionReactor.ts) observes a native Thread's running turn and asks the [execution service](../../packages/workbench/src/TicketExecutionService.ts) to advance an assigned, active `todo` Ticket. Local Tickets move to `in_progress` in the [store](../../packages/workbench/src/WorkbenchStore.ts); Jira-owned Tickets use the Jira write path. Other progress changes remain separate from agent activity.
+Creating an Assignment does not change Ticket progress. A [reactor](../../apps/server/src/workbench/TicketExecutionReactor.ts) observes a native Thread's running turn and asks the [store](../../packages/workbench/src/WorkbenchStore.ts) to move an assigned, active `todo` Ticket to `in_progress`. Other progress changes remain separate from agent activity.
 
 ## Workspace and history boundaries
 
@@ -45,4 +45,4 @@ These safeguards are implemented in the [workspace service](../../packages/workb
 
 ## Progress and activity
 
-Ticket progress is persisted as `todo`, `in_progress`, or `done`. Workbench derives agent activity from native Thread shells in the [client projection](../../apps/web/src/workbench/workbench.logic.ts), without a separate persisted agent lifecycle. Waiting for input takes priority over Working, which takes priority over Ready for review when a Ticket has multiple active Threads. A completed turn can show Ready for review while Ticket progress remains `in_progress`; Jira flagged state is independent of both.
+Ticket progress is persisted as `todo`, `in_progress`, or `done`. Workbench derives agent activity from native Thread shells in the [client projection](../../apps/web/src/workbench/workbench.logic.ts), without a separate persisted agent lifecycle. Waiting for input takes priority over Working, which takes priority over Ready for review when a Ticket has multiple active Threads. A completed turn can show Ready for review while Ticket progress remains `in_progress`.

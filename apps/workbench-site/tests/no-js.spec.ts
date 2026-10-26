@@ -7,7 +7,7 @@ import { test, expect } from "@playwright/test";
     await page.goto("/t3code/");
     await expect(page.getByRole("tablist")).toHaveCount(0);
     const frames = page.locator("[data-walkthrough-frame]");
-    await expect(frames).toHaveCount(7);
+    await expect(frames).toHaveCount(6);
     for (const frame of await frames.all()) await expect(frame).toBeVisible();
     await expect(page.locator(".hero-media img")).toHaveAttribute("srcset", /480w/);
     await expect(page.locator(".hero-media [data-product-image]:visible")).toHaveAttribute(

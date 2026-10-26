@@ -7,13 +7,14 @@
 ## Scope
 
 This policy describes how T3 Code Workbench handles information when you use this
-fork and its hosted Jira authorization service. Workbench is an independently
+fork and the hosted Jira authorization service used by earlier releases.
+Workbench is an independently
 maintained fork of T3 Code. This policy does not represent T3 Tools, Inc.,
 Atlassian, GitHub, Cloudflare, or your AI provider.
 
 Workbench organizes projects, Tickets, Epics, repository worktrees, coding-agent
-Threads, and linked pull requests. It can synchronize selected Jira work and
-send task context to providers you configure.
+Threads, linked pull requests, and linked Jira issues. It can send task context
+to providers you configure.
 
 ## Where your information goes
 
@@ -22,10 +23,11 @@ your own computer or a remote machine managed by someone else. Workbench stores
 its project data and conversation history in that environment. Browser clients
 also use local storage for settings and application state.
 
-Using the hosted Jira authorization service does not upload your project
-database, repository files, Jira issue content, or conversations to that service.
-It handles authorization and token refresh. Your T3 environment requests Jira
-content directly from Atlassian.
+Current releases do not connect to Jira. Earlier releases that connect to Jira
+use a hosted authorization service. It handles authorization and token refresh
+and does not receive your project database, repository files, Jira issue
+content, or conversations. Those releases request Jira content directly from
+Atlassian.
 
 This does not mean all information stays on your device. Connected integrations,
 AI providers, remote environments, and optional connectivity services receive
@@ -46,23 +48,21 @@ stored on their machines.
 
 ### Jira
 
-When you connect Jira, Workbench processes OAuth credentials, authorized site
-identifiers and URLs, project and board information, sprint information, and
-selected issue and Epic data. Stored issue data includes identifiers, titles,
-descriptions, statuses, and synchronization metadata. This content may contain
-personal or confidential information entered into Jira.
+Workbench stores the Jira issue key and URL that you link to a Ticket or Epic
+and includes them in Ticket context sent to your agent. It does not sign in to
+Jira or read or change Jira content. Coding agents can use their own Jira
+connectors, subject to the provider's configuration and your Jira permissions.
 
-Workbench reads the connected user's account ID when preparing issue creation
-and assignment. Its stored issue snapshot does not include a separate user
-profile or assignee directory.
-
-These data support displaying and synchronizing Jira work, creating issues and
-Epics, updating descriptions and statuses, and placing new issues in sprints.
-Operations remain subject to the connected user's Jira permissions.
+If you connected Jira in an earlier release, Tickets and Epics imported then
+keep their stored titles, descriptions, statuses, and issue links. That
+release's Jira credentials remain in your environment's secret store; updating
+Workbench does not delete them. This content may contain personal or
+confidential information entered into Jira.
 
 ### Hosted Jira authorization service
 
-The authorization service runs on Cloudflare. It processes authorization codes,
+Earlier releases that connect to Jira use this service; current releases do
+not. The authorization service runs on Cloudflare. It processes authorization codes,
 temporary session identifiers, access and refresh tokens, token expiry, and
 granted scopes to connect your environment to Atlassian.
 
@@ -86,8 +86,8 @@ that Cloudflare retains no platform or security records.
 When you send a message, task context and other selected content can be sent to
 your configured coding-agent or AI provider. Workbench can also automatically
 send Ticket titles and descriptions to the configured text-generation provider
-to create or refresh summaries. This can include content imported from Jira,
-even when you have not sent that content in a chat message.
+to create or refresh summaries. This can include content that an earlier release
+imported from Jira, even when you have not sent that content in a chat message.
 
 Provider retention, model training, and account controls depend on that provider
 and your agreement with it. This policy makes no promise that third-party
@@ -111,8 +111,8 @@ settings.
 
 ## Sharing and use
 
-We use information handled by our hosted service to provide Jira authorization,
-refresh access, protect the service, and respond to support requests. We do not
+We use information handled by our hosted service to provide Jira authorization
+for earlier releases, refresh access, protect the service, and respond to support requests. We do not
 sell personal information or use Jira content for advertising.
 
 Information is shared with the services needed for your selected features,
@@ -126,8 +126,7 @@ The location of project data also depends on where your T3 environment runs.
 
 Local project data, imported Jira content, generated summaries, and Thread
 history do not have a general 24-hour expiry. They can remain in your environment
-until removed. Archiving work, pausing synchronization, or revoking Jira access
-does not by itself erase existing local copies, conversation history, or backups.
+until removed. Archiving work or revoking Jira access does not by itself erase existing local copies, conversation history, or backups.
 
 You can revoke this app's authorization through your Atlassian account. This
 withdraws its authorization; it does not delete content already copied elsewhere.
@@ -143,7 +142,7 @@ We delete support emails from our mailbox within 90 days after the request is re
 continued retention is required by law. Proton processes these messages as our
 email provider under its own privacy and retention practices.
 
-The broker uses Cloudflare SQLite-backed Durable Objects. Cloudflare provides
+The hosted authorization service uses Cloudflare SQLite-backed Durable Objects. Cloudflare provides
 [point-in-time recovery for the preceding 30 days](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/).
 Deleting an active authorization session is therefore not a promise of immediate
 erasure from all infrastructure recovery storage. Platform security records and
@@ -151,9 +150,9 @@ recovery copies are subject to Cloudflare's retention practices.
 
 ## Your choices and privacy requests
 
-You choose whether to connect Jira, which available boards and sprints to
-synchronize, which repositories to use, and which providers receive your work.
-Review your provider configuration before importing sensitive content, because
+You choose which Jira issues to link, which repositories to use, and which
+providers and connectors receive your work. Review your provider configuration
+before adding sensitive content, because
 summary generation can transmit Ticket content automatically.
 
 Contact the privacy address above to ask about information held by the operator
