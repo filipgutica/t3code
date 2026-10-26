@@ -5,7 +5,6 @@ import {
   type WorkbenchTicketDraftActionInput,
   type WorkbenchBeginTicketDraftInput,
   type WorkbenchUpdateTicketDraftInput,
-  type WorkbenchJiraOperationError,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -31,7 +30,7 @@ export class TicketDraftService extends Context.Service<
     ) => Effect.Effect<WorkbenchTicketDraft, WorkbenchOperationError>;
     readonly promote: (
       input: WorkbenchTicketDraftActionInput,
-    ) => Effect.Effect<WorkbenchTicketDraft, WorkbenchOperationError | WorkbenchJiraOperationError>;
+    ) => Effect.Effect<WorkbenchTicketDraft, WorkbenchOperationError>;
     readonly startWork: (
       input: WorkbenchTicketDraftActionInput,
     ) => Effect.Effect<WorkbenchTicketDraft, WorkbenchOperationError>;
@@ -109,17 +108,15 @@ const make = Effect.gen(function* () {
     if (draft.phase !== "promoting") {
       draft = yield* store.transitionTicketDraft({ ...input, from: ["draft"], phase: "promoting" });
     }
-    // Content is frozen in promoting. The stable ticket ID reuses Jira's uncertain-create recovery.
+    // Content is frozen in promoting, so a retry after a crash reuses the saved ticket.
     const snapshot = yield* store.getSnapshot;
     if (!snapshot.tickets.some((ticket) => ticket.id === draft.id)) {
-      const { jiraSprintId, ...fields } = draft.fields;
       yield* host
         .createTicket({
           id: draft.id,
           projectId: draft.projectId,
-          ...fields,
+          ...draft.fields,
           primaryT3ProjectId: primary,
-          ...(jiraSprintId !== null ? { jiraSprintId } : {}),
           createdAt: draft.createdAt,
         })
         .pipe(

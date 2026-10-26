@@ -6,7 +6,6 @@ import {
   ThreadId,
   WorkbenchProjectId,
   WorkbenchTicketId,
-  WorkbenchJiraOperationError,
   WorkbenchOperationError,
   WorkbenchTicketWorkspaceAttemptId,
 } from "@t3tools/contracts";
@@ -135,9 +134,9 @@ const fixture = (options?: {
             yield* options?.beforeCreateTicket ?? Effect.void;
             if (rejectCreation) {
               rejectCreation = false;
-              return yield* new WorkbenchJiraOperationError({
-                code: "invalid_binding",
-                message: "Choose a valid Jira sprint.",
+              return yield* new WorkbenchOperationError({
+                code: "ticket_draft_operation_failed",
+                message: "The ticket could not be saved.",
               });
             }
             return yield* store.createTicket(input);
@@ -255,22 +254,6 @@ const seed = Effect.gen(function* () {
   });
 });
 
-const seedUncertainJiraCreate = Effect.gen(function* () {
-  const sql = yield* SqlClient.SqlClient;
-  yield* sql`INSERT INTO workbench_jira_connections
-    (connection_id, cloud_id, credential_id, site_name, site_url, scopes_json, created_at, updated_at)
-    VALUES ('connection', 'cloud', 'fixture', 'Fixture', 'https://fixture.atlassian.net', '[]', ${timestamp}, ${timestamp})`;
-  yield* sql`INSERT INTO workbench_jira_bindings
-    (binding_id, workbench_project_id, connection_id, jira_project_id, jira_project_key, jira_project_name,
-      board_id, board_name, sprint_id, sprint_name, default_primary_t3_project_id,
-      default_repository_project_ids_json, status_mappings_json, active, created_at, updated_at)
-    VALUES ('binding', ${workspaceId}, 'connection', 'jira-project', 'FIX', 'Fixture', 1, 'Board', 1, 'Sprint',
-      ${first}, '[]', '[]', 1, ${timestamp}, ${timestamp})`;
-  yield* sql`INSERT INTO workbench_jira_ticket_creations
-    (ticket_id, binding_id, title, kind, markdown, state, created_at, updated_at)
-    VALUES (${ticketId}, 'binding', 'Original frozen request', 'story', '', 'uncertain', ${timestamp}, ${timestamp})`;
-});
-
 describe("TicketDraftService", () => {
   it.effect("finishes Start work after its requesting client disconnects", () =>
     Effect.gen(function* () {
@@ -304,7 +287,7 @@ describe("TicketDraftService", () => {
     }),
   );
 
-  it.effect("autosaves another draft while Jira creation is still pending", () =>
+  it.effect("autosaves another draft while ticket creation is still pending", () =>
     Effect.gen(function* () {
       const creating = yield* Deferred.make<void>();
       const release = yield* Deferred.make<void>();
@@ -329,9 +312,9 @@ describe("TicketDraftService", () => {
         const edited = yield* service.update({
           id: other.id,
           expectedRevision: other.revision,
-          fields: { ...other.fields, title: "Autosaved while Jira is pending" },
+          fields: { ...other.fields, title: "Autosaved while creation is pending" },
         });
-        expect(edited.fields.title).toBe("Autosaved while Jira is pending");
+        expect(edited.fields.title).toBe("Autosaved while creation is pending");
         yield* Deferred.succeed(release, undefined);
         expect((yield* Fiber.join(promotion)).phase).toBe("planning");
       }).pipe(Effect.provide(f.layer));
@@ -816,63 +799,25 @@ describe("TicketDraftService", () => {
       expect((yield* store.getTicketDraftForThread(threadId))?.workArea?.status).toBe("ready");
     }).pipe(Effect.provide(f.layer));
   });
-  it.effect("confirmed no-write Jira failure restores an editable draft for Local retry", () => {
+  it.effect("a failed ticket create restores an editable draft for retry", () => {
     const f = fixture();
     return Effect.gen(function* () {
       const draft = yield* seed;
       const service = yield* TicketDraftService;
       const store = yield* WorkbenchStore;
-      const jiraDraft = yield* service.update({
-        id: draft.id,
-        expectedRevision: draft.revision,
-        fields: { ...draft.fields, localOnly: false, jiraSprintId: 999 },
-      });
       f.rejectNextCreation();
       const rejected = yield* Effect.result(
-        service.promote({ id: jiraDraft.id, expectedRevision: jiraDraft.revision }),
+        service.promote({ id: draft.id, expectedRevision: draft.revision }),
       );
-      expect(Result.isFailure(rejected) && rejected.failure.code).toBe("invalid_binding");
+      expect(Result.isFailure(rejected) && rejected.failure.code).toBe(
+        "ticket_draft_operation_failed",
+      );
       const editable = yield* store.getTicketDraft(draft.id);
       expect(editable.phase).toBe("draft");
-      const local = yield* service.update({
-        id: editable.id,
-        expectedRevision: editable.revision,
-        fields: { ...editable.fields, localOnly: true, jiraSprintId: null },
-      });
       expect(
-        (yield* service.promote({ id: local.id, expectedRevision: local.revision })).phase,
+        (yield* service.promote({ id: editable.id, expectedRevision: editable.revision })).phase,
       ).toBe("planning");
       expect(f.counts().threadCreates).toBe(1);
     }).pipe(Effect.provide(f.layer));
   });
-  it.effect(
-    "abandoning an uncertain Jira create releases the draft slot and retains its no-duplicate ledger",
-    () => {
-      const f = fixture();
-      return Effect.gen(function* () {
-        const draft = yield* seed;
-        yield* seedUncertainJiraCreate;
-        const service = yield* TicketDraftService;
-        const store = yield* WorkbenchStore;
-        f.rejectNextCreation();
-        yield* Effect.result(service.promote({ id: draft.id, expectedRevision: draft.revision }));
-        const frozen = yield* store.getTicketDraft(draft.id);
-        expect(frozen.phase).toBe("promoting");
-        yield* service.discard({ id: frozen.id, expectedRevision: frozen.revision });
-        const sql = yield* SqlClient.SqlClient;
-        const ledger = yield* sql<{
-          readonly state: string;
-        }>`SELECT state FROM workbench_jira_ticket_creations WHERE ticket_id = ${draft.id}`;
-        expect(ledger[0]?.state).toBe("uncertain");
-        expect((yield* store.getSnapshot).ticketDrafts).toEqual([]);
-        const next = yield* service.begin({
-          id: WorkbenchTicketId.make("fresh-draft"),
-          projectId: workspaceId,
-          threadId: ThreadId.make("fresh-thread"),
-          modelSelection: model,
-        });
-        expect(next.phase).toBe("draft");
-      }).pipe(Effect.provide(f.layer));
-    },
-  );
 });

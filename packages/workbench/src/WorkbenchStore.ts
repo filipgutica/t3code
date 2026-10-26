@@ -15,9 +15,7 @@ import {
   WorkbenchTicketWorkspace,
   WorkbenchTicketWorkspaceAttemptId,
   WorkbenchTicketWorkspaceRepository,
-  WorkbenchJiraIssueSnapshot,
   IsoDateTime,
-  type WorkbenchUpdateJiraTicketFieldsInput,
   ThreadId,
   ProjectId,
   type WorkbenchArchiveTicketInput,
@@ -34,7 +32,7 @@ import {
   type WorkbenchUpdateEpicInput,
   type WorkbenchUpdateProjectInput,
   type WorkbenchUpdateTicketInput,
-  type WorkbenchTicketStatus,
+  type WorkbenchJiraIssue,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { sha256 } from "@noble/hashes/sha2";
@@ -69,7 +67,33 @@ const WorkbenchProjectLinkRow = Schema.Struct({
   linkedProjectId: ProjectId,
   position: Schema.Number,
 });
-const WorkbenchEpicRow = WorkbenchEpic;
+const JiraIssueColumns = {
+  jiraIssueKey: Schema.NullOr(Schema.String),
+  jiraIssueUrl: Schema.NullOr(Schema.String),
+};
+const jiraIssueFromRow = (row: {
+  readonly jiraIssueKey: string | null;
+  readonly jiraIssueUrl: string | null;
+}): WorkbenchJiraIssue | null =>
+  row.jiraIssueKey !== null && row.jiraIssueUrl !== null
+    ? { key: row.jiraIssueKey, url: row.jiraIssueUrl }
+    : null;
+const WorkbenchEpicRow = Schema.Struct({
+  id: WorkbenchEpicId,
+  projectId: WorkbenchProjectId,
+  title: WorkbenchEpic.fields.title,
+  markdown: WorkbenchEpic.fields.markdown,
+  archivedAt: WorkbenchEpic.fields.archivedAt,
+  ...JiraIssueColumns,
+  createdAt: WorkbenchEpic.fields.createdAt,
+  updatedAt: WorkbenchEpic.fields.updatedAt,
+});
+const epicFromRow = ({
+  jiraIssueKey,
+  jiraIssueUrl,
+  ...epic
+}: typeof WorkbenchEpicRow.Type): WorkbenchEpic =>
+  WorkbenchEpic.make({ ...epic, jiraIssue: jiraIssueFromRow({ jiraIssueKey, jiraIssueUrl }) });
 // Epic versions must advance even within one clock tick or after clock skew.
 const advanceEpicUpdatedAt = (previousUpdatedAt: string, updatedAt: string) =>
   DateTime.formatIso(
@@ -132,6 +156,7 @@ const WorkbenchTicketRow = Schema.Struct({
   generatedSummarySourceHash: Schema.NullOr(Schema.String),
   generatedSummaryRequestId: Schema.NullOr(Schema.String),
   archivedAt: Schema.NullOr(IsoDateTime),
+  ...JiraIssueColumns,
   createdAt: WorkbenchTicket.fields.createdAt,
   updatedAt: WorkbenchTicket.fields.updatedAt,
 });
@@ -212,6 +237,7 @@ const ticketFromRow = (
     revision: row.revision,
     generatedSummary: generatedSummaryFromRow(row),
     archivedAt: row.archivedAt,
+    jiraIssue: jiraIssueFromRow(row),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
@@ -306,15 +332,6 @@ export interface WorkbenchCompleteTicketWorkspaceInput {
   readonly completedAt: string;
 }
 
-export interface WorkbenchExecutionRun {
-  readonly runId: RunId;
-  readonly threadId: ThreadId;
-  readonly sequence: number;
-  readonly ticketId: WorkbenchTicketId;
-  readonly assignmentId: WorkbenchAssignmentId;
-  readonly startedAt: IsoDateTime;
-  readonly state: "pending" | "uncertain";
-}
 export interface WorkbenchConsumeTicketExecutionInput {
   readonly sequence: number;
   readonly run: {
@@ -381,10 +398,10 @@ interface WorkbenchStoreShape extends Omit<
     projectId: WorkbenchProjectId,
   ) => Effect.Effect<void, WorkbenchOperationError>;
   readonly archiveProject: (
-    input: WorkbenchArchiveProjectInput & { readonly expectedJiraBindingId?: string | null },
+    input: WorkbenchArchiveProjectInput,
   ) => Effect.Effect<WorkbenchProject, WorkbenchOperationError>;
   readonly deleteProject: (
-    input: WorkbenchDeleteProjectInput & { readonly expectedJiraBindingId?: string | null },
+    input: WorkbenchDeleteProjectInput,
   ) => Effect.Effect<void, WorkbenchOperationError>;
   readonly createProject: (
     input: WorkbenchCreateProjectInput,
@@ -407,24 +424,24 @@ interface WorkbenchStoreShape extends Omit<
   readonly updateTicket: (
     input: WorkbenchUpdateTicketInput,
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
+  /** Restores the native event cursor and settles runs held by older releases. */
   readonly initializeTicketExecution: Effect.Effect<number, WorkbenchOperationError>;
+  /** Moves the Ticket assigned to a newly running native Thread to In Progress. */
   readonly consumeTicketExecution: (
     input: WorkbenchConsumeTicketExecutionInput,
-  ) => Effect.Effect<WorkbenchExecutionRun | null, WorkbenchOperationError>;
-  readonly pendingTicketExecutions: Effect.Effect<
-    ReadonlyArray<WorkbenchExecutionRun>,
-    WorkbenchOperationError
-  >;
-  /** Record uncertainty before the Jira request. Interrupted requests may only be read back. */
-  readonly beginTicketExecutionJira: (
-    runId: RunId,
-  ) => Effect.Effect<"start" | "resume" | "skip", WorkbenchOperationError>;
-  readonly completeTicketExecutionJira: (
-    runId: RunId,
   ) => Effect.Effect<void, WorkbenchOperationError>;
-  readonly updateJiraTicketFields: (
-    input: WorkbenchUpdateJiraTicketFieldsInput,
-  ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
+  /** `null` unlinks. Bumps the Ticket revision; a stale revision fails with `ticket_changed`. */
+  readonly setTicketJiraIssueLink: (input: {
+    readonly ticketId: WorkbenchTicketId;
+    readonly jiraIssue: WorkbenchJiraIssue | null;
+    readonly expectedRevision: number;
+  }) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
+  /** `null` unlinks. A stale `expectedUpdatedAt` fails with `epic_changed`. */
+  readonly setEpicJiraIssueLink: (input: {
+    readonly epicId: WorkbenchEpicId;
+    readonly jiraIssue: WorkbenchJiraIssue | null;
+    readonly expectedUpdatedAt: string;
+  }) => Effect.Effect<WorkbenchEpic, WorkbenchOperationError>;
   readonly requestTicketSummary: (
     input: WorkbenchRequestTicketSummaryInput,
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
@@ -455,7 +472,7 @@ interface WorkbenchStoreShape extends Omit<
   readonly getTicketWorkspace: (
     ticketId: WorkbenchTicketId,
   ) => Effect.Effect<Option.Option<WorkbenchTicketWorkspace>, WorkbenchOperationError>;
-  /** Current Jira issue key, when this Ticket has an active Jira link. */
+  /** Linked Jira issue key; branch names, Thread titles, and PR search use it. */
   readonly getTicketJiraIssueKey: (
     ticketId: WorkbenchTicketId,
   ) => Effect.Effect<Option.Option<string>, WorkbenchOperationError>;
@@ -565,6 +582,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
         title,
         markdown,
         archived_at AS "archivedAt",
+        jira_issue_key AS "jiraIssueKey",
+        jira_issue_url AS "jiraIssueUrl",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM workbench_epics
@@ -594,6 +613,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
         generated_summary_source_hash AS "generatedSummarySourceHash",
         generated_summary_request_id AS "generatedSummaryRequestId",
         archived_at AS "archivedAt",
+        jira_issue_key AS "jiraIssueKey",
+        jira_issue_url AS "jiraIssueUrl",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM workbench_tickets
@@ -611,19 +632,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
         AND ticket.workbench_project_id IN (SELECT project_id FROM workbench_projects WHERE deleted_at IS NULL AND archived_at IS NULL)
         AND ticket.archived_at IS NULL
         AND ticket.generated_summary_status = 'pending'
-        AND (
-          NOT EXISTS (
-            SELECT 1
-            FROM workbench_jira_issue_links AS jira_link
-            WHERE jira_link.ticket_id = ticket.ticket_id
-          )
-          OR EXISTS (
-            SELECT 1
-            FROM workbench_jira_issue_links AS jira_link
-            WHERE jira_link.ticket_id = ticket.ticket_id
-              AND jira_link.active = 1
-          )
-        )
       ORDER BY ticket.created_at ASC, ticket.ticket_id ASC
     `,
   });
@@ -737,25 +745,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
       WHERE ticket_id = ${ticketId}
     `,
   });
-  const findJiraIssueLinkByTicket = SqlSchema.findOneOption({
-    Request: FindTicketInput,
-    Result: Schema.Struct({ ticketId: WorkbenchTicketId }),
-    execute: ({ ticketId }) => sql`
-      SELECT ticket_id AS "ticketId"
-      FROM workbench_jira_issue_links
-      WHERE ticket_id = ${ticketId}
-      LIMIT 1
-    `,
-  });
   const findJiraIssueKeyByTicket = SqlSchema.findOneOption({
     Request: FindTicketInput,
-    Result: Schema.Struct({ key: Schema.NullOr(WorkbenchJiraIssueSnapshot.fields.key) }),
+    Result: Schema.Struct({ key: Schema.NullOr(Schema.String) }),
     execute: ({ ticketId }) => sql`
-      SELECT json_extract(issue_json, '$.key') AS key
-      FROM workbench_jira_issue_links
-      WHERE ticket_id = ${ticketId} AND active = 1
-      ORDER BY last_seen_at DESC, jira_issue_id ASC
-      LIMIT 1
+      SELECT jira_issue_key AS key FROM workbench_tickets WHERE ticket_id = ${ticketId}
     `,
   });
   const getTicketJiraIssueKey: WorkbenchStoreShape["getTicketJiraIssueKey"] = Effect.fn(
@@ -790,14 +784,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
     "WorkbenchStore.hasThreadAtWorktreePath",
   )(function* (worktreePath: string) {
     return yield* native.hasThreadAtWorktreePath(worktreePath);
-  });
-  const isJiraManagedTicket = Effect.fn("WorkbenchStore.isJiraManagedTicket")(function* (
-    ticketId: WorkbenchTicketId,
-  ) {
-    return (
-      (ticketId.startsWith("jira:") && ticketId.includes(":issue:")) ||
-      Option.isSome(yield* findJiraIssueLinkByTicket({ ticketId }))
-    );
   });
   const listTicketWorkspaceRepositoriesByTicket = SqlSchema.findAll({
     Request: FindTicketInput,
@@ -926,21 +912,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
     return project.value;
   });
 
-  const requireExpectedJiraBinding = Effect.fnUntraced(function* (input: {
-    readonly id: WorkbenchProjectId;
-    readonly expectedJiraBindingId?: string | null;
-  }) {
-    if (input.expectedJiraBindingId === undefined) return;
-    const bindings = yield* sql<{
-      readonly id: string;
-    }>`SELECT binding_id AS id FROM workbench_jira_bindings WHERE workbench_project_id = ${input.id}`;
-    if ((bindings[0]?.id ?? null) !== input.expectedJiraBindingId)
-      return yield* new WorkbenchOperationError({
-        code: "project_changed",
-        message: "The Workspace Jira configuration changed. Refresh it and try again.",
-      });
-  });
-
   const requireStableProjectWorkspaces = Effect.fnUntraced(function* (
     projectId: WorkbenchProjectId,
   ) {
@@ -961,27 +932,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
         code: "ticket_workspace_in_use",
         message:
           "A Ticket Workspace is changing. Wait for it to finish before changing the Workspace lifecycle.",
-      });
-  });
-
-  const requireResolvedProjectJiraOperations = Effect.fnUntraced(function* (
-    projectId: WorkbenchProjectId,
-  ) {
-    const pending = yield* sql`
-      SELECT 1 WHERE EXISTS (
-        SELECT 1 FROM workbench_jira_bindings b WHERE b.workbench_project_id = ${projectId}
-          AND (EXISTS (SELECT 1 FROM workbench_jira_ticket_creations c WHERE c.binding_id = b.binding_id AND c.state IN ('pending', 'uncertain'))
-            OR EXISTS (SELECT 1 FROM workbench_jira_epic_creations c WHERE c.binding_id = b.binding_id AND c.state IN ('pending', 'uncertain')))
-      ) OR EXISTS (
-        SELECT 1 FROM workbench_execution_runs r JOIN workbench_tickets t ON t.ticket_id = r.ticket_id
-        WHERE t.workbench_project_id = ${projectId} AND r.state = 'uncertain'
-      )
-    `;
-    if (pending.length > 0)
-      return yield* new WorkbenchOperationError({
-        code: "jira_operation_pending",
-        message:
-          "Resolve pending or uncertain Jira operations before archiving or deleting this Workspace.",
       });
   });
 
@@ -1020,6 +970,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
         generated_summary_source_hash AS "generatedSummarySourceHash",
         generated_summary_request_id AS "generatedSummaryRequestId",
         archived_at AS "archivedAt",
+        jira_issue_key AS "jiraIssueKey",
+        jira_issue_url AS "jiraIssueUrl",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM workbench_tickets
@@ -1027,13 +979,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
         AND deleted_at IS NULL
     `,
   });
-  const listJiraIssueLinkActivity = (ticketId: WorkbenchTicketId) => sql<{
-    readonly active: number;
-  }>`
-    SELECT active
-    FROM workbench_jira_issue_links
-    WHERE ticket_id = ${ticketId}
-  `;
   const lockAndFindTicket = Effect.fn("WorkbenchStore.lockAndFindTicket")(function* ({
     ticketId,
     activeOnly,
@@ -1102,7 +1047,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     }
     return ticket.value;
   });
-  const findEpic = SqlSchema.findOneOption({
+  const findEpicRow = SqlSchema.findOneOption({
     Request: FindEpicInput,
     Result: WorkbenchEpicRow,
     execute: ({ epicId }) => sql`
@@ -1112,6 +1057,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
         title,
         markdown,
         archived_at AS "archivedAt",
+        jira_issue_key AS "jiraIssueKey",
+        jira_issue_url AS "jiraIssueUrl",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM workbench_epics
@@ -1119,6 +1066,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
         AND workbench_project_id IN (SELECT project_id FROM workbench_projects WHERE deleted_at IS NULL)
     `,
   });
+  const findEpic = (input: typeof FindEpicInput.Type) =>
+    findEpicRow(input).pipe(Effect.map(Option.map(epicFromRow)));
   const findNativeThread = Effect.fn("WorkbenchStore.findNativeThread")(function* ({
     threadId,
   }: {
@@ -1382,7 +1331,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             ...project,
             linkedProjectIds: linksByProject.get(project.id) ?? [],
           })),
-          epics: epicRows,
+          epics: epicRows.map(epicFromRow),
           tickets: ticketRows.map((ticket) => ({
             ...ticketFromRow(
               ticket,
@@ -1431,10 +1380,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
             const project = yield* findProject({ id: ticket.value.projectId });
             if (Option.isNone(project) || project.value.archivedAt !== null)
               return Option.none<WorkbenchTicket>();
-            const jiraLinks = yield* listJiraIssueLinkActivity(ticketId);
-            if (jiraLinks.length > 0 && !jiraLinks.some((link) => link.active === 1)) {
-              return Option.none<WorkbenchTicket>();
-            }
             const repositories = yield* listTicketRepositoryRowsByTicket({ ticketId });
             return Option.some(
               ticketFromRow(
@@ -2098,9 +2043,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       .withTransaction(
         Effect.gen(function* () {
           const current = yield* requireProjectRevision(input);
-          yield* requireExpectedJiraBinding(input);
           yield* requireStableProjectWorkspaces(input.id);
-          if (input.archivedAt !== null) yield* requireResolvedProjectJiraOperations(input.id);
           const sequence = yield* native.executionSequence;
           yield* sql`
         UPDATE workbench_projects SET archived_at = ${input.archivedAt}, revision = revision + 1,
@@ -2157,7 +2100,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
       .withTransaction(
         Effect.gen(function* () {
           yield* requireProjectRevision(input);
-          yield* requireExpectedJiraBinding(input);
           yield* requireStableProjectWorkspaces(input.id);
           const planningThreads = yield* sql<{
             readonly threadId: ThreadId;
@@ -2177,9 +2119,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message:
                 "The Workspace planning data changed. Review the updated deletion counts and try again.",
             });
-          yield* requireResolvedProjectJiraOperations(input.id);
           // Tombstones preserve Assignment reservations and retained worktree ownership.
-          // Bindings and creation ledgers remain for external-operation history.
           yield* sql`
         UPDATE workbench_tickets SET deleted_at = ${input.deletedAt}, updated_at = ${input.deletedAt},
           revision = revision + 1, generated_summary_request_id = NULL
@@ -2334,6 +2274,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             return WorkbenchEpic.make({
               ...input,
               archivedAt: null,
+              jiraIssue: null,
               updatedAt: input.createdAt,
             });
           }),
@@ -2351,25 +2292,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             yield* sql`
       UPDATE workbench_epics
       SET
-        title = CASE
-          WHEN EXISTS (
-            SELECT 1
-            FROM workbench_jira_epic_links AS jira_epic_link
-            JOIN workbench_jira_bindings AS jira_binding
-              ON jira_binding.binding_id = jira_epic_link.binding_id
-            WHERE jira_epic_link.epic_id = workbench_epics.epic_id
-              AND jira_binding.workbench_project_id = workbench_epics.workbench_project_id
-          ) OR EXISTS (
-            SELECT 1
-            FROM workbench_jira_bindings AS jira_binding
-            WHERE jira_binding.workbench_project_id = workbench_epics.workbench_project_id
-              AND instr(
-                workbench_epics.epic_id,
-                'jira:' || jira_binding.binding_id || ':epic:'
-              ) = 1
-          ) THEN title
-          ELSE ${input.title}
-        END,
+        title = ${input.title},
         markdown = ${input.markdown},
         updated_at = ${updatedAt}
       WHERE epic_id = ${input.id}
@@ -2396,15 +2319,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
               return yield* new WorkbenchOperationError({
                 code: "epic_changed",
                 message: "The Workbench Epic changed. Refresh it and try again.",
-              });
-            }
-            const links = yield* sql`
-              SELECT 1 FROM workbench_jira_epic_links WHERE epic_id = ${input.id} LIMIT 1
-            `;
-            if ((input.id.startsWith("jira:") && input.id.includes(":epic:")) || links.length > 0) {
-              return yield* new WorkbenchOperationError({
-                code: "jira_managed_epic",
-                message: "Jira-managed Epics cannot be archived or restored locally.",
               });
             }
             const updatedAt = advanceEpicUpdatedAt(
@@ -2579,6 +2493,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         error: null,
       },
       archivedAt: null,
+      jiraIssue: null,
       updatedAt: input.createdAt,
     });
     yield* publishTicketChange(ticket.id);
@@ -2588,36 +2503,26 @@ const makeWorkbenchStore = Effect.gen(function* () {
   const resolveTicketUpdateFields = ({
     input,
     current,
-    jiraManaged,
   }: {
     readonly input: WorkbenchUpdateTicketInput;
     readonly current: typeof WorkbenchTicketRow.Type;
-    readonly jiraManaged: boolean;
-  }) => {
-    let epicId = current.epicId;
-    if (!jiraManaged && input.epicId !== undefined) {
-      epicId = input.epicId;
-    }
-    return {
-      epicId,
-      title: jiraManaged ? current.title : (input.title ?? current.title),
-      kind: jiraManaged ? current.kind : (input.kind ?? current.kind),
-      markdown: jiraManaged ? current.markdown : (input.markdown ?? current.markdown),
-      status: jiraManaged ? current.status : (input.status ?? current.status),
-      blocked: jiraManaged ? current.blocked === 1 : (input.blocked ?? current.blocked === 1),
-    };
-  };
+  }) => ({
+    epicId: input.epicId === undefined ? current.epicId : input.epicId,
+    title: input.title ?? current.title,
+    kind: input.kind ?? current.kind,
+    markdown: input.markdown ?? current.markdown,
+    status: input.status ?? current.status,
+    blocked: input.blocked ?? current.blocked === 1,
+  });
 
   const recordLocalExecutionReset = Effect.fnUntraced(function* ({
     ticketId,
     status,
-    jiraManaged,
   }: {
     ticketId: WorkbenchTicketId;
-    status: WorkbenchTicketStatus | undefined;
-    jiraManaged: boolean;
+    status: WorkbenchUpdateTicketInput["status"];
   }) {
-    if (!jiraManaged && status === "todo") {
+    if (status === "todo") {
       const sequence = yield* native.executionSequence;
       yield* sql`UPDATE workbench_tickets SET execution_after_sequence = ${sequence} WHERE ticket_id = ${ticketId}`;
     }
@@ -2644,7 +2549,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
           const currentRepositories = yield* listTicketRepositoryRowsByTicket({
             ticketId: input.id,
           });
-          const jiraManaged = yield* isJiraManagedTicket(input.id);
           const {
             epicId: requestedEpicId,
             title,
@@ -2652,7 +2556,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             markdown,
             status,
             blocked,
-          } = resolveTicketUpdateFields({ input, current, jiraManaged });
+          } = resolveTicketUpdateFields({ input, current });
           const epicId = yield* validateTicketEpic({
             projectId: current.projectId,
             epicId: requestedEpicId,
@@ -2689,11 +2593,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "Ticket repository scope cannot change while its Workspace is changing.",
             });
           }
-          yield* recordLocalExecutionReset({
-            ticketId: input.id,
-            status: input.status,
-            jiraManaged,
-          });
+          yield* recordLocalExecutionReset({ ticketId: input.id, status: input.status });
           const contentChanged = title !== current.title || markdown !== current.markdown;
           const summary = summaryUpdate({ row: current, contentChanged });
           yield* sql`
@@ -2759,6 +2659,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               revision: current.revision + 1,
               generatedSummary: summary.generatedSummary,
               archivedAt: current.archivedAt,
+              jiraIssue: jiraIssueFromRow(current),
               createdAt: current.createdAt,
               updatedAt: input.updatedAt,
             }),
@@ -2771,29 +2672,45 @@ const makeWorkbenchStore = Effect.gen(function* () {
     return ticket;
   });
 
-  const ExecutionRunRow = Schema.Struct({
-    runId: RunId,
-    threadId: ThreadId,
-    sequence: Schema.Number,
-    ticketId: WorkbenchTicketId,
-    assignmentId: WorkbenchAssignmentId,
-    startedAt: IsoDateTime,
-    state: Schema.Literals(["pending", "uncertain"]),
+  const advanceTicketForRun = (input: { readonly runId: RunId; readonly ticketId: string }) =>
+    sql`UPDATE workbench_tickets SET status = 'in_progress', revision = revision + 1,
+      updated_at = MAX(updated_at, (SELECT started_at FROM workbench_execution_runs WHERE run_id = ${input.runId}))
+      WHERE ticket_id = ${input.ticketId}`;
+
+  /** Runs that older releases held for a Jira transition settle on the local path. */
+  const settleHeldTicketExecutions = Effect.gen(function* () {
+    const held = yield* sql<{
+      readonly runId: RunId;
+    }>`SELECT run_id AS "runId" FROM workbench_execution_runs
+      WHERE state IN ('pending', 'uncertain') ORDER BY sequence`;
+    for (const { runId } of held) {
+      // These are the admission checks the Jira path applied. Uncertain runs skip
+      // the Workspace fence: their transition may have been sent before an archive.
+      const admitted = yield* sql<{ readonly ticketId: string }>`
+        SELECT t.ticket_id AS "ticketId" FROM workbench_execution_runs r
+        JOIN workbench_assignments a ON a.assignment_id = r.assignment_id
+        JOIN workbench_tickets t ON t.ticket_id = a.ticket_id
+        JOIN workbench_projects p ON p.project_id = t.workbench_project_id
+        WHERE r.run_id = ${runId}
+          AND a.superseded_at IS NULL AND p.deleted_at IS NULL AND p.archived_at IS NULL
+          AND t.deleted_at IS NULL AND t.archived_at IS NULL
+          AND (r.state = 'uncertain' OR p.execution_after_sequence < r.sequence)
+          AND NOT EXISTS (SELECT 1 FROM workbench_ticket_drafts d WHERE d.thread_id = a.thread_id AND d.phase <> 'working')
+          AND t.status = 'todo' AND a.execution_after_sequence < r.sequence
+          AND t.execution_after_sequence < r.sequence`;
+      if (admitted[0] !== undefined) {
+        yield* advanceTicketForRun({ runId, ticketId: admitted[0].ticketId });
+      }
+      yield* sql`UPDATE workbench_execution_runs SET state = 'done' WHERE run_id = ${runId}`;
+    }
   });
-  const pendingTicketExecutions = SqlSchema.findAll({
-    Request: Schema.Void,
-    Result: ExecutionRunRow,
-    execute:
-      () => sql`SELECT run_id AS "runId", thread_id AS "threadId", sequence, ticket_id AS "ticketId",
-      assignment_id AS "assignmentId", started_at AS "startedAt", state
-      FROM workbench_execution_runs WHERE state IN ('pending', 'uncertain') ORDER BY sequence`,
-  })(undefined).pipe(Effect.mapError(workbenchStoreError));
 
   const initializeTicketExecution = sql
     .withTransaction(
       Effect.gen(function* () {
         // Acquire the SQLite writer before the high-water and run baseline reads.
         yield* sql`UPDATE workbench_execution_cursor SET sequence = sequence WHERE singleton = 1`;
+        yield* settleHeldTicketExecutions;
         const existing = yield* sql<{
           readonly sequence: number;
         }>`SELECT sequence FROM workbench_execution_cursor WHERE singleton = 1`;
@@ -2822,8 +2739,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               code: "persistence_failed",
               message: "Ticket execution consumption has not been initialized.",
             });
-          if (input.sequence <= cursor[0].sequence) return null;
-          let pending: WorkbenchExecutionRun | null = null;
+          if (input.sequence <= cursor[0].sequence) return;
           const run = input.run;
           const prior =
             yield* sql`SELECT run_id FROM workbench_execution_runs WHERE run_id = ${run.id}`;
@@ -2841,193 +2757,87 @@ const makeWorkbenchStore = Effect.gen(function* () {
             AND a.execution_after_sequence < ${input.sequence}
             AND t.execution_after_sequence < ${input.sequence}`;
             const assignment = assignments[0];
-            if (assignment !== undefined) {
-              if (yield* isJiraManagedTicket(assignment.ticketId)) {
-                pending = {
-                  runId: run.id,
-                  threadId: run.threadId,
-                  sequence: input.sequence,
-                  ticketId: assignment.ticketId,
-                  assignmentId: assignment.id,
-                  startedAt: run.startedAt,
-                  state: "pending",
-                };
-              } else {
-                yield* sql`UPDATE workbench_tickets SET status = 'in_progress', revision = revision + 1,
-              updated_at = MAX(updated_at, ${run.startedAt}) WHERE ticket_id = ${assignment.ticketId}`;
-              }
-            }
             yield* sql`INSERT INTO workbench_execution_runs (run_id, thread_id, sequence, ticket_id, assignment_id, started_at, state)
-          VALUES (${run.id}, ${run.threadId}, ${input.sequence}, ${assignment?.ticketId ?? null}, ${assignment?.id ?? null}, ${run.startedAt}, ${pending === null ? "done" : "pending"})`;
+          VALUES (${run.id}, ${run.threadId}, ${input.sequence}, ${assignment?.ticketId ?? null}, ${assignment?.id ?? null}, ${run.startedAt}, 'done')`;
+            if (assignment !== undefined) {
+              yield* advanceTicketForRun({ runId: run.id, ticketId: assignment.ticketId });
+            }
           }
-          // Every preceding event was applied or its Jira obligation was persisted in this lane.
+          // Every preceding event was applied in this lane.
           yield* sql`UPDATE workbench_execution_cursor SET sequence = ${input.sequence} WHERE singleton = 1`;
-          return pending;
         }),
       )
       .pipe(Effect.mapError(workbenchStoreError));
 
-  const beginTicketExecutionJira: WorkbenchStoreShape["beginTicketExecutionJira"] = (runId) =>
-    sql
-      .withTransaction(
-        Effect.gen(function* () {
-          yield* sql`UPDATE workbench_execution_runs SET state = state WHERE run_id = ${runId}`;
-          // Legacy archived uncertainty remains recoverable. A restore admits
-          // readback only; it must never retry an already-sent Jira transition.
-          const paused = yield* sql`
-            SELECT 1 FROM workbench_execution_runs r
-            JOIN workbench_tickets t ON t.ticket_id = r.ticket_id
-            JOIN workbench_projects p ON p.project_id = t.workbench_project_id
-            WHERE r.run_id = ${runId} AND r.state = 'uncertain'
-              AND p.deleted_at IS NULL AND p.archived_at IS NOT NULL
-          `;
-          if (paused.length > 0) return "skip";
-          const current = yield* sql<{
-            readonly state: "pending" | "uncertain";
-          }>`SELECT r.state FROM workbench_execution_runs r
-      JOIN workbench_assignments a ON a.assignment_id = r.assignment_id
-      JOIN workbench_tickets t ON t.ticket_id = a.ticket_id
-            JOIN workbench_projects p ON p.project_id = t.workbench_project_id
-      WHERE r.run_id = ${runId} AND r.state IN ('pending', 'uncertain')
-        AND a.superseded_at IS NULL AND p.deleted_at IS NULL AND p.archived_at IS NULL AND t.deleted_at IS NULL AND t.archived_at IS NULL
-        AND (r.state = 'uncertain' OR p.execution_after_sequence < r.sequence)
-        AND NOT EXISTS (SELECT 1 FROM workbench_ticket_drafts d WHERE d.thread_id = a.thread_id AND d.phase <> 'working')
-        AND t.status = 'todo' AND a.execution_after_sequence < r.sequence AND t.execution_after_sequence < r.sequence`;
-          if (current[0] === undefined) {
-            yield* sql`UPDATE workbench_execution_runs SET state = 'done' WHERE run_id = ${runId}`;
-            return "skip";
-          }
-          if (current[0].state === "uncertain") return "resume";
-          yield* sql`UPDATE workbench_execution_runs SET state = 'uncertain' WHERE run_id = ${runId}`;
-          return "start";
-        }),
-      )
-      .pipe(Effect.mapError(workbenchStoreError));
-  const completeTicketExecutionJira: WorkbenchStoreShape["completeTicketExecutionJira"] = (runId) =>
-    sql`UPDATE workbench_execution_runs SET state = 'done' WHERE run_id = ${runId}`.pipe(
-      Effect.asVoid,
-      Effect.mapError(workbenchStoreError),
-    );
-
-  const recordJiraExecutionReset = Effect.fnUntraced(function* ({
-    ticketId,
-    status,
-  }: {
-    ticketId: WorkbenchTicketId;
-    status: WorkbenchTicketStatus;
-  }) {
-    if (status === "todo") {
-      const sequence = yield* native.executionSequence;
-      yield* sql`
-        UPDATE workbench_tickets SET execution_after_sequence = ${sequence}
-        WHERE ticket_id = ${ticketId} AND status <> 'todo'
-      `;
-    }
-  });
-
-  const updateJiraTicketFields: WorkbenchStoreShape["updateJiraTicketFields"] = Effect.fn(
-    "WorkbenchStore.updateJiraTicketFields",
-  )(function* (input) {
-    const { ticket, contentChanged } = yield* sql
+  const setTicketJiraIssueLink: WorkbenchStoreShape["setTicketJiraIssueLink"] = Effect.fn(
+    "WorkbenchStore.setTicketJiraIssueLink",
+  )(function* ({ ticketId, jiraIssue, expectedRevision }) {
+    const now = DateTime.formatIso(yield* DateTime.now);
+    return yield* sql
       .withTransaction(
         Effect.gen(function* () {
           const current = yield* requireTicketRevision({
-            ticketId: input.id,
-            expectedRevision: input.expectedRevision,
-            revisionMessage: "The Workbench Ticket changed before Jira could update it.",
+            ticketId,
+            expectedRevision,
+            revisionMessage: "The Workbench Ticket changed before its Jira link could be saved.",
             activeOnly: true,
           });
           if (current.archivedAt !== null) {
             return yield* new WorkbenchOperationError({
               code: "ticket_archived",
-              message: "Archived Workbench Tickets cannot be updated from Jira.",
+              message: "Archived Workbench Tickets cannot be modified.",
             });
           }
-
-          const repositories = yield* listTicketRepositoryRowsByTicket({ ticketId: input.id });
-          const epicId = input.epicId === undefined ? current.epicId : input.epicId;
-          const title = input.title === undefined ? current.title : input.title;
-          const kind = input.kind === undefined ? current.kind : input.kind;
-          const status = input.status === undefined ? current.status : input.status;
-          const blocked = input.blocked === undefined ? current.blocked === 1 : input.blocked;
-          const markdown = input.markdown === undefined ? current.markdown : input.markdown;
-          const changed =
-            epicId !== current.epicId ||
-            title !== current.title ||
-            kind !== current.kind ||
-            status !== current.status ||
-            blocked !== (current.blocked === 1) ||
-            markdown !== current.markdown;
-          if (!changed) {
-            return {
-              ticket: ticketFromRow(
-                current,
-                repositories.length > 0
-                  ? repositories.map((repository) => repository.repositoryProjectId)
-                  : [current.primaryT3ProjectId],
-              ),
-              contentChanged: false,
-            };
-          }
-          yield* recordJiraExecutionReset({ ticketId: input.id, status });
-          const contentChanged = title !== current.title || markdown !== current.markdown;
-          const summary = summaryUpdate({ row: current, contentChanged });
-
-          const updated = yield* sql<{ readonly id: string; readonly updatedAt: string }>`
+          const updatedAt = now > current.updatedAt ? now : current.updatedAt;
+          yield* sql`
             UPDATE workbench_tickets
-            SET
-              epic_id = ${epicId},
-              title = ${title},
-              kind = ${kind},
-              status = ${status},
-              blocked = ${blocked ? 1 : 0},
-              markdown = ${markdown},
-              generated_summary_status = ${summary.generatedSummaryStatus},
-              generated_summary_stale = ${summary.generatedSummaryStale},
-              generated_summary_error = ${summary.generatedSummaryError},
-              generated_summary_source_hash = ${summary.generatedSummarySourceHash},
-              generated_summary_request_id = ${summary.generatedSummaryRequestId},
-              revision = revision + 1,
-              updated_at = MAX(updated_at, ${input.updatedAt})
-            WHERE ticket_id = ${input.id}
-              AND deleted_at IS NULL
-              AND revision = ${input.expectedRevision}
-            RETURNING ticket_id AS id, updated_at AS "updatedAt"
+            SET jira_issue_key = ${jiraIssue?.key ?? null}, jira_issue_url = ${jiraIssue?.url ?? null},
+              revision = revision + 1, updated_at = ${updatedAt}
+            WHERE ticket_id = ${ticketId}
           `;
-          const persisted = updated[0];
-          if (persisted === undefined) {
-            return yield* new WorkbenchOperationError({
-              code: "ticket_changed",
-              message: "The Workbench Ticket changed before Jira could update it.",
-            });
-          }
-          return {
-            ticket: WorkbenchTicket.make({
-              id: current.id,
-              projectId: current.projectId,
-              epicId,
-              title,
-              kind,
-              status,
-              blocked,
-              markdown,
-              primaryT3ProjectId: current.primaryT3ProjectId,
+          const repositories = yield* listTicketRepositoryRowsByTicket({ ticketId });
+          return ticketFromRow(
+            {
+              ...current,
+              jiraIssueKey: jiraIssue?.key ?? null,
+              jiraIssueUrl: jiraIssue?.url ?? null,
               revision: current.revision + 1,
-              generatedSummary: summary.generatedSummary,
-              repositoryProjectIds:
-                repositories.length > 0
-                  ? repositories.map((repository) => repository.repositoryProjectId)
-                  : [current.primaryT3ProjectId],
-              createdAt: current.createdAt,
-              updatedAt: persisted.updatedAt,
-            }),
-            contentChanged,
-          };
+              updatedAt,
+            },
+            repositories.length > 0
+              ? repositories.map((repository) => repository.repositoryProjectId)
+              : [current.primaryT3ProjectId],
+          );
         }),
       )
       .pipe(Effect.mapError(workbenchStoreError));
-    if (contentChanged) yield* publishTicketChange(ticket.id);
-    return ticket;
+  });
+
+  const setEpicJiraIssueLink: WorkbenchStoreShape["setEpicJiraIssueLink"] = Effect.fn(
+    "WorkbenchStore.setEpicJiraIssueLink",
+  )(function* ({ epicId, jiraIssue, expectedUpdatedAt }) {
+    const now = DateTime.formatIso(yield* DateTime.now);
+    return yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const current = yield* requireMutableEpic(epicId);
+          if (current.updatedAt !== expectedUpdatedAt) {
+            return yield* new WorkbenchOperationError({
+              code: "epic_changed",
+              message: "The Workbench Epic changed. Refresh it and try again.",
+            });
+          }
+          const updatedAt = advanceEpicUpdatedAt(current.updatedAt, now);
+          yield* sql`
+            UPDATE workbench_epics
+            SET jira_issue_key = ${jiraIssue?.key ?? null}, jira_issue_url = ${jiraIssue?.url ?? null},
+              updated_at = ${updatedAt}
+            WHERE epic_id = ${epicId}
+          `;
+          return WorkbenchEpic.make({ ...current, jiraIssue, updatedAt });
+        }),
+      )
+      .pipe(Effect.mapError(workbenchStoreError));
   });
 
   const requestTicketSummary: WorkbenchStoreShape["requestTicketSummary"] = Effect.fn(
@@ -3048,13 +2858,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
             return yield* new WorkbenchOperationError({
               code: "ticket_archived",
               message: "Archived Workbench Tickets cannot generate a summary.",
-            });
-          }
-          const jiraLinks = yield* listJiraIssueLinkActivity(input.ticketId);
-          if (jiraLinks.length > 0 && !jiraLinks.some((link) => link.active === 1)) {
-            return yield* new WorkbenchOperationError({
-              code: "ticket_summary_generation_failed",
-              message: "This Jira Ticket is no longer active and cannot generate a summary.",
             });
           }
           const sourceHash = ticketSummarySourceHash(current.value.title, current.value.markdown);
@@ -3178,12 +2981,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
               "The Workbench Ticket changed before its lifecycle state could be updated.",
             activeOnly: true,
           });
-          if (yield* isJiraManagedTicket(input.ticketId)) {
-            return yield* new WorkbenchOperationError({
-              code: "jira_managed_ticket",
-              message: "Jira-managed Tickets cannot be archived.",
-            });
-          }
           const workspace = yield* findTicketWorkspaceRow({ ticketId: input.ticketId });
           if (
             Option.isSome(workspace) &&
@@ -3239,12 +3036,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
             revisionMessage: "The Workbench Ticket changed before it could be deleted.",
             activeOnly: true,
           });
-          if (yield* isJiraManagedTicket(input.ticketId)) {
-            return yield* new WorkbenchOperationError({
-              code: "jira_managed_ticket",
-              message: "Jira-managed Tickets cannot be deleted.",
-            });
-          }
           const changingDrafts =
             yield* sql`SELECT 1 FROM workbench_ticket_drafts WHERE draft_id = ${input.ticketId}
             AND phase IN ('promoting', 'starting')`;
@@ -3528,10 +3319,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
     updateTicket,
     initializeTicketExecution,
     consumeTicketExecution,
-    pendingTicketExecutions,
-    beginTicketExecutionJira,
-    completeTicketExecutionJira,
-    updateJiraTicketFields,
+    setTicketJiraIssueLink,
+    setEpicJiraIssueLink,
     requestTicketSummary,
     completeTicketSummary,
     failTicketSummary,

@@ -4,14 +4,13 @@ import type {
   ThreadId,
   WorkbenchCreateTicketInput,
   WorkbenchTicket,
-  WorkbenchJiraOperationError,
   WorkbenchOperationError,
   WorkbenchTicketDraft,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
-/** Native conversation and existing tracker effects owned by the environment. */
+/** Native conversation and ticket-creation effects owned by the environment. */
 export class TicketDraftHost extends Context.Service<
   TicketDraftHost,
   {
@@ -39,6 +38,6 @@ export class TicketDraftHost extends Context.Service<
     ) => Effect.Effect<void, WorkbenchOperationError>;
     readonly createTicket: (
       input: WorkbenchCreateTicketInput,
-    ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError | WorkbenchJiraOperationError>;
+    ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
   }
 >()("@t3tools/workbench/TicketDraftHost") {}

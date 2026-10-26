@@ -5,7 +5,6 @@ import {
   WorkbenchProjectId,
   WorkbenchTicketId,
   type WorkbenchOperationError,
-  type WorkbenchJiraOperationError,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -23,12 +22,6 @@ import * as Tracer from "effect/Tracer";
 
 import { WorkbenchNativeAccess } from "./WorkbenchNativeAccess.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
-import { JiraApi } from "./jira/JiraApi.ts";
-import { JiraAuthService } from "./jira/JiraAuthService.ts";
-import { JiraSyncService } from "./jira/JiraSyncService.ts";
-import { JiraTicketWriteService } from "./jira/JiraTicketWriteService.ts";
-import * as WorkbenchJiraService from "./jira/WorkbenchJiraService.ts";
-import { WorkbenchJiraRepository, layerSql } from "./jira/WorkbenchJiraRepository.ts";
 
 const projectId = ProjectId.make("repo");
 const secondProjectId = ProjectId.make("second-repo");
@@ -42,11 +35,7 @@ const withStore = <A, E>({
   gitCalls = [],
   onRepositoryCheck = () => Effect.void,
 }: {
-  readonly use: Effect.Effect<
-    A,
-    E,
-    WorkbenchStore | SqlClient.SqlClient | WorkbenchJiraRepository | Scope.Scope
-  >;
+  readonly use: Effect.Effect<A, E, WorkbenchStore | SqlClient.SqlClient | Scope.Scope>;
   readonly gitCalls?: Array<boolean>;
   readonly onRepositoryCheck?: () => Effect.Effect<void>;
 }) =>
@@ -91,7 +80,7 @@ const withStore = <A, E>({
       return yield* use;
     }).pipe(
       Effect.provide(
-        Layer.merge(store, layerSql).pipe(
+        store.pipe(
           Layer.provideMerge(
             NodeSqliteClient.layer({ filename: `${directory}/state.sqlite`, readerWorker: true }),
           ),
@@ -130,26 +119,12 @@ describe("Workbench SQLite contention", () => {
             return span;
           },
         });
-        const jira = yield* WorkbenchJiraService.make.pipe(
-          Effect.provide(
-            Layer.mergeAll(
-              Layer.mock(JiraApi, {}),
-              Layer.mock(JiraAuthService, {}),
-              Layer.mock(JiraSyncService, {}),
-              Layer.mock(JiraTicketWriteService, {}),
-            ),
-          ),
-        );
         const reads: ReadonlyArray<
-          readonly [
-            string,
-            Effect.Effect<void, WorkbenchOperationError | WorkbenchJiraOperationError>,
-          ]
+          readonly [string, Effect.Effect<void, WorkbenchOperationError>]
         > = [
           ["snapshot", store.getSnapshot.pipe(Effect.asVoid)],
           ["preparations", store.getTicketPreparations.pipe(Effect.asVoid)],
           ["draft", store.getTicketDraftForThread(threadId).pipe(Effect.asVoid)],
-          ["jira", jira.getSnapshot.pipe(Effect.asVoid)],
           ["project", store.getProject(workspaceId).pipe(Effect.asVoid)],
           ["workspace", store.getTicketWorkspace(ticketId).pipe(Effect.asVoid)],
           ["repositories", store.getTicketWorkspaceRepositoryStates(ticketId).pipe(Effect.asVoid)],
@@ -171,10 +146,6 @@ describe("Workbench SQLite contention", () => {
             yield* sql`DELETE FROM workbench_ticket_drafts WHERE draft_id = ${ticketId}`;
             expect(yield* store.getTicketPreparations).toEqual([]);
             expect(yield* store.getTicketDraftForThread(threadId)).toBeNull();
-            yield* sql`INSERT INTO workbench_jira_connections
-              (connection_id, cloud_id, site_name, site_url, avatar_url, scopes_json, credential_id, created_at, updated_at)
-              VALUES ('uncommitted', 'cloud', 'Jira', 'https://example.atlassian.net', NULL, '[]', 'credential', ${createdAt}, ${createdAt})`;
-            expect((yield* jira.getSnapshot).connections).toHaveLength(1);
           }),
         );
       }),
