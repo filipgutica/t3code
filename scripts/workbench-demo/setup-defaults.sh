@@ -1,5 +1,4 @@
 # Fork-owned prompt helpers. Keep the shared wizard library unchanged.
-DEMO_JIRA_BROKER_DEFAULT_URL="${DEMO_JIRA_BROKER_DEFAULT_URL:-https://workbench-auth.fgutica.workers.dev}"
 
 demo_saved() {
   node --input-type=module - "$ENV_FILE" "$1" <<'JS'
@@ -11,26 +10,21 @@ JS
 }
 
 demo_ask() {
-  local key="$1" prompt="$2" fallback="${3:-}" secret="${4:-}" current input=""
+  local key="$1" prompt="$2" fallback="${3:-}" current input=""
   current=$(demo_saved "$key")
   current="${current:-${!key:-$fallback}}"
   if [[ -n "$current" ]]; then
-    if [[ "$secret" == secret ]]; then
-      printf '  %s [Enter keeps saved/detected secret]: ' "$prompt"
-    else
-      printf '  %s [%s]: ' "$prompt" "$current"
-    fi
+    printf '  %s [%s]: ' "$prompt" "$current"
   else
     printf '  %s: ' "$prompt"
   fi
-  if [[ "$secret" == secret ]]; then read -rs input || true; printf '\n'
-  else read -r input || true; fi
+  read -r input || true
   printf -v "$key" '%s' "${input:-$current}"
 }
 
 demo_profile_complete() {
-  local key broker client_id client_secret
-  for key in DEMO_GITHUB_OWNER DEMO_GITHUB_RESOURCE_MODE DEMO_JIRA_SITE_URL DEMO_JIRA_RESOURCE_MODE DEMO_JIRA_PROJECT_KEY DEMO_JIRA_BOARD_ID; do
+  local key
+  for key in DEMO_GITHUB_OWNER DEMO_GITHUB_RESOURCE_MODE; do
     [[ -n "$(demo_saved "$key")" ]] || return 1
   done
   case "$(demo_saved DEMO_GITHUB_RESOURCE_MODE)" in
@@ -38,20 +32,6 @@ demo_profile_complete() {
     provision) ;;
     *) return 1 ;;
   esac
-  case "$(demo_saved DEMO_JIRA_RESOURCE_MODE)" in
-    reuse) [[ -n "$(demo_saved DEMO_JIRA_SPRINT_ID)" ]] || return 1 ;;
-    provision) [[ -n "$(demo_saved DEMO_JIRA_EMAIL)" && -n "$(demo_saved DEMO_JIRA_API_TOKEN)" ]] || return 1 ;;
-    *) return 1 ;;
-  esac
-
-  broker="$(demo_saved T3_WORKBENCH_JIRA_BROKER_URL)"
-  client_id="$(demo_saved T3_WORKBENCH_JIRA_CLIENT_ID)"
-  client_secret="$(demo_saved T3_WORKBENCH_JIRA_CLIENT_SECRET)"
-  if [[ -n "$client_id" && -n "$client_secret" ]]; then
-    [[ -n "$(demo_saved DEMO_JIRA_CALLBACK_URL)" ]] || return 1
-  else
-    [[ "$broker" =~ ^https://[^[:space:]]+$ ]] || return 1
-  fi
 }
 
 # Probe only the kit's known repository pairs; do not enumerate unrelated repos.

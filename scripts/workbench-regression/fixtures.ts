@@ -11,8 +11,6 @@ import { withDemoAccess } from "../workbench-demo/access.mts";
 import { runRpc, readShellSnapshot } from "../workbench-demo/local.mts";
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 import { resetToBaseline } from "../workbench-demo/reset-to-baseline.mts";
-import { decodeJiraAuthBundle } from "../workbench-demo/jira-auth.mts";
-import { resetJira, validateJiraBaseline } from "../workbench-demo/remotes.mts";
 import { DEMO_REPOSITORIES } from "../workbench-demo/repositories.mts";
 
 export type Demo = {
@@ -56,63 +54,23 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
           ? process.env.DEMO_HOME
           : await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "workbench-regression-")),
       );
-      const required = (key: string) => {
-        const value = process.env[key];
-        if (!value?.trim()) throw new Error(`Live regression requires ${key}.`);
-        return value;
-      };
-      const baseline = live
-        ? validateJiraBaseline(JSON.parse(required("DEMO_JIRA_BASELINE")))
-        : undefined;
-      if (baseline) {
-        const entries = {
-          DEMO_JIRA_SITE_URL: required("DEMO_JIRA_SITE_URL"),
-          DEMO_JIRA_PROJECT_KEY: required("DEMO_JIRA_PROJECT_KEY"),
-          DEMO_JIRA_BOARD_ID: required("DEMO_JIRA_BOARD_ID"),
-          DEMO_JIRA_EMAIL: required("DEMO_JIRA_EMAIL"),
-          DEMO_JIRA_API_TOKEN: required("DEMO_JIRA_API_TOKEN"),
-          DEMO_JIRA_SPRINT_ID: String(baseline.sprintId),
-          DEMO_GITHUB_REPOSITORIES: Object.values(DEMO_REPOSITORIES)
-            .map((repo) => repo.repository)
-            .join(","),
-        };
-        if (
-          baseline.site !== entries.DEMO_JIRA_SITE_URL ||
-          baseline.projectKey !== entries.DEMO_JIRA_PROJECT_KEY ||
-          baseline.boardId !== Number(entries.DEMO_JIRA_BOARD_ID)
-        )
-          throw new Error("Jira baseline does not match the configured site/project/board.");
+      if (live)
         await NodeFSP.writeFile(
           NodePath.join(home, "config.env"),
-          Object.entries(entries)
-            .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
-            .join("\n"),
+          `DEMO_GITHUB_REPOSITORIES=${JSON.stringify(
+            Object.values(DEMO_REPOSITORIES)
+              .map((repo) => repo.repository)
+              .join(","),
+          )}`,
           { mode: 0o600 },
         );
-        await NodeFSP.writeFile(
-          NodePath.join(home, "remotes.json"),
-          JSON.stringify({ jiraBaseline: baseline }),
-          { mode: 0o600 },
-        );
-      } else {
-        await NodeFSP.writeFile(
-          NodePath.join(home, "config.env"),
-          "T3_WORKBENCH_JIRA_CLIENT_ID=\nT3_WORKBENCH_JIRA_CLIENT_SECRET=\nT3_WORKBENCH_JIRA_VAULT=\n",
-          { mode: 0o600 },
-        );
-      }
-      const oauthBundle = live
-        ? decodeJiraAuthBundle(required("DEMO_JIRA_OAUTH_BUNDLE"))
-        : undefined;
-      const preparation = prepareStartup({ browser, home, live, deadline: preparationDeadline });
+      const preparation = prepareStartup({ browser, home, deadline: preparationDeadline });
       let server: Awaited<ReturnType<typeof resetToBaseline>> | undefined;
       try {
         const reset = resetToBaseline({
           home,
-          remoteApply: live,
           configure: preparation.configure,
           built: true,
-          ...(oauthBundle ? { oauthBundle, onAuthImported: preparation.onAuthImported } : {}),
         }).catch(async (error) => {
           await preparation.cancel(error);
           throw error;
@@ -145,24 +103,14 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
               rpc: (operation) => runRpc(wsUrl, token, operation),
               shellSnapshot: () => readShellSnapshot(wsUrl, token),
             }),
-          // Covers the 25-minute live-job ceiling, including slow Jira responses.
+          // Covers the 25-minute live-job ceiling.
           { ttl: "30m" },
         );
       } finally {
         try {
           await preparation.close();
         } finally {
-          try {
-            await server?.stop();
-          } finally {
-            if (baseline)
-              await resetJira({
-                baseline,
-                email: required("DEMO_JIRA_EMAIL"),
-                token: required("DEMO_JIRA_API_TOKEN"),
-                apply: true,
-              });
-          }
+          await server?.stop();
         }
       }
     },
@@ -233,6 +181,3 @@ export const test = base.extend<{}, { demo: Demo; pairedState: StorageState }>({
 export { expect };
 export const snapshot = (demo: Demo) =>
   demo.rpc((client) => client[WORKBENCH_WS_METHODS.workbenchGetSnapshot]({}));
-
-export const jiraSnapshot = (demo: Demo) =>
-  demo.rpc((client) => client[WORKBENCH_WS_METHODS.workbenchJiraGetSnapshot]({}));

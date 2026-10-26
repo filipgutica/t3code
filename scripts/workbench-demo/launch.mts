@@ -37,7 +37,7 @@ export const launchDemo = async (input: {
   let output = "";
   const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
   // Exit only observes the CLI. Its backend can still hold inherited output
-  // pipes while shutting down, so credentials must wait for close as well.
+  // pipes while shutting down, so callers must wait for close as well.
   const closed = new Promise<void>((resolve) => child.once("close", () => resolve()));
   const stop = async () => {
     if (child.exitCode === null && child.signalCode === null) {
@@ -53,12 +53,7 @@ export const launchDemo = async (input: {
         closed,
         new Promise<never>((_, reject) => {
           timeout = setTimeout(
-            () =>
-              reject(
-                new Error(
-                  "Demo processes did not close after stop; credentials were not exported.",
-                ),
-              ),
+            () => reject(new Error("Demo processes did not close after stop.")),
             15_000,
           );
         }),

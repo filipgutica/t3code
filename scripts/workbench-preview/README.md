@@ -5,7 +5,7 @@ for the relationship between local regressions, preview smoke, and hosted checks
 
 Open a PR's demo link, sign in to Vercel, and choose **Open demo**. The launcher starts an environment with synthetic Tickets, repositories and native Threads. Native pairing happens automatically. Reopening the same link in the same browser resumes that environment while it is running; **Start new demo** makes a fresh one. The environment stops after 20 minutes; return to the launcher to start another session.
 
-Each fresh demo has its own filesystem and Jira connections. Jira starts disconnected. Local demo state is discarded at expiry; writes to Jira or other connected services remain.
+Each fresh demo has its own filesystem. Local demo state is discarded at expiry; writes to connected services remain.
 
 ## One-time setup
 
@@ -43,9 +43,7 @@ never forwards commands, and refuses writes with a synthetic notice. The pinned
 real GitHub CLI remains installed, but the preview's private PATH selects the
 adapter.
 
-## Optional Jira and OpenCode
-
-Connect a test Jira site through Workbench's existing **Connect Jira** flow. A connection belongs to the whole demo environment and is available to its agents. Expiring the demo removes locally stored grants but does not revoke Atlassian app authorization or undo Jira writes. No maintainer Jira account is preloaded.
+## OpenCode
 
 The preview pins OpenCode and selects `opencode/big-pickle` for turns and small model tasks. Other providers are disabled initially and no paid fallback is configured. [OpenCode lists Big Pickle as free and says submitted data may be used for model improvement](https://opencode.ai/docs/zen/#privacy). Use synthetic content; configure an approved provider before sending confidential data. Model availability and terms can change.
 
@@ -86,7 +84,7 @@ in In Progress. Restore it to Todo. Record the PR revision, controller revision,
 browser, and observed result; capture only a Board screenshot without a pairing
 URL or code. This checks protected launch, pairing, rendered seed data, and one
 persisted Workbench write in one Sandbox. It does not check expiry, separate
-launch isolation, Jira, or provider execution.
+launch isolation, or provider execution.
 
 The Actions jobs cannot run this browser path with the current All Deployments
 Vercel Authentication policy: they have no reviewer login session, and the

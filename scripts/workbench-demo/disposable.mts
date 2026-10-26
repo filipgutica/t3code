@@ -4,10 +4,9 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeCrypto from "node:crypto";
 
-import { planBaselineReset } from "./baseline.mts";
 import { withDemoAccess } from "./access.mts";
 import { requireHome, setupHome } from "./environment.mts";
-import { exportJiraAuth, importJiraAuth } from "./jira-auth.mts";
+import { seedDemoJiraLinks } from "./issue-links.mts";
 import { launchDemo } from "./launch.mts";
 import {
   installAttentionGitHubAdapter,
@@ -18,15 +17,12 @@ import { readDemoModelSelection } from "./local.mts";
 import { seedInstalledDemoProviders } from "./providers.mts";
 import { stopDemo } from "./lifecycle.mts";
 import { resetToBaseline } from "./reset-to-baseline.mts";
-import { verifyDemoJira } from "./integrations.mts";
 
 const RUNS_DIRECTORY = "runs";
 const LOCK_FILE = ".disposable-demo.lock";
-const RUN_MANIFEST = "disposable-run.json";
 
-type DisposableRunManifest = {
+type DisposableRunLock = {
   readonly version: 1;
-  readonly phase: "pending-auth" | "running" | "auth-saved";
   readonly sourceHome: string;
   readonly runHome: string;
   readonly createdAt: string;
@@ -59,26 +55,22 @@ const isRunPath = (sourceHome: string, runHome: string): boolean => {
 const readJson = async (path: string): Promise<unknown> =>
   JSON.parse(await NodeFSP.readFile(path, "utf8"));
 
-const parseManifest = (value: unknown, location: string): DisposableRunManifest => {
+// Locks from older checkouts may also carry a `phase`, which recovery ignores.
+const parseLock = (value: unknown, location: string): DisposableRunLock => {
   const record = isRecord(value) ? value : undefined;
   if (
     record === undefined ||
     record.version !== 1 ||
-    (record.phase !== "pending-auth" &&
-      record.phase !== "running" &&
-      record.phase !== "auth-saved") ||
     typeof record.sourceHome !== "string" ||
     typeof record.runHome !== "string" ||
     typeof record.createdAt !== "string" ||
     typeof record.pid !== "number"
   )
-    throw new Error(`Invalid disposable demo manifest in ${location}.`);
-  return value as DisposableRunManifest;
+    throw new Error(`Invalid disposable demo lock in ${location}.`);
+  return value as DisposableRunLock;
 };
-const readManifestFile = async (path: string): Promise<DisposableRunManifest> =>
-  parseManifest(await readJson(path), path);
-const readManifest = async (runHome: string): Promise<DisposableRunManifest> =>
-  readManifestFile(NodePath.join(runHome, RUN_MANIFEST));
+const readLock = async (path: string): Promise<DisposableRunLock> =>
+  parseLock(await readJson(path), path);
 
 const copyIfPresent = async (source: string, destination: string): Promise<void> => {
   if (!NodeFS.existsSync(source)) return;
@@ -94,12 +86,11 @@ const acquireLock = async (sourceHome: string, runHome: string): Promise<void> =
       await handle.writeFile(
         `${JSON.stringify({
           version: 1,
-          phase: "pending-auth",
           sourceHome,
           runHome,
           createdAt: new Date().toISOString(),
           pid: process.pid,
-        } satisfies DisposableRunManifest)}\n`,
+        } satisfies DisposableRunLock)}\n`,
       );
     } finally {
       await handle.close();
@@ -120,7 +111,7 @@ const acquireLock = async (sourceHome: string, runHome: string): Promise<void> =
         // Keep the error actionable without attempting to remove an ambiguous lock.
       }
       throw new Error(
-        `A disposable demo run is already active or needs recovery at ${existing}. Inspect that run before retrying; stale Jira tokens will not be replayed.`,
+        `A disposable demo run is already active or needs recovery at ${existing}. Inspect that run before retrying, or run recover for it.`,
       );
     }
     throw error;
@@ -138,80 +129,26 @@ const removeGeneratedRun = async (runHome: string): Promise<void> => {
   }
 };
 
-const writeRunManifest = async (
-  runHome: string,
-  sourceHome: string,
-  phase: DisposableRunManifest["phase"],
-): Promise<void> => {
-  await NodeFSP.writeFile(
-    NodePath.join(runHome, RUN_MANIFEST),
-    `${JSON.stringify({
-      version: 1,
-      phase,
-      sourceHome,
-      runHome,
-      createdAt: new Date().toISOString(),
-      pid: process.pid,
-    } satisfies DisposableRunManifest)}\n`,
-    { mode: 0o600 },
-  );
-};
-
-const writeLockPhase = async (
-  sourceHome: string,
-  runHome: string,
-  phase: DisposableRunManifest["phase"],
-): Promise<void> => {
-  const lock = await readManifestFile(lockPath(sourceHome));
-  await NodeFSP.writeFile(
-    lockPath(sourceHome),
-    `${JSON.stringify({ ...lock, runHome, phase } satisfies DisposableRunManifest)}\n`,
-    { mode: 0o600 },
-  );
-};
-
 export const finishDisposableRun = async (sourceHome: string, runHome: string): Promise<void> => {
-  const bundle = await exportJiraAuth({ home: runHome });
-  await importJiraAuth({ home: sourceHome, bundle });
-  const lock = await readManifestFile(lockPath(sourceHome));
-  await NodeFSP.writeFile(
-    lockPath(sourceHome),
-    `${JSON.stringify({ ...lock, phase: "auth-saved" } satisfies DisposableRunManifest)}\n`,
-    { mode: 0o600 },
-  );
   await removeGeneratedRun(runHome);
   await NodeFSP.rm(lockPath(sourceHome), { force: false });
 };
 
-const requireJiraBaseline = (home: string) => {
-  const jira = planBaselineReset({ home }).jira;
-  if (jira === undefined)
-    throw new Error(
-      `The saved demo has no complete Jira baseline. Run bash scripts/workbench-demo/setup.sh with DEMO_HOME=${home} before using the disposable runner.`,
-    );
-  return jira;
-};
-
-const verifyJira = async (home: string): Promise<void> => {
-  const jira = requireJiraBaseline(home);
-  await withDemoAccess(home, (access) =>
-    verifyDemoJira({
-      ...access,
-      site: jira.site,
-      boardId: jira.boardId,
-      projectKey: jira.projectKey,
-      sprintId: jira.sprintId,
-      expectedKeys: jira.issues.map((issue) => issue.key),
-      requireEpic: false,
-    }),
-  );
+const stopRecordedRun = async (runHome: string): Promise<void> => {
+  if (!NodeFS.existsSync(NodePath.join(runHome, "run.lock"))) return;
+  try {
+    await stopDemo(runHome);
+  } catch (error) {
+    if (error instanceof Error && /ENOENT|ECONNREFUSED/.test(String(error))) {
+      await NodeFSP.rm(NodePath.join(runHome, "run.lock"), { force: false });
+    } else throw error;
+  }
 };
 
 export const startDisposableDemo = async (input: {
   readonly sourceHome: string;
 }): Promise<DisposableDemoSession> => {
   const sourceHome = requireHome(input.sourceHome);
-  const sourceJira = requireJiraBaseline(sourceHome);
   const runHome = NodePath.join(
     runsPath(sourceHome),
     `run-${Date.now()}-${NodeCrypto.randomUUID().slice(0, 8)}`,
@@ -219,10 +156,7 @@ export const startDisposableDemo = async (input: {
   await NodeFSP.mkdir(runsPath(sourceHome), { recursive: true, mode: 0o700 });
   await acquireLock(sourceHome, runHome);
   let server: Awaited<ReturnType<typeof launchDemo>> | undefined;
-  let runInitialized = false;
   try {
-    // Exporting first proves that the durable source is stopped and still has a usable grant.
-    const oauthBundle = await exportJiraAuth({ home: sourceHome });
     await setupHome(runHome);
     await copyIfPresent(
       NodePath.join(sourceHome, "config.env"),
@@ -237,22 +171,7 @@ export const startDisposableDemo = async (input: {
       NodePath.join(sourceHome, "userdata", "settings.json"),
       NodePath.join(runHome, "userdata", "settings.json"),
     );
-    server = await resetToBaseline({
-      home: runHome,
-      remoteApply: false,
-      linkPullRequests: false,
-      oauthBundle,
-      configure: async () => {
-        // resetToBaseline archives the run home, so persist the recovery marker
-        // after that archive and before the new server starts.
-        await writeRunManifest(runHome, sourceHome, "pending-auth");
-        runInitialized = true;
-      },
-      onAuthImported: async () => {
-        await writeRunManifest(runHome, sourceHome, "running");
-        await writeLockPhase(sourceHome, runHome, "running");
-      },
-    });
+    server = await resetToBaseline({ home: runHome, linkPullRequests: false });
     await server.stop();
     // The first boot migrates legacy provider settings before we preserve their choices.
     await seedInstalledDemoProviders({ home: runHome });
@@ -264,23 +183,14 @@ export const startDisposableDemo = async (input: {
     );
     await server.stop();
     await seedAttentionOutcomes(runHome);
+    seedDemoJiraLinks(runHome);
     server = await launchDemo({ home: runHome, env: attentionEnv });
-    // resetToBaseline syncs Jira when the complete baseline is present; verify the live grant too.
-    if (sourceJira.issues.length === 0) throw new Error("The saved Jira baseline has no issues.");
-    await verifyJira(runHome);
   } catch (error) {
-    if (server) {
-      await server.stop().catch(() => undefined);
-    } else if (!runInitialized) {
-      // No live run exists yet, so this failure cannot have rotated its grant.
-      await NodeFSP.rm(runHome, { recursive: true, force: true });
-      await NodeFSP.rm(lockPath(sourceHome), { force: true });
-    } else {
-      throw new Error(
-        `${error instanceof Error ? error.message : "Disposable demo startup failed."} State retained at ${runHome}; run recover --home ${sourceHome} --run ${runHome} after confirming the server is stopped.`,
-      );
-    }
-    throw error;
+    await server?.stop().catch(() => undefined);
+    throw new Error(
+      `${error instanceof Error ? error.message : "Disposable demo startup failed."} State retained at ${runHome} for diagnosis; run recover --home ${sourceHome} --run ${runHome} to remove it.`,
+      { cause: error },
+    );
   }
 
   let stopping = false;
@@ -321,39 +231,9 @@ export const recoverDisposableDemo = async (input: {
     throw new Error(`Disposable run must be inside ${runsPath(sourceHome)}.`);
   if (!NodeFS.existsSync(lockPath(sourceHome)))
     throw new Error(`No disposable run lock exists for ${sourceHome}; refusing recovery.`);
-  const lock = await readManifestFile(lockPath(sourceHome));
+  const lock = await readLock(lockPath(sourceHome));
   if (lock.sourceHome !== sourceHome || lock.runHome !== runHome)
     throw new Error("The source lock does not point to the requested disposable run.");
-  if (lock.phase === "auth-saved") {
-    await removeGeneratedRun(runHome);
-    await NodeFSP.rm(lockPath(sourceHome), { force: false });
-    return;
-  }
-  if (lock.phase === "pending-auth") {
-    if (NodeFS.existsSync(NodePath.join(runHome, "run.lock"))) {
-      try {
-        await stopDemo(runHome);
-      } catch (error) {
-        if (error instanceof Error && /ENOENT|ECONNREFUSED/.test(String(error))) {
-          await NodeFSP.rm(NodePath.join(runHome, "run.lock"), { force: false });
-        } else throw error;
-      }
-    }
-    await removeGeneratedRun(runHome);
-    await NodeFSP.rm(lockPath(sourceHome), { force: false });
-    return;
-  }
-  const manifest = await readManifest(runHome);
-  if (manifest.sourceHome !== sourceHome || manifest.runHome !== runHome)
-    throw new Error("The disposable run does not belong to the selected source home.");
-  if (NodeFS.existsSync(NodePath.join(runHome, "run.lock"))) {
-    try {
-      await stopDemo(runHome);
-    } catch (error) {
-      if (error instanceof Error && /ENOENT|ECONNREFUSED/.test(String(error))) {
-        await NodeFSP.rm(NodePath.join(runHome, "run.lock"), { force: false });
-      } else throw error;
-    }
-  }
+  await stopRecordedRun(runHome);
   await finishDisposableRun(sourceHome, runHome);
 };

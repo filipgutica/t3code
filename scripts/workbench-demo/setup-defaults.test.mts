@@ -45,14 +45,6 @@ it("saved values outrank environment and detection, without executing config", (
     ),
   ).toContain("result=ambient");
 });
-it("Enter retains secrets without printing them", () => {
-  const result = run(
-    'demo_ask DEMO_JIRA_API_TOKEN "Token" "" secret; [[ "$DEMO_JIRA_API_TOKEN" == sensitive ]]',
-    "DEMO_JIRA_API_TOKEN=sensitive\n",
-  );
-  expect(result).not.toContain("sensitive");
-  expect(result).toContain("Enter keeps");
-});
 it("detects only an existing complete demo repository pair", () => {
   const result = run(
     'gh() { [[ "$*" == *"repos/person/orbit-"* ]]; }; demo_detect_repositories person',
@@ -65,14 +57,6 @@ it("offers quick reuse only for a complete saved profile", () => {
     "DEMO_GITHUB_OWNER=person",
     "DEMO_GITHUB_RESOURCE_MODE=reuse",
     "DEMO_GITHUB_REPOSITORIES=orbit-api,orbit-web",
-    "DEMO_JIRA_SITE_URL=https://example.atlassian.net",
-    "DEMO_JIRA_RESOURCE_MODE=reuse",
-    "DEMO_JIRA_PROJECT_KEY=DEMO",
-    "DEMO_JIRA_BOARD_ID=1",
-    "DEMO_JIRA_SPRINT_ID=2",
-    "T3_WORKBENCH_JIRA_CLIENT_ID=client",
-    "T3_WORKBENCH_JIRA_CLIENT_SECRET=secret",
-    "DEMO_JIRA_CALLBACK_URL=http://localhost:5000/workbench",
   ].join("\n");
   expect(
     run("if demo_profile_complete; then printf ready; else printf incomplete; fi", config),
@@ -80,31 +64,7 @@ it("offers quick reuse only for a complete saved profile", () => {
   expect(
     run(
       "if demo_profile_complete; then printf ready; else printf incomplete; fi",
-      config.replace("DEMO_JIRA_SPRINT_ID=2", ""),
-    ),
-  ).toBe("incomplete");
-});
-
-it("accepts a hosted broker profile without direct OAuth credentials", () => {
-  const config = [
-    "DEMO_GITHUB_OWNER=person",
-    "DEMO_GITHUB_RESOURCE_MODE=reuse",
-    "DEMO_GITHUB_REPOSITORIES=orbit-api,orbit-web",
-    "DEMO_JIRA_SITE_URL=https://example.atlassian.net",
-    "DEMO_JIRA_RESOURCE_MODE=reuse",
-    "DEMO_JIRA_PROJECT_KEY=DEMO",
-    "DEMO_JIRA_BOARD_ID=1",
-    "DEMO_JIRA_SPRINT_ID=2",
-    "T3_WORKBENCH_JIRA_BROKER_URL=https://workbench-auth.example",
-  ].join("\n");
-
-  expect(
-    run("if demo_profile_complete; then printf ready; else printf incomplete; fi", config),
-  ).toBe("ready");
-  expect(
-    run(
-      "if demo_profile_complete; then printf ready; else printf incomplete; fi",
-      config.replace("T3_WORKBENCH_JIRA_BROKER_URL=https://workbench-auth.example", ""),
+      config.replace("DEMO_GITHUB_REPOSITORIES=orbit-api,orbit-web", ""),
     ),
   ).toBe("incomplete");
 });
@@ -112,8 +72,8 @@ it("accepts a hosted broker profile without direct OAuth credentials", () => {
 it("switching from reuse to provision clears saved remote identities", () => {
   expect(
     run(
-      'demo_ask_reuse_resource DEMO_GITHUB_REPOSITORIES Repositories provision; demo_ask_reuse_resource DEMO_JIRA_SPRINT_ID Sprint provision; printf "repos=%s,sprint=%s" "$DEMO_GITHUB_REPOSITORIES" "$DEMO_JIRA_SPRINT_ID"',
-      "DEMO_GITHUB_REPOSITORIES=old-api,old-web\nDEMO_JIRA_SPRINT_ID=123\n",
+      'demo_ask_reuse_resource DEMO_GITHUB_REPOSITORIES Repositories provision; printf "repos=%s" "$DEMO_GITHUB_REPOSITORIES"',
+      "DEMO_GITHUB_REPOSITORIES=old-api,old-web\n",
     ),
-  ).toBe("repos=,sprint=");
+  ).toBe("repos=");
 });

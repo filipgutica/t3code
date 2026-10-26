@@ -82,7 +82,7 @@ export const resetHome = ({ home: input, apply }: { home: string; apply: boolean
   const home = requireHome(input);
   if (NodeFS.existsSync(NodePath.join(home, ".disposable-demo.lock")))
     throw new Error(
-      "A disposable demo run owns this profile's Jira grant. Stop or recover that run before resetting it.",
+      "A disposable demo run is using this profile. Stop or recover that run before resetting it.",
     );
   if (NodeFS.existsSync(NodePath.join(home, "run.lock")))
     throw new Error("Stop the demo before resetting it.");
@@ -114,5 +114,5 @@ export const resetHome = ({ home: input, apply }: { home: string; apply: boolean
     if (NodeFS.existsSync(NodePath.join(backup, file)))
       NodeFS.copyFileSync(NodePath.join(backup, file), NodePath.join(home, file));
   }
-  return `Archived previous environment at ${backup}. Configuration retained; Jira must be reconnected after start and seed. Use reset-baseline to preserve the Jira connection.`;
+  return `Archived previous environment at ${backup}. Configuration retained; start and seed to recreate local state.`;
 };

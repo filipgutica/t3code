@@ -15,7 +15,6 @@ const ownedPaths = [
   "apps/desktop/src/workbench",
   "apps/mobile/src/workbench",
   "apps/web/src/routes/workbench.tsx",
-  "infra/workbench-auth/src",
 ];
 
 const diff = NodeChildProcess.execFileSync(

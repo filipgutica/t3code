@@ -252,38 +252,14 @@ test("ticket PR discovery includes other Workspace repositories without changing
                   ...candidate,
                   primaryT3ProjectId: selectedProjectId,
                   repositoryProjectIds: [selectedProjectId],
+                  jiraIssue: {
+                    key: ticketKey,
+                    url: `https://example.atlassian.net/browse/${ticketKey}`,
+                  },
                 }
               : candidate,
           ),
           ticketWorkspaces: [],
-        });
-        return;
-      }
-      if (request.tag === WORKBENCH_WS_METHODS.workbenchJiraGetSnapshot) {
-        reply({
-          connections: [],
-          bindings: [],
-          issueLinks: [
-            {
-              bindingId: "demo-pr-search",
-              ticketId: ticket.id,
-              active: true,
-              linkedAt: timestamp,
-              lastSeenAt: timestamp,
-              issue: {
-                issueId: "5191",
-                key: ticketKey,
-                url: `https://example.atlassian.net/browse/${ticketKey}`,
-                summary: ticket.title,
-                issueType: { id: "bug", name: "Bug" },
-                status: { id: "todo", name: "To Do" },
-                epic: null,
-                flagged: false,
-                rank: 0,
-                remoteUpdatedAt: timestamp,
-              },
-            },
-          ],
         });
         return;
       }

@@ -8,7 +8,6 @@
     "!apps/{server,web,desktop,mobile}/src/workbench/**",
     "!packages/contracts/src/workbench*",
     "!apps/web/src/routes/workbench.tsx",
-    "!infra/workbench-auth/src/**",
   ],
   "ignoreExports": [
     // Effect services expose separate namespace imports with the conventional layer and make names.

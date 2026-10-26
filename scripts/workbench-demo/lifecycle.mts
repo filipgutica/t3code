@@ -47,7 +47,7 @@ export const startDemo = async (
   const disposableLock = NodePath.join(home, ".disposable-demo.lock");
   if (NodeFS.existsSync(disposableLock))
     throw new Error(
-      "A disposable demo run owns this profile's Jira grant. Stop or recover that run before starting the persistent profile.",
+      "A disposable demo run is using this profile. Stop or recover that run before starting the persistent profile.",
     );
   const runtimePath = NodePath.join(home, "userdata", "server-runtime.json");
   if (NodeFS.existsSync(runtimePath)) {
@@ -90,15 +90,7 @@ export const startDemo = async (
       PATH: `${NodePath.join(root, "node_modules", ".bin")}${NodePath.delimiter}${process.env.PATH ?? ""}`,
       T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "0",
     };
-    for (const key of [
-      "T3_WORKBENCH_JIRA_CLIENT_ID",
-      "T3_WORKBENCH_JIRA_CLIENT_SECRET",
-      "T3_WORKBENCH_JIRA_BROKER_URL",
-      "T3_WORKBENCH_JIRA_VAULT",
-      "T3CODE_PORT_OFFSET",
-    ]) {
-      if (config[key] !== undefined) Object.assign(env, { [key]: config[key] });
-    }
+    if (config.T3CODE_PORT_OFFSET !== undefined) env.T3CODE_PORT_OFFSET = config.T3CODE_PORT_OFFSET;
     if (built) {
       // Flags set mode, host, home and browser; these ambient keys would still
       // switch the server to dev mode, pin its port, or make it read bootstrap input.

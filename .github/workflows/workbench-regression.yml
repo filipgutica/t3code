@@ -51,7 +51,7 @@ jobs:
           retention-days: 1
 
   browser:
-    name: UI flows and Jira lifecycle (simulated services) ${{ matrix.shard }}/3
+    name: UI flows (simulated services) ${{ matrix.shard }}/3
     needs: build
     strategy:
       fail-fast: false

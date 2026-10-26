@@ -82,11 +82,9 @@ concurrency:
 permissions:
   contents: read
 
-# These values are part of the Workbench desktop build contract. Jira's broker
-# is public configuration; its Atlassian client secret remains in the broker.
+# This value is part of the Workbench desktop build contract.
 env:
   T3CODE_WORKBENCH_BUILD: "1"
-  T3_WORKBENCH_JIRA_BROKER_URL: https://workbench-auth.fgutica.workers.dev
 
 jobs:
   resolve:
@@ -602,7 +600,6 @@ jobs:
             printf 'Platform: %s\n' "$BUILD_PLATFORM"
             printf 'Architecture: %s\n' "$BUILD_ARCH"
             printf 'Signing status: %s\n' "$status"
-            printf 'Jira broker: %s\n' "$T3_WORKBENCH_JIRA_BROKER_URL"
           } > "$metadata"
 
           BUILD_PLATFORM="$BUILD_PLATFORM" BUILD_ARCH="$BUILD_ARCH" node --input-type=module -e '
