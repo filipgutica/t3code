@@ -491,11 +491,11 @@ function WorkbenchBoardErrors(
           <span className="min-w-0 flex-1">
             {error ?? query.error ?? threadLookupError ?? jiraError}
           </span>
-          {query.error ? (
+          {error === null && query.error ? (
             <Button onClick={query.refresh} size="xs" variant="outline">
               <RefreshCwIcon /> Retry
             </Button>
-          ) : threadLookupError ? (
+          ) : error === null && threadLookupError ? (
             <Button onClick={refreshThreadLookup} size="xs" variant="outline">
               <RefreshCwIcon /> Retry
             </Button>

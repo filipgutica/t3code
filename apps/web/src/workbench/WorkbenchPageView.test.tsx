@@ -728,6 +728,20 @@ it.each(["queryError", "threadLookupError"] as const)(
   },
 );
 
+it.each(["queryError", "threadLookupError"] as const)(
+  "retries the board's %s only when that error is displayed",
+  async (errorSource) => {
+    const props = { syncState: "success" as const, [errorSource]: "Could not load board data" };
+    await render({ ...props, error: "Could not move Ticket" });
+    expect(container.textContent).toContain("Could not move Ticket");
+    expect(button("Retry", { optional: true })).toBeNull();
+
+    await render(props);
+    expect(container.textContent).toContain("Could not load board data");
+    expect(button("Retry").disabled).toBe(false);
+  },
+);
+
 it("opens the planning conversation for create=ticket instead of the board", async () => {
   await render({ conversation: "create" });
   expect(document.querySelector('[data-conversation="none"]')).not.toBeNull();
