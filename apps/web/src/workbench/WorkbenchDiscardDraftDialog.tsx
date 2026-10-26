@@ -19,7 +19,6 @@ export function WorkbenchDiscardDraftDialog({
   finalFocus,
   open,
   busy,
-  creationUncertain,
   error,
   onOpenChange,
   onDiscard,
@@ -29,8 +28,6 @@ export function WorkbenchDiscardDraftDialog({
   readonly finalFocus?: ComponentProps<typeof AlertDialogPopup>["finalFocus"];
   readonly open: boolean;
   readonly busy: boolean;
-  /** The draft is mid Create ticket, so a Jira issue may already exist for it. */
-  readonly creationUncertain: boolean;
   readonly error: string | null;
   readonly onOpenChange: (open: boolean) => void;
   readonly onDiscard: () => Promise<boolean>;
@@ -52,11 +49,9 @@ export function WorkbenchDiscardDraftDialog({
                 : "Discard this ticket draft?"}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {creationUncertain
-              ? "Creating this ticket did not finish, and Jira may already have created the issue. Discarding deletes the planning conversation and this draft here, but it does not delete anything in Jira. Check Jira for the issue before you create another ticket."
-              : count > 1
-                ? "The selected drafts and their planning conversations are deleted. Tickets you already created are not affected."
-                : "The planning conversation and its draft are deleted. Tickets you already created are not affected."}
+            {count > 1
+              ? "The selected drafts and their planning conversations are deleted. Tickets you already created are not affected."
+              : "The planning conversation and its draft are deleted. Tickets you already created are not affected."}
           </AlertDialogDescription>
           <WorkbenchInlineError message={error} />
         </AlertDialogHeader>

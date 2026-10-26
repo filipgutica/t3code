@@ -1,8 +1,4 @@
 import "./WorkbenchPage.css";
-import { WorkbenchJiraCreationRecovery } from "./WorkbenchJiraCreationRecovery";
-
-const formatJiraSyncStatus = (value: string | null) =>
-  value === null ? "Jira not synced yet" : `Jira synced ${formatRelativeTimeLabel(value)}`;
 
 import { useWorkbenchPageDialogs } from "./useWorkbenchPageDialogs";
 import { useWorkbenchThreadActions } from "./useWorkbenchThreadActions";
@@ -10,18 +6,10 @@ import { useWorkbenchBoardData } from "./useWorkbenchBoardData";
 import { useWorkbenchPageData } from "./useWorkbenchPageData";
 import { useWorkbenchTicketActions } from "./useWorkbenchTicketActions";
 import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
-import { useWorkbenchJiraBindings } from "./useWorkbenchJiraBindings";
 import type { useWorkbenchWorkspaceActions } from "./useWorkbenchWorkspaceActions";
 
-import {
-  EnvironmentId,
-  type WorkbenchProjectId,
-  type WorkbenchTicket,
-  type WorkbenchTicketId,
-} from "@t3tools/contracts";
+import { EnvironmentId, type WorkbenchProjectId, type WorkbenchTicketId } from "@t3tools/contracts";
 import { useState } from "react";
-import { formatRelativeTimeLabel } from "../timestampFormat";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 
 import {
   AlertCircleIcon,
@@ -32,7 +20,6 @@ import {
   BlocksIcon,
   FolderGit2Icon,
   Layers3Icon,
-  LinkIcon,
   LayoutDashboardIcon,
   MessagesSquareIcon,
   MoreHorizontalIcon,
@@ -64,7 +51,6 @@ import {
 import {
   Menu,
   MenuGroup,
-  MenuGroupLabel,
   MenuItem,
   MenuPopup,
   MenuSeparator,
@@ -78,7 +64,6 @@ import {
   isWorkbenchTicketStartPending,
 } from "./startWorkbenchTicket";
 
-import { WorkbenchJiraTransitionsPreloader } from "./WorkbenchJiraTransitionsPreloader";
 import { WorkbenchQueryError } from "./WorkbenchQueryError";
 
 import {
@@ -90,14 +75,9 @@ import {
 } from "./WorkbenchForms";
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
 import { WorkbenchBoardFloatingChat } from "./WorkbenchBoardFloatingChat";
-import type { WorkbenchJiraIssueTicketOpener } from "./WorkbenchTicketMetadata";
 import { WorkbenchTicketConversation } from "./WorkbenchTicketConversation";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
-import { WorkbenchJiraDialog } from "./WorkbenchJiraDialog";
-import { WorkbenchPublishTicketDialog } from "./WorkbenchPublishTicketDialog";
-import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
-import { getWorkbenchJiraBindingSprints, isWorkbenchJiraEpic } from "./workbenchJira.logic";
 import {
   getUnsavedConversationDrafts,
   resolveWorkbenchWorkItemView,
@@ -111,16 +91,11 @@ type WorkbenchPageViewProps = {
   readonly createWorkspace: boolean;
   /** `create=ticket` is in the URL: the Workspace shows its ticket planning conversation. */
   readonly createTicket?: boolean;
-  readonly jiraDialogOpen: boolean;
   readonly error: string | null;
   readonly pendingAction: string | null;
   readonly setError: (message: string | null) => void;
-  readonly beginJiraAuthFlow: () => Promise<void>;
-  readonly openJiraDialog: () => void;
-  readonly handleJiraDialogOpenChange: (open: boolean) => void;
   readonly pageData: ReturnType<typeof useWorkbenchPageData>;
   readonly selection: ReturnType<typeof useWorkbenchPageSelection>;
-  readonly jiraBindings: ReturnType<typeof useWorkbenchJiraBindings>;
   readonly dialogs: ReturnType<typeof useWorkbenchPageDialogs>;
   readonly boardData: ReturnType<typeof useWorkbenchBoardData>;
   readonly ticketActions: ReturnType<typeof useWorkbenchTicketActions>;
@@ -176,30 +151,11 @@ function WorkbenchWorkspaceLifecycleMenu({
   );
 }
 
-function WorkbenchWorkspaceStateBadges({
-  readOnly,
-  jiraBinding,
-}: {
-  readOnly: boolean;
-  jiraBinding: ReturnType<typeof useWorkbenchBoardData>["jiraBinding"];
-}) {
-  return (
-    <>
-      {readOnly ? <Badge variant="outline">Archived Workspace</Badge> : null}
-      {jiraBinding && !jiraBinding.active ? (
-        <Badge variant="outline">Jira sync paused</Badge>
-      ) : null}
-    </>
-  );
-}
-
 function WorkbenchBoardHeader(
   props: Pick<
     WorkbenchPageViewProps,
     | "boardData"
     | "dialogs"
-    | "jiraBindings"
-    | "openJiraDialog"
     | "workspaceActions"
     | "pageData"
     | "selection"
@@ -207,39 +163,18 @@ function WorkbenchBoardHeader(
     | "pendingAction"
   >,
 ) {
-  const {
-    pageData,
-    selection,
-    jiraBindings,
-    dialogs,
-    boardData,
-    setError,
-    openJiraDialog,
-    workspaceActions,
-    pendingAction,
-  } = props;
+  const { pageData, selection, dialogs, boardData, setError, workspaceActions, pendingAction } =
+    props;
   const { keybindings, availableEditors } = pageData;
   const { selectedProject } = selection;
-  const { jiraPendingAction, syncJiraBinding } = jiraBindings;
   const { setEditWorkspaceOpen, openTicketDialog, openTicketConversation, openEpicDialog } =
     dialogs;
-  const {
-    projectTickets,
-    linkedT3Projects,
-    jiraBinding,
-    jiraSprintLinks,
-    showJiraImportedOnly,
-    boardTickets,
-  } = boardData;
+  const { projectTickets, linkedT3Projects } = boardData;
 
   if (selectedProject === null) return null;
   const readOnly = selectedProject.archivedAt != null;
-  const lifecyclePending =
-    !pageData.canOperate || pendingAction !== null || jiraPendingAction !== null;
+  const lifecyclePending = !pageData.canOperate || pendingAction !== null;
   const mutationDisabled = readOnly || lifecyclePending;
-  const ticketCountLabel = showJiraImportedOnly
-    ? `${boardTickets.length} imported tickets`
-    : `${projectTickets.length} tickets`;
   return (
     <WorkspacePageHeader
       electron={isElectron}
@@ -251,12 +186,11 @@ function WorkbenchBoardHeader(
             <h1 className="max-w-full min-w-0 truncate text-xl font-semibold">
               {selectedProject.title}
             </h1>
-            <span className="shrink-0 text-xs text-muted-foreground">{ticketCountLabel}</span>
-            <WorkbenchWorkspaceStateBadges readOnly={readOnly} jiraBinding={jiraBinding} />
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {projectTickets.length} tickets
+            </span>
+            {readOnly ? <Badge variant="outline">Archived Workspace</Badge> : null}
           </div>
-          {jiraBinding ? (
-            <WorkbenchJiraBoardContext binding={jiraBinding} pendingAction={jiraPendingAction} />
-          ) : null}
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Popover>
@@ -317,46 +251,6 @@ function WorkbenchBoardHeader(
                 </MenuItem>
               </MenuGroup>
               <MenuSeparator />
-              {jiraBinding ? (
-                <>
-                  <MenuGroup>
-                    <MenuGroupLabel>
-                      {jiraBinding.boardName}
-                      {!jiraBinding.active ? " · Paused" : ""}
-                    </MenuGroupLabel>
-                    <MenuItem disabled={mutationDisabled} onClick={openJiraDialog}>
-                      <Settings2Icon /> Configure Jira sync
-                    </MenuItem>
-                    <MenuItem
-                      disabled={mutationDisabled || !jiraBinding.active}
-                      onClick={() => void syncJiraBinding(jiraBinding)}
-                    >
-                      <RefreshCwIcon />{" "}
-                      {jiraPendingAction === "sync" ? "Syncing Jira…" : "Sync Jira"}
-                    </MenuItem>
-                  </MenuGroup>
-                  {jiraSprintLinks.length > 0 ? (
-                    <MenuGroup>
-                      <MenuGroupLabel>Jira sprints</MenuGroupLabel>
-                      {jiraSprintLinks.map((sprint) => (
-                        <MenuItem
-                          key={sprint.id}
-                          render={<a href={sprint.url} target="_blank" rel="noopener noreferrer" />}
-                        >
-                          <LinkIcon /> {sprint.name}
-                        </MenuItem>
-                      ))}
-                    </MenuGroup>
-                  ) : null}
-                </>
-              ) : (
-                <MenuGroup>
-                  <MenuItem disabled={mutationDisabled} onClick={openJiraDialog}>
-                    <LinkIcon /> Connect Jira
-                  </MenuItem>
-                </MenuGroup>
-              )}
-              <MenuSeparator />
               <WorkbenchWorkspaceLifecycleMenu
                 workspace={selectedProject}
                 pending={lifecyclePending}
@@ -370,133 +264,18 @@ function WorkbenchBoardHeader(
   );
 }
 
-function WorkbenchJiraBoardContext({
-  binding,
-  pendingAction,
-}: {
-  binding: NonNullable<ReturnType<typeof useWorkbenchBoardData>["jiraBinding"]>;
-  pendingAction: ReturnType<typeof useWorkbenchJiraBindings>["jiraPendingAction"];
-}) {
-  const sprints = getWorkbenchJiraBindingSprints(binding);
-  const sprintScope = binding.followActiveSprint ? "Following active" : "Selected";
-  return (
-    <div
-      aria-label="Jira sync context"
-      className="flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground"
-    >
-      <span className="min-w-0 break-words [overflow-wrap:anywhere]">
-        Jira board: {binding.boardName}
-      </span>
-      <span className="min-w-0 break-words [overflow-wrap:anywhere]">
-        {sprintScope} sprint{sprints.length === 1 ? "" : "s"}:{" "}
-        {sprints.map((sprint) => sprint.name).join(", ")}
-      </span>
-      <Tooltip>
-        <TooltipTrigger
-          render={<span aria-label="Jira sync status" className="break-words" tabIndex={0} />}
-        >
-          {jiraBindingStatusLabel(binding, pendingAction)}
-        </TooltipTrigger>
-        <TooltipPopup>
-          {binding.lastSyncedAt
-            ? new Date(binding.lastSyncedAt).toLocaleString()
-            : "Jira not synced yet"}
-        </TooltipPopup>
-      </Tooltip>
-    </div>
-  );
-}
-
-function WorkbenchJiraSyncNotice(
-  props: Pick<
-    WorkbenchPageViewProps,
-    "boardData" | "environmentId" | "jiraBindings" | "pageData" | "selection"
-  >,
-) {
-  const { selection, jiraBindings, boardData, environmentId } = props;
-
-  const {
-    setSelectedTicketId,
-    setSelectedEpicId,
-    setAwaitingTicketId,
-    setAwaitingEpicId,
-    selectedProject,
-    updateRouteSelection,
-  } = selection;
-  const { setJiraSyncNotice, syncJiraBinding } = jiraBindings;
-
-  const { jiraBinding, activeJiraSyncNotice, setJiraBoardFilter } = boardData;
-
-  if (environmentId === null) return null;
-  return (
-    <>
-      {activeJiraSyncNotice ? (
-        <div
-          className={`mx-3 mt-3 flex shrink-0 items-center gap-2 rounded-lg border p-3 text-sm sm:mx-4 ${
-            activeJiraSyncNotice.state === "error"
-              ? "border-destructive/30 bg-destructive/5 text-destructive-foreground"
-              : "border-border bg-muted/25 text-foreground"
-          }`}
-          role="status"
-          aria-live="polite"
-        >
-          <RefreshCwIcon
-            className={`size-4 shrink-0 ${
-              activeJiraSyncNotice.state === "syncing" ? "animate-spin" : ""
-            }`}
-          />
-          <span className="min-w-0 flex-1">{activeJiraSyncNotice.message}</span>
-          {activeJiraSyncNotice.state === "error" &&
-          jiraBinding?.active &&
-          selectedProject?.archivedAt == null ? (
-            <Button
-              disabled={!props.pageData.canOperate}
-              onClick={() => void syncJiraBinding(jiraBinding)}
-              size="xs"
-              variant="outline"
-            >
-              <RefreshCwIcon /> Retry
-            </Button>
-          ) : activeJiraSyncNotice.state === "success" ? (
-            <Button
-              onClick={() => {
-                setJiraSyncNotice(null);
-                if (!selectedProject) return;
-                setAwaitingTicketId(null);
-                setAwaitingEpicId(null);
-                setSelectedEpicId(null);
-                setSelectedTicketId(null);
-                setJiraBoardFilter({ environmentId, projectId: selectedProject.id });
-                void updateRouteSelection(selectedProject.id);
-              }}
-              size="xs"
-              variant="outline"
-            >
-              View imported tickets
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-    </>
-  );
-}
-
 function WorkbenchBoardErrors(
-  props: Pick<WorkbenchPageViewProps, "error" | "setError" | "jiraBindings" | "pageData">,
+  props: Pick<WorkbenchPageViewProps, "error" | "setError" | "pageData">,
 ) {
-  const { pageData, jiraBindings, error, setError } = props;
+  const { pageData, error, setError } = props;
   const { query, threadLookupError, refreshThreadLookup } = pageData;
 
-  const { jiraError } = jiraBindings;
-
   return (
     <>
-      {query.error || error || threadLookupError || jiraError ? (
+      {query.error || error || threadLookupError ? (
         <div className="mx-3 mt-3 flex shrink-0 items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive-foreground sm:mx-4">
           <AlertCircleIcon className="size-4 shrink-0" />
-          <span className="min-w-0 flex-1">
-            {error ?? query.error ?? threadLookupError ?? jiraError}
-          </span>
+          <span className="min-w-0 flex-1">{error ?? query.error ?? threadLookupError}</span>
           {error === null && query.error ? (
             <Button onClick={query.refresh} size="xs" variant="outline">
               <RefreshCwIcon /> Retry
@@ -525,40 +304,11 @@ function WorkbenchBoardErrors(
 function WorkbenchBoardToolbar(props: Pick<WorkbenchPageViewProps, "boardData">) {
   const { boardData } = props;
 
-  const {
-    jiraIssueLinksByTicketId,
-    projectTickets,
-    showJiraImportedOnly,
-    boardEpics,
-    boardGroupModeForView,
-    setBoardGroupMode,
-    setJiraBoardFilter,
-  } = boardData;
+  const { projectEpics, boardGroupModeForView, setBoardGroupMode } = boardData;
 
   return (
     <div className="flex min-w-0 max-w-44 flex-wrap items-center gap-2 text-sm">
-      {showJiraImportedOnly ? (
-        <Button
-          aria-label="Show all Workbench tickets"
-          onClick={() => setJiraBoardFilter(null)}
-          size="xs"
-          variant="outline"
-        >
-          Show all tickets
-        </Button>
-      ) : null}
-      {projectTickets.some((ticket) => jiraIssueLinksByTicketId.get(ticket.id)?.issue.flagged) ? (
-        <Badge className="ml-1" variant="warning">
-          <AlertCircleIcon />
-          {
-            projectTickets.filter(
-              (ticket) => jiraIssueLinksByTicketId.get(ticket.id)?.issue.flagged,
-            ).length
-          }{" "}
-          Jira flagged
-        </Badge>
-      ) : null}
-      {boardEpics.length > 0 ? (
+      {projectEpics.length > 0 ? (
         <div className="w-44 max-w-full">
           <Select
             value={boardGroupModeForView}
@@ -590,7 +340,6 @@ type WorkbenchPageTicketDetailProps = Pick<
   | "dialogs"
   | "environmentId"
   | "error"
-  | "jiraBindings"
   | "pageData"
   | "pendingAction"
   | "selection"
@@ -600,7 +349,7 @@ type WorkbenchPageTicketDetailProps = Pick<
 >;
 
 function getWorkbenchPageTicketState({
-  props: { pageData, ticketActions, jiraBindings, pendingAction, error },
+  props: { pageData, ticketActions, pendingAction, error },
   ticketId,
 }: {
   props: WorkbenchPageTicketDetailProps;
@@ -618,7 +367,7 @@ function getWorkbenchPageTicketState({
       ticketId,
     }),
     threadActionLabel: getWorkbenchTicketStartProgressLabel(pendingAction, ticketId),
-    error: error ?? pageData.query.error ?? pageData.threadLookupError ?? jiraBindings.jiraError,
+    error: error ?? pageData.query.error ?? pageData.threadLookupError,
     onRetryError: error
       ? undefined
       : pageData.query.error
@@ -646,105 +395,6 @@ function isWorkbenchPageTicketThreadPending({
   return (
     isWorkbenchTicketStartPending(pendingAction, ticketId) ||
     (assignment !== undefined && pendingAction === `restore:${assignment.threadId}`)
-  );
-}
-
-function getWorkbenchPageJiraIssueTicketOpener({
-  boardData,
-  selection,
-}: Pick<WorkbenchPageViewProps, "boardData" | "selection">): WorkbenchJiraIssueTicketOpener {
-  return (issueId) => {
-    const ticketId = boardData.jiraTicketIdsByIssueId.get(issueId);
-    const projectId = selection.selectedProject?.id;
-    if (ticketId === undefined || projectId === undefined) return undefined;
-    return () => {
-      selection.setAwaitingTicketId(null);
-      selection.setAwaitingEpicId(null);
-      selection.setSelectedEpicId(null);
-      selection.setSelectedTicketId(ticketId);
-      void selection.updateRouteSelection(projectId, ticketId);
-    };
-  };
-}
-
-function getWorkbenchPageTicketJiraProps({
-  props: { boardData, jiraBindings, pageData, pendingAction, ticketActions, selection },
-  ticket,
-}: {
-  props: WorkbenchPageTicketDetailProps;
-  ticket: WorkbenchTicket;
-}) {
-  const { jiraIssueLinksByTicketId, jiraManagedTicketIds, jiraOwnershipKnown, jiraBinding } =
-    boardData;
-  const { jiraPendingAction, syncJiraBinding } = jiraBindings;
-  const jiraFieldsManaged = jiraManagedTicketIds.has(ticket.id);
-  return {
-    jiraIssueLink: jiraIssueLinksByTicketId.get(ticket.id) ?? null,
-    openJiraIssueTicket: getWorkbenchPageJiraIssueTicketOpener({ boardData, selection }),
-    jiraFieldsManaged,
-    jiraOwnershipKnown,
-    jiraPublicationAction: (
-      <WorkbenchPageTicketPublicationAction
-        ticket={ticket}
-        binding={jiraBinding}
-        ownershipKnown={jiraOwnershipKnown}
-        jiraFieldsManaged={jiraFieldsManaged}
-        pending={
-          !pageData.canOperate ||
-          pendingAction !== null ||
-          selection.selectedProject?.archivedAt != null
-        }
-        editing={pageData.ticketDrafts.get(ticket.id)?.mode === "editing"}
-        onPublish={ticketActions.openPublication}
-      />
-    ),
-    jiraRefreshing: jiraPendingAction === "sync",
-    jiraRefreshDisabled:
-      !pageData.canOperate ||
-      jiraPendingAction !== null ||
-      !jiraBinding?.active ||
-      selection.selectedProject?.archivedAt != null,
-    onRefreshJira: jiraBinding ? () => void syncJiraBinding(jiraBinding) : null,
-    lifecycleActionsEnabled:
-      pageData.canOperate &&
-      jiraOwnershipKnown &&
-      !jiraFieldsManaged &&
-      selection.selectedProject?.archivedAt == null,
-  };
-}
-
-function WorkbenchPageTicketPublicationAction({
-  ticket,
-  binding,
-  ownershipKnown,
-  jiraFieldsManaged,
-  pending,
-  editing,
-  onPublish,
-}: {
-  ticket: WorkbenchTicket;
-  binding: WorkbenchPageViewProps["boardData"]["jiraBinding"];
-  ownershipKnown: boolean;
-  jiraFieldsManaged: boolean;
-  pending: boolean;
-  editing: boolean;
-  onPublish: WorkbenchPageViewProps["ticketActions"]["openPublication"];
-}) {
-  if (!binding || !ownershipKnown || jiraFieldsManaged) return null;
-  return (
-    <Button
-      size="xs"
-      variant="outline"
-      disabled={pending || !binding.active || ticket.archivedAt != null || editing}
-      onClick={() => onPublish(ticket)}
-      title={
-        binding.active
-          ? "Create a Jira issue for this local Ticket"
-          : "Resume Jira sync before publishing"
-      }
-    >
-      <WorkbenchJiraIcon /> Publish to Jira…
-    </Button>
   );
 }
 
@@ -787,7 +437,6 @@ function WorkbenchPageTicketDetail(
     setError("Start work before changing this ticket's Threads. Planning keeps its own Thread.");
   const {
     changeTicket,
-    changeJiraTransition,
     setTicketArchived,
     removeTicket,
     resetTicketWorkspace,
@@ -812,7 +461,7 @@ function WorkbenchPageTicketDetail(
       workspaceReadOnly={!pageData.canOperate || selectedProject.archivedAt != null}
       ticket={selectedTicket}
       {...getWorkbenchPageTicketState({ props, ticketId: selectedTicket.id })}
-      {...getWorkbenchPageTicketJiraProps({ props, ticket: selectedTicket })}
+      lifecycleActionsEnabled={pageData.canOperate && selectedProject.archivedAt == null}
       repositoryScopeDraft={ticketActions.repositoryScopeDraft}
       onEditRepositories={ticketActions.editRepositories}
       onRepositoryScopeChange={ticketActions.changeRepositoryScope}
@@ -837,9 +486,6 @@ function WorkbenchPageTicketDetail(
         void regenerateSummary(ticket);
       }}
       onUpdate={changeTicket}
-      onJiraTransition={(selection) => {
-        void changeJiraTransition(selection);
-      }}
       onCreateEpic={openEpicDialog}
       onOpenEpic={(epicId) => {
         setAwaitingTicketId(null);
@@ -882,7 +528,7 @@ function WorkbenchPageEpicDetail(
   >,
 ) {
   const { pageData, selection, dialogs, boardData, error, pendingAction, setError } = props;
-  const { repositoriesById, query, jiraSnapshot, assignmentsByTicket } = pageData;
+  const { repositoriesById, query, assignmentsByTicket } = pageData;
   const {
     setSelectedTicketId,
     setSelectedEpicId,
@@ -895,8 +541,7 @@ function WorkbenchPageEpicDetail(
   } = selection;
 
   const { saveEpicContent, openTicketConversation, canArchiveEpic, setEpicArchived } = dialogs;
-  const { jiraIssueLinksByTicketId, selectedEpicTickets, jiraBinding, selectedJiraEpicUrl } =
-    boardData;
+  const { selectedEpicTickets } = boardData;
 
   const pending = pendingAction !== null;
   if (selectedProject === null || selectedEpic === null) return null;
@@ -906,20 +551,9 @@ function WorkbenchPageEpicDetail(
       workspaceTitle={selectedProject.title}
       readOnly={!pageData.canOperate || selectedProject.archivedAt != null}
       epic={selectedEpic}
-      jiraUrl={selectedJiraEpicUrl}
-      jiraManaged={
-        jiraBinding !== null &&
-        isWorkbenchJiraEpic({
-          epicId: selectedEpic.id,
-          bindingId: jiraBinding.id,
-          epicLinks: jiraSnapshot?.epicLinks,
-        })
-      }
       tickets={selectedEpicTickets}
       repositoriesById={repositoriesById}
       assignmentsByTicket={assignmentsByTicket}
-      jiraIssueLinksByTicketId={jiraIssueLinksByTicketId}
-      jiraOwnershipKnown={boardData.jiraOwnershipKnown}
       pending={pending}
       error={error ?? query.error}
       onBack={() => {
@@ -928,7 +562,6 @@ function WorkbenchPageEpicDetail(
       }}
       actions={{
         onSave: saveEpicContent,
-        openJiraIssueTicket: getWorkbenchPageJiraIssueTicketOpener(props),
         lifecycleSupported: pageData.snapshot?.supportsEpicLifecycle === true,
         canArchive: canArchiveEpic,
         onArchive: setEpicArchived,
@@ -942,24 +575,6 @@ function WorkbenchPageEpicDetail(
       }}
       onCreateTicket={() => openTicketConversation(selectedEpic.id)}
     />
-  );
-}
-
-/** Jira-bound Workspaces create tickets from Jira's Epics; local ones use every active Epic. */
-function getCreationEpics({
-  jiraBinding,
-  activeProjectEpics,
-  epicLinks,
-}: {
-  jiraBinding: WorkbenchPageViewProps["boardData"]["jiraBinding"];
-  activeProjectEpics: WorkbenchPageViewProps["boardData"]["activeProjectEpics"];
-  epicLinks:
-    | NonNullable<WorkbenchPageViewProps["pageData"]["jiraSnapshot"]>["epicLinks"]
-    | undefined;
-}) {
-  if (!jiraBinding) return activeProjectEpics;
-  return activeProjectEpics.filter((epic) =>
-    isWorkbenchJiraEpic({ epicId: epic.id, bindingId: jiraBinding.id, epicLinks }),
   );
 }
 
@@ -1003,14 +618,6 @@ function WorkbenchPageConversation(
       providers={pageData.providers}
       linkedProjects={boardData.linkedT3Projects}
       epics={boardData.activeProjectEpics}
-      jiraEpics={getCreationEpics({
-        jiraBinding: boardData.jiraBinding,
-        activeProjectEpics: boardData.activeProjectEpics,
-        epicLinks: pageData.jiraSnapshot?.epicLinks,
-      })}
-      jiraBinding={boardData.jiraBinding}
-      localOnlySupported={pageData.jiraSnapshot?.supportsLocalOnlyTickets === true}
-      jiraOwnershipKnown={boardData.jiraOwnershipKnown}
       initialEpicId={dialogs.conversationEpicId}
       refreshSnapshot={pageData.refreshWorkbenchSnapshot}
       onClose={dialogs.closeTicketConversation}
@@ -1034,8 +641,6 @@ function WorkbenchPageBoard(
     | "dialogs"
     | "environmentId"
     | "error"
-    | "jiraBindings"
-    | "openJiraDialog"
     | "workspaceActions"
     | "pageData"
     | "pendingAction"
@@ -1075,17 +680,8 @@ function WorkbenchPageBoard(
   } = selection;
 
   const { openTicketConversation } = dialogs;
-  const {
-    jiraIssueLinksByTicketId,
-    jiraBinding,
-    activeJiraTicketIds,
-    boardTickets,
-    boardEpics,
-    boardGroupModeForView,
-    repositoriesReady,
-  } = boardData;
-  const { changeTicket, changeJiraTransition, ticketForBoardAction, regenerateSummary } =
-    ticketActions;
+  const { projectTickets, projectEpics, boardGroupModeForView, repositoriesReady } = boardData;
+  const { changeTicket, ticketForBoardAction, regenerateSummary } = ticketActions;
   const { requestTicketThread } = threadActions;
   const pending = pendingAction !== null;
   if (environmentId === null || selectedProject === null) return null;
@@ -1100,41 +696,18 @@ function WorkbenchPageBoard(
     <>
       <WorkbenchBoardHeader {...props} />
 
-      <WorkbenchJiraSyncNotice {...props} />
-
       <WorkbenchBoardErrors {...props} />
 
       <div className="flex min-h-0 flex-1 flex-col">
-        {jiraBinding?.lastSyncError ? (
-          <p
-            role="status"
-            className="border-b border-border px-4 py-2 text-sm text-warning-foreground"
-          >
-            {jiraBinding.lastSyncError}
-          </p>
-        ) : null}
         <WorkbenchTicketBoard
           environmentId={environmentId}
           readOnly={!pageData.canOperate || selectedProject.archivedAt != null}
           threadRestoreDisabled={!pageData.canOperate}
-          onJiraTransition={(selection) => {
-            void changeJiraTransition(selection);
-          }}
-          key={`${selectedProject.id}:${jiraBinding?.boardMode ?? "mapped"}`}
-          mirrorColumns={jiraBinding?.boardMode === "mirror_jira" ? jiraBinding.boardColumns : null}
-          jiraConnected={jiraBinding !== null}
-          jiraOwnershipKnown={boardData.jiraOwnershipKnown}
-          {...(jiraBinding && boardData.jiraOwnershipKnown
-            ? { onPublishToJira: ticketActions.openPublication }
-            : {})}
-          jiraPublishDisabled={
-            !pageData.canOperate || !jiraBinding?.active || selectedProject.archivedAt != null
-          }
-          jiraStatusMappings={jiraBinding?.statusMappings ?? []}
+          key={selectedProject.id}
           projectId={selectedProject.id}
           drafts={getUnsavedConversationDrafts(snapshot, selectedProject.id)}
-          tickets={boardTickets}
-          epics={boardEpics}
+          tickets={projectTickets}
+          epics={projectEpics}
           groupMode={boardGroupModeForView}
           viewControls={<WorkbenchBoardToolbar boardData={boardData} />}
           floatingChat={
@@ -1147,9 +720,6 @@ function WorkbenchPageBoard(
               onOpenDraft={(draftId) => selectTicket(selectedProject.id, draftId)}
             />
           }
-          jiraIssueLinksByTicketId={jiraIssueLinksByTicketId}
-          openJiraIssueTicket={getWorkbenchPageJiraIssueTicketOpener(props)}
-          activeJiraTicketIds={activeJiraTicketIds}
           selectedTicketId={null}
           repositoriesById={repositoriesById}
           repositoryProjectIds={selectedProject.linkedProjectIds}
@@ -1206,7 +776,6 @@ function WorkbenchPageBoardChat({
       workspace={workspace}
       providers={pageData.providers}
       linkedProjects={boardData.linkedT3Projects}
-      // Unfiltered: a Thread keeps its tab when the board shows only Jira-imported tickets.
       tickets={boardData.projectTickets}
       assignments={snapshot?.assignments ?? []}
       drafts={snapshot?.ticketDrafts ?? []}
@@ -1215,23 +784,7 @@ function WorkbenchPageBoardChat({
       createContext={{
         linkedProjects: boardData.linkedT3Projects,
         epics: boardData.activeProjectEpics,
-        jiraEpics: getCreationEpics({
-          jiraBinding: boardData.jiraBinding,
-          activeProjectEpics: boardData.activeProjectEpics,
-          epicLinks: pageData.jiraSnapshot?.epicLinks,
-        }),
-        jiraBinding: boardData.jiraBinding,
-        localOnlySupported: pageData.jiraSnapshot?.supportsLocalOnlyTickets === true,
-        jiraOwnershipKnown: boardData.jiraOwnershipKnown,
       }}
-      ticketKeysById={
-        new Map(
-          [...boardData.jiraIssueLinksByTicketId].map(([ticketId, link]) => [
-            ticketId,
-            link.issue.key,
-          ]),
-        )
-      }
       canStartDrafts={
         pageData.canOperate && workspace.archivedAt == null && supportsConversationDrafts(snapshot)
       }
@@ -1250,8 +803,6 @@ function WorkbenchPageWorkspace(
     | "dialogs"
     | "environmentId"
     | "error"
-    | "jiraBindings"
-    | "openJiraDialog"
     | "workspaceActions"
     | "pageData"
     | "pendingAction"
@@ -1261,10 +812,8 @@ function WorkbenchPageWorkspace(
     | "ticketActions"
   >,
 ) {
-  const { pageData, selection, jiraBindings, boardData, environmentId, pendingAction } = props;
-  const { optimisticStatus } = pageData;
+  const { pageData, selection, environmentId, pendingAction } = props;
   const { selectedProject, selectedEpic, selectedTicket } = selection;
-  const { jiraPendingAction } = jiraBindings;
   const workItemView = resolveWorkbenchWorkItemView({
     snapshot: pageData.snapshot,
     workspaceId: selectedProject?.id ?? null,
@@ -1277,8 +826,6 @@ function WorkbenchPageWorkspace(
     awaitingTicketId: selection.awaitingTicketId,
   });
 
-  const { projectJiraIssueLinks } = boardData;
-
   const pending = !pageData.canOperate || pendingAction !== null;
   if (environmentId === null) return null;
   return (
@@ -1288,8 +835,7 @@ function WorkbenchPageWorkspace(
           role="status"
           className="border-b border-border px-4 py-3 text-sm text-muted-foreground"
         >
-          This Workspace is archived. Planning is read-only and Jira sync is paused. Linked Threads
-          remain available.
+          This Workspace is archived. Planning is read-only. Linked Threads remain available.
           <Button
             variant="ghost"
             size="xs"
@@ -1303,16 +849,6 @@ function WorkbenchPageWorkspace(
           </Button>
         </div>
       ) : null}
-      <WorkbenchJiraTransitionsPreloader
-        environmentId={environmentId}
-        issueLinks={projectJiraIssueLinks}
-        paused={
-          selection.selectedProject?.archivedAt != null ||
-          pending ||
-          optimisticStatus.pendingTicketIds.size > 0 ||
-          jiraPendingAction !== null
-        }
-      />
       {workItemView.kind === "conversation" ? (
         <WorkbenchPageConversation {...props} draft={workItemView.draft} />
       ) : workItemView.kind === "ticket" ? (
@@ -1363,86 +899,6 @@ function WorkbenchPageWorkspaceDialogs(
           error={error ?? query.error}
           onOpenChange={setEditWorkspaceOpen}
           onSave={saveWorkspace}
-        />
-      ) : null}
-    </>
-  );
-}
-
-function WorkbenchPageJiraDialog(
-  props: Pick<
-    WorkbenchPageViewProps,
-    | "beginJiraAuthFlow"
-    | "environmentId"
-    | "boardData"
-    | "handleJiraDialogOpenChange"
-    | "jiraBindings"
-    | "jiraDialogOpen"
-    | "pageData"
-    | "selection"
-  >,
-) {
-  const {
-    pageData,
-    selection,
-    jiraBindings,
-    boardData,
-    jiraDialogOpen,
-    beginJiraAuthFlow,
-    handleJiraDialogOpenChange,
-  } = props;
-  const { jiraQuery, jiraSnapshot } = pageData;
-  const { selectedProject } = selection;
-  const {
-    jiraError,
-    jiraPendingAction,
-    listJiraProjectsForConnection,
-    listJiraBoardsForProject,
-    listJiraSprintsForBoard,
-    getJiraBoardConfiguration,
-    createJiraBindingForWorkspace,
-    updateJiraBindingForWorkspace,
-    setJiraBindingActive,
-  } = jiraBindings;
-
-  const {
-    linkedT3Projects,
-    jiraBinding,
-    localTicketsForJiraMigration,
-    localEpicsForJiraMigration,
-  } = boardData;
-
-  return (
-    <>
-      {selectedProject && selectedProject.archivedAt == null && jiraDialogOpen ? (
-        <WorkbenchJiraDialog
-          // Keep the dialog instance stable while a first migration is being
-          // retried; its revision snapshot must not be replaced by a refresh.
-          key={selectedProject.id}
-          open={jiraDialogOpen}
-          connections={jiraSnapshot?.connections ?? []}
-          existingBinding={jiraBinding}
-          linkedProjects={linkedT3Projects}
-          localTickets={localTicketsForJiraMigration}
-          localEpics={localEpicsForJiraMigration}
-          pending={!pageData.canOperate || jiraPendingAction !== null || jiraQuery.isPending}
-          error={jiraError ?? jiraQuery.error}
-          recovery={
-            <WorkbenchPageJiraRecovery
-              environmentId={props.environmentId}
-              pageData={pageData}
-              boardData={boardData}
-            />
-          }
-          onOpenChange={handleJiraDialogOpenChange}
-          onBeginAuth={beginJiraAuthFlow}
-          onListProjects={listJiraProjectsForConnection}
-          onListBoards={listJiraBoardsForProject}
-          onListSprints={listJiraSprintsForBoard}
-          onGetBoardConfiguration={getJiraBoardConfiguration}
-          onCreate={createJiraBindingForWorkspace}
-          onUpdate={updateJiraBindingForWorkspace}
-          onSetActive={setJiraBindingActive}
         />
       ) : null}
     </>
@@ -1526,11 +982,11 @@ function WorkbenchPageThreadDialogs(
 function WorkbenchPageTicketDialogs(
   props: Pick<
     WorkbenchPageViewProps,
-    "boardData" | "dialogs" | "error" | "pageData" | "pendingAction" | "selection" | "ticketActions"
+    "boardData" | "dialogs" | "error" | "pageData" | "pendingAction" | "selection"
   >,
 ) {
-  const { pageData, selection, dialogs, boardData, error, pendingAction, ticketActions } = props;
-  const { query, jiraSnapshot } = pageData;
+  const { pageData, selection, dialogs, boardData, error, pendingAction } = props;
+  const { query } = pageData;
   const { selectedProject } = selection;
 
   const {
@@ -1543,32 +999,12 @@ function WorkbenchPageTicketDialogs(
     handleTicketDialogOpenChange,
     handleEpicDialogOpenChange,
   } = dialogs;
-  const { linkedT3Projects, activeProjectEpics, jiraBinding } = boardData;
+  const { linkedT3Projects, activeProjectEpics } = boardData;
 
   const pending = pendingAction !== null;
-  const publication = ticketActions.publication;
   if (selectedProject?.archivedAt != null) return null;
   return (
     <>
-      {publication ? (
-        <WorkbenchPublishTicketDialog
-          key={publication.ticket.id}
-          ticket={publication.ticket}
-          binding={publication.binding}
-          epics={activeProjectEpics.filter((epic) =>
-            isWorkbenchJiraEpic({
-              epicId: epic.id,
-              bindingId: publication.binding.id,
-              epicLinks: jiraSnapshot?.epicLinks,
-            }),
-          )}
-          pending={pending}
-          disabled={!pageData.canOperate}
-          error={ticketActions.publicationError}
-          onClose={ticketActions.closePublication}
-          onPublish={ticketActions.publishTicket}
-        />
-      ) : null}
       {selectedProject ? (
         <WorkbenchEpicDialog
           open={epicDialogOpen}
@@ -1585,15 +1021,7 @@ function WorkbenchPageTicketDialogs(
           open={ticketDialogOpen}
           linkedProjects={linkedT3Projects}
           epics={activeProjectEpics}
-          jiraEpics={getCreationEpics({
-            jiraBinding,
-            activeProjectEpics,
-            epicLinks: jiraSnapshot?.epicLinks,
-          })}
           initialEpicId={ticketDialogEpicId}
-          jiraBinding={jiraBinding}
-          localOnlySupported={jiraSnapshot?.supportsLocalOnlyTickets === true}
-          jiraOwnershipKnown={boardData.jiraOwnershipKnown}
           pending={pending}
           disabled={!pageData.canOperate}
           error={error ?? query.error}
@@ -1614,8 +1042,6 @@ function WorkbenchPageContent(
     | "dialogs"
     | "environmentId"
     | "error"
-    | "jiraBindings"
-    | "openJiraDialog"
     | "workspaceActions"
     | "pageData"
     | "pendingAction"
@@ -1626,7 +1052,7 @@ function WorkbenchPageContent(
   >,
 ) {
   const { environmentId, pageData, selection } = props;
-  const { query, jiraQuery, snapshot, jiraSnapshot } = pageData;
+  const { query, snapshot } = pageData;
   const { awaitingSelectedProject, selectedProject } = selection;
   if (environmentId === null)
     return (
@@ -1644,8 +1070,6 @@ function WorkbenchPageContent(
     );
   if (query.isPending && snapshot === null) return <WorkbenchLoading />;
   if (snapshot === null && query.error) return <WorkbenchQueryError query={query} />;
-  if (jiraSnapshot === null && jiraQuery.error) return <WorkbenchQueryError query={jiraQuery} />;
-  if (jiraSnapshot === null) return <WorkbenchLoading />;
   if (awaitingSelectedProject && query.error) return <WorkbenchQueryError query={query} />;
   if (awaitingSelectedProject) return <WorkbenchLoading />;
   if (selectedProject === null) return <WorkbenchPageNoWorkspace {...props} />;
@@ -1697,49 +1121,14 @@ function WorkbenchPageNoWorkspace(
   );
 }
 
-function WorkbenchPageJiraRecovery({
-  environmentId,
-  pageData,
-  boardData,
-}: Pick<WorkbenchPageViewProps, "environmentId" | "pageData" | "boardData">) {
-  const creations =
-    pageData.jiraSnapshot?.uncertainCreations?.filter(
-      (creation) => creation.bindingId === boardData.jiraBinding?.id,
-    ) ?? [];
-  if (environmentId === null || creations.length === 0) return null;
-  return (
-    <WorkbenchJiraCreationRecovery
-      key={`${environmentId}:${boardData.jiraBinding?.id}`}
-      environmentId={environmentId}
-      creations={creations}
-    />
-  );
-}
-
 export function WorkbenchPageView(props: WorkbenchPageViewProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-workbench-page="">
-      {!props.jiraDialogOpen ? (
-        <WorkbenchPageJiraRecovery
-          key={`${props.environmentId}:${props.selection.selectedProject?.id}`}
-          {...props}
-        />
-      ) : null}
       <WorkbenchPageContent {...props} />
 
       <WorkbenchPageWorkspaceDialogs {...props} />
-      <WorkbenchPageJiraDialog {...props} />
       <WorkbenchPageThreadDialogs {...props} />
       <WorkbenchPageTicketDialogs {...props} />
     </div>
   );
-}
-
-function jiraBindingStatusLabel(
-  binding: NonNullable<ReturnType<typeof useWorkbenchBoardData>["jiraBinding"]>,
-  pendingAction: string | null,
-) {
-  if (pendingAction === "sync") return "Syncing with Jira…";
-  if (binding.lastSyncError) return "Jira sync failed";
-  return formatJiraSyncStatus(binding.lastSyncedAt);
 }

@@ -203,8 +203,6 @@ it("preserves a draft deep link without requiring a Ticket record and falls back
       epicId: null,
       repositoryProjectIds: [],
       primaryT3ProjectId: null,
-      localOnly: false,
-      jiraSprintId: null,
     },
   };
   const { router, update } = await mount(

@@ -6,7 +6,6 @@ import type {
   ThreadId,
   WorkbenchAssignment,
   WorkbenchEpic,
-  WorkbenchJiraIssueSnapshot,
   WorkbenchSnapshot,
   WorkbenchTicket,
   WorkbenchTicketGeneratedSummary,
@@ -25,17 +24,6 @@ export const WORKBENCH_TICKET_KIND_LABELS: Record<WorkbenchTicketKind, string> =
   story: "Story",
   bug: "Bug",
 };
-
-/** Jira's issue type wins for Jira Tickets; local Tickets use their Workbench kind. */
-export function getWorkbenchTicketTypeLabel({
-  kind,
-  jiraIssue,
-}: {
-  readonly kind: WorkbenchTicketKind;
-  readonly jiraIssue: Pick<WorkbenchJiraIssueSnapshot, "issueType"> | undefined;
-}): string {
-  return jiraIssue?.issueType.name ?? WORKBENCH_TICKET_KIND_LABELS[kind];
-}
 
 const WORKBENCH_TICKET_TEMPLATES: Record<WorkbenchTicketKind, string> = {
   story: [
@@ -70,7 +58,7 @@ export function isWorkbenchTicketKind(value: unknown): value is WorkbenchTicketK
   return WORKBENCH_TICKET_KINDS.some((kind) => kind === value);
 }
 
-export const WORKBENCH_TICKET_STATUSES = [
+const WORKBENCH_TICKET_STATUSES = [
   "todo",
   "in_progress",
   "done",
@@ -81,6 +69,17 @@ export const WORKBENCH_TICKET_STATUS_LABELS: Record<WorkbenchTicketStatus, strin
   in_progress: "In Progress",
   done: "Done",
 };
+
+export function getWorkbenchBoardColumns<Ticket extends Pick<WorkbenchTicket, "status">>(
+  tickets: ReadonlyArray<Ticket>,
+) {
+  return WORKBENCH_TICKET_STATUSES.map((status) => ({
+    id: status,
+    title: WORKBENCH_TICKET_STATUS_LABELS[status],
+    status,
+    tickets: tickets.filter((ticket) => ticket.status === status),
+  }));
+}
 
 export function getWorkbenchTicketSummaryPresentation(
   summary: WorkbenchTicketGeneratedSummary | undefined,
@@ -386,10 +385,12 @@ function neutralizeTicketContextTags(value: string): string {
 
 export type WorkbenchTicketContextSource = Pick<
   WorkbenchTicket,
-  "title" | "markdown" | "kind" | "repositoryProjectIds" | "primaryT3ProjectId"
-> & {
-  readonly jiraIssue?: Pick<WorkbenchJiraIssueSnapshot, "issueType" | "parent"> | undefined;
-};
+  "title" | "markdown" | "kind" | "repositoryProjectIds" | "primaryT3ProjectId" | "jiraIssue"
+>;
+
+// Workbench never calls Jira; the agent's own connector does, and the user applies the link card.
+const JIRA_CONNECTOR_INSTRUCTION =
+  'If you have a Jira connector, search it for issues that already cover this ticket and tell the user about matches. Create or change Jira issues only when the user asks. After you create or find the issue, post its URL in one fenced `workbench-jira-link` block, `{"url": "..."}`, so the user can link it to the ticket.';
 
 export function buildTicketThreadContext(
   ticket: WorkbenchTicketContextSource,
@@ -400,7 +401,7 @@ export function buildTicketThreadContext(
   }>,
 ): string {
   const body = ticket.markdown.trim();
-  const parent = ticket.jiraIssue?.parent;
+  const jiraIssue = ticket.jiraIssue;
   const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]));
   const repositoryLines = getWorkbenchTicketRepositoryProjectIds(ticket).map((repositoryId) => {
     const repository = repositoriesById.get(repositoryId);
@@ -411,8 +412,12 @@ export function buildTicketThreadContext(
   return [
     `# ${ticket.title}`,
     "",
-    `Ticket type: ${getWorkbenchTicketTypeLabel({ kind: ticket.kind, jiraIssue: ticket.jiraIssue })}`,
-    ...(parent ? [`Parent: ${parent.key}${parent.summary ? `: ${parent.summary}` : ""}`] : []),
+    `Ticket type: ${WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}`,
+    ...(jiraIssue ? [`Jira issue: ${jiraIssue.key} (${jiraIssue.url})`] : []),
+    "",
+    "## Jira",
+    "",
+    JIRA_CONNECTOR_INSTRUCTION,
     "",
     "## Repository scope",
     "",

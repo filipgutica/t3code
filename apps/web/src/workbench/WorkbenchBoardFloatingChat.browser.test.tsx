@@ -142,8 +142,6 @@ const draft = (id: string, threadId: string, title: string): WorkbenchTicketDraf
     epicId: null,
     repositoryProjectIds: [],
     primaryT3ProjectId: null,
-    localOnly: true,
-    jiraSprintId: null,
   },
   createdAt,
   updatedAt: createdAt,
@@ -176,19 +174,20 @@ function Harness(props: {
       workspace={workspace}
       providers={[]}
       linkedProjects={[]}
-      tickets={[ticket("ticket-a", "Refunds"), ticket("ticket-b", "Payouts")]}
+      tickets={[
+        {
+          ...ticket("ticket-a", "Refunds"),
+          jiraIssue: { key: "PAY-1", url: "https://example.atlassian.net/browse/PAY-1" },
+        },
+        ticket("ticket-b", "Payouts"),
+      ]}
       assignments={[assignment("first", "ticket-a"), assignment("second", "ticket-b")]}
       drafts={drafts}
       threadsById={new Map(threadIds.map((id) => [ThreadId.make(id), liveThread(id)]))}
       archivedThreadsById={new Map()}
-      ticketKeysById={new Map([[WorkbenchTicketId.make("ticket-a"), "PAY-1"]])}
       createContext={{
         linkedProjects: [],
         epics: [],
-        jiraEpics: [],
-        jiraBinding: null,
-        localOnlySupported: true,
-        jiraOwnershipKnown: true,
       }}
       canStartDrafts
       refreshSnapshot={() => {}}

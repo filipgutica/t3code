@@ -187,9 +187,6 @@ export function useWorkbenchSidebarDraftMenu({
   return {
     actions,
     confirmationTitle: confirmedDraft?.title ?? "",
-    creationUncertain: Boolean(
-      actions.confirmation?.drafts.some((draft) => draft.phase === "promoting"),
-    ),
     openMenu,
     error: actions.error ?? menuError,
     finalFocus: () => {

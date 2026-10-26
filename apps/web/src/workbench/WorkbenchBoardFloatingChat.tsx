@@ -48,7 +48,6 @@ interface WorkbenchBoardFloatingChatProps extends Pick<
   readonly drafts: ReadonlyArray<WorkbenchTicketDraft>;
   readonly threadsById: ThreadsById;
   readonly archivedThreadsById: ThreadsById;
-  readonly ticketKeysById: ReadonlyMap<WorkbenchTicketId, string>;
   /** What Create ticket checks a draft against, as on the full draft page. */
   readonly createContext: Omit<Parameters<typeof getTicketDraftCreateState>[0], "fields">;
   /** False for a read-only Workspace, a missing permission, or a host without drafts. */
@@ -172,7 +171,6 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
     drafts: props.drafts,
     threadsById: props.threadsById,
     archivedThreadsById: props.archivedThreadsById,
-    ticketKeysById: props.ticketKeysById,
   });
   const chat = resolveWorkbenchFloatingChat({
     ...threads,
@@ -378,7 +376,6 @@ function BoardDraftThread({
       <WorkbenchDiscardDraftDialog
         open={discardOpen}
         busy={transitions.action !== null}
-        creationUncertain={draft.phase === "promoting" && createState.createsInJira}
         error={transitions.error}
         onOpenChange={setDiscardOpen}
         onDiscard={transitions.discard}

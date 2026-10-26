@@ -22,7 +22,6 @@ import { WorkbenchThreadBreadcrumb } from "./WorkbenchThreadBreadcrumb";
 vi.mock("./state", () => ({
   workbenchEnvironment: {
     snapshot: () => snapshotQuery,
-    jiraSnapshot: () => jiraSnapshotQuery,
     ticket: (target: {
       environmentId: EnvironmentId;
       input: { ticketId: WorkbenchTicketId; revision: number };
@@ -95,8 +94,6 @@ const snapshot: WorkbenchSnapshot = {
   ],
 };
 const snapshotQuery = Atom.make(AsyncResult.success(snapshot));
-// Never loads: attaching Ticket context must not wait for Jira.
-const jiraSnapshotQuery = Atom.make(AsyncResult.initial());
 const ticketQuery = Atom.family((_key: string) =>
   Atom.make<AsyncResult.AsyncResult<WorkbenchTicket | null, Error>>(AsyncResult.initial()),
 );

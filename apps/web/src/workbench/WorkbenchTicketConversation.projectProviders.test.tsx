@@ -103,10 +103,6 @@ const mount = () =>
         providers={[provider]}
         linkedProjects={projects}
         epics={[]}
-        jiraEpics={[]}
-        jiraBinding={null}
-        localOnlySupported
-        jiraOwnershipKnown
         initialEpicId={null}
         refreshSnapshot={() => {}}
         onClose={() => {}}

@@ -1,9 +1,4 @@
-import type {
-  EnvironmentId,
-  WorkbenchJiraTicketTransition,
-  WorkbenchTicketId,
-  WorkbenchTicketStatus,
-} from "@t3tools/contracts";
+import type { EnvironmentId, WorkbenchTicketId, WorkbenchTicketStatus } from "@t3tools/contracts";
 
 type TicketActionTarget = {
   readonly environmentId: EnvironmentId;
@@ -14,12 +9,6 @@ export type WorkbenchSidebarTicketAction = TicketActionTarget &
   (
     | { readonly kind: "new-thread" }
     | { readonly kind: "status"; readonly status: WorkbenchTicketStatus }
-    | {
-        readonly kind: "jira-transition";
-        readonly transitionId: string;
-        readonly destination: WorkbenchJiraTicketTransition["to"];
-        readonly expectedRemoteUpdatedAt: string;
-      }
     | { readonly kind: "archive"; readonly archived: boolean }
   );
 

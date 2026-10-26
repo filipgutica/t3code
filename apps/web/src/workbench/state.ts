@@ -7,7 +7,6 @@ import {
   createEnvironmentQueryAtomFamily,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Effect from "effect/Effect";
-import * as Atom from "effect/reactivity/Atom";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 
 import { connectionAtomRuntime } from "../connection/runtime";
@@ -25,34 +24,7 @@ const ticketPreparations = createEnvironmentRpcQueryAtomFamily(connectionAtomRun
   staleTimeMs: 5_000,
 });
 
-const jiraSnapshot = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
-  label: "environment-data:workbench:jira:snapshot",
-  tag: WS_METHODS.workbenchJiraGetSnapshot,
-  staleTimeMs: 5_000,
-});
-
-const JIRA_TRANSITIONS_STALE_TIME_MS = 30_000;
-const jiraTicketTransitionsCache = createEnvironmentQueryAtomFamily(connectionAtomRuntime, {
-  label: "environment-data:workbench:jira:get-ticket-transitions",
-  staleTimeMs: JIRA_TRANSITIONS_STALE_TIME_MS,
-  // Workflow actions belong to a Jira revision; a refreshed issue must not reuse old actions.
-  execute: ({ ticketId }: { ticketId: WorkbenchTicketId; remoteUpdatedAt: string | null }) =>
-    request(WS_METHODS.workbenchJiraGetTicketTransitions, { ticketId }),
-});
-
-// Retain the shared result, but recreate its observer on menu open so SWR checks its age.
-// Keeping the observer alive for the cache's idle TTL would skip that check on reopen.
-const jiraTicketTransitionsObserver = Atom.family(
-  (cached: ReturnType<typeof jiraTicketTransitionsCache>) =>
-    cached.pipe(
-      Atom.swr({ staleTime: JIRA_TRANSITIONS_STALE_TIME_MS, revalidateOnMount: true }),
-      Atom.setIdleTTL(0),
-    ),
-);
-
 const scheduler = createAtomCommandScheduler();
-const jiraReadScheduler = createAtomCommandScheduler();
-const jiraSyncScheduler = createAtomCommandScheduler();
 const serialPerEnvironment = {
   mode: "serial",
   key: ({ environmentId }: { readonly environmentId: EnvironmentId }) => environmentId,
@@ -79,27 +51,6 @@ const refreshSnapshot = (
     registry.refresh(ticketPreparations({ environmentId, input: {} }));
   });
 
-const refreshJiraSnapshot = (
-  { environmentId }: { readonly environmentId: EnvironmentId },
-  registry: AtomRegistry.AtomRegistry,
-) =>
-  Effect.sync(() =>
-    registry.refresh(
-      jiraSnapshot({
-        environmentId,
-        input: {},
-      }),
-    ),
-  );
-
-const refreshWorkbenchAndJiraSnapshots = (
-  input: { readonly environmentId: EnvironmentId },
-  registry: AtomRegistry.AtomRegistry,
-) =>
-  Effect.all([refreshSnapshot(input, registry), refreshJiraSnapshot(input, registry)], {
-    discard: true,
-  });
-
 export const workbenchEnvironment = {
   snapshot,
   ticket: createEnvironmentQueryAtomFamily(connectionAtomRuntime, {
@@ -116,15 +67,6 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
   }),
   ticketPreparations,
-  jiraSnapshot,
-  // A failed migration can have committed remotely; recovery needs a fresh reply,
-  // not the query atom's cached value or its fire-and-forget refresh.
-  jiraReadSnapshot: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:jira:read-snapshot",
-    tag: WS_METHODS.workbenchJiraGetSnapshot,
-    scheduler,
-    concurrency: serialPerEnvironment,
-  }),
   createProject: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:create-project",
     tag: WS_METHODS.workbenchCreateProject,
@@ -144,14 +86,14 @@ export const workbenchEnvironment = {
     tag: WS_METHODS.workbenchArchiveProject,
     scheduler,
     concurrency: serialPerEnvironment,
-    onSuccess: refreshWorkbenchAndJiraSnapshots,
+    onSuccess: refreshSnapshot,
   }),
   deleteProject: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:delete-project",
     tag: WS_METHODS.workbenchDeleteProject,
     scheduler,
     concurrency: serialPerEnvironment,
-    onSuccess: refreshWorkbenchAndJiraSnapshots,
+    onSuccess: refreshSnapshot,
   }),
   createEpic: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:create-epic",
@@ -174,95 +116,6 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,
   }),
-  jiraBeginAuth: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:jira:begin-auth",
-    tag: WS_METHODS.workbenchJiraBeginAuth,
-    scheduler,
-    concurrency: serialPerEnvironment,
-  }),
-  jiraCompleteAuth: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:jira:complete-auth",
-    tag: WS_METHODS.workbenchJiraCompleteAuth,
-    scheduler,
-    concurrency: serialPerEnvironment,
-    onSuccess: refreshJiraSnapshot,
-  }),
-  jiraClaimAuth: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:jira:claim-auth",
-    tag: WS_METHODS.workbenchJiraClaimAuth,
-    scheduler,
-    concurrency: serialPerEnvironment,
-    onSuccess: refreshJiraSnapshot,
-  }),
-  jiraListProjects: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:jira:list-projects",
-    tag: WS_METHODS.workbenchJiraListProjects,
-    scheduler: jiraReadScheduler,
-    concurrency: serialPerEnvironment,
-  }),
-  jiraListBoards: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:jira:list-boards",
-    tag: WS_METHODS.workbenchJiraListBoards,
-    scheduler: jiraReadScheduler,
-    concurrency: serialPerEnvironment,
-  }),
-  jiraListSprints: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:jira:list-sprints",
-    tag: WS_METHODS.workbenchJiraListSprints,
-    scheduler: jiraReadScheduler,
-    concurrency: serialPerEnvironment,
-  }),
-  jiraGetBoardConfiguration: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:jira:get-board-configuration",
-    tag: WS_METHODS.workbenchJiraGetBoardConfiguration,
-    scheduler: jiraReadScheduler,
-    concurrency: serialPerEnvironment,
-  }),
-  jiraCreateBinding: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:jira:create-binding",
-    tag: WS_METHODS.workbenchJiraCreateBinding,
-    scheduler,
-    concurrency: serialPerEnvironment,
-    onSuccess: refreshJiraSnapshot,
-  }),
-  jiraUpdateBinding: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:jira:update-binding",
-    tag: WS_METHODS.workbenchJiraUpdateBinding,
-    scheduler,
-    concurrency: serialPerEnvironment,
-    onSuccess: refreshJiraSnapshot,
-  }),
-  jiraSyncBinding: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:jira:sync-binding",
-    tag: WS_METHODS.workbenchJiraSyncBinding,
-    scheduler: jiraSyncScheduler,
-    concurrency: serialPerEnvironment,
-    onSuccess: refreshSnapshot,
-    onSettled: refreshJiraSnapshot,
-  }),
-  jiraMigrateLocalTickets: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:jira:migrate-local-tickets",
-    tag: WS_METHODS.workbenchJiraMigrateLocalTickets,
-    scheduler,
-    concurrency: serialPerEnvironment,
-    onSuccess: refreshWorkbenchAndJiraSnapshots,
-  }),
-  jiraResolveCreation: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:jira:resolve-creation",
-    tag: WS_METHODS.workbenchJiraResolveCreation,
-    scheduler,
-    concurrency: serialPerEnvironment,
-    onSuccess: refreshWorkbenchAndJiraSnapshots,
-  }),
-  jiraUpdateTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:jira:update-ticket",
-    tag: WS_METHODS.workbenchJiraUpdateTicket,
-    scheduler,
-    concurrency: serialPerEnvironment,
-    onSuccess: refreshWorkbenchAndJiraSnapshots,
-  }),
-  jiraGetTicketTransitions: (target: Parameters<typeof jiraTicketTransitionsCache>[0]) =>
-    jiraTicketTransitionsObserver(jiraTicketTransitionsCache(target)),
   createTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:create-ticket",
     tag: WS_METHODS.workbenchCreateTicket,
@@ -273,6 +126,13 @@ export const workbenchEnvironment = {
   updateTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:update-ticket",
     tag: WS_METHODS.workbenchUpdateTicket,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshSnapshot,
+  }),
+  setJiraIssueLink: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:set-jira-issue-link",
+    tag: WS_METHODS.workbenchSetJiraIssueLink,
     scheduler,
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,
@@ -292,13 +152,12 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,
   }),
-  // Creating the ticket can create a Jira issue, so Jira links refresh as well.
   promoteTicketDraft: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:promote-ticket-draft",
     tag: WS_METHODS.workbenchPromoteTicketDraft,
     scheduler,
     concurrency: serialPerEnvironment,
-    onSuccess: refreshWorkbenchAndJiraSnapshots,
+    onSuccess: refreshSnapshot,
   }),
   discardTicketDraft: createEnvironmentRpcCommand(connectionAtomRuntime, {
     ...discardTicketDraftOptions,

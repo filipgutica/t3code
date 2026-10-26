@@ -46,7 +46,6 @@ vi.mock("../state/pullRequests", () => ({
 }));
 vi.mock("./state", () => ({
   workbenchEnvironment: {
-    jiraGetTicketTransitions: () => null,
     snapshot: () => Atom.make(null),
     ticketPreparations: () => Atom.make(null),
     discardTicketDraftInBatch: { permissionAtom: () => Atom.make(true) },
@@ -106,12 +105,6 @@ const props: ComponentProps<typeof WorkbenchTicketBoard> = {
   epics: [],
   groupMode: "none",
   viewControls: null,
-  mirrorColumns: null,
-  jiraConnected: false,
-  openJiraIssueTicket: () => undefined,
-  jiraStatusMappings: [],
-  jiraIssueLinksByTicketId: new Map(),
-  activeJiraTicketIds: new Set(),
   selectedTicketId: null,
   repositoryProjectIds: repositories.map((repository) => repository.id),
   repositoriesReady: true,
@@ -130,7 +123,6 @@ const props: ComponentProps<typeof WorkbenchTicketBoard> = {
   onRegenerateSummary: vi.fn(),
   onOpenThread: vi.fn(),
   onCreateTicket: vi.fn(),
-  onJiraTransition: vi.fn(),
 };
 
 describe("Workbench Board view", () => {

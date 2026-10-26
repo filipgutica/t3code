@@ -7,42 +7,23 @@ export interface WorkbenchTicketDraft {
   readonly mode: "editing" | "saved";
   /** Ticket revision captured when editing began. */
   readonly revision?: number;
-  /** Remote Jira version captured when editing began; protects against stale overwrites. */
-  readonly jiraRemoteUpdatedAt?: string | null;
   readonly savedVersion?: WorkbenchTicketSavedVersion;
 }
 
-export type WorkbenchTicketSavedVersion =
-  | { readonly revision: number }
-  | { readonly jiraRemoteUpdatedAt: string | null };
+export type WorkbenchTicketSavedVersion = { readonly revision: number };
 
-type DraftContent = Pick<
-  WorkbenchTicketDraft,
-  "title" | "markdown" | "revision" | "jiraRemoteUpdatedAt"
->;
+type DraftContent = Pick<WorkbenchTicketDraft, "title" | "markdown" | "revision">;
 
 const draftMatchesSubmittedVersion = (
   draft: WorkbenchTicketDraft,
   submittedContent: DraftContent,
-): boolean =>
-  draft.revision === submittedContent.revision &&
-  draft.jiraRemoteUpdatedAt === submittedContent.jiraRemoteUpdatedAt;
+): boolean => draft.revision === submittedContent.revision;
 
-const getDraftVersion = (
-  content: DraftContent,
-): Pick<WorkbenchTicketDraft, "revision" | "jiraRemoteUpdatedAt"> => ({
-  ...(content.revision !== undefined ? { revision: content.revision } : {}),
-  ...(content.jiraRemoteUpdatedAt !== undefined
-    ? { jiraRemoteUpdatedAt: content.jiraRemoteUpdatedAt }
-    : {}),
-});
+const getDraftVersion = (content: DraftContent): Pick<WorkbenchTicketDraft, "revision"> =>
+  content.revision !== undefined ? { revision: content.revision } : {};
 
 const getSavedVersion = (content: DraftContent): WorkbenchTicketSavedVersion | undefined =>
-  content.jiraRemoteUpdatedAt !== undefined
-    ? { jiraRemoteUpdatedAt: content.jiraRemoteUpdatedAt }
-    : content.revision !== undefined
-      ? { revision: content.revision }
-      : undefined;
+  content.revision !== undefined ? { revision: content.revision } : undefined;
 
 const mergeSavedDraft = ({
   draft,
@@ -74,22 +55,12 @@ const mergeSavedDraft = ({
 export const isWorkbenchDraftProjected = ({
   draft,
   ticket,
-  jiraRemoteUpdatedAt,
 }: {
   readonly draft: WorkbenchTicketDraft | undefined;
   readonly ticket: Pick<WorkbenchTicket, "title" | "markdown" | "revision"> | undefined;
-  readonly jiraRemoteUpdatedAt?: string | null | undefined;
 }): boolean => {
   if (draft?.mode !== "saved" || ticket === undefined) return false;
-  if (draft.savedVersion && "revision" in draft.savedVersion) {
-    return ticket.revision >= draft.savedVersion.revision;
-  }
-  if (draft.savedVersion?.jiraRemoteUpdatedAt != null) {
-    return (
-      jiraRemoteUpdatedAt != null &&
-      Date.parse(jiraRemoteUpdatedAt) >= Date.parse(draft.savedVersion.jiraRemoteUpdatedAt)
-    );
-  }
+  if (draft.savedVersion) return ticket.revision >= draft.savedVersion.revision;
   return ticket.title === draft.title && ticket.markdown === draft.markdown;
 };
 

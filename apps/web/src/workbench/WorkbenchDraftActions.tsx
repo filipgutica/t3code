@@ -20,7 +20,6 @@ interface DraftActionsProps {
   readonly blocker: string | null;
   /** The saved ticket exists, so only the ticket (not the draft) can still be changed. */
   readonly ticketExists: boolean;
-  readonly createsInJira: boolean;
   readonly saveState: "idle" | "saving" | "saved" | "error";
   readonly onCreate: () => void;
   readonly onStartWork: () => void;
@@ -64,20 +63,14 @@ function DiscardingActions({ action, canOperate, onRetryDiscard }: DraftActionsP
 const getDraftStatusLine = ({
   action,
   blocker,
-  createsInJira,
   phase,
   saveState,
   ticketExists,
-}: Pick<
-  DraftActionsProps,
-  "action" | "blocker" | "createsInJira" | "phase" | "saveState" | "ticketExists"
->) => {
+}: Pick<DraftActionsProps, "action" | "blocker" | "phase" | "saveState" | "ticketExists">) => {
   if (phase === "promoting" && action === null && !blocker) {
     if (ticketExists)
       return "Linking the ticket to this conversation did not finish. Retry Create ticket.";
-    return createsInJira
-      ? "Creating the ticket did not finish. Retry Create ticket, or check Jira and discard the draft."
-      : "Creating the ticket did not finish. Retry Create ticket, or discard the draft.";
+    return "Creating the ticket did not finish. Retry Create ticket, or discard the draft.";
   }
   if (blocker && phase !== "creating") return blocker;
   if (saveState === "saving") return "Saving…";
@@ -90,22 +83,16 @@ function UnsavedDraftActions({
   canOperate,
   blocker,
   ticketExists,
-  createsInJira,
   saveState,
   onCreate,
   onDiscard,
 }: DraftActionsProps) {
   const busy = action !== null;
   const creating = action === "promote";
-  const createLabel = creating
-    ? createsInJira
-      ? "Creating in Jira…"
-      : "Creating ticket…"
-    : "Create ticket";
+  const createLabel = creating ? "Creating ticket…" : "Create ticket";
   const status = getDraftStatusLine({
     action,
     blocker,
-    createsInJira,
     phase,
     saveState,
     ticketExists,
@@ -177,7 +164,6 @@ export function WorkbenchDraftActions({
       canOperate={canOperate}
       blocker={editor.conflict ? DRAFT_CONFLICT_MESSAGE : createState.blocker}
       ticketExists={ticketExists}
-      createsInJira={createState.createsInJira}
       saveState={editor.saveState}
       onCreate={() => void transitions.promote(createState.effectiveFields)}
       onStartWork={() => void transitions.startWork()}

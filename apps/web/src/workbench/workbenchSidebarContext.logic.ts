@@ -6,7 +6,6 @@ import type {
   EnvironmentId,
   WorkbenchAssignment,
   WorkbenchEpic,
-  WorkbenchJiraIssueLink,
   WorkbenchProject,
   WorkbenchTicket,
   WorkbenchTicketId,
@@ -25,7 +24,6 @@ export const getWorkbenchSidebarTicketDetails = ({
   projects,
   workbenchProjects,
   epics,
-  issueLinks,
 }: {
   readonly environmentId: EnvironmentId | null;
   readonly tickets: ReadonlyArray<
@@ -39,6 +37,7 @@ export const getWorkbenchSidebarTicketDetails = ({
       | "epicId"
       | "repositoryProjectIds"
       | "primaryT3ProjectId"
+      | "jiraIssue"
     >
   >;
   readonly assignments: ReadonlyArray<
@@ -65,7 +64,6 @@ export const getWorkbenchSidebarTicketDetails = ({
   readonly projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "title">>;
   readonly workbenchProjects: ReadonlyArray<Pick<WorkbenchProject, "id" | "archivedAt">>;
   readonly epics: ReadonlyArray<Pick<WorkbenchEpic, "id" | "title">>;
-  readonly issueLinks: ReadonlyArray<WorkbenchJiraIssueLink>;
 }) => {
   const threadsById = new Map(
     threads
@@ -86,7 +84,6 @@ export const getWorkbenchSidebarTicketDetails = ({
     threadsById,
   });
   const epicsById = new Map(epics.map((epic) => [epic.id, epic.title]));
-  const issuesByTicket = new Map(issueLinks.map((link) => [link.ticketId, link]));
   const assignmentsByTicket = new Map<
     WorkbenchTicketId,
     Array<Pick<WorkbenchAssignment, "threadId">>
@@ -98,7 +95,6 @@ export const getWorkbenchSidebarTicketDetails = ({
   }
   return new Map(
     tickets.map((ticket) => {
-      const issueLink = issuesByTicket.get(ticket.id);
       const ticketAssignments = assignmentsByTicket.get(ticket.id) ?? [];
       return [
         ticket.id,
@@ -107,16 +103,9 @@ export const getWorkbenchSidebarTicketDetails = ({
           readOnly: environmentId === null || !activeWorkspaceIds.has(ticket.projectId),
           executionStatus: executionStatuses.get(ticket.id) ?? null,
           kind: ticket.kind,
-          statusLabel:
-            issueLink?.issue.status.name ?? WORKBENCH_TICKET_STATUS_LABELS[ticket.status],
-          attentionLabel: issueLink
-            ? issueLink.issue.flagged
-              ? "Jira flagged"
-              : null
-            : ticket.blocked
-              ? "Blocked"
-              : null,
-          issueLink,
+          statusLabel: WORKBENCH_TICKET_STATUS_LABELS[ticket.status],
+          attentionLabel: ticket.blocked ? "Blocked" : null,
+          jiraIssue: ticket.jiraIssue ?? null,
           epicTitle: ticket.epicId ? epicsById.get(ticket.epicId) : undefined,
           repositories: (ticket.repositoryProjectIds.length
             ? ticket.repositoryProjectIds

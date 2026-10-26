@@ -40,9 +40,9 @@ export function WorkbenchWorkspaceDeleteDialog({
           <AlertDialogTitle>Delete {workspace.title}?</AlertDialogTitle>
           <AlertDialogDescription>
             Permanently remove this Workspace, {ticketCount} Ticket{ticketCount === 1 ? "" : "s"},{" "}
-            and {epicCount} Epic{epicCount === 1 ? "" : "s"}, including its Jira mirror. Native
-            Projects, Threads, Git worktrees, branches, commits, and Jira issues are retained. You
-            can remove retained worktrees separately. This cannot be undone.
+            and {epicCount} Epic{epicCount === 1 ? "" : "s"}. Native Projects, Threads, Git
+            worktrees, branches, commits, and Jira issues are retained. You can remove retained
+            worktrees separately. This cannot be undone.
           </AlertDialogDescription>
           {error ? (
             <p role="alert" className="text-sm text-destructive-foreground">

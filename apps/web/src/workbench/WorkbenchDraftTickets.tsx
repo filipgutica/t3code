@@ -192,9 +192,6 @@ export function WorkbenchDraftTickets({
         }}
         open={actions.confirmation?.open === true}
         busy={actions.busy}
-        creationUncertain={
-          actions.confirmation?.drafts.some((draft) => draft.phase === "promoting") ?? false
-        }
         error={null}
         onOpenChange={(open) => {
           if (!open) actions.closeConfirmation();

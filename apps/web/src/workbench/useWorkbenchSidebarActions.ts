@@ -16,7 +16,6 @@ export function useWorkbenchSidebarActions({
   threadLookupReady,
   requestNewThread,
   changeTicket,
-  changeJiraTransition,
   setTicketArchived,
   setError,
 }: {
@@ -27,7 +26,6 @@ export function useWorkbenchSidebarActions({
   threadLookupReady: boolean;
   requestNewThread: ReturnType<typeof useWorkbenchThreadActions>["requestNewThread"];
   changeTicket: ReturnType<typeof useWorkbenchTicketActions>["changeTicket"];
-  changeJiraTransition: ReturnType<typeof useWorkbenchTicketActions>["changeJiraTransition"];
   setTicketArchived: ReturnType<typeof useWorkbenchTicketActions>["setTicketArchived"];
   setError: (message: string | null) => void;
 }) {
@@ -57,14 +55,6 @@ export function useWorkbenchSidebarActions({
         case "status":
           changeTicket(ticket, { status: action.status });
           break;
-        case "jira-transition":
-          void changeJiraTransition({
-            ticket,
-            transitionId: action.transitionId,
-            destination: action.destination,
-            expectedRemoteUpdatedAt: action.expectedRemoteUpdatedAt,
-          });
-          break;
         case "archive":
           void setTicketArchived(ticket, action.archived ? new Date().toISOString() : null);
           break;
@@ -81,7 +71,6 @@ export function useWorkbenchSidebarActions({
     threadLookupReady,
     requestNewThread,
     changeTicket,
-    changeJiraTransition,
     setTicketArchived,
     setError,
   ]);

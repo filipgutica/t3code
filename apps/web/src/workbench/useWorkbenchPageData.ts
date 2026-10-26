@@ -20,25 +20,18 @@ export function useWorkbenchPageData(environmentId: EnvironmentId | null) {
   const query = useEnvironmentQuery(
     environmentId === null ? null : workbenchEnvironment.snapshot({ environmentId, input: {} }),
   );
-  const jiraQuery = useEnvironmentQuery(
-    environmentId === null ? null : workbenchEnvironment.jiraSnapshot({ environmentId, input: {} }),
-  );
   const refreshWorkbenchSnapshot = query.refresh;
-  const refreshJiraSnapshot = jiraQuery.refresh;
   const projects = allProjects.filter((project) => project.environmentId === environmentId);
   const repositoriesById = new Map(projects.map((project) => [project.id, project]));
   const snapshot = query.data;
   const snapshotProjects = snapshot?.projects ?? null;
-  const jiraSnapshot = jiraQuery.data;
   const optimisticStatus = useOptimisticWorkbenchStatus({
     environmentId,
     tickets: snapshot?.tickets ?? [],
-    issueLinks: jiraSnapshot?.issueLinks ?? [],
   });
   const { ticketDrafts, clearTicketDraft } = useWorkbenchTicketDrafts({
     environmentId,
     snapshot,
-    jiraSnapshot,
   });
   const threadLookup = useWorkbenchThreadLookup({ environmentId, snapshot });
   return {
@@ -49,14 +42,11 @@ export function useWorkbenchPageData(environmentId: EnvironmentId | null) {
     keybindings,
     availableEditors,
     query,
-    jiraQuery,
     refreshWorkbenchSnapshot,
-    refreshJiraSnapshot,
     ticketDrafts,
     clearTicketDraft,
     snapshot,
     snapshotProjects,
-    jiraSnapshot,
     optimisticStatus,
     ...threadLookup,
   };

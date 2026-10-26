@@ -1,5 +1,4 @@
-import { useWorkbenchPageEnvironment } from "./useWorkbenchPageEnvironment";
-import { useWorkbenchPageJira } from "./useWorkbenchPageJira";
+import { usePrimaryEnvironmentId } from "../state/environments";
 import { useWorkbenchPageTicketWorkflow } from "./useWorkbenchPageTicketWorkflow";
 
 import { WorkbenchPageView } from "./WorkbenchPageView";
@@ -29,9 +28,6 @@ interface WorkbenchPageProps {
   readonly initialProjectId: WorkbenchProjectId | undefined;
   readonly initialTicketId: WorkbenchTicketId | undefined;
   readonly initialEpicId: WorkbenchEpicId | undefined;
-  readonly jiraOAuthCode: string | undefined;
-  readonly jiraOAuthState: string | undefined;
-  readonly jiraOAuthError: string | undefined;
 }
 
 export function WorkbenchPage({
@@ -41,19 +37,11 @@ export function WorkbenchPage({
   initialProjectId,
   initialTicketId,
   initialEpicId,
-  jiraOAuthCode,
-  jiraOAuthState,
-  jiraOAuthError,
 }: WorkbenchPageProps) {
-  const { environmentId, environmentHttpBaseUrl } = useWorkbenchPageEnvironment({
-    initialEnvironmentId,
-    jiraOAuthCode,
-    jiraOAuthState,
-    jiraOAuthError,
-  });
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const environmentId = initialEnvironmentId ?? primaryEnvironmentId;
   const pageData = useWorkbenchPageData(environmentId);
-  const { projects, refreshWorkbenchSnapshot, refreshJiraSnapshot, snapshot, optimisticStatus } =
-    pageData;
+  const { projects, refreshWorkbenchSnapshot, snapshot, optimisticStatus } = pageData;
   const { error, setError, pendingAction, setPendingAction, workspaceActions, selection } =
     useWorkbenchWorkspaceSelection({
       environmentId,
@@ -64,69 +52,29 @@ export function WorkbenchPage({
       initialEpicId,
     });
 
-  const {
-    jiraBindings,
-    jiraDialogOpen,
-    beginJiraAuthFlow,
-    openJiraDialog,
-    handleJiraDialogOpenChange,
-  } = useWorkbenchPageJira({
-    environmentId,
-    environmentHttpBaseUrl,
-    pageData,
-    selection,
-    jiraOAuthCode,
-    jiraOAuthState,
-    jiraOAuthError,
-  });
-  const {
-    setJiraError,
-    jiraPendingAction,
-    jiraSyncNotice,
-    pendingJiraMigrationBindingsRef,
-    jiraSyncBinding,
-  } = jiraBindings;
-
   const dialogs = useWorkbenchPageDialogs({
     environmentId,
     snapshot: pageData.snapshot,
     projects,
     canOperate: pageData.canOperate,
-    localOnlySupported: pageData.jiraSnapshot?.supportsLocalOnlyTickets === true,
     selection,
     setPendingAction,
     setError,
   });
 
-  const boardData = useWorkbenchBoardData({ environmentId, pageData, selection, jiraSyncNotice });
-  const { jiraBinding, localTicketsForJiraMigration, localEpicsForJiraMigration } = boardData;
+  const boardData = useWorkbenchBoardData({ environmentId, pageData, selection });
 
   const { ticketActions, threadActions } = useWorkbenchPageTicketWorkflow({
     environmentId,
     pageData,
     selection,
-    jiraBindings,
-    boardData,
     pendingAction,
     setPendingAction,
     setError,
     initialTicketId,
   });
 
-  const hasLocalMigrationData =
-    localTicketsForJiraMigration.length > 0 || localEpicsForJiraMigration.length > 0;
-  useWorkbenchPageRefresh({
-    environmentId,
-    jiraBinding: selection.selectedProject?.archivedAt != null ? null : jiraBinding,
-    jiraDialogOpen,
-    jiraPendingAction,
-    jiraSyncBinding,
-    pendingJiraMigrationBindingsRef,
-    hasLocalMigrationData,
-    refreshJiraSnapshot,
-    refreshWorkbenchSnapshot,
-    setJiraError,
-  });
+  useWorkbenchPageRefresh(refreshWorkbenchSnapshot);
 
   return (
     <>
@@ -140,16 +88,11 @@ export function WorkbenchPage({
         environmentId={environmentId}
         createWorkspace={createWorkspace}
         createTicket={createTicket}
-        jiraDialogOpen={jiraDialogOpen}
         error={error}
         pendingAction={pendingAction}
         setError={setError}
-        beginJiraAuthFlow={beginJiraAuthFlow}
-        openJiraDialog={openJiraDialog}
-        handleJiraDialogOpenChange={handleJiraDialogOpenChange}
         pageData={pageData}
         selection={selection}
-        jiraBindings={jiraBindings}
         dialogs={dialogs}
         boardData={boardData}
         ticketActions={ticketActions}

@@ -5,7 +5,6 @@ import type {
   WorkbenchProjectId,
   WorkbenchTicket,
   WorkbenchTicketDraft,
-  WorkbenchTicketId,
 } from "@t3tools/contracts";
 
 import { getAssignmentsForTicket } from "./workbench.logic";
@@ -28,7 +27,6 @@ export const getWorkbenchBoardChatThreads = ({
   drafts,
   threadsById,
   archivedThreadsById,
-  ticketKeysById,
 }: {
   readonly projectId: WorkbenchProjectId;
   /** Tickets in board order, before any board search or status filtering. */
@@ -37,7 +35,6 @@ export const getWorkbenchBoardChatThreads = ({
   readonly drafts: ReadonlyArray<WorkbenchTicketDraft>;
   readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   readonly archivedThreadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
-  readonly ticketKeysById: ReadonlyMap<WorkbenchTicketId, string>;
 }) => {
   const boardTickets = tickets.filter((ticket) => ticket.projectId === projectId);
   const ticketsById = new Map(boardTickets.map((ticket) => [ticket.id, ticket]));
@@ -62,7 +59,7 @@ export const getWorkbenchBoardChatThreads = ({
   };
   // Several Threads can share a ticket, so the Thread title tells them apart.
   const ticketThreadTitle = (ticket: WorkbenchTicket) => (thread: EnvironmentThreadShell) =>
-    `${ticketKeysById.get(ticket.id) ?? ticket.title} · ${thread.title}`;
+    `${ticket.jiraIssue?.key ?? ticket.title} · ${thread.title}`;
 
   for (const draft of drafts) {
     if (draft.projectId !== projectId || draft.phase === "working") continue;

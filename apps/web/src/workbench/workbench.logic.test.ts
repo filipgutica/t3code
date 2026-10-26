@@ -169,6 +169,10 @@ describe("Workbench ticket helpers", () => {
         "",
         "Ticket type: Story",
         "",
+        "## Jira",
+        "",
+        'If you have a Jira connector, search it for issues that already cover this ticket and tell the user about matches. Create or change Jira issues only when the user asks. After you create or find the issue, post its URL in one fenced `workbench-jira-link` block, `{"url": "..."}`, so the user can link it to the ticket.',
+        "",
         "## Repository scope",
         "",
         "- T3 Code (primary): /repos/t3code",
@@ -181,7 +185,7 @@ describe("Workbench ticket helpers", () => {
     );
   });
 
-  it("describes a Jira sub-task by its Jira type and parent", () => {
+  it("names the linked Jira issue in the Thread context", () => {
     const context = buildTicketThreadContext(
       {
         title: "Add idempotency key",
@@ -189,21 +193,13 @@ describe("Workbench ticket helpers", () => {
         kind: "story",
         primaryT3ProjectId: ProjectId.make("repository-one"),
         repositoryProjectIds: [ProjectId.make("repository-one")],
-        jiraIssue: {
-          issueType: { id: "10003", name: "Sub-task" },
-          parent: {
-            issueId: "10012",
-            key: "ABC-12",
-            url: "https://example.atlassian.net/browse/ABC-12",
-            summary: "Retry failed card payments",
-          },
-        },
+        jiraIssue: { key: "ABC-12", url: "https://example.atlassian.net/browse/ABC-12" },
       },
       [],
     );
     expect(context.split("\n").slice(2, 4)).toEqual([
-      "Ticket type: Sub-task",
-      "Parent: ABC-12: Retry failed card payments",
+      "Ticket type: Story",
+      "Jira issue: ABC-12 (https://example.atlassian.net/browse/ABC-12)",
     ]);
   });
 
