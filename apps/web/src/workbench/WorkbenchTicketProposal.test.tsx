@@ -428,6 +428,10 @@ describe("agent Jira link card", () => {
     await render({ blocks: [jiraBlock], ticket: linkedTo("ORBIT-375") });
     expect(heading()).toBe("Linked ORBIT-375");
     expect(button("Link")).toBeUndefined();
+    // Keys repeat across Jira sites, so the same key elsewhere is a different issue.
+    const otherSite = { key: "ORBIT-375", url: "https://other.atlassian.net/browse/ORBIT-375" };
+    await render({ blocks: [jiraBlock], ticket: { ...ticket, jiraIssue: otherSite } });
+    expect(button("Replace")?.disabled).toBe(false);
   });
 
   it("rejects a block that is not a Jira issue URL", async () => {

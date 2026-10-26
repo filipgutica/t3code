@@ -192,12 +192,19 @@ const seedV19 = Effect.gen(function* () {
     ticketId: "reserved-pending",
     key: null,
     state: "pending",
+    // The request named its Epic by Jira issue ID or by local Epic ID.
     fingerprint: JSON.stringify({
       primaryT3ProjectId: "docs",
       repositoryProjectIds: ["docs", "native"],
+      epicId: "10",
     }),
   });
-  yield* creation({ ticketId: "reserved-uncertain", key: null, state: "uncertain" });
+  yield* creation({
+    ticketId: "reserved-uncertain",
+    key: null,
+    state: "uncertain",
+    fingerprint: JSON.stringify({ epicId: "local-epic" }),
+  });
   yield* creation({ ticketId: "reserved-created", key: "ORBIT-5", state: "created" });
 
   // Epics: a Jira Epic, a published local Epic, and a reservation without a local Epic.
@@ -321,6 +328,14 @@ describe("ensureWorkbenchSchema", () => {
           status: "todo",
           revision: 0,
         });
+        const reservedEpics = yield* sql<{ readonly id: string; readonly epicId: string | null }>`
+          SELECT ticket_id AS id, epic_id AS "epicId" FROM workbench_tickets
+          WHERE ticket_id LIKE 'reserved-%' ORDER BY ticket_id`;
+        expect(reservedEpics).toEqual([
+          { id: "reserved-created", epicId: null },
+          { id: "reserved-pending", epicId: "jira:binding:epic:10" },
+          { id: "reserved-uncertain", epicId: "local-epic" },
+        ]);
         expect(tickets.find((ticket) => ticket.id === "reserved-uncertain")).toMatchObject({
           primaryT3ProjectId: "native",
           status: "todo",

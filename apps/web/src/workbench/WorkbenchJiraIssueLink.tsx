@@ -221,12 +221,18 @@ const readWorkbenchJiraLinkBlock = (code: string): WorkbenchJiraIssue | null => 
   }
 };
 
+// Keys repeat across Jira sites, so an issue is its key on its host.
+const jiraHost = (issue: WorkbenchJiraIssue) => new URL(issue.url).host;
+const sameJiraIssue = (left: WorkbenchJiraIssue, right: WorkbenchJiraIssue) =>
+  left.key === right.key && jiraHost(left) === jiraHost(right);
+
 const jiraLinkCardHeading = (ticket: WorkbenchTicket | null, issue: WorkbenchJiraIssue) => {
   if (ticket === null) return `Create the ticket to link ${issue.key}`;
   const current = ticket.jiraIssue ?? null;
   if (current === null) return `Link ${issue.key} to this Ticket`;
+  if (sameJiraIssue(current, issue)) return `Linked ${issue.key}`;
   return current.key === issue.key
-    ? `Linked ${issue.key}`
+    ? `Replace ${current.key} on ${jiraHost(current)} with ${issue.key} on ${jiraHost(issue)}?`
     : `Replace ${current.key} with ${issue.key}?`;
 };
 
@@ -266,7 +272,7 @@ function JiraLinkCardBody({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const current = ticket?.jiraIssue ?? null;
-  const linked = current?.key === issue.key;
+  const linked = current !== null && sameJiraIssue(current, issue);
   const link = async () => {
     if (ticket === null) return;
     setPending(true);

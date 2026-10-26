@@ -119,6 +119,7 @@ const linkTicketsFromIssueLinks = Effect.gen(function* () {
 
 interface TicketCreationRow {
   readonly ticketId: string;
+  readonly bindingId: string;
   readonly projectId: string;
   readonly title: string;
   readonly kind: string;
@@ -133,6 +134,32 @@ interface TicketCreationRow {
   readonly hasLocalTicket: number;
 }
 
+/**
+ * A request named its Epic by local Epic ID or, for Jira Epics, by Jira issue ID.
+ * Resolve it while the binding's Epic links still exist.
+ */
+const requestedEpicId = Effect.fn("WorkbenchSchema.requestedEpicId")(function* (
+  creation: TicketCreationRow,
+) {
+  const sql = yield* SqlClient.SqlClient;
+  const requested = parseJsonOrNull(creation.fingerprint);
+  const epicId = isRecord(requested) ? nonEmptyString(requested.epicId) : null;
+  if (epicId === null) return null;
+  const rows = yield* sql<{ readonly epicId: string }>`
+    SELECT epic_id AS "epicId" FROM workbench_epics
+    WHERE workbench_project_id = ${creation.projectId} AND (
+      epic_id = ${epicId}
+      OR epic_id = ${`jira:${creation.bindingId}:epic:${epicId}`}
+      OR epic_id IN (
+        SELECT epic_id FROM workbench_jira_epic_links
+        WHERE binding_id = ${creation.bindingId} AND jira_issue_id = ${epicId}
+      )
+    )
+    LIMIT 1
+  `;
+  return rows[0]?.epicId ?? null;
+});
+
 /** A reservation whose local Ticket never appeared becomes a local Ticket. */
 const insertReservedTicket = Effect.fn("WorkbenchSchema.insertReservedTicket")(function* (
   creation: TicketCreationRow,
@@ -140,13 +167,14 @@ const insertReservedTicket = Effect.fn("WorkbenchSchema.insertReservedTicket")(f
 ) {
   const sql = yield* SqlClient.SqlClient;
   const scope = requestedRepositoryScope(creation);
+  const epicId = yield* requestedEpicId(creation);
   yield* sql`
     INSERT INTO workbench_tickets (
       ticket_id, workbench_project_id, epic_id, title, kind, markdown, primary_t3_project_id,
       status, blocked, revision, generated_summary_status, jira_issue_key, jira_issue_url,
       created_at, updated_at
     ) VALUES (
-      ${creation.ticketId}, ${creation.projectId}, NULL, ${creation.title},
+      ${creation.ticketId}, ${creation.projectId}, ${epicId}, ${creation.title},
       ${creation.kind === "bug" ? "bug" : "story"}, ${creation.markdown}, ${scope.primary},
       'todo', 0, 0, 'pending', ${link?.key ?? null}, ${link?.url ?? null},
       ${creation.createdAt}, ${creation.updatedAt}
@@ -165,7 +193,7 @@ const foldTicketCreations = Effect.gen(function* () {
   // A creation's result can be an existing Ticket that already carried the issue link.
   const creations = yield* sql<TicketCreationRow>`
     SELECT COALESCE(creation.result_ticket_id, creation.ticket_id) AS "ticketId",
-      binding.workbench_project_id AS "projectId", creation.title, creation.kind,
+      creation.binding_id AS "bindingId", binding.workbench_project_id AS "projectId", creation.title, creation.kind,
       creation.markdown, creation.request_fingerprint AS fingerprint,
       creation.jira_issue_key AS key, connection.site_url AS "siteUrl",
       binding.default_primary_t3_project_id AS "defaultPrimaryT3ProjectId",
