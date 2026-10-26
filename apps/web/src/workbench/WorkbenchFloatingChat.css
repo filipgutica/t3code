@@ -32,3 +32,24 @@
 [data-workbench-floating-chat] [data-chat-composer-footer]:not(.absolute) {
   padding-bottom: 0.625rem;
 }
+
+/*
+ * Round the panel content with a mask, not overflow or clip-path. Under a rounded clip,
+ * Chromium paints the composer glass's backdrop blur over its whole box, ignoring its
+ * clip-path.
+ */
+[data-workbench-floating-chat-content] {
+  --wb-chat-mask-corner: calc(var(--radius-2xl) - 1px);
+  --wb-chat-mask-corner-size: calc(2 * var(--wb-chat-mask-corner))
+    calc(2 * var(--wb-chat-mask-corner));
+  --wb-chat-mask-round: radial-gradient(circle closest-side, #000 calc(100% - 0.5px), transparent);
+  --wb-chat-mask-fill: linear-gradient(#000 0 0);
+  mask:
+    var(--wb-chat-mask-round) left top / var(--wb-chat-mask-corner-size),
+    var(--wb-chat-mask-round) right top / var(--wb-chat-mask-corner-size),
+    var(--wb-chat-mask-round) left bottom / var(--wb-chat-mask-corner-size),
+    var(--wb-chat-mask-round) right bottom / var(--wb-chat-mask-corner-size),
+    var(--wb-chat-mask-fill) center / 100% calc(100% - 2 * var(--wb-chat-mask-corner)),
+    var(--wb-chat-mask-fill) center / calc(100% - 2 * var(--wb-chat-mask-corner)) 100%;
+  mask-repeat: no-repeat;
+}
