@@ -14,6 +14,7 @@ import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 const observed = vi.hoisted(() => ({
   queried: null as PullRequestSummary | null,
   cached: null as PullRequestSummary | null,
+  answered: new Map<string, PullRequestSummary>(),
 }));
 
 vi.mock("../lib/openPullRequestLink", async (importOriginal) => ({
@@ -25,19 +26,32 @@ vi.mock("../components/ui/tooltip", () => {
   return { Tooltip: Passthrough, TooltipPopup: Passthrough, TooltipTrigger: Passthrough };
 });
 vi.mock("../state/pullRequests", () => ({
-  linkedPullRequestDetailAtom: (target: unknown) => target,
-  useSharedPullRequestSummary: (_environmentId: unknown, _reference: unknown, current: unknown) =>
-    observed.cached ?? current,
+  linkedPullRequestDetailAtom: (target: SummaryTarget) => target,
+  useSharedPullRequestSummary: (environmentId: string, reference: SummaryTarget["input"] | null) =>
+    observed.cached ??
+    (reference
+      ? (observed.answered.get(summaryKey({ environmentId, input: reference })) ?? null)
+      : null),
 }));
 vi.mock("../state/query", () => ({
-  useEnvironmentQuery: (atom: { input: { host?: string } } | null) => {
+  // Like the native summary query, only an answered read reaches the shared summary,
+  // and the RPC answers only a read routed to the pull request's host.
+  useEnvironmentQuery: (target: SummaryTarget | null) => {
     const summary = observed.queried;
-    return {
-      data: summary && atom?.input.host === new URL(summary.url).hostname ? summary : null,
-      dataUpdatedAt: null,
-    };
+    if (target && summary && target.input.host === new URL(summary.url).hostname) {
+      observed.answered.set(summaryKey(target), summary);
+    }
+    return { data: null };
   },
 }));
+
+interface SummaryTarget {
+  readonly environmentId: string;
+  readonly input: { readonly host?: string; readonly repository: string; readonly number: number };
+}
+function summaryKey({ environmentId, input }: SummaryTarget) {
+  return `${environmentId}:${input.host}:${input.repository}#${input.number}`;
+}
 
 const environmentId = EnvironmentId.make("local");
 const projectId = ProjectId.make("repo");
@@ -104,6 +118,7 @@ describe("Workbench ticket pull request link", () => {
         await act(() => renderer?.unmount());
         observed.queried = null;
         observed.cached = null;
+        observed.answered.clear();
         vi.unstubAllGlobals();
       }
     },
@@ -138,6 +153,7 @@ describe("Workbench ticket pull request link", () => {
       await act(() => renderer?.unmount());
       observed.queried = null;
       observed.cached = null;
+      observed.answered.clear();
       vi.unstubAllGlobals();
     }
   });
@@ -170,6 +186,7 @@ describe("Workbench ticket pull request link", () => {
       await act(() => renderer?.unmount());
       observed.queried = null;
       observed.cached = null;
+      observed.answered.clear();
       vi.unstubAllGlobals();
     }
   });

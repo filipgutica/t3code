@@ -270,26 +270,22 @@ const makeTestLayer = ({
     getShell: (projectId) => {
       events.push(`project:${projectId}`);
       if (projectId === primaryProjectId) {
-        return Effect.succeed(
-          Option.some(
-            projectShell({
-              id: projectId,
-              workspaceRoot: projectWorkspaceRoots?.get(projectId) ?? "/repos/primary",
-            }),
-          ),
+        return Effect.succeedSome(
+          projectShell({
+            id: projectId,
+            workspaceRoot: projectWorkspaceRoots?.get(projectId) ?? "/repos/primary",
+          }),
         );
       }
       if (projectId === secondaryProjectId) {
-        return Effect.succeed(
-          Option.some(
-            projectShell({
-              id: projectId,
-              workspaceRoot: projectWorkspaceRoots?.get(projectId) ?? "/repos/secondary",
-            }),
-          ),
+        return Effect.succeedSome(
+          projectShell({
+            id: projectId,
+            workspaceRoot: projectWorkspaceRoots?.get(projectId) ?? "/repos/secondary",
+          }),
         );
       }
-      return Effect.succeed(Option.none());
+      return Effect.succeedNone;
     },
   });
   const threadLayer = Layer.mock(ThreadManagementService)({
@@ -580,7 +576,7 @@ const makePersistentWorkspaceFixture = Effect.gen(function* () {
     TicketWorkspaceHost.of({
       worktreesDir: path.join(directory, "worktrees"),
       generateBranchName: () => Effect.succeed(generatedBranchName),
-      resolveOpenPullRequestBranch: () => Effect.succeed(Option.none()),
+      resolveOpenPullRequestBranch: () => Effect.succeedNone,
       projections: {
         getProjectShellById: (id) =>
           Effect.succeed(
@@ -593,7 +589,7 @@ const makePersistentWorkspaceFixture = Effect.gen(function* () {
               })),
             ),
           ),
-        getThreadShellById: () => Effect.succeed(Option.none()),
+        getThreadShellById: () => Effect.succeedNone,
       },
       git: {
         invalidateLocalStatus: () => Effect.void,

@@ -66,15 +66,16 @@ export const nativeThreadShell = ({
 };
 
 /** Uses the caller's SQL client so uncommitted native rows share Workbench's transaction. */
-export const seedNativeThread = (input: Parameters<typeof nativeThreadShell>[0]) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    const thread = nativeThreadShell(input);
-    const payload = yield* encodeThreadPayload({
-      ...thread,
-      lastVisitedAt: thread.lastVisitedAt ?? null,
-    });
-    yield* sql`
+export const seedNativeThread = Effect.fn("seedNativeThread")(function* (
+  input: Parameters<typeof nativeThreadShell>[0],
+) {
+  const sql = yield* SqlClient.SqlClient;
+  const thread = nativeThreadShell(input);
+  const payload = yield* encodeThreadPayload({
+    ...thread,
+    lastVisitedAt: thread.lastVisitedAt ?? null,
+  });
+  yield* sql`
       INSERT INTO orchestration_v2_projection_threads (
         thread_id, project_id, title, default_provider, provider_instance_id,
         runtime_mode, interaction_mode, active_provider_thread_id,
@@ -86,4 +87,4 @@ export const seedNativeThread = (input: Parameters<typeof nativeThreadShell>[0])
         ${input.deletedAt ?? null}, ${payload}
       )
     `;
-  });
+});

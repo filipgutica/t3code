@@ -25,8 +25,10 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const path = yield* Path.Path;
     return {
-      canRemove: (input: { readonly worktreesDir: string; readonly worktreePath: string }) =>
-        Effect.succeed(!isWorkbenchWorktreePath({ path, ...input })),
+      canRemove: Effect.fn("WorkspaceCleanupPolicy.canRemove")(
+        (input: { readonly worktreesDir: string; readonly worktreePath: string }) =>
+          Effect.succeed(!isWorkbenchWorktreePath({ path, ...input })),
+      ),
     };
   }),
 );

@@ -13,8 +13,12 @@
     // Effect services expose separate namespace imports with the conventional layer and make names.
     { "file": "apps/server/src/workbench/**", "exports": ["layer", "make"] },
   ],
-  // Expo autolinks this upstream native module; no source file imports it.
-  "ignoreDependencies": ["@t3tools/mobile-highlights-native"],
+  "ignoreDependencies": [
+    // Expo autolinks this upstream native module; no source file imports it.
+    "@t3tools/mobile-highlights-native",
+    // Upstream mobile tooling executes this package's CLI by filename.
+    "agent-device",
+  ],
   // Health and duplication ignores do not support `!` exceptions, so the upstream globs below use
   // character classes that match every name except the Workbench ones (prefix "workb", plus
   // `routes/workbench.tsx` and `resolve-workbench-*`). Upstream syncs then audit only the overlay.

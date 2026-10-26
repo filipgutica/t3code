@@ -70,24 +70,16 @@ const makeHost = Effect.gen(function* () {
     }
   });
   return TicketDraftHost.of({
-    validatePlanningModel: (model) =>
-      providers.getInstance(model.instanceId).pipe(
-        Effect.flatMap((instance) => {
-          if (
-            !instance ||
-            (instance.driverKind !== "codex" && instance.driverKind !== "claudeAgent")
-          ) {
-            return Effect.fail(
-              new WorkbenchOperationError({
-                code: "ticket_draft_invalid",
-                message:
-                  "Ticket planning currently requires a Codex or Claude provider with enforced read-only tools.",
-              }),
-            );
-          }
-          return Effect.void;
-        }),
-      ),
+    validatePlanningModel: Effect.fn("TicketDraftHost.validatePlanningModel")(function* (model) {
+      const instance = yield* providers.getInstance(model.instanceId);
+      if (!instance || (instance.driverKind !== "codex" && instance.driverKind !== "claudeAgent")) {
+        return yield* new WorkbenchOperationError({
+          code: "ticket_draft_invalid",
+          message:
+            "Ticket planning currently requires a Codex or Claude provider with enforced read-only tools.",
+        });
+      }
+    }),
     createThread: Effect.fn("TicketDraftHost.createThread")(function* (draft) {
       const commandId = CommandId.make(`ticket-draft:${draft.id}:create`);
       yield* threads
@@ -119,7 +111,7 @@ const makeHost = Effect.gen(function* () {
         })
         .pipe(Effect.mapError(nativeFailure));
     }),
-    requireIdle: (threadId) => checkIdle(threadId),
+    requireIdle: Effect.fn("TicketDraftHost.requireIdle")((threadId) => checkIdle(threadId)),
     requireDiscardable: Effect.fn("TicketDraftHost.requireDiscardable")(function* (draft) {
       if (!(yield* ownsThread(draft))) return;
       const existing = yield* threads

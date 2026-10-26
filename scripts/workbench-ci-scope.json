@@ -1,5 +1,5 @@
 {
-  "upstreamBase": "5b35402623d7d1d88eaa472807272a6c2e78012a",
+  "upstreamBase": "220eb73524ca7882d53b6a12c824ccbcd97ad279",
   "groups": [
     {
       "name": "Workbench domain, adapters, UI and contracts",
@@ -192,6 +192,7 @@
     {
       "name": "Native web composition and PR/thread/settings entry points",
       "paths": [
+        "apps/web/src/appInit.tsx",
         "packages/client-runtime/src/state/threadShell.ts",
         "apps/web/src/components/AppSidebarLayout.tsx",
         "apps/web/src/components/ChatMarkdown.tsx",
@@ -262,7 +263,7 @@
         "apps/web/src/components/ChatView.logic.test.ts",
         "apps/web/src/components/CommandPalette.logic.test.ts",
         "apps/web/src/components/Sidebar.logic.test.ts",
-        "apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.tsx",
+        "apps/web/src/components/ThreadNotificationCoordinator.badge.browser.test.ts",
         "apps/web/src/components/chat/MessagesTimeline.browser.test.tsx",
         "apps/web/src/components/composerContextPresentation.test.ts",
         "apps/web/src/components/desktopUpdate.logic.test.ts",
@@ -412,7 +413,7 @@
     },
     {
       "name": "Dependency and build configuration",
-      "paths": ["vite.config.ts", "patches/"],
+      "paths": ["vite.config.ts", "patches/", "scripts/effect-budget.json"],
       "tests": [],
       "verification": ["typecheck", "unit", "build"]
     }

@@ -87,13 +87,13 @@ export const settleDoneTicketThreads = Effect.fn("Workbench.settleDoneTicketThre
       snapshotAt: thread.updatedAt,
       settledAt: thread.latestRunCompletedAt,
     }).pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause)
-          ? Effect.failCause(cause)
-          : Effect.logWarning("Done Ticket thread settlement skipped", {
-              threadId: thread.id,
-              cause: Cause.pretty(cause),
-            }),
+      Effect.catchCauseIf(
+        (cause) => !Cause.hasInterruptsOnly(cause),
+        (cause) =>
+          Effect.logWarning("Done Ticket thread settlement skipped", {
+            threadId: thread.id,
+            cause: Cause.pretty(cause),
+          }),
       ),
     );
   }
@@ -122,12 +122,12 @@ export const layer = Layer.effectDiscard(
         readCurrentWorkbench: workbench.getSnapshot,
       });
     }).pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause)
-          ? Effect.failCause(cause)
-          : Effect.logWarning("Done Ticket settlement reconciliation failed", {
-              cause: Cause.pretty(cause),
-            }),
+      Effect.catchCauseIf(
+        (cause) => !Cause.hasInterruptsOnly(cause),
+        (cause) =>
+          Effect.logWarning("Done Ticket settlement reconciliation failed", {
+            cause: Cause.pretty(cause),
+          }),
       ),
     );
     yield* forkParked(reconcile.pipe(Effect.repeat(Schedule.spaced("1 minute")), Effect.asVoid));

@@ -192,17 +192,13 @@ export function WorkbenchPullRequestLink({
       ...(host === undefined ? {} : { host }),
     };
   })();
-  const queried = useEnvironmentQuery(
+  // Mounted for its answers, which land in the shared summary read below.
+  useEnvironmentQuery(
     pullRequest.state === undefined && reference
       ? linkedPullRequestDetailAtom({ environmentId, input: reference })
       : null,
   );
-  const summary = useSharedPullRequestSummary(
-    environmentId,
-    reference,
-    queried.data,
-    queried.dataUpdatedAt,
-  );
+  const summary = useSharedPullRequestSummary(environmentId, reference);
   const state = resolvedPullRequestState({ pullRequest, summary });
   const presentation = state ? PULL_REQUEST_STATE_PRESENTATION[state] : undefined;
   const stateClass = presentation?.toneClassName ?? "text-muted-foreground";

@@ -70,7 +70,7 @@ const instanceId = ProviderInstanceId.make("codex");
 const modelSelection = { instanceId, model: "gpt-5.4" };
 const decodeDelegateTaskResult = Schema.decodeUnknownEffect(OrchestratorMcpDelegateTaskResult);
 const unused = Effect.die("Unexpected provider operation");
-const snapshot = Schema.decodeUnknownSync(ServerProvider)({
+const snapshot = Schema.decodeSync(ServerProvider)({
   instanceId,
   driver: "codex",
   enabled: true,
@@ -176,9 +176,7 @@ const makeLayerTest = <A, E, R>(policies: Layer.Layer<A, E, R>) =>
         isRepository: () => Effect.succeed(true),
       }),
     ),
-    Layer.provide(
-      Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeed(Option.none()) }),
-    ),
+    Layer.provide(Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedNone })),
     Layer.provide(
       Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
         resolveLink: () => unused,

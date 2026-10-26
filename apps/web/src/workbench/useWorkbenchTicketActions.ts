@@ -190,10 +190,15 @@ export function useWorkbenchTicketActions({
       setPendingAction(null);
     });
   };
-  const updateTicketFields = async (
-    ticket: WorkbenchTicket,
-    patch: WorkbenchTicketPatch,
-  ): Promise<WorkbenchTicketSavedVersion | false> => {
+  const updateTicketFields = async ({
+    ticket,
+    patch,
+    updatedAt,
+  }: {
+    ticket: WorkbenchTicket;
+    patch: WorkbenchTicketPatch;
+    updatedAt: string;
+  }): Promise<WorkbenchTicketSavedVersion | false> => {
     if (
       environmentId === null ||
       pendingAction !== null ||
@@ -205,7 +210,7 @@ export function useWorkbenchTicketActions({
       setError("Save or cancel this Ticket's edits before changing its status.");
       return false;
     }
-    return saveLocalTicketFields({ environmentId, ticket, patch, draft });
+    return saveLocalTicketFields({ environmentId, ticket, patch, draft, updatedAt });
   };
 
   const saveLocalTicketFields = async ({
@@ -213,11 +218,13 @@ export function useWorkbenchTicketActions({
     ticket,
     patch,
     draft,
+    updatedAt,
   }: {
     environmentId: EnvironmentId;
     ticket: WorkbenchTicket;
     patch: WorkbenchTicketPatch;
     draft: WorkbenchTicketDraft | undefined;
+    updatedAt: string;
   }): Promise<WorkbenchTicketSavedVersion | false> => {
     const statusToken =
       patch.status !== undefined
@@ -233,7 +240,7 @@ export function useWorkbenchTicketActions({
         id: ticket.id,
         expectedRevision,
         ...patch,
-        updatedAt: new Date().toISOString(),
+        updatedAt,
       },
     });
     if (statusToken !== null && statusEnvironmentRef.current !== environmentId) return false;
@@ -289,7 +296,7 @@ export function useWorkbenchTicketActions({
   };
 
   const changeTicket = (ticket: WorkbenchTicket, patch: WorkbenchTicketPatch) => {
-    void updateTicketFields(ticket, patch);
+    void updateTicketFields({ ticket, patch, updatedAt: new Date().toISOString() });
   };
 
   const setTicketArchived = async (ticket: WorkbenchTicket, archivedAt: string | null) => {
@@ -352,7 +359,11 @@ export function useWorkbenchTicketActions({
 
   const saveTicketContent = (ticket: WorkbenchTicket, title: string, markdown: string) => {
     if (title.trim().length === 0) return Promise.resolve(false as const);
-    return updateTicketFields(ticket, { title: title.trim(), markdown: markdown.trim() });
+    return updateTicketFields({
+      ticket,
+      patch: { title: title.trim(), markdown: markdown.trim() },
+      updatedAt: new Date().toISOString(),
+    });
   };
 
   const regenerateSummary = async (ticket: WorkbenchTicket) => {

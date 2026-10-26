@@ -123,7 +123,7 @@ export const TicketSummaryServiceLive = Layer.effect(
         )
           return;
         const summary = yield* host.generate(job.ticket).pipe(
-          Effect.map(Option.some),
+          Effect.asSome,
           Effect.catch((error) =>
             store
               .failTicketSummary({
@@ -142,20 +142,20 @@ export const TicketSummaryServiceLive = Layer.effect(
           });
         }
       }).pipe(
-        Effect.catchCause((cause) =>
-          Cause.hasInterrupts(cause)
-            ? Effect.failCause(cause)
-            : store
-                .failTicketSummary({
-                  ticketId,
-                  requestId: job.requestId,
-                  error: "Summary generation failed. Try regenerating the summary.",
-                })
-                .pipe(
-                  Effect.catchCause(() =>
-                    Effect.logError("Ticket summary failure could not be saved."),
-                  ),
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterrupts(cause),
+          () =>
+            store
+              .failTicketSummary({
+                ticketId,
+                requestId: job.requestId,
+                error: "Summary generation failed. Try regenerating the summary.",
+              })
+              .pipe(
+                Effect.catchCause(() =>
+                  Effect.logError("Ticket summary failure could not be saved."),
                 ),
+              ),
         ),
         Effect.ensuring(finish(job)),
       );
@@ -174,8 +174,9 @@ export const TicketSummaryServiceLive = Layer.effect(
       yield* enqueue({ ticketId: ticket.id, automatic: true });
     }
     return TicketSummaryService.of({
-      regenerate: (input) =>
+      regenerate: Effect.fn("TicketSummaryService.regenerate")((input) =>
         enqueue({ ticketId: input.ticketId, automatic: false }).pipe(Effect.map(Option.getOrThrow)),
+      ),
       awaitIdle: Effect.suspend(() => Deferred.await(idle)),
     });
   }),

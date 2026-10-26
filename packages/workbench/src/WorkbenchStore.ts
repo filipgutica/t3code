@@ -3269,37 +3269,38 @@ const makeWorkbenchStore = Effect.gen(function* () {
 
   return WorkbenchStore.of({
     ...ticketDraftPersistence,
-    getTicketDraftForThread: (threadId) =>
-      sql
-        .withTransaction(
-          Effect.gen(function* () {
-            const draft = yield* ticketDraftPersistence.getTicketDraftForThread(threadId);
-            if (!draft) return null;
-            const workArea = yield* loadTicketWorkspace(draft.id);
-            return { ...draft, workArea: Option.getOrNull(workArea) };
-          }),
-        )
-        .pipe(NodeSqliteClient.readOnly, Effect.mapError(workbenchStoreError)),
-    getTicket: (ticketId) =>
-      sql
-        .withTransaction(
-          Effect.gen(function* () {
-            const ticket = yield* findTicket({ id: ticketId });
-            if (Option.isNone(ticket)) return Option.none<WorkbenchTicket>();
-            const repositories = yield* listTicketRepositoryRowsByTicket({ ticketId });
-            return Option.some(
-              ticketFromRow(
-                ticket.value,
-                repositories.length > 0
-                  ? repositories.map((repository) => repository.repositoryProjectId)
-                  : [ticket.value.primaryT3ProjectId],
-              ),
-            );
-          }),
-        )
-        .pipe(NodeSqliteClient.readOnly, Effect.mapError(persistenceError)),
-    getEpic: (epicId) =>
+    getTicketDraftForThread: Effect.fn("WorkbenchStore.getTicketDraftForThread")(
+      function* (threadId) {
+        const draft = yield* ticketDraftPersistence.getTicketDraftForThread(threadId);
+        if (!draft) return null;
+        const workArea = yield* loadTicketWorkspace(draft.id);
+        return { ...draft, workArea: Option.getOrNull(workArea) };
+      },
+      sql.withTransaction,
+      NodeSqliteClient.readOnly,
+      Effect.mapError(workbenchStoreError),
+    ),
+    getTicket: Effect.fn("WorkbenchStore.getTicket")(
+      function* (ticketId) {
+        const ticket = yield* findTicket({ id: ticketId });
+        if (Option.isNone(ticket)) return Option.none<WorkbenchTicket>();
+        const repositories = yield* listTicketRepositoryRowsByTicket({ ticketId });
+        return Option.some(
+          ticketFromRow(
+            ticket.value,
+            repositories.length > 0
+              ? repositories.map((repository) => repository.repositoryProjectId)
+              : [ticket.value.primaryT3ProjectId],
+          ),
+        );
+      },
+      sql.withTransaction,
+      NodeSqliteClient.readOnly,
+      Effect.mapError(persistenceError),
+    ),
+    getEpic: Effect.fn("WorkbenchStore.getEpic")((epicId) =>
       findEpic({ epicId }).pipe(NodeSqliteClient.readOnly, Effect.mapError(persistenceError)),
+    ),
     getSnapshot: getSnapshot(false).pipe(NodeSqliteClient.readOnly),
     getCompactSnapshot: getSnapshot(true).pipe(NodeSqliteClient.readOnly),
     listTicketsNeedingSummary: listTicketsNeedingSummary(),
@@ -3348,5 +3349,5 @@ const makeWorkbenchStore = Effect.gen(function* () {
 
 export const WorkbenchStoreLive = Layer.effect(
   WorkbenchStore,
-  ensureWorkbenchSchema.pipe(Effect.flatMap(() => makeWorkbenchStore)),
+  ensureWorkbenchSchema.pipe(Effect.andThen(makeWorkbenchStore)),
 );

@@ -145,9 +145,7 @@ function startWithMissingWorktree(
         Layer.mock(GitWorkflow.GitWorkflowService)({ pruneWorktrees, createWorktree }),
         Layer.mock(ProjectService.ProjectService)({
           getById: () =>
-            Effect.succeed(
-              Option.some({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
-            ),
+            Effect.succeedSome({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
         }),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThreadRecords: () => {
@@ -698,7 +696,7 @@ function makeLocalCommandHarness(input: {
         }),
         Layer.mock(ProjectService.ProjectService)({
           getById: () =>
-            Effect.succeed(Option.some({ workspaceRoot: "/tmp/native-account-project" } as never)),
+            Effect.succeedSome({ workspaceRoot: "/tmp/native-account-project" } as never),
         }),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThreadRecords,
@@ -808,6 +806,31 @@ effectIt.effect.each([
 
     expect(harness.interruptTurn).not.toHaveBeenCalled();
     expect(harness.projection().runs.at(-1)?.status).toBe("running");
+  }),
+);
+
+effectIt.effect.each([
+  { text: "Continue", expected: "Plan read-only.\n\nUser message:\nContinue" },
+  { text: "/goal all tests pass", expected: "/goal all tests pass" },
+])("sends runtime instructions except before a native /goal: $text", ({ text, expected }) =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text,
+      previousTurn: { runStatus: "completed", turnStatus: "completed" },
+    });
+    const policy = {
+      cwd: "/tmp/native-account-command",
+      instructions: "Plan read-only.",
+      sandboxPolicy: { type: "readOnly" },
+    };
+    harness.resolveRuntimePolicy.mockReturnValue(Effect.succeed(policy as never));
+    harness.tryHandlePromptCommand.mockReturnValue(Effect.succeed(false));
+
+    yield* harness.start;
+
+    const started = harness.startRootRun.mock.calls[0]?.[0];
+    expect(started?.message.text).toBe(expected);
+    expect(started?.runtimePolicy).toBe(policy);
   }),
 );
 

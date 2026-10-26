@@ -62,7 +62,7 @@ const withStore = <A, E>({
               }),
               Effect.tap(onRepositoryCheck),
             ),
-          findThread: () => Effect.succeed(Option.none()),
+          findThread: () => Effect.succeedNone,
           hasThreadAtWorktreePath: () => Effect.succeed(false),
           executionSequence: Effect.succeed(0),
           startedExecutionRunIds: Effect.succeed([]),

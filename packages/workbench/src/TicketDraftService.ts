@@ -254,17 +254,25 @@ const make = Effect.gen(function* () {
     yield* host.deleteThread(draft);
     yield* store.removeTicketDraft({ id: draft.id, expectedRevision: draft.revision });
   });
+  // Draft operations already trace inside the lock; these wrappers preserve serialization.
   return TicketDraftService.of({
-    begin: (input) => withDraftLock(input.id, begin(input)),
-    update: (input) => store.updateTicketDraft(input),
-    promote: (input) => withDraftLock(input.id, promote(input)),
+    begin: Effect.fnUntraced(function* (input) {
+      return yield* withDraftLock(input.id, begin(input));
+    }),
+    update: store.updateTicketDraft,
+    promote: Effect.fnUntraced(function* (input) {
+      return yield* withDraftLock(input.id, promote(input));
+    }),
     // A disconnected caller must not leave the draft in starting after its workspace finishes.
-    startWork: (input) =>
-      withDraftLock(input.id, startWork(input)).pipe(
+    startWork: Effect.fnUntraced(function* (input) {
+      return yield* withDraftLock(input.id, startWork(input)).pipe(
         Effect.forkIn(scope),
         Effect.flatMap(Fiber.join),
-      ),
-    discard: (input) => withDraftLock(input.id, discard(input)),
+      );
+    }),
+    discard: Effect.fnUntraced(function* (input) {
+      return yield* withDraftLock(input.id, discard(input));
+    }),
   });
 });
 

@@ -60,7 +60,7 @@ const fixture = (options?: {
       executionSequence: Effect.sync(() => sequence),
       startedExecutionRunIds: Effect.succeed([]),
       hasPendingThreadWork: () => Effect.sync(() => busy),
-      findProject: (id) => Effect.succeed(Option.some({ id, workspaceRoot: `/repos/${id}` })),
+      findProject: (id) => Effect.succeedSome({ id, workspaceRoot: `/repos/${id}` }),
       isRepository: () => Effect.succeed(true),
       findThread: (id) =>
         Effect.sync(() => {
