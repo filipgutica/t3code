@@ -247,6 +247,9 @@ const query = {
   refresh: vi.fn(),
 };
 const noop = vi.fn();
+const refreshQuery = vi.fn();
+const refreshThreadLookup = vi.fn();
+const retries = { queryError: refreshQuery, threadLookupError: refreshThreadLookup };
 const success = vi.fn(async () => true);
 const idle = vi.fn(async () => {});
 const syncJiraBinding = vi.fn<PageProps["jiraBindings"]["syncJiraBinding"]>(async () => null);
@@ -330,7 +333,7 @@ function Harness({
     providers: [],
     keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
     availableEditors: [],
-    query: { ...query, data: currentSnapshot, error: queryError },
+    query: { ...query, data: currentSnapshot, error: queryError, refresh: refreshQuery },
     jiraQuery: { ...query, data: jiraSnapshot },
     refreshWorkbenchSnapshot: noop,
     refreshJiraSnapshot: noop,
@@ -357,7 +360,7 @@ function Harness({
     threadLookupReady: true,
     threadLookupError,
     refreshArchivedThreads: noop,
-    refreshThreadLookup: noop,
+    refreshThreadLookup,
   };
   const selection: PageProps["selection"] = {
     awaitingTicketId: null,
@@ -724,7 +727,9 @@ it.each(["queryError", "threadLookupError"] as const)(
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Could not load Ticket data",
     );
-    expect(container.querySelector('[role="alert"] button')?.textContent).toContain("Retry");
+    await act(async () => button("Retry").click());
+    expect(retries[errorSource]).toHaveBeenCalledOnce();
+    expect(Object.values(retries).filter((retry) => retry.mock.calls.length > 0)).toHaveLength(1);
   },
 );
 
@@ -738,7 +743,9 @@ it.each(["queryError", "threadLookupError"] as const)(
 
     await render(props);
     expect(container.textContent).toContain("Could not load board data");
-    expect(button("Retry").disabled).toBe(false);
+    await act(async () => button("Retry").click());
+    expect(retries[errorSource]).toHaveBeenCalledOnce();
+    expect(Object.values(retries).filter((retry) => retry.mock.calls.length > 0)).toHaveLength(1);
   },
 );
 
