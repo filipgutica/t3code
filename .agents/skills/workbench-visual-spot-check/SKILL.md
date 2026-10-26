@@ -21,15 +21,16 @@ Reuse the current task's permission; clarify only what is missing.
 Supply:
 
 - Checkout path, tested commit, comparison base, changed areas and intended behavior changes.
-- Actual demo URL, isolated home, client and a separate agent pairing link if needed.
+- Local demo URL, isolated home, client and a separate agent pairing link if needed.
 - Representative Workspace, Ticket and linked/native Thread records; fixture expectations or baseline screenshots.
 - Fixture fidelity: scripted or real provider, synthetic or real PR inspection, Jira connection state and known limitations.
 - Permitted local fixture edits, worktree preparation, provider turns and remote operations; restoration obligations and report/evidence directory outside Git.
 
-Use [workbench-demo](../workbench-demo/SKILL.md) for setup and fixture fidelity.
-Use the client tooling authorized by the user. This repository's
-[test-t3-app](../test-t3-app/SKILL.md) describes its built-in Browser panel;
-explicit user authorization may select Chrome or another available client.
+Run the demo locally from the checkout under test with
+[workbench-demo](../workbench-demo/SKILL.md), which also covers fixture fidelity.
+Check it in the T3 Code Workbench app's Browser panel through its `preview_*` tools.
+The Vercel demo linked from a PR is for human reviewers; agents do not use it.
+Use Chrome or another client only when the user explicitly asks for it.
 The subagent reuses the supplied runtime. It does not start or stop servers,
 seed databases, edit source, commit, push or publish evidence.
 Return setup problems to the primary agent and continue independent checks.
