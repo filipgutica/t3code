@@ -549,7 +549,7 @@ function FloatingChatFrame({
       data-workbench-floating-chat=""
       aria-label={`${label} chat`}
       className={cn(
-        "absolute right-4 bottom-4 z-20 flex max-h-[calc(100%-2rem)] max-w-[calc(100%-2rem)] flex-col overflow-hidden rounded-2xl border border-border/80 bg-popover/92 shadow-lg/20 backdrop-blur-xl",
+        "absolute right-4 bottom-4 z-20 flex max-h-[calc(100%-2rem)] max-w-[calc(100%-2rem)] flex-col rounded-2xl border border-border/80 bg-popover/92 shadow-lg/20 backdrop-blur-xl",
         expanded && height === null && "h-[min(540px,70vh)]",
       )}
       style={{ width: size.width, height: height ?? undefined }}
@@ -563,7 +563,9 @@ function FloatingChatFrame({
           {...handlers(handle.edge)}
         />
       ))}
-      {children}
+      <div data-workbench-floating-chat-content="" className="flex min-h-0 flex-1 flex-col">
+        {children}
+      </div>
     </section>
   );
 }
