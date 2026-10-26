@@ -6,7 +6,6 @@ import {
   ProjectId,
   ThreadId,
   NonNegativeInt,
-  PositiveInt,
   TrimmedNonEmptyString,
   TrimmedString,
 } from "./baseSchemas.ts";
@@ -69,6 +68,44 @@ export const WorkbenchTicketWorkspaceRepositoryStatus = Schema.Literals([
 export type WorkbenchTicketWorkspaceRepositoryStatus =
   typeof WorkbenchTicketWorkspaceRepositoryStatus.Type;
 
+/**
+ * A Jira issue a Workbench Ticket or Epic points to. Workbench stores and shows
+ * the link only; it never reads or writes Jira.
+ */
+export const WorkbenchJiraIssue = Schema.Struct({
+  key: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
+  url: TrimmedNonEmptyString.check(Schema.isMaxLength(2_048)),
+});
+export type WorkbenchJiraIssue = typeof WorkbenchJiraIssue.Type;
+
+/** Message for the `jira_issue_url_invalid` operation error and inline form errors. */
+export const WORKBENCH_JIRA_ISSUE_URL_ERROR =
+  "Enter a Jira issue URL, such as https://your-site.atlassian.net/browse/PROJ-123.";
+
+const JIRA_ISSUE_KEY = /^[A-Z][A-Z0-9_]*-[0-9]+$/u;
+const BROWSE_PATH = /\/browse\/([^/]+)/u;
+
+const issueKey = (url: URL): string | null => {
+  const candidate =
+    BROWSE_PATH.exec(url.pathname)?.[1] ?? url.searchParams.get("selectedIssue") ?? "";
+  const key = candidate.toUpperCase();
+  return JIRA_ISSUE_KEY.test(key) ? key : null;
+};
+
+/**
+ * Accepts `/browse/KEY` and board `selectedIssue=KEY` links on any http(s)
+ * host, so Jira Cloud, Data Center, and context-path installs all work.
+ */
+export const parseJiraIssueUrl = (input: string): WorkbenchJiraIssue | null => {
+  const trimmed = input.trim();
+  if (!URL.canParse(trimmed)) return null;
+  const url = new URL(trimmed);
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  if (url.href.length > 2_048) return null;
+  const key = issueKey(url);
+  return key === null ? null : { key, url: url.href };
+};
+
 export const WorkbenchProject = Schema.Struct({
   id: WorkbenchProjectId,
   title: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
@@ -89,6 +126,8 @@ export const WorkbenchEpic = Schema.Struct({
   title: TrimmedNonEmptyString.check(Schema.isMaxLength(240)),
   markdown: TrimmedString.check(Schema.isMaxLength(120_000)),
   archivedAt: Schema.NullOr(IsoDateTime),
+  // Optional so snapshots from servers without Jira links still decode.
+  jiraIssue: Schema.optionalKey(Schema.NullOr(WorkbenchJiraIssue)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -116,6 +155,8 @@ export const WorkbenchTicket = Schema.Struct({
   // Optional for compatibility with snapshots produced before Ticket
   // archiving was introduced. New snapshots always include null or a time.
   archivedAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
+  // Optional so snapshots from servers without Jira links still decode.
+  jiraIssue: Schema.optionalKey(Schema.NullOr(WorkbenchJiraIssue)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -175,8 +216,6 @@ export const WorkbenchTicketDraftFields = Schema.Struct({
   epicId: Schema.NullOr(WorkbenchEpicId),
   repositoryProjectIds: Schema.Array(ProjectId),
   primaryT3ProjectId: Schema.NullOr(ProjectId),
-  localOnly: Schema.Boolean,
-  jiraSprintId: Schema.NullOr(PositiveInt),
 });
 export type WorkbenchTicketDraftFields = typeof WorkbenchTicketDraftFields.Type;
 export const WorkbenchTicketDraft = Schema.Struct({
@@ -306,12 +345,6 @@ export const WorkbenchCreateTicketInput = Schema.Struct({
   markdown: WorkbenchTicket.fields.markdown,
   primaryT3ProjectId: ProjectId,
   repositoryProjectIds: Schema.optionalKey(Schema.Array(ProjectId).check(Schema.isMinLength(1))),
-  /** Keep a new Ticket local even when its Workspace is connected to Jira. */
-  localOnly: Schema.optionalKey(Schema.Boolean),
-  /** Selects the target Jira sprint when the Workspace has more than one. */
-  jiraSprintId: Schema.optionalKey(PositiveInt),
-  /** Explicitly publish an existing local Ticket without replacing its identity. */
-  existingLocalTicketRevision: Schema.optionalKey(NonNegativeInt),
   createdAt: IsoDateTime,
 });
 export type WorkbenchCreateTicketInput = typeof WorkbenchCreateTicketInput.Type;
@@ -331,19 +364,34 @@ export const WorkbenchUpdateTicketInput = Schema.Struct({
 });
 export type WorkbenchUpdateTicketInput = typeof WorkbenchUpdateTicketInput.Type;
 
-/** Updates only fields owned by a Jira projection after an optimistic revision check. */
-export const WorkbenchUpdateJiraTicketFieldsInput = Schema.Struct({
-  id: WorkbenchTicketId,
-  expectedRevision: NonNegativeInt,
-  epicId: Schema.optionalKey(Schema.NullOr(WorkbenchEpicId)),
-  title: Schema.optionalKey(WorkbenchTicket.fields.title),
-  kind: Schema.optionalKey(WorkbenchTicketKind),
-  status: Schema.optionalKey(WorkbenchTicketStatus),
-  blocked: Schema.optionalKey(Schema.Boolean),
-  markdown: Schema.optionalKey(WorkbenchTicket.fields.markdown),
-  updatedAt: WorkbenchTicket.fields.updatedAt,
-});
-export type WorkbenchUpdateJiraTicketFieldsInput = typeof WorkbenchUpdateJiraTicketFieldsInput.Type;
+const WorkbenchJiraIssueUrlInput = Schema.NullOr(
+  TrimmedNonEmptyString.check(Schema.isMaxLength(2_048)),
+);
+
+/** `url: null` unlinks. The server parses the URL with `parseJiraIssueUrl`. */
+export const WorkbenchSetJiraIssueLinkInput = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("ticket"),
+    ticketId: WorkbenchTicketId,
+    url: WorkbenchJiraIssueUrlInput,
+    expectedRevision: NonNegativeInt,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("epic"),
+    epicId: WorkbenchEpicId,
+    url: WorkbenchJiraIssueUrlInput,
+    // Epics have no revision; their lifecycle already uses updatedAt as the version.
+    expectedUpdatedAt: IsoDateTime,
+  }),
+]);
+export type WorkbenchSetJiraIssueLinkInput = typeof WorkbenchSetJiraIssueLinkInput.Type;
+
+// Tagged because an Epic-first untagged union would also accept a Ticket payload.
+export const WorkbenchSetJiraIssueLinkResult = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("ticket"), ticket: WorkbenchTicket }),
+  Schema.Struct({ kind: Schema.Literal("epic"), epic: WorkbenchEpic }),
+]);
+export type WorkbenchSetJiraIssueLinkResult = typeof WorkbenchSetJiraIssueLinkResult.Type;
 
 export const WorkbenchArchiveTicketInput = Schema.Struct({
   ticketId: WorkbenchTicketId,
@@ -411,7 +459,6 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "project_not_found",
   "project_archived",
   "project_changed",
-  "jira_operation_pending",
   "epic_not_found",
   "epic_project_mismatch",
   "epic_archived",
@@ -420,8 +467,7 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "ticket_changed",
   "ticket_archived",
   "ticket_summary_generation_failed",
-  "jira_managed_ticket",
-  "jira_managed_epic",
+  "jira_issue_url_invalid",
   "linked_project_not_found",
   "linked_project_not_repository",
   "primary_project_not_linked",

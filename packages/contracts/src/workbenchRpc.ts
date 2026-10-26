@@ -26,6 +26,8 @@ import {
   WorkbenchRegenerateTicketSummaryInput,
   WorkbenchReleaseTicketWorkspaceInput,
   WorkbenchReplaceAssignmentInput,
+  WorkbenchSetJiraIssueLinkInput,
+  WorkbenchSetJiraIssueLinkResult,
   WorkbenchSnapshot,
   WorkbenchTicket,
   WorkbenchTicketId,
@@ -35,37 +37,6 @@ import {
   WorkbenchUpdateProjectInput,
   WorkbenchUpdateTicketInput,
 } from "./workbench.ts";
-import {
-  WorkbenchJiraBeginAuthInput,
-  WorkbenchJiraBeginAuthResult,
-  WorkbenchJiraBinding,
-  WorkbenchJiraBoard,
-  WorkbenchJiraBoardConfiguration,
-  WorkbenchJiraClaimAuthInput,
-  WorkbenchJiraClaimAuthResult,
-  WorkbenchJiraCompleteAuthInput,
-  WorkbenchJiraCompleteAuthResult,
-  WorkbenchJiraCreateBindingInput,
-  WorkbenchJiraGetBoardConfigurationInput,
-  WorkbenchJiraGetTicketTransitionsInput,
-  WorkbenchJiraGetTicketTransitionsResult,
-  WorkbenchJiraIssueSnapshot,
-  WorkbenchJiraListBoardsInput,
-  WorkbenchJiraListProjectsInput,
-  WorkbenchJiraListSprintsInput,
-  WorkbenchJiraMigrateLocalTicketsInput,
-  WorkbenchJiraMigrateLocalTicketsResult,
-  WorkbenchJiraOperationError,
-  WorkbenchJiraProject,
-  WorkbenchJiraSnapshot,
-  WorkbenchJiraResolveCreationInput,
-  WorkbenchJiraResolveCreationResult,
-  WorkbenchJiraSprint,
-  WorkbenchJiraSyncBindingInput,
-  WorkbenchJiraSyncResult,
-  WorkbenchJiraUpdateBindingInput,
-  WorkbenchJiraUpdateTicketInput,
-} from "./workbenchJira.ts";
 
 export const WORKBENCH_WS_METHODS = {
   // Workbench project-management methods
@@ -94,29 +65,10 @@ export const WORKBENCH_WS_METHODS = {
   workbenchReplaceAssignment: "workbench.assignments.replace",
   workbenchPrepareTicketWorkspace: "workbench.ticketWorkspaces.prepare",
   workbenchReleaseTicketWorkspace: "workbench.ticketWorkspaces.release",
-  workbenchJiraGetSnapshot: "workbench.jira.getSnapshot",
-  workbenchJiraBeginAuth: "workbench.jira.auth.begin",
-  workbenchJiraCompleteAuth: "workbench.jira.auth.complete",
-  workbenchJiraClaimAuth: "workbench.jira.auth.claim",
-  workbenchJiraListProjects: "workbench.jira.projects.list",
-  workbenchJiraListBoards: "workbench.jira.boards.list",
-  workbenchJiraListSprints: "workbench.jira.sprints.list",
-  workbenchJiraGetBoardConfiguration: "workbench.jira.boards.getConfiguration",
-  workbenchJiraCreateBinding: "workbench.jira.bindings.create",
-  workbenchJiraUpdateBinding: "workbench.jira.bindings.update",
-  workbenchJiraSyncBinding: "workbench.jira.bindings.sync",
-  workbenchJiraUpdateTicket: "workbench.jira.tickets.update",
-  workbenchJiraGetTicketTransitions: "workbench.jira.tickets.transitions",
-  workbenchJiraMigrateLocalTickets: "workbench.jira.localTickets.migrate",
-  workbenchJiraResolveCreation: "workbench.jira.creations.resolve",
+  workbenchSetJiraIssueLink: "workbench.setJiraIssueLink",
 } as const;
 
 const WorkbenchRpcError = Schema.Union([WorkbenchOperationError, EnvironmentAuthorizationError]);
-const WorkbenchCreateTicketRpcError = Schema.Union([
-  WorkbenchOperationError,
-  WorkbenchJiraOperationError,
-  EnvironmentAuthorizationError,
-]);
 
 const WsWorkbenchGetTicketPreparationsRpc = Rpc.make(
   WORKBENCH_WS_METHODS.workbenchGetTicketPreparations,
@@ -184,7 +136,7 @@ const WsWorkbenchArchiveEpicRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchArchive
 const WsWorkbenchCreateTicketRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchCreateTicket, {
   payload: WorkbenchCreateTicketInput,
   success: WorkbenchTicket,
-  error: WorkbenchCreateTicketRpcError,
+  error: WorkbenchRpcError,
 });
 
 const WsWorkbenchUpdateTicketRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchUpdateTicket, {
@@ -250,117 +202,11 @@ const WsWorkbenchReleaseTicketWorkspaceRpc = Rpc.make(
   },
 );
 
-const WorkbenchJiraRpcError = Schema.Union([
-  WorkbenchJiraOperationError,
-  EnvironmentAuthorizationError,
-]);
-const WorkbenchJiraMigrationRpcError = Schema.Union([
-  WorkbenchOperationError,
-  WorkbenchJiraOperationError,
-  EnvironmentAuthorizationError,
-]);
-
-const WsWorkbenchJiraGetSnapshotRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchJiraGetSnapshot, {
-  payload: Schema.Struct({}),
-  success: WorkbenchJiraSnapshot,
-  error: WorkbenchJiraRpcError,
+const WsWorkbenchSetJiraIssueLinkRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink, {
+  payload: WorkbenchSetJiraIssueLinkInput,
+  success: WorkbenchSetJiraIssueLinkResult,
+  error: WorkbenchRpcError,
 });
-
-const WsWorkbenchJiraBeginAuthRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchJiraBeginAuth, {
-  payload: WorkbenchJiraBeginAuthInput,
-  success: WorkbenchJiraBeginAuthResult,
-  error: WorkbenchJiraRpcError,
-});
-
-const WsWorkbenchJiraCompleteAuthRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchJiraCompleteAuth, {
-  payload: WorkbenchJiraCompleteAuthInput,
-  success: WorkbenchJiraCompleteAuthResult,
-  error: WorkbenchJiraRpcError,
-});
-
-const WsWorkbenchJiraClaimAuthRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchJiraClaimAuth, {
-  payload: WorkbenchJiraClaimAuthInput,
-  success: WorkbenchJiraClaimAuthResult,
-  error: WorkbenchJiraRpcError,
-});
-
-const WsWorkbenchJiraListProjectsRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchJiraListProjects, {
-  payload: WorkbenchJiraListProjectsInput,
-  success: Schema.Array(WorkbenchJiraProject),
-  error: WorkbenchJiraRpcError,
-});
-
-const WsWorkbenchJiraListBoardsRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchJiraListBoards, {
-  payload: WorkbenchJiraListBoardsInput,
-  success: Schema.Array(WorkbenchJiraBoard),
-  error: WorkbenchJiraRpcError,
-});
-
-const WsWorkbenchJiraListSprintsRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchJiraListSprints, {
-  payload: WorkbenchJiraListSprintsInput,
-  success: Schema.Array(WorkbenchJiraSprint),
-  error: WorkbenchJiraRpcError,
-});
-
-const WsWorkbenchJiraGetBoardConfigurationRpc = Rpc.make(
-  WORKBENCH_WS_METHODS.workbenchJiraGetBoardConfiguration,
-  {
-    payload: WorkbenchJiraGetBoardConfigurationInput,
-    success: WorkbenchJiraBoardConfiguration,
-    error: WorkbenchJiraRpcError,
-  },
-);
-
-const WsWorkbenchJiraCreateBindingRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchJiraCreateBinding, {
-  payload: WorkbenchJiraCreateBindingInput,
-  success: WorkbenchJiraBinding,
-  error: WorkbenchJiraRpcError,
-});
-
-const WsWorkbenchJiraUpdateBindingRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchJiraUpdateBinding, {
-  payload: WorkbenchJiraUpdateBindingInput,
-  success: WorkbenchJiraBinding,
-  error: WorkbenchJiraRpcError,
-});
-
-const WsWorkbenchJiraSyncBindingRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchJiraSyncBinding, {
-  payload: WorkbenchJiraSyncBindingInput,
-  success: WorkbenchJiraSyncResult,
-  error: WorkbenchJiraRpcError,
-});
-
-const WsWorkbenchJiraUpdateTicketRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchJiraUpdateTicket, {
-  payload: WorkbenchJiraUpdateTicketInput,
-  success: WorkbenchJiraIssueSnapshot,
-  error: WorkbenchJiraRpcError,
-});
-
-const WsWorkbenchJiraResolveCreationRpc = Rpc.make(
-  WORKBENCH_WS_METHODS.workbenchJiraResolveCreation,
-  {
-    payload: WorkbenchJiraResolveCreationInput,
-    success: WorkbenchJiraResolveCreationResult,
-    error: WorkbenchJiraRpcError,
-  },
-);
-
-const WsWorkbenchJiraGetTicketTransitionsRpc = Rpc.make(
-  WORKBENCH_WS_METHODS.workbenchJiraGetTicketTransitions,
-  {
-    payload: WorkbenchJiraGetTicketTransitionsInput,
-    success: WorkbenchJiraGetTicketTransitionsResult,
-    error: WorkbenchJiraRpcError,
-  },
-);
-
-const WsWorkbenchJiraMigrateLocalTicketsRpc = Rpc.make(
-  WORKBENCH_WS_METHODS.workbenchJiraMigrateLocalTickets,
-  {
-    payload: WorkbenchJiraMigrateLocalTicketsInput,
-    success: WorkbenchJiraMigrateLocalTicketsResult,
-    error: WorkbenchJiraMigrationRpcError,
-  },
-);
 
 const WsWorkbenchBeginTicketDraftRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchBeginTicketDraft, {
   payload: WorkbenchBeginTicketDraftInput,
@@ -377,7 +223,7 @@ const WsWorkbenchPromoteTicketDraftRpc = Rpc.make(
   {
     payload: WorkbenchTicketDraftActionInput,
     success: WorkbenchTicketDraft,
-    error: WorkbenchCreateTicketRpcError,
+    error: WorkbenchRpcError,
   },
 );
 const WsWorkbenchDiscardTicketDraftRpc = Rpc.make(
@@ -423,19 +269,5 @@ export const WorkbenchRpcGroup = RpcGroup.make(
   WsWorkbenchReplaceAssignmentRpc,
   WsWorkbenchPrepareTicketWorkspaceRpc,
   WsWorkbenchReleaseTicketWorkspaceRpc,
-  WsWorkbenchJiraGetSnapshotRpc,
-  WsWorkbenchJiraBeginAuthRpc,
-  WsWorkbenchJiraCompleteAuthRpc,
-  WsWorkbenchJiraClaimAuthRpc,
-  WsWorkbenchJiraListProjectsRpc,
-  WsWorkbenchJiraListBoardsRpc,
-  WsWorkbenchJiraListSprintsRpc,
-  WsWorkbenchJiraGetBoardConfigurationRpc,
-  WsWorkbenchJiraCreateBindingRpc,
-  WsWorkbenchJiraUpdateBindingRpc,
-  WsWorkbenchJiraSyncBindingRpc,
-  WsWorkbenchJiraUpdateTicketRpc,
-  WsWorkbenchJiraResolveCreationRpc,
-  WsWorkbenchJiraGetTicketTransitionsRpc,
-  WsWorkbenchJiraMigrateLocalTicketsRpc,
+  WsWorkbenchSetJiraIssueLinkRpc,
 );
