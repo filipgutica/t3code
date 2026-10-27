@@ -366,19 +366,24 @@ export function WorkbenchFloatingChatPicker({
   const changeOpen = (next: boolean) => {
     setOpen(next);
     if (!next) groups.changeQuery("");
+    // A group the user collapsed opens again so the showing Thread is always in the list.
+    else if (selected) groups.reveal(selected);
   };
   const openOnWaiting = () => {
     const target = waiting[0];
     focusThreadIdRef.current = target?.threadId ?? null;
-    // A group the user collapsed must open so its waiting Thread mounts and can take focus.
     if (target) groups.reveal(target);
     changeOpen(true);
   };
-  const focusWaiting = (isOpen: boolean) => {
-    const threadId = focusThreadIdRef.current;
+  const row = (threadId: ThreadId | undefined) =>
+    popupRef.current?.querySelector<HTMLElement>(`[data-thread-id="${threadId}"]`);
+  // Focuses the waiting Thread the pill asked for, or scrolls to the showing Thread.
+  const revealOnOpen = (isOpen: boolean) => {
+    const waitingThreadId = focusThreadIdRef.current;
     focusThreadIdRef.current = null;
-    if (!isOpen || threadId === null) return;
-    popupRef.current?.querySelector<HTMLElement>(`[data-thread-id="${threadId}"]`)?.focus();
+    if (!isOpen) return;
+    if (waitingThreadId !== null) row(waitingThreadId)?.focus();
+    else row(selected?.threadId)?.scrollIntoView({ block: "center" });
   };
   const select = (threadId: ThreadId) => {
     changeOpen(false);
@@ -387,7 +392,7 @@ export function WorkbenchFloatingChatPicker({
 
   return (
     <>
-      <Menu open={open} onOpenChange={changeOpen} onOpenChangeComplete={focusWaiting}>
+      <Menu open={open} onOpenChange={changeOpen} onOpenChangeComplete={revealOnOpen}>
         <MenuTrigger
           render={
             <button

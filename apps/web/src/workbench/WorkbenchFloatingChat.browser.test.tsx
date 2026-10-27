@@ -187,6 +187,33 @@ it("opens a collapsed group to focus its waiting Thread from the pill", async ()
   await expect.element(screen.getByRole("menuitem", { name: /Thread c/ })).toHaveFocus();
 });
 
+it("scrolls to the showing Thread whenever the menu opens, even after its group was collapsed", async () => {
+  setup();
+  const threads = Array.from({ length: 20 }, (_, index) => ({
+    ...thread(`t${index}`),
+    ticket: {
+      id: WorkbenchTicketId.make(`ticket-${index}`),
+      key: `PAY-${index}`,
+      title: `Ticket ${index}`,
+      kind: "story" as const,
+    },
+  }));
+  await using screen = await render(
+    <Harness kind="board" threads={threads} primaryThreadId={ThreadId.make("t19")} />,
+  );
+  const menu = screen.getByRole("button", { name: /^Board Threads/ });
+  const showing = screen.getByRole("menuitem", { name: "Thread t19" });
+
+  await userEvent.click(menu);
+  await expect.element(showing).toBeInViewport();
+
+  await userEvent.click(screen.getByRole("menuitem", { name: "PAY-19 Ticket 19 1 Thread" }));
+  await expect.element(showing).not.toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  await userEvent.click(menu);
+  await expect.element(showing).toBeInViewport();
+});
+
 it("collapses a group in search results, and forgets it with the search", async () => {
   setup();
   const ticket = {
