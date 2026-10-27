@@ -103,6 +103,7 @@ const snapshot: WorkbenchSnapshot = {
     },
   ],
   assignments: [],
+  threadRecaps: [],
   ticketWorkspaces: [],
   reservedThreadIds: [],
 };

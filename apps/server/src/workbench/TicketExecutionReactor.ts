@@ -21,7 +21,15 @@ import { forkParked } from "../serverActivation.ts";
 import { OrchestratorV2 } from "../orchestration-v2/Orchestrator.ts";
 import { EventSinkV2 } from "../orchestration-v2/EventSink.ts";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import { ThreadRecapService } from "./ThreadRecapService.ts";
 import { WorkbenchStore } from "./WorkbenchStore.ts";
+
+const RECAPPED_RUN_STATUSES: ReadonlySet<string> = new Set([
+  "completed",
+  "failed",
+  "interrupted",
+  "cancelled",
+]);
 
 type ExecutionFailure = {
   readonly runId: RunId;
@@ -44,6 +52,24 @@ const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestratorV2;
   const store = yield* WorkbenchStore;
   const sink = yield* EventSinkV2;
+  const recaps = yield* ThreadRecapService;
+
+  // Recaps stay outside the execution retry path; enqueue logs its own failures.
+  const scheduleRecap = (stored: OrchestrationV2StoredEvent) => {
+    const event = stored.event;
+    if (
+      (event.type !== "run.created" && event.type !== "run.updated") ||
+      !RECAPPED_RUN_STATUSES.has(event.payload.status) ||
+      event.payload.startedAt === null ||
+      (event.nodeId !== undefined && event.nodeId !== event.payload.rootNodeId)
+    )
+      return Effect.void;
+    return recaps.enqueue({
+      threadId: event.threadId,
+      runId: event.payload.id,
+      completedAt: DateTime.formatIso(event.payload.completedAt ?? event.occurredAt),
+    });
+  };
 
   const appendFailureActivity = (execution: ExecutionFailure, cause: Cause.Cause<unknown>) => {
     const occurredAt = DateTime.makeUnsafe(execution.startedAt);
@@ -174,6 +200,7 @@ const make = Effect.gen(function* () {
                       }
                     }),
                   ),
+                  Effect.andThen(scheduleRecap(stored)),
                   Effect.andThen(noteSeen(stored.sequence)),
                 ),
               );

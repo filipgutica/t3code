@@ -43,6 +43,7 @@ const snapshot: WorkbenchSnapshot = {
   assignments: [],
   epics: [],
   reservedThreadIds: [],
+  threadRecaps: [],
   ticketWorkspaces: [],
 };
 const setError = vi.fn();

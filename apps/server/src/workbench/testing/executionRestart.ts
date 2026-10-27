@@ -31,6 +31,7 @@ import { OrchestratorV2 } from "../../orchestration-v2/Orchestrator.ts";
 import { ServerActivation } from "../../serverActivation.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
 import { TicketExecutionReactor, layer as reactorLayer } from "../TicketExecutionReactor.ts";
+import { ThreadRecapService } from "../ThreadRecapService.ts";
 import { seedNativeThread } from "./nativeThreads.ts";
 
 const encodeResult = Schema.encodeEffect(
@@ -127,7 +128,18 @@ const nativeEngineLayer = Layer.unwrap(
     });
   }),
 );
-export const reactorServices = reactorLayer.pipe(Layer.provide(nativeEngineLayer));
+export const reactorServicesWithoutRecaps = reactorLayer.pipe(Layer.provide(nativeEngineLayer));
+export const reactorServices = reactorServicesWithoutRecaps.pipe(
+  Layer.provide(
+    Layer.succeed(
+      ThreadRecapService,
+      ThreadRecapService.of({
+        enqueue: Effect.fn("ThreadRecapService.enqueue")(function* () {}),
+        awaitIdle: Effect.void,
+      }),
+    ),
+  ),
+);
 
 // Each phase runs in a separate Node process and opens the same disk database.
 const main = (filename: string, phase: string) =>

@@ -1098,6 +1098,12 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
     }),
   );
   yield* applyMigration(20, migrateJiraStateToLinks);
+  yield* applyMigration(
+    21,
+    sql`CREATE TABLE workbench_thread_recaps (
+      thread_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, text TEXT NOT NULL, updated_at TEXT NOT NULL
+    )`.pipe(Effect.asVoid),
+  );
   yield* sql`
     INSERT OR IGNORE INTO workbench_schema_migrations (version)
     VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13), (14)

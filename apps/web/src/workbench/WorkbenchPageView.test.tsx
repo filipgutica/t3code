@@ -178,6 +178,7 @@ const snapshot: WorkbenchSnapshot = {
   tickets: [ticket],
   epics: [],
   assignments: [assignment],
+  threadRecaps: [],
   ticketWorkspaces: [],
   reservedThreadIds: [],
 };
@@ -643,7 +644,9 @@ it("returns to planning instead of opening a second Thread from the planning tic
 
 it("shows the ticket's Threads in the floating chat except in planning ticket details", async () => {
   await render({ detail: true });
-  expect(document.querySelector('[role="tablist"][aria-label="Ticket Threads"]')).not.toBeNull();
+  expect(
+    document.querySelector('[data-workbench-floating-chat] [aria-label^="Ticket Threads"]'),
+  ).not.toBeNull();
   await render({ conversation: "planning" });
   await act(async () => button("Ticket details").click());
   expect(document.querySelector("article")).not.toBeNull();

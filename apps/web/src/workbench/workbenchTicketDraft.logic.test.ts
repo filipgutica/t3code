@@ -62,6 +62,7 @@ const makeSnapshot = (drafts?: ReadonlyArray<WorkbenchConversationDraft>): Workb
   tickets: [],
   assignments: [],
   reservedThreadIds: [],
+  threadRecaps: [],
   ticketWorkspaces: [],
 });
 

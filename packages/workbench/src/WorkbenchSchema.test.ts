@@ -279,6 +279,28 @@ describe("ensureWorkbenchSchema", () => {
     ),
   );
 
+  it.effect("creates the Thread recap table once", () =>
+    withForeignKeys(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* ensureWorkbenchSchema;
+        yield* ensureWorkbenchSchema;
+        const columns = yield* sql<{
+          readonly name: string;
+        }>`SELECT name FROM pragma_table_info('workbench_thread_recaps')`;
+        expect(columns.map((column) => column.name)).toEqual([
+          "thread_id",
+          "run_id",
+          "text",
+          "updated_at",
+        ]);
+        expect(
+          yield* sql`SELECT version FROM workbench_schema_migrations WHERE version = 21`,
+        ).toHaveLength(1);
+      }),
+    ),
+  );
+
   it.effect("moves v19 Jira state onto local Tickets and Epics and drops the Jira tables", () =>
     withForeignKeys(
       Effect.gen(function* () {

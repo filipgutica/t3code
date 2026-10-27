@@ -211,6 +211,7 @@ const snapshot: WorkbenchSnapshot = {
   epics: [],
   assignments: [],
   reservedThreadIds: [],
+  threadRecaps: [],
   ticketWorkspaces: [
     retained,
     { ...retained, ticketId: WorkbenchTicketId.make("active-ticket") },
@@ -386,6 +387,7 @@ it("hides archived Workspaces from actionable results and restores their search 
       },
     ],
     tickets: [{ ...snapshot.tickets[0]!, projectId: workspaceId, title: "Release Checklist" }],
+    threadRecaps: [],
     ticketWorkspaces: [],
   };
   const root = createRootRoute();

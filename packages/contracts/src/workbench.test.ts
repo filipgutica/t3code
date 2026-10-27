@@ -104,6 +104,16 @@ describe("Workbench contracts", () => {
       expect(snapshot).not.toHaveProperty("supportsEpicLifecycle", true);
     }),
   );
+  it.effect("decodes snapshots from hosts without Thread recaps", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* decodeWorkbenchSnapshot({
+        projects: [],
+        tickets: [],
+        assignments: [],
+      });
+      expect(snapshot.threadRecaps).toEqual([]);
+    }),
+  );
   it.effect("decodes the persisted Project, Ticket, and Assignment snapshot", () =>
     Effect.gen(function* () {
       const snapshot = yield* decodeWorkbenchSnapshot({

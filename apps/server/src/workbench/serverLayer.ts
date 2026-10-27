@@ -4,6 +4,7 @@ import * as Layer from "effect/Layer";
 
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as ProjectionStoreV2 from "../orchestration-v2/ProjectionStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as WorkbenchOrchestrationReactor from "./OrchestrationReactor.ts";
 import * as TicketSettlement from "./TicketSettlement.ts";
@@ -11,6 +12,7 @@ import * as TicketExecutionReactor from "./TicketExecutionReactor.ts";
 import * as TicketDraftService from "./TicketDraftService.ts";
 import * as TicketPlanningRuntime from "./TicketPlanningRuntime.ts";
 import * as TicketSummaryService from "./TicketSummaryService.ts";
+import * as ThreadRecapService from "./ThreadRecapService.ts";
 import * as TicketWorkspaceService from "./TicketWorkspaceService.ts";
 import * as WorkbenchStore from "./WorkbenchStore.ts";
 import * as WorkbenchWorktreeOwnership from "./worktreeOwnership.ts";
@@ -29,7 +31,11 @@ export const WorkbenchHostPoliciesLayerLive = Layer.mergeAll(
   TicketPlanningRuntime.layerRuntimePolicyDecorator,
   TicketPlanningRuntime.layerMcpWritePolicy,
   WorkbenchWorktreeOwnership.layer,
-).pipe(Layer.provide(WorkbenchStoreLayerLive), Layer.provide(ProjectStore.layer));
+).pipe(
+  Layer.provide(WorkbenchStoreLayerLive),
+  Layer.provide(ProjectStore.layer),
+  Layer.provide(ProjectionStoreV2.layer),
+);
 const WorkspaceLifecycleLayerLive = WorkspaceLifecycleService.layer.pipe(
   Layer.provide(WorkbenchStoreLayerLive),
 );
@@ -48,6 +54,7 @@ export const WorkbenchServicesLayerLive = Layer.empty.pipe(
   Layer.provideMerge(WorkspaceLifecycleLayerLive),
   Layer.provideMerge(TicketWorkspaceService.TicketWorkspaceServiceLive),
   Layer.provideMerge(TicketSummaryService.TicketSummaryServiceLive),
+  Layer.provideMerge(ThreadRecapService.ThreadRecapServiceLive),
   Layer.provideMerge(WorkbenchStoreLayerLive),
 );
 

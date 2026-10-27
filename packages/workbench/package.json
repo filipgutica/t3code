@@ -16,6 +16,14 @@
       "types": "./src/TicketSummaryHost.ts",
       "import": "./src/TicketSummaryHost.ts"
     },
+    "./ThreadRecapService": {
+      "types": "./src/ThreadRecapService.ts",
+      "import": "./src/ThreadRecapService.ts"
+    },
+    "./ThreadRecapHost": {
+      "types": "./src/ThreadRecapHost.ts",
+      "import": "./src/ThreadRecapHost.ts"
+    },
     "./WorkbenchStore": {
       "types": "./src/WorkbenchStore.ts",
       "import": "./src/WorkbenchStore.ts"

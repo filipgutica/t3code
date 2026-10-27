@@ -115,6 +115,7 @@ it("preserves the scroll container while the new Thread's Assignment refresh fin
       },
     ],
     epics: [],
+    threadRecaps: [],
     ticketWorkspaces: [],
     reservedThreadIds: [],
   };

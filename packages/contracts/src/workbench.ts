@@ -260,6 +260,14 @@ export const WorkbenchTicketDraftActionInput = Schema.Struct({
 });
 export type WorkbenchTicketDraftActionInput = typeof WorkbenchTicketDraftActionInput.Type;
 
+/** Generated recap of a Thread's latest finished run, shown to sibling Threads on its Ticket. */
+export const WorkbenchThreadRecap = Schema.Struct({
+  threadId: ThreadId,
+  text: Schema.String,
+  updatedAt: IsoDateTime,
+});
+export type WorkbenchThreadRecap = typeof WorkbenchThreadRecap.Type;
+
 export const WorkbenchSnapshot = Schema.Struct({
   projects: Schema.Array(WorkbenchProject),
   supportsEpicLifecycle: Schema.optionalKey(Schema.Boolean),
@@ -271,6 +279,9 @@ export const WorkbenchSnapshot = Schema.Struct({
   // Thread IDs remain reserved so those Threads cannot be reassigned.
   reservedThreadIds: Schema.Array(ThreadId).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   ticketWorkspaces: Schema.Array(WorkbenchTicketWorkspace).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  threadRecaps: Schema.Array(WorkbenchThreadRecap).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
 });
@@ -467,6 +478,7 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "ticket_changed",
   "ticket_archived",
   "ticket_summary_generation_failed",
+  "thread_recap_generation_failed",
   "jira_issue_url_invalid",
   "linked_project_not_found",
   "linked_project_not_repository",

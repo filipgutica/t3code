@@ -79,6 +79,7 @@ const snapshot: WorkbenchSnapshot = {
     },
   ],
   reservedThreadIds: [],
+  threadRecaps: [],
   ticketWorkspaces: [],
 };
 const shells: EnvironmentThreadShell[] = [

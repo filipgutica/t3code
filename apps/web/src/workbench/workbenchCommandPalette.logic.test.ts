@@ -59,6 +59,7 @@ const snapshot: WorkbenchSnapshot = {
   ],
   epics: [],
   reservedThreadIds: [],
+  threadRecaps: [],
   ticketWorkspaces: [],
 };
 describe("Workbench command navigation", () => {

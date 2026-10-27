@@ -1,4 +1,4 @@
-import { NodeId, RunId, WorkbenchAssignmentId } from "@t3tools/contracts";
+import { NodeId, RunId, WorkbenchAssignmentId, type ThreadId } from "@t3tools/contracts";
 import { it as effectIt } from "@effect/vitest";
 import * as NodeURL from "node:url";
 import * as Deferred from "effect/Deferred";
@@ -20,10 +20,12 @@ import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
 import { ServerActivation } from "../serverActivation.ts";
 import { WorkbenchStore } from "./WorkbenchStore.ts";
 import { TicketExecutionReactor } from "./TicketExecutionReactor.ts";
+import { ThreadRecapService } from "./ThreadRecapService.ts";
 import {
   now,
   persistenceLayer,
   reactorServices,
+  reactorServicesWithoutRecaps,
   runEvent,
   seed,
   servicesLayer,
@@ -378,5 +380,50 @@ describe("durable Workbench execution consumption", () => {
           }).pipe(Effect.provide(testLayer), Effect.scoped);
         }
       }),
+  );
+
+  effectIt.effect("schedules a recap only when a root run finishes", () =>
+    Effect.gen(function* () {
+      yield* seed;
+      const sink = yield* EventSinkV2;
+      const scheduled = yield* Ref.make<
+        ReadonlyArray<{ readonly threadId: ThreadId; readonly runId: RunId }>
+      >([]);
+      const recaps = ThreadRecapService.of({
+        enqueue: ({ threadId, runId }) =>
+          Ref.update(scheduled, (all) => [...all, { threadId, runId }]),
+        awaitIdle: Effect.void,
+      });
+      const run = (name: string) => RunId.make(`recap-${name}`);
+      const finished = runEvent({ id: run("completed"), status: "completed" });
+      const failed = runEvent({ id: run("failed"), status: "completed", ordinal: 2 });
+      const neverStarted = runEvent({ id: run("never-started"), status: "completed", ordinal: 3 });
+      const childNode = runEvent({ id: run("child-node"), status: "completed", ordinal: 4 });
+      yield* Effect.gen(function* () {
+        const reactor = yield* TicketExecutionReactor;
+        yield* reactor.start();
+        const events = yield* sink.write({
+          events: [
+            runEvent({ id: run("completed") }),
+            finished,
+            { ...failed, payload: { ...failed.payload, status: "failed", completedAt: null } },
+            { ...neverStarted, payload: { ...neverStarted.payload, startedAt: null } },
+            { ...childNode, nodeId: NodeId.make("child-node") },
+          ],
+        });
+        yield* reactor.drainThrough(events.at(-1)!.sequence);
+        expect(yield* Ref.get(scheduled)).toEqual([
+          { threadId, runId: run("completed") },
+          { threadId, runId: run("failed") },
+        ]);
+      }).pipe(
+        Effect.provide(
+          reactorServicesWithoutRecaps.pipe(
+            Layer.provide(Layer.succeed(ThreadRecapService, recaps)),
+          ),
+        ),
+        Effect.scoped,
+      );
+    }).pipe(Effect.provide(testLayer), Effect.scoped),
   );
 });

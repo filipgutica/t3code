@@ -769,6 +769,103 @@ describe("WorkbenchStore package boundary", () => {
   );
 });
 
+describe("Workbench Thread roster", () => {
+  const projectId = ProjectId.make("roster-project");
+  const workspaceId = WorkbenchProjectId.make("roster-workspace");
+  const ticketId = WorkbenchTicketId.make("roster-ticket");
+  const thread = (name: string) => ThreadId.make(`roster-${name}`);
+  const layer = testLayer({
+    projects: new Set([projectId]),
+    threads: new Map(
+      ["first", "second", "replaced", "replacement", "lone"].map((name) => [
+        thread(name),
+        projectId,
+      ]),
+    ),
+  });
+  const assign = (
+    store: WorkbenchStore["Service"],
+    input: { readonly ticketId: WorkbenchTicketId; readonly name: string; readonly minute: number },
+  ) =>
+    store.createAssignment({
+      id: WorkbenchAssignmentId.make(`roster-assignment-${input.name}`),
+      ticketId: input.ticketId,
+      threadId: thread(input.name),
+      createdAt: `2026-10-20T10:0${input.minute}:00.000Z`,
+    });
+
+  it.effect("lists current sibling Threads with their recaps and excludes the Thread itself", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      yield* seedTicket({ store, projectId, workspaceId, ticketId, title: "Ship rosters" });
+      const loneTicketId = WorkbenchTicketId.make("roster-lone-ticket");
+      yield* store.createTicket({
+        id: loneTicketId,
+        projectId: workspaceId,
+        title: "Alone",
+        kind: "story",
+        markdown: "",
+        primaryT3ProjectId: projectId,
+        createdAt: "2026-10-20T10:00:00.000Z",
+      });
+      yield* assign(store, { ticketId, name: "first", minute: 1 });
+      yield* assign(store, { ticketId, name: "second", minute: 2 });
+      yield* assign(store, { ticketId, name: "replaced", minute: 3 });
+      yield* assign(store, { ticketId: loneTicketId, name: "lone", minute: 4 });
+      yield* store.replaceAssignment({
+        ticketId,
+        previousThreadId: thread("replaced"),
+        threadId: thread("replacement"),
+        replacedAt: "2026-10-20T10:05:00.000Z",
+      });
+      const recap = {
+        runId: RunId.make("second-run"),
+        text: "Moved validation into the schema.",
+        updatedAt: "2026-10-20T11:00:00.000Z",
+      };
+      yield* store.upsertThreadRecap({ threadId: thread("second"), ...recap });
+
+      const roster = Option.getOrThrow(yield* store.getThreadRoster(thread("first")));
+      expect(roster.ticket).toEqual({ id: ticketId, title: "Ship rosters", jiraIssueKey: null });
+      expect(roster.recap).toBeNull();
+      expect(roster.siblings).toEqual([
+        { threadId: thread("second"), recap },
+        { threadId: thread("replacement"), recap: null },
+      ]);
+      expect(Option.getOrThrow(yield* store.getThreadRoster(thread("second"))).recap).toEqual(
+        recap,
+      );
+      expect(Option.getOrThrow(yield* store.getThreadRoster(thread("lone"))).siblings).toEqual([]);
+      expect(yield* store.getThreadRoster(thread("replaced"))).toEqual(Option.none());
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("never replaces a recap with one for an earlier run and exposes it in snapshots", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      yield* seedTicket({ store, projectId, workspaceId, ticketId });
+      yield* assign(store, { ticketId, name: "first", minute: 1 });
+      const threadId = thread("first");
+      const write = (run: string, updatedAt: string) =>
+        store.upsertThreadRecap({
+          threadId,
+          runId: RunId.make(run),
+          text: `Recap of ${run}`,
+          updatedAt,
+        });
+      yield* write("run-2", "2026-10-20T12:00:00.000Z");
+      yield* write("run-1", "2026-10-20T11:00:00.000Z");
+      expect((yield* store.getCompactSnapshot).threadRecaps).toEqual([
+        { threadId, text: "Recap of run-2", updatedAt: "2026-10-20T12:00:00.000Z" },
+      ]);
+      yield* write("run-3", "2026-10-20T13:00:00.000Z");
+      expect((yield* store.getSnapshot).threadRecaps).toEqual([
+        { threadId, text: "Recap of run-3", updatedAt: "2026-10-20T13:00:00.000Z" },
+      ]);
+    }).pipe(Effect.provide(layer)),
+  );
+});
+
 describe("Workbench Workspace lifecycle", () => {
   const projectId = ProjectId.make("lifecycle-native-project");
   const workspaceId = WorkbenchProjectId.make("lifecycle-workspace");

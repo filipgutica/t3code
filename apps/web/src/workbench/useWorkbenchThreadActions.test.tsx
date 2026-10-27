@@ -147,6 +147,7 @@ const snapshot: WorkbenchSnapshot = {
   tickets: [ticket],
   epics: [],
   assignments: [],
+  threadRecaps: [],
   ticketWorkspaces: [],
   reservedThreadIds: [],
 };

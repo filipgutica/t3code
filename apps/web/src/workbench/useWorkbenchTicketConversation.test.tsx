@@ -507,6 +507,7 @@ describe("useTicketDraftTransitions", () => {
           updatedAt: time,
         },
       ],
+      threadRecaps: [],
       ticketWorkspaces: [
         {
           ticketId: draft.id,

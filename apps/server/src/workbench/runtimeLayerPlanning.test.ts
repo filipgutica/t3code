@@ -41,6 +41,7 @@ import * as EffectWorker from "../orchestration-v2/EffectWorker.ts";
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
@@ -138,10 +139,12 @@ const draft = {
 >;
 const planningPolicyLayer = TicketPlanningRuntime.layerRuntimePolicyDecorator.pipe(
   Layer.provide(ProjectStore.layer),
+  Layer.provide(ProjectionStore.layer),
   Layer.provide(
     Layer.mock(WorkbenchStore)({
       getTicketDraftForThread: (threadId) =>
         Effect.succeed(threadId === planningThreadId ? draft : null),
+      getThreadRoster: () => Effect.succeedNone,
     }),
   ),
 );
@@ -215,6 +218,7 @@ const layerPersistedPlanningTest = makeLayerTest(
   TicketPlanningRuntime.layerRuntimePolicyDecorator.pipe(
     Layer.provideMerge(WorkbenchStoreLive),
     Layer.provide(ProjectStore.layer),
+    Layer.provide(ProjectionStore.layer),
   ),
 );
 
