@@ -19,7 +19,6 @@ import type * as Scope from "effect/Scope";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import * as SqlClient from "effect/sql/SqlClient";
 import { vi } from "vite-plus/test";
-import { McpWritePolicy } from "../mcp/McpWritePolicy.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
 import { WorkspaceCleanupPolicy } from "../workspace/WorkspaceCleanupPolicy.ts";
 import * as ServerConfig from "../config.ts";
@@ -27,7 +26,6 @@ import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
 import { runServer } from "../server.ts";
 
 type RuntimeContext =
-  | McpWritePolicy
   | RuntimePolicy.RuntimePolicyDecorator
   | ClaudeQueryOptionsDecorator
   | SqlClient.SqlClient;
@@ -263,10 +261,6 @@ it.effect("runServer installs Workbench host policies", () =>
           threadId,
           modelSelection,
         });
-        // Drafting Threads use MCP like any other Thread; their prompt keeps them to planning.
-        const writePolicy = yield* McpWritePolicy;
-        yield* writePolicy.assertAllowed(threadId);
-        yield* writePolicy.assertAllowed(ThreadId.make("native"));
         assert.strictEqual(yield* ClaudeQueryOptionsDecorator, providerPolicy);
         const decorator = yield* RuntimePolicy.RuntimePolicyDecorator;
         const native = {

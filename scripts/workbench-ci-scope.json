@@ -115,7 +115,6 @@
         "packages/provider-core/src/server/textGenerationOperations.ts",
         "packages/provider-muse/src/server/textGeneration.ts",
         "apps/server/src/observability/RpcInstrumentation.ts",
-        "apps/server/src/mcp/McpWritePolicy.ts",
         "apps/server/src/orchestration-v2/Adapters/CodexSandboxPolicy.ts"
       ],
       "tests": [

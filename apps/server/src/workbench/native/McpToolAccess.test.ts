@@ -1,4 +1,4 @@
-import { assert, expect, it } from "@effect/vitest";
+import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
   OrchestratorMcpFailure,
@@ -16,7 +16,6 @@ import * as ThreadManagement from "../../orchestration-v2/ThreadManagementServic
 import * as McpHttpServer from "../../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
-import { McpWritePolicy } from "../../mcp/McpWritePolicy.ts";
 import { liveThreadShell } from "../../mcp/McpToolAccess.testkit.ts";
 
 const fullAccessThreadId = ThreadId.make("thread:full-access");
@@ -32,17 +31,6 @@ const threadCaller = (threadId: ThreadId): McpInvocationContext.McpInvocationSco
     providerInstanceId: ProviderInstanceId.make("codex"),
   },
   client: undefined,
-  capabilities: new Set(["orchestration"]),
-  issuedAt: 0,
-});
-
-const clientCaller = (
-  access: McpInvocationContext.McpClientCaller["access"],
-): McpInvocationContext.McpInvocationScope => ({
-  environmentId: EnvironmentId.make("environment"),
-  requestNamespace: "client:session",
-  thread: undefined,
-  client: { sessionId: "session", label: "Claude Code", access },
   capabilities: new Set(["orchestration"]),
   issuedAt: 0,
 });
@@ -123,7 +111,6 @@ const call = (
   );
 
 const fullAccess = threadCaller(fullAccessThreadId);
-const fullAccessClient = clientCaller("full-access");
 const readOnlyProvider = {
   ...fullAccess,
   thread: {
@@ -133,43 +120,6 @@ const readOnlyProvider = {
     readOnly: true,
   },
 };
-
-it.effect("applies an owner write policy after credential restrictions and before handlers", () =>
-  Effect.gen(function* () {
-    const checked: ThreadId[] = [];
-    const deny = {
-      assertAllowed: (threadId: ThreadId) =>
-        Effect.sync(() => checked.push(threadId)).pipe(
-          Effect.andThen(
-            Effect.fail(
-              new OrchestratorMcpFailure({
-                code: "capability_denied",
-                message: "Owner forbids writes",
-              }),
-            ),
-          ),
-        ),
-    };
-    assert.equal(
-      yield* call("writes", fullAccess).pipe(Effect.provideService(McpWritePolicy, deny)),
-      "capability_denied",
-    );
-    assert.deepEqual(checked, [fullAccessThreadId]);
-    assert.equal(
-      yield* call("reads", fullAccess).pipe(Effect.provideService(McpWritePolicy, deny)),
-      "ran",
-    );
-    assert.equal(
-      yield* call("writes", readOnlyProvider).pipe(Effect.provideService(McpWritePolicy, deny)),
-      "capability_denied",
-    );
-    assert.equal(
-      yield* call("writes", fullAccessClient).pipe(Effect.provideService(McpWritePolicy, deny)),
-      "ran",
-    );
-    assert.deepEqual(checked, [fullAccessThreadId]);
-  }).pipe(Effect.provide(probeServer)),
-);
 
 it.effect.each([
   ["reads", readOnlyProvider, "ran"],
