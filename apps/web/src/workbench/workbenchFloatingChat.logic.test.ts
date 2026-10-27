@@ -18,8 +18,10 @@ import {
   getWorkbenchFloatingChatThreadLabel,
   getWorkbenchBoardChatThreads,
   getWorkbenchFloatingChatPickerSections,
+  isWorkbenchFloatingChatGroupOpenByDefault,
   resolveWorkbenchFloatingChat,
   type WorkbenchFloatingChatThread,
+  type WorkbenchFloatingChatTicket,
 } from "./workbenchFloatingChat.logic";
 import { resolveWorkbenchThreadExecutionStatusPresentation } from "./WorkbenchThreadExecutionStatus.logic";
 import type { WorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
@@ -343,16 +345,45 @@ describe("resolveWorkbenchFloatingChat", () => {
 });
 
 describe("getWorkbenchFloatingChatPickerSections", () => {
-  const ticketA = { id: WorkbenchTicketId.make("a"), key: "WB-1", title: "First" };
-  const ticketB = { id: WorkbenchTicketId.make("b"), key: null, title: "Second" };
-  const ticketC = { id: WorkbenchTicketId.make("c"), key: null, title: "Thread c1" };
+  const ticketA = {
+    id: WorkbenchTicketId.make("a"),
+    key: "WB-1",
+    title: "First",
+    kind: "bug" as const,
+  };
+  const ticketB = {
+    id: WorkbenchTicketId.make("b"),
+    key: null,
+    title: "Second",
+    kind: "story" as const,
+  };
+  const ticketC = {
+    id: WorkbenchTicketId.make("c"),
+    key: null,
+    title: "Thread c1",
+    kind: "story" as const,
+  };
   const shape = (sections: ReturnType<typeof getWorkbenchFloatingChatPickerSections>) =>
-    sections.map((section) => ({
-      heading: section.heading,
-      rows: section.rows.map((row) => [row.thread.threadId, row.ticketPrefix]),
-    }));
+    sections.map((section) =>
+      section.type === "ticket"
+        ? {
+            type: section.type,
+            id: section.id,
+            rows: [section.row.thread.threadId],
+            prefix: section.prefix,
+          }
+        : {
+            type: section.type,
+            id: section.id,
+            rows: section.rows.map((row) => row.thread.threadId),
+          },
+    );
+  const rowTitles = (sections: ReturnType<typeof getWorkbenchFloatingChatPickerSections>) =>
+    sections.flatMap((section) =>
+      section.type === "ticket" ? [section.row.title] : section.rows.map((row) => row.title),
+    );
 
-  it("heads drafts and shared tickets, and folds a lone ticket Thread into one row", () => {
+  it("groups drafts and shared tickets, and folds a lone ticket Thread into one row", () => {
     const sections = getWorkbenchFloatingChatPickerSections([
       thread("b1", null, { ticket: ticketB }),
       thread("a1", null, { ticket: ticketA }),
@@ -361,28 +392,29 @@ describe("getWorkbenchFloatingChatPickerSections", () => {
       thread("c1", null, { ticket: ticketC }),
     ]);
     expect(shape(sections)).toEqual([
-      { heading: { key: null, title: "Drafts" }, rows: [["draft", null]] },
-      {
-        heading: { key: null, title: "Second" },
-        rows: [
-          ["b1", null],
-          ["b2", null],
-        ],
-      },
-      { heading: null, rows: [["a1", "WB-1"]] },
+      { type: "group", id: "drafts", rows: ["draft"] },
+      { type: "group", id: "b", rows: ["b1", "b2"] },
+      { type: "ticket", id: "a", rows: ["a1"], prefix: "WB-1" },
       // The title already names the ticket, so the row needs no prefix.
-      { heading: null, rows: [["c1", null]] },
+      { type: "ticket", id: "c", rows: ["c1"], prefix: null },
     ]);
   });
 
-  it("drops the ticket title its heading already shows from each Thread's title", () => {
-    const sections = getWorkbenchFloatingChatPickerSections([
+  it("lists one ticket's Threads, or Threads with no ticket, as plain rows", () => {
+    expect(shape(getWorkbenchFloatingChatPickerSections([thread("x"), thread("y")]))).toEqual([
+      { type: "rows", id: "drafts", rows: ["x", "y"] },
+    ]);
+    const oneTicket = getWorkbenchFloatingChatPickerSections([
       thread("main", null, { title: "Second", ticket: ticketB }),
       thread("api", null, { title: "Second — API contract review", ticket: ticketB }),
       thread("other", null, { title: "Review copy", ticket: ticketB }),
       thread("word", null, { title: "Secondary review", ticket: ticketB }),
     ]);
-    expect(sections[0]?.rows.map((row) => row.title)).toEqual([
+    expect(shape(oneTicket)).toEqual([
+      { type: "rows", id: "b", rows: ["main", "api", "other", "word"] },
+    ]);
+    // Only a separator after the ticket title marks it as the title's prefix.
+    expect(rowTitles(oneTicket)).toEqual([
       "Second",
       "API contract review",
       "Review copy",
@@ -390,24 +422,43 @@ describe("getWorkbenchFloatingChatPickerSections", () => {
     ]);
   });
 
-  it("lists Threads without a ticket, and no tickets, without headings", () => {
-    const sections = getWorkbenchFloatingChatPickerSections([thread("x"), thread("y")]);
-    expect(shape(sections)).toEqual([
-      {
-        heading: null,
-        rows: [
-          ["x", null],
-          ["y", null],
-        ],
-      },
-    ]);
-  });
-
   it("names a lone Thread's ticket by title when the ticket has no key", () => {
     const sections = getWorkbenchFloatingChatPickerSections([
+      thread("draft"),
       thread("r", null, { title: "Review", ticket: ticketB }),
     ]);
-    expect(shape(sections)).toEqual([{ heading: null, rows: [["r", "Second"]] }]);
+    expect(shape(sections)[1]).toEqual({ type: "ticket", id: "b", rows: ["r"], prefix: "Second" });
+  });
+});
+
+describe("isWorkbenchFloatingChatGroupOpenByDefault", () => {
+  const group = (
+    ticket: WorkbenchFloatingChatTicket | null,
+    ...threads: WorkbenchFloatingChatThread[]
+  ) => ({
+    type: "group" as const,
+    id: ticket?.id ?? "drafts",
+    ticket,
+    rows: threads.map((entry) => ({ thread: entry, title: entry.title })),
+  });
+  const shared = {
+    id: WorkbenchTicketId.make("t"),
+    key: null,
+    title: "Shared",
+    kind: "story" as const,
+  };
+
+  it("opens drafts, and a ticket's group that holds the showing Thread or one waiting on you", () => {
+    expect(isWorkbenchFloatingChatGroupOpenByDefault(group(null, thread("d")), null)).toBe(true);
+    const quiet = group(shared, thread("a"), thread("b", "working"));
+    expect(isWorkbenchFloatingChatGroupOpenByDefault(quiet, null)).toBe(false);
+    expect(isWorkbenchFloatingChatGroupOpenByDefault(quiet, ThreadId.make("a"))).toBe(true);
+    expect(
+      isWorkbenchFloatingChatGroupOpenByDefault(
+        group(shared, thread("a"), thread("c", "approval")),
+        null,
+      ),
+    ).toBe(true);
   });
 });
 
@@ -415,7 +466,12 @@ describe("filterWorkbenchFloatingChatThreads", () => {
   const threads = [
     thread("a", null, {
       title: "Fix date-range parsing",
-      ticket: { id: WorkbenchTicketId.make("t"), key: "MA-5360", title: "Validate filters" },
+      ticket: {
+        id: WorkbenchTicketId.make("t"),
+        key: "MA-5360",
+        title: "Validate filters",
+        kind: "story",
+      },
     }),
     thread("b", null, { title: "Update chart", recap: "Rendered the token usage series." }),
   ];
@@ -434,6 +490,7 @@ describe("getWorkbenchFloatingChatThreadLabel", () => {
       id: WorkbenchTicketId.make(title),
       key,
       title,
+      kind: "story" as const,
     });
     expect(
       getWorkbenchFloatingChatThreadLabel(

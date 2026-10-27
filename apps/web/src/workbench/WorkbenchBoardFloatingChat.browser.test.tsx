@@ -233,7 +233,7 @@ const setup = async () => {
   };
 };
 
-it("heads ticket drafts, and folds each single-Thread ticket into one row named by its ticket", async () => {
+it("groups drafts under a collapsible heading, and shows a single-Thread ticket as one row", async () => {
   const { onSnapshot } = await setup();
   await using screen = await render(
     <Harness
@@ -244,14 +244,24 @@ it("heads ticket drafts, and folds each single-Thread ticket into one row named 
   await userEvent.click(screen.getByRole("button", { name: "Board Threads: Plan exports" }));
 
   const items = screen.getByRole("menuitem");
-  await expect.element(items.nth(0)).toHaveAccessibleName(/Plan exports/);
-  await expect.element(items.nth(1)).toHaveAccessibleName("PAY-1 Thread first");
-  await expect.element(items.nth(2)).toHaveAccessibleName("Payouts Thread second");
+  const drafts = items.nth(0);
+  await expect.element(drafts).toHaveAccessibleName("Drafts 1 Thread");
+  await expect.element(drafts).toHaveAttribute("aria-expanded", "true");
+  await expect.element(items.nth(1)).toHaveAccessibleName(/Plan exports/);
+  await expect.element(items.nth(2)).toHaveAccessibleName("PAY-1 Thread first");
+  await expect.element(items.nth(3)).toHaveAccessibleName("Payouts Thread second");
+  await expect.element(items.nth(2)).toHaveAccessibleDescription("Refunded the duplicate charge.");
+  await expect.element(items.nth(2).getByText("Refunded the duplicate charge.")).toBeVisible();
+
+  // Collapsing keeps the menu open and hides only the group's Threads.
+  await userEvent.click(drafts);
+  await expect.element(drafts).toHaveAttribute("aria-expanded", "false");
   await expect
-    .element(screen.getByRole("group", { name: "Drafts" }).getByRole("menuitem"))
-    .toHaveAccessibleName(/Plan exports/);
-  await expect.element(items.nth(1)).toHaveAccessibleDescription("Refunded the duplicate charge.");
-  await expect.element(items.nth(1).getByText("Refunded the duplicate charge.")).toBeVisible();
+    .element(screen.getByRole("menuitem", { name: /Plan exports/ }))
+    .not.toBeInTheDocument();
+  await expect.element(screen.getByRole("menuitem", { name: "PAY-1 Thread first" })).toBeVisible();
+  await userEvent.click(drafts);
+  await expect.element(screen.getByRole("menuitem", { name: /Plan exports/ })).toBeVisible();
   expect(mocks.begin).not.toHaveBeenCalled();
 });
 

@@ -6,6 +6,7 @@ import type {
   WorkbenchTicket,
   WorkbenchTicketDraft,
   WorkbenchTicketId,
+  WorkbenchTicketKind,
 } from "@t3tools/contracts";
 
 import { getAssignmentsForTicket } from "./workbench.logic";
@@ -19,6 +20,7 @@ export interface WorkbenchFloatingChatTicket {
   readonly id: WorkbenchTicketId;
   readonly key: string | null;
   readonly title: string;
+  readonly kind: WorkbenchTicketKind;
 }
 
 export interface WorkbenchFloatingChatThread {
@@ -77,7 +79,12 @@ export const getWorkbenchBoardChatThreads = ({
       title: title(thread),
       status: getWorkbenchThreadExecutionStatus(thread),
       ticket: ticket
-        ? { id: ticket.id, key: ticket.jiraIssue?.key ?? null, title: ticket.title }
+        ? {
+            id: ticket.id,
+            key: ticket.jiraIssue?.key ?? null,
+            title: ticket.title,
+            kind: ticket.kind,
+          }
         : null,
       recap: recaps.get(threadId) ?? null,
     };
@@ -166,17 +173,36 @@ const groupWorkbenchFloatingChatThreads = (threads: ReadonlyArray<WorkbenchFloat
   return drafts ? [drafts, ...groups.values()] : [...groups.values()];
 };
 
-export interface WorkbenchFloatingChatPickerSection {
-  readonly id: string;
-  /** Rows under a heading belong to it; a ticket with one Thread names itself in its row. */
-  readonly heading: { readonly key: string | null; readonly title: string } | null;
-  readonly rows: ReadonlyArray<{
-    readonly thread: WorkbenchFloatingChatThread;
-    readonly ticketPrefix: string | null;
-    /** The Thread title, less a leading ticket title its heading already shows. */
-    readonly title: string;
-  }>;
+export interface WorkbenchFloatingChatPickerRow {
+  readonly thread: WorkbenchFloatingChatThread;
+  /** The Thread title, less a leading ticket title its group already shows. */
+  readonly title: string;
 }
+
+/**
+ * A plain list of Threads, a collapsible group of drafts or of one ticket's Threads, or a
+ * ticket with a single Thread, which is one row that opens that Thread.
+ */
+export type WorkbenchFloatingChatPickerSection =
+  | {
+      readonly type: "rows";
+      readonly id: string;
+      readonly rows: ReadonlyArray<WorkbenchFloatingChatPickerRow>;
+    }
+  | {
+      readonly type: "group";
+      readonly id: string;
+      readonly ticket: WorkbenchFloatingChatTicket | null;
+      readonly rows: ReadonlyArray<WorkbenchFloatingChatPickerRow>;
+    }
+  | {
+      readonly type: "ticket";
+      readonly id: string;
+      readonly ticket: WorkbenchFloatingChatTicket;
+      readonly row: WorkbenchFloatingChatPickerRow;
+      /** The ticket's key, or its title when the Thread's title does not already show it. */
+      readonly prefix: string | null;
+    };
 
 // Threads often start with their ticket's title; under its heading only the rest tells them apart.
 const titleUnderHeading = (title: string, ticketTitle: string) => {
@@ -187,44 +213,64 @@ const titleUnderHeading = (title: string, ticketTitle: string) => {
 };
 
 /**
- * The picker's layout: drafts and tickets with several Threads get a heading; a ticket with
- * one Thread is a single row prefixed by its key, or its title when the Thread's differs.
+ * The picker's layout. A list from one ticket, or with no tickets, is plain rows. Otherwise
+ * drafts and tickets with several Threads are groups, and a ticket with one Thread is one row.
  */
 export const getWorkbenchFloatingChatPickerSections = (
   threads: ReadonlyArray<WorkbenchFloatingChatThread>,
 ): ReadonlyArray<WorkbenchFloatingChatPickerSection> => {
   const groups = groupWorkbenchFloatingChatThreads(threads);
-  const hasTickets = groups.some((group) => group.ticket !== null);
-  return groups.map(({ ticket, threads: members }): WorkbenchFloatingChatPickerSection => {
-    const rows = members.map((thread) => ({ thread, ticketPrefix: null, title: thread.title }));
-    if (ticket === null) {
-      return {
-        id: "ungrouped",
-        // Only board drafts lack a ticket.
-        heading: hasTickets ? { key: null, title: "Drafts" } : null,
-        rows,
-      };
-    }
-    const [only] = members;
-    if (members.length > 1 || only === undefined) {
-      return {
-        id: ticket.id,
-        heading: { key: ticket.key, title: ticket.title },
-        rows: members.map((thread) => ({
+  const [onlyGroup] = groups;
+  if (groups.length === 1 && onlyGroup !== undefined) {
+    const ticket = onlyGroup.ticket;
+    return [
+      {
+        type: "rows",
+        id: ticket?.id ?? "drafts",
+        rows: onlyGroup.threads.map((thread) => ({
           thread,
-          ticketPrefix: null,
-          title: titleUnderHeading(thread.title, ticket.title),
+          title: ticket ? titleUnderHeading(thread.title, ticket.title) : thread.title,
         })),
+      },
+    ];
+  }
+  return groups.map(({ ticket, threads: members }): WorkbenchFloatingChatPickerSection => {
+    const [only] = members;
+    if (ticket !== null && members.length === 1 && only !== undefined) {
+      return {
+        type: "ticket",
+        id: ticket.id,
+        ticket,
+        row: { thread: only, title: only.title },
+        prefix: ticket.key ?? (only.title === ticket.title ? null : ticket.title),
       };
     }
-    const ticketPrefix = ticket.key ?? (only.title === ticket.title ? null : ticket.title);
     return {
-      id: ticket.id,
-      heading: null,
-      rows: [{ thread: only, ticketPrefix, title: only.title }],
+      type: "group",
+      id: ticket?.id ?? "drafts",
+      ticket,
+      rows: members.map((thread) => ({
+        thread,
+        title: ticket ? titleUnderHeading(thread.title, ticket.title) : thread.title,
+      })),
     };
   });
 };
+
+/**
+ * Drafts start open as work in progress; a ticket's group starts open when it holds the
+ * showing Thread or one waiting on the user.
+ */
+export const isWorkbenchFloatingChatGroupOpenByDefault = (
+  { ticket, rows }: Extract<WorkbenchFloatingChatPickerSection, { type: "group" }>,
+  selectedThreadId: ThreadId | null,
+) =>
+  ticket === null ||
+  rows.some(
+    ({ thread }) =>
+      thread.threadId === selectedThreadId ||
+      (thread.status !== null && WORKBENCH_ATTENTION_KINDS.has(thread.status.kind)),
+  );
 
 export const filterWorkbenchFloatingChatThreads = (
   threads: ReadonlyArray<WorkbenchFloatingChatThread>,

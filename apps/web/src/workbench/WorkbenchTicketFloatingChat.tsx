@@ -96,7 +96,12 @@ function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabl
     return () => setPageChat(null);
   }, [environmentId, ticketId]);
   const recaps = useWorkbenchThreadRecaps(environmentId);
-  const chatTicket = { id: ticketId, key: props.ticketKey ?? null, title: ticket.title };
+  const chatTicket = {
+    id: ticketId,
+    key: props.ticketKey ?? null,
+    title: ticket.title,
+    kind: ticket.kind,
+  };
   const chat = resolveWorkbenchFloatingChat({
     active: chatThreads(props.activeAssignments, props.threadsById, recaps, chatTicket),
     archived: chatThreads(props.activeAssignments, props.archivedThreadsById, recaps, chatTicket),
