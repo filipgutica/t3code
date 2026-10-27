@@ -43,6 +43,9 @@ vi.mock("./state", () => {
     },
   };
 });
+vi.mock("./useWorkbenchThreadRecaps", () => ({
+  useWorkbenchThreadRecaps: () => new Map([["first", "Refunded the duplicate charge."]]),
+}));
 vi.mock("./usePlanningModelSelection", () => ({
   usePlanningModelSelection: () => ({
     entries: [],
@@ -197,6 +200,13 @@ function Harness(props: {
   );
 }
 
+type Screen = Awaited<ReturnType<typeof render>>;
+
+const pickThread = async (screen: Screen, name: RegExp) => {
+  await userEvent.click(screen.getByRole("button", { name: /^Board Threads/ }));
+  await userEvent.click(screen.getByRole("menuitem", { name }));
+};
+
 // The chat stays hidden on narrow screens, which includes the default test viewport.
 const setup = async () => {
   await page.viewport(1280, 900);
@@ -221,7 +231,7 @@ const setup = async () => {
   };
 };
 
-it("lists draft and ticket Threads across the board's tickets, drafts first", async () => {
+it("groups the board's Threads by ticket, drafts first, with each Thread's recap", async () => {
   const { onSnapshot } = await setup();
   await using screen = await render(
     <Harness
@@ -229,10 +239,21 @@ it("lists draft and ticket Threads across the board's tickets, drafts first", as
       onSnapshot={onSnapshot}
     />,
   );
-  const tabs = screen.getByRole("tablist", { name: "Board Threads" }).getByRole("tab");
-  await expect.element(tabs.nth(0)).toHaveAccessibleName("Plan exports");
-  await expect.element(tabs.nth(1)).toHaveAccessibleName("PAY-1 · Thread first");
-  await expect.element(tabs.nth(2)).toHaveAccessibleName("Payouts · Thread second");
+  await userEvent.click(screen.getByRole("button", { name: "Board Threads: Plan exports" }));
+
+  const items = screen.getByRole("menuitem");
+  await expect.element(items.nth(0)).toHaveAccessibleName(/Plan exports/);
+  await expect.element(items.nth(1)).toHaveAccessibleName(/Thread first/);
+  await expect.element(items.nth(2)).toHaveAccessibleName(/Thread second/);
+  await expect
+    .element(screen.getByRole("group", { name: "Drafts" }).getByRole("menuitem"))
+    .toHaveAccessibleName(/Plan exports/);
+  const refunds = screen.getByRole("group", { name: "PAY-1 · Refunds" }).getByRole("menuitem");
+  await expect.element(refunds).toHaveAccessibleName(/Thread first/);
+  await expect.element(refunds.getByText("Refunded the duplicate charge.")).toBeVisible();
+  await expect
+    .element(screen.getByRole("group", { name: "Payouts" }).getByRole("menuitem"))
+    .toHaveAccessibleName(/Thread second/);
   expect(mocks.begin).not.toHaveBeenCalled();
 });
 
@@ -284,7 +305,7 @@ it("keeps a draft's conversation read-only with the draft's actions, and ticket 
       onSnapshot={onSnapshot}
     />,
   );
-  await userEvent.click(screen.getByRole("tab", { name: "Plan exports" }));
+  await pickThread(screen, /Plan exports/);
   await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
   await expect
     .element(screen.getByRole("textbox", { name: "Composer for draft-thread" }))
@@ -295,7 +316,7 @@ it("keeps a draft's conversation read-only with the draft's actions, and ticket 
     .element(strip.getByRole("status"))
     .toHaveTextContent("Select a repository to create the ticket.");
 
-  await userEvent.click(screen.getByRole("tab", { name: "PAY-1 · Thread first" }));
+  await pickThread(screen, /Thread first/);
   await expect
     .element(screen.getByRole("textbox", { name: "Composer for first" }))
     .not.toHaveAttribute("readonly");
@@ -309,7 +330,7 @@ it.each([
   const { onSnapshot } = await setup();
   const saved = { ...draft("ticket-a", "draft-thread", "Refunds"), phase };
   await using screen = await render(<Harness initialDrafts={[saved]} onSnapshot={onSnapshot} />);
-  await userEvent.click(screen.getByRole("tab", { name: "PAY-1 · Thread draft-thread" }));
+  await pickThread(screen, /Thread draft-thread/);
   await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
   await expect.element(screen.getByRole("button", { name: action })).toBeEnabled();
 });
@@ -330,7 +351,7 @@ it.each(["Open draft", "Open full Thread"])(
         onOpenDraft={onOpenDraft}
       />,
     );
-    await userEvent.click(screen.getByRole("tab", { name: "Plan exports" }));
+    await pickThread(screen, /Plan exports/);
     await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
     await userEvent.click(screen.getByRole("button", { name: "Apply to draft" }));
     await expect.element(screen.getByRole("alert")).toHaveTextContent("Saving the draft failed");
@@ -353,10 +374,10 @@ it("opens ticket Threads, including settled ones, as Threads and drafts as draft
       onOpenThread={onOpenThread}
     />,
   );
-  await userEvent.click(screen.getByRole("tab", { name: "PAY-1 · Thread first" }));
+  await pickThread(screen, /Thread first/);
   await userEvent.click(screen.getByRole("button", { name: "Open full Thread" }));
   expect(onOpenThread).toHaveBeenCalledWith("first");
-  await userEvent.click(screen.getByRole("tab", { name: "Plan exports" }));
+  await pickThread(screen, /Plan exports/);
   await userEvent.click(screen.getByRole("button", { name: "Open full Thread" }));
   expect(onOpenDraft).toHaveBeenCalledWith("draft");
 });

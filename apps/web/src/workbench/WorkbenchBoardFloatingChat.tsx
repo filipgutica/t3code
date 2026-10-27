@@ -33,6 +33,7 @@ import {
   type WorkbenchConversationDraft,
 } from "./workbenchTicketDraft.logic";
 import { usePlanningModelSelection } from "./usePlanningModelSelection";
+import { useWorkbenchThreadRecaps } from "./useWorkbenchThreadRecaps";
 
 type ThreadsById = ReadonlyMap<ThreadId, EnvironmentThreadShell>;
 
@@ -171,6 +172,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
     drafts: props.drafts,
     threadsById: props.threadsById,
     archivedThreadsById: props.archivedThreadsById,
+    recaps: useWorkbenchThreadRecaps(environmentId),
   });
   const chat = resolveWorkbenchFloatingChat({
     ...threads,
