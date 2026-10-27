@@ -99,6 +99,7 @@ function WorkbenchPullRequestPreview({ children }: { children: ReactNode }) {
         repository: next.reference.repository,
         number: next.reference.number,
         ...(next.reference.host === undefined ? {} : { host: next.reference.host }),
+        ...(next.initialTab === undefined ? {} : { detailTab: next.initialTab }),
         ...(routeThreadRef.environmentId === next.environmentId
           ? {}
           : { environmentId: next.environmentId }),
