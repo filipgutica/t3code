@@ -22,9 +22,10 @@ const WorkbenchStoreLayerLive = WorkbenchStore.WorkbenchStoreLive.pipe(
   Layer.provide(SqlitePersistence.layerConfig),
 );
 
-export const WorkbenchProviderPoliciesLayerLive = Layer.succeed(ClaudeQueryOptionsDecorator, {
-  decorate: ClaudeResearchPolicy.decorate,
-});
+export const WorkbenchProviderPoliciesLayerLive = Layer.effect(
+  ClaudeQueryOptionsDecorator,
+  ClaudeResearchPolicy.make,
+);
 
 export const WorkbenchHostPoliciesLayerLive = Layer.mergeAll(
   WorkbenchProviderPoliciesLayerLive,

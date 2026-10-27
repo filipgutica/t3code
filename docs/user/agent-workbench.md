@@ -47,10 +47,11 @@ draft's title, description, and repository selection; it does not create the Tic
 
 Planning can use your configured connectors, web tools, and the browser for
 research. With a Jira connector, the agent looks for existing issues that cover
-your request; see [Jira links](#jira-links). During planning, the provider's
-automatic reviewer handles approval requests instead of you. Planning has no shell
-network access, so CLI research such as `gh` is unavailable; use a configured
-connector instead. An approved research step does not start implementation.
+your request; see [Jira links](#jira-links). During planning, the agent runs
+read-only shell commands without asking you, and the provider's automatic reviewer
+handles other approval requests. Claude planning has a shell only on macOS. Shell
+commands have no general network access, so use a configured connector instead of
+CLI research such as `gh`. An approved research step does not start implementation.
 
 Leaving the view keeps the draft in the Board’s **Drafts** section and the Workbench
 sidebar. Open it to resume its conversation and saved fields. Choose **New Ticket**

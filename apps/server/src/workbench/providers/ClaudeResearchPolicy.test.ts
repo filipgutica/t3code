@@ -7,6 +7,8 @@ import * as Schema from "effect/Schema";
 import * as ClaudeAdapterV2 from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { decorate } from "./ClaudeResearchPolicy.ts";
 
+const linuxHost = { platform: "linux", homeDirectory: "/home/planner" } as const;
+
 const bypassSettings = Schema.decodeSync(ClaudeSettings)({
   launchArgs: "--dangerously-skip-permissions",
 });
@@ -30,6 +32,7 @@ describe("Claude read-only policy", () => {
         allowDangerouslySkipPermissions: true,
       });
       const decoration = decorate({
+        ...linuxHost,
         runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode,
           interactionMode: "plan",
@@ -50,6 +53,7 @@ describe("Claude read-only policy", () => {
   it("leaves non-research writable queries to native policy", () => {
     assert.deepEqual(
       decorate({
+        ...linuxHost,
         runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: "full-access",
           interactionMode: "default",
@@ -88,9 +92,9 @@ describe("Claude research policy", () => {
     allowDangerouslySkipPermissions: false,
     settings: { disableAllHooks: true, showThinkingSummaries: true },
   };
-  const researchOptions = (options: ClaudeQueryOptions) => ({
+  const researchOptions = (options: ClaudeQueryOptions, platform: NodeJS.Platform = "linux") => ({
     ...options,
-    ...decorate({ runtimePolicy }).options?.(options),
+    ...decorate({ ...linuxHost, runtimePolicy, platform }).options?.(options),
   });
   it("routes research planning approvals to Auto without exposing shell or file writes", () => {
     const options = researchOptions({
@@ -106,6 +110,42 @@ describe("Claude research policy", () => {
     if (!Array.isArray(options.tools)) return assert.fail("Expected explicit research tools");
     assert.includeMembers(options.tools, ["Read", "WebFetch", "WebSearch", "ToolSearch"]);
     assert.notIncludeMembers(options.tools, ["Bash", "Edit", "Write", "Agent"]);
+    assert.notProperty(options.settings, "sandbox");
+  });
+
+  it("runs macOS research shell commands in a write-denied sandbox without prompts", () => {
+    const options = researchOptions(nativeOptions, "darwin");
+    assert.equal(options.permissionPrompts, "none");
+    if (!Array.isArray(options.tools)) return assert.fail("Expected explicit research tools");
+    assert.includeMembers(options.tools, ["Bash", "Read", "WebFetch"]);
+    assert.notIncludeMembers(options.tools, ["Edit", "Write", "NotebookEdit", "Agent"]);
+    assert.include(options.settings, { disableAllHooks: true, showThinkingSummaries: true });
+    if (typeof options.settings !== "object") return assert.fail("Expected settings object");
+    const sandbox = options.settings.sandbox;
+    // Without the sandbox, Claude would run Bash unsandboxed or route it to approval.
+    assert.include(sandbox, {
+      enabled: true,
+      failIfUnavailable: true,
+      autoAllowBashIfSandboxed: true,
+      allowUnsandboxedCommands: false,
+    });
+    assert.includeMembers(sandbox?.filesystem?.denyWrite ?? [], ["/workspace", "/home/planner"]);
+    assert.isTrue(sandbox?.network?.strictAllowlist);
+  });
+
+  it("keeps the shell unavailable outside Auto research", () => {
+    const options = {
+      ...nativeOptions,
+      ...decorate({
+        runtimePolicy: { ...runtimePolicy, runtimeMode: "approval-required" },
+        ...linuxHost,
+        platform: "darwin",
+      }).options?.(nativeOptions),
+    };
+    if (!Array.isArray(options.tools)) return assert.fail("Expected explicit research tools");
+    assert.notInclude(options.tools, "Bash");
+    if (typeof options.settings !== "object") return assert.fail("Expected settings object");
+    assert.notProperty(options.settings, "sandbox");
   });
   it.effect("lets external connector writes reach the Auto reviewer during planning", () =>
     Effect.gen(function* () {
@@ -149,6 +189,7 @@ describe("Claude research policy", () => {
 
   it("keeps non-Auto research in plan mode without changing native prompt settings", () => {
     const decoration = decorate({
+      ...linuxHost,
       runtimePolicy: { ...runtimePolicy, runtimeMode: "approval-required" },
     });
     const options = { ...nativeOptions, ...decoration.options?.(nativeOptions) };

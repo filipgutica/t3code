@@ -17,6 +17,7 @@ import {
   WorkbenchTicketWorkspaceAttemptId,
 } from "@t3tools/contracts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -293,11 +294,29 @@ it.effect("routes Codex planning approvals to the auto reviewer inside the read-
     Effect.provide(policyLayer("draft", "codex")),
   ),
 );
+it.effect.each([
+  ["darwin", false],
+  ["linux", true],
+] as const)("tells Claude planning on %s whether the shell is unavailable", ([platform, told]) =>
+  resolve.pipe(
+    Effect.map((policy) => {
+      const instruction = "Claude ticket planning keeps shell and file-writing tools unavailable.";
+      (told ? assert.include : assert.notInclude)(policy.instructions ?? "", instruction);
+    }),
+    Effect.provide(
+      policyLayer("draft", "claudeAgent").pipe(
+        Layer.provide(Layer.succeed(HostProcess.Platform, platform)),
+      ),
+    ),
+  ),
+);
 it.effect("routes Claude planning approvals to Auto with read-only tools", () =>
   resolve.pipe(
     Effect.map((runtimePolicy) => {
       const decoration = ClaudeResearchPolicy.decorate({
         runtimePolicy,
+        platform: "darwin",
+        homeDirectory: "/home/planner",
       });
       const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
         runtimePolicy,
@@ -332,7 +351,14 @@ it.effect("routes Claude planning approvals to Auto with read-only tools", () =>
       // Approvals the Auto reviewer leaves undecided are denied, never shown to the user.
       assert.equal(options.permissionPrompts, "none");
       if (!Array.isArray(options.tools)) return assert.fail("Expected explicit research tools");
-      assert.notIncludeMembers(options.tools, ["Bash", "Edit", "Write", "NotebookEdit", "Agent"]);
+      assert.include(options.tools, "Bash");
+      assert.notIncludeMembers(options.tools, ["Edit", "Write", "NotebookEdit", "Agent"]);
+      if (typeof options.settings !== "object") return assert.fail("Expected settings object");
+      assert.include(options.settings.sandbox, {
+        enabled: true,
+        allowUnsandboxedCommands: false,
+      });
+      assert.include(options.settings.sandbox?.filesystem?.denyWrite ?? [], runtimePolicy.cwd);
       assert.notInclude(options.allowedTools ?? [], ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD);
       assert.notInclude(options.allowedTools ?? [], "mcp__t3-code__preview_navigate");
       assert.include(options.allowedTools ?? [], "Read");

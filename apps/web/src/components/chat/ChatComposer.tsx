@@ -978,7 +978,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     compactDisabledReason ?? (noProviderAvailable ? "Compacting is unavailable right now" : null);
   const supportedRuntimeModes = selectedProviderEntry?.snapshot.supportedRuntimeModes;
   const compatibleRuntimeModeOptions = readOnlyPlanning
-    ? runtimeModeOptions.filter((option) => option.mode === "approval-required")
+    ? runtimeModeOptions.filter((option) => option.mode === "auto")
     : supportedRuntimeModes && supportedRuntimeModes.length > 0
       ? runtimeModeOptions.filter((option) => supportedRuntimeModes.includes(option.mode))
       : runtimeModeOptions;

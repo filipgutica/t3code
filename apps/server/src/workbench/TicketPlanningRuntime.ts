@@ -7,6 +7,7 @@ import {
   type OrchestrationV2ThreadShell,
   type ThreadId,
 } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -20,6 +21,7 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
 import * as WorkbenchStore from "./WorkbenchStore.ts";
 import { McpWritePolicy } from "../mcp/McpWritePolicy.ts";
+import { researchShellAvailable } from "./providers/ClaudeResearchPolicy.ts";
 
 const RepositoryManifest = Schema.Array(
   Schema.Struct({ id: ProjectId, name: Schema.String, path: Schema.String }),
@@ -118,6 +120,7 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
   const projects = yield* ProjectStore.ProjectStoreV2;
   const providers = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
+  const platform = yield* HostProcess.Platform;
 
   const siblingRoster = Effect.fn("TicketPlanningRuntime.siblingRoster")(function* (input: {
     readonly thread: OrchestrationV2AppThread;
@@ -240,7 +243,7 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
               "You are preparing a ticket in a Workbench workspace. This is a planning conversation, not implementation. Inspect the repositories listed below to understand the request. Do not edit files, run mutating commands, create worktrees, or start other agents. A native backing Project is an internal anchor and does not define the task's repository scope.",
               "Use available connectors, GitHub tools, and browser navigation to research the request. Shell commands run read-only without network access, and requests for network access, unsandboxed commands, or more filesystem access are rejected, so use a configured connector instead of network CLI tools such as gh. Other tool approvals are reviewed automatically. An approval does not authorize implementation.",
               JIRA_LINK_INSTRUCTIONS,
-              ...(instance.driverKind === "claudeAgent"
+              ...(instance.driverKind === "claudeAgent" && !researchShellAvailable(platform)
                 ? [
                     "Claude ticket planning keeps shell and file-writing tools unavailable. Use the configured GitHub connector and other research tools instead of Bash or gh.",
                   ]
