@@ -442,7 +442,7 @@ test("a merge handoff follows the drawn merge back to the main lane", async ({ p
     const frames = JSON.parse(element.dataset.route!) as { transform: string }[];
     const x = Number(frames[16]!.transform.match(/translate\(([-\d.]+)px/)![1]);
     return {
-      midpoint: x + element.offsetWidth / 2,
+      midpoint: x + element.getBoundingClientRect().width / 2,
       mainLane: centerX('[aria-labelledby="review-heading"] .commit-node'),
       branchLane: centerX('[aria-labelledby="scope-heading"] .commit-node'),
     };
