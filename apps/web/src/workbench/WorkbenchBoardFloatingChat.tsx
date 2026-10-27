@@ -18,10 +18,14 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
 import { WorkbenchDiscardDraftDialog } from "./WorkbenchDiscardDraftDialog";
 import { applyTicketProposal, WorkbenchDraftActions } from "./WorkbenchDraftActions";
-import { WorkbenchFloatingChat } from "./WorkbenchFloatingChat";
+import {
+  WorkbenchFloatingChat,
+  type WorkbenchFloatingChatTicketThread,
+} from "./WorkbenchFloatingChat";
 import {
   getWorkbenchBoardChatThreads,
   resolveWorkbenchFloatingChat,
+  type WorkbenchFloatingChatThread,
 } from "./workbenchFloatingChat.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import { failureMessage } from "./workbenchPageCommands";
@@ -58,6 +62,9 @@ interface WorkbenchBoardFloatingChatProps extends Pick<
   readonly onOpenDraft: (draftId: WorkbenchTicketId) => void;
   /** Opens a ticket's Thread on its route, restoring it first when archived. */
   readonly onOpenThread: (threadId: ThreadId) => void;
+  /** Starts another Thread on a ticket through the start-Thread dialog. */
+  readonly onNewTicketThread: (ticket: WorkbenchTicket) => void;
+  readonly newTicketThreadDisabled: boolean;
 }
 
 /** The Workspace's ticket Threads and ticket drafts in the floating chat. Hidden on narrow screens. */
@@ -214,6 +221,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
       newThreadDisabled={
         !props.canStartDrafts || !canBeginDraft || !draftBegin.ready || draftBegin.pending
       }
+      ticketThread={getNewTicketThread(chat.selected, planningDrafts, props)}
       planning={{
         threadIds: new Set(planningDrafts.keys()),
         render: (threadId, conversation) => {
@@ -242,6 +250,25 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
     />
   );
 }
+
+/** A new Thread joins the showing Thread's ticket; a draft's ticket waits for Start work. */
+const getNewTicketThread = (
+  selected: WorkbenchFloatingChatThread | null,
+  planningDrafts: ReadonlyMap<ThreadId, WorkbenchTicketDraft>,
+  props: Pick<
+    WorkbenchBoardFloatingChatProps,
+    "tickets" | "newTicketThreadDisabled" | "onNewTicketThread"
+  >,
+): WorkbenchFloatingChatTicketThread | null => {
+  if (!selected?.ticket || planningDrafts.has(selected.threadId)) return null;
+  const ticket = props.tickets.find((candidate) => candidate.id === selected.ticket?.id);
+  if (!ticket) return null;
+  return {
+    ticket: selected.ticket,
+    disabled: props.newTicketThreadDisabled || ticket.archivedAt != null,
+    onStart: () => props.onNewTicketThread(ticket),
+  };
+};
 
 const canApplyProposal = (
   canOperate: boolean,
