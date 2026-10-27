@@ -1,5 +1,6 @@
 /* Native drag hit-testing ignores z-index. Suspend background drag regions
-   while workspace actions cover the Workbench header. */
-body:has([data-workbench-workspace-actions]) [data-workbench-page] .drag-region {
+   while popups that can cover the Workbench header are open. Select keeps its
+   popup mounted after a value change, so the rule keys on data-open. */
+body:has([data-workbench-header-overlay][data-open]) [data-workbench-page] .drag-region {
   -webkit-app-region: no-drag;
 }
