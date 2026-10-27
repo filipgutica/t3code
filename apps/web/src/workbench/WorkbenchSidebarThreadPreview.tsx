@@ -9,7 +9,7 @@ import type { ReactNode } from "react";
 import { ThreadPullRequestsMiniList } from "../components/ThreadStatusIndicators";
 import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
 import { EnvironmentMachineIcon } from "../components/EnvironmentMachineIcon";
-import { getTriggerDisplayModelLabel } from "../components/chat/providerIconUtils";
+import { getTriggerDisplayModelName } from "../components/chat/providerIconUtils";
 import type { ProviderInstanceEntry } from "../providerInstances";
 import type { EnvironmentPresentation } from "../state/environments";
 import type { WorkbenchSidebarThread } from "./workbenchSidebar.logic";
@@ -88,16 +88,9 @@ function WorkbenchSidebarThreadPreviewDetails({
       project ? { title: project.title, repositoryIdentity: project.repositoryIdentity } : null,
     );
   const machine = resolveEnvironmentMachineKind(environment?.serverConfig ?? null);
-  const selectedModel = shell
-    ? providerEntry?.models.find((model) => model.slug === shell.modelSelection.model)
-    : undefined;
   const providerLabel =
     providerEntry?.displayName ?? shell?.runtime?.providerName ?? shell?.modelSelection.instanceId;
-  const modelLabel = shell
-    ? selectedModel
-      ? getTriggerDisplayModelLabel(selectedModel)
-      : shell.modelSelection.model
-    : null;
+  const modelLabel = shell ? resolveModelLabel(shell, providerEntry) : null;
 
   return (
     <div className="grid gap-1.5 pl-0.5 text-xs text-muted-foreground">
@@ -145,6 +138,18 @@ function WorkbenchSidebarThreadPreviewDetails({
       ) : null}
     </div>
   );
+}
+
+function resolveModelLabel(
+  shell: EnvironmentThreadShell,
+  providerEntry: ProviderInstanceEntry | null,
+): string {
+  const selectedModel = providerEntry?.models.find(
+    (model) => model.slug === shell.modelSelection.model,
+  );
+  return selectedModel
+    ? getTriggerDisplayModelName(selectedModel, providerEntry?.driverKind)
+    : shell.modelSelection.model;
 }
 
 function WorkbenchSidebarThreadPreviewPullRequests({
