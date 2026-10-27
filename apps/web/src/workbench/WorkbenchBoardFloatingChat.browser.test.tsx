@@ -11,12 +11,14 @@ import {
   type WorkbenchTicket,
   type WorkbenchTicketDraft,
 } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import * as Cause from "effect/Cause";
 import { useState, type ReactNode } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
+import { useComposerDraftStore } from "../composerDraftStore";
 import { makeThreadFixture } from "../test-fixtures";
 import { WorkbenchBoardFloatingChat } from "./WorkbenchBoardFloatingChat";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
@@ -270,6 +272,50 @@ it("cancels an untouched draft and returns to the Thread it was started from", a
     expect.objectContaining({ input: expect.objectContaining({ id: begun.id }) }),
   );
   await expect.element(screen.getByRole("textbox", { name: "Composer for second" })).toBeVisible();
+});
+
+it("returns each cancelled draft to the Thread it was started from", async () => {
+  const { succeed, onSnapshot } = await setup();
+  mocks.begin.mockImplementation(succeed);
+  mocks.otherCommand.mockResolvedValue({ _tag: "Success", value: undefined });
+  await using screen = await render(<Harness onSnapshot={onSnapshot} />);
+  await pickThread(screen, /Thread second/);
+  const newDraft = screen.getByRole("button", { name: "New ticket draft" });
+  const cancel = screen.getByRole("group", { name: "Ticket draft" }).getByRole("button", {
+    name: "Cancel",
+  });
+
+  await userEvent.click(newDraft);
+  const first = mocks.begin.mock.calls[0]?.[0].input as BeginInput;
+  await expect
+    .element(screen.getByRole("textbox", { name: `Composer for ${first.threadId}` }))
+    .toBeVisible();
+  await userEvent.click(newDraft);
+  await expect.element(cancel).toBeEnabled();
+  await userEvent.click(cancel);
+  await expect
+    .element(screen.getByRole("textbox", { name: `Composer for ${first.threadId}` }))
+    .toBeVisible();
+  await userEvent.click(cancel);
+
+  await expect.element(screen.getByRole("textbox", { name: "Composer for second" })).toBeVisible();
+});
+
+it("asks before discarding a draft whose composer holds an unsent message", async () => {
+  const { succeed, onSnapshot } = await setup();
+  mocks.begin.mockImplementation(succeed);
+  await using screen = await render(<Harness onSnapshot={onSnapshot} />);
+  await userEvent.click(screen.getByRole("button", { name: "New ticket draft" }));
+  const begun = mocks.begin.mock.calls[0]?.[0].input as BeginInput;
+  const strip = screen.getByRole("group", { name: "Ticket draft" });
+  await expect.element(strip.getByRole("button", { name: "Cancel" })).toBeVisible();
+
+  useComposerDraftStore
+    .getState()
+    .setPrompt(scopeThreadRef(environmentId, begun.threadId), "Check refund exports");
+
+  await expect.element(strip.getByRole("button", { name: "Discard" })).toBeVisible();
+  await expect.element(strip.getByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
 });
 
 it("begins a new draft for each click and shows its Thread in the chat", async () => {

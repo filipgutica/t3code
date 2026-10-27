@@ -1,3 +1,4 @@
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type {
   EnvironmentId,
@@ -10,6 +11,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { toastManager } from "../components/ui/toast";
+import { useThreadHasUnsentDraft } from "../composerDraftStore";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { randomUUID } from "../lib/utils";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -82,7 +84,7 @@ function useBeginBoardDraft({
   readonly workspaceId: WorkbenchBoardFloatingChatProps["workspace"]["id"];
   readonly modelSelection: ReturnType<typeof usePlanningModelSelection>["modelSelection"];
   readonly refreshSnapshot: () => void;
-  readonly onBegun: (threadId: ThreadId) => void;
+  readonly onBegun: (threadId: ThreadId, from: ThreadId | null) => void;
 }) {
   const beginDraft = useAtomCommand(workbenchEnvironment.beginTicketDraft, {
     reportFailure: false,
@@ -97,7 +99,7 @@ function useBeginBoardDraft({
       mountedRef.current = false;
     };
   }, []);
-  const begin = async () => {
+  const begin = async (from: ThreadId | null) => {
     if (modelSelection === null || pending) return;
     const attempt = failedAttemptRef.current ?? {
       id: WorkbenchTicketId.make(randomUUID()),
@@ -121,7 +123,7 @@ function useBeginBoardDraft({
       return;
     }
     failedAttemptRef.current = null;
-    onBegun(attempt.threadId);
+    onBegun(attempt.threadId, from);
   };
   return { begin, pending, ready: modelSelection !== null };
 }
@@ -157,13 +159,16 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
     draft: null,
   });
   // Leaving a draft through Cancel or Discard returns to the Thread it was started from.
-  const draftReturnRef = useRef<ThreadId | null>(null);
+  const draftReturnsRef = useRef(new Map<ThreadId, ThreadId | null>());
   const draftBegin = useBeginBoardDraft({
     environmentId,
     workspaceId: projectId,
     modelSelection,
     refreshSnapshot: props.refreshSnapshot,
-    onBegun: showThread,
+    onBegun: (threadId, from) => {
+      draftReturnsRef.current.set(threadId, from);
+      showThread(threadId);
+    },
   });
   const threads = getWorkbenchBoardChatThreads({
     projectId,
@@ -205,10 +210,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
       chat={chat}
       onSelectThread={setExplicitThreadId}
       onOpenThread={openThread}
-      onNewThread={() => {
-        draftReturnRef.current = chat.selected?.threadId ?? null;
-        void draftBegin.begin();
-      }}
+      onNewThread={() => void draftBegin.begin(chat.selected?.threadId ?? null)}
       newThreadDisabled={
         !props.canStartDrafts || !canBeginDraft || !draftBegin.ready || draftBegin.pending
       }
@@ -230,7 +232,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
               onOpenDraft={() => props.onOpenDraft(draft.id)}
               openRef={mountedDraftOpenRef}
               neverRan={props.threadsById.get(threadId)?.latestRun == null}
-              onDiscarded={() => setExplicitThreadId(draftReturnRef.current)}
+              onDiscarded={() => setExplicitThreadId(draftReturnsRef.current.get(threadId) ?? null)}
             >
               {conversation}
             </BoardDraftThread>
@@ -293,9 +295,17 @@ const useCanOperateDraft = ({
   workspace.archivedAt == null &&
   ticket?.archivedAt == null;
 
-/** Nothing was sent or written, so leaving the draft loses nothing. */
-const isUntouchedDraft = (neverRan: boolean, fields: { title: string; markdown: string }) =>
-  neverRan && fields.title.trim() === "" && fields.markdown.trim() === "";
+/** Nothing was sent, typed, or written, so leaving the draft loses nothing. */
+const useIsUntouchedDraft = (
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  neverRan: boolean,
+  fields: { readonly title: string; readonly markdown: string },
+) =>
+  !useThreadHasUnsentDraft(scopeThreadRef(environmentId, threadId)) &&
+  neverRan &&
+  fields.title.trim() === "" &&
+  fields.markdown.trim() === "";
 
 /**
  * A draft's conversation in the chat: proposals apply to the draft, and the strip below offers
@@ -340,6 +350,7 @@ function BoardDraftThread({
     refreshSnapshot,
   });
   const createState = getTicketDraftCreateState({ ...createContext, fields: editor.fields });
+  const untouched = useIsUntouchedDraft(environmentId, draft.threadId, neverRan, editor.fields);
   const transitions = useTicketDraftTransitions({
     environmentId,
     draft,
@@ -381,7 +392,7 @@ function BoardDraftThread({
         createState={createState}
         canOperate={canOperate}
         ticketExists={ticket !== null}
-        untouched={isUntouchedDraft(neverRan, editor.fields)}
+        untouched={untouched}
       />
     </>
   );
