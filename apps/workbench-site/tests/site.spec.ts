@@ -25,7 +25,6 @@ const test = base.extend<{ cleanPage: void }>({
 const load = async (page: Page, hash = "") => {
   await page.goto(`/t3code/${hash}`);
   await expect(page.locator("[data-enhanced]")).toHaveAttribute("data-enhanced", "true");
-  await expect(page.getByRole("tablist", { name: "Ticket workflow screenshots" })).toBeVisible();
 };
 const noOverflow = async (page: Page) => {
   expect(
@@ -101,27 +100,65 @@ const atReadingTop = async (page: Page, id: string) =>
     );
   });
 });
+[390, 1280].forEach((width) => {
+  test(`header, section nav, graph, and content share one frame at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await load(page);
+    const edges = await page.evaluate(() => {
+      const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+      const graphs = [...document.querySelectorAll(".commit-graph")].map((graph) =>
+        graph.getBoundingClientRect(),
+      );
+      return {
+        headerRule: box(".fg-site-header").width - innerWidth,
+        navRule: box(".section-navigation").width - innerWidth,
+        frameLeft: box("main").left,
+        frameRight: box("main").right,
+        brand: box(".fg-site-projects__trigger span").left,
+        nav: box("nav.section-nav a").left,
+        graphLeft: Math.min(...graphs.map((graph) => graph.left)),
+        graphRight: Math.max(...graphs.map((graph) => graph.right)),
+        headings: [...document.querySelectorAll("main :is(h1, h2)")].map(
+          (heading) => heading.getBoundingClientRect().left,
+        ),
+        media: box(".hero-media"),
+        themeSwitch: box(".fg-site-appearance").right,
+      };
+    });
+    expect(edges.headerRule).toBe(0);
+    expect(edges.navRule).toBe(0);
+    for (const left of [edges.brand, edges.nav, edges.graphLeft])
+      expect(left).toBeCloseTo(edges.frameLeft, 0);
+    // Headings and the hero image start on the content column, right of the graph.
+    for (const left of edges.headings) expect(left).toBeCloseTo(edges.media.left, 0);
+    expect(edges.graphRight).toBeLessThanOrEqual(edges.media.left);
+    expect(edges.media.right).toBeCloseTo(edges.frameRight, 0);
+    expect(edges.themeSwitch).toBeCloseTo(edges.frameRight, 0);
+  });
+});
 test("section anchors, active state, and history retain native scrolling", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await load(page);
   const nav = page.getByRole("navigation", { name: "On this page" });
   await markScrollEnd(page);
-  await nav.getByRole("link", { name: "Walkthrough", exact: true }).click();
+  await nav.getByRole("link", { name: "Plan", exact: true }).click();
   await ended(page);
-  await atReadingTop(page, "walkthrough-heading");
-  await expect(nav.getByRole("link", { name: "Walkthrough", exact: true })).toHaveAttribute(
+  await atReadingTop(page, "plan-heading");
+  await expect(nav.getByRole("link", { name: "Plan", exact: true })).toHaveAttribute(
     "aria-current",
     "location",
   );
   await markScrollEnd(page);
-  await nav.getByRole("link", { name: "Workspaces", exact: true }).click();
+  await nav.getByRole("link", { name: "Worktrees", exact: true }).click();
   await ended(page);
-  await atReadingTop(page, "scope-heading");
+  await atReadingTop(page, "worktrees-heading");
   await markScrollEnd(page);
   await page.goBack();
   await ended(page);
-  await atReadingTop(page, "walkthrough-heading");
-  await expect(page).toHaveURL(/#walkthrough-heading$/);
+  await atReadingTop(page, "plan-heading");
+  await expect(page).toHaveURL(/#plan-heading$/);
   await page.evaluate(() =>
     scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }),
   );
@@ -129,48 +166,19 @@ test("section anchors, active state, and history retain native scrolling", async
     "aria-current",
     "location",
   );
-  await expect(page).toHaveURL(/#walkthrough-heading$/);
+  await expect(page).toHaveURL(/#plan-heading$/);
 });
-test("initial section hash realigns after screenshot enhancement", async ({ page }) => {
-  await load(page, "#scope-heading");
-  await atReadingTop(page, "scope-heading");
-});
-test("inactive screenshot deep links and history select the matching tab", async ({ page }) => {
+test("section and screenshot deep links land on their target", async ({ page }) => {
+  await load(page, "#worktrees-heading");
+  await atReadingTop(page, "worktrees-heading");
   await load(page, "#walkthrough-notifications");
-  await expect(page.getByRole("tab", { name: "Notifications", exact: true })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  await expect(page.locator("#walkthrough-notifications")).toBeVisible();
-  await atReadingTop(page, "walkthrough-notifications");
-  await page.evaluate(() => {
-    location.hash = "walkthrough-workspace";
-  });
-  await expect(page.getByRole("tab", { name: "Work area", exact: true })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  await atReadingTop(page, "walkthrough-workspace");
-  await page.goBack();
-  await expect(page.getByRole("tab", { name: "Notifications", exact: true })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
   await atReadingTop(page, "walkthrough-notifications");
 });
-test("tabs support keyboard controls and retained original screenshot links", async ({ page }) => {
+test("every screenshot links to its original PNG", async ({ page }) => {
   await load(page);
-  const first = page.getByRole("tab", { name: "Plan", exact: true });
-  await first.focus();
-  await page.keyboard.press("ArrowRight");
-  await expect(page.getByRole("tab", { name: "Ticket", exact: true })).toBeFocused();
-  await expect(page.locator("#walkthrough-ticket")).toBeVisible();
-  await page.keyboard.press("End");
-  await expect(page.getByRole("tab", { name: "Notifications", exact: true })).toBeFocused();
-  await page.keyboard.press("Home");
-  await expect(first).toBeFocused();
-  expect(await page.locator("[data-walkthrough-frame]").count()).toBe(6);
-  for (const link of await page.locator("[data-product-image]").all())
+  const links = page.locator("[data-product-image]");
+  await expect(links).toHaveCount(9);
+  for (const link of await links.all())
     await expect(link).toHaveAttribute("href", /\/t3code\/_astro\/.*\.png$/);
 });
 test("image dialog uses original pixels, scales to DPR, and restores focus", async ({ page }) => {
@@ -307,135 +315,158 @@ test("themes switch screenshot previews, originals, and an open lightbox", async
   );
   await other.close();
 });
-test("reduced motion keeps section navigation and screenshot changes immediate", async ({
-  page,
-}) => {
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await load(page);
-  await expect(page.locator("html")).toHaveCSS("scroll-behavior", "auto");
-  await page.getByRole("tab", { name: "Work area", exact: true }).click();
-  await expect
-    .poll(() =>
-      page
-        .locator("#walkthrough-workspace [data-product-image-frame]")
-        .evaluate((element) => element.getAnimations().length),
-    )
-    .toBe(0);
-  await page
-    .getByRole("navigation", { name: "On this page" })
-    .getByRole("link", { name: "Workspaces", exact: true })
-    .click();
-  await atReadingTop(page, "scope-heading");
-  await noOverflow(page);
-});
+const graphState = (page: Page) =>
+  page.evaluate(() => {
+    const shown = (element: Element) =>
+      getComputedStyle(element).display !== "none" && element.getClientRects().length > 0;
+    const centre = innerHeight / 2;
+    const nodes = [...document.querySelectorAll(".graph-node")].filter(shown).map((node) => {
+      const box = node.getBoundingClientRect();
+      return {
+        x: box.left + box.width / 2,
+        y: box.top + box.height / 2,
+        radius: box.height / 2,
+        filled: Number(getComputedStyle(node.firstElementChild!).opacity),
+        section: node.closest("section")!.getAttribute("aria-labelledby"),
+      };
+    });
+    const lines = [...document.querySelectorAll(".graph-segment > i")].filter(shown).map((fill) => {
+      const track = fill.parentElement!.getBoundingClientRect();
+      return { top: track.top, bottom: track.bottom, drawnTo: fill.getBoundingClientRect().bottom };
+    });
+    return { centre, nodes, lines };
+  });
+// Lines are drawn down to the viewport's centre line, and nodes above it are filled.
+const followsCentreLine = async (page: Page) => {
+  const { centre, nodes, lines } = await graphState(page);
+  const misdrawn = lines.filter(({ top, bottom, drawnTo }) => {
+    const expected = Math.min(Math.max(centre, top), bottom);
+    return Math.abs(drawnTo - expected) > 1.5;
+  });
+  const misfilled = nodes.filter(({ y, radius, filled }) =>
+    y < centre - radius ? filled !== 1 : y > centre + radius ? filled !== 0 : false,
+  );
+  return misdrawn.length + misfilled.length;
+};
+const scrollToCentre = (page: Page, id: string, offset: number) =>
+  page.evaluate(
+    ({ id, offset }) => {
+      const heading = document.getElementById(id)!.getBoundingClientRect();
+      scrollTo({ top: scrollY + heading.top - innerHeight / 2 + offset, behavior: "instant" });
+    },
+    { id, offset },
+  );
 
-test("branch handoffs follow the current navigation section and settle without looping", async ({
+test("the commit graph draws to the viewport's centre line and is only scroll-linked", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await load(page);
-  const packet = page.locator(".trace-packet");
-  await expect(packet).toHaveCount(1);
-  await packet.evaluate((element) => {
-    const animate = element.animate.bind(element);
-    element.animate = (...args) => {
-      element.setAttribute(
-        "data-handoffs",
-        String(Number(element.getAttribute("data-handoffs")) + 1),
-      );
-      return animate(...args);
-    };
-  });
-  const nav = page.getByRole("navigation", { name: "On this page" });
-  for (const [label, id] of [
-    ["Walkthrough", "walkthrough-heading"],
-    ["Workspaces", "scope-heading"],
-  ]) {
-    await markScrollEnd(page);
-    await nav.getByRole("link", { name: label, exact: true }).click();
-    await ended(page);
-    await atReadingTop(page, id!);
-    await expect(nav.getByRole("link", { name: label, exact: true })).toHaveAttribute(
-      "aria-current",
-      "location",
-    );
-    await expect(page.locator("[data-trace-section].is-current")).toHaveAttribute(
-      "aria-labelledby",
-      id!,
-    );
+  await expect.poll(() => followsCentreLine(page)).toBe(0);
+  // Centre line inside the fork's branch lanes, then just past the merge node.
+  for (const [id, offset] of [
+    ["threads-heading", 240],
+    ["review-heading", 120],
+  ] as const) {
+    await scrollToCentre(page, id, offset);
+    await expect.poll(() => followsCentreLine(page)).toBe(0);
   }
-  // Browser automation can scroll the sticky link into view before activating it,
-  // producing additional real section changes on the way to the destination.
-  expect(Number(await packet.getAttribute("data-handoffs"))).toBeGreaterThanOrEqual(2);
-  await packet.evaluate(async (element) => {
-    await Promise.all(
-      element.getAnimations().map((animation) => animation.finished.catch(() => undefined)),
-    );
-  });
-  await expect(packet).toHaveCSS("opacity", "0");
-  expect(await packet.evaluate((element) => element.getAnimations().length)).toBe(0);
+  const { centre, nodes } = await graphState(page);
+  expect(nodes.filter((node) => node.y < centre).length).toBeGreaterThan(0);
+  expect(nodes.filter((node) => node.y > centre).length).toBeGreaterThan(0);
+  // Every animation follows scroll, so nothing runs while the page is idle.
+  const animations = await page.evaluate(() =>
+    document.getAnimations().map((animation) => animation.timeline instanceof ViewTimeline),
+  );
+  expect(animations.length).toBeGreaterThan(0);
+  expect(animations.every(Boolean)).toBe(true);
+});
+
+test("the graph forks into a lane per repository and merges back at review", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await load(page);
+  const lanes = async () => {
+    const { nodes } = await graphState(page);
+    const main = nodes.find((node) => node.section === "hero-heading")!.x;
+    const lanesOf = (section: string) =>
+      nodes.filter((node) => node.section === section).map((node) => Math.round(node.x - main));
+    return {
+      worktrees: lanesOf("worktrees-heading"),
+      threads: lanesOf("threads-heading"),
+      review: lanesOf("review-heading"),
+      install: lanesOf("install-heading"),
+    };
+  };
+  const desktop = await lanes();
+  expect(desktop.worktrees).toHaveLength(2);
+  expect(desktop.worktrees.every((offset) => offset > 0)).toBe(true);
+  expect(desktop.threads).toEqual(desktop.worktrees);
+  expect(desktop.review).toEqual([0]);
+  expect(desktop.install).toEqual([0]);
+  await expect(page.locator(".graph-curve")).toHaveCount(2);
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator(".commit-branch").first()).toBeHidden();
+  await expect(page.locator(".graph-curve").first()).toBeHidden();
+  const phone = await lanes();
+  expect(phone.worktrees).toEqual([0]);
+  expect(phone.threads).toEqual([0]);
   await noOverflow(page);
 });
 
-test("walkthrough signals fork, merge, and notify, and stop when reduced motion is enabled", async ({
+[390, 1280].forEach((width) => {
+  test(`each commit node sits on its heading's first line at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await load(page);
+    const offsets = await page.evaluate(() =>
+      [...document.querySelectorAll("main section")].flatMap((section) => {
+        const heading = section.querySelector("h1, h2")!;
+        const line =
+          heading.getBoundingClientRect().top +
+          parseFloat(getComputedStyle(heading).lineHeight) / 2;
+        return [...section.querySelectorAll(".graph-node")]
+          .filter((node) => getComputedStyle(node).display !== "none")
+          .map((node) => {
+            const box = node.getBoundingClientRect();
+            return Math.abs(box.top + box.height / 2 - line);
+          });
+      }),
+    );
+    // Two worktree lanes on desktop; one lane on phones.
+    expect(offsets).toHaveLength(width === 1280 ? 9 : 7);
+    for (const offset of offsets) expect(offset).toBeLessThan(1);
+  });
+});
+
+(
+  [
+    [320, 640],
+    [1280, 900],
+  ] as const
+).forEach(([width, height]) => {
+  test(`the merged node fills at the end of the page at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await load(page);
+    await page.evaluate(() =>
+      scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }),
+    );
+    await expect(page.locator(".graph-node--merged > i")).toHaveCSS("opacity", "1");
+  });
+});
+
+test("reduced motion shows the whole graph drawn and keeps navigation immediate", async ({
   page,
 }) => {
-  await load(page);
-  for (const [tab, id] of [
-    ["Work area", "workspace"],
-    ["Pull request", "pull-request"],
-    ["Notifications", "notifications"],
-  ]) {
-    await page.getByRole("tab", { name: tab, exact: true }).click();
-    const frame = page.locator(`#walkthrough-${id}`);
-    await expect(frame.locator(".walkthrough-signal")).toBeVisible();
-    await expect(frame.locator(".signal-start")).not.toHaveCSS("stroke", "none");
-    await expect(frame.locator(".signal-end")).not.toHaveCSS("stroke", "none");
-    // Seek the finite effect to inspect its visible shape without a timing-sensitive sleep.
-    const effect = await frame.locator(".walkthrough-signal").evaluate((signal) => {
-      const animations = signal.getAnimations({ subtree: true });
-      for (const animation of animations) {
-        animation.pause();
-        animation.currentTime = Number(animation.effect?.getTiming().duration) / 2;
-      }
-      return {
-        count: animations.length,
-        loops: animations.map((animation) => animation.effect?.getTiming().iterations),
-        packets: [...signal.querySelectorAll(".signal-packet")].map((packet) => ({
-          opacity: Number(getComputedStyle(packet).opacity),
-          y: packet.getBoundingClientRect().y,
-        })),
-        ring: Number(getComputedStyle(signal.querySelector(".signal-ring")!).opacity),
-      };
-    });
-    expect(effect.count).toBeGreaterThan(0);
-    expect(effect.loops.every((iterations) => iterations === 1)).toBe(true);
-    if (id === "workspace") {
-      expect(effect.packets.every((packet) => packet.opacity > 0)).toBe(true);
-      expect(effect.packets[0]!.y).toBeLessThan(effect.packets[1]!.y);
-    } else if (id === "pull-request") {
-      expect(effect.packets.every((packet) => packet.opacity > 0)).toBe(true);
-      expect(effect.packets[0]!.y).toBeCloseTo(effect.packets[1]!.y, 0);
-    } else {
-      expect(effect.ring).toBeGreaterThan(0);
-    }
-  }
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await expect
-    .poll(() =>
-      page
-        .locator("#walkthrough-notifications")
-        .evaluate((frame) => frame.getAnimations({ subtree: true }).length),
-    )
-    .toBe(0);
-  await page.getByRole("tab", { name: "Work area", exact: true }).click();
-  await expect
-    .poll(() =>
-      page
-        .locator("#walkthrough-workspace")
-        .evaluate((frame) => frame.getAnimations({ subtree: true }).length),
-    )
-    .toBe(0);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await load(page);
+  await expect(page.locator("html")).toHaveCSS("scroll-behavior", "auto");
+  expect(await page.evaluate(() => document.getAnimations().length)).toBe(0);
+  const { nodes, lines } = await graphState(page);
+  expect(nodes.every((node) => node.filled === 1)).toBe(true);
+  expect(lines.every((line) => Math.abs(line.drawnTo - line.bottom) < 0.5)).toBe(true);
+  await page
+    .getByRole("navigation", { name: "On this page" })
+    .getByRole("link", { name: "Worktrees", exact: true })
+    .click();
+  await atReadingTop(page, "worktrees-heading");
+  await noOverflow(page);
 });

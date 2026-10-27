@@ -10,14 +10,14 @@ no dedicated Workbench mobile interface yet.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/board-light.png">
-  <img src="./media/workbench/board.png" alt="Beacon Board with a saved draft above Tickets across Todo, In Progress, and Done.">
+  <img src="./media/workbench/board.png" alt="Beacon Board with Tickets across To Do, In Progress, and Done, and the board chat below.">
 </picture>
 
 The screenshots use fictional Orbit and Beacon projects in an isolated demo.
-Planning conversations and prepared Git worktrees are real. PR feedback and
-implementation outcomes are illustrative; they do not show completed product work.
+Planning conversations, recaps, and prepared Git worktrees are real. PR feedback
+and implementation outcomes are illustrative; they do not show completed product work.
 
-For a tabbed overview, open the [screenshot walkthrough](https://filipgutica.github.io/t3code/#walkthrough-heading).
+For a visual tour from plan to merged pull request, open the [Workbench site](https://filipgutica.github.io/t3code/).
 
 ## Create a Workspace and Ticket
 
@@ -57,16 +57,8 @@ sidebar. Open it to resume its conversation and saved fields. Choose **New Ticke
 to explore another idea in a separate draft. Planning conversations stay in
 Workbench until you start work.
 
-**Create manually** opens the form when you already know the requirements.
-
-To plan without leaving the Board, use the chat in its lower-right corner. It
-lists the Threads of the Workspace's Tickets and drafts. At the
-end of its Thread menu, choose **New ticket draft** to start a planning conversation
-there, or **New Thread on** the open Thread's Ticket to start another Thread for that
-Ticket. A draft offers **Create ticket** and then **Start work**, and keeps the same
-Thread throughout. **Cancel** removes a
-draft you have not used yet and returns to the Thread you had open. Choose **Open
-full Thread** to edit its fields.
+**Create manually** opens the form when you already know the requirements. To plan
+without leaving the Board, start a draft from its chat; see [Chat with Threads](#chat-with-threads).
 
 Creating the Ticket keeps the same conversation for further planning. Choose
 **Start work** when ready to prepare its work area and continue that Thread in the
@@ -143,18 +135,53 @@ or Ticket links to return to the work, or choose **Back to Threads** to restore 
 regular T3 sidebar. The command palette also offers **Open Workbench**, **New
 Ticket** for the current Workspace, and **Back to Ticket** from a linked Thread.
 
-To talk to a Ticket's Threads without leaving the Ticket, use the ticket chat in its
-bottom-right corner. Its header shows the open Thread; select it to switch between the
-Ticket's Threads, find settled and archived ones, or choose **New Thread**. After a
-Thread finishes a run, the menu can show a short recap of it, and Threads on the same
-Ticket read each other's recaps so they know what the others are doing. When other
-Threads wait for your approval or input, or their run failed, **N need you** opens the
-menu on the first of them. A Thread you create from the Ticket opens here. Select the message field
-to expand the conversation, or choose **Show ticket chat** in the command palette.
-Drag the chat's left edge, top edge, or top-left corner to resize it. The chat leaves out the Thread's side panels:
-opening a file or diff from it, or choosing **Open full Thread**, opens the Thread itself.
-The ticket chat is not available on narrow screens or while a Ticket is still being
-planned.
+Workbench sidebar Thread rows offer the same pin and snooze actions as native Threads.
+
+## Chat with Threads
+
+The Board and each Ticket have a chat in the lower-right corner. The board chat
+lists the Threads of the Workspace's Tickets and drafts. The ticket chat lists that
+Ticket's Threads. Use it to follow and answer agents without leaving the page.
+
+- Select the open Thread's name to switch Threads, search them, or find settled and
+  archived ones.
+- After a Thread finishes a run, the menu can show a short recap of it. Threads on
+  the same Ticket read each other's recaps so they know what the others are doing.
+- When other Threads wait for your approval or input, or their run failed, **N need
+  you** opens the menu on the first of them.
+- Select the message field to expand the conversation, or choose **Show chat** in
+  the command palette. Drag the chat's left edge, top edge, or top-left corner to
+  resize it.
+
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/ticket-chat-light.png">
+  <img src="./media/workbench/ticket-chat.png" alt="Ticket chat whose Thread menu shows one Thread waiting for approval, another with its recap, and New Thread.">
+</picture>
+
+New-Thread actions end the Thread menu. In the ticket chat, **New Thread** starts
+another Thread on the Ticket, and it opens in the chat. In the board chat, **New
+Thread on** starts one on the open Thread's Ticket, and **New ticket draft** starts
+a planning conversation.
+
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/board-chat-light.png">
+  <img src="./media/workbench/board-chat.png" alt="Board chat whose Thread menu shows recaps, a Ticket's two Threads, a Thread waiting for approval, and the new-Thread actions.">
+</picture>
+
+A board draft plans the same way as **New Ticket** and runs in Auto. Apply the
+proposal, then choose **Create ticket** and **Start work**; the same Thread continues
+throughout. **Cancel** removes a draft you have not used yet and returns to the Thread
+you had open. Once you have used the draft, **Discard** removes it after you confirm. Choose **Open full Thread** to edit the draft's fields.
+
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/board-draft-light.png">
+  <img src="./media/workbench/board-draft.png" alt="Board chat with a ticket draft's proposal applied, offering Discard and Create ticket.">
+</picture>
+
+The chat leaves out the Thread's side panels: opening a file or diff from it, or
+choosing **Open full Thread**, opens the Thread itself. The chat is not available on
+narrow screens, and a Ticket that is still being planned shows its conversation in
+the page instead.
 
 ## Follow progress and review results
 
@@ -192,7 +219,7 @@ remain until the checks or review feedback are resolved.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/notifications-light.png">
-  <img src="./media/workbench/notifications.png" alt="A Ticket's attention list showing interrupted runs, failed checks, requested changes, and unresolved PR discussions.">
+  <img src="./media/workbench/notifications.png" alt="A Ticket's attention list showing failed checks, requested changes, and unresolved PR threads.">
 </picture>
 
 The Ticket's **Pull Requests** section collects PRs reported by linked Threads and
@@ -222,7 +249,7 @@ menu when needed; the summary does not replace the full description sent to the
 agent.
 
 Choose **New Epic** from the Workspace actions menu, assign related Tickets, and
-use the Board's **Group** toggle to show Epic swimlanes. On desktop, drag
+set the Board's **Group by** to **Epic** to show Epic swimlanes. On desktop, drag
 Tickets between status columns.
 
 Archive a Ticket to hide it from the active Board, or restore it from

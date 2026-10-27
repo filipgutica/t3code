@@ -5,7 +5,7 @@ defineProps<{ sections: typeof pageSections; activeId?: string }>();
 
 <template>
   <div class="section-navigation">
-    <nav class="section-nav wrap" aria-label="On this page">
+    <nav class="section-nav frame" aria-label="On this page">
       <a
         v-for="section in sections"
         :key="section.id"

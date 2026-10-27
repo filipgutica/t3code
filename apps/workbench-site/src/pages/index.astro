@@ -4,7 +4,7 @@ import App from "../App.vue";
 import type { ProductImageDescriptor, ProductImageSource } from "../images";
 import type { ImageMetadata } from "astro";
 import libraryThemeCss from "@filipgutica/ui/theme.css?raw";
-import sitePaletteCss from "@filipgutica/ui/themes/graphite-indigo.css?raw";
+import sitePaletteCss from "../styles/t3-theme.css?raw";
 import { siteThemeBootScript } from "@filipgutica/ui/site";
 import board from "../assets/screenshots/board.png";
 import boardLight from "../assets/screenshots/board-light.png";
@@ -20,6 +20,10 @@ import notifications from "../assets/screenshots/notifications.png";
 import notificationsLight from "../assets/screenshots/notifications-light.png";
 import planning from "../assets/screenshots/planning.png";
 import planningLight from "../assets/screenshots/planning-light.png";
+import ticketChat from "../assets/screenshots/ticket-chat.png";
+import ticketChatLight from "../assets/screenshots/ticket-chat-light.png";
+import boardChat from "../assets/screenshots/board-chat.png";
+import boardChatLight from "../assets/screenshots/board-chat-light.png";
 import "../styles/site.css";
 
 const repository = "https://github.com/filipgutica/t3code";
@@ -31,68 +35,12 @@ const description =
 const base = import.meta.env.BASE_URL;
 const canonical = new URL(base, Astro.site);
 const shareImage = await getImage({ src: board, width: 1200, format: "jpeg", quality: 85 });
-const screenshotSizes =
-  "(max-width: 640px) calc(100vw - 32px), (max-width: 1168px) calc(100vw - 48px), 1120px";
-const walkthrough = [
-  {
-    id: "planning",
-    tab: "Plan",
-    title: "Start with a conversation",
-    src: planning,
-    light: planningLight,
-    alt: "Native planning conversation proposing a Beacon Ticket beside its editable draft",
-    caption: "Describe the work, review a proposal, and apply it to the draft. Follow-ups stay in the same conversation.",
-  },
-  {
-    id: "ticket",
-    tab: "Ticket",
-    title: "Save the Ticket when ready",
-    src: ticket,
-    light: ticketLight,
-    alt: "Workbench Ticket showing its description and linked native T3 Threads",
-    caption:
-      "Keep the agreed goal, acceptance criteria, and repository scope. The planning conversation stays attached.",
-  },
-  {
-    id: "workspace",
-    tab: "Work area",
-    title: "Prepare the work area",
-    src: workspace,
-    light: workspaceLight,
-    alt: "Prepared Ticket work area showing repository worktrees",
-    caption:
-      "Isolated worktrees per repository. Preparation does not start an agent.",
-  },
-  {
-    id: "thread",
-    tab: "Thread",
-    title: "Continue the same native Thread",
-    src: thread,
-    light: threadLight,
-    alt: "Native T3 Thread continuing the planning conversation in the Ticket work area",
-    caption:
-      "Start work prepares the worktrees and adds ticket context to the same conversation. Review it and send your next instruction when ready.",
-  },
-  {
-    id: "pull-request",
-    tab: "Pull request",
-    title: "Review the linked pull request",
-    src: pullRequest,
-    light: pullRequestLight,
-    alt: "Native pull request panel over a demo Ticket showing its summary and failing checks",
-    caption: "Linked PR checks and review feedback on a second demo Ticket.",
-  },
-  {
-    id: "notifications",
-    tab: "Notifications",
-    title: "See what needs attention",
-    src: notifications,
-    light: notificationsLight,
-    alt: "Ticket Needs attention list with five signals from Threads and linked pull requests",
-    caption:
-      "Threads, review feedback, and failed checks that need attention.",
-  },
-];
+// Matches the content column: the frame minus its graph column, then the split and pair layouts.
+const sizes = {
+  full: "(max-width: 640px) calc(100vw - 60px), (max-width: 900px) calc(100vw - 84px), 1096px",
+  split: "(max-width: 900px) calc(100vw - 60px), 720px",
+  pair: "(max-width: 900px) calc(100vw - 60px), 536px",
+};
 const prepareSource = async (src: ImageMetadata): Promise<ProductImageSource> => {
   const image = await getImage({
     src,
@@ -125,31 +73,61 @@ const prepareImage = async ({
   const [darkSource, lightSource] = await Promise.all([prepareSource(src), prepareSource(light)]);
   return { ...darkSource, light: lightSource, alt, sizes, eager };
 };
-const steps = await Promise.all(
-  walkthrough.map(async ({ src, light, alt, ...step }) => ({
-    ...step,
-    image: await prepareImage({ src, light, alt, sizes: screenshotSizes }),
-  })),
-);
 const images = {
   board: await prepareImage({
     src: board,
     light: boardLight,
-    alt: "Beacon Workbench Board with a saved draft and Tickets spanning Beacon CLI and Beacon Docs",
-    sizes: screenshotSizes,
+    alt: "Beacon Workbench Board with Tickets across Beacon CLI and Beacon Docs and the board chat",
+    sizes: sizes.full,
     eager: true,
+  }),
+  planning: await prepareImage({
+    src: planning,
+    light: planningLight,
+    alt: "Native planning conversation proposing a Beacon Ticket beside its editable draft",
+    sizes: sizes.split,
+  }),
+  boardChat: await prepareImage({
+    src: boardChat,
+    light: boardChatLight,
+    alt: "Board chat with its Thread menu open, showing recaps, a Thread waiting for approval, and New ticket draft",
+    sizes: sizes.split,
+  }),
+  ticket: await prepareImage({
+    src: ticket,
+    light: ticketLight,
+    alt: "Workbench Ticket showing its description and linked native T3 Threads",
+    sizes: sizes.split,
   }),
   workspace: await prepareImage({
     src: workspace,
     light: workspaceLight,
-    sizes: screenshotSizes,
     alt: "Prepared Ticket work area with primary and secondary repository worktrees",
+    sizes: sizes.full,
+  }),
+  thread: await prepareImage({
+    src: thread,
+    light: threadLight,
+    alt: "Native T3 Thread continuing the planning conversation in the Ticket work area",
+    sizes: sizes.pair,
+  }),
+  ticketChat: await prepareImage({
+    src: ticketChat,
+    light: ticketChatLight,
+    alt: "Ticket chat on a Ticket page, its Thread menu showing one Thread waiting for approval and another with its recap",
+    sizes: sizes.pair,
   }),
   pullRequest: await prepareImage({
     src: pullRequest,
     light: pullRequestLight,
-    sizes: screenshotSizes,
     alt: "Native pull request panel over a demo Ticket showing its summary and failing checks",
+    sizes: sizes.full,
+  }),
+  notifications: await prepareImage({
+    src: notifications,
+    light: notificationsLight,
+    alt: "Ticket Needs attention list with failed checks, requested changes, and unresolved threads on linked pull requests",
+    sizes: sizes.split,
   }),
 };
 const darkTokens = [libraryThemeCss, sitePaletteCss].map((css) => {
@@ -186,6 +164,6 @@ const noScriptDarkCss = `@media (prefers-color-scheme: dark) { :root:not(.dark) 
     <noscript><style is:global set:html={noScriptDarkCss}></style></noscript>
   </head>
   <body>
-    <App client:load images={images} walkthrough={steps} base={base} repository={repository} guide={guide} downloads={downloads} />
+    <App client:load images={images} base={base} repository={repository} guide={guide} downloads={downloads} />
   </body>
 </html>

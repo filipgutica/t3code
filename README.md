@@ -4,7 +4,7 @@
 
 An independent fork of [T3 Code](https://github.com/pingdotgg/t3code) that adds planning across repositories while keeping native T3 Threads for agent conversations.
 
-**[Download the latest Workbench preview](https://github.com/filipgutica/t3code/releases)** · **[Workbench user guide](./docs/user/agent-workbench.md)** · **[Screenshot walkthrough](https://filipgutica.github.io/t3code/#walkthrough-heading)**
+**[Download the latest Workbench preview](https://github.com/filipgutica/t3code/releases)** · **[Workbench user guide](./docs/user/agent-workbench.md)** · **[Workbench site](https://filipgutica.github.io/t3code/)**
 
 - **Plan work:** group repositories into Workspaces, organize Tickets into Epics, and track progress.
 - **Start implementation:** create native Threads with Ticket context and Git worktrees for the selected repositories.

@@ -1,0 +1,71 @@
+/* T3 Code's default light and dark theme (apps/web/src/index.css, new design on), resolved to sRGB.
+ * Keep exactly one :root.dark block: index.astro copies it into a <noscript> prefers-color-scheme rule. */
+
+:root {
+  color-scheme: light;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Inter Variable", "Segoe UI", system-ui, sans-serif;
+  --color-bg: #fcfcfc;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-surface-muted: #f4f4f5;
+  --color-text: #18181b;
+  --color-muted: #71717b;
+  --color-link: #1b4ed8;
+  --color-accent: #1b4ed8;
+  --color-focus: #1b4ed8;
+  --color-border: #d4d4d8;
+  --color-border-subtle: #e4e4e7;
+  --color-button-bg: var(--color-accent);
+  --color-button-text: #ffffff;
+  --color-button-hover: #325fdc;
+  --color-input-bg: var(--color-surface);
+  --color-input-text: var(--color-text);
+  --color-input-border: var(--color-border);
+  --color-input-placeholder: var(--color-muted);
+  --color-row-hover: #f4f4f5;
+  --color-row-selected: #e4e4e7;
+  --color-row-selected-text: var(--color-text);
+  --color-code: var(--color-surface-muted);
+  --color-code-text: var(--color-text);
+  --color-progress: var(--color-accent);
+  --radius-control: 0.5rem;
+  --radius-panel: 0.75rem;
+  --text-3xl: 32px;
+  --text-reading: 16px;
+  --text-display: 56px;
+  --text-display-sm: 38px;
+  --tracking-tight: -0.01em;
+  --space-20: 80px;
+  --space-24: 96px;
+  --row: 36px;
+  --page-wide: 1120px;
+}
+
+:root.dark {
+  color-scheme: dark;
+  --color-bg: #000000;
+  --color-surface: #111111;
+  --color-surface-raised: #111111;
+  --color-surface-muted: #1e1e1e;
+  --color-text: #f5f5f5;
+  --color-muted: #a1a1a1;
+  --color-link: #50a2ff;
+  --color-accent: #346bf1;
+  --color-focus: #346bf1;
+  --color-border: #2b2b2b;
+  --color-border-subtle: #242424;
+  --color-button-bg: var(--color-accent);
+  --color-button-text: #ffffff;
+  --color-button-hover: #2f60d9;
+  --color-input-bg: var(--color-surface);
+  --color-input-text: var(--color-text);
+  --color-input-border: var(--color-border);
+  --color-input-placeholder: var(--color-muted);
+  --color-row-hover: #1a1a1a;
+  --color-row-selected: #262626;
+  --color-row-selected-text: var(--color-text);
+  --color-code: var(--color-surface);
+  --color-code-text: var(--color-text);
+  --color-progress: var(--color-accent);
+  --shadow-dialog: 0 8px 24px rgb(0 0 0 / 60%), 0 0 0 1px var(--color-border);
+}
