@@ -93,16 +93,19 @@ const recaps = Effect.flatMap(WorkbenchStore, (store) => store.getCompactSnapsho
 );
 
 describe("ThreadRecapService", () => {
-  it.effect("does not recap a Thread that has no siblings", () =>
+  it.effect("recaps a ticket's only Thread, and skips a Thread outside any ticket", () =>
     Effect.gen(function* () {
       const calls = yield* Ref.make(0);
       yield* Effect.gen(function* () {
         const service = yield* ThreadRecapService;
+        yield* service.enqueue({ ...run(1), threadId: siblingId });
+        yield* service.awaitIdle;
+        expect(yield* Ref.get(calls)).toBe(0);
         yield* seedTicket([threadId]);
         yield* service.enqueue(run(1));
         yield* service.awaitIdle;
-        expect(yield* Ref.get(calls)).toBe(0);
-        expect(yield* recaps).toEqual([]);
+        expect(yield* Ref.get(calls)).toBe(1);
+        expect((yield* recaps).map((recap) => recap.threadId)).toEqual([threadId]);
       }).pipe(
         withRecapHost({ generate: () => Ref.update(calls, (n) => n + 1).pipe(Effect.as("x")) }),
       );

@@ -21,7 +21,7 @@ export interface ThreadRecapRequest {
 export class ThreadRecapService extends Context.Service<
   ThreadRecapService,
   {
-    /** Schedule a recap of a finished run when its Thread shares a Ticket. Never fails. */
+    /** Schedule a recap of a finished run when its Thread belongs to a Ticket. Never fails. */
     readonly enqueue: (request: ThreadRecapRequest) => Effect.Effect<void>;
     /** Wait for currently scheduled recaps to finish, including superseding requests. */
     readonly awaitIdle: Effect.Effect<void>;
@@ -44,7 +44,7 @@ export const ThreadRecapServiceLive = Layer.effect(
     const enqueue = Effect.fn("ThreadRecapService.enqueue")(
       function* (request: ThreadRecapRequest) {
         const roster = yield* store.getThreadRoster(request.threadId);
-        if (Option.isNone(roster) || roster.value.siblings.length === 0) return;
+        if (Option.isNone(roster)) return;
         const stored = roster.value.recap;
         // Replayed terminal events must not regenerate or roll back a recap.
         if (

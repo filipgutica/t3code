@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 import { it as effectIt } from "@effect/vitest";
 import * as NodeURL from "node:url";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -407,6 +408,10 @@ describe("durable Workbench execution consumption", () => {
       const failed = runEvent({ id: run("failed"), status: "completed", ordinal: 2 });
       const neverStarted = runEvent({ id: run("never-started"), status: "completed", ordinal: 3 });
       const childNode = runEvent({ id: run("child-node"), status: "completed", ordinal: 4 });
+      // Past the recovery window, so only live run events schedule recaps.
+      yield* TestClock.setTime(
+        DateTime.toEpochMillis(DateTime.makeUnsafe(now)) + 25 * 60 * 60 * 1000,
+      );
       yield* Effect.gen(function* () {
         const reactor = yield* TicketExecutionReactor;
         yield* reactor.start();
@@ -435,34 +440,53 @@ describe("durable Workbench execution consumption", () => {
     }).pipe(Effect.provide(testLayer), Effect.scoped),
   );
 
-  effectIt.effect("re-offers the latest finished run of shared ticket Threads on start", () =>
+  effectIt.effect("re-offers ticket Threads' runs from the last day on start", () =>
     Effect.gen(function* () {
       yield* seed;
-      const sibling = ThreadIdSchema.make("execution-restart-sibling");
-      yield* seedNativeThread({ threadId: sibling, projectId, createdAt: now });
+      // Sorts after threadId, so recovery has passed the old run when it offers this one.
+      const recent = ThreadIdSchema.make("execution-restart-zz-recent");
+      yield* seedNativeThread({ threadId: recent, projectId, createdAt: now });
       const store = yield* WorkbenchStore;
       yield* store.createAssignment({
-        id: WorkbenchAssignmentId.make("execution-restart-sibling-assignment"),
+        id: WorkbenchAssignmentId.make("execution-restart-recent-assignment"),
         ticketId,
-        threadId: sibling,
+        threadId: recent,
         createdAt: now,
       });
       const sink = yield* EventSinkV2;
+      const old = RunId.make("recap-old");
       const missed = RunId.make("recap-missed");
-      // Written before the cursor exists, so only recovery can schedule its recap.
-      yield* sink.write({ events: [runEvent({ id: missed, status: "completed" })] });
-      const offered = yield* Deferred.make<{
-        readonly threadId: ThreadId;
-        readonly runId: RunId;
-      }>();
+      const dayLater = DateTime.add(DateTime.makeUnsafe(now), { hours: 24 });
+      const missedRun = runEvent({ id: missed, status: "completed" });
+      // Written before the cursor exists, so only recovery can schedule their recaps.
+      yield* sink.write({
+        events: [
+          runEvent({ id: old, status: "completed" }),
+          {
+            ...missedRun,
+            threadId: recent,
+            occurredAt: dayLater,
+            payload: { ...missedRun.payload, threadId: recent, completedAt: dayLater },
+          },
+        ],
+      });
+      yield* TestClock.setTime(DateTime.toEpochMillis(dayLater) + 60 * 60 * 1000);
+      const offered = yield* Ref.make<ReadonlyArray<RunId>>([]);
+      const recentOffered = yield* Deferred.make<void>();
       const recaps = ThreadRecapService.of({
-        enqueue: ({ threadId, runId }) => Deferred.succeed(offered, { threadId, runId }),
+        enqueue: ({ threadId: offeredThreadId, runId }) =>
+          Ref.update(offered, (runs) => [...runs, runId]).pipe(
+            Effect.andThen(
+              offeredThreadId === recent ? Deferred.succeed(recentOffered, undefined) : Effect.void,
+            ),
+          ),
         awaitIdle: Effect.void,
       });
       yield* Effect.gen(function* () {
         const reactor = yield* TicketExecutionReactor;
         yield* reactor.start();
-        expect(yield* Deferred.await(offered)).toEqual({ threadId, runId: missed });
+        yield* Deferred.await(recentOffered);
+        expect(yield* Ref.get(offered)).toEqual([missed]);
       }).pipe(
         Effect.provide(
           reactorServicesWithoutRecaps.pipe(

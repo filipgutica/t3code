@@ -505,11 +505,8 @@ interface WorkbenchStoreShape extends Omit<
   readonly upsertThreadRecap: (
     input: WorkbenchStoredThreadRecap & { readonly threadId: ThreadId },
   ) => Effect.Effect<void, WorkbenchOperationError>;
-  /** Current Threads of Tickets that have more than one, which are the Threads that get recaps. */
-  readonly listSharedTicketThreadIds: Effect.Effect<
-    ReadonlyArray<ThreadId>,
-    WorkbenchOperationError
-  >;
+  /** Current Threads of Tickets, which are the Threads that get recaps. */
+  readonly listTicketThreadIds: Effect.Effect<ReadonlyArray<ThreadId>, WorkbenchOperationError>;
   /** Branch selected for new worktrees, when this Ticket Workspace has one. */
   readonly getTicketWorkspaceGeneratedBranchName: (
     ticketId: WorkbenchTicketId,
@@ -897,7 +894,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       WHERE excluded.updated_at >= workbench_thread_recaps.updated_at
     `.pipe(Effect.asVoid, Effect.mapError(persistenceError)),
   );
-  const listSharedTicketThreadIdRows = SqlSchema.findAll({
+  const listTicketThreadIdRows = SqlSchema.findAll({
     Request: Schema.Void,
     Result: Schema.Struct({ threadId: ThreadId }),
     execute: () => sql`
@@ -906,19 +903,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
       INNER JOIN workbench_tickets AS ticket ON ticket.ticket_id = assignment.ticket_id
       WHERE ticket.deleted_at IS NULL
         AND assignment.superseded_at IS NULL
-        AND assignment.ticket_id IN (
-          SELECT ticket_id FROM workbench_assignments
-          WHERE superseded_at IS NULL
-          GROUP BY ticket_id
-          HAVING COUNT(*) > 1
-        )
       ORDER BY assignment.thread_id ASC
     `,
   });
-  const listSharedTicketThreadIds = listSharedTicketThreadIdRows().pipe(
+  const listTicketThreadIds = listTicketThreadIdRows().pipe(
     Effect.map((rows) => rows.map((row) => row.threadId)),
     Effect.mapError(persistenceError),
-    Effect.withSpan("WorkbenchStore.listSharedTicketThreadIds"),
+    Effect.withSpan("WorkbenchStore.listTicketThreadIds"),
   );
   const listThreadRecapRows = SqlSchema.findAll({
     Request: Schema.Void,
@@ -3513,7 +3504,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     getTicketJiraIssueKey,
     getThreadRoster,
     upsertThreadRecap,
-    listSharedTicketThreadIds,
+    listTicketThreadIds,
     getTicketWorkspaceGeneratedBranchName,
     getTicketWorkspaceRepositoryStates,
     claimTicketWorkspace,

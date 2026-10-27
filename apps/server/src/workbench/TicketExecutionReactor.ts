@@ -7,10 +7,12 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
@@ -30,6 +32,8 @@ const RECAPPED_RUN_STATUSES: ReadonlySet<string> = new Set([
   "interrupted",
   "cancelled",
 ]);
+
+const RECAP_RECOVERY_WINDOW_MS = Duration.toMillis(Duration.hours(24));
 
 type ExecutionFailure = {
   readonly runId: RunId;
@@ -72,9 +76,10 @@ const make = Effect.gen(function* () {
   };
 
   // The recap queue is in memory and the execution cursor can pass a queued run, so a restart
-  // re-offers each shared Thread's latest finished run; enqueue skips ones already recapped.
+  // re-offers each ticket Thread's latest run from the last day; enqueue skips recapped ones.
   const recoverRecaps = Effect.gen(function* () {
-    const threadIds = yield* store.listSharedTicketThreadIds;
+    const threadIds = yield* store.listTicketThreadIds;
+    const oldest = (yield* Clock.currentTimeMillis) - RECAP_RECOVERY_WINDOW_MS;
     yield* Effect.forEach(
       threadIds,
       (threadId) =>
@@ -83,6 +88,7 @@ const make = Effect.gen(function* () {
           if (
             thread?.latestRunId == null ||
             thread.latestRunCompletedAt == null ||
+            DateTime.toEpochMillis(thread.latestRunCompletedAt) < oldest ||
             thread.activeRunId !== null ||
             thread.archivedAt !== null ||
             thread.settledOverride === "settled"
