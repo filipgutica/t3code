@@ -1,6 +1,13 @@
-import { NodeId, RunId, WorkbenchAssignmentId } from "@t3tools/contracts";
+import {
+  NodeId,
+  RunId,
+  ThreadId as ThreadIdSchema,
+  WorkbenchAssignmentId,
+  type ThreadId,
+} from "@t3tools/contracts";
 import { it as effectIt } from "@effect/vitest";
 import * as NodeURL from "node:url";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -20,10 +27,14 @@ import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
 import { ServerActivation } from "../serverActivation.ts";
 import { WorkbenchStore } from "./WorkbenchStore.ts";
 import { TicketExecutionReactor } from "./TicketExecutionReactor.ts";
+import { ThreadRecapService } from "./ThreadRecapService.ts";
+import { seedNativeThread } from "./testing/nativeThreads.ts";
 import {
   now,
   persistenceLayer,
+  projectId,
   reactorServices,
+  reactorServicesWithoutRecaps,
   runEvent,
   seed,
   servicesLayer,
@@ -378,5 +389,126 @@ describe("durable Workbench execution consumption", () => {
           }).pipe(Effect.provide(testLayer), Effect.scoped);
         }
       }),
+  );
+
+  effectIt.effect("schedules a recap only when a recent root run finishes", () =>
+    Effect.gen(function* () {
+      yield* seed;
+      const sink = yield* EventSinkV2;
+      const scheduled = yield* Ref.make<
+        ReadonlyArray<{ readonly threadId: ThreadId; readonly runId: RunId }>
+      >([]);
+      const recaps = ThreadRecapService.of({
+        enqueue: ({ threadId, runId }) =>
+          Ref.update(scheduled, (all) => [...all, { threadId, runId }]),
+        awaitIdle: Effect.void,
+      });
+      // Runs here finish two days after the seeded one, so the seeded run is too old to recover.
+      const finishedAt = DateTime.add(DateTime.makeUnsafe(now), { hours: 48 });
+      yield* TestClock.setTime(DateTime.toEpochMillis(finishedAt) + 60 * 60 * 1000);
+      const recent = (event: ReturnType<typeof runEvent>): ReturnType<typeof runEvent> => ({
+        ...event,
+        occurredAt: finishedAt,
+        payload: {
+          ...event.payload,
+          completedAt: event.payload.completedAt === null ? null : finishedAt,
+        },
+      });
+      const run = (name: string) => RunId.make(`recap-${name}`);
+      const finished = recent(runEvent({ id: run("completed"), status: "completed" }));
+      const failed = recent(runEvent({ id: run("failed"), status: "completed", ordinal: 2 }));
+      const neverStarted = recent(
+        runEvent({ id: run("never-started"), status: "completed", ordinal: 3 }),
+      );
+      const childNode = recent(
+        runEvent({ id: run("child-node"), status: "completed", ordinal: 4 }),
+      );
+      // Startup replay can deliver a terminal event the cursor passed long ago.
+      const stale = runEvent({ id: run("stale"), status: "completed", ordinal: 5 });
+      yield* Effect.gen(function* () {
+        const reactor = yield* TicketExecutionReactor;
+        yield* reactor.start();
+        const events = yield* sink.write({
+          events: [
+            recent(runEvent({ id: run("completed") })),
+            finished,
+            { ...failed, payload: { ...failed.payload, status: "failed", completedAt: null } },
+            { ...neverStarted, payload: { ...neverStarted.payload, startedAt: null } },
+            { ...childNode, nodeId: NodeId.make("child-node") },
+            stale,
+          ],
+        });
+        yield* reactor.drainThrough(events.at(-1)!.sequence);
+        expect(yield* Ref.get(scheduled)).toEqual([
+          { threadId, runId: run("completed") },
+          { threadId, runId: run("failed") },
+        ]);
+      }).pipe(
+        Effect.provide(
+          reactorServicesWithoutRecaps.pipe(
+            Layer.provide(Layer.succeed(ThreadRecapService, recaps)),
+          ),
+        ),
+        Effect.scoped,
+      );
+    }).pipe(Effect.provide(testLayer), Effect.scoped),
+  );
+
+  effectIt.effect("re-offers ticket Threads' runs from the last day on start", () =>
+    Effect.gen(function* () {
+      yield* seed;
+      // Sorts after threadId, so recovery has passed the old run when it offers this one.
+      const recent = ThreadIdSchema.make("execution-restart-zz-recent");
+      yield* seedNativeThread({ threadId: recent, projectId, createdAt: now });
+      const store = yield* WorkbenchStore;
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("execution-restart-recent-assignment"),
+        ticketId,
+        threadId: recent,
+        createdAt: now,
+      });
+      const sink = yield* EventSinkV2;
+      const old = RunId.make("recap-old");
+      const missed = RunId.make("recap-missed");
+      const dayLater = DateTime.add(DateTime.makeUnsafe(now), { hours: 24 });
+      const missedRun = runEvent({ id: missed, status: "completed" });
+      // Written before the cursor exists, so only recovery can schedule their recaps.
+      yield* sink.write({
+        events: [
+          runEvent({ id: old, status: "completed" }),
+          {
+            ...missedRun,
+            threadId: recent,
+            occurredAt: dayLater,
+            payload: { ...missedRun.payload, threadId: recent, completedAt: dayLater },
+          },
+        ],
+      });
+      yield* TestClock.setTime(DateTime.toEpochMillis(dayLater) + 60 * 60 * 1000);
+      const offered = yield* Ref.make<ReadonlyArray<RunId>>([]);
+      const recentOffered = yield* Deferred.make<void>();
+      const recaps = ThreadRecapService.of({
+        enqueue: ({ threadId: offeredThreadId, runId }) =>
+          Ref.update(offered, (runs) => [...runs, runId]).pipe(
+            Effect.andThen(
+              offeredThreadId === recent ? Deferred.succeed(recentOffered, undefined) : Effect.void,
+            ),
+          ),
+        awaitIdle: Effect.void,
+      });
+      yield* Effect.gen(function* () {
+        const reactor = yield* TicketExecutionReactor;
+        yield* reactor.start();
+        yield* Deferred.await(recentOffered);
+        expect(yield* Ref.get(offered)).toEqual([missed]);
+      }).pipe(
+        Effect.provide(
+          reactorServicesWithoutRecaps.pipe(
+            Layer.provide(Layer.succeed(ThreadRecapService, recaps)),
+          ),
+        ),
+        Effect.scoped,
+      );
+    }).pipe(Effect.provide(testLayer), Effect.scoped),
   );
 });

@@ -254,7 +254,7 @@ function UnsupportedPlanning({
         <EmptyDescription>
           {hostOutdated
             ? "This environment does not support planning conversations yet. Enter the ticket yourself, or update the environment."
-            : "Workbench currently supports read-only ticket planning with Codex and Claude. Set one up in provider settings, or create the ticket manually."}
+            : "Workbench currently supports ticket planning with Codex and Claude. Set one up in provider settings, or create the ticket manually."}
         </EmptyDescription>
       </EmptyHeader>
       <EmptyContent>
@@ -336,8 +336,9 @@ function ModelUnsupportedNotice() {
     >
       <CircleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden />
       <span>
-        The selected model cannot enforce read-only planning, so the server will not run this
-        conversation. Choose a Codex or Claude model in the composer, or create the ticket manually.
+        Ticket planning supports Codex and Claude, so the server will not run this conversation with
+        the selected model. Choose a Codex or Claude model in the composer, or create the ticket
+        manually.
       </span>
     </div>
   );
@@ -398,7 +399,7 @@ type DraftBodyProps = WorkbenchTicketConversationProps & {
   readonly onRetryBegin: () => void;
 };
 
-/** True when the Thread runs on a provider that cannot enforce read-only planning. */
+/** True when the Thread runs on a provider that ticket planning does not support. */
 function useModelUnsupported({ environmentId, draft, entries }: DraftBodyProps) {
   const thread = useThreadShell(scopeThreadRef(environmentId, draft.threadId));
   const driver = entries.find(

@@ -75,8 +75,7 @@ const makeHost = Effect.gen(function* () {
       if (!instance || (instance.driverKind !== "codex" && instance.driverKind !== "claudeAgent")) {
         return yield* new WorkbenchOperationError({
           code: "ticket_draft_invalid",
-          message:
-            "Ticket planning currently requires a Codex or Claude provider with enforced read-only tools.",
+          message: "Ticket planning currently requires a Codex or Claude provider.",
         });
       }
     }),
@@ -105,7 +104,7 @@ const makeHost = Effect.gen(function* () {
           creationSource: "web",
           modelSelection: draft.modelSelection,
           runtimeMode: "full-access",
-          interactionMode: "plan",
+          interactionMode: "default",
           branch: null,
           worktreePath: null,
         })

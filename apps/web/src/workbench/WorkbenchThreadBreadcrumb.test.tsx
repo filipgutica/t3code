@@ -82,6 +82,7 @@ const snapshot: WorkbenchSnapshot = {
   reservedThreadIds: [],
   epics: [],
   tickets: [],
+  threadRecaps: [],
   ticketWorkspaces: [],
   assignments: [
     {

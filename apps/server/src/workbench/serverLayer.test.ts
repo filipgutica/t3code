@@ -263,16 +263,9 @@ it.effect("runServer installs Workbench host policies", () =>
           threadId,
           modelSelection,
         });
+        // Drafting Threads use MCP like any other Thread; their prompt keeps them to planning.
         const writePolicy = yield* McpWritePolicy;
-        assert.strictEqual(
-          yield* writePolicy.assertAllowed(threadId).pipe(
-            Effect.match({
-              onFailure: (error) => error.code,
-              onSuccess: () => "allowed",
-            }),
-          ),
-          "capability_denied",
-        );
+        yield* writePolicy.assertAllowed(threadId);
         yield* writePolicy.assertAllowed(ThreadId.make("native"));
         assert.strictEqual(yield* ClaudeQueryOptionsDecorator, providerPolicy);
         const decorator = yield* RuntimePolicy.RuntimePolicyDecorator;
@@ -319,7 +312,7 @@ it.effect("runServer installs Workbench host policies", () =>
                 onSuccess: () => "resolved",
               }),
             ),
-          "This provider does not support enforced read-only ticket planning.",
+          "Ticket drafting supports Codex and Claude providers.",
         );
       }).pipe(
         Effect.provide(WorkbenchStoreLive.pipe(Layer.provideMerge(Layer.succeedContext(context)))),

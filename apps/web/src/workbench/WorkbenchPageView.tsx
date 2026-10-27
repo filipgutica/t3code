@@ -724,6 +724,8 @@ function WorkbenchPageBoard(
               pageData={pageData}
               boardData={boardData}
               threadActions={threadActions}
+              ticketActions={ticketActions}
+              pendingAction={pendingAction}
               environmentId={environmentId}
               workspace={selectedProject}
               onOpenDraft={(draftId) => selectTicket(selectedProject.id, draftId)}
@@ -770,10 +772,15 @@ function WorkbenchPageBoardChat({
   pageData,
   boardData,
   threadActions,
+  ticketActions,
+  pendingAction,
   environmentId,
   workspace,
   onOpenDraft,
-}: Pick<WorkbenchPageViewProps, "pageData" | "boardData" | "threadActions"> & {
+}: Pick<
+  WorkbenchPageViewProps,
+  "pageData" | "boardData" | "threadActions" | "ticketActions" | "pendingAction"
+> & {
   readonly environmentId: EnvironmentId;
   readonly workspace: NonNullable<WorkbenchPageViewProps["selection"]["selectedProject"]>;
   readonly onOpenDraft: (draftId: WorkbenchTicketId) => void;
@@ -800,6 +807,15 @@ function WorkbenchPageBoardChat({
       refreshSnapshot={pageData.refreshWorkbenchSnapshot}
       onOpenDraft={onOpenDraft}
       onOpenThread={(threadId) => void threadActions.openAssignedThread(threadId)}
+      onNewTicketThread={(ticket) =>
+        threadActions.requestNewThread(ticketActions.ticketForBoardAction(ticket))
+      }
+      newTicketThreadDisabled={
+        !pageData.canOperate ||
+        !pageData.threadLookupReady ||
+        pendingAction !== null ||
+        workspace.archivedAt != null
+      }
     />
   );
 }

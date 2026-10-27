@@ -43,6 +43,12 @@ export function WorkbenchTicketTypeBadge({
   );
 }
 
+/** The ticket's Jira issue type, as an icon in its type colour. */
+export function WorkbenchTicketKindIcon({ kind }: { kind: WorkbenchTicketKind }) {
+  const { color, Icon } = TICKET_TYPES[kind];
+  return <Icon aria-hidden className="size-3.5 shrink-0" style={{ color }} />;
+}
+
 export function WorkbenchEpicBadge({ title, className }: { title: string; className?: string }) {
   return (
     <Badge size="default" variant="label" style={labelColor(EPIC_COLOR)} className={className}>

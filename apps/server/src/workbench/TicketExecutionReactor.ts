@@ -7,10 +7,12 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
@@ -21,7 +23,17 @@ import { forkParked } from "../serverActivation.ts";
 import { OrchestratorV2 } from "../orchestration-v2/Orchestrator.ts";
 import { EventSinkV2 } from "../orchestration-v2/EventSink.ts";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import { ThreadRecapService } from "./ThreadRecapService.ts";
 import { WorkbenchStore } from "./WorkbenchStore.ts";
+
+const RECAPPED_RUN_STATUSES: ReadonlySet<string> = new Set([
+  "completed",
+  "failed",
+  "interrupted",
+  "cancelled",
+]);
+
+const RECAP_WINDOW_MS = Duration.toMillis(Duration.hours(24));
 
 type ExecutionFailure = {
   readonly runId: RunId;
@@ -44,6 +56,72 @@ const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestratorV2;
   const store = yield* WorkbenchStore;
   const sink = yield* EventSinkV2;
+  const recaps = yield* ThreadRecapService;
+
+  // Startup replay and recovery can offer old runs; only the last day's runs get recaps.
+  const isRecapRecent = (completedAt: DateTime.Utc) =>
+    Effect.map(
+      Clock.currentTimeMillis,
+      (now) => DateTime.toEpochMillis(completedAt) >= now - RECAP_WINDOW_MS,
+    );
+
+  // Recaps stay outside the execution retry path; enqueue logs its own failures.
+  const scheduleRecap = (stored: OrchestrationV2StoredEvent) => {
+    const event = stored.event;
+    if (
+      (event.type !== "run.created" && event.type !== "run.updated") ||
+      !RECAPPED_RUN_STATUSES.has(event.payload.status) ||
+      event.payload.startedAt === null ||
+      (event.nodeId !== undefined && event.nodeId !== event.payload.rootNodeId)
+    )
+      return Effect.void;
+    const completedAt = event.payload.completedAt ?? event.occurredAt;
+    return Effect.flatMap(isRecapRecent(completedAt), (recent) =>
+      recent
+        ? recaps.enqueue({
+            threadId: event.threadId,
+            runId: event.payload.id,
+            completedAt: DateTime.formatIso(completedAt),
+          })
+        : Effect.void,
+    );
+  };
+
+  // The recap queue is in memory and the execution cursor can pass a queued run, so a restart
+  // re-offers each ticket Thread's latest run from the last day; enqueue skips recapped ones.
+  const recoverRecaps = Effect.gen(function* () {
+    const threadIds = yield* store.listTicketThreadIds;
+    yield* Effect.forEach(
+      threadIds,
+      (threadId) =>
+        Effect.gen(function* () {
+          const thread = yield* orchestrationEngine.getThreadShell(threadId);
+          if (
+            thread?.latestRunId == null ||
+            thread.latestRunCompletedAt == null ||
+            !(yield* isRecapRecent(thread.latestRunCompletedAt)) ||
+            thread.activeRunId !== null ||
+            thread.archivedAt !== null ||
+            thread.settledOverride === "settled"
+          )
+            return;
+          yield* recaps.enqueue({
+            threadId,
+            runId: thread.latestRunId,
+            completedAt: DateTime.formatIso(thread.latestRunCompletedAt),
+          });
+        }),
+      { discard: true },
+    );
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.interrupt
+        : Effect.logWarning("Thread recaps could not be recovered", {
+            cause: Cause.pretty(cause),
+          }),
+    ),
+  );
 
   const appendFailureActivity = (execution: ExecutionFailure, cause: Cause.Cause<unknown>) => {
     const occurredAt = DateTime.makeUnsafe(execution.startedAt);
@@ -157,6 +235,7 @@ const make = Effect.gen(function* () {
     function* () {
       const sequence = yield* initialize;
       yield* noteSeen(sequence);
+      yield* forkParked(recoverRecaps);
       yield* forkParked(
         Effect.gen(function* () {
           let afterSequence = sequence;
@@ -174,6 +253,7 @@ const make = Effect.gen(function* () {
                       }
                     }),
                   ),
+                  Effect.andThen(scheduleRecap(stored)),
                   Effect.andThen(noteSeen(stored.sequence)),
                 ),
               );

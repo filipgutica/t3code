@@ -27,6 +27,7 @@ The diagram shows conceptual relationships. Native T3 Project and Thread referen
 | Epic and Ticket                        | Both belong to one Workspace. A Ticket can belong to one Epic in that Workspace. Each can carry one Jira issue key and URL.                                   |
 | Ticket repository and Ticket Workspace | A Ticket has a non-empty ordered repository scope with one primary Project. Its optional Ticket Workspace tracks branch preparation and repository worktrees. |
 | Assignment                             | Links a Ticket to one native Thread. A Thread ID is unique across Assignments; superseded rows retain history.                                                |
+| Thread recap                           | Generated cache keyed by native Thread ID, with no foreign key. Rows outlive unlinked Assignments; snapshots return only recaps of Ticket Threads.            |
 
 These constraints come from the [table keys and relationships](../../packages/workbench/src/WorkbenchSchema.ts) and [Ticket scope validation](../../packages/workbench/src/WorkbenchStore.ts). Workbench never reads Jira, so the issue link is whatever the user last applied. Tickets imported before v20 keep IDs of the form `jira:<binding>:issue:<id>`; treat them as opaque, because the binding they name no longer exists.
 

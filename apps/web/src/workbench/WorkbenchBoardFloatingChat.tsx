@@ -1,3 +1,4 @@
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type {
   EnvironmentId,
@@ -7,21 +8,24 @@ import type {
 } from "@t3tools/contracts";
 import { ThreadId, WorkbenchTicketId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { SquareArrowOutUpRightIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
-import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
+import { useThreadHasUnsentDraft } from "../composerDraftStore";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { randomUUID } from "../lib/utils";
 import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
 import { WorkbenchDiscardDraftDialog } from "./WorkbenchDiscardDraftDialog";
 import { applyTicketProposal, WorkbenchDraftActions } from "./WorkbenchDraftActions";
-import { WorkbenchFloatingChat } from "./WorkbenchFloatingChat";
+import {
+  WorkbenchFloatingChat,
+  type WorkbenchFloatingChatTicketThread,
+} from "./WorkbenchFloatingChat";
 import {
   getWorkbenchBoardChatThreads,
   resolveWorkbenchFloatingChat,
+  type WorkbenchFloatingChatThread,
 } from "./workbenchFloatingChat.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import { failureMessage } from "./workbenchPageCommands";
@@ -33,6 +37,7 @@ import {
   type WorkbenchConversationDraft,
 } from "./workbenchTicketDraft.logic";
 import { usePlanningModelSelection } from "./usePlanningModelSelection";
+import { useWorkbenchThreadRecaps } from "./useWorkbenchThreadRecaps";
 
 type ThreadsById = ReadonlyMap<ThreadId, EnvironmentThreadShell>;
 
@@ -57,6 +62,9 @@ interface WorkbenchBoardFloatingChatProps extends Pick<
   readonly onOpenDraft: (draftId: WorkbenchTicketId) => void;
   /** Opens a ticket's Thread on its route, restoring it first when archived. */
   readonly onOpenThread: (threadId: ThreadId) => void;
+  /** Starts another Thread on a ticket through the start-Thread dialog. */
+  readonly onNewTicketThread: (ticket: WorkbenchTicket) => void;
+  readonly newTicketThreadDisabled: boolean;
 }
 
 /** The Workspace's ticket Threads and ticket drafts in the floating chat. Hidden on narrow screens. */
@@ -83,7 +91,7 @@ function useBeginBoardDraft({
   readonly workspaceId: WorkbenchBoardFloatingChatProps["workspace"]["id"];
   readonly modelSelection: ReturnType<typeof usePlanningModelSelection>["modelSelection"];
   readonly refreshSnapshot: () => void;
-  readonly onBegun: (threadId: ThreadId) => void;
+  readonly onBegun: (threadId: ThreadId, from: ThreadId | null) => void;
 }) {
   const beginDraft = useAtomCommand(workbenchEnvironment.beginTicketDraft, {
     reportFailure: false,
@@ -98,7 +106,7 @@ function useBeginBoardDraft({
       mountedRef.current = false;
     };
   }, []);
-  const begin = async () => {
+  const begin = async (from: ThreadId | null) => {
     if (modelSelection === null || pending) return;
     const attempt = failedAttemptRef.current ?? {
       id: WorkbenchTicketId.make(randomUUID()),
@@ -122,7 +130,7 @@ function useBeginBoardDraft({
       return;
     }
     failedAttemptRef.current = null;
-    onBegun(attempt.threadId);
+    onBegun(attempt.threadId, from);
   };
   return { begin, pending, ready: modelSelection !== null };
 }
@@ -157,12 +165,17 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
     workspace,
     draft: null,
   });
+  // Leaving a draft through Cancel or Discard returns to the Thread it was started from.
+  const draftReturnsRef = useRef(new Map<ThreadId, ThreadId | null>());
   const draftBegin = useBeginBoardDraft({
     environmentId,
     workspaceId: projectId,
     modelSelection,
     refreshSnapshot: props.refreshSnapshot,
-    onBegun: showThread,
+    onBegun: (threadId, from) => {
+      draftReturnsRef.current.set(threadId, from);
+      showThread(threadId);
+    },
   });
   const threads = getWorkbenchBoardChatThreads({
     projectId,
@@ -171,6 +184,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
     drafts: props.drafts,
     threadsById: props.threadsById,
     archivedThreadsById: props.archivedThreadsById,
+    recaps: useWorkbenchThreadRecaps(environmentId),
   });
   const chat = resolveWorkbenchFloatingChat({
     ...threads,
@@ -203,10 +217,11 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
       chat={chat}
       onSelectThread={setExplicitThreadId}
       onOpenThread={openThread}
-      onNewThread={() => void draftBegin.begin()}
+      onNewThread={() => void draftBegin.begin(chat.selected?.threadId ?? null)}
       newThreadDisabled={
         !props.canStartDrafts || !canBeginDraft || !draftBegin.ready || draftBegin.pending
       }
+      ticketThread={getNewTicketThread(chat.selected, planningDrafts, props)}
       planning={{
         threadIds: new Set(planningDrafts.keys()),
         render: (threadId, conversation) => {
@@ -224,7 +239,8 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
               refreshSnapshot={props.refreshSnapshot}
               onOpenDraft={() => props.onOpenDraft(draft.id)}
               openRef={mountedDraftOpenRef}
-              onDiscarded={() => setExplicitThreadId(null)}
+              neverRan={props.threadsById.get(threadId)?.latestRun == null}
+              onDiscarded={() => setExplicitThreadId(draftReturnsRef.current.get(threadId) ?? null)}
             >
               {conversation}
             </BoardDraftThread>
@@ -234,6 +250,25 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
     />
   );
 }
+
+/** A new Thread joins the showing Thread's ticket; a draft's ticket waits for Start work. */
+const getNewTicketThread = (
+  selected: WorkbenchFloatingChatThread | null,
+  planningDrafts: ReadonlyMap<ThreadId, WorkbenchTicketDraft>,
+  props: Pick<
+    WorkbenchBoardFloatingChatProps,
+    "tickets" | "newTicketThreadDisabled" | "onNewTicketThread"
+  >,
+): WorkbenchFloatingChatTicketThread | null => {
+  if (!selected?.ticket || planningDrafts.has(selected.threadId)) return null;
+  const ticket = props.tickets.find((candidate) => candidate.id === selected.ticket?.id);
+  if (!ticket) return null;
+  return {
+    ticket: selected.ticket,
+    disabled: props.newTicketThreadDisabled || ticket.archivedAt != null,
+    onStart: () => props.onNewTicketThread(ticket),
+  };
+};
 
 const canApplyProposal = (
   canOperate: boolean,
@@ -287,6 +322,18 @@ const useCanOperateDraft = ({
   workspace.archivedAt == null &&
   ticket?.archivedAt == null;
 
+/** Nothing was sent, typed, or written, so leaving the draft loses nothing. */
+const useIsUntouchedDraft = (
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  neverRan: boolean,
+  fields: { readonly title: string; readonly markdown: string },
+) =>
+  !useThreadHasUnsentDraft(scopeThreadRef(environmentId, threadId)) &&
+  neverRan &&
+  fields.title.trim() === "" &&
+  fields.markdown.trim() === "";
+
 /**
  * A draft's conversation in the chat: proposals apply to the draft, and the strip below offers
  * the draft page's actions. Fields are edited on the full draft page, so no edits stay pending.
@@ -301,6 +348,7 @@ function BoardDraftThread({
   refreshSnapshot,
   onOpenDraft,
   openRef,
+  neverRan,
   onDiscarded,
   children,
 }: {
@@ -313,13 +361,14 @@ function BoardDraftThread({
   readonly refreshSnapshot: () => void;
   readonly onOpenDraft: () => void;
   readonly openRef: RefObject<MountedDraftOpen | null>;
+  /** No message was ever sent, so the conversation holds nothing to lose. */
+  readonly neverRan: boolean;
   readonly onDiscarded: () => void;
   readonly children: ReactNode;
 }) {
   // Command replies can be newer than the snapshot; the newest revision wins.
   const [fromCommand, setFromCommand] = useState<WorkbenchConversationDraft | null>(null);
   const draft = pickNewestConversationDraft(snapshotDraft, fromCommand) ?? snapshotDraft;
-  const [discardOpen, setDiscardOpen] = useState(false);
   const canOperate = useCanOperateDraft({ environmentId, workspace, ticket });
   const editor = useTicketDraftEditor({
     environmentId,
@@ -328,6 +377,7 @@ function BoardDraftThread({
     refreshSnapshot,
   });
   const createState = getTicketDraftCreateState({ ...createContext, fields: editor.fields });
+  const untouched = useIsUntouchedDraft(environmentId, draft.threadId, neverRan, editor.fields);
   const transitions = useTicketDraftTransitions({
     environmentId,
     draft,
@@ -342,7 +392,7 @@ function BoardDraftThread({
     onCreateManually: onOpenDraft,
     refreshSnapshot,
   });
-  const openSavedDraft = useOpenSavedDraft({
+  useOpenSavedDraft({
     threadId: draft.threadId,
     flush: editor.flush,
     setError: transitions.setError,
@@ -362,23 +412,14 @@ function BoardDraftThread({
       >
         {children}
       </WorkbenchTicketProposalRenderer>
-      <BoardDraftStrip editor={editor} error={transitions.error} onOpenDraft={openSavedDraft}>
-        <WorkbenchDraftActions
-          draft={draft}
-          editor={editor}
-          transitions={transitions}
-          createState={createState}
-          canOperate={canOperate}
-          ticketExists={ticket !== null}
-          onDiscard={() => setDiscardOpen(true)}
-        />
-      </BoardDraftStrip>
-      <WorkbenchDiscardDraftDialog
-        open={discardOpen}
-        busy={transitions.action !== null}
-        error={transitions.error}
-        onOpenChange={setDiscardOpen}
-        onDiscard={transitions.discard}
+      <BoardDraftStrip
+        draft={draft}
+        editor={editor}
+        transitions={transitions}
+        createState={createState}
+        canOperate={canOperate}
+        ticketExists={ticket !== null}
+        untouched={untouched}
       />
     </>
   );
@@ -386,17 +427,17 @@ function BoardDraftThread({
 
 function BoardDraftStrip({
   editor,
-  error: transitionError,
-  onOpenDraft,
-  children,
-}: {
-  readonly editor: Pick<ReturnType<typeof useTicketDraftEditor>, "conflict" | "saveError">;
-  readonly error: string | null;
-  readonly onOpenDraft: () => Promise<void>;
-  readonly children: ReactNode;
+  transitions,
+  untouched,
+  ...actions
+}: Omit<Parameters<typeof WorkbenchDraftActions>[0], "onDiscard" | "layout" | "onCancel"> & {
+  readonly editor: ReturnType<typeof useTicketDraftEditor>;
+  readonly transitions: ReturnType<typeof useTicketDraftTransitions>;
+  readonly untouched: boolean;
 }) {
+  const [discardOpen, setDiscardOpen] = useState(false);
   // A conflict explains itself in the actions' status line.
-  const error = transitionError ?? (editor.conflict ? null : editor.saveError);
+  const error = transitions.error ?? (editor.conflict ? null : editor.saveError);
   return (
     <div
       role="group"
@@ -408,11 +449,21 @@ function BoardDraftStrip({
           {error}
         </p>
       ) : null}
-      {children}
-      <Button size="xs" variant="ghost" onClick={() => void onOpenDraft()}>
-        <SquareArrowOutUpRightIcon />
-        Open draft
-      </Button>
+      <WorkbenchDraftActions
+        {...actions}
+        editor={editor}
+        transitions={transitions}
+        layout="inline"
+        onCancel={untouched ? () => void transitions.discard() : null}
+        onDiscard={() => setDiscardOpen(true)}
+      />
+      <WorkbenchDiscardDraftDialog
+        open={discardOpen}
+        busy={transitions.action !== null}
+        error={transitions.error}
+        onOpenChange={setDiscardOpen}
+        onDiscard={transitions.discard}
+      />
     </div>
   );
 }

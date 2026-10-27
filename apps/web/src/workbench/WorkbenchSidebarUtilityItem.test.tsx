@@ -51,6 +51,7 @@ const snapshot: WorkbenchSnapshot = {
   epics: [],
   assignments: [],
   reservedThreadIds: [],
+  threadRecaps: [],
   ticketWorkspaces: [],
 };
 let renderer: ReactTestRenderer | undefined;

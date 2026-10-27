@@ -12,9 +12,11 @@ import { WorkbenchFloatingChat } from "./WorkbenchFloatingChat";
 import {
   resolveWorkbenchFloatingChat,
   type WorkbenchFloatingChatThread,
+  type WorkbenchFloatingChatTicket,
 } from "./workbenchFloatingChat.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import { getWorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
+import { useWorkbenchThreadRecaps } from "./useWorkbenchThreadRecaps";
 
 type ThreadsById = ReadonlyMap<ThreadId, EnvironmentThreadShell>;
 
@@ -31,11 +33,21 @@ export const getWorkbenchFloatingChatInset = (enabled: boolean) =>
 const chatThreads = (
   assignments: ReadonlyArray<WorkbenchAssignment>,
   threadsById: ThreadsById,
+  recaps: ReadonlyMap<ThreadId, string>,
+  ticket: WorkbenchFloatingChatTicket,
 ): WorkbenchFloatingChatThread[] =>
   assignments.flatMap(({ threadId }) => {
     const thread = threadsById.get(threadId);
     return thread
-      ? [{ threadId, title: thread.title, status: getWorkbenchThreadExecutionStatus(thread) }]
+      ? [
+          {
+            threadId,
+            title: thread.title,
+            status: getWorkbenchThreadExecutionStatus(thread),
+            ticket,
+            recap: recaps.get(threadId) ?? null,
+          },
+        ]
       : [];
   });
 
@@ -83,10 +95,17 @@ function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabl
     });
     return () => setPageChat(null);
   }, [environmentId, ticketId]);
+  const recaps = useWorkbenchThreadRecaps(environmentId);
+  const chatTicket = {
+    id: ticketId,
+    key: props.ticketKey ?? null,
+    title: ticket.title,
+    kind: ticket.kind,
+  };
   const chat = resolveWorkbenchFloatingChat({
-    active: chatThreads(props.activeAssignments, props.threadsById),
-    archived: chatThreads(props.activeAssignments, props.archivedThreadsById),
-    settled: chatThreads(props.settledAssignments, props.threadsById),
+    active: chatThreads(props.activeAssignments, props.threadsById, recaps, chatTicket),
+    archived: chatThreads(props.activeAssignments, props.archivedThreadsById, recaps, chatTicket),
+    settled: chatThreads(props.settledAssignments, props.threadsById, recaps, chatTicket),
     primaryThreadId: props.primaryAssignment?.threadId ?? null,
     explicitThreadId,
   });

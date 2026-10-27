@@ -41,16 +41,16 @@ related Tickets. A Ticket's **work area** contains its prepared repository workt
 </picture>
 
 You do not need a title or repository selection before starting the conversation.
-Planning can inspect the workspace's repositories but cannot change them. Ask
+Planning can read the workspace's repositories, run commands, and write notes
+outside them, but it is told not to change them or start implementing. Ask
 follow-up questions to refine the proposal. Applying a new proposal replaces the
 draft's title, description, and repository selection; it does not create the Ticket.
 
-Planning can use your configured connectors, web tools, and the browser for
-research. With a Jira connector, the agent looks for existing issues that cover
-your request; see [Jira links](#jira-links). During planning, the provider's
-automatic reviewer handles approval requests instead of you. Planning has no shell
-network access, so CLI research such as `gh` is unavailable; use a configured
-connector instead. An approved research step does not start implementation.
+Planning can use your configured connectors, web tools, the browser, and CLI tools
+such as `gh` for research. With a Jira connector, the agent looks for existing
+issues that cover your request; see [Jira links](#jira-links). Planning runs in
+Auto, so the provider's automatic reviewer handles approval requests instead of
+you.
 
 Leaving the view keeps the draft in the Board’s **Drafts** section and the Workbench
 sidebar. Open it to resume its conversation and saved fields. Choose **New Ticket**
@@ -60,15 +60,18 @@ Workbench until you start work.
 **Create manually** opens the form when you already know the requirements.
 
 To plan without leaving the Board, use the chat in its lower-right corner. It
-lists the Threads of the Workspace's Tickets and drafts. Choose **New ticket draft**
-(**+**) to start a planning conversation there. A draft's tab offers **Create
-ticket** and then **Start work**, and keeps the same Thread throughout. Choose
-**Open draft** to edit its fields.
+lists the Threads of the Workspace's Tickets and drafts. At the
+end of its Thread menu, choose **New ticket draft** to start a planning conversation
+there, or **New Thread on** the open Thread's Ticket to start another Thread for that
+Ticket. A draft offers **Create ticket** and then **Start work**, and keeps the same
+Thread throughout. **Cancel** removes a
+draft you have not used yet and returns to the Thread you had open. Choose **Open
+full Thread** to edit its fields.
 
 Creating the Ticket keeps the same conversation for further planning. Choose
 **Start work** when ready to prepare its work area and continue that Thread in the
 primary worktree. Start work does not send a message; send your next instruction
-to begin implementation. Read-only planning supports Codex and Claude providers.
+to begin implementation. Planning supports Codex and Claude providers.
 
 The primary repository is where new Threads open. A Ticket can include other
 repositories when the work spans several codebases. Use **Edit Workspace** to
@@ -141,8 +144,12 @@ regular T3 sidebar. The command palette also offers **Open Workbench**, **New
 Ticket** for the current Workspace, and **Back to Ticket** from a linked Thread.
 
 To talk to a Ticket's Threads without leaving the Ticket, use the ticket chat in its
-bottom-right corner. Each active Thread has a tab; settled and archived Threads are
-under **⋯**. A Thread you create from the Ticket opens here. Select the message field
+bottom-right corner. Its header shows the open Thread; select it to switch between the
+Ticket's Threads, find settled and archived ones, or choose **New Thread**. After a
+Thread finishes a run, the menu can show a short recap of it, and Threads on the same
+Ticket read each other's recaps so they know what the others are doing. When other
+Threads wait for your approval or input, or their run failed, **N need you** opens the
+menu on the first of them. A Thread you create from the Ticket opens here. Select the message field
 to expand the conversation, or choose **Show ticket chat** in the command palette.
 Drag the chat's left edge, top edge, or top-left corner to resize it. The chat leaves out the Thread's side panels:
 opening a file or diff from it, or choosing **Open full Thread**, opens the Thread itself.

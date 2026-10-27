@@ -41,6 +41,7 @@ import * as EffectWorker from "../orchestration-v2/EffectWorker.ts";
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
@@ -138,10 +139,12 @@ const draft = {
 >;
 const planningPolicyLayer = TicketPlanningRuntime.layerRuntimePolicyDecorator.pipe(
   Layer.provide(ProjectStore.layer),
+  Layer.provide(ProjectionStore.layer),
   Layer.provide(
     Layer.mock(WorkbenchStore)({
       getTicketDraftForThread: (threadId) =>
         Effect.succeed(threadId === planningThreadId ? draft : null),
+      getThreadRoster: () => Effect.succeedNone,
     }),
   ),
 );
@@ -215,6 +218,7 @@ const layerPersistedPlanningTest = makeLayerTest(
   TicketPlanningRuntime.layerRuntimePolicyDecorator.pipe(
     Layer.provideMerge(WorkbenchStoreLive),
     Layer.provide(ProjectStore.layer),
+    Layer.provide(ProjectionStore.layer),
   ),
 );
 
@@ -257,6 +261,8 @@ it.effect("uses native project enablement for planning creation, retries and tur
     yield* drafts.begin(beginInput);
     const created = yield* threads.getThreadShell(draft.threadId);
     assert.equal(created?.projectId, projectId);
+    // MCP authorization reads the stored mode; plan mode would refuse sends to sibling Threads.
+    assert.equal(created?.interactionMode, "default");
     yield* setEnabled(false);
     yield* settings.updateSettings({
       providerInstances: { [instanceId]: { driver: instance.driverKind, enabled: false } },
@@ -490,7 +496,6 @@ it.effect(
       > = [];
       const mcpTools = McpHttpServer.layerOrchestratorToolkit.pipe(
         Layer.provideMerge(McpServer.McpServer.layer),
-        Layer.provide(TicketPlanningRuntime.layerMcpWritePolicy),
         Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
         Layer.provide(ProviderRegistryMock.layer([snapshot])),
         Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
@@ -682,51 +687,14 @@ it.effect(
           dispatched.storedEvents.some(({ event }) => event.type === "checkpoint-scope.created"),
           threadId === nativeThreadId,
         );
-        if (threadId === planningThreadId) {
-          const planningShell = yield* threads.getThreadShell(threadId);
-          assert.isOk(planningShell?.activeRunId);
-          const sequence = yield* threads.getThreadEventSequence(threadId);
-          const denied = yield* invokeWorktreeDelegation("planning-worktree-denied");
-          assert.isTrue(denied.isError);
-          const content = denied.content[0];
-          assert.equal(content?.type, "text");
-          if (content?.type === "text") {
-            assert.deepEqual(JSON.parse(content.text), {
-              _tag: "OrchestratorMcpFailure",
-              code: "capability_denied",
-              message:
-                "This conversation is preparing a ticket. Start work before changing repositories or the environment.",
-            });
-          }
-          assert.deepEqual(headLookups, []);
-          assert.deepEqual(preparations, []);
-          assert.equal(yield* threads.getThreadEventSequence(threadId), sequence);
-          assert.deepEqual(
-            (yield* threads.getThreadRecords(threadId, ["subagents"])).subagents,
-            [],
-          );
-        }
         yield* worker.drain();
       }
       const planning = policies.get(planningThreadId);
       assert.isDefined(planning);
       assert.equal(planning?.runtimeMode, "auto");
-      assert.equal(planning?.interactionMode, "plan");
-      assert.deepEqual(planning?.sandboxPolicy, {
-        type: "readOnly",
-        access: { type: "fullAccess" },
-        networkAccess: false,
-      });
-      assert.equal(planning?.toolAccess, "research");
-      assert.deepInclude(planning?.approvalPolicy, {
-        granular: {
-          sandbox_approval: false,
-          rules: false,
-          skill_approval: false,
-          request_permissions: false,
-          mcp_elicitations: true,
-        },
-      });
+      assert.equal(planning?.interactionMode, "default");
+      assert.isUndefined(planning?.sandboxPolicy);
+      assert.isUndefined(planning?.toolAccess);
       assert.equal(planning?.checkpoints, "disabled");
       assert.include(planning?.instructions ?? "", "workbench-ticket-draft");
       assert.equal(planning?.cwd, process.cwd());

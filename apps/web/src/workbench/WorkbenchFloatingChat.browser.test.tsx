@@ -1,5 +1,5 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, WorkbenchTicketId } from "@t3tools/contracts";
 import { useState, type ReactNode } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
@@ -11,6 +11,8 @@ import {
   resolveWorkbenchFloatingChat,
   type WorkbenchFloatingChatThread,
 } from "./workbenchFloatingChat.logic";
+import { resolveWorkbenchThreadExecutionStatusPresentation } from "./WorkbenchThreadExecutionStatus.logic";
+import type { WorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 
 // The real ChatView needs a connected environment. The stand-in honors the one embedding
@@ -45,10 +47,23 @@ const setup = () => {
   useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} });
 };
 
-const thread = (id: string): WorkbenchFloatingChatThread => ({
+const thread = (
+  id: string,
+  kind: WorkbenchThreadExecutionStatus["kind"] | null = null,
+  recap: string | null = null,
+): WorkbenchFloatingChatThread => ({
   threadId: ThreadId.make(id),
   title: `Thread ${id}`,
-  status: null,
+  status:
+    kind === null
+      ? null
+      : {
+          kind,
+          presentation: resolveWorkbenchThreadExecutionStatusPresentation({ kind }),
+          startedAt: null,
+        },
+  ticket: null,
+  recap,
 });
 
 function Harness(props: {
@@ -58,12 +73,13 @@ function Harness(props: {
   readonly primaryThreadId?: ThreadId;
   readonly onNewThread?: () => void;
   readonly onOpenThread?: (threadId: ThreadId) => void;
+  readonly kind?: "ticket" | "board";
 }) {
   const [explicitThreadId, setExplicitThreadId] = useState<ThreadId | null>(null);
   return (
     <WorkbenchFloatingChat
       environmentId={EnvironmentId.make("environment")}
-      kind="ticket"
+      kind={props.kind ?? "ticket"}
       label="PAY-1"
       chat={resolveWorkbenchFloatingChat({
         active: props.threads,
@@ -84,7 +100,9 @@ it("mounts the chat only when expanded and focuses the composer for an explicit 
   setup();
   await using screen = await render(<Harness threads={[thread("a"), thread("b")]} />);
 
-  await expect.element(screen.getByRole("tab", { name: "Thread a" })).toBeInTheDocument();
+  await expect
+    .element(screen.getByRole("button", { name: "Ticket Threads: Thread a" }))
+    .toBeInTheDocument();
   await expect.element(screen.getByLabelText("Composer for a")).not.toBeInTheDocument();
 
   await userEvent.click(screen.getByRole("button", { name: "Message Thread a…" }));
@@ -92,25 +110,173 @@ it("mounts the chat only when expanded and focuses the composer for an explicit 
   await expect.element(screen.getByLabelText("Composer for a")).toHaveFocus();
 });
 
-it("keeps focus on the tab when arrow keys switch Threads in the expanded panel", async () => {
+it("switches Threads from the picker without moving focus into the composer", async () => {
   setup();
   await using screen = await render(<Harness threads={[thread("a"), thread("b")]} />);
   await userEvent.click(screen.getByRole("button", { name: "Expand ticket chat" }));
   await expect.element(screen.getByLabelText("Composer for a")).toHaveFocus();
 
-  await userEvent.click(screen.getByRole("tab", { name: "Thread a" }));
-  await userEvent.keyboard("{ArrowRight}");
+  await userEvent.click(screen.getByRole("button", { name: "Ticket Threads: Thread a" }));
+  await userEvent.click(screen.getByRole("menuitem", { name: /Thread b/ }));
 
-  const tabB = screen.getByRole("tab", { name: "Thread b" });
-  await expect.element(tabB).toHaveAttribute("aria-selected", "true");
-  await expect.element(tabB).toHaveFocus();
+  await expect
+    .element(screen.getByRole("button", { name: "Ticket Threads: Thread b" }))
+    .toBeInTheDocument();
   await expect.element(screen.getByLabelText("Composer for b")).toBeInTheDocument();
   await expect.element(screen.getByLabelText("Composer for b")).not.toHaveFocus();
 
   // Returning to the Thread that was expanded does not replay the earlier focus request.
-  await userEvent.keyboard("{ArrowLeft}");
-  await expect.element(screen.getByRole("tab", { name: "Thread a" })).toHaveFocus();
+  await userEvent.click(screen.getByRole("button", { name: "Ticket Threads: Thread b" }));
+  await userEvent.click(screen.getByRole("menuitem", { name: /Thread a/ }));
+  await expect.element(screen.getByLabelText("Composer for a")).toBeInTheDocument();
   await expect.element(screen.getByLabelText("Composer for a")).not.toHaveFocus();
+});
+
+it("shows each Thread's recap and opens on the first other Thread waiting on the user", async () => {
+  setup();
+  await using screen = await render(
+    <Harness
+      threads={[
+        thread("a", "approval"),
+        thread("b", "working", "Added the board chat picker."),
+        thread("c", "input"),
+        thread("d", "failed"),
+      ]}
+    />,
+  );
+  // The showing Thread waits too, but the pill counts only the others.
+  const pill = screen.getByRole("button", { name: "2 other Threads need you" });
+  await expect.element(pill).toBeVisible();
+
+  await userEvent.click(pill);
+
+  await expect.element(screen.getByRole("menuitem", { name: /Thread c/ })).toHaveFocus();
+  await expect.element(screen.getByText("Added the board chat picker.")).toBeVisible();
+});
+
+it("opens a collapsed group to focus its waiting Thread from the pill", async () => {
+  setup();
+  const ticket = (id: string, key: string) => ({
+    id: WorkbenchTicketId.make(id),
+    key,
+    title: `Ticket ${key}`,
+    kind: "story" as const,
+  });
+  const onTicket = (base: WorkbenchFloatingChatThread, key: string) => ({
+    ...base,
+    ticket: ticket(key.toLowerCase(), key),
+  });
+  await using screen = await render(
+    <Harness
+      kind="board"
+      threads={[
+        onTicket(thread("a"), "PAY-1"),
+        onTicket(thread("c", "input"), "PAY-2"),
+        onTicket(thread("e"), "PAY-2"),
+      ]}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: /^Board Threads/ }));
+  const group = screen.getByRole("menuitem", { name: "PAY-2 Ticket PAY-2 2 Threads" });
+  await userEvent.click(group);
+  await expect.element(group).toHaveAttribute("aria-expanded", "false");
+  await userEvent.keyboard("{Escape}");
+
+  await userEvent.click(screen.getByRole("button", { name: "1 other Thread needs you" }));
+
+  await expect.element(screen.getByRole("menuitem", { name: /Thread c/ })).toHaveFocus();
+});
+
+it("scrolls to the showing Thread whenever the menu opens, even after its group was collapsed", async () => {
+  setup();
+  const threads = Array.from({ length: 20 }, (_, index) => ({
+    ...thread(`t${index}`),
+    ticket: {
+      id: WorkbenchTicketId.make(`ticket-${index}`),
+      key: `PAY-${index}`,
+      title: `Ticket ${index}`,
+      kind: "story" as const,
+    },
+  }));
+  await using screen = await render(
+    <Harness kind="board" threads={threads} primaryThreadId={ThreadId.make("t19")} />,
+  );
+  const menu = screen.getByRole("button", { name: /^Board Threads/ });
+  const showing = screen.getByRole("menuitem", { name: "Thread t19" });
+
+  await userEvent.click(menu);
+  await expect.element(showing).toBeInViewport();
+
+  await userEvent.click(screen.getByRole("menuitem", { name: "PAY-19 Ticket 19 1 Thread" }));
+  await expect.element(showing).not.toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  await userEvent.click(menu);
+  await expect.element(showing).toBeInViewport();
+});
+
+it("moves keyboard focus to the showing Thread it scrolls to", async () => {
+  setup();
+  const ticket = {
+    id: WorkbenchTicketId.make("pay-1"),
+    key: "PAY-1",
+    title: "Refunds",
+    kind: "story" as const,
+  };
+  const threads = [
+    ...["d1", "d2", "d3"].map((id) => thread(id, null, `Recap ${id}`)),
+    ...["t1", "t2", "t3", "t4"].map((id) => ({ ...thread(id, null, `Recap ${id}`), ticket })),
+  ];
+  await using screen = await render(
+    <Harness kind="board" threads={threads} primaryThreadId={ThreadId.make("t4")} />,
+  );
+  const menu = screen.getByRole("button", { name: /^Board Threads/ });
+  menu.element().focus();
+
+  await userEvent.keyboard("{Enter}");
+
+  const showing = screen.getByRole("menuitem", { name: "Thread t4" });
+  await expect.element(showing).toHaveFocus();
+  await expect.element(showing).toBeInViewport();
+});
+
+it("collapses a group in search results, and forgets it with the search", async () => {
+  setup();
+  const ticket = {
+    id: WorkbenchTicketId.make("pay-2"),
+    key: "PAY-2",
+    title: "Payouts",
+    kind: "story" as const,
+  };
+  const threads = ["a", "b", "c", "d", "e", "f", "g", "h"].map((id) => ({
+    ...thread(id),
+    ticket: id === "a" ? { ...ticket, id: WorkbenchTicketId.make("pay-1"), key: "PAY-1" } : ticket,
+  }));
+  await using screen = await render(<Harness kind="board" threads={threads} />);
+  await userEvent.click(screen.getByRole("button", { name: /^Board Threads/ }));
+  await userEvent.type(screen.getByRole("textbox", { name: "Search Threads" }), "Thread");
+  const group = screen.getByRole("menuitem", { name: "PAY-2 Payouts 7 Threads" });
+  await expect.element(group).toHaveAttribute("aria-expanded", "true");
+
+  await userEvent.click(group);
+
+  await expect.element(group).toHaveAttribute("aria-expanded", "false");
+  await expect.element(screen.getByRole("menuitem", { name: /Thread h/ })).not.toBeInTheDocument();
+  await userEvent.type(screen.getByRole("textbox", { name: "Search Threads" }), " ");
+  await expect.element(group).toHaveAttribute("aria-expanded", "true");
+});
+
+it("filters a long Thread list by title or recap", async () => {
+  setup();
+  const threads = ["a", "b", "c", "d", "e", "f", "g"].map((id) => thread(id));
+  await using screen = await render(
+    <Harness threads={[...threads, thread("h", null, "Wired the rate-limit headers.")]} />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Ticket Threads: Thread a" }));
+
+  await userEvent.type(screen.getByRole("textbox", { name: "Search Threads" }), "rate-limit");
+
+  await expect.element(screen.getByRole("menuitem", { name: /Thread h/ })).toBeVisible();
+  await expect.element(screen.getByRole("menuitem", { name: /Thread a/ })).not.toBeInTheDocument();
 });
 
 it("restores an expanded panel from the launcher without moving focus into the composer", async () => {
@@ -142,7 +308,7 @@ it("returns focus to the control that brings the panel back", async () => {
   await expect.element(screen.getByRole("button", { name: "Expand ticket chat" })).toHaveFocus();
 });
 
-it("offers Start Thread when the ticket has no Threads, without a history menu", async () => {
+it("offers Start Thread when the ticket has no Threads, without a Thread picker", async () => {
   setup();
   await using screen = await render(<Harness threads={[]} />);
 
@@ -151,7 +317,7 @@ it("offers Start Thread when the ticket has no Threads, without a history menu",
     .toBeVisible();
   await expect.element(screen.getByRole("button", { name: "Start Thread" })).toBeVisible();
   await expect
-    .element(screen.getByRole("button", { name: "Settled and archived Threads" }))
+    .element(screen.getByRole("button", { name: "Ticket Threads" }))
     .not.toBeInTheDocument();
 });
 
@@ -162,12 +328,13 @@ it("opens a settled Thread when the ticket has no active Threads", async () => {
     .element(screen.getByText("No active Threads on PAY-1.", { exact: false }))
     .toBeVisible();
 
-  await userEvent.click(screen.getByRole("button", { name: "Settled and archived Threads" }));
+  await userEvent.click(screen.getByRole("button", { name: "Ticket Threads" }));
+  await userEvent.click(screen.getByRole("menuitem", { name: /Settled/ }));
   await userEvent.click(screen.getByRole("menuitem", { name: "Thread s" }));
 
   await expect
-    .element(screen.getByRole("tab", { name: "Thread s" }))
-    .toHaveAttribute("aria-selected", "true");
+    .element(screen.getByRole("button", { name: "Ticket Threads: Thread s" }))
+    .toBeInTheDocument();
 });
 
 it("restores an archived Thread when the ticket has no active Threads", async () => {
@@ -177,8 +344,9 @@ it("restores an archived Thread when the ticket has no active Threads", async ()
     <Harness threads={[]} archived={[thread("x")]} onOpenThread={onOpenThread} />,
   );
 
-  await userEvent.click(screen.getByRole("button", { name: "Settled and archived Threads" }));
-  await userEvent.click(screen.getByRole("menuitem", { name: /Thread x/ }));
+  await userEvent.click(screen.getByRole("button", { name: "Ticket Threads" }));
+  await userEvent.click(screen.getByRole("menuitem", { name: /Archived/ }));
+  await userEvent.click(screen.getByRole("menuitem", { name: "Restore and open Thread x" }));
 
   expect(onOpenThread).toHaveBeenCalledExactlyOnceWith(ThreadId.make("x"));
 });
@@ -204,7 +372,8 @@ it("focuses the expanded composer again for a new request, such as the palette a
   setup();
   await using screen = await render(<Harness threads={[thread("a")]} />);
   await userEvent.click(screen.getByRole("button", { name: "Expand ticket chat" }));
-  await userEvent.click(screen.getByRole("tab", { name: "Thread a" }));
+  await userEvent.click(screen.getByRole("button", { name: "Ticket Threads: Thread a" }));
+  await userEvent.keyboard("{Escape}");
   await expect.element(screen.getByLabelText("Composer for a")).not.toHaveFocus();
 
   await act(() => useWorkbenchFloatingChatStore.getState().expand());
@@ -232,7 +401,7 @@ it("opens the full Thread when the user opens a right-panel surface from the emb
   expect(onOpenThread).toHaveBeenCalledExactlyOnceWith(ThreadId.make("a"));
 });
 
-it("focuses a requested Thread's composer once its tab appears, such as a Thread just created", async () => {
+it("focuses a requested Thread's composer once it appears, such as a Thread just created", async () => {
   setup();
   await using screen = await render(
     <Harness threads={[thread("a")]} primaryThreadId={ThreadId.make("a")} />,
@@ -248,12 +417,13 @@ it("focuses a requested Thread's composer once its tab appears, such as a Thread
   await expect.element(screen.getByLabelText("Composer for b")).toHaveFocus();
 });
 
-it("starts a new Thread from the header", async () => {
+it("starts a new Thread from the Thread menu", async () => {
   setup();
   const onNewThread = vi.fn();
   await using screen = await render(<Harness threads={[thread("a")]} onNewThread={onNewThread} />);
 
-  await userEvent.click(screen.getByRole("button", { name: "New Thread" }));
+  await userEvent.click(screen.getByRole("button", { name: /^Ticket Threads/ }));
+  await userEvent.click(screen.getByRole("menuitem", { name: "New Thread" }));
 
   expect(onNewThread).toHaveBeenCalledOnce();
 });

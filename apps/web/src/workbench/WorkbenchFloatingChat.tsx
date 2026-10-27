@@ -1,12 +1,10 @@
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import {
-  ArchiveRestoreIcon,
   ArrowUpIcon,
   ChevronDownIcon,
   ChevronUpIcon,
-  CircleCheckIcon,
-  EllipsisIcon,
+  FilePenLineIcon,
   MessageCircleIcon,
   MinusIcon,
   PlusIcon,
@@ -17,24 +15,14 @@ import {
   useEffectEvent,
   useRef,
   useState,
-  type KeyboardEvent,
   type ReactElement,
   type ReactNode,
   type Ref,
-  type WheelEvent,
 } from "react";
 
 import ChatView from "../components/ChatView";
 import { Button } from "../components/ui/button";
-import {
-  Menu,
-  MenuGroup,
-  MenuGroupLabel,
-  MenuItem,
-  MenuPopup,
-  MenuSeparator,
-  MenuTrigger,
-} from "../components/ui/menu";
+import { MenuItem, MenuItemLabel } from "../components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 import { useRightPanelStore } from "../rightPanelStore";
@@ -42,12 +30,14 @@ import "./WorkbenchFloatingChat.css";
 import type {
   resolveWorkbenchFloatingChat,
   WorkbenchFloatingChatThread,
+  WorkbenchFloatingChatTicket,
 } from "./workbenchFloatingChat.logic";
 import {
   useWorkbenchFloatingChatStore,
   type WorkbenchFloatingChatFocusRequest,
 } from "./workbenchFloatingChatState";
-import { WorkbenchThreadExecutionStatusIcon } from "./WorkbenchThreadExecutionStatus";
+import { WorkbenchFloatingChatPicker } from "./WorkbenchFloatingChatPicker";
+import { WorkbenchTicketKindIcon } from "./WorkbenchTicketMetadata";
 import { WorkbenchTicketProposalHistory } from "./WorkbenchTicketProposal";
 import {
   useWorkbenchFloatingChatSize,
@@ -88,7 +78,15 @@ export interface WorkbenchFloatingChatProps {
   readonly onOpenThread: (threadId: ThreadId) => void;
   readonly onNewThread: () => void;
   readonly newThreadDisabled: boolean;
+  /** The board's new Thread on the showing Thread's ticket; null when it has none. */
+  readonly ticketThread?: WorkbenchFloatingChatTicketThread | null;
   readonly planning?: WorkbenchFloatingChatPlanning;
+}
+
+export interface WorkbenchFloatingChatTicketThread {
+  readonly ticket: WorkbenchFloatingChatTicket;
+  readonly disabled: boolean;
+  readonly onStart: () => void;
 }
 
 /**
@@ -99,24 +97,6 @@ export interface WorkbenchFloatingChatPlanning {
   readonly threadIds: ReadonlySet<ThreadId>;
   readonly render: (threadId: ThreadId, conversation: ReactNode) => ReactNode;
 }
-
-const tabLabel = (thread: WorkbenchFloatingChatThread) =>
-  thread.status ? `${thread.title} (${thread.status.presentation.label})` : thread.title;
-
-const statusIcon = (thread: WorkbenchFloatingChatThread) =>
-  thread.status ? <WorkbenchThreadExecutionStatusIcon status={thread.status.presentation} /> : null;
-
-const threadTitle = (thread: WorkbenchFloatingChatThread) => thread.title;
-const restoreLabel = (thread: WorkbenchFloatingChatThread) => `Restore and open ${thread.title}`;
-const settledIcon = () => <CircleCheckIcon className="text-success" />;
-const archivedIcon = () => <ArchiveRestoreIcon />;
-
-const TAB_KEY_STEPS: Partial<Record<string, (index: number, count: number) => number>> = {
-  ArrowRight: (index, count) => (index + 1) % count,
-  ArrowLeft: (index, count) => (index - 1 + count) % count,
-  Home: () => 0,
-  End: (_index, count) => count - 1,
-};
 
 /** An icon button that names itself in a tooltip; `render` swaps the button, such as for a menu. */
 function FloatingChatAction({
@@ -135,12 +115,6 @@ function FloatingChatAction({
     </Tooltip>
   );
 }
-
-// A mouse wheel scrolls vertically; turn it sideways so every tab is reachable without a trackpad.
-const scrollTabsSideways = (event: WheelEvent<HTMLDivElement>) => {
-  if (Math.abs(event.deltaY) > Math.abs(event.deltaX))
-    event.currentTarget.scrollLeft += event.deltaY;
-};
 
 function FloatingChatLauncher({
   copy,
@@ -184,148 +158,6 @@ function FloatingChatLauncher({
       </TooltipTrigger>
       <TooltipPopup>{copy.title}</TooltipPopup>
     </Tooltip>
-  );
-}
-
-function FloatingChatTabs({
-  label,
-  tabs,
-  selectedThreadId,
-  onSelect,
-}: {
-  readonly label: string;
-  readonly tabs: ReadonlyArray<WorkbenchFloatingChatThread>;
-  readonly selectedThreadId: ThreadId | null;
-  readonly onSelect: (threadId: ThreadId) => void;
-}) {
-  const listRef = useRef<HTMLDivElement>(null);
-  // Keeps the selected tab in view, such as a Thread opened from elsewhere, without scrolling the page.
-  useEffect(() => {
-    const list = listRef.current;
-    const tab = list?.querySelector<HTMLElement>(`[data-thread-id="${selectedThreadId}"]`);
-    if (!list || !tab) return;
-    const end = tab.offsetLeft + tab.offsetWidth - list.clientWidth;
-    list.scrollLeft = Math.min(Math.max(list.scrollLeft, end), tab.offsetLeft);
-  }, [selectedThreadId]);
-  const selectByKey = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
-    const step = TAB_KEY_STEPS[event.key];
-    const thread = step ? tabs[step(index, tabs.length)] : undefined;
-    if (!thread) return;
-    event.preventDefault();
-    onSelect(thread.threadId);
-    event.currentTarget.parentElement
-      ?.querySelector<HTMLElement>(`[data-thread-id="${thread.threadId}"]`)
-      ?.focus();
-  };
-  return (
-    <div
-      ref={listRef}
-      role="tablist"
-      aria-label={label}
-      className="relative flex min-w-0 flex-1 gap-0.5 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      onWheel={scrollTabsSideways}
-    >
-      {tabs.map((thread, index) => {
-        const isSelected = thread.threadId === selectedThreadId;
-        return (
-          <Tooltip key={thread.threadId}>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  role="tab"
-                  data-thread-id={thread.threadId}
-                  aria-selected={isSelected}
-                  aria-label={tabLabel(thread)}
-                  tabIndex={isSelected ? 0 : -1}
-                  className={cn(
-                    "flex h-7 max-w-40 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground hover:bg-accent/60 focus-visible:outline-2 focus-visible:outline-ring",
-                    isSelected && "bg-secondary font-medium text-foreground",
-                  )}
-                  onClick={() => onSelect(thread.threadId)}
-                  onKeyDown={(event) => selectByKey(event, index)}
-                />
-              }
-            >
-              {statusIcon(thread)}
-              <span className="truncate">{thread.title}</span>
-            </TooltipTrigger>
-            <TooltipPopup>{tabLabel(thread)}</TooltipPopup>
-          </Tooltip>
-        );
-      })}
-    </div>
-  );
-}
-
-function FloatingChatMenuGroup({
-  label,
-  threads,
-  icon,
-  itemLabel = threadTitle,
-  onSelect,
-}: {
-  readonly label: string;
-  readonly threads: ReadonlyArray<WorkbenchFloatingChatThread>;
-  readonly icon: (thread: WorkbenchFloatingChatThread) => ReactNode;
-  readonly itemLabel?: (thread: WorkbenchFloatingChatThread) => string;
-  readonly onSelect: (threadId: ThreadId) => void;
-}) {
-  if (threads.length === 0) return null;
-  return (
-    <MenuGroup>
-      <MenuGroupLabel>{label}</MenuGroupLabel>
-      {threads.map((thread) => (
-        <MenuItem key={thread.threadId} onClick={() => onSelect(thread.threadId)}>
-          {icon(thread)}
-          <span className="truncate">{itemLabel(thread)}</span>
-        </MenuItem>
-      ))}
-    </MenuGroup>
-  );
-}
-
-function FloatingChatMenu({
-  chat,
-  onSelect,
-  onOpenThread,
-}: {
-  readonly chat: FloatingChat;
-  readonly onSelect: (threadId: ThreadId) => void;
-  readonly onOpenThread: (threadId: ThreadId) => void;
-}) {
-  if (chat.settled.length === 0 && chat.archived.length === 0) return null;
-  return (
-    <Menu>
-      <FloatingChatAction
-        label="Settled and archived Threads"
-        render={
-          <MenuTrigger
-            render={
-              <Button variant="ghost" size="icon-sm" aria-label="Settled and archived Threads" />
-            }
-          />
-        }
-      >
-        <EllipsisIcon />
-      </FloatingChatAction>
-      <MenuPopup align="end" className="min-w-56 max-w-80">
-        <FloatingChatMenuGroup
-          label="Settled"
-          threads={chat.settled}
-          icon={settledIcon}
-          onSelect={onSelect}
-        />
-        {chat.settled.length > 0 && chat.archived.length > 0 ? <MenuSeparator /> : null}
-        <FloatingChatMenuGroup
-          label="Archived"
-          threads={chat.archived}
-          icon={archivedIcon}
-          itemLabel={restoreLabel}
-          onSelect={onOpenThread}
-        />
-      </MenuPopup>
-    </Menu>
   );
 }
 
@@ -427,7 +259,7 @@ function FloatingChatThread({
     />
   );
   return (
-    <div role="tabpanel" aria-label={thread.title} className="flex min-h-0 flex-1 flex-col">
+    <div role="region" aria-label={thread.title} className="flex min-h-0 flex-1 flex-col">
       {planning && planningThread ? (
         planning.render(thread.threadId, conversation)
       ) : (
@@ -571,8 +403,8 @@ function FloatingChatFrame({
 }
 
 // An explicit expand focuses one composer once: the requested Thread's, or the one showing.
-// A requested Thread can get its tab after the request, such as a Thread created moments ago.
-// Switching tabs, collapsing, or opening another ticket leaves focus where the user put it.
+// A requested Thread can appear after the request, such as a Thread created moments ago.
+// Switching Threads, collapsing, or opening another ticket leaves focus where the user put it.
 function useComposerFocusRequest(
   request: WorkbenchFloatingChatFocusRequest,
   selectedThreadId: ThreadId | null,
@@ -597,6 +429,76 @@ function useComposerFocusRequest(
   };
 }
 
+/** The Thread menu's last items: a new Thread, or on the board, its ticket's Thread or a draft. */
+function NewThreadItems({
+  kind,
+  copy,
+  newThreadDisabled,
+  ticketThread,
+  onNewThread,
+}: {
+  readonly kind: WorkbenchFloatingChatKind;
+  readonly copy: ChatCopy;
+  readonly newThreadDisabled: boolean;
+  readonly ticketThread: WorkbenchFloatingChatProps["ticketThread"];
+  readonly onNewThread: () => void;
+}) {
+  return (
+    <>
+      {ticketThread ? (
+        <MenuItem disabled={ticketThread.disabled} onClick={ticketThread.onStart}>
+          <WorkbenchTicketKindIcon kind={ticketThread.ticket.kind} />
+          <MenuItemLabel>
+            New Thread on {ticketThread.ticket.key ?? ticketThread.ticket.title}
+          </MenuItemLabel>
+        </MenuItem>
+      ) : null}
+      <MenuItem disabled={newThreadDisabled} onClick={onNewThread}>
+        {kind === "board" ? <FilePenLineIcon /> : <PlusIcon />}
+        <MenuItemLabel>{copy.newThread}</MenuItemLabel>
+      </MenuItem>
+    </>
+  );
+}
+
+function FloatingChatThreadActions({
+  copy,
+  expanded,
+  toggleRef,
+  onOpenThread,
+  onToggle,
+}: {
+  readonly copy: ChatCopy;
+  readonly expanded: boolean;
+  readonly toggleRef: Ref<HTMLButtonElement>;
+  readonly onOpenThread: () => void;
+  readonly onToggle: () => void;
+}) {
+  return (
+    <>
+      <FloatingChatAction
+        label="Open full Thread"
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Open full Thread"
+            onClick={onOpenThread}
+          />
+        }
+      >
+        <SquareArrowOutUpRightIcon />
+      </FloatingChatAction>
+      <FloatingChatToggle
+        copy={copy}
+        expanded={expanded}
+        buttonRef={toggleRef}
+        onToggle={onToggle}
+      />
+    </>
+  );
+}
+
 export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
   const { environmentId, label, chat, onOpenThread, onNewThread, newThreadDisabled } = props;
   const copy = CHAT_COPY[props.kind];
@@ -612,7 +514,9 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
     (mode === "launcher" ? launcherRef : expandButtonRef).current?.focus();
   }, [mode]);
 
-  const composerFocus = useComposerFocusRequest(focusRequest, chat.selectedThreadId);
+  const { selected } = chat;
+  const selectedThreadId = selected?.threadId ?? null;
+  const composerFocus = useComposerFocusRequest(focusRequest, selectedThreadId);
   const selectThread = (threadId: ThreadId) => {
     composerFocus.release();
     props.onSelectThread(threadId);
@@ -635,60 +539,40 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
     );
   }
 
-  const selected = chat.tabs.find((thread) => thread.threadId === chat.selectedThreadId) ?? null;
   const expanded = mode === "expanded" && selected !== null;
+  const hasHistory = chat.settled.length > 0 || chat.archived.length > 0;
   return (
     <FloatingChatFrame label={label} expanded={expanded}>
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border/60 px-2">
-        {selected === null ? (
-          <>
-            <span className="min-w-0 flex-1 truncate ps-2 text-xs font-medium">{copy.title}</span>
-            <FloatingChatMenu chat={chat} onSelect={selectThread} onOpenThread={onOpenThread} />
-          </>
+        {selected === null && !hasHistory ? (
+          <span className="min-w-0 flex-1 truncate ps-2 text-xs font-medium">{copy.title}</span>
         ) : (
-          <>
-            <FloatingChatTabs
-              label={copy.threads}
-              tabs={chat.tabs}
-              selectedThreadId={selected.threadId}
-              onSelect={selectThread}
-            />
-            <FloatingChatAction
-              label={copy.newThread}
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={copy.newThread}
-                  disabled={newThreadDisabled}
-                  onClick={onNewThread}
-                />
-              }
-            >
-              <PlusIcon />
-            </FloatingChatAction>
-            <FloatingChatMenu chat={chat} onSelect={selectThread} onOpenThread={onOpenThread} />
-            <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border" />
-            <FloatingChatAction
-              label="Open full Thread"
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Open full Thread"
-                  onClick={() => onOpenThread(selected.threadId)}
-                />
-              }
-            >
-              <SquareArrowOutUpRightIcon />
-            </FloatingChatAction>
-            <FloatingChatToggle
-              copy={copy}
-              expanded={expanded}
-              buttonRef={expandButtonRef}
-              onToggle={expanded ? () => changeMode(collapse) : () => expand()}
-            />
-          </>
+          <WorkbenchFloatingChatPicker
+            chat={chat}
+            grouped={props.kind === "board"}
+            title={copy.title}
+            listLabel={copy.threads}
+            onSelect={selectThread}
+            onOpenThread={onOpenThread}
+            actions={
+              <NewThreadItems
+                kind={props.kind}
+                copy={copy}
+                newThreadDisabled={newThreadDisabled}
+                ticketThread={props.ticketThread}
+                onNewThread={onNewThread}
+              />
+            }
+          />
+        )}
+        {selected === null ? null : (
+          <FloatingChatThreadActions
+            copy={copy}
+            expanded={expanded}
+            toggleRef={expandButtonRef}
+            onOpenThread={() => onOpenThread(selected.threadId)}
+            onToggle={expanded ? () => changeMode(collapse) : () => expand()}
+          />
         )}
         <FloatingChatAction
           label={`Minimize ${copy.title.toLowerCase()}`}
@@ -709,9 +593,9 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
         copy={copy}
         label={label}
         selected={selected}
-        hasHistory={chat.settled.length > 0 || chat.archived.length > 0}
+        hasHistory={hasHistory}
         expanded={expanded}
-        composerFocusRequest={composerFocus.requestFor(selected?.threadId ?? null)}
+        composerFocusRequest={composerFocus.requestFor(selectedThreadId)}
         onExpand={() => expand()}
         onOpenThread={onOpenThread}
         onNewThread={onNewThread}

@@ -356,6 +356,7 @@ describe("inline ticket proposal", () => {
       ],
       epics: [],
       reservedThreadIds: [],
+      threadRecaps: [],
       ticketWorkspaces: [],
     };
     await act(async () => root.render(history()));
@@ -398,6 +399,7 @@ describe("agent Jira link card", () => {
     ],
     epics: [],
     reservedThreadIds: [],
+    threadRecaps: [],
     ticketWorkspaces: [],
   });
 

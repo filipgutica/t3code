@@ -15,6 +15,7 @@ import {
   WorkbenchTicketWorkspace,
   WorkbenchTicketWorkspaceAttemptId,
   WorkbenchTicketWorkspaceRepository,
+  WorkbenchThreadRecap,
   IsoDateTime,
   ThreadId,
   ProjectId,
@@ -326,6 +327,27 @@ export interface WorkbenchReleaseTicketWorkspaceRepositoryInput {
   readonly branchName?: string;
 }
 
+export interface WorkbenchStoredThreadRecap {
+  readonly runId: RunId;
+  readonly text: string;
+  /** Terminal time of the recapped run; a recap never replaces one for a later run. */
+  readonly updatedAt: IsoDateTime;
+}
+
+export interface WorkbenchThreadRoster {
+  readonly ticket: {
+    readonly id: WorkbenchTicketId;
+    readonly title: string;
+    readonly jiraIssueKey: string | null;
+  };
+  readonly recap: WorkbenchStoredThreadRecap | null;
+  /** Other current Threads on the Ticket, oldest Assignment first. */
+  readonly siblings: ReadonlyArray<{
+    readonly threadId: ThreadId;
+    readonly recap: WorkbenchStoredThreadRecap | null;
+  }>;
+}
+
 export interface WorkbenchCompleteTicketWorkspaceInput {
   readonly ticketId: WorkbenchTicketId;
   readonly attemptId: WorkbenchTicketWorkspaceAttemptId;
@@ -476,6 +498,15 @@ interface WorkbenchStoreShape extends Omit<
   readonly getTicketJiraIssueKey: (
     ticketId: WorkbenchTicketId,
   ) => Effect.Effect<Option.Option<string>, WorkbenchOperationError>;
+  /** The Ticket a Thread currently works on, with that Ticket's other Threads. */
+  readonly getThreadRoster: (
+    threadId: ThreadId,
+  ) => Effect.Effect<Option.Option<WorkbenchThreadRoster>, WorkbenchOperationError>;
+  readonly upsertThreadRecap: (
+    input: WorkbenchStoredThreadRecap & { readonly threadId: ThreadId },
+  ) => Effect.Effect<void, WorkbenchOperationError>;
+  /** Current Threads of Tickets, which are the Threads that get recaps. */
+  readonly listTicketThreadIds: Effect.Effect<ReadonlyArray<ThreadId>, WorkbenchOperationError>;
   /** Branch selected for new worktrees, when this Ticket Workspace has one. */
   readonly getTicketWorkspaceGeneratedBranchName: (
     ticketId: WorkbenchTicketId,
@@ -522,6 +553,20 @@ interface WorkbenchStoreShape extends Omit<
 export class WorkbenchStore extends Context.Service<WorkbenchStore, WorkbenchStoreShape>()(
   "@t3tools/workbench/WorkbenchStore",
 ) {}
+
+const ThreadRosterRow = Schema.Struct({
+  ticketId: WorkbenchTicketId,
+  title: Schema.String,
+  jiraIssueKey: Schema.NullOr(Schema.String),
+  threadId: Schema.NullOr(ThreadId),
+  runId: Schema.NullOr(RunId),
+  text: Schema.NullOr(Schema.String),
+  updatedAt: Schema.NullOr(IsoDateTime),
+});
+const recapFromRosterRow = (row: typeof ThreadRosterRow.Type): WorkbenchStoredThreadRecap | null =>
+  row.runId === null || row.text === null || row.updatedAt === null
+    ? null
+    : { runId: row.runId, text: row.text, updatedAt: row.updatedAt };
 
 const persistenceError = (_cause: unknown) =>
   new WorkbenchOperationError({
@@ -762,6 +807,127 @@ const makeWorkbenchStore = Effect.gen(function* () {
       Effect.mapError(persistenceError),
     ),
   );
+  // Planning and working drafts already hold an Assignment; the draft row covers the hand-off.
+  // A replaced draft Thread keeps its working row, so its superseded Assignment must win.
+  const retiredDraftThread = sql`
+    SELECT 1 FROM workbench_assignments AS retired
+    WHERE retired.thread_id = draft.thread_id AND retired.superseded_at IS NOT NULL
+  `;
+  const listThreadRosterRows = SqlSchema.findAll({
+    Request: ThreadId,
+    Result: ThreadRosterRow,
+    execute: (threadId) => sql`
+      WITH ticket AS (
+        SELECT ticket_id, title, jira_issue_key
+        FROM workbench_tickets
+        WHERE deleted_at IS NULL AND ticket_id IN (
+          SELECT ticket_id FROM workbench_assignments
+          WHERE thread_id = ${threadId} AND superseded_at IS NULL
+          UNION
+          SELECT draft.draft_id FROM workbench_ticket_drafts AS draft
+          WHERE draft.thread_id = ${threadId}
+            AND draft.phase IN ('planning', 'starting', 'working')
+            AND NOT EXISTS (${retiredDraftThread})
+        )
+        LIMIT 1
+      ),
+      member AS (
+        SELECT assignment.thread_id, assignment.created_at
+        FROM workbench_assignments AS assignment
+        INNER JOIN ticket ON ticket.ticket_id = assignment.ticket_id
+        WHERE assignment.superseded_at IS NULL
+        UNION ALL
+        SELECT draft.thread_id, NULL
+        FROM workbench_ticket_drafts AS draft
+        INNER JOIN ticket ON ticket.ticket_id = draft.draft_id
+        WHERE draft.phase = 'working' AND NOT EXISTS (${retiredDraftThread})
+      )
+      SELECT
+        ticket.ticket_id AS "ticketId",
+        ticket.title AS "title",
+        ticket.jira_issue_key AS "jiraIssueKey",
+        member.thread_id AS "threadId",
+        recap.run_id AS "runId",
+        recap.text AS "text",
+        recap.updated_at AS "updatedAt"
+      FROM ticket
+      LEFT JOIN member ON 1 = 1
+      LEFT JOIN workbench_thread_recaps AS recap ON recap.thread_id = member.thread_id
+      ORDER BY member.created_at IS NULL, member.created_at, member.thread_id
+    `,
+  });
+  const getThreadRoster: WorkbenchStoreShape["getThreadRoster"] = Effect.fn(
+    "WorkbenchStore.getThreadRoster",
+  )(
+    function* (threadId) {
+      const rows = yield* listThreadRosterRows(threadId);
+      const first = rows[0];
+      if (!first) return Option.none<WorkbenchThreadRoster>();
+      const seen = new Set<ThreadId>();
+      let recap: WorkbenchStoredThreadRecap | null = null;
+      const siblings: Array<WorkbenchThreadRoster["siblings"][number]> = [];
+      for (const row of rows) {
+        if (row.threadId === null || seen.has(row.threadId)) continue;
+        seen.add(row.threadId);
+        if (row.threadId === threadId) recap = recapFromRosterRow(row);
+        else siblings.push({ threadId: row.threadId, recap: recapFromRosterRow(row) });
+      }
+      return Option.some({
+        ticket: { id: first.ticketId, title: first.title, jiraIssueKey: first.jiraIssueKey },
+        recap,
+        siblings,
+      });
+    },
+    NodeSqliteClient.readOnly,
+    Effect.mapError(persistenceError),
+  );
+  const upsertThreadRecap: WorkbenchStoreShape["upsertThreadRecap"] = Effect.fn(
+    "WorkbenchStore.upsertThreadRecap",
+  )((input) =>
+    sql`
+      INSERT INTO workbench_thread_recaps (thread_id, run_id, text, updated_at)
+      VALUES (${input.threadId}, ${input.runId}, ${input.text}, ${input.updatedAt})
+      ON CONFLICT (thread_id) DO UPDATE SET
+        run_id = excluded.run_id,
+        text = excluded.text,
+        updated_at = excluded.updated_at
+      WHERE excluded.updated_at >= workbench_thread_recaps.updated_at
+    `.pipe(Effect.asVoid, Effect.mapError(persistenceError)),
+  );
+  const listTicketThreadIdRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: Schema.Struct({ threadId: ThreadId }),
+    execute: () => sql`
+      SELECT assignment.thread_id AS "threadId"
+      FROM workbench_assignments AS assignment
+      INNER JOIN workbench_tickets AS ticket ON ticket.ticket_id = assignment.ticket_id
+      WHERE ticket.deleted_at IS NULL
+        AND assignment.superseded_at IS NULL
+      ORDER BY assignment.thread_id ASC
+    `,
+  });
+  const listTicketThreadIds = listTicketThreadIdRows().pipe(
+    Effect.map((rows) => rows.map((row) => row.threadId)),
+    Effect.mapError(persistenceError),
+    Effect.withSpan("WorkbenchStore.listTicketThreadIds"),
+  );
+  const listThreadRecapRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: WorkbenchThreadRecap,
+    execute: () => sql`
+      SELECT thread_id AS "threadId", text, updated_at AS "updatedAt"
+      FROM workbench_thread_recaps
+      WHERE thread_id IN (
+        SELECT assignment.thread_id
+        FROM workbench_assignments AS assignment
+        INNER JOIN workbench_tickets AS ticket ON ticket.ticket_id = assignment.ticket_id
+        WHERE ticket.deleted_at IS NULL
+        UNION
+        SELECT thread_id FROM workbench_ticket_drafts
+      )
+      ORDER BY thread_id ASC
+    `,
+  });
   const findTicketWorkspaceGeneratedBranchName = SqlSchema.findOneOption({
     Request: FindTicketInput,
     Result: Schema.Struct({ generatedBranchName: Schema.NullOr(Schema.String) }),
@@ -1286,6 +1452,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           reservedThreadRows,
           ticketWorkspaceRows,
           ticketWorkspaceRepositoryRows,
+          threadRecaps,
         ] = yield* Effect.all([
           listProjectRows(),
           listProjectLinkRows(),
@@ -1296,6 +1463,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           listReservedThreadIds(),
           listTicketWorkspaceRows(),
           listTicketWorkspaceRepositoryRows(),
+          listThreadRecapRows(),
         ]);
         const linksByProject = new Map<
           string,
@@ -1347,6 +1515,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               repositories: workspaceRepositoriesByTicket.get(workspace.ticketId) ?? [],
             }),
           ),
+          threadRecaps,
         });
       }),
     );
@@ -3333,6 +3502,9 @@ const makeWorkbenchStore = Effect.gen(function* () {
     hasThreadAtWorktreePath,
     getTicketWorkspace,
     getTicketJiraIssueKey,
+    getThreadRoster,
+    upsertThreadRecap,
+    listTicketThreadIds,
     getTicketWorkspaceGeneratedBranchName,
     getTicketWorkspaceRepositoryStates,
     claimTicketWorkspace,
