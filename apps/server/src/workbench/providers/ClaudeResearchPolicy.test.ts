@@ -129,6 +129,7 @@ describe("Claude research policy", () => {
       autoAllowBashIfSandboxed: true,
       allowUnsandboxedCommands: false,
     });
+    assert.isFalse(sandbox?.filesystem?.disabled);
     assert.includeMembers(sandbox?.filesystem?.denyWrite ?? [], ["/workspace", "/home/planner"]);
     assert.isTrue(sandbox?.network?.strictAllowlist);
   });

@@ -26,9 +26,9 @@ const researchAllowedTools = (allowedTools: ReadonlyArray<string>) =>
 // commands unsandboxed, so research there keeps the shell unavailable.
 export const researchShellAvailable = (platform: NodeJS.Platform) => platform === "darwin";
 
-// Sandboxed commands run without prompts. Writes are denied in the working directory
-// and home, which cover user settings that widen sandbox writes; temp stays writable.
-// Hosts outside the user's sandbox allowlist are refused rather than sent to review.
+// Sandboxed commands run without prompts; writes are denied in cwd and home, temp stays
+// writable, and hosts outside the user's allowlist are refused. Flag settings outrank user
+// settings, so filesystem isolation stays on; user excludedCommands and allowWrite still merge.
 const researchShellSettings = (input: {
   readonly cwd: string;
   readonly homeDirectory: string;
@@ -38,7 +38,7 @@ const researchShellSettings = (input: {
     failIfUnavailable: true,
     autoAllowBashIfSandboxed: true,
     allowUnsandboxedCommands: false,
-    filesystem: { denyWrite: [input.cwd, input.homeDirectory] },
+    filesystem: { disabled: false, denyWrite: [input.cwd, input.homeDirectory] },
     network: { strictAllowlist: true },
   },
 });
