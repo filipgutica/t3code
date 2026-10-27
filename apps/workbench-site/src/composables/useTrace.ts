@@ -6,8 +6,10 @@ const handoffKeyframes = ({ start, end, radius }: { start: Point; end: Point; ra
   const reverse = end.y < start.y;
   const [upper, lower] = reverse ? [end, start] : [start, end];
   // Construct the downward fork/merge path once, then traverse it in either direction.
+  // Matches CommitBranch: a merge from the branch lane (right) curves just below its node,
+  // and a fork onto the branch lane curves just above the branch node.
   const route =
-    upper!.x < lower!.x
+    upper!.x > lower!.x
       ? `M${upper!.x} ${upper!.y} C${upper!.x} ${upper!.y + 26} ${lower!.x} ${upper!.y + 14} ${lower!.x} ${upper!.y + 48} V${lower!.y}`
       : `M${upper!.x} ${upper!.y} V${lower!.y - 36} C${upper!.x} ${lower!.y - 14} ${lower!.x} ${lower!.y - 26} ${lower!.x} ${lower!.y}`;
   const path = document.createElementNS("http://www.w3.org/2000/svg", "path");

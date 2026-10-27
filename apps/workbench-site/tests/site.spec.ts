@@ -411,6 +411,46 @@ test("branch handoffs follow the current navigation section and settle without l
   await noOverflow(page);
 });
 
+test("a merge handoff follows the drawn merge back to the main lane", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await load(page);
+  const nav = page.getByRole("navigation", { name: "On this page" });
+  await markScrollEnd(page);
+  await nav.getByRole("link", { name: "Workspaces", exact: true }).click();
+  await ended(page);
+  const packet = page.locator(".trace-packet");
+  await packet.evaluate((element) => {
+    const animate = element.animate.bind(element);
+    element.animate = (keyframes, options) => {
+      element.dataset.route = JSON.stringify(keyframes);
+      return animate(keyframes, options);
+    };
+  });
+  await markScrollEnd(page);
+  await nav.getByRole("link", { name: "Review", exact: true }).click();
+  await ended(page);
+  await expect(page.locator("[data-trace-section].is-current")).toHaveAttribute(
+    "aria-labelledby",
+    "review-heading",
+  );
+  const { midpoint, mainLane, branchLane } = await packet.evaluate((element) => {
+    const origin = element.parentElement!.getBoundingClientRect().left;
+    const centerX = (selector: string) => {
+      const node = document.querySelector(selector)!.getBoundingClientRect();
+      return node.left + node.width / 2 - origin;
+    };
+    const frames = JSON.parse(element.dataset.route!) as { transform: string }[];
+    const x = Number(frames[16]!.transform.match(/translate\(([-\d.]+)px/)![1]);
+    return {
+      midpoint: x + element.offsetWidth / 2,
+      mainLane: centerX('[aria-labelledby="review-heading"] .commit-node'),
+      branchLane: centerX('[aria-labelledby="scope-heading"] .commit-node'),
+    };
+  });
+  // The merge curves just below the Workspaces node, so the packet runs most of the way on the main lane.
+  expect(branchLane - mainLane).toBeGreaterThan(16);
+  expect(midpoint).toBeCloseTo(mainLane, 0);
+});
 test("walkthrough signals fork, merge, and notify, and stop when reduced motion is enabled", async ({
   page,
 }) => {
