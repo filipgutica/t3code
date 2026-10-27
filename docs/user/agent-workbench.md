@@ -60,10 +60,11 @@ Workbench until you start work.
 **Create manually** opens the form when you already know the requirements.
 
 To plan without leaving the Board, use the chat in its lower-right corner. It
-lists the Threads of the Workspace's Tickets and drafts. At the end of its Thread
-menu, choose **New ticket draft** to start a planning conversation there, or **New
-Thread on** the open Thread's Ticket to start another Thread for that Ticket. A draft offers **Create ticket**
-and then **Start work**, and keeps the same Thread throughout. **Cancel** removes a
+lists the Threads of the Workspace's Tickets and drafts, grouped by Ticket. At the
+end of its Thread menu, choose **New ticket draft** to start a planning conversation
+there, or **New Thread on** the open Thread's Ticket to start another Thread for that
+Ticket. A draft offers **Create ticket** and then **Start work**, and keeps the same
+Thread throughout. **Cancel** removes a
 draft you have not used yet and returns to the Thread you had open. Choose **Open
 full Thread** to edit its fields.
 
@@ -143,8 +144,12 @@ regular T3 sidebar. The command palette also offers **Open Workbench**, **New
 Ticket** for the current Workspace, and **Back to Ticket** from a linked Thread.
 
 To talk to a Ticket's Threads without leaving the Ticket, use the ticket chat in its
-bottom-right corner. Each active Thread has a tab; settled and archived Threads are
-under **⋯**. A Thread you create from the Ticket opens here. Select the message field
+bottom-right corner. Its header shows the open Thread; select it to switch between the
+Ticket's Threads, find settled and archived ones, or choose **New Thread**. Each Thread
+in the menu shows a short recap of its latest run, and Threads on the same Ticket read
+each other's recaps so they know what the others are doing. **N need you** opens the
+menu on the next Thread waiting for your approval or input. A Thread you create from
+the Ticket opens here. Select the message field
 to expand the conversation, or choose **Show ticket chat** in the command palette.
 Drag the chat's left edge, top edge, or top-left corner to resize it. The chat leaves out the Thread's side panels:
 opening a file or diff from it, or choosing **Open full Thread**, opens the Thread itself.
