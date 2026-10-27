@@ -69,7 +69,7 @@ it("delivers failed checks, unresolved feedback, a separate API repository and i
       number: 906,
       url: "https://github.com/workbench-synthetic/attention-api/pull/906",
       checksState: "passing",
-      reviewDecision: null,
+      reviewDecision: "approved",
     }),
   );
   const activity = toPullRequestActivityPage(
@@ -97,12 +97,14 @@ it("delivers failed checks, unresolved feedback, a separate API repository and i
     decodeThreads(JSON.parse(await read(902, ReviewThreads.document)).data),
   );
   if (!feedback) throw new Error("Native review threads are unavailable");
-  expect(feedback.threads).toHaveLength(2);
-  expect(new Set(feedback.threads.map(({ thread }) => thread.id)).size).toBe(2);
+  expect(feedback.threads).toHaveLength(3);
+  expect(new Set(feedback.threads.map(({ thread }) => thread.id)).size).toBe(3);
   expect(feedback.threads.map(({ thread }) => thread.path)).toEqual([
     "synthetic.txt",
     "src/invitations.ts",
+    "src/invitations.test.ts",
   ]);
+  expect(feedback.threads[2]?.thread.comments.at(-1)?.author?.login).toBe("synthetic-demo-viewer");
   expect(feedback.threads.every(({ thread }) => !thread.isResolved)).toBe(true);
   expect(feedback.threads[0]?.thread.isResolved).toBe(false);
   expect(feedback.threads[0]?.thread.comments[0]?.body).toMatch(

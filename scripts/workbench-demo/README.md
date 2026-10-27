@@ -86,11 +86,12 @@ The feedback Ticket (`synthetic-attention-feedback`) has a long Markdown
 description, scopes **Orbit Web and Orbit API**, and has three active native
 Threads, all belonging to the Ticket's primary **Orbit Web** Project. The original
 links PRs **901 and 902**; the **shared PR assignment** links
-PR **902** again. The **API contract review** Thread links the clean PR **906** in
+PR **902** again. The **API contract review** Thread links the approved PR **906** in
 `workbench-synthetic/attention-api`. Its three PR identities remain distinct;
 sharing PR 902 does not duplicate its signals. PR 902 contains
-two unresolved discussions, in `synthetic.txt` and `src/invitations.ts`, with
-separate destinations, plus one requested-changes review.
+three unresolved discussions, in `synthetic.txt`, `src/invitations.ts`, and
+`src/invitations.test.ts`, plus one requested-changes review. The demo viewer
+replied last in `src/invitations.test.ts`, so only the first two count.
 PR 901 contains two failed checks (**API tests** and **Web tests**) in the same
 synthetic **Attention CI** workflow. These checks share one failed-check signal.
 
@@ -102,7 +103,7 @@ Threads, keeps the same actions visible and can be collapsed.
 In the sidebar, open the filter menu beside search and turn on **Needs
 attention**. Expect the three confirmed-action Tickets, sorted by urgency. Both
 feedback assignments remain because they link PR 902; only the original also
-links the failed PR 901. The clean API assignment is excluded. Remove the filter
+links the failed PR 901. The API assignment is included with **Approved**. Remove the filter
 with its chip. Workspace and Ticket chevrons still collapse and expand while the
 filter is on, and text search expands matching groups until it is cleared.
 

@@ -48,7 +48,7 @@ const BUSY_FEEDBACK_MARKDOWN = [
   "| Repository | Work to review | Existing fixture source |",
   "| --- | --- | --- |",
   "| Orbit Web | Empty response and recovery UI | Failed checks and unresolved review feedback |",
-  "| Orbit API | Expiry contract and retry behavior | Separate clean API PR |",
+  "| Orbit API | Expiry contract and retry behavior | Separate approved API PR |",
   "",
   "## Decisions awaiting input",
   "",
