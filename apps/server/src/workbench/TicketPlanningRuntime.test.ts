@@ -363,7 +363,7 @@ it.effect("lists sibling Threads with status, provider, recap, and coordination 
       assert.include(instructions, 't3_thread_read({threadId, view: "messages", limit: 10');
       assert.include(
         instructions,
-        't3_thread_send({threadId, mode: "queue", text: "From ORBIT-7 · Prepare ticket: …"})',
+        't3_thread_send({threadId, mode: "queue", message: "From ORBIT-7 · Prepare ticket: …"})',
       );
       assert.include(instructions, "Never steer, restart, or interrupt another Thread.");
       assert.equal(policy.runtimeMode, basePolicy.runtimeMode);

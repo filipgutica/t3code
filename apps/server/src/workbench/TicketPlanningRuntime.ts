@@ -155,7 +155,7 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
       ...(input.readOnly
         ? []
         : [
-            `Message a sibling only to coordinate shared files, a contract change, or a handoff, with t3_thread_send({threadId, mode: "queue", text: ${quoted(sender)}}). If a send is refused, tell the user.`,
+            `Message a sibling only to coordinate shared files, a contract change, or a handoff, with t3_thread_send({threadId, mode: "queue", message: ${quoted(sender)}}). If a send is refused, tell the user.`,
           ]),
       "Never steer, restart, or interrupt another Thread.",
     ].join("\n");
