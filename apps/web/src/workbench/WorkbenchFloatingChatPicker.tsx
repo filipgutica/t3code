@@ -201,10 +201,6 @@ function PickerGroupHeader({
         .join(" ")}
       onClick={onToggle}
     >
-      <ChevronRightIcon
-        aria-hidden
-        className={cn("size-3.5 shrink-0 text-muted-foreground", open && "rotate-90")}
-      />
       {ticket ? (
         <WorkbenchTicketKindIcon kind={ticket.kind} />
       ) : (
@@ -217,6 +213,10 @@ function PickerGroupHeader({
       ) : null}
       <span className="min-w-0 flex-1 truncate">{title}</span>
       <span className="shrink-0 text-2xs text-muted-foreground tabular-nums">{count}</span>
+      <ChevronRightIcon
+        aria-hidden
+        className={cn("size-3.5 shrink-0 text-muted-foreground", open && "rotate-90")}
+      />
     </MenuItem>
   );
 }
@@ -256,9 +256,7 @@ function PickerThreadSections({
           ticketPrefix={prefix}
           title={row.title}
           icon={
-            <span className="mt-0.5 flex shrink-0 gap-2">
-              {/* Lines up with the chevron of group headings. */}
-              <span className="size-3.5" />
+            <span className="mt-0.5 flex shrink-0">
               <WorkbenchTicketKindIcon kind={ticket.kind} />
             </span>
           }
@@ -281,7 +279,7 @@ function PickerThreadSections({
         />
         {/* The rule ties a group's Threads to its heading. */}
         {open ? (
-          <div className="ms-3.5 border-s border-muted-foreground/30 ps-1">
+          <div className="ms-3.5 border-s border-muted-foreground/30 ps-2">
             {section.rows.map(item)}
           </div>
         ) : null}
