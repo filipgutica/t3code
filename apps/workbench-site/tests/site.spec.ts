@@ -169,7 +169,7 @@ test("tabs support keyboard controls and retained original screenshot links", as
   await expect(page.getByRole("tab", { name: "Notifications", exact: true })).toBeFocused();
   await page.keyboard.press("Home");
   await expect(first).toBeFocused();
-  expect(await page.locator("[data-walkthrough-frame]").count()).toBe(6);
+  expect(await page.locator("[data-walkthrough-frame]").count()).toBe(7);
   for (const link of await page.locator("[data-product-image]").all())
     await expect(link).toHaveAttribute("href", /\/t3code\/_astro\/.*\.png$/);
 });

@@ -3,7 +3,7 @@
 @import "tailwindcss/utilities.css" source(none);
 @import "@filipgutica/ui/theme.css";
 @import "@filipgutica/ui/components.css";
-@import "@filipgutica/ui/themes/graphite-indigo.css";
+@import "./t3-theme.css";
 @import "@filipgutica/ui/site.css";
 
 :root {
@@ -111,6 +111,7 @@ nav.section-nav {
 nav.section-nav a {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   min-height: var(--control-lg);
   min-width: var(--control-lg);
   color: var(--text-muted);

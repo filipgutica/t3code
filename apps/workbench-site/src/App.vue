@@ -15,6 +15,7 @@ const { images, walkthrough, base, repository, guide, downloads } = defineProps<
   images: {
     board: ProductImageDescriptor;
     workspace: ProductImageDescriptor;
+    boardChat: ProductImageDescriptor;
     pullRequest: ProductImageDescriptor;
   };
   walkthrough: readonly WalkthroughStep[];
@@ -134,6 +135,29 @@ onUnmounted(() => {
                 :steps="walkthrough"
                 @open="openImage"
               />
+            </div>
+          </section>
+
+          <section class="section chat-section" aria-labelledby="chat-heading" data-trace-section>
+            <CommitBranch lane="parallel" />
+            <div class="section-body">
+              <div class="section-copy">
+                <h2 id="chat-heading">Chat with Ticket Threads from the Board</h2>
+                <p>
+                  The Board's chat lists the Threads of the Workspace's Tickets and drafts. Start a
+                  ticket draft there, plan it, and create the Ticket without leaving the Board.
+                </p>
+              </div>
+              <figure class="media-stage">
+                <ProductImage :image="images.boardChat" @open="openImage" />
+              </figure>
+              <div class="section-copy">
+                <p>
+                  When other Threads wait for your approval or input, or their run failed, the chat
+                  shows how many. Select the count to open the menu on the first of them.
+                </p>
+              </div>
+              <a class="text-link" :href="`${guide}#chat-with-threads`">Chat guide</a>
             </div>
           </section>
 

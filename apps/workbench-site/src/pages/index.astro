@@ -4,7 +4,7 @@ import App from "../App.vue";
 import type { ProductImageDescriptor, ProductImageSource } from "../images";
 import type { ImageMetadata } from "astro";
 import libraryThemeCss from "@filipgutica/ui/theme.css?raw";
-import sitePaletteCss from "@filipgutica/ui/themes/graphite-indigo.css?raw";
+import sitePaletteCss from "../styles/t3-theme.css?raw";
 import { siteThemeBootScript } from "@filipgutica/ui/site";
 import board from "../assets/screenshots/board.png";
 import boardLight from "../assets/screenshots/board-light.png";
@@ -20,6 +20,10 @@ import notifications from "../assets/screenshots/notifications.png";
 import notificationsLight from "../assets/screenshots/notifications-light.png";
 import planning from "../assets/screenshots/planning.png";
 import planningLight from "../assets/screenshots/planning-light.png";
+import ticketChat from "../assets/screenshots/ticket-chat.png";
+import ticketChatLight from "../assets/screenshots/ticket-chat-light.png";
+import boardChat from "../assets/screenshots/board-chat.png";
+import boardChatLight from "../assets/screenshots/board-chat-light.png";
 import "../styles/site.css";
 
 const repository = "https://github.com/filipgutica/t3code";
@@ -74,6 +78,16 @@ const walkthrough = [
       "Start work prepares the worktrees and adds ticket context to the same conversation. Review it and send your next instruction when ready.",
   },
   {
+    id: "chat",
+    tab: "Chat",
+    title: "Talk to the Ticket's Threads",
+    src: ticketChat,
+    light: ticketChatLight,
+    alt: "Ticket chat on a Ticket page, its Thread menu showing one Thread waiting for approval and another with its recap",
+    caption:
+      "Switch between a Ticket's Threads without leaving it. Each Thread can see what the others did from their recaps.",
+  },
+  {
     id: "pull-request",
     tab: "Pull request",
     title: "Review the linked pull request",
@@ -88,9 +102,8 @@ const walkthrough = [
     title: "See what needs attention",
     src: notifications,
     light: notificationsLight,
-    alt: "Ticket Needs attention list with five signals from Threads and linked pull requests",
-    caption:
-      "Threads, review feedback, and failed checks that need attention.",
+    alt: "Ticket Needs attention list with failed checks, requested changes, and unresolved threads on linked pull requests",
+    caption: "Failed checks, requested changes, and open review threads on linked PRs.",
   },
 ];
 const prepareSource = async (src: ImageMetadata): Promise<ProductImageSource> => {
@@ -135,7 +148,7 @@ const images = {
   board: await prepareImage({
     src: board,
     light: boardLight,
-    alt: "Beacon Workbench Board with a saved draft and Tickets spanning Beacon CLI and Beacon Docs",
+    alt: "Beacon Workbench Board with Tickets across Beacon CLI and Beacon Docs and the board chat",
     sizes: screenshotSizes,
     eager: true,
   }),
@@ -144,6 +157,12 @@ const images = {
     light: workspaceLight,
     sizes: screenshotSizes,
     alt: "Prepared Ticket work area with primary and secondary repository worktrees",
+  }),
+  boardChat: await prepareImage({
+    src: boardChat,
+    light: boardChatLight,
+    sizes: screenshotSizes,
+    alt: "Board chat with its Thread menu open, showing recaps, a Thread waiting for approval, and New ticket draft",
   }),
   pullRequest: await prepareImage({
     src: pullRequest,

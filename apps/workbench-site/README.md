@@ -20,19 +20,23 @@ the preview and full-size lightbox follow the shared System/Light/Dark choice. C
 display width so text stays clear on Retina displays. Keep source screenshots
 free of pairing URLs and private data.
 
-For T3 Browser captures, maximize the panel so the viewport fits without scaling,
-then use the toolbar's **Capture screenshot** action to save the native-resolution
-PNG. Automation snapshots are capped at 1280 pixels. Check the saved dimensions
+Capture from a Workbench demo in a browser context with a 1280 × 900 viewport and a
+device scale factor of 2, which gives 2560 × 1800 PNGs. Switch light and dark by
+emulating the color scheme; the app follows the system theme. Check the saved dimensions
 and text at 1:1 before replacing both the site and user-guide images; keep the
-pointer outside the page and close popovers that expose local paths.
+pointer outside the page, clear focus rings, and close popovers that expose local paths.
 
 The walkthrough starts with a native planning conversation and editable draft.
-It then shows the saved Ticket, prepared work area, and continuation of the same
-Thread. A second demo Ticket demonstrates linked PRs and attention.
+It then shows the saved Ticket, prepared work area, continuation of the same
+Thread, and the ticket chat with a recap and a Thread waiting for approval. A second
+demo Ticket demonstrates linked PRs and attention.
 Readers select each screenshot with tabs; arrow keys, Home, and End move between
 them. Without JavaScript, all steps remain visible. Each screenshot opens in the
 existing lightbox. The planning conversation is real; it does not show completed implementation work.
 Demo PR feedback and implementation outcomes are illustrative.
+
+The palette in `src/styles/t3-theme.css` mirrors T3 Code's default light and dark theme
+so the page matches the screenshots. Update it when that theme changes.
 
 The theme switch shares its `tool-site-theme` setting with the annoterm, wtree, and devps sites, which are served from the same origin.
 
