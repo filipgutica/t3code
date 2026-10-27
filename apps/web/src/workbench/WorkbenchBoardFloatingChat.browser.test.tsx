@@ -231,6 +231,7 @@ const setup = async () => {
     restoreMode: "collapsed",
     focusRequest: { id: 0, threadId: null },
     pageChat: null,
+    pickedThreads: {},
   });
   let addToSnapshot: (input: BeginInput) => void = () => {};
   const succeed = async ({ input }: { readonly input: BeginInput }) => {
@@ -310,6 +311,19 @@ it("starts another Thread on the showing Thread's ticket, but not on a draft's",
     .element(screen.getByRole("menuitem", { name: /^New Thread on/ }))
     .not.toBeInTheDocument();
   expect(mocks.begin).not.toHaveBeenCalled();
+});
+
+it("shows the picked Thread again when the user returns to the Board", async () => {
+  const { onSnapshot } = await setup();
+  const showing = (screen: Screen) =>
+    screen.getByRole("button", { name: "Board Threads: Thread second" });
+  {
+    await using screen = await render(<Harness onSnapshot={onSnapshot} />);
+    await pickThread(screen, /Thread second/, /^Payouts/);
+    await expect.element(showing(screen)).toBeVisible();
+  }
+  await using screen = await render(<Harness onSnapshot={onSnapshot} />);
+  await expect.element(showing(screen)).toBeVisible();
 });
 
 it("cancels an untouched draft and returns to the Thread it was started from", async () => {

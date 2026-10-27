@@ -1,4 +1,3 @@
-import { useNavigate } from "@tanstack/react-router";
 import { BlocksIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo } from "react";
@@ -7,7 +6,7 @@ import { useSidebar } from "../components/ui/sidebar";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
-import { readLastWorkbenchHref } from "./workbenchLastLocation";
+import { useNavigateToLastWorkbench } from "./workbenchLastLocation";
 
 export interface WorkbenchSidebarUtilityItemProps {
   readonly render: (props: {
@@ -20,7 +19,7 @@ export interface WorkbenchSidebarUtilityItemProps {
 export const WorkbenchSidebarUtilityItem = memo(function WorkbenchSidebarUtilityItem({
   render,
 }: WorkbenchSidebarUtilityItemProps) {
-  const navigate = useNavigate();
+  const navigateToLastWorkbench = useNavigateToLastWorkbench();
   const { isMobile, setOpenMobile } = useSidebar();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const connected = useEnvironment(primaryEnvironmentId)?.connection.phase === "connected";
@@ -33,12 +32,7 @@ export const WorkbenchSidebarUtilityItem = memo(function WorkbenchSidebarUtility
     if (isMobile) {
       setOpenMobile(false);
     }
-    const lastHref = readLastWorkbenchHref();
-    if (lastHref) {
-      void navigate({ href: lastHref });
-      return;
-    }
-    void navigate({ to: "/workbench", search: {} });
+    void navigateToLastWorkbench();
   };
 
   if (!connected || !query.isSuccess || !query.data) return null;

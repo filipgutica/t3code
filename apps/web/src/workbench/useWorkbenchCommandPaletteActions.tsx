@@ -8,6 +8,7 @@ import { workbenchEnvironment } from "./state";
 import { parseWorkbenchSearch } from "./workbenchSearch";
 import { getWorkbenchCommandPaletteTargets } from "./workbenchCommandPalette.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
+import { useNavigateToLastWorkbench } from "./workbenchLastLocation";
 
 const selectPageChatAvailable = (
   state: ReturnType<typeof useWorkbenchFloatingChatStore.getState>,
@@ -69,6 +70,7 @@ export const useWorkbenchCommandPaletteActions = ({
 }): CommandPaletteActionItem[] => {
   const location = useLocation();
   const navigate = useNavigate();
+  const navigateToLastWorkbench = useNavigateToLastWorkbench();
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const pageChatAvailable = useWorkbenchFloatingChatStore(selectPageChatAvailable);
@@ -98,7 +100,11 @@ export const useWorkbenchCommandPaletteActions = ({
       title: "Open Workbench",
       searchTerms: ["Open Workbench", "board", "tickets"],
       icon: <LayoutDashboardIcon className="size-4 text-icon-muted" />,
-      run: () => navigate({ to: "/workbench", search: targets.board }),
+      // Without a Board from the current page, return to wherever the user left Workbench.
+      run: () =>
+        targets.board.workbenchProjectId === undefined
+          ? navigateToLastWorkbench(targets.board)
+          : navigate({ to: "/workbench", search: targets.board }),
     },
   ];
   items.push(...ticketActions(targets, navigate));
