@@ -34,6 +34,10 @@ export interface WorkbenchFloatingChatThread {
 export const getWorkbenchFloatingChatTicketLabel = (ticket: WorkbenchFloatingChatTicket) =>
   ticket.key ? `${ticket.key} · ${ticket.title}` : ticket.title;
 
+/** Names a Thread outside its ticket group, where the title alone can repeat across tickets. */
+export const getWorkbenchFloatingChatThreadLabel = (thread: WorkbenchFloatingChatThread) =>
+  thread.ticket ? `${thread.ticket.key ?? thread.ticket.title} · ${thread.title}` : thread.title;
+
 export const getWorkbenchBoardChatThreads = ({
   projectId,
   tickets,

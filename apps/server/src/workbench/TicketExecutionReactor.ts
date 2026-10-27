@@ -71,6 +71,41 @@ const make = Effect.gen(function* () {
     });
   };
 
+  // The recap queue is in memory and the execution cursor can pass a queued run, so a restart
+  // re-offers each shared Thread's latest finished run; enqueue skips ones already recapped.
+  const recoverRecaps = Effect.gen(function* () {
+    const threadIds = yield* store.listSharedTicketThreadIds;
+    yield* Effect.forEach(
+      threadIds,
+      (threadId) =>
+        Effect.gen(function* () {
+          const thread = yield* orchestrationEngine.getThreadShell(threadId);
+          if (
+            thread?.latestRunId == null ||
+            thread.latestRunCompletedAt == null ||
+            thread.activeRunId !== null ||
+            thread.archivedAt !== null ||
+            thread.settledOverride === "settled"
+          )
+            return;
+          yield* recaps.enqueue({
+            threadId,
+            runId: thread.latestRunId,
+            completedAt: DateTime.formatIso(thread.latestRunCompletedAt),
+          });
+        }),
+      { discard: true },
+    );
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.interrupt
+        : Effect.logWarning("Thread recaps could not be recovered", {
+            cause: Cause.pretty(cause),
+          }),
+    ),
+  );
+
   const appendFailureActivity = (execution: ExecutionFailure, cause: Cause.Cause<unknown>) => {
     const occurredAt = DateTime.makeUnsafe(execution.startedAt);
     const identity = `workbench:ticket-execution-failed:${execution.runId}`;
@@ -183,6 +218,7 @@ const make = Effect.gen(function* () {
     function* () {
       const sequence = yield* initialize;
       yield* noteSeen(sequence);
+      yield* forkParked(recoverRecaps);
       yield* forkParked(
         Effect.gen(function* () {
           let afterSequence = sequence;

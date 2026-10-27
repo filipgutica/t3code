@@ -19,6 +19,7 @@ import {
 import { cn } from "../lib/utils";
 import {
   filterWorkbenchFloatingChatThreads,
+  getWorkbenchFloatingChatThreadLabel,
   getWorkbenchFloatingChatTicketLabel,
   groupWorkbenchFloatingChatThreads,
   type resolveWorkbenchFloatingChat,
@@ -280,14 +281,16 @@ export function WorkbenchFloatingChatPicker({
             label="Settled"
             threads={chat.settled}
             icon={<CircleCheckIcon className="text-success" />}
-            itemLabel={(thread) => thread.title}
+            itemLabel={getWorkbenchFloatingChatThreadLabel}
             onSelect={select}
           />
           <PickerHistory
             label="Archived"
             threads={chat.archived}
             icon={<ArchiveRestoreIcon />}
-            itemLabel={(thread) => `Restore and open ${thread.title}`}
+            itemLabel={(thread) =>
+              `Restore and open ${getWorkbenchFloatingChatThreadLabel(thread)}`
+            }
             onSelect={(threadId) => {
               changeOpen(false);
               onOpenThread(threadId);

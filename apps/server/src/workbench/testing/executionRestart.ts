@@ -38,7 +38,7 @@ const encodeResult = Schema.encodeEffect(
   Schema.fromJsonString(Schema.Struct({ status: Schema.String, revision: Schema.Number })),
 );
 
-const projectId = ProjectId.make("execution-restart-project");
+export const projectId = ProjectId.make("execution-restart-project");
 const workspaceId = WorkbenchProjectId.make("execution-restart-workspace");
 export const threadId = ThreadId.make("execution-restart-thread");
 export const ticketId = WorkbenchTicketId.make("execution-restart-ticket");

@@ -505,6 +505,11 @@ interface WorkbenchStoreShape extends Omit<
   readonly upsertThreadRecap: (
     input: WorkbenchStoredThreadRecap & { readonly threadId: ThreadId },
   ) => Effect.Effect<void, WorkbenchOperationError>;
+  /** Current Threads of Tickets that have more than one, which are the Threads that get recaps. */
+  readonly listSharedTicketThreadIds: Effect.Effect<
+    ReadonlyArray<ThreadId>,
+    WorkbenchOperationError
+  >;
   /** Branch selected for new worktrees, when this Ticket Workspace has one. */
   readonly getTicketWorkspaceGeneratedBranchName: (
     ticketId: WorkbenchTicketId,
@@ -806,6 +811,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
     ),
   );
   // Planning and working drafts already hold an Assignment; the draft row covers the hand-off.
+  // A replaced draft Thread keeps its working row, so its superseded Assignment must win.
+  const retiredDraftThread = sql`
+    SELECT 1 FROM workbench_assignments AS retired
+    WHERE retired.thread_id = draft.thread_id AND retired.superseded_at IS NOT NULL
+  `;
   const listThreadRosterRows = SqlSchema.findAll({
     Request: ThreadId,
     Result: ThreadRosterRow,
@@ -817,8 +827,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
           SELECT ticket_id FROM workbench_assignments
           WHERE thread_id = ${threadId} AND superseded_at IS NULL
           UNION
-          SELECT draft_id FROM workbench_ticket_drafts
-          WHERE thread_id = ${threadId} AND phase IN ('planning', 'starting', 'working')
+          SELECT draft.draft_id FROM workbench_ticket_drafts AS draft
+          WHERE draft.thread_id = ${threadId}
+            AND draft.phase IN ('planning', 'starting', 'working')
+            AND NOT EXISTS (${retiredDraftThread})
         )
         LIMIT 1
       ),
@@ -831,7 +843,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         SELECT draft.thread_id, NULL
         FROM workbench_ticket_drafts AS draft
         INNER JOIN ticket ON ticket.ticket_id = draft.draft_id
-        WHERE draft.phase = 'working'
+        WHERE draft.phase = 'working' AND NOT EXISTS (${retiredDraftThread})
       )
       SELECT
         ticket.ticket_id AS "ticketId",
@@ -884,6 +896,29 @@ const makeWorkbenchStore = Effect.gen(function* () {
         updated_at = excluded.updated_at
       WHERE excluded.updated_at >= workbench_thread_recaps.updated_at
     `.pipe(Effect.asVoid, Effect.mapError(persistenceError)),
+  );
+  const listSharedTicketThreadIdRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: Schema.Struct({ threadId: ThreadId }),
+    execute: () => sql`
+      SELECT assignment.thread_id AS "threadId"
+      FROM workbench_assignments AS assignment
+      INNER JOIN workbench_tickets AS ticket ON ticket.ticket_id = assignment.ticket_id
+      WHERE ticket.deleted_at IS NULL
+        AND assignment.superseded_at IS NULL
+        AND assignment.ticket_id IN (
+          SELECT ticket_id FROM workbench_assignments
+          WHERE superseded_at IS NULL
+          GROUP BY ticket_id
+          HAVING COUNT(*) > 1
+        )
+      ORDER BY assignment.thread_id ASC
+    `,
+  });
+  const listSharedTicketThreadIds = listSharedTicketThreadIdRows().pipe(
+    Effect.map((rows) => rows.map((row) => row.threadId)),
+    Effect.mapError(persistenceError),
+    Effect.withSpan("WorkbenchStore.listSharedTicketThreadIds"),
   );
   const listThreadRecapRows = SqlSchema.findAll({
     Request: Schema.Void,
@@ -3478,6 +3513,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     getTicketJiraIssueKey,
     getThreadRoster,
     upsertThreadRecap,
+    listSharedTicketThreadIds,
     getTicketWorkspaceGeneratedBranchName,
     getTicketWorkspaceRepositoryStates,
     claimTicketWorkspace,

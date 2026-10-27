@@ -1,4 +1,10 @@
-import { NodeId, RunId, WorkbenchAssignmentId, type ThreadId } from "@t3tools/contracts";
+import {
+  NodeId,
+  RunId,
+  ThreadId as ThreadIdSchema,
+  WorkbenchAssignmentId,
+  type ThreadId,
+} from "@t3tools/contracts";
 import { it as effectIt } from "@effect/vitest";
 import * as NodeURL from "node:url";
 import * as Deferred from "effect/Deferred";
@@ -21,9 +27,11 @@ import { ServerActivation } from "../serverActivation.ts";
 import { WorkbenchStore } from "./WorkbenchStore.ts";
 import { TicketExecutionReactor } from "./TicketExecutionReactor.ts";
 import { ThreadRecapService } from "./ThreadRecapService.ts";
+import { seedNativeThread } from "./testing/nativeThreads.ts";
 import {
   now,
   persistenceLayer,
+  projectId,
   reactorServices,
   reactorServicesWithoutRecaps,
   runEvent,
@@ -416,6 +424,45 @@ describe("durable Workbench execution consumption", () => {
           { threadId, runId: run("completed") },
           { threadId, runId: run("failed") },
         ]);
+      }).pipe(
+        Effect.provide(
+          reactorServicesWithoutRecaps.pipe(
+            Layer.provide(Layer.succeed(ThreadRecapService, recaps)),
+          ),
+        ),
+        Effect.scoped,
+      );
+    }).pipe(Effect.provide(testLayer), Effect.scoped),
+  );
+
+  effectIt.effect("re-offers the latest finished run of shared ticket Threads on start", () =>
+    Effect.gen(function* () {
+      yield* seed;
+      const sibling = ThreadIdSchema.make("execution-restart-sibling");
+      yield* seedNativeThread({ threadId: sibling, projectId, createdAt: now });
+      const store = yield* WorkbenchStore;
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("execution-restart-sibling-assignment"),
+        ticketId,
+        threadId: sibling,
+        createdAt: now,
+      });
+      const sink = yield* EventSinkV2;
+      const missed = RunId.make("recap-missed");
+      // Written before the cursor exists, so only recovery can schedule its recap.
+      yield* sink.write({ events: [runEvent({ id: missed, status: "completed" })] });
+      const offered = yield* Deferred.make<{
+        readonly threadId: ThreadId;
+        readonly runId: RunId;
+      }>();
+      const recaps = ThreadRecapService.of({
+        enqueue: ({ threadId, runId }) => Deferred.succeed(offered, { threadId, runId }),
+        awaitIdle: Effect.void,
+      });
+      yield* Effect.gen(function* () {
+        const reactor = yield* TicketExecutionReactor;
+        yield* reactor.start();
+        expect(yield* Deferred.await(offered)).toEqual({ threadId, runId: missed });
       }).pipe(
         Effect.provide(
           reactorServicesWithoutRecaps.pipe(

@@ -818,6 +818,11 @@ describe("Workbench Thread roster", () => {
         threadId: thread("replacement"),
         replacedAt: "2026-10-20T10:05:00.000Z",
       });
+      // Replacing a planning Thread leaves its draft row working.
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`INSERT INTO workbench_ticket_drafts
+        (draft_id, workbench_project_id, thread_id, phase, revision, payload_json)
+        VALUES (${ticketId}, ${workspaceId}, ${thread("replaced")}, 'working', 1, '{}')`;
       const recap = {
         runId: RunId.make("second-run"),
         text: "Moved validation into the schema.",

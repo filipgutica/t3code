@@ -15,6 +15,7 @@ import {
 import { makeThreadFixture } from "../test-fixtures";
 import {
   filterWorkbenchFloatingChatThreads,
+  getWorkbenchFloatingChatThreadLabel,
   getWorkbenchBoardChatThreads,
   groupWorkbenchFloatingChatThreads,
   resolveWorkbenchFloatingChat,
@@ -374,5 +375,28 @@ describe("filterWorkbenchFloatingChatThreads", () => {
     expect(ids(filterWorkbenchFloatingChatThreads(threads, "ma-5360"))).toEqual(["a"]);
     expect(ids(filterWorkbenchFloatingChatThreads(threads, "token usage"))).toEqual(["b"]);
     expect(ids(filterWorkbenchFloatingChatThreads(threads, "  "))).toEqual(["a", "b"]);
+  });
+});
+
+describe("getWorkbenchFloatingChatThreadLabel", () => {
+  it("tells same-named Threads on different tickets apart by key, else ticket title", () => {
+    const ticket = (key: string | null, title: string) => ({
+      id: WorkbenchTicketId.make(title),
+      key,
+      title,
+    });
+    expect(
+      getWorkbenchFloatingChatThreadLabel(
+        thread("a", null, { title: "Review", ticket: ticket("PAY-1", "Refunds") }),
+      ),
+    ).toBe("PAY-1 · Review");
+    expect(
+      getWorkbenchFloatingChatThreadLabel(
+        thread("b", null, { title: "Review", ticket: ticket(null, "Payouts") }),
+      ),
+    ).toBe("Payouts · Review");
+    expect(getWorkbenchFloatingChatThreadLabel(thread("c", null, { title: "Review" }))).toBe(
+      "Review",
+    );
   });
 });
