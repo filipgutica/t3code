@@ -1,13 +1,10 @@
 import {
   isLiveSubagentShell,
-  OrchestratorMcpFailure,
   ProjectId,
   WorkbenchTicketDraftFields,
   type OrchestrationV2AppThread,
   type OrchestrationV2ThreadShell,
-  type ThreadId,
 } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -20,8 +17,6 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
 import * as WorkbenchStore from "./WorkbenchStore.ts";
-import { McpWritePolicy } from "../mcp/McpWritePolicy.ts";
-import { researchShellAvailable } from "./providers/ClaudeResearchPolicy.ts";
 
 const RepositoryManifest = Schema.Array(
   Schema.Struct({ id: ProjectId, name: Schema.String, path: Schema.String }),
@@ -46,56 +41,6 @@ const JIRA_LINK_INSTRUCTIONS = [
   "Do not write to other services.",
 ].join(" ");
 const isRuntimePolicyResolveError = Schema.is(RuntimePolicy.RuntimePolicyResolveError);
-// The auto reviewer may approve what reaches it, so sandbox escapes and
-// permission grants are rejected before review. Connector approvals still reach it.
-const CODEX_RESEARCH_APPROVAL_POLICY = {
-  granular: {
-    sandbox_approval: false,
-    rules: false,
-    skill_approval: false,
-    request_permissions: false,
-    mcp_elicitations: true,
-  },
-};
-
-/** Planning agents can inspect repositories, but cannot mutate the environment through MCP. */
-export const layerMcpWritePolicy = Layer.effect(
-  McpWritePolicy,
-  Effect.gen(function* () {
-    const store = yield* WorkbenchStore.WorkbenchStore;
-    return {
-      assertAllowed: Effect.fn("TicketPlanningRuntime.assertAllowed")(function* (
-        threadId: ThreadId,
-        operation?: "research",
-      ) {
-        const draft = yield* store.getTicketDraftForThread(threadId).pipe(
-          Effect.mapError(
-            () =>
-              new OrchestratorMcpFailure({
-                code: "capability_denied",
-                message: "Ticket planning permissions could not be verified.",
-              }),
-          ),
-        );
-        if (operation === "research") {
-          if (draft !== null && (draft.phase === "draft" || draft.phase === "planning")) return;
-          return yield* new OrchestratorMcpFailure({
-            code: "capability_denied",
-            message: "Browser research requires an active ticket planning conversation.",
-          });
-        }
-        if (draft !== null && draft.phase !== "working") {
-          return yield* new OrchestratorMcpFailure({
-            code: "capability_denied",
-            message:
-              "This conversation is preparing a ticket. Start work before changing repositories or the environment.",
-          });
-        }
-      }),
-    };
-  }),
-);
-
 type ResolveInput = Parameters<RuntimePolicy.RuntimePolicyV2Shape["resolve"]>[0];
 const ROSTER_SIBLING_LIMIT = 10;
 // Titles and recaps are user or model text; keep each on one bounded line.
@@ -120,11 +65,9 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
   const projects = yield* ProjectStore.ProjectStoreV2;
   const providers = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
-  const platform = yield* HostProcess.Platform;
 
   const siblingRoster = Effect.fn("TicketPlanningRuntime.siblingRoster")(function* (input: {
     readonly thread: OrchestrationV2AppThread;
-    readonly readOnly: boolean;
   }) {
     const roster = yield* store.getThreadRoster(input.thread.id);
     if (Option.isNone(roster)) return undefined;
@@ -155,11 +98,7 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
         ? [`(${siblings.length - shown.length} more not shown.)`]
         : []),
       'Before you change shared files or contracts, read the relevant sibling with t3_thread_read({threadId, view: "messages", limit: 10, maxCharsPerItem: 2000}).',
-      ...(input.readOnly
-        ? []
-        : [
-            `Message a sibling only to coordinate shared files, a contract change, or a handoff, with t3_thread_send({threadId, mode: "queue", message: ${quoted(sender)}}). If a send is refused, tell the user.`,
-          ]),
+      `Message a sibling only to coordinate shared files, a contract change, or a handoff, with t3_thread_send({threadId, mode: "queue", message: ${quoted(sender)}}). If a send is refused, tell the user.`,
       "Never steer, restart, or interrupt another Thread.",
     ].join("\n");
   });
@@ -204,7 +143,7 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
             return yield* new RuntimePolicy.RuntimePolicyResolveError({
               projectId: input.thread.projectId,
               providerInstanceId: input.modelSelection.instanceId,
-              cause: "This provider does not support enforced read-only ticket planning.",
+              cause: "Ticket drafting supports Codex and Claude providers.",
             });
           }
           const repositories = yield* projects.list({
@@ -227,27 +166,14 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
           const currentDraft = yield* encodeDraft(draft.fields);
           return {
             ...policy,
-            // Approvals go to the provider's auto reviewer, not the user.
+            // Approvals go to the provider's auto reviewer, not the user. Draft Threads are
+            // created in plan mode, which would block the notes the prompt allows.
             runtimeMode: "auto" as const,
-            interactionMode: "plan" as const,
-            approvalPolicy:
-              instance.driverKind === "codex" ? CODEX_RESEARCH_APPROVAL_POLICY : "on-request",
-            sandboxPolicy: {
-              type: "readOnly",
-              access: { type: "fullAccess" },
-              networkAccess: false,
-            },
-            toolAccess: "research" as const,
+            interactionMode: "default" as const,
             checkpoints: "disabled" as const,
             instructions: [
-              "You are preparing a ticket in a Workbench workspace. This is a planning conversation, not implementation. Inspect the repositories listed below to understand the request. Do not edit files, run mutating commands, create worktrees, or start other agents. A native backing Project is an internal anchor and does not define the task's repository scope.",
-              "Use available connectors, GitHub tools, and browser navigation to research the request. Shell commands run read-only without network access, and requests for network access, unsandboxed commands, or more filesystem access are rejected, so use a configured connector instead of network CLI tools such as gh. Other tool approvals are reviewed automatically. An approval does not authorize implementation.",
+              "You are preparing a ticket in a Workbench workspace. This is a planning conversation, not implementation. Inspect the repositories listed below to understand the request; run commands, connectors, GitHub tools, and the browser as needed. Do not change the repositories' files, branches, or worktrees, and do not start implementing. If notes or other artifacts help, write them outside the repositories, in the system temp directory, unless the user asks for another place. The working directory is an internal anchor and does not define the task's repository scope.",
               JIRA_LINK_INSTRUCTIONS,
-              ...(instance.driverKind === "claudeAgent" && !researchShellAvailable(platform)
-                ? [
-                    "Claude ticket planning keeps shell and file-writing tools unavailable. Use the configured GitHub connector and other research tools instead of Bash or gh.",
-                  ]
-                : []),
               "Help the user establish a title, goal, implementation plan, acceptance criteria, non-goals, and testing. Ask focused questions only when the repository evidence and conversation do not resolve a material uncertainty. Identify which repositories need to be attached and which should be primary. Preserve the user's decisions and edits.",
               "When the draft is useful, propose it in one fenced JSON block labeled workbench-ticket-draft. The JSON object must contain title (string), markdown (string with Goal, Work, Acceptance criteria, Non-goals, and Testing sections), repositoryProjectIds (array of listed repository IDs), and primaryT3ProjectId (one selected repository ID). The user explicitly applies this proposal; emitting it does not create or update a ticket.",
               `Repository manifest: ${manifest}`,
@@ -275,10 +201,7 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
         resolve: Effect.fn("TicketPlanningRuntime.resolve")(function* (input: ResolveInput) {
           const policy = yield* resolveTicketPolicy(input);
           // Sibling awareness is advisory; a roster failure must not block the turn.
-          const roster = yield* siblingRoster({
-            thread: input.thread,
-            readOnly: policy.toolAccess === "research",
-          }).pipe(
+          const roster = yield* siblingRoster({ thread: input.thread }).pipe(
             Effect.catchCause((cause) =>
               Cause.hasInterruptsOnly(cause)
                 ? Effect.interrupt

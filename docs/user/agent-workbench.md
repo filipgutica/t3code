@@ -41,17 +41,16 @@ related Tickets. A Ticket's **work area** contains its prepared repository workt
 </picture>
 
 You do not need a title or repository selection before starting the conversation.
-Planning can inspect the workspace's repositories but cannot change them. Ask
+Planning can read the workspace's repositories, run commands, and write notes
+outside them, but it is told not to change them or start implementing. Ask
 follow-up questions to refine the proposal. Applying a new proposal replaces the
 draft's title, description, and repository selection; it does not create the Ticket.
 
-Planning can use your configured connectors, web tools, and the browser for
-research. With a Jira connector, the agent looks for existing issues that cover
-your request; see [Jira links](#jira-links). During planning, the agent runs
-read-only shell commands without asking you, and the provider's automatic reviewer
-handles other approval requests. Claude planning has a shell only on macOS. Shell
-commands have no general network access, so use a configured connector instead of
-CLI research such as `gh`. An approved research step does not start implementation.
+Planning can use your configured connectors, web tools, the browser, and CLI tools
+such as `gh` for research. With a Jira connector, the agent looks for existing
+issues that cover your request; see [Jira links](#jira-links). Planning runs in
+Auto, so the provider's automatic reviewer handles approval requests instead of
+you.
 
 Leaving the view keeps the draft in the Board’s **Drafts** section and the Workbench
 sidebar. Open it to resume its conversation and saved fields. Choose **New Ticket**
@@ -62,14 +61,15 @@ Workbench until you start work.
 
 To plan without leaving the Board, use the chat in its lower-right corner. It
 lists the Threads of the Workspace's Tickets and drafts. Choose **New ticket draft**
-(**+**) to start a planning conversation there. A draft's tab offers **Create
-ticket** and then **Start work**, and keeps the same Thread throughout. Choose
-**Open draft** to edit its fields.
+(**+**) to start a planning conversation there. A draft offers **Create ticket**
+and then **Start work**, and keeps the same Thread throughout. **Cancel** removes a
+draft you have not used yet and returns to the Thread you had open. Choose **Open
+full Thread** to edit its fields.
 
 Creating the Ticket keeps the same conversation for further planning. Choose
 **Start work** when ready to prepare its work area and continue that Thread in the
 primary worktree. Start work does not send a message; send your next instruction
-to begin implementation. Read-only planning supports Codex and Claude providers.
+to begin implementation. Planning supports Codex and Claude providers.
 
 The primary repository is where new Threads open. A Ticket can include other
 repositories when the work spans several codebases. Use **Edit Workspace** to

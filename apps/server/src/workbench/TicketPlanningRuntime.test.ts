@@ -1,7 +1,5 @@
-import * as ClaudeResearchPolicy from "./providers/ClaudeResearchPolicy.ts";
 import { assert, it } from "@effect/vitest";
 import {
-  EnvironmentId,
   ModelSelection,
   ProjectId,
   ProviderInstanceId,
@@ -17,7 +15,6 @@ import {
   WorkbenchTicketWorkspaceAttemptId,
 } from "@t3tools/contracts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -26,11 +23,8 @@ import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 
-import * as ClaudeAdapterV2 from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
-import * as CodexAdapterV2 from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
-import { McpWritePolicy } from "../mcp/McpWritePolicy.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
 import * as Providers from "../provider/ProviderInstanceRegistry.ts";
 import * as TicketPlanningRuntime from "./TicketPlanningRuntime.ts";
@@ -245,19 +239,20 @@ const resolve = Effect.flatMap(RuntimePolicy.RuntimePolicyDecorator, (decorator)
 );
 
 it.effect.each(["codex", "claudeAgent"] as const)(
-  "enforces read-only cross-repository planning for %s, including custom instances",
+  "drafts in Auto with the provider's usual tools for %s, including custom instances",
   (driver) =>
     resolve.pipe(
       Effect.map((policy) => {
         assert.equal(policy.runtimeMode, "auto");
-        assert.equal(policy.interactionMode, "plan");
-        assert.equal(policy.toolAccess, "research");
-        assert.deepEqual(policy.sandboxPolicy, {
-          type: "readOnly",
-          access: { type: "fullAccess" },
-          networkAccess: false,
-        });
+        // Draft Threads are created in plan mode, which would block notes.
+        assert.equal(policy.interactionMode, "default");
+        assert.isUndefined(policy.toolAccess);
+        assert.isUndefined(policy.sandboxPolicy);
+        assert.isUndefined(policy.approvalPolicy);
         assert.equal(policy.checkpoints, "disabled");
+        assert.include(policy.instructions ?? "", "not implementation");
+        assert.include(policy.instructions ?? "", "Do not change the repositories' files");
+        assert.include(policy.instructions ?? "", "system temp directory");
         assert.include(policy.instructions ?? "", "/repo/repo:first");
         assert.include(policy.instructions ?? "", "/repo/repo:second");
         assert.include(policy.instructions ?? "", "workbench-ticket-draft");
@@ -265,110 +260,6 @@ it.effect.each(["codex", "claudeAgent"] as const)(
       }),
       Effect.provide(policyLayer("draft", driver)),
     ),
-);
-it.effect("routes Codex planning approvals to the auto reviewer inside the read-only sandbox", () =>
-  resolve.pipe(
-    Effect.flatMap((runtimePolicy) =>
-      CodexAdapterV2.buildCodexTurnStartParams({
-        nativeThreadId: "native-planning",
-        codexInput: [{ type: "text", text: "Research the ticket." }],
-        runtimePolicy,
-        modelSelection,
-      }),
-    ),
-    Effect.map((params) => {
-      assert.equal(params.approvalsReviewer, "auto_review");
-      assert.deepEqual(params.sandboxPolicy, { type: "readOnly", networkAccess: false });
-      // The reviewer never sees sandbox escapes or permission grants.
-      assert.deepEqual(params.approvalPolicy, {
-        granular: {
-          sandbox_approval: false,
-          rules: false,
-          skill_approval: false,
-          request_permissions: false,
-          mcp_elicitations: true,
-        },
-      });
-      assert.equal(params.collaborationMode?.mode, "plan");
-    }),
-    Effect.provide(policyLayer("draft", "codex")),
-  ),
-);
-it.effect.each([
-  ["darwin", false],
-  ["linux", true],
-] as const)("tells Claude planning on %s whether the shell is unavailable", ([platform, told]) =>
-  resolve.pipe(
-    Effect.map((policy) => {
-      const instruction = "Claude ticket planning keeps shell and file-writing tools unavailable.";
-      (told ? assert.include : assert.notInclude)(policy.instructions ?? "", instruction);
-    }),
-    Effect.provide(
-      policyLayer("draft", "claudeAgent").pipe(
-        Layer.provide(Layer.succeed(HostProcess.Platform, platform)),
-      ),
-    ),
-  ),
-);
-it.effect("routes Claude planning approvals to Auto with read-only tools", () =>
-  resolve.pipe(
-    Effect.map((runtimePolicy) => {
-      const decoration = ClaudeResearchPolicy.decorate({
-        runtimePolicy,
-        platform: "darwin",
-        homeDirectory: "/home/planner",
-      });
-      const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
-        runtimePolicy,
-        undefined,
-        decoration.permissionMode,
-      );
-      const mcpOverrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
-        mcpSession: {
-          environmentId: EnvironmentId.make("planning-environment"),
-          threadId,
-          providerSessionId: "planning-session",
-          providerInstanceId: instanceId,
-          endpoint: "http://localhost/mcp",
-          authorizationHeader: "Bearer fixture",
-          browserToolsAvailable: true,
-        },
-        readOnlySandbox: true,
-        ...(queryPolicy.allowedTools === undefined
-          ? {}
-          : { allowedTools: queryPolicy.allowedTools }),
-      });
-      const nativeOptions = ClaudeAdapterV2.makeClaudeQueryOptions({
-        modelSelection,
-        nativeThreadId: "native-planning",
-        resume: false,
-        cwd: "/repo/first",
-        ...queryPolicy,
-        ...mcpOverrides,
-      });
-      const options = { ...nativeOptions, ...decoration.options?.(nativeOptions) };
-      assert.equal(options.permissionMode, "auto");
-      // Approvals the Auto reviewer leaves undecided are denied, never shown to the user.
-      assert.equal(options.permissionPrompts, "none");
-      if (!Array.isArray(options.tools)) return assert.fail("Expected explicit research tools");
-      assert.include(options.tools, "Bash");
-      assert.notIncludeMembers(options.tools, ["Edit", "Write", "NotebookEdit", "Agent"]);
-      if (typeof options.settings !== "object") return assert.fail("Expected settings object");
-      assert.include(options.settings.sandbox, {
-        enabled: true,
-        allowUnsandboxedCommands: false,
-      });
-      assert.include(options.settings.sandbox?.filesystem?.denyWrite ?? [], runtimePolicy.cwd);
-      assert.notInclude(options.allowedTools ?? [], ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD);
-      assert.notInclude(options.allowedTools ?? [], "mcp__t3-code__preview_navigate");
-      assert.include(options.allowedTools ?? [], "Read");
-      assert.notIncludeMembers(options.allowedTools ?? [], [
-        "mcp__t3-code__html_preview",
-        "mcp__t3-code__html_render",
-      ]);
-    }),
-    Effect.provide(policyLayer("draft", "claudeAgent")),
-  ),
 );
 it.effect("leaves ordinary native Threads unchanged", () =>
   resolve.pipe(
@@ -427,15 +318,14 @@ it.effect("composes the roster with working-draft instructions", () =>
     Effect.provide(policyLayer("working", "codex", false, Effect.succeed(roster(1)))),
   ),
 );
-it.effect("keeps planning instructions and offers read-only Threads no send guidance", () =>
+it.effect("keeps planning instructions and the sibling roster's send guidance", () =>
   resolve.pipe(
     Effect.map((policy) => {
-      assert.equal(policy.toolAccess, "research");
       assert.include(policy.instructions ?? "", "ticket is already saved");
       assert.include(policy.instructions ?? "", "workbench-ticket-draft");
       assert.include(policy.instructions ?? "", `thread_id=${siblingId}`);
       assert.include(policy.instructions ?? "", "t3_thread_read");
-      assert.notInclude(policy.instructions ?? "", "t3_thread_send");
+      assert.include(policy.instructions ?? "", "t3_thread_send");
     }),
     Effect.provide(policyLayer("planning", "codex", false, Effect.succeed(roster(1)))),
   ),
@@ -457,7 +347,7 @@ it.effect.each([null, "planning"] as const)(
       ),
     ),
 );
-it.effect("continues saved ticket planning with read-only restrictions", () =>
+it.effect("continues saved ticket planning without checkpoints", () =>
   resolve.pipe(
     Effect.map((policy) => {
       assert.equal(policy.checkpoints, "disabled");
@@ -506,80 +396,5 @@ it.effect.each([
   Effect.result(resolve).pipe(
     Effect.map((result) => assert.isTrue(Result.isFailure(result))),
     Effect.provide(policyLayer("draft", driver, missing)),
-  ),
-);
-it.effect.each(["draft", "planning", "starting", "working", null] as const)(
-  "MCP mutations require completed Start work (%s)",
-  (phase) =>
-    Effect.result(Effect.flatMap(McpWritePolicy, (policy) => policy.assertAllowed(threadId))).pipe(
-      Effect.map((result) => {
-        assert.equal(Result.isSuccess(result), phase === "working" || phase === null);
-        if (Result.isFailure(result)) {
-          assert.equal(result.failure.code, "capability_denied");
-          assert.equal(
-            result.failure.message,
-            "This conversation is preparing a ticket. Start work before changing repositories or the environment.",
-          );
-        }
-      }),
-      Effect.provide(
-        TicketPlanningRuntime.layerMcpWritePolicy.pipe(
-          Layer.provide(
-            Layer.mock(WorkbenchStore)({
-              getTicketDraftForThread: () => Effect.succeed(phase === null ? null : draft(phase)),
-            }),
-          ),
-        ),
-      ),
-    ),
-);
-it.effect.each([
-  "draft",
-  "planning",
-  "creating",
-  "promoting",
-  "starting",
-  "working",
-  "discarding",
-  null,
-] as const)("browser research requires a current planning phase (%s)", (phase) =>
-  Effect.result(
-    Effect.flatMap(McpWritePolicy, (policy) => policy.assertAllowed(threadId, "research")),
-  ).pipe(
-    Effect.map((result) =>
-      assert.equal(Result.isSuccess(result), phase === "draft" || phase === "planning"),
-    ),
-    Effect.provide(
-      TicketPlanningRuntime.layerMcpWritePolicy.pipe(
-        Layer.provide(
-          Layer.mock(WorkbenchStore)({
-            getTicketDraftForThread: () => Effect.succeed(phase === null ? null : draft(phase)),
-          }),
-        ),
-      ),
-    ),
-  ),
-);
-it.effect("refuses MCP mutations when planning ownership cannot be read", () =>
-  Effect.result(Effect.flatMap(McpWritePolicy, (policy) => policy.assertAllowed(threadId))).pipe(
-    Effect.map((result) => {
-      assert.isTrue(Result.isFailure(result));
-      if (Result.isFailure(result)) {
-        assert.equal(result.failure.code, "capability_denied");
-        assert.equal(result.failure.message, "Ticket planning permissions could not be verified.");
-      }
-    }),
-    Effect.provide(
-      TicketPlanningRuntime.layerMcpWritePolicy.pipe(
-        Layer.provide(
-          Layer.mock(WorkbenchStore)({
-            getTicketDraftForThread: () =>
-              Effect.fail(
-                new WorkbenchOperationError({ code: "persistence_failed", message: "Unavailable" }),
-              ),
-          }),
-        ),
-      ),
-    ),
   ),
 );

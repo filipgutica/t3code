@@ -494,7 +494,6 @@ it.effect(
       > = [];
       const mcpTools = McpHttpServer.layerOrchestratorToolkit.pipe(
         Layer.provideMerge(McpServer.McpServer.layer),
-        Layer.provide(TicketPlanningRuntime.layerMcpWritePolicy),
         Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
         Layer.provide(ProviderRegistryMock.layer([snapshot])),
         Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
@@ -686,51 +685,14 @@ it.effect(
           dispatched.storedEvents.some(({ event }) => event.type === "checkpoint-scope.created"),
           threadId === nativeThreadId,
         );
-        if (threadId === planningThreadId) {
-          const planningShell = yield* threads.getThreadShell(threadId);
-          assert.isOk(planningShell?.activeRunId);
-          const sequence = yield* threads.getThreadEventSequence(threadId);
-          const denied = yield* invokeWorktreeDelegation("planning-worktree-denied");
-          assert.isTrue(denied.isError);
-          const content = denied.content[0];
-          assert.equal(content?.type, "text");
-          if (content?.type === "text") {
-            assert.deepEqual(JSON.parse(content.text), {
-              _tag: "OrchestratorMcpFailure",
-              code: "capability_denied",
-              message:
-                "This conversation is preparing a ticket. Start work before changing repositories or the environment.",
-            });
-          }
-          assert.deepEqual(headLookups, []);
-          assert.deepEqual(preparations, []);
-          assert.equal(yield* threads.getThreadEventSequence(threadId), sequence);
-          assert.deepEqual(
-            (yield* threads.getThreadRecords(threadId, ["subagents"])).subagents,
-            [],
-          );
-        }
         yield* worker.drain();
       }
       const planning = policies.get(planningThreadId);
       assert.isDefined(planning);
       assert.equal(planning?.runtimeMode, "auto");
-      assert.equal(planning?.interactionMode, "plan");
-      assert.deepEqual(planning?.sandboxPolicy, {
-        type: "readOnly",
-        access: { type: "fullAccess" },
-        networkAccess: false,
-      });
-      assert.equal(planning?.toolAccess, "research");
-      assert.deepInclude(planning?.approvalPolicy, {
-        granular: {
-          sandbox_approval: false,
-          rules: false,
-          skill_approval: false,
-          request_permissions: false,
-          mcp_elicitations: true,
-        },
-      });
+      assert.equal(planning?.interactionMode, "default");
+      assert.isUndefined(planning?.sandboxPolicy);
+      assert.isUndefined(planning?.toolAccess);
       assert.equal(planning?.checkpoints, "disabled");
       assert.include(planning?.instructions ?? "", "workbench-ticket-draft");
       assert.equal(planning?.cwd, process.cwd());
