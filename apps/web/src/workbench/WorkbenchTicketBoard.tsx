@@ -1053,7 +1053,7 @@ function WorkbenchBoardRepositoryFilter({
               : (repositoriesById.get(repositoryId)?.title ?? "Repository unavailable")}
           </SelectValue>
         </SelectTrigger>
-        <SelectPopup>
+        <SelectPopup data-workbench-header-overlay="">
           <SelectItem value="all-repositories">All repositories</SelectItem>
           {repositoryProjectIds.map((repositoryId) => (
             <SelectItem
@@ -1095,16 +1095,9 @@ function renderWorkbenchBoardEmptyFilter({
   repositoryId,
   attentionMode,
   visibleTickets,
-  setRepositoryId,
-  setAttentionMode,
 }: Pick<
   ReturnType<typeof useWorkbenchBoardData>,
-  | "search"
-  | "repositoryId"
-  | "attentionMode"
-  | "visibleTickets"
-  | "setRepositoryId"
-  | "setAttentionMode"
+  "search" | "repositoryId" | "attentionMode" | "visibleTickets"
 >) {
   return (
     <>
@@ -1113,20 +1106,9 @@ function renderWorkbenchBoardEmptyFilter({
       visibleTickets.length === 0 ? (
         <div
           role="status"
-          className="flex shrink-0 items-center justify-center gap-3 p-4 text-sm text-muted-foreground"
+          className="flex shrink-0 items-center justify-center p-4 text-sm text-muted-foreground"
         >
           No matching tickets.
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              search.setText("");
-              setRepositoryId(null);
-              setAttentionMode("all");
-            }}
-          >
-            Clear filters
-          </Button>
         </div>
       ) : null}
     </>
@@ -1140,6 +1122,8 @@ function renderWorkbenchBoardStatus({
   refreshAttention,
   search,
   repositoryId,
+  setRepositoryId,
+  setAttentionMode,
   visibleTickets,
   tickets,
 }: Pick<
@@ -1150,6 +1134,8 @@ function renderWorkbenchBoardStatus({
   | "incompleteInspection"
   | "refreshAttention"
   | "repositoryId"
+  | "setRepositoryId"
+  | "setAttentionMode"
   | "visibleTickets"
 > &
   Pick<WorkbenchTicketBoardProps, "tickets">) {
@@ -1179,9 +1165,22 @@ function renderWorkbenchBoardStatus({
           </Tooltip>
         </div>
       ) : null}
-      <span role="status" className="ml-auto tabular-nums">
-        {visibleTickets.length} of {tickets.length} tickets
-      </span>
+      <div className="ml-auto flex items-center gap-1">
+        <span role="status" className="tabular-nums">
+          {visibleTickets.length} of {tickets.length} tickets
+        </span>
+        <Button
+          variant="ghost"
+          size="micro"
+          onClick={() => {
+            search.setText("");
+            setRepositoryId(null);
+            setAttentionMode("all");
+          }}
+        >
+          Clear filters
+        </Button>
+      </div>
     </div>
   );
 }
@@ -1291,6 +1290,8 @@ function renderWorkbenchBoardControls({
           refreshAttention,
           search,
           repositoryId,
+          setRepositoryId,
+          setAttentionMode,
           visibleTickets,
           tickets,
         })}
@@ -1300,8 +1301,6 @@ function renderWorkbenchBoardControls({
         repositoryId,
         attentionMode,
         visibleTickets,
-        setRepositoryId,
-        setAttentionMode,
       })}
       <div className="shrink-0 overflow-x-auto border-b border-border/60 px-3 py-2 @min-[48rem]/board:hidden">
         <ToggleGroup

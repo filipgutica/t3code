@@ -399,6 +399,82 @@ describe("Workbench Board view", () => {
     );
     expect(renderer.root.findAllByType("article")).toHaveLength(2);
   });
+  it.each([
+    [
+      "repository",
+      (root: ReactTestRenderer["root"]) => root.findByType(Select).props.onValueChange("secondary"),
+    ],
+    [
+      "search",
+      (root: ReactTestRenderer["root"]) => {
+        root
+          .findByProps({ "aria-label": "Search tickets" })
+          .props.onChange({ target: { value: "billing" } });
+        vi.advanceTimersByTime(200);
+      },
+    ],
+    [
+      "attention",
+      (root: ReactTestRenderer["root"]) =>
+        root
+          .findAllByType(ToggleGroup)
+          .find((node) => node.props["aria-label"] === "Filter by attention")!
+          .props.onValueChange(["attention"]),
+    ],
+  ])("clears the %s filter while Tickets still match", (filter, applyFilter) => {
+    const billing = { ...ticket("Billing"), repositoryProjectIds: [ProjectId.make("secondary")] };
+    vi.spyOn(attentionProvider, "useWorkbenchAttentionData").mockReturnValue({
+      attentionRefresh: 0,
+      refreshAttention: vi.fn(),
+      attentionReferences: [],
+      attentionScope: "clear-filters-board",
+      setAttentionObservations: vi.fn(),
+      attentionReasonsByTicket: new Map([[billing.id, ["Waiting for input"]]]),
+      attentionSignalsByTicket: new Map([
+        [
+          billing.id,
+          [
+            {
+              kind: "waiting",
+              cause: "approval",
+              source: { type: "thread", threadId: ThreadId.make("billing"), threadTitle: "" },
+            },
+          ],
+        ],
+      ]),
+      attentionInspectionsByTicket: new Map(),
+      attentionCoverage: "0 linked PRs",
+    });
+    act(() => {
+      renderer = create(
+        <WorkbenchTicketBoard
+          {...props}
+          projectId={WorkbenchProjectId.make(`clear-${filter}-workspace`)}
+          tickets={[ticket("Welcome"), billing]}
+        />,
+      );
+    });
+    const clearButtons = () =>
+      renderer.root
+        .findAllByType("button")
+        .filter((button) => button.children.includes("Clear filters"));
+    expect(clearButtons()).toHaveLength(0);
+    act(() => applyFilter(renderer.root));
+    expect(renderer.root.findAllByType("h3").map((node) => node.children.join(""))).toEqual([
+      "Billing",
+    ]);
+    expect(clearButtons()).toHaveLength(1);
+    act(() => clearButtons()[0]!.props.onClick());
+    expect(renderer.root.findAllByType("article")).toHaveLength(2);
+    expect(renderer.root.findByProps({ "aria-label": "Search tickets" }).props.value).toBe("");
+    expect(renderer.root.findByType(Select).props.value).toBe("all-repositories");
+    expect(
+      renderer.root
+        .findAllByType(ToggleGroup)
+        .find((node) => node.props["aria-label"] === "Filter by attention")!.props.value,
+    ).toEqual(["all"]);
+    expect(clearButtons()).toHaveLength(0);
+  });
   it("isolates search by both environment and workspace and clears a combined empty filter", () => {
     const workspaceProps = { ...props, projectId: WorkbenchProjectId.make("scope-workspace") };
     act(() => {

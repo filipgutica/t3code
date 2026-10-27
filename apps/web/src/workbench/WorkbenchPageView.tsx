@@ -232,7 +232,7 @@ function WorkbenchBoardHeader(
             >
               <MoreHorizontalIcon />
             </MenuTrigger>
-            <MenuPopup align="end" data-workbench-workspace-actions="">
+            <MenuPopup align="end" data-workbench-header-overlay="">
               <MenuGroup>
                 <MenuItem disabled={mutationDisabled} onClick={() => openTicketDialog()}>
                   <PlusIcon /> New ticket manually
@@ -323,7 +323,7 @@ function WorkbenchBoardToolbar(props: Pick<WorkbenchPageViewProps, "boardData">)
                 Group by: {boardGroupModeForView === "epic" ? "Epic" : "Status"}
               </SelectValue>
             </SelectTrigger>
-            <SelectPopup>
+            <SelectPopup data-workbench-header-overlay="">
               <SelectItem value="none">Status</SelectItem>
               <SelectItem value="epic">Epic</SelectItem>
             </SelectPopup>
