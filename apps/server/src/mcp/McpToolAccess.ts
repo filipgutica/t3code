@@ -116,21 +116,6 @@ export const actsAsCaller = <P, A, E, R>(handle: (params: P) => Effect.Effect<A,
     ),
   );
 
-/** Browser research still needs a live caller and the owner's explicit read-only exception. */
-export const researchesAsCaller = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
-  declare((params: P) =>
-    requireThreadCaller.pipe(
-      Effect.flatMap((scope) =>
-        scope.thread.readOnly === true
-          ? Effect.flatMap(McpWritePolicy, (policy) =>
-              policy.assertAllowed(scope.thread.threadId, "research"),
-            ).pipe(Effect.andThen(loadCaller()), Effect.tap(assertLiveCaller))
-          : writingCaller,
-      ),
-      Effect.flatMap(() => handle(params)),
-    ),
-  );
-
 /** Changes something that belongs to no thread, such as a pending upload or a scheduled task. */
 export const writes = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare((params: P) => orchestratingCaller.pipe(Effect.flatMap(() => handle(params))));

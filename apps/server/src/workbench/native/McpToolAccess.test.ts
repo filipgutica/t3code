@@ -19,15 +19,9 @@ import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { McpWritePolicy } from "../../mcp/McpWritePolicy.ts";
 import { liveThreadShell } from "../../mcp/McpToolAccess.testkit.ts";
 
-const supervisedThreadId = ThreadId.make("thread:supervised");
 const fullAccessThreadId = ThreadId.make("thread:full-access");
-const endedThreadId = ThreadId.make("thread:ended");
 
-const shells = new Map([
-  [supervisedThreadId, liveThreadShell(supervisedThreadId, { runtimeMode: "approval-required" })],
-  [fullAccessThreadId, liveThreadShell(fullAccessThreadId)],
-  [endedThreadId, liveThreadShell(endedThreadId, { activeRunId: null })],
-]);
+const shells = new Map([[fullAccessThreadId, liveThreadShell(fullAccessThreadId)]]);
 
 const threadCaller = (threadId: ThreadId): McpInvocationContext.McpInvocationScope => ({
   environmentId: EnvironmentId.make("environment"),
@@ -78,7 +72,6 @@ const probe = {
 const ProbeToolkit = Toolkit.make(
   Tool.make("reads", probe),
   Tool.make("acts_as_caller", probe),
-  Tool.make("researches_as_caller", probe),
   Tool.make("writes", probe),
   Tool.make("starts_threads", {
     ...probe,
@@ -92,7 +85,6 @@ const ran = Effect.succeed({ ran: "ran" });
 const layerProbeHandlers = McpToolAccess.toLayer(ProbeToolkit, {
   reads: McpToolAccess.reads(() => ran),
   acts_as_caller: McpToolAccess.actsAsCaller(() => ran),
-  researches_as_caller: McpToolAccess.researchesAsCaller(() => ran),
   writes: McpToolAccess.writes(() => ran),
   starts_threads: McpToolAccess.startsThreads(
     (input) => input,
@@ -130,11 +122,8 @@ const call = (
     Effect.provideService(McpSchema.McpServerClient, mcpClient),
   );
 
-const supervised = threadCaller(supervisedThreadId);
 const fullAccess = threadCaller(fullAccessThreadId);
-const ended = threadCaller(endedThreadId);
 const fullAccessClient = clientCaller("full-access");
-const readOnlyClient = clientCaller("read-only");
 const readOnlyProvider = {
   ...fullAccess,
   thread: {
@@ -182,47 +171,11 @@ it.effect("applies an owner write policy after credential restrictions and befor
   }).pipe(Effect.provide(probeServer)),
 );
 
-it.effect("requires an explicit research exception without granting mutations", () =>
-  Effect.gen(function* () {
-    assert.equal(yield* call("researches_as_caller", readOnlyProvider), "capability_denied");
-    const researchPolicy = {
-      assertAllowed: (_: ThreadId, operation?: "research") =>
-        operation === "research"
-          ? Effect.void
-          : Effect.fail(
-              new OrchestratorMcpFailure({ code: "capability_denied", message: "Planning" }),
-            ),
-    };
-    assert.equal(
-      yield* call("researches_as_caller", readOnlyProvider).pipe(
-        Effect.provideService(McpWritePolicy, researchPolicy),
-      ),
-      "ran",
-    );
-    assert.equal(
-      yield* call("acts_as_caller", readOnlyProvider).pipe(
-        Effect.provideService(McpWritePolicy, researchPolicy),
-      ),
-      "capability_denied",
-    );
-    assert.equal(
-      yield* call("researches_as_caller", {
-        ...ended,
-        thread: { ...readOnlyProvider.thread, threadId: endedThreadId },
-      }).pipe(Effect.provideService(McpWritePolicy, researchPolicy)),
-      "parent_not_active",
-    );
-  }).pipe(Effect.provide(probeServer)),
-);
-
 it.effect.each([
   ["reads", readOnlyProvider, "ran"],
   ["writes", readOnlyProvider, "capability_denied"],
   ["acts_as_caller", readOnlyProvider, "capability_denied"],
   ["starts_threads", readOnlyProvider, "capability_denied"],
-  ["researches_as_caller", supervised, "ran"],
-  ["researches_as_caller", ended, "parent_not_active"],
-  ["researches_as_caller", readOnlyClient, "thread_credential_required"],
 ] as const)("%s from %o: %s", ([tool, scope, expected]) =>
   call(tool, scope).pipe(
     Effect.map((outcome) => expect(outcome).toBe(expected)),
