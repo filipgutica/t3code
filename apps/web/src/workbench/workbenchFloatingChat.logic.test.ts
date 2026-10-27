@@ -364,26 +364,15 @@ describe("getWorkbenchFloatingChatPickerSections", () => {
     kind: "story" as const,
   };
   const shape = (sections: ReturnType<typeof getWorkbenchFloatingChatPickerSections>) =>
-    sections.map((section) =>
-      section.type === "ticket"
-        ? {
-            type: section.type,
-            id: section.id,
-            rows: [section.row.thread.threadId],
-            prefix: section.prefix,
-          }
-        : {
-            type: section.type,
-            id: section.id,
-            rows: section.rows.map((row) => row.thread.threadId),
-          },
-    );
+    sections.map((section) => ({
+      type: section.type,
+      id: section.id,
+      rows: section.rows.map((row) => row.thread.threadId),
+    }));
   const rowTitles = (sections: ReturnType<typeof getWorkbenchFloatingChatPickerSections>) =>
-    sections.flatMap((section) =>
-      section.type === "ticket" ? [section.row.title] : section.rows.map((row) => row.title),
-    );
+    sections.flatMap((section) => section.rows.map((row) => row.title));
 
-  it("groups drafts and shared tickets, and folds a lone ticket Thread into one row", () => {
+  it("groups drafts first, then each ticket's Threads, including a ticket with one Thread", () => {
     const sections = getWorkbenchFloatingChatPickerSections([
       thread("b1", null, { ticket: ticketB }),
       thread("a1", null, { ticket: ticketA }),
@@ -394,9 +383,8 @@ describe("getWorkbenchFloatingChatPickerSections", () => {
     expect(shape(sections)).toEqual([
       { type: "group", id: "drafts", rows: ["draft"] },
       { type: "group", id: "b", rows: ["b1", "b2"] },
-      { type: "ticket", id: "a", rows: ["a1"], prefix: "WB-1" },
-      // The title already names the ticket, so the row needs no prefix.
-      { type: "ticket", id: "c", rows: ["c1"], prefix: null },
+      { type: "group", id: "a", rows: ["a1"] },
+      { type: "group", id: "c", rows: ["c1"] },
     ]);
   });
 
@@ -420,14 +408,6 @@ describe("getWorkbenchFloatingChatPickerSections", () => {
       "Review copy",
       "Secondary review",
     ]);
-  });
-
-  it("names a lone Thread's ticket by title when the ticket has no key", () => {
-    const sections = getWorkbenchFloatingChatPickerSections([
-      thread("draft"),
-      thread("r", null, { title: "Review", ticket: ticketB }),
-    ]);
-    expect(shape(sections)[1]).toEqual({ type: "ticket", id: "b", rows: ["r"], prefix: "Second" });
   });
 });
 

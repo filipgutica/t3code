@@ -179,10 +179,7 @@ export interface WorkbenchFloatingChatPickerRow {
   readonly title: string;
 }
 
-/**
- * A plain list of Threads, a collapsible group of drafts or of one ticket's Threads, or a
- * ticket with a single Thread, which is one row that opens that Thread.
- */
+/** A plain list of Threads, or a collapsible group of drafts or of one ticket's Threads. */
 export type WorkbenchFloatingChatPickerSection =
   | {
       readonly type: "rows";
@@ -194,14 +191,6 @@ export type WorkbenchFloatingChatPickerSection =
       readonly id: string;
       readonly ticket: WorkbenchFloatingChatTicket | null;
       readonly rows: ReadonlyArray<WorkbenchFloatingChatPickerRow>;
-    }
-  | {
-      readonly type: "ticket";
-      readonly id: string;
-      readonly ticket: WorkbenchFloatingChatTicket;
-      readonly row: WorkbenchFloatingChatPickerRow;
-      /** The ticket's key, or its title when the Thread's title does not already show it. */
-      readonly prefix: string | null;
     };
 
 // Threads often start with their ticket's title; under its heading only the rest tells them apart.
@@ -214,47 +203,36 @@ const titleUnderHeading = (title: string, ticketTitle: string) => {
 
 /**
  * The picker's layout. A list from one ticket, or with no tickets, is plain rows. Otherwise
- * drafts and tickets with several Threads are groups, and a ticket with one Thread is one row.
+ * drafts and each ticket are groups, so a ticket always opens to its Threads.
  */
 export const getWorkbenchFloatingChatPickerSections = (
   threads: ReadonlyArray<WorkbenchFloatingChatThread>,
 ): ReadonlyArray<WorkbenchFloatingChatPickerSection> => {
   const groups = groupWorkbenchFloatingChatThreads(threads);
+  const rows = (
+    ticket: WorkbenchFloatingChatTicket | null,
+    members: ReadonlyArray<WorkbenchFloatingChatThread>,
+  ) =>
+    members.map((thread) => ({
+      thread,
+      title: ticket ? titleUnderHeading(thread.title, ticket.title) : thread.title,
+    }));
   const [onlyGroup] = groups;
   if (groups.length === 1 && onlyGroup !== undefined) {
-    const ticket = onlyGroup.ticket;
     return [
       {
         type: "rows",
-        id: ticket?.id ?? "drafts",
-        rows: onlyGroup.threads.map((thread) => ({
-          thread,
-          title: ticket ? titleUnderHeading(thread.title, ticket.title) : thread.title,
-        })),
+        id: onlyGroup.ticket?.id ?? "drafts",
+        rows: rows(onlyGroup.ticket, onlyGroup.threads),
       },
     ];
   }
-  return groups.map(({ ticket, threads: members }): WorkbenchFloatingChatPickerSection => {
-    const [only] = members;
-    if (ticket !== null && members.length === 1 && only !== undefined) {
-      return {
-        type: "ticket",
-        id: ticket.id,
-        ticket,
-        row: { thread: only, title: only.title },
-        prefix: ticket.key ?? (only.title === ticket.title ? null : ticket.title),
-      };
-    }
-    return {
-      type: "group",
-      id: ticket?.id ?? "drafts",
-      ticket,
-      rows: members.map((thread) => ({
-        thread,
-        title: ticket ? titleUnderHeading(thread.title, ticket.title) : thread.title,
-      })),
-    };
-  });
+  return groups.map(({ ticket, threads: members }) => ({
+    type: "group",
+    id: ticket?.id ?? "drafts",
+    ticket,
+    rows: rows(ticket, members),
+  }));
 };
 
 /**

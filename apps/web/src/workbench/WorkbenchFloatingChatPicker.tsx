@@ -60,22 +60,18 @@ function ThreadStatusIcon({ thread }: { readonly thread: WorkbenchFloatingChatTh
 
 function PickerThreadItem({
   thread,
-  ticketPrefix = null,
   title,
-  icon = <ThreadStatusIcon thread={thread} />,
   selected,
   onSelect,
 }: {
   readonly thread: WorkbenchFloatingChatThread;
-  readonly ticketPrefix?: string | null;
   readonly title: string;
-  readonly icon?: ReactNode;
   readonly selected: boolean;
   readonly onSelect: (threadId: ThreadId) => void;
 }) {
   const status = thread.status;
   // Flex layout drops the spaces between these parts from the computed name.
-  const name = [ticketPrefix, title, status?.presentation.label].filter(Boolean).join(" ");
+  const name = [title, status?.presentation.label].filter(Boolean).join(" ");
   return (
     <MenuItem
       data-thread-id={thread.threadId}
@@ -85,14 +81,9 @@ function PickerThreadItem({
       onClick={() => onSelect(thread.threadId)}
     >
       <span className="flex min-w-0 flex-1 items-start gap-2">
-        {icon}
+        <ThreadStatusIcon thread={thread} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex min-w-0 items-baseline gap-1.5">
-            {ticketPrefix ? (
-              <span className="max-w-28 shrink-0 truncate text-xs text-muted-foreground">
-                {ticketPrefix}
-              </span>
-            ) : null}
             <span className={cn("min-w-0 flex-1 truncate", selected && "font-medium")}>
               {title}
             </span>
@@ -250,24 +241,6 @@ function PickerThreadSections({
   return getWorkbenchFloatingChatPickerSections(threads).map((section) => {
     if (section.type === "rows")
       return <MenuGroup key={section.id}>{section.rows.map(item)}</MenuGroup>;
-    if (section.type === "ticket") {
-      const { ticket, row, prefix } = section;
-      return (
-        <PickerThreadItem
-          key={section.id}
-          thread={row.thread}
-          ticketPrefix={prefix}
-          title={row.title}
-          icon={
-            <span className="mt-0.5 flex shrink-0">
-              <WorkbenchTicketKindIcon kind={ticket.kind} />
-            </span>
-          }
-          selected={row.thread.threadId === selectedThreadId}
-          onSelect={onSelect}
-        />
-      );
-    }
     const open =
       openGroups.get(section.id) ??
       (searching || isWorkbenchFloatingChatGroupOpenByDefault(section, selectedThreadId));
