@@ -391,7 +391,7 @@ describe("durable Workbench execution consumption", () => {
       }),
   );
 
-  effectIt.effect("schedules a recap only when a root run finishes", () =>
+  effectIt.effect("schedules a recap only when a recent root run finishes", () =>
     Effect.gen(function* () {
       yield* seed;
       const sink = yield* EventSinkV2;
@@ -403,25 +403,39 @@ describe("durable Workbench execution consumption", () => {
           Ref.update(scheduled, (all) => [...all, { threadId, runId }]),
         awaitIdle: Effect.void,
       });
+      // Runs here finish two days after the seeded one, so the seeded run is too old to recover.
+      const finishedAt = DateTime.add(DateTime.makeUnsafe(now), { hours: 48 });
+      yield* TestClock.setTime(DateTime.toEpochMillis(finishedAt) + 60 * 60 * 1000);
+      const recent = (event: ReturnType<typeof runEvent>): ReturnType<typeof runEvent> => ({
+        ...event,
+        occurredAt: finishedAt,
+        payload: {
+          ...event.payload,
+          completedAt: event.payload.completedAt === null ? null : finishedAt,
+        },
+      });
       const run = (name: string) => RunId.make(`recap-${name}`);
-      const finished = runEvent({ id: run("completed"), status: "completed" });
-      const failed = runEvent({ id: run("failed"), status: "completed", ordinal: 2 });
-      const neverStarted = runEvent({ id: run("never-started"), status: "completed", ordinal: 3 });
-      const childNode = runEvent({ id: run("child-node"), status: "completed", ordinal: 4 });
-      // Past the recovery window, so only live run events schedule recaps.
-      yield* TestClock.setTime(
-        DateTime.toEpochMillis(DateTime.makeUnsafe(now)) + 25 * 60 * 60 * 1000,
+      const finished = recent(runEvent({ id: run("completed"), status: "completed" }));
+      const failed = recent(runEvent({ id: run("failed"), status: "completed", ordinal: 2 }));
+      const neverStarted = recent(
+        runEvent({ id: run("never-started"), status: "completed", ordinal: 3 }),
       );
+      const childNode = recent(
+        runEvent({ id: run("child-node"), status: "completed", ordinal: 4 }),
+      );
+      // Startup replay can deliver a terminal event the cursor passed long ago.
+      const stale = runEvent({ id: run("stale"), status: "completed", ordinal: 5 });
       yield* Effect.gen(function* () {
         const reactor = yield* TicketExecutionReactor;
         yield* reactor.start();
         const events = yield* sink.write({
           events: [
-            runEvent({ id: run("completed") }),
+            recent(runEvent({ id: run("completed") })),
             finished,
             { ...failed, payload: { ...failed.payload, status: "failed", completedAt: null } },
             { ...neverStarted, payload: { ...neverStarted.payload, startedAt: null } },
             { ...childNode, nodeId: NodeId.make("child-node") },
+            stale,
           ],
         });
         yield* reactor.drainThrough(events.at(-1)!.sequence);

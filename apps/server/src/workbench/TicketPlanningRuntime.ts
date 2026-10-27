@@ -166,8 +166,8 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
           const currentDraft = yield* encodeDraft(draft.fields);
           return {
             ...policy,
-            // Approvals go to the provider's auto reviewer, not the user. Draft Threads are
-            // created in plan mode, which would block the notes the prompt allows.
+            // Approvals go to the provider's auto reviewer, not the user. Drafts created before
+            // their Threads started in default mode are still stored in plan mode.
             runtimeMode: "auto" as const,
             interactionMode: "default" as const,
             checkpoints: "disabled" as const,

@@ -261,6 +261,8 @@ it.effect("uses native project enablement for planning creation, retries and tur
     yield* drafts.begin(beginInput);
     const created = yield* threads.getThreadShell(draft.threadId);
     assert.equal(created?.projectId, projectId);
+    // MCP authorization reads the stored mode; plan mode would refuse sends to sibling Threads.
+    assert.equal(created?.interactionMode, "default");
     yield* setEnabled(false);
     yield* settings.updateSettings({
       providerInstances: { [instanceId]: { driver: instance.driverKind, enabled: false } },

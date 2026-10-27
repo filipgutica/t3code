@@ -33,7 +33,7 @@ const RECAPPED_RUN_STATUSES: ReadonlySet<string> = new Set([
   "cancelled",
 ]);
 
-const RECAP_RECOVERY_WINDOW_MS = Duration.toMillis(Duration.hours(24));
+const RECAP_WINDOW_MS = Duration.toMillis(Duration.hours(24));
 
 type ExecutionFailure = {
   readonly runId: RunId;
@@ -58,6 +58,13 @@ const make = Effect.gen(function* () {
   const sink = yield* EventSinkV2;
   const recaps = yield* ThreadRecapService;
 
+  // Startup replay and recovery can offer old runs; only the last day's runs get recaps.
+  const isRecapRecent = (completedAt: DateTime.Utc) =>
+    Effect.map(
+      Clock.currentTimeMillis,
+      (now) => DateTime.toEpochMillis(completedAt) >= now - RECAP_WINDOW_MS,
+    );
+
   // Recaps stay outside the execution retry path; enqueue logs its own failures.
   const scheduleRecap = (stored: OrchestrationV2StoredEvent) => {
     const event = stored.event;
@@ -68,18 +75,22 @@ const make = Effect.gen(function* () {
       (event.nodeId !== undefined && event.nodeId !== event.payload.rootNodeId)
     )
       return Effect.void;
-    return recaps.enqueue({
-      threadId: event.threadId,
-      runId: event.payload.id,
-      completedAt: DateTime.formatIso(event.payload.completedAt ?? event.occurredAt),
-    });
+    const completedAt = event.payload.completedAt ?? event.occurredAt;
+    return Effect.flatMap(isRecapRecent(completedAt), (recent) =>
+      recent
+        ? recaps.enqueue({
+            threadId: event.threadId,
+            runId: event.payload.id,
+            completedAt: DateTime.formatIso(completedAt),
+          })
+        : Effect.void,
+    );
   };
 
   // The recap queue is in memory and the execution cursor can pass a queued run, so a restart
   // re-offers each ticket Thread's latest run from the last day; enqueue skips recapped ones.
   const recoverRecaps = Effect.gen(function* () {
     const threadIds = yield* store.listTicketThreadIds;
-    const oldest = (yield* Clock.currentTimeMillis) - RECAP_RECOVERY_WINDOW_MS;
     yield* Effect.forEach(
       threadIds,
       (threadId) =>
@@ -88,7 +99,7 @@ const make = Effect.gen(function* () {
           if (
             thread?.latestRunId == null ||
             thread.latestRunCompletedAt == null ||
-            DateTime.toEpochMillis(thread.latestRunCompletedAt) < oldest ||
+            !(yield* isRecapRecent(thread.latestRunCompletedAt)) ||
             thread.activeRunId !== null ||
             thread.archivedAt !== null ||
             thread.settledOverride === "settled"
