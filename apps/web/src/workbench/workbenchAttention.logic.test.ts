@@ -43,6 +43,13 @@ const reviewThread = (id: string, isResolved = false): PullRequestReviewThread =
   isOutdated: false,
   comments: [],
 });
+const comment = (login: string, body = "") => ({
+  id: `${login}-${body}`,
+  author: { login, name: null, avatarUrl: null },
+  body,
+  createdAt: "2026-10-20T00:00:00.000Z",
+  url: null,
+});
 const evaluate = (
   overrides: Partial<Parameters<typeof getWorkbenchPullRequestAttention>[0]> = {},
 ) =>
@@ -359,14 +366,46 @@ describe("Workbench attention from active native Threads and linked PRs", () => 
       }).signalKinds,
     ).toEqual([]);
   });
-  it("previews a discussion's location, readable opening comment and last reply", () => {
-    const comment = (login: string, body: string) => ({
-      id: login,
-      author: { login, name: null, avatarUrl: null },
-      body,
-      createdAt: "2026-10-20T00:00:00.000Z",
-      url: null,
+  it("hands a discussion back to others while your reply is the latest comment", () => {
+    // konnect-ui-apps#14723: someone else's PR, outdated bot findings, each answered by the viewer.
+    const summary = {
+      ...cleanSummary,
+      author: { login: "adorack", name: null, avatarUrl: null },
+    };
+    const answered = {
+      ...reviewThread("answered"),
+      isOutdated: true,
+      comments: [comment("kong-ksai", "Finding"), comment("FilipGutica", "Not changing this.")],
+    };
+    const withThreads = (...reviewThreads: PullRequestReviewThread[]) =>
+      evaluate({ summary, viewer: "filipgutica", activity: { ...activity, reviewThreads } });
+    expect(withThreads(answered)).toMatchObject({
+      signalKinds: [],
+      unresolvedReviewThreads: [],
+      resolvedReviewThreadIds: ["answered"],
     });
+    const followUp = { ...answered, comments: [...answered.comments, comment("kong-ksai")] };
+    expect(withThreads(followUp).unresolvedReviewThreads).toEqual([followUp]);
+    // An omitted later comment or an unknown viewer can still need you.
+    const partial = { ...answered, commentCount: 3 };
+    expect(withThreads(partial).unresolvedReviewThreads).toEqual([partial]);
+    expect(
+      evaluate({ summary, activity: { ...activity, reviewThreads: [answered] } })
+        .unresolvedReviewThreads,
+    ).toEqual([answered]);
+    // A partial page that returns the answered discussion still clears the earlier observation.
+    expect(
+      mergeWorkbenchPullRequestAttention({
+        previous: withThreads(followUp),
+        next: evaluate({
+          summary,
+          viewer: "filipgutica",
+          activity: { commentsTruncated: true, reviewThreads: [answered] },
+        }),
+      }).signalKinds,
+    ).toEqual([]);
+  });
+  it("previews a discussion's location, readable opening comment and last reply", () => {
     const thread = {
       ...reviewThread("bot"),
       comments: [

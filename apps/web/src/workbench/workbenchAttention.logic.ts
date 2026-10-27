@@ -179,6 +179,7 @@ export interface WorkbenchPullRequestAttention {
   readonly reasons: ReadonlyArray<string>;
   readonly signalKinds: ReadonlyArray<WorkbenchPullRequestAttentionKind>;
   readonly unresolvedReviewThreads: ReadonlyArray<PullRequestReviewThread>;
+  /** Discussions that no longer need you: resolved, or your reply is the latest comment. */
   readonly resolvedReviewThreadIds: ReadonlyArray<string>;
   readonly activityComplete: boolean;
   readonly checksKnown: boolean;
@@ -228,6 +229,8 @@ type AttentionInput = {
     PullRequestActivity,
     "reviewThreads" | "commentsTruncated" | "reviewThreadsTruncated"
   > | null;
+  /** The signed-in host login; unknown keeps every unresolved discussion. */
+  readonly viewer?: string | undefined;
   readonly loading: boolean;
   readonly error: boolean;
 };
@@ -321,10 +324,19 @@ const pullRequestInspection = ({
   };
 };
 
+/** The last commenter is only known when the host returned every comment in the discussion. */
+const lastReviewCommentAuthor = (thread: PullRequestReviewThread) => {
+  const commentCount = thread.commentCount ?? thread.comments.length;
+  const complete =
+    thread.nextCommentsCursor === undefined && commentCount === thread.comments.length;
+  return complete ? (thread.comments.at(-1)?.author?.login ?? null) : null;
+};
+
 export const getWorkbenchPullRequestAttention = ({
   reference,
   summary,
   activity,
+  viewer,
   loading,
   error,
 }: AttentionInput): WorkbenchPullRequestAttention => {
@@ -344,8 +356,13 @@ export const getWorkbenchPullRequestAttention = ({
       terminal: true,
     };
   const signalKinds = pullRequestSummarySignals({ reference, summary });
-  const unresolvedReviewThreads =
-    activity?.reviewThreads.filter((thread) => !thread.isResolved) ?? [];
+  // Your reply hands a discussion back to the others until someone comments after it.
+  const login = viewer?.toLowerCase();
+  const needsViewer = (thread: PullRequestReviewThread) =>
+    !thread.isResolved &&
+    (login === undefined || lastReviewCommentAuthor(thread)?.toLowerCase() !== login);
+  const reviewThreads = activity?.reviewThreads ?? [];
+  const unresolvedReviewThreads = reviewThreads.filter(needsViewer);
   if (unresolvedReviewThreads.length > 0) signalKinds.push("unresolved-feedback");
   const reasons: string[] = signalKinds.map((kind) => pullRequestReasonLabels[kind]);
   const { statusReason, ...inspection } = pullRequestInspection({
@@ -360,9 +377,9 @@ export const getWorkbenchPullRequestAttention = ({
     reasons,
     signalKinds,
     unresolvedReviewThreads,
-    resolvedReviewThreadIds:
-      activity?.reviewThreads.filter((thread) => thread.isResolved).map((thread) => thread.id) ??
-      [],
+    resolvedReviewThreadIds: reviewThreads
+      .filter((thread) => !needsViewer(thread))
+      .map((thread) => thread.id),
     displayInspectionStatus: inspection.inspectionStatus,
     ...inspection,
   };
@@ -425,21 +442,15 @@ const reviewCommentExcerpt = (body: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-/** The last reply is only known when the host returned every comment in the discussion. */
 export const getWorkbenchReviewThreadPreview = (thread: PullRequestReviewThread) => {
   const first = thread.comments[0];
   const commentCount = thread.commentCount ?? thread.comments.length;
-  const complete =
-    thread.nextCommentsCursor === undefined && commentCount === thread.comments.length;
   return {
     location: thread.line === null ? thread.path : `${thread.path}:${thread.line}`,
     author: first?.author?.login ?? null,
     excerpt: first ? reviewCommentExcerpt(first.body) : "",
     replyCount: Math.max(commentCount - 1, 0),
-    lastReplyAuthor:
-      complete && thread.comments.length > 1
-        ? (thread.comments.at(-1)?.author?.login ?? null)
-        : null,
+    lastReplyAuthor: thread.comments.length > 1 ? lastReviewCommentAuthor(thread) : null,
   };
 };
 

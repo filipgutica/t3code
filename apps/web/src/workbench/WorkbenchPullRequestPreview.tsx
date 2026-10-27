@@ -18,7 +18,11 @@ import {
   useWorkbenchAttentionData,
 } from "./WorkbenchAttentionProvider";
 import { resolveThreadRouteRef } from "../threadRoutes";
-import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanelStore";
+import {
+  type PullRequestDetailTab,
+  selectActiveRightPanelSurface,
+  useRightPanelStore,
+} from "../rightPanelStore";
 
 export interface WorkbenchLinkedPullRequestThread {
   readonly threadId: ThreadId;
@@ -29,6 +33,7 @@ export interface WorkbenchLinkedPullRequestThread {
 export interface WorkbenchPullRequestSelection {
   readonly environmentId: EnvironmentId;
   readonly reference: PullRequestRef;
+  readonly initialTab?: PullRequestDetailTab;
   readonly linkedThread?: WorkbenchLinkedPullRequestThread;
 }
 

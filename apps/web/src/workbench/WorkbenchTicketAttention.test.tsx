@@ -117,6 +117,7 @@ it.each(["Checks failed", "Changes requested", "1 unresolved thread"])(
         number: row.pullRequest.number,
         host: "github.com",
       },
+      ...(label === "1 unresolved thread" ? { initialTab: "code" } : {}),
       linkedThread: { threadId, title: "Review settings", onOpen: expect.any(Function) },
     });
     expect(trigger.getAttribute("aria-expanded")).toBe("false");

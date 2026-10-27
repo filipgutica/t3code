@@ -38,16 +38,22 @@ vi.mock("../state/pullRequests", () => ({
   useSharedPullRequestSummary: (_environment: unknown, input: { number: number }) =>
     state.completed.has(input.number) ? summaryFor(input.number) : null,
 }));
+vi.mock("./state", () => ({
+  workbenchEnvironment: { pullRequestViewer: () => ({ kind: "viewer", number: 0 }) },
+}));
 vi.mock("../state/query", () => ({
   useEnvironmentQuery: ({ kind, number }: { kind: string; number: number }) => {
     const key = `${kind}:${number}`;
     useEffect(() => {
+      // The per-host viewer read is not a native PR read.
+      if (kind === "viewer") return;
       state.active.add(key);
       state.maxActive = Math.max(state.maxActive, state.active.size);
       return () => {
         state.active.delete(key);
       };
     }, [key]);
+    if (kind === "viewer") return { data: { viewer: "filipgutica" } };
     const complete = state.completed.has(number);
     return {
       resultIdentity: state.resultIdentity,

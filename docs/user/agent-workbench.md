@@ -219,7 +219,9 @@ list does not clear them.
 Opening a Thread acknowledges its notification. A pending question or approval
 stays until you respond, and an interrupted run is not a reason. PR actions
 remain until the checks or review feedback are resolved, and **Approved** stays
-until the PR is merged or closed.
+while those conditions hold and the PR is open. A review thread stops counting once you reply
+to it, and counts again when someone else comments. Resolving
+it on the host clears it for good.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/notifications-light.png">

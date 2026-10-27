@@ -8,6 +8,7 @@ import {
   useSharedPullRequestSummary,
 } from "../state/pullRequests";
 import { useEnvironmentQuery } from "../state/query";
+import { workbenchEnvironment } from "./state";
 import {
   getWorkbenchPullRequestAttention,
   workbenchAttentionIdentity,
@@ -95,6 +96,12 @@ function WorkbenchAttentionQuery({
   const summaryQuery = useEnvironmentQuery(linkedPullRequestDetailAtom(target));
   const summary = useSharedPullRequestSummary(environmentId, target.input);
   const activityQuery = useEnvironmentQuery(pullRequestEnvironment.activity(target));
+  const { host } = target.input;
+  const viewer = useEnvironmentQuery(
+    host === undefined
+      ? null
+      : workbenchEnvironment.pullRequestViewer({ environmentId, input: { host } }),
+  ).data?.viewer;
   const initialResult = useRef({
     summary: summaryQuery.resultIdentity,
     activity: activityQuery.resultIdentity,
@@ -119,6 +126,7 @@ function WorkbenchAttentionQuery({
         reference,
         summary,
         activity: activityQuery.data,
+        viewer,
         loading:
           waitingForRefresh ||
           summaryQuery.isPending ||
@@ -133,6 +141,7 @@ function WorkbenchAttentionQuery({
     reference,
     refresh,
     summary,
+    viewer,
     summaryQuery.resultIdentity,
     activityQuery.resultIdentity,
     activityQuery.data,

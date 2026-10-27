@@ -119,6 +119,7 @@ function ReviewThreadPreviews({ threads }: { threads: readonly PullRequestReview
         );
       })}
       {hidden > 0 ? <li>+{hidden} more</li> : null}
+      <li>Reply or resolve on GitHub to clear.</li>
     </ul>
   );
 }
@@ -162,6 +163,8 @@ function AttentionItems({
         number: row.pullRequest.number,
         ...(host === undefined ? {} : { host }),
       },
+      // Resolving a discussion is available beside it in the code view.
+      ...(signal.kind === "unresolved-feedback" ? { initialTab: "code" as const } : {}),
       linkedThread: {
         threadId: row.threadId,
         title: row.threadTitle,

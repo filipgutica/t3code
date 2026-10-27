@@ -67,6 +67,12 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
   }),
   ticketPreparations,
+  // One read per host tells attention which review discussions you answered last.
+  pullRequestViewer: createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
+    label: "environment-data:workbench:pull-request-viewer",
+    tag: WS_METHODS.pullRequestsRoutingIdentity,
+    staleTimeMs: 10 * 60_000,
+  }),
   createProject: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:create-project",
     tag: WS_METHODS.workbenchCreateProject,
