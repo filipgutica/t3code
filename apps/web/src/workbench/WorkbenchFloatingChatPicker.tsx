@@ -339,7 +339,11 @@ export function WorkbenchFloatingChatPicker({
     if (!next) setQuery("");
   };
   const openOnWaiting = () => {
-    focusThreadIdRef.current = waiting[0]?.threadId ?? null;
+    const target = waiting[0];
+    focusThreadIdRef.current = target?.threadId ?? null;
+    // A group the user collapsed must open so its waiting Thread mounts and can take focus.
+    if (target)
+      setOpenGroups((current) => new Map(current).set(target.ticket?.id ?? "drafts", true));
     changeOpen(true);
   };
   const focusWaiting = (isOpen: boolean) => {

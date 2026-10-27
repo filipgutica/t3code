@@ -1,5 +1,5 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, WorkbenchTicketId } from "@t3tools/contracts";
 import { useState, type ReactNode } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
@@ -151,6 +151,38 @@ it("shows each Thread's recap and opens on the first other Thread waiting on the
 
   await expect.element(screen.getByRole("menuitem", { name: /Thread c/ })).toHaveFocus();
   await expect.element(screen.getByText("Added the board chat picker.")).toBeVisible();
+});
+
+it("opens a collapsed group to focus its waiting Thread from the pill", async () => {
+  setup();
+  const ticket = (id: string, key: string) => ({
+    id: WorkbenchTicketId.make(id),
+    key,
+    title: `Ticket ${key}`,
+    kind: "story" as const,
+  });
+  const onTicket = (base: WorkbenchFloatingChatThread, key: string) => ({
+    ...base,
+    ticket: ticket(key.toLowerCase(), key),
+  });
+  await using screen = await render(
+    <Harness
+      threads={[
+        onTicket(thread("a"), "PAY-1"),
+        onTicket(thread("c", "input"), "PAY-2"),
+        onTicket(thread("e"), "PAY-2"),
+      ]}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: /^Ticket Threads/ }));
+  const group = screen.getByRole("menuitem", { name: "PAY-2 Ticket PAY-2 2 Threads" });
+  await userEvent.click(group);
+  await expect.element(group).toHaveAttribute("aria-expanded", "false");
+  await userEvent.keyboard("{Escape}");
+
+  await userEvent.click(screen.getByRole("button", { name: "1 other Thread needs you" }));
+
+  await expect.element(screen.getByRole("menuitem", { name: /Thread c/ })).toHaveFocus();
 });
 
 it("filters a long Thread list by title or recap", async () => {
