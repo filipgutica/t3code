@@ -101,6 +101,38 @@ const atReadingTop = async (page: Page, id: string) =>
     );
   });
 });
+[390, 1280].forEach((width) => {
+  test(`header, section nav, and content share one frame at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await load(page);
+    const edges = await page.evaluate(() => {
+      const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect();
+      const frame = box(".hero-media");
+      return {
+        headerRule: box(".fg-site-header").width - innerWidth,
+        navRule: box(".section-navigation").width - innerWidth,
+        frameLeft: frame.left,
+        frameRight: frame.right,
+        brand: box(".fg-site-projects__trigger span").left,
+        nav: box("nav.section-nav a").left,
+        heading: box("#walkthrough-heading").left,
+        themeSwitch: box(".fg-site-appearance").right,
+        graphRight: Math.max(
+          ...[...document.querySelectorAll(".commit-branch")].map(
+            (branch) => branch.getBoundingClientRect().right,
+          ),
+        ),
+      };
+    });
+    expect(edges.headerRule).toBe(0);
+    expect(edges.navRule).toBe(0);
+    for (const left of [edges.brand, edges.nav, edges.heading])
+      expect(left).toBeCloseTo(edges.frameLeft, 0);
+    expect(edges.themeSwitch).toBeCloseTo(edges.frameRight, 0);
+    // The commit graph stays in the left margin; nothing draws past the frame's right edge.
+    expect(edges.graphRight).toBeLessThanOrEqual(edges.frameLeft);
+  });
+});
 test("section anchors, active state, and history retain native scrolling", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await load(page);

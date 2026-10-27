@@ -20,12 +20,27 @@
   --font-sans: var(--font-ui);
   --radius-md: var(--radius-control);
   --radius-lg: var(--radius-panel);
-  --site-page-max: var(--page-wide);
   --site-display: var(--text-display);
   --site-display-mobile: var(--text-display-sm);
-  --graph-rail: var(--space-24);
+  /* One frame for every row. Wide screens keep the commit rail in the left margin. */
+  --frame-max: var(--page-wide);
+  --rail: 64px;
+  --gutter: var(--space-4);
+  --frame: min(var(--frame-max), calc(100% - 2 * var(--gutter)));
+  --column-gap: var(--space-6);
+  --section-pad: var(--space-16);
   --duration-section: 360ms;
   --duration-walkthrough: 220ms;
+}
+@media (min-width: 641px) {
+  :root {
+    --gutter: var(--space-6);
+  }
+}
+@media (min-width: 1001px) {
+  :root {
+    --gutter: calc(var(--rail) + var(--space-6));
+  }
 }
 *,
 *::before,
@@ -50,32 +65,28 @@ body {
 h1,
 h2,
 h3,
-h4,
 p,
 figure {
   margin: 0;
 }
 h1,
 h2,
-h3,
-h4 {
+h3 {
   font-weight: var(--weight-semibold);
   line-height: var(--leading-tight);
   letter-spacing: var(--tracking-tight);
   text-wrap: balance;
 }
 h1 {
-  max-width: 18ch;
   font-size: var(--site-display);
   line-height: 1.08;
+  letter-spacing: -0.02em;
 }
 h2 {
-  max-width: 28ch;
   font-size: var(--text-3xl);
 }
 h3 {
   font-size: var(--text-lg);
-  letter-spacing: var(--tracking-tight);
 }
 @layer base {
   a {
@@ -91,83 +102,129 @@ h3 {
   outline: 2px solid var(--color-focus);
   outline-offset: var(--space-1);
 }
-.wrap {
-  width: min(var(--site-page-max), calc(100% - var(--space-12)));
+.frame {
+  width: var(--frame);
   margin-inline: auto;
 }
-.site-content {
-  min-width: 0;
+
+/* Header: full-bleed rules, content on the frame. */
+.fg-site-header .fg-site-header__inner {
+  width: var(--frame);
+  min-height: var(--space-16);
+  padding-inline: 0;
+  padding-block: var(--space-3);
 }
-.fg-site-header {
-  --site-frame: 100%;
-  --site-gutter: 0px;
+.fg-site-header .fg-site-projects__trigger {
+  margin-inline-start: calc(-1 * var(--space-3));
 }
-nav.section-nav {
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-  font-size: var(--text-sm);
+.fg-site-header .fg-site-appearance {
+  gap: 2px;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-muted);
 }
-nav.section-nav a {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: var(--control-lg);
-  min-width: var(--control-lg);
-  color: var(--text-muted);
+.fg-site-header .fg-site-appearance__choice {
+  width: var(--control-md);
+  min-height: var(--control-md);
+  border: 0;
+  border-radius: calc(var(--radius-control) - 2px);
 }
-nav.section-nav a:hover {
-  color: var(--text);
+.fg-site-header .fg-site-appearance__choice[aria-pressed="true"] {
+  background: var(--color-bg);
+  box-shadow: 0 0 0 1px var(--border-subtle);
 }
 .section-navigation {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: 20;
   background: var(--bg);
-  border-block: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
 }
-.section-nav {
-  overflow-x: auto;
+nav.section-nav {
+  display: flex;
   gap: var(--space-6);
-  scrollbar-width: thin;
+  overflow-x: auto;
+  font-size: var(--text-sm);
+  scrollbar-width: none;
 }
-.section-nav a {
+nav.section-nav a {
+  display: inline-flex;
   flex: none;
+  align-items: center;
+  min-height: var(--control-lg);
   border-bottom: 2px solid transparent;
+  color: var(--text-muted);
 }
-.section-nav a[aria-current="location"] {
-  border-bottom-color: var(--text-muted);
+nav.section-nav a:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+nav.section-nav a[aria-current="location"] {
+  border-bottom-color: var(--accent);
   color: var(--text);
   font-weight: var(--weight-medium);
 }
-.hero {
-  padding-block: var(--space-12);
+
+/* Sections: a 12-column head (heading | lede) above full-width media. */
+.hero,
+.section {
+  padding-block: var(--section-pad);
 }
-.section-body {
+.section {
+  border-top: 1px solid var(--border-subtle);
+}
+.hero,
+.section {
   display: grid;
-  gap: var(--space-6);
-}
-.hero > .section-body {
   gap: var(--space-8);
 }
-.hero-copy {
+.section-head {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--column-gap);
+  row-gap: var(--space-4);
+  align-items: start;
+}
+.section-head > :is(h1, h2) {
+  grid-column: 1 / span 6;
+}
+.section-lede {
+  grid-column: 7 / span 6;
   display: grid;
   justify-items: start;
-  gap: var(--space-6);
-}
-.hero-summary {
-  display: grid;
   gap: var(--space-4);
 }
-.lead {
-  max-width: 56ch;
+.hero .section-lede {
+  align-self: end;
+}
+.section-lede p {
+  max-width: 52ch;
+  color: var(--text-muted);
   font-size: var(--text-reading);
 }
-.section-copy p,
-.review-heading > p,
-.closing > .section-body > p {
+.section-lede p.lead {
+  color: var(--text);
+}
+.section-lede p.note,
+.section-lede p.provenance {
+  font-size: var(--text-sm);
+}
+.provenance a,
+.site-footer p a {
+  color: inherit;
+  text-decoration: underline;
+}
+.hero-media,
+.media,
+.screenshot-walkthrough {
+  min-width: 0;
+}
+figcaption {
   max-width: var(--measure);
+  margin-top: var(--space-3);
   color: var(--text-muted);
+  font-size: var(--text-sm);
 }
 .actions {
   display: flex;
@@ -188,7 +245,6 @@ nav.section-nav a:hover {
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   white-space: nowrap;
-  text-decoration: none;
   transition: background var(--duration-fast) var(--ease-out);
 }
 .button:hover {
@@ -208,52 +264,33 @@ nav.section-nav a:hover {
 .text-link {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
   min-height: var(--control-lg);
   color: var(--text);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-}
-.provenance,
-figcaption,
-.release-note {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-.provenance a,
-.site-footer p a {
-  color: inherit;
   text-decoration: underline;
+  text-decoration-color: var(--border);
 }
-.hero-media,
-.media-stage,
-.screenshot-walkthrough {
-  min-width: 0;
+.text-link:hover {
+  text-decoration-color: currentColor;
 }
-figcaption {
-  max-width: var(--measure);
-  margin-top: var(--space-3);
-}
-.section {
-  padding-block: var(--space-12);
-  border-top: 1px solid var(--border-subtle);
-}
-.review-heading,
-.section-copy {
-  display: grid;
-  justify-items: start;
-  gap: var(--space-3);
-  align-content: start;
-}
+
+/* Walkthrough */
 .screenshot-walkthrough .fg-tabs {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--space-6);
 }
+.fg-tabs__list {
+  flex-wrap: wrap;
+}
+.fg-tabs__panel {
+  min-width: 0;
+}
 .walkthrough-heading {
-  justify-content: space-between;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-3);
 }
 .walkthrough-frame {
@@ -264,23 +301,20 @@ figcaption {
 .walkthrough-frame figcaption {
   margin-top: 0;
 }
-.review-heading > .walkthrough-note {
+
+/* Footer */
+.site-footer {
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-muted);
   font-size: var(--text-xs);
 }
-.closing > .section-body {
-  justify-items: start;
-  gap: var(--space-4);
-}
-.site-footer {
+.site-footer > .frame {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--space-4);
   padding-block: var(--space-8);
-  border-top: 1px solid var(--border-subtle);
-  color: var(--text-muted);
-  font-size: var(--text-xs);
 }
 .site-footer .brand {
   display: inline-flex;
@@ -299,7 +333,7 @@ figcaption {
   position: absolute;
   top: -100%;
   left: var(--space-4);
-  z-index: 3;
+  z-index: 40;
   padding: var(--space-3);
   border-radius: var(--radius-md);
   background: var(--accent);
@@ -307,12 +341,6 @@ figcaption {
 }
 .skip-link:focus {
   top: var(--space-3);
-}
-.fg-tabs__list {
-  flex-wrap: wrap;
-}
-.fg-tabs__panel {
-  min-width: 0;
 }
 .image-lightbox {
   width: calc(var(--lightbox-image-width, 32rem) + var(--space-8) + 2px);
@@ -332,35 +360,42 @@ figcaption {
   object-fit: contain;
   border-radius: var(--radius-md);
 }
+main p a {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
 @media (max-width: 800px) {
-  .hero,
-  .section {
-    padding-block: var(--space-8);
+  :root {
+    --section-pad: var(--space-12);
+  }
+  .section-head > :is(h1, h2),
+  .section-lede {
+    grid-column: 1 / -1;
   }
 }
 @media (max-width: 640px) {
+  :root {
+    --section-pad: var(--space-8);
+  }
   h1 {
     font-size: var(--site-display-mobile);
-    max-width: 14ch;
-  }
-  .section-nav {
-    gap: var(--space-4);
-  }
-  .hero > .section-body {
-    gap: var(--space-6);
-  }
-  .hero-copy,
-  .hero-summary {
-    gap: var(--space-4);
-  }
-  h1 {
-    line-height: 1.15;
+    line-height: 1.12;
   }
   h2 {
     font-size: var(--text-2xl);
   }
-  .wrap {
-    width: min(var(--site-page-max), calc(100% - var(--space-8)));
+  .hero,
+  .section {
+    gap: var(--space-6);
+  }
+  nav.section-nav {
+    gap: var(--space-4);
+  }
+  /* The links and theme switch wrap below the brand; keep them on the frame's edges. */
+  .fg-site-header .fg-site-header__end {
+    width: 100%;
+    justify-content: space-between;
+    margin-inline-start: 0;
   }
   .actions {
     gap: var(--space-4);
@@ -380,83 +415,62 @@ figcaption {
   }
 }
 
-/* Neutral prose links remain identifiable without relying on color. */
-main p a {
-  text-decoration: underline;
-  text-underline-offset: 0.18em;
-}
-
-/* Reading copy and metadata use distinct type roles. */
-main p {
-  font-size: var(--text-reading);
-}
-main p:is(.provenance, .release-note, .walkthrough-note) {
-  font-size: var(--text-sm);
-}
-
-/* Workbench’s Git graph follows the reading flow without hiding content. */
-main.wrap {
+/* The commit graph lives in the left margin: the main lane at 16px, the branch lane at 48px,
+   and each node reaches right to the section's content edge. */
+main.frame {
   position: relative;
 }
-main.wrap {
-  padding-right: var(--graph-rail);
-}
-
-main.wrap::before {
+main.frame::before {
   content: "";
   position: absolute;
   top: 0;
   bottom: var(--space-8);
-  right: calc(var(--graph-rail) / 4);
+  left: calc(16px - var(--rail));
   width: 1px;
   background: var(--border);
 }
-
 [data-trace-section] {
   position: relative;
+  --node-y: 1.25rem;
 }
-
+.hero {
+  --node-y: 1.9rem;
+}
 .commit-branch {
   position: absolute;
   top: 0;
   bottom: 0;
-  right: calc(-1 * var(--graph-rail));
-  width: var(--graph-rail);
+  left: calc(-1 * var(--rail));
+  width: var(--rail);
   pointer-events: none;
 }
-
 .commit-branch:is(.commit-branch--fork, .commit-branch--parallel, .commit-branch--merge)::before {
   content: "";
   position: absolute;
-  left: var(--space-8);
+  left: 48px;
   width: 1px;
   background: var(--border);
 }
-
 .commit-branch--fork::before {
-  top: 50%;
+  top: calc(var(--section-pad) + var(--node-y));
   bottom: 0;
 }
-
 .commit-branch--parallel::before {
   top: 0;
   bottom: 0;
 }
-
 .commit-branch--merge::before {
   top: 0;
-  bottom: 50%;
+  height: calc(var(--section-pad) + var(--node-y));
 }
-
 .commit-junction {
   position: absolute;
-  top: calc(50% - var(--graph-rail) / 2);
+  top: calc(var(--section-pad) + var(--node-y) - 48px);
   left: 0;
-  width: var(--graph-rail);
-  height: var(--graph-rail);
+  width: var(--rail);
+  height: 96px;
   overflow: visible;
 }
-
 .commit-junction path {
   fill: none;
   stroke: var(--border);
@@ -464,7 +478,6 @@ main.wrap::before {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-
 .commit-node {
   fill: var(--bg);
   stroke: var(--text-muted);
@@ -476,48 +489,40 @@ main.wrap::before {
     stroke var(--duration) var(--ease-out),
     transform var(--duration) var(--ease-out);
 }
-
 .commit-neutral-node {
   fill: var(--bg);
   stroke: var(--text-muted);
   stroke-width: 1.5;
 }
-
 .commit-terminal {
   position: absolute;
   bottom: var(--space-6);
   left: 0;
-  width: var(--graph-rail);
+  width: var(--rail);
   height: var(--space-4);
 }
-
 .commit-terminal circle {
   fill: var(--text-muted);
 }
-
 .is-current .commit-junction path {
   stroke: var(--text-muted);
 }
-
 .is-current .commit-node {
   fill: var(--accent);
   stroke: var(--accent);
   transform: scale(1.2);
 }
-
 .commit-reach {
   fill: var(--accent);
   opacity: 0;
   transform: scaleX(0);
   transform-box: fill-box;
-  transform-origin: right;
+  transform-origin: left;
 }
-
 .is-current .commit-reach {
   opacity: 1;
   transform: none;
 }
-
 .trace-packet {
   position: absolute;
   top: 0;
@@ -529,7 +534,6 @@ main.wrap::before {
   opacity: 0;
   pointer-events: none;
 }
-
 @media (prefers-reduced-motion: no-preference) {
   .trace-arriving .commit-reach {
     animation: commit-reach var(--duration-section) var(--ease-out);
@@ -559,10 +563,17 @@ main.wrap::before {
     }
   }
 }
+@media (max-width: 1000px) {
+  main.frame::before,
+  .commit-branch,
+  .trace-packet {
+    display: none;
+  }
+}
 
 .walkthrough-signal {
   flex: none;
-  width: var(--graph-rail);
+  width: var(--space-24);
   height: var(--space-8);
   overflow: visible;
   fill: var(--bg);
@@ -716,16 +727,6 @@ main.wrap::before {
   }
 }
 
-@media (max-width: 1000px) {
-  main.wrap::before,
-  .commit-branch,
-  .trace-packet {
-    display: none;
-  }
-  main.wrap {
-    padding-right: 0;
-  }
-}
 @media (max-width: 640px) {
   .walkthrough-signal {
     width: var(--space-16);
