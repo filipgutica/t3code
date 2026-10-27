@@ -17,7 +17,6 @@ import {
 } from "../orchestration-v2/DispatchModeLimit.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "./OrchestratorMcpService.ts";
-import { McpWritePolicy } from "./McpWritePolicy.ts";
 import {
   assertFullAccess,
   assertLiveCaller,
@@ -66,10 +65,6 @@ export class Declaration<out Handler> {
   }
 }
 
-const assertThreadWritesAllowed = (threadId: ThreadId) =>
-  Effect.flatMap(McpWritePolicy, (policy) => policy.assertAllowed(threadId));
-
-/** A client approved for read-only access changes nothing. */
 const refuseReadOnlyClient = McpInvocationContext.McpInvocationContext.pipe(
   Effect.flatMap((scope) =>
     scope.client?.access === "read-only" || scope.thread?.readOnly === true
@@ -82,9 +77,7 @@ const refuseReadOnlyClient = McpInvocationContext.McpInvocationContext.pipe(
                 : "This tool changes the environment, and this MCP client was approved for read-only access.",
           }),
         )
-      : scope.thread === undefined
-        ? Effect.void
-        : assertThreadWritesAllowed(scope.thread.threadId),
+      : Effect.void,
   ),
 );
 
@@ -116,22 +109,6 @@ export const actsAsCaller = <P, A, E, R>(handle: (params: P) => Effect.Effect<A,
     ),
   );
 
-/** Browser research still needs a live caller and the owner's explicit read-only exception. */
-export const researchesAsCaller = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
-  declare((params: P) =>
-    requireThreadCaller.pipe(
-      Effect.flatMap((scope) =>
-        scope.thread.readOnly === true
-          ? Effect.flatMap(McpWritePolicy, (policy) =>
-              policy.assertAllowed(scope.thread.threadId, "research"),
-            ).pipe(Effect.andThen(loadCaller()), Effect.tap(assertLiveCaller))
-          : writingCaller,
-      ),
-      Effect.flatMap(() => handle(params)),
-    ),
-  );
-
-/** Changes something that belongs to no thread, such as a pending upload or a scheduled task. */
 export const writes = <P, A, E, R>(handle: (params: P) => Effect.Effect<A, E, R>) =>
   declare((params: P) => orchestratingCaller.pipe(Effect.flatMap(() => handle(params))));
 
@@ -204,6 +181,16 @@ export const startsThreads = <P, A, E, R>(
       };
       return yield* handle(params, started);
     }),
+  );
+
+/** One tool with two access rules, picked per call, such as create versus update. */
+export const either = <P, A, E, R, A2, E2, R2>(
+  useFirst: (params: P) => boolean,
+  first: Declaration<(params: P) => Effect.Effect<A, E, R>>,
+  second: Declaration<(params: P) => Effect.Effect<A2, E2, R2>>,
+) =>
+  declare((params: P): Effect.Effect<A | A2, E | E2, R | R2> =>
+    useFirst(params) ? checkedHandler(first)(params) : checkedHandler(second)(params),
   );
 
 const fullAccessRequired =

@@ -170,7 +170,7 @@ jobs:
           vp exec tsc --noEmit -p scripts/workbench-regression/tsconfig.json
           T3CODE_WORKBENCH_BUILD=1 vp run build:desktop
           node apps/desktop/scripts/verify-preload-bundle.mjs
-          xvfb-run -a vp run --filter @t3tools/desktop smoke-test
+          xvfb-run -a node scripts/workbench-desktop-smoke.mjs
 
       - name: Verify simulated Workbench regressions
         if: steps.preview.outputs.proceed == 'true'

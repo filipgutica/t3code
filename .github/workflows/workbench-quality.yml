@@ -53,7 +53,7 @@ jobs:
           vp run build:desktop
 
       - name: Smoke test desktop
-        run: xvfb-run -a vp run --filter @t3tools/desktop smoke-test
+        run: xvfb-run -a node scripts/workbench-desktop-smoke.mjs
 
   quality:
     name: Types, unit tests, lint and isolation

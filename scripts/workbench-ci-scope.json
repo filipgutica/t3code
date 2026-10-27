@@ -1,5 +1,5 @@
 {
-  "upstreamBase": "220eb73524ca7882d53b6a12c824ccbcd97ad279",
+  "upstreamBase": "570d4b03eef879bd60be3d74444046858c94dacd",
   "groups": [
     {
       "name": "Workbench domain, adapters, UI and contracts",
@@ -73,6 +73,7 @@
         "apps/server/src/os-jank.ts",
         "apps/server/src/provider/ClaudeProvider.ts",
         "packages/provider-acp-registry/src/server/driver.ts",
+        "packages/provider-fx/src/server/driver.ts",
         "apps/server/src/provider/Drivers/CodexHomeLayout.ts",
         "apps/server/src/provider/Drivers/CodexManagedProvider.ts",
         "packages/provider-opencode/src/server/driver.ts",
@@ -114,7 +115,6 @@
         "packages/provider-core/src/server/textGenerationOperations.ts",
         "packages/provider-muse/src/server/textGeneration.ts",
         "apps/server/src/observability/RpcInstrumentation.ts",
-        "apps/server/src/mcp/McpWritePolicy.ts",
         "apps/server/src/orchestration-v2/Adapters/CodexSandboxPolicy.ts"
       ],
       "tests": [
@@ -283,7 +283,7 @@
     {
       "name": "Desktop identity, auth, backend and updates",
       "paths": [
-        "apps/desktop/scripts/smoke-test.mjs",
+        "scripts/workbench-desktop-smoke.mjs",
         "apps/desktop/src/app/DesktopClerk.ts",
         "apps/desktop/src/app/DesktopEarlyElectronStartup.ts",
         "apps/desktop/src/app/DesktopEnvironment.ts",
