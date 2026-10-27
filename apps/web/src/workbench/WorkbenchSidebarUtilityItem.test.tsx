@@ -10,6 +10,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { WorkbenchSidebarUtilityItem } from "./WorkbenchSidebarUtilityItem";
+import { startWorkbenchLocationTracking } from "./workbenchLastLocation";
 
 const state = vi.hoisted(() => ({
   primary: "workbench-primary",
@@ -70,16 +71,18 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const mount = async () => {
+const mount = async (initialEntry = "/core-remote/native-thread") => {
   const root = createRootRoute();
-  const workbench = createRoute({ getParentRoute: () => root, path: "/workbench" });
+  const validateSearch = (search: Record<string, unknown>) => search;
+  const workbench = createRoute({ getParentRoute: () => root, path: "/workbench", validateSearch });
   const nativeThread = createRoute({
     getParentRoute: () => root,
     path: "/$environmentId/$threadId",
+    validateSearch,
   });
   const router = createRouter({
     routeTree: root.addChildren([workbench, nativeThread]),
-    history: createMemoryHistory({ initialEntries: ["/core-remote/native-thread"] }),
+    history: createMemoryHistory({ initialEntries: [initialEntry] }),
   });
   await router.load();
   const render = () => (
@@ -128,4 +131,27 @@ it("withholds its primary action until connected feature detection succeeds and 
   state.error = "The server request timed out";
   await act(() => renderer!.update(render()));
   expect(renderer!.root.findAllByType("button")).toHaveLength(0);
+});
+
+it("returns to the last Workbench Thread after the user leaves for a native Thread", async () => {
+  const workbenchThreadHref = "/workbench-primary/ticket-thread?workbench=true";
+  const { router } = await mount(workbenchThreadHref);
+  using _tracking = { [Symbol.dispose]: startWorkbenchLocationTracking(router) };
+  const fromLocation = router.state.location;
+  await act(() => router.navigate({ href: "/core-remote/native-thread" }));
+  // Node routers run in server mode and never emit onResolved themselves.
+  router.emit({
+    type: "onResolved",
+    fromLocation,
+    toLocation: router.state.location,
+    pathChanged: true,
+    hrefChanged: true,
+    hashChanged: false,
+  });
+
+  await act(async () => {
+    renderer!.root.findByType("button").props.onClick();
+    await router.load();
+  });
+  expect(router.state.location.href).toBe(workbenchThreadHref);
 });

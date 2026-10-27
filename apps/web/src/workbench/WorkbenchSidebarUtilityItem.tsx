@@ -7,6 +7,7 @@ import { useSidebar } from "../components/ui/sidebar";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
+import { readLastWorkbenchHref } from "./workbenchLastLocation";
 
 export interface WorkbenchSidebarUtilityItemProps {
   readonly render: (props: {
@@ -31,6 +32,11 @@ export const WorkbenchSidebarUtilityItem = memo(function WorkbenchSidebarUtility
   const handleClick = () => {
     if (isMobile) {
       setOpenMobile(false);
+    }
+    const lastHref = readLastWorkbenchHref();
+    if (lastHref) {
+      void navigate({ href: lastHref });
+      return;
     }
     void navigate({ to: "/workbench", search: {} });
   };
