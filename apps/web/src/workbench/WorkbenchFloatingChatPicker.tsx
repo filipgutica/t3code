@@ -382,8 +382,13 @@ export function WorkbenchFloatingChatPicker({
     const waitingThreadId = focusThreadIdRef.current;
     focusThreadIdRef.current = null;
     if (!isOpen) return;
-    if (waitingThreadId !== null) row(waitingThreadId)?.focus();
-    else row(selected?.threadId)?.scrollIntoView({ block: "center" });
+    if (waitingThreadId !== null) return row(waitingThreadId)?.focus();
+    const showing = row(selected?.threadId);
+    // Keyboard opening focuses the first item, which centring could scroll out of view; the
+    // search field keeps its focus.
+    if (document.activeElement?.getAttribute("role") === "menuitem")
+      showing?.focus({ preventScroll: true });
+    showing?.scrollIntoView({ block: "center" });
   };
   const select = (threadId: ThreadId) => {
     changeOpen(false);

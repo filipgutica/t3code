@@ -214,6 +214,31 @@ it("scrolls to the showing Thread whenever the menu opens, even after its group 
   await expect.element(showing).toBeInViewport();
 });
 
+it("moves keyboard focus to the showing Thread it scrolls to", async () => {
+  setup();
+  const ticket = {
+    id: WorkbenchTicketId.make("pay-1"),
+    key: "PAY-1",
+    title: "Refunds",
+    kind: "story" as const,
+  };
+  const threads = [
+    ...["d1", "d2", "d3"].map((id) => thread(id, null, `Recap ${id}`)),
+    ...["t1", "t2", "t3", "t4"].map((id) => ({ ...thread(id, null, `Recap ${id}`), ticket })),
+  ];
+  await using screen = await render(
+    <Harness kind="board" threads={threads} primaryThreadId={ThreadId.make("t4")} />,
+  );
+  const menu = screen.getByRole("button", { name: /^Board Threads/ });
+  menu.element().focus();
+
+  await userEvent.keyboard("{Enter}");
+
+  const showing = screen.getByRole("menuitem", { name: "Thread t4" });
+  await expect.element(showing).toHaveFocus();
+  await expect.element(showing).toBeInViewport();
+});
+
 it("collapses a group in search results, and forgets it with the search", async () => {
   setup();
   const ticket = {
