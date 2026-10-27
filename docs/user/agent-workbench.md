@@ -60,7 +60,7 @@ Workbench until you start work.
 **Create manually** opens the form when you already know the requirements.
 
 To plan without leaving the Board, use the chat in its lower-right corner. It
-lists the Threads of the Workspace's Tickets and drafts, grouped by Ticket. At the
+lists the Threads of the Workspace's Tickets and drafts. At the
 end of its Thread menu, choose **New ticket draft** to start a planning conversation
 there, or **New Thread on** the open Thread's Ticket to start another Thread for that
 Ticket. A draft offers **Create ticket** and then **Start work**, and keeps the same
@@ -145,11 +145,11 @@ Ticket** for the current Workspace, and **Back to Ticket** from a linked Thread.
 
 To talk to a Ticket's Threads without leaving the Ticket, use the ticket chat in its
 bottom-right corner. Its header shows the open Thread; select it to switch between the
-Ticket's Threads, find settled and archived ones, or choose **New Thread**. Each Thread
-in the menu shows a short recap of its latest run, and Threads on the same Ticket read
-each other's recaps so they know what the others are doing. **N need you** opens the
-menu on the next Thread waiting for your approval or input. A Thread you create from
-the Ticket opens here. Select the message field
+Ticket's Threads, find settled and archived ones, or choose **New Thread**. After a
+Thread finishes a run, the menu can show a short recap of it, and Threads on the same
+Ticket read each other's recaps so they know what the others are doing. When other
+Threads wait for your approval or input, or their run failed, **N need you** opens the
+menu on the first of them. A Thread you create from the Ticket opens here. Select the message field
 to expand the conversation, or choose **Show ticket chat** in the command palette.
 Drag the chat's left edge, top edge, or top-left corner to resize it. The chat leaves out the Thread's side panels:
 opening a file or diff from it, or choosing **Open full Thread**, opens the Thread itself.
