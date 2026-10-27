@@ -225,13 +225,16 @@ function PickerThreadSections({
   threads,
   selectedThreadId,
   openGroups,
+  searching,
   onToggleGroup,
   onSelect,
 }: {
   readonly threads: ReadonlyArray<WorkbenchFloatingChatThread>;
   readonly selectedThreadId: ThreadId | null;
-  /** Group ids the user opened or closed; search passes null to show every group open. */
-  readonly openGroups: ReadonlyMap<string, boolean> | null;
+  /** Group ids the user opened or closed. */
+  readonly openGroups: ReadonlyMap<string, boolean>;
+  /** Search results start with every group open. */
+  readonly searching: boolean;
   readonly onToggleGroup: (id: string, open: boolean) => void;
   readonly onSelect: (threadId: ThreadId) => void;
 }) {
@@ -266,9 +269,8 @@ function PickerThreadSections({
       );
     }
     const open =
-      openGroups === null ||
-      (openGroups.get(section.id) ??
-        isWorkbenchFloatingChatGroupOpenByDefault(section, selectedThreadId));
+      openGroups.get(section.id) ??
+      (searching || isWorkbenchFloatingChatGroupOpenByDefault(section, selectedThreadId));
     return (
       <MenuGroup key={section.id}>
         <PickerGroupHeader
@@ -308,6 +310,32 @@ function WaitingPill({ count, onClick }: { readonly count: number; readonly onCl
 }
 
 /**
+ * The search query and which groups are open. Toggles outside search persist while the chat is
+ * mounted; toggles in search results start from every group open and end with the search.
+ */
+function usePickerGroups() {
+  const [query, setQuery] = useState("");
+  const [browseGroups, setBrowseGroups] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const [searchGroups, setSearchGroups] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const searching = query.trim() !== "";
+  const set = (update: typeof setBrowseGroups, id: string, open: boolean) =>
+    update((current) => new Map(current).set(id, open));
+  return {
+    query,
+    searching,
+    openGroups: searching ? searchGroups : browseGroups,
+    changeQuery: (next: string) => {
+      setQuery(next);
+      setSearchGroups(new Map());
+    },
+    toggle: (id: string, open: boolean) =>
+      set(searching ? setSearchGroups : setBrowseGroups, id, open),
+    reveal: (thread: WorkbenchFloatingChatThread) =>
+      set(setBrowseGroups, thread.ticket?.id ?? "drafts", true),
+  };
+}
+
+/**
  * The floating chat's Thread switcher: the showing Thread in full, and a menu of the board's
  * or ticket's Threads with their recaps. The pill opens it on the first Thread waiting on you.
  */
@@ -317,6 +345,7 @@ export function WorkbenchFloatingChatPicker({
   listLabel,
   onSelect,
   onOpenThread,
+  actions,
 }: {
   readonly chat: FloatingChat;
   /** Shown in the trigger when no Thread is selected. */
@@ -325,25 +354,24 @@ export function WorkbenchFloatingChatPicker({
   readonly onSelect: (threadId: ThreadId) => void;
   /** Opens an archived Thread on its route after restoring it. */
   readonly onOpenThread: (threadId: ThreadId) => void;
+  /** New-Thread items, after the Threads as in a chat app's switcher. */
+  readonly actions: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  // Kept while the chat is mounted, so a group the user closed stays closed between opens.
-  const [openGroups, setOpenGroups] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const groups = usePickerGroups();
   const focusThreadIdRef = useRef<ThreadId | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const { selected, waiting } = chat;
-  const visible = filterWorkbenchFloatingChatThreads(chat.active, query);
+  const visible = filterWorkbenchFloatingChatThreads(chat.active, groups.query);
   const changeOpen = (next: boolean) => {
     setOpen(next);
-    if (!next) setQuery("");
+    if (!next) groups.changeQuery("");
   };
   const openOnWaiting = () => {
     const target = waiting[0];
     focusThreadIdRef.current = target?.threadId ?? null;
     // A group the user collapsed must open so its waiting Thread mounts and can take focus.
-    if (target)
-      setOpenGroups((current) => new Map(current).set(target.ticket?.id ?? "drafts", true));
+    if (target) groups.reveal(target);
     changeOpen(true);
   };
   const focusWaiting = (isOpen: boolean) => {
@@ -375,8 +403,8 @@ export function WorkbenchFloatingChatPicker({
           {chat.active.length >= SEARCH_THRESHOLD ? (
             <MenuSearchInput
               autoFocus
-              value={query}
-              onChange={(event) => setQuery(event.currentTarget.value)}
+              value={groups.query}
+              onChange={(event) => groups.changeQuery(event.currentTarget.value)}
               placeholder="Search Threads"
               aria-label="Search Threads"
             />
@@ -389,10 +417,9 @@ export function WorkbenchFloatingChatPicker({
             <PickerThreadSections
               threads={visible}
               selectedThreadId={selected?.threadId ?? null}
-              openGroups={query.trim() === "" ? openGroups : null}
-              onToggleGroup={(id, next) =>
-                setOpenGroups((current) => new Map(current).set(id, next))
-              }
+              openGroups={groups.openGroups}
+              searching={groups.searching}
+              onToggleGroup={groups.toggle}
               onSelect={select}
             />
           </div>
@@ -418,6 +445,8 @@ export function WorkbenchFloatingChatPicker({
               onOpenThread(threadId);
             }}
           />
+          <MenuSeparator />
+          {actions}
         </MenuPopup>
       </Menu>
       <WaitingPill count={waiting.length} onClick={openOnWaiting} />

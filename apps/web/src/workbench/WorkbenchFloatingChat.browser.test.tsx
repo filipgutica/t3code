@@ -185,6 +185,32 @@ it("opens a collapsed group to focus its waiting Thread from the pill", async ()
   await expect.element(screen.getByRole("menuitem", { name: /Thread c/ })).toHaveFocus();
 });
 
+it("collapses a group in search results, and forgets it with the search", async () => {
+  setup();
+  const ticket = {
+    id: WorkbenchTicketId.make("pay-2"),
+    key: "PAY-2",
+    title: "Payouts",
+    kind: "story" as const,
+  };
+  const threads = ["a", "b", "c", "d", "e", "f", "g", "h"].map((id) => ({
+    ...thread(id),
+    ticket: id === "a" ? { ...ticket, id: WorkbenchTicketId.make("pay-1"), key: "PAY-1" } : ticket,
+  }));
+  await using screen = await render(<Harness threads={threads} />);
+  await userEvent.click(screen.getByRole("button", { name: /^Ticket Threads/ }));
+  await userEvent.type(screen.getByRole("textbox", { name: "Search Threads" }), "Thread");
+  const group = screen.getByRole("menuitem", { name: "PAY-2 Payouts 7 Threads" });
+  await expect.element(group).toHaveAttribute("aria-expanded", "true");
+
+  await userEvent.click(group);
+
+  await expect.element(group).toHaveAttribute("aria-expanded", "false");
+  await expect.element(screen.getByRole("menuitem", { name: /Thread h/ })).not.toBeInTheDocument();
+  await userEvent.type(screen.getByRole("textbox", { name: "Search Threads" }), " ");
+  await expect.element(group).toHaveAttribute("aria-expanded", "true");
+});
+
 it("filters a long Thread list by title or recap", async () => {
   setup();
   const threads = ["a", "b", "c", "d", "e", "f", "g"].map((id) => thread(id));
@@ -337,12 +363,13 @@ it("focuses a requested Thread's composer once it appears, such as a Thread just
   await expect.element(screen.getByLabelText("Composer for b")).toHaveFocus();
 });
 
-it("starts a new Thread from the header", async () => {
+it("starts a new Thread from the Thread menu", async () => {
   setup();
   const onNewThread = vi.fn();
   await using screen = await render(<Harness threads={[thread("a")]} onNewThread={onNewThread} />);
 
-  await userEvent.click(screen.getByRole("button", { name: "New Thread" }));
+  await userEvent.click(screen.getByRole("button", { name: /^Ticket Threads/ }));
+  await userEvent.click(screen.getByRole("menuitem", { name: "New Thread" }));
 
   expect(onNewThread).toHaveBeenCalledOnce();
 });

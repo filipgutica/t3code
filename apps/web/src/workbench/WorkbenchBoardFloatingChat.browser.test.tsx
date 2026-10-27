@@ -212,11 +212,10 @@ const pickThread = async (screen: Screen, name: RegExp) => {
   await userEvent.click(screen.getByRole("menuitem", { name }));
 };
 
-const newMenu = (screen: Screen) =>
-  screen.getByRole("button", { name: "New Thread or ticket draft" });
+const threadMenu = (screen: Screen) => screen.getByRole("button", { name: /^Board Threads/ });
 
 const beginDraft = async (screen: Screen) => {
-  await userEvent.click(newMenu(screen));
+  await userEvent.click(threadMenu(screen));
   await userEvent.click(screen.getByRole("menuitem", { name: "New ticket draft" }));
 };
 
@@ -287,14 +286,14 @@ it("starts another Thread on the showing Thread's ticket, but not on a draft's",
     />,
   );
   await pickThread(screen, /Thread first/);
-  await userEvent.click(newMenu(screen));
+  await userEvent.click(threadMenu(screen));
   await userEvent.click(screen.getByRole("menuitem", { name: "New Thread on PAY-1" }));
   expect(onNewTicketThread).toHaveBeenCalledWith(
     expect.objectContaining({ id: WorkbenchTicketId.make("ticket-a") }),
   );
 
   await pickThread(screen, /Plan exports/);
-  await userEvent.click(newMenu(screen));
+  await userEvent.click(threadMenu(screen));
   await expect.element(screen.getByRole("menuitem", { name: "New ticket draft" })).toBeVisible();
   await expect
     .element(screen.getByRole("menuitem", { name: /^New Thread on/ }))
@@ -392,7 +391,7 @@ it("repeats a failed begin with the same ids instead of starting a second draft"
   await using screen = await render(<Harness onSnapshot={onSnapshot} />);
 
   await beginDraft(screen);
-  await userEvent.click(newMenu(screen));
+  await userEvent.click(threadMenu(screen));
   const retry = screen.getByRole("menuitem", { name: "New ticket draft" });
   await expect.element(retry).not.toHaveAttribute("aria-disabled");
   await userEvent.click(retry);

@@ -60,9 +60,9 @@ Workbench until you start work.
 **Create manually** opens the form when you already know the requirements.
 
 To plan without leaving the Board, use the chat in its lower-right corner. It
-lists the Threads of the Workspace's Tickets and drafts. Under **+**, choose **New
-ticket draft** to start a planning conversation there, or **New Thread on** the open
-Thread's Ticket to start another Thread for that Ticket. A draft offers **Create ticket**
+lists the Threads of the Workspace's Tickets and drafts. At the end of its Thread
+menu, choose **New ticket draft** to start a planning conversation there, or **New
+Thread on** the open Thread's Ticket to start another Thread for that Ticket. A draft offers **Create ticket**
 and then **Start work**, and keeps the same Thread throughout. **Cancel** removes a
 draft you have not used yet and returns to the Thread you had open. Choose **Open
 full Thread** to edit its fields.

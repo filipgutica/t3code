@@ -22,7 +22,7 @@ import {
 
 import ChatView from "../components/ChatView";
 import { Button } from "../components/ui/button";
-import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuTrigger } from "../components/ui/menu";
+import { MenuItem, MenuItemLabel } from "../components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 import { useRightPanelStore } from "../rightPanelStore";
@@ -60,7 +60,7 @@ const CHAT_COPY = {
   board: {
     title: "Board chat",
     threads: "Board Threads",
-    newThread: "New Thread or ticket draft",
+    newThread: "New ticket draft",
     startThread: "Draft a ticket",
     emptyHint: "A ticket draft starts a planning Thread here.",
   },
@@ -429,8 +429,8 @@ function useComposerFocusRequest(
   };
 }
 
-/** The ticket chat's + starts a Thread; the board's offers its ticket's Thread or a ticket draft. */
-function NewThreadControl({
+/** The Thread menu's last items: a new Thread, or on the board, its ticket's Thread or a draft. */
+function NewThreadItems({
   kind,
   copy,
   newThreadDisabled,
@@ -443,92 +443,39 @@ function NewThreadControl({
   readonly ticketThread: WorkbenchFloatingChatProps["ticketThread"];
   readonly onNewThread: () => void;
 }) {
-  if (kind === "ticket") {
-    return (
-      <FloatingChatAction
-        label={copy.newThread}
-        render={
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={copy.newThread}
-            disabled={newThreadDisabled}
-            onClick={onNewThread}
-          />
-        }
-      >
-        <PlusIcon />
-      </FloatingChatAction>
-    );
-  }
   return (
-    <Menu>
-      <FloatingChatAction
-        label={copy.newThread}
-        render={
-          <MenuTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={copy.newThread}
-                disabled={newThreadDisabled && (ticketThread?.disabled ?? true)}
-              />
-            }
-          />
-        }
-      >
-        <PlusIcon />
-      </FloatingChatAction>
-      <MenuPopup align="end" className="max-w-72">
-        {ticketThread ? (
-          <MenuItem disabled={ticketThread.disabled} onClick={ticketThread.onStart}>
-            <WorkbenchTicketKindIcon kind={ticketThread.ticket.kind} />
-            <MenuItemLabel>
-              New Thread on {ticketThread.ticket.key ?? ticketThread.ticket.title}
-            </MenuItemLabel>
-          </MenuItem>
-        ) : null}
-        <MenuItem disabled={newThreadDisabled} onClick={onNewThread}>
-          <FilePenLineIcon />
-          <MenuItemLabel>New ticket draft</MenuItemLabel>
+    <>
+      {ticketThread ? (
+        <MenuItem disabled={ticketThread.disabled} onClick={ticketThread.onStart}>
+          <WorkbenchTicketKindIcon kind={ticketThread.ticket.kind} />
+          <MenuItemLabel>
+            New Thread on {ticketThread.ticket.key ?? ticketThread.ticket.title}
+          </MenuItemLabel>
         </MenuItem>
-      </MenuPopup>
-    </Menu>
+      ) : null}
+      <MenuItem disabled={newThreadDisabled} onClick={onNewThread}>
+        {kind === "board" ? <FilePenLineIcon /> : <PlusIcon />}
+        <MenuItemLabel>{copy.newThread}</MenuItemLabel>
+      </MenuItem>
+    </>
   );
 }
 
 function FloatingChatThreadActions({
-  kind,
   copy,
   expanded,
-  newThreadDisabled,
-  ticketThread,
   toggleRef,
-  onNewThread,
   onOpenThread,
   onToggle,
 }: {
-  readonly kind: WorkbenchFloatingChatKind;
   readonly copy: ChatCopy;
   readonly expanded: boolean;
-  readonly newThreadDisabled: boolean;
-  readonly ticketThread: WorkbenchFloatingChatProps["ticketThread"];
   readonly toggleRef: Ref<HTMLButtonElement>;
-  readonly onNewThread: () => void;
   readonly onOpenThread: () => void;
   readonly onToggle: () => void;
 }) {
   return (
     <>
-      <NewThreadControl
-        kind={kind}
-        copy={copy}
-        newThreadDisabled={newThreadDisabled}
-        ticketThread={ticketThread}
-        onNewThread={onNewThread}
-      />
-      <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border" />
       <FloatingChatAction
         label="Open full Thread"
         render={
@@ -606,17 +553,22 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
             listLabel={copy.threads}
             onSelect={selectThread}
             onOpenThread={onOpenThread}
+            actions={
+              <NewThreadItems
+                kind={props.kind}
+                copy={copy}
+                newThreadDisabled={newThreadDisabled}
+                ticketThread={props.ticketThread}
+                onNewThread={onNewThread}
+              />
+            }
           />
         )}
         {selected === null ? null : (
           <FloatingChatThreadActions
-            kind={props.kind}
             copy={copy}
             expanded={expanded}
-            newThreadDisabled={newThreadDisabled}
-            ticketThread={props.ticketThread}
             toggleRef={expandButtonRef}
-            onNewThread={onNewThread}
             onOpenThread={() => onOpenThread(selected.threadId)}
             onToggle={expanded ? () => changeMode(collapse) : () => expand()}
           />
