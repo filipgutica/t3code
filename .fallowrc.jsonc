@@ -33,8 +33,8 @@
   // `routes/workbench.tsx` and `resolve-workbench-*`). Upstream syncs then audit only the overlay.
   // Keep the upstream patterns identical in both lists. A trailing `?` can match `/`, so no
   // alternative ends in one, and a pattern without `/` matches file names in every directory,
-  // so root files are listed by name. Top-level directories other than apps, packages, scripts and
-  // infra are upstream-owned, including ones a later sync adds.
+  // so root files are listed by name. Top-level directories whose names do not start with apps,
+  // packages, scripts or infra are upstream-owned, including ones a later sync adds.
   "health": {
     // Enforce the inherited 20/15 limits; graph-estimated coverage is not a test gate.
     "maxCrap": 0,
