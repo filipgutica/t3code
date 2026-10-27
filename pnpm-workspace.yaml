@@ -204,7 +204,7 @@ minimumReleaseAgeExclude:
   - "@opencode/client@2.0.28"
   - "@opencode/protocol@2.0.28"
   - "@opencode/schema@2.0.28"
-  - "@filipgutica/ui@1.4.0"
+  - "@filipgutica/ui@1.5.0"
   - "@muse-code/sdk@1.4.6"
   - "@expo/package-manager@1.14.2"
   - "@react-native/asset-utils@0.88.0"

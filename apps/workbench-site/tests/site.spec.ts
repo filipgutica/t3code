@@ -88,7 +88,7 @@ const atReadingTop = async (page: Page, id: string) =>
     expect((await download.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await page.locator(".fg-site-projects > summary").click();
     const projects = page.getByRole("navigation", { name: "Projects" });
-    await expect(projects.getByRole("link")).toHaveCount(5);
+    await expect(projects.getByRole("link")).toHaveCount(6);
     await expect(
       page
         .getByRole("navigation", { name: "Projects" })
