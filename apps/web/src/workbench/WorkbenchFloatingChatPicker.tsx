@@ -100,7 +100,7 @@ function PickerThreadItem({
               </span>
             ) : null}
             {selected ? (
-              <CheckIcon aria-hidden className="size-3.5 shrink-0 self-center text-foreground" />
+              <CheckIcon aria-hidden className="size-3.5 shrink-0 self-center text-primary" />
             ) : null}
           </span>
           {thread.recap ? (
@@ -144,6 +144,15 @@ function PickerHistory({
   );
 }
 
+/** A ticket's kind, or the draft mark for a Thread with no ticket yet. */
+function PickerTicketIcon({ ticket }: { readonly ticket: WorkbenchFloatingChatTicket | null }) {
+  return ticket ? (
+    <WorkbenchTicketKindIcon kind={ticket.kind} />
+  ) : (
+    <FilePenLineIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+  );
+}
+
 function PickerTriggerContent({
   selected,
   title,
@@ -153,6 +162,7 @@ function PickerTriggerContent({
 }) {
   return (
     <>
+      {selected === null ? null : <PickerTicketIcon ticket={selected.ticket} />}
       {selected?.ticket?.key ? (
         <span className="max-w-32 shrink-0 truncate text-xs text-muted-foreground">
           {selected.ticket.key}
@@ -175,11 +185,14 @@ function PickerGroupHeader({
   ticket,
   count,
   open,
+  current,
   onToggle,
 }: {
   readonly ticket: WorkbenchFloatingChatTicket | null;
   readonly count: number;
   readonly open: boolean;
+  /** Holds the showing Thread, so the heading still marks it while collapsed. */
+  readonly current: boolean;
   readonly onToggle: () => void;
 }) {
   const title = ticket?.title ?? "Drafts";
@@ -192,17 +205,13 @@ function PickerGroupHeader({
         .join(" ")}
       onClick={onToggle}
     >
-      {ticket ? (
-        <WorkbenchTicketKindIcon kind={ticket.kind} />
-      ) : (
-        <FilePenLineIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-      )}
+      <PickerTicketIcon ticket={ticket} />
       {ticket?.key ? (
         <span className="max-w-28 shrink-0 truncate text-xs text-muted-foreground">
           {ticket.key}
         </span>
       ) : null}
-      <span className="min-w-0 flex-1 truncate">{title}</span>
+      <span className={cn("min-w-0 flex-1 truncate", current && "font-medium")}>{title}</span>
       <span className="shrink-0 text-2xs text-muted-foreground tabular-nums">{count}</span>
       <ChevronRightIcon
         aria-hidden
@@ -241,6 +250,18 @@ function PickerThreadSections({
       onSelect={onSelect}
     />
   );
+  // The showing Thread's stretch of its group's rule is drawn in the accent colour.
+  const groupedItem = (row: WorkbenchFloatingChatPickerRow) => (
+    <div key={row.thread.threadId} className="relative">
+      {row.thread.threadId === selectedThreadId ? (
+        <span
+          aria-hidden
+          className="absolute inset-y-1 -start-[calc(0.5rem+2px)] w-[3px] rounded-full bg-primary"
+        />
+      ) : null}
+      {item(row)}
+    </div>
+  );
   return getWorkbenchFloatingChatPickerSections(threads, grouped).map((section) => {
     if (section.type === "rows")
       return <MenuGroup key={section.id}>{section.rows.map(item)}</MenuGroup>;
@@ -253,12 +274,13 @@ function PickerThreadSections({
           ticket={section.ticket}
           count={section.rows.length}
           open={open}
+          current={section.rows.some(({ thread }) => thread.threadId === selectedThreadId)}
           onToggle={() => onToggleGroup(section.id, !open)}
         />
         {/* The rule ties a group's Threads to its heading. */}
         {open ? (
           <div className="ms-3.5 border-s border-muted-foreground/30 ps-2">
-            {section.rows.map(item)}
+            {section.rows.map(groupedItem)}
           </div>
         ) : null}
       </MenuGroup>
