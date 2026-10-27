@@ -18,6 +18,7 @@ const state = vi.hoisted(() => ({
   title: "Invite reviewers",
   resultIdentity: {},
   reviewThreads: [] as PullRequestReviewThread[],
+  viewer: "settled" as "pending" | "settled" | "failed",
 }));
 vi.mock("../state/pullRequests", () => ({
   linkedPullRequestDetailAtom: ({
@@ -38,16 +39,27 @@ vi.mock("../state/pullRequests", () => ({
   useSharedPullRequestSummary: (_environment: unknown, input: { number: number }) =>
     state.completed.has(input.number) ? summaryFor(input.number) : null,
 }));
+vi.mock("./state", () => ({
+  workbenchEnvironment: { pullRequestViewer: () => ({ kind: "viewer", number: 0 }) },
+}));
 vi.mock("../state/query", () => ({
   useEnvironmentQuery: ({ kind, number }: { kind: string; number: number }) => {
     const key = `${kind}:${number}`;
     useEffect(() => {
+      // The per-host viewer read is not a native PR read.
+      if (kind === "viewer") return;
       state.active.add(key);
       state.maxActive = Math.max(state.maxActive, state.active.size);
       return () => {
         state.active.delete(key);
       };
     }, [key]);
+    if (kind === "viewer")
+      return {
+        data: state.viewer === "settled" ? { viewer: "filipgutica" } : null,
+        error: state.viewer === "failed" ? "Identity lookup failed" : null,
+        isSuccess: state.viewer === "settled",
+      };
     const complete = state.completed.has(number);
     return {
       resultIdentity: state.resultIdentity,
@@ -92,6 +104,7 @@ beforeEach(() => {
   state.title = "Invite reviewers";
   state.resultIdentity = {};
   state.reviewThreads = [];
+  state.viewer = "settled";
 });
 afterEach(() => act(() => renderer?.unmount()));
 const references = Array.from({ length: 7 }, (_, index) => ({
@@ -145,6 +158,60 @@ it("bounds native reads to three PRs, progresses completed batches, and unsubscr
   );
   act(() => renderer.unmount());
   expect(state.active.size).toBe(0);
+});
+
+it("keeps observing until the viewer lookup settles, then counts discussions you answered", () => {
+  state.completed.add(1);
+  state.viewer = "pending";
+  const thread = (login: string) => ({
+    id: "answered",
+    path: "src/settings.ts",
+    line: 12,
+    side: "right" as const,
+    isResolved: false,
+    isOutdated: false,
+    comments: [
+      {
+        id: "finding",
+        author: { login: "kong-ksai", name: null, avatarUrl: null },
+        body: "",
+        createdAt: "2026-10-20T00:00:00.000Z",
+        url: null,
+      },
+      {
+        id: "reply",
+        author: { login, name: null, avatarUrl: null },
+        body: "",
+        createdAt: "2026-10-20T00:00:00.000Z",
+        url: null,
+      },
+    ],
+  });
+  state.reviewThreads = [thread("filipgutica")];
+  const onChange = vi.fn();
+  const render = () => (
+    <WorkbenchAttentionQueries
+      environmentId={environmentId}
+      references={[references[0]!]}
+      refresh={false}
+      onChange={onChange}
+    />
+  );
+  const latest = () => onChange.mock.lastCall![0].values().next().value;
+  act(() => {
+    renderer = create(render());
+  });
+  expect(latest()).toMatchObject({ terminal: false, inspectionStatus: "loading" });
+  state.viewer = "settled";
+  act(() => renderer.update(render()));
+  expect(latest()).toMatchObject({ terminal: true, signalKinds: [] });
+  // A failed lookup still finishes, and keeps the discussion as feedback.
+  act(() => renderer.unmount());
+  state.viewer = "failed";
+  act(() => {
+    renderer = create(render());
+  });
+  expect(latest()).toMatchObject({ terminal: true, signalKinds: ["unresolved-feedback"] });
 });
 
 it.each(["open", "closed"] as const)(

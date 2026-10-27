@@ -202,20 +202,26 @@ the Ticket progress from the Ticket or Board card menu when the work is accepted
 
 Use **Needs attention** on the Board, or in the sidebar's filter menu, to find
 approval and input requests, failed runs, failed PR checks, PR feedback, plans
-ready for review, and finished agent turns. The sidebar filter sorts the most
-urgent work first. **Agent replies** narrows the Board to completed agent work
-awaiting review. PR inspection covers explicitly linked PRs; the Board shows
+ready for review, finished agent turns, and approved PRs. The sidebar filter
+sorts the most urgent work first. **Agent replies** narrows the Board to
+completed agent work awaiting review. PR inspection covers explicitly linked PRs; the Board shows
 incomplete or unavailable coverage and lets you refresh.
 
 Each Ticket and Thread shows its most urgent reason in the status area, with
 **+N** for other reasons. Click it to see the reasons grouped by Thread and PR.
 Thread reasons open the Thread; failed checks, requested changes, and unresolved
-discussions open the PR. The Ticket page keeps these actions in its **Needs
-attention** section. Opening the list does not clear them.
+discussions open the PR. **Approved** means the PR is approved, has no
+failing or pending checks, and has no merge conflicts; the host can still block
+the merge on other rules, such as a required check that was cancelled. The
+Ticket page keeps these actions in its **Needs attention** section. Opening the
+list does not clear them.
 
 Opening a Thread acknowledges its notification. A pending question or approval
 stays until you respond, and an interrupted run is not a reason. PR actions
-remain until the checks or review feedback are resolved.
+remain until the checks or review feedback are resolved, and **Approved** stays
+while those conditions hold and the PR is open. A review thread stops counting once you reply
+to it, and counts again when someone else comments. Resolving
+it on the host clears it for good.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/notifications-light.png">

@@ -18,7 +18,11 @@ import {
   useWorkbenchAttentionData,
 } from "./WorkbenchAttentionProvider";
 import { resolveThreadRouteRef } from "../threadRoutes";
-import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanelStore";
+import {
+  type PullRequestDetailTab,
+  selectActiveRightPanelSurface,
+  useRightPanelStore,
+} from "../rightPanelStore";
 
 export interface WorkbenchLinkedPullRequestThread {
   readonly threadId: ThreadId;
@@ -29,6 +33,7 @@ export interface WorkbenchLinkedPullRequestThread {
 export interface WorkbenchPullRequestSelection {
   readonly environmentId: EnvironmentId;
   readonly reference: PullRequestRef;
+  readonly initialTab?: PullRequestDetailTab;
   readonly linkedThread?: WorkbenchLinkedPullRequestThread;
 }
 
@@ -94,6 +99,7 @@ function WorkbenchPullRequestPreview({ children }: { children: ReactNode }) {
         repository: next.reference.repository,
         number: next.reference.number,
         ...(next.reference.host === undefined ? {} : { host: next.reference.host }),
+        ...(next.initialTab === undefined ? {} : { detailTab: next.initialTab }),
         ...(routeThreadRef.environmentId === next.environmentId
           ? {}
           : { environmentId: next.environmentId }),

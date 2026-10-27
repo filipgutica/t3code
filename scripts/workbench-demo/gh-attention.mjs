@@ -125,7 +125,7 @@ const pr = (number) => ({
   headRepository: { nameWithOwner: repositoryForPullRequest(number), viewerPermission: "WRITE" },
   headRef: { id: `synthetic-ref-${number}` },
   autoMergeRequest: null,
-  reviewDecision: number === 902 ? "CHANGES_REQUESTED" : null,
+  reviewDecision: number === 902 ? "CHANGES_REQUESTED" : number === 906 ? "APPROVED" : null,
   mergeable: "MERGEABLE",
   mergeStateStatus: "UNKNOWN",
   createdAt: at,
@@ -252,7 +252,7 @@ if (/^query ReviewThreads\b/.test(query)) {
     reactionGroups: [],
     reviewDismissals: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
     reviewThreads: {
-      totalCount: number === 902 ? 2 : number === 904 ? 1 : 0,
+      totalCount: number === 902 ? 3 : number === 904 ? 1 : 0,
       nodes:
         number === 902 || number === 904
           ? [
@@ -291,6 +291,34 @@ if (/^query ReviewThreads\b/.test(query)) {
                           },
                         ],
                         totalCount: 1,
+                        pageInfo: { hasNextPage: false, endCursor: null },
+                      },
+                    },
+                    // The viewer answered last, so this discussion waits on the reviewer.
+                    {
+                      id: "synthetic-thread-902-answered",
+                      isResolved: false,
+                      isOutdated: true,
+                      path: "src/invitations.test.ts",
+                      line: 1,
+                      diffSide: "RIGHT",
+                      comments: {
+                        nodes: [
+                          {
+                            ...comment,
+                            id: "synthetic-feedback-answered",
+                            body: "[Synthetic answered feedback] Cover the expired-link response.",
+                            url: `https://github.com/${repository}/pull/902#discussion_r3`,
+                          },
+                          {
+                            ...comment,
+                            id: "synthetic-feedback-answered-reply",
+                            author: { ...comment.author, login: viewer },
+                            body: "[Synthetic reply] Covered in the next commit.",
+                            url: `https://github.com/${repository}/pull/902#discussion_r4`,
+                          },
+                        ],
+                        totalCount: 2,
                         pageInfo: { hasNextPage: false, endCursor: null },
                       },
                     },

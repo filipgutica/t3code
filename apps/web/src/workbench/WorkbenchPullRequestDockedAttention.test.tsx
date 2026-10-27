@@ -122,7 +122,9 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 vi.mock("../state/entities", () => ({ useThreadShells: () => shells }));
 vi.mock("../state/environments", () => ({ usePrimaryEnvironmentId: () => environmentId }));
-vi.mock("./state", () => ({ workbenchEnvironment: { snapshot: () => ({ kind: "snapshot" }) } }));
+vi.mock("./state", () => ({
+  workbenchEnvironment: { snapshot: () => ({ kind: "snapshot" }), pullRequestViewer: () => null },
+}));
 vi.mock("../state/pullRequests", () => ({
   linkedPullRequestDetailAtom: () => ({ kind: "summary" }),
   pullRequestEnvironment: { activity: () => ({ kind: "activity" }) },

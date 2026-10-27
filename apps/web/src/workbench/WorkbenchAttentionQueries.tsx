@@ -8,6 +8,7 @@ import {
   useSharedPullRequestSummary,
 } from "../state/pullRequests";
 import { useEnvironmentQuery } from "../state/query";
+import { workbenchEnvironment } from "./state";
 import {
   getWorkbenchPullRequestAttention,
   workbenchAttentionIdentity,
@@ -95,6 +96,15 @@ function WorkbenchAttentionQuery({
   const summaryQuery = useEnvironmentQuery(linkedPullRequestDetailAtom(target));
   const summary = useSharedPullRequestSummary(environmentId, target.input);
   const activityQuery = useEnvironmentQuery(pullRequestEnvironment.activity(target));
+  const { host } = target.input;
+  const viewerQuery = useEnvironmentQuery(
+    host === undefined
+      ? null
+      : workbenchEnvironment.pullRequestViewer({ environmentId, input: { host } }),
+  );
+  const viewer = viewerQuery.data?.viewer;
+  // A finished inspection stops observing, so wait for the login; a failed lookup counts every discussion.
+  const viewerSettled = host === undefined || viewerQuery.isSuccess || viewerQuery.error !== null;
   const initialResult = useRef({
     summary: summaryQuery.resultIdentity,
     activity: activityQuery.resultIdentity,
@@ -119,8 +129,10 @@ function WorkbenchAttentionQuery({
         reference,
         summary,
         activity: activityQuery.data,
+        viewer,
         loading:
           waitingForRefresh ||
+          !viewerSettled ||
           summaryQuery.isPending ||
           activityQuery.isPending ||
           (!summaryQuery.isSuccess && summaryQuery.error === null) ||
@@ -133,6 +145,8 @@ function WorkbenchAttentionQuery({
     reference,
     refresh,
     summary,
+    viewer,
+    viewerSettled,
     summaryQuery.resultIdentity,
     activityQuery.resultIdentity,
     activityQuery.data,
