@@ -170,7 +170,6 @@
         "apps/server/src/scheduledTasks/ScheduledTaskService.schedule.test.ts",
         "apps/server/src/scheduledTasks/ScheduledTaskService.test.ts",
         "apps/server/src/sourceControl/SourceControlRepositoryService.test.ts",
-        "apps/server/src/storageCleanup.test.ts",
         "apps/server/src/telemetry/Identify.test.ts",
         "apps/server/src/textGeneration/AntigravityTextGeneration.test.ts",
         "apps/server/src/textGeneration/ClaudeTextGeneration.test.ts",

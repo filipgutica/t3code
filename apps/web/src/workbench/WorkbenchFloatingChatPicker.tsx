@@ -60,22 +60,18 @@ function ThreadStatusIcon({ thread }: { readonly thread: WorkbenchFloatingChatTh
 
 function PickerThreadItem({
   thread,
-  ticketPrefix = null,
   title,
-  icon = <ThreadStatusIcon thread={thread} />,
   selected,
   onSelect,
 }: {
   readonly thread: WorkbenchFloatingChatThread;
-  readonly ticketPrefix?: string | null;
   readonly title: string;
-  readonly icon?: ReactNode;
   readonly selected: boolean;
   readonly onSelect: (threadId: ThreadId) => void;
 }) {
   const status = thread.status;
   // Flex layout drops the spaces between these parts from the computed name.
-  const name = [ticketPrefix, title, status?.presentation.label].filter(Boolean).join(" ");
+  const name = [title, status?.presentation.label].filter(Boolean).join(" ");
   return (
     <MenuItem
       data-thread-id={thread.threadId}
@@ -85,14 +81,9 @@ function PickerThreadItem({
       onClick={() => onSelect(thread.threadId)}
     >
       <span className="flex min-w-0 flex-1 items-start gap-2">
-        {icon}
+        <ThreadStatusIcon thread={thread} />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="flex min-w-0 items-baseline gap-1.5">
-            {ticketPrefix ? (
-              <span className="max-w-28 shrink-0 truncate text-xs text-muted-foreground">
-                {ticketPrefix}
-              </span>
-            ) : null}
             <span className={cn("min-w-0 flex-1 truncate", selected && "font-medium")}>
               {title}
             </span>
@@ -109,7 +100,7 @@ function PickerThreadItem({
               </span>
             ) : null}
             {selected ? (
-              <CheckIcon aria-hidden className="size-3.5 shrink-0 self-center text-foreground" />
+              <CheckIcon aria-hidden className="size-3.5 shrink-0 self-center text-primary" />
             ) : null}
           </span>
           {thread.recap ? (
@@ -153,6 +144,15 @@ function PickerHistory({
   );
 }
 
+/** A ticket's kind, or the draft mark for a Thread with no ticket yet. */
+function PickerTicketIcon({ ticket }: { readonly ticket: WorkbenchFloatingChatTicket | null }) {
+  return ticket ? (
+    <WorkbenchTicketKindIcon kind={ticket.kind} />
+  ) : (
+    <FilePenLineIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+  );
+}
+
 function PickerTriggerContent({
   selected,
   title,
@@ -162,6 +162,7 @@ function PickerTriggerContent({
 }) {
   return (
     <>
+      {selected === null ? null : <PickerTicketIcon ticket={selected.ticket} />}
       {selected?.ticket?.key ? (
         <span className="max-w-32 shrink-0 truncate text-xs text-muted-foreground">
           {selected.ticket.key}
@@ -184,11 +185,14 @@ function PickerGroupHeader({
   ticket,
   count,
   open,
+  current,
   onToggle,
 }: {
   readonly ticket: WorkbenchFloatingChatTicket | null;
   readonly count: number;
   readonly open: boolean;
+  /** Holds the showing Thread, so the heading still marks it while collapsed. */
+  readonly current: boolean;
   readonly onToggle: () => void;
 }) {
   const title = ticket?.title ?? "Drafts";
@@ -201,17 +205,13 @@ function PickerGroupHeader({
         .join(" ")}
       onClick={onToggle}
     >
-      {ticket ? (
-        <WorkbenchTicketKindIcon kind={ticket.kind} />
-      ) : (
-        <FilePenLineIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-      )}
+      <PickerTicketIcon ticket={ticket} />
       {ticket?.key ? (
         <span className="max-w-28 shrink-0 truncate text-xs text-muted-foreground">
           {ticket.key}
         </span>
       ) : null}
-      <span className="min-w-0 flex-1 truncate">{title}</span>
+      <span className={cn("min-w-0 flex-1 truncate", current && "font-medium")}>{title}</span>
       <span className="shrink-0 text-2xs text-muted-foreground tabular-nums">{count}</span>
       <ChevronRightIcon
         aria-hidden
@@ -224,12 +224,15 @@ function PickerGroupHeader({
 function PickerThreadSections({
   threads,
   selectedThreadId,
+  grouped,
   openGroups,
   searching,
   onToggleGroup,
   onSelect,
 }: {
   readonly threads: ReadonlyArray<WorkbenchFloatingChatThread>;
+  /** The board groups Threads under their tickets; the ticket chat lists them plainly. */
+  readonly grouped: boolean;
   readonly selectedThreadId: ThreadId | null;
   /** Group ids the user opened or closed. */
   readonly openGroups: ReadonlyMap<string, boolean>;
@@ -247,27 +250,21 @@ function PickerThreadSections({
       onSelect={onSelect}
     />
   );
-  return getWorkbenchFloatingChatPickerSections(threads).map((section) => {
+  // The showing Thread's stretch of its group's rule is drawn in the accent colour.
+  const groupedItem = (row: WorkbenchFloatingChatPickerRow) => (
+    <div key={row.thread.threadId} className="relative">
+      {row.thread.threadId === selectedThreadId ? (
+        <span
+          aria-hidden
+          className="absolute inset-y-1 -start-[calc(0.5rem+2px)] w-[3px] rounded-full bg-primary"
+        />
+      ) : null}
+      {item(row)}
+    </div>
+  );
+  return getWorkbenchFloatingChatPickerSections(threads, grouped).map((section) => {
     if (section.type === "rows")
       return <MenuGroup key={section.id}>{section.rows.map(item)}</MenuGroup>;
-    if (section.type === "ticket") {
-      const { ticket, row, prefix } = section;
-      return (
-        <PickerThreadItem
-          key={section.id}
-          thread={row.thread}
-          ticketPrefix={prefix}
-          title={row.title}
-          icon={
-            <span className="mt-0.5 flex shrink-0">
-              <WorkbenchTicketKindIcon kind={ticket.kind} />
-            </span>
-          }
-          selected={row.thread.threadId === selectedThreadId}
-          onSelect={onSelect}
-        />
-      );
-    }
     const open =
       openGroups.get(section.id) ??
       (searching || isWorkbenchFloatingChatGroupOpenByDefault(section, selectedThreadId));
@@ -277,12 +274,13 @@ function PickerThreadSections({
           ticket={section.ticket}
           count={section.rows.length}
           open={open}
+          current={section.rows.some(({ thread }) => thread.threadId === selectedThreadId)}
           onToggle={() => onToggleGroup(section.id, !open)}
         />
         {/* The rule ties a group's Threads to its heading. */}
         {open ? (
           <div className="ms-3.5 border-s border-muted-foreground/30 ps-2">
-            {section.rows.map(item)}
+            {section.rows.map(groupedItem)}
           </div>
         ) : null}
       </MenuGroup>
@@ -346,6 +344,7 @@ export function WorkbenchFloatingChatPicker({
   onSelect,
   onOpenThread,
   actions,
+  grouped,
 }: {
   readonly chat: FloatingChat;
   /** Shown in the trigger when no Thread is selected. */
@@ -356,6 +355,7 @@ export function WorkbenchFloatingChatPicker({
   readonly onOpenThread: (threadId: ThreadId) => void;
   /** New-Thread items, after the Threads as in a chat app's switcher. */
   readonly actions: ReactNode;
+  readonly grouped: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const groups = usePickerGroups();
@@ -366,19 +366,29 @@ export function WorkbenchFloatingChatPicker({
   const changeOpen = (next: boolean) => {
     setOpen(next);
     if (!next) groups.changeQuery("");
+    // A group the user collapsed opens again so the showing Thread is always in the list.
+    else if (selected) groups.reveal(selected);
   };
   const openOnWaiting = () => {
     const target = waiting[0];
     focusThreadIdRef.current = target?.threadId ?? null;
-    // A group the user collapsed must open so its waiting Thread mounts and can take focus.
     if (target) groups.reveal(target);
     changeOpen(true);
   };
-  const focusWaiting = (isOpen: boolean) => {
-    const threadId = focusThreadIdRef.current;
+  const row = (threadId: ThreadId | undefined) =>
+    popupRef.current?.querySelector<HTMLElement>(`[data-thread-id="${threadId}"]`);
+  // Focuses the waiting Thread the pill asked for, or scrolls to the showing Thread.
+  const revealOnOpen = (isOpen: boolean) => {
+    const waitingThreadId = focusThreadIdRef.current;
     focusThreadIdRef.current = null;
-    if (!isOpen || threadId === null) return;
-    popupRef.current?.querySelector<HTMLElement>(`[data-thread-id="${threadId}"]`)?.focus();
+    if (!isOpen) return;
+    if (waitingThreadId !== null) return row(waitingThreadId)?.focus();
+    const showing = row(selected?.threadId);
+    // Keyboard opening focuses the first item, which centring could scroll out of view; the
+    // search field keeps its focus.
+    if (document.activeElement?.getAttribute("role") === "menuitem")
+      showing?.focus({ preventScroll: true });
+    showing?.scrollIntoView({ block: "center" });
   };
   const select = (threadId: ThreadId) => {
     changeOpen(false);
@@ -387,7 +397,7 @@ export function WorkbenchFloatingChatPicker({
 
   return (
     <>
-      <Menu open={open} onOpenChange={changeOpen} onOpenChangeComplete={focusWaiting}>
+      <Menu open={open} onOpenChange={changeOpen} onOpenChangeComplete={revealOnOpen}>
         <MenuTrigger
           render={
             <button
@@ -416,6 +426,7 @@ export function WorkbenchFloatingChatPicker({
             ) : null}
             <PickerThreadSections
               threads={visible}
+              grouped={grouped}
               selectedThreadId={selected?.threadId ?? null}
               openGroups={groups.openGroups}
               searching={groups.searching}

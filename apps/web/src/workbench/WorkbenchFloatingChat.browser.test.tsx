@@ -73,12 +73,13 @@ function Harness(props: {
   readonly primaryThreadId?: ThreadId;
   readonly onNewThread?: () => void;
   readonly onOpenThread?: (threadId: ThreadId) => void;
+  readonly kind?: "ticket" | "board";
 }) {
   const [explicitThreadId, setExplicitThreadId] = useState<ThreadId | null>(null);
   return (
     <WorkbenchFloatingChat
       environmentId={EnvironmentId.make("environment")}
-      kind="ticket"
+      kind={props.kind ?? "ticket"}
       label="PAY-1"
       chat={resolveWorkbenchFloatingChat({
         active: props.threads,
@@ -167,6 +168,7 @@ it("opens a collapsed group to focus its waiting Thread from the pill", async ()
   });
   await using screen = await render(
     <Harness
+      kind="board"
       threads={[
         onTicket(thread("a"), "PAY-1"),
         onTicket(thread("c", "input"), "PAY-2"),
@@ -174,7 +176,7 @@ it("opens a collapsed group to focus its waiting Thread from the pill", async ()
       ]}
     />,
   );
-  await userEvent.click(screen.getByRole("button", { name: /^Ticket Threads/ }));
+  await userEvent.click(screen.getByRole("button", { name: /^Board Threads/ }));
   const group = screen.getByRole("menuitem", { name: "PAY-2 Ticket PAY-2 2 Threads" });
   await userEvent.click(group);
   await expect.element(group).toHaveAttribute("aria-expanded", "false");
@@ -183,6 +185,58 @@ it("opens a collapsed group to focus its waiting Thread from the pill", async ()
   await userEvent.click(screen.getByRole("button", { name: "1 other Thread needs you" }));
 
   await expect.element(screen.getByRole("menuitem", { name: /Thread c/ })).toHaveFocus();
+});
+
+it("scrolls to the showing Thread whenever the menu opens, even after its group was collapsed", async () => {
+  setup();
+  const threads = Array.from({ length: 20 }, (_, index) => ({
+    ...thread(`t${index}`),
+    ticket: {
+      id: WorkbenchTicketId.make(`ticket-${index}`),
+      key: `PAY-${index}`,
+      title: `Ticket ${index}`,
+      kind: "story" as const,
+    },
+  }));
+  await using screen = await render(
+    <Harness kind="board" threads={threads} primaryThreadId={ThreadId.make("t19")} />,
+  );
+  const menu = screen.getByRole("button", { name: /^Board Threads/ });
+  const showing = screen.getByRole("menuitem", { name: "Thread t19" });
+
+  await userEvent.click(menu);
+  await expect.element(showing).toBeInViewport();
+
+  await userEvent.click(screen.getByRole("menuitem", { name: "PAY-19 Ticket 19 1 Thread" }));
+  await expect.element(showing).not.toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  await userEvent.click(menu);
+  await expect.element(showing).toBeInViewport();
+});
+
+it("moves keyboard focus to the showing Thread it scrolls to", async () => {
+  setup();
+  const ticket = {
+    id: WorkbenchTicketId.make("pay-1"),
+    key: "PAY-1",
+    title: "Refunds",
+    kind: "story" as const,
+  };
+  const threads = [
+    ...["d1", "d2", "d3"].map((id) => thread(id, null, `Recap ${id}`)),
+    ...["t1", "t2", "t3", "t4"].map((id) => ({ ...thread(id, null, `Recap ${id}`), ticket })),
+  ];
+  await using screen = await render(
+    <Harness kind="board" threads={threads} primaryThreadId={ThreadId.make("t4")} />,
+  );
+  const menu = screen.getByRole("button", { name: /^Board Threads/ });
+  menu.element().focus();
+
+  await userEvent.keyboard("{Enter}");
+
+  const showing = screen.getByRole("menuitem", { name: "Thread t4" });
+  await expect.element(showing).toHaveFocus();
+  await expect.element(showing).toBeInViewport();
 });
 
 it("collapses a group in search results, and forgets it with the search", async () => {
@@ -197,8 +251,8 @@ it("collapses a group in search results, and forgets it with the search", async 
     ...thread(id),
     ticket: id === "a" ? { ...ticket, id: WorkbenchTicketId.make("pay-1"), key: "PAY-1" } : ticket,
   }));
-  await using screen = await render(<Harness threads={threads} />);
-  await userEvent.click(screen.getByRole("button", { name: /^Ticket Threads/ }));
+  await using screen = await render(<Harness kind="board" threads={threads} />);
+  await userEvent.click(screen.getByRole("button", { name: /^Board Threads/ }));
   await userEvent.type(screen.getByRole("textbox", { name: "Search Threads" }), "Thread");
   const group = screen.getByRole("menuitem", { name: "PAY-2 Payouts 7 Threads" });
   await expect.element(group).toHaveAttribute("aria-expanded", "true");
