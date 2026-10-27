@@ -14,7 +14,9 @@ import {
   getWorkbenchAttentionReasonKind,
   matchesWorkbenchAttention,
   getWorkbenchThreadNotification,
+  getWorkbenchReviewThreadPreview,
   groupWorkbenchAttentionSignals,
+  mergeWorkbenchPullRequestAttention,
   type WorkbenchAttentionSignal,
   workbenchAttentionIdentity,
 } from "./workbenchAttention.logic";
@@ -321,6 +323,70 @@ describe("Workbench attention from active native Threads and linked PRs", () => 
     expect(evaluate({ activity: { ...activity, commentsTruncated: true } }).inspectionStatus).toBe(
       "incomplete",
     );
+  });
+  it("reports approval only with passing or absent checks, no conflicts and no draft", () => {
+    const approved = { ...cleanSummary, mergeability: "mergeable" as const };
+    expect(evaluate({ summary: approved }).signalKinds).toEqual(["approved"]);
+    expect(evaluate({ summary: { ...approved, checksState: null } }).signalKinds).toEqual([
+      "approved",
+    ]);
+    for (const summary of [
+      cleanSummary,
+      { ...approved, checksState: "pending" as const },
+      { ...approved, mergeability: "unknown" as const },
+      { ...approved, mergeability: "conflicting" as const },
+      { ...approved, isDraft: true },
+      { ...approved, reviewDecision: "review-required" as const },
+    ])
+      expect(evaluate({ summary }).signalKinds).toEqual([]);
+    expect(
+      evaluate({
+        summary: approved,
+        activity: { ...activity, reviewThreads: [reviewThread("open")] },
+      }).signalKinds,
+    ).toEqual(["approved", "unresolved-feedback"]);
+  });
+  it("keeps approval through a reload and drops it once the review decision changes", () => {
+    const previous = evaluate({ summary: { ...cleanSummary, mergeability: "mergeable" } });
+    expect(
+      mergeWorkbenchPullRequestAttention({ previous, next: evaluate({ loading: true }) })
+        .signalKinds,
+    ).toEqual(["approved"]);
+    expect(
+      mergeWorkbenchPullRequestAttention({
+        previous,
+        next: evaluate({ summary: { ...cleanSummary, reviewDecision: "review-required" } }),
+      }).signalKinds,
+    ).toEqual([]);
+  });
+  it("previews a discussion's location, readable opening comment and last reply", () => {
+    const comment = (login: string, body: string) => ({
+      id: login,
+      author: { login, name: null, avatarUrl: null },
+      body,
+      createdAt: "2026-10-20T00:00:00.000Z",
+      url: null,
+    });
+    const thread = {
+      ...reviewThread("bot"),
+      comments: [
+        comment(
+          "kong-core-ui",
+          "🔵 **Low** `risk`\n\nNo locale [label](https://example.com) for `token_cache_hit_rate`.\n\n<!-- kreview-ids match=m1 -->",
+        ),
+        comment("filipgutica", "Not changing this."),
+      ],
+    };
+    expect(getWorkbenchReviewThreadPreview(thread)).toEqual({
+      location: "src/settings.ts:12",
+      author: "kong-core-ui",
+      excerpt: "🔵 Low risk No locale label for token_cache_hit_rate.",
+      replyCount: 1,
+      lastReplyAuthor: "filipgutica",
+    });
+    expect(
+      getWorkbenchReviewThreadPreview({ ...thread, line: null, commentCount: 3 }),
+    ).toMatchObject({ location: "src/settings.ts", replyCount: 2, lastReplyAuthor: null });
   });
   it("excludes merged/closed references even with stale failing observations", () => {
     for (const state of ["merged", "closed"] as const)

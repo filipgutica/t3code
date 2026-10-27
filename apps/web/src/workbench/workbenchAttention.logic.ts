@@ -28,15 +28,18 @@ export type WorkbenchAttentionReasonKind =
   | "checks"
   | "feedback"
   | "plan"
-  | "done";
+  | "done"
+  | "approved";
 export type WorkbenchPullRequestAttentionKind =
   | "failed-checks"
   | "changes-requested"
-  | "unresolved-feedback";
+  | "unresolved-feedback"
+  | "approved";
 const pullRequestReasonLabels = {
   "failed-checks": "Failed PR checks",
   "changes-requested": "PR changes requested",
   "unresolved-feedback": "Unresolved PR feedback",
+  approved: "PR approved",
 } as const;
 export type WorkbenchInspectionStatus = "loading" | "unavailable" | "incomplete" | "complete";
 type WorkbenchThreadWaitingCause = "approval" | "plan" | "failed";
@@ -85,6 +88,7 @@ export const getWorkbenchAttentionReasonKind = (
       "changes-requested": "feedback",
       "unresolved-feedback": "feedback",
       reply: "done",
+      approved: "approved",
     } as const
   )[signal.kind];
 };
@@ -97,6 +101,7 @@ const reasonPriority = {
   feedback: 3,
   plan: 4,
   done: 5,
+  approved: 6,
 };
 
 /** Approval wins input ties; other equal priorities preserve source order. Missing signals sort last. */
@@ -122,6 +127,7 @@ const reasonLabels = {
   feedback: "Feedback",
   plan: "Plan ready",
   done: "Done",
+  approved: "Approved",
 } as const;
 
 export const getWorkbenchAttentionReasonLabel = (kind: WorkbenchAttentionReasonKind) =>
@@ -137,6 +143,7 @@ const signalLabels = {
   reply: "Agent replied",
   "failed-checks": "Checks failed",
   "changes-requested": "Changes requested",
+  approved: "Approved",
 } as const;
 
 export const getWorkbenchAttentionSignalLabel = (signal: WorkbenchAttentionSignal) => {
@@ -215,7 +222,7 @@ type AttentionInput = {
   readonly reference: TicketPullRequestReference;
   readonly summary:
     | (Pick<PullRequestSummary, "state" | "checksState" | "reviewDecision"> &
-        Partial<Pick<PullRequestSummary, "title">>)
+        Partial<Pick<PullRequestSummary, "title" | "mergeability" | "isDraft">>)
     | null;
   readonly activity: Pick<
     PullRequestActivity,
@@ -271,6 +278,16 @@ const pullRequestSummarySignals = ({
     "changes-requested"
   )
     signals.push("changes-requested");
+  // Only what the summary reports: GitHub can still block the merge on rules it does not expose.
+  if (
+    summary?.reviewDecision === "approved" &&
+    summary.checksState !== undefined &&
+    summary.checksState !== "failing" &&
+    summary.checksState !== "pending" &&
+    summary.mergeability === "mergeable" &&
+    summary.isDraft !== true
+  )
+    signals.push("approved");
   return signals;
 };
 
@@ -369,17 +386,18 @@ export const mergeWorkbenchPullRequestAttention = ({
   for (const thread of next.unresolvedReviewThreads) discussions.set(thread.id, thread);
   for (const id of next.resolvedReviewThreadIds) discussions.delete(id);
   const unresolvedReviewThreads = [...discussions.values()];
-  const signalKinds: WorkbenchPullRequestAttentionKind[] = [];
-  if (
-    next.signalKinds.includes("failed-checks") ||
-    (!next.checksKnown && previous.signalKinds.includes("failed-checks"))
-  )
-    signalKinds.push("failed-checks");
-  if (
-    next.signalKinds.includes("changes-requested") ||
-    (!next.reviewDecisionKnown && previous.signalKinds.includes("changes-requested"))
-  )
-    signalKinds.push("changes-requested");
+  // A summary signal survives a read that could not observe its source.
+  const summarySignals = [
+    ["failed-checks", next.checksKnown],
+    ["changes-requested", next.reviewDecisionKnown],
+    ["approved", next.reviewDecisionKnown],
+  ] as const;
+  const signalKinds: WorkbenchPullRequestAttentionKind[] = summarySignals
+    .filter(
+      ([kind, known]) =>
+        next.signalKinds.includes(kind) || (!known && previous.signalKinds.includes(kind)),
+    )
+    .map(([kind]) => kind);
   if (unresolvedReviewThreads.length > 0) signalKinds.push("unresolved-feedback");
   return {
     ...next,
@@ -394,6 +412,34 @@ export const mergeWorkbenchPullRequestAttention = ({
       ...signalKinds.map((kind) => pullRequestReasonLabels[kind]),
       ...next.reasons.filter((reason) => reason.startsWith("PR attention ")),
     ],
+  };
+};
+
+/** Review bodies are markdown, and bots append hidden metadata; the preview keeps the prose. */
+const reviewCommentExcerpt = (body: string) =>
+  body
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[*`]/g, "")
+    .replace(/^\s*(?:#+|>+)\s*/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/** The last reply is only known when the host returned every comment in the discussion. */
+export const getWorkbenchReviewThreadPreview = (thread: PullRequestReviewThread) => {
+  const first = thread.comments[0];
+  const commentCount = thread.commentCount ?? thread.comments.length;
+  const complete =
+    thread.nextCommentsCursor === undefined && commentCount === thread.comments.length;
+  return {
+    location: thread.line === null ? thread.path : `${thread.path}:${thread.line}`,
+    author: first?.author?.login ?? null,
+    excerpt: first ? reviewCommentExcerpt(first.body) : "",
+    replyCount: Math.max(commentCount - 1, 0),
+    lastReplyAuthor:
+      complete && thread.comments.length > 1
+        ? (thread.comments.at(-1)?.author?.login ?? null)
+        : null,
   };
 };
 

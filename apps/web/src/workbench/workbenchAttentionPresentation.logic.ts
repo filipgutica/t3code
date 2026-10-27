@@ -24,6 +24,7 @@ const reasonTones = {
   feedback: "text-warning-foreground",
   plan: nativeAttentionTone("input"),
   done: "text-success-foreground",
+  approved: "text-success-foreground",
 } as const;
 
 export function getWorkbenchAttentionReasonPresentation(kind: WorkbenchAttentionReasonKind) {
@@ -59,7 +60,9 @@ export function getWorkbenchAttentionSignalPresentation(signal: WorkbenchAttenti
         ? "View checks"
         : signal.kind === "changes-requested"
           ? "View review"
-          : "View threads";
+          : signal.kind === "approved"
+            ? "View PR"
+            : "View threads";
   return {
     ...getWorkbenchAttentionReasonPresentation(kind),
     action,

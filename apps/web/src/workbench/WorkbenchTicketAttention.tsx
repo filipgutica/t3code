@@ -1,7 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
-import type { EnvironmentId, ThreadId, WorkbenchTicketId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  PullRequestReviewThread,
+  ThreadId,
+  WorkbenchTicketId,
+} from "@t3tools/contracts";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import {
+  BadgeCheckIcon,
   ChevronRightIcon,
   CircleAlertIcon,
   CircleCheckIcon,
@@ -26,6 +32,7 @@ import {
   getWorkbenchAttentionSignalLabel,
   getWorkbenchAttentionSourceLabel,
   getWorkbenchAttentionSourceParts,
+  getWorkbenchReviewThreadPreview,
   type WorkbenchAttentionReasonKind,
   type WorkbenchAttentionSignal,
 } from "./workbenchAttention.logic";
@@ -51,6 +58,7 @@ const reasonIcons = {
   feedback: MessageSquareTextIcon,
   plan: ListChecksIcon,
   done: CircleCheckIcon,
+  approved: BadgeCheckIcon,
 } satisfies Record<WorkbenchAttentionReasonKind, unknown>;
 
 function AttentionSignalItem({
@@ -76,6 +84,42 @@ function AttentionSignalItem({
         <ChevronRightIcon aria-hidden className="size-3" />
       </span>
     </button>
+  );
+}
+
+const maxReviewThreadPreviews = 3;
+
+/** Says which discussion is open and whether it was answered, so the reader can decide before opening the PR. */
+function ReviewThreadPreviews({ threads }: { threads: readonly PullRequestReviewThread[] }) {
+  const hidden = threads.length - maxReviewThreadPreviews;
+  return (
+    <ul className="flex flex-col gap-1.5 pt-0.5 pb-1 pl-7 pr-2 text-2xs text-muted-foreground">
+      {threads.slice(0, maxReviewThreadPreviews).map((thread) => {
+        const { location, author, excerpt, replyCount, lastReplyAuthor } =
+          getWorkbenchReviewThreadPreview(thread);
+        return (
+          <li key={thread.id} className="flex min-w-0 flex-col">
+            <span className="break-all font-mono">
+              {location}
+              {thread.isOutdated ? " · outdated" : null}
+            </span>
+            {excerpt ? (
+              <span className="line-clamp-2 break-words text-foreground/80 [overflow-wrap:anywhere]">
+                {author ? <span className="font-medium">{author}: </span> : null}
+                {excerpt}
+              </span>
+            ) : null}
+            {replyCount > 0 ? (
+              <span>
+                {replyCount} {replyCount === 1 ? "reply" : "replies"}
+                {lastReplyAuthor ? `, last from ${lastReplyAuthor}` : null}
+              </span>
+            ) : null}
+          </li>
+        );
+      })}
+      {hidden > 0 ? <li>+{hidden} more</li> : null}
+    </ul>
   );
 }
 
@@ -137,11 +181,12 @@ function AttentionItems({
               {repository ? ` · ${repository}` : null}
             </h3>
             {group.map((signal) => (
-              <AttentionSignalItem
-                key={signal.kind === "waiting" ? `${signal.kind}:${signal.cause}` : signal.kind}
-                signal={signal}
-                onOpenSignal={openSignal}
-              />
+              <div key={signal.kind === "waiting" ? `${signal.kind}:${signal.cause}` : signal.kind}>
+                <AttentionSignalItem signal={signal} onOpenSignal={openSignal} />
+                {signal.kind === "unresolved-feedback" ? (
+                  <ReviewThreadPreviews threads={signal.unresolvedReviewThreads} />
+                ) : null}
+              </div>
             ))}
           </section>
         );
