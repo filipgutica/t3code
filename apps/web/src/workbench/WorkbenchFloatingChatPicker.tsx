@@ -215,12 +215,15 @@ function PickerGroupHeader({
 function PickerThreadSections({
   threads,
   selectedThreadId,
+  grouped,
   openGroups,
   searching,
   onToggleGroup,
   onSelect,
 }: {
   readonly threads: ReadonlyArray<WorkbenchFloatingChatThread>;
+  /** The board groups Threads under their tickets; the ticket chat lists them plainly. */
+  readonly grouped: boolean;
   readonly selectedThreadId: ThreadId | null;
   /** Group ids the user opened or closed. */
   readonly openGroups: ReadonlyMap<string, boolean>;
@@ -238,7 +241,7 @@ function PickerThreadSections({
       onSelect={onSelect}
     />
   );
-  return getWorkbenchFloatingChatPickerSections(threads).map((section) => {
+  return getWorkbenchFloatingChatPickerSections(threads, grouped).map((section) => {
     if (section.type === "rows")
       return <MenuGroup key={section.id}>{section.rows.map(item)}</MenuGroup>;
     const open =
@@ -319,6 +322,7 @@ export function WorkbenchFloatingChatPicker({
   onSelect,
   onOpenThread,
   actions,
+  grouped,
 }: {
   readonly chat: FloatingChat;
   /** Shown in the trigger when no Thread is selected. */
@@ -329,6 +333,7 @@ export function WorkbenchFloatingChatPicker({
   readonly onOpenThread: (threadId: ThreadId) => void;
   /** New-Thread items, after the Threads as in a chat app's switcher. */
   readonly actions: ReactNode;
+  readonly grouped: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const groups = usePickerGroups();
@@ -389,6 +394,7 @@ export function WorkbenchFloatingChatPicker({
             ) : null}
             <PickerThreadSections
               threads={visible}
+              grouped={grouped}
               selectedThreadId={selected?.threadId ?? null}
               openGroups={groups.openGroups}
               searching={groups.searching}

@@ -73,12 +73,13 @@ function Harness(props: {
   readonly primaryThreadId?: ThreadId;
   readonly onNewThread?: () => void;
   readonly onOpenThread?: (threadId: ThreadId) => void;
+  readonly kind?: "ticket" | "board";
 }) {
   const [explicitThreadId, setExplicitThreadId] = useState<ThreadId | null>(null);
   return (
     <WorkbenchFloatingChat
       environmentId={EnvironmentId.make("environment")}
-      kind="ticket"
+      kind={props.kind ?? "ticket"}
       label="PAY-1"
       chat={resolveWorkbenchFloatingChat({
         active: props.threads,
@@ -167,6 +168,7 @@ it("opens a collapsed group to focus its waiting Thread from the pill", async ()
   });
   await using screen = await render(
     <Harness
+      kind="board"
       threads={[
         onTicket(thread("a"), "PAY-1"),
         onTicket(thread("c", "input"), "PAY-2"),
@@ -174,7 +176,7 @@ it("opens a collapsed group to focus its waiting Thread from the pill", async ()
       ]}
     />,
   );
-  await userEvent.click(screen.getByRole("button", { name: /^Ticket Threads/ }));
+  await userEvent.click(screen.getByRole("button", { name: /^Board Threads/ }));
   const group = screen.getByRole("menuitem", { name: "PAY-2 Ticket PAY-2 2 Threads" });
   await userEvent.click(group);
   await expect.element(group).toHaveAttribute("aria-expanded", "false");
@@ -197,8 +199,8 @@ it("collapses a group in search results, and forgets it with the search", async 
     ...thread(id),
     ticket: id === "a" ? { ...ticket, id: WorkbenchTicketId.make("pay-1"), key: "PAY-1" } : ticket,
   }));
-  await using screen = await render(<Harness threads={threads} />);
-  await userEvent.click(screen.getByRole("button", { name: /^Ticket Threads/ }));
+  await using screen = await render(<Harness kind="board" threads={threads} />);
+  await userEvent.click(screen.getByRole("button", { name: /^Board Threads/ }));
   await userEvent.type(screen.getByRole("textbox", { name: "Search Threads" }), "Thread");
   const group = screen.getByRole("menuitem", { name: "PAY-2 Payouts 7 Threads" });
   await expect.element(group).toHaveAttribute("aria-expanded", "true");

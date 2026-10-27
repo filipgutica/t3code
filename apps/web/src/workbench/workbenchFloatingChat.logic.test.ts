@@ -373,13 +373,16 @@ describe("getWorkbenchFloatingChatPickerSections", () => {
     sections.flatMap((section) => section.rows.map((row) => row.title));
 
   it("groups drafts first, then each ticket's Threads, including a ticket with one Thread", () => {
-    const sections = getWorkbenchFloatingChatPickerSections([
-      thread("b1", null, { ticket: ticketB }),
-      thread("a1", null, { ticket: ticketA }),
-      thread("draft"),
-      thread("b2", null, { ticket: ticketB }),
-      thread("c1", null, { ticket: ticketC }),
-    ]);
+    const sections = getWorkbenchFloatingChatPickerSections(
+      [
+        thread("b1", null, { ticket: ticketB }),
+        thread("a1", null, { ticket: ticketA }),
+        thread("draft"),
+        thread("b2", null, { ticket: ticketB }),
+        thread("c1", null, { ticket: ticketC }),
+      ],
+      true,
+    );
     expect(shape(sections)).toEqual([
       { type: "group", id: "drafts", rows: ["draft"] },
       { type: "group", id: "b", rows: ["b1", "b2"] },
@@ -388,16 +391,24 @@ describe("getWorkbenchFloatingChatPickerSections", () => {
     ]);
   });
 
-  it("lists one ticket's Threads, or Threads with no ticket, as plain rows", () => {
-    expect(shape(getWorkbenchFloatingChatPickerSections([thread("x"), thread("y")]))).toEqual([
-      { type: "rows", id: "drafts", rows: ["x", "y"] },
-    ]);
-    const oneTicket = getWorkbenchFloatingChatPickerSections([
-      thread("main", null, { title: "Second", ticket: ticketB }),
-      thread("api", null, { title: "Second — API contract review", ticket: ticketB }),
-      thread("other", null, { title: "Review copy", ticket: ticketB }),
-      thread("word", null, { title: "Secondary review", ticket: ticketB }),
-    ]);
+  it("keeps a lone ticket's heading on the board, as when a search matches one ticket", () => {
+    expect(
+      shape(
+        getWorkbenchFloatingChatPickerSections([thread("b1", null, { ticket: ticketB })], true),
+      ),
+    ).toEqual([{ type: "group", id: "b", rows: ["b1"] }]);
+  });
+
+  it("lists the ticket chat's Threads as plain rows under the ticket", () => {
+    const oneTicket = getWorkbenchFloatingChatPickerSections(
+      [
+        thread("main", null, { title: "Second", ticket: ticketB }),
+        thread("api", null, { title: "Second — API contract review", ticket: ticketB }),
+        thread("other", null, { title: "Review copy", ticket: ticketB }),
+        thread("word", null, { title: "Secondary review", ticket: ticketB }),
+      ],
+      false,
+    );
     expect(shape(oneTicket)).toEqual([
       { type: "rows", id: "b", rows: ["main", "api", "other", "word"] },
     ]);

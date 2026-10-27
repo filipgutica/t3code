@@ -202,38 +202,21 @@ const titleUnderHeading = (title: string, ticketTitle: string) => {
 };
 
 /**
- * The picker's layout. A list from one ticket, or with no tickets, is plain rows. Otherwise
- * drafts and each ticket are groups, so a ticket always opens to its Threads.
+ * The picker's layout. The ticket chat lists its one ticket's Threads as plain rows. The board
+ * always groups drafts and each ticket, so a ticket always opens to its Threads.
  */
 export const getWorkbenchFloatingChatPickerSections = (
   threads: ReadonlyArray<WorkbenchFloatingChatThread>,
-): ReadonlyArray<WorkbenchFloatingChatPickerSection> => {
-  const groups = groupWorkbenchFloatingChatThreads(threads);
-  const rows = (
-    ticket: WorkbenchFloatingChatTicket | null,
-    members: ReadonlyArray<WorkbenchFloatingChatThread>,
-  ) =>
-    members.map((thread) => ({
+  grouped: boolean,
+): ReadonlyArray<WorkbenchFloatingChatPickerSection> =>
+  groupWorkbenchFloatingChatThreads(threads).map(({ ticket, threads: members }) => {
+    const id = ticket?.id ?? "drafts";
+    const rows = members.map((thread) => ({
       thread,
       title: ticket ? titleUnderHeading(thread.title, ticket.title) : thread.title,
     }));
-  const [onlyGroup] = groups;
-  if (groups.length === 1 && onlyGroup !== undefined) {
-    return [
-      {
-        type: "rows",
-        id: onlyGroup.ticket?.id ?? "drafts",
-        rows: rows(onlyGroup.ticket, onlyGroup.threads),
-      },
-    ];
-  }
-  return groups.map(({ ticket, threads: members }) => ({
-    type: "group",
-    id: ticket?.id ?? "drafts",
-    ticket,
-    rows: rows(ticket, members),
-  }));
-};
+    return grouped ? { type: "group", id, ticket, rows } : { type: "rows", id, rows };
+  });
 
 /**
  * Drafts start open as work in progress; a ticket's group starts open when it holds the

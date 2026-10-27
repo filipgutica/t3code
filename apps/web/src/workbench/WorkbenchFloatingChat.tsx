@@ -549,6 +549,7 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
         ) : (
           <WorkbenchFloatingChatPicker
             chat={chat}
+            grouped={props.kind === "board"}
             title={copy.title}
             listLabel={copy.threads}
             onSelect={selectThread}
