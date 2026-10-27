@@ -20,28 +20,58 @@
   --font-sans: var(--font-ui);
   --radius-md: var(--radius-control);
   --radius-lg: var(--radius-panel);
-  --site-display: var(--text-display);
-  --site-display-mobile: var(--text-display-sm);
-  /* One frame for every row. Wide screens keep the commit rail in the left margin. */
-  --frame-max: var(--page-wide);
-  --rail: 64px;
+
+  /* Type */
+  --h1: 72px;
+  --h1-leading: 1.02;
+  --h2: 40px;
+  --h2-leading: 1.1;
+  --lede: 19px;
+
+  /* One frame for every row; each section is [graph | content]. */
   --gutter: var(--space-4);
-  --frame: min(var(--frame-max), calc(100% - 2 * var(--gutter)));
+  --frame: min(1200px, calc(100% - 2 * var(--gutter)));
   --column-gap: var(--space-6);
-  --section-pad: var(--space-16);
-  --duration-section: 360ms;
-  --duration-walkthrough: 220ms;
+  --section-pad: 56px;
+  --hero-pad: var(--space-12);
+
+  /* The commit graph: lane 0 is main, lanes 1 and 2 are the per-repository branches. */
+  --graph: 28px;
+  --lane-0: 9px;
+  --lane-1: 52px;
+  --lane-2: 88px;
+  --line: 3px;
+  --node: 14px;
+  --curve: 64px;
+  --track: var(--border);
 }
 @media (min-width: 641px) {
   :root {
     --gutter: var(--space-6);
+    --section-pad: 72px;
   }
 }
-@media (min-width: 1001px) {
+@media (min-width: 901px) {
   :root {
-    --gutter: calc(var(--rail) + var(--space-6));
+    --gutter: var(--space-8);
+    --section-pad: 96px;
+    --hero-pad: var(--space-16);
+    --graph: 120px;
+    --lane-0: 16px;
+    --line: 4px;
+    --node: 18px;
   }
 }
+@media (max-width: 640px) {
+  :root {
+    --h1: 40px;
+    --h1-leading: 1.05;
+    --h2: 28px;
+    --h2-leading: 1.15;
+    --lede: 17px;
+  }
+}
+
 *,
 *::before,
 *::after {
@@ -59,7 +89,7 @@ body {
   min-width: 0;
   background: var(--bg);
   color: var(--text);
-  font: var(--weight-regular) var(--text-md) / var(--leading) var(--font-sans);
+  font: var(--weight-regular) var(--text-md) / 1.55 var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 h1,
@@ -73,26 +103,32 @@ h1,
 h2,
 h3 {
   font-weight: var(--weight-semibold);
-  line-height: var(--leading-tight);
-  letter-spacing: var(--tracking-tight);
   text-wrap: balance;
 }
 h1 {
-  font-size: var(--site-display);
-  line-height: 1.08;
-  letter-spacing: -0.02em;
+  max-width: 14ch;
+  font-size: var(--h1);
+  line-height: var(--h1-leading);
+  letter-spacing: -0.035em;
 }
 h2 {
-  font-size: var(--text-3xl);
+  font-size: var(--h2);
+  line-height: var(--h2-leading);
+  letter-spacing: -0.025em;
 }
 h3 {
   font-size: var(--text-lg);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+p {
+  text-wrap: pretty;
 }
 @layer base {
   a {
     color: var(--color-link);
     text-decoration: none;
-    text-underline-offset: var(--space-1);
+    text-underline-offset: 0.2em;
   }
   a:hover {
     text-decoration: underline;
@@ -138,8 +174,9 @@ h3 {
   position: sticky;
   top: 0;
   z-index: 20;
-  background: var(--bg);
   border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px);
 }
 nav.section-nav {
   display: flex;
@@ -166,48 +203,51 @@ nav.section-nav a[aria-current="location"] {
   font-weight: var(--weight-medium);
 }
 
-/* Sections: a 12-column head (heading | lede) above full-width media. */
-.hero,
-.section {
-  padding-block: var(--section-pad);
-}
-.section {
-  border-top: 1px solid var(--border-subtle);
-}
-.hero,
-.section {
+/* Steps: every section is a commit. Its heading's first line sits on the node. */
+.step {
+  --pad: var(--section-pad);
+  --node-y: calc(var(--pad) + var(--h2) * var(--h2-leading) / 2);
   display: grid;
-  gap: var(--space-8);
+  grid-template-columns: var(--graph) minmax(0, 1fr);
 }
-.section-head {
+.hero {
+  --pad: var(--hero-pad);
+  --node-y: calc(var(--pad) + var(--h1) * var(--h1-leading) / 2);
+}
+.step-body {
+  grid-column: 2;
+  min-width: 0;
+  padding-block: var(--pad);
+  padding-inline-start: var(--space-2);
+}
+.hero .step-body {
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  column-gap: var(--column-gap);
-  row-gap: var(--space-4);
-  align-items: start;
+  justify-items: start;
+  gap: var(--space-6);
 }
-.section-head > :is(h1, h2) {
-  grid-column: 1 / span 6;
+.lead {
+  max-width: 56ch;
+  color: var(--text-muted);
+  font-size: var(--lede);
+  line-height: 1.5;
 }
-.section-lede {
-  grid-column: 7 / span 6;
+.hero .lead {
+  color: var(--text);
+}
+.copy {
   display: grid;
+  align-content: start;
   justify-items: start;
   gap: var(--space-4);
 }
-.hero .section-lede {
-  align-self: end;
-}
-.section-lede p {
-  max-width: 52ch;
+.copy p,
+.step-body > p:not(.lead) {
+  max-width: 60ch;
   color: var(--text-muted);
-  font-size: var(--text-reading);
 }
-.section-lede p.lead {
-  color: var(--text);
-}
-.section-lede p.note,
-.section-lede p.provenance {
+p.note,
+p.provenance {
+  color: var(--text-muted);
   font-size: var(--text-sm);
 }
 .provenance a,
@@ -215,17 +255,121 @@ nav.section-nav a[aria-current="location"] {
   color: inherit;
   text-decoration: underline;
 }
-.hero-media,
-.media,
-.screenshot-walkthrough {
+.hero-media {
+  justify-self: stretch;
+  margin-top: var(--space-6);
+}
+
+/* Layouts. Below 900px every layout is one column in source order. */
+.layout-split,
+.layout-wide .head,
+.layout-detail,
+.layout-pair {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: var(--column-gap);
+  row-gap: var(--space-12);
+  align-items: start;
+}
+.layout-split > .copy {
+  grid-column: 1 / span 4;
+}
+.layout-split > .shot {
+  grid-column: 5 / -1;
+}
+.layout-split > .shot--secondary {
+  grid-column: 1 / span 8;
+}
+.layout-split > .copy--aside {
+  grid-column: 9 / -1;
+  align-self: center;
+}
+.layout-wide {
+  display: grid;
+  gap: var(--space-12);
+}
+.layout-wide .head > h2 {
+  grid-column: 1 / span 6;
+}
+.layout-wide .head > .copy {
+  grid-column: 7 / -1;
+}
+.layout-detail > .shot {
+  grid-column: 1 / span 8;
+}
+.layout-detail > .facts {
+  grid-column: 9 / -1;
+}
+.facts {
+  display: grid;
+  gap: var(--space-6);
+  margin: 0;
+}
+.facts > div {
+  display: grid;
+  gap: var(--space-1);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+.facts dt {
+  font-weight: var(--weight-semibold);
+}
+.facts dd {
+  margin: 0;
+  color: var(--text-muted);
+}
+.layout-split--nested {
+  margin-top: var(--space-6);
+}
+.layout-pair .head {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  row-gap: var(--space-4);
+}
+.layout-pair .head > h2 {
+  grid-column: 1 / span 6;
+}
+.layout-pair .head > .copy {
+  grid-column: 7 / -1;
+}
+.layout-pair > .shot {
+  grid-column: span 6;
+}
+@media (max-width: 900px) {
+  .layout-split,
+  .layout-wide .head,
+  .layout-detail,
+  .layout-pair,
+  .layout-pair .head {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--space-6);
+  }
+  .layout-split > *,
+  .layout-wide .head > *,
+  .layout-detail > *,
+  .layout-pair > *,
+  .layout-pair .head > * {
+    grid-column: 1 / -1 !important;
+  }
+}
+
+/* Screenshots sit in panels like T3's own. */
+.shot {
+  display: grid;
+  gap: var(--space-3);
   min-width: 0;
 }
-figcaption {
-  max-width: var(--measure);
-  margin-top: var(--space-3);
+.shot figcaption {
+  max-width: 60ch;
   color: var(--text-muted);
   font-size: var(--text-sm);
 }
+.shot figcaption strong {
+  color: var(--text);
+  font-weight: var(--weight-semibold);
+}
+
 .actions {
   display: flex;
   align-items: center;
@@ -236,8 +380,8 @@ figcaption {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: var(--control-lg);
-  padding-inline: var(--space-4);
+  min-height: 44px;
+  padding-inline: var(--space-5);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   background: var(--accent);
@@ -252,19 +396,10 @@ figcaption {
   color: var(--accent-text);
   text-decoration: none;
 }
-.button--secondary {
-  border-color: var(--border);
-  background: transparent;
-  color: var(--text);
-}
-.button--secondary:hover {
-  background: var(--surface-hover);
-  color: var(--text);
-}
 .text-link {
   display: inline-flex;
   align-items: center;
-  min-height: var(--control-lg);
+  min-height: 44px;
   color: var(--text);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
@@ -274,32 +409,12 @@ figcaption {
 .text-link:hover {
   text-decoration-color: currentColor;
 }
-
-/* Walkthrough */
-.screenshot-walkthrough .fg-tabs {
+.step--end .step-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-6);
-}
-.fg-tabs__list {
-  flex-wrap: wrap;
-}
-.fg-tabs__panel {
-  min-width: 0;
-}
-.walkthrough-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-.walkthrough-frame {
-  display: grid;
-  gap: var(--space-3);
-  min-width: 0;
-}
-.walkthrough-frame figcaption {
-  margin-top: 0;
+  justify-items: start;
+  gap: var(--space-5);
+  /* Leaves room for the merged node to reach the viewport's centre line at the end of the page. */
+  padding-bottom: max(var(--pad), calc(50svh - 240px));
 }
 
 /* Footer */
@@ -364,30 +479,7 @@ main p a {
   text-decoration: underline;
   text-underline-offset: 0.18em;
 }
-@media (max-width: 800px) {
-  :root {
-    --section-pad: var(--space-12);
-  }
-  .section-head > :is(h1, h2),
-  .section-lede {
-    grid-column: 1 / -1;
-  }
-}
 @media (max-width: 640px) {
-  :root {
-    --section-pad: var(--space-8);
-  }
-  h1 {
-    font-size: var(--site-display-mobile);
-    line-height: 1.12;
-  }
-  h2 {
-    font-size: var(--text-2xl);
-  }
-  .hero,
-  .section {
-    gap: var(--space-6);
-  }
   nav.section-nav {
     gap: var(--space-4);
   }
@@ -415,321 +507,181 @@ main p a {
   }
 }
 
-/* The commit graph lives in the left margin: the main lane at 16px, the branch lane at 48px,
-   and each node reaches right to the section's content edge. */
-main.frame {
+/* The commit graph. Static by default: every line drawn, every node filled. */
+.commit-graph {
   position: relative;
-}
-main.frame::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: var(--space-8);
-  left: calc(16px - var(--rail));
-  width: 1px;
-  background: var(--border);
-}
-[data-trace-section] {
-  position: relative;
-  --node-y: 1.25rem;
-}
-.hero {
-  --node-y: 1.9rem;
-}
-.commit-branch {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: calc(-1 * var(--rail));
-  width: var(--rail);
+  grid-column: 1;
+  grid-row: 1;
   pointer-events: none;
 }
-.commit-branch:is(.commit-branch--fork, .commit-branch--parallel, .commit-branch--merge)::before {
-  content: "";
-  position: absolute;
-  left: 48px;
-  width: 1px;
-  background: var(--border);
+.graph-lane-0 {
+  --x: var(--lane-0);
 }
-.commit-branch--fork::before {
-  top: calc(var(--section-pad) + var(--node-y));
+.graph-lane-1 {
+  --x: var(--lane-1);
+}
+.graph-lane-2 {
+  --x: var(--lane-2);
+}
+.graph-segment {
+  position: absolute;
+  left: calc(var(--x) - var(--line) / 2);
+  width: var(--line);
+  background: var(--track);
+}
+.graph-segment > i {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  transform-origin: top;
+}
+/* Segments that start at a section's top overlap the previous one by a pixel, so lanes have no seam. */
+.graph-segment--above {
+  top: -1px;
+  height: calc(var(--node-y) + 1px);
+}
+.graph-segment--below {
+  top: var(--node-y);
   bottom: 0;
 }
-.commit-branch--parallel::before {
-  top: 0;
+.graph-segment--full {
+  top: -1px;
   bottom: 0;
 }
-.commit-branch--merge::before {
-  top: 0;
-  height: calc(var(--section-pad) + var(--node-y));
+.graph-segment--after-fork {
+  top: var(--curve);
+  height: calc(var(--node-y) - var(--curve));
 }
-.commit-junction {
+.graph-segment--before-merge {
+  top: -1px;
+  height: calc(var(--node-y) - var(--curve) + 1px);
+}
+/* Main waits on the track while the work happens on the branches. */
+.graph-segment--idle > i {
+  display: none;
+}
+.graph-curve {
   position: absolute;
-  top: calc(var(--section-pad) + var(--node-y) - 48px);
   left: 0;
-  width: var(--rail);
-  height: 96px;
+  width: 120px;
+  height: var(--curve);
   overflow: visible;
 }
-.commit-junction path {
+.graph-curve--fork {
+  top: 0;
+}
+.graph-curve--merge {
+  top: calc(var(--node-y) - var(--curve));
+}
+.graph-curve path {
   fill: none;
-  stroke: var(--border);
-  stroke-width: 1.5;
+  stroke-width: var(--line);
+}
+.graph-curve-track {
+  stroke: var(--track);
+}
+.graph-curve-fill {
+  stroke: var(--accent);
+  stroke-dasharray: 1;
+}
+.graph-node {
+  position: absolute;
+  top: calc(var(--node-y) - var(--node) / 2);
+  left: calc(var(--x) - var(--node) / 2);
+  width: var(--node);
+  height: var(--node);
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 var(--line) var(--track);
+}
+.graph-node > i {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: var(--accent);
+  box-shadow: 0 0 0 calc(var(--line) + 1px) color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.graph-node--merged {
+  --node: calc(var(--line) * 7.5);
+}
+.graph-node--merged svg {
+  width: 62%;
+  fill: none;
+  stroke: var(--accent-text);
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.commit-node {
-  fill: var(--bg);
-  stroke: var(--text-muted);
-  stroke-width: 1.5;
-  transform-box: fill-box;
-  transform-origin: center;
-  transition:
-    fill var(--duration) var(--ease-out),
-    stroke var(--duration) var(--ease-out),
-    transform var(--duration) var(--ease-out);
+.graph-node--single-lane {
+  display: none;
 }
-.commit-neutral-node {
-  fill: var(--bg);
-  stroke: var(--text-muted);
-  stroke-width: 1.5;
-}
-.commit-terminal {
-  position: absolute;
-  bottom: var(--space-6);
-  left: 0;
-  width: var(--rail);
-  height: var(--space-4);
-}
-.commit-terminal circle {
-  fill: var(--text-muted);
-}
-.is-current .commit-junction path {
-  stroke: var(--text-muted);
-}
-.is-current .commit-node {
-  fill: var(--accent);
-  stroke: var(--accent);
-  transform: scale(1.2);
-}
-.commit-reach {
-  fill: var(--accent);
-  opacity: 0;
-  transform: scaleX(0);
-  transform-box: fill-box;
-  transform-origin: left;
-}
-.is-current .commit-reach {
-  opacity: 1;
-  transform: none;
-}
-.trace-packet {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: var(--space-2);
-  height: var(--space-2);
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-  opacity: 0;
-  pointer-events: none;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .trace-arriving .commit-reach {
-    animation: commit-reach var(--duration-section) var(--ease-out);
-  }
-  .trace-arriving .commit-node {
-    animation: commit-settle var(--duration-section) var(--ease-out);
-  }
-  @keyframes commit-reach {
-    from {
-      opacity: 0;
-      transform: scaleX(0);
-    }
-    to {
-      opacity: 1;
-      transform: scaleX(1);
-    }
-  }
-  @keyframes commit-settle {
-    0% {
-      transform: scale(0.9);
-    }
-    60% {
-      transform: scale(1.35);
-    }
-    100% {
-      transform: scale(1.2);
-    }
-  }
-}
-@media (max-width: 1000px) {
-  main.frame::before,
-  .commit-branch,
-  .trace-packet {
+@media (max-width: 900px) {
+  .graph-lane-1,
+  .graph-lane-2,
+  .graph-curve {
     display: none;
   }
-}
-
-.walkthrough-signal {
-  flex: none;
-  width: var(--space-24);
-  height: var(--space-8);
-  overflow: visible;
-  fill: var(--bg);
-  stroke: var(--text-muted);
-  stroke-width: 1.5;
-}
-
-.walkthrough-signal path {
-  fill: none;
-  stroke: var(--border);
-}
-
-.signal-packet {
-  fill: var(--accent);
-  stroke: none;
-  opacity: 0;
-}
-
-.signal-ring {
-  fill: none;
-  stroke: var(--accent);
-  opacity: 0;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .is-switching .signal-packet--first {
-    animation: signal-handoff var(--duration-section) var(--ease-out);
+  .graph-node--single-lane {
+    display: block;
   }
-  [data-motion="fork"].is-switching .signal-packet--first {
-    animation-name: signal-fork-upper;
-  }
-  [data-motion="fork"].is-switching .signal-packet--second {
-    animation: signal-fork-lower var(--duration-section) var(--ease-out);
-  }
-  [data-motion="merge"].is-switching .signal-packet--first {
-    animation-name: signal-merge-upper;
-  }
-  [data-motion="merge"].is-switching .signal-packet--second {
-    animation: signal-merge-lower var(--duration-section) var(--ease-out);
-  }
-  [data-motion="notify"].is-switching .signal-ring {
-    animation: signal-notify var(--duration-section) var(--ease-out) var(--duration-fast);
-  }
-  @keyframes signal-handoff {
-    0% {
-      opacity: 0;
-      transform: translate(8px, 16px);
-    }
-    15% {
-      opacity: 1;
-    }
-    85% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-      transform: translate(88px, 16px);
-    }
-  }
-  @keyframes signal-fork-upper {
-    0% {
-      opacity: 0;
-      transform: translate(8px, 16px);
-    }
-    15% {
-      opacity: 1;
-      transform: translate(24px, 16px);
-    }
-    50% {
-      transform: translate(48px, 8px);
-    }
-    85% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-      transform: translate(88px, 8px);
-    }
-  }
-  @keyframes signal-fork-lower {
-    0% {
-      opacity: 0;
-      transform: translate(8px, 16px);
-    }
-    15% {
-      opacity: 1;
-      transform: translate(24px, 16px);
-    }
-    50% {
-      transform: translate(48px, 24px);
-    }
-    85% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-      transform: translate(88px, 24px);
-    }
-  }
-  @keyframes signal-merge-upper {
-    0% {
-      opacity: 0;
-      transform: translate(8px, 8px);
-    }
-    15% {
-      opacity: 1;
-      transform: translate(24px, 8px);
-    }
-    50% {
-      transform: translate(48px, 16px);
-    }
-    85% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-      transform: translate(88px, 16px);
-    }
-  }
-  @keyframes signal-merge-lower {
-    0% {
-      opacity: 0;
-      transform: translate(8px, 24px);
-    }
-    15% {
-      opacity: 1;
-      transform: translate(24px, 24px);
-    }
-    50% {
-      transform: translate(48px, 16px);
-    }
-    85% {
-      opacity: 1;
-    }
-    100% {
-      opacity: 0;
-      transform: translate(88px, 16px);
-    }
-  }
-  @keyframes signal-notify {
-    from {
-      opacity: 0.8;
-      transform: scale(0.6);
-    }
-    to {
-      opacity: 0;
-      transform: scale(2);
-    }
+  .graph-segment--idle > i {
+    display: block;
   }
 }
 
-@media (max-width: 640px) {
-  .walkthrough-signal {
-    width: var(--space-16);
-    height: var(--space-6);
+/* With scroll-driven animations, lines draw and nodes fill as the viewport's centre line passes them. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .graph-segment,
+    .graph-curve,
+    .graph-node {
+      view-timeline: --graph block;
+      view-timeline-inset: 50% 50%;
+    }
+    /* Longhands: the minifier folds a following animation-timeline into an invalid shorthand. */
+    .graph-segment > i,
+    .graph-curve-fill,
+    .graph-node > i {
+      animation-timing-function: linear;
+      animation-fill-mode: both;
+      animation-timeline: --graph;
+    }
+    .graph-segment > i {
+      animation-name: graph-draw;
+    }
+    .graph-curve-fill {
+      animation-name: graph-curve-draw;
+    }
+    .graph-node > i {
+      animation-name: graph-reach;
+    }
+  }
+}
+@keyframes graph-draw {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes graph-curve-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes graph-reach {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }

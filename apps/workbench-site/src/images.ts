@@ -11,10 +11,3 @@ export type ProductImageDescriptor = ProductImageSource & {
   sizes: string;
   eager: boolean;
 };
-export type WalkthroughStep = {
-  id: string;
-  tab: string;
-  title: string;
-  caption: string;
-  image: ProductImageDescriptor;
-};

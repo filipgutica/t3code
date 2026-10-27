@@ -26,13 +26,13 @@ emulating the color scheme; the app follows the system theme. Check the saved di
 and text at 1:1 before replacing both the site and user-guide images; keep the
 pointer outside the page, clear focus rings, and close popovers that expose local paths.
 
-The walkthrough starts with a native planning conversation and editable draft.
-It then shows the saved Ticket, prepared work area, continuation of the same
-Thread, and the ticket chat with a recap and a Thread waiting for approval. A second
-demo Ticket demonstrates linked PRs and attention.
-Readers select each screenshot with tabs; arrow keys, Home, and End move between
-them. Without JavaScript, all steps remain visible. Each screenshot opens in the
-existing lightbox. The planning conversation is real; it does not show completed implementation work.
+The page follows one Ticket as a commit graph: plan, Ticket, a worktree per
+repository (the fork), native Threads, pull request review (the merge), and install.
+`src/components/CommitGraph.vue` draws each section's slice. Lines draw and nodes fill
+with CSS scroll-driven animations, so they need no JavaScript and nothing runs while the
+page is idle. Under reduced motion, or in browsers without scroll timelines, the graph is
+drawn in full. Below 900px it collapses to one lane. Each screenshot opens in the lightbox.
+The planning conversation is real; it does not show completed implementation work.
 Demo PR feedback and implementation outcomes are illustrative.
 
 The palette in `src/styles/t3-theme.css` mirrors T3 Code's default light and dark theme
