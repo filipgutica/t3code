@@ -1,6 +1,7 @@
 import { LoaderCircleIcon, PlayIcon, TicketPlusIcon, Trash2Icon } from "lucide-react";
 
 import { Button } from "../components/ui/button";
+import { cn } from "../lib/utils";
 import type {
   useTicketDraftEditor,
   useTicketDraftTransitions,
@@ -25,28 +26,38 @@ interface DraftActionsProps {
   readonly onStartWork: () => void;
   readonly onDiscard: () => void;
   readonly onRetryDiscard: () => void;
+  /** Inline fits the floating chat's single-row strip; the draft page stacks. */
+  readonly layout: "stacked" | "inline";
+  /** Replaces Discard for a draft with nothing to lose, skipping the confirmation. */
+  readonly onCancel: (() => void) | null;
 }
 
 const SPINNER = <LoaderCircleIcon className="animate-spin" aria-hidden />;
 
-function PlanningActions({ phase, action, canOperate, onStartWork }: DraftActionsProps) {
+function PlanningActions({ phase, action, canOperate, onStartWork, layout }: DraftActionsProps) {
   const label =
     action === "start"
       ? "Preparing work area…"
       : phase === "starting"
         ? "Retry start work"
         : "Start work";
+  const inline = layout === "inline";
   return (
-    <>
-      <p className="text-xs text-muted-foreground">
+    <div className={inline ? "flex items-center gap-2" : "space-y-2"}>
+      <p className={cn("text-xs text-muted-foreground", inline && "line-clamp-2 min-w-0 flex-1")}>
         Start work prepares the work area and continues this conversation there. Nothing is sent
         automatically.
       </p>
-      <Button className="w-full" disabled={action !== null || !canOperate} onClick={onStartWork}>
+      <Button
+        className={inline ? "shrink-0" : "w-full"}
+        size={inline ? "sm" : "default"}
+        disabled={action !== null || !canOperate}
+        onClick={onStartWork}
+      >
         {action === "start" ? SPINNER : <PlayIcon />}
         {label}
       </Button>
-    </>
+    </div>
   );
 }
 
@@ -77,50 +88,81 @@ const getDraftStatusLine = ({
   return saveState === "saved" ? "Draft saved" : "\u00a0";
 };
 
-function UnsavedDraftActions({
-  phase,
+function DiscardButton({
   action,
-  canOperate,
-  blocker,
-  ticketExists,
-  saveState,
-  onCreate,
   onDiscard,
-}: DraftActionsProps) {
-  const busy = action !== null;
-  const creating = action === "promote";
-  const createLabel = creating ? "Creating ticket…" : "Create ticket";
-  const status = getDraftStatusLine({
-    action,
-    blocker,
-    phase,
-    saveState,
-    ticketExists,
-  });
+  layout,
+  onCancel,
+  disabled,
+}: DraftActionsProps & { readonly disabled: boolean }) {
+  if (onCancel)
+    return (
+      <Button size="sm" variant="ghost" disabled={disabled} onClick={onCancel}>
+        {action === "discard" ? SPINNER : null}
+        Cancel
+      </Button>
+    );
   return (
-    <>
-      <p role="status" className="text-xs text-muted-foreground">
-        {status}
-      </p>
-      <div className="flex items-center justify-between gap-2">
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={busy || !canDiscardConversationDraft({ phase, ticketExists }) || !canOperate}
-          onClick={onDiscard}
-        >
-          <Trash2Icon /> Discard draft
-        </Button>
-        <Button
-          disabled={busy || phase === "creating" || blocker !== null || !canOperate}
-          aria-busy={creating}
-          onClick={onCreate}
-        >
-          {creating ? SPINNER : <TicketPlusIcon />}
-          {createLabel}
-        </Button>
+    <Button size="sm" variant="ghost" disabled={disabled} onClick={onDiscard}>
+      <Trash2Icon /> {layout === "inline" ? "Discard" : "Discard draft"}
+    </Button>
+  );
+}
+
+function CreateTicketButton({
+  action,
+  phase,
+  blocker,
+  canOperate,
+  onCreate,
+  layout,
+}: DraftActionsProps) {
+  const creating = action === "promote";
+  return (
+    <Button
+      size={layout === "inline" ? "sm" : "default"}
+      disabled={action !== null || phase === "creating" || blocker !== null || !canOperate}
+      aria-busy={creating}
+      onClick={onCreate}
+    >
+      {creating ? SPINNER : <TicketPlusIcon />}
+      {creating ? "Creating ticket…" : "Create ticket"}
+    </Button>
+  );
+}
+
+function UnsavedDraftActions(props: DraftActionsProps) {
+  const { phase, action, canOperate, ticketExists, layout } = props;
+  const inline = layout === "inline";
+  const discardDisabled =
+    action !== null || !canDiscardConversationDraft({ phase, ticketExists }) || !canOperate;
+  const statusLine = (
+    <p
+      role="status"
+      className={cn("text-xs text-muted-foreground", inline && "line-clamp-2 min-w-0 flex-1")}
+    >
+      {getDraftStatusLine(props)}
+    </p>
+  );
+  const discard = <DiscardButton {...props} disabled={discardDisabled} />;
+  const create = <CreateTicketButton {...props} />;
+  if (inline) {
+    return (
+      <div className="flex items-center gap-2">
+        {statusLine}
+        {discard}
+        {create}
       </div>
-    </>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      {statusLine}
+      <div className="flex items-center justify-between gap-2">
+        {discard}
+        {create}
+      </div>
+    </div>
   );
 }
 
@@ -145,6 +187,8 @@ export function WorkbenchDraftActions({
   canOperate,
   ticketExists,
   onDiscard,
+  layout = "stacked",
+  onCancel = null,
 }: {
   readonly draft: WorkbenchConversationDraft;
   readonly editor: DraftEditor;
@@ -156,9 +200,13 @@ export function WorkbenchDraftActions({
   readonly canOperate: boolean;
   readonly ticketExists: boolean;
   readonly onDiscard: () => void;
+  readonly layout?: DraftActionsProps["layout"];
+  readonly onCancel?: DraftActionsProps["onCancel"];
 }) {
   return (
     <DraftActions
+      layout={layout}
+      onCancel={onCancel}
       phase={draft.phase}
       action={transitions.action}
       canOperate={canOperate}

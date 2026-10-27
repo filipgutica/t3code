@@ -17,7 +17,7 @@ import {
   filterWorkbenchFloatingChatThreads,
   getWorkbenchFloatingChatThreadLabel,
   getWorkbenchBoardChatThreads,
-  groupWorkbenchFloatingChatThreads,
+  getWorkbenchFloatingChatPickerSections,
   resolveWorkbenchFloatingChat,
   type WorkbenchFloatingChatThread,
 } from "./workbenchFloatingChat.logic";
@@ -342,22 +342,72 @@ describe("resolveWorkbenchFloatingChat", () => {
   });
 });
 
-describe("groupWorkbenchFloatingChatThreads", () => {
+describe("getWorkbenchFloatingChatPickerSections", () => {
   const ticketA = { id: WorkbenchTicketId.make("a"), key: "WB-1", title: "First" };
   const ticketB = { id: WorkbenchTicketId.make("b"), key: null, title: "Second" };
+  const ticketC = { id: WorkbenchTicketId.make("c"), key: null, title: "Thread c1" };
+  const shape = (sections: ReturnType<typeof getWorkbenchFloatingChatPickerSections>) =>
+    sections.map((section) => ({
+      heading: section.heading,
+      rows: section.rows.map((row) => [row.thread.threadId, row.ticketPrefix]),
+    }));
 
-  it("puts ticket drafts first, then one group per ticket in list order", () => {
-    const groups = groupWorkbenchFloatingChatThreads([
+  it("heads drafts and shared tickets, and folds a lone ticket Thread into one row", () => {
+    const sections = getWorkbenchFloatingChatPickerSections([
       thread("b1", null, { ticket: ticketB }),
       thread("a1", null, { ticket: ticketA }),
       thread("draft"),
       thread("b2", null, { ticket: ticketB }),
+      thread("c1", null, { ticket: ticketC }),
     ]);
-    expect(groups.map((group) => [group.ticket?.id ?? null, ids(group.threads)])).toEqual([
-      [null, ["draft"]],
-      ["b", ["b1", "b2"]],
-      ["a", ["a1"]],
+    expect(shape(sections)).toEqual([
+      { heading: { key: null, title: "Drafts" }, rows: [["draft", null]] },
+      {
+        heading: { key: null, title: "Second" },
+        rows: [
+          ["b1", null],
+          ["b2", null],
+        ],
+      },
+      { heading: null, rows: [["a1", "WB-1"]] },
+      // The title already names the ticket, so the row needs no prefix.
+      { heading: null, rows: [["c1", null]] },
     ]);
+  });
+
+  it("drops the ticket title its heading already shows from each Thread's title", () => {
+    const sections = getWorkbenchFloatingChatPickerSections([
+      thread("main", null, { title: "Second", ticket: ticketB }),
+      thread("api", null, { title: "Second — API contract review", ticket: ticketB }),
+      thread("other", null, { title: "Review copy", ticket: ticketB }),
+      thread("word", null, { title: "Secondary review", ticket: ticketB }),
+    ]);
+    expect(sections[0]?.rows.map((row) => row.title)).toEqual([
+      "Second",
+      "API contract review",
+      "Review copy",
+      "Secondary review",
+    ]);
+  });
+
+  it("lists Threads without a ticket, and no tickets, without headings", () => {
+    const sections = getWorkbenchFloatingChatPickerSections([thread("x"), thread("y")]);
+    expect(shape(sections)).toEqual([
+      {
+        heading: null,
+        rows: [
+          ["x", null],
+          ["y", null],
+        ],
+      },
+    ]);
+  });
+
+  it("names a lone Thread's ticket by title when the ticket has no key", () => {
+    const sections = getWorkbenchFloatingChatPickerSections([
+      thread("r", null, { title: "Review", ticket: ticketB }),
+    ]);
+    expect(shape(sections)).toEqual([{ heading: null, rows: [["r", "Second"]] }]);
   });
 });
 

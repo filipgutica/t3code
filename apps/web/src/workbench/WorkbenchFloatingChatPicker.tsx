@@ -1,5 +1,11 @@
 import type { ThreadId } from "@t3tools/contracts";
-import { ArchiveRestoreIcon, CheckIcon, ChevronDownIcon, CircleCheckIcon } from "lucide-react";
+import {
+  ArchiveRestoreIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  CircleCheckIcon,
+  MessageSquareIcon,
+} from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 
 import { Badge } from "../components/ui/badge";
@@ -19,9 +25,8 @@ import {
 import { cn } from "../lib/utils";
 import {
   filterWorkbenchFloatingChatThreads,
+  getWorkbenchFloatingChatPickerSections,
   getWorkbenchFloatingChatThreadLabel,
-  getWorkbenchFloatingChatTicketLabel,
-  groupWorkbenchFloatingChatThreads,
   type resolveWorkbenchFloatingChat,
   WORKBENCH_ATTENTION_KINDS,
   type WorkbenchFloatingChatThread,
@@ -38,28 +43,45 @@ const SEARCH_THRESHOLD = 8;
 
 function PickerThreadItem({
   thread,
+  ticketPrefix,
+  title,
   selected,
   onSelect,
 }: {
   readonly thread: WorkbenchFloatingChatThread;
+  readonly ticketPrefix: string | null;
+  readonly title: string;
   readonly selected: boolean;
   readonly onSelect: (threadId: ThreadId) => void;
 }) {
   const status = thread.status;
+  // Flex layout drops the spaces between these parts from the computed name.
+  const name = [ticketPrefix, title, status?.presentation.label].filter(Boolean).join(" ");
   return (
     <MenuItem
       data-thread-id={thread.threadId}
+      aria-label={name}
+      aria-description={thread.recap ?? undefined}
       aria-current={selected || undefined}
       onClick={() => onSelect(thread.threadId)}
     >
       <span className="flex min-w-0 flex-1 items-start gap-2">
-        <span className="mt-0.5 flex size-3.5 shrink-0">
-          {status ? <WorkbenchThreadExecutionStatusIcon status={status.presentation} /> : null}
+        <span className="mt-0.5 flex size-3.5 shrink-0 text-muted-foreground">
+          {status ? (
+            <WorkbenchThreadExecutionStatusIcon status={status.presentation} />
+          ) : (
+            <MessageSquareIcon aria-hidden className="size-3.5" />
+          )}
         </span>
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="flex min-w-0 items-baseline gap-2">
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            {ticketPrefix ? (
+              <span className="max-w-28 shrink-0 truncate text-xs text-muted-foreground">
+                {ticketPrefix}
+              </span>
+            ) : null}
             <span className={cn("min-w-0 flex-1 truncate", selected && "font-medium")}>
-              {thread.title}
+              {title}
             </span>
             {status ? (
               <span
@@ -73,13 +95,13 @@ function PickerThreadItem({
                 {status.presentation.label}
               </span>
             ) : null}
+            {selected ? (
+              <CheckIcon aria-hidden className="size-3.5 shrink-0 self-center text-foreground" />
+            ) : null}
           </span>
           {thread.recap ? (
-            <span className="line-clamp-2 text-2xs text-muted-foreground">{thread.recap}</span>
+            <span className="truncate text-2xs text-muted-foreground">{thread.recap}</span>
           ) : null}
-        </span>
-        <span className="mt-0.5 flex size-3.5 shrink-0">
-          {selected ? <CheckIcon aria-hidden className="size-3.5 text-foreground" /> : null}
         </span>
       </span>
     </MenuItem>
@@ -127,9 +149,9 @@ function PickerTriggerContent({
 }) {
   return (
     <>
-      {selected?.ticket ? (
+      {selected?.ticket?.key ? (
         <span className="max-w-32 shrink-0 truncate text-xs text-muted-foreground">
-          {selected.ticket.key ?? selected.ticket.title}
+          {selected.ticket.key}
         </span>
       ) : null}
       <span className="min-w-0 truncate text-xs font-medium">{selected?.title ?? title}</span>
@@ -145,34 +167,42 @@ function PickerTriggerContent({
   );
 }
 
-function PickerThreadGroups({
+function PickerThreadSections({
   threads,
   selectedThreadId,
-  ungroupedLabel,
   onSelect,
 }: {
   readonly threads: ReadonlyArray<WorkbenchFloatingChatThread>;
   readonly selectedThreadId: ThreadId | null;
-  readonly ungroupedLabel: string;
   readonly onSelect: (threadId: ThreadId) => void;
 }) {
-  return groupWorkbenchFloatingChatThreads(threads).map((group) => (
-    <MenuGroup key={group.ticket?.id ?? "ungrouped"}>
-      <MenuGroupLabel>
-        <span className="block truncate">
-          {group.ticket ? getWorkbenchFloatingChatTicketLabel(group.ticket) : ungroupedLabel}
-        </span>
-      </MenuGroupLabel>
-      {group.threads.map((thread) => (
-        <PickerThreadItem
-          key={thread.threadId}
-          thread={thread}
-          selected={thread.threadId === selectedThreadId}
-          onSelect={onSelect}
-        />
-      ))}
-    </MenuGroup>
-  ));
+  return getWorkbenchFloatingChatPickerSections(threads).map((section) => {
+    const rows = section.rows.map(({ thread, ticketPrefix, title }) => (
+      <PickerThreadItem
+        key={thread.threadId}
+        thread={thread}
+        ticketPrefix={ticketPrefix}
+        title={title}
+        selected={thread.threadId === selectedThreadId}
+        onSelect={onSelect}
+      />
+    ));
+    if (section.heading === null) return <MenuGroup key={section.id}>{rows}</MenuGroup>;
+    return (
+      <MenuGroup key={section.id}>
+        <MenuGroupLabel>
+          <span className="block truncate">
+            {section.heading.key ? (
+              <span className="text-foreground/80">{section.heading.key} </span>
+            ) : null}
+            {section.heading.title}
+          </span>
+        </MenuGroupLabel>
+        {/* The rule ties a heading to the Threads beneath it. */}
+        <div className="ms-3 border-s border-muted-foreground/30 ps-1">{rows}</div>
+      </MenuGroup>
+    );
+  });
 }
 
 function WaitingPill({ count, onClick }: { readonly count: number; readonly onClick: () => void }) {
@@ -202,7 +232,6 @@ export function WorkbenchFloatingChatPicker({
   chat,
   title,
   listLabel,
-  ungroupedLabel,
   onSelect,
   onOpenThread,
 }: {
@@ -210,8 +239,6 @@ export function WorkbenchFloatingChatPicker({
   /** Shown in the trigger when no Thread is selected. */
   readonly title: string;
   readonly listLabel: string;
-  /** Names Threads without a ticket: drafts on the board, every Thread in a ticket's chat. */
-  readonly ungroupedLabel: string;
   readonly onSelect: (threadId: ThreadId) => void;
   /** Opens an archived Thread on its route after restoring it. */
   readonly onOpenThread: (threadId: ThreadId) => void;
@@ -255,7 +282,7 @@ export function WorkbenchFloatingChatPicker({
         >
           <PickerTriggerContent selected={selected} title={title} />
         </MenuTrigger>
-        <MenuPopup ref={popupRef} align="start" className="w-100">
+        <MenuPopup ref={popupRef} align="start" className="w-96">
           {chat.active.length >= SEARCH_THRESHOLD ? (
             <MenuSearchInput
               autoFocus
@@ -265,15 +292,17 @@ export function WorkbenchFloatingChatPicker({
               aria-label="Search Threads"
             />
           ) : null}
-          {visible.length === 0 && chat.active.length > 0 ? (
-            <MenuItem disabled>No Threads match</MenuItem>
-          ) : null}
-          <PickerThreadGroups
-            threads={visible}
-            selectedThreadId={selected?.threadId ?? null}
-            ungroupedLabel={ungroupedLabel}
-            onSelect={select}
-          />
+          {/* Only the list scrolls, so search and history stay in reach in a short window. */}
+          <div className="max-h-[clamp(8rem,calc(var(--available-height)-7rem),20rem)] overflow-y-auto">
+            {visible.length === 0 && chat.active.length > 0 ? (
+              <MenuItem disabled>No Threads match</MenuItem>
+            ) : null}
+            <PickerThreadSections
+              threads={visible}
+              selectedThreadId={selected?.threadId ?? null}
+              onSelect={select}
+            />
+          </div>
           {chat.active.length > 0 && (chat.settled.length > 0 || chat.archived.length > 0) ? (
             <MenuSeparator />
           ) : null}

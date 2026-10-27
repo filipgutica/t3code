@@ -25,13 +25,13 @@ export interface WorkbenchFloatingChatThread {
   readonly threadId: ThreadId;
   readonly title: string;
   readonly status: WorkbenchThreadExecutionStatus | null;
-  /** The board groups Threads by ticket; null for ticket drafts and in a ticket's own chat. */
+  /** Null for a ticket draft that has no ticket yet. */
   readonly ticket: WorkbenchFloatingChatTicket | null;
   /** A generated summary of the Thread's latest finished run. */
   readonly recap: string | null;
 }
 
-export const getWorkbenchFloatingChatTicketLabel = (ticket: WorkbenchFloatingChatTicket) =>
+const getWorkbenchFloatingChatTicketLabel = (ticket: WorkbenchFloatingChatTicket) =>
   ticket.key ? `${ticket.key} · ${ticket.title}` : ticket.title;
 
 /** Names a Thread outside its ticket group, where the title alone can repeat across tickets. */
@@ -150,9 +150,7 @@ export function resolveWorkbenchFloatingChat({
 }
 
 /** Ticket drafts first, then one group per ticket in list order. */
-export const groupWorkbenchFloatingChatThreads = (
-  threads: ReadonlyArray<WorkbenchFloatingChatThread>,
-) => {
+const groupWorkbenchFloatingChatThreads = (threads: ReadonlyArray<WorkbenchFloatingChatThread>) => {
   const groups = new Map<
     WorkbenchTicketId | null,
     { ticket: WorkbenchFloatingChatTicket | null; threads: WorkbenchFloatingChatThread[] }
@@ -166,6 +164,66 @@ export const groupWorkbenchFloatingChatThreads = (
   const drafts = groups.get(null);
   groups.delete(null);
   return drafts ? [drafts, ...groups.values()] : [...groups.values()];
+};
+
+export interface WorkbenchFloatingChatPickerSection {
+  readonly id: string;
+  /** Rows under a heading belong to it; a ticket with one Thread names itself in its row. */
+  readonly heading: { readonly key: string | null; readonly title: string } | null;
+  readonly rows: ReadonlyArray<{
+    readonly thread: WorkbenchFloatingChatThread;
+    readonly ticketPrefix: string | null;
+    /** The Thread title, less a leading ticket title its heading already shows. */
+    readonly title: string;
+  }>;
+}
+
+// Threads often start with their ticket's title; under its heading only the rest tells them apart.
+const titleUnderHeading = (title: string, ticketTitle: string) => {
+  const match = title.startsWith(ticketTitle)
+    ? /^[\s\-–—:·|]+(.+)$/.exec(title.slice(ticketTitle.length))
+    : null;
+  return match?.[1] ?? title;
+};
+
+/**
+ * The picker's layout: drafts and tickets with several Threads get a heading; a ticket with
+ * one Thread is a single row prefixed by its key, or its title when the Thread's differs.
+ */
+export const getWorkbenchFloatingChatPickerSections = (
+  threads: ReadonlyArray<WorkbenchFloatingChatThread>,
+): ReadonlyArray<WorkbenchFloatingChatPickerSection> => {
+  const groups = groupWorkbenchFloatingChatThreads(threads);
+  const hasTickets = groups.some((group) => group.ticket !== null);
+  return groups.map(({ ticket, threads: members }): WorkbenchFloatingChatPickerSection => {
+    const rows = members.map((thread) => ({ thread, ticketPrefix: null, title: thread.title }));
+    if (ticket === null) {
+      return {
+        id: "ungrouped",
+        // Only board drafts lack a ticket.
+        heading: hasTickets ? { key: null, title: "Drafts" } : null,
+        rows,
+      };
+    }
+    const [only] = members;
+    if (members.length > 1 || only === undefined) {
+      return {
+        id: ticket.id,
+        heading: { key: ticket.key, title: ticket.title },
+        rows: members.map((thread) => ({
+          thread,
+          ticketPrefix: null,
+          title: titleUnderHeading(thread.title, ticket.title),
+        })),
+      };
+    }
+    const ticketPrefix = ticket.key ?? (only.title === ticket.title ? null : ticket.title);
+    return {
+      id: ticket.id,
+      heading: null,
+      rows: [{ thread: only, ticketPrefix, title: only.title }],
+    };
+  });
 };
 
 export const filterWorkbenchFloatingChatThreads = (

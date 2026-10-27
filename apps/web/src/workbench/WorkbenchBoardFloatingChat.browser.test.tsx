@@ -231,7 +231,7 @@ const setup = async () => {
   };
 };
 
-it("groups the board's Threads by ticket, drafts first, with each Thread's recap", async () => {
+it("heads ticket drafts, and folds each single-Thread ticket into one row named by its ticket", async () => {
   const { onSnapshot } = await setup();
   await using screen = await render(
     <Harness
@@ -243,18 +243,33 @@ it("groups the board's Threads by ticket, drafts first, with each Thread's recap
 
   const items = screen.getByRole("menuitem");
   await expect.element(items.nth(0)).toHaveAccessibleName(/Plan exports/);
-  await expect.element(items.nth(1)).toHaveAccessibleName(/Thread first/);
-  await expect.element(items.nth(2)).toHaveAccessibleName(/Thread second/);
+  await expect.element(items.nth(1)).toHaveAccessibleName("PAY-1 Thread first");
+  await expect.element(items.nth(2)).toHaveAccessibleName("Payouts Thread second");
   await expect
     .element(screen.getByRole("group", { name: "Drafts" }).getByRole("menuitem"))
     .toHaveAccessibleName(/Plan exports/);
-  const refunds = screen.getByRole("group", { name: "PAY-1 · Refunds" }).getByRole("menuitem");
-  await expect.element(refunds).toHaveAccessibleName(/Thread first/);
-  await expect.element(refunds.getByText("Refunded the duplicate charge.")).toBeVisible();
-  await expect
-    .element(screen.getByRole("group", { name: "Payouts" }).getByRole("menuitem"))
-    .toHaveAccessibleName(/Thread second/);
+  await expect.element(items.nth(1)).toHaveAccessibleDescription("Refunded the duplicate charge.");
+  await expect.element(items.nth(1).getByText("Refunded the duplicate charge.")).toBeVisible();
   expect(mocks.begin).not.toHaveBeenCalled();
+});
+
+it("cancels an untouched draft and returns to the Thread it was started from", async () => {
+  const { succeed, onSnapshot } = await setup();
+  mocks.begin.mockImplementation(succeed);
+  mocks.otherCommand.mockResolvedValue({ _tag: "Success", value: undefined });
+  await using screen = await render(<Harness onSnapshot={onSnapshot} />);
+  await pickThread(screen, /Thread second/);
+
+  await userEvent.click(screen.getByRole("button", { name: "New ticket draft" }));
+  const begun = mocks.begin.mock.calls[0]?.[0].input as BeginInput;
+  const strip = screen.getByRole("group", { name: "Ticket draft" });
+  await expect.element(strip.getByRole("button", { name: "Discard" })).not.toBeInTheDocument();
+  await userEvent.click(strip.getByRole("button", { name: "Cancel" }));
+
+  expect(mocks.otherCommand).toHaveBeenCalledWith(
+    expect.objectContaining({ input: expect.objectContaining({ id: begun.id }) }),
+  );
+  await expect.element(screen.getByRole("textbox", { name: "Composer for second" })).toBeVisible();
 });
 
 it("begins a new draft for each click and shows its Thread in the chat", async () => {
@@ -335,32 +350,29 @@ it.each([
   await expect.element(screen.getByRole("button", { name: action })).toBeEnabled();
 });
 
-it.each(["Open draft", "Open full Thread"])(
-  "%s opens a draft only after its applied proposal saves",
-  async (action) => {
-    const { onSnapshot } = await setup();
-    mocks.otherCommand.mockResolvedValue({
-      _tag: "Failure",
-      cause: Cause.fail(new Error("Saving the draft failed")),
-    });
-    const onOpenDraft = vi.fn();
-    await using screen = await render(
-      <Harness
-        initialDrafts={[draft("draft", "draft-thread", "Plan exports")]}
-        onSnapshot={onSnapshot}
-        onOpenDraft={onOpenDraft}
-      />,
-    );
-    await pickThread(screen, /Plan exports/);
-    await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
-    await userEvent.click(screen.getByRole("button", { name: "Apply to draft" }));
-    await expect.element(screen.getByRole("alert")).toHaveTextContent("Saving the draft failed");
+it("Open full Thread opens a draft only after its applied proposal saves", async () => {
+  const { onSnapshot } = await setup();
+  mocks.otherCommand.mockResolvedValue({
+    _tag: "Failure",
+    cause: Cause.fail(new Error("Saving the draft failed")),
+  });
+  const onOpenDraft = vi.fn();
+  await using screen = await render(
+    <Harness
+      initialDrafts={[draft("draft", "draft-thread", "Plan exports")]}
+      onSnapshot={onSnapshot}
+      onOpenDraft={onOpenDraft}
+    />,
+  );
+  await pickThread(screen, /Plan exports/);
+  await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
+  await userEvent.click(screen.getByRole("button", { name: "Apply to draft" }));
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("Saving the draft failed");
 
-    await userEvent.click(screen.getByRole("button", { name: action }));
-    await expect.element(screen.getByRole("alert")).toBeVisible();
-    expect(onOpenDraft).not.toHaveBeenCalled();
-  },
-);
+  await userEvent.click(screen.getByRole("button", { name: "Open full Thread" }));
+  await expect.element(screen.getByRole("alert")).toBeVisible();
+  expect(onOpenDraft).not.toHaveBeenCalled();
+});
 
 it("opens ticket Threads, including settled ones, as Threads and drafts as drafts", async () => {
   const { onSnapshot } = await setup();

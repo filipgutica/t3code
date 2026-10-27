@@ -49,7 +49,6 @@ const CHAT_COPY = {
   ticket: {
     title: "Ticket chat",
     threads: "Ticket Threads",
-    ungrouped: "Threads",
     newThread: "New Thread",
     startThread: "Start Thread",
     emptyHint: "A Thread works in this ticket's workspace.",
@@ -57,7 +56,6 @@ const CHAT_COPY = {
   board: {
     title: "Board chat",
     threads: "Board Threads",
-    ungrouped: "Drafts",
     newThread: "New ticket draft",
     startThread: "Draft a ticket",
     emptyHint: "A ticket draft starts a planning Thread here.",
@@ -528,7 +526,6 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
             chat={chat}
             title={copy.title}
             listLabel={copy.threads}
-            ungroupedLabel={copy.ungrouped}
             onSelect={selectThread}
             onOpenThread={onOpenThread}
           />

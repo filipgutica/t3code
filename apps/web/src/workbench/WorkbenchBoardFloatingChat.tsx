@@ -7,10 +7,8 @@ import type {
 } from "@t3tools/contracts";
 import { ThreadId, WorkbenchTicketId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { SquareArrowOutUpRightIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
-import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { randomUUID } from "../lib/utils";
@@ -158,6 +156,8 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
     workspace,
     draft: null,
   });
+  // Leaving a draft through Cancel or Discard returns to the Thread it was started from.
+  const draftReturnRef = useRef<ThreadId | null>(null);
   const draftBegin = useBeginBoardDraft({
     environmentId,
     workspaceId: projectId,
@@ -205,7 +205,10 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
       chat={chat}
       onSelectThread={setExplicitThreadId}
       onOpenThread={openThread}
-      onNewThread={() => void draftBegin.begin()}
+      onNewThread={() => {
+        draftReturnRef.current = chat.selected?.threadId ?? null;
+        void draftBegin.begin();
+      }}
       newThreadDisabled={
         !props.canStartDrafts || !canBeginDraft || !draftBegin.ready || draftBegin.pending
       }
@@ -226,7 +229,8 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
               refreshSnapshot={props.refreshSnapshot}
               onOpenDraft={() => props.onOpenDraft(draft.id)}
               openRef={mountedDraftOpenRef}
-              onDiscarded={() => setExplicitThreadId(null)}
+              neverRan={props.threadsById.get(threadId)?.latestRun == null}
+              onDiscarded={() => setExplicitThreadId(draftReturnRef.current)}
             >
               {conversation}
             </BoardDraftThread>
@@ -289,6 +293,10 @@ const useCanOperateDraft = ({
   workspace.archivedAt == null &&
   ticket?.archivedAt == null;
 
+/** Nothing was sent or written, so leaving the draft loses nothing. */
+const isUntouchedDraft = (neverRan: boolean, fields: { title: string; markdown: string }) =>
+  neverRan && fields.title.trim() === "" && fields.markdown.trim() === "";
+
 /**
  * A draft's conversation in the chat: proposals apply to the draft, and the strip below offers
  * the draft page's actions. Fields are edited on the full draft page, so no edits stay pending.
@@ -303,6 +311,7 @@ function BoardDraftThread({
   refreshSnapshot,
   onOpenDraft,
   openRef,
+  neverRan,
   onDiscarded,
   children,
 }: {
@@ -315,13 +324,14 @@ function BoardDraftThread({
   readonly refreshSnapshot: () => void;
   readonly onOpenDraft: () => void;
   readonly openRef: RefObject<MountedDraftOpen | null>;
+  /** No message was ever sent, so the conversation holds nothing to lose. */
+  readonly neverRan: boolean;
   readonly onDiscarded: () => void;
   readonly children: ReactNode;
 }) {
   // Command replies can be newer than the snapshot; the newest revision wins.
   const [fromCommand, setFromCommand] = useState<WorkbenchConversationDraft | null>(null);
   const draft = pickNewestConversationDraft(snapshotDraft, fromCommand) ?? snapshotDraft;
-  const [discardOpen, setDiscardOpen] = useState(false);
   const canOperate = useCanOperateDraft({ environmentId, workspace, ticket });
   const editor = useTicketDraftEditor({
     environmentId,
@@ -344,7 +354,7 @@ function BoardDraftThread({
     onCreateManually: onOpenDraft,
     refreshSnapshot,
   });
-  const openSavedDraft = useOpenSavedDraft({
+  useOpenSavedDraft({
     threadId: draft.threadId,
     flush: editor.flush,
     setError: transitions.setError,
@@ -364,23 +374,14 @@ function BoardDraftThread({
       >
         {children}
       </WorkbenchTicketProposalRenderer>
-      <BoardDraftStrip editor={editor} error={transitions.error} onOpenDraft={openSavedDraft}>
-        <WorkbenchDraftActions
-          draft={draft}
-          editor={editor}
-          transitions={transitions}
-          createState={createState}
-          canOperate={canOperate}
-          ticketExists={ticket !== null}
-          onDiscard={() => setDiscardOpen(true)}
-        />
-      </BoardDraftStrip>
-      <WorkbenchDiscardDraftDialog
-        open={discardOpen}
-        busy={transitions.action !== null}
-        error={transitions.error}
-        onOpenChange={setDiscardOpen}
-        onDiscard={transitions.discard}
+      <BoardDraftStrip
+        draft={draft}
+        editor={editor}
+        transitions={transitions}
+        createState={createState}
+        canOperate={canOperate}
+        ticketExists={ticket !== null}
+        untouched={isUntouchedDraft(neverRan, editor.fields)}
       />
     </>
   );
@@ -388,17 +389,17 @@ function BoardDraftThread({
 
 function BoardDraftStrip({
   editor,
-  error: transitionError,
-  onOpenDraft,
-  children,
-}: {
-  readonly editor: Pick<ReturnType<typeof useTicketDraftEditor>, "conflict" | "saveError">;
-  readonly error: string | null;
-  readonly onOpenDraft: () => Promise<void>;
-  readonly children: ReactNode;
+  transitions,
+  untouched,
+  ...actions
+}: Omit<Parameters<typeof WorkbenchDraftActions>[0], "onDiscard" | "layout" | "onCancel"> & {
+  readonly editor: ReturnType<typeof useTicketDraftEditor>;
+  readonly transitions: ReturnType<typeof useTicketDraftTransitions>;
+  readonly untouched: boolean;
 }) {
+  const [discardOpen, setDiscardOpen] = useState(false);
   // A conflict explains itself in the actions' status line.
-  const error = transitionError ?? (editor.conflict ? null : editor.saveError);
+  const error = transitions.error ?? (editor.conflict ? null : editor.saveError);
   return (
     <div
       role="group"
@@ -410,11 +411,21 @@ function BoardDraftStrip({
           {error}
         </p>
       ) : null}
-      {children}
-      <Button size="xs" variant="ghost" onClick={() => void onOpenDraft()}>
-        <SquareArrowOutUpRightIcon />
-        Open draft
-      </Button>
+      <WorkbenchDraftActions
+        {...actions}
+        editor={editor}
+        transitions={transitions}
+        layout="inline"
+        onCancel={untouched ? () => void transitions.discard() : null}
+        onDiscard={() => setDiscardOpen(true)}
+      />
+      <WorkbenchDiscardDraftDialog
+        open={discardOpen}
+        busy={transitions.action !== null}
+        error={transitions.error}
+        onOpenChange={setDiscardOpen}
+        onDiscard={transitions.discard}
+      />
     </div>
   );
 }
