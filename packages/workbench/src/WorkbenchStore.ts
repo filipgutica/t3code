@@ -3125,18 +3125,20 @@ const makeWorkbenchStore = Effect.gen(function* () {
   ) {
     yield* sql`UPDATE workbench_tickets SET updated_at = updated_at WHERE ticket_id = ${ticketId}`;
     yield* sql`UPDATE workbench_ticket_drafts SET revision = revision WHERE draft_id = ${ticketId}`;
-    const owners = yield* sql`
-      SELECT 1 FROM workbench_tickets WHERE ticket_id = ${ticketId} AND deleted_at IS NULL
+    const [owner] = yield* sql<{ readonly projectId: WorkbenchProjectId }>`
+      SELECT workbench_project_id AS "projectId" FROM workbench_tickets
+      WHERE ticket_id = ${ticketId} AND deleted_at IS NULL
       UNION ALL
-      SELECT 1 FROM workbench_ticket_drafts
+      SELECT workbench_project_id AS "projectId" FROM workbench_ticket_drafts
       WHERE draft_id = ${ticketId} AND phase IN ('creating', 'draft', 'promoting')
     `;
-    if (owners.length === 0) {
+    if (owner === undefined) {
       return yield* new WorkbenchOperationError({
         code: "reference_owner_not_found",
         message: "The Workbench Ticket no longer exists or is being discarded.",
       });
     }
+    yield* requireActiveProject(owner.projectId);
   });
 
   // An edit attributed to a Thread commits only while that Thread owns the target. Run it after

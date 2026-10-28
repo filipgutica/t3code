@@ -1223,6 +1223,12 @@ describe("Workbench Workspace lifecycle", () => {
         }),
         store.deleteTicket({ ticketId, expectedRevision: request.revision, deletedAt: now }),
         store.unlinkAssignment({ ticketId, threadId }),
+        store.addReference({
+          ticketId,
+          url: "https://github.com/acme/app/issues/7",
+          addedByThreadId: threadId,
+        }),
+        store.removeReference({ ticketId, url: "https://github.com/acme/app/issues/7" }),
         store.replaceAssignment({
           ticketId,
           previousThreadId: threadId,
