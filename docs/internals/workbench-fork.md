@@ -2,6 +2,17 @@
 
 The fork keeps T3 Code as the owner of execution and adds Workbench planning in an isolated overlay. Upstream changes enter the product branch through verified merge pull requests. Start with [Workbench architecture](workbench-architecture.md) for module boundaries and request flow, or [Workbench data model](workbench-data-model.md) for storage ownership.
 
+## Upstream first
+
+Staying in sync with upstream T3 Code is a top priority. Each change to an upstream-owned file is a future merge conflict, and each Workbench copy of native behavior stops receiving upstream fixes. Workbench therefore reuses as much of upstream as it can:
+
+1. **Reuse native code.** Use native components, services, and commands through their props, services, and extension points. Workbench composes them and doesn't reimplement them.
+2. **Copy only with sign-off.** If nothing native fits, say so in the plan or PR before writing a Workbench copy, and get maintainer sign-off. Record the copy in the [upstream catalog](workbench-upstream-catalog.md) with the upstream capability that would let us delete it.
+3. **Change upstream files last.** Change an upstream-owned file only when no adapter, native extension point, or approved copy can do the job. Keep the change to the smallest integration, record it in the catalog, and mark the site with a short comment that says why it exists and when it can go.
+4. **Retire exceptions.** When an upstream sync brings a capability that a catalog entry waits for, switch to it in a follow-up PR and remove the entry.
+
+The goal is for Workbench to become a T3 Code extension once upstream supports extensions. The catalog's "Remove when" column is the list of extension capabilities Workbench needs.
+
 ## Isolation boundary
 
 | Source                                    | Ownership rule                                                                                                                               |
@@ -14,7 +25,7 @@ The fork keeps T3 Code as the owner of execution and adds Workbench planning in 
 
 Workbench stores references to native `ProjectId` and `ThreadId` values rather than copying T3 records. Its package shares the server process and database with T3, but owns a separate `workbench_schema_migrations` ledger. Server adapters supply native reads and host effects through typed services. Native reads that participate in Workbench writes must use the caller's SQL client and transaction; a separate connection or preloaded snapshot can break writer-lock ordering and ownership checks. [Architecture](workbench-architecture.md) and [data model](workbench-data-model.md) explain the boundary.
 
-Before changing an upstream-owned file, check whether a Workbench adapter or extension point can own the behavior. Keep any remaining integration small and preserve behavior outside Workbench. [Ticket lifecycle](workbench-ticket-lifecycle.md) describes the fork-owned behavior that crosses native boundaries.
+Apply [Upstream first](#upstream-first) before changing an upstream-owned file, and preserve behavior outside Workbench. [Ticket lifecycle](workbench-ticket-lifecycle.md) describes the fork-owned behavior that crosses native boundaries.
 
 Native consumers use typed host capabilities with native defaults. Workbench installs its policy at server startup, the web root, and desktop product selection. This is static composition: wire contracts and route declarations retain explicit integration points. Keep Workbench decisions in the installed implementation rather than copying them into native callers.
 
