@@ -670,59 +670,6 @@ describe("WorkbenchStore package boundary", () => {
     }).pipe(Effect.provide(testLayer({ projects: new Set(["provenance-project"]) }))),
   );
 
-  it.effect("refuses to remove a repository that an active Thread works in", () =>
-    Effect.gen(function* () {
-      const store = yield* WorkbenchStore;
-      const primary = ProjectId.make("scope-primary");
-      const other = ProjectId.make("scope-other");
-      const workspaceId = WorkbenchProjectId.make("scope-workspace");
-      const ticketId = WorkbenchTicketId.make("scope-ticket");
-      yield* store.createProject({
-        id: workspaceId,
-        title: "Scope workspace",
-        linkedProjectIds: [primary, other],
-        createdAt: "2026-10-20T10:00:00.000Z",
-      });
-      const ticket = yield* store.createTicket({
-        id: ticketId,
-        projectId: workspaceId,
-        title: "Scope",
-        kind: "story",
-        markdown: "",
-        primaryT3ProjectId: primary,
-        repositoryProjectIds: [primary, other],
-        createdAt: "2026-10-20T10:00:00.000Z",
-      });
-      yield* store.createAssignment({
-        id: WorkbenchAssignmentId.make("scope-assignment"),
-        ticketId,
-        threadId: ThreadId.make("scope-thread"),
-        createdAt: "2026-10-20T10:01:00.000Z",
-      });
-      const narrow = (repositoryProjectIds: ReadonlyArray<ProjectId>, revision: number) =>
-        store.updateTicket({
-          id: ticketId,
-          expectedRevision: revision,
-          primaryT3ProjectId: repositoryProjectIds[0]!,
-          repositoryProjectIds: [...repositoryProjectIds],
-          updatedAt: "2026-10-20T10:02:00.000Z",
-        });
-
-      expect((yield* Effect.flip(narrow([other], ticket.revision))).code).toBe(
-        "ticket_repository_scope_locked",
-      );
-      const narrowed = yield* narrow([primary], ticket.revision);
-      expect(narrowed.repositoryProjectIds).toEqual([primary]);
-    }).pipe(
-      Effect.provide(
-        testLayer({
-          projects: new Set(["scope-primary", "scope-other"]),
-          threads: new Map([["scope-thread", "scope-primary"]]),
-        }),
-      ),
-    ),
-  );
-
   it.effect("rejects non-Git linked projects before creating a Workspace", () =>
     Effect.gen(function* () {
       const store = yield* WorkbenchStore;

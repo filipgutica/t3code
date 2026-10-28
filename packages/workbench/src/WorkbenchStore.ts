@@ -467,8 +467,7 @@ interface WorkbenchStoreShape extends Omit<
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
   /**
    * A changed title or description records `updatedByThreadId`, which an
-   * agent passes and a user edit omits. A repository that an active
-   * Assignment's Thread works in cannot leave the scope.
+   * agent passes and a user edit omits.
    */
   readonly updateTicket: (
     input: WorkbenchUpdateTicketInput & { readonly updatedByThreadId?: ThreadId },
@@ -486,6 +485,10 @@ interface WorkbenchStoreShape extends Omit<
   readonly addReference: (
     input: WorkbenchAddReferenceInput & { readonly addedByThreadId: ThreadId | null },
   ) => Effect.Effect<WorkbenchReference, WorkbenchOperationError>;
+  /** Projects the Ticket's active, non-planning Threads work in. */
+  readonly listActiveThreadProjectIds: (
+    ticketId: WorkbenchTicketId,
+  ) => Effect.Effect<ReadonlyArray<ProjectId>, WorkbenchOperationError>;
   /** One owner's References, in insertion order. */
   readonly listReferences: (
     ticketId: WorkbenchTicketId,
@@ -2834,36 +2837,23 @@ const makeWorkbenchStore = Effect.gen(function* () {
     }
   });
 
-  const requireRepositoriesUnused = Effect.fn("WorkbenchStore.requireRepositoriesUnused")(
-    function* ({
-      ticketId,
-      current,
-      next,
-    }: {
-      readonly ticketId: WorkbenchTicketId;
-      readonly current: ReadonlyArray<ProjectId>;
-      readonly next: ReadonlyArray<ProjectId>;
-    }) {
-      const removedProjectIds = current.filter((projectId) => !next.includes(projectId));
-      if (removedProjectIds.length === 0) return;
-      // A planning Thread moves to the live scope at Start work, so it does not pin one.
-      const assignments = yield* sql<{ readonly threadId: ThreadId }>`
-        SELECT a.thread_id AS "threadId" FROM workbench_assignments a
-        WHERE a.ticket_id = ${ticketId} AND a.superseded_at IS NULL
-          AND NOT EXISTS (SELECT 1 FROM workbench_ticket_drafts d
-            WHERE d.thread_id = a.thread_id AND d.phase <> 'working')
-      `;
-      for (const { threadId } of assignments) {
-        const thread = yield* native.findThread(threadId);
-        if (Option.isSome(thread) && removedProjectIds.includes(thread.value.projectId)) {
-          return yield* new WorkbenchOperationError({
-            code: "ticket_repository_scope_locked",
-            message: "A repository that an active Thread works in cannot be removed.",
-          });
-        }
-      }
-    },
-  );
+  const listActiveThreadProjectIds: WorkbenchStoreShape["listActiveThreadProjectIds"] = Effect.fn(
+    "WorkbenchStore.listActiveThreadProjectIds",
+  )(function* (ticketId) {
+    // A planning Thread moves to the live scope at Start work, so it does not pin one.
+    const assignments = yield* sql<{ readonly threadId: ThreadId }>`
+          SELECT a.thread_id AS "threadId" FROM workbench_assignments a
+          WHERE a.ticket_id = ${ticketId} AND a.superseded_at IS NULL
+            AND NOT EXISTS (SELECT 1 FROM workbench_ticket_drafts d
+              WHERE d.thread_id = a.thread_id AND d.phase <> 'working')
+        `;
+    const projectIds = new Set<ProjectId>();
+    for (const { threadId } of assignments) {
+      const thread = yield* native.findThread(threadId);
+      if (Option.isSome(thread)) projectIds.add(thread.value.projectId);
+    }
+    return [...projectIds];
+  }, Effect.mapError(workbenchStoreError));
 
   const updateTicket: WorkbenchStoreShape["updateTicket"] = Effect.fn(
     "WorkbenchStore.updateTicket",
@@ -2930,11 +2920,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "Ticket repository scope cannot change while its Workspace is changing.",
             });
           }
-          yield* requireRepositoriesUnused({
-            ticketId: input.id,
-            current: currentRepositoryProjectIds,
-            next: repositoryProjectIds,
-          });
           yield* recordLocalExecutionReset({ ticketId: input.id, status: input.status });
           const contentChanged = title !== current.title || markdown !== current.markdown;
           const updatedByThreadId = ticketProvenance({ input, current, contentChanged });
@@ -3712,6 +3697,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     getThreadRoster,
     resolveThreadOwner,
     listReferences,
+    listActiveThreadProjectIds,
     upsertThreadRecap,
     listTicketThreadIds,
     getTicketWorkspaceGeneratedBranchName,

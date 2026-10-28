@@ -151,6 +151,7 @@ describe("WorkbenchAgentService", () => {
         kind: "story",
         markdown: "",
         primaryT3ProjectId: first,
+        repositoryProjectIds: [first, second],
         createdAt,
       });
       yield* store.createAssignment({
@@ -180,6 +181,24 @@ describe("WorkbenchAgentService", () => {
         _tag: "WorkstreamChangedError",
         currentRevision: state.revision,
       });
+
+      // The worker Thread runs in `first`, so the agent may drop `second` but not `first`.
+      const locked = yield* Effect.flip(
+        agent.update({
+          threadId: worker,
+          expectedRevision: state.revision,
+          repositoryProjectIds: [second],
+        }),
+      );
+      expect(locked).toMatchObject({ code: "ticket_repository_scope_locked" });
+      const narrowed = yield* agent.update({
+        threadId: worker,
+        expectedRevision: state.revision,
+        repositoryProjectIds: [first],
+      });
+      expect(narrowed.state.repositories.filter((repository) => repository.selected)).toEqual([
+        { projectId: first, name: `${first} repo`, selected: true, worktreePath: null },
+      ]);
 
       const stranger = yield* Effect.flip(agent.read(ThreadId.make("agent-stranger")));
       expect(stranger.message).toBe("This Thread does not belong to a Workstream");

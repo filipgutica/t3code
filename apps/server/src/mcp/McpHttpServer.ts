@@ -73,6 +73,8 @@ import {
 } from "./toolkits/device/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
+import { layer as layerWorkbenchToolHandlers } from "../workbench/mcp/handlers.ts";
+import { WorkbenchToolkit } from "../workbench/mcp/tools.ts";
 
 const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
   HttpServerRequest.toURL(request).pipe(
@@ -1099,6 +1101,7 @@ export const layerTools = Layer.mergeAll(
   layerPullRequestsToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
+  toolkitRegistration(WorkbenchToolkit, layerWorkbenchToolHandlers),
 );
 
 export const layer = layerTools.pipe(Layer.provideMerge(layerMcpTransport));
