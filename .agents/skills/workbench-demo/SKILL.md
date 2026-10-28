@@ -30,7 +30,7 @@ for explicit remote provisioning or regression-fixture repair.
 
 ## Demo fidelity
 
-The checkout supplies the code; the profile supplies configuration and OAuth.
+The checkout supplies the code; the profile supplies configuration.
 Normal runs leave remote GitHub data unchanged. Jira issue links are synthetic,
 on `jira.example.invalid`, and Workbench never contacts Jira.
 
