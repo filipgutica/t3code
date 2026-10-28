@@ -434,4 +434,111 @@ describe("ensureWorkbenchSchema", () => {
       }),
     ),
   );
+
+  it.effect("turns v21 Ticket and Epic Jira links into References once", () =>
+    withForeignKeys(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* ensureWorkbenchSchema;
+        // Rewind to v21, the last schema before References.
+        yield* sql`DELETE FROM workbench_schema_migrations WHERE version = 22`;
+        yield* sql`DROP TABLE workbench_references`;
+        yield* sql`INSERT INTO workbench_projects (project_id, title, created_at, updated_at)
+          VALUES ('workspace', 'Workspace', ${now}, ${now})`;
+        yield* sql`INSERT INTO workbench_epics (epic_id, workbench_project_id, title, markdown,
+            created_at, updated_at, jira_issue_key, jira_issue_url)
+          VALUES ('epic', 'workspace', 'Onboarding', 'Epic body', ${now}, ${now},
+            'ORBIT-10', ${browse("ORBIT-10")})`;
+        for (const id of ["linked", "plain", "archived", "deleted", "shares-epic"]) {
+          yield* insertTicket({ id, status: "todo" });
+          yield* sql`INSERT INTO workbench_ticket_repositories (ticket_id, t3_project_id, position)
+            VALUES (${id}, 'native', 0)`;
+        }
+        yield* sql`UPDATE workbench_tickets SET jira_issue_key = 'ORBIT-1',
+            jira_issue_url = ${browse("ORBIT-1")}, epic_id = 'epic' WHERE ticket_id = 'linked'`;
+        yield* sql`UPDATE workbench_tickets SET epic_id = 'epic' WHERE ticket_id = 'plain'`;
+        yield* sql`UPDATE workbench_tickets SET jira_issue_key = 'ORBIT-2',
+            jira_issue_url = ${browse("ORBIT-2")}, archived_at = ${later}
+          WHERE ticket_id = 'archived'`;
+        yield* sql`UPDATE workbench_tickets SET jira_issue_key = 'ORBIT-3',
+            jira_issue_url = ${browse("ORBIT-3")}, deleted_at = ${later}
+          WHERE ticket_id = 'deleted'`;
+        // A member Ticket linked to its own Epic's issue keeps one Reference.
+        yield* sql`UPDATE workbench_tickets SET jira_issue_key = 'ORBIT-10',
+            jira_issue_url = ${browse("ORBIT-10")}, epic_id = 'epic'
+          WHERE ticket_id = 'shares-epic'`;
+        yield* sql`INSERT INTO workbench_assignments (assignment_id, ticket_id, thread_id,
+            created_at, superseded_at)
+          VALUES ('old', 'linked', 'thread-old', ${now}, ${later}),
+            ('current', 'linked', 'thread-current', ${later}, NULL)`;
+        yield* sql`INSERT INTO workbench_ticket_workspaces (ticket_id, attempt_id, status,
+            branch_name, created_at, updated_at)
+          VALUES ('linked', 'attempt', 'ready', 'orbit-1-ticket', ${now}, ${now})`;
+        yield* sql`INSERT INTO workbench_ticket_workspace_repositories (ticket_id, t3_project_id,
+            attempt_id, is_primary, source_path, worktree_path, branch_name, status, created_at,
+            updated_at)
+          VALUES ('linked', 'native', 'attempt', 1, '/repo', '/worktrees/orbit-1',
+            'orbit-1-ticket', 'ready', ${now}, ${now})`;
+        yield* sql`INSERT INTO workbench_ticket_drafts (draft_id, workbench_project_id,
+            thread_id, phase, revision, payload_json)
+          VALUES ('draft', 'workspace', 'thread-draft', 'draft', 2, '{"fields":{"epicId":"epic"}}')`;
+        yield* sql`INSERT INTO workbench_execution_runs (run_id, sequence, thread_id, ticket_id,
+            state) VALUES ('run', 7, 'thread-current', 'linked', 'pending')`;
+        yield* sql`INSERT INTO workbench_thread_recaps (thread_id, run_id, text, updated_at)
+          VALUES ('thread-current', 'run', 'Recap', ${now})`;
+        const dumpTables = Effect.gen(function* () {
+          const tables = yield* sql<{ readonly name: string }>`SELECT name FROM sqlite_master
+            WHERE type = 'table' AND name LIKE 'workbench_%'
+              AND name NOT IN ('workbench_references', 'workbench_schema_migrations')
+            ORDER BY name`;
+          const rows: Record<string, ReadonlyArray<unknown>> = {};
+          for (const { name } of tables) {
+            rows[name] = yield* sql`SELECT * FROM ${sql(name)} ORDER BY rowid`;
+          }
+          return rows;
+        });
+        const readReferences = sql`SELECT ticket_id AS "ticketId", url, title,
+            added_by_thread_id AS "addedByThreadId", position, created_at AS "createdAt"
+          FROM workbench_references ORDER BY ticket_id, position`;
+        const before = yield* dumpTables;
+
+        yield* ensureWorkbenchSchema;
+
+        expect(yield* dumpTables).toEqual(before);
+        const epicReference = (ticketId: string, position: number) => ({
+          ticketId,
+          url: browse("ORBIT-10"),
+          title: "ORBIT-10 Onboarding",
+          addedByThreadId: null,
+          position,
+          createdAt: now,
+        });
+        const issueReference = (ticketId: string, key: string) => ({
+          ticketId,
+          url: browse(key),
+          title: key,
+          addedByThreadId: null,
+          position: 0,
+          createdAt: now,
+        });
+        const references = yield* readReferences;
+        expect(references).toEqual([
+          issueReference("archived", "ORBIT-2"),
+          issueReference("deleted", "ORBIT-3"),
+          issueReference("linked", "ORBIT-1"),
+          epicReference("linked", 1),
+          epicReference("plain", 0),
+          issueReference("shares-epic", "ORBIT-10"),
+        ]);
+        expect(
+          yield* sql`SELECT version FROM workbench_schema_migrations WHERE version = 22`,
+        ).toHaveLength(1);
+        yield* expectForeignKeysIntact;
+
+        yield* ensureWorkbenchSchema;
+        expect(yield* readReferences).toEqual(references);
+        expect(yield* dumpTables).toEqual(before);
+      }),
+    ),
+  );
 });

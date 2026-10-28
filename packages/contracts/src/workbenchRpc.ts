@@ -27,7 +27,9 @@ import {
   WorkbenchReleaseTicketWorkspaceInput,
   WorkbenchReplaceAssignmentInput,
   WorkbenchSetJiraIssueLinkInput,
-  WorkbenchSetJiraIssueLinkResult,
+  WorkbenchAddReferenceInput,
+  WorkbenchReference,
+  WorkbenchRemoveReferenceInput,
   WorkbenchSnapshot,
   WorkbenchTicket,
   WorkbenchTicketId,
@@ -66,6 +68,8 @@ export const WORKBENCH_WS_METHODS = {
   workbenchPrepareTicketWorkspace: "workbench.ticketWorkspaces.prepare",
   workbenchReleaseTicketWorkspace: "workbench.ticketWorkspaces.release",
   workbenchSetJiraIssueLink: "workbench.setJiraIssueLink",
+  workbenchAddReference: "workbench.references.add",
+  workbenchRemoveReference: "workbench.references.remove",
 } as const;
 
 const WorkbenchRpcError = Schema.Union([WorkbenchOperationError, EnvironmentAuthorizationError]);
@@ -204,7 +208,19 @@ const WsWorkbenchReleaseTicketWorkspaceRpc = Rpc.make(
 
 const WsWorkbenchSetJiraIssueLinkRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink, {
   payload: WorkbenchSetJiraIssueLinkInput,
-  success: WorkbenchSetJiraIssueLinkResult,
+  success: WorkbenchEpic,
+  error: WorkbenchRpcError,
+});
+
+const WsWorkbenchAddReferenceRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchAddReference, {
+  payload: WorkbenchAddReferenceInput,
+  success: WorkbenchReference,
+  error: WorkbenchRpcError,
+});
+
+const WsWorkbenchRemoveReferenceRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchRemoveReference, {
+  payload: WorkbenchRemoveReferenceInput,
+  success: Schema.Void,
   error: WorkbenchRpcError,
 });
 
@@ -270,4 +286,6 @@ export const WorkbenchRpcGroup = RpcGroup.make(
   WsWorkbenchPrepareTicketWorkspaceRpc,
   WsWorkbenchReleaseTicketWorkspaceRpc,
   WsWorkbenchSetJiraIssueLinkRpc,
+  WsWorkbenchAddReferenceRpc,
+  WsWorkbenchRemoveReferenceRpc,
 );

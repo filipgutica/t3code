@@ -36,6 +36,8 @@ export const WORKBENCH_RPC_REQUIRED_SCOPES = {
   [WORKBENCH_WS_METHODS.workbenchPrepareTicketWorkspace]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchReleaseTicketWorkspace]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink]: AuthOrchestrationOperateScope,
+  [WORKBENCH_WS_METHODS.workbenchAddReference]: AuthOrchestrationOperateScope,
+  [WORKBENCH_WS_METHODS.workbenchRemoveReference]: AuthOrchestrationOperateScope,
 } as const satisfies Record<WorkbenchRpcMethod, AuthEnvironmentScope>;
 
 const {
