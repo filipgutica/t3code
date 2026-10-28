@@ -1,3 +1,4 @@
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useStableCallback } from "../hooks/useStableCallback";
 import type {
   EnvironmentId,
@@ -12,6 +13,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { toastManager } from "../components/ui/toast";
 import { randomUUID } from "../lib/utils";
+import { useThreadShell } from "../state/entities";
 import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
 import { failureMessage } from "./workbenchPageCommands";
@@ -19,6 +21,29 @@ import type { WorkbenchConversationDraft } from "./workbenchTicketDraft.logic";
 import { createTicketDraftFieldSync } from "./workbenchTicketDraftSync";
 
 const SAVE_DELAY_MS = 600;
+// Agent edits arrive between a Thread's items; one refresh after a burst keeps requests few.
+const AGENT_EDIT_REFRESH_DELAY_MS = 1_000;
+
+/**
+ * The planning Thread edits its draft through MCP tools, and only the Workbench snapshot carries
+ * the result. Refresh it shortly after the Thread's items change so those edits show while it works.
+ */
+export function useRefreshOnThreadActivity(
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  refreshSnapshot: () => void,
+) {
+  const itemCount = useThreadShell(scopeThreadRef(environmentId, threadId))?.itemCount;
+  const seen = useRef(itemCount);
+  const refresh = useStableCallback(refreshSnapshot);
+  // oxlint-disable-next-line t3code/react-effect-budget -- syncs the snapshot with the live Thread
+  useEffect(() => {
+    if (itemCount === undefined || itemCount === seen.current) return;
+    seen.current = itemCount;
+    const timer = setTimeout(refresh, AGENT_EDIT_REFRESH_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [itemCount, refresh]);
+}
 
 type BeginState =
   | { readonly status: "idle" | "pending" }

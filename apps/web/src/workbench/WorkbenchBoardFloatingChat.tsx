@@ -30,7 +30,11 @@ import {
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import { failureMessage } from "./workbenchPageCommands";
 import { getTicketDraftCreateState } from "./WorkbenchTicketDraftPanel";
-import { useTicketDraftEditor, useTicketDraftTransitions } from "./useWorkbenchTicketConversation";
+import {
+  useRefreshOnThreadActivity,
+  useTicketDraftEditor,
+  useTicketDraftTransitions,
+} from "./useWorkbenchTicketConversation";
 import {
   pickNewestConversationDraft,
   type WorkbenchConversationDraft,
@@ -333,6 +337,7 @@ function BoardDraftThread({
     onDraft: setFromCommand,
     refreshSnapshot,
   });
+  useRefreshOnThreadActivity(environmentId, draft.threadId, refreshSnapshot);
   const createState = getTicketDraftCreateState({ ...createContext, fields: editor.fields });
   const untouched = useIsUntouchedDraft(environmentId, draft.threadId, neverRan, editor.fields);
   const transitions = useTicketDraftTransitions({

@@ -109,13 +109,26 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
       });
     }
     const ticket = yield* store.getTicket(owner.value.ticketId);
-    return Option.isNone(ticket)
-      ? undefined
-      : workstreamInstruction({
-          id: ticket.value.id,
-          title: ticket.value.title,
-          brief: ticket.value.markdown,
-        });
+    if (Option.isNone(ticket)) return undefined;
+    const instruction = workstreamInstruction({
+      id: ticket.value.id,
+      title: ticket.value.title,
+      brief: ticket.value.markdown,
+    });
+    const workspace = yield* store.getTicketWorkspace(ticket.value.id);
+    const ready = Option.isSome(workspace)
+      ? workspace.value.repositories.filter((repository) => repository.status === "ready")
+      : [];
+    if (ready.length === 0) return instruction;
+    const workArea = yield* encodeWorkArea(
+      ready.map((repository) => ({
+        id: repository.projectId,
+        path: repository.worktreePath,
+        branch: repository.branchName,
+        primary: repository.isPrimary,
+      })),
+    );
+    return `${instruction}\n\nPrepared worktrees: ${workArea}`;
   });
 
   // Workbench context is advisory; a failure to read it must not block the turn.
@@ -143,20 +156,11 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
           const draft = yield* store.getTicketDraftForThread(input.thread.id);
           if (draft === null) return policy;
           if (draft.phase === "working") {
-            const workArea = yield* encodeWorkArea(
-              (draft.workArea?.repositories ?? []).map((repository) => ({
-                id: repository.projectId,
-                path: repository.worktreePath,
-                branch: repository.branchName,
-                primary: repository.isPrimary,
-              })),
-            );
+            // The Workstream instruction lists the prepared worktrees.
             return {
               ...policy,
-              instructions: [
+              instructions:
                 "The ticket has been created and Start work has completed. This same conversation now continues in its prepared work area. Earlier ticket-planning-only instructions are historical; follow the user's current request and the repository instructions for this work area.",
-                `Prepared worktrees: ${workArea}`,
-              ].join("\n\n"),
             };
           }
           if (draft.phase !== "draft" && draft.phase !== "creating" && draft.phase !== "planning") {

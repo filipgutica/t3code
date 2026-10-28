@@ -225,6 +225,7 @@ const policyLayer = (
                   ),
             ),
           getTicketDraft: () => Effect.succeed(draft(phase ?? "draft")),
+          getTicketWorkspace: () => Effect.succeed(Option.fromNullishOr(draft("working").workArea)),
           getTicket: () =>
             Effect.succeedSome({
               id: WorkbenchTicketId.make("draft"),
@@ -313,6 +314,11 @@ it.effect("tells an assigned Thread its Workstream, tools, artifacts folder, and
       assert.include(instructions, "`artifactsDir`");
       assert.include(instructions, "Jira or GitHub, when the user asks");
       assert.include(instructions, "## Goal\nExplain worktree failures");
+      assert.include(instructions, '"path":"/work-area/repo:first"');
+      assert.include(
+        instructions,
+        '"path":"/work-area/repo:second","branch":"ticket/approved","primary":true',
+      );
     }),
     Effect.provide(policyLayer(null, "codex", false, Effect.succeedNone, "ticket")),
   ),

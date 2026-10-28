@@ -17,6 +17,7 @@ import { create } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  useRefreshOnThreadActivity,
   useTicketDraftBegin,
   useTicketDraftEditor,
   useTicketDraftTransitions,
@@ -45,6 +46,10 @@ vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: (command: keyof typeof commands) => commands[command],
 }));
 vi.mock("../components/ui/toast", () => ({ toastManager: toast }));
+const threadShell = vi.hoisted(() => ({ itemCount: 0 }));
+vi.mock("../state/entities", () => ({
+  useThreadShell: () => ({ itemCount: threadShell.itemCount }),
+}));
 
 const environmentId = EnvironmentId.make("environment");
 const workspaceId = WorkbenchProjectId.make("workspace");
@@ -553,5 +558,35 @@ describe("useTicketDraftTransitions", () => {
     expect(harness.onDiscarded).toHaveBeenCalledOnce();
     await harness.unmount();
     expect(commands.update).toHaveBeenCalledOnce();
+  });
+});
+
+describe("useRefreshOnThreadActivity", () => {
+  it("refreshes the snapshot once after a burst of Thread items, and not on mount", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const refreshSnapshot = vi.fn();
+    threadShell.itemCount = 3;
+    function Harness(_props: { readonly items: number }) {
+      useRefreshOnThreadActivity(environmentId, ThreadId.make("thread"), refreshSnapshot);
+      return null;
+    }
+    let renderer: ReturnType<typeof create> | undefined;
+    await act(async () => {
+      renderer = create(<Harness items={3} />);
+    });
+    vi.useFakeTimers();
+    try {
+      await act(async () => vi.advanceTimersByTime(5_000));
+      expect(refreshSnapshot).not.toHaveBeenCalled();
+      for (const items of [4, 5]) {
+        threadShell.itemCount = items;
+        await act(async () => renderer?.update(<Harness items={items} />));
+      }
+      await act(async () => vi.advanceTimersByTime(1_000));
+      expect(refreshSnapshot).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+      await act(async () => renderer?.unmount());
+    }
   });
 });
