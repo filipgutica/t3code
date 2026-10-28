@@ -1,7 +1,6 @@
 import type { ThreadId } from "@t3tools/contracts";
 import {
   ArchiveRestoreIcon,
-  CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleCheckIcon,
@@ -16,6 +15,8 @@ import {
   MenuGroup,
   MenuItem,
   MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
   MenuSearchInput,
   MenuSeparator,
   MenuTrigger,
@@ -70,11 +71,11 @@ function PickerThreadItem({
   // Flex layout drops the spaces between these parts from the computed name.
   const name = [title, status?.presentation.label].filter(Boolean).join(" ");
   return (
-    <MenuItem
+    <MenuRadioItem
+      value={thread.threadId}
       data-thread-id={thread.threadId}
       aria-label={name}
       aria-description={thread.recap ?? undefined}
-      aria-current={selected || undefined}
       onClick={() => onSelect(thread.threadId)}
     >
       <span className="flex min-w-0 flex-1 items-start gap-2">
@@ -96,16 +97,13 @@ function PickerThreadItem({
                 {status.presentation.label}
               </span>
             ) : null}
-            {selected ? (
-              <CheckIcon aria-hidden className="size-3.5 shrink-0 self-center text-primary" />
-            ) : null}
           </span>
           {thread.recap ? (
             <span className="truncate text-2xs text-muted-foreground">{thread.recap}</span>
           ) : null}
         </span>
       </span>
-    </MenuItem>
+    </MenuRadioItem>
   );
 }
 
@@ -267,7 +265,7 @@ function PickerThreadSections({
       {item(row)}
     </div>
   );
-  return getWorkbenchFloatingChatPickerSections(threads, grouped).map((section) => {
+  const sections = getWorkbenchFloatingChatPickerSections(threads, grouped).map((section) => {
     if (section.type === "rows")
       return <MenuGroup key={section.id}>{section.rows.map(item)}</MenuGroup>;
     const open =
@@ -291,6 +289,7 @@ function PickerThreadSections({
       </MenuGroup>
     );
   });
+  return <MenuRadioGroup value={selectedThreadId}>{sections}</MenuRadioGroup>;
 }
 
 function WaitingPill({ count, onClick }: { readonly count: number; readonly onClick: () => void }) {
@@ -391,7 +390,7 @@ export function WorkbenchFloatingChatPicker({
     const showing = row(selected?.threadId);
     // Keyboard opening focuses the first item, which centring could scroll out of view; the
     // search field keeps its focus.
-    if (document.activeElement?.getAttribute("role") === "menuitem")
+    if (document.activeElement?.getAttribute("role")?.startsWith("menuitem"))
       showing?.focus({ preventScroll: true });
     showing?.scrollIntoView({ block: "center" });
   };
