@@ -176,23 +176,29 @@ describe("resolveWorkbenchWorkItemView", () => {
     ).toEqual({ kind: "board" });
   });
 
-  it("opens the same conversation for a planning or starting ticket", () => {
+  it("opens the ticket page for a created ticket that has not started work", () => {
     for (const phase of ["planning", "starting"] as const) {
-      const draft = makeDraft({ phase });
       expect(
         resolveWorkbenchWorkItemView({
           ...base,
-          snapshot: makeSnapshot([draft]),
+          snapshot: makeSnapshot([makeDraft({ phase })]),
           selectedTicketId: ticketId,
           ticketExists: true,
         }),
-      ).toEqual({ kind: "conversation", draft });
+      ).toEqual({ kind: "ticket" });
     }
   });
 
   it("keeps the conversation while Create ticket waits for the snapshot to hold the ticket", () => {
     // The ticket id is selected first; the stale snapshot still has the draft and no ticket.
-    for (const phase of ["creating", "draft", "promoting", "discarding"] as const) {
+    for (const phase of [
+      "creating",
+      "draft",
+      "promoting",
+      "discarding",
+      "planning",
+      "starting",
+    ] as const) {
       const draft = makeDraft({ phase });
       expect(
         resolveWorkbenchWorkItemView({

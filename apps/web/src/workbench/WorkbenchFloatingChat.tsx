@@ -81,7 +81,7 @@ export interface WorkbenchFloatingChatProps {
   readonly newThreadDisabled: boolean;
   /** The board's new Thread on the showing Thread's ticket; null when it has none. */
   readonly ticketThread?: WorkbenchFloatingChatTicketThread | null;
-  readonly planning?: WorkbenchFloatingChatPlanning;
+  readonly planning?: WorkbenchFloatingChatPlanning | undefined;
 }
 
 export interface WorkbenchFloatingChatTicketThread {

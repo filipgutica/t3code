@@ -61,11 +61,12 @@ export const getConversationDraftTitle = (
 /**
  * The conversation a selected ticket id opens. After Create ticket the id is selected before the
  * snapshot holds the ticket, and a stale snapshot still reports the draft as `draft` or
- * `promoting`, so every phase before `working` keeps the same view.
+ * `promoting`, so those phases keep the conversation until the saved ticket arrives.
  */
 const getConversationDraftForTicket = (
   snapshot: WorkbenchSnapshot | null,
   ticketId: WorkbenchTicketId,
+  ticketExists: boolean,
 ): WorkbenchConversationDraft | null =>
   draftsOf(snapshot).find(
     (draft) =>
@@ -74,8 +75,16 @@ const getConversationDraftForTicket = (
         draft.phase === "discarding" ||
         draft.phase === "draft" ||
         draft.phase === "promoting" ||
-        draft.phase === "planning" ||
-        draft.phase === "starting"),
+        (!ticketExists && (draft.phase === "planning" || draft.phase === "starting"))),
+  ) ?? null;
+
+/** A saved ticket whose planning Thread has not started work yet; its page offers Start work. */
+export const getPlanningTicketDraft = (
+  snapshot: WorkbenchSnapshot | null,
+  ticketId: WorkbenchTicketId,
+): WorkbenchConversationDraft | null =>
+  draftsOf(snapshot).find(
+    (draft) => draft.id === ticketId && (draft.phase === "planning" || draft.phase === "starting"),
   ) ?? null;
 
 /** Prefers whichever record of the same draft has the higher revision; command replies beat a stale snapshot. */
@@ -109,7 +118,7 @@ export type WorkbenchWorkItemView =
 
 /**
  * Chooses the Workspace's main-content view. `create=ticket` stays in the URL while the
- * conversation is open so reload and history resume it; a planning ticket reuses the same view.
+ * conversation is open so reload and history resume it; a saved ticket opens its own page.
  */
 export const resolveWorkbenchWorkItemView = ({
   snapshot,
@@ -130,7 +139,9 @@ export const resolveWorkbenchWorkItemView = ({
   readonly awaitingTicketId?: WorkbenchTicketId | null;
 }): WorkbenchWorkItemView => {
   const planning =
-    selectedTicketId === null ? null : getConversationDraftForTicket(snapshot, selectedTicketId);
+    selectedTicketId === null
+      ? null
+      : getConversationDraftForTicket(snapshot, selectedTicketId, ticketExists);
   if (planning?.projectId === workspaceId) return { kind: "conversation", draft: planning };
   if (selectedTicketId !== null && selectedTicketId === awaitingTicketId && !ticketExists) {
     return { kind: "conversation", draft: null };

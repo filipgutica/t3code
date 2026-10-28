@@ -630,41 +630,24 @@ it("shows a draft on the board while New Ticket remains available", async () => 
   expect(document.body.textContent).toContain("Draft");
 });
 
-it("keeps a planning ticket in the conversation and shows the ordinary ticket once work starts", async () => {
+it("opens a planning ticket's own page with Start work until work starts", async () => {
   await render({ conversation: "planning" });
-  expect(document.querySelector('[data-conversation="planning"]')).not.toBeNull();
+  expect(document.querySelector("[data-conversation]")).toBeNull();
+  expect(document.querySelector("article")).not.toBeNull();
+  expect(button("Start work")).not.toBeNull();
   await render({ conversation: "working" });
   expect(document.querySelector("[data-conversation]")).toBeNull();
+  expect(button("Start work", { optional: true })).toBeNull();
   expect(button("Open Thread for Ship the release").disabled).toBe(false);
 });
 
-it("opens the ticket details from a planning conversation and returns to the same conversation", async () => {
-  await render({ conversation: "planning" });
-  await act(async () => button("Ticket details").click());
-  expect(document.querySelector("[data-conversation]")).toBeNull();
-  // The ordinary ticket view brings back editing and repositories that planning hides.
-  expect(document.body.textContent).toContain(ticket.title);
-  await act(async () => button("Continue planning").click());
-  expect(document.querySelector('[data-conversation="planning"]')).not.toBeNull();
-});
-
-it("returns to planning instead of opening a second Thread from the planning ticket's details", async () => {
-  await render({ conversation: "planning" });
-  await act(async () => button("Ticket details").click());
-  await act(async () => button("Open Thread for Ship the release").click());
-  expect(requestTicketThread).not.toHaveBeenCalled();
-  expect(document.querySelector('[data-conversation="planning"]')).not.toBeNull();
-});
-
-it("shows the ticket's Threads in the floating chat except in planning ticket details", async () => {
-  await render({ detail: true });
-  expect(
-    document.querySelector('[data-workbench-floating-chat] [aria-label^="Ticket Threads"]'),
-  ).not.toBeNull();
-  await render({ conversation: "planning" });
-  await act(async () => button("Ticket details").click());
-  expect(document.querySelector("article")).not.toBeNull();
-  expect(document.querySelector("[data-workbench-floating-chat]")).toBeNull();
+it("shows the ticket's Threads in the floating chat, also while the ticket is planning", async () => {
+  for (const options of [{ detail: true }, { conversation: "planning" as const }]) {
+    await render(options);
+    expect(
+      document.querySelector('[data-workbench-floating-chat] [aria-label^="Ticket Threads"]'),
+    ).not.toBeNull();
+  }
 });
 
 it("tells the conversation when the host predates conversation drafts", async () => {

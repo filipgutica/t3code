@@ -237,7 +237,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
           const draft = planningDrafts.get(threadId);
           if (!draft) return conversation;
           return (
-            <BoardDraftThread
+            <WorkbenchDraftThread
               key={draft.id}
               environmentId={environmentId}
               workspace={workspace}
@@ -248,9 +248,11 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
               onOpenDraft={() => props.onOpenDraft(draft.id)}
               neverRan={props.threadsById.get(threadId)?.latestRun == null}
               onDiscarded={() => setExplicitThreadId(draftReturnsRef.current.get(threadId) ?? null)}
+              // Promoted drafts share the ticket's id, so this opens the new ticket's page.
+              onTicketCreated={(created) => props.onOpenDraft(created.id)}
             >
               {conversation}
-            </BoardDraftThread>
+            </WorkbenchDraftThread>
           );
         },
       }}
@@ -304,10 +306,11 @@ const useIsUntouchedDraft = (
   fields.markdown.trim() === "";
 
 /**
- * A draft's conversation in the chat, with the draft page's actions in the strip below. The agent
- * fills the fields through MCP, and people edit them on the full draft page.
+ * A draft's conversation in a floating chat, with the draft page's actions in the strip below.
+ * Without a conversation it is the strip alone. The agent fills the fields through MCP, and people
+ * edit them on the full draft page.
  */
-function BoardDraftThread({
+export function WorkbenchDraftThread({
   environmentId,
   workspace,
   snapshotDraft,
@@ -317,6 +320,7 @@ function BoardDraftThread({
   onOpenDraft,
   neverRan,
   onDiscarded,
+  onTicketCreated,
   children,
 }: {
   readonly environmentId: EnvironmentId;
@@ -329,7 +333,8 @@ function BoardDraftThread({
   /** No message was ever sent, so the conversation holds nothing to lose. */
   readonly neverRan: boolean;
   readonly onDiscarded: () => void;
-  readonly children: ReactNode;
+  readonly onTicketCreated?: (draft: WorkbenchConversationDraft) => void;
+  readonly children?: ReactNode;
 }) {
   // Command replies can be newer than the snapshot; the newest revision wins.
   const [fromCommand, setFromCommand] = useState<WorkbenchConversationDraft | null>(null);
@@ -348,8 +353,10 @@ function BoardDraftThread({
     draft,
     editor,
     onDraft: setFromCommand,
-    // The chat stays on the board; the tab follows the same Thread through each phase.
-    onTicketCreated: setFromCommand,
+    onTicketCreated: (created) => {
+      setFromCommand(created);
+      onTicketCreated?.(created);
+    },
     onWorkStarted: () => {},
     onDiscarded,
     onClose: () => {},

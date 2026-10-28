@@ -9,7 +9,7 @@ import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
 import type { useWorkbenchWorkspaceActions } from "./useWorkbenchWorkspaceActions";
 
 import { EnvironmentId, type WorkbenchProjectId, type WorkbenchTicketId } from "@t3tools/contracts";
-import { useState } from "react";
+import type { ReactNode } from "react";
 
 import {
   AlertCircleIcon,
@@ -21,7 +21,6 @@ import {
   FolderGit2Icon,
   Layers3Icon,
   LayoutDashboardIcon,
-  MessagesSquareIcon,
   MoreHorizontalIcon,
   PlusIcon,
   Settings2Icon,
@@ -74,12 +73,14 @@ import {
   WorkbenchWorkspaceDialog,
 } from "./WorkbenchForms";
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
-import { WorkbenchBoardFloatingChat } from "./WorkbenchBoardFloatingChat";
+import { WorkbenchBoardFloatingChat, WorkbenchDraftThread } from "./WorkbenchBoardFloatingChat";
+import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import { WorkbenchTicketConversation } from "./WorkbenchTicketConversation";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
 import { getTicketReferences } from "./workbenchReferences.logic";
 import {
+  getPlanningTicketDraft,
   getUnsavedConversationDrafts,
   resolveWorkbenchWorkItemView,
   supportsConversationDrafts,
@@ -403,13 +404,9 @@ function isWorkbenchPageTicketThreadPending({
 /**
  * While a saved ticket is still planning, its Thread is the planning conversation: Start work is
  * the step that hands it over. Thread changes here would only make Start work fail, so they
- * explain that instead, and opening the Thread returns to the conversation.
+ * explain that instead.
  */
-type WorkbenchPlanningDetailMode = { readonly onContinuePlanning: () => void };
-
-function WorkbenchPageTicketDetail(
-  props: WorkbenchPageTicketDetailProps & { readonly planning?: WorkbenchPlanningDetailMode },
-) {
+function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
   const {
     pageData,
     selection,
@@ -434,7 +431,8 @@ function WorkbenchPageTicketDetail(
   } = selection;
   const { openEpicDialog } = dialogs;
   const { linkedT3Projects, projectEpics, selectedAssignments } = boardData;
-  const planning = props.planning;
+  const planning =
+    selectedTicket === null ? null : getPlanningTicketDraft(pageData.snapshot, selectedTicket.id);
   const blockThreadChange = () =>
     setError("Start work before changing this ticket's Threads. Planning keeps its own Thread.");
   const {
@@ -455,71 +453,101 @@ function WorkbenchPageTicketDetail(
     unlinkThread,
   } = threadActions;
   if (environmentId === null || selectedProject === null || selectedTicket === null) return null;
+  const planningThread = (conversation?: ReactNode) =>
+    planning ? (
+      <WorkbenchDraftThread
+        key={planning.id}
+        environmentId={environmentId}
+        workspace={selectedProject}
+        snapshotDraft={planning}
+        ticket={selectedTicket}
+        createContext={{
+          linkedProjects: linkedT3Projects,
+          epics: boardData.activeProjectEpics,
+        }}
+        refreshSnapshot={pageData.refreshWorkbenchSnapshot}
+        onOpenDraft={() => props.dialogs.openTicketDialog()}
+        neverRan={threadsById.get(planning.threadId)?.latestRun == null}
+        onDiscarded={closeWorkItem}
+      >
+        {conversation}
+      </WorkbenchDraftThread>
+    ) : null;
   return (
-    <WorkbenchTicketDetail
-      key={selectedTicket.id}
-      environmentId={environmentId}
-      workspaceTitle={selectedProject.title}
-      workspaceReadOnly={!pageData.canOperate || selectedProject.archivedAt != null}
-      ticket={selectedTicket}
-      {...getWorkbenchPageTicketState({ props, ticketId: selectedTicket.id })}
-      lifecycleActionsEnabled={pageData.canOperate && selectedProject.archivedAt == null}
-      repositoryScopeDraft={ticketActions.repositoryScopeDraft}
-      onEditRepositories={ticketActions.editRepositories}
-      onRepositoryScopeChange={ticketActions.changeRepositoryScope}
-      onCancelRepositories={ticketActions.cancelRepositoryScope}
-      onSaveRepositories={ticketActions.saveRepositories}
-      linkedProjects={linkedT3Projects}
-      epics={projectEpics}
-      keybindings={keybindings}
-      availableEditors={availableEditors}
-      assignments={selectedAssignments}
-      floatingChat={!planning}
-      threadsById={threadsById}
-      archivedThreadsById={archivedThreadsById}
-      threadLookupReady={threadLookupReady}
-      onBack={() => {
-        setError(null);
-        if (planning) planning.onContinuePlanning();
-        else closeWorkItem();
-      }}
-      onSave={saveTicketContent}
-      onRegenerateSummary={(ticket) => {
-        void regenerateSummary(ticket);
-      }}
-      onUpdate={changeTicket}
-      onCreateEpic={openEpicDialog}
-      onOpenEpic={(epicId) => {
-        setAwaitingTicketId(null);
-        setAwaitingEpicId(null);
-        setSelectedTicketId(null);
-        setSelectedEpicId(epicId);
-        void updateEpicRouteSelection(selectedProject.id, epicId);
-      }}
-      onOpenThread={planning ? planning.onContinuePlanning : requestTicketThread}
-      onOpenAssignedThread={planning ? planning.onContinuePlanning : openAssignedThread}
-      onNewThread={planning ? blockThreadChange : requestNewThread}
-      onAttachThread={(ticket) => {
-        if (planning) return blockThreadChange();
-        setError(null);
-        setAttachThreadTicket(ticket);
-      }}
-      onUnlinkThread={(threadId) => {
-        if (planning) return blockThreadChange();
-        void unlinkThread(threadId);
-      }}
-      onDeleteThread={(threadId) => {
-        if (planning) return blockThreadChange();
-        void deleteAssignedThread(threadId);
-      }}
-      onReplaceThread={(ticket, previousThreadId) => {
-        if (planning) return blockThreadChange();
-        requestReplacementThread({ ticket, previousThreadId });
-      }}
-      onArchive={setTicketArchived}
-      onDelete={removeTicket}
-      onResetWorkspace={resetTicketWorkspace}
-    />
+    <>
+      {planning ? <div className="shrink-0 border-b border-border">{planningThread()}</div> : null}
+      <WorkbenchTicketDetail
+        key={selectedTicket.id}
+        environmentId={environmentId}
+        workspaceTitle={selectedProject.title}
+        workspaceReadOnly={!pageData.canOperate || selectedProject.archivedAt != null}
+        ticket={selectedTicket}
+        {...getWorkbenchPageTicketState({ props, ticketId: selectedTicket.id })}
+        lifecycleActionsEnabled={pageData.canOperate && selectedProject.archivedAt == null}
+        repositoryScopeDraft={ticketActions.repositoryScopeDraft}
+        onEditRepositories={ticketActions.editRepositories}
+        onRepositoryScopeChange={ticketActions.changeRepositoryScope}
+        onCancelRepositories={ticketActions.cancelRepositoryScope}
+        onSaveRepositories={ticketActions.saveRepositories}
+        linkedProjects={linkedT3Projects}
+        epics={projectEpics}
+        keybindings={keybindings}
+        availableEditors={availableEditors}
+        assignments={selectedAssignments}
+        floatingChat
+        floatingChatPlanning={
+          planning
+            ? {
+                threadIds: new Set([planning.threadId]),
+                render: (_threadId, conversation) => planningThread(conversation),
+              }
+            : undefined
+        }
+        threadsById={threadsById}
+        archivedThreadsById={archivedThreadsById}
+        threadLookupReady={threadLookupReady}
+        onBack={() => {
+          setError(null);
+          closeWorkItem();
+        }}
+        onSave={saveTicketContent}
+        onRegenerateSummary={(ticket) => {
+          void regenerateSummary(ticket);
+        }}
+        onUpdate={changeTicket}
+        onCreateEpic={openEpicDialog}
+        onOpenEpic={(epicId) => {
+          setAwaitingTicketId(null);
+          setAwaitingEpicId(null);
+          setSelectedTicketId(null);
+          setSelectedEpicId(epicId);
+          void updateEpicRouteSelection(selectedProject.id, epicId);
+        }}
+        onOpenThread={requestTicketThread}
+        onOpenAssignedThread={openAssignedThread}
+        onNewThread={planning ? blockThreadChange : requestNewThread}
+        onAttachThread={(ticket) => {
+          if (planning) return blockThreadChange();
+          setError(null);
+          setAttachThreadTicket(ticket);
+        }}
+        onUnlinkThread={(threadId) => {
+          if (planning) return blockThreadChange();
+          void unlinkThread(threadId);
+        }}
+        onDeleteThread={(threadId) => {
+          if (planning) return blockThreadChange();
+          void deleteAssignedThread(threadId);
+        }}
+        onReplaceThread={(ticket, previousThreadId) => {
+          if (planning) return blockThreadChange();
+          requestReplacementThread({ ticket, previousThreadId });
+        }}
+        onArchive={setTicketArchived}
+        onDelete={removeTicket}
+        onResetWorkspace={resetTicketWorkspace}
+      />
+    </>
   );
 }
 
@@ -594,29 +622,7 @@ function WorkbenchPageConversation(
 ) {
   const { pageData, selection, dialogs, boardData, environmentId, draft } = props;
   const { selectedProject, selectedTicket } = selection;
-  // The ticket whose details replace the conversation; another ticket always opens the conversation.
-  const [detailsTicketId, setDetailsTicketId] = useState<WorkbenchTicketId | null>(null);
-  const continuePlanning = () => {
-    props.setError(null);
-    setDetailsTicketId(null);
-  };
   if (environmentId === null || selectedProject === null) return null;
-  if (selectedTicket !== null && detailsTicketId === selectedTicket.id) {
-    return (
-      <>
-        <div className="flex items-center gap-3 border-b border-border px-4 py-2">
-          <Button size="sm" variant="outline" onClick={continuePlanning}>
-            <MessagesSquareIcon data-icon="inline-start" />
-            Continue planning
-          </Button>
-          <span className="min-w-0 text-xs text-muted-foreground">
-            Ticket details and repositories. Start work from the conversation.
-          </span>
-        </div>
-        <WorkbenchPageTicketDetail {...props} planning={{ onContinuePlanning: continuePlanning }} />
-      </>
-    );
-  }
   return (
     <WorkbenchTicketConversation
       environmentId={environmentId}
@@ -640,10 +646,15 @@ function WorkbenchPageConversation(
       }
       onCreateEpic={dialogs.openEpicDialog}
       onDraftPrepared={dialogs.openCreatedTicket}
-      onTicketCreated={dialogs.openCreatedTicket}
+      onTicketCreated={(created) => {
+        dialogs.openCreatedTicket(created);
+        // The ticket's page continues this conversation in its floating chat.
+        useWorkbenchFloatingChatStore.getState().expand(created.threadId);
+      }}
       onDiscarded={dialogs.closeTicketConversation}
       onWorkStarted={dialogs.openDraftThread}
-      onShowTicketDetails={() => setDetailsTicketId(selectedTicket?.id ?? null)}
+      // A saved ticket opens its own page once the snapshot holds it.
+      onShowTicketDetails={pageData.refreshWorkbenchSnapshot}
     />
   );
 }
