@@ -46,14 +46,23 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
     .getByLabel("Description", { exact: true })
     .fill("Full regression description with acceptance criteria.");
   await draft.getByRole("button", { name: "Create ticket", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Start work", exact: true })).toBeVisible();
+  const ticketChat = page.getByRole("region", {
+    name: "Regression disposable ticket chat",
+    exact: true,
+  });
+  await expect(ticketChat.getByRole("button", { name: "Start work", exact: true })).toBeVisible();
   const prepared = await snapshot(demo);
   const created = prepared.tickets.find((t) => t.title === "Regression disposable ticket");
   if (!created) throw new Error("Created Ticket was not persisted");
   const assignment = prepared.assignments.find((a) => a.ticketId === created.id);
   if (!assignment) throw new Error("Planning Thread was not retained");
-  await page.getByRole("button", { name: "Start work", exact: true }).click();
-  await expect(page).toHaveURL((url) => url.pathname.endsWith(`/${assignment.threadId}`));
+  const draftPhase = async () =>
+    (await snapshot(demo)).ticketDrafts?.find((d) => d.id === created.id)?.phase;
+  expect(await draftPhase()).toBe("planning");
+  await ticketChat.getByRole("button", { name: "Start work", exact: true }).click();
+  // The snapshot omits drafts once work has started.
+  await expect.poll(draftPhase).toBeUndefined();
+  await expect(page).toHaveURL((url) => url.searchParams.get("ticketId") === created.id);
   await openWorkbench(
     page,
     demo.workbenchUrl(`/workbench?workbenchProjectId=orbit&ticketId=${created.id}`),
