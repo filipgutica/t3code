@@ -118,7 +118,6 @@ const mount = () =>
           environmentId,
           ticket,
           projects,
-          defaultModelSelection: null,
           workspace: undefined,
           initialRepositoryScope: undefined,
         }}

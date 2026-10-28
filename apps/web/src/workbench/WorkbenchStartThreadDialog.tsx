@@ -42,6 +42,7 @@ import {
   isWorkbenchTicketWorkspaceReady,
   type WorkbenchRepositoryScope,
 } from "./workbenchRepositoryScope";
+import { resolveWorkbenchDefaultModelSelection } from "./workbenchTicketDraft.logic";
 
 function resolveWorkbenchStartThreadSelection(
   entries: ReadonlyArray<ProviderInstanceEntry>,
@@ -178,7 +179,6 @@ const useWorkbenchStartThreadSelection = ({
 
 type WorkbenchStartThreadDialogRequest = {
   readonly environmentId: EnvironmentId;
-  readonly defaultModelSelection: ModelSelection | null;
   readonly ticket: WorkbenchTicket;
   readonly projects: ReadonlyArray<Project>;
   readonly workspace: WorkbenchTicketWorkspace | undefined;
@@ -188,20 +188,6 @@ type WorkbenchStartThreadDialogRequest = {
   readonly description?: string;
   readonly startLabel?: string;
 };
-
-const getWorkbenchStartThreadDefaultSelection = ({
-  projects,
-  scope,
-  workspaceReady,
-  defaultModelSelection,
-}: {
-  projects: readonly Project[];
-  scope: WorkbenchRepositoryScope;
-  workspaceReady: boolean;
-  defaultModelSelection: ModelSelection | null;
-}) =>
-  projects.find((project) => project.id === scope.primaryT3ProjectId)?.defaultModelSelection ??
-  (workspaceReady ? defaultModelSelection : null);
 
 const resolveThreadRepositoryScope = ({
   ticket,
@@ -259,7 +245,6 @@ export function WorkbenchStartThreadDialog({
 }) {
   const {
     environmentId,
-    defaultModelSelection,
     ticket,
     projects,
     workspace,
@@ -298,11 +283,10 @@ export function WorkbenchStartThreadDialog({
     projectId: repositoryScope.primaryT3ProjectId,
     providers,
     settings,
-    defaultModelSelection: getWorkbenchStartThreadDefaultSelection({
-      projects,
-      scope: repositoryScope,
-      workspaceReady,
-      defaultModelSelection,
+    defaultModelSelection: resolveWorkbenchDefaultModelSelection({
+      settings,
+      projectId: repositoryScope.primaryT3ProjectId,
+      project: projects.find((project) => project.id === repositoryScope.primaryT3ProjectId),
     }),
     stickyModelSelection,
   });

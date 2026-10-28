@@ -1,5 +1,6 @@
 import {
   type ModelSelection,
+  type ProjectId,
   type ProviderInstanceId,
   type WorkbenchProjectId,
   type WorkbenchSnapshot,
@@ -7,6 +8,10 @@ import {
   type WorkbenchTicketId,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
+import {
+  resolveProjectSettings,
+  type LegacyProjectSettingsFields,
+} from "@t3tools/shared/projectSettings";
 
 // "Conversation draft" is the backend-owned planning record. It is unrelated to the local
 // edit buffers that WorkbenchForms calls "ticket drafts".
@@ -137,6 +142,21 @@ export const resolveWorkbenchWorkItemView = ({
   }
   return { kind: "board" };
 };
+
+/**
+ * The model a native new Thread in this project starts on: the project's override, else the
+ * environment default. Null leaves the choice to the caller's sticky model and fallback.
+ */
+export const resolveWorkbenchDefaultModelSelection = ({
+  settings,
+  projectId,
+  project,
+}: {
+  readonly settings: Parameters<typeof resolveProjectSettings>[0];
+  readonly projectId: ProjectId | null;
+  readonly project: LegacyProjectSettingsFields | null | undefined;
+}): ModelSelection | null =>
+  resolveProjectSettings(settings, projectId, project).settings.defaultModelSelection;
 
 /** Planning enforces read-only access only for these provider drivers. */
 const PLANNING_DRIVERS: ReadonlySet<string> = new Set(["codex", "claudeAgent"]);

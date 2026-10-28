@@ -150,7 +150,6 @@ const render = async ({
         providers={[provider]}
         request={{
           environmentId,
-          defaultModelSelection: null,
           ticket: savedTicket,
           projects: availableProjects,
           workspace: unprepared ? undefined : preparedWorkspace,

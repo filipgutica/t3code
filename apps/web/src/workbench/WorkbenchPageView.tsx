@@ -944,7 +944,7 @@ function WorkbenchPageThreadDialogs(
   >,
 ) {
   const { pageData, threadActions, environmentId, error, pendingAction } = props;
-  const { repositoriesById, providers, snapshot, threadsById, reservedThreadIds } = pageData;
+  const { providers, snapshot, threadsById, reservedThreadIds } = pageData;
 
   const {
     startThreadRequest,
@@ -973,9 +973,6 @@ function WorkbenchPageThreadDialogs(
             ),
             initialRepositoryScope: startThreadRequest.repositoryScope,
             environmentId,
-            defaultModelSelection:
-              repositoriesById.get(startThreadRequest.ticket.primaryT3ProjectId)
-                ?.defaultModelSelection ?? null,
             additional: startThreadRequest.mode === "additional",
           }}
           error={error}
