@@ -1,4 +1,5 @@
 import {
+  DEFAULT_SERVER_SETTINGS,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -13,6 +14,7 @@ import {
   getConversationDraftTitle,
   pickNewestConversationDraft,
   resolveTicketPlanningModelSelection,
+  resolveWorkbenchDefaultModelSelection,
   resolveWorkbenchWorkItemView,
   canDiscardConversationDraft,
   supportsConversationDrafts,
@@ -289,6 +291,42 @@ describe("resolveTicketPlanningModelSelection", () => {
         preferred: [{ instanceId: claude, model: "sonnet" }],
       }),
     ).toBeNull();
+  });
+});
+
+describe("Workbench Thread model order", () => {
+  const codex = ProviderInstanceId.make("codex");
+  const claude = ProviderInstanceId.make("claudeAgent");
+  const candidates = [
+    { instanceId: codex, driverKind: "codex", ready: true, defaultModel: "gpt-default" },
+    { instanceId: claude, driverKind: "claudeAgent", ready: true, defaultModel: "sonnet" },
+  ];
+  const haiku = { instanceId: claude, model: "claude-haiku-5-5" };
+  const sticky = { instanceId: codex, model: "gpt-sticky" };
+  const resolve = (environmentDefault: typeof haiku | null, projectDefault: typeof sticky | null) =>
+    resolveTicketPlanningModelSelection({
+      candidates,
+      preferred: [
+        resolveWorkbenchDefaultModelSelection({
+          settings: { ...DEFAULT_SERVER_SETTINGS, defaultModelSelection: environmentDefault },
+          projectId: repoA,
+          project: { defaultModelSelection: projectDefault },
+        }),
+        sticky,
+      ],
+    });
+
+  it("starts on the environment default before the last model picked", () => {
+    expect(resolve(haiku, null)).toEqual(haiku);
+  });
+
+  it("lets the project's default override the environment default", () => {
+    const projectDefault = { instanceId: codex, model: "gpt-project" };
+    expect(resolve(haiku, projectDefault)).toEqual(projectDefault);
+  });
+
+  it("falls back to the last model picked when neither default is set", () => {
+    expect(resolve(null, null)).toEqual(sticky);
   });
 });
 

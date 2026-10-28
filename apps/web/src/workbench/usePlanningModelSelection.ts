@@ -11,6 +11,7 @@ import {
 import type { Project } from "../types";
 import {
   resolveTicketPlanningModelSelection,
+  resolveWorkbenchDefaultModelSelection,
   type WorkbenchConversationDraft,
 } from "./workbenchTicketDraft.logic";
 
@@ -54,7 +55,14 @@ export function usePlanningModelSelection({
         entry.models[0]?.slug ??
         null,
     })),
-    preferred: [anchorProject?.defaultModelSelection, sticky],
+    preferred: [
+      resolveWorkbenchDefaultModelSelection({
+        settings,
+        projectId: anchorProjectId,
+        project: anchorProject,
+      }),
+      sticky,
+    ],
   });
   return { entries, modelSelection };
 }

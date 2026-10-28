@@ -5,6 +5,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import {
+  DEFAULT_SERVER_SETTINGS,
   WorkbenchAssignmentId,
   type EnvironmentId,
   type ServerProvider,
@@ -14,8 +15,11 @@ import {
   type WorkbenchTicketId,
 } from "@t3tools/contracts";
 
+import { useComposerDraftStore } from "../composerDraftStore";
 import { newThreadId, randomUUID } from "../lib/utils";
 import { resolveDefaultProviderModelSelection } from "../providerInstances";
+import { appAtomRegistry } from "../rpc/atomRegistry";
+import { environmentServerConfigsAtom } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
@@ -25,6 +29,7 @@ import {
 } from "./startWorkbenchTicket";
 import { workbenchEnvironment } from "./state";
 import { waitForWorkbenchThread } from "./waitForWorkbenchThread";
+import { resolveWorkbenchDefaultModelSelection } from "./workbenchTicketDraft.logic";
 
 const commandFailureMessage = (failure: {
   readonly cause: Parameters<typeof squashAtomCommandFailure>[0]["cause"];
@@ -159,8 +164,24 @@ export function useStartWorkbenchTicket({
             waitForThread: (threadId) =>
               waitForWorkbenchThread(scopeThreadRef(environmentId, threadId)),
             openThread,
-            resolveModelSelection: (project) =>
-              resolveDefaultProviderModelSelection(providers, project.defaultModelSelection),
+            resolveModelSelection: (project) => {
+              const settings =
+                appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.settings ??
+                DEFAULT_SERVER_SETTINGS;
+              const { stickyActiveProvider, stickyModelSelectionByProvider } =
+                useComposerDraftStore.getState();
+              return resolveDefaultProviderModelSelection(
+                providers,
+                resolveWorkbenchDefaultModelSelection({
+                  settings,
+                  projectId: project.id,
+                  project,
+                }) ??
+                  (stickyActiveProvider === null
+                    ? null
+                    : stickyModelSelectionByProvider[stickyActiveProvider]),
+              );
+            },
             makeThreadId: newThreadId,
             makeAssignmentId: () => WorkbenchAssignmentId.make(randomUUID()),
             now: () => new Date().toISOString(),
