@@ -5,7 +5,7 @@ import type {
   WorkbenchTicketDraftFields,
   WorkbenchTicketKind,
 } from "@t3tools/contracts";
-import type { Dispatch, SetStateAction } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -75,6 +75,7 @@ export function WorkbenchTicketDraftFieldsForm({
   fields,
   disabled,
   updatedBy,
+  references,
   onChange,
   onCreateEpic,
   ...context
@@ -83,53 +84,60 @@ export function WorkbenchTicketDraftFieldsForm({
   readonly disabled: boolean;
   /** The agent Thread that last wrote the title or brief, if one did. */
   readonly updatedBy: string | null;
+  /** Sits after the description and keeps its own read-only rules, outside the form's fieldsets. */
+  readonly references: ReactNode;
   readonly onChange: (patch: Partial<WorkbenchTicketDraftFields>) => void;
   readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
 }) {
   const { selectedEpicId, repositories } = getTicketDraftCreateState({ fields, ...context });
   return (
-    <fieldset disabled={disabled} className="min-w-0 space-y-5">
-      <div className="space-y-1.5">
-        <Label htmlFor="workbench-draft-title">Title</Label>
-        <Input
-          id="workbench-draft-title"
-          placeholder="What needs doing?"
-          value={fields.title}
-          onChange={(event) => onChange({ title: event.currentTarget.value })}
+    <div className="min-w-0 space-y-5">
+      <fieldset disabled={disabled} className="min-w-0 space-y-5">
+        <div className="space-y-1.5">
+          <Label htmlFor="workbench-draft-title">Title</Label>
+          <Input
+            id="workbench-draft-title"
+            placeholder="What needs doing?"
+            value={fields.title}
+            onChange={(event) => onChange({ title: event.currentTarget.value })}
+          />
+        </div>
+        <WorkbenchTicketDescriptionEditor
+          id="workbench-draft-description"
+          markdown={fields.markdown}
+          jira={false}
+          updatedBy={updatedBy}
+          onChange={(markdown) => onChange({ markdown })}
         />
-      </div>
-      <WorkbenchTicketDescriptionEditor
-        id="workbench-draft-description"
-        markdown={fields.markdown}
-        jira={false}
-        updatedBy={updatedBy}
-        onChange={(markdown) => onChange({ markdown })}
-      />
-      <WorkbenchCreateTicketKind
-        kind={fields.kind}
-        markdown={fields.markdown}
-        setKind={asSetter<WorkbenchTicketKind>(fields.kind, (kind) => onChange({ kind }))}
-        setMarkdown={asSetter(fields.markdown, (markdown) => onChange({ markdown }))}
-      />
-      <WorkbenchCreateTicketEpic
-        onCreateEpic={onCreateEpic}
-        epics={context.epics}
-        pending={disabled}
-        epicId={selectedEpicId}
-        setEpicId={asSetter(selectedEpicId, (epicId) => onChange({ epicId }))}
-      />
-      <WorkbenchCreateTicketRepositories
-        linkedProjects={context.linkedProjects}
-        selectedRepositoryProjectIds={repositories.selectedRepositoryProjectIds}
-        selectedProjectId={repositories.selectedProjectId}
-        setRepositoryProjectIds={asSetter<ReadonlyArray<ProjectId>>(
-          repositories.selectedRepositoryProjectIds,
-          (ids) => onChange({ repositoryProjectIds: ids }),
-        )}
-        setPrimaryProjectId={asSetter(repositories.selectedProjectId, (id) =>
-          onChange({ primaryT3ProjectId: id }),
-        )}
-      />
-    </fieldset>
+      </fieldset>
+      {references}
+      <fieldset disabled={disabled} className="min-w-0 space-y-5">
+        <WorkbenchCreateTicketKind
+          kind={fields.kind}
+          markdown={fields.markdown}
+          setKind={asSetter<WorkbenchTicketKind>(fields.kind, (kind) => onChange({ kind }))}
+          setMarkdown={asSetter(fields.markdown, (markdown) => onChange({ markdown }))}
+        />
+        <WorkbenchCreateTicketEpic
+          onCreateEpic={onCreateEpic}
+          epics={context.epics}
+          pending={disabled}
+          epicId={selectedEpicId}
+          setEpicId={asSetter(selectedEpicId, (epicId) => onChange({ epicId }))}
+        />
+        <WorkbenchCreateTicketRepositories
+          linkedProjects={context.linkedProjects}
+          selectedRepositoryProjectIds={repositories.selectedRepositoryProjectIds}
+          selectedProjectId={repositories.selectedProjectId}
+          setRepositoryProjectIds={asSetter<ReadonlyArray<ProjectId>>(
+            repositories.selectedRepositoryProjectIds,
+            (ids) => onChange({ repositoryProjectIds: ids }),
+          )}
+          setPrimaryProjectId={asSetter(repositories.selectedProjectId, (id) =>
+            onChange({ primaryT3ProjectId: id }),
+          )}
+        />
+      </fieldset>
+    </div>
   );
 }

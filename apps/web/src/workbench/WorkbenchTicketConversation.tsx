@@ -475,6 +475,21 @@ function WorkbenchDraftAside({
     props.threadsById,
     props.archivedThreadsById,
   );
+  const references = (
+    <WorkbenchDraftReferences
+      environmentId={props.environmentId}
+      draftId={draft.id}
+      references={props.references}
+      threadsById={props.threadsById}
+      archivedThreadsById={props.archivedThreadsById}
+      readOnly={!canOperate || transitions.action !== null}
+      fileCwd={getReferenceFileCwd(linkedProjects, [
+        draft.fields.primaryT3ProjectId,
+        ...draft.fields.repositoryProjectIds,
+        draft.anchorProjectId,
+      ])}
+    />
+  );
   return (
     <>
       <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto p-4">
@@ -488,11 +503,14 @@ function WorkbenchDraftAside({
           />
         ) : null}
         {planning ? (
-          <WorkbenchPlanningSummary
-            summary={ticket ?? draft.fields}
-            linkedProjects={linkedProjects}
-            updatedBy={updatedBy}
-          />
+          <>
+            <WorkbenchPlanningSummary
+              summary={ticket ?? draft.fields}
+              linkedProjects={linkedProjects}
+              updatedBy={updatedBy}
+            />
+            {references}
+          </>
         ) : (
           <WorkbenchTicketDraftFieldsForm
             fields={fields}
@@ -505,23 +523,11 @@ function WorkbenchDraftAside({
             linkedProjects={linkedProjects}
             epics={props.epics}
             updatedBy={updatedBy}
+            references={references}
             onChange={edit}
             onCreateEpic={props.onCreateEpic}
           />
         )}
-        <WorkbenchDraftReferences
-          environmentId={props.environmentId}
-          draftId={draft.id}
-          references={props.references}
-          threadsById={props.threadsById}
-          archivedThreadsById={props.archivedThreadsById}
-          readOnly={!canOperate || transitions.action !== null}
-          fileCwd={getReferenceFileCwd(linkedProjects, [
-            draft.fields.primaryT3ProjectId,
-            ...draft.fields.repositoryProjectIds,
-            draft.anchorProjectId,
-          ])}
-        />
         <WorkbenchInlineError
           message={transitions.error ?? (editor.conflict ? null : editor.saveError)}
         />
