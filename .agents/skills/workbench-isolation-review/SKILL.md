@@ -21,6 +21,7 @@ Classify every changed file against the documented ownership boundaries. For eac
 - Workbench rules and state remain with their documented owner; shared code delegates rather than reproducing the feature.
 - Existing signatures, defaults, and behavior for non-Workbench callers remain intact unless the user authorized a contract change.
 - Native records and lifecycle remain authoritative, and environment identity survives the integration.
+- The [upstream catalog](../../../docs/internals/workbench-upstream-catalog.md) has an entry for each new upstream-file change and each new Workbench copy of native behavior, and the changed site carries its short comment. A missing entry is action-required.
 
 Trace relevant callers, types, and tests. Check for copied native implementations, application imports from the Workbench package (including test helpers), unnecessary shared exports, and changes to native persistence or transaction ownership. Directory placement alone does not prove isolation.
 

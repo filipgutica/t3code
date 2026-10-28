@@ -17,6 +17,8 @@ Trace the affected native behavior and its Workbench callers. Prefer, in order:
 2. Workbench-owned logic and composition around that behavior.
 3. A small shared integration that delegates to Workbench and preserves behavior for other callers.
 
+A Workbench copy of native behavior is not on this list. It needs a capability upstream lacks; name that capability and get maintainer sign-off before writing the copy. Record each copy and each upstream-file change in the [upstream catalog](../../../docs/internals/workbench-upstream-catalog.md), following [Upstream first](../../../docs/internals/workbench-fork.md#upstream-first).
+
 For each proposed shared-file change, state its necessity, the existing extension points considered, and the behavior outside Workbench that must remain intact. Existing integration files are candidates, not blanket permission to add business rules there. A new hook earns its place only when current callers need it.
 
 Keep native records authoritative. Check where lifecycle, persistence, transactions, and environment identity are owned before introducing Workbench state. Follow the documented ownership rules rather than cloning native models, components, or workflows to make integration convenient.
