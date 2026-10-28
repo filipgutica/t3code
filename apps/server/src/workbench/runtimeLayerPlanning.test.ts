@@ -696,7 +696,7 @@ it.effect(
       assert.isUndefined(planning?.sandboxPolicy);
       assert.isUndefined(planning?.toolAccess);
       assert.equal(planning?.checkpoints, "disabled");
-      assert.include(planning?.instructions ?? "", "workbench-ticket-draft");
+      assert.include(planning?.instructions ?? "", "workbench_workstream_update");
       assert.equal(planning?.cwd, process.cwd());
       const native = policies.get(nativeThreadId);
       assert.isDefined(native);
