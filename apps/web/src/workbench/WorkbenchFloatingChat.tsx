@@ -24,6 +24,7 @@ import ChatView from "../components/ChatView";
 import { Button } from "../components/ui/button";
 import { MenuItem, MenuItemLabel } from "../components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { ChangeRequestLinkOpenProvider } from "../lib/openPullRequestLink";
 import { cn } from "../lib/utils";
 import { useRightPanelStore } from "../rightPanelStore";
 import "./WorkbenchFloatingChat.css";
@@ -37,6 +38,7 @@ import {
   type WorkbenchFloatingChatFocusRequest,
 } from "./workbenchFloatingChatState";
 import { WorkbenchFloatingChatPicker } from "./WorkbenchFloatingChatPicker";
+import { useOpenWorkbenchPullRequest } from "./WorkbenchPullRequestPreview";
 import { WorkbenchTicketKindIcon } from "./WorkbenchTicketMetadata";
 import {
   useWorkbenchFloatingChatSize,
@@ -213,8 +215,8 @@ function FloatingChatPlaceholder({
   );
 }
 
-// The embed hides the right panel, so a file, diff, or pull request the user opens from the
-// timeline continues in the full Thread, where the right panel shows it.
+// The embed hides the right panel, so a file or diff the user opens from the timeline
+// continues in the full Thread, where the right panel shows it.
 function useOpenThreadOnPanelAction(threadRef: ScopedThreadRef, onOpen: () => void) {
   const threadKey = scopedThreadKey(threadRef);
   const open = useEffectEvent(onOpen);
@@ -245,17 +247,21 @@ function FloatingChatThread({
   const threadRef = scopeThreadRef(environmentId, thread.threadId);
   const openThread = () => onOpenThread(thread.threadId);
   useOpenThreadOnPanelAction(threadRef, openThread);
+  const openPullRequest = useOpenWorkbenchPullRequest();
   const planningThread = planning?.threadIds.has(thread.threadId) === true;
+  // Pull request links open in the page's preview, so the user stays on the Board or Ticket.
   const conversation = (
-    <ChatView
-      key={thread.threadId}
-      environmentId={environmentId}
-      threadId={thread.threadId}
-      routeKind="server"
-      hideHeader
-      readOnlyPlanning={planningThread}
-      embedded={{ composerFocusRequest, openThread }}
-    />
+    <ChangeRequestLinkOpenProvider value={openPullRequest}>
+      <ChatView
+        key={thread.threadId}
+        environmentId={environmentId}
+        threadId={thread.threadId}
+        routeKind="server"
+        hideHeader
+        readOnlyPlanning={planningThread}
+        embedded={{ composerFocusRequest, openThread }}
+      />
+    </ChangeRequestLinkOpenProvider>
   );
   return (
     <div role="region" aria-label={thread.title} className="flex min-h-0 flex-1 flex-col">
