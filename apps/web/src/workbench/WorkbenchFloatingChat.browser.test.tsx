@@ -1,5 +1,5 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, ThreadId, WorkbenchTicketId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ThreadId, WorkbenchTicketId } from "@t3tools/contracts";
 import { useState } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
@@ -15,21 +15,50 @@ import { resolveWorkbenchThreadExecutionStatusPresentation } from "./WorkbenchTh
 import type { WorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 
-// The real ChatView needs a connected environment. The stand-in honors the one embedding
-// input the panel controls, as ChatView does: each new focus request focuses the composer.
+const { openPullRequest } = vi.hoisted(() => ({ openPullRequest: vi.fn() }));
+vi.mock("./WorkbenchPullRequestPreview", () => ({
+  useOpenWorkbenchPullRequest: () => openPullRequest,
+}));
+vi.mock("@t3tools/client-runtime/change-request-links", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@t3tools/client-runtime/change-request-links")>()),
+  resolveChangeRequestLinkTarget: () => ({
+    project: { id: ProjectId.make("repo"), environmentId: EnvironmentId.make("environment") },
+    repository: "acme/app",
+    number: 42,
+  }),
+}));
+
+// The real ChatView needs a connected environment. The stand-in honors the embedding inputs
+// the panel controls, as ChatView does: each new focus request focuses the composer, and a
+// pull request link in the timeline opens through the native link handler.
 vi.mock("../components/ChatView", async () => {
   const { useEffect, useRef } = await import("react");
+  const { useOpenChangeRequestLink } = await import("../lib/openPullRequestLink");
   return {
     default: function ChatViewStub(props: {
-      threadId: string;
+      environmentId: EnvironmentId;
+      threadId: ThreadId;
       embedded?: { composerFocusRequest: number | null };
     }) {
       const ref = useRef<HTMLTextAreaElement>(null);
       const request = props.embedded?.composerFocusRequest ?? null;
+      const openChangeRequest = useOpenChangeRequestLink(
+        scopeThreadRef(props.environmentId, props.threadId),
+      );
       useEffect(() => {
         if (request !== null) ref.current?.focus();
       }, [request]);
-      return <textarea ref={ref} aria-label={`Composer for ${props.threadId}`} />;
+      return (
+        <>
+          <textarea ref={ref} aria-label={`Composer for ${props.threadId}`} />
+          <a
+            href="https://github.com/acme/app/pull/42"
+            onClick={(event) => openChangeRequest(event, "https://github.com/acme/app/pull/42")}
+          >
+            acme/app #42
+          </a>
+        </>
+      );
     },
   };
 });
@@ -41,6 +70,7 @@ const setup = () => {
     pageChat: null,
   });
   useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} });
+  openPullRequest.mockReset();
 };
 
 const thread = (
@@ -404,6 +434,23 @@ it("opens the full Thread when the user opens a right-panel surface from the emb
   await act(() => useRightPanelStore.getState().openFile(threadRef, "src/index.ts"));
 
   expect(onOpenThread).toHaveBeenCalledExactlyOnceWith(ThreadId.make("a"));
+});
+
+it("opens a pull request link from the embed in the page's preview, not the full Thread", async () => {
+  setup();
+  const onOpenThread = vi.fn();
+  await using screen = await render(
+    <Harness threads={[thread("a")]} onOpenThread={onOpenThread} />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Expand ticket chat" }));
+
+  await userEvent.click(screen.getByRole("link", { name: "acme/app #42" }));
+
+  expect(openPullRequest).toHaveBeenCalledExactlyOnceWith({
+    environmentId: EnvironmentId.make("environment"),
+    reference: { projectId: ProjectId.make("repo"), repository: "acme/app", number: 42 },
+  });
+  expect(onOpenThread).not.toHaveBeenCalled();
 });
 
 it("focuses a requested Thread's composer once it appears, such as a Thread just created", async () => {
