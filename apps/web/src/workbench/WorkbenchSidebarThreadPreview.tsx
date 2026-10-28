@@ -43,7 +43,7 @@ export function WorkbenchSidebarThreadPreview({
   providerEntry,
   pullRequests,
 }: {
-  readonly thread: WorkbenchSidebarThread;
+  readonly thread: Pick<WorkbenchSidebarThread, "title">;
   readonly shell: EnvironmentThreadShell | null;
   readonly project: EnvironmentProject | null;
   readonly environment: EnvironmentPresentation | null;

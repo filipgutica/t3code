@@ -42,7 +42,7 @@ function TicketPullRequestPreview({
   ) : null;
 }
 
-function TicketPreview({
+export function TicketPreview({
   ticket,
   details,
   status,
