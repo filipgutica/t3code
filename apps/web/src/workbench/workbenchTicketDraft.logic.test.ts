@@ -9,7 +9,6 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  findTicketDraftSuggestion,
   getUnsavedConversationDrafts,
   getConversationDraftTitle,
   pickNewestConversationDraft,
@@ -19,7 +18,6 @@ import {
   supportsConversationDrafts,
   supportsEnforcedTicketPlanning,
   type WorkbenchConversationDraft,
-  type WorkbenchSuggestionMessage,
 } from "./workbenchTicketDraft.logic";
 
 const workspaceId = WorkbenchProjectId.make("workspace");
@@ -247,86 +245,6 @@ describe("resolveWorkbenchWorkItemView", () => {
         createTicket: true,
       }),
     ).toEqual({ kind: "ticket" });
-  });
-});
-
-describe("findTicketDraftSuggestion", () => {
-  const known = new Set<string>([repoA, repoB]);
-  const fenced = (payload: unknown) =>
-    `Here is a proposal.\n\n\`\`\`workbench-ticket-draft\n${
-      typeof payload === "string" ? payload : JSON.stringify(payload)
-    }\n\`\`\`\n`;
-  const proposal = {
-    title: " Add retry ",
-    markdown: "## Goal\nRetry.",
-    repositoryProjectIds: [repoA, repoB],
-    primaryT3ProjectId: repoB,
-  };
-  const assistant = (id: string, text: string, streaming = false): WorkbenchSuggestionMessage => ({
-    id,
-    role: "assistant",
-    text,
-    streaming,
-  });
-  const find = (messages: ReadonlyArray<WorkbenchSuggestionMessage>) =>
-    findTicketDraftSuggestion({ messages, knownRepositoryProjectIds: known });
-
-  it("reads a valid proposal and trims text", () => {
-    expect(find([assistant("m1", fenced(proposal))])).toEqual({
-      messageId: "m1",
-      sourceOffset: fenced(proposal).indexOf("```"),
-      title: "Add retry",
-      markdown: "## Goal\nRetry.",
-      repositoryProjectIds: [repoA, repoB],
-      primaryT3ProjectId: repoB,
-    });
-  });
-
-  it("uses the last block of the newest completed assistant message", () => {
-    const text = `${fenced({ ...proposal, title: "First" })}\n${fenced({ ...proposal, title: "Second" })}`;
-    expect(find([assistant("old", fenced(proposal)), assistant("new", text)])?.title).toBe(
-      "Second",
-    );
-  });
-
-  it.each(["```", "````", "~~~"])(
-    "keeps %s fence identity when the plan contains code examples",
-    (fence) => {
-      const withCode = { ...proposal, markdown: "## Work\n```ts\nconst retry = true;\n```" };
-      const text = `Intro\n\n  ${fence}workbench-ticket-draft\n${JSON.stringify(withCode)}\n  ${fence}`;
-      const suggestion = find([assistant("m", text)]);
-      expect(suggestion?.sourceOffset).toBe(text.indexOf(fence));
-      expect(suggestion?.markdown).toBe(withCode.markdown);
-    },
-  );
-
-  it("ignores a streaming message and falls back to the last completed proposal", () => {
-    const suggestion = find([
-      assistant("done", fenced(proposal)),
-      assistant("live", fenced({ ...proposal, title: "Half written" }), true),
-    ]);
-    expect(suggestion?.messageId).toBe("done");
-  });
-
-  it("ignores user messages that quote the format", () => {
-    expect(find([{ id: "u", role: "user", text: fenced(proposal), streaming: false }])).toBeNull();
-  });
-
-  it("does not resurrect an older proposal when the newest block is malformed", () => {
-    expect(
-      find([assistant("old", fenced(proposal)), assistant("bad", fenced("{ not json"))]),
-    ).toBeNull();
-  });
-
-  it.each([
-    ["an unknown repository", { ...proposal, repositoryProjectIds: [repoA, "stranger"] }],
-    ["a primary outside the selection", { ...proposal, primaryT3ProjectId: "stranger" }],
-    ["an empty repository list", { ...proposal, repositoryProjectIds: [] }],
-    ["a blank title", { ...proposal, title: "   " }],
-    ["a title over the field limit", { ...proposal, title: "x".repeat(241) }],
-    ["missing fields", { title: "Only a title" }],
-  ])("rejects %s", (_label, payload) => {
-    expect(find([assistant("m", fenced(payload))])).toBeNull();
   });
 });
 

@@ -14,7 +14,6 @@ import {
   type WorkbenchTicketId,
 } from "@t3tools/contracts";
 
-import { useComposerDraftStore } from "../composerDraftStore";
 import { newThreadId, randomUUID } from "../lib/utils";
 import { resolveDefaultProviderModelSelection } from "../providerInstances";
 import { threadEnvironment } from "../state/threads";
@@ -26,7 +25,6 @@ import {
 } from "./startWorkbenchTicket";
 import { workbenchEnvironment } from "./state";
 import { waitForWorkbenchThread } from "./waitForWorkbenchThread";
-import { getTicketReferences, type WorkbenchReferencesByTicket } from "./workbenchReferences.logic";
 
 const commandFailureMessage = (failure: {
   readonly cause: Parameters<typeof squashAtomCommandFailure>[0]["cause"];
@@ -100,7 +98,6 @@ export function useStartWorkbenchTicket({
   projects,
   providers,
   assignmentsByTicket,
-  referencesByTicket,
   existingThreadIds,
   threadLookupReady,
   onRefreshThreadLookup,
@@ -112,7 +109,6 @@ export function useStartWorkbenchTicket({
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly assignmentsByTicket: ReadonlyMap<WorkbenchTicketId, WorkbenchAssignment>;
-  readonly referencesByTicket: WorkbenchReferencesByTicket;
   readonly existingThreadIds: ReadonlySet<ThreadId>;
   readonly threadLookupReady: boolean;
   readonly onRefreshThreadLookup: () => void;
@@ -148,7 +144,6 @@ export function useStartWorkbenchTicket({
           {
             environmentId,
             ticket,
-            references: getTicketReferences(referencesByTicket, ticket.id),
             projects,
             assignment: options?.assignment ?? assignmentsByTicket.get(ticket.id),
             existingThreadIds,
@@ -161,8 +156,6 @@ export function useStartWorkbenchTicket({
             createAssignment,
             replaceAssignment,
             deleteThread,
-            addReviewComment: (threadRef, comment) =>
-              useComposerDraftStore.getState().addReviewComment(threadRef, comment),
             waitForThread: (threadId) =>
               waitForWorkbenchThread(scopeThreadRef(environmentId, threadId)),
             openThread,

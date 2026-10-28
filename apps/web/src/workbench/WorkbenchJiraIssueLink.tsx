@@ -4,19 +4,14 @@ import {
   parseJiraIssueUrl,
   WORKBENCH_JIRA_ISSUE_URL_ERROR,
   type WorkbenchEpic,
-  type WorkbenchJiraIssue,
-  type WorkbenchReference,
-  type WorkbenchTicket,
 } from "@t3tools/contracts";
 import { useState } from "react";
 
-import type { ChatMarkdownCodeBlock } from "../components/ChatMarkdown";
-import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Label } from "../components/ui/label";
 import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
-import { useWorkbenchReferenceCommands, WorkbenchUrlPopover } from "./WorkbenchReferences";
+import { WorkbenchUrlPopover } from "./WorkbenchReferences";
 import { reportWorkbenchCommandFailure } from "./workbenchPageCommands";
 import { WorkbenchJiraIssueKeyLink } from "./WorkbenchTicketMetadata";
 
@@ -106,114 +101,5 @@ export function WorkbenchEpicJiraIssueLinkField({
         </p>
       ) : null}
     </div>
-  );
-}
-
-/** Reads an agent's `workbench-jira-link` block; anything but a Jira issue URL is rejected. */
-const readWorkbenchJiraLinkBlock = (code: string): WorkbenchJiraIssue | null => {
-  try {
-    const value: unknown = JSON.parse(code);
-    if (typeof value !== "object" || value === null || !("url" in value)) return null;
-    return typeof value.url === "string" ? parseJiraIssueUrl(value.url) : null;
-  } catch {
-    return null;
-  }
-};
-
-const jiraLinkCardHeading = (ticket: WorkbenchTicket | null, linked: boolean, key: string) => {
-  if (ticket === null) return `Create the ticket to link ${key}`;
-  return linked ? `Linked ${key}` : `Link ${key} to this Ticket`;
-};
-
-/** The agent proposes a link; the user applies it, so no agent write permission is involved. */
-export function WorkbenchJiraLinkCard({
-  environmentId,
-  block,
-  ticket,
-  references,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly block: ChatMarkdownCodeBlock;
-  readonly ticket: WorkbenchTicket | null;
-  readonly references: ReadonlyArray<WorkbenchReference>;
-}) {
-  const issue = block.isComplete ? readWorkbenchJiraLinkBlock(block.code) : null;
-  if (block.isStreaming || issue === null) {
-    return (
-      <p role="status" className="my-3 text-sm text-muted-foreground">
-        {block.isStreaming
-          ? "Preparing Jira link…"
-          : "This Jira link is not a Jira issue URL. Ask the agent to try again."}
-      </p>
-    );
-  }
-  return (
-    <JiraLinkCardBody
-      environmentId={environmentId}
-      issue={issue}
-      ticket={ticket}
-      references={references}
-    />
-  );
-}
-
-function JiraLinkCardBody({
-  environmentId,
-  issue,
-  ticket,
-  references,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly issue: WorkbenchJiraIssue;
-  readonly ticket: WorkbenchTicket | null;
-  readonly references: ReadonlyArray<WorkbenchReference>;
-}) {
-  const commands = useWorkbenchReferenceCommands(environmentId);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  // Stored Reference URLs are normalized the same way as the parsed block URL.
-  const linked = references.some((reference) => reference.url === issue.url);
-  const link = async () => {
-    if (ticket === null) return;
-    setPending(true);
-    setError(
-      await commands.add({ ticketId: ticket.id, url: issue.url }).finally(() => setPending(false)),
-    );
-  };
-  return (
-    <section
-      aria-label="Jira link"
-      className="my-3 flex min-w-0 flex-col gap-2 rounded-lg border border-primary/25 bg-primary/5 p-3"
-    >
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="min-w-0 flex-1">
-          <h3 className="text-sm font-medium">{jiraLinkCardHeading(ticket, linked, issue.key)}</h3>
-          <a
-            href={issue.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block truncate font-mono text-muted-foreground text-xs hover:underline"
-          >
-            {issue.url}
-          </a>
-        </div>
-        {linked ? (
-          <Badge variant="outline">Linked</Badge>
-        ) : (
-          <Button
-            size="xs"
-            disabled={ticket === null || !commands.canEdit || pending}
-            onClick={() => void link()}
-          >
-            Link
-          </Button>
-        )}
-      </div>
-      {error ? (
-        <p role="alert" className="text-destructive text-xs">
-          {error}
-        </p>
-      ) : null}
-    </section>
   );
 }

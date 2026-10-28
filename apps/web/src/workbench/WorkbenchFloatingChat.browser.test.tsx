@@ -33,10 +33,6 @@ vi.mock("../components/ChatView", async () => {
     },
   };
 });
-vi.mock("./WorkbenchTicketProposal", () => ({
-  WorkbenchTicketProposalHistory: (props: { children: ReactNode }) => props.children,
-}));
-
 const setup = () => {
   useWorkbenchFloatingChatStore.setState({
     mode: "collapsed",

@@ -42,10 +42,6 @@ import { toastManager } from "../components/ui/toast";
 import { useThreadShell } from "../state/entities";
 import type { Project } from "../types";
 import { WorkbenchDescription } from "./WorkbenchDescription";
-import {
-  WorkbenchRepositoryBadges,
-  WorkbenchTicketProposalRenderer,
-} from "./WorkbenchTicketProposal";
 import { WorkbenchInlineError } from "./WorkbenchForms";
 import { WorkbenchDiscardDraftDialog } from "./WorkbenchDiscardDraftDialog";
 import {
@@ -54,7 +50,7 @@ import {
 } from "./WorkbenchTicketDraftPanel";
 import { workbenchEnvironment } from "./state";
 import { usePlanningModelSelection } from "./usePlanningModelSelection";
-import { applyTicketProposal, WorkbenchDraftActions } from "./WorkbenchDraftActions";
+import { WorkbenchDraftActions } from "./WorkbenchDraftActions";
 import {
   useTicketDraftBegin,
   useTicketDraftEditor,
@@ -298,6 +294,36 @@ function WorkbenchConversationPane({
   );
 }
 
+function WorkbenchRepositoryBadges({
+  label,
+  ids,
+  primaryId,
+  projects,
+}: {
+  readonly label: string;
+  readonly ids: ReadonlyArray<string>;
+  readonly primaryId: string | null;
+  readonly projects: ReadonlyArray<Project>;
+}) {
+  return (
+    <ul aria-label={label} data-workbench-ticket-repositories className="flex flex-wrap gap-1.5">
+      {ids.map((id) => (
+        <Badge
+          key={id}
+          render={<li data-workbench-ticket-repository-badge />}
+          variant="outline"
+          size="lg"
+        >
+          <span className="max-w-48 truncate">
+            {projects.find((project) => project.id === id)?.title ?? "Repository"}
+          </span>
+          {id === primaryId ? <span className="text-muted-foreground">· Primary</span> : null}
+        </Badge>
+      ))}
+    </ul>
+  );
+}
+
 /** What the saved ticket looks like while its conversation keeps planning. */
 function WorkbenchPlanningSummary({
   summary,
@@ -408,7 +434,6 @@ function useModelUnsupported({ environmentId, draft, entries }: DraftBodyProps) 
   return thread !== null && draft.phase !== "working" && !supportsEnforcedTicketPlanning(driver);
 }
 
-/** The assistant's newest proposal; Apply writes it into the fields as an explicit edit. */
 /** The right-hand column: ticket fields or summary, errors, and the phase's actions. */
 function WorkbenchDraftAside({
   props,
@@ -560,7 +585,6 @@ function WorkbenchTicketConversationBody(props: DraftBodyProps) {
   const transitions = useTicketDraftTransitions({
     environmentId,
     draft,
-    projects: props.linkedProjects,
     editor,
     onDraft,
     onTicketCreated: props.onTicketCreated,
@@ -609,26 +633,7 @@ function WorkbenchTicketConversationBody(props: DraftBodyProps) {
                 onCreateManually={() => void transitions.createManually()}
               />
             ) : (
-              <WorkbenchTicketProposalRenderer
-                environmentId={environmentId}
-                threadId={draft.threadId}
-                linkedProjects={props.linkedProjects}
-                fields={editor.fields}
-                ticket={ticket}
-                canApply={
-                  canOperate &&
-                  props.workspace.archivedAt == null &&
-                  editor.editable &&
-                  editor.conflict === null &&
-                  transitions.action === null
-                }
-                onApply={applyTicketProposal(editor)}
-              >
-                <WorkbenchConversationPane
-                  environmentId={environmentId}
-                  threadId={draft.threadId}
-                />
-              </WorkbenchTicketProposalRenderer>
+              <WorkbenchConversationPane environmentId={environmentId} threadId={draft.threadId} />
             )}
           </section>
           <aside

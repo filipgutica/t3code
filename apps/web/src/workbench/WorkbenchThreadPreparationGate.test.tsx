@@ -13,10 +13,6 @@ vi.mock("../state/query", () => ({ useEnvironmentQuery: () => state.query }));
 vi.mock("./state", () => ({
   workbenchEnvironment: { ticketPreparations: vi.fn() },
 }));
-vi.mock("./WorkbenchTicketProposal", () => ({
-  WorkbenchTicketProposalHistory: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
-
 import { WorkbenchThreadPreparationGate } from "./WorkbenchThreadPreparationGate";
 
 const threadRef = {

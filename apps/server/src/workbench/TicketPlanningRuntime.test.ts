@@ -299,8 +299,6 @@ it.effect.each(["codex", "claudeAgent"] as const)(
         assert.include(policy.instructions ?? "", 'Workstream "Explain failures" (id draft)');
         assert.include(policy.instructions ?? "", "## Goal\nExplain worktree failures");
         assert.include(policy.instructions ?? "", "record each file with workbench_reference_add");
-        assert.notInclude(policy.instructions ?? "", "workbench-ticket-draft");
-        assert.notInclude(policy.instructions ?? "", "workbench-jira-link");
       }),
       Effect.provide(policyLayer("draft", driver)),
     ),
@@ -315,7 +313,6 @@ it.effect("tells an assigned Thread its Workstream, tools, artifacts folder, and
       assert.include(instructions, "`artifactsDir`");
       assert.include(instructions, "Jira or GitHub, when the user asks");
       assert.include(instructions, "## Goal\nExplain worktree failures");
-      assert.notInclude(instructions, "workbench-jira-link");
     }),
     Effect.provide(policyLayer(null, "codex", false, Effect.succeedNone, "ticket")),
   ),
@@ -433,7 +430,6 @@ it.effect(
         assert.include(policy.instructions ?? "", "ticket/approved");
         // Planning instructions are historical here; the Workstream instruction still applies.
         assert.include(policy.instructions ?? "", "call workbench_workstream_read");
-        assert.notInclude(policy.instructions ?? "", "workbench-jira-link");
       }),
       Effect.provide(policyLayer("working")),
     ),
