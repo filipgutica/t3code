@@ -7,7 +7,7 @@ The fork keeps T3 Code as the owner of execution and adds Workbench planning in 
 Staying in sync with upstream T3 Code is a top priority. Each change to an upstream-owned file is a future merge conflict, and each Workbench copy of native behavior stops receiving upstream fixes. Workbench therefore reuses as much of upstream as it can:
 
 1. **Reuse native code.** Use native components, services, and commands through their props, services, and extension points. Workbench composes them and doesn't reimplement them.
-2. **Copy only with sign-off.** If nothing native fits, say so in the plan or PR before writing a Workbench copy, and get maintainer sign-off. Record the copy in the [upstream catalog](workbench-upstream-catalog.md) with the upstream capability that would let us delete it.
+2. **Copy only for a real upstream gap, with sign-off.** A Workbench copy of native behavior is allowed only when upstream lacks a capability Workbench needs. Integration effort alone doesn't justify one. Name the missing capability, stop, and get maintainer sign-off before writing the copy. Then record it in the [upstream catalog](workbench-upstream-catalog.md) with that capability as its removal condition. Exceptions already in the catalog aren't precedent for new ones.
 3. **Change upstream files last.** Change an upstream-owned file only when no adapter, native extension point, or approved copy can do the job. Keep the change to the smallest integration, record it in the catalog, and mark the site with a short comment that says why it exists and when it can go.
 4. **Retire exceptions.** When an upstream sync brings a capability that a catalog entry waits for, switch to it in a follow-up PR and remove the entry.
 
