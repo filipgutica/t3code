@@ -299,7 +299,10 @@ it.effect.each(["codex", "claudeAgent"] as const)(
         );
         assert.include(policy.instructions ?? "", 'Workstream "Explain failures" (id draft)');
         assert.include(policy.instructions ?? "", "## Goal\nExplain worktree failures");
-        assert.include(policy.instructions ?? "", "record each file with workbench_reference_add");
+        assert.include(
+          policy.instructions ?? "",
+          "Record each file, and each relevant issue, PR, doc, or design, with workbench_reference_add",
+        );
       }),
       Effect.provide(policyLayer("draft", driver)),
     ),

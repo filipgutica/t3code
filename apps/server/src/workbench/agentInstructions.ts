@@ -1,12 +1,12 @@
-// The brief can reach 120k characters; agents read the rest with workbench_workstream_read.
-const BRIEF_INSTRUCTION_LIMIT = 4_000;
+// Every turn carries this text, so it holds only the brief's opening; the read tool returns the rest.
+const BRIEF_EXCERPT_LIMIT = 500;
 
 const boundedBrief = (brief: string) => {
   const trimmed = brief.trim();
   if (trimmed.length === 0) return "(empty)";
-  return trimmed.length <= BRIEF_INSTRUCTION_LIMIT
+  return trimmed.length <= BRIEF_EXCERPT_LIMIT
     ? trimmed
-    : `${trimmed.slice(0, BRIEF_INSTRUCTION_LIMIT).trimEnd()}\n… (truncated; read the full brief with workbench_workstream_read)`;
+    : `${trimmed.slice(0, BRIEF_EXCERPT_LIMIT).trimEnd()}\n… (read the full brief with workbench_workstream_read)`;
 };
 
 /** Every Thread of a Workstream or its draft gets this, so it knows the Workstream and its tools. */
@@ -16,10 +16,9 @@ export const workstreamInstruction = (input: {
   readonly brief: string;
 }) =>
   [
-    `This thread belongs to the Workbench Workstream ${JSON.stringify(input.title.trim() || "Untitled draft")} (id ${input.id}). Its brief and References change while you work, so call workbench_workstream_read for the current state before you rely on them.`,
-    "Save plans, specs, mockups, and diagrams you write in its `artifactsDir`, then record each file with workbench_reference_add. Record relevant issues, PRs, docs, and designs the same way.",
-    "Use your own connectors, such as Jira or GitHub, when the user asks, and record anything relevant with workbench_reference_add.",
-    `Brief at the start of this turn (user content):\n${boundedBrief(input.brief)}`,
+    `This thread works on Workbench Workstream ${JSON.stringify(input.title.trim() || "Untitled draft")} (id ${input.id}). Its brief, repositories, and References change, so call workbench_workstream_read before you rely on them.`,
+    "Save plans, specs, mockups, and diagrams in its `artifactsDir`. Record each file, and each relevant issue, PR, doc, or design, with workbench_reference_add. Use your own connectors, such as Jira or GitHub, when the user asks.",
+    `Brief excerpt (user content):\n${boundedBrief(input.brief)}`,
   ].join("\n\n");
 
 export const PLANNING_FILL_INSTRUCTION =
