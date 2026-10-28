@@ -129,7 +129,7 @@ export function useWorkbenchSidebarThreadRowData({
   thread,
   threadRef,
 }: {
-  thread: WorkbenchSidebarThread;
+  thread: Pick<WorkbenchSidebarThread, "environmentId">;
   threadRef: ThreadRef;
 }): WorkbenchSidebarThreadRowData {
   const shell = useThreadShell(threadRef);

@@ -1,29 +1,39 @@
-import type { ThreadId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   ArchiveRestoreIcon,
-  CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleCheckIcon,
   FilePenLineIcon,
   MessageSquareIcon,
 } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactElement, type ReactNode } from "react";
 
+import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
+import { resolveThreadPullRequestBadgePresentation } from "../components/ThreadStatusIndicators";
 import { Badge } from "../components/ui/badge";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import {
   Menu,
   MenuGroup,
   MenuItem,
   MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
   MenuSearchInput,
   MenuSeparator,
-  MenuSub,
-  MenuSubPopup,
-  MenuSubTrigger,
   MenuTrigger,
 } from "../components/ui/menu";
 import { cn } from "../lib/utils";
+import { useProjects, useThreadShells } from "../state/entities";
+import { useEnvironmentQuery } from "../state/query";
+import { WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
+import { groupWorkbenchReferences } from "./workbenchReferences.logic";
+import { getWorkbenchSidebarTicketDetails } from "./workbenchSidebarContext.logic";
+import { TicketPreview } from "./WorkbenchSidebarTicketButton";
+import { WorkbenchSidebarThreadPreview } from "./WorkbenchSidebarThreadPreview";
+import { workbenchEnvironment } from "./state";
 import {
   filterWorkbenchFloatingChatThreads,
   getWorkbenchFloatingChatPickerSections,
@@ -35,6 +45,7 @@ import {
   type WorkbenchFloatingChatTicket,
   type WorkbenchFloatingChatThread,
 } from "./workbenchFloatingChat.logic";
+import { useWorkbenchSidebarThreadRowData } from "./WorkbenchSidebarThreadRow.logic";
 import { WorkbenchTicketKindIcon } from "./WorkbenchTicketMetadata";
 import {
   WorkbenchThreadExecutionStatus,
@@ -45,6 +56,80 @@ type FloatingChat = ReturnType<typeof resolveWorkbenchFloatingChat>;
 
 // Fewer Threads than this fit without scrolling, so a filter would only add noise.
 const SEARCH_THRESHOLD = 8;
+
+/** The sidebar's hover preview beside a picker row. Its content, and data, mount only while shown. */
+function PickerRowPreview({
+  preview,
+  children,
+}: {
+  readonly preview: ReactNode;
+  readonly children: ReactElement;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={children} />
+      <TooltipPopup align="start" side="right" variant="glass" className="text-left">
+        {preview}
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function PickerThreadPreview({
+  environmentId,
+  thread,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly thread: WorkbenchFloatingChatThread;
+}) {
+  const data = useWorkbenchSidebarThreadRowData({
+    thread: { environmentId },
+    threadRef: scopeThreadRef(environmentId, thread.threadId),
+  });
+  return (
+    <WorkbenchSidebarThreadPreview
+      thread={thread}
+      shell={data.shell}
+      project={data.project}
+      environment={data.environment}
+      providerEntry={data.providerEntry}
+      pullRequests={data.pullRequests}
+    />
+  );
+}
+
+function PickerTicketPreview({
+  environmentId,
+  ticketId,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly ticketId: WorkbenchFloatingChatTicket["id"];
+}) {
+  const snapshot = useEnvironmentQuery(
+    workbenchEnvironment.snapshot({ environmentId, input: {} }),
+  ).data;
+  const threads = useThreadShells();
+  const projects = useProjects();
+  const ticket = snapshot?.tickets.find((candidate) => candidate.id === ticketId);
+  if (!snapshot || !ticket) return null;
+  const details = getWorkbenchSidebarTicketDetails({
+    environmentId,
+    tickets: snapshot.tickets,
+    assignments: snapshot.assignments,
+    threads,
+    projects,
+    workbenchProjects: snapshot.projects,
+    epics: snapshot.epics,
+    referencesByTicket: groupWorkbenchReferences(snapshot.references),
+  }).get(ticketId);
+  return (
+    <TicketPreview
+      ticket={ticket}
+      details={details}
+      status={details?.statusLabel ?? WORKBENCH_TICKET_STATUS_LABELS[ticket.status]}
+    />
+  );
+}
 
 function ThreadStatusIcon({ thread }: { readonly thread: WorkbenchFloatingChatThread }) {
   return (
@@ -59,11 +144,13 @@ function ThreadStatusIcon({ thread }: { readonly thread: WorkbenchFloatingChatTh
 }
 
 function PickerThreadItem({
+  environmentId,
   thread,
   title,
   selected,
   onSelect,
 }: {
+  readonly environmentId: EnvironmentId;
   readonly thread: WorkbenchFloatingChatThread;
   readonly title: string;
   readonly selected: boolean;
@@ -73,74 +160,146 @@ function PickerThreadItem({
   // Flex layout drops the spaces between these parts from the computed name.
   const name = [title, status?.presentation.label].filter(Boolean).join(" ");
   return (
-    <MenuItem
-      data-thread-id={thread.threadId}
-      aria-label={name}
-      aria-description={thread.recap ?? undefined}
-      aria-current={selected || undefined}
-      onClick={() => onSelect(thread.threadId)}
+    <PickerRowPreview
+      preview={<PickerThreadPreview environmentId={environmentId} thread={thread} />}
     >
-      <span className="flex min-w-0 flex-1 items-start gap-2">
-        <ThreadStatusIcon thread={thread} />
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="flex min-w-0 items-baseline gap-1.5">
-            <span className={cn("min-w-0 flex-1 truncate", selected && "font-medium")}>
-              {title}
-            </span>
-            {status ? (
-              <span
-                className={cn(
-                  "shrink-0 text-2xs",
-                  WORKBENCH_ATTENTION_KINDS.has(status.kind)
-                    ? cn("font-medium", status.presentation.className)
-                    : "text-muted-foreground",
-                )}
-              >
-                {status.presentation.label}
+      <MenuRadioItem
+        value={thread.threadId}
+        data-thread-id={thread.threadId}
+        aria-label={name}
+        aria-description={thread.recap ?? undefined}
+        onClick={() => onSelect(thread.threadId)}
+      >
+        <span className="flex min-w-0 flex-1 items-start gap-2">
+          <ThreadStatusIcon thread={thread} />
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="flex min-w-0 items-baseline gap-1.5">
+              <span className={cn("min-w-0 flex-1 truncate", selected && "font-medium")}>
+                {title}
               </span>
-            ) : null}
-            {selected ? (
-              <CheckIcon aria-hidden className="size-3.5 shrink-0 self-center text-primary" />
+              {status ? (
+                <span
+                  className={cn(
+                    "shrink-0 text-2xs",
+                    WORKBENCH_ATTENTION_KINDS.has(status.kind)
+                      ? cn("font-medium", status.presentation.className)
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {status.presentation.label}
+                </span>
+              ) : null}
+            </span>
+            {thread.recap ? (
+              <span className="truncate text-2xs text-muted-foreground">{thread.recap}</span>
             ) : null}
           </span>
-          {thread.recap ? (
-            <span className="truncate text-2xs text-muted-foreground">{thread.recap}</span>
-          ) : null}
         </span>
-      </span>
-    </MenuItem>
+      </MenuRadioItem>
+    </PickerRowPreview>
   );
 }
 
 function PickerHistory({
+  environmentId,
   label,
   threads,
   icon,
   itemLabel,
+  selectedThreadId,
   onSelect,
 }: {
+  readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly threads: ReadonlyArray<WorkbenchFloatingChatThread>;
   readonly icon: ReactNode;
   readonly itemLabel: (thread: WorkbenchFloatingChatThread) => string;
+  /** Given when choosing a row shows it here, so the showing one is highlighted. */
+  readonly selectedThreadId?: ThreadId | null;
   readonly onSelect: (threadId: ThreadId) => void;
 }) {
+  // Starts open when it holds the showing Thread, like a ticket group.
+  const [open, setOpen] = useState(() =>
+    threads.some((thread) => thread.threadId === selectedThreadId),
+  );
+  const row = (thread: WorkbenchFloatingChatThread) => {
+    const content = <span className="truncate">{itemLabel(thread)}</span>;
+    return selectedThreadId === undefined ? (
+      <MenuItem onClick={() => onSelect(thread.threadId)}>{content}</MenuItem>
+    ) : (
+      <MenuRadioItem
+        value={thread.threadId}
+        data-thread-id={thread.threadId}
+        onClick={() => onSelect(thread.threadId)}
+      >
+        {content}
+      </MenuRadioItem>
+    );
+  };
   if (threads.length === 0) return null;
   return (
-    <MenuSub>
-      <MenuSubTrigger>
+    <MenuGroup>
+      <MenuItem closeOnClick={false} aria-expanded={open} onClick={() => setOpen(!open)}>
         {icon}
         <span className="min-w-0 flex-1 truncate">{label}</span>
         <span className="text-2xs text-muted-foreground tabular-nums">{threads.length}</span>
-      </MenuSubTrigger>
-      <MenuSubPopup className="max-w-80">
-        {threads.map((thread) => (
-          <MenuItem key={thread.threadId} onClick={() => onSelect(thread.threadId)}>
-            <span className="truncate">{itemLabel(thread)}</span>
-          </MenuItem>
-        ))}
-      </MenuSubPopup>
-    </MenuSub>
+        <ChevronRightIcon
+          aria-hidden
+          className={cn("size-3.5 shrink-0 text-muted-foreground", open && "rotate-90")}
+        />
+      </MenuItem>
+      {/* Bounded on its own, since the Thread list's height leaves room only for this heading. */}
+      {open ? (
+        <div className="ms-3.5 max-h-40 overflow-y-auto border-s border-muted-foreground/30 ps-2">
+          <MenuRadioGroup value={selectedThreadId ?? null}>
+            {threads.map((thread) => (
+              <PickerRowPreview
+                key={thread.threadId}
+                preview={<PickerThreadPreview environmentId={environmentId} thread={thread} />}
+              >
+                {row(thread)}
+              </PickerRowPreview>
+            ))}
+          </MenuRadioGroup>
+        </div>
+      ) : null}
+    </MenuGroup>
+  );
+}
+
+function PickerHistorySections({
+  environmentId,
+  chat,
+  onSelect,
+  onRestore,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly chat: FloatingChat;
+  readonly onSelect: (threadId: ThreadId) => void;
+  readonly onRestore: (threadId: ThreadId) => void;
+}) {
+  const hasHistory = chat.settled.length > 0 || chat.archived.length > 0;
+  return (
+    <>
+      {chat.active.length > 0 && hasHistory ? <MenuSeparator /> : null}
+      <PickerHistory
+        environmentId={environmentId}
+        label="Settled"
+        threads={chat.settled}
+        icon={<CircleCheckIcon className="text-success" />}
+        itemLabel={getWorkbenchFloatingChatThreadLabel}
+        selectedThreadId={chat.selected?.threadId ?? null}
+        onSelect={onSelect}
+      />
+      <PickerHistory
+        environmentId={environmentId}
+        label="Archived"
+        threads={chat.archived}
+        icon={<ArchiveRestoreIcon />}
+        itemLabel={(thread) => `Restore and open ${getWorkbenchFloatingChatThreadLabel(thread)}`}
+        onSelect={onRestore}
+      />
+    </>
   );
 }
 
@@ -153,10 +312,66 @@ function PickerTicketIcon({ ticket }: { readonly ticket: WorkbenchFloatingChatTi
   );
 }
 
+/**
+ * The showing Thread's PR and provider, as on its native sidebar row; icons only inside the
+ * trigger. The trigger's own label hides its content, so the text also goes in a description.
+ */
+function PickerTriggerThreadContext({
+  environmentId,
+  threadId,
+  descriptionId,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly descriptionId: string;
+}) {
+  const data = useWorkbenchSidebarThreadRowData({
+    thread: { environmentId },
+    threadRef: scopeThreadRef(environmentId, threadId),
+  });
+  const pullRequest = resolveThreadPullRequestBadgePresentation({
+    badge: data.pullRequestBadge,
+    number: data.currentPullRequest?.number,
+    url: data.currentPullRequest?.url,
+    status: data.pullRequestIndicator,
+  });
+  return (
+    <>
+      <span id={descriptionId} className="sr-only">
+        {[pullRequest?.label, data.providerEntry?.displayName].filter(Boolean).join(", ")}
+      </span>
+      {pullRequest ? (
+        <span
+          aria-hidden
+          className={cn(
+            "inline-flex shrink-0 items-center gap-0.5 text-xs tabular-nums",
+            pullRequest.toneClassName,
+          )}
+        >
+          <pullRequest.Icon aria-hidden className="size-3 shrink-0" />
+          {pullRequest.text}
+        </span>
+      ) : null}
+      {data.providerEntry ? (
+        <ProviderInstanceIcon
+          driverKind={data.providerEntry.driverKind}
+          displayName={data.providerEntry.displayName}
+          className="size-3.5 shrink-0 opacity-75"
+          iconClassName="size-3.5"
+        />
+      ) : null}
+    </>
+  );
+}
+
 function PickerTriggerContent({
+  environmentId,
   selected,
   title,
+  descriptionId,
 }: {
+  readonly environmentId: EnvironmentId;
+  readonly descriptionId: string;
   readonly selected: WorkbenchFloatingChatThread | null;
   readonly title: string;
 }) {
@@ -176,18 +391,27 @@ function PickerTriggerContent({
           startedAt={selected.status.startedAt}
         />
       ) : null}
+      {selected === null ? null : (
+        <PickerTriggerThreadContext
+          environmentId={environmentId}
+          threadId={selected.threadId}
+          descriptionId={descriptionId}
+        />
+      )}
       <ChevronDownIcon aria-hidden className="ms-auto size-3.5 shrink-0 text-muted-foreground" />
     </>
   );
 }
 
 function PickerGroupHeader({
+  environmentId,
   ticket,
   count,
   open,
   current,
   onToggle,
 }: {
+  readonly environmentId: EnvironmentId;
   readonly ticket: WorkbenchFloatingChatTicket | null;
   readonly count: number;
   readonly open: boolean;
@@ -196,7 +420,7 @@ function PickerGroupHeader({
   readonly onToggle: () => void;
 }) {
   const title = ticket?.title ?? "Drafts";
-  return (
+  const heading = (
     <MenuItem
       closeOnClick={false}
       aria-expanded={open}
@@ -219,9 +443,18 @@ function PickerGroupHeader({
       />
     </MenuItem>
   );
+  if (ticket === null) return heading;
+  return (
+    <PickerRowPreview
+      preview={<PickerTicketPreview environmentId={environmentId} ticketId={ticket.id} />}
+    >
+      {heading}
+    </PickerRowPreview>
+  );
 }
 
 function PickerThreadSections({
+  environmentId,
   threads,
   selectedThreadId,
   grouped,
@@ -230,6 +463,7 @@ function PickerThreadSections({
   onToggleGroup,
   onSelect,
 }: {
+  readonly environmentId: EnvironmentId;
   readonly threads: ReadonlyArray<WorkbenchFloatingChatThread>;
   /** The board groups Threads under their tickets; the ticket chat lists them plainly. */
   readonly grouped: boolean;
@@ -244,6 +478,7 @@ function PickerThreadSections({
   const item = ({ thread, title }: WorkbenchFloatingChatPickerRow) => (
     <PickerThreadItem
       key={thread.threadId}
+      environmentId={environmentId}
       thread={thread}
       title={title}
       selected={thread.threadId === selectedThreadId}
@@ -262,7 +497,7 @@ function PickerThreadSections({
       {item(row)}
     </div>
   );
-  return getWorkbenchFloatingChatPickerSections(threads, grouped).map((section) => {
+  const sections = getWorkbenchFloatingChatPickerSections(threads, grouped).map((section) => {
     if (section.type === "rows")
       return <MenuGroup key={section.id}>{section.rows.map(item)}</MenuGroup>;
     const open =
@@ -271,6 +506,7 @@ function PickerThreadSections({
     return (
       <MenuGroup key={section.id}>
         <PickerGroupHeader
+          environmentId={environmentId}
           ticket={section.ticket}
           count={section.rows.length}
           open={open}
@@ -286,6 +522,7 @@ function PickerThreadSections({
       </MenuGroup>
     );
   });
+  return <MenuRadioGroup value={selectedThreadId}>{sections}</MenuRadioGroup>;
 }
 
 function WaitingPill({ count, onClick }: { readonly count: number; readonly onClick: () => void }) {
@@ -338,6 +575,7 @@ function usePickerGroups() {
  * or ticket's Threads with their recaps. The pill opens it on the first Thread waiting on you.
  */
 export function WorkbenchFloatingChatPicker({
+  environmentId,
   chat,
   title,
   listLabel,
@@ -346,6 +584,7 @@ export function WorkbenchFloatingChatPicker({
   actions,
   grouped,
 }: {
+  readonly environmentId: EnvironmentId;
   readonly chat: FloatingChat;
   /** Shown in the trigger when no Thread is selected. */
   readonly title: string;
@@ -361,6 +600,7 @@ export function WorkbenchFloatingChatPicker({
   const groups = usePickerGroups();
   const focusThreadIdRef = useRef<ThreadId | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
+  const descriptionId = useId();
   const { selected, waiting } = chat;
   const visible = filterWorkbenchFloatingChatThreads(chat.active, groups.query);
   const changeOpen = (next: boolean) => {
@@ -386,7 +626,7 @@ export function WorkbenchFloatingChatPicker({
     const showing = row(selected?.threadId);
     // Keyboard opening focuses the first item, which centring could scroll out of view; the
     // search field keeps its focus.
-    if (document.activeElement?.getAttribute("role") === "menuitem")
+    if (document.activeElement?.getAttribute("role")?.startsWith("menuitem"))
       showing?.focus({ preventScroll: true });
     showing?.scrollIntoView({ block: "center" });
   };
@@ -403,11 +643,17 @@ export function WorkbenchFloatingChatPicker({
             <button
               type="button"
               aria-label={selected ? `${listLabel}: ${selected.title}` : listLabel}
+              aria-describedby={selected ? descriptionId : undefined}
               className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-start hover:bg-accent/60 focus-visible:outline-2 focus-visible:outline-ring data-popup-open:bg-accent"
             />
           }
         >
-          <PickerTriggerContent selected={selected} title={title} />
+          <PickerTriggerContent
+            environmentId={environmentId}
+            selected={selected}
+            title={title}
+            descriptionId={descriptionId}
+          />
         </MenuTrigger>
         <MenuPopup ref={popupRef} align="start" className="w-96">
           {chat.active.length >= SEARCH_THRESHOLD ? (
@@ -425,6 +671,7 @@ export function WorkbenchFloatingChatPicker({
               <MenuItem disabled>No Threads match</MenuItem>
             ) : null}
             <PickerThreadSections
+              environmentId={environmentId}
               threads={visible}
               grouped={grouped}
               selectedThreadId={selected?.threadId ?? null}
@@ -434,24 +681,11 @@ export function WorkbenchFloatingChatPicker({
               onSelect={select}
             />
           </div>
-          {chat.active.length > 0 && (chat.settled.length > 0 || chat.archived.length > 0) ? (
-            <MenuSeparator />
-          ) : null}
-          <PickerHistory
-            label="Settled"
-            threads={chat.settled}
-            icon={<CircleCheckIcon className="text-success" />}
-            itemLabel={getWorkbenchFloatingChatThreadLabel}
+          <PickerHistorySections
+            environmentId={environmentId}
+            chat={chat}
             onSelect={select}
-          />
-          <PickerHistory
-            label="Archived"
-            threads={chat.archived}
-            icon={<ArchiveRestoreIcon />}
-            itemLabel={(thread) =>
-              `Restore and open ${getWorkbenchFloatingChatThreadLabel(thread)}`
-            }
-            onSelect={(threadId) => {
+            onRestore={(threadId) => {
               changeOpen(false);
               onOpenThread(threadId);
             }}

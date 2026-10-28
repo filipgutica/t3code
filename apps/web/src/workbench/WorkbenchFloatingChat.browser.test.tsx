@@ -113,7 +113,7 @@ it("switches Threads from the picker without moving focus into the composer", as
   await expect.element(screen.getByLabelText("Composer for a")).toHaveFocus();
 
   await userEvent.click(screen.getByRole("button", { name: "Ticket Threads: Thread a" }));
-  await userEvent.click(screen.getByRole("menuitem", { name: /Thread b/ }));
+  await userEvent.click(screen.getByRole("menuitemradio", { name: /Thread b/ }));
 
   await expect
     .element(screen.getByRole("button", { name: "Ticket Threads: Thread b" }))
@@ -123,7 +123,7 @@ it("switches Threads from the picker without moving focus into the composer", as
 
   // Returning to the Thread that was expanded does not replay the earlier focus request.
   await userEvent.click(screen.getByRole("button", { name: "Ticket Threads: Thread b" }));
-  await userEvent.click(screen.getByRole("menuitem", { name: /Thread a/ }));
+  await userEvent.click(screen.getByRole("menuitemradio", { name: /Thread a/ }));
   await expect.element(screen.getByLabelText("Composer for a")).toBeInTheDocument();
   await expect.element(screen.getByLabelText("Composer for a")).not.toHaveFocus();
 });
@@ -146,7 +146,7 @@ it("shows each Thread's recap and opens on the first other Thread waiting on the
 
   await userEvent.click(pill);
 
-  await expect.element(screen.getByRole("menuitem", { name: /Thread c/ })).toHaveFocus();
+  await expect.element(screen.getByRole("menuitemradio", { name: /Thread c/ })).toHaveFocus();
   await expect.element(screen.getByText("Added the board chat picker.")).toBeVisible();
 });
 
@@ -180,7 +180,7 @@ it("opens a collapsed group to focus its waiting Thread from the pill", async ()
 
   await userEvent.click(screen.getByRole("button", { name: "1 other Thread needs you" }));
 
-  await expect.element(screen.getByRole("menuitem", { name: /Thread c/ })).toHaveFocus();
+  await expect.element(screen.getByRole("menuitemradio", { name: /Thread c/ })).toHaveFocus();
 });
 
 it("scrolls to the showing Thread whenever the menu opens, even after its group was collapsed", async () => {
@@ -198,7 +198,7 @@ it("scrolls to the showing Thread whenever the menu opens, even after its group 
     <Harness kind="board" threads={threads} primaryThreadId={ThreadId.make("t19")} />,
   );
   const menu = screen.getByRole("button", { name: /^Board Threads/ });
-  const showing = screen.getByRole("menuitem", { name: "Thread t19" });
+  const showing = screen.getByRole("menuitemradio", { name: "Thread t19" });
 
   await userEvent.click(menu);
   await expect.element(showing).toBeInViewport();
@@ -230,7 +230,7 @@ it("moves keyboard focus to the showing Thread it scrolls to", async () => {
 
   await userEvent.keyboard("{Enter}");
 
-  const showing = screen.getByRole("menuitem", { name: "Thread t4" });
+  const showing = screen.getByRole("menuitemradio", { name: "Thread t4" });
   await expect.element(showing).toHaveFocus();
   await expect.element(showing).toBeInViewport();
 });
@@ -256,7 +256,9 @@ it("collapses a group in search results, and forgets it with the search", async 
   await userEvent.click(group);
 
   await expect.element(group).toHaveAttribute("aria-expanded", "false");
-  await expect.element(screen.getByRole("menuitem", { name: /Thread h/ })).not.toBeInTheDocument();
+  await expect
+    .element(screen.getByRole("menuitemradio", { name: /Thread h/ }))
+    .not.toBeInTheDocument();
   await userEvent.type(screen.getByRole("textbox", { name: "Search Threads" }), " ");
   await expect.element(group).toHaveAttribute("aria-expanded", "true");
 });
@@ -271,8 +273,10 @@ it("filters a long Thread list by title or recap", async () => {
 
   await userEvent.type(screen.getByRole("textbox", { name: "Search Threads" }), "rate-limit");
 
-  await expect.element(screen.getByRole("menuitem", { name: /Thread h/ })).toBeVisible();
-  await expect.element(screen.getByRole("menuitem", { name: /Thread a/ })).not.toBeInTheDocument();
+  await expect.element(screen.getByRole("menuitemradio", { name: /Thread h/ })).toBeVisible();
+  await expect
+    .element(screen.getByRole("menuitemradio", { name: /Thread a/ }))
+    .not.toBeInTheDocument();
 });
 
 it("restores an expanded panel from the launcher without moving focus into the composer", async () => {
@@ -326,11 +330,16 @@ it("opens a settled Thread when the ticket has no active Threads", async () => {
 
   await userEvent.click(screen.getByRole("button", { name: "Ticket Threads" }));
   await userEvent.click(screen.getByRole("menuitem", { name: /Settled/ }));
-  await userEvent.click(screen.getByRole("menuitem", { name: "Thread s" }));
+  await userEvent.click(screen.getByRole("menuitemradio", { name: "Thread s" }));
 
+  const trigger = screen.getByRole("button", { name: "Ticket Threads: Thread s" });
+  await expect.element(trigger).toBeInTheDocument();
+
+  // Settled reopens expanded with the showing Thread highlighted.
+  await userEvent.click(trigger);
   await expect
-    .element(screen.getByRole("button", { name: "Ticket Threads: Thread s" }))
-    .toBeInTheDocument();
+    .element(screen.getByRole("menuitemradio", { name: "Thread s" }))
+    .toHaveAttribute("aria-checked", "true");
 });
 
 it("restores an archived Thread when the ticket has no active Threads", async () => {

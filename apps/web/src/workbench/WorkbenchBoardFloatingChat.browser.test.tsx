@@ -45,6 +45,15 @@ vi.mock("./state", () => {
     },
   };
 });
+// The stubbed useAtomValue cannot feed the chat bar's PR and provider lookup.
+vi.mock("./WorkbenchSidebarThreadRow.logic", () => ({
+  useWorkbenchSidebarThreadRowData: () => ({
+    providerEntry: null,
+    pullRequestBadge: null,
+    currentPullRequest: null,
+    pullRequestIndicator: null,
+  }),
+}));
 vi.mock("./useWorkbenchThreadRecaps", () => ({
   useWorkbenchThreadRecaps: () => new Map([["first", "Refunded the duplicate charge."]]),
 }));
@@ -188,7 +197,7 @@ type Screen = Awaited<ReturnType<typeof render>>;
 const pickThread = async (screen: Screen, name: RegExp, group?: RegExp) => {
   await userEvent.click(screen.getByRole("button", { name: /^Board Threads/ }));
   if (group) await userEvent.click(screen.getByRole("menuitem", { name: group }));
-  await userEvent.click(screen.getByRole("menuitem", { name }));
+  await userEvent.click(screen.getByRole("menuitemradio", { name }));
 };
 
 const threadMenu = (screen: Screen) => screen.getByRole("button", { name: /^Board Threads/ });
@@ -233,19 +242,19 @@ it("groups drafts and each ticket under collapsible headings, even a ticket with
   );
   await userEvent.click(screen.getByRole("button", { name: "Board Threads: Plan exports" }));
 
-  const items = screen.getByRole("menuitem");
-  const drafts = items.nth(0);
+  const headings = screen.getByRole("menuitem");
+  const drafts = headings.nth(0);
   await expect.element(drafts).toHaveAccessibleName("Drafts 1 Thread");
   await expect.element(drafts).toHaveAttribute("aria-expanded", "true");
-  await expect.element(items.nth(1)).toHaveAccessibleName(/Plan exports/);
-  const refunds = items.nth(2);
+  await expect.element(screen.getByRole("menuitemradio", { name: /Plan exports/ })).toBeVisible();
+  const refunds = headings.nth(1);
   await expect.element(refunds).toHaveAccessibleName("PAY-1 Refunds 1 Thread");
   await expect.element(refunds).toHaveAttribute("aria-expanded", "false");
-  await expect.element(items.nth(3)).toHaveAccessibleName("Payouts 1 Thread");
+  await expect.element(headings.nth(2)).toHaveAccessibleName("Payouts 1 Thread");
 
   // A ticket heading opens to its Thread instead of opening the Thread itself.
   await userEvent.click(refunds);
-  const first = screen.getByRole("menuitem", { name: "Thread first" });
+  const first = screen.getByRole("menuitemradio", { name: "Thread first" });
   await expect.element(first).toHaveAccessibleDescription("Refunded the duplicate charge.");
   await expect.element(first.getByText("Refunded the duplicate charge.")).toBeVisible();
   await expect
@@ -256,11 +265,11 @@ it("groups drafts and each ticket under collapsible headings, even a ticket with
   await userEvent.click(drafts);
   await expect.element(drafts).toHaveAttribute("aria-expanded", "false");
   await expect
-    .element(screen.getByRole("menuitem", { name: /Plan exports/ }))
+    .element(screen.getByRole("menuitemradio", { name: /Plan exports/ }))
     .not.toBeInTheDocument();
   await expect.element(first).toBeVisible();
   await userEvent.click(drafts);
-  await expect.element(screen.getByRole("menuitem", { name: /Plan exports/ })).toBeVisible();
+  await expect.element(screen.getByRole("menuitemradio", { name: /Plan exports/ })).toBeVisible();
   expect(mocks.begin).not.toHaveBeenCalled();
 });
 

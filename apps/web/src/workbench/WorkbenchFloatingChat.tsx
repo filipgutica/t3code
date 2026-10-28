@@ -541,6 +541,7 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
           <span className="min-w-0 flex-1 truncate ps-2 text-xs font-medium">{copy.title}</span>
         ) : (
           <WorkbenchFloatingChatPicker
+            environmentId={environmentId}
             chat={chat}
             grouped={props.kind === "board"}
             title={copy.title}
