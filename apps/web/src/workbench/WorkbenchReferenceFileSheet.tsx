@@ -59,7 +59,7 @@ function FileContents({
   );
 }
 
-/** Images load as a host media asset; it names a Thread, so this uses the Thread that added the file. */
+/** Images load as a host media asset, which names a Thread of the Reference's owner. */
 function ImageContents({
   environmentId,
   threadId,
@@ -85,14 +85,14 @@ export function WorkbenchReferenceFileSheet({
   cwd,
   path,
   label,
-  addedByThreadId,
+  threadId,
   onClose,
 }: {
   readonly environmentId: EnvironmentId;
   readonly cwd: string;
   readonly path: string;
   readonly label: string;
-  readonly addedByThreadId: ThreadId | null;
+  readonly threadId: ThreadId | null;
   readonly onClose: () => void;
 }) {
   return (
@@ -110,10 +110,10 @@ export function WorkbenchReferenceFileSheet({
           </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-6">
-          {addedByThreadId !== null && isWorkspaceImagePreviewPath(path) ? (
+          {threadId !== null && isWorkspaceImagePreviewPath(path) ? (
             <ImageContents
               environmentId={environmentId}
-              threadId={addedByThreadId}
+              threadId={threadId}
               path={path}
               label={label}
             />

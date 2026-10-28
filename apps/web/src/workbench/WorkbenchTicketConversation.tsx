@@ -488,6 +488,7 @@ function WorkbenchDraftAside({
         ...draft.fields.repositoryProjectIds,
         draft.anchorProjectId,
       ])}
+      fileThreadId={draft.threadId}
     />
   );
   return (

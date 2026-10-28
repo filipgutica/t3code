@@ -1216,6 +1216,7 @@ function WorkbenchTicketDetailController({
                   ticket.primaryT3ProjectId,
                   ...ticket.repositoryProjectIds,
                 ])}
+                fileThreadId={(assignment ?? activeAssignments[0])?.threadId ?? null}
               />
               <WorkbenchTicketSummaryPanel
                 key={`${ticket.id}:${summaryFailedEmpty}`}

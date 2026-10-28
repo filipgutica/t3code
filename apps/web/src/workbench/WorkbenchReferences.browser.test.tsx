@@ -79,6 +79,7 @@ const renderDraftReferences = () =>
       archivedThreadsById={new Map()}
       readOnly={false}
       fileCwd="/repos/app"
+      fileThreadId={planner}
     />,
   );
 

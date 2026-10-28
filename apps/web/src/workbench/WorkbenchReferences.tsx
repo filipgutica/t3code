@@ -369,6 +369,8 @@ type OwnedReferencesInput = {
   readonly readOnly: boolean;
   /** A repository the host can anchor file reads at; file References open from it. */
   readonly fileCwd: string | null;
+  /** One of the owner's Threads, for images a person added; host media reads name a Thread. */
+  readonly fileThreadId: ThreadId | null;
 };
 
 /** Rows, removal, and file previews for a saved Ticket's or draft's References. */
@@ -379,6 +381,7 @@ function useOwnedReferences({
   archivedThreadsById,
   readOnly,
   fileCwd,
+  fileThreadId,
 }: OwnedReferencesInput) {
   const commands = useWorkbenchReferenceCommands(environmentId);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
@@ -418,7 +421,7 @@ function useOwnedReferences({
           cwd={fileCwd}
           path={file.parsed.url}
           label={file.parsed.label}
-          addedByThreadId={file.reference.addedByThreadId}
+          threadId={file.reference.addedByThreadId ?? fileThreadId}
           onClose={() => setFile(null)}
         />
       ) : null,
