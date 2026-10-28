@@ -608,7 +608,7 @@ function WorkbenchTicketConversationBody(props: DraftBodyProps) {
     onDraft,
     refreshSnapshot: props.refreshSnapshot,
   });
-  useRefreshOnThreadActivity(environmentId, draft.threadId, props.refreshSnapshot);
+  useRefreshOnThreadActivity(scopeThreadRef(environmentId, draft.threadId), props.refreshSnapshot);
   const blocker = useBlocker({
     withResolver: true,
     shouldBlockFn: async () => !(await editor.flush()).ok,

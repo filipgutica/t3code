@@ -567,7 +567,10 @@ describe("useRefreshOnThreadActivity", () => {
     const refreshSnapshot = vi.fn();
     threadShell.itemCount = 3;
     function Harness(_props: { readonly items: number }) {
-      useRefreshOnThreadActivity(environmentId, ThreadId.make("thread"), refreshSnapshot);
+      useRefreshOnThreadActivity(
+        scopeThreadRef(environmentId, ThreadId.make("thread")),
+        refreshSnapshot,
+      );
       return null;
     }
     let renderer: ReturnType<typeof create> | undefined;

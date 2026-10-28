@@ -32,6 +32,7 @@ import {
   type RefObject,
 } from "react";
 import { useWorkbenchSidebarReveal } from "./useWorkbenchSidebarReveal";
+import { useRefreshOnThreadActivity } from "./useWorkbenchTicketConversation";
 import { getWorkbenchSidebarActiveKey } from "./workbenchSidebarReveal.logic";
 import { useWorkbenchSidebarFilters } from "./workbenchSidebarFilterState";
 
@@ -1978,6 +1979,11 @@ function useWorkbenchSidebarData({
   const currentThread = useWorkbenchSidebarCurrentThread({ context, threadShells });
   const query = useEnvironmentQuery(
     environmentId === null ? null : workbenchEnvironment.snapshot({ environmentId, input: {} }),
+  );
+  // On a Workbench Thread's own page, show the edits it makes to its Ticket while it works.
+  useRefreshOnThreadActivity(
+    context ? scopeThreadRef(context.environmentId, context.threadId) : null,
+    query.refresh,
   );
   const snapshot = query.data;
   const tickets = snapshot?.tickets ?? [];

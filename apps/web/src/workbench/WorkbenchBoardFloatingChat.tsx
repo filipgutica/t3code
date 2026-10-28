@@ -200,6 +200,10 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
     primaryThreadId: null,
     explicitThreadId,
   });
+  useRefreshOnThreadActivity(
+    chat.selected ? scopeThreadRef(environmentId, chat.selected.threadId) : null,
+    props.refreshSnapshot,
+  );
   const canBeginDraft = useAtomValue(
     workbenchEnvironment.beginTicketDraft.permissionAtom(environmentId),
   );
@@ -337,7 +341,6 @@ function BoardDraftThread({
     onDraft: setFromCommand,
     refreshSnapshot,
   });
-  useRefreshOnThreadActivity(environmentId, draft.threadId, refreshSnapshot);
   const createState = getTicketDraftCreateState({ ...createContext, fields: editor.fields });
   const untouched = useIsUntouchedDraft(environmentId, draft.threadId, neverRan, editor.fields);
   const transitions = useTicketDraftTransitions({

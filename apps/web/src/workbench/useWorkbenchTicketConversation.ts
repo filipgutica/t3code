@@ -1,8 +1,8 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useStableCallback } from "../hooks/useStableCallback";
 import type {
   EnvironmentId,
   ModelSelection,
+  ScopedThreadRef,
   WorkbenchEpicId,
   WorkbenchProjectId,
   WorkbenchTicketDraftFields,
@@ -25,15 +25,14 @@ const SAVE_DELAY_MS = 600;
 const AGENT_EDIT_REFRESH_DELAY_MS = 1_000;
 
 /**
- * The planning Thread edits its draft through MCP tools, and only the Workbench snapshot carries
+ * A Thread edits its Ticket or draft through MCP tools, and only the Workbench snapshot carries
  * the result. Refresh it shortly after the Thread's items change so those edits show while it works.
  */
 export function useRefreshOnThreadActivity(
-  environmentId: EnvironmentId,
-  threadId: ThreadId,
+  threadRef: ScopedThreadRef | null,
   refreshSnapshot: () => void,
 ) {
-  const itemCount = useThreadShell(scopeThreadRef(environmentId, threadId))?.itemCount;
+  const itemCount = useThreadShell(threadRef)?.itemCount;
   const seen = useRef(itemCount);
   const refresh = useStableCallback(refreshSnapshot);
   // oxlint-disable-next-line t3code/react-effect-budget -- syncs the snapshot with the live Thread
