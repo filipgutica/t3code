@@ -204,4 +204,56 @@ describe("WorkbenchAgentService", () => {
       expect(stranger.message).toBe("This Thread does not belong to a Workstream");
     }).pipe(Effect.provide(testLayer)),
   );
+
+  // The service resolves the owner before writing; these are the writes of an agent unlinked in between.
+  it.effect("rejects an agent's write once its Thread no longer owns the Ticket", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      yield* seedWorkspace;
+      const ticket = yield* store.createTicket({
+        id: WorkbenchTicketId.make("agent-unlinked-ticket"),
+        projectId: workspaceId,
+        title: "Expire invitations",
+        kind: "story",
+        markdown: "",
+        primaryT3ProjectId: first,
+        createdAt,
+      });
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("agent-unlinked-assignment"),
+        ticketId: ticket.id,
+        threadId: worker,
+        createdAt,
+      });
+      const url = "https://github.com/acme/app/issues/7";
+      yield* store.addReference({ ticketId: ticket.id, url, addedByThreadId: worker });
+      yield* store.unlinkAssignment({ ticketId: ticket.id, threadId: worker });
+
+      const writes = [
+        store.addReference({
+          ticketId: ticket.id,
+          url: "https://github.com/acme/app/issues/8",
+          addedByThreadId: worker,
+        }),
+        store.removeReference({ ticketId: ticket.id, url, actingThreadId: worker }),
+        store.updateTicket({
+          id: ticket.id,
+          expectedRevision: ticket.revision,
+          markdown: "Agent plan.",
+          updatedAt: createdAt,
+          updatedByThreadId: worker,
+        }),
+      ];
+      for (const write of writes) {
+        expect(yield* Effect.flip(write)).toMatchObject({ code: "thread_not_owner" });
+      }
+      expect((yield* store.listReferences(ticket.id)).map((reference) => reference.url)).toEqual([
+        url,
+      ]);
+      expect(Option.getOrThrow(yield* store.getTicket(ticket.id)).markdown).toBe("");
+
+      yield* store.removeReference({ ticketId: ticket.id, url });
+      expect(yield* store.listReferences(ticket.id)).toEqual([]);
+    }).pipe(Effect.provide(testLayer)),
+  );
 });

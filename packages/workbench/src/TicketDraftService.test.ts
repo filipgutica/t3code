@@ -838,6 +838,24 @@ describe("TicketDraftService", () => {
     }).pipe(Effect.provide(f.layer));
   });
 
+  it.effect("keeps the agent's Updated by through promotion", () => {
+    const f = fixture();
+    return Effect.gen(function* () {
+      const seeded = yield* seed;
+      const service = yield* TicketDraftService;
+      const store = yield* WorkbenchStore;
+      const draft = yield* store.updateTicketDraft({
+        id: seeded.id,
+        expectedRevision: seeded.revision,
+        fields: { ...seeded.fields, markdown: "Agent brief" },
+        updatedByThreadId: seeded.threadId,
+      });
+      yield* service.promote({ id: draft.id, expectedRevision: draft.revision });
+      const ticket = (yield* store.getSnapshot).tickets.find(({ id }) => id === draft.id);
+      expect(ticket?.updatedByThreadId).toBe(seeded.threadId);
+    }).pipe(Effect.provide(f.layer));
+  });
+
   it.effect("rejects References for a discarding draft and deletes them on discard", () => {
     const f = fixture();
     return Effect.gen(function* () {

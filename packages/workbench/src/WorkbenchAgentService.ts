@@ -284,6 +284,15 @@ const make = Effect.gen(function* () {
   });
 
   // A stale write reports the current revision, so the agent can reread and retry.
+  // The owner was resolved before the write; the store rechecks it inside the transaction.
+  const lostOwnership = <A>(effect: Effect.Effect<A, AgentServiceError>) =>
+    effect.pipe(
+      Effect.catchTags({
+        WorkbenchOperationError: (error) =>
+          Effect.fail(error.code === "thread_not_owner" ? new WorkstreamNotOwnedError() : error),
+      }),
+    );
+
   const staleAs =
     (
       code: WorkbenchOperationError["code"],
@@ -341,7 +350,10 @@ const make = Effect.gen(function* () {
         updatedAt: yield* currentAt,
         updatedByThreadId: input.threadId,
       })
-      .pipe(staleAs("ticket_changed", requireTicket(ticketId).pipe(Effect.map((t) => t.revision))));
+      .pipe(
+        staleAs("ticket_changed", requireTicket(ticketId).pipe(Effect.map((t) => t.revision))),
+        lostOwnership,
+      );
     const scopeChanged =
       saved.repositoryProjectIds.length !== current.repositoryProjectIds.length ||
       saved.repositoryProjectIds.some((id) => !current.repositoryProjectIds.includes(id));
@@ -413,12 +425,14 @@ const make = Effect.gen(function* () {
     readonly title?: string | undefined;
   }) {
     const owner = yield* requireOwner(input.threadId);
-    const reference = yield* store.addReference({
-      ticketId: ownerId(owner),
-      url: input.url,
-      ...(input.title === undefined ? {} : { title: input.title }),
-      addedByThreadId: input.threadId,
-    });
+    const reference = yield* store
+      .addReference({
+        ticketId: ownerId(owner),
+        url: input.url,
+        ...(input.title === undefined ? {} : { title: input.title }),
+        addedByThreadId: input.threadId,
+      })
+      .pipe(lostOwnership);
     return agentReference(reference);
   });
 
@@ -427,7 +441,9 @@ const make = Effect.gen(function* () {
     readonly url: string;
   }) {
     const owner = yield* requireOwner(input.threadId);
-    yield* store.removeReference({ ticketId: ownerId(owner), url: input.url });
+    yield* store
+      .removeReference({ ticketId: ownerId(owner), url: input.url, actingThreadId: input.threadId })
+      .pipe(lostOwnership);
   });
 
   return WorkbenchAgentService.of({ read, update, addReference, removeReference });

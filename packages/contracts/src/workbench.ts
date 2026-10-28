@@ -600,6 +600,7 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "primary_repository_not_selected",
   "ticket_repository_scope_locked",
   "thread_not_found",
+  "thread_not_owner",
   "thread_project_mismatch",
   "assignment_not_found",
   "assignment_already_exists",

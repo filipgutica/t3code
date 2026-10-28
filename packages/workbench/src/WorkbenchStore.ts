@@ -462,8 +462,9 @@ interface WorkbenchStoreShape extends Omit<
   readonly archiveEpic: (
     input: WorkbenchArchiveEpicInput,
   ) => Effect.Effect<WorkbenchEpic, WorkbenchOperationError>;
+  /** `updatedByThreadId` carries an agent-written draft's provenance onto its Ticket. */
   readonly createTicket: (
-    input: WorkbenchCreateTicketInput,
+    input: WorkbenchCreateTicketInput & { readonly updatedByThreadId?: ThreadId | null },
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
   /**
    * A changed title or description records `updatedByThreadId`, which an
@@ -494,8 +495,9 @@ interface WorkbenchStoreShape extends Omit<
     ticketId: WorkbenchTicketId,
   ) => Effect.Effect<ReadonlyArray<WorkbenchReference>, WorkbenchOperationError>;
   /** Removes a Reference without bumping any revision; a missing URL is a no-op. */
+  /** An agent passes `actingThreadId`; the removal then requires that Thread to own the Ticket. */
   readonly removeReference: (
-    input: WorkbenchRemoveReferenceInput,
+    input: WorkbenchRemoveReferenceInput & { readonly actingThreadId?: ThreadId },
   ) => Effect.Effect<void, WorkbenchOperationError>;
   /** `null` unlinks. A stale `expectedUpdatedAt` fails with `epic_changed`. */
   readonly setEpicJiraIssueLink: (input: {
@@ -2709,7 +2711,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
   const createTicket: WorkbenchStoreShape["createTicket"] = Effect.fn(
     "WorkbenchStore.createTicket",
   )(function* (input) {
-    const { references: stagedReferences = [], ...ticketInput } = input;
+    const { references: stagedReferences = [], updatedByThreadId = null, ...ticketInput } = input;
     const references = yield* normalizeStagedReferences(stagedReferences);
     const { epicId, repositoryProjectIds } = yield* sql
       .withTransaction(
@@ -2743,6 +2745,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               generated_summary_error,
               generated_summary_source_hash,
               generated_summary_request_id,
+              updated_by_thread_id,
               created_at,
               updated_at
             ) VALUES (
@@ -2762,6 +2765,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               NULL,
               NULL,
               NULL,
+              ${updatedByThreadId},
               ${input.createdAt},
               ${input.createdAt}
             )
@@ -2792,7 +2796,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       ...ticketInput,
       epicId,
       repositoryProjectIds,
-      updatedByThreadId: null,
+      updatedByThreadId,
       status: "todo",
       blocked: false,
       revision: 0,
@@ -2867,6 +2871,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             revisionMessage: "The Workbench Ticket changed before it could be updated.",
             activeOnly: false,
           });
+          yield* requireActingThread(input.updatedByThreadId, input.id);
           if (current.archivedAt !== null) {
             return yield* new WorkbenchOperationError({
               code: "ticket_archived",
@@ -3118,6 +3123,21 @@ const makeWorkbenchStore = Effect.gen(function* () {
     }
   });
 
+  // An edit attributed to a Thread commits only while that Thread owns the target. Run it after
+  // the transaction's first write, so it reads the latest assignments under the write lock.
+  const requireActingThread = Effect.fn("WorkbenchStore.requireActingThread")(function* (
+    threadId: ThreadId | null | undefined,
+    ownerId: WorkbenchTicketId,
+  ) {
+    if (threadId === null || threadId === undefined) return;
+    const [owner] = yield* listThreadOwnerRows(threadId);
+    if (owner?.id === ownerId) return;
+    return yield* new WorkbenchOperationError({
+      code: "thread_not_owner",
+      message: "This Thread no longer belongs to that Workstream.",
+    });
+  });
+
   const findReference = SqlSchema.findOne({
     Request: Schema.Struct({ ticketId: WorkbenchTicketId, url: Schema.String }),
     Result: WorkbenchReference,
@@ -3147,6 +3167,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       .withTransaction(
         Effect.gen(function* () {
           yield* requireReferenceOwner(input.ticketId);
+          yield* requireActingThread(input.actingThreadId, input.ticketId);
           yield* sql`DELETE FROM workbench_references WHERE ticket_id = ${input.ticketId} AND url = ${url}`;
         }),
       )
@@ -3162,6 +3183,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       .withTransaction(
         Effect.gen(function* () {
           yield* requireReferenceOwner(input.ticketId);
+          yield* requireActingThread(input.addedByThreadId, input.ticketId);
           yield* insertReference({
             ticketId: input.ticketId,
             ...reference!,

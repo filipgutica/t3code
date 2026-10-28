@@ -639,6 +639,12 @@ describe("WorkbenchStore package boundary", () => {
         workspaceId: WorkbenchProjectId.make("provenance-workspace"),
         ticketId,
       });
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("provenance-assignment"),
+        ticketId,
+        threadId: agent,
+        createdAt: ticket.createdAt,
+      });
       const update = (input: {
         readonly revision: number;
         readonly markdown?: string;
@@ -667,7 +673,14 @@ describe("WorkbenchStore package boundary", () => {
       const byUser = yield* update({ revision: moved.revision, markdown: "User plan." });
       expect(byUser.updatedByThreadId).toBeNull();
       expect((yield* store.getSnapshot).tickets[0]?.updatedByThreadId).toBeNull();
-    }).pipe(Effect.provide(testLayer({ projects: new Set(["provenance-project"]) }))),
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          projects: new Set(["provenance-project"]),
+          threads: new Map([["provenance-agent", "provenance-project"]]),
+        }),
+      ),
+    ),
   );
 
   it.effect("rejects non-Git linked projects before creating a Workspace", () =>
