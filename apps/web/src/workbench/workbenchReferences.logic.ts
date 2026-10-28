@@ -1,6 +1,7 @@
 import {
   parseWorkbenchReferenceUrl,
   workbenchTicketIssueReferences,
+  type ProjectId,
   type WorkbenchParsedReferenceUrl,
   type WorkbenchReference,
   type WorkbenchTicketId,
@@ -76,3 +77,15 @@ export const getWorkbenchReferenceSearchTerms = (
     const { label } = viewOf(reference).parsed;
     return reference.title === null ? [label] : [label, reference.title];
   });
+
+/** A repository the host can anchor a file read at; the first of `projectIds` that is known. */
+export const getReferenceFileCwd = (
+  projects: ReadonlyArray<{ readonly id: ProjectId; readonly workspaceRoot: string }>,
+  projectIds: ReadonlyArray<ProjectId | null>,
+): string | null => {
+  for (const projectId of projectIds) {
+    const project = projects.find((candidate) => candidate.id === projectId);
+    if (project) return project.workspaceRoot;
+  }
+  return null;
+};

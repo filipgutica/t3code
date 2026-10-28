@@ -7,6 +7,7 @@ import {
   type ThreadId,
   type WorkbenchParsedReferenceUrl,
   type WorkbenchReference,
+  type WorkbenchReferenceDraft,
   type WorkbenchReferenceKind,
   type WorkbenchTicketId,
 } from "@t3tools/contracts";
@@ -29,12 +30,34 @@ import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
 import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
+import { WorkbenchReferenceFileSheet } from "./WorkbenchReferenceFileSheet";
 import {
   WorkbenchTicketPanelHeader,
   useWorkbenchTicketPanelCollapsed,
 } from "./WorkbenchTicketPanelHeader";
 import { reportWorkbenchCommandFailure } from "./workbenchPageCommands";
 import { splitWorkbenchReferences, type WorkbenchReferenceView } from "./workbenchReferences.logic";
+
+type ThreadTitles = ReadonlyMap<ThreadId, Pick<EnvironmentThreadShell, "title">>;
+
+export const workbenchThreadTitle = (
+  threadId: ThreadId | null | undefined,
+  threadsById: ThreadTitles,
+  archivedThreadsById: ThreadTitles,
+): string | null =>
+  threadId == null
+    ? null
+    : (threadsById.get(threadId)?.title ?? archivedThreadsById.get(threadId)?.title ?? "a Thread");
+
+/** Marks content an agent Thread wrote, such as "Added by Planning". */
+export function WorkbenchProvenanceBadge({ text }: { readonly text: string }) {
+  return (
+    <Badge variant="outline" className="max-w-full">
+      <BotIcon />
+      <span className="truncate">{text}</span>
+    </Badge>
+  );
+}
 
 const KIND_ICONS = {
   jira_issue: WorkbenchJiraIcon,
@@ -256,44 +279,71 @@ function WorkbenchUrlForm({
   );
 }
 
+type ReferenceRowView = {
+  readonly reference: Pick<WorkbenchReference, "url" | "title">;
+  readonly parsed: WorkbenchParsedReferenceUrl;
+};
+
+function ReferenceRowTarget({
+  parsed,
+  onOpenFile,
+  children,
+}: {
+  readonly parsed: WorkbenchParsedReferenceUrl;
+  readonly onOpenFile: (() => void) | undefined;
+  readonly children: ReactNode;
+}) {
+  const className =
+    "flex min-w-0 max-w-full flex-col items-start gap-1 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+  // A file path is only meaningful on the host, so it opens through the environment.
+  if (parsed.kind === "file") {
+    return onOpenFile ? (
+      <button type="button" className={className} onClick={onOpenFile}>
+        {children}
+      </button>
+    ) : (
+      <span className={className}>{children}</span>
+    );
+  }
+  return (
+    <a href={parsed.url} target="_blank" rel="noopener noreferrer" className={className}>
+      {children}
+    </a>
+  );
+}
+
 function WorkbenchReferenceRow({
   view: { reference, parsed },
   addedBy,
   removeDisabled,
   onRemove,
+  onOpenFile,
 }: {
-  readonly view: WorkbenchReferenceView;
+  readonly view: ReferenceRowView;
   readonly addedBy: string | null;
   readonly removeDisabled: boolean | null;
   readonly onRemove: () => void;
+  readonly onOpenFile?: (() => void) | undefined;
 }) {
   const host = URL.canParse(parsed.url) ? new URL(parsed.url).host : null;
   return (
     <li className="flex min-w-0 items-start gap-2 py-3 first:pt-0 last:pb-0">
       <div className="flex min-w-0 flex-1 flex-col items-start gap-1.5">
-        <a
-          href={parsed.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex min-w-0 max-w-full flex-col gap-1 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-        >
+        <ReferenceRowTarget parsed={parsed} onOpenFile={onOpenFile}>
           <span className="break-words text-sm font-medium leading-5 [overflow-wrap:anywhere] hover:underline">
             {reference.title ?? parsed.label}
           </span>
-          <span className="flex min-w-0 items-center gap-1.5 text-xs leading-5 text-muted-foreground">
+          <span className="flex min-w-0 max-w-full items-center gap-1.5 text-xs leading-5 text-muted-foreground">
             <WorkbenchReferenceKindIcon kind={parsed.kind} className="size-3.5 shrink-0" />
             {parsed.label !== host ? (
-              <span className="truncate font-mono">{parsed.label}</span>
+              <span className="truncate font-mono">
+                {parsed.kind === "file" ? parsed.url : parsed.label}
+              </span>
             ) : null}
             {host ? <span className="truncate">{host}</span> : null}
           </span>
-        </a>
-        {addedBy !== null ? (
-          <Badge variant="outline" className="max-w-full">
-            <BotIcon />
-            <span className="truncate">Added by {addedBy}</span>
-          </Badge>
-        ) : null}
+        </ReferenceRowTarget>
+        {addedBy !== null ? <WorkbenchProvenanceBadge text={`Added by ${addedBy}`} /> : null}
       </div>
       {removeDisabled === null ? null : (
         <Button
@@ -311,39 +361,93 @@ function WorkbenchReferenceRow({
   );
 }
 
-/** Links to issues, specs, and designs; pull request References show under Pull requests. */
-export function WorkbenchTicketReferencesPanel({
+type OwnedReferencesInput = {
+  readonly environmentId: EnvironmentId;
+  readonly ownerId: WorkbenchTicketId;
+  readonly threadsById: ThreadTitles;
+  readonly archivedThreadsById: ThreadTitles;
+  readonly readOnly: boolean;
+  /** A repository the host can anchor file reads at; file References open from it. */
+  readonly fileCwd: string | null;
+};
+
+/** Rows, removal, and file previews for a saved Ticket's or draft's References. */
+function useOwnedReferences({
   environmentId,
-  ticketId,
-  references,
+  ownerId,
   threadsById,
   archivedThreadsById,
   readOnly,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly ticketId: WorkbenchTicketId;
-  readonly references: ReadonlyArray<WorkbenchReference>;
-  readonly threadsById: ReadonlyMap<ThreadId, Pick<EnvironmentThreadShell, "title">>;
-  readonly archivedThreadsById: ReadonlyMap<ThreadId, Pick<EnvironmentThreadShell, "title">>;
-  readonly readOnly: boolean;
-}) {
-  const [collapsed, setCollapsed] = useWorkbenchTicketPanelCollapsed("references");
-  const contentId = useId();
+  fileCwd,
+}: OwnedReferencesInput) {
   const commands = useWorkbenchReferenceCommands(environmentId);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { listed } = splitWorkbenchReferences(references);
+  const [file, setFile] = useState<WorkbenchParsedReferenceUrl | null>(null);
   const editable = !readOnly && commands.canEdit;
-  const threadTitle = (threadId: ThreadId | null) =>
-    threadId === null
-      ? null
-      : (threadsById.get(threadId)?.title ??
-        archivedThreadsById.get(threadId)?.title ??
-        "a Thread");
   const remove = async (url: string) => {
     setPendingUrl(url);
-    setError(await commands.remove({ ticketId, url }).finally(() => setPendingUrl(null)));
+    setError(await commands.remove({ ticketId: ownerId, url }).finally(() => setPendingUrl(null)));
   };
+  return {
+    commands,
+    editable,
+    pendingUrl,
+    error,
+    rows: (views: ReadonlyArray<WorkbenchReferenceView>) =>
+      views.map((view) => (
+        <WorkbenchReferenceRow
+          key={view.reference.url}
+          view={view}
+          addedBy={workbenchThreadTitle(
+            view.reference.addedByThreadId,
+            threadsById,
+            archivedThreadsById,
+          )}
+          removeDisabled={editable ? pendingUrl !== null : null}
+          onRemove={() => void remove(view.reference.url)}
+          onOpenFile={
+            fileCwd !== null && view.parsed.kind === "file" ? () => setFile(view.parsed) : undefined
+          }
+        />
+      )),
+    sheet:
+      file !== null && fileCwd !== null ? (
+        <WorkbenchReferenceFileSheet
+          environmentId={environmentId}
+          cwd={fileCwd}
+          path={file.url}
+          label={file.label}
+          onClose={() => setFile(null)}
+        />
+      ) : null,
+  };
+}
+
+function ReferenceError({ message }: { readonly message: string | null }) {
+  return message ? (
+    <p role="alert" className="text-destructive text-xs">
+      {message}
+    </p>
+  ) : null;
+}
+
+/** Links to issues, specs, and designs; pull request References show under Pull requests. */
+export function WorkbenchTicketReferencesPanel({
+  ticketId,
+  references,
+  ...owner
+}: Omit<OwnedReferencesInput, "ownerId"> & {
+  readonly ticketId: WorkbenchTicketId;
+  readonly references: ReadonlyArray<WorkbenchReference>;
+}) {
+  const [collapsed, setCollapsed] = useWorkbenchTicketPanelCollapsed("references");
+  const contentId = useId();
+  const { commands, editable, pendingUrl, error, rows, sheet } = useOwnedReferences({
+    ...owner,
+    ownerId: ticketId,
+  });
+  const { listed } = splitWorkbenchReferences(references);
   return (
     <section className="flex min-w-0 flex-col rounded-xl border border-border/60 bg-card/40">
       <WorkbenchTicketPanelHeader
@@ -381,26 +485,175 @@ export function WorkbenchTicketReferencesPanel({
       />
       <div id={contentId} hidden={collapsed} className="min-w-0 space-y-2 px-4 pb-4">
         {listed.length > 0 ? (
-          <ul className="divide-y divide-border/50">
-            {listed.map((view) => (
-              <WorkbenchReferenceRow
-                key={view.reference.url}
-                view={view}
-                addedBy={threadTitle(view.reference.addedByThreadId)}
-                removeDisabled={editable ? pendingUrl !== null : null}
-                onRemove={() => void remove(view.reference.url)}
-              />
-            ))}
-          </ul>
+          <ul className="divide-y divide-border/50">{rows(listed)}</ul>
         ) : (
           <p className="text-xs leading-5 text-muted-foreground">No references yet.</p>
         )}
-        {error ? (
-          <p role="alert" className="text-destructive text-xs">
-            {error}
-          </p>
-        ) : null}
+        <ReferenceError message={error} />
       </div>
+      {sheet}
     </section>
+  );
+}
+
+/** An always-visible field: Enter adds the pasted URL or path, and a failure keeps the text. */
+function WorkbenchReferencePasteInput({
+  disabled,
+  onAdd,
+}: {
+  readonly disabled: boolean;
+  readonly onAdd: (url: string) => Promise<string | null>;
+}) {
+  const [url, setUrl] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const errorId = useId();
+  const submit = async () => {
+    if (url.trim() === "") return;
+    if (parseWorkbenchReferenceUrl(url) === null) {
+      setError(WORKBENCH_REFERENCE_URL_ERROR);
+      return;
+    }
+    setPending(true);
+    const failure = await onAdd(url.trim()).finally(() => setPending(false));
+    if (failure === null) setUrl("");
+    setError(failure);
+  };
+  return (
+    <div className="space-y-1">
+      <Input
+        aria-label="Add a reference URL"
+        size="sm"
+        placeholder="Paste a Jira, GitHub, or any URL…"
+        value={url}
+        disabled={disabled || pending}
+        aria-invalid={error !== null}
+        aria-describedby={error === null ? undefined : errorId}
+        onChange={(event) => {
+          setUrl(event.target.value);
+          setError(null);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          void submit();
+        }}
+      />
+      {error ? (
+        <p id={errorId} role="alert" className="text-destructive text-xs">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function ReferenceSection({
+  rows,
+  input,
+}: {
+  readonly rows: ReadonlyArray<ReactNode>;
+  readonly input: ReactNode;
+}) {
+  const headingId = useId();
+  return (
+    <section aria-labelledby={headingId} className="space-y-2">
+      <div className="space-y-0.5">
+        <h3 id={headingId} className="font-medium text-sm">
+          References
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          Issues, specs, and designs. Paste a link, or ask the agent to find them.
+        </p>
+      </div>
+      {rows.length > 0 ? (
+        <ul className="divide-y divide-border/50 rounded-lg border border-border/60 p-3">{rows}</ul>
+      ) : null}
+      {input}
+    </section>
+  );
+}
+
+/** A draft's References, edited in place; agent additions arrive with the snapshot. */
+export function WorkbenchDraftReferences({
+  draftId,
+  references,
+  ...owner
+}: Omit<OwnedReferencesInput, "ownerId"> & {
+  readonly draftId: WorkbenchTicketId;
+  readonly references: ReadonlyArray<WorkbenchReference>;
+}) {
+  const { commands, editable, pendingUrl, error, rows, sheet } = useOwnedReferences({
+    ...owner,
+    ownerId: draftId,
+  });
+  // A draft has no Pull requests section yet, so its PR References list here.
+  const { listed, pullRequests } = splitWorkbenchReferences(references);
+  return (
+    <>
+      <ReferenceSection
+        rows={rows([...listed, ...pullRequests])}
+        input={
+          editable ? (
+            <WorkbenchReferencePasteInput
+              disabled={pendingUrl !== null}
+              onAdd={(url) => commands.add({ ticketId: draftId, url })}
+            />
+          ) : null
+        }
+      />
+      <ReferenceError message={error} />
+      {sheet}
+    </>
+  );
+}
+
+/** References for a Ticket that does not exist yet; they are sent with Create Ticket. */
+export function WorkbenchStagedReferences({
+  references,
+  disabled,
+  onChange,
+}: {
+  readonly references: ReadonlyArray<WorkbenchReferenceDraft>;
+  readonly disabled: boolean;
+  readonly onChange: (references: ReadonlyArray<WorkbenchReferenceDraft>) => void;
+}) {
+  const views = references.flatMap((reference) => {
+    const parsed = parseWorkbenchReferenceUrl(reference.url);
+    return parsed
+      ? [{ reference: { url: parsed.url, title: reference.title ?? null }, parsed }]
+      : [];
+  });
+  return (
+    <ReferenceSection
+      rows={views.map((view) => (
+        <WorkbenchReferenceRow
+          key={view.parsed.url}
+          view={view}
+          addedBy={null}
+          removeDisabled={disabled}
+          onRemove={() =>
+            onChange(
+              references.filter(
+                (reference) => parseWorkbenchReferenceUrl(reference.url)?.url !== view.parsed.url,
+              ),
+            )
+          }
+        />
+      ))}
+      input={
+        <WorkbenchReferencePasteInput
+          disabled={disabled}
+          onAdd={async (url) => {
+            const parsed = parseWorkbenchReferenceUrl(url);
+            if (parsed === null) return WORKBENCH_REFERENCE_URL_ERROR;
+            if (!views.some((view) => view.parsed.url === parsed.url)) {
+              onChange([...references, { url: parsed.url }]);
+            }
+            return null;
+          }}
+        />
+      }
+    />
   );
 }

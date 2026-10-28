@@ -74,12 +74,15 @@ const asSetter =
 export function WorkbenchTicketDraftFieldsForm({
   fields,
   disabled,
+  updatedBy,
   onChange,
   onCreateEpic,
   ...context
 }: DraftFieldContext & {
   readonly fields: WorkbenchTicketDraftFields;
   readonly disabled: boolean;
+  /** The agent Thread that last wrote the title or brief, if one did. */
+  readonly updatedBy: string | null;
   readonly onChange: (patch: Partial<WorkbenchTicketDraftFields>) => void;
   readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
 }) {
@@ -99,6 +102,7 @@ export function WorkbenchTicketDraftFieldsForm({
         id="workbench-draft-description"
         markdown={fields.markdown}
         jira={false}
+        updatedBy={updatedBy}
         onChange={(markdown) => onChange({ markdown })}
       />
       <WorkbenchCreateTicketKind

@@ -37,6 +37,7 @@ import {
   type WorkbenchReference,
   type WorkbenchTicket,
   WorkbenchTicketId,
+  type WorkbenchReferenceDraft,
   type WorkbenchTicketKind,
   type WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
@@ -170,8 +171,15 @@ import {
   WorkbenchTicketCopyMenuItems,
 } from "./WorkbenchTicketMetadata";
 import { WorkbenchEpicJiraIssueLinkField } from "./WorkbenchJiraIssueLink";
-import { WorkbenchReferenceBadge, WorkbenchTicketReferencesPanel } from "./WorkbenchReferences";
 import {
+  WorkbenchProvenanceBadge,
+  WorkbenchReferenceBadge,
+  WorkbenchStagedReferences,
+  WorkbenchTicketReferencesPanel,
+  workbenchThreadTitle,
+} from "./WorkbenchReferences";
+import {
+  getReferenceFileCwd,
   getTicketIssue,
   hasJiraReference,
   splitWorkbenchReferences,
@@ -549,6 +557,8 @@ export function WorkbenchTicketDialog({
     setRepositoryProjectIds,
     primaryProjectId,
     setPrimaryProjectId,
+    references,
+    setReferences,
     handleOpenChange,
   } = useWorkbenchCreateTicketDraft({ initialEpicId, pending, onOpenChange });
   const selectedEpicId = epics.some((epic) => epic.id === epicId) ? epicId : null;
@@ -571,6 +581,7 @@ export function WorkbenchTicketDialog({
       epicId: selectedEpicId,
       repositoryProjectIds: selectedRepositoryProjectIds,
       primaryT3ProjectId: selectedProjectId,
+      ...(references.length > 0 ? { references } : {}),
     });
     if (created) handleOpenChange(false);
   };
@@ -626,6 +637,11 @@ export function WorkbenchTicketDialog({
               selectedProjectId={selectedProjectId}
               setRepositoryProjectIds={setRepositoryProjectIds}
               setPrimaryProjectId={setPrimaryProjectId}
+            />
+            <WorkbenchStagedReferences
+              references={references}
+              disabled={mutationDisabled}
+              onChange={setReferences}
             />
           </form>
         </DialogPanel>
@@ -1179,7 +1195,15 @@ function WorkbenchTicketDetailController({
                 }}
                 actions={{ setDraft: setDraft }}
                 context={{ environmentId: environmentId }}
-                records={{ ticket: ticket, jira: hasJiraReference(references) }}
+                records={{
+                  ticket: ticket,
+                  jira: hasJiraReference(references),
+                  updatedBy: workbenchThreadTitle(
+                    ticket.updatedByThreadId,
+                    threadsById,
+                    archivedThreadsById,
+                  ),
+                }}
               />
               <WorkbenchTicketReferencesPanel
                 environmentId={environmentId}
@@ -1188,6 +1212,10 @@ function WorkbenchTicketDetailController({
                 threadsById={threadsById}
                 archivedThreadsById={archivedThreadsById}
                 readOnly={workspaceReadOnly}
+                fileCwd={getReferenceFileCwd(linkedProjects, [
+                  ticket.primaryT3ProjectId,
+                  ...ticket.repositoryProjectIds,
+                ])}
               />
               <WorkbenchTicketSummaryPanel
                 key={`${ticket.id}:${summaryFailedEmpty}`}
@@ -2078,7 +2106,9 @@ function WorkbenchTicketDescriptionPanel({
   >;
   actions: Pick<WorkbenchTicketDescriptionPanelProps, "setDraft">;
   context: Pick<WorkbenchTicketDescriptionPanelProps, "environmentId">;
-  records: Pick<WorkbenchTicketDescriptionPanelProps, "ticket" | "jira">;
+  records: Pick<WorkbenchTicketDescriptionPanelProps, "ticket" | "jira"> & {
+    readonly updatedBy: string | null;
+  };
 }) {
   const {
     editing,
@@ -2092,12 +2122,17 @@ function WorkbenchTicketDescriptionPanel({
   } = presentation;
   const { setDraft } = actions;
   const { environmentId } = context;
-  const { ticket, jira } = records;
+  const { ticket, jira, updatedBy } = records;
   return (
     <section className="flex min-w-0 flex-col rounded-xl border border-border/60 bg-card/40">
       <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">Description</h2>
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="text-sm font-semibold">Description</h2>
+            {updatedBy !== null ? (
+              <WorkbenchProvenanceBadge text={`Updated by ${updatedBy}`} />
+            ) : null}
+          </div>
           <p className="text-xs text-muted-foreground">
             Goal, constraints, and acceptance criteria.
           </p>
@@ -2165,18 +2200,26 @@ export function WorkbenchTicketDescriptionEditor({
   id = "edit-workbench-ticket-context",
   markdown,
   jira,
+  updatedBy = null,
   onChange,
 }: {
   id?: string;
   markdown: string;
   jira: boolean;
+  /** The agent Thread that last wrote the description, if one did. */
+  updatedBy?: string | null;
   onChange: (markdown: string) => void;
 }) {
   const [preview, setPreview] = useState(false);
   return (
     <div className="min-w-0 space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Label htmlFor={id}>Description</Label>
+        <div className="flex min-w-0 items-center gap-2">
+          <Label htmlFor={id}>Description</Label>
+          {updatedBy !== null ? (
+            <WorkbenchProvenanceBadge text={`Updated by ${updatedBy}`} />
+          ) : null}
+        </div>
         <ToggleGroup
           aria-label="Ticket description editor mode"
           variant="segmented"
@@ -5468,9 +5511,11 @@ function useWorkbenchCreateTicketDraft({
   const [markdown, setMarkdown] = useState(() => getWorkbenchTicketTemplate("story"));
   const [repositoryProjectIds, setRepositoryProjectIds] = useState<ReadonlyArray<ProjectId>>([]);
   const [primaryProjectId, setPrimaryProjectId] = useState<ProjectId | null>(null);
+  const [references, setReferences] = useState<ReadonlyArray<WorkbenchReferenceDraft>>([]);
   const handleOpenChange = (nextOpen: boolean) => {
     if (pending) return;
     if (!nextOpen) {
+      setReferences([]);
       setRequestId(WorkbenchTicketId.make(randomUUID()));
       setTitle("");
       setKind("story");
@@ -5495,6 +5540,8 @@ function useWorkbenchCreateTicketDraft({
     setRepositoryProjectIds,
     primaryProjectId,
     setPrimaryProjectId,
+    references,
+    setReferences,
     handleOpenChange,
   };
 }

@@ -102,6 +102,9 @@ const mount = () =>
         draftsSupported
         providers={[provider]}
         linkedProjects={projects}
+        references={[]}
+        threadsById={new Map()}
+        archivedThreadsById={new Map()}
         epics={[]}
         initialEpicId={null}
         refreshSnapshot={() => {}}

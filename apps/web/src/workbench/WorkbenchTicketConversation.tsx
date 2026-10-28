@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useBlocker } from "@tanstack/react-router";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type {
   EnvironmentId,
   ServerProvider,
@@ -8,6 +9,7 @@ import type {
   WorkbenchEpic,
   WorkbenchEpicId,
   WorkbenchProject,
+  WorkbenchReference,
   WorkbenchTicket,
 } from "@t3tools/contracts";
 import { ArrowLeftIcon, CircleAlertIcon, TicketPlusIcon } from "lucide-react";
@@ -52,6 +54,12 @@ import { workbenchEnvironment } from "./state";
 import { usePlanningModelSelection } from "./usePlanningModelSelection";
 import { WorkbenchDraftActions } from "./WorkbenchDraftActions";
 import {
+  WorkbenchDraftReferences,
+  WorkbenchProvenanceBadge,
+  workbenchThreadTitle,
+} from "./WorkbenchReferences";
+import { getReferenceFileCwd } from "./workbenchReferences.logic";
+import {
   useTicketDraftBegin,
   useTicketDraftEditor,
   useTicketDraftTransitions,
@@ -74,6 +82,10 @@ export interface WorkbenchTicketConversationProps {
   readonly draftsSupported: boolean;
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly linkedProjects: ReadonlyArray<Project>;
+  /** The draft's References; a promoted draft's id is its Ticket's id. */
+  readonly references: ReadonlyArray<WorkbenchReference>;
+  readonly threadsById: ReadonlyMap<ThreadId, Pick<EnvironmentThreadShell, "title">>;
+  readonly archivedThreadsById: ReadonlyMap<ThreadId, Pick<EnvironmentThreadShell, "title">>;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
   readonly initialEpicId: WorkbenchEpicId | null;
   readonly refreshSnapshot: () => void;
@@ -328,6 +340,7 @@ function WorkbenchRepositoryBadges({
 function WorkbenchPlanningSummary({
   summary,
   linkedProjects,
+  updatedBy,
 }: {
   readonly summary: {
     readonly title: string;
@@ -336,12 +349,14 @@ function WorkbenchPlanningSummary({
     readonly primaryT3ProjectId: string | null;
   };
   readonly linkedProjects: ReadonlyArray<Project>;
+  readonly updatedBy: string | null;
 }) {
   return (
     <div className="min-w-0 space-y-4">
       <div className="space-y-1.5">
         <p className="text-xs font-medium text-muted-foreground">Ticket</p>
         <p className="break-words text-base font-semibold">{summary.title}</p>
+        {updatedBy !== null ? <WorkbenchProvenanceBadge text={`Updated by ${updatedBy}`} /> : null}
       </div>
       <WorkbenchRepositoryBadges
         label="Ticket repositories"
@@ -454,6 +469,11 @@ function WorkbenchDraftAside({
   const { fields, edit } = editor;
   const modelUnsupported = useModelUnsupported(props);
   const planning = draft.phase === "planning" || draft.phase === "starting";
+  const updatedBy = workbenchThreadTitle(
+    planning ? ticket?.updatedByThreadId : draft.updatedByThreadId,
+    props.threadsById,
+    props.archivedThreadsById,
+  );
   return (
     <>
       <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto p-4">
@@ -470,6 +490,7 @@ function WorkbenchDraftAside({
           <WorkbenchPlanningSummary
             summary={ticket ?? draft.fields}
             linkedProjects={linkedProjects}
+            updatedBy={updatedBy}
           />
         ) : (
           <WorkbenchTicketDraftFieldsForm
@@ -482,10 +503,24 @@ function WorkbenchDraftAside({
             }
             linkedProjects={linkedProjects}
             epics={props.epics}
+            updatedBy={updatedBy}
             onChange={edit}
             onCreateEpic={props.onCreateEpic}
           />
         )}
+        <WorkbenchDraftReferences
+          environmentId={props.environmentId}
+          draftId={draft.id}
+          references={props.references}
+          threadsById={props.threadsById}
+          archivedThreadsById={props.archivedThreadsById}
+          readOnly={!canOperate || transitions.action !== null}
+          fileCwd={getReferenceFileCwd(linkedProjects, [
+            draft.fields.primaryT3ProjectId,
+            ...draft.fields.repositoryProjectIds,
+            draft.anchorProjectId,
+          ])}
+        />
         <WorkbenchInlineError
           message={transitions.error ?? (editor.conflict ? null : editor.saveError)}
         />

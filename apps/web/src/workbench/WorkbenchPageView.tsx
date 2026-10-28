@@ -628,6 +628,9 @@ function WorkbenchPageConversation(
       draftsSupported={supportsConversationDrafts(pageData.snapshot)}
       providers={pageData.providers}
       linkedProjects={boardData.linkedT3Projects}
+      references={draft ? getTicketReferences(pageData.referencesByTicket, draft.id) : []}
+      threadsById={pageData.threadsById}
+      archivedThreadsById={pageData.archivedThreadsById}
       epics={boardData.activeProjectEpics}
       initialEpicId={dialogs.conversationEpicId}
       refreshSnapshot={pageData.refreshWorkbenchSnapshot}
