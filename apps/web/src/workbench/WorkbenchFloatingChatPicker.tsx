@@ -206,6 +206,7 @@ function PickerHistory({
   threads,
   icon,
   itemLabel,
+  selectedThreadId,
   onSelect,
 }: {
   readonly environmentId: EnvironmentId;
@@ -213,9 +214,28 @@ function PickerHistory({
   readonly threads: ReadonlyArray<WorkbenchFloatingChatThread>;
   readonly icon: ReactNode;
   readonly itemLabel: (thread: WorkbenchFloatingChatThread) => string;
+  /** Given when choosing a row shows it here, so the showing one is highlighted. */
+  readonly selectedThreadId?: ThreadId | null;
   readonly onSelect: (threadId: ThreadId) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  // Starts open when it holds the showing Thread, like a ticket group.
+  const [open, setOpen] = useState(() =>
+    threads.some((thread) => thread.threadId === selectedThreadId),
+  );
+  const row = (thread: WorkbenchFloatingChatThread) => {
+    const content = <span className="truncate">{itemLabel(thread)}</span>;
+    return selectedThreadId === undefined ? (
+      <MenuItem onClick={() => onSelect(thread.threadId)}>{content}</MenuItem>
+    ) : (
+      <MenuRadioItem
+        value={thread.threadId}
+        data-thread-id={thread.threadId}
+        onClick={() => onSelect(thread.threadId)}
+      >
+        {content}
+      </MenuRadioItem>
+    );
+  };
   if (threads.length === 0) return null;
   return (
     <MenuGroup>
@@ -231,16 +251,16 @@ function PickerHistory({
       {/* Bounded on its own, since the Thread list's height leaves room only for this heading. */}
       {open ? (
         <div className="ms-3.5 max-h-40 overflow-y-auto border-s border-muted-foreground/30 ps-2">
-          {threads.map((thread) => (
-            <PickerRowPreview
-              key={thread.threadId}
-              preview={<PickerThreadPreview environmentId={environmentId} thread={thread} />}
-            >
-              <MenuItem onClick={() => onSelect(thread.threadId)}>
-                <span className="truncate">{itemLabel(thread)}</span>
-              </MenuItem>
-            </PickerRowPreview>
-          ))}
+          <MenuRadioGroup value={selectedThreadId ?? null}>
+            {threads.map((thread) => (
+              <PickerRowPreview
+                key={thread.threadId}
+                preview={<PickerThreadPreview environmentId={environmentId} thread={thread} />}
+              >
+                {row(thread)}
+              </PickerRowPreview>
+            ))}
+          </MenuRadioGroup>
         </div>
       ) : null}
     </MenuGroup>
@@ -268,6 +288,7 @@ function PickerHistorySections({
         threads={chat.settled}
         icon={<CircleCheckIcon className="text-success" />}
         itemLabel={getWorkbenchFloatingChatThreadLabel}
+        selectedThreadId={chat.selected?.threadId ?? null}
         onSelect={onSelect}
       />
       <PickerHistory

@@ -330,11 +330,16 @@ it("opens a settled Thread when the ticket has no active Threads", async () => {
 
   await userEvent.click(screen.getByRole("button", { name: "Ticket Threads" }));
   await userEvent.click(screen.getByRole("menuitem", { name: /Settled/ }));
-  await userEvent.click(screen.getByRole("menuitem", { name: "Thread s" }));
+  await userEvent.click(screen.getByRole("menuitemradio", { name: "Thread s" }));
 
+  const trigger = screen.getByRole("button", { name: "Ticket Threads: Thread s" });
+  await expect.element(trigger).toBeInTheDocument();
+
+  // Settled reopens expanded with the showing Thread highlighted.
+  await userEvent.click(trigger);
   await expect
-    .element(screen.getByRole("button", { name: "Ticket Threads: Thread s" }))
-    .toBeInTheDocument();
+    .element(screen.getByRole("menuitemradio", { name: "Thread s" }))
+    .toHaveAttribute("aria-checked", "true");
 });
 
 it("restores an archived Thread when the ticket has no active Threads", async () => {
