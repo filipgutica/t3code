@@ -18,9 +18,6 @@ import {
   MenuPopup,
   MenuSearchInput,
   MenuSeparator,
-  MenuSub,
-  MenuSubPopup,
-  MenuSubTrigger,
   MenuTrigger,
 } from "../components/ui/menu";
 import { cn } from "../lib/utils";
@@ -125,22 +122,30 @@ function PickerHistory({
   readonly itemLabel: (thread: WorkbenchFloatingChatThread) => string;
   readonly onSelect: (threadId: ThreadId) => void;
 }) {
+  const [open, setOpen] = useState(false);
   if (threads.length === 0) return null;
   return (
-    <MenuSub>
-      <MenuSubTrigger>
+    <MenuGroup>
+      <MenuItem closeOnClick={false} aria-expanded={open} onClick={() => setOpen(!open)}>
         {icon}
         <span className="min-w-0 flex-1 truncate">{label}</span>
         <span className="text-2xs text-muted-foreground tabular-nums">{threads.length}</span>
-      </MenuSubTrigger>
-      <MenuSubPopup className="max-w-80">
-        {threads.map((thread) => (
-          <MenuItem key={thread.threadId} onClick={() => onSelect(thread.threadId)}>
-            <span className="truncate">{itemLabel(thread)}</span>
-          </MenuItem>
-        ))}
-      </MenuSubPopup>
-    </MenuSub>
+        <ChevronRightIcon
+          aria-hidden
+          className={cn("size-3.5 shrink-0 text-muted-foreground", open && "rotate-90")}
+        />
+      </MenuItem>
+      {/* Bounded on its own, since the Thread list's height leaves room only for this heading. */}
+      {open ? (
+        <div className="ms-3.5 max-h-40 overflow-y-auto border-s border-muted-foreground/30 ps-2">
+          {threads.map((thread) => (
+            <MenuItem key={thread.threadId} onClick={() => onSelect(thread.threadId)}>
+              <span className="truncate">{itemLabel(thread)}</span>
+            </MenuItem>
+          ))}
+        </div>
+      ) : null}
+    </MenuGroup>
   );
 }
 
