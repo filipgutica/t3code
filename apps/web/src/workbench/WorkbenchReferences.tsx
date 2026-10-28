@@ -383,7 +383,7 @@ function useOwnedReferences({
   const commands = useWorkbenchReferenceCommands(environmentId);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [file, setFile] = useState<WorkbenchParsedReferenceUrl | null>(null);
+  const [file, setFile] = useState<WorkbenchReferenceView | null>(null);
   const editable = !readOnly && commands.canEdit;
   const remove = async (url: string) => {
     setPendingUrl(url);
@@ -407,7 +407,7 @@ function useOwnedReferences({
           removeDisabled={editable ? pendingUrl !== null : null}
           onRemove={() => void remove(view.reference.url)}
           onOpenFile={
-            fileCwd !== null && view.parsed.kind === "file" ? () => setFile(view.parsed) : undefined
+            fileCwd !== null && view.parsed.kind === "file" ? () => setFile(view) : undefined
           }
         />
       )),
@@ -416,8 +416,9 @@ function useOwnedReferences({
         <WorkbenchReferenceFileSheet
           environmentId={environmentId}
           cwd={fileCwd}
-          path={file.url}
-          label={file.label}
+          path={file.parsed.url}
+          label={file.parsed.label}
+          addedByThreadId={file.reference.addedByThreadId}
           onClose={() => setFile(null)}
         />
       ) : null,

@@ -1,4 +1,8 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+
+import { useAssetUrlState } from "../assets/assetUrls";
+import { PreviewImage } from "../components/files/PreviewImage";
 
 import {
   Sheet,
@@ -55,18 +59,40 @@ function FileContents({
   );
 }
 
+/** Images load as a host media asset; it names a Thread, so this uses the Thread that added the file. */
+function ImageContents({
+  environmentId,
+  threadId,
+  path,
+  label,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly path: string;
+  readonly label: string;
+}) {
+  const asset = useAssetUrlState(environmentId, { _tag: "media-file", threadId, path });
+  if (asset._tag === "Loading") return <Skeleton className="h-48 w-full" />;
+  if (asset._tag === "Failure") {
+    return <p className="text-sm text-muted-foreground">This image is no longer available.</p>;
+  }
+  return <PreviewImage src={asset.url} name={label} />;
+}
+
 /** Shows a file Reference read from the environment that owns the Ticket. */
 export function WorkbenchReferenceFileSheet({
   environmentId,
   cwd,
   path,
   label,
+  addedByThreadId,
   onClose,
 }: {
   readonly environmentId: EnvironmentId;
   readonly cwd: string;
   readonly path: string;
   readonly label: string;
+  readonly addedByThreadId: ThreadId | null;
   readonly onClose: () => void;
 }) {
   return (
@@ -84,7 +110,16 @@ export function WorkbenchReferenceFileSheet({
           </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-6">
-          <FileContents environmentId={environmentId} cwd={cwd} path={path} />
+          {addedByThreadId !== null && isWorkspaceImagePreviewPath(path) ? (
+            <ImageContents
+              environmentId={environmentId}
+              threadId={addedByThreadId}
+              path={path}
+              label={label}
+            />
+          ) : (
+            <FileContents environmentId={environmentId} cwd={cwd} path={path} />
+          )}
         </div>
       </SheetPopup>
     </Sheet>
