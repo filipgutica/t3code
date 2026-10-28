@@ -6,7 +6,7 @@ import * as NodeCrypto from "node:crypto";
 
 import { withDemoAccess } from "./access.mts";
 import { requireHome, setupHome } from "./environment.mts";
-import { seedDemoJiraLinks } from "./issue-links.mts";
+import { seedDemoReferences } from "./issue-links.mts";
 import { launchDemo } from "./launch.mts";
 import {
   installAttentionGitHubAdapter,
@@ -183,7 +183,7 @@ export const startDisposableDemo = async (input: {
     );
     await server.stop();
     await seedAttentionOutcomes(runHome);
-    seedDemoJiraLinks(runHome);
+    seedDemoReferences(runHome);
     server = await launchDemo({ home: runHome, env: attentionEnv });
   } catch (error) {
     await server?.stop().catch(() => undefined);

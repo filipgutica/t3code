@@ -1,7 +1,7 @@
 # Workbench demo
 
 Run the current checkout with fresh Tickets, repositories, native Threads,
-synthetic linked PRs, and Jira issue links:
+synthetic linked PRs, and synthetic References:
 
 ```sh
 bash scripts/workbench-demo/run.sh
@@ -142,9 +142,14 @@ Ticket IDs and assignments and contain explicitly labelled synthetic specificati
 with paragraphs, headings, bullets, checklists, a table, fenced code, links, and long
 inline values. Local runs and private previews consume these same fixtures.
 
-Local runs link `orbit-001`, `orbit-002`, `orbit-005`, and the **A welcoming first
-run** Epic to synthetic Jira issues on `jira.example.invalid`. Workbench shows
-these links but never contacts Jira.
+Local runs and private previews seed References with
+[`issue-links.mts`](issue-links.mts) while the server is stopped. `orbit-001`,
+`orbit-002`, and `orbit-005` reference synthetic Jira issues on
+`jira.example.invalid`, and the **A welcoming first run** Epic links to one.
+`orbit-001` also shows the other kinds: issue #1 on the pinned `orbit-web`
+repository, which does not exist, a design link on `example.com`, and a file
+Reference to a synthetic plan written into its artifacts folder. Workbench shows
+these links but never contacts Jira or GitHub for them.
 
 ## Troubleshooting
 

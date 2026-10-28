@@ -119,7 +119,7 @@ try {
       "node",
       "--input-type=module",
       "-e",
-      "import fs from 'node:fs';import {DatabaseSync} from 'node:sqlite';const userdata=process.argv[1]+'/userdata/';const v2=fs.existsSync(userdata+'statev2.sqlite');const db=new DatabaseSync(userdata+(v2?'statev2.sqlite':'state.sqlite'),{readOnly:true});console.log(JSON.stringify({v2,tickets:db.prepare('SELECT COUNT(*) AS count FROM workbench_tickets').get().count,selections:db.prepare(v2?'SELECT payload_json FROM orchestration_v2_projection_threads':'SELECT model_selection_json FROM projection_threads').all().map(x=>v2?JSON.parse(x.payload_json).modelSelection:JSON.parse(x.model_selection_json))}));db.close();",
+      "import fs from 'node:fs';import {DatabaseSync} from 'node:sqlite';const userdata=process.argv[1]+'/userdata/';const v2=fs.existsSync(userdata+'statev2.sqlite');const db=new DatabaseSync(userdata+(v2?'statev2.sqlite':'state.sqlite'),{readOnly:true});console.log(JSON.stringify({v2,tickets:db.prepare('SELECT COUNT(*) AS count FROM workbench_tickets').get().count,references:db.prepare(`SELECT url FROM workbench_references WHERE ticket_id='orbit-001' ORDER BY position`).all().map(x=>({url:x.url,fileExists:x.url.startsWith('/')?fs.existsSync(x.url):null})),selections:db.prepare(v2?'SELECT payload_json FROM orchestration_v2_projection_threads':'SELECT model_selection_json FROM projection_threads').all().map(x=>v2?JSON.parse(x.payload_json).modelSelection:JSON.parse(x.model_selection_json))}));db.close();",
       home,
     ),
   );
@@ -127,6 +127,11 @@ try {
   NodeAssert.ok(
     counts.tickets > 0 && counts.selections.length > 0,
     "Native fixture receipts finish before public readiness",
+  );
+  NodeAssert.deepEqual(
+    counts.references.map((reference) => reference.fileExists),
+    [null, null, null, true],
+    "The showcase Ticket has its Jira, GitHub issue, link, and existing file References",
   );
   for (const selection of counts.selections)
     NodeAssert.deepEqual(
