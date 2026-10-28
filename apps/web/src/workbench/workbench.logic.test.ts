@@ -149,6 +149,7 @@ describe("Workbench ticket helpers", () => {
             ProjectId.make("repository-one"),
             ProjectId.make("repository-two"),
           ],
+          references: [],
         },
         [
           {
@@ -185,22 +186,26 @@ describe("Workbench ticket helpers", () => {
     );
   });
 
-  it("names the linked Jira issue in the Thread context", () => {
-    const context = buildTicketThreadContext(
-      {
-        title: "Add idempotency key",
-        markdown: "",
-        kind: "story",
-        primaryT3ProjectId: ProjectId.make("repository-one"),
-        repositoryProjectIds: [ProjectId.make("repository-one")],
-        jiraIssue: { key: "ABC-12", url: "https://example.atlassian.net/browse/ABC-12" },
-      },
-      [],
+  it("names the Ticket's first issue Reference in the Thread context", () => {
+    const issueLine = (urls: ReadonlyArray<string>) =>
+      buildTicketThreadContext(
+        {
+          title: "Add idempotency key",
+          markdown: "",
+          kind: "story",
+          primaryT3ProjectId: ProjectId.make("repository-one"),
+          repositoryProjectIds: [ProjectId.make("repository-one")],
+          references: urls.map((url) => ({ url })),
+        },
+        [],
+      ).split("\n")[3];
+    const jira = "https://example.atlassian.net/browse/ABC-12";
+    const github = "https://github.com/acme/orbit-web/issues/61";
+    expect(issueLine(["https://figma.com/file/spec", jira, github])).toBe(
+      `Jira issue: ABC-12 (${jira})`,
     );
-    expect(context.split("\n").slice(2, 4)).toEqual([
-      "Ticket type: Story",
-      "Jira issue: ABC-12 (https://example.atlassian.net/browse/ABC-12)",
-    ]);
+    expect(issueLine([github, jira])).toBe(`GitHub issue: orbit-web#61 (${github})`);
+    expect(issueLine(["https://figma.com/file/spec"])).toBe("");
   });
 
   it("represents ticket context as a removable composer comment attachment", () => {
@@ -212,6 +217,7 @@ describe("Workbench ticket helpers", () => {
         kind: "story",
         primaryT3ProjectId: ProjectId.make("repository-one"),
         repositoryProjectIds: [ProjectId.make("repository-one"), ProjectId.make("repository-two")],
+        references: [],
       },
       [
         {
@@ -248,6 +254,7 @@ describe("Workbench ticket helpers", () => {
         kind: "bug",
         primaryT3ProjectId: ProjectId.make("repository-one"),
         repositoryProjectIds: [ProjectId.make("repository-one")],
+        references: [],
       },
       [],
     );
@@ -370,6 +377,7 @@ describe("Workbench ticket helpers", () => {
     expect(
       getWorkbenchContextForThread(
         {
+          references: [],
           projects: [workspace],
           epics: [],
           tickets: [ticket],
@@ -384,6 +392,7 @@ describe("Workbench ticket helpers", () => {
     expect(
       getWorkbenchContextForThread(
         {
+          references: [],
           projects: [workspace],
           epics: [],
           tickets: [ticket],

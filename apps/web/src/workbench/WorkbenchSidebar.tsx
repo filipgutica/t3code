@@ -46,6 +46,10 @@ import {
   getWorkbenchSidebarTicketDetails,
   type WorkbenchSidebarTicketDetails,
 } from "./workbenchSidebarContext.logic";
+import {
+  groupWorkbenchReferences,
+  type WorkbenchReferencesByTicket,
+} from "./workbenchReferences.logic";
 import { WorkbenchSidebarThreadRow } from "./WorkbenchSidebarThreadRow";
 import { WorkbenchSidebarRowNavigation } from "./WorkbenchSidebarRowNavigation";
 import { useWorkbenchAttentionData } from "./WorkbenchAttentionProvider";
@@ -229,6 +233,7 @@ export function WorkbenchSidebar({
     snapshot,
     draftsByWorkspace,
     ticketDetailsById,
+    referencesByTicket,
     selectedTicketIsDone,
     sidebarQuery,
     setSidebarSearch,
@@ -290,6 +295,7 @@ export function WorkbenchSidebar({
             draftsByWorkspace,
             ticketCountsByWorkspace,
             ticketDetailsById,
+            referencesByTicket,
             ticketGroupsByWorkspace,
             actionableThreadIdsByTicket,
           }}
@@ -348,6 +354,7 @@ type WorkbenchSidebarNavigationFields = {
     ReadonlyArray<WorkbenchSidebarTicket>
   >;
   readonly ticketDetailsById: ReadonlyMap<WorkbenchTicketId, WorkbenchSidebarTicketDetails>;
+  readonly referencesByTicket: WorkbenchReferencesByTicket;
   readonly contextThreadId: ThreadId | undefined;
   readonly onOpenThread: (thread: {
     readonly environmentId: EnvironmentId;
@@ -382,6 +389,7 @@ type WorkbenchSidebarNavigationProps = {
     | "draftsByWorkspace"
     | "ticketCountsByWorkspace"
     | "ticketDetailsById"
+    | "referencesByTicket"
     | "ticketGroupsByWorkspace"
     | "actionableThreadIdsByTicket"
   >;
@@ -843,16 +851,6 @@ function useWorkbenchSidebarAttentionNavigation({
   };
 }
 
-function getWorkbenchSidebarJiraKeys(
-  ticketDetailsById: WorkbenchSidebarNavigationFields["ticketDetailsById"],
-) {
-  return new Map(
-    [...ticketDetailsById].flatMap(([ticketId, details]) =>
-      details.jiraIssue ? [[ticketId, details.jiraIssue.key] as const] : [],
-    ),
-  );
-}
-
 function WorkbenchSidebarNavigation({
   header,
   query,
@@ -866,6 +864,7 @@ function WorkbenchSidebarNavigation({
     environmentId,
     archivedTicketsByWorkspace,
     ticketDetailsById,
+    referencesByTicket,
     projects,
     ticketCountsByWorkspace,
     ticketGroupsByWorkspace,
@@ -918,7 +917,6 @@ function WorkbenchSidebarNavigation({
     projects,
     onlyActionable,
   });
-  const jiraKeysByTicketId = getWorkbenchSidebarJiraKeys(ticketDetailsById);
   const visibleDrafts = onlyActionable ? emptySidebarDrafts : draftsByWorkspace;
   const visibleProjects = actionableProjects;
   const archivedFiltered = {
@@ -991,7 +989,7 @@ function WorkbenchSidebarNavigation({
     projects: onlyActionable ? actionableProjects : projects,
     ticketGroupsByWorkspace: prioritizedGroups,
     archivedTicketsByWorkspace: onlyActionable ? new Map() : archivedTicketsByWorkspace,
-    jiraKeysByTicketId,
+    referencesByTicket,
     draftsByWorkspace: visibleDrafts,
   });
   const selectSearchResult = (result: WorkbenchSidebarSearchResult) => {
@@ -1986,6 +1984,7 @@ function useWorkbenchSidebarData({
   const assignments = snapshot?.assignments ?? [];
   const threads = getWorkbenchSidebarThreads({ currentThread, threadShells });
   const nativeProjects = useProjects();
+  const referencesByTicket = groupWorkbenchReferences(snapshot?.references ?? []);
   const ticketDetailsById = (() =>
     snapshot
       ? getWorkbenchSidebarTicketDetails({
@@ -1996,6 +1995,7 @@ function useWorkbenchSidebarData({
           projects: nativeProjects,
           workbenchProjects: snapshot.projects,
           epics: snapshot.epics,
+          referencesByTicket,
         })
       : new Map<WorkbenchTicketId, WorkbenchSidebarTicketDetails>())();
   const { draftsByWorkspace, ticketCountsByWorkspace, archivedTicketsByWorkspace } =
@@ -2028,6 +2028,7 @@ function useWorkbenchSidebarData({
     snapshot,
     draftsByWorkspace,
     ticketDetailsById,
+    referencesByTicket,
     selectedTicketIsDone,
     sidebarQuery,
     setSidebarSearch,

@@ -4,24 +4,25 @@ import {
   ProjectId,
   type ThreadId,
   type WorkbenchAssignment,
+  type WorkbenchReference,
   type WorkbenchTicketId,
 } from "@t3tools/contracts";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { MessageSquareIcon, RefreshCwIcon } from "lucide-react";
-import { useId } from "react";
+import { MessageSquareIcon } from "lucide-react";
+import { useId, useState } from "react";
 
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
-import { usePullRequestList } from "../state/pullRequests";
 import { formatEnvironmentQueryError } from "../state/query";
 import { vcsEnvironment } from "../state/vcs";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { WorkbenchLinkPullRequest } from "./WorkbenchLinkPullRequest";
 import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
+import { useWorkbenchReferenceCommands } from "./WorkbenchReferences";
 import {
   WorkbenchTicketPanelHeader,
   useWorkbenchTicketPanelCollapsed,
@@ -64,8 +65,7 @@ export function WorkbenchTicketPullRequests({
   ticketId,
   assignments,
   threadsById,
-  ticketKey,
-  workspaceRepositoryProjectIds,
+  references,
   pullRequests,
   checkouts,
   onOpenThread,
@@ -75,8 +75,8 @@ export function WorkbenchTicketPullRequests({
   readonly ticketId: WorkbenchTicketId;
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
   readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
-  readonly ticketKey: string | null;
-  readonly workspaceRepositoryProjectIds: ReadonlyArray<ProjectId>;
+  /** The Ticket's `github_pull_request` References. */
+  readonly references: ReadonlyArray<WorkbenchReference>;
   readonly pullRequests: ReadonlyArray<WorkbenchTicketPullRequest>;
   readonly onOpenThread: (threadId: ThreadId) => void;
   readonly checkouts: ReadonlyArray<{
@@ -90,60 +90,43 @@ export function WorkbenchTicketPullRequests({
   const checkout = useAtomValue(
     ticketCheckoutPullRequests(JSON.stringify({ environmentId, checkouts })),
   );
-  const canSearch = ticketKey !== null && workspaceRepositoryProjectIds.length > 0;
-  const search = usePullRequestList(
-    canSearch
-      ? [
-          {
-            environmentId,
-            input: {
-              state: "all",
-              involvement: "all",
-              projectIds: workspaceRepositoryProjectIds,
-              query: ticketKey,
-              limit: 50,
-            },
-          },
-        ]
-      : [],
-  );
-  // Hosts without text search must not associate an unfiltered repository listing with a Ticket.
-  const matches =
-    search.data?.entries.filter((entry) =>
-      search.data?.providers.some(
-        (provider) => provider.host === entry.host && provider.searchesOnHost,
-      ),
-    ) ?? [];
+  const referenceCommands = useWorkbenchReferenceCommands(environmentId);
+  const [unlinking, setUnlinking] = useState<string | null>(null);
+  const [unlinkError, setUnlinkError] = useState<string | null>(null);
   const rows = mergeWorkbenchTicketPullRequests({
     threadPullRequests: pullRequests,
-    matches,
     checkoutPullRequests: checkout.pullRequests,
+    references,
   });
-  const unsupported = search.data?.providers.some((provider) => !provider.searchesOnHost);
+  const canUnlink = !readOnly && referenceCommands.canEdit;
+  const unlink = async (reference: WorkbenchReference) => {
+    setUnlinking(reference.url);
+    setUnlinkError(
+      await referenceCommands
+        .remove({ ticketId, url: reference.url })
+        .finally(() => setUnlinking(null)),
+    );
+  };
 
   return (
     <section className="flex min-w-0 shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/30">
       <WorkbenchTicketPanelHeader
         title="Pull requests"
         count={rows.length}
-        description={
-          canSearch
-            ? `Linked PRs and ${ticketKey} mentions`
-            : "Linked through threads or the ticket work area"
-        }
+        description="Linked through threads, references, or the ticket work area"
         collapsed={collapsed}
         onToggle={() => setCollapsed((value) => !value)}
         contentId={contentId}
         actions={
-          <WorkbenchTicketPullRequestActions
-            readOnly={readOnly}
-            environmentId={environmentId}
-            ticketId={ticketId}
-            assignments={assignments}
-            threadsById={threadsById}
-            canSearch={canSearch}
-            search={search}
-          />
+          !readOnly ? (
+            <WorkbenchLinkPullRequest
+              key={`${environmentId}:${ticketId}`}
+              environmentId={environmentId}
+              ticketId={ticketId}
+              assignments={assignments}
+              threadsById={threadsById}
+            />
+          ) : null
         }
       />
       <div id={contentId} hidden={collapsed} className="min-w-0 space-y-3 px-4 pb-4">
@@ -153,76 +136,41 @@ export function WorkbenchTicketPullRequests({
               <WorkbenchTicketPullRequestRow
                 key={row.pullRequest.url.toLowerCase()}
                 environmentId={environmentId}
-                ticketKey={ticketKey}
                 row={row}
                 onOpenThread={onOpenThread}
+                unlinkDisabled={canUnlink ? unlinking !== null : null}
+                onUnlink={(reference) => void unlink(reference)}
               />
             ))}
           </div>
         ) : null}
-        <WorkbenchPullRequestSearchStatus
-          search={search}
-          checkout={checkout}
-          unsupported={unsupported}
-          hasRows={rows.length > 0}
-        />
+        {unlinkError ? (
+          <p
+            role="alert"
+            className="break-words text-xs leading-5 text-destructive [overflow-wrap:anywhere]"
+          >
+            {unlinkError}
+          </p>
+        ) : null}
+        <WorkbenchPullRequestCheckoutStatus checkout={checkout} hasRows={rows.length > 0} />
       </div>
     </section>
   );
 }
 
-function WorkbenchTicketPullRequestActions({
-  readOnly,
-  environmentId,
-  ticketId,
-  assignments,
-  threadsById,
-  canSearch,
-  search,
-}: Pick<
-  Parameters<typeof WorkbenchTicketPullRequests>[0],
-  "readOnly" | "environmentId" | "ticketId" | "assignments" | "threadsById"
-> & {
-  canSearch: boolean;
-  search: ReturnType<typeof usePullRequestList>;
-}) {
-  return (
-    <>
-      {!readOnly ? (
-        <WorkbenchLinkPullRequest
-          key={`${environmentId}:${ticketId}`}
-          environmentId={environmentId}
-          ticketId={ticketId}
-          assignments={assignments}
-          threadsById={threadsById}
-        />
-      ) : null}
-      {canSearch ? (
-        <Button
-          aria-label="Refresh ticket pull requests"
-          title="Refresh ticket pull requests"
-          size="icon-xs"
-          variant="outline"
-          disabled={search.isPending}
-          onClick={() => search.refresh()}
-        >
-          <RefreshCwIcon />
-        </Button>
-      ) : null}
-    </>
-  );
-}
-
 function WorkbenchTicketPullRequestRow({
   environmentId,
-  ticketKey,
   row,
   onOpenThread,
-}: Pick<
-  Parameters<typeof WorkbenchTicketPullRequests>[0],
-  "environmentId" | "ticketKey" | "onOpenThread"
-> & { row: ReturnType<typeof mergeWorkbenchTicketPullRequests>[number] }) {
-  const { pullRequest, threadId, threadTitle, matchesTicket } = row;
+  unlinkDisabled,
+  onUnlink,
+}: Pick<Parameters<typeof WorkbenchTicketPullRequests>[0], "environmentId" | "onOpenThread"> & {
+  row: ReturnType<typeof mergeWorkbenchTicketPullRequests>[number];
+  /** `null` hides Unlink, as for a read-only Ticket. */
+  unlinkDisabled: boolean | null;
+  onUnlink: (reference: WorkbenchReference) => void;
+}) {
+  const { pullRequest, threadId, threadTitle, reference } = row;
   return (
     <div key={pullRequest.url.toLowerCase()} className="min-w-0 py-3 first:pt-0 last:pb-0">
       <WorkbenchPullRequestLink
@@ -236,7 +184,6 @@ function WorkbenchTicketPullRequestRow({
       />
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-2 pt-1 text-xs leading-5 text-muted-foreground">
         <WorkbenchTicketPullRequestRepository pullRequest={pullRequest} />
-        {matchesTicket ? <Badge variant="secondary">Mentions {ticketKey}</Badge> : null}
         {threadId !== null && threadTitle !== null ? (
           <Tooltip>
             <TooltipTrigger
@@ -258,8 +205,20 @@ function WorkbenchTicketPullRequestRow({
               Linked through thread: {threadTitle}
             </TooltipPopup>
           </Tooltip>
-        ) : !matchesTicket ? (
+        ) : reference === null ? (
           <Badge variant="secondary">Work area</Badge>
+        ) : null}
+        {reference !== null && unlinkDisabled !== null ? (
+          <Button
+            size="xs"
+            type="button"
+            variant="ghost"
+            disabled={unlinkDisabled}
+            aria-label={`Unlink pull request #${pullRequest.number} reference`}
+            onClick={() => onUnlink(reference)}
+          >
+            Unlink
+          </Button>
         ) : null}
       </div>
     </div>
@@ -290,28 +249,19 @@ function WorkbenchTicketPullRequestRepository({
   );
 }
 
-function WorkbenchPullRequestSearchStatus({
-  search,
+function WorkbenchPullRequestCheckoutStatus({
   checkout,
-  unsupported,
   hasRows,
 }: {
-  search: ReturnType<typeof usePullRequestList>;
   checkout: {
     pullRequests: ReadonlyArray<TicketPullRequestReference>;
     errors: ReadonlyArray<string>;
     isPending: boolean;
   };
-  unsupported: boolean | undefined;
   hasRows: boolean;
 }) {
   return (
     <>
-      {search.isPending ? (
-        <p role="status" className="text-xs leading-5 text-muted-foreground">
-          Searching repositories…
-        </p>
-      ) : null}
       {checkout.isPending ? (
         <p role="status" className="text-xs leading-5 text-muted-foreground">
           Checking ticket work area pull requests…
@@ -326,42 +276,9 @@ function WorkbenchPullRequestSearchStatus({
           {error}
         </p>
       ))}
-      {search.error ? (
-        <p
-          role="alert"
-          className="break-words text-xs leading-5 text-destructive [overflow-wrap:anywhere]"
-        >
-          PR search unavailable: {search.error}
-        </p>
-      ) : null}
-      {search.data?.errors.map((error) => (
-        <p
-          role="alert"
-          key={error.projectId}
-          className="break-words text-xs leading-5 text-destructive [overflow-wrap:anywhere]"
-        >
-          {error.projectTitle}: {error.message}
-        </p>
-      ))}
-      {unsupported ? (
-        <p className="text-xs leading-5 text-muted-foreground">
-          Ticket-key search is unavailable for some repository hosts.
-        </p>
-      ) : null}
-      {!hasRows &&
-      !search.isPending &&
-      !checkout.isPending &&
-      checkout.errors.length === 0 &&
-      !search.error &&
-      !unsupported &&
-      (search.data?.errors.length ?? 0) === 0 ? (
+      {!hasRows && !checkout.isPending && checkout.errors.length === 0 ? (
         <p className="text-xs leading-5 text-muted-foreground">
           No pull requests found for this ticket.
-        </p>
-      ) : null}
-      {search.data?.truncated ? (
-        <p className="text-xs leading-5 text-muted-foreground">
-          Showing up to 50 matches per repository. More may be available on the host.
         </p>
       ) : null}
     </>

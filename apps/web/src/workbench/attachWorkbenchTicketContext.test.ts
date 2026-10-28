@@ -18,6 +18,7 @@ const input = {
     kind: "story",
     repositoryProjectIds: [web, api],
     primaryT3ProjectId: web,
+    references: [],
   },
   projects: [
     { id: api, title: "API", workspaceRoot: "/remote/api" },

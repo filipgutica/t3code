@@ -26,6 +26,7 @@ import {
 } from "./startWorkbenchTicket";
 import { workbenchEnvironment } from "./state";
 import { waitForWorkbenchThread } from "./waitForWorkbenchThread";
+import { getTicketReferences, type WorkbenchReferencesByTicket } from "./workbenchReferences.logic";
 
 const commandFailureMessage = (failure: {
   readonly cause: Parameters<typeof squashAtomCommandFailure>[0]["cause"];
@@ -99,6 +100,7 @@ export function useStartWorkbenchTicket({
   projects,
   providers,
   assignmentsByTicket,
+  referencesByTicket,
   existingThreadIds,
   threadLookupReady,
   onRefreshThreadLookup,
@@ -110,6 +112,7 @@ export function useStartWorkbenchTicket({
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly assignmentsByTicket: ReadonlyMap<WorkbenchTicketId, WorkbenchAssignment>;
+  readonly referencesByTicket: WorkbenchReferencesByTicket;
   readonly existingThreadIds: ReadonlySet<ThreadId>;
   readonly threadLookupReady: boolean;
   readonly onRefreshThreadLookup: () => void;
@@ -145,6 +148,7 @@ export function useStartWorkbenchTicket({
           {
             environmentId,
             ticket,
+            references: getTicketReferences(referencesByTicket, ticket.id),
             projects,
             assignment: options?.assignment ?? assignmentsByTicket.get(ticket.id),
             existingThreadIds,

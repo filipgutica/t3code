@@ -60,8 +60,8 @@ describe("Workbench Board Ticket preview", () => {
         markdown:
           "h2. Goal\n\n* Show {{POST /v4}} and [API docs|https://example.com]. " +
           "Explain the next action. ".repeat(20),
-        jiraIssue: { key: "API-1", url: "https://example.atlassian.net/browse/API-1" },
       },
+      jira: true,
     });
     expect(preview.source).toBe("description");
     expect(preview.text.startsWith("Show POST /v4 and API docs. Explain the next action.")).toBe(

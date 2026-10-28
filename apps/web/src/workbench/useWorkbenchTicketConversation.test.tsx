@@ -486,6 +486,7 @@ describe("useTicketDraftTransitions", () => {
     const working = { ...draft, phase: "working" as const, revision: 2 };
     const docs = ProjectId.make("docs");
     const snapshot: WorkbenchSnapshot = {
+      references: [],
       projects: [],
       epics: [],
       assignments: [],

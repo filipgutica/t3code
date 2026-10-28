@@ -21,7 +21,7 @@ import type { WorkbenchSuggestionMessage } from "./workbenchTicketDraft.logic";
 const state = vi.hoisted(() => ({
   messages: [] as WorkbenchSuggestionMessage[],
   snapshot: null as WorkbenchSnapshot | null,
-  setJiraIssueLink: vi.fn(),
+  addReference: vi.fn(),
 }));
 vi.mock("@effect/atom-react", () => ({
   useAtomValue: () => ({ availableEditors: [], revealInFileManagerLabel: "Show in file manager" }),
@@ -40,7 +40,7 @@ vi.mock("../hooks/useSettings", async (importOriginal) => {
   };
 });
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
-vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => state.setJiraIssueLink }));
+vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => state.addReference }));
 vi.mock("../state/session", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../state/session")>();
   return {
@@ -71,7 +71,7 @@ vi.mock("../state/entities", () => ({
 }));
 vi.mock("../state/query", () => ({ useEnvironmentQuery: () => ({ data: state.snapshot }) }));
 vi.mock("./state", () => ({
-  workbenchEnvironment: { snapshot: vi.fn(), setJiraIssueLink: { permissionAtom: () => null } },
+  workbenchEnvironment: { snapshot: vi.fn(), addReference: { permissionAtom: () => null } },
 }));
 
 import ChatMarkdown, { ChatMarkdownCodeBlockRendererContext } from "../components/ChatMarkdown";
@@ -185,7 +185,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.messages = [{ id: "assistant", role: "assistant", text, streaming: false }];
   state.snapshot = null;
-  state.setJiraIssueLink = vi.fn(async () => ({ _tag: "Success", value: undefined }));
+  state.addReference = vi.fn(async () => ({ _tag: "Success", value: undefined }));
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -321,6 +321,7 @@ describe("inline ticket proposal", () => {
     const composer = container.querySelector("input");
     expect(container.querySelector("pre")).not.toBeNull();
     state.snapshot = {
+      references: [],
       projects: [
         {
           id: workspaceId,
@@ -378,6 +379,7 @@ describe("inline ticket proposal", () => {
 describe("agent Jira link card", () => {
   const heading = () => container.querySelector('[aria-label="Jira link"] h3')?.textContent;
   const liveSnapshot = (supersededAt: string | null): WorkbenchSnapshot => ({
+    references: [],
     projects: [
       {
         id: workspaceId,
@@ -409,31 +411,29 @@ describe("agent Jira link card", () => {
     expect(button("Link")?.disabled).toBe(true);
   });
 
-  it("links the issue to the Ticket version the user saw", async () => {
+  it("adds the issue as a Ticket Reference", async () => {
     await render({ blocks: [jiraBlock], ticket });
     expect(heading()).toBe("Link ORBIT-375 to this Ticket");
     await act(async () => button("Link")!.click());
-    expect(state.setJiraIssueLink).toHaveBeenCalledWith({
+    expect(state.addReference).toHaveBeenCalledWith({
       environmentId,
-      input: { kind: "ticket", ticketId, url: jiraUrl, expectedRevision: 1 },
+      input: { ticketId, url: jiraUrl },
     });
   });
 
-  it("offers to replace a different link and confirms an existing one", async () => {
-    const linkedTo = (key: string) => ({
-      ...ticket,
-      jiraIssue: { key, url: `https://acme.atlassian.net/browse/${key}` },
+  it("confirms an issue the Ticket already references", async () => {
+    const referencing = (url: string): WorkbenchSnapshot => ({
+      ...liveSnapshot(null),
+      references: [{ ticketId, url, title: null, addedByThreadId: null, createdAt: timestamp }],
     });
-    await render({ blocks: [jiraBlock], ticket: linkedTo("ORBIT-3") });
-    expect(heading()).toBe("Replace ORBIT-3 with ORBIT-375?");
-    expect(button("Replace")?.disabled).toBe(false);
-    await render({ blocks: [jiraBlock], ticket: linkedTo("ORBIT-375") });
+    state.snapshot = referencing(jiraUrl);
+    await render({ blocks: [jiraBlock], ticket });
     expect(heading()).toBe("Linked ORBIT-375");
     expect(button("Link")).toBeUndefined();
     // Keys repeat across Jira sites, so the same key elsewhere is a different issue.
-    const otherSite = { key: "ORBIT-375", url: "https://other.atlassian.net/browse/ORBIT-375" };
-    await render({ blocks: [jiraBlock], ticket: { ...ticket, jiraIssue: otherSite } });
-    expect(button("Replace")?.disabled).toBe(false);
+    state.snapshot = referencing("https://other.atlassian.net/browse/ORBIT-375");
+    await render({ blocks: [jiraBlock], ticket });
+    expect(button("Link")?.disabled).toBe(false);
   });
 
   it("rejects a block that is not a Jira issue URL", async () => {

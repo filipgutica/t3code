@@ -78,6 +78,7 @@ import { WorkbenchBoardFloatingChat } from "./WorkbenchBoardFloatingChat";
 import { WorkbenchTicketConversation } from "./WorkbenchTicketConversation";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
+import { getTicketReferences } from "./workbenchReferences.logic";
 import {
   getUnsavedConversationDrafts,
   resolveWorkbenchWorkItemView,
@@ -359,6 +360,7 @@ function getWorkbenchPageTicketState({
     ticketWorkspace: pageData.snapshot?.ticketWorkspaces.find(
       (workspace) => workspace.ticketId === ticketId,
     ),
+    references: getTicketReferences(pageData.referencesByTicket, ticketId),
     pending: pendingAction !== null || pageData.optimisticStatus.pendingTicketIds.has(ticketId),
     threadMutationsDisabled: !pageData.canOperate,
     threadActionPending: isWorkbenchPageTicketThreadPending({
@@ -736,6 +738,7 @@ function WorkbenchPageBoard(
           repositoryProjectIds={selectedProject.linkedProjectIds}
           repositoriesReady={repositoriesReady}
           assignmentsByTicket={assignmentsByTicket}
+          referencesByTicket={pageData.referencesByTicket}
           assignments={snapshot?.assignments ?? []}
           threadsById={threadsById}
           archivedThreadsById={archivedThreadsById}
@@ -794,6 +797,7 @@ function WorkbenchPageBoardChat({
       linkedProjects={boardData.linkedT3Projects}
       tickets={boardData.projectTickets}
       assignments={snapshot?.assignments ?? []}
+      referencesByTicket={pageData.referencesByTicket}
       drafts={snapshot?.ticketDrafts ?? []}
       threadsById={pageData.threadsById}
       archivedThreadsById={pageData.archivedThreadsById}

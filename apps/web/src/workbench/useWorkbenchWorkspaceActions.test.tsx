@@ -73,6 +73,7 @@ const next = { ...workspace, id: WorkbenchProjectId.make("next") };
 const ticketId = WorkbenchTicketId.make("ticket");
 const epicId = WorkbenchEpicId.make("epic");
 const snapshot: WorkbenchSnapshot = {
+  references: [],
   projects: [workspace, archived, next],
   tickets: [
     {

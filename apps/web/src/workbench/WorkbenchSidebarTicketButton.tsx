@@ -19,7 +19,7 @@ import type { WorkbenchSidebarTicketDetails } from "./workbenchSidebarContext.lo
 import { WorkbenchTicketAttentionBadge } from "./WorkbenchTicketAttention";
 import { WorkbenchSidebarQuickAction } from "./WorkbenchSidebarRowActions";
 import { WorkbenchSidebarRowNavigation } from "./WorkbenchSidebarRowNavigation";
-import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
+import { WorkbenchReferenceKindIcon } from "./WorkbenchReferences";
 
 function TicketPullRequestPreview({
   pullRequests,
@@ -56,10 +56,10 @@ function TicketPreview({
     <div className="flex flex-col gap-2 text-xs">
       <p className="font-medium text-foreground break-words">{ticket.title}</p>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-muted-foreground">
-        {details?.jiraIssue ? (
+        {details?.issue ? (
           <>
-            <dt>Jira</dt>
-            <dd>{details.jiraIssue.key}</dd>
+            <dt>Issue</dt>
+            <dd>{details.issue.label}</dd>
           </>
         ) : null}
         {details ? (
@@ -145,16 +145,16 @@ function WorkbenchSidebarTicketStatus({
   return (
     <span data-workbench-sidebar-metadata-label="" data-workbench-sidebar-line="1">
       <span data-workbench-sidebar-metadata-icon="" aria-hidden>
-        {details?.jiraIssue ? (
-          <WorkbenchJiraIcon className="size-3" />
+        {details?.issue ? (
+          <WorkbenchReferenceKindIcon kind={details.issue.kind} className="size-3" />
         ) : (
           <span className={`size-1.5 rounded-full ${TICKET_STATUS_DOT_TONE[ticket.status]}`} />
         )}
       </span>
       <span data-workbench-sidebar-ticket-planning="">
-        {details?.jiraIssue ? (
+        {details?.issue ? (
           <>
-            <span className="shrink-0 font-mono">{details.jiraIssue.key}</span>
+            <span className="shrink-0 font-mono">{details.issue.label}</span>
             <span aria-hidden>·</span>
           </>
         ) : null}
@@ -273,7 +273,7 @@ export function WorkbenchSidebarTicketButton({
   const actions = useWorkbenchSidebarTicketActionMenu({
     environmentId: details?.environmentId,
     ticket,
-    jiraIssue: details?.jiraIssue ?? null,
+    issue: details?.issue ?? null,
     readOnly: details?.readOnly ?? true,
   });
   return (

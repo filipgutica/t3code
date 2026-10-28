@@ -180,13 +180,23 @@ function Harness(props: {
       workspace={workspace}
       providers={[]}
       linkedProjects={[]}
-      tickets={[
-        {
-          ...ticket("ticket-a", "Refunds"),
-          jiraIssue: { key: "PAY-1", url: "https://example.atlassian.net/browse/PAY-1" },
-        },
-        ticket("ticket-b", "Payouts"),
-      ]}
+      tickets={[ticket("ticket-a", "Refunds"), ticket("ticket-b", "Payouts")]}
+      referencesByTicket={
+        new Map([
+          [
+            WorkbenchTicketId.make("ticket-a"),
+            [
+              {
+                ticketId: WorkbenchTicketId.make("ticket-a"),
+                url: "https://example.atlassian.net/browse/PAY-1",
+                title: null,
+                addedByThreadId: null,
+                createdAt,
+              },
+            ],
+          ],
+        ])
+      }
       assignments={[assignment("first", "ticket-a"), assignment("second", "ticket-b")]}
       drafts={drafts}
       threadsById={new Map(threadIds.map((id) => [ThreadId.make(id), liveThread(id)]))}

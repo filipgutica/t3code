@@ -119,7 +119,12 @@ export function WorkbenchThreadBreadcrumb({
                       attachWorkbenchTicketContext({
                         environmentId,
                         thread,
-                        ticket: fullTicket,
+                        ticket: {
+                          ...fullTicket,
+                          references: (data?.references ?? []).filter(
+                            (reference) => reference.ticketId === ticket.id,
+                          ),
+                        },
                         projects: projects.filter(
                           (candidate) => candidate.environmentId === environmentId,
                         ),

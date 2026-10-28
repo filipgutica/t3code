@@ -128,6 +128,7 @@ function startInput(assignment?: WorkbenchAssignment) {
   return {
     environmentId,
     ticket,
+    references: [],
     projects: [project],
     assignment,
     existingThreadIds: new Set<ThreadId>(),

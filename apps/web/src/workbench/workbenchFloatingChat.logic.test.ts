@@ -61,7 +61,6 @@ const ticket: WorkbenchTicket = {
   status: "todo",
   blocked: false,
   archivedAt: null,
-  jiraIssue: { key: "WB-42", url: "https://example.atlassian.net/browse/WB-42" },
   revision: 0,
   createdAt,
   updatedAt: createdAt,
@@ -107,6 +106,20 @@ const boardInput = () => ({
   threadsById: new Map([liveThread("first"), liveThread("second")].map((t) => [t.id, t])),
   archivedThreadsById: new Map<ThreadId, ReturnType<typeof liveThread>>(),
   recaps: new Map<ThreadId, string>(),
+  referencesByTicket: new Map([
+    [
+      ticket.id,
+      [
+        {
+          ticketId: ticket.id,
+          url: "https://example.atlassian.net/browse/WB-42",
+          title: null,
+          addedByThreadId: null,
+          createdAt,
+        },
+      ],
+    ],
+  ]),
 });
 const titlesAndTickets = (threads: ReadonlyArray<WorkbenchFloatingChatThread>) =>
   threads.map(({ threadId, title, ticket }) => ({ threadId, title, key: ticket?.key ?? null }));
@@ -117,7 +130,6 @@ describe("getWorkbenchBoardChatThreads", () => {
       ...ticket,
       id: WorkbenchTicketId.make("second-ticket"),
       title: "Next",
-      jiraIssue: null,
     };
     const input = boardInput();
     const result = getWorkbenchBoardChatThreads({

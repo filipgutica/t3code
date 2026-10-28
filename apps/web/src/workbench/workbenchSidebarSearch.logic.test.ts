@@ -29,6 +29,13 @@ const thread = {
   pinnedAt: null,
   pinOrderKey: null,
 };
+const reference = (ticketId: WorkbenchTicketId, url: string, title: string | null = null) => ({
+  ticketId,
+  url,
+  title,
+  addedByThreadId: null,
+  createdAt: "2026-10-01T00:00:00Z",
+});
 const draft = {
   id: WorkbenchTicketId.make("unsaved-ticket"),
   title: "Draft query optimization",
@@ -49,7 +56,10 @@ const inputs = {
     ],
   ]),
   archivedTicketsByWorkspace: new Map([[workspaceId, [archivedTicket]]]),
-  jiraKeysByTicketId: new Map([[ticket.id, "MA-5517"]]),
+  referencesByTicket: new Map([
+    [ticket.id, [reference(ticket.id, "https://acme.atlassian.net/browse/MA-5517")]],
+    [draft.id, [reference(draft.id, "https://figma.com/file/abc", "Planner mockups")]],
+  ]),
   draftsByWorkspace: new Map([[workspaceId, [draft]]]),
 };
 
@@ -74,7 +84,7 @@ describe("Workbench sidebar search destinations", () => {
     ]);
   });
 
-  it("matches Jira keys case-insensitively and opens the owning Ticket", () => {
+  it("matches Reference labels case-insensitively and opens the owning Ticket", () => {
     expect(getWorkbenchSidebarSearchResults({ ...inputs, query: "ma-5517" })).toEqual([
       expect.objectContaining({
         kind: "ticket",
@@ -83,6 +93,12 @@ describe("Workbench sidebar search destinations", () => {
         workspaceId,
         subtitle: "Analytics · MA-5517",
       }),
+    ]);
+  });
+
+  it("matches a draft by its Reference title", () => {
+    expect(getWorkbenchSidebarSearchResults({ ...inputs, query: "mockups" })).toEqual([
+      expect.objectContaining({ kind: "draft", ticketId: draft.id, title: draft.title }),
     ]);
   });
 

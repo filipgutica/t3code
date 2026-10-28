@@ -51,6 +51,7 @@ vi.mock("../components/ui/sidebar", () => ({
 }));
 
 const snapshot: WorkbenchSnapshot = {
+  references: [],
   projects: [],
   tickets: [],
   epics: [],

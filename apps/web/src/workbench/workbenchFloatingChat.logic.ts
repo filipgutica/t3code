@@ -10,6 +10,11 @@ import type {
 } from "@t3tools/contracts";
 
 import { getAssignmentsForTicket } from "./workbench.logic";
+import {
+  getTicketIssue,
+  getTicketReferences,
+  type WorkbenchReferencesByTicket,
+} from "./workbenchReferences.logic";
 import { getConversationDraftTitle } from "./workbenchTicketDraft.logic";
 import {
   getWorkbenchThreadExecutionStatus,
@@ -18,6 +23,7 @@ import {
 
 export interface WorkbenchFloatingChatTicket {
   readonly id: WorkbenchTicketId;
+  /** The first issue Reference label. */
   readonly key: string | null;
   readonly title: string;
   readonly kind: WorkbenchTicketKind;
@@ -48,6 +54,7 @@ export const getWorkbenchBoardChatThreads = ({
   threadsById,
   archivedThreadsById,
   recaps,
+  referencesByTicket,
 }: {
   readonly projectId: WorkbenchProjectId;
   /** Tickets in board order, before any board search or status filtering. */
@@ -57,6 +64,7 @@ export const getWorkbenchBoardChatThreads = ({
   readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   readonly archivedThreadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   readonly recaps: ReadonlyMap<ThreadId, string>;
+  readonly referencesByTicket: WorkbenchReferencesByTicket;
 }) => {
   const boardTickets = tickets.filter((ticket) => ticket.projectId === projectId);
   const ticketsById = new Map(boardTickets.map((ticket) => [ticket.id, ticket]));
@@ -81,7 +89,7 @@ export const getWorkbenchBoardChatThreads = ({
       ticket: ticket
         ? {
             id: ticket.id,
-            key: ticket.jiraIssue?.key ?? null,
+            key: getTicketIssue(getTicketReferences(referencesByTicket, ticket.id))?.label ?? null,
             title: ticket.title,
             kind: ticket.kind,
           }

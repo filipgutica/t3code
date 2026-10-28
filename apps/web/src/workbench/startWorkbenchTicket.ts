@@ -12,6 +12,7 @@ import type {
   WorkbenchReplaceAssignmentInput,
   WorkbenchPrepareTicketWorkspaceInput,
   WorkbenchTicket,
+  WorkbenchReference,
   WorkbenchTicketWorkspace,
   WorkbenchUpdateTicketInput,
 } from "@t3tools/contracts";
@@ -37,6 +38,7 @@ type EnvironmentCommandInput<Input> = {
 interface StartWorkbenchTicketInput {
   readonly environmentId: EnvironmentId;
   readonly ticket: WorkbenchTicket;
+  readonly references: ReadonlyArray<WorkbenchReference>;
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly assignment: WorkbenchAssignment | undefined;
   readonly existingThreadIds: ReadonlySet<ThreadId>;
@@ -345,7 +347,7 @@ const attachTicketContextAndOpen = async ({
       .map((repository) => [repository.projectId, repository.worktreePath]),
   );
   const ticketContext = buildTicketReviewComment(
-    input.ticket,
+    { ...input.ticket, references: input.references },
     input.projects.map((repository) => ({
       ...repository,
       workspaceRoot: preparedPaths.get(repository.id) ?? repository.workspaceRoot,

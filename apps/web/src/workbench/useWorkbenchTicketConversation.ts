@@ -370,7 +370,10 @@ export function useTicketDraftTransitions({
             projectId: primary.projectId,
             worktreePath: primary.worktreePath,
           },
-          ticket,
+          ticket: {
+            ...ticket,
+            references: snapshot.references.filter((reference) => reference.ticketId === ticket.id),
+          },
           projects,
           repositories: workspace.repositories,
         });

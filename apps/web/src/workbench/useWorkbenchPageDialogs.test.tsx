@@ -30,6 +30,7 @@ const environmentId = EnvironmentId.make("remote");
 const workspaceId = WorkbenchProjectId.make("workspace");
 const time = "2026-09-27T00:00:00.000Z";
 const snapshot: WorkbenchSnapshot = {
+  references: [],
   projects: [
     {
       id: workspaceId,

@@ -79,6 +79,7 @@ it("preserves the scroll container while the new Thread's Assignment refresh fin
   const ticketId = WorkbenchTicketId.make("ticket");
   const timestamp = "2026-10-17T00:00:00.000Z";
   state.snapshot = {
+    references: [],
     projects: [
       {
         id: workspaceId,

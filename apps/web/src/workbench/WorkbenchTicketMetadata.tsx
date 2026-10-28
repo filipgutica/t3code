@@ -1,4 +1,8 @@
-import type { WorkbenchJiraIssue, WorkbenchTicketKind } from "@t3tools/contracts";
+import type {
+  WorkbenchJiraIssue,
+  WorkbenchParsedReferenceUrl,
+  WorkbenchTicketKind,
+} from "@t3tools/contracts";
 import {
   BookOpenIcon,
   BugIcon,
@@ -58,7 +62,7 @@ export function WorkbenchEpicBadge({ title, className }: { title: string; classN
   );
 }
 
-/** The linked Jira issue's key, opening the issue. Unlinked records show nothing. */
+/** An Epic's linked Jira issue key, opening the issue. Unlinked Epics show nothing. */
 export function WorkbenchJiraIssueKeyLink({
   jiraIssue,
   size = "default",
@@ -84,14 +88,14 @@ export function WorkbenchJiraIssueKeyLink({
   );
 }
 
+/** `issue` is the Ticket's first issue Reference, which also serves as its ID. */
 export function WorkbenchTicketCopyMenuItems({
   ticketId,
-  jiraIssue,
+  issue,
 }: {
   ticketId: string;
-  jiraIssue: WorkbenchJiraIssue | null | undefined;
+  issue: WorkbenchParsedReferenceUrl | null;
 }) {
-  const issue = jiraIssue;
   const copy = async ({
     value,
     target,
@@ -117,7 +121,7 @@ export function WorkbenchTicketCopyMenuItems({
       <MenuItem
         onClick={() =>
           void copy({
-            value: issue?.key ?? ticketId,
+            value: issue?.label ?? ticketId,
             target: "ticket ID",
             copiedTitle: "Ticket ID copied",
           })
@@ -130,12 +134,12 @@ export function WorkbenchTicketCopyMenuItems({
           onClick={() =>
             void copy({
               value: issue.url,
-              target: "Jira link",
-              copiedTitle: "Jira link copied",
+              target: "issue link",
+              copiedTitle: "Issue link copied",
             })
           }
         >
-          <LinkIcon /> Copy Jira link
+          <LinkIcon /> Copy issue link
         </MenuItem>
       ) : null}
     </>

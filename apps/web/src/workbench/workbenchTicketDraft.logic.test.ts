@@ -56,6 +56,7 @@ const makeDraft = (
 });
 
 const makeSnapshot = (drafts?: ReadonlyArray<WorkbenchConversationDraft>): WorkbenchSnapshot => ({
+  references: [],
   projects: [],
   ...(drafts === undefined ? {} : { ticketDrafts: drafts }),
   epics: [],

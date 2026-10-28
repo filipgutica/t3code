@@ -70,6 +70,7 @@ const ticket: WorkbenchTicket = {
   updatedAt: timestamp,
 };
 const snapshot: WorkbenchSnapshot = {
+  references: [],
   projects: [
     {
       id: ticket.projectId,

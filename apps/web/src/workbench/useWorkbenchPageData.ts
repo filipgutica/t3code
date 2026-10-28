@@ -10,6 +10,7 @@ import { useEnvironmentQuery } from "../state/query";
 
 import { useOptimisticWorkbenchStatus } from "./useOptimisticWorkbenchStatus";
 import { workbenchEnvironment } from "./state";
+import { groupWorkbenchReferences } from "./workbenchReferences.logic";
 
 export function useWorkbenchPageData(environmentId: EnvironmentId | null) {
   // Workbench mutations share orchestration:operate in workbenchRpcPermissions.
@@ -34,6 +35,7 @@ export function useWorkbenchPageData(environmentId: EnvironmentId | null) {
     snapshot,
   });
   const threadLookup = useWorkbenchThreadLookup({ environmentId, snapshot });
+  const referencesByTicket = groupWorkbenchReferences(snapshot?.references ?? []);
   return {
     canOperate,
     projects,
@@ -47,6 +49,7 @@ export function useWorkbenchPageData(environmentId: EnvironmentId | null) {
     clearTicketDraft,
     snapshot,
     snapshotProjects,
+    referencesByTicket,
     optimisticStatus,
     ...threadLookup,
   };

@@ -38,6 +38,7 @@ import {
 } from "./workbenchTicketDraft.logic";
 import { usePlanningModelSelection } from "./usePlanningModelSelection";
 import { useWorkbenchThreadRecaps } from "./useWorkbenchThreadRecaps";
+import type { WorkbenchReferencesByTicket } from "./workbenchReferences.logic";
 
 type ThreadsById = ReadonlyMap<ThreadId, EnvironmentThreadShell>;
 
@@ -49,6 +50,7 @@ interface WorkbenchBoardFloatingChatProps extends Pick<
   /** The Workspace's tickets in board order, before board search and filters. */
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
+  readonly referencesByTicket: WorkbenchReferencesByTicket;
   /** Every draft in the snapshot, in all phases. */
   readonly drafts: ReadonlyArray<WorkbenchTicketDraft>;
   readonly threadsById: ThreadsById;
@@ -190,6 +192,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
     threadsById: props.threadsById,
     archivedThreadsById: props.archivedThreadsById,
     recaps: useWorkbenchThreadRecaps(environmentId),
+    referencesByTicket: props.referencesByTicket,
   });
   const chat = resolveWorkbenchFloatingChat({
     ...threads,

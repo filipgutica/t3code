@@ -13,6 +13,11 @@ import type {
 
 import { WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
 import { getWorkbenchTicketPullRequests } from "./workbenchPullRequests.logic";
+import {
+  getTicketIssue,
+  getTicketReferences,
+  type WorkbenchReferencesByTicket,
+} from "./workbenchReferences.logic";
 import { getWorkbenchTicketExecutionStatuses } from "./workbenchThreadStatus.logic";
 
 /** Project already-loaded context once, without fetching PRs for each sidebar row. */
@@ -24,6 +29,7 @@ export const getWorkbenchSidebarTicketDetails = ({
   projects,
   workbenchProjects,
   epics,
+  referencesByTicket,
 }: {
   readonly environmentId: EnvironmentId | null;
   readonly tickets: ReadonlyArray<
@@ -37,7 +43,6 @@ export const getWorkbenchSidebarTicketDetails = ({
       | "epicId"
       | "repositoryProjectIds"
       | "primaryT3ProjectId"
-      | "jiraIssue"
     >
   >;
   readonly assignments: ReadonlyArray<
@@ -64,6 +69,7 @@ export const getWorkbenchSidebarTicketDetails = ({
   readonly projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "title">>;
   readonly workbenchProjects: ReadonlyArray<Pick<WorkbenchProject, "id" | "archivedAt">>;
   readonly epics: ReadonlyArray<Pick<WorkbenchEpic, "id" | "title">>;
+  readonly referencesByTicket: WorkbenchReferencesByTicket;
 }) => {
   const threadsById = new Map(
     threads
@@ -105,7 +111,7 @@ export const getWorkbenchSidebarTicketDetails = ({
           kind: ticket.kind,
           statusLabel: WORKBENCH_TICKET_STATUS_LABELS[ticket.status],
           attentionLabel: ticket.blocked ? "Blocked" : null,
-          jiraIssue: ticket.jiraIssue ?? null,
+          issue: getTicketIssue(getTicketReferences(referencesByTicket, ticket.id)),
           epicTitle: ticket.epicId ? epicsById.get(ticket.epicId) : undefined,
           repositories: (ticket.repositoryProjectIds.length
             ? ticket.repositoryProjectIds

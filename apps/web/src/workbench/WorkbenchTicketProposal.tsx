@@ -4,6 +4,7 @@ import type {
   EnvironmentId,
   ScopedThreadRef,
   ThreadId,
+  WorkbenchSnapshot,
   WorkbenchTicket,
   WorkbenchTicketDraftFields,
 } from "@t3tools/contracts";
@@ -31,6 +32,11 @@ import {
 } from "./workbenchTicketDraft.logic";
 
 const EMPTY_MESSAGES: ReadonlyArray<WorkbenchSuggestionMessage> = [];
+
+const ticketReferences = (
+  snapshot: Pick<WorkbenchSnapshot, "references"> | null | undefined,
+  ticket: WorkbenchTicket | null,
+) => (ticket === null ? [] : (snapshot?.references ?? []).filter((r) => r.ticketId === ticket.id));
 
 export function WorkbenchRepositoryBadges({
   label,
@@ -178,6 +184,7 @@ export function WorkbenchTicketProposalHistory({
           environmentId={threadRef.environmentId}
           block={block}
           ticket={liveTicket}
+          references={ticketReferences(data, liveTicket)}
         />
       );
     }
@@ -272,9 +279,19 @@ export function WorkbenchTicketProposalRenderer({
   const knownRepositoryProjectIds = new Set(linkedProjects.map((project) => project.id));
   const latest = findTicketDraftSuggestion({ messages, knownRepositoryProjectIds });
   const [handled, setHandled] = useState<ReadonlyMap<string, "applied" | "dismissed">>(new Map());
+  const { data } = useEnvironmentQuery(
+    ticket === null ? null : workbenchEnvironment.snapshot({ environmentId, input: {} }),
+  );
   const renderBlock = (block: ChatMarkdownCodeBlock) => {
     if (block.language === "workbench-jira-link" && block.messageId !== undefined) {
-      return <WorkbenchJiraLinkCard environmentId={environmentId} block={block} ticket={ticket} />;
+      return (
+        <WorkbenchJiraLinkCard
+          environmentId={environmentId}
+          block={block}
+          ticket={ticket}
+          references={ticketReferences(data, ticket)}
+        />
+      );
     }
     if (block.language !== "workbench-ticket-draft" || block.messageId === undefined) {
       return undefined;

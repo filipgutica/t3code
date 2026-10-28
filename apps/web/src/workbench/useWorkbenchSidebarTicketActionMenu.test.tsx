@@ -52,11 +52,15 @@ const ticket = {
   archivedAt: null,
   updatedAt: "2026-10-16T00:00:00.000Z",
 };
-const jiraIssue = { key: "WB-1", url: "https://example.atlassian.net/browse/WB-1" };
+const issue = {
+  url: "https://example.atlassian.net/browse/WB-1",
+  kind: "jira_issue" as const,
+  label: "WB-1",
+};
 const input = {
   environmentId,
   ticket,
-  jiraIssue: null,
+  issue: null,
   readOnly: false,
 };
 let actions: ReturnType<typeof useWorkbenchSidebarTicketActionMenu>;
@@ -152,9 +156,9 @@ describe("Workbench sidebar Ticket actions", () => {
     expect(mocks.navigate).not.toHaveBeenCalled();
   });
 
-  it("treats a linked Ticket as local and opens its Jira link", async () => {
-    await render({ ...input, jiraIssue });
-    mocks.showMenu.mockResolvedValueOnce("open-jira");
+  it("treats a linked Ticket as local and opens its first issue Reference", async () => {
+    await render({ ...input, issue });
+    mocks.showMenu.mockResolvedValueOnce("open-issue");
     await act(async () => actions.openMenu(position));
     const items = mocks.showMenu.mock.calls[0]?.[0];
     expect(items).toContainEqual(
@@ -164,7 +168,7 @@ describe("Workbench sidebar Ticket actions", () => {
       }),
     );
     expect(items).toContainEqual(expect.objectContaining({ id: "archive" }));
-    expect(mocks.openExternal).toHaveBeenCalledWith(jiraIssue.url);
+    expect(mocks.openExternal).toHaveBeenCalledWith(issue.url);
     expect(peekWorkbenchSidebarTicketAction(environmentId)).toBeNull();
   });
 

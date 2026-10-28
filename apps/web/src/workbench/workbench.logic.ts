@@ -1,17 +1,19 @@
-import type {
-  OrchestrationV2ShellSnapshot,
-  OrchestrationV2ThreadFamily,
-  OrchestrationV2ThreadShell,
-  ProjectId,
-  ThreadId,
-  WorkbenchAssignment,
-  WorkbenchEpic,
-  WorkbenchSnapshot,
-  WorkbenchTicket,
-  WorkbenchTicketGeneratedSummary,
-  WorkbenchTicketId,
-  WorkbenchTicketKind,
-  WorkbenchTicketStatus,
+import {
+  workbenchTicketIssueReferences,
+  type OrchestrationV2ShellSnapshot,
+  type OrchestrationV2ThreadFamily,
+  type OrchestrationV2ThreadShell,
+  type ProjectId,
+  type ThreadId,
+  type WorkbenchAssignment,
+  type WorkbenchEpic,
+  type WorkbenchReference,
+  type WorkbenchSnapshot,
+  type WorkbenchTicket,
+  type WorkbenchTicketGeneratedSummary,
+  type WorkbenchTicketId,
+  type WorkbenchTicketKind,
+  type WorkbenchTicketStatus,
 } from "@t3tools/contracts";
 import type { ReviewCommentContext } from "../reviewCommentContext";
 
@@ -385,8 +387,8 @@ function neutralizeTicketContextTags(value: string): string {
 
 export type WorkbenchTicketContextSource = Pick<
   WorkbenchTicket,
-  "title" | "markdown" | "kind" | "repositoryProjectIds" | "primaryT3ProjectId" | "jiraIssue"
->;
+  "title" | "markdown" | "kind" | "repositoryProjectIds" | "primaryT3ProjectId"
+> & { readonly references: ReadonlyArray<Pick<WorkbenchReference, "url">> };
 
 // Workbench never calls Jira; the agent's own connector does, and the user applies the link card.
 const JIRA_CONNECTOR_INSTRUCTION =
@@ -401,7 +403,7 @@ export function buildTicketThreadContext(
   }>,
 ): string {
   const body = ticket.markdown.trim();
-  const jiraIssue = ticket.jiraIssue;
+  const issue = workbenchTicketIssueReferences(ticket.references)[0];
   const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]));
   const repositoryLines = getWorkbenchTicketRepositoryProjectIds(ticket).map((repositoryId) => {
     const repository = repositoriesById.get(repositoryId);
@@ -413,7 +415,11 @@ export function buildTicketThreadContext(
     `# ${ticket.title}`,
     "",
     `Ticket type: ${WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}`,
-    ...(jiraIssue ? [`Jira issue: ${jiraIssue.key} (${jiraIssue.url})`] : []),
+    ...(issue
+      ? [
+          `${issue.kind === "jira_issue" ? "Jira issue" : "GitHub issue"}: ${issue.label} (${issue.url})`,
+        ]
+      : []),
     "",
     "## Jira",
     "",
