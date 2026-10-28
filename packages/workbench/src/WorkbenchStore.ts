@@ -2897,6 +2897,22 @@ const makeWorkbenchStore = Effect.gen(function* () {
           const currentRepositoryProjectIds = currentRepositories.map(
             (repository) => repository.repositoryProjectId,
           );
+          const requestedRepositoryIds = input.repositoryProjectIds;
+          // Users may still remove such a repository; an agent must not pull one out from under a sibling.
+          if (input.updatedByThreadId !== undefined && requestedRepositoryIds !== undefined) {
+            const inUse = yield* listActiveThreadProjectIds(input.id);
+            if (
+              inUse.some(
+                (id) =>
+                  currentRepositoryProjectIds.includes(id) && !requestedRepositoryIds.includes(id),
+              )
+            ) {
+              return yield* new WorkbenchOperationError({
+                code: "ticket_repository_scope_locked",
+                message: "A repository that an active Thread works in cannot be removed.",
+              });
+            }
+          }
           const primaryT3ProjectId = input.primaryT3ProjectId ?? current.primaryT3ProjectId;
           const repositoryProjectIds = yield* validateTicketRepositoryScope({
             projectId: current.projectId,

@@ -205,6 +205,44 @@ describe("WorkbenchAgentService", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
+  // The store checks this under its write lock, so a Thread linked after the agent read the Ticket counts.
+  it.effect("refuses an agent update that drops the repository an assigned Thread works in", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      yield* seedWorkspace;
+      const ticket = yield* store.createTicket({
+        id: WorkbenchTicketId.make("agent-scope-ticket"),
+        projectId: workspaceId,
+        title: "Expire invitations",
+        kind: "story",
+        markdown: "",
+        primaryT3ProjectId: first,
+        repositoryProjectIds: [first, second],
+        createdAt,
+      });
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("agent-scope-assignment"),
+        ticketId: ticket.id,
+        threadId: worker,
+        createdAt,
+      });
+      const keepSecond = (updatedByThreadId?: ThreadId) =>
+        store.updateTicket({
+          id: ticket.id,
+          expectedRevision: ticket.revision,
+          repositoryProjectIds: [second],
+          primaryT3ProjectId: second,
+          updatedAt: createdAt,
+          ...(updatedByThreadId === undefined ? {} : { updatedByThreadId }),
+        });
+
+      expect(yield* Effect.flip(keepSecond(worker))).toMatchObject({
+        code: "ticket_repository_scope_locked",
+      });
+      expect((yield* keepSecond()).repositoryProjectIds).toEqual([second]);
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   // The service resolves the owner before writing; these are the writes of an agent unlinked in between.
   it.effect("rejects an agent's write once its Thread no longer owns the Ticket", () =>
     Effect.gen(function* () {

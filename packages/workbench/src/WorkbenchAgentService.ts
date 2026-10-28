@@ -316,20 +316,6 @@ const make = Effect.gen(function* () {
   ) {
     const current = yield* requireTicket(ticketId);
     const repositoryProjectIds = input.repositoryProjectIds;
-    if (repositoryProjectIds !== undefined) {
-      // Users may still remove such a repository; an agent must not pull one out from under a sibling.
-      const inUse = yield* store.listActiveThreadProjectIds(ticketId);
-      if (
-        inUse.some(
-          (id) => current.repositoryProjectIds.includes(id) && !repositoryProjectIds.includes(id),
-        )
-      ) {
-        return yield* new WorkbenchOperationError({
-          code: "ticket_repository_scope_locked",
-          message: "A repository that an active Thread works in cannot be removed.",
-        });
-      }
-    }
     // Agents do not choose a primary; keep it, or promote the first repository when it leaves.
     const primaryT3ProjectId =
       repositoryProjectIds === undefined ||
