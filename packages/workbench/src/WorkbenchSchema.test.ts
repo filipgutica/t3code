@@ -443,6 +443,7 @@ describe("ensureWorkbenchSchema", () => {
         // Rewind to v21, the last schema before References.
         yield* sql`DELETE FROM workbench_schema_migrations WHERE version = 22`;
         yield* sql`DROP TABLE workbench_references`;
+        yield* sql`ALTER TABLE workbench_tickets DROP COLUMN updated_by_thread_id`;
         yield* sql`INSERT INTO workbench_projects (project_id, title, created_at, updated_at)
           VALUES ('workspace', 'Workspace', ${now}, ${now})`;
         yield* sql`INSERT INTO workbench_epics (epic_id, workbench_project_id, title, markdown,
@@ -501,10 +502,19 @@ describe("ensureWorkbenchSchema", () => {
             added_by_thread_id AS "addedByThreadId", position, created_at AS "createdAt"
           FROM workbench_references ORDER BY ticket_id, position`;
         const before = yield* dumpTables;
+        // Pre-existing columns keep their values; the added provenance column starts empty.
+        const withoutProvenance = (tables: Record<string, ReadonlyArray<unknown>>) => ({
+          ...tables,
+          workbench_tickets: (tables.workbench_tickets ?? []).map((row) => {
+            const { updated_by_thread_id, ...rest } = row as Record<string, unknown>;
+            expect(updated_by_thread_id).toBeNull();
+            return rest;
+          }),
+        });
 
         yield* ensureWorkbenchSchema;
 
-        expect(yield* dumpTables).toEqual(before);
+        expect(withoutProvenance(yield* dumpTables)).toEqual(before);
         const epicReference = (ticketId: string, position: number) => ({
           ticketId,
           url: browse("ORBIT-10"),
@@ -537,7 +547,7 @@ describe("ensureWorkbenchSchema", () => {
 
         yield* ensureWorkbenchSchema;
         expect(yield* readReferences).toEqual(references);
-        expect(yield* dumpTables).toEqual(before);
+        expect(withoutProvenance(yield* dumpTables)).toEqual(before);
       }),
     ),
   );

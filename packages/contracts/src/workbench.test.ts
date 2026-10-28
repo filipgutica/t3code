@@ -552,7 +552,6 @@ describe("parseWorkbenchReferenceUrl", () => {
       "ORBIT-12",
     ],
     ["https://github.com/acme/orbit-web/issues/61", "github_issue", "orbit-web#61"],
-    ["https://github.com/acme/orbit-web/pull/902/files", "github_pull_request", "orbit-web#902"],
     ["https://www.figma.com/design/abc/Invite-modal", "link", "www.figma.com"],
     ["https://github.com/acme/orbit-web", "link", "github.com"],
     ["https://github.example.com/acme/orbit-web/issues/61", "link", "github.example.com"],
@@ -565,9 +564,40 @@ describe("parseWorkbenchReferenceUrl", () => {
   });
 
   it.each([
+    ["https://github.com/acme/orbit-web/pull/902", "https://github.com/acme/orbit-web/pull/902"],
+    [
+      "https://github.com/acme/orbit-web/pull/902/files#diff-1",
+      "https://github.com/acme/orbit-web/pull/902",
+    ],
+    [
+      "http://www.github.com/acme/orbit-web/pull/902/commits?w=1",
+      "https://github.com/acme/orbit-web/pull/902",
+    ],
+  ])("stores one URL for every view of a PR: %s", (input, url) => {
+    expect(parseWorkbenchReferenceUrl(input)).toEqual({
+      url,
+      kind: "github_pull_request",
+      label: "orbit-web#902",
+    });
+  });
+
+  it.each([
+    ["/home/user/.t3/userdata/workbench-artifacts/ticket-1/plan.md", "plan.md"],
+    ["/home/user/specs/", "specs"],
+    ["C:\\Users\\user\\mockup.png", "mockup.png"],
+    ["D:/designs/flow.svg", "flow.svg"],
+  ])("reads the absolute path %s as a file", (input, label) => {
+    expect(parseWorkbenchReferenceUrl(` ${input} `)).toEqual({ url: input, kind: "file", label });
+  });
+
+  it.each([
     "",
     "ORBIT-375",
-    "/Users/me/spec.md",
+    "spec.md",
+    "./spec.md",
+    "/",
+    "//nas/share/spec.md",
+    `/${"a".repeat(2_048)}`,
     "javascript:alert(1)",
     "ftp://acme.atlassian.net/browse/ORBIT-375",
     `https://example.com/${"a".repeat(2_048)}`,

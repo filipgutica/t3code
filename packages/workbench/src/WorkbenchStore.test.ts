@@ -627,6 +627,102 @@ describe("WorkbenchStore package boundary", () => {
     }).pipe(Effect.provide(testLayer({ projects: new Set(["native-project"]) }))),
   );
 
+  it.effect("records the agent that last changed the description until a user edits it", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const projectId = ProjectId.make("provenance-project");
+      const ticketId = WorkbenchTicketId.make("provenance-ticket");
+      const agent = ThreadId.make("provenance-agent");
+      const ticket = yield* seedTicket({
+        store,
+        projectId,
+        workspaceId: WorkbenchProjectId.make("provenance-workspace"),
+        ticketId,
+      });
+      const update = (input: {
+        readonly revision: number;
+        readonly markdown?: string;
+        readonly status?: "todo" | "in_progress";
+        readonly updatedByThreadId?: ThreadId;
+      }) =>
+        store.updateTicket({
+          id: ticketId,
+          expectedRevision: input.revision,
+          ...(input.markdown === undefined ? {} : { markdown: input.markdown }),
+          ...(input.status === undefined ? {} : { status: input.status }),
+          ...(input.updatedByThreadId === undefined
+            ? {}
+            : { updatedByThreadId: input.updatedByThreadId }),
+          updatedAt: "2026-10-20T10:00:00.000Z",
+        });
+      const byAgent = yield* update({
+        revision: ticket.revision,
+        markdown: "## Goal\n\nAgent plan.",
+        updatedByThreadId: agent,
+      });
+      expect(byAgent.updatedByThreadId).toBe(agent);
+      // A status change leaves the description's author in place.
+      const moved = yield* update({ revision: byAgent.revision, status: "in_progress" });
+      expect(Option.getOrThrow(yield* store.getTicket(ticketId)).updatedByThreadId).toBe(agent);
+      const byUser = yield* update({ revision: moved.revision, markdown: "User plan." });
+      expect(byUser.updatedByThreadId).toBeNull();
+      expect((yield* store.getSnapshot).tickets[0]?.updatedByThreadId).toBeNull();
+    }).pipe(Effect.provide(testLayer({ projects: new Set(["provenance-project"]) }))),
+  );
+
+  it.effect("refuses to remove a repository that an active Thread works in", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const primary = ProjectId.make("scope-primary");
+      const other = ProjectId.make("scope-other");
+      const workspaceId = WorkbenchProjectId.make("scope-workspace");
+      const ticketId = WorkbenchTicketId.make("scope-ticket");
+      yield* store.createProject({
+        id: workspaceId,
+        title: "Scope workspace",
+        linkedProjectIds: [primary, other],
+        createdAt: "2026-10-20T10:00:00.000Z",
+      });
+      const ticket = yield* store.createTicket({
+        id: ticketId,
+        projectId: workspaceId,
+        title: "Scope",
+        kind: "story",
+        markdown: "",
+        primaryT3ProjectId: primary,
+        repositoryProjectIds: [primary, other],
+        createdAt: "2026-10-20T10:00:00.000Z",
+      });
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("scope-assignment"),
+        ticketId,
+        threadId: ThreadId.make("scope-thread"),
+        createdAt: "2026-10-20T10:01:00.000Z",
+      });
+      const narrow = (repositoryProjectIds: ReadonlyArray<ProjectId>, revision: number) =>
+        store.updateTicket({
+          id: ticketId,
+          expectedRevision: revision,
+          primaryT3ProjectId: repositoryProjectIds[0]!,
+          repositoryProjectIds: [...repositoryProjectIds],
+          updatedAt: "2026-10-20T10:02:00.000Z",
+        });
+
+      expect((yield* Effect.flip(narrow([other], ticket.revision))).code).toBe(
+        "ticket_repository_scope_locked",
+      );
+      const narrowed = yield* narrow([primary], ticket.revision);
+      expect(narrowed.repositoryProjectIds).toEqual([primary]);
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          projects: new Set(["scope-primary", "scope-other"]),
+          threads: new Map([["scope-thread", "scope-primary"]]),
+        }),
+      ),
+    ),
+  );
+
   it.effect("rejects non-Git linked projects before creating a Workspace", () =>
     Effect.gen(function* () {
       const store = yield* WorkbenchStore;
@@ -842,6 +938,37 @@ describe("Workbench Thread roster", () => {
       );
       expect(Option.getOrThrow(yield* store.getThreadRoster(thread("lone"))).siblings).toEqual([]);
       expect(yield* store.getThreadRoster(thread("replaced"))).toEqual(Option.none());
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("resolves a Thread's owner from its active Assignment or its unsaved draft", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      yield* seedTicket({ store, projectId, workspaceId, ticketId });
+      yield* assign(store, { ticketId, name: "first", minute: 1 });
+      yield* assign(store, { ticketId, name: "replaced", minute: 2 });
+      yield* store.replaceAssignment({
+        ticketId,
+        previousThreadId: thread("replaced"),
+        threadId: thread("replacement"),
+        replacedAt: "2026-10-20T10:05:00.000Z",
+      });
+      const sql = yield* SqlClient.SqlClient;
+      const draftId = WorkbenchTicketId.make("roster-draft");
+      yield* sql`INSERT INTO workbench_ticket_drafts
+        (draft_id, workbench_project_id, thread_id, phase, revision, payload_json)
+        VALUES (${draftId}, ${workspaceId}, ${thread("planner")}, 'draft', 0, '{}'),
+          ('roster-old-plan', ${workspaceId}, ${thread("replaced")}, 'working', 1, '{}')`;
+
+      expect(yield* store.resolveThreadOwner(thread("first"))).toEqual(
+        Option.some({ kind: "ticket", ticketId }),
+      );
+      expect(yield* store.resolveThreadOwner(thread("planner"))).toEqual(
+        Option.some({ kind: "draft", draftId }),
+      );
+      // A superseded Assignment's leftover working draft is not an owner.
+      expect(yield* store.resolveThreadOwner(thread("replaced"))).toEqual(Option.none());
+      expect(yield* store.resolveThreadOwner(thread("stranger"))).toEqual(Option.none());
     }).pipe(Effect.provide(layer)),
   );
 

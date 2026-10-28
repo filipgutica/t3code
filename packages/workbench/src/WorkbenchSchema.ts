@@ -358,12 +358,14 @@ const migrateJiraStateToLinks = Effect.gen(function* () {
 });
 
 /**
- * v22 turns each Ticket's Jira link, then its Epic's link, into References.
+ * v22 turns each Ticket's Jira link, then its Epic's link, into References,
+ * and records which Thread last edited a Ticket's title or description.
  * The Ticket `jira_issue_key` and `jira_issue_url` columns are retired: they
  * stay in place, and nothing reads or writes them after this migration.
  */
 const migrateJiraLinksToReferences = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  yield* sql`ALTER TABLE workbench_tickets ADD COLUMN updated_by_thread_id TEXT`;
   // No foreign key: a draft owns its References before its Ticket row exists.
   yield* sql`CREATE TABLE workbench_references (
     ticket_id TEXT NOT NULL, url TEXT NOT NULL, title TEXT, added_by_thread_id TEXT,

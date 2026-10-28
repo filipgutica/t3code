@@ -84,7 +84,9 @@ export const WORKBENCH_JIRA_ISSUE_URL_ERROR =
 
 const JIRA_ISSUE_KEY = /^[A-Z][A-Z0-9_]*-[0-9]+$/u;
 const BROWSE_PATH = /\/browse\/([^/]+)/u;
-const GITHUB_ITEM_PATH = /^\/[^/]+\/([^/]+)\/(issues|pull)\/([1-9][0-9]*)(?:\/|$)/u;
+const GITHUB_ITEM_PATH = /^\/([^/]+)\/([^/]+)\/(issues|pull)\/([1-9][0-9]*)(?:\/|$)/u;
+// POSIX absolute paths, and Windows drive paths with either separator.
+const ABSOLUTE_FILE_PATH = /^(?:\/(?!\/)|[A-Za-z]:[\\/])/u;
 const MAX_REFERENCE_URL_LENGTH = 2_048;
 
 const issueKey = (url: URL): string | null => {
@@ -116,6 +118,7 @@ export const WorkbenchReferenceKind = Schema.Literals([
   "jira_issue",
   "github_issue",
   "github_pull_request",
+  "file",
   "link",
 ]);
 export type WorkbenchReferenceKind = typeof WorkbenchReferenceKind.Type;
@@ -129,28 +132,47 @@ export interface WorkbenchParsedReferenceUrl {
 
 /** Message for the `reference_url_invalid` operation error and inline form errors. */
 export const WORKBENCH_REFERENCE_URL_ERROR =
-  "Enter an http or https URL of up to 2,048 characters.";
+  "Enter an http or https URL, or an absolute file path, of up to 2,048 characters.";
 
-const httpReferenceKind = (url: URL): Omit<WorkbenchParsedReferenceUrl, "url"> => {
+const httpReference = (url: URL): WorkbenchParsedReferenceUrl => {
   const github =
     url.hostname === "github.com" || url.hostname === "www.github.com"
       ? GITHUB_ITEM_PATH.exec(url.pathname)
       : null;
   if (github) {
-    const [, repository, type, number] = github;
-    return {
-      kind: type === "pull" ? "github_pull_request" : "github_issue",
-      label: `${repository}#${number}`,
-    };
+    const [, owner, repository, type, number] = github;
+    const label = `${repository}#${number}`;
+    // One PR has many URLs (`/files`, `/commits`, anchors); store one so they cannot duplicate.
+    return type === "pull"
+      ? {
+          url: `https://github.com/${owner}/${repository}/pull/${number}`,
+          kind: "github_pull_request",
+          label,
+        }
+      : { url: url.href, kind: "github_issue", label };
   }
   const key = issueKey(url);
-  return key === null ? { kind: "link", label: url.host } : { kind: "jira_issue", label: key };
+  return key === null
+    ? { url: url.href, kind: "link", label: url.host }
+    : { url: url.href, kind: "jira_issue", label: key };
 };
 
-/** Derives a Reference's kind and label on read; Workbench never fetches the target. */
+const fileReference = (input: string): WorkbenchParsedReferenceUrl | null => {
+  if (!ABSOLUTE_FILE_PATH.test(input) || input.length > MAX_REFERENCE_URL_LENGTH) return null;
+  const label = input.split(/[\\/]/u).findLast((segment) => segment.length > 0);
+  return label === undefined ? null : { url: input, kind: "file", label };
+};
+
+/**
+ * Derives a Reference's kind and label on read; Workbench never fetches the target.
+ * An absolute path is a file on the environment host.
+ */
 export const parseWorkbenchReferenceUrl = (input: string): WorkbenchParsedReferenceUrl | null => {
-  const url = parseHttpUrl(input);
-  return url === null ? null : { url: url.href, ...httpReferenceKind(url) };
+  const trimmed = input.trim();
+  const file = fileReference(trimmed);
+  if (file !== null) return file;
+  const url = parseHttpUrl(trimmed);
+  return url === null ? null : httpReference(url);
 };
 
 const ISSUE_REFERENCE_KINDS: ReadonlySet<WorkbenchReferenceKind> = new Set([
@@ -221,6 +243,8 @@ export const WorkbenchTicket = Schema.Struct({
   // Optional for compatibility with snapshots produced before Ticket
   // archiving was introduced. New snapshots always include null or a time.
   archivedAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
+  // The Thread whose MCP update last changed the title or description; a user edit clears it.
+  updatedByThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -306,6 +330,8 @@ export const WorkbenchTicketDraft = Schema.Struct({
   revision: NonNegativeInt,
   phase: WorkbenchTicketDraftPhase,
   fields: WorkbenchTicketDraftFields,
+  // As on WorkbenchTicket; older stored payloads omit it.
+  updatedByThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

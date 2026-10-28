@@ -164,6 +164,7 @@ const WorkbenchTicketRow = Schema.Struct({
   generatedSummarySourceHash: Schema.NullOr(Schema.String),
   generatedSummaryRequestId: Schema.NullOr(Schema.String),
   archivedAt: Schema.NullOr(IsoDateTime),
+  updatedByThreadId: Schema.NullOr(ThreadId),
   createdAt: WorkbenchTicket.fields.createdAt,
   updatedAt: WorkbenchTicket.fields.updatedAt,
 });
@@ -244,9 +245,20 @@ const ticketFromRow = (
     revision: row.revision,
     generatedSummary: generatedSummaryFromRow(row),
     archivedAt: row.archivedAt,
+    updatedByThreadId: row.updatedByThreadId,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
+
+const ticketProvenance = ({
+  input,
+  current,
+  contentChanged,
+}: {
+  readonly input: { readonly updatedByThreadId?: ThreadId };
+  readonly current: typeof WorkbenchTicketRow.Type;
+  readonly contentChanged: boolean;
+}) => (contentChanged ? (input.updatedByThreadId ?? null) : current.updatedByThreadId);
 
 const ticketSummarySourceHash = (title: string, markdown: string): string =>
   Hex.encode(sha256(new TextEncoder().encode(JSON.stringify([title, markdown]))));
@@ -338,6 +350,10 @@ export interface WorkbenchStoredThreadRecap {
   /** Terminal time of the recapped run; a recap never replaces one for a later run. */
   readonly updatedAt: IsoDateTime;
 }
+
+export type WorkbenchThreadOwner =
+  | { readonly kind: "ticket"; readonly ticketId: WorkbenchTicketId }
+  | { readonly kind: "draft"; readonly draftId: WorkbenchTicketId };
 
 export interface WorkbenchThreadRoster {
   readonly ticket: {
@@ -449,8 +465,13 @@ interface WorkbenchStoreShape extends Omit<
   readonly createTicket: (
     input: WorkbenchCreateTicketInput,
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
+  /**
+   * A changed title or description records `updatedByThreadId`, which an
+   * agent passes and a user edit omits. A repository that an active
+   * Assignment's Thread works in cannot leave the scope.
+   */
   readonly updateTicket: (
-    input: WorkbenchUpdateTicketInput,
+    input: WorkbenchUpdateTicketInput & { readonly updatedByThreadId?: ThreadId },
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
   /** Restores the native event cursor and settles runs held by older releases. */
   readonly initializeTicketExecution: Effect.Effect<number, WorkbenchOperationError>;
@@ -465,6 +486,10 @@ interface WorkbenchStoreShape extends Omit<
   readonly addReference: (
     input: WorkbenchAddReferenceInput & { readonly addedByThreadId: ThreadId | null },
   ) => Effect.Effect<WorkbenchReference, WorkbenchOperationError>;
+  /** One owner's References, in insertion order. */
+  readonly listReferences: (
+    ticketId: WorkbenchTicketId,
+  ) => Effect.Effect<ReadonlyArray<WorkbenchReference>, WorkbenchOperationError>;
   /** Removes a Reference without bumping any revision; a missing URL is a no-op. */
   readonly removeReference: (
     input: WorkbenchRemoveReferenceInput,
@@ -505,6 +530,13 @@ interface WorkbenchStoreShape extends Omit<
   readonly getTicketWorkspace: (
     ticketId: WorkbenchTicketId,
   ) => Effect.Effect<Option.Option<WorkbenchTicketWorkspace>, WorkbenchOperationError>;
+  /**
+   * What a Thread may edit: the Ticket of its active Assignment, or else the
+   * draft it plans while that draft is still unsaved.
+   */
+  readonly resolveThreadOwner: (
+    threadId: ThreadId,
+  ) => Effect.Effect<Option.Option<WorkbenchThreadOwner>, WorkbenchOperationError>;
   /** The Ticket a Thread currently works on, with that Ticket's other Threads. */
   readonly getThreadRoster: (
     threadId: ThreadId,
@@ -698,6 +730,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         generated_summary_source_hash AS "generatedSummarySourceHash",
         generated_summary_request_id AS "generatedSummaryRequestId",
         archived_at AS "archivedAt",
+        updated_by_thread_id AS "updatedByThreadId",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM workbench_tickets
@@ -876,11 +909,19 @@ const makeWorkbenchStore = Effect.gen(function* () {
       ORDER BY member.created_at IS NULL, member.created_at, member.thread_id
     `,
   });
-  const listReferenceUrlsByTicket = SqlSchema.findAll({
+  const listReferencesByTicket = SqlSchema.findAll({
     Request: FindTicketInput,
-    Result: Schema.Struct({ url: Schema.String }),
+    Result: WorkbenchReference,
     execute: ({ ticketId }) => sql`
-      SELECT url FROM workbench_references WHERE ticket_id = ${ticketId} ORDER BY position
+      SELECT
+        ticket_id AS "ticketId",
+        url,
+        title,
+        added_by_thread_id AS "addedByThreadId",
+        created_at AS "createdAt"
+      FROM workbench_references
+      WHERE ticket_id = ${ticketId}
+      ORDER BY position
     `,
   });
   const getThreadRoster: WorkbenchStoreShape["getThreadRoster"] = Effect.fn(
@@ -890,7 +931,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       const rows = yield* listThreadRosterRows(threadId);
       const first = rows[0];
       if (!first) return Option.none<WorkbenchThreadRoster>();
-      const references = yield* listReferenceUrlsByTicket({ ticketId: first.ticketId });
+      const references = yield* listReferencesByTicket({ ticketId: first.ticketId });
       const seen = new Set<ThreadId>();
       let recap: WorkbenchStoredThreadRecap | null = null;
       const siblings: Array<WorkbenchThreadRoster["siblings"][number]> = [];
@@ -909,6 +950,38 @@ const makeWorkbenchStore = Effect.gen(function* () {
         recap,
         siblings,
       });
+    },
+    NodeSqliteClient.readOnly,
+    Effect.mapError(persistenceError),
+  );
+  const listThreadOwnerRows = SqlSchema.findAll({
+    Request: ThreadId,
+    Result: Schema.Struct({ kind: Schema.Literals(["ticket", "draft"]), id: WorkbenchTicketId }),
+    execute: (threadId) => sql`
+      SELECT 'ticket' AS kind, assignment.ticket_id AS id, 0 AS rank
+      FROM workbench_assignments AS assignment
+      INNER JOIN workbench_tickets AS ticket ON ticket.ticket_id = assignment.ticket_id
+      WHERE assignment.thread_id = ${threadId}
+        AND assignment.superseded_at IS NULL
+        AND ticket.deleted_at IS NULL
+      UNION ALL
+      SELECT 'draft', draft_id, 1
+      FROM workbench_ticket_drafts
+      WHERE thread_id = ${threadId} AND phase IN ('creating', 'draft', 'promoting')
+      ORDER BY rank
+    `,
+  });
+  const resolveThreadOwner: WorkbenchStoreShape["resolveThreadOwner"] = Effect.fn(
+    "WorkbenchStore.resolveThreadOwner",
+  )(
+    function* (threadId) {
+      const [owner] = yield* listThreadOwnerRows(threadId);
+      if (owner === undefined) return Option.none<WorkbenchThreadOwner>();
+      return Option.some<WorkbenchThreadOwner>(
+        owner.kind === "ticket"
+          ? { kind: "ticket", ticketId: owner.id }
+          : { kind: "draft", draftId: owner.id },
+      );
     },
     NodeSqliteClient.readOnly,
     Effect.mapError(persistenceError),
@@ -1188,6 +1261,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         generated_summary_source_hash AS "generatedSummarySourceHash",
         generated_summary_request_id AS "generatedSummaryRequestId",
         archived_at AS "archivedAt",
+        updated_by_thread_id AS "updatedByThreadId",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM workbench_tickets
@@ -2715,6 +2789,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       ...ticketInput,
       epicId,
       repositoryProjectIds,
+      updatedByThreadId: null,
       status: "todo",
       blocked: false,
       revision: 0,
@@ -2758,6 +2833,37 @@ const makeWorkbenchStore = Effect.gen(function* () {
       yield* sql`UPDATE workbench_tickets SET execution_after_sequence = ${sequence} WHERE ticket_id = ${ticketId}`;
     }
   });
+
+  const requireRepositoriesUnused = Effect.fn("WorkbenchStore.requireRepositoriesUnused")(
+    function* ({
+      ticketId,
+      current,
+      next,
+    }: {
+      readonly ticketId: WorkbenchTicketId;
+      readonly current: ReadonlyArray<ProjectId>;
+      readonly next: ReadonlyArray<ProjectId>;
+    }) {
+      const removedProjectIds = current.filter((projectId) => !next.includes(projectId));
+      if (removedProjectIds.length === 0) return;
+      // A planning Thread moves to the live scope at Start work, so it does not pin one.
+      const assignments = yield* sql<{ readonly threadId: ThreadId }>`
+        SELECT a.thread_id AS "threadId" FROM workbench_assignments a
+        WHERE a.ticket_id = ${ticketId} AND a.superseded_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM workbench_ticket_drafts d
+            WHERE d.thread_id = a.thread_id AND d.phase <> 'working')
+      `;
+      for (const { threadId } of assignments) {
+        const thread = yield* native.findThread(threadId);
+        if (Option.isSome(thread) && removedProjectIds.includes(thread.value.projectId)) {
+          return yield* new WorkbenchOperationError({
+            code: "ticket_repository_scope_locked",
+            message: "A repository that an active Thread works in cannot be removed.",
+          });
+        }
+      }
+    },
+  );
 
   const updateTicket: WorkbenchStoreShape["updateTicket"] = Effect.fn(
     "WorkbenchStore.updateTicket",
@@ -2824,8 +2930,14 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "Ticket repository scope cannot change while its Workspace is changing.",
             });
           }
+          yield* requireRepositoriesUnused({
+            ticketId: input.id,
+            current: currentRepositoryProjectIds,
+            next: repositoryProjectIds,
+          });
           yield* recordLocalExecutionReset({ ticketId: input.id, status: input.status });
           const contentChanged = title !== current.title || markdown !== current.markdown;
+          const updatedByThreadId = ticketProvenance({ input, current, contentChanged });
           const summary = summaryUpdate({ row: current, contentChanged });
           yield* sql`
             UPDATE workbench_tickets
@@ -2837,6 +2949,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               primary_t3_project_id = ${primaryT3ProjectId},
               status = ${status},
               blocked = ${blocked ? 1 : 0},
+              updated_by_thread_id = ${updatedByThreadId},
               generated_summary_status = ${summary.generatedSummaryStatus},
               generated_summary_stale = ${summary.generatedSummaryStale},
               generated_summary_error = ${summary.generatedSummaryError},
@@ -2890,6 +3003,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               revision: current.revision + 1,
               generatedSummary: summary.generatedSummary,
               archivedAt: current.archivedAt,
+              updatedByThreadId,
               createdAt: current.createdAt,
               updatedAt: input.updatedAt,
             }),
@@ -3033,6 +3147,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
       WHERE ticket_id = ${ticketId} AND url = ${url}
     `,
   });
+
+  const listReferences: WorkbenchStoreShape["listReferences"] = (ticketId) =>
+    listReferencesByTicket({ ticketId }).pipe(
+      Effect.mapError(persistenceError),
+      Effect.withSpan("WorkbenchStore.listReferences"),
+    );
 
   const removeReference: WorkbenchStoreShape["removeReference"] = Effect.fn(
     "WorkbenchStore.removeReference",
@@ -3590,6 +3710,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
     hasThreadAtWorktreePath,
     getTicketWorkspace,
     getThreadRoster,
+    resolveThreadOwner,
+    listReferences,
     upsertThreadRecap,
     listTicketThreadIds,
     getTicketWorkspaceGeneratedBranchName,

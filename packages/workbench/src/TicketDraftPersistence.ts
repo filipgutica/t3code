@@ -330,8 +330,9 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
       }),
     );
   }, Effect.mapError(operationError));
+  /** Like `updateTicket`, a changed title or description records `updatedByThreadId`. */
   const updateTicketDraft = Effect.fn("TicketDraftPersistence.updateTicketDraft")(function* (
-    input: WorkbenchUpdateTicketDraftInput,
+    input: WorkbenchUpdateTicketDraftInput & { readonly updatedByThreadId?: ThreadId },
   ) {
     const current = yield* readCurrentDraft(input);
     if (current.phase !== "draft") return yield* busy();
@@ -342,9 +343,15 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
         const draft = yield* getTicketDraft(input.id);
         if (draft.revision !== input.expectedRevision) return yield* changed();
         if (draft.phase !== "draft") return yield* busy();
+        const contentChanged =
+          input.fields.title !== draft.fields.title ||
+          input.fields.markdown !== draft.fields.markdown;
         const next = {
           ...draft,
           fields: input.fields,
+          updatedByThreadId: contentChanged
+            ? (input.updatedByThreadId ?? null)
+            : (draft.updatedByThreadId ?? null),
           revision: draft.revision + 1,
           updatedAt: yield* now,
         };

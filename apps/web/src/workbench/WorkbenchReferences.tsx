@@ -10,7 +10,15 @@ import {
   type WorkbenchReferenceKind,
   type WorkbenchTicketId,
 } from "@t3tools/contracts";
-import { BotIcon, CircleDotIcon, ExternalLinkIcon, LinkIcon, PlusIcon, XIcon } from "lucide-react";
+import {
+  BotIcon,
+  CircleDotIcon,
+  ExternalLinkIcon,
+  FileTextIcon,
+  LinkIcon,
+  PlusIcon,
+  XIcon,
+} from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 
 import { Badge } from "../components/ui/badge";
@@ -32,6 +40,7 @@ const KIND_ICONS = {
   jira_issue: WorkbenchJiraIcon,
   github_issue: CircleDotIcon,
   github_pull_request: PullRequestGlyph.pullRequest,
+  file: FileTextIcon,
   link: LinkIcon,
 } satisfies Record<WorkbenchReferenceKind, unknown>;
 
