@@ -47,6 +47,11 @@ import {
 import { ThreadToolkit } from "../../apps/server/src/mcp/toolkits/thread/tools.ts";
 import { WorktreeToolkit } from "../../apps/server/src/mcp/toolkits/worktree/tools.ts";
 import {
+  PLANNING_FILL_INSTRUCTION,
+  workstreamInstruction,
+} from "../../apps/server/src/workbench/agentInstructions.ts";
+import { WorkbenchToolkit } from "../../apps/server/src/workbench/mcp/tools.ts";
+import {
   CLAUDE_PROVIDER,
   makeClaudeQueryOptions,
 } from "../../apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts";
@@ -182,6 +187,22 @@ export const McpToolUseCase = Schema.Struct({
       ),
     ),
     world: Schema.optional(McpToolUseWorld),
+    /**
+     * The Workbench Workstream the thread belongs to. Its instructions open the prompt, as the
+     * runtime policy adds them to each turn; `repositories` makes it a planning thread.
+     */
+    workstream: Schema.optional(
+      Schema.Struct({
+        id: Schema.String,
+        title: Schema.String,
+        brief: Schema.String,
+        repositories: Schema.optional(
+          Schema.Array(
+            Schema.Struct({ id: Schema.String, name: Schema.String, path: Schema.String }),
+          ),
+        ),
+      }),
+    ),
     /** Canned tool results by bare name, T3 or native. `"default"` uses the runner's result. */
     mocks: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
     /** Regexes on one part of a shell command. A match wins over the shell simulator. */
@@ -301,6 +322,7 @@ const t3SourceTools: ReadonlyArray<Tool.Any> = [
   PreviewToolkit,
   DeviceToolkit,
   HtmlToolkit,
+  WorkbenchToolkit,
 ].flatMap((toolkit): ReadonlyArray<Tool.Any> => Object.values(toolkit.tools));
 const t3Tools: ReadonlyArray<ApiTool> = t3SourceTools.map((tool) => ({
   name: `${T3_PREFIX}${tool.name}`,
@@ -671,6 +693,20 @@ const loadTools = (tools: Array<ApiTool>, id: string, found: ReadonlyArray<ApiTo
   return { type: "tool_result", tool_use_id: id, content };
 };
 
+/** The runtime policy's instructions for a Workstream thread; planning adds its fill text. */
+const workstreamTurnInstructions = ({ setup }: McpToolUseCase) => {
+  const workstream = setup.workstream;
+  if (workstream === undefined) return undefined;
+  const planning = workstream.repositories
+    ? [
+        PLANNING_FILL_INSTRUCTION,
+        `Repository manifest: ${JSON.stringify(workstream.repositories)}`,
+        "The ticket has not been created yet.",
+      ]
+    : [];
+  return [...planning, workstreamInstruction(workstream)].join("\n\n");
+};
+
 /** Messages for a case: reminders, context, prior turns with real tool blocks, then the prompt. */
 export const buildMessages = (sample: Sample) => {
   const { testCase, base, tools } = sample;
@@ -719,7 +755,12 @@ export const buildMessages = (sample: Sample) => {
     }
     if (turn.text) push(turn.role, text(turn.text));
   }
-  const { prompt } = testCase;
+  const instructions = workstreamTurnInstructions(testCase);
+  // ProviderTurnStartService sends runtime policy instructions ahead of the user's message.
+  const prompt =
+    instructions === undefined
+      ? testCase.prompt
+      : `${instructions}\n\nUser message:\n${testCase.prompt}`;
   const childPrompt = () => taskPrompt({ task: prompt, role: delegateRole });
   push("user", text(role === "delegated-child" ? childPrompt() : prompt));
   return messages;
