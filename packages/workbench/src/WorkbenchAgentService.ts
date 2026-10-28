@@ -291,13 +291,14 @@ const make = Effect.gen(function* () {
     ) =>
     <A>(effect: Effect.Effect<A, WorkbenchOperationError>) =>
       effect.pipe(
-        Effect.catchTag("WorkbenchOperationError", (error) =>
-          error.code === code
-            ? Effect.flatMap(currentRevision, (revision) =>
-                Effect.fail(new WorkstreamChangedError({ currentRevision: revision })),
-              )
-            : Effect.fail(error),
-        ),
+        Effect.catchTags({
+          WorkbenchOperationError: (error) =>
+            error.code === code
+              ? Effect.flatMap(currentRevision, (revision) =>
+                  Effect.fail(new WorkstreamChangedError({ currentRevision: revision })),
+                )
+              : Effect.fail(error),
+        }),
       );
 
   const updateTicket = Effect.fn("WorkbenchAgentService.updateTicket")(function* (

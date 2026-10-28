@@ -78,8 +78,10 @@ export function WorkbenchReferenceFileSheet({
     >
       <SheetPopup side="right" className="w-[min(88vw,48rem)] max-w-none">
         <SheetHeader>
-          <SheetTitle className="text-base">{label}</SheetTitle>
-          <SheetDescription className="break-all font-mono text-xs">{path}</SheetDescription>
+          <SheetTitle>{label}</SheetTitle>
+          <SheetDescription>
+            <span className="break-all font-mono text-xs">{path}</span>
+          </SheetDescription>
         </SheetHeader>
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 pb-6">
           <FileContents environmentId={environmentId} cwd={cwd} path={path} />

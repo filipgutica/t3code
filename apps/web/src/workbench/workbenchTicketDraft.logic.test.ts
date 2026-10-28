@@ -24,7 +24,6 @@ const workspaceId = WorkbenchProjectId.make("workspace");
 const otherWorkspaceId = WorkbenchProjectId.make("other-workspace");
 const ticketId = WorkbenchTicketId.make("ticket");
 const repoA = ProjectId.make("repo-a");
-const repoB = ProjectId.make("repo-b");
 const time = "2026-10-01T00:00:00.000Z";
 
 const makeDraft = (
