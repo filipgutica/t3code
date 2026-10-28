@@ -147,7 +147,7 @@ Local runs and private previews seed References with
 `orbit-002`, and `orbit-005` reference synthetic Jira issues on
 `jira.example.invalid`, and the **A welcoming first run** Epic links to one.
 `orbit-001` also shows the other kinds: issue #1 on the pinned `orbit-web`
-repository, which does not exist, a design link on `example.com`, and a file
+repository, which does not exist and returns 404, a design link on `example.com`, and a file
 Reference to a synthetic plan written into its artifacts folder. Workbench shows
 these links but never contacts Jira or GitHub for them.
 

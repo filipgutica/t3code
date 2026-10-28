@@ -3,7 +3,7 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
 
-import { demoDatabasePath } from "./environment.mts";
+import { demoDatabasePath, resolveHome } from "./environment.mts";
 import { DEMO_REPOSITORIES } from "./repositories.mts";
 
 // Synthetic issues on a reserved domain: Workbench stores and shows links but never contacts Jira.
@@ -53,6 +53,8 @@ const showcaseReferences = (artifactsDir: string) => [
  * native seed has created them. The server must be stopped.
  */
 export const seedDemoReferences = (home: string): void => {
+  // Refuses the live ~/.t3 home; the path stays as given so it matches the server's artifacts path.
+  resolveHome(home);
   const databasePath = demoDatabasePath(home);
   const artifactsDir = artifactsDirectory(databasePath, SHOWCASE_TICKET_ID);
   NodeFS.mkdirSync(artifactsDir, { recursive: true });
