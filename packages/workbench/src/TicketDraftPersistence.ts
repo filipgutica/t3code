@@ -524,6 +524,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
           if (draft.revision !== input.expectedRevision) return yield* changed();
           if (draft.phase !== "discarding") return yield* busy();
           yield* sql`DELETE FROM workbench_ticket_drafts WHERE draft_id = ${draft.id} AND revision = ${draft.revision}`;
+          yield* sql`DELETE FROM workbench_references WHERE ticket_id = ${draft.id}`;
         }),
       )
       .pipe(Effect.mapError(operationError));

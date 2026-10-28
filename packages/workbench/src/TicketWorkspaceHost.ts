@@ -27,13 +27,12 @@ export class TicketWorkspaceHost extends Context.Service<
       readonly primaryT3ProjectId: ProjectId | null;
       readonly title: string;
       readonly markdown: string;
-      readonly jiraIssueKey: string | null;
+      readonly issueLabel: string | null;
     }) => Effect.Effect<string, WorkbenchOperationError>;
     /** Resolve one safe same-repository open PR head for a new worktree. */
     readonly resolveOpenPullRequestBranch: (input: {
       readonly projectId: ProjectId;
       readonly assignedThreadIds: ReadonlyArray<ThreadId>;
-      readonly jiraIssueKey: string | null;
     }) => Effect.Effect<
       Option.Option<{
         readonly remoteName: string;

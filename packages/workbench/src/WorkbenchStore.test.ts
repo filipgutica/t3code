@@ -831,7 +831,7 @@ describe("Workbench Thread roster", () => {
       yield* store.upsertThreadRecap({ threadId: thread("second"), ...recap });
 
       const roster = Option.getOrThrow(yield* store.getThreadRoster(thread("first")));
-      expect(roster.ticket).toEqual({ id: ticketId, title: "Ship rosters", jiraIssueKey: null });
+      expect(roster.ticket).toEqual({ id: ticketId, title: "Ship rosters", issueLabel: null });
       expect(roster.recap).toBeNull();
       expect(roster.siblings).toEqual([
         { threadId: thread("second"), recap },
@@ -1123,11 +1123,6 @@ describe("Workbench Workspace lifecycle", () => {
           title: "Blocked",
           updatedAt: now,
         }),
-        store.setTicketJiraIssueLink({
-          ticketId,
-          jiraIssue: orbitIssue(1),
-          expectedRevision: request.revision,
-        }),
         store.setEpicJiraIssueLink({
           epicId,
           jiraIssue: orbitIssue(1),
@@ -1376,41 +1371,120 @@ describe("Workbench Workspace lifecycle", () => {
     },
   );
 
-  it.effect("links, changes, and unlinks a Jira issue on a Ticket by its revision", () =>
+  it.effect("adds and removes References without changing the Ticket revision", () =>
     Effect.gen(function* () {
       const store = yield* setup;
       const ticket = Option.getOrThrow(yield* store.getTicket(ticketId));
-      expect(ticket.jiraIssue).toBeNull();
-      expect(yield* store.getTicketJiraIssueKey(ticketId)).toEqual(Option.none());
-      const linked = yield* store.setTicketJiraIssueLink({
+      const issueUrl = "https://acme.atlassian.net/browse/ORBIT-375";
+      const added = yield* store.addReference({
         ticketId,
-        jiraIssue: orbitIssue(375),
-        expectedRevision: ticket.revision,
+        url: ` ${issueUrl} `,
+        title: "Expire invitations",
+        addedByThreadId: threadId,
       });
-      expect(linked).toMatchObject({ jiraIssue: orbitIssue(375), revision: ticket.revision + 1 });
-      expect(yield* store.getTicketJiraIssueKey(ticketId)).toEqual(Option.some("ORBIT-375"));
-      const stale = yield* Effect.flip(
-        store.setTicketJiraIssueLink({
+      expect(added).toMatchObject({
+        ticketId,
+        url: issueUrl,
+        title: "Expire invitations",
+        addedByThreadId: threadId,
+      });
+      // Adding the same URL again returns the stored Reference unchanged.
+      expect(
+        yield* store.addReference({
           ticketId,
-          jiraIssue: orbitIssue(376),
-          expectedRevision: ticket.revision,
+          url: issueUrl,
+          title: "Other",
+          addedByThreadId: null,
         }),
+      ).toEqual(added);
+      const design = yield* store.addReference({
+        ticketId,
+        url: "https://figma.com/file/invite",
+        addedByThreadId: null,
+      });
+      expect(design.title).toBeNull();
+      expect((yield* store.getSnapshot).references).toEqual([added, design]);
+      expect(
+        (yield* Effect.flip(
+          store.addReference({ ticketId, url: "file:///spec.md", addedByThreadId: null }),
+        )).code,
+      ).toBe("reference_url_invalid");
+      expect(
+        (yield* Effect.flip(
+          store.addReference({
+            ticketId: WorkbenchTicketId.make("missing"),
+            url: issueUrl,
+            addedByThreadId: null,
+          }),
+        )).code,
+      ).toBe("reference_owner_not_found");
+
+      yield* store.removeReference({ ticketId, url: issueUrl });
+      yield* store.removeReference({ ticketId, url: issueUrl });
+      expect((yield* store.getSnapshot).references).toEqual([design]);
+      expect(Option.getOrThrow(yield* store.getTicket(ticketId)).revision).toBe(ticket.revision);
+
+      // Archived Tickets keep their References editable; deleted ones hide them.
+      const archived = yield* store.archiveTicket({
+        ticketId,
+        archivedAt: now,
+        expectedRevision: ticket.revision,
+        updatedAt: now,
+      });
+      yield* store.addReference({ ticketId, url: issueUrl, addedByThreadId: null });
+      yield* store.deleteTicket({ ticketId, expectedRevision: archived.revision, deletedAt: now });
+      expect((yield* store.getSnapshot).references).toEqual([]);
+      expect((yield* Effect.flip(store.removeReference({ ticketId, url: issueUrl }))).code).toBe(
+        "reference_owner_not_found",
       );
-      expect(stale.code).toBe("ticket_changed");
-      yield* store.setTicketJiraIssueLink({
-        ticketId,
-        jiraIssue: orbitIssue(376),
-        expectedRevision: linked.revision,
-      });
-      expect((yield* store.getSnapshot).tickets[0]?.jiraIssue).toEqual(orbitIssue(376));
-      const unlinked = yield* store.setTicketJiraIssueLink({
-        ticketId,
-        jiraIssue: null,
-        expectedRevision: linked.revision + 1,
-      });
-      expect(Option.getOrThrow(yield* store.getTicket(ticketId))).toEqual(unlinked);
-      expect(unlinked.jiraIssue).toBeNull();
-      expect(yield* store.getTicketJiraIssueKey(ticketId)).toEqual(Option.none());
+    }).pipe(Effect.provide(layer())),
+  );
+
+  it.effect("creates a Ticket with its staged References in one transaction", () =>
+    Effect.gen(function* () {
+      const store = yield* setup;
+      const sql = yield* SqlClient.SqlClient;
+      const create = (id: string, urls: ReadonlyArray<string>) =>
+        store.createTicket({
+          id: WorkbenchTicketId.make(id),
+          projectId: workspaceId,
+          title: id,
+          kind: "story",
+          markdown: "",
+          primaryT3ProjectId: projectId,
+          references: urls.map((url) => ({ url, title: `Title ${url}` })),
+          createdAt: now,
+        });
+      const rejected = yield* Effect.flip(
+        create("rejected", ["https://github.com/acme/web/issues/1", "not a url"]),
+      );
+      expect(rejected.code).toBe("reference_url_invalid");
+      expect(yield* store.getTicket(WorkbenchTicketId.make("rejected"))).toEqual(Option.none());
+      expect(yield* sql`SELECT 1 FROM workbench_references`).toEqual([]);
+
+      yield* create("staged", [
+        "https://github.com/acme/web/issues/1",
+        "https://figma.com/file",
+        " https://github.com/acme/web/issues/1",
+      ]);
+      expect(
+        (yield* store.getSnapshot).references.map(({ url, title, addedByThreadId }) => ({
+          url,
+          title,
+          addedByThreadId,
+        })),
+      ).toEqual([
+        {
+          url: "https://github.com/acme/web/issues/1",
+          title: "Title https://github.com/acme/web/issues/1",
+          addedByThreadId: null,
+        },
+        {
+          url: "https://figma.com/file",
+          title: "Title https://figma.com/file",
+          addedByThreadId: null,
+        },
+      ]);
     }).pipe(Effect.provide(layer())),
   );
 
@@ -1427,30 +1501,27 @@ describe("Workbench Workspace lifecycle", () => {
         primaryT3ProjectId: projectId,
         createdAt: now,
       });
-      const linked = yield* store.setTicketJiraIssueLink({
+      const reference = yield* store.addReference({
         ticketId: importedId,
-        jiraIssue: orbitIssue(9),
-        expectedRevision: imported.revision,
+        url: orbitIssue(9).url,
+        addedByThreadId: null,
       });
       const edited = yield* store.updateTicket({
         id: importedId,
-        expectedRevision: linked.revision,
+        expectedRevision: imported.revision,
         title: "Edited locally",
         status: "done",
         updatedAt: now,
       });
-      expect(edited).toMatchObject({
-        title: "Edited locally",
-        status: "done",
-        jiraIssue: orbitIssue(9),
-      });
+      expect(edited).toMatchObject({ title: "Edited locally", status: "done" });
       const archived = yield* store.archiveTicket({
         ticketId: importedId,
         archivedAt: now,
         expectedRevision: edited.revision,
         updatedAt: now,
       });
-      expect(archived).toMatchObject({ archivedAt: now, jiraIssue: orbitIssue(9) });
+      expect(archived).toMatchObject({ archivedAt: now });
+      expect((yield* store.getSnapshot).references).toEqual([reference]);
       const restored = yield* store.archiveTicket({
         ticketId: importedId,
         archivedAt: null,

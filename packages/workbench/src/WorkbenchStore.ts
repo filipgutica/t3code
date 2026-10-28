@@ -16,6 +16,8 @@ import {
   WorkbenchTicketWorkspaceAttemptId,
   WorkbenchTicketWorkspaceRepository,
   WorkbenchThreadRecap,
+  WorkbenchReference,
+  WORKBENCH_REFERENCE_URL_ERROR,
   IsoDateTime,
   ThreadId,
   ProjectId,
@@ -34,6 +36,11 @@ import {
   type WorkbenchUpdateProjectInput,
   type WorkbenchUpdateTicketInput,
   type WorkbenchJiraIssue,
+  type WorkbenchAddReferenceInput,
+  type WorkbenchReferenceDraft,
+  type WorkbenchRemoveReferenceInput,
+  parseWorkbenchReferenceUrl,
+  workbenchTicketIssueLabel,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { sha256 } from "@noble/hashes/sha2";
@@ -157,7 +164,6 @@ const WorkbenchTicketRow = Schema.Struct({
   generatedSummarySourceHash: Schema.NullOr(Schema.String),
   generatedSummaryRequestId: Schema.NullOr(Schema.String),
   archivedAt: Schema.NullOr(IsoDateTime),
-  ...JiraIssueColumns,
   createdAt: WorkbenchTicket.fields.createdAt,
   updatedAt: WorkbenchTicket.fields.updatedAt,
 });
@@ -238,7 +244,6 @@ const ticketFromRow = (
     revision: row.revision,
     generatedSummary: generatedSummaryFromRow(row),
     archivedAt: row.archivedAt,
-    jiraIssue: jiraIssueFromRow(row),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
@@ -338,7 +343,8 @@ export interface WorkbenchThreadRoster {
   readonly ticket: {
     readonly id: WorkbenchTicketId;
     readonly title: string;
-    readonly jiraIssueKey: string | null;
+    /** First issue Reference label; see `workbenchTicketIssueLabel`. */
+    readonly issueLabel: string | null;
   };
   readonly recap: WorkbenchStoredThreadRecap | null;
   /** Other current Threads on the Ticket, oldest Assignment first. */
@@ -452,12 +458,17 @@ interface WorkbenchStoreShape extends Omit<
   readonly consumeTicketExecution: (
     input: WorkbenchConsumeTicketExecutionInput,
   ) => Effect.Effect<void, WorkbenchOperationError>;
-  /** `null` unlinks. Bumps the Ticket revision; a stale revision fails with `ticket_changed`. */
-  readonly setTicketJiraIssueLink: (input: {
-    readonly ticketId: WorkbenchTicketId;
-    readonly jiraIssue: WorkbenchJiraIssue | null;
-    readonly expectedRevision: number;
-  }) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
+  /**
+   * Adds a Reference without bumping any revision. An existing URL returns its
+   * Reference unchanged.
+   */
+  readonly addReference: (
+    input: WorkbenchAddReferenceInput & { readonly addedByThreadId: ThreadId | null },
+  ) => Effect.Effect<WorkbenchReference, WorkbenchOperationError>;
+  /** Removes a Reference without bumping any revision; a missing URL is a no-op. */
+  readonly removeReference: (
+    input: WorkbenchRemoveReferenceInput,
+  ) => Effect.Effect<void, WorkbenchOperationError>;
   /** `null` unlinks. A stale `expectedUpdatedAt` fails with `epic_changed`. */
   readonly setEpicJiraIssueLink: (input: {
     readonly epicId: WorkbenchEpicId;
@@ -494,10 +505,6 @@ interface WorkbenchStoreShape extends Omit<
   readonly getTicketWorkspace: (
     ticketId: WorkbenchTicketId,
   ) => Effect.Effect<Option.Option<WorkbenchTicketWorkspace>, WorkbenchOperationError>;
-  /** Linked Jira issue key; branch names, Thread titles, and PR search use it. */
-  readonly getTicketJiraIssueKey: (
-    ticketId: WorkbenchTicketId,
-  ) => Effect.Effect<Option.Option<string>, WorkbenchOperationError>;
   /** The Ticket a Thread currently works on, with that Ticket's other Threads. */
   readonly getThreadRoster: (
     threadId: ThreadId,
@@ -557,7 +564,6 @@ export class WorkbenchStore extends Context.Service<WorkbenchStore, WorkbenchSto
 const ThreadRosterRow = Schema.Struct({
   ticketId: WorkbenchTicketId,
   title: Schema.String,
-  jiraIssueKey: Schema.NullOr(Schema.String),
   threadId: Schema.NullOr(ThreadId),
   runId: Schema.NullOr(RunId),
   text: Schema.NullOr(Schema.String),
@@ -577,6 +583,25 @@ const isWorkbenchOperationError = Schema.is(WorkbenchOperationError);
 const workbenchStoreError = (cause: unknown) =>
   isWorkbenchOperationError(cause) ? cause : persistenceError(cause);
 
+/** Parses staged References before any write and keeps the first of each normalized URL. */
+const normalizeStagedReferences = (references: ReadonlyArray<WorkbenchReferenceDraft>) => {
+  const byUrl = new Map<string, { readonly url: string; readonly title: string | null }>();
+  for (const reference of references) {
+    const parsed = parseWorkbenchReferenceUrl(reference.url);
+    if (parsed === null) {
+      return Effect.fail(
+        new WorkbenchOperationError({
+          code: "reference_url_invalid",
+          message: WORKBENCH_REFERENCE_URL_ERROR,
+        }),
+      );
+    }
+    if (!byUrl.has(parsed.url))
+      byUrl.set(parsed.url, { url: parsed.url, title: reference.title ?? null });
+  }
+  return Effect.succeed([...byUrl.values()]);
+};
+
 const makeWorkbenchStore = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const sql = yield* SqlClient.SqlClient;
@@ -588,6 +613,21 @@ const makeWorkbenchStore = Effect.gen(function* () {
   const publishTicketChange = (ticketId: WorkbenchTicketId) =>
     PubSub.publish(ticketChangesPubSub, { ticketId });
   const recheckTicketSummary = (ticketId: WorkbenchTicketId) => publishTicketChange(ticketId);
+
+  /** An existing URL keeps its Reference; new ones append in insertion order. */
+  const insertReference = (reference: {
+    readonly ticketId: WorkbenchTicketId;
+    readonly url: string;
+    readonly title: string | null;
+    readonly addedByThreadId: ThreadId | null;
+    readonly createdAt: string;
+  }) => sql`
+    INSERT OR IGNORE INTO workbench_references
+      (ticket_id, url, title, added_by_thread_id, position, created_at)
+    SELECT ${reference.ticketId}, ${reference.url}, ${reference.title},
+      ${reference.addedByThreadId}, COALESCE(MAX(position), -1) + 1, ${reference.createdAt}
+    FROM workbench_references WHERE ticket_id = ${reference.ticketId}
+  `;
 
   const listProjectRows = SqlSchema.findAll({
     Request: Schema.Void,
@@ -658,8 +698,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
         generated_summary_source_hash AS "generatedSummarySourceHash",
         generated_summary_request_id AS "generatedSummaryRequestId",
         archived_at AS "archivedAt",
-        jira_issue_key AS "jiraIssueKey",
-        jira_issue_url AS "jiraIssueUrl",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM workbench_tickets
@@ -790,23 +828,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
       WHERE ticket_id = ${ticketId}
     `,
   });
-  const findJiraIssueKeyByTicket = SqlSchema.findOneOption({
-    Request: FindTicketInput,
-    Result: Schema.Struct({ key: Schema.NullOr(Schema.String) }),
-    execute: ({ ticketId }) => sql`
-      SELECT jira_issue_key AS key FROM workbench_tickets WHERE ticket_id = ${ticketId}
-    `,
-  });
-  const getTicketJiraIssueKey: WorkbenchStoreShape["getTicketJiraIssueKey"] = Effect.fn(
-    "WorkbenchStore.getTicketJiraIssueKey",
-  )((ticketId) =>
-    findJiraIssueKeyByTicket({ ticketId }).pipe(
-      Effect.map((row) =>
-        Option.isSome(row) && row.value.key !== null ? Option.some(row.value.key) : Option.none(),
-      ),
-      Effect.mapError(persistenceError),
-    ),
-  );
   // Planning and working drafts already hold an Assignment; the draft row covers the hand-off.
   // A replaced draft Thread keeps its working row, so its superseded Assignment must win.
   const retiredDraftThread = sql`
@@ -818,7 +839,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     Result: ThreadRosterRow,
     execute: (threadId) => sql`
       WITH ticket AS (
-        SELECT ticket_id, title, jira_issue_key
+        SELECT ticket_id, title
         FROM workbench_tickets
         WHERE deleted_at IS NULL AND ticket_id IN (
           SELECT ticket_id FROM workbench_assignments
@@ -845,7 +866,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
       SELECT
         ticket.ticket_id AS "ticketId",
         ticket.title AS "title",
-        ticket.jira_issue_key AS "jiraIssueKey",
         member.thread_id AS "threadId",
         recap.run_id AS "runId",
         recap.text AS "text",
@@ -856,6 +876,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
       ORDER BY member.created_at IS NULL, member.created_at, member.thread_id
     `,
   });
+  const listReferenceUrlsByTicket = SqlSchema.findAll({
+    Request: FindTicketInput,
+    Result: Schema.Struct({ url: Schema.String }),
+    execute: ({ ticketId }) => sql`
+      SELECT url FROM workbench_references WHERE ticket_id = ${ticketId} ORDER BY position
+    `,
+  });
   const getThreadRoster: WorkbenchStoreShape["getThreadRoster"] = Effect.fn(
     "WorkbenchStore.getThreadRoster",
   )(
@@ -863,6 +890,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       const rows = yield* listThreadRosterRows(threadId);
       const first = rows[0];
       if (!first) return Option.none<WorkbenchThreadRoster>();
+      const references = yield* listReferenceUrlsByTicket({ ticketId: first.ticketId });
       const seen = new Set<ThreadId>();
       let recap: WorkbenchStoredThreadRecap | null = null;
       const siblings: Array<WorkbenchThreadRoster["siblings"][number]> = [];
@@ -873,7 +901,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
         else siblings.push({ threadId: row.threadId, recap: recapFromRosterRow(row) });
       }
       return Option.some({
-        ticket: { id: first.ticketId, title: first.title, jiraIssueKey: first.jiraIssueKey },
+        ticket: {
+          id: first.ticketId,
+          title: first.title,
+          issueLabel: workbenchTicketIssueLabel(references),
+        },
         recap,
         siblings,
       });
@@ -911,6 +943,26 @@ const makeWorkbenchStore = Effect.gen(function* () {
     Effect.mapError(persistenceError),
     Effect.withSpan("WorkbenchStore.listTicketThreadIds"),
   );
+  // Drafts own References until promotion; a promoted draft's id is its Ticket's id.
+  const listReferenceRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: WorkbenchReference,
+    execute: () => sql`
+      SELECT
+        ticket_id AS "ticketId",
+        url,
+        title,
+        added_by_thread_id AS "addedByThreadId",
+        created_at AS "createdAt"
+      FROM workbench_references
+      WHERE ticket_id IN (SELECT ticket_id FROM workbench_tickets WHERE deleted_at IS NULL)
+        OR ticket_id IN (
+          SELECT draft_id FROM workbench_ticket_drafts
+          WHERE phase IN ('creating', 'draft', 'promoting')
+        )
+      ORDER BY ticket_id ASC, position ASC
+    `,
+  });
   const listThreadRecapRows = SqlSchema.findAll({
     Request: Schema.Void,
     Result: WorkbenchThreadRecap,
@@ -1136,8 +1188,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
         generated_summary_source_hash AS "generatedSummarySourceHash",
         generated_summary_request_id AS "generatedSummaryRequestId",
         archived_at AS "archivedAt",
-        jira_issue_key AS "jiraIssueKey",
-        jira_issue_url AS "jiraIssueUrl",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM workbench_tickets
@@ -1453,6 +1503,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           ticketWorkspaceRows,
           ticketWorkspaceRepositoryRows,
           threadRecaps,
+          references,
         ] = yield* Effect.all([
           listProjectRows(),
           listProjectLinkRows(),
@@ -1464,6 +1515,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           listTicketWorkspaceRows(),
           listTicketWorkspaceRepositoryRows(),
           listThreadRecapRows(),
+          listReferenceRows(),
         ]);
         const linksByProject = new Map<
           string,
@@ -1516,6 +1568,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             }),
           ),
           threadRecaps,
+          references,
         });
       }),
     );
@@ -2579,6 +2632,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
   const createTicket: WorkbenchStoreShape["createTicket"] = Effect.fn(
     "WorkbenchStore.createTicket",
   )(function* (input) {
+    const { references: stagedReferences = [], ...ticketInput } = input;
+    const references = yield* normalizeStagedReferences(stagedReferences);
     const { epicId, repositoryProjectIds } = yield* sql
       .withTransaction(
         Effect.gen(function* () {
@@ -2643,13 +2698,21 @@ const makeWorkbenchStore = Effect.gen(function* () {
               ) VALUES (${input.id}, ${repositoryProjectId}, ${position})
             `;
           }
+          for (const reference of references) {
+            yield* insertReference({
+              ticketId: input.id,
+              ...reference,
+              addedByThreadId: null,
+              createdAt: input.createdAt,
+            });
+          }
           return { epicId, repositoryProjectIds };
         }),
       )
       .pipe(Effect.mapError(workbenchStoreError));
 
     const ticket = WorkbenchTicket.make({
-      ...input,
+      ...ticketInput,
       epicId,
       repositoryProjectIds,
       status: "todo",
@@ -2662,7 +2725,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
         error: null,
       },
       archivedAt: null,
-      jiraIssue: null,
       updatedAt: input.createdAt,
     });
     yield* publishTicketChange(ticket.id);
@@ -2828,7 +2890,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
               revision: current.revision + 1,
               generatedSummary: summary.generatedSummary,
               archivedAt: current.archivedAt,
-              jiraIssue: jiraIssueFromRow(current),
               createdAt: current.createdAt,
               updatedAt: input.updatedAt,
             }),
@@ -2938,45 +2999,71 @@ const makeWorkbenchStore = Effect.gen(function* () {
       )
       .pipe(Effect.mapError(workbenchStoreError));
 
-  const setTicketJiraIssueLink: WorkbenchStoreShape["setTicketJiraIssueLink"] = Effect.fn(
-    "WorkbenchStore.setTicketJiraIssueLink",
-  )(function* ({ ticketId, jiraIssue, expectedRevision }) {
-    const now = DateTime.formatIso(yield* DateTime.now);
+  // Lock both possible owners before checking them, so a discard or delete cannot interleave.
+  const requireReferenceOwner = Effect.fn("WorkbenchStore.requireReferenceOwner")(function* (
+    ticketId: WorkbenchTicketId,
+  ) {
+    yield* sql`UPDATE workbench_tickets SET updated_at = updated_at WHERE ticket_id = ${ticketId}`;
+    yield* sql`UPDATE workbench_ticket_drafts SET revision = revision WHERE draft_id = ${ticketId}`;
+    const owners = yield* sql`
+      SELECT 1 FROM workbench_tickets WHERE ticket_id = ${ticketId} AND deleted_at IS NULL
+      UNION ALL
+      SELECT 1 FROM workbench_ticket_drafts
+      WHERE draft_id = ${ticketId} AND phase IN ('creating', 'draft', 'promoting')
+    `;
+    if (owners.length === 0) {
+      return yield* new WorkbenchOperationError({
+        code: "reference_owner_not_found",
+        message: "The Workbench Ticket no longer exists or is being discarded.",
+      });
+    }
+  });
+
+  const findReference = SqlSchema.findOne({
+    Request: Schema.Struct({ ticketId: WorkbenchTicketId, url: Schema.String }),
+    Result: WorkbenchReference,
+    execute: ({ ticketId, url }) => sql`
+      SELECT
+        ticket_id AS "ticketId",
+        url,
+        title,
+        added_by_thread_id AS "addedByThreadId",
+        created_at AS "createdAt"
+      FROM workbench_references
+      WHERE ticket_id = ${ticketId} AND url = ${url}
+    `,
+  });
+
+  const removeReference: WorkbenchStoreShape["removeReference"] = Effect.fn(
+    "WorkbenchStore.removeReference",
+  )(function* (input) {
+    const url = parseWorkbenchReferenceUrl(input.url)?.url ?? input.url.trim();
     return yield* sql
       .withTransaction(
         Effect.gen(function* () {
-          const current = yield* requireTicketRevision({
-            ticketId,
-            expectedRevision,
-            revisionMessage: "The Workbench Ticket changed before its Jira link could be saved.",
-            activeOnly: true,
+          yield* requireReferenceOwner(input.ticketId);
+          yield* sql`DELETE FROM workbench_references WHERE ticket_id = ${input.ticketId} AND url = ${url}`;
+        }),
+      )
+      .pipe(Effect.mapError(workbenchStoreError));
+  });
+
+  const addReference: WorkbenchStoreShape["addReference"] = Effect.fn(
+    "WorkbenchStore.addReference",
+  )(function* (input) {
+    const [reference] = yield* normalizeStagedReferences([input]);
+    const createdAt = IsoDateTime.make(DateTime.formatIso(yield* DateTime.now));
+    return yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* requireReferenceOwner(input.ticketId);
+          yield* insertReference({
+            ticketId: input.ticketId,
+            ...reference!,
+            addedByThreadId: input.addedByThreadId,
+            createdAt,
           });
-          if (current.archivedAt !== null) {
-            return yield* new WorkbenchOperationError({
-              code: "ticket_archived",
-              message: "Archived Workbench Tickets cannot be modified.",
-            });
-          }
-          const updatedAt = now > current.updatedAt ? now : current.updatedAt;
-          yield* sql`
-            UPDATE workbench_tickets
-            SET jira_issue_key = ${jiraIssue?.key ?? null}, jira_issue_url = ${jiraIssue?.url ?? null},
-              revision = revision + 1, updated_at = ${updatedAt}
-            WHERE ticket_id = ${ticketId}
-          `;
-          const repositories = yield* listTicketRepositoryRowsByTicket({ ticketId });
-          return ticketFromRow(
-            {
-              ...current,
-              jiraIssueKey: jiraIssue?.key ?? null,
-              jiraIssueUrl: jiraIssue?.url ?? null,
-              revision: current.revision + 1,
-              updatedAt,
-            },
-            repositories.length > 0
-              ? repositories.map((repository) => repository.repositoryProjectId)
-              : [current.primaryT3ProjectId],
-          );
+          return yield* findReference({ ticketId: input.ticketId, url: reference!.url });
         }),
       )
       .pipe(Effect.mapError(workbenchStoreError));
@@ -3489,7 +3576,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
     updateTicket,
     initializeTicketExecution,
     consumeTicketExecution,
-    setTicketJiraIssueLink,
+    addReference,
+    removeReference,
     setEpicJiraIssueLink,
     requestTicketSummary,
     completeTicketSummary,
@@ -3501,7 +3589,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
     replaceAssignment,
     hasThreadAtWorktreePath,
     getTicketWorkspace,
-    getTicketJiraIssueKey,
     getThreadRoster,
     upsertThreadRecap,
     listTicketThreadIds,
