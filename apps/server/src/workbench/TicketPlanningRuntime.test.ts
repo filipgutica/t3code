@@ -178,7 +178,7 @@ const roster = (siblingCount: number) =>
     ticket: {
       id: WorkbenchTicketId.make("draft"),
       title: "Explain failures",
-      jiraIssueKey: "ORBIT-7",
+      issueLabel: "ORBIT-7",
     },
     recap: null,
     siblings: Array.from({ length: siblingCount }, () => ({

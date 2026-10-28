@@ -105,13 +105,15 @@ const seedTicket = Effect.gen(function* () {
   });
 });
 
-const seedJiraIssueLink = Effect.gen(function* () {
+// A non-issue link comes first, so naming must pick the first issue Reference.
+const seedIssueReferences = Effect.gen(function* () {
   const store = yield* WorkbenchStore;
-  yield* store.setTicketJiraIssueLink({
-    ticketId,
-    jiraIssue: { key: "MA-4037", url: "https://example.atlassian.net/browse/MA-4037" },
-    expectedRevision: 0,
-  });
+  for (const url of [
+    "https://figma.com/file/prepare",
+    "https://example.atlassian.net/browse/MA-4037",
+    "https://github.com/acme/api/issues/9",
+  ])
+    yield* store.addReference({ ticketId, url, addedByThreadId: null });
 });
 
 const seedReadyTicketWorkspace = Effect.gen(function* () {
@@ -685,7 +687,7 @@ describe("TicketWorkspaceService", () => {
     expect(
       ticketWorkspaceDirectoryName({
         ticketId,
-        jiraIssueKey: "../MA/4037",
+        issueLabel: "../MA/4037",
       }),
     ).toBe("ma-4037-737ce60f");
     expect(
@@ -696,9 +698,20 @@ describe("TicketWorkspaceService", () => {
     ).toMatch(/^prepare-repositories-[0-9a-f]{8}$/);
   });
 
-  it("keeps readable Jira names unique across Tickets", () => {
-    const first = ticketWorkspaceDirectoryName({ ticketId: "ticket-1", jiraIssueKey: "MA-123" });
-    const second = ticketWorkspaceDirectoryName({ ticketId: "ticket-2", jiraIssueKey: "MA-123" });
+  it("names a branch from a GitHub issue label", () => {
+    expect(
+      ticketWorkspaceBranchName({
+        ticketId,
+        issueLabel: "orbit-web#61",
+        title: "Fix focus after resend",
+        prefix: "",
+      }),
+    ).toBe("orbit-web-61-fix-focus-after-resend-737ce60f");
+  });
+
+  it("keeps readable issue names unique across Tickets", () => {
+    const first = ticketWorkspaceDirectoryName({ ticketId: "ticket-1", issueLabel: "MA-123" });
+    const second = ticketWorkspaceDirectoryName({ ticketId: "ticket-2", issueLabel: "MA-123" });
 
     expect(first).toMatch(/^ma-123-[0-9a-f]{8}$/);
     expect(second).toMatch(/^ma-123-[0-9a-f]{8}$/);
@@ -708,19 +721,19 @@ describe("TicketWorkspaceService", () => {
   it("shortens Jira branch titles at word boundaries while preserving Ticket identity", () => {
     const title = "MA-5585 Support AI Gateway version across Explore dashboards and API requests";
     expect(
-      ticketWorkspaceBranchName({ ticketId, jiraIssueKey: "MA-5585", title, prefix: "team/" }),
+      ticketWorkspaceBranchName({ ticketId, issueLabel: "MA-5585", title, prefix: "team/" }),
     ).toBe("team/ma-5585-support-ai-gateway-version-737ce60f");
     expect(
       ticketWorkspaceBranchName({
         ticketId: "ticket-2",
-        jiraIssueKey: "MA-5585",
+        issueLabel: "MA-5585",
         title,
         prefix: "team",
       }),
     ).not.toBe(
-      ticketWorkspaceBranchName({ ticketId, jiraIssueKey: "MA-5585", title, prefix: "team" }),
+      ticketWorkspaceBranchName({ ticketId, issueLabel: "MA-5585", title, prefix: "team" }),
     );
-    expect(ticketWorkspaceDirectoryName({ ticketId, jiraIssueKey: "MA-5585", title })).toBe(
+    expect(ticketWorkspaceDirectoryName({ ticketId, issueLabel: "MA-5585", title })).toBe(
       "ma-5585-737ce60f",
     );
     for (const title of ["", "../../", "a".repeat(100)]) {
@@ -1773,11 +1786,11 @@ describe("TicketWorkspaceService", () => {
     );
   });
 
-  it.effect("uses the linked Jira key and repository basenames for a new Workspace", () => {
+  it.effect("uses the first issue Reference and repository basenames for a new Workspace", () => {
     const events: Array<string> = [];
     return Effect.gen(function* () {
       yield* seedTicket;
-      yield* seedJiraIssueLink;
+      yield* seedIssueReferences;
       const service = yield* TicketWorkspaceService;
       const workspace = yield* service.prepare({ ticketId, requestedAt: createdAt });
 
@@ -1817,7 +1830,7 @@ describe("TicketWorkspaceService", () => {
             : generatedBranch;
       return Effect.gen(function* () {
         yield* seedTicket;
-        yield* seedJiraIssueLink;
+        yield* seedIssueReferences;
         const service = yield* TicketWorkspaceService;
         const workspace = yield* service.prepare({ ticketId, requestedAt: createdAt });
         expect(workspace.branchName).toBe(branch);
@@ -2226,7 +2239,7 @@ describe("TicketWorkspaceService", () => {
     const events: Array<string> = [];
     return Effect.gen(function* () {
       yield* seedTicket;
-      yield* seedJiraIssueLink;
+      yield* seedIssueReferences;
       const service = yield* TicketWorkspaceService;
       const first = yield* service.prepare({ ticketId, requestedAt: createdAt });
       yield* service.release({ ticketId, releasedAt: "2026-09-03T12:05:00.000Z" });
@@ -2309,7 +2322,7 @@ describe("TicketWorkspaceService", () => {
     const events: Array<string> = [];
     return Effect.gen(function* () {
       yield* seedTicket;
-      yield* seedJiraIssueLink;
+      yield* seedIssueReferences;
       const service = yield* TicketWorkspaceService;
       yield* service.prepare({ ticketId, requestedAt: createdAt });
 

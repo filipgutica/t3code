@@ -3,8 +3,6 @@ import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   WORKBENCH_WS_METHODS,
-  WorkbenchEpicId,
-  WorkbenchProjectId,
   WorkbenchTicketId,
   WsRpcGroup,
 } from "@t3tools/contracts";
@@ -17,20 +15,18 @@ import {
   layer as rpcScopeAuthorizationLayer,
 } from "../auth/RpcAuthorization.ts";
 
-const epic = {
-  id: WorkbenchEpicId.make("scope-epic"),
-  projectId: WorkbenchProjectId.make("scope-workspace"),
-  title: "Scope Epic",
-  markdown: "",
-  archivedAt: null,
+const reference = {
+  ticketId: WorkbenchTicketId.make("scope-ticket"),
+  url: "https://github.com/acme/web/issues/61",
+  title: null,
+  addedByThreadId: null,
   createdAt: "2026-10-25T00:00:00.000Z",
-  updatedAt: "2026-10-25T00:00:00.000Z",
 };
 
 describe("Workbench RPC authorization", () => {
-  it.effect("requires operate scope to change a Jira issue link", () =>
+  it.effect("requires operate scope to add a Reference", () =>
     Effect.gen(function* () {
-      const method = WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink;
+      const method = WORKBENCH_WS_METHODS.workbenchAddReference;
       const group = WsRpcGroup.omit(
         ...[...WsRpcGroup.requests.keys()].filter(
           (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, typeof method> => tag !== method,
@@ -40,15 +36,10 @@ describe("Workbench RPC authorization", () => {
       const handlers = group.toLayerHandler(method, () =>
         Effect.sync(() => {
           mutations++;
-          return { kind: "epic" as const, epic };
+          return reference;
         }),
       );
-      const input = {
-        kind: "epic" as const,
-        epicId: epic.id,
-        url: null,
-        expectedUpdatedAt: epic.updatedAt,
-      };
+      const input = { ticketId: reference.ticketId, url: reference.url };
       const reader = yield* RpcTest.makeClient(group).pipe(
         Effect.provide(
           Layer.merge(handlers, rpcScopeAuthorizationLayer([AuthOrchestrationReadScope])),
@@ -63,7 +54,7 @@ describe("Workbench RPC authorization", () => {
           Layer.merge(handlers, rpcScopeAuthorizationLayer([AuthOrchestrationOperateScope])),
         ),
       );
-      expect(yield* operator[method](input)).toEqual({ kind: "epic", epic });
+      expect(yield* operator[method](input)).toEqual(reference);
       expect(mutations).toBe(1);
     }).pipe(Effect.scoped),
   );

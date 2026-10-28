@@ -9,7 +9,6 @@ import {
   type OrchestrationV2ThreadShell,
   type PullRequestListEntry,
   type PullRequestListInput,
-  type PullRequestListResult,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -97,27 +96,21 @@ const thread = (
 
 const resolve = (
   options: {
-    entries?: PullRequestListEntry[];
     threads?: OrchestrationV2ThreadShell[];
     summaries?: ChangeRequest[];
-    jiraIssueKey?: string | null;
-    resultPatch?: Partial<PullRequestListResult>;
     searches?: PullRequestListInput[];
     reads?: string[];
     remote?: string;
     failRead?: boolean;
-    cachedEntries?: PullRequestListEntry[];
   } = {},
 ) =>
   Effect.gen(function* () {
     const provider = yield* SourceControlProvider;
-    let invalidated = false;
     return yield* make.pipe(
       Effect.flatMap((resolver) =>
         resolver.resolveOpenPullRequestBranch({
           projectId,
           assignedThreadIds: (options.threads ?? []).map((value) => value.id),
-          jiraIssueKey: options.jiraIssueKey === undefined ? "DEMO-1" : options.jiraIssueKey,
         }),
       ),
       Effect.provide(
@@ -127,34 +120,11 @@ const resolve = (
             getThreadShell: (id) =>
               Effect.succeed((options.threads ?? []).find((value) => value.id === id) ?? null),
           }),
+          // Records any host search; Ticket preparation must not run one.
           Layer.mock(PullRequestService)({
-            invalidate: () =>
-              Effect.sync(() => {
-                invalidated = true;
-              }),
             list: (input) => {
               options.searches?.push(input);
-              return Effect.succeed({
-                entries:
-                  !invalidated && options.cachedEntries !== undefined
-                    ? options.cachedEntries
-                    : (options.entries ?? []),
-                viewers: { "github.com": "demo" },
-                providers: [
-                  {
-                    host: "github.com",
-                    kind: SourceControlProviderKind.make("github"),
-                    searchesOnHost: true,
-                    configured: true,
-                    projectCount: 1,
-                    detail: null,
-                  },
-                ],
-                errors: [],
-                truncated: false,
-                nextCursors: {},
-                ...options.resultPatch,
-              });
+              return Effect.die("Unexpected PR search");
             },
           }),
           Layer.mock(SourceControlProviderRegistry)({
@@ -192,7 +162,10 @@ const resolve = (
               }),
             );
           const found = (
-            options.summaries ?? (options.entries ?? []).map((value) => summary(value.number))
+            options.summaries ??
+            (options.threads ?? []).flatMap((value) =>
+              (value.pullRequests ?? []).map((pullRequest) => summary(pullRequest.number)),
+            )
           ).find((value) => value.url === reference);
           return found ? Effect.succeed(found) : Effect.die("Unexpected PR read");
         },
@@ -206,50 +179,15 @@ const failureMessage = <A>(result: Result.Result<A, { message: string }>) => {
 };
 
 describe("Ticket workspace PR resolution", () => {
-  it.effect("refreshes cached discovery before choosing a preparation branch", () =>
-    Effect.gen(function* () {
-      expect(yield* resolve({ cachedEntries: [], entries: [entry(1)] })).toEqual(
-        Option.some({ remoteName: "origin", remoteBranch: "fix/pr-1" }),
-      );
-      const result = yield* resolve({
-        cachedEntries: [entry(1)],
-        entries: [entry(1), entry(2)],
-      }).pipe(Effect.result);
-      expect(failureMessage(result)).toContain("Multiple open PRs match API (#1, #2)");
-    }),
-  );
-  it.effect("uses the open PR's branch and scopes the Jira search to the selected project", () =>
+  it.effect("uses the open PR linked through a Thread without searching hosts", () =>
     Effect.gen(function* () {
       const searches: PullRequestListInput[] = [];
-      expect(yield* resolve({ entries: [entry(1)], searches })).toEqual(
-        Option.some({ remoteName: "origin", remoteBranch: "fix/pr-1" }),
-      );
-      expect(searches).toEqual([
-        { state: "open", involvement: "all", projectIds: [projectId], query: "DEMO-1", limit: 50 },
-      ]);
-    }),
-  );
-  it.effect("deduplicates a PR linked through a Thread and matching the Jira issue", () =>
-    Effect.gen(function* () {
       const reads: string[] = [];
-      expect(yield* resolve({ entries: [entry(1)], threads: [thread(1)], reads })).toEqual(
-        Option.some({ remoteName: "origin", remoteBranch: "fix/pr-1" }),
+      expect(yield* resolve({ threads: [thread(2)], searches, reads })).toEqual(
+        Option.some({ remoteName: "origin", remoteBranch: "fix/pr-2" }),
       );
-      expect(reads).toEqual([entry(1).url]);
-    }),
-  );
-  it.effect("uses an active linked PR without a Jira key and does not search all PRs", () =>
-    Effect.gen(function* () {
-      const searches: PullRequestListInput[] = [];
-      expect(
-        yield* resolve({
-          jiraIssueKey: null,
-          threads: [thread(2)],
-          summaries: [summary(2)],
-          searches,
-        }),
-      ).toEqual(Option.some({ remoteName: "origin", remoteBranch: "fix/pr-2" }));
       expect(searches).toEqual([]);
+      expect(reads).toEqual([entry(2).url]);
     }),
   );
   it.effect("ignores settled history, dismissed links, and other repositories", () =>
@@ -258,7 +196,6 @@ describe("Ticket workspace PR resolution", () => {
       const reads: string[] = [];
       expect(
         yield* resolve({
-          entries: [entry(4, "example/other")],
           threads: [
             thread(1, { settledOverride: "settled" }),
             thread(2, { archivedAt: DateTime.makeUnsafe(timestamp) }),
@@ -276,18 +213,16 @@ describe("Ticket workspace PR resolution", () => {
       expect(reads).toEqual([]);
     }),
   );
-  it.effect("fails when distinct open PRs are linked or match instead of choosing the first", () =>
+  it.effect("fails when distinct open PRs are linked instead of choosing the first", () =>
     Effect.gen(function* () {
-      const result = yield* Effect.result(
-        resolve({ entries: [entry(1)], threads: [thread(2)], summaries: [summary(1), summary(2)] }),
-      );
+      const result = yield* Effect.result(resolve({ threads: [thread(1), thread(2)] }));
       expect(failureMessage(result)).toContain("Multiple open PRs");
     }),
   );
   it.effect("rechecks linked PR state and ignores closed or merged candidates", () =>
     Effect.gen(function* () {
       expect(
-        yield* resolve({ entries: [entry(1)], summaries: [summary(1, { state: "merged" })] }),
+        yield* resolve({ threads: [thread(1)], summaries: [summary(1, { state: "merged" })] }),
       ).toEqual(Option.none());
     }),
   );
@@ -300,65 +235,21 @@ describe("Ticket workspace PR resolution", () => {
       ]) {
         expect(
           failureMessage(
-            yield* Effect.result(resolve({ entries: [entry(1)], summaries: [summary(1, patch)] })),
+            yield* Effect.result(resolve({ threads: [thread(1)], summaries: [summary(1, patch)] })),
           ),
         ).toContain("fork or unknown head");
       }
     }),
   );
-  it.effect("does not treat failed or truncated discovery as no matching PR", () =>
-    Effect.gen(function* () {
-      for (const resultPatch of [
-        { truncated: true },
-        { errors: [{ projectId, projectTitle: "API", message: "offline" }] },
-        {
-          providers: [
-            {
-              host: "github.com",
-              kind: SourceControlProviderKind.make("github"),
-              searchesOnHost: true,
-              configured: false,
-              projectCount: 1,
-              detail: "Sign in",
-            },
-          ],
-        },
-      ])
-        expect(failureMessage(yield* Effect.result(resolve({ resultPatch })))).toMatch(
-          /incomplete|Could not search/,
-        );
-    }),
-  );
-  it.effect("never associates an unfiltered listing from a host without text search", () =>
-    Effect.gen(function* () {
-      expect(
-        yield* resolve({
-          entries: [entry(1)],
-          resultPatch: {
-            providers: [
-              {
-                host: "github.com",
-                kind: SourceControlProviderKind.make("github"),
-                searchesOnHost: false,
-                configured: true,
-                projectCount: 1,
-                detail: null,
-              },
-            ],
-          },
-        }),
-      ).toEqual(Option.none());
-    }),
-  );
   it.effect("fails if PR metadata cannot be read or the repository remote changed", () =>
     Effect.gen(function* () {
       expect(
-        failureMessage(yield* Effect.result(resolve({ entries: [entry(1)], failRead: true }))),
+        failureMessage(yield* Effect.result(resolve({ threads: [thread(1)], failRead: true }))),
       ).toContain("Could not inspect");
       expect(
         failureMessage(
           yield* Effect.result(
-            resolve({ entries: [entry(1)], remote: "https://github.com/example/other.git" }),
+            resolve({ threads: [thread(1)], remote: "https://github.com/example/other.git" }),
           ),
         ),
       ).toContain("remote");
@@ -366,10 +257,8 @@ describe("Ticket workspace PR resolution", () => {
   );
   it.effect("does no hosting reads when there is no Ticket PR association", () =>
     Effect.gen(function* () {
-      const searches: PullRequestListInput[] = [];
       const reads: string[] = [];
-      expect(yield* resolve({ jiraIssueKey: null, searches, reads })).toEqual(Option.none());
-      expect(searches).toEqual([]);
+      expect(yield* resolve({ reads })).toEqual(Option.none());
       expect(reads).toEqual([]);
     }),
   );
