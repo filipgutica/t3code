@@ -231,7 +231,9 @@ it on the host clears it for good.
 
 The Ticket's **Pull Requests** section collects PRs reported by linked Threads and
 prepared worktrees, and the Ticket's pull request
-[References](#references). To attach a PR yourself, choose **Link PR** from
+[References](#references). PRs opened to deliver the Ticket belong in its linked
+Threads. Keep prior or example PRs as supporting References; do not add delivery
+PRs there too. To attach a delivery PR yourself, choose **Link PR** from
 the Ticket, select a Thread if prompted, then choose a listed PR or search by
 title. You can paste a full PR URL when browsing is unavailable or the PR is not
 listed. A number such as `#42` refers to the selected Thread's repository. Link PR
@@ -297,9 +299,10 @@ and confirm. The same Thread ownership and local-change checks apply.
 
 ## References
 
-References are the links a Ticket keeps for its work: Jira and GitHub issues, pull
-requests, specs, designs, docs, and files that agents write. Workbench shows them
-but does not connect to Jira or open the linked pages itself.
+References are supporting sources for a Ticket: Jira and GitHub issues, prior or
+example pull requests, specs, designs, docs, and files that agents write. Link PRs
+opened to deliver this Ticket through a Thread; do not duplicate them as References.
+Workbench shows these sources but does not connect to Jira or open the linked pages itself.
 
 To add one, choose **Add reference** in the Ticket's **References** section and
 paste a URL or an absolute file path, with an optional title. Drafts and the
@@ -344,8 +347,10 @@ A description an agent changed shows **Updated by** and the Thread's name until
 you edit it. A Reference an agent added shows **Added by**. Change anything back
 as you would edit it yourself.
 
-Agents record References on their own. When you paste links into a planning
-conversation, or an agent finds a related issue, it adds them. Agents use their
+Agents record References on their own. When you paste supporting links into a planning
+conversation, or an agent finds a related issue or prior example, it adds them.
+Agents link PRs they create, take over, or push to through their Thread instead of
+also adding them as References. Agents use their
 own connectors, such as Jira or GitHub, when you ask.
 
 Each Ticket has an artifacts folder on the machine that runs the environment,

@@ -301,7 +301,7 @@ it.effect.each(["codex", "claudeAgent"] as const)(
         assert.include(policy.instructions ?? "", "## Goal\nExplain worktree failures");
         assert.include(
           policy.instructions ?? "",
-          "Record each file, and each relevant issue, PR, doc, or design, with workbench_reference_add",
+          "Add files and supporting sources (issues, docs, designs, prior/example PRs) with workbench_reference_add",
         );
       }),
       Effect.provide(policyLayer("draft", driver)),
@@ -315,6 +315,11 @@ it.effect("tells an assigned Thread its Workstream, tools, artifacts folder, and
       assert.include(instructions, 'Workstream "Explain failures" (id draft)');
       assert.include(instructions, "call workbench_workstream_read");
       assert.include(instructions, "`artifactsDir`");
+      assert.include(
+        instructions,
+        "Link PRs you create, take over, or push to with link_pull_request",
+      );
+      assert.include(instructions, "don't duplicate them as References");
       assert.include(instructions, "Jira or GitHub, when the user asks");
       assert.include(instructions, "## Goal\nExplain worktree failures");
       assert.include(instructions, '"path":"/work-area/repo:first"');

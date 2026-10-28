@@ -56,7 +56,7 @@ const WorkstreamUpdateInput = Schema.Struct({
 
 const ReadWorkstreamTool = Tool.make("workbench_workstream_read", {
   description:
-    "Read the Workstream this thread belongs to: brief, status, repositories with worktrees, References, Threads, PRs, and `artifactsDir`. The user and other threads edit it while you work, so read it before you rely on it.",
+    "Read your Workstream: brief, status, repositories/worktrees, References, Threads, PRs, `artifactsDir`. PRs combine Thread links and References. Read before relying on state; others edit it.",
   parameters: Tool.EmptyParams,
   success: WorkstreamState,
   failure: WorkbenchToolError,
@@ -84,7 +84,7 @@ const UpdateWorkstreamTool = Tool.make("workbench_workstream_update", {
 
 const AddReferenceTool = Tool.make("workbench_reference_add", {
   description:
-    "Record a Reference on this thread's Workstream: an issue, PR, spec, design, or doc URL, or a file you saved. Adding a URL again is a no-op.",
+    "Add a supporting issue, spec, design, doc, file, or past or example PR. Link delivery PRs with link_pull_request; do not duplicate them here. Existing URLs are a no-op.",
   parameters: Schema.Struct({
     url: ReferenceUrl,
     title: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(500))),
