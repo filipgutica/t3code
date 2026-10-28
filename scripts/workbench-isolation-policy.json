@@ -54,6 +54,12 @@
       "reason": "Supply Workbench notification policy to the native application-lifetime notification service."
     },
     {
+      "source": "apps/web/src/appInit.tsx",
+      "target": "apps/web/src/workbench/workbenchLastLocation",
+      "symbols": ["startWorkbenchLocationTracking"],
+      "reason": "Track the last Workbench location beside native main-app location tracking for the router's lifetime."
+    },
+    {
       "source": "apps/web/src/routeTree.gen.ts",
       "target": "apps/web/src/routes/workbench",
       "symbols": ["Route"],

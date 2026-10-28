@@ -53,6 +53,7 @@ import { registerOpenFavoriteEditorCommand } from "./components/chat/OpenInPicke
 import { environmentThreadShells } from "./state/threads";
 import { resolveThreadRouteTarget } from "./threadRoutes";
 import { workbenchThreadPresentationPolicyAtom } from "./workbench/useWorkbenchTicketPreparations";
+import { startWorkbenchLocationTracking } from "./workbench/workbenchLastLocation";
 
 /** Writes appearance settings onto the document, touching only the groups that changed. */
 function startClientAppearance(): void {
@@ -192,6 +193,7 @@ export function startAppServices(): AppRouter {
     shellStateAtom: environmentShell.stateAtom,
   });
   startMainAppLocationTracking(router);
+  startWorkbenchLocationTracking(router);
   startBackgroundThreadAnnouncements(appAtomRegistry, router);
   startThreadVisitedMigration(appAtomRegistry);
   startSshPasswordPromptQueue();

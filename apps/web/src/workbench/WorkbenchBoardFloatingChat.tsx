@@ -139,25 +139,30 @@ type MountedDraftOpen = { readonly threadId: ThreadId; readonly open: () => Prom
 
 function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
   const { environmentId, workspace } = props;
-  const [explicitThreadId, setExplicitThreadId] = useState<ThreadId | null>(null);
+  const projectId = workspace.id;
+  const pageChatKey = `${environmentId}:board:${projectId}`;
+  const explicitThreadId = useWorkbenchFloatingChatStore(
+    (state) => state.pickedThreads[pageChatKey] ?? null,
+  );
+  const setExplicitThreadId = (threadId: ThreadId | null) =>
+    useWorkbenchFloatingChatStore.getState().pickThread(pageChatKey, threadId);
   const showThread = (threadId: ThreadId) => {
     setExplicitThreadId(threadId);
     useWorkbenchFloatingChatStore.getState().expand(threadId);
   };
-  const projectId = workspace.id;
   useEffect(() => {
-    const { setPageChat, expand } = useWorkbenchFloatingChatStore.getState();
+    const { setPageChat, pickThread, expand } = useWorkbenchFloatingChatStore.getState();
     setPageChat({
       environmentId,
       kind: "board",
       projectId,
       showThread: (threadId) => {
-        setExplicitThreadId(threadId);
+        pickThread(pageChatKey, threadId);
         expand(threadId);
       },
     });
     return () => setPageChat(null);
-  }, [environmentId, projectId]);
+  }, [environmentId, projectId, pageChatKey]);
   const { modelSelection } = usePlanningModelSelection({
     environmentId,
     providers: props.providers,

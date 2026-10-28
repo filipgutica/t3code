@@ -5,7 +5,7 @@ import type {
   WorkbenchAssignment,
   WorkbenchTicket,
 } from "@t3tools/contracts";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { WorkbenchFloatingChat } from "./WorkbenchFloatingChat";
@@ -80,21 +80,26 @@ export function WorkbenchTicketFloatingChat({
 
 function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabled">) {
   const { ticket, onNewThread, environmentId } = props;
-  const [explicitThreadId, setExplicitThreadId] = useState<ThreadId | null>(null);
   const ticketId = ticket.id;
+  const pageChatKey = `${environmentId}:ticket:${ticketId}`;
+  const explicitThreadId = useWorkbenchFloatingChatStore(
+    (state) => state.pickedThreads[pageChatKey] ?? null,
+  );
+  const setExplicitThreadId = (threadId: ThreadId) =>
+    useWorkbenchFloatingChatStore.getState().pickThread(pageChatKey, threadId);
   useEffect(() => {
-    const { setPageChat, expand } = useWorkbenchFloatingChatStore.getState();
+    const { setPageChat, pickThread, expand } = useWorkbenchFloatingChatStore.getState();
     setPageChat({
       environmentId,
       kind: "ticket",
       ticketId,
       showThread: (threadId) => {
-        setExplicitThreadId(threadId);
+        pickThread(pageChatKey, threadId);
         expand(threadId);
       },
     });
     return () => setPageChat(null);
-  }, [environmentId, ticketId]);
+  }, [environmentId, ticketId, pageChatKey]);
   const recaps = useWorkbenchThreadRecaps(environmentId);
   const chatTicket = {
     id: ticketId,
