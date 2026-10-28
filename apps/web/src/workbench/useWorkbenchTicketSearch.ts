@@ -3,18 +3,16 @@ import { useWorkbenchBoardView, type WorkbenchBoardScope } from "./workbenchBoar
 
 export function matchesWorkbenchTicketSearch({
   title,
-  jiraKey,
+  referenceTerms = [],
   query,
 }: {
   readonly title: string;
-  readonly jiraKey?: string | undefined;
+  /** From `getWorkbenchReferenceSearchTerms`. */
+  readonly referenceTerms?: ReadonlyArray<string>;
   readonly query: string;
 }): boolean {
   const normalized = query.trim().toLowerCase();
-  return (
-    title.toLowerCase().includes(normalized) ||
-    (jiraKey?.toLowerCase().includes(normalized) ?? false)
-  );
+  return [title, ...referenceTerms].some((value) => value.toLowerCase().includes(normalized));
 }
 
 export function useWorkbenchTicketSearch(scope: WorkbenchBoardScope) {

@@ -56,25 +56,15 @@ const decodeJiraIssue = (url: string | null) => {
 };
 
 // Untraced: RPC instrumentation already spans every Workbench call, and the store spans the write.
-const setJiraIssueLink = Effect.fnUntraced(function* (
+const setEpicJiraIssueLink = Effect.fnUntraced(function* (
   workbench: WorkbenchStore.WorkbenchStore["Service"],
   input: WorkbenchSetJiraIssueLinkInput,
 ) {
-  const jiraIssue = yield* decodeJiraIssue(input.url);
-  if (input.kind === "ticket") {
-    const ticket = yield* workbench.setTicketJiraIssueLink({
-      ticketId: input.ticketId,
-      jiraIssue,
-      expectedRevision: input.expectedRevision,
-    });
-    return { kind: "ticket" as const, ticket };
-  }
-  const epic = yield* workbench.setEpicJiraIssueLink({
+  return yield* workbench.setEpicJiraIssueLink({
     epicId: input.epicId,
-    jiraIssue,
+    jiraIssue: yield* decodeJiraIssue(input.url),
     expectedUpdatedAt: input.expectedUpdatedAt,
   });
-  return { kind: "epic" as const, epic };
 });
 
 export const makeWorkbenchRpcHandlers = ({
@@ -117,5 +107,9 @@ export const makeWorkbenchRpcHandlers = ({
       ticketWorkspaces.prepare(input),
     [WORKBENCH_WS_METHODS.workbenchReleaseTicketWorkspace]: (input) =>
       ticketWorkspaces.release(input),
-    [WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink]: (input) => setJiraIssueLink(workbench, input),
+    [WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink]: (input) =>
+      setEpicJiraIssueLink(workbench, input),
+    [WORKBENCH_WS_METHODS.workbenchAddReference]: (input) =>
+      workbench.addReference({ ...input, addedByThreadId: null }),
+    [WORKBENCH_WS_METHODS.workbenchRemoveReference]: (input) => workbench.removeReference(input),
   }) satisfies WorkbenchRpcHandlers;

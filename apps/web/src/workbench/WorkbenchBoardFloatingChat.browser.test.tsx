@@ -13,7 +13,7 @@ import {
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import * as Cause from "effect/Cause";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
@@ -63,39 +63,6 @@ vi.mock("../components/ChatView", () => ({
     />
   ),
 }));
-vi.mock("./WorkbenchTicketProposal", () => ({
-  WorkbenchTicketProposalHistory: (props: { children: ReactNode }) => props.children,
-  // Stands in for a proposal card: Apply hands the proposal to the chat's draft editor.
-  WorkbenchTicketProposalRenderer: (props: {
-    children: ReactNode;
-    canApply: boolean;
-    onApply: (suggestion: {
-      title: string;
-      markdown: string;
-      repositoryProjectIds: ReadonlyArray<string>;
-      primaryT3ProjectId: string | null;
-    }) => void;
-  }) => (
-    <>
-      {props.children}
-      <button
-        type="button"
-        disabled={!props.canApply}
-        onClick={() =>
-          props.onApply({
-            title: "Export refunds",
-            markdown: "",
-            repositoryProjectIds: [],
-            primaryT3ProjectId: null,
-          })
-        }
-      >
-        Apply to draft
-      </button>
-    </>
-  ),
-}));
-
 const environmentId = EnvironmentId.make("local");
 const projectId = WorkbenchProjectId.make("workspace");
 const repositoryId = ProjectId.make("repository");
@@ -180,13 +147,23 @@ function Harness(props: {
       workspace={workspace}
       providers={[]}
       linkedProjects={[]}
-      tickets={[
-        {
-          ...ticket("ticket-a", "Refunds"),
-          jiraIssue: { key: "PAY-1", url: "https://example.atlassian.net/browse/PAY-1" },
-        },
-        ticket("ticket-b", "Payouts"),
-      ]}
+      tickets={[ticket("ticket-a", "Refunds"), ticket("ticket-b", "Payouts")]}
+      referencesByTicket={
+        new Map([
+          [
+            WorkbenchTicketId.make("ticket-a"),
+            [
+              {
+                ticketId: WorkbenchTicketId.make("ticket-a"),
+                url: "https://example.atlassian.net/browse/PAY-1",
+                title: null,
+                addedByThreadId: null,
+                createdAt,
+              },
+            ],
+          ],
+        ])
+      }
       assignments={[assignment("first", "ticket-a"), assignment("second", "ticket-b")]}
       drafts={drafts}
       threadsById={new Map(threadIds.map((id) => [ThreadId.make(id), liveThread(id)]))}
@@ -464,30 +441,6 @@ it.each([
   await pickThread(screen, /Thread draft-thread/);
   await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
   await expect.element(screen.getByRole("button", { name: action })).toBeEnabled();
-});
-
-it("Open full Thread opens a draft only after its applied proposal saves", async () => {
-  const { onSnapshot } = await setup();
-  mocks.otherCommand.mockResolvedValue({
-    _tag: "Failure",
-    cause: Cause.fail(new Error("Saving the draft failed")),
-  });
-  const onOpenDraft = vi.fn();
-  await using screen = await render(
-    <Harness
-      initialDrafts={[draft("draft", "draft-thread", "Plan exports")]}
-      onSnapshot={onSnapshot}
-      onOpenDraft={onOpenDraft}
-    />,
-  );
-  await pickThread(screen, /Plan exports/);
-  await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
-  await userEvent.click(screen.getByRole("button", { name: "Apply to draft" }));
-  await expect.element(screen.getByRole("alert")).toHaveTextContent("Saving the draft failed");
-
-  await userEvent.click(screen.getByRole("button", { name: "Open full Thread" }));
-  await expect.element(screen.getByRole("alert")).toBeVisible();
-  expect(onOpenDraft).not.toHaveBeenCalled();
 });
 
 it("opens ticket Threads, including settled ones, as Threads and drafts as drafts", async () => {

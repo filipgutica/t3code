@@ -12,6 +12,7 @@ vi.mock("../components/ui/button", () => ({
   Button: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
 }));
 const snapshot: WorkbenchSnapshot = {
+  references: [],
   projects: [],
   tickets: [],
   epics: [],

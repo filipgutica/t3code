@@ -31,26 +31,27 @@ related Tickets. A Ticket's **work area** contains its prepared repository workt
 3. Open the Workspace Board and choose **New Ticket**.
 4. Describe what you want to work on in the planning conversation. Choose your
    model using the native conversation controls.
-5. Review the proposed title, plan, acceptance criteria, and repository scope.
-   Choose **Apply to draft**, then edit any field. Use **Write** or **Preview** for the description.
+5. As you talk, the agent fills in the draft's title, description, and
+   repositories, and adds links you paste as [References](#references). Edit any
+   field yourself. Use **Write** or **Preview** for the description.
 6. Choose **Create ticket** to save it.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/planning-light.png">
-  <img src="./media/workbench/planning.png" alt="A native planning conversation proposes a Ticket beside its editable draft.">
+  <img src="./media/workbench/planning.png" alt="A native planning conversation beside its editable Ticket draft.">
 </picture>
 
 You do not need a title or repository selection before starting the conversation.
 Planning can read the workspace's repositories, run commands, and write notes
 outside them, but it is told not to change them or start implementing. Ask
-follow-up questions to refine the proposal. Applying a new proposal replaces the
-draft's title, description, and repository selection; it does not create the Ticket.
+follow-up questions to refine the draft. The agent's edits apply at once, and you
+can change any field back; see [Agents and the Ticket](#agents-and-the-ticket).
+Filling the draft does not create the Ticket.
 
 Planning can use your configured connectors, web tools, the browser, and CLI tools
-such as `gh` for research. With a Jira connector, the agent looks for existing
-issues that cover your request; see [Jira links](#jira-links). Planning runs in
-Auto, so the provider's automatic reviewer handles approval requests instead of
-you.
+such as `gh` for research. Ask it to find or create Jira or GitHub issues with its
+own connectors, and it records them as References. Planning runs in Auto, so the
+provider's automatic reviewer handles approval requests instead of you.
 
 Leaving the view keeps the draft in the Board’s **Drafts** section and the Workbench
 sidebar. Open it to resume its conversation and saved fields. Choose **New Ticket**
@@ -92,8 +93,8 @@ in the sidebar remains available for cleanup even after deleting the last Worksp
 ## Start agent work
 
 For a Ticket prepared through a conversation, choose **Start work** to continue
-that same Thread in its prepared work area. Review the Ticket context chip in the
-composer, add your next instruction, and send when ready.
+that same Thread in its prepared work area. Add your next instruction and send
+when ready.
 
 For a manually created Ticket, or an additional conversation:
 
@@ -101,12 +102,16 @@ For a manually created Ticket, or an additional conversation:
 2. If the work area is not prepared, review the primary and additional repositories.
    Select a provider and model, then choose **Create work area and Thread**.
    Prepared work areas show the repositories that the new Thread will reuse.
-3. Review the Ticket context chip in the native Thread composer.
-4. Add instructions and send the message.
+3. Add instructions and send the message.
 
 Creating a Thread does not start an agent turn. Workbench prepares one Git
 worktree per selected repository and opens the Thread in the primary repository's
-worktree. The context chip includes the Ticket description and repository paths.
+worktree.
+
+Each Thread on a Ticket knows its Ticket. With every message, Workbench gives the
+agent the Ticket's title and description, shortened if long, and the paths of the
+prepared worktrees. The agent reads the current Ticket when it needs more, so
+after you edit the Ticket, the next message uses the saved version.
 
 To prepare worktrees before opening a conversation, choose **Prepare work area**
 in **Work area**, review the repositories, and confirm.
@@ -115,10 +120,6 @@ in **Work area**, review the repositories, and confirm.
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/workspace-light.png">
   <img src="./media/workbench/workspace.png" alt="A prepared Ticket work area with worktrees for Beacon Docs (primary) and Beacon CLI.">
 </picture>
-
-After changing the Ticket, use **Add ticket context** in an existing
-Thread to stage its saved requirements and current checkout paths. Review the
-context chip and send when ready; attaching context does not send a message.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/thread-light.png">
@@ -168,14 +169,14 @@ a planning conversation.
   <img src="./media/workbench/board-chat.png" alt="Board chat whose Thread menu shows recaps, a Ticket's two Threads, a Thread waiting for approval, and the new-Thread actions.">
 </picture>
 
-A board draft plans the same way as **New Ticket** and runs in Auto. Apply the
-proposal, then choose **Create ticket** and **Start work**; the same Thread continues
-throughout. **Cancel** removes a draft you have not used yet and returns to the Thread
+A board draft plans the same way as **New Ticket** and runs in Auto. When the
+agent has filled in the draft, choose **Create ticket** and **Start work**; the same
+Thread continues throughout. **Cancel** removes a draft you have not used yet and returns to the Thread
 you had open. Once you have used the draft, **Discard** removes it after you confirm. Choose **Open full Thread** to edit the draft's fields.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/board-draft-light.png">
-  <img src="./media/workbench/board-draft.png" alt="Board chat with a ticket draft's proposal applied, offering Discard and Create ticket.">
+  <img src="./media/workbench/board-draft.png" alt="Board chat with a ticket draft, offering Discard and Create ticket.">
 </picture>
 
 The chat leaves out the Thread's side panels: opening a file or diff from it, or
@@ -229,8 +230,8 @@ it on the host clears it for good.
 </picture>
 
 The Ticket's **Pull Requests** section collects PRs reported by linked Threads and
-prepared worktrees. For a Ticket with a Jira link, it also searches linked
-repositories for the issue key. To attach a PR yourself, choose **Link PR** from
+prepared worktrees, and the Ticket's pull request
+[References](#references). To attach a PR yourself, choose **Link PR** from
 the Ticket, select a Thread if prompted, then choose a listed PR or search by
 title. You can paste a full PR URL when browsing is unavailable or the PR is not
 listed. A number such as `#42` refers to the selected Thread's repository. Link PR
@@ -245,7 +246,8 @@ Thread's command palette.
 
 ## Edit and organize Tickets
 
-Use Board search to find loaded Tickets by title or Jira issue key. Filter by any
+Use Board search to find loaded Tickets by title or by a Reference's label or
+title, such as an issue key. Filter by any
 repository in their scope. Search, repository filtering, grouping, and the
 selected Board column are retained per Workspace when returning from a Ticket.
 Open a Ticket and choose **Edit** to change its title or description. Saved
@@ -293,34 +295,63 @@ After deleting a Ticket or Workspace, open **Retained worktrees** in the Workben
 remove its kept worktrees. Review the listed repository paths, choose **Remove**,
 and confirm. The same Thread ownership and local-change checks apply.
 
-## Jira links
+## References
 
-Workbench does not connect to Jira. A Ticket or Epic can link to one Jira issue,
-and your agent does any Jira work through its own Jira connector.
+References are the links a Ticket keeps for its work: Jira and GitHub issues, pull
+requests, specs, designs, docs, and files that agents write. Workbench shows them
+but does not connect to Jira or open the linked pages itself.
 
-To link an issue yourself, open the Ticket or Epic details and choose **Link
-issue** under **Jira issue**. Paste the issue's URL, such as
-`https://your-site.atlassian.net/browse/PROJ-123`. Use **Change** or **Unlink** to
-replace or remove the link.
+To add one, choose **Add reference** in the Ticket's **References** section and
+paste a URL or an absolute file path, with an optional title. Drafts and the
+manual Ticket form have a paste field for References, which are saved with the
+Ticket. Use a Reference's remove button to remove it.
 
-If your agent has a Jira connector, ask it to find, create, or update an issue in
-a planning or work conversation. Workbench tells the agent to change Jira only
-when you ask. When it has the issue, it posts a link card; choose **Link** to
-link the issue to the Ticket. In a draft, the card waits until you choose
-**Create ticket**.
+Issue References show their key or repository and number, such as `PROJ-123` or
+`orbit-web#12`. Board cards show up to two, and Board and sidebar search match
+them. The first issue Reference also names the branch when the work area is
+prepared, so add it before you prepare.
 
-The issue key appears on the Board, in the sidebar, and in Ticket details, and
-Board search matches it. The Ticket's **Pull Requests** section also finds PRs
-that mention the key. Branch names include the key when the work area is
-prepared, so link the issue before you prepare it.
+Pull request References appear in **Pull Requests** instead of **References**,
+together with the PRs that linked Threads report. **Unlink** on such a row removes
+only the Reference; a PR that a Thread also links stays listed. **Needs
+attention** covers only PRs linked to a Thread.
 
-Workspaces that synced with Jira in an earlier version keep their Tickets and
-Epics as ordinary records with their issue links. Workbench no longer updates
-them from Jira; edit, move, archive, or delete them like any other record.
-Tickets whose issues had left the selected sprints are archived. If an earlier
-version could not confirm that it created a Jira issue, the Ticket or Epic stays
-a local record, linked only if its issue key was known. Check Jira and link the
-issue yourself if needed.
+A file Reference is a path on the machine that runs the environment. It opens in
+the file viewer from any connected client, including remote ones. A file that no
+longer exists shows as unavailable.
+
+Epics keep a single Jira link. Open the Epic's details and choose **Link issue**
+under **Jira issue** to paste the issue's URL, or **Change** or **Unlink** to
+replace or remove it.
+
+Tickets that had a Jira link in an earlier version keep it, and their Epic's
+link, as References. Workspaces that synced with Jira in an earlier version keep
+their Tickets and Epics as ordinary records. Workbench no longer updates them
+from Jira; edit, move, archive, or delete them like any other record. Tickets
+whose issues had left the selected sprints are archived. If an earlier version
+could not confirm that it created a Jira issue, the Ticket or Epic stays a local
+record, linked only if its issue key was known. Check Jira and add the issue
+yourself if needed.
+
+## Agents and the Ticket
+
+Planning Threads and Threads on a Ticket can read and change their own Ticket or
+draft while they work. An agent can change the title, description, and
+repositories, a Ticket's progress, and add or remove References. Its changes apply at once and show
+in the Thread. It cannot remove a repository that an active Thread works in.
+
+A description an agent changed shows **Updated by** and the Thread's name until
+you edit it. A Reference an agent added shows **Added by**. Change anything back
+as you would edit it yourself.
+
+Agents record References on their own. When you paste links into a planning
+conversation, or an agent finds a related issue, it adds them. Agents use their
+own connectors, such as Jira or GitHub, when you ask.
+
+Each Ticket has an artifacts folder on the machine that runs the environment,
+under `userdata/workbench-artifacts` in the T3 data directory. Agents save plans,
+specs, mockups, and diagrams there and add each file as a Reference. Deleting the
+Ticket or discarding the draft keeps the folder.
 
 ## Troubleshooting
 

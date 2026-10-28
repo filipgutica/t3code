@@ -4,7 +4,7 @@ import type {
   ContextMenuItem,
   EnvironmentId,
   LocalApi,
-  WorkbenchJiraIssue,
+  WorkbenchParsedReferenceUrl,
   WorkbenchTicketStatus,
 } from "@t3tools/contracts";
 import { useNavigate, useRouter } from "@tanstack/react-router";
@@ -28,15 +28,18 @@ type TicketMenuAction =
   | "change-status"
   | `status:${WorkbenchTicketStatus}`
   | "copy-link"
-  | "open-jira"
+  | "open-issue"
   | "archive";
+
+const openIssueItem = (issue: WorkbenchParsedReferenceUrl | null) =>
+  issue ? [{ id: "open-issue" as const, label: `Open ${issue.label}` }] : [];
 
 const menuItems = ({
   ticket,
-  jiraIssue,
+  issue,
 }: {
   readonly ticket: WorkbenchSidebarTicket;
-  readonly jiraIssue: WorkbenchJiraIssue | null;
+  readonly issue: WorkbenchParsedReferenceUrl | null;
 }): ReadonlyArray<ContextMenuItem<TicketMenuAction>> => {
   const active = ticket.archivedAt === null;
   return [
@@ -51,7 +54,7 @@ const menuItems = ({
       })),
     },
     { id: "copy-link", label: "Copy Ticket link", separatorBefore: true },
-    ...(jiraIssue ? [{ id: "open-jira" as const, label: "Open in Jira" }] : []),
+    ...openIssueItem(issue),
     {
       id: "archive",
       label: active ? "Archive Ticket" : "Restore Ticket",
@@ -99,24 +102,28 @@ async function copyTicketLink(href: string): Promise<void> {
   }
 }
 
-async function openJiraLink(api: LocalApi, jiraIssue: WorkbenchJiraIssue | null): Promise<void> {
-  if (!jiraIssue) return;
+async function openIssueLink(
+  api: LocalApi,
+  issue: WorkbenchParsedReferenceUrl | null,
+): Promise<void> {
+  if (!issue) return;
   try {
-    await api.shell.openExternal(jiraIssue.url);
+    await api.shell.openExternal(issue.url);
   } catch (cause) {
-    reportMenuFailure("Could not open Jira", cause);
+    reportMenuFailure("Could not open the issue", cause);
   }
 }
 
 export function useWorkbenchSidebarTicketActionMenu({
   environmentId,
   ticket,
-  jiraIssue,
+  issue,
   readOnly,
 }: {
   readonly environmentId: EnvironmentId | null | undefined;
   readonly ticket: WorkbenchSidebarTicket;
-  readonly jiraIssue: WorkbenchJiraIssue | null;
+  /** The Ticket's first issue Reference. */
+  readonly issue: WorkbenchParsedReferenceUrl | null;
   readonly readOnly: boolean;
 }) {
   const navigate = useNavigate();
@@ -138,8 +145,8 @@ export function useWorkbenchSidebarTicketActionMenu({
       await copyTicketLink(location.href);
       return;
     }
-    if (selected === "open-jira") {
-      await openJiraLink(api, jiraIssue);
+    if (selected === "open-issue") {
+      await openIssueLink(api, issue);
       return;
     }
     if (readOnly || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return;
@@ -167,11 +174,8 @@ export function useWorkbenchSidebarTicketActionMenu({
         !readOnly && readEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
       const selected = await api.contextMenu.show(
         !mutable
-          ? [
-              { id: "copy-link" as const, label: "Copy Ticket link" },
-              ...(jiraIssue ? [{ id: "open-jira" as const, label: "Open in Jira" }] : []),
-            ]
-          : menuItems({ ticket, jiraIssue }),
+          ? [{ id: "copy-link" as const, label: "Copy Ticket link" }, ...openIssueItem(issue)]
+          : menuItems({ ticket, issue }),
         position,
       );
       if (selected !== null) await runSelected(selected);

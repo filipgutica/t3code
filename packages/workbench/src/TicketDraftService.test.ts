@@ -820,4 +820,71 @@ describe("TicketDraftService", () => {
       expect(f.counts().threadCreates).toBe(1);
     }).pipe(Effect.provide(f.layer));
   });
+  it.effect("keeps draft References through promotion without bumping the draft", () => {
+    const f = fixture();
+    return Effect.gen(function* () {
+      const draft = yield* seed;
+      const service = yield* TicketDraftService;
+      const store = yield* WorkbenchStore;
+      const reference = yield* store.addReference({
+        ticketId: draft.id,
+        url: "https://github.com/acme/web/issues/61",
+        addedByThreadId: draft.threadId,
+      });
+      expect((yield* store.getTicketDraft(draft.id)).revision).toBe(draft.revision);
+      expect((yield* store.getSnapshot).references).toEqual([reference]);
+      yield* service.promote({ id: draft.id, expectedRevision: draft.revision });
+      expect((yield* store.getSnapshot).references).toEqual([reference]);
+    }).pipe(Effect.provide(f.layer));
+  });
+
+  it.effect("keeps the agent's Updated by through promotion", () => {
+    const f = fixture();
+    return Effect.gen(function* () {
+      const seeded = yield* seed;
+      const service = yield* TicketDraftService;
+      const store = yield* WorkbenchStore;
+      const draft = yield* store.updateTicketDraft({
+        id: seeded.id,
+        expectedRevision: seeded.revision,
+        fields: { ...seeded.fields, markdown: "Agent brief" },
+        updatedByThreadId: seeded.threadId,
+      });
+      yield* service.promote({ id: draft.id, expectedRevision: draft.revision });
+      const ticket = (yield* store.getSnapshot).tickets.find(({ id }) => id === draft.id);
+      expect(ticket?.updatedByThreadId).toBe(seeded.threadId);
+    }).pipe(Effect.provide(f.layer));
+  });
+
+  it.effect("rejects References for a discarding draft and deletes them on discard", () => {
+    const f = fixture();
+    return Effect.gen(function* () {
+      const draft = yield* seed;
+      const service = yield* TicketDraftService;
+      const store = yield* WorkbenchStore;
+      const sql = yield* SqlClient.SqlClient;
+      yield* store.addReference({
+        ticketId: draft.id,
+        url: "https://github.com/acme/web/issues/61",
+        addedByThreadId: null,
+      });
+      const discarding = yield* store.transitionTicketDraft({
+        id: draft.id,
+        expectedRevision: draft.revision,
+        from: ["draft"],
+        phase: "discarding",
+      });
+      const rejected = yield* Effect.result(
+        store.addReference({
+          ticketId: draft.id,
+          url: "https://figma.com/file",
+          addedByThreadId: null,
+        }),
+      );
+      expect(Result.isFailure(rejected) && rejected.failure.code).toBe("reference_owner_not_found");
+      expect((yield* store.getSnapshot).references).toEqual([]);
+      yield* service.discard({ id: draft.id, expectedRevision: discarding.revision });
+      expect(yield* sql`SELECT 1 FROM workbench_references`).toEqual([]);
+    }).pipe(Effect.provide(f.layer));
+  });
 });

@@ -178,7 +178,7 @@ const roster = (siblingCount: number) =>
     ticket: {
       id: WorkbenchTicketId.make("draft"),
       title: "Explain failures",
-      jiraIssueKey: "ORBIT-7",
+      issueLabel: "ORBIT-7",
     },
     recap: null,
     siblings: Array.from({ length: siblingCount }, () => ({
@@ -191,11 +191,22 @@ const roster = (siblingCount: number) =>
     })),
   });
 type Roster = Effect.Success<ReturnType<WorkbenchStore["Service"]["getThreadRoster"]>>;
+const UNSAVED_PHASES: ReadonlyArray<WorkbenchTicketDraft["phase"] | null> = [
+  "creating",
+  "draft",
+  "promoting",
+];
 const policyLayer = (
   phase: WorkbenchTicketDraft["phase"] | null,
   driver = "codex",
   missingRepository = false,
   readRoster: Effect.Effect<Roster, WorkbenchOperationError> = Effect.succeedNone,
+  // Unsaved drafts own themselves; saved ones, like assigned Threads, belong to their Ticket.
+  owner: "none" | "draft" | "ticket" = phase === null
+    ? "none"
+    : UNSAVED_PHASES.includes(phase)
+      ? "draft"
+      : "ticket",
 ) =>
   TicketPlanningRuntime.layerRuntimePolicyDecorator.pipe(
     Layer.provide(
@@ -203,6 +214,34 @@ const policyLayer = (
         Layer.mock(WorkbenchStore)({
           getTicketDraftForThread: () => Effect.succeed(phase === null ? null : draft(phase)),
           getThreadRoster: () => readRoster,
+          resolveThreadOwner: () =>
+            Effect.succeed(
+              owner === "none"
+                ? Option.none()
+                : Option.some(
+                    owner === "draft"
+                      ? { kind: "draft" as const, draftId: WorkbenchTicketId.make("draft") }
+                      : { kind: "ticket" as const, ticketId: WorkbenchTicketId.make("draft") },
+                  ),
+            ),
+          getTicketDraft: () => Effect.succeed(draft(phase ?? "draft")),
+          getTicketWorkspace: () => Effect.succeed(Option.fromNullishOr(draft("working").workArea)),
+          getTicket: () =>
+            Effect.succeedSome({
+              id: WorkbenchTicketId.make("draft"),
+              projectId: WorkbenchProjectId.make("tools"),
+              epicId: null,
+              title: "Explain failures",
+              kind: "story" as const,
+              markdown: "## Goal\nExplain worktree failures",
+              primaryT3ProjectId: second,
+              repositoryProjectIds: [second],
+              status: "in_progress" as const,
+              blocked: false,
+              revision: 4,
+              createdAt: DateTime.formatIso(now),
+              updatedAt: DateTime.formatIso(now),
+            }),
         }),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThreadShell: (id) => Effect.succeed(id === siblingId ? siblingShell : null),
@@ -252,14 +291,40 @@ it.effect.each(["codex", "claudeAgent"] as const)(
         assert.equal(policy.checkpoints, "disabled");
         assert.include(policy.instructions ?? "", "not implementation");
         assert.include(policy.instructions ?? "", "Do not change the repositories' files");
-        assert.include(policy.instructions ?? "", "system temp directory");
         assert.include(policy.instructions ?? "", "/repo/repo:first");
         assert.include(policy.instructions ?? "", "/repo/repo:second");
-        assert.include(policy.instructions ?? "", "workbench-ticket-draft");
-        assert.include(policy.instructions ?? "", "workbench-jira-link");
+        assert.include(
+          policy.instructions ?? "",
+          "Fill the draft as the conversation goes with workbench_workstream_update",
+        );
+        assert.include(policy.instructions ?? "", 'Workstream "Explain failures" (id draft)');
+        assert.include(policy.instructions ?? "", "## Goal\nExplain worktree failures");
+        assert.include(
+          policy.instructions ?? "",
+          "Record each file, and each relevant issue, PR, doc, or design, with workbench_reference_add",
+        );
       }),
       Effect.provide(policyLayer("draft", driver)),
     ),
+);
+it.effect("tells an assigned Thread its Workstream, tools, artifacts folder, and brief", () =>
+  resolve.pipe(
+    Effect.map((policy) => {
+      const instructions = policy.instructions ?? "";
+      assert.equal(policy.runtimeMode, basePolicy.runtimeMode);
+      assert.include(instructions, 'Workstream "Explain failures" (id draft)');
+      assert.include(instructions, "call workbench_workstream_read");
+      assert.include(instructions, "`artifactsDir`");
+      assert.include(instructions, "Jira or GitHub, when the user asks");
+      assert.include(instructions, "## Goal\nExplain worktree failures");
+      assert.include(instructions, '"path":"/work-area/repo:first"');
+      assert.include(
+        instructions,
+        '"path":"/work-area/repo:second","branch":"ticket/approved","primary":true',
+      );
+    }),
+    Effect.provide(policyLayer(null, "codex", false, Effect.succeedNone, "ticket")),
+  ),
 );
 it.effect("leaves ordinary native Threads unchanged", () =>
   resolve.pipe(
@@ -322,7 +387,8 @@ it.effect("keeps planning instructions and the sibling roster's send guidance", 
   resolve.pipe(
     Effect.map((policy) => {
       assert.include(policy.instructions ?? "", "ticket is already saved");
-      assert.include(policy.instructions ?? "", "workbench-ticket-draft");
+      assert.include(policy.instructions ?? "", "workbench_workstream_update");
+      assert.include(policy.instructions ?? "", "call workbench_workstream_read");
       assert.include(policy.instructions ?? "", `thread_id=${siblingId}`);
       assert.include(policy.instructions ?? "", "t3_thread_read");
       assert.include(policy.instructions ?? "", "t3_thread_send");
@@ -371,8 +437,8 @@ it.effect(
         assert.include(policy.instructions ?? "", "/work-area/repo:first");
         assert.include(policy.instructions ?? "", "/work-area/repo:second");
         assert.include(policy.instructions ?? "", "ticket/approved");
-        // Planning instructions are historical here, so the link card instruction is repeated.
-        assert.include(policy.instructions ?? "", "workbench-jira-link");
+        // Planning instructions are historical here; the Workstream instruction still applies.
+        assert.include(policy.instructions ?? "", "call workbench_workstream_read");
       }),
       Effect.provide(policyLayer("working")),
     ),

@@ -4,7 +4,6 @@ import { useEffect, type ReactNode } from "react";
 
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
-import { WorkbenchTicketProposalHistory } from "./WorkbenchTicketProposal";
 
 /** Preparation stays in its Workbench view even when a native Thread link is opened. */
 export function WorkbenchThreadPreparationGate({
@@ -41,9 +40,5 @@ export function WorkbenchThreadPreparationGate({
       replace: true,
     });
   }, [navigate, preparation, environmentId]);
-  return preparation ? null : (
-    <WorkbenchTicketProposalHistory threadRef={threadRef}>
-      {children}
-    </WorkbenchTicketProposalHistory>
-  );
+  return preparation ? null : children;
 }

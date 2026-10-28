@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useBlocker } from "@tanstack/react-router";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type {
   EnvironmentId,
   ServerProvider,
@@ -8,6 +9,7 @@ import type {
   WorkbenchEpic,
   WorkbenchEpicId,
   WorkbenchProject,
+  WorkbenchReference,
   WorkbenchTicket,
 } from "@t3tools/contracts";
 import { ArrowLeftIcon, CircleAlertIcon, TicketPlusIcon } from "lucide-react";
@@ -42,10 +44,6 @@ import { toastManager } from "../components/ui/toast";
 import { useThreadShell } from "../state/entities";
 import type { Project } from "../types";
 import { WorkbenchDescription } from "./WorkbenchDescription";
-import {
-  WorkbenchRepositoryBadges,
-  WorkbenchTicketProposalRenderer,
-} from "./WorkbenchTicketProposal";
 import { WorkbenchInlineError } from "./WorkbenchForms";
 import { WorkbenchDiscardDraftDialog } from "./WorkbenchDiscardDraftDialog";
 import {
@@ -54,8 +52,15 @@ import {
 } from "./WorkbenchTicketDraftPanel";
 import { workbenchEnvironment } from "./state";
 import { usePlanningModelSelection } from "./usePlanningModelSelection";
-import { applyTicketProposal, WorkbenchDraftActions } from "./WorkbenchDraftActions";
+import { WorkbenchDraftActions } from "./WorkbenchDraftActions";
 import {
+  WorkbenchDraftReferences,
+  WorkbenchProvenanceBadge,
+  workbenchThreadTitle,
+} from "./WorkbenchReferences";
+import { getReferenceFileCwd } from "./workbenchReferences.logic";
+import {
+  useRefreshOnThreadActivity,
   useTicketDraftBegin,
   useTicketDraftEditor,
   useTicketDraftTransitions,
@@ -78,6 +83,10 @@ export interface WorkbenchTicketConversationProps {
   readonly draftsSupported: boolean;
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly linkedProjects: ReadonlyArray<Project>;
+  /** The draft's References; a promoted draft's id is its Ticket's id. */
+  readonly references: ReadonlyArray<WorkbenchReference>;
+  readonly threadsById: ReadonlyMap<ThreadId, Pick<EnvironmentThreadShell, "title">>;
+  readonly archivedThreadsById: ReadonlyMap<ThreadId, Pick<EnvironmentThreadShell, "title">>;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
   readonly initialEpicId: WorkbenchEpicId | null;
   readonly refreshSnapshot: () => void;
@@ -298,10 +307,41 @@ function WorkbenchConversationPane({
   );
 }
 
+function WorkbenchRepositoryBadges({
+  label,
+  ids,
+  primaryId,
+  projects,
+}: {
+  readonly label: string;
+  readonly ids: ReadonlyArray<string>;
+  readonly primaryId: string | null;
+  readonly projects: ReadonlyArray<Project>;
+}) {
+  return (
+    <ul aria-label={label} data-workbench-ticket-repositories className="flex flex-wrap gap-1.5">
+      {ids.map((id) => (
+        <Badge
+          key={id}
+          render={<li data-workbench-ticket-repository-badge />}
+          variant="outline"
+          size="lg"
+        >
+          <span className="max-w-48 truncate">
+            {projects.find((project) => project.id === id)?.title ?? "Repository"}
+          </span>
+          {id === primaryId ? <span className="text-muted-foreground">· Primary</span> : null}
+        </Badge>
+      ))}
+    </ul>
+  );
+}
+
 /** What the saved ticket looks like while its conversation keeps planning. */
 function WorkbenchPlanningSummary({
   summary,
   linkedProjects,
+  updatedBy,
 }: {
   readonly summary: {
     readonly title: string;
@@ -310,12 +350,14 @@ function WorkbenchPlanningSummary({
     readonly primaryT3ProjectId: string | null;
   };
   readonly linkedProjects: ReadonlyArray<Project>;
+  readonly updatedBy: string | null;
 }) {
   return (
     <div className="min-w-0 space-y-4">
       <div className="space-y-1.5">
         <p className="text-xs font-medium text-muted-foreground">Ticket</p>
         <p className="break-words text-base font-semibold">{summary.title}</p>
+        {updatedBy !== null ? <WorkbenchProvenanceBadge text={`Updated by ${updatedBy}`} /> : null}
       </div>
       <WorkbenchRepositoryBadges
         label="Ticket repositories"
@@ -408,7 +450,6 @@ function useModelUnsupported({ environmentId, draft, entries }: DraftBodyProps) 
   return thread !== null && draft.phase !== "working" && !supportsEnforcedTicketPlanning(driver);
 }
 
-/** The assistant's newest proposal; Apply writes it into the fields as an explicit edit. */
 /** The right-hand column: ticket fields or summary, errors, and the phase's actions. */
 function WorkbenchDraftAside({
   props,
@@ -429,6 +470,27 @@ function WorkbenchDraftAside({
   const { fields, edit } = editor;
   const modelUnsupported = useModelUnsupported(props);
   const planning = draft.phase === "planning" || draft.phase === "starting";
+  const updatedBy = workbenchThreadTitle(
+    planning ? ticket?.updatedByThreadId : draft.updatedByThreadId,
+    props.threadsById,
+    props.archivedThreadsById,
+  );
+  const references = (
+    <WorkbenchDraftReferences
+      environmentId={props.environmentId}
+      draftId={draft.id}
+      references={props.references}
+      threadsById={props.threadsById}
+      archivedThreadsById={props.archivedThreadsById}
+      readOnly={!canOperate || transitions.action !== null}
+      fileCwd={getReferenceFileCwd(linkedProjects, [
+        draft.fields.primaryT3ProjectId,
+        ...draft.fields.repositoryProjectIds,
+        draft.anchorProjectId,
+      ])}
+      fileThreadId={draft.threadId}
+    />
+  );
   return (
     <>
       <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto p-4">
@@ -442,10 +504,14 @@ function WorkbenchDraftAside({
           />
         ) : null}
         {planning ? (
-          <WorkbenchPlanningSummary
-            summary={ticket ?? draft.fields}
-            linkedProjects={linkedProjects}
-          />
+          <>
+            <WorkbenchPlanningSummary
+              summary={ticket ?? draft.fields}
+              linkedProjects={linkedProjects}
+              updatedBy={updatedBy}
+            />
+            {references}
+          </>
         ) : (
           <WorkbenchTicketDraftFieldsForm
             fields={fields}
@@ -457,6 +523,8 @@ function WorkbenchDraftAside({
             }
             linkedProjects={linkedProjects}
             epics={props.epics}
+            updatedBy={updatedBy}
+            references={references}
             onChange={edit}
             onCreateEpic={props.onCreateEpic}
           />
@@ -547,6 +615,7 @@ function WorkbenchTicketConversationBody(props: DraftBodyProps) {
     onDraft,
     refreshSnapshot: props.refreshSnapshot,
   });
+  useRefreshOnThreadActivity(scopeThreadRef(environmentId, draft.threadId), props.refreshSnapshot);
   const blocker = useBlocker({
     withResolver: true,
     shouldBlockFn: async () => !(await editor.flush()).ok,
@@ -560,7 +629,6 @@ function WorkbenchTicketConversationBody(props: DraftBodyProps) {
   const transitions = useTicketDraftTransitions({
     environmentId,
     draft,
-    projects: props.linkedProjects,
     editor,
     onDraft,
     onTicketCreated: props.onTicketCreated,
@@ -609,26 +677,7 @@ function WorkbenchTicketConversationBody(props: DraftBodyProps) {
                 onCreateManually={() => void transitions.createManually()}
               />
             ) : (
-              <WorkbenchTicketProposalRenderer
-                environmentId={environmentId}
-                threadId={draft.threadId}
-                linkedProjects={props.linkedProjects}
-                fields={editor.fields}
-                ticket={ticket}
-                canApply={
-                  canOperate &&
-                  props.workspace.archivedAt == null &&
-                  editor.editable &&
-                  editor.conflict === null &&
-                  transitions.action === null
-                }
-                onApply={applyTicketProposal(editor)}
-              >
-                <WorkbenchConversationPane
-                  environmentId={environmentId}
-                  threadId={draft.threadId}
-                />
-              </WorkbenchTicketProposalRenderer>
+              <WorkbenchConversationPane environmentId={environmentId} threadId={draft.threadId} />
             )}
           </section>
           <aside

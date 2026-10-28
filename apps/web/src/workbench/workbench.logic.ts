@@ -1,19 +1,18 @@
-import type {
-  OrchestrationV2ShellSnapshot,
-  OrchestrationV2ThreadFamily,
-  OrchestrationV2ThreadShell,
-  ProjectId,
-  ThreadId,
-  WorkbenchAssignment,
-  WorkbenchEpic,
-  WorkbenchSnapshot,
-  WorkbenchTicket,
-  WorkbenchTicketGeneratedSummary,
-  WorkbenchTicketId,
-  WorkbenchTicketKind,
-  WorkbenchTicketStatus,
+import {
+  type OrchestrationV2ShellSnapshot,
+  type OrchestrationV2ThreadFamily,
+  type OrchestrationV2ThreadShell,
+  type ProjectId,
+  type ThreadId,
+  type WorkbenchAssignment,
+  type WorkbenchEpic,
+  type WorkbenchSnapshot,
+  type WorkbenchTicket,
+  type WorkbenchTicketGeneratedSummary,
+  type WorkbenchTicketId,
+  type WorkbenchTicketKind,
+  type WorkbenchTicketStatus,
 } from "@t3tools/contracts";
-import type { ReviewCommentContext } from "../reviewCommentContext";
 
 export const WORKBENCH_TICKET_KINDS = [
   "story",
@@ -377,76 +376,6 @@ export function isWorkbenchThreadArchived(
   archivedThreads: ReadonlyMap<ThreadId, unknown>,
 ): boolean {
   return !liveThreads.has(threadId) && archivedThreads.has(threadId);
-}
-
-function neutralizeTicketContextTags(value: string): string {
-  return value.replace(/<(?=\/?review_comment\b)/giu, "&lt;");
-}
-
-export type WorkbenchTicketContextSource = Pick<
-  WorkbenchTicket,
-  "title" | "markdown" | "kind" | "repositoryProjectIds" | "primaryT3ProjectId" | "jiraIssue"
->;
-
-// Workbench never calls Jira; the agent's own connector does, and the user applies the link card.
-const JIRA_CONNECTOR_INSTRUCTION =
-  'If you have a Jira connector, search it for issues that already cover this ticket and tell the user about matches. Create or change Jira issues only when the user asks. After you create or find the issue, post its URL in one fenced `workbench-jira-link` block, `{"url": "..."}`, so the user can link it to the ticket.';
-
-export function buildTicketThreadContext(
-  ticket: WorkbenchTicketContextSource,
-  repositories: ReadonlyArray<{
-    readonly id: ProjectId;
-    readonly title: string;
-    readonly workspaceRoot: string;
-  }>,
-): string {
-  const body = ticket.markdown.trim();
-  const jiraIssue = ticket.jiraIssue;
-  const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]));
-  const repositoryLines = getWorkbenchTicketRepositoryProjectIds(ticket).map((repositoryId) => {
-    const repository = repositoriesById.get(repositoryId);
-    const title = repository?.title ?? repositoryId;
-    const workspaceRoot = repository?.workspaceRoot ?? "Repository unavailable";
-    return `- ${title}${repositoryId === ticket.primaryT3ProjectId ? " (primary)" : ""}: ${workspaceRoot}`;
-  });
-  return [
-    `# ${ticket.title}`,
-    "",
-    `Ticket type: ${WORKBENCH_TICKET_KIND_LABELS[ticket.kind]}`,
-    ...(jiraIssue ? [`Jira issue: ${jiraIssue.key} (${jiraIssue.url})`] : []),
-    "",
-    "## Jira",
-    "",
-    JIRA_CONNECTOR_INSTRUCTION,
-    "",
-    "## Repository scope",
-    "",
-    ...repositoryLines,
-    ...(body.length > 0 ? ["", body] : []),
-  ].join("\n");
-}
-
-export function buildTicketReviewComment(
-  ticket: WorkbenchTicketContextSource & Pick<WorkbenchTicket, "id">,
-  repositories: ReadonlyArray<{
-    readonly id: ProjectId;
-    readonly title: string;
-    readonly workspaceRoot: string;
-  }>,
-): ReviewCommentContext {
-  const context = buildTicketThreadContext(ticket, repositories);
-  return {
-    id: `workbench-ticket:${ticket.id}`,
-    sectionId: `workbench-ticket:${ticket.id}`,
-    sectionTitle: "Agent Workbench ticket",
-    filePath: ticket.title,
-    startIndex: 0,
-    endIndex: Math.max(0, context.split("\n").length - 1),
-    rangeLabel: "Ticket context",
-    text: ticket.title,
-    diff: neutralizeTicketContextTags(context),
-    fenceLanguage: "markdown",
-  };
 }
 
 export function groupWorkbenchTicketsByEpic<

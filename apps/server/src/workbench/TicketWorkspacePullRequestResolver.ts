@@ -1,7 +1,6 @@
 import {
   WorkbenchOperationError,
   type ThreadId,
-  type ProjectId,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
@@ -14,7 +13,6 @@ import * as Option from "effect/Option";
 
 import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
 import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
-import { PullRequestService } from "../pullRequest/PullRequestService.ts";
 import {
   type SourceControlProviderHandle,
   SourceControlProviderRegistry,
@@ -66,7 +64,6 @@ const validatePullRequestHead = ({
 export const make = Effect.gen(function* () {
   const projects = yield* ProjectStoreV2;
   const threads = yield* ThreadManagementService;
-  const pullRequests = yield* PullRequestService;
   const providers = yield* SourceControlProviderRegistry;
 
   const collectThreadCandidates = Effect.fnUntraced(function* ({
@@ -87,54 +84,6 @@ export const make = Effect.gen(function* () {
       if (thread === null || thread.archivedAt !== null || thread.settledOverride === "settled")
         continue;
       for (const url of threadCandidateUrls(thread)) addCandidate(url);
-    }
-  });
-
-  const collectJiraCandidates = Effect.fnUntraced(function* ({
-    projectId,
-    projectTitle,
-    jiraIssueKey,
-    addCandidate,
-  }: {
-    projectId: ProjectId;
-    projectTitle: string;
-    jiraIssueKey: string;
-    addCandidate: (url: string) => void;
-  }) {
-    yield* pullRequests.invalidate({});
-    const result = yield* pullRequests
-      .list({
-        state: "open",
-        involvement: "all",
-        projectIds: [projectId],
-        query: jiraIssueKey,
-        limit: 50,
-      })
-      .pipe(
-        Effect.mapError(() =>
-          preparationError(
-            `Could not search ${projectTitle} for Ticket pull requests. Check the hosting connection and retry.`,
-          ),
-        ),
-      );
-    if (
-      result.errors.length > 0 ||
-      result.providers.some((provider) => provider.searchesOnHost && !provider.configured)
-    )
-      return yield* preparationError(
-        `Could not search all pull requests for ${projectTitle}. Check the hosting connection and retry.`,
-      );
-    if (result.truncated || Object.keys(result.nextCursors).length > 0)
-      return yield* preparationError(
-        `The PR search for ${projectTitle} is incomplete. Narrow the Ticket's linked PRs before preparing its workspace.`,
-      );
-    for (const entry of result.entries) {
-      if (
-        entry.projectId === projectId &&
-        entry.state === "open" &&
-        result.providers.some((provider) => provider.host === entry.host && provider.searchesOnHost)
-      )
-        addCandidate(entry.url);
     }
   });
 
@@ -179,7 +128,7 @@ export const make = Effect.gen(function* () {
 
   const resolveOpenPullRequestBranch: TicketWorkspacePullRequestResolver["Service"]["resolveOpenPullRequestBranch"] =
     Effect.fn("TicketWorkspacePullRequestResolver.resolveOpenPullRequestBranch")(function* (input) {
-      if (!input.jiraIssueKey && input.assignedThreadIds.length === 0) return Option.none();
+      if (input.assignedThreadIds.length === 0) return Option.none();
       const projectOption = yield* projects
         .getShell(input.projectId)
         .pipe(
@@ -207,14 +156,6 @@ export const make = Effect.gen(function* () {
           candidates.set(`${repositoryKey}#${parsed.number}`, url);
       };
       yield* collectThreadCandidates({ assignedThreadIds: input.assignedThreadIds, addCandidate });
-      if (input.jiraIssueKey) {
-        yield* collectJiraCandidates({
-          projectId: input.projectId,
-          projectTitle: project.title,
-          jiraIssueKey: input.jiraIssueKey,
-          addCandidate,
-        });
-      }
 
       if (candidates.size === 0) return Option.none();
       const handle = yield* providers

@@ -7,9 +7,7 @@ import {
   WorkbenchEpicId,
   WorkbenchProjectId,
   WorkbenchTicketId,
-  WorkbenchTicketWorkspaceAttemptId,
   type ModelSelection,
-  type WorkbenchSnapshot,
   type WorkbenchTicketDraft,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -19,6 +17,7 @@ import { create } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  useRefreshOnThreadActivity,
   useTicketDraftBegin,
   useTicketDraftEditor,
   useTicketDraftTransitions,
@@ -31,7 +30,6 @@ const commands = vi.hoisted(() => ({
   update: vi.fn(),
   promote: vi.fn(),
   startWork: vi.fn(),
-  readSnapshot: vi.fn(),
   discard: vi.fn(),
 }));
 const toast = vi.hoisted(() => ({ add: vi.fn() }));
@@ -41,7 +39,6 @@ vi.mock("./state", () => ({
     updateTicketDraft: "update",
     promoteTicketDraft: "promote",
     startTicketDraftWork: "startWork",
-    readSnapshot: "readSnapshot",
     discardTicketDraft: "discard",
   },
 }));
@@ -49,6 +46,10 @@ vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: (command: keyof typeof commands) => commands[command],
 }));
 vi.mock("../components/ui/toast", () => ({ toastManager: toast }));
+const threadShell = vi.hoisted(() => ({ itemCount: 0 }));
+vi.mock("../state/entities", () => ({
+  useThreadShell: () => ({ itemCount: threadShell.itemCount }),
+}));
 
 const environmentId = EnvironmentId.make("environment");
 const workspaceId = WorkbenchProjectId.make("workspace");
@@ -359,10 +360,6 @@ const mountEditor = async (initial: WorkbenchTicketDraft = makeDraft()) => {
     const transitionOptions: TransitionOptions = {
       environmentId,
       draft,
-      projects: [
-        { id: ProjectId.make("repo"), title: "API", workspaceRoot: "/source/api" },
-        { id: ProjectId.make("docs"), title: "Docs", workspaceRoot: "/source/docs" },
-      ],
       editor,
       onDraft,
       onTicketCreated: vi.fn(),
@@ -481,124 +478,22 @@ describe("useTicketDraftEditor", () => {
 });
 
 describe("useTicketDraftTransitions", () => {
-  it("stages the live ticket and prepared checkouts before continuing the same Thread", async () => {
+  it("continues the same Thread without changing the user's unsent message", async () => {
     const draft = makeDraft({ phase: "planning" });
     const working = { ...draft, phase: "working" as const, revision: 2 };
-    const docs = ProjectId.make("docs");
-    const snapshot: WorkbenchSnapshot = {
-      projects: [],
-      epics: [],
-      assignments: [],
-      reservedThreadIds: [],
-      tickets: [
-        {
-          id: draft.id,
-          projectId: workspaceId,
-          epicId: null,
-          title: "Saved ticket",
-          markdown: "Requirements revised after promotion",
-          kind: "story",
-          primaryT3ProjectId: docs,
-          repositoryProjectIds: [draft.anchorProjectId, docs],
-          status: "todo",
-          blocked: false,
-          revision: 3,
-          createdAt: time,
-          updatedAt: time,
-        },
-      ],
-      threadRecaps: [],
-      ticketWorkspaces: [
-        {
-          ticketId: draft.id,
-          attemptId: WorkbenchTicketWorkspaceAttemptId.make("attempt"),
-          status: "ready",
-          branchName: "ticket",
-          errorMessage: null,
-          createdAt: time,
-          updatedAt: time,
-          repositories: [draft.anchorProjectId, docs].map((projectId) => ({
-            projectId,
-            isPrimary: projectId === docs,
-            sourcePath: `/source/${projectId}`,
-            worktreePath: `/prepared/${projectId}`,
-            branchName: "ticket",
-            status: "ready",
-            errorMessage: null,
-            createdAt: time,
-            updatedAt: time,
-          })),
-        },
-      ],
-    };
     commands.startWork.mockResolvedValue(AsyncResult.success(working));
-    commands.readSnapshot.mockResolvedValue(AsyncResult.success(snapshot));
     const threadRef = scopeThreadRef(environmentId, draft.threadId);
     useComposerDraftStore.getState().setPrompt(threadRef, "Keep my unsent request");
     const harness = await mountEditor(draft);
-    harness.onWorkStarted.mockImplementation(() => {
-      const composer = useComposerDraftStore.getState().getComposerDraft(threadRef);
-      expect(composer?.prompt).toMatch(/^Keep my unsent request /);
-      expect(composer?.reviewComments).toHaveLength(1);
-      expect(composer?.reviewComments[0]?.diff).toContain("Requirements revised after promotion");
-      expect(composer?.reviewComments[0]?.diff).toContain("Docs (primary): /prepared/docs");
-      expect(composer?.reviewComments[0]?.diff).toContain("API: /prepared/repo");
-      expect(composer?.reviewComments[0]?.diff).not.toContain("/source/");
-    });
     try {
       await harness.run(() => harness.transitions().startWork());
       expect(harness.onWorkStarted).toHaveBeenCalledWith(working);
-      expect(commands.readSnapshot).toHaveBeenCalledWith({ environmentId, input: {} });
-      expect(
-        useComposerDraftStore
-          .getState()
-          .getComposerDraft(scopeThreadRef(EnvironmentId.make("other-host"), draft.threadId)),
-      ).toBeNull();
+      const composer = useComposerDraftStore.getState().getComposerDraft(threadRef);
+      expect(composer?.prompt).toBe("Keep my unsent request");
+      expect(composer?.reviewComments).toEqual([]);
     } finally {
       await harness.unmount();
     }
-  });
-
-  it("opens the prepared Thread with visible recovery when context reading fails after unmount", async () => {
-    const working = makeDraft({ phase: "working" });
-    commands.startWork.mockResolvedValue(AsyncResult.success(working));
-    let resolveRead: (result: unknown) => void = () => {};
-    const read = new Promise<unknown>((resolve) => {
-      resolveRead = resolve;
-    });
-    let markRequested: () => void = () => {};
-    const requested = new Promise<void>((resolve) => {
-      markRequested = resolve;
-    });
-    commands.readSnapshot.mockImplementation(() => {
-      markRequested();
-      return read;
-    });
-    const harness = await mountEditor(makeDraft({ phase: "planning" }));
-    let pending: Promise<void> | undefined;
-    await harness.run(async () => {
-      pending = harness.transitions().startWork();
-      await requested;
-    });
-    // A working snapshot replaces this planning view before the fresh read completes.
-    await harness.unmount();
-    await act(async () => {
-      resolveRead(AsyncResult.failure(Cause.fail(new Error("Offline."))));
-      await pending;
-    });
-    expect(harness.onWorkStarted).toHaveBeenCalledWith(working);
-    expect(toast.add).toHaveBeenCalledWith({
-      type: "warning",
-      title: "Ticket context could not be attached",
-      description: expect.stringContaining(
-        "Use Add ticket context in the Thread before sending. Offline.",
-      ),
-    });
-    expect(
-      useComposerDraftStore
-        .getState()
-        .getComposerDraft(scopeThreadRef(environmentId, working.threadId)),
-    ).toBeNull();
   });
 
   it.each(["close", "createManually"] as const)(
@@ -663,5 +558,38 @@ describe("useTicketDraftTransitions", () => {
     expect(harness.onDiscarded).toHaveBeenCalledOnce();
     await harness.unmount();
     expect(commands.update).toHaveBeenCalledOnce();
+  });
+});
+
+describe("useRefreshOnThreadActivity", () => {
+  it("refreshes the snapshot once after a burst of Thread items, and not on mount", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const refreshSnapshot = vi.fn();
+    threadShell.itemCount = 3;
+    function Harness(_props: { readonly items: number }) {
+      useRefreshOnThreadActivity(
+        scopeThreadRef(environmentId, ThreadId.make("thread")),
+        refreshSnapshot,
+      );
+      return null;
+    }
+    let renderer: ReturnType<typeof create> | undefined;
+    await act(async () => {
+      renderer = create(<Harness items={3} />);
+    });
+    vi.useFakeTimers();
+    try {
+      await act(async () => vi.advanceTimersByTime(5_000));
+      expect(refreshSnapshot).not.toHaveBeenCalled();
+      for (const items of [4, 5]) {
+        threadShell.itemCount = items;
+        await act(async () => renderer?.update(<Harness items={items} />));
+      }
+      await act(async () => vi.advanceTimersByTime(1_000));
+      expect(refreshSnapshot).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+      await act(async () => renderer?.unmount());
+    }
   });
 });

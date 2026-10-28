@@ -434,7 +434,7 @@
   "apps/web/src/state/queries.ts": 2,
   "apps/web/src/state/threads.ts": 1,
   "apps/web/src/workbench/WorkbenchAttentionQueries.tsx": 3,
-  "apps/web/src/workbench/WorkbenchBoardFloatingChat.tsx": 3,
+  "apps/web/src/workbench/WorkbenchBoardFloatingChat.tsx": 2,
   "apps/web/src/workbench/WorkbenchCheckoutDetails.tsx": 1,
   "apps/web/src/workbench/WorkbenchFloatingChat.tsx": 3,
   "apps/web/src/workbench/WorkbenchForms.tsx": 1,

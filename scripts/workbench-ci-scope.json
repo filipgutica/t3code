@@ -45,6 +45,7 @@
         "apps/server/src/git/GitWorkflowService.ts",
         "apps/server/src/http.ts",
         "apps/server/src/httpCors.ts",
+        "apps/server/src/mcp/McpHttpServer.ts",
         "apps/server/src/mcp/McpInvocationContext.ts",
         "apps/server/src/mcp/McpSessionRegistry.ts",
         "apps/server/src/mcp/McpToolAccess.ts",
@@ -115,7 +116,8 @@
         "packages/provider-core/src/server/textGenerationOperations.ts",
         "packages/provider-muse/src/server/textGeneration.ts",
         "apps/server/src/observability/RpcInstrumentation.ts",
-        "apps/server/src/orchestration-v2/Adapters/CodexSandboxPolicy.ts"
+        "apps/server/src/orchestration-v2/Adapters/CodexSandboxPolicy.ts",
+        "apps/server/src/provider/agentContextBudget.json"
       ],
       "tests": [
         "apps/server/src/assets/AssetAccess.test.ts",
@@ -127,6 +129,7 @@
         "apps/server/src/git/GitManager.test.ts",
         "apps/server/src/git/GitWorkflowService.test.ts",
         "apps/server/src/http.test.ts",
+        "apps/server/src/mcp/McpHttpServer.test.ts",
         "apps/server/src/mcp/McpInvocationContext.test.ts",
         "apps/server/src/mcp/McpSessionRegistry.test.ts",
         "apps/server/src/mcp/McpToolAccess.test.ts",
@@ -184,7 +187,8 @@
         "apps/server/src/ws.test.ts",
         "packages/provider-core/src/server/textGenerationPrompts.test.ts",
         "packages/provider-muse/src/server/textGeneration.test.ts",
-        "apps/server/src/orchestration-v2/Adapters/CodexSandboxPolicy.test.ts"
+        "apps/server/src/orchestration-v2/Adapters/CodexSandboxPolicy.test.ts",
+        "apps/server/src/provider/AgentContextBudget.test.ts"
       ],
       "verification": ["unit", "typecheck"]
     },

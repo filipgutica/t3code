@@ -1,6 +1,5 @@
 import { EnvironmentId, ThreadId, WorkbenchProjectId, WorkbenchTicketId } from "@t3tools/contracts";
 import { act } from "react";
-import type { ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
@@ -13,10 +12,6 @@ vi.mock("../state/query", () => ({ useEnvironmentQuery: () => state.query }));
 vi.mock("./state", () => ({
   workbenchEnvironment: { ticketPreparations: vi.fn() },
 }));
-vi.mock("./WorkbenchTicketProposal", () => ({
-  WorkbenchTicketProposalHistory: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
-
 import { WorkbenchThreadPreparationGate } from "./WorkbenchThreadPreparationGate";
 
 const threadRef = {

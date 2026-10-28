@@ -27,6 +27,7 @@ import { makeThreadFixture } from "../test-fixtures";
 import type { Project } from "../types";
 import { WorkbenchPageView } from "./WorkbenchPageView";
 import { useWorkbenchBoardData } from "./useWorkbenchBoardData";
+import { groupWorkbenchReferences } from "./workbenchReferences.logic";
 
 vi.mock("../state/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../state/server")>();
@@ -103,7 +104,7 @@ const ticket: WorkbenchTicket = {
   createdAt: timestamp,
   updatedAt: timestamp,
 };
-const jiraIssue = { key: "WB-1", url: "https://example.atlassian.net/browse/WB-1" };
+const jiraIssueUrl = "https://example.atlassian.net/browse/WB-1";
 const thread = makeThreadFixture({
   id: ThreadId.make("native-thread"),
   environmentId,
@@ -174,6 +175,7 @@ const workspaceFixture = (workspaceState: "active" | "archived" | "deleted") => 
   };
 };
 const snapshot: WorkbenchSnapshot = {
+  references: [],
   projects: [workspace],
   tickets: [ticket],
   epics: [],
@@ -221,7 +223,7 @@ function Harness({
   canOperate?: boolean;
   workspaceState?: "active" | "archived" | "deleted";
   detail?: boolean;
-  /** The Ticket links a Jira issue. */
+  /** The Ticket has a Jira issue Reference. */
   linked?: boolean;
   grants?: { archive: boolean; remove: boolean };
   error?: string | null;
@@ -245,10 +247,20 @@ function Harness({
     conversation,
     detail,
   });
-  const linkedTicket = linked ? { ...ticket, jiraIssue } : ticket;
-  const selectedTicket = fixtureTicket && linkedTicket;
+  const references = linked
+    ? [
+        {
+          ticketId: ticket.id,
+          url: jiraIssueUrl,
+          title: null,
+          addedByThreadId: null,
+          createdAt: ticket.createdAt,
+        },
+      ]
+    : [];
+  const selectedTicket = fixtureTicket && ticket;
   const selectedTicketId = selectedTicket?.id ?? null;
-  const tickets = [linkedTicket];
+  const tickets = [ticket];
   const currentSnapshot = {
     ...snapshot,
     ...(epicLifecycleSupported === undefined
@@ -256,10 +268,12 @@ function Harness({
       : { supportsEpicLifecycle: epicLifecycleSupported }),
     projects: [currentWorkspace],
     tickets,
+    references,
     ...(ticketDrafts === undefined ? {} : { ticketDrafts }),
   };
   const pageData: PageProps["pageData"] = {
     canOperate,
+    referencesByTicket: groupWorkbenchReferences(references),
     projects: [repository],
     repositoriesById: new Map([[repository.id, repository]]),
     providers: [],
@@ -667,12 +681,11 @@ it("disables board mutations without operate permission and restores them when g
   expect(button("New Ticket").disabled).toBe(false);
 });
 
-it("links a Ticket's Jira issue from read-only Ticket detail and hides it once unlinked", async () => {
-  const issueLink = () =>
-    document.querySelector<HTMLAnchorElement>('a[aria-label="Open Jira issue WB-1"]');
+it("shows a Ticket's issue Reference in read-only Ticket detail and hides it once removed", async () => {
+  const issueLink = () => document.querySelector<HTMLAnchorElement>('a[aria-label="Open WB-1"]');
   await render({ detail: true, linked: true, canOperate: false });
   expect(document.body.textContent).toContain(ticket.title);
-  expect(issueLink()?.href).toBe(jiraIssue.url);
+  expect(issueLink()?.href).toBe(jiraIssueUrl);
   await render({ detail: true, canOperate: false });
   expect(issueLink()).toBeNull();
 });

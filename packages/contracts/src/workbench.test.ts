@@ -12,7 +12,6 @@ import {
   WorkbenchDeleteTicketInput,
   WorkbenchReplaceAssignmentInput,
   WorkbenchSetJiraIssueLinkInput,
-  WorkbenchSetJiraIssueLinkResult,
   WorkbenchSnapshot,
   WorkbenchTicket,
   WorkbenchTicketDraft,
@@ -22,6 +21,8 @@ import {
   WorkbenchUpdateProjectInput,
   WorkbenchUpdateTicketInput,
   parseJiraIssueUrl,
+  parseWorkbenchReferenceUrl,
+  workbenchTicketIssueLabel,
 } from "./workbench.ts";
 import { AuthOrchestrationOperateScope } from "./auth.ts";
 import { WORKBENCH_CLIENT_GUARDED_RPC_SCOPES } from "./workbenchRpcPermissions.ts";
@@ -40,9 +41,6 @@ const decodeWorkbenchDeleteTicketInput = Schema.decodeUnknownEffect(WorkbenchDel
 const decodeWorkbenchUpdateProjectInput = Schema.decodeUnknownEffect(WorkbenchUpdateProjectInput);
 const decodeWorkbenchSetJiraIssueLinkInput = Schema.decodeUnknownEffect(
   WorkbenchSetJiraIssueLinkInput,
-);
-const decodeWorkbenchSetJiraIssueLinkResult = Schema.decodeUnknownEffect(
-  WorkbenchSetJiraIssueLinkResult,
 );
 const decodeWorkbenchTicketDraft = Schema.decodeUnknownEffect(WorkbenchTicketDraft);
 const decodeWorkbenchUpdateTicketInput = Schema.decodeUnknownEffect(WorkbenchUpdateTicketInput);
@@ -112,6 +110,7 @@ describe("Workbench contracts", () => {
         assignments: [],
       });
       expect(snapshot.threadRecaps).toEqual([]);
+      expect(snapshot.references).toEqual([]);
     }),
   );
   it.effect("decodes the persisted Project, Ticket, and Assignment snapshot", () =>
@@ -387,22 +386,11 @@ describe("Workbench contracts", () => {
     }),
   );
 
-  it.effect("decodes Jira links and keeps snapshots without them compatible", () =>
+  it.effect("decodes Epic Jira links and Ticket References", () =>
     Effect.gen(function* () {
       const jiraIssue = {
         key: "ORBIT-375",
         url: "https://acme.atlassian.net/browse/ORBIT-375",
-      };
-      const ticket = {
-        id: "ticket-1",
-        projectId: "workspace",
-        title: "Linked",
-        markdown: "",
-        primaryT3ProjectId: "native",
-        status: "todo",
-        blocked: false,
-        createdAt: "2026-10-25T10:00:00.000Z",
-        updatedAt: "2026-10-25T10:00:00.000Z",
       };
       const epic = {
         id: "epic-1",
@@ -413,53 +401,37 @@ describe("Workbench contracts", () => {
         createdAt: "2026-10-25T10:00:00.000Z",
         updatedAt: "2026-10-25T10:00:00.000Z",
       };
-      const linked = yield* decodeWorkbenchSnapshot({
+      const reference = {
+        ticketId: "ticket-1",
+        url: jiraIssue.url,
+        title: null,
+        addedByThreadId: null,
+        createdAt: "2026-10-25T10:00:00.000Z",
+      };
+      const snapshot = yield* decodeWorkbenchSnapshot({
         projects: [],
         epics: [{ ...epic, jiraIssue }],
-        tickets: [{ ...ticket, jiraIssue }],
+        tickets: [],
         assignments: [],
+        references: [reference],
       });
-      expect(linked.tickets[0]?.jiraIssue).toEqual(jiraIssue);
-      expect(linked.epics[0]?.jiraIssue).toEqual(jiraIssue);
-      const legacy = yield* decodeWorkbenchSnapshot({
-        projects: [],
-        epics: [epic],
-        tickets: [ticket],
-        assignments: [],
-      });
-      expect(legacy.tickets[0]?.jiraIssue).toBeUndefined();
-      expect(legacy.epics[0]?.jiraIssue).toBeUndefined();
-
-      // A Ticket carries every Epic field, so the result must stay tagged.
-      const result = yield* decodeWorkbenchSetJiraIssueLinkResult({
-        kind: "ticket",
-        ticket: { ...ticket, jiraIssue },
-      });
-      expect(result.kind === "ticket" && result.ticket.primaryT3ProjectId).toBe("native");
+      expect(snapshot.epics[0]?.jiraIssue).toEqual(jiraIssue);
+      expect(snapshot.references).toEqual([reference]);
     }),
   );
 
-  it.effect("requires the record version that matches each Jira link target", () =>
+  it.effect("requires the Epic version for a Jira link", () =>
     Effect.gen(function* () {
-      const ticketLink = {
-        kind: "ticket",
-        ticketId: "ticket-1",
-        url: "https://acme.atlassian.net/browse/ORBIT-375",
-        expectedRevision: 2,
-      };
       const epicUnlink = {
-        kind: "epic",
         epicId: "epic-1",
         url: null,
         expectedUpdatedAt: "2026-10-25T10:00:00.000Z",
       };
-      expect(yield* decodeWorkbenchSetJiraIssueLinkInput(ticketLink)).toEqual(ticketLink);
       expect(yield* decodeWorkbenchSetJiraIssueLinkInput(epicUnlink)).toEqual(epicUnlink);
       for (const invalid of [
-        { ...ticketLink, expectedRevision: undefined },
         { ...epicUnlink, expectedUpdatedAt: undefined },
-        { ...ticketLink, kind: "epic" },
-        { ...ticketLink, url: " " },
+        { ...epicUnlink, url: " " },
+        { kind: "ticket", ticketId: "ticket-1", url: null, expectedRevision: 2 },
       ]) {
         expect((yield* Effect.exit(decodeWorkbenchSetJiraIssueLinkInput(invalid)))._tag).toBe(
           "Failure",
@@ -567,5 +539,84 @@ describe("parseJiraIssueUrl", () => {
     "data:text/html,https://acme.atlassian.net/browse/ORBIT-375",
   ])("rejects %s", (input) => {
     expect(parseJiraIssueUrl(input)).toBeNull();
+  });
+});
+
+describe("parseWorkbenchReferenceUrl", () => {
+  it.each([
+    ["https://acme.atlassian.net/browse/ORBIT-375", "jira_issue", "ORBIT-375"],
+    ["http://jira.internal:8080/jira/browse/OPS_2-9/activity", "jira_issue", "OPS_2-9"],
+    [
+      "https://acme.atlassian.net/jira/software/projects/ORBIT/boards/1?selectedIssue=orbit-12",
+      "jira_issue",
+      "ORBIT-12",
+    ],
+    ["https://github.com/acme/orbit-web/issues/61", "github_issue", "orbit-web#61"],
+    ["https://www.figma.com/design/abc/Invite-modal", "link", "www.figma.com"],
+    ["https://github.com/acme/orbit-web", "link", "github.com"],
+    ["https://github.example.com/acme/orbit-web/issues/61", "link", "github.example.com"],
+  ])("reads %s as %s", (input, kind, label) => {
+    expect(parseWorkbenchReferenceUrl(`  ${input} `)).toEqual({
+      url: new URL(input).href,
+      kind,
+      label,
+    });
+  });
+
+  it.each([
+    ["https://github.com/acme/orbit-web/pull/902", "https://github.com/acme/orbit-web/pull/902"],
+    [
+      "https://github.com/acme/orbit-web/pull/902/files#diff-1",
+      "https://github.com/acme/orbit-web/pull/902",
+    ],
+    [
+      "http://www.github.com/acme/orbit-web/pull/902/commits?w=1",
+      "https://github.com/acme/orbit-web/pull/902",
+    ],
+  ])("stores one URL for every view of a PR: %s", (input, url) => {
+    expect(parseWorkbenchReferenceUrl(input)).toEqual({
+      url,
+      kind: "github_pull_request",
+      label: "orbit-web#902",
+    });
+  });
+
+  it.each([
+    ["/home/user/.t3/userdata/workbench-artifacts/ticket-1/plan.md", "plan.md"],
+    ["/home/user/specs/", "specs"],
+    ["C:\\Users\\user\\mockup.png", "mockup.png"],
+    ["D:/designs/flow.svg", "flow.svg"],
+  ])("reads the absolute path %s as a file", (input, label) => {
+    expect(parseWorkbenchReferenceUrl(` ${input} `)).toEqual({ url: input, kind: "file", label });
+  });
+
+  it.each([
+    "",
+    "ORBIT-375",
+    "spec.md",
+    "./spec.md",
+    "/",
+    "//nas/share/spec.md",
+    `/${"a".repeat(2_048)}`,
+    "javascript:alert(1)",
+    "ftp://acme.atlassian.net/browse/ORBIT-375",
+    `https://example.com/${"a".repeat(2_048)}`,
+  ])("rejects %s", (input) => {
+    expect(parseWorkbenchReferenceUrl(input)).toBeNull();
+  });
+
+  it("labels a Ticket with its first issue Reference", () => {
+    const urls = (...values: ReadonlyArray<string>) => values.map((url) => ({ url }));
+    expect(
+      workbenchTicketIssueLabel(
+        urls(
+          "https://github.com/acme/orbit-web/pull/902",
+          "https://figma.com/file",
+          "https://github.com/acme/orbit-web/issues/61",
+          "https://acme.atlassian.net/browse/ORBIT-1",
+        ),
+      ),
+    ).toBe("orbit-web#61");
+    expect(workbenchTicketIssueLabel(urls("https://figma.com/file"))).toBeNull();
   });
 });

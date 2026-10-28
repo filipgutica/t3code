@@ -37,10 +37,8 @@ ask only for missing authorization, and continue independent checks.
   **pass**, **fail**, **blocked**, or **not applicable**, with observed result and
   screenshot, URL, test, or log evidence. State why a case is not applicable.
 - A Thread-opening check is incomplete until an authorized test message is sent
-  and the turn finishes. Use: `Do not edit files or run commands. Reply exactly:
-  Workbench regression passed.` Verify progress and retained context afterward.
-- Append text normally in the composer. Replacing its entire editable value can
-  remove the hidden Ticket context token and invalidate the attachment check.
+  and the turn finishes. Use: `Do not edit files or run commands. Reply with this
+  Thread's Ticket title and repository paths.` Verify progress and the reply afterward.
 - Exercise both entry points when a behavior exists on Board and Ticket detail.
   Check the reverse operation, reload persistence, and error recovery where listed.
 - Web and desktop share UI but differ in native navigation, editor opening, and

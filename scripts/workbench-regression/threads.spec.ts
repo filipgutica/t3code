@@ -18,7 +18,7 @@ const decodeProviderState = Schema.decodeUnknownSync(
   ),
 );
 
-test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain completed work", async ({
+test("N1 N2 N3 R1: create a Thread, send the Ticket instruction and retain completed work", async ({
   page,
   demo,
 }, testInfo) => {
@@ -69,7 +69,9 @@ test("N1 N2 N3 R1: create a Thread, send full Ticket context and retain complete
   expect(inputs.some((input) => input.includes(ticket!.markdown))).toBe(true);
   expect(
     inputs.some(
-      (input) => input.includes("## Repository scope") && input.includes("Orbit Web (primary)"),
+      (input) =>
+        input.includes(`Workstream ${JSON.stringify(ticket!.title)}`) &&
+        input.includes("Prepared worktrees: "),
     ),
   ).toBe(true);
   expect(complete.tickets.find((t) => t.id === "orbit-004")?.status).toBe("in_progress");

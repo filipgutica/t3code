@@ -13,6 +13,18 @@
       "reason": "Compose the exhaustive Workbench RPC scope map with native authorization."
     },
     {
+      "source": "apps/server/src/mcp/McpHttpServer.ts",
+      "target": "apps/server/src/workbench/mcp/handlers",
+      "symbols": ["layer"],
+      "reason": "Advertise the Workbench MCP toolkit alongside native tools."
+    },
+    {
+      "source": "apps/server/src/mcp/McpHttpServer.ts",
+      "target": "apps/server/src/workbench/mcp/tools",
+      "symbols": ["WorkbenchToolkit"],
+      "reason": "Advertise the Workbench MCP toolkit alongside native tools."
+    },
+    {
       "source": "apps/server/src/observability/RpcInstrumentation.ts",
       "target": "apps/server/src/workbench/rpcInstrumentation",
       "symbols": ["WORKBENCH_RPC_AGGREGATES"],

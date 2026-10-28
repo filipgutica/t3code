@@ -17,7 +17,6 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 import * as Cause from "effect/Cause";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
-import type { ReviewCommentContext } from "../reviewCommentContext";
 import { resolveThreadRouteRenderState } from "../threadRoutes";
 
 import {
@@ -86,7 +85,7 @@ const preparedWorkspace = {
   updatedAt: createdAt,
 } as WorkbenchTicketWorkspace;
 
-function makeDependencies(events: string[], comments: ReviewCommentContext[] = []) {
+function makeDependencies(events: string[]) {
   return {
     updateTicket: async () => AsyncResult.success(ticket),
     prepareTicketWorkspace: async () => {
@@ -108,10 +107,6 @@ function makeDependencies(events: string[], comments: ReviewCommentContext[] = [
     deleteThread: async () => {
       events.push("delete-thread");
       return success;
-    },
-    addReviewComment: (_threadRef: unknown, comment: ReviewCommentContext) => {
-      events.push("add-review-comment");
-      comments.push(comment);
     },
     waitForThread: async () => {},
     openThread: async () => {
@@ -171,7 +166,7 @@ describe("coordinateWorkbenchTicketStart", () => {
     expect(events.slice(0, 3)).toEqual(["save-repositories", "prepare-workspace", "create-thread"]);
   });
 
-  it("saves reviewed repositories before preparing and uses the selected primary for the Thread and context", async () => {
+  it("saves reviewed repositories before preparing and uses the selected primary for the Thread", async () => {
     const secondaryId = ProjectId.make("repository-two");
     const secondaryProject = {
       ...project,
@@ -198,12 +193,11 @@ describe("coordinateWorkbenchTicketStart", () => {
       ],
     };
     const events: string[] = [];
-    const comments: ReviewCommentContext[] = [];
     let createdThreadInput: unknown;
     await coordinateWorkbenchTicketStart(
       { ...startInput(), projects: [project, secondaryProject] },
       {
-        ...makeDependencies(events, comments),
+        ...makeDependencies(events),
         updateTicket: async ({ input }) => {
           expect(input).toMatchObject({
             id: ticket.id,
@@ -229,8 +223,6 @@ describe("coordinateWorkbenchTicketStart", () => {
       projectId: secondaryId,
       worktreePath: "/worktrees/ticket-one/api",
     });
-    expect(comments[0]?.diff).toContain("API (primary): /worktrees/ticket-one/api");
-    expect(comments[0]?.diff).toContain("T3 Code: /worktrees/ticket-one/t3code");
   });
 
   it("does not prepare repositories or create a Thread when the reviewed scope cannot be saved", async () => {
@@ -268,7 +260,6 @@ describe("coordinateWorkbenchTicketStart", () => {
       "preparing-workspace",
       "creating-thread",
       "linking-thread",
-      "attaching-context",
       "opening-thread",
     ]);
   });
@@ -283,9 +274,8 @@ describe("coordinateWorkbenchTicketStart", () => {
     expect(getWorkbenchTicketStartProgressLabel("delete:ticket-one", ticket.id)).toBeNull();
   });
 
-  it("keeps ticket context on the intended route while the new thread reaches the client", async () => {
+  it("opens the intended route only after the new thread reaches the client", async () => {
     const events: string[] = [];
-    const comments: ReviewCommentContext[] = [];
     let resolveShellReady = () => {};
     let resolveWaitingForShell = () => {};
     const shellReady = new Promise<void>((resolve) => {
@@ -297,7 +287,7 @@ describe("coordinateWorkbenchTicketStart", () => {
     let shellExists = false;
     let openedRouteState: ReturnType<typeof resolveThreadRouteRenderState> | undefined;
     const dependencies = {
-      ...makeDependencies(events, comments),
+      ...makeDependencies(events),
       waitForThread: async () => {
         resolveWaitingForShell();
         await shellReady;
@@ -321,7 +311,6 @@ describe("coordinateWorkbenchTicketStart", () => {
         ]),
       ).toBe("waiting-for-shell");
       expect(openedRouteState).toBeUndefined();
-      expect(comments[0]?.rangeLabel).toBe("Ticket context");
     } finally {
       shellExists = true;
       resolveShellReady();
@@ -330,7 +319,7 @@ describe("coordinateWorkbenchTicketStart", () => {
     expect(openedRouteState).toBe("ready");
   });
 
-  it("replaces the requested missing link with ticket context without sending a prompt", async () => {
+  it("replaces the requested missing link without sending a prompt", async () => {
     const events: string[] = [];
     const liveThreadId = ThreadId.make("live-sibling");
     const missingThreadId = ThreadId.make("missing-target");
@@ -366,19 +355,17 @@ describe("coordinateWorkbenchTicketStart", () => {
       "prepare-workspace",
       "create-thread",
       "replace-assignment",
-      "add-review-comment",
       "open-thread",
     ]);
   });
-  it("creates the Thread and Assignment, attaches ticket context, then opens it", async () => {
+  it("creates the Thread and Assignment, then opens it", async () => {
     const events: string[] = [];
     let createdThreadInput: unknown;
-    const comments: ReviewCommentContext[] = [];
     const selectedModel: ModelSelection = { ...modelSelection, model: "gpt-5.4-mini" };
     const result = await coordinateWorkbenchTicketStart(
       { ...startInput(), threadLookupReady: false },
       {
-        ...makeDependencies(events, comments),
+        ...makeDependencies(events),
         createThread: async (input) => {
           events.push("create-thread");
           createdThreadInput = input.input;
@@ -394,19 +381,10 @@ describe("coordinateWorkbenchTicketStart", () => {
       worktreePath: "/worktrees/ticket-one/t3code",
       modelSelection: selectedModel,
     });
-    expect(comments).toHaveLength(1);
-    expect(comments[0]).toMatchObject({
-      filePath: ticket.title,
-      rangeLabel: "Ticket context",
-      text: ticket.title,
-    });
-    expect(comments[0]?.diff).toContain("/worktrees/ticket-one/t3code");
-    expect(comments[0]?.diff).toContain(ticket.markdown);
     expect(events).toEqual([
       "prepare-workspace",
       "create-thread",
       "create-assignment",
-      "add-review-comment",
       "open-thread",
     ]);
   });
@@ -452,7 +430,6 @@ describe("coordinateWorkbenchTicketStart", () => {
       "prepare-workspace",
       "create-thread",
       "replace-assignment",
-      "add-review-comment",
       "open-thread",
     ]);
   });
@@ -480,7 +457,7 @@ describe("coordinateWorkbenchTicketStart", () => {
     expect(events).toEqual(["open-thread"]);
   });
 
-  it("creates an additional Thread with ticket context without replacing the active Assignment", async () => {
+  it("creates an additional Thread without replacing the active Assignment", async () => {
     const events: string[] = [];
     let createdThreadInput: unknown;
     let createdAssignmentInput: unknown;
@@ -520,7 +497,6 @@ describe("coordinateWorkbenchTicketStart", () => {
       "prepare-workspace",
       "create-thread",
       "create-assignment",
-      "add-review-comment",
       "open-thread",
     ]);
   });
@@ -542,7 +518,6 @@ describe("coordinateWorkbenchTicketStart", () => {
       "prepare-workspace",
       "create-thread",
       "create-assignment",
-      "add-review-comment",
       "open-thread",
     ]);
   });

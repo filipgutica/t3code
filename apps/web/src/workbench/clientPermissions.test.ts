@@ -116,6 +116,8 @@ it.effect("keeps Workbench workspace availability and dispatch aligned with oper
         WORKBENCH_WS_METHODS.workbenchPrepareTicketWorkspace,
         WORKBENCH_WS_METHODS.workbenchReleaseTicketWorkspace,
         WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink,
+        WORKBENCH_WS_METHODS.workbenchAddReference,
+        WORKBENCH_WS_METHODS.workbenchRemoveReference,
       ]) {
         const workspace = createEnvironmentRpcCommand(runtime, { label: method, tag: method });
         expect(registry.get(workspace.permissionAtom(env))).toBe(true);

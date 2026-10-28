@@ -292,8 +292,8 @@ export function WorkbenchStartThreadDialog({
   const dialogDescription =
     customDescription ??
     (additional
-      ? "Start another Thread for this ticket. It opens with ticket context attached."
-      : "The Thread opens with ticket context attached. Add a message and send when you’re ready.");
+      ? "Start another Thread for this ticket. It can read and update the ticket."
+      : "The Thread can read and update this ticket. Add a message and send when you’re ready.");
   const selection = useWorkbenchStartThreadSelection({
     projectId: repositoryScope.primaryT3ProjectId,
     providers,

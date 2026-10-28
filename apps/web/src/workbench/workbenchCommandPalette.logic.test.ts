@@ -22,6 +22,7 @@ const threadId = ThreadId.make("thread");
 const ticketId = WorkbenchTicketId.make("ticket");
 const time = "2026-09-27T00:00:00.000Z";
 const snapshot: WorkbenchSnapshot = {
+  references: [],
   projects: [
     {
       id: workspaceId,

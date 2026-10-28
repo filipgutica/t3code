@@ -33,8 +33,11 @@ import {
   type WorkbenchCreateTicketInput,
   type WorkbenchEpic,
   WorkbenchEpicId,
+  type WorkbenchParsedReferenceUrl,
+  type WorkbenchReference,
   type WorkbenchTicket,
   WorkbenchTicketId,
+  type WorkbenchReferenceDraft,
   type WorkbenchTicketKind,
   type WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
@@ -167,7 +170,20 @@ import {
   WorkbenchTicketTypeBadge,
   WorkbenchTicketCopyMenuItems,
 } from "./WorkbenchTicketMetadata";
-import { WorkbenchJiraIssueLinkField } from "./WorkbenchJiraIssueLink";
+import { WorkbenchEpicJiraIssueLinkField } from "./WorkbenchJiraIssueLink";
+import {
+  WorkbenchProvenanceBadge,
+  WorkbenchReferenceBadge,
+  WorkbenchStagedReferences,
+  WorkbenchTicketReferencesPanel,
+  workbenchThreadTitle,
+} from "./WorkbenchReferences";
+import {
+  getReferenceFileCwd,
+  getTicketIssue,
+  hasJiraReference,
+  splitWorkbenchReferences,
+} from "./workbenchReferences.logic";
 import { WorkbenchTicketPullRequests } from "./WorkbenchTicketPullRequests";
 import {
   WorkbenchTicketPanelHeader,
@@ -300,9 +316,9 @@ export function WorkbenchEpicDetail({
           <WorkbenchEpicCounts
             progress={progress}
             linkField={
-              <WorkbenchJiraIssueLinkField
+              <WorkbenchEpicJiraIssueLinkField
                 environmentId={environmentId}
-                target={{ kind: "epic", epic }}
+                epic={epic}
                 disabled={mutationDisabled || epic.archivedAt !== null}
               />
             }
@@ -541,6 +557,8 @@ export function WorkbenchTicketDialog({
     setRepositoryProjectIds,
     primaryProjectId,
     setPrimaryProjectId,
+    references,
+    setReferences,
     handleOpenChange,
   } = useWorkbenchCreateTicketDraft({ initialEpicId, pending, onOpenChange });
   const selectedEpicId = epics.some((epic) => epic.id === epicId) ? epicId : null;
@@ -563,6 +581,7 @@ export function WorkbenchTicketDialog({
       epicId: selectedEpicId,
       repositoryProjectIds: selectedRepositoryProjectIds,
       primaryT3ProjectId: selectedProjectId,
+      ...(references.length > 0 ? { references } : {}),
     });
     if (created) handleOpenChange(false);
   };
@@ -619,6 +638,11 @@ export function WorkbenchTicketDialog({
               setRepositoryProjectIds={setRepositoryProjectIds}
               setPrimaryProjectId={setPrimaryProjectId}
             />
+            <WorkbenchStagedReferences
+              references={references}
+              disabled={mutationDisabled}
+              onChange={setReferences}
+            />
           </form>
         </DialogPanel>
         <DialogFooter>
@@ -647,6 +671,7 @@ export type WorkbenchTicketDetailProps = {
   readonly workspaceReadOnly?: boolean;
   readonly threadMutationsDisabled?: boolean;
   readonly ticket: WorkbenchTicket;
+  readonly references: ReadonlyArray<WorkbenchReference>;
   readonly ticketWorkspace: WorkbenchTicketWorkspace | undefined;
   readonly linkedProjects: ReadonlyArray<Project>;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
@@ -753,6 +778,7 @@ function WorkbenchLoadedTicketDetail(props: WorkbenchTicketDetailProps) {
         workspaceReadOnly: props.workspaceReadOnly ?? false,
         threadMutationsDisabled: props.threadMutationsDisabled ?? false,
         ticket: props.ticket,
+        references: props.references,
         epics: props.epics,
         pending: props.pending,
         error: props.error,
@@ -830,6 +856,7 @@ function WorkbenchTicketDetailController({
     | "workspaceReadOnly"
     | "threadMutationsDisabled"
     | "ticket"
+    | "references"
     | "epics"
     | "pending"
     | "error"
@@ -884,6 +911,7 @@ function WorkbenchTicketDetailController({
   const {
     workspaceTitle,
     ticket,
+    references,
     epics,
     pending,
     error,
@@ -1075,6 +1103,7 @@ function WorkbenchTicketDetailController({
         }}
         records={{
           ticket: ticket,
+          issue: getTicketIssue(references),
           actionableTicket: actionableTicket,
           assignment: assignment,
         }}
@@ -1166,7 +1195,28 @@ function WorkbenchTicketDetailController({
                 }}
                 actions={{ setDraft: setDraft }}
                 context={{ environmentId: environmentId }}
-                records={{ ticket: ticket }}
+                records={{
+                  ticket: ticket,
+                  jira: hasJiraReference(references),
+                  updatedBy: workbenchThreadTitle(
+                    ticket.updatedByThreadId,
+                    threadsById,
+                    archivedThreadsById,
+                  ),
+                }}
+              />
+              <WorkbenchTicketReferencesPanel
+                environmentId={environmentId}
+                ticketId={ticket.id}
+                references={references}
+                threadsById={threadsById}
+                archivedThreadsById={archivedThreadsById}
+                readOnly={workspaceReadOnly}
+                fileCwd={getReferenceFileCwd(linkedProjects, [
+                  ticket.primaryT3ProjectId,
+                  ...ticket.repositoryProjectIds,
+                ])}
+                fileThreadId={(assignment ?? activeAssignments[0])?.threadId ?? null}
               />
               <WorkbenchTicketSummaryPanel
                 key={`${ticket.id}:${summaryFailedEmpty}`}
@@ -1260,8 +1310,9 @@ function WorkbenchTicketDetailController({
                 ticketId={ticket.id}
                 assignments={activeAssignments}
                 threadsById={threadsById}
-                ticketKey={ticket.jiraIssue?.key ?? null}
-                workspaceRepositoryProjectIds={linkedProjects.map((project) => project.id)}
+                references={splitWorkbenchReferences(references).pullRequests.map(
+                  (view) => view.reference,
+                )}
                 pullRequests={associatedPullRequests}
                 checkouts={getWorkbenchTicketPullRequestCheckouts({
                   workspace: ticketWorkspace,
@@ -1316,7 +1367,6 @@ function WorkbenchTicketDetailController({
               <WorkbenchTicketDetailsPanel
                 presentation={{
                   collapsed: detailsPanelCollapsed,
-                  environmentId: environmentId,
                   epics: epics,
                   isArchived: isArchived,
                   linkedEpicId: linkedEpicId,
@@ -1361,7 +1411,7 @@ function WorkbenchTicketDetailController({
         enabled={floatingChat}
         environmentId={environmentId}
         ticket={actionableTicket}
-        ticketKey={ticket.jiraIssue?.key}
+        ticketKey={getTicketIssue(references)?.label}
         activeAssignments={activeAssignments}
         settledAssignments={settledAssignments}
         primaryAssignment={assignment}
@@ -1393,7 +1443,6 @@ type WorkbenchTicketUpdatePatch = Partial<
 
 type WorkbenchTicketDetailsPanelProps = {
   readonly collapsed: boolean;
-  readonly environmentId: EnvironmentId;
   readonly epics: ReadonlyArray<WorkbenchEpic>;
   readonly isArchived: boolean;
   readonly linkedEpicId: WorkbenchEpicId | null;
@@ -1412,7 +1461,7 @@ function WorkbenchTicketDetailsPanel({
 }: {
   presentation: Pick<
     WorkbenchTicketDetailsPanelProps,
-    "collapsed" | "environmentId" | "epics" | "isArchived" | "linkedEpicId" | "pending"
+    "collapsed" | "epics" | "isArchived" | "linkedEpicId" | "pending"
   >;
   actions: Pick<
     WorkbenchTicketDetailsPanelProps,
@@ -1420,7 +1469,7 @@ function WorkbenchTicketDetailsPanel({
   >;
   records: Pick<WorkbenchTicketDetailsPanelProps, "ticket" | "actionableTicket">;
 }) {
-  const { collapsed, environmentId, epics, isArchived, linkedEpicId, pending } = presentation;
+  const { collapsed, epics, isArchived, linkedEpicId, pending } = presentation;
   const { onCreateEpic, onOpenEpic, onToggle, onUpdate } = actions;
   const { ticket, actionableTicket } = records;
   return (
@@ -1433,7 +1482,6 @@ function WorkbenchTicketDetailsPanel({
       />
       <div id="workbench-ticket-details" className="min-w-0" hidden={collapsed}>
         <WorkbenchTicketLocalDetails
-          environmentId={environmentId}
           epics={epics}
           isArchived={isArchived}
           linkedEpicId={linkedEpicId}
@@ -1770,6 +1818,8 @@ type WorkbenchTicketHeaderProps = {
   workspaceTitle: string;
   displayedTitle: string;
   ticket: WorkbenchTicket;
+  /** The Ticket's first issue Reference, which identifies it. */
+  issue: WorkbenchParsedReferenceUrl | null;
   isArchived: boolean;
   environmentId: EnvironmentId;
   actionableTicket: WorkbenchTicket;
@@ -1837,7 +1887,7 @@ function WorkbenchTicketHeader({
     | "selectedThreadTitle"
     | "lifecycleActionsEnabled"
   >;
-  records: Pick<WorkbenchTicketHeaderProps, "ticket" | "actionableTicket" | "assignment">;
+  records: Pick<WorkbenchTicketHeaderProps, "ticket" | "issue" | "actionableTicket" | "assignment">;
   context: Pick<WorkbenchTicketHeaderProps, "environmentId">;
 }) {
   const {
@@ -1864,7 +1914,7 @@ function WorkbenchTicketHeader({
     selectedThreadTitle,
     lifecycleActionsEnabled,
   } = presentation;
-  const { ticket, actionableTicket, assignment } = records;
+  const { ticket, issue, actionableTicket, assignment } = records;
   const { environmentId } = context;
   return (
     <WorkspacePageHeader
@@ -1887,6 +1937,7 @@ function WorkbenchTicketHeader({
           }}
           records={{
             ticket: ticket,
+            issue,
             actionableTicket: actionableTicket,
           }}
           context={{ environmentId: environmentId }}
@@ -1908,6 +1959,7 @@ function WorkbenchTicketHeader({
           }}
           records={{
             ticket: ticket,
+            issue,
             actionableTicket: actionableTicket,
             assignment: assignment,
           }}
@@ -2030,6 +2082,8 @@ type WorkbenchTicketDescriptionPanelProps = {
   ) => void;
   environmentId: EnvironmentId;
   ticket: WorkbenchTicket;
+  /** Whether the Ticket has a Jira Reference, so its description may use Jira markup. */
+  jira: boolean;
   cancelEditing: () => void;
   dirty: boolean;
   displayedMarkdown: string;
@@ -2053,7 +2107,9 @@ function WorkbenchTicketDescriptionPanel({
   >;
   actions: Pick<WorkbenchTicketDescriptionPanelProps, "setDraft">;
   context: Pick<WorkbenchTicketDescriptionPanelProps, "environmentId">;
-  records: Pick<WorkbenchTicketDescriptionPanelProps, "ticket">;
+  records: Pick<WorkbenchTicketDescriptionPanelProps, "ticket" | "jira"> & {
+    readonly updatedBy: string | null;
+  };
 }) {
   const {
     editing,
@@ -2067,12 +2123,17 @@ function WorkbenchTicketDescriptionPanel({
   } = presentation;
   const { setDraft } = actions;
   const { environmentId } = context;
-  const { ticket } = records;
+  const { ticket, jira, updatedBy } = records;
   return (
     <section className="flex min-w-0 flex-col rounded-xl border border-border/60 bg-card/40">
       <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">Description</h2>
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="text-sm font-semibold">Description</h2>
+            {updatedBy !== null ? (
+              <WorkbenchProvenanceBadge text={`Updated by ${updatedBy}`} />
+            ) : null}
+          </div>
           <p className="text-xs text-muted-foreground">
             Goal, constraints, and acceptance criteria.
           </p>
@@ -2109,7 +2170,7 @@ function WorkbenchTicketDescriptionPanel({
             <WorkbenchTicketDescriptionEditor
               key={`${environmentId}:${ticket.id}`}
               markdown={draft.markdown}
-              jira={Boolean(ticket.jiraIssue)}
+              jira={jira}
               onChange={(markdown) => {
                 setDraft(environmentId, ticket.id, {
                   ...draft,
@@ -2129,7 +2190,7 @@ function WorkbenchTicketDescriptionPanel({
         </>
       ) : (
         <div className="min-h-40 min-w-0 p-4 @min-[40rem]/ticket:p-5">
-          <WorkbenchDescription markdown={displayedMarkdown} jira={Boolean(ticket.jiraIssue)} />
+          <WorkbenchDescription markdown={displayedMarkdown} jira={jira} />
         </div>
       )}
     </section>
@@ -2140,18 +2201,26 @@ export function WorkbenchTicketDescriptionEditor({
   id = "edit-workbench-ticket-context",
   markdown,
   jira,
+  updatedBy = null,
   onChange,
 }: {
   id?: string;
   markdown: string;
   jira: boolean;
+  /** The agent Thread that last wrote the description, if one did. */
+  updatedBy?: string | null;
   onChange: (markdown: string) => void;
 }) {
   const [preview, setPreview] = useState(false);
   return (
     <div className="min-w-0 space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Label htmlFor={id}>Description</Label>
+        <div className="flex min-w-0 items-center gap-2">
+          <Label htmlFor={id}>Description</Label>
+          {updatedBy !== null ? (
+            <WorkbenchProvenanceBadge text={`Updated by ${updatedBy}`} />
+          ) : null}
+        </div>
         <ToggleGroup
           aria-label="Ticket description editor mode"
           variant="segmented"
@@ -3017,7 +3086,6 @@ function getWorkbenchWorkspaceDescription({
 }
 
 function WorkbenchTicketLocalDetails({
-  environmentId,
   epics,
   isArchived,
   linkedEpicId,
@@ -3029,7 +3097,6 @@ function WorkbenchTicketLocalDetails({
   actionableTicket,
 }: Pick<
   WorkbenchTicketDetailsPanelProps,
-  | "environmentId"
   | "epics"
   | "isArchived"
   | "linkedEpicId"
@@ -3108,11 +3175,6 @@ function WorkbenchTicketLocalDetails({
           </SelectPopup>
         </Select>
       </div>
-      <WorkbenchJiraIssueLinkField
-        environmentId={environmentId}
-        target={{ kind: "ticket", ticket: actionableTicket }}
-        disabled={pending || isArchived}
-      />
     </div>
   );
 }
@@ -4212,7 +4274,6 @@ function WorkbenchEpicTickets({
                 <span className="min-w-0">
                   <span className="flex min-w-0 flex-wrap items-center gap-2">
                     <WorkbenchTicketTypeBadge kind={ticket.kind} />
-                    <WorkbenchJiraIssueKeyLink jiraIssue={ticket.jiraIssue} className="z-10" />
                   </span>
                   <span className="mt-1 block min-w-0">
                     <Tooltip>
@@ -4542,6 +4603,7 @@ type WorkbenchTicketHeadingProps = Pick<
   | "workspaceTitle"
   | "displayedTitle"
   | "ticket"
+  | "issue"
   | "isArchived"
   | "environmentId"
   | "actionableTicket"
@@ -4559,13 +4621,13 @@ function WorkbenchTicketHeading({
     WorkbenchTicketHeadingProps,
     "executionStatus" | "workspaceTitle" | "displayedTitle" | "isArchived" | "pending" | "editing"
   >;
-  records: Pick<WorkbenchTicketHeadingProps, "ticket" | "actionableTicket">;
+  records: Pick<WorkbenchTicketHeadingProps, "ticket" | "issue" | "actionableTicket">;
   context: Pick<WorkbenchTicketHeadingProps, "environmentId">;
   actions: Pick<WorkbenchTicketHeadingProps, "onUpdate">;
 }) {
   const { executionStatus, workspaceTitle, displayedTitle, isArchived, pending, editing } =
     presentation;
-  const { ticket, actionableTicket } = records;
+  const { ticket, issue, actionableTicket } = records;
   const { environmentId } = context;
   const { onUpdate } = actions;
   return (
@@ -4585,7 +4647,7 @@ function WorkbenchTicketHeading({
           ticketId={ticket.id}
           ticketTitle={ticket.title}
         />
-        <WorkbenchJiraIssueKeyLink jiraIssue={ticket.jiraIssue} size="control" />
+        {issue ? <WorkbenchReferenceBadge reference={issue} size="control" /> : null}
         {ticket.archivedAt != null ? (
           <Badge size="control" variant="outline">
             Archived
@@ -4611,6 +4673,7 @@ type WorkbenchTicketHeaderActionsProps = Pick<
   WorkbenchTicketHeaderProps,
   | "displayedTitle"
   | "ticket"
+  | "issue"
   | "isArchived"
   | "actionableTicket"
   | "pending"
@@ -4645,7 +4708,10 @@ function WorkbenchTicketHeaderActions({
     | "selectedThreadTitle"
     | "lifecycleActionsEnabled"
   >;
-  records: Pick<WorkbenchTicketHeaderActionsProps, "ticket" | "actionableTicket" | "assignment">;
+  records: Pick<
+    WorkbenchTicketHeaderActionsProps,
+    "ticket" | "issue" | "actionableTicket" | "assignment"
+  >;
   actions: Pick<
     WorkbenchTicketHeaderActionsProps,
     | "onReplaceThread"
@@ -4667,7 +4733,7 @@ function WorkbenchTicketHeaderActions({
     selectedThreadTitle,
     lifecycleActionsEnabled,
   } = presentation;
-  const { ticket, actionableTicket, assignment } = records;
+  const { ticket, issue, actionableTicket, assignment } = records;
   const {
     onReplaceThread,
     settledAssignments,
@@ -4721,6 +4787,7 @@ function WorkbenchTicketHeaderActions({
         isArchived={isArchived}
         pending={pending}
         ticket={ticket}
+        issue={issue}
         lifecycleActionsEnabled={lifecycleActionsEnabled}
         onArchive={onArchive}
         setDeleteConfirmationOpen={setDeleteConfirmationOpen}
@@ -5264,6 +5331,7 @@ function WorkbenchTicketActionsMenu({
   isArchived,
   pending,
   ticket,
+  issue,
   lifecycleActionsEnabled,
   onArchive,
   setDeleteConfirmationOpen,
@@ -5272,6 +5340,7 @@ function WorkbenchTicketActionsMenu({
   | "isArchived"
   | "pending"
   | "ticket"
+  | "issue"
   | "lifecycleActionsEnabled"
   | "onArchive"
   | "setDeleteConfirmationOpen"
@@ -5283,7 +5352,7 @@ function WorkbenchTicketActionsMenu({
       </MenuTrigger>
       <MenuPopup align="end">
         <MenuGroup>
-          <WorkbenchTicketCopyMenuItems ticketId={ticket.id} jiraIssue={ticket.jiraIssue} />
+          <WorkbenchTicketCopyMenuItems ticketId={ticket.id} issue={issue} />
         </MenuGroup>
         {lifecycleActionsEnabled ? (
           <>
@@ -5443,9 +5512,11 @@ function useWorkbenchCreateTicketDraft({
   const [markdown, setMarkdown] = useState(() => getWorkbenchTicketTemplate("story"));
   const [repositoryProjectIds, setRepositoryProjectIds] = useState<ReadonlyArray<ProjectId>>([]);
   const [primaryProjectId, setPrimaryProjectId] = useState<ProjectId | null>(null);
+  const [references, setReferences] = useState<ReadonlyArray<WorkbenchReferenceDraft>>([]);
   const handleOpenChange = (nextOpen: boolean) => {
     if (pending) return;
     if (!nextOpen) {
+      setReferences([]);
       setRequestId(WorkbenchTicketId.make(randomUUID()));
       setTitle("");
       setKind("story");
@@ -5470,6 +5541,8 @@ function useWorkbenchCreateTicketDraft({
     setRepositoryProjectIds,
     primaryProjectId,
     setPrimaryProjectId,
+    references,
+    setReferences,
     handleOpenChange,
   };
 }

@@ -1,5 +1,4 @@
 import {
-  ProjectId,
   type ModelSelection,
   type ProviderInstanceId,
   type WorkbenchProjectId,
@@ -8,7 +7,6 @@ import {
   type WorkbenchTicketId,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
-import * as Schema from "effect/Schema";
 
 // "Conversation draft" is the backend-owned planning record. It is unrelated to the local
 // edit buffers that WorkbenchForms calls "ticket drafts".
@@ -138,110 +136,6 @@ export const resolveWorkbenchWorkItemView = ({
     return { kind: "conversation", draft: null };
   }
   return { kind: "board" };
-};
-
-export interface WorkbenchTicketDraftSuggestion {
-  /** Assistant message that carried the proposal; keys Apply and Dismiss state. */
-  readonly messageId: string;
-  readonly sourceOffset: number;
-  readonly title: string;
-  readonly markdown: string;
-  readonly repositoryProjectIds: ReadonlyArray<ProjectId>;
-  readonly primaryT3ProjectId: ProjectId;
-}
-
-const SuggestionPayload = Schema.Struct({
-  title: Schema.String,
-  markdown: Schema.String,
-  repositoryProjectIds: Schema.Array(Schema.String),
-  primaryT3ProjectId: Schema.String,
-});
-const decodeSuggestionPayload = Schema.decodeUnknownOption(
-  Schema.fromJsonString(SuggestionPayload),
-);
-
-// Field limits mirror WorkbenchTicketDraftFields so Apply never fails server validation.
-const MAX_TITLE_LENGTH = 240;
-const MAX_MARKDOWN_LENGTH = 120_000;
-const FENCE =
-  /^([ ]{0,3})([`~])(\2{2,})[ \t]*workbench-ticket-draft[ \t]*\r?\n([\s\S]*?)^ {0,3}\2\3\2*[ \t]*\r?$/gm;
-
-/** The last labeled block wins, so a corrected proposal replaces an earlier one. */
-const lastFencedPayload = (text: string): { code: string; sourceOffset: number } | null => {
-  let block: { code: string; sourceOffset: number } | null = null;
-  for (const match of text.matchAll(FENCE)) {
-    block = { code: match[4] ?? "", sourceOffset: match.index + (match[1]?.length ?? 0) };
-  }
-  return block;
-};
-
-/** Validates a rendered proposal with the same constraints as the draft's Apply action. */
-export const readTicketDraftSuggestion = ({
-  code,
-  messageId,
-  sourceOffset,
-  knownRepositoryProjectIds,
-}: {
-  readonly code: string;
-  readonly messageId: string;
-  readonly sourceOffset: number;
-  readonly knownRepositoryProjectIds: ReadonlySet<string>;
-}): WorkbenchTicketDraftSuggestion | null => {
-  const decoded = decodeSuggestionPayload(code);
-  if (decoded._tag === "None") return null;
-  const { title, markdown, repositoryProjectIds, primaryT3ProjectId } = decoded.value;
-  const repositories = [...new Set(repositoryProjectIds)];
-  if (
-    title.trim().length === 0 ||
-    title.trim().length > MAX_TITLE_LENGTH ||
-    markdown.trim().length > MAX_MARKDOWN_LENGTH ||
-    repositories.length === 0 ||
-    !repositories.every((id) => knownRepositoryProjectIds.has(id)) ||
-    !repositories.includes(primaryT3ProjectId)
-  ) {
-    return null;
-  }
-  return {
-    messageId,
-    sourceOffset,
-    title: title.trim(),
-    markdown: markdown.trim(),
-    repositoryProjectIds: repositories.map((id) => ProjectId.make(id)),
-    primaryT3ProjectId: ProjectId.make(primaryT3ProjectId),
-  };
-};
-
-export interface WorkbenchSuggestionMessage {
-  readonly id: string;
-  readonly role: "user" | "assistant" | "system";
-  readonly text: string;
-  readonly streaming: boolean;
-}
-
-/**
- * Reads the newest completed assistant message that carries a proposal. Repository IDs must
- * belong to the Workspace and the primary must be selected; anything else is ignored rather
- * than partly applied.
- */
-export const findTicketDraftSuggestion = ({
-  messages,
-  knownRepositoryProjectIds,
-}: {
-  readonly messages: ReadonlyArray<WorkbenchSuggestionMessage>;
-  readonly knownRepositoryProjectIds: ReadonlySet<string>;
-}): WorkbenchTicketDraftSuggestion | null => {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index]!;
-    if (message.role !== "assistant" || message.streaming) continue;
-    const block = lastFencedPayload(message.text);
-    if (block === null) continue;
-    return readTicketDraftSuggestion({
-      ...block,
-      messageId: message.id,
-      knownRepositoryProjectIds,
-    });
-  }
-  return null;
 };
 
 /** Planning enforces read-only access only for these provider drivers. */

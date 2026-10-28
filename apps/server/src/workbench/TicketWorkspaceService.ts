@@ -76,7 +76,7 @@ export const ticketWorkspaceHostLayer = Layer.effect(
                 yield* providerRegistry.getProviders,
                 input.primaryT3ProjectId,
               );
-        const title = input.jiraIssueKey ? `${input.jiraIssueKey}: ${input.title}` : input.title;
+        const title = input.issueLabel ? `${input.issueLabel}: ${input.title}` : input.title;
         const result = yield* textGeneration
           .generateBranchName({
             cwd: project.value.workspaceRoot,

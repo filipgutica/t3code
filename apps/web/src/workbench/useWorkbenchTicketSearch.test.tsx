@@ -1,16 +1,29 @@
-import { EnvironmentId, WorkbenchProjectId } from "@t3tools/contracts";
+import { EnvironmentId, WorkbenchProjectId, WorkbenchTicketId } from "@t3tools/contracts";
 import { act, useLayoutEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { matchesWorkbenchTicketSearch, useWorkbenchTicketSearch } from "./useWorkbenchTicketSearch";
+import { getWorkbenchReferenceSearchTerms } from "./workbenchReferences.logic";
 
 describe("Workbench ticket search", () => {
-  it("matches titles and Jira keys without case or surrounding whitespace", () => {
+  it("matches titles and Reference terms without case or surrounding whitespace", () => {
+    const referenceTerms = getWorkbenchReferenceSearchTerms([
+      {
+        ticketId: WorkbenchTicketId.make("ticket"),
+        url: "https://github.com/acme/orbit-web/issues/61",
+        title: "Invite dialog loses focus",
+        addedByThreadId: null,
+        createdAt: "2026-10-27T00:00:00.000Z",
+      },
+    ]);
     expect(
-      matchesWorkbenchTicketSearch({ title: "Fix login", jiraKey: "MA-5360", query: " LOGIN " }),
+      matchesWorkbenchTicketSearch({ title: "Fix login", referenceTerms, query: " LOGIN " }),
     ).toBe(true);
     expect(
-      matchesWorkbenchTicketSearch({ title: "Fix login", jiraKey: "MA-5360", query: "ma-536" }),
+      matchesWorkbenchTicketSearch({ title: "Fix login", referenceTerms, query: "web#6" }),
+    ).toBe(true);
+    expect(
+      matchesWorkbenchTicketSearch({ title: "Fix login", referenceTerms, query: "loses focus" }),
     ).toBe(true);
     expect(matchesWorkbenchTicketSearch({ title: "Fix login", query: "  " })).toBe(true);
     expect(matchesWorkbenchTicketSearch({ title: "Fix login", query: "billing" })).toBe(false);

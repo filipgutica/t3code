@@ -16,6 +16,7 @@ erDiagram
     TICKET ||--o| TICKET_WORKSPACE : prepares
     TICKET_WORKSPACE ||--o{ WORKTREE_RECORD : tracks
     TICKET ||--o{ ASSIGNMENT : records
+    TICKET ||--o{ REFERENCE : keeps
     NATIVE_T3_THREAD ||--o| ASSIGNMENT : referenced_by
 ```
 
@@ -24,12 +25,13 @@ The diagram shows conceptual relationships. Native T3 Project and Thread referen
 | Record                                 | Role and constraint                                                                                                                                           |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Workbench Workspace and Project link   | A Workspace groups planning records and an ordered set of native repository Projects.                                                                         |
-| Epic and Ticket                        | Both belong to one Workspace. A Ticket can belong to one Epic in that Workspace. Each can carry one Jira issue key and URL.                                   |
+| Epic and Ticket                        | Both belong to one Workspace. A Ticket can belong to one Epic in that Workspace. An Epic can carry one Jira issue key and URL.                                |
 | Ticket repository and Ticket Workspace | A Ticket has a non-empty ordered repository scope with one primary Project. Its optional Ticket Workspace tracks branch preparation and repository worktrees. |
 | Assignment                             | Links a Ticket to one native Thread. A Thread ID is unique across Assignments; superseded rows retain history.                                                |
 | Thread recap                           | Generated cache keyed by native Thread ID, with no foreign key. Rows outlive unlinked Assignments; snapshots return only recaps of Ticket Threads.            |
+| Reference                              | An ordered, unique URL owned by a Ticket or draft ID. See [References](#references-v22).                                                                      |
 
-These constraints come from the [table keys and relationships](../../packages/workbench/src/WorkbenchSchema.ts) and [Ticket scope validation](../../packages/workbench/src/WorkbenchStore.ts). Workbench never reads Jira, so the issue link is whatever the user last applied. Tickets imported before v20 keep IDs of the form `jira:<binding>:issue:<id>`; treat them as opaque, because the binding they name no longer exists.
+These constraints come from the [table keys and relationships](../../packages/workbench/src/WorkbenchSchema.ts) and [Ticket scope validation](../../packages/workbench/src/WorkbenchStore.ts). Workbench never reads Jira or any Reference target; a link is only what a user or agent recorded. Tickets imported before v20 keep IDs of the form `jira:<binding>:issue:<id>`; treat them as opaque, because the binding they name no longer exists.
 
 ## Ownership and transaction boundary
 
@@ -45,9 +47,13 @@ The key application invariants are:
 
 These rules are enforced by [WorkbenchStore](../../packages/workbench/src/WorkbenchStore.ts), rather than by foreign keys to native systems.
 
+## References (v22)
+
+`workbench_references` keeps a Ticket's links, keyed by `(ticket_id, url)` in `position` order. Kind and label are not stored: clients derive them with `parseWorkbenchReferenceUrl` in the [contracts](../../packages/contracts/src/workbench.ts), and its normalized URL is the key, so adding an existing URL is a no-op. `ticket_id` has no foreign key because a draft owns References under its ID before its Ticket row exists; promotion keeps the ID, so nothing is copied. In the write transaction, the store requires the owner to be a non-deleted Ticket or a draft in `creating`, `draft`, or `promoting`. Adding or removing a Reference never bumps the Ticket or draft revision, so an agent's change cannot make a user's open edit stale. Discarding a draft deletes its References with the draft row; a deleted Ticket's References stay with its tombstone and are left out of snapshots. Migration 22 creates the table and copies each Ticket's Jira link, then its Epic's link, into it. It also adds `workbench_tickets.updated_by_thread_id`, the Thread that last changed the title or description, which a user edit clears; a draft keeps the same `updatedByThreadId` in its `payload_json`. Like v20, it alters `workbench_tickets` in place instead of rebuilding it, so the retired Ticket `jira_issue_key` and `jira_issue_url` columns remain, and nothing reads or writes them.
+
 ## Jira state removal (v20)
 
-Before v20, Workbench synchronized Jira itself in `workbench_jira_*` tables. Migration 20 in the [schema initializer](../../packages/workbench/src/WorkbenchSchema.ts) folds that state into the `jira_issue_key` and `jira_issue_url` columns on `workbench_tickets` and `workbench_epics`, then drops the Jira tables. Its [tests](../../packages/workbench/src/WorkbenchSchema.test.ts) cover the upgrade.
+Before v20, Workbench synchronized Jira itself in `workbench_jira_*` tables. Migration 20 in the [schema initializer](../../packages/workbench/src/WorkbenchSchema.ts) folds that state into the `jira_issue_key` and `jira_issue_url` columns on `workbench_tickets` and `workbench_epics`, then drops the Jira tables. Epics still use those columns; v22 retires the Ticket pair. Its [tests](../../packages/workbench/src/WorkbenchSchema.test.ts) cover the upgrade.
 
 - **No table rebuild.** The migration adds the link columns with `ALTER TABLE` and updates rows in place. Rebuilding `workbench_tickets` would cascade-delete its repositories, Assignments, and Ticket Workspaces, and rebuilding `workbench_epics` would clear every Ticket's Epic. The base `CREATE TABLE` statements deliberately omit the link columns, and fresh databases get them from the same migration; adding them to the base statements breaks that `ALTER TABLE`.
 - **Legacy DDL stays until migration 20 is recorded.** The Jira `CREATE TABLE` statements run only while the ledger lacks version 20, because earlier numbered migrations still alter those tables. A fresh database creates them and drops them in the same initialization. Do not delete the statements while databases older than v20 can still upgrade.

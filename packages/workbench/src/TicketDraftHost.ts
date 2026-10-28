@@ -37,7 +37,7 @@ export class TicketDraftHost extends Context.Service<
       draft: WorkbenchTicketDraft,
     ) => Effect.Effect<void, WorkbenchOperationError>;
     readonly createTicket: (
-      input: WorkbenchCreateTicketInput,
+      input: WorkbenchCreateTicketInput & { readonly updatedByThreadId?: ThreadId | null },
     ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
   }
 >()("@t3tools/workbench/TicketDraftHost") {}

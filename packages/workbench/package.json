@@ -47,6 +47,14 @@
     "./TicketDraftHost": {
       "types": "./src/TicketDraftHost.ts",
       "import": "./src/TicketDraftHost.ts"
+    },
+    "./WorkbenchAgentService": {
+      "types": "./src/WorkbenchAgentService.ts",
+      "import": "./src/WorkbenchAgentService.ts"
+    },
+    "./WorkbenchAgentHost": {
+      "types": "./src/WorkbenchAgentHost.ts",
+      "import": "./src/WorkbenchAgentHost.ts"
     }
   },
   "scripts": {

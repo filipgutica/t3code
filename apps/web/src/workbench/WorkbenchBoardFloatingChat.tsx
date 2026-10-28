@@ -8,7 +8,7 @@ import type {
 } from "@t3tools/contracts";
 import { ThreadId, WorkbenchTicketId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { toastManager } from "../components/ui/toast";
 import { useThreadHasUnsentDraft } from "../composerDraftStore";
@@ -17,7 +17,7 @@ import { randomUUID } from "../lib/utils";
 import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
 import { WorkbenchDiscardDraftDialog } from "./WorkbenchDiscardDraftDialog";
-import { applyTicketProposal, WorkbenchDraftActions } from "./WorkbenchDraftActions";
+import { WorkbenchDraftActions } from "./WorkbenchDraftActions";
 import {
   WorkbenchFloatingChat,
   type WorkbenchFloatingChatTicketThread,
@@ -30,14 +30,18 @@ import {
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import { failureMessage } from "./workbenchPageCommands";
 import { getTicketDraftCreateState } from "./WorkbenchTicketDraftPanel";
-import { WorkbenchTicketProposalRenderer } from "./WorkbenchTicketProposal";
-import { useTicketDraftEditor, useTicketDraftTransitions } from "./useWorkbenchTicketConversation";
+import {
+  useRefreshOnThreadActivity,
+  useTicketDraftEditor,
+  useTicketDraftTransitions,
+} from "./useWorkbenchTicketConversation";
 import {
   pickNewestConversationDraft,
   type WorkbenchConversationDraft,
 } from "./workbenchTicketDraft.logic";
 import { usePlanningModelSelection } from "./usePlanningModelSelection";
 import { useWorkbenchThreadRecaps } from "./useWorkbenchThreadRecaps";
+import type { WorkbenchReferencesByTicket } from "./workbenchReferences.logic";
 
 type ThreadsById = ReadonlyMap<ThreadId, EnvironmentThreadShell>;
 
@@ -49,6 +53,7 @@ interface WorkbenchBoardFloatingChatProps extends Pick<
   /** The Workspace's tickets in board order, before board search and filters. */
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
+  readonly referencesByTicket: WorkbenchReferencesByTicket;
   /** Every draft in the snapshot, in all phases. */
   readonly drafts: ReadonlyArray<WorkbenchTicketDraft>;
   readonly threadsById: ThreadsById;
@@ -135,8 +140,6 @@ function useBeginBoardDraft({
   return { begin, pending, ready: modelSelection !== null };
 }
 
-type MountedDraftOpen = { readonly threadId: ThreadId; readonly open: () => Promise<void> };
-
 function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
   const { environmentId, workspace } = props;
   const projectId = workspace.id;
@@ -190,12 +193,17 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
     threadsById: props.threadsById,
     archivedThreadsById: props.archivedThreadsById,
     recaps: useWorkbenchThreadRecaps(environmentId),
+    referencesByTicket: props.referencesByTicket,
   });
   const chat = resolveWorkbenchFloatingChat({
     ...threads,
     primaryThreadId: null,
     explicitThreadId,
   });
+  useRefreshOnThreadActivity(
+    chat.selected ? scopeThreadRef(environmentId, chat.selected.threadId) : null,
+    props.refreshSnapshot,
+  );
   const canBeginDraft = useAtomValue(
     workbenchEnvironment.beginTicketDraft.permissionAtom(environmentId),
   );
@@ -205,11 +213,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
       .filter((draft) => draft.projectId === projectId && draft.phase !== "working")
       .map((draft) => [draft.threadId, draft]),
   );
-  // The mounted draft must save an applied proposal before the full draft page replaces it.
-  const mountedDraftOpenRef = useRef<MountedDraftOpen | null>(null);
   const openThread = (threadId: ThreadId) => {
-    const mounted = mountedDraftOpenRef.current;
-    if (mounted?.threadId === threadId) return void mounted.open();
     const draft = planningDrafts.get(threadId);
     if (draft) props.onOpenDraft(draft.id);
     else props.onOpenThread(threadId);
@@ -239,11 +243,9 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
               workspace={workspace}
               snapshotDraft={draft}
               ticket={props.tickets.find((candidate) => candidate.id === draft.id) ?? null}
-              linkedProjects={props.linkedProjects}
               createContext={props.createContext}
               refreshSnapshot={props.refreshSnapshot}
               onOpenDraft={() => props.onOpenDraft(draft.id)}
-              openRef={mountedDraftOpenRef}
               neverRan={props.threadsById.get(threadId)?.latestRun == null}
               onDiscarded={() => setExplicitThreadId(draftReturnsRef.current.get(threadId) ?? null)}
             >
@@ -275,44 +277,6 @@ const getNewTicketThread = (
   };
 };
 
-const canApplyProposal = (
-  canOperate: boolean,
-  editor: Pick<ReturnType<typeof useTicketDraftEditor>, "editable" | "conflict">,
-  transitions: Pick<ReturnType<typeof useTicketDraftTransitions>, "action">,
-) => canOperate && editor.editable && editor.conflict === null && transitions.action === null;
-
-/**
- * An applied proposal may still be saving, and the full draft page reads only saved fields.
- * Registers the guard so the chat header's Open full Thread waits for the same save.
- */
-function useOpenSavedDraft({
-  threadId,
-  flush,
-  setError,
-  onOpenDraft,
-  openRef,
-}: {
-  readonly threadId: ThreadId;
-  readonly flush: ReturnType<typeof useTicketDraftEditor>["flush"];
-  readonly setError: (message: string) => void;
-  readonly onOpenDraft: () => void;
-  readonly openRef: RefObject<MountedDraftOpen | null>;
-}) {
-  const open = async () => {
-    const outcome = await flush();
-    if (outcome.ok) onOpenDraft();
-    else setError(outcome.message);
-  };
-  useEffect(() => {
-    const mounted = { threadId, open };
-    openRef.current = mounted;
-    return () => {
-      if (openRef.current === mounted) openRef.current = null;
-    };
-  });
-  return open;
-}
-
 /** The full draft page's rule: the grant, and nothing archived. */
 const useCanOperateDraft = ({
   environmentId,
@@ -340,19 +304,17 @@ const useIsUntouchedDraft = (
   fields.markdown.trim() === "";
 
 /**
- * A draft's conversation in the chat: proposals apply to the draft, and the strip below offers
- * the draft page's actions. Fields are edited on the full draft page, so no edits stay pending.
+ * A draft's conversation in the chat, with the draft page's actions in the strip below. The agent
+ * fills the fields through MCP, and people edit them on the full draft page.
  */
 function BoardDraftThread({
   environmentId,
   workspace,
   snapshotDraft,
   ticket,
-  linkedProjects,
   createContext,
   refreshSnapshot,
   onOpenDraft,
-  openRef,
   neverRan,
   onDiscarded,
   children,
@@ -361,11 +323,9 @@ function BoardDraftThread({
   readonly workspace: WorkbenchBoardFloatingChatProps["workspace"];
   readonly snapshotDraft: WorkbenchConversationDraft;
   readonly ticket: WorkbenchTicket | null;
-  readonly linkedProjects: WorkbenchBoardFloatingChatProps["linkedProjects"];
   readonly createContext: WorkbenchBoardFloatingChatProps["createContext"];
   readonly refreshSnapshot: () => void;
   readonly onOpenDraft: () => void;
-  readonly openRef: RefObject<MountedDraftOpen | null>;
   /** No message was ever sent, so the conversation holds nothing to lose. */
   readonly neverRan: boolean;
   readonly onDiscarded: () => void;
@@ -386,7 +346,6 @@ function BoardDraftThread({
   const transitions = useTicketDraftTransitions({
     environmentId,
     draft,
-    projects: linkedProjects,
     editor,
     onDraft: setFromCommand,
     // The chat stays on the board; the tab follows the same Thread through each phase.
@@ -397,26 +356,9 @@ function BoardDraftThread({
     onCreateManually: onOpenDraft,
     refreshSnapshot,
   });
-  useOpenSavedDraft({
-    threadId: draft.threadId,
-    flush: editor.flush,
-    setError: transitions.setError,
-    onOpenDraft,
-    openRef,
-  });
   return (
     <>
-      <WorkbenchTicketProposalRenderer
-        environmentId={environmentId}
-        threadId={draft.threadId}
-        linkedProjects={linkedProjects}
-        fields={editor.fields}
-        ticket={ticket}
-        canApply={canApplyProposal(canOperate, editor, transitions)}
-        onApply={applyTicketProposal(editor)}
-      >
-        {children}
-      </WorkbenchTicketProposalRenderer>
+      {children}
       <BoardDraftStrip
         draft={draft}
         editor={editor}

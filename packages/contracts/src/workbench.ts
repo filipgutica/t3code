@@ -84,6 +84,10 @@ export const WORKBENCH_JIRA_ISSUE_URL_ERROR =
 
 const JIRA_ISSUE_KEY = /^[A-Z][A-Z0-9_]*-[0-9]+$/u;
 const BROWSE_PATH = /\/browse\/([^/]+)/u;
+const GITHUB_ITEM_PATH = /^\/([^/]+)\/([^/]+)\/(issues|pull)\/([1-9][0-9]*)(?:\/|$)/u;
+// POSIX absolute paths, and Windows drive paths with either separator.
+const ABSOLUTE_FILE_PATH = /^(?:\/(?!\/)|[A-Za-z]:[\\/])/u;
+const MAX_REFERENCE_URL_LENGTH = 2_048;
 
 const issueKey = (url: URL): string | null => {
   const candidate =
@@ -92,19 +96,103 @@ const issueKey = (url: URL): string | null => {
   return JIRA_ISSUE_KEY.test(key) ? key : null;
 };
 
+const parseHttpUrl = (input: string): URL | null => {
+  const trimmed = input.trim();
+  if (!URL.canParse(trimmed)) return null;
+  const url = new URL(trimmed);
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  return url.href.length > MAX_REFERENCE_URL_LENGTH ? null : url;
+};
+
 /**
  * Accepts `/browse/KEY` and board `selectedIssue=KEY` links on any http(s)
  * host, so Jira Cloud, Data Center, and context-path installs all work.
  */
 export const parseJiraIssueUrl = (input: string): WorkbenchJiraIssue | null => {
-  const trimmed = input.trim();
-  if (!URL.canParse(trimmed)) return null;
-  const url = new URL(trimmed);
-  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-  if (url.href.length > 2_048) return null;
-  const key = issueKey(url);
-  return key === null ? null : { key, url: url.href };
+  const url = parseHttpUrl(input);
+  const key = url === null ? null : issueKey(url);
+  return url === null || key === null ? null : { key, url: url.href };
 };
+
+export const WorkbenchReferenceKind = Schema.Literals([
+  "jira_issue",
+  "github_issue",
+  "github_pull_request",
+  "file",
+  "link",
+]);
+export type WorkbenchReferenceKind = typeof WorkbenchReferenceKind.Type;
+
+export interface WorkbenchParsedReferenceUrl {
+  /** Normalized URL; References are unique per Ticket on this value. */
+  readonly url: string;
+  readonly kind: WorkbenchReferenceKind;
+  readonly label: string;
+}
+
+/** Message for the `reference_url_invalid` operation error and inline form errors. */
+export const WORKBENCH_REFERENCE_URL_ERROR =
+  "Enter an http or https URL, or an absolute file path, of up to 2,048 characters.";
+
+const httpReference = (url: URL): WorkbenchParsedReferenceUrl => {
+  const github =
+    url.hostname === "github.com" || url.hostname === "www.github.com"
+      ? GITHUB_ITEM_PATH.exec(url.pathname)
+      : null;
+  if (github) {
+    const [, owner, repository, type, number] = github;
+    const label = `${repository}#${number}`;
+    // One PR has many URLs (`/files`, `/commits`, anchors); store one so they cannot duplicate.
+    return type === "pull"
+      ? {
+          url: `https://github.com/${owner}/${repository}/pull/${number}`,
+          kind: "github_pull_request",
+          label,
+        }
+      : { url: url.href, kind: "github_issue", label };
+  }
+  const key = issueKey(url);
+  return key === null
+    ? { url: url.href, kind: "link", label: url.host }
+    : { url: url.href, kind: "jira_issue", label: key };
+};
+
+const fileReference = (input: string): WorkbenchParsedReferenceUrl | null => {
+  if (!ABSOLUTE_FILE_PATH.test(input) || input.length > MAX_REFERENCE_URL_LENGTH) return null;
+  const label = input.split(/[\\/]/u).findLast((segment) => segment.length > 0);
+  return label === undefined ? null : { url: input, kind: "file", label };
+};
+
+/**
+ * Derives a Reference's kind and label on read; Workbench never fetches the target.
+ * An absolute path is a file on the environment host.
+ */
+export const parseWorkbenchReferenceUrl = (input: string): WorkbenchParsedReferenceUrl | null => {
+  const trimmed = input.trim();
+  const file = fileReference(trimmed);
+  if (file !== null) return file;
+  const url = parseHttpUrl(trimmed);
+  return url === null ? null : httpReference(url);
+};
+
+const ISSUE_REFERENCE_KINDS: ReadonlySet<WorkbenchReferenceKind> = new Set([
+  "jira_issue",
+  "github_issue",
+]);
+
+/** A Ticket's issue References (`jira_issue`, `github_issue`), in list order. */
+export const workbenchTicketIssueReferences = (
+  references: ReadonlyArray<{ readonly url: string }>,
+): ReadonlyArray<WorkbenchParsedReferenceUrl> =>
+  references.flatMap((reference) => {
+    const parsed = parseWorkbenchReferenceUrl(reference.url);
+    return parsed !== null && ISSUE_REFERENCE_KINDS.has(parsed.kind) ? [parsed] : [];
+  });
+
+/** A Ticket's short identity: its first issue Reference label, in list order. */
+export const workbenchTicketIssueLabel = (
+  references: ReadonlyArray<{ readonly url: string }>,
+): string | null => workbenchTicketIssueReferences(references)[0]?.label ?? null;
 
 export const WorkbenchProject = Schema.Struct({
   id: WorkbenchProjectId,
@@ -155,12 +243,27 @@ export const WorkbenchTicket = Schema.Struct({
   // Optional for compatibility with snapshots produced before Ticket
   // archiving was introduced. New snapshots always include null or a time.
   archivedAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
-  // Optional so snapshots from servers without Jira links still decode.
-  jiraIssue: Schema.optionalKey(Schema.NullOr(WorkbenchJiraIssue)),
+  // The Thread whose MCP update last changed the title or description; a user edit clears it.
+  updatedByThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
 export type WorkbenchTicket = typeof WorkbenchTicket.Type;
+
+const WorkbenchReferenceTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(500));
+const WorkbenchReferenceUrlInput = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(MAX_REFERENCE_URL_LENGTH),
+);
+
+/** A link a Ticket or its draft points to. Kind and label come from `parseWorkbenchReferenceUrl`. */
+export const WorkbenchReference = Schema.Struct({
+  ticketId: WorkbenchTicketId,
+  url: WorkbenchReferenceUrlInput,
+  title: Schema.NullOr(WorkbenchReferenceTitle),
+  addedByThreadId: Schema.NullOr(ThreadId),
+  createdAt: IsoDateTime,
+});
+export type WorkbenchReference = typeof WorkbenchReference.Type;
 
 export const WorkbenchAssignment = Schema.Struct({
   id: WorkbenchAssignmentId,
@@ -227,6 +330,8 @@ export const WorkbenchTicketDraft = Schema.Struct({
   revision: NonNegativeInt,
   phase: WorkbenchTicketDraftPhase,
   fields: WorkbenchTicketDraftFields,
+  // As on WorkbenchTicket; older stored payloads omit it.
+  updatedByThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -284,6 +389,8 @@ export const WorkbenchSnapshot = Schema.Struct({
   threadRecaps: Schema.Array(WorkbenchThreadRecap).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
+  // References of visible Tickets and unpromoted drafts, in insertion order per owner.
+  references: Schema.Array(WorkbenchReference).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });
 export type WorkbenchSnapshot = typeof WorkbenchSnapshot.Type;
 
@@ -347,6 +454,13 @@ export const WorkbenchArchiveEpicInput = Schema.Struct({
 });
 export type WorkbenchArchiveEpicInput = typeof WorkbenchArchiveEpicInput.Type;
 
+/** A Reference staged before its Ticket exists. */
+export const WorkbenchReferenceDraft = Schema.Struct({
+  url: WorkbenchReferenceUrlInput,
+  title: Schema.optionalKey(WorkbenchReferenceTitle),
+});
+export type WorkbenchReferenceDraft = typeof WorkbenchReferenceDraft.Type;
+
 export const WorkbenchCreateTicketInput = Schema.Struct({
   id: WorkbenchTicketId,
   projectId: WorkbenchProjectId,
@@ -356,6 +470,7 @@ export const WorkbenchCreateTicketInput = Schema.Struct({
   markdown: WorkbenchTicket.fields.markdown,
   primaryT3ProjectId: ProjectId,
   repositoryProjectIds: Schema.optionalKey(Schema.Array(ProjectId).check(Schema.isMinLength(1))),
+  references: Schema.optionalKey(Schema.Array(WorkbenchReferenceDraft)),
   createdAt: IsoDateTime,
 });
 export type WorkbenchCreateTicketInput = typeof WorkbenchCreateTicketInput.Type;
@@ -380,29 +495,25 @@ const WorkbenchJiraIssueUrlInput = Schema.NullOr(
 );
 
 /** `url: null` unlinks. The server parses the URL with `parseJiraIssueUrl`. */
-export const WorkbenchSetJiraIssueLinkInput = Schema.Union([
-  Schema.Struct({
-    kind: Schema.Literal("ticket"),
-    ticketId: WorkbenchTicketId,
-    url: WorkbenchJiraIssueUrlInput,
-    expectedRevision: NonNegativeInt,
-  }),
-  Schema.Struct({
-    kind: Schema.Literal("epic"),
-    epicId: WorkbenchEpicId,
-    url: WorkbenchJiraIssueUrlInput,
-    // Epics have no revision; their lifecycle already uses updatedAt as the version.
-    expectedUpdatedAt: IsoDateTime,
-  }),
-]);
+export const WorkbenchSetJiraIssueLinkInput = Schema.Struct({
+  epicId: WorkbenchEpicId,
+  url: WorkbenchJiraIssueUrlInput,
+  // Epics have no revision; their lifecycle already uses updatedAt as the version.
+  expectedUpdatedAt: IsoDateTime,
+});
 export type WorkbenchSetJiraIssueLinkInput = typeof WorkbenchSetJiraIssueLinkInput.Type;
 
-// Tagged because an Epic-first untagged union would also accept a Ticket payload.
-export const WorkbenchSetJiraIssueLinkResult = Schema.Union([
-  Schema.Struct({ kind: Schema.Literal("ticket"), ticket: WorkbenchTicket }),
-  Schema.Struct({ kind: Schema.Literal("epic"), epic: WorkbenchEpic }),
-]);
-export type WorkbenchSetJiraIssueLinkResult = typeof WorkbenchSetJiraIssueLinkResult.Type;
+export const WorkbenchAddReferenceInput = Schema.Struct({
+  ticketId: WorkbenchTicketId,
+  ...WorkbenchReferenceDraft.fields,
+});
+export type WorkbenchAddReferenceInput = typeof WorkbenchAddReferenceInput.Type;
+
+export const WorkbenchRemoveReferenceInput = Schema.Struct({
+  ticketId: WorkbenchTicketId,
+  url: WorkbenchReferenceUrlInput,
+});
+export type WorkbenchRemoveReferenceInput = typeof WorkbenchRemoveReferenceInput.Type;
 
 export const WorkbenchArchiveTicketInput = Schema.Struct({
   ticketId: WorkbenchTicketId,
@@ -480,6 +591,8 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "ticket_summary_generation_failed",
   "thread_recap_generation_failed",
   "jira_issue_url_invalid",
+  "reference_url_invalid",
+  "reference_owner_not_found",
   "linked_project_not_found",
   "linked_project_not_repository",
   "primary_project_not_linked",
@@ -487,6 +600,7 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "primary_repository_not_selected",
   "ticket_repository_scope_locked",
   "thread_not_found",
+  "thread_not_owner",
   "thread_project_mismatch",
   "assignment_not_found",
   "assignment_already_exists",

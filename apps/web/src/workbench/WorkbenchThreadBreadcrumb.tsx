@@ -1,21 +1,11 @@
-import { RegistryContext } from "@effect/atom-react";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Link } from "@tanstack/react-router";
-import { BlocksIcon, TicketIcon, TicketPlusIcon } from "lucide-react";
-import * as Effect from "effect/Effect";
-import * as AtomRegistry from "effect/reactivity/AtomRegistry";
-import { useContext, useState } from "react";
+import { BlocksIcon, TicketIcon } from "lucide-react";
 
 import {
   WorkspaceBreadcrumbItem,
   WorkspaceBreadcrumbSeparator,
 } from "../components/WorkspaceBreadcrumb";
-import { Button } from "../components/ui/button";
-import { toastManager } from "../components/ui/toast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
-import { useProjects, useThreadShell } from "../state/entities";
-import { attachWorkbenchTicketContext } from "./attachWorkbenchTicketContext";
 import { Badge } from "../components/ui/badge";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
@@ -28,11 +18,7 @@ export function WorkbenchThreadBreadcrumb({
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
 }) {
-  const registry = useContext(RegistryContext);
-  const [attaching, setAttaching] = useState(false);
   const { data } = useEnvironmentQuery(workbenchEnvironment.snapshot({ environmentId, input: {} }));
-  const projects = useProjects();
-  const thread = useThreadShell(scopeThreadRef(environmentId, threadId));
   const context = getWorkbenchContextForThread(data ?? null, threadId);
   if (!context) return null;
   const { ticket, workspace: project } = context;
@@ -81,79 +67,6 @@ export function WorkbenchThreadBreadcrumb({
             {WORKBENCH_TICKET_STATUS_LABELS[ticket.status]}
           </Badge>
         </Link>
-      </WorkspaceBreadcrumbItem>
-      <WorkspaceBreadcrumbItem>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                aria-label="Add ticket context"
-                variant="ghost"
-                size="icon-sm"
-                disabled={thread === null || attaching}
-                onClick={async () => {
-                  if (thread === null || attaching) return;
-                  setAttaching(true);
-                  return (async () => {
-                    try {
-                      let fullTicket = ticket;
-                      if (ticket.markdownOmitted) {
-                        const query = workbenchEnvironment.ticket({
-                          environmentId,
-                          input: { ticketId: ticket.id, revision: ticket.revision },
-                        });
-                        registry.refresh(query);
-                        const loaded = await Effect.runPromise(
-                          AtomRegistry.getResult(registry, query, { suspendOnWaiting: true }),
-                        );
-                        if (loaded === null) {
-                          toastManager.add({
-                            type: "error",
-                            title: "Ticket context could not be attached",
-                            description: "This Ticket no longer exists.",
-                          });
-                          return;
-                        }
-                        fullTicket = loaded;
-                      }
-                      attachWorkbenchTicketContext({
-                        environmentId,
-                        thread,
-                        ticket: fullTicket,
-                        projects: projects.filter(
-                          (candidate) => candidate.environmentId === environmentId,
-                        ),
-                        repositories:
-                          data?.ticketWorkspaces.find(
-                            (workspace) => workspace.ticketId === ticket.id,
-                          )?.repositories ?? [],
-                      });
-                      toastManager.add({
-                        type: "success",
-                        title: "Ticket context attached",
-                        description: "Review it in the composer before sending.",
-                      });
-                    } catch (cause) {
-                      toastManager.add({
-                        type: "error",
-                        title: "Ticket context could not be attached",
-                        description:
-                          cause instanceof Error
-                            ? cause.message
-                            : "The Ticket could not be loaded.",
-                      });
-                    }
-                  })().finally(() => {
-                    setAttaching(false);
-                  });
-                }}
-              />
-            }
-          >
-            <TicketPlusIcon />
-          </TooltipTrigger>
-          <TooltipPopup>Add current ticket details to your next message</TooltipPopup>
-        </Tooltip>
       </WorkspaceBreadcrumbItem>
       <WorkspaceBreadcrumbSeparator />
     </>

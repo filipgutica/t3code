@@ -68,6 +68,7 @@ describe("Workbench sidebar ticket context", () => {
       projects: [],
       workbenchProjects,
       epics: [],
+      referencesByTicket: new Map(),
     };
     expect(getWorkbenchSidebarTicketDetails(inputs).get(ticketId)?.readOnly).toBe(readOnly);
     expect(
@@ -97,6 +98,7 @@ describe("Workbench sidebar ticket context", () => {
       ],
       workbenchProjects: [],
       epics: [],
+      referencesByTicket: new Map(),
     }).get(ticketId);
     expect(details?.repositories).toEqual(["Local repo"]);
     expect(details?.pullRequests.map(({ pullRequest }) => pullRequest.number)).toEqual([12]);
@@ -114,6 +116,7 @@ describe("Workbench sidebar ticket context", () => {
       projects: [],
       workbenchProjects: [],
       epics: [],
+      referencesByTicket: new Map(),
     }).get(ticketId);
     expect(details?.pullRequests).toEqual([]);
     expect(details?.repositories).toEqual([]);
@@ -146,6 +149,7 @@ describe("Workbench sidebar ticket context", () => {
       projects: [],
       workbenchProjects: [],
       epics: [],
+      referencesByTicket: new Map(),
     };
     const details = getWorkbenchSidebarTicketDetails(inputs).get(ticketId);
     expect(details?.executionStatus?.presentation.label).toBe("Working");

@@ -71,14 +71,18 @@ const element = <T extends HTMLElement>(selector: string) => {
 const renderDialog = async (overrides: Partial<typeof props> = {}) => {
   await act(async () => root.render(<WorkbenchTicketDialog {...props} {...overrides} />));
 };
-const setTitle = async () => {
-  const input = element<HTMLInputElement>("#workbench-ticket-title");
+const type = async (input: HTMLInputElement, value: string) => {
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(
-      input,
-      "Fix this",
-    );
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+};
+const setTitle = () => type(element<HTMLInputElement>("#workbench-ticket-title"), "Fix this");
+const pasteReference = async (url: string) => {
+  const input = element<HTMLInputElement>('input[aria-label="Add a reference URL"]');
+  await type(input, url);
+  await act(async () => {
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   });
 };
 const submit = async () => {
@@ -110,6 +114,29 @@ describe("Workbench Ticket creation", () => {
         epicId: localEpic.id,
         primaryT3ProjectId: project.id,
         repositoryProjectIds: [project.id],
+      }),
+    );
+  });
+
+  it("stages pasted References and sends them with the new Ticket", async () => {
+    await renderDialog();
+    await setTitle();
+    await pasteReference("ORBIT-375");
+    expect(document.querySelector('[role="alert"]')?.textContent).toMatch(/absolute file path/);
+    await pasteReference("https://github.com/acme/app/pull/902/files");
+    await pasteReference("https://github.com/acme/app/pull/902");
+    await pasteReference("/home/user/notes/plan.md");
+    await pasteReference("https://acme.atlassian.net/browse/ORBIT-1");
+    await act(async () =>
+      element<HTMLButtonElement>('button[aria-label="Remove reference ORBIT-1"]').click(),
+    );
+    await submit();
+    expect(onCreate).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        references: [
+          { url: "https://github.com/acme/app/pull/902" },
+          { url: "/home/user/notes/plan.md" },
+        ],
       }),
     );
   });

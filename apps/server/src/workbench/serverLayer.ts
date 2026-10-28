@@ -14,6 +14,7 @@ import * as TicketPlanningRuntime from "./TicketPlanningRuntime.ts";
 import * as TicketSummaryService from "./TicketSummaryService.ts";
 import * as ThreadRecapService from "./ThreadRecapService.ts";
 import * as TicketWorkspaceService from "./TicketWorkspaceService.ts";
+import * as WorkbenchAgentService from "./WorkbenchAgentService.ts";
 import * as WorkbenchStore from "./WorkbenchStore.ts";
 import * as WorkbenchWorktreeOwnership from "./worktreeOwnership.ts";
 import * as WorkspaceLifecycleService from "@t3tools/workbench/WorkspaceLifecycleService";
@@ -47,9 +48,17 @@ const TicketDraftLayerLive = TicketDraftService.layer.pipe(
   ),
 );
 
+const WorkbenchAgentLayerLive = WorkbenchAgentService.WorkbenchAgentServiceLive.pipe(
+  Layer.provide(WorkbenchStoreLayerLive),
+  Layer.provide(
+    TicketWorkspaceService.TicketWorkspaceServiceLive.pipe(Layer.provide(WorkbenchStoreLayerLive)),
+  ),
+);
+
 export const WorkbenchServicesLayerLive = Layer.empty.pipe(
   Layer.provideMerge(WorkbenchHostPoliciesLayerLive),
   Layer.provideMerge(TicketDraftLayerLive),
+  Layer.provideMerge(WorkbenchAgentLayerLive),
   Layer.provideMerge(WorkspaceLifecycleLayerLive),
   Layer.provideMerge(TicketWorkspaceService.TicketWorkspaceServiceLive),
   Layer.provideMerge(TicketSummaryService.TicketSummaryServiceLive),

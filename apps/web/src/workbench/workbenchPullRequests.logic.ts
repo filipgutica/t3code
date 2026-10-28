@@ -2,11 +2,13 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import type {
   PullRequestListEntry,
   ProjectId,
+  WorkbenchReference,
   WorkbenchTicketWorkspace,
   ThreadId,
   ThreadLinkedPullRequest,
   WorkbenchAssignment,
 } from "@t3tools/contracts";
+import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import {
   legacyThreadPullRequestKey,
   threadPullRequestKeyOf,
@@ -29,46 +31,79 @@ export type TicketPullRequestReference = ThreadLinkedPullRequest &
     readonly isDraft?: boolean | undefined;
   };
 
+/** A Reference-only row has no native Project, so it shows no looked-up status. */
+type TicketPullRequestRowReference = Omit<TicketPullRequestReference, "projectId"> & {
+  readonly projectId?: ProjectId;
+};
+
 interface TicketPullRequestRow {
-  readonly pullRequest: TicketPullRequestReference;
+  readonly pullRequest: TicketPullRequestRowReference;
   readonly threadId: ThreadId | null;
   readonly threadTitle: string | null;
-  readonly matchesTicket: boolean;
+  /** The `github_pull_request` Reference that also lists this PR; Unlink removes only it. */
+  readonly reference: WorkbenchReference | null;
 }
 
-/** Search can add PRs from another branch and supply fresh titles/states for Thread references. */
+// One PR can arrive as `/pull/12`, `/pull/12/files`, or with different repository casing.
+const pullRequestIdentity = (url: string) => {
+  const link = sourceControlClients.parseChangeRequestUrl(url)?.link;
+  return link
+    ? `${link.host}/${link.repository}#${link.number}`.toLowerCase()
+    : url.toLowerCase().replace(/\/$/, "");
+};
+
+/** Thread links, prepared checkouts, and PR References, one row per PR. */
 export const mergeWorkbenchTicketPullRequests = ({
   threadPullRequests,
-  matches,
   checkoutPullRequests = [],
+  references = [],
 }: {
   readonly threadPullRequests: ReadonlyArray<WorkbenchTicketPullRequest>;
-  readonly matches: ReadonlyArray<TicketPullRequestReference>;
   readonly checkoutPullRequests?: ReadonlyArray<TicketPullRequestReference>;
+  /** `github_pull_request` References, in list order. */
+  readonly references?: ReadonlyArray<WorkbenchReference>;
 }): ReadonlyArray<TicketPullRequestRow> => {
   const rows = new Map<string, TicketPullRequestRow>();
-  const identity = (reference: TicketPullRequestReference) =>
-    reference.url.toLowerCase().replace(/\/$/, "");
   for (const { pullRequest, threadId, threadTitle } of threadPullRequests) {
-    rows.set(identity(pullRequest), { pullRequest, threadId, threadTitle, matchesTicket: false });
+    rows.set(pullRequestIdentity(pullRequest.url), {
+      pullRequest,
+      threadId,
+      threadTitle,
+      reference: null,
+    });
   }
+  // Checkout status is fresher than a Thread's stored snapshot.
   for (const pullRequest of checkoutPullRequests) {
-    const key = identity(pullRequest);
+    const key = pullRequestIdentity(pullRequest.url);
+    const existing = rows.get(key);
     rows.set(key, {
       pullRequest,
-      threadId: rows.get(key)?.threadId ?? null,
-      threadTitle: rows.get(key)?.threadTitle ?? null,
-      matchesTicket: false,
+      threadId: existing?.threadId ?? null,
+      threadTitle: existing?.threadTitle ?? null,
+      reference: null,
     });
   }
-  for (const pullRequest of matches) {
-    const key = identity(pullRequest);
-    rows.set(key, {
-      pullRequest,
-      threadId: rows.get(key)?.threadId ?? null,
-      threadTitle: rows.get(key)?.threadTitle ?? null,
-      matchesTicket: true,
-    });
+  for (const reference of references) {
+    const link = sourceControlClients.parseChangeRequestUrl(reference.url)?.link;
+    if (!link) continue;
+    const key = pullRequestIdentity(reference.url);
+    const existing = rows.get(key);
+    rows.set(
+      key,
+      existing
+        ? { ...existing, reference }
+        : {
+            pullRequest: {
+              repository: link.repository,
+              number: link.number,
+              url: reference.url,
+              ...(reference.title === null ? {} : { title: reference.title }),
+            },
+            threadId: null,
+            threadTitle: null,
+            reference,
+          },
+    );
   }
   return [...rows.values()];
 };

@@ -1,4 +1,3 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { CreateThreadInput, DeleteThreadInput } from "@t3tools/client-runtime/operations";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
@@ -17,10 +16,8 @@ import type {
 } from "@t3tools/contracts";
 import { DEFAULT_RUNTIME_MODE } from "@t3tools/contracts";
 
-import type { ComposerThreadTarget } from "../composerDraftStore";
-import type { ReviewCommentContext } from "../reviewCommentContext";
 import { DEFAULT_INTERACTION_MODE } from "../types";
-import { buildTicketReviewComment, resolveWorkbenchTicketThreadTarget } from "./workbench.logic";
+import { resolveWorkbenchTicketThreadTarget } from "./workbench.logic";
 import {
   isWorkbenchRepositoryScopeEqual,
   type WorkbenchRepositoryScope,
@@ -49,7 +46,6 @@ export type WorkbenchTicketStartStage =
   | "preparing-workspace"
   | "creating-thread"
   | "linking-thread"
-  | "attaching-context"
   | "opening-thread";
 
 const WORKBENCH_TICKET_START_STAGE_LABELS: Record<WorkbenchTicketStartStage, string> = {
@@ -58,7 +54,6 @@ const WORKBENCH_TICKET_START_STAGE_LABELS: Record<WorkbenchTicketStartStage, str
   "preparing-workspace": "Preparing repositories…",
   "creating-thread": "Creating Thread…",
   "linking-thread": "Linking Thread to Ticket…",
-  "attaching-context": "Attaching Ticket context…",
   "opening-thread": "Opening Thread…",
 };
 
@@ -84,8 +79,8 @@ export function isWorkbenchTicketStartPending(
 /**
  * Controls how a Ticket start is coordinated. A normal start opens an
  * existing active Thread when one is assigned, then creates a replacement
- * when its native Thread is missing. Every new Thread opens with its Ticket
- * context attached and waits for the user to send the first turn.
+ * when its native Thread is missing. Every new Thread opens and waits for the
+ * user to send the first turn; the server tells it about its Ticket.
  */
 export interface StartWorkbenchTicketOptions {
   readonly mode?: "additional" | "replace";
@@ -115,10 +110,6 @@ interface StartWorkbenchTicketDependencies {
   readonly deleteThread: (
     input: EnvironmentCommandInput<DeleteThreadInput>,
   ) => Promise<CommandResult>;
-  readonly addReviewComment: (
-    threadRef: ComposerThreadTarget,
-    comment: ReviewCommentContext,
-  ) => void;
   readonly waitForThread: (threadId: ThreadId) => Promise<void>;
   readonly openThread: (threadId: ThreadId) => Promise<void>;
   readonly resolveModelSelection: (project: EnvironmentProject) => ModelSelection | null;
@@ -320,40 +311,13 @@ export async function coordinateWorkbenchTicketStart(
     };
   }
 
-  return attachTicketContextAndOpen({
-    input,
-    dependencies,
-    workspace: workspaceResult.value,
-    threadId,
-  });
+  return openStartedThread(dependencies, threadId);
 }
 
-const attachTicketContextAndOpen = async ({
-  input,
-  dependencies,
-  workspace,
-  threadId,
-}: {
-  input: StartWorkbenchTicketInput;
-  dependencies: StartWorkbenchTicketDependencies;
-  workspace: import("@t3tools/contracts").WorkbenchTicketWorkspace;
-  threadId: ThreadId;
-}): Promise<StartWorkbenchTicketResult> => {
-  const preparedPaths = new Map(
-    workspace.repositories
-      .filter((repository) => repository.status === "ready")
-      .map((repository) => [repository.projectId, repository.worktreePath]),
-  );
-  const ticketContext = buildTicketReviewComment(
-    input.ticket,
-    input.projects.map((repository) => ({
-      ...repository,
-      workspaceRoot: preparedPaths.get(repository.id) ?? repository.workspaceRoot,
-    })),
-  );
-  dependencies.onStage?.("attaching-context");
-  dependencies.addReviewComment(scopeThreadRef(input.environmentId, threadId), ticketContext);
-
+const openStartedThread = async (
+  dependencies: StartWorkbenchTicketDependencies,
+  threadId: ThreadId,
+): Promise<StartWorkbenchTicketResult> => {
   try {
     dependencies.onStage?.("opening-thread");
     await dependencies.waitForThread(threadId);

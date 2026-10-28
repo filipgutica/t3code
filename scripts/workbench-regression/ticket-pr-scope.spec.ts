@@ -153,7 +153,7 @@ test("ticket PRs exclude shared checkouts until a workspace is prepared", async 
   await expect(page.getByText("Unrelated shared checkout change", { exact: true })).toHaveCount(0);
 });
 
-test("ticket PR discovery includes other Workspace repositories without changing Ticket scope", async ({
+test("ticket PR References show without changing Ticket scope", async ({
   page,
   demo,
 }, testInfo) => {
@@ -161,9 +161,8 @@ test("ticket PR discovery includes other Workspace repositories without changing
   const workspace = initial.projects.find((project) => project.id === "orbit");
   const ticket = initial.tickets.find((candidate) => candidate.projectId === workspace?.id);
   const selectedProjectId = workspace?.linkedProjectIds[0];
-  const prProjectId = workspace?.linkedProjectIds[1];
-  if (!workspace || !ticket || !selectedProjectId || !prProjectId)
-    throw new Error("Expected a demo Workspace with two repositories and a Ticket");
+  if (!workspace || !ticket || !selectedProjectId)
+    throw new Error("Expected a demo Workspace with a repository and a Ticket");
   const shell = await demo.shellSnapshot();
   const threadId = initial.assignments.find(
     (assignment) => assignment.ticketId === ticket.id,
@@ -171,8 +170,6 @@ test("ticket PR discovery includes other Workspace repositories without changing
   if (!threadId) throw new Error("Expected a linked demo Thread");
   const threadTitle = "Database setup and connection verification for the development environment";
   const timestamp = "2026-09-17T00:00:00.000Z";
-  const ticketKey = "DEMO-5191";
-  const requests: unknown[] = [];
   await page.routeWebSocket(/.*/, (socket) => {
     const server = socket.connectToServer();
     socket.onMessage((message) => {
@@ -252,67 +249,19 @@ test("ticket PR discovery includes other Workspace repositories without changing
                   ...candidate,
                   primaryT3ProjectId: selectedProjectId,
                   repositoryProjectIds: [selectedProjectId],
-                  jiraIssue: {
-                    key: ticketKey,
-                    url: `https://example.atlassian.net/browse/${ticketKey}`,
-                  },
                 }
               : candidate,
           ),
-          ticketWorkspaces: [],
-        });
-        return;
-      }
-      if (request.tag === WS_METHODS.pullRequestsList) {
-        const input = "payload" in request ? request.payload : null;
-        requests.push(input);
-        const includesRepository =
-          typeof input === "object" &&
-          input !== null &&
-          "projectIds" in input &&
-          Array.isArray(input.projectIds) &&
-          input.projectIds.includes(prProjectId);
-        reply({
-          viewers: { "github.com": "demo" },
-          providers: [
+          references: [
             {
-              host: "github.com",
-              kind: "github",
-              searchesOnHost: true,
-              configured: true,
-              projectCount: 2,
-              detail: null,
+              ticketId: ticket.id,
+              url: "https://github.com/example/api/pull/1554",
+              title: "Fix request scoping",
+              addedByThreadId: null,
+              createdAt: timestamp,
             },
           ],
-          entries: includesRepository
-            ? [
-                {
-                  provider: "github",
-                  host: "github.com",
-                  projectId: prProjectId,
-                  projectTitle: "API",
-                  repository: "example/api",
-                  number: 1554,
-                  title: "Fix request scoping [DEMO-5191]",
-                  url: "https://github.com/example/api/pull/1554",
-                  author: null,
-                  headBranch: "fix/demo-5191-request-scoping",
-                  baseBranch: "main",
-                  state: "open",
-                  isDraft: false,
-                  mergeability: "unknown",
-                  additions: 0,
-                  deletions: 0,
-                  createdAt: timestamp,
-                  updatedAt: timestamp,
-                  viewerReviewRequested: false,
-                  labels: [],
-                },
-              ]
-            : [],
-          errors: [],
-          truncated: false,
-          nextCursors: {},
+          ticketWorkspaces: [],
         });
         return;
       }
@@ -326,10 +275,9 @@ test("ticket PR discovery includes other Workspace repositories without changing
   );
   await expect(page.getByRole("heading", { name: ticket.title, exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: /^Pull requests/ })).toBeVisible();
-  await expect(page.getByText("Searching repositories…", { exact: true })).toHaveCount(0);
   await page.getByRole("heading", { name: /^Pull requests/ }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("ticket-pr-discovery.png") });
-  await expect(page.getByText("Fix request scoping [DEMO-5191]", { exact: true })).toBeVisible();
+  await expect(page.getByText("Fix request scoping", { exact: true })).toBeVisible();
   const threadBadge = page.getByRole("button", {
     name: `Open linked Thread: ${threadTitle}`,
     exact: true,
@@ -355,12 +303,6 @@ test("ticket PR discovery includes other Workspace repositories without changing
       .first(),
   ).toHaveClass(/text-emerald/);
   await page.screenshot({ path: testInfo.outputPath("ticket-pr-discovery.png") });
-  expect(requests).toContainEqual(
-    expect.objectContaining({
-      projectIds: workspace.linkedProjectIds,
-      query: ticketKey,
-    }),
-  );
   await page.setViewportSize({ width: 1024, height: 900 });
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(threadBadge).toBeVisible();
@@ -369,7 +311,7 @@ test("ticket PR discovery includes other Workspace repositories without changing
   await expect(page).toHaveURL(
     (url) => url.pathname.includes(threadId) && url.searchParams.get("workbench") === "true",
   );
-  // Discovering the PR must not add its repository to the Ticket's saved preparation scope.
+  // Showing the PR must not add its repository to the Ticket's saved preparation scope.
   expect((await snapshot(demo)).tickets.find((candidate) => candidate.id === ticket.id)).toEqual(
     ticket,
   );

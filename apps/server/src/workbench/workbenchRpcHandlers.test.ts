@@ -1,6 +1,7 @@
 import {
   ProjectId,
   WORKBENCH_JIRA_ISSUE_URL_ERROR,
+  WORKBENCH_REFERENCE_URL_ERROR,
   WORKBENCH_WS_METHODS,
   WorkbenchEpicId,
   WorkbenchProjectId,
@@ -71,83 +72,76 @@ const seed = Effect.gen(function* () {
     createdAt,
   });
   const handlers = makeWorkbenchRpcHandlers(yield* acquireWorkbenchRpcServices);
-  return { store, epic, ticket, setLink: handlers[WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink] };
+  return {
+    store,
+    epic,
+    ticket,
+    setLink: handlers[WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink],
+    addReference: handlers[WORKBENCH_WS_METHODS.workbenchAddReference],
+    removeReference: handlers[WORKBENCH_WS_METHODS.workbenchRemoveReference],
+  };
 });
 
-describe("workbench.setJiraIssueLink", () => {
-  it.effect("links, changes, and unlinks a Ticket from a Jira issue URL", () =>
+describe("workbench.references", () => {
+  it.effect("adds and removes a Ticket Reference without changing the Ticket", () =>
     Effect.gen(function* () {
-      const { store, ticket, setLink } = yield* seed;
-      const linked = yield* setLink({
-        kind: "ticket",
+      const { store, ticket, addReference, removeReference } = yield* seed;
+      const url = "https://github.com/acme/web/issues/61";
+      const added = yield* addReference({ ticketId, url, title: "Focus after resend" });
+      expect(added).toMatchObject({
         ticketId,
-        url: "https://example.atlassian.net/browse/orbit-375",
-        expectedRevision: ticket.revision,
+        url,
+        title: "Focus after resend",
+        addedByThreadId: null,
       });
-      expect(linked).toMatchObject({
-        kind: "ticket",
-        ticket: {
-          id: ticketId,
-          jiraIssue: { key: "ORBIT-375", url: "https://example.atlassian.net/browse/orbit-375" },
-        },
-      });
-      if (linked.kind !== "ticket") return expect.unreachable();
-      // Board links carry the key in the query string.
-      const changed = yield* setLink({
-        kind: "ticket",
-        ticketId,
-        url: "https://example.atlassian.net/jira/software/projects/ORBIT/boards/1?selectedIssue=ORBIT-9",
-        expectedRevision: linked.ticket.revision,
-      });
-      if (changed.kind !== "ticket") return expect.unreachable();
-      expect(changed.ticket.jiraIssue?.key).toBe("ORBIT-9");
-      expect(yield* store.getTicketJiraIssueKey(ticketId)).toEqual(Option.some("ORBIT-9"));
-      const unlinked = yield* setLink({
-        kind: "ticket",
-        ticketId,
-        url: null,
-        expectedRevision: changed.ticket.revision,
-      });
-      if (unlinked.kind !== "ticket") return expect.unreachable();
-      expect(unlinked.ticket.jiraIssue ?? null).toBeNull();
-      expect(yield* store.getTicketJiraIssueKey(ticketId)).toEqual(Option.none());
+      expect((yield* store.getSnapshot).references).toEqual([added]);
+      yield* removeReference({ ticketId, url });
+      expect((yield* store.getSnapshot).references).toEqual([]);
+      expect(Option.getOrThrow(yield* store.getTicket(ticketId))).toEqual(ticket);
     }).pipe(Effect.provide(TestLayer)),
   );
 
+  it.effect("rejects a URL that is not http or https without writing", () =>
+    Effect.gen(function* () {
+      const { store, addReference } = yield* seed;
+      const error = yield* addReference({ ticketId, url: "javascript:alert(1)" }).pipe(Effect.flip);
+      expect(error).toMatchObject({
+        _tag: "WorkbenchOperationError",
+        code: "reference_url_invalid",
+        message: WORKBENCH_REFERENCE_URL_ERROR,
+      });
+      expect((yield* store.getSnapshot).references).toEqual([]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+});
+
+describe("workbench.setJiraIssueLink", () => {
   it.effect("links and unlinks an Epic", () =>
     Effect.gen(function* () {
       const { epic, setLink } = yield* seed;
       const linked = yield* setLink({
-        kind: "epic",
         epicId,
         url: "https://jira.example.com/browse/ORBIT-1",
         expectedUpdatedAt: epic.updatedAt,
       });
-      expect(linked).toMatchObject({
-        kind: "epic",
-        epic: { id: epicId, jiraIssue: { key: "ORBIT-1" } },
-      });
-      if (linked.kind !== "epic") return expect.unreachable();
+      expect(linked).toMatchObject({ id: epicId, jiraIssue: { key: "ORBIT-1" } });
       const unlinked = yield* setLink({
-        kind: "epic",
         epicId,
         url: null,
-        expectedUpdatedAt: linked.epic.updatedAt,
+        expectedUpdatedAt: linked.updatedAt,
       });
-      if (unlinked.kind !== "epic") return expect.unreachable();
-      expect(unlinked.epic.jiraIssue ?? null).toBeNull();
+      expect(unlinked.jiraIssue ?? null).toBeNull();
     }).pipe(Effect.provide(TestLayer)),
   );
 
   it.effect("rejects a URL that is not a Jira issue without writing", () =>
     Effect.gen(function* () {
-      const { store, ticket, setLink } = yield* seed;
+      const { store, epic, setLink } = yield* seed;
       for (const url of ["javascript:alert(1)//browse/ORBIT-1", "https://example.com/wiki/page"]) {
         const error = yield* setLink({
-          kind: "ticket",
-          ticketId,
+          epicId,
           url,
-          expectedRevision: ticket.revision,
+          expectedUpdatedAt: epic.updatedAt,
         }).pipe(Effect.flip);
         expect(error).toMatchObject({
           _tag: "WorkbenchOperationError",
@@ -155,8 +149,7 @@ describe("workbench.setJiraIssueLink", () => {
           message: WORKBENCH_JIRA_ISSUE_URL_ERROR,
         });
       }
-      const current = yield* store.getTicket(ticketId);
-      expect(Option.getOrThrow(current).revision).toBe(ticket.revision);
+      expect(Option.getOrThrow(yield* store.getEpic(epicId))).toEqual(epic);
     }).pipe(Effect.provide(TestLayer)),
   );
 });

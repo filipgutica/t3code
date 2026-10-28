@@ -11,6 +11,7 @@ import {
   type WorkbenchReleaseTicketWorkspaceInput,
   type WorkbenchSnapshot,
   type WorkbenchTicketWorkspace,
+  workbenchTicketIssueLabel,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -47,28 +48,29 @@ const slugSegment = (value: string, fallback: string) => {
 
 export interface TicketWorkspaceNamingInput {
   readonly ticketId: string;
-  readonly jiraIssueKey?: string | null;
+  /** The Ticket's first issue Reference label, such as `PROJ-123` or `orbit-web#61`. */
+  readonly issueLabel?: string | null;
   readonly title?: string;
 }
 
 /** Human-readable identity used for new workspace directories. */
 export const ticketWorkspaceDirectoryName = ({
   ticketId,
-  jiraIssueKey,
+  issueLabel,
   title,
 }: TicketWorkspaceNamingInput) => {
-  const readable = jiraIssueKey?.trim() || title?.trim() || ticketId;
+  const readable = issueLabel?.trim() || title?.trim() || ticketId;
   return `${slugSegment(readable, "ticket")}-${shortStableSuffix(ticketId)}`;
 };
 
 export const ticketWorkspaceBranchName = ({
   ticketId,
-  jiraIssueKey,
+  issueLabel,
   title,
   prefix,
 }: TicketWorkspaceNamingInput & { readonly prefix: string }) => {
   const suffix = shortStableSuffix(ticketId);
-  const issueKey = slugSegment(jiraIssueKey ?? "", "")
+  const issueKey = slugSegment(issueLabel ?? "", "")
     .slice(0, 64 - suffix.length - 2)
     .replace(/-+$/g, "");
   const titleSlug = slugSegment(title ?? "", "ticket");
@@ -709,7 +711,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       isPrimary,
       branchName,
       assignedThreadIds,
-      jiraIssueKey,
       workspaceDirectory,
       existingRepository,
       usedRepositoryDirectoryNames,
@@ -718,7 +719,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       readonly isPrimary: boolean;
       readonly branchName: Effect.Effect<string, WorkbenchOperationError>;
       readonly assignedThreadIds: ReadonlyArray<ThreadId>;
-      readonly jiraIssueKey: string | null;
       readonly workspaceDirectory: string;
       readonly existingRepository: WorkbenchTicketWorkspace["repositories"][number] | undefined;
       readonly usedRepositoryDirectoryNames: Set<string>;
@@ -751,7 +751,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       const pullRequestBranch = yield* resolveOpenPullRequestBranch({
         projectId,
         assignedThreadIds,
-        jiraIssueKey,
       });
       const source = Option.isSome(pullRequestBranch)
         ? pullRequestBranch.value
@@ -834,14 +833,12 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     ticket,
     branchName,
     assignedThreadIds,
-    jiraIssueKey,
     existingWorkspace,
     workspaceDirectory,
   }: {
     readonly ticket: WorkbenchSnapshot["tickets"][number];
     readonly branchName: Effect.Effect<string, WorkbenchOperationError>;
     readonly assignedThreadIds: ReadonlyArray<ThreadId>;
-    readonly jiraIssueKey: string | null;
     readonly existingWorkspace: Option.Option<WorkbenchTicketWorkspace>;
     readonly workspaceDirectory: string;
   }) {
@@ -875,7 +872,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
           isPrimary: projectId === ticket.primaryT3ProjectId,
           branchName,
           assignedThreadIds,
-          jiraIssueKey,
           workspaceDirectory,
           existingRepository,
           usedRepositoryDirectoryNames,
@@ -1115,13 +1111,15 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     const reconciledExisting = yield* store.getTicketWorkspace(input.ticketId);
     const startsNewGeneration =
       Option.isNone(reconciledExisting) || reconciledExisting.value.status === "released";
-    const jiraIssueKey = Option.getOrNull(yield* store.getTicketJiraIssueKey(ticket.id));
+    const issueLabel = workbenchTicketIssueLabel(
+      snapshot.references.filter((reference) => reference.ticketId === ticket.id),
+    );
     const assignedThreadIds = snapshot.assignments
       .filter((assignment) => assignment.ticketId === ticket.id && assignment.supersededAt === null)
       .map((assignment) => assignment.threadId);
     const proposedWorkspaceDirectoryName = ticketWorkspaceDirectoryName({
       ticketId: ticket.id,
-      jiraIssueKey,
+      issueLabel,
       title: ticket.title,
     });
     let generatedBranchName = Option.getOrUndefined(
@@ -1132,7 +1130,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       generatedBranchName = yield* generateBranchName({
         ticketId: ticket.id,
         primaryT3ProjectId: ticket.primaryT3ProjectId,
-        jiraIssueKey,
+        issueLabel,
         title: ticket.title,
         markdown: ticket.markdown,
       });
@@ -1175,7 +1173,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       ticket,
       branchName: resolveBranchName,
       assignedThreadIds,
-      jiraIssueKey,
       existingWorkspace: reconciledExisting,
       workspaceDirectory,
     });
@@ -1185,7 +1182,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       : (generatedBranchName ??
         ticketWorkspaceBranchName({
           ticketId: ticket.id,
-          jiraIssueKey,
+          issueLabel,
           title: ticket.title,
           prefix: "",
         }));

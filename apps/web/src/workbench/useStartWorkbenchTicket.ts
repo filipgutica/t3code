@@ -14,7 +14,6 @@ import {
   type WorkbenchTicketId,
 } from "@t3tools/contracts";
 
-import { useComposerDraftStore } from "../composerDraftStore";
 import { newThreadId, randomUUID } from "../lib/utils";
 import { resolveDefaultProviderModelSelection } from "../providerInstances";
 import { threadEnvironment } from "../state/threads";
@@ -157,8 +156,6 @@ export function useStartWorkbenchTicket({
             createAssignment,
             replaceAssignment,
             deleteThread,
-            addReviewComment: (threadRef, comment) =>
-              useComposerDraftStore.getState().addReviewComment(threadRef, comment),
             waitForThread: (threadId) =>
               waitForWorkbenchThread(scopeThreadRef(environmentId, threadId)),
             openThread,

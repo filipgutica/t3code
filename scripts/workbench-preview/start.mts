@@ -12,6 +12,7 @@ import {
   seedAttentionRecords,
   seedAttentionOutcomes,
 } from "../workbench-demo/attention.mts";
+import { seedDemoReferences } from "../workbench-demo/issue-links.mts";
 import { preparePreview, PREVIEW_MODEL_SELECTION, resetPreviewState } from "./config.mts";
 import {
   AuthAccessTokenType,
@@ -181,6 +182,7 @@ try {
   running.child.kill("SIGTERM");
   await running.exited;
   await seedAttentionOutcomes(preview.t3Home);
+  seedDemoReferences(preview.t3Home);
   if (!shuttingDown) {
     // Public readiness cannot succeed until native fixture receipts have completed.
     running = launchNativeServer(preview.port, "0.0.0.0");

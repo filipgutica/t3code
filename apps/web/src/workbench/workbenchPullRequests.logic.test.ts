@@ -4,6 +4,7 @@ import {
   ThreadId,
   WorkbenchTicketId,
   WorkbenchTicketWorkspaceAttemptId,
+  type WorkbenchReference,
   type WorkbenchTicketWorkspace,
   type ThreadLinkedPullRequest,
   type ThreadPullRequestLink,
@@ -16,79 +17,83 @@ import {
   type WorkbenchPullRequestThread,
 } from "./workbenchPullRequests.logic";
 
-describe("Jira search and Thread PR references", () => {
-  it("retains checkout PRs without a Jira match and deduplicates them with search results", () => {
-    const checkout = { ...pullRequest(1), title: "Local branch PR", state: "open" as const };
-    expect(
-      mergeWorkbenchTicketPullRequests({
-        threadPullRequests: [],
-        checkoutPullRequests: [checkout],
-        matches: [],
-      }),
-    ).toEqual([{ pullRequest: checkout, threadId: null, threadTitle: null, matchesTicket: false }]);
-    const match = { ...checkout, state: "merged" as const };
-    expect(
-      mergeWorkbenchTicketPullRequests({
-        threadPullRequests: [],
-        checkoutPullRequests: [checkout],
-        matches: [match],
-      }),
-    ).toEqual([{ pullRequest: match, threadId: null, threadTitle: null, matchesTicket: true }]);
-  });
-  it("includes merged matches from other branches and enriches duplicate Thread references", () => {
-    const reference = {
-      threadId: ThreadId.make("thread"),
-      threadTitle: "Ticket work",
-      pullRequest: pullRequest(3800, "Kong/public-ui-components"),
-    };
-    const matched = {
-      ...pullRequest(3800, "kong/public-ui-components"),
-      title: "Fix headers [MA-5439]",
-      state: "merged" as const,
-    };
-    expect(
-      mergeWorkbenchTicketPullRequests({
-        threadPullRequests: [reference],
-        checkoutPullRequests: [reference.pullRequest],
-        matches: [matched, { ...pullRequest(13803, "Kong/konnect-ui-apps"), state: "merged" }],
-      }),
-    ).toEqual([
-      {
-        pullRequest: matched,
-        threadId: reference.threadId,
-        threadTitle: "Ticket work",
-        matchesTicket: true,
-      },
-      {
-        pullRequest: { ...pullRequest(13803, "Kong/konnect-ui-apps"), state: "merged" },
-        threadId: null,
-        threadTitle: null,
-        matchesTicket: true,
-      },
-    ]);
-  });
-
-  it("keeps Thread references when search has no matches and separates hosts", () => {
-    const reference = {
+describe("Thread, checkout, and Reference pull requests", () => {
+  it("keeps checkout PRs and prefers their status over the Thread's stored link", () => {
+    const linked = {
       threadId: ThreadId.make("thread"),
       threadTitle: "Work",
       pullRequest: pullRequest(1),
     };
-    const enterprise = { ...pullRequest(1), url: "https://git.example.com/acme/repo/pull/1" };
+    const checkout = { ...pullRequest(1), title: "Local branch PR", state: "merged" as const };
     expect(
-      mergeWorkbenchTicketPullRequests({ threadPullRequests: [reference], matches: [] }),
+      mergeWorkbenchTicketPullRequests({
+        threadPullRequests: [linked],
+        checkoutPullRequests: [checkout, pullRequest(2)],
+      }),
+    ).toEqual([
+      { pullRequest: checkout, threadId: linked.threadId, threadTitle: "Work", reference: null },
+      { pullRequest: pullRequest(2), threadId: null, threadTitle: null, reference: null },
+    ]);
+  });
+
+  it("lists a Reference-only PR and attaches a Reference to the Thread row for the same PR", () => {
+    const linked = {
+      threadId: ThreadId.make("thread"),
+      threadTitle: "Ticket work",
+      pullRequest: pullRequest(3800, "Kong/public-ui-components"),
+    };
+    const sameAsThread = prReference(
+      "https://github.com/kong/public-ui-components/pull/3800/files",
+    );
+    const onlyReference = prReference("https://github.com/Kong/konnect-ui-apps/pull/13803", "Docs");
+    expect(
+      mergeWorkbenchTicketPullRequests({
+        threadPullRequests: [linked],
+        references: [sameAsThread, onlyReference],
+      }),
     ).toEqual([
       {
-        pullRequest: reference.pullRequest,
-        threadId: reference.threadId,
-        threadTitle: "Work",
-        matchesTicket: false,
+        pullRequest: linked.pullRequest,
+        threadId: linked.threadId,
+        threadTitle: "Ticket work",
+        reference: sameAsThread,
+      },
+      {
+        pullRequest: {
+          repository: "kong/konnect-ui-apps",
+          number: 13803,
+          url: onlyReference.url,
+          title: "Docs",
+        },
+        threadId: null,
+        threadTitle: null,
+        reference: onlyReference,
       },
     ]);
+  });
+
+  it("separates the same repository and number on different hosts", () => {
+    const enterprise = { ...pullRequest(1), url: "https://git.example.com/acme/repo/pull/1" };
+    const linked = {
+      threadId: ThreadId.make("thread"),
+      threadTitle: "Work",
+      pullRequest: enterprise,
+    };
     expect(
-      mergeWorkbenchTicketPullRequests({ threadPullRequests: [reference], matches: [enterprise] }),
+      mergeWorkbenchTicketPullRequests({
+        threadPullRequests: [linked],
+        references: [prReference("https://github.com/acme/repo/pull/1")],
+      }),
     ).toHaveLength(2);
   });
+});
+
+const prReference = (url: string, title: string | null = null): WorkbenchReference => ({
+  ticketId: WorkbenchTicketId.make("ticket"),
+  url,
+  title,
+  addedByThreadId: null,
+  createdAt: "2026-09-09T00:00:00.000Z",
 });
 
 const pullRequest = (number: number, repository = "acme/repo"): ThreadLinkedPullRequest => ({
@@ -266,9 +271,7 @@ describe("Workbench Ticket pull request references", () => {
       threadsById: new Map([[linkedThread.id, linkedThread]]),
       archivedThreadsById: new Map(),
     });
-    expect(
-      mergeWorkbenchTicketPullRequests({ threadPullRequests: references, matches: [] }),
-    ).toEqual([
+    expect(mergeWorkbenchTicketPullRequests({ threadPullRequests: references })).toEqual([
       {
         pullRequest: {
           ...pullRequest(1584),
@@ -280,7 +283,7 @@ describe("Workbench Ticket pull request references", () => {
         },
         threadId: linkedThread.id,
         threadTitle: "Database setup",
-        matchesTicket: false,
+        reference: null,
       },
     ]);
   });

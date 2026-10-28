@@ -143,6 +143,20 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,
   }),
+  addReference: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:add-reference",
+    tag: WS_METHODS.workbenchAddReference,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshSnapshot,
+  }),
+  removeReference: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:remove-reference",
+    tag: WS_METHODS.workbenchRemoveReference,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshSnapshot,
+  }),
   // The conversation draft lives in the Workbench snapshot, so every transition refreshes it.
   beginTicketDraft: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:begin-ticket-draft",

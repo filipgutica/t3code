@@ -22,6 +22,7 @@ import type {
   WorkbenchTicketId,
   WorkbenchTicketStatus,
 } from "@t3tools/contracts";
+import { workbenchTicketIssueReferences } from "@t3tools/contracts";
 import {
   ArrowRightIcon,
   BotIcon,
@@ -103,15 +104,23 @@ import {
 import { getWorkbenchBoardTicketPreview } from "./workbenchBoardTicketPreview";
 import {
   WorkbenchEpicBadge,
-  WorkbenchJiraIssueKeyLink,
   WorkbenchTicketTypeBadge,
   WorkbenchTicketCopyMenuItems,
 } from "./WorkbenchTicketMetadata";
 import { WorkbenchDraftTickets } from "./WorkbenchDraftTickets";
+import { WorkbenchReferenceBadge } from "./WorkbenchReferences";
+import {
+  getTicketReferences,
+  getWorkbenchReferenceSearchTerms,
+  hasJiraReference,
+  type WorkbenchReferencesByTicket,
+} from "./workbenchReferences.logic";
 import {
   getConversationDraftTitle,
   type WorkbenchConversationDraft,
 } from "./workbenchTicketDraft.logic";
+
+const BOARD_CARD_ISSUE_LIMIT = 2;
 
 const STATUS_DOT_CLASS: Record<WorkbenchTicketStatus, string> = {
   todo: "bg-muted-foreground/55",
@@ -136,6 +145,7 @@ type WorkbenchTicketBoardProps = {
   readonly repositoriesReady: boolean;
   readonly repositoriesById: ReadonlyMap<ProjectId, Project>;
   readonly assignmentsByTicket: ReadonlyMap<WorkbenchTicketId, WorkbenchAssignment>;
+  readonly referencesByTicket: WorkbenchReferencesByTicket;
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
   readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   readonly archivedThreadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
@@ -276,6 +286,9 @@ function WorkbenchTicketBoardContent({
                       draft,
                       props.threadsById.get(draft.threadId)?.title,
                     ),
+                    referenceTerms: getWorkbenchReferenceSearchTerms(
+                      getTicketReferences(props.referencesByTicket, draft.id),
+                    ),
                     query: search.query,
                   }),
               )}
@@ -359,6 +372,7 @@ type WorkbenchBoardContext = Pick<
   | "selectedTicketId"
   | "repositoriesById"
   | "assignmentsByTicket"
+  | "referencesByTicket"
   | "threadsById"
   | "archivedThreadsById"
   | "threadLookupReady"
@@ -600,7 +614,7 @@ function WorkbenchBoardTicketTitle({
 }
 
 function WorkbenchBoardTicketActions({
-  presentation: { ticket, board },
+  presentation: { ticket, board, issues },
   disabled,
 }: {
   presentation: ReturnType<typeof getWorkbenchBoardTicketPresentation>;
@@ -624,7 +638,7 @@ function WorkbenchBoardTicketActions({
         {getWorkbenchTicketSummaryActionLabel(ticket.generatedSummary)}
       </MenuItem>
       <MenuSeparator />
-      <WorkbenchTicketCopyMenuItems ticketId={ticket.id} jiraIssue={ticket.jiraIssue} />
+      <WorkbenchTicketCopyMenuItems ticketId={ticket.id} issue={issues[0] ?? null} />
     </WorkbenchTicketStatusMenu>
   );
 }
@@ -635,6 +649,7 @@ function useWorkbenchBoardData({
   repositoryProjectIds,
   repositoriesReady,
   tickets,
+  referencesByTicket,
   assignments,
   threadsById,
   archivedThreadsById,
@@ -647,6 +662,7 @@ function useWorkbenchBoardData({
   | "repositoryProjectIds"
   | "repositoriesReady"
   | "tickets"
+  | "referencesByTicket"
   | "assignments"
   | "threadsById"
   | "archivedThreadsById"
@@ -686,7 +702,9 @@ function useWorkbenchBoardData({
         getWorkbenchTicketRepositoryProjectIds(ticket).includes(repositoryId)) &&
       matchesWorkbenchTicketSearch({
         title: ticket.title,
-        jiraKey: ticket.jiraIssue?.key,
+        referenceTerms: getWorkbenchReferenceSearchTerms(
+          getTicketReferences(referencesByTicket, ticket.id),
+        ),
         query: search.query,
       }),
   );
@@ -753,6 +771,7 @@ function getWorkbenchBoardTicketPresentation({
     repositoriesById,
     epicsById,
     agentStatesByTicket,
+    referencesByTicket,
   } = board;
   const assignment = assignmentsByTicket.get(ticket.id);
   const nativeThread = assignment ? threadsById.get(assignment.threadId) : undefined;
@@ -779,7 +798,9 @@ function getWorkbenchBoardTicketPresentation({
     title: repositoriesById.get(id)?.title ?? "Repository unavailable",
   }));
   const epic = ticket.epicId ? epicsById.get(ticket.epicId) : undefined;
-  const summary = getWorkbenchBoardTicketPreview({ ticket });
+  const references = getTicketReferences(referencesByTicket, ticket.id);
+  const summary = getWorkbenchBoardTicketPreview({ ticket, jira: hasJiraReference(references) });
+  const issues = workbenchTicketIssueReferences(references);
 
   return {
     ticket,
@@ -792,19 +813,25 @@ function getWorkbenchBoardTicketPresentation({
     repositories,
     epic,
     summary,
+    issues,
   };
 }
 
 function renderWorkbenchBoardTicketMetadata(
   presentation: ReturnType<typeof getWorkbenchBoardTicketPresentation>,
 ) {
-  const { ticket, board, repositories, epic, summary } = presentation;
+  const { ticket, board, repositories, epic, summary, issues } = presentation;
   const { pendingTicketIds, groupMode, onSelect, projectId } = board;
   return (
     <div className="mt-2 flex min-w-0 flex-col gap-2 text-xs text-foreground">
       {pendingTicketIds.has(ticket.id) ? <span role="status">Saving status…</span> : null}
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <WorkbenchJiraIssueKeyLink jiraIssue={ticket.jiraIssue} className="z-10" />
+        {issues.slice(0, BOARD_CARD_ISSUE_LIMIT).map((issue) => (
+          <WorkbenchReferenceBadge key={issue.url} reference={issue} className="z-10" />
+        ))}
+        {issues.length > BOARD_CARD_ISSUE_LIMIT ? (
+          <Badge variant="outline">+{issues.length - BOARD_CARD_ISSUE_LIMIT}</Badge>
+        ) : null}
         <WorkbenchTicketTypeBadge kind={ticket.kind} />
         {groupMode === "none" && epic ? (
           <WorkbenchEpicBadge className="min-w-0 max-w-full" title={epic.title} />
@@ -1186,9 +1213,8 @@ function renderWorkbenchBoardStatus({
 }
 
 function renderWorkbenchBoardSearch({
-  hasJiraKeys,
   search,
-}: { hasJiraKeys: boolean } & Pick<ReturnType<typeof useWorkbenchBoardData>, "search">) {
+}: Pick<ReturnType<typeof useWorkbenchBoardData>, "search">) {
   return (
     <InputGroup>
       <InputGroupAddon>
@@ -1196,7 +1222,7 @@ function renderWorkbenchBoardSearch({
       </InputGroupAddon>
       <InputGroupInput
         aria-label="Search tickets"
-        placeholder={hasJiraKeys ? "Search by title or Jira key…" : "Search by title…"}
+        placeholder="Search by title or reference…"
         value={search.text}
         onChange={(event) => search.setText(event.target.value)}
         onKeyDown={(event) => {
@@ -1270,10 +1296,7 @@ function renderWorkbenchBoardControls({
           role="group"
         >
           <div className="min-w-0 @min-[22rem]/board-controls:col-span-2 @min-[42rem]/board-controls:col-span-1">
-            {renderWorkbenchBoardSearch({
-              hasJiraKeys: tickets.some((ticket) => ticket.jiraIssue),
-              search,
-            })}
+            {renderWorkbenchBoardSearch({ search })}
           </div>
           <WorkbenchBoardRepositoryFilter
             repositoryId={repositoryId}

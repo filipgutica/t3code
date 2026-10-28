@@ -102,6 +102,7 @@ const props: ComponentProps<typeof WorkbenchTicketBoard> = {
   environmentId: EnvironmentId.make("remount-local"),
   projectId: WorkbenchProjectId.make("remount-workspace"),
   tickets: [ticket("Welcome"), ticket("Billing")],
+  referencesByTicket: new Map(),
   epics: [],
   groupMode: "none",
   viewControls: null,

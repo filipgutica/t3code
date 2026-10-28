@@ -47,18 +47,18 @@ function descriptionExcerpt(markdown: string): string {
 
 export function getWorkbenchBoardTicketPreview({
   ticket,
+  jira = false,
 }: {
-  ticket: Pick<WorkbenchTicket, "markdown" | "generatedSummary" | "jiraIssue">;
+  ticket: Pick<WorkbenchTicket, "markdown" | "generatedSummary">;
+  /** Whether the Ticket has a Jira Reference, so its description may use Jira markup. */
+  jira?: boolean;
 }) {
   const summary = getWorkbenchTicketSummaryPresentation(ticket.generatedSummary);
   if (summary.hasText) {
     return { text: summary.text, source: "summary" as const, statusLabel: summary.statusLabel };
   }
   const excerpt = descriptionExcerpt(
-    workbenchDescriptionMarkdown(
-      ticket.markdown.slice(0, MAX_DESCRIPTION_SCAN_LENGTH),
-      Boolean(ticket.jiraIssue),
-    ),
+    workbenchDescriptionMarkdown(ticket.markdown.slice(0, MAX_DESCRIPTION_SCAN_LENGTH), jira),
   );
   if (excerpt) {
     return {

@@ -143,6 +143,7 @@ const readyWorkspace: WorkbenchTicketWorkspace = {
   updatedAt: createdAt,
 };
 const snapshot: WorkbenchSnapshot = {
+  references: [],
   projects: [workspace],
   tickets: [ticket],
   epics: [],
@@ -178,6 +179,7 @@ function pageData(input: HarnessInput): HookInput["pageData"] {
   return {
     canOperate: input.canOperate ?? true,
     snapshot: input.snapshot,
+    referencesByTicket: new Map(),
     snapshotProjects: input.snapshot.projects,
     projects,
     repositoriesById: new Map(projects.map((project) => [project.id, project])),

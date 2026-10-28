@@ -10,7 +10,6 @@ import type { getTicketDraftCreateState } from "./WorkbenchTicketDraftPanel";
 import {
   canDiscardConversationDraft,
   type WorkbenchConversationDraft,
-  type WorkbenchTicketDraftSuggestion,
 } from "./workbenchTicketDraft.logic";
 import { DRAFT_CONFLICT_MESSAGE } from "./workbenchTicketDraftSync";
 
@@ -220,15 +219,3 @@ export function WorkbenchDraftActions({
     />
   );
 }
-
-/** Applies an agent's proposal to the draft and saves it at once. */
-export const applyTicketProposal =
-  (editor: Pick<DraftEditor, "edit" | "flush">) => (suggestion: WorkbenchTicketDraftSuggestion) => {
-    editor.edit({
-      title: suggestion.title,
-      markdown: suggestion.markdown,
-      repositoryProjectIds: [...suggestion.repositoryProjectIds],
-      primaryT3ProjectId: suggestion.primaryT3ProjectId,
-    });
-    void editor.flush();
-  };

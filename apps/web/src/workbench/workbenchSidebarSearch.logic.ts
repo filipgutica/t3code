@@ -1,5 +1,12 @@
 import type { WorkbenchProject, WorkbenchProjectId, WorkbenchTicketId } from "@t3tools/contracts";
 
+import {
+  getTicketIssue,
+  getTicketReferences,
+  getWorkbenchReferenceSearchTerms,
+  type WorkbenchReferencesByTicket,
+} from "./workbenchReferences.logic";
+
 import type {
   WorkbenchSidebarThread,
   WorkbenchSidebarTicket,
@@ -31,8 +38,25 @@ type SearchContext = {
   readonly workspaceId: WorkbenchProjectId;
   readonly workspaceTitle: string;
   readonly matches: (value: string | undefined) => boolean;
-  readonly jiraKeysByTicketId: ReadonlyMap<WorkbenchTicketId, string>;
+  readonly referencesByTicket: WorkbenchReferencesByTicket;
 };
+
+const matchesTicket = ({
+  ticketId,
+  title,
+  context,
+}: {
+  readonly ticketId: WorkbenchTicketId;
+  readonly title: string;
+  readonly context: SearchContext;
+}) =>
+  context.matches(title) ||
+  getWorkbenchReferenceSearchTerms(getTicketReferences(context.referencesByTicket, ticketId)).some(
+    context.matches,
+  );
+
+const issueLabelOf = (context: SearchContext, ticketId: WorkbenchTicketId) =>
+  getTicketIssue(getTicketReferences(context.referencesByTicket, ticketId))?.label;
 
 function getMatchingTicket({
   ticket,
@@ -41,8 +65,7 @@ function getMatchingTicket({
   readonly ticket: WorkbenchSidebarTicket;
   readonly context: SearchContext;
 }): ReadonlyArray<WorkbenchSidebarSearchResult> {
-  const jiraKey = context.jiraKeysByTicketId.get(ticket.id);
-  if (!context.matches(ticket.title) && !context.matches(jiraKey)) return [];
+  if (!matchesTicket({ ticketId: ticket.id, title: ticket.title, context })) return [];
   return [
     {
       kind: "ticket",
@@ -51,7 +74,11 @@ function getMatchingTicket({
       workspaceId: context.workspaceId,
       workspaceTitle: context.workspaceTitle,
       ticketId: ticket.id,
-      subtitle: [context.workspaceTitle, jiraKey, ticket.archivedAt ? "Archived" : undefined]
+      subtitle: [
+        context.workspaceTitle,
+        issueLabelOf(context, ticket.id),
+        ticket.archivedAt ? "Archived" : undefined,
+      ]
         .filter(Boolean)
         .join(" · "),
     },
@@ -75,7 +102,7 @@ function getMatchingTicketGroup({
       workspaceTitle: context.workspaceTitle,
       subtitle: [
         context.workspaceTitle,
-        context.jiraKeysByTicketId.get(group.ticket.id),
+        issueLabelOf(context, group.ticket.id),
         group.ticket.title,
         thread.archivedAt ? "Archived Thread" : undefined,
       ]
@@ -95,7 +122,7 @@ function getMatchingDrafts({
   readonly context: SearchContext;
 }): ReadonlyArray<WorkbenchSidebarSearchResult> {
   return drafts
-    .filter((draft) => context.matches(draft.title))
+    .filter((draft) => matchesTicket({ ticketId: draft.id, title: draft.title, context }))
     .map((draft) => ({
       kind: "draft",
       key: `draft:${context.workspaceId}:${draft.id}`,
@@ -113,7 +140,7 @@ export function getWorkbenchSidebarSearchResults({
   projects,
   ticketGroupsByWorkspace,
   archivedTicketsByWorkspace,
-  jiraKeysByTicketId,
+  referencesByTicket,
   draftsByWorkspace,
 }: {
   readonly query: string;
@@ -123,7 +150,7 @@ export function getWorkbenchSidebarSearchResults({
     WorkbenchProjectId,
     ReadonlyArray<WorkbenchSidebarTicket>
   >;
-  readonly jiraKeysByTicketId: ReadonlyMap<WorkbenchTicketId, string>;
+  readonly referencesByTicket: WorkbenchReferencesByTicket;
   readonly draftsByWorkspace: ReadonlyMap<
     WorkbenchProjectId,
     ReadonlyArray<{ readonly id: WorkbenchTicketId; readonly title: string }>
@@ -140,7 +167,7 @@ export function getWorkbenchSidebarSearchResults({
       workspaceId: workspace.id,
       workspaceTitle: workspace.title,
       matches,
-      jiraKeysByTicketId,
+      referencesByTicket,
     };
     if (matches(workspace.title)) {
       results.push({

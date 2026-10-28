@@ -1,3 +1,4 @@
+import { parseWorkbenchReferenceUrl } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -353,6 +354,56 @@ const migrateJiraStateToLinks = Effect.gen(function* () {
     "workbench_jira_connections",
   ]) {
     yield* sql`DROP TABLE ${sql(table)}`;
+  }
+});
+
+/**
+ * v22 turns each Ticket's Jira link, then its Epic's link, into References,
+ * and records which Thread last edited a Ticket's title or description.
+ * The Ticket `jira_issue_key` and `jira_issue_url` columns are retired: they
+ * stay in place, and nothing reads or writes them after this migration.
+ */
+const migrateJiraLinksToReferences = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`ALTER TABLE workbench_tickets ADD COLUMN updated_by_thread_id TEXT`;
+  // No foreign key: a draft owns its References before its Ticket row exists.
+  yield* sql`CREATE TABLE workbench_references (
+    ticket_id TEXT NOT NULL, url TEXT NOT NULL, title TEXT, added_by_thread_id TEXT,
+    position INTEGER NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (ticket_id, url)
+  )`;
+  const links = yield* sql<{
+    readonly ticketId: string;
+    readonly key: string | null;
+    readonly url: string;
+    readonly epicTitle: string | null;
+    readonly createdAt: string;
+  }>`
+    SELECT ticket_id AS "ticketId", jira_issue_key AS key, jira_issue_url AS url,
+      NULL AS "epicTitle", created_at AS "createdAt", 0 AS source
+    FROM workbench_tickets WHERE jira_issue_url IS NOT NULL
+    UNION ALL
+    SELECT ticket.ticket_id, epic.jira_issue_key, epic.jira_issue_url, epic.title,
+      ticket.created_at, 1
+    FROM workbench_tickets AS ticket
+    INNER JOIN workbench_epics AS epic ON epic.epic_id = ticket.epic_id
+    WHERE epic.jira_issue_url IS NOT NULL
+    ORDER BY "ticketId", source
+  `;
+  const positions = new Map<string, number>();
+  for (const link of links) {
+    const position = positions.get(link.ticketId) ?? 0;
+    positions.set(link.ticketId, position + 1);
+    // The parser's normalized URL is the uniqueness key for later additions.
+    const url = parseWorkbenchReferenceUrl(link.url)?.url ?? link.url;
+    const title =
+      link.epicTitle === null
+        ? link.key
+        : link.key === null
+          ? link.epicTitle
+          : `${link.key} ${link.epicTitle}`;
+    yield* sql`INSERT OR IGNORE INTO workbench_references
+      (ticket_id, url, title, added_by_thread_id, position, created_at)
+      VALUES (${link.ticketId}, ${url}, ${title}, NULL, ${position}, ${link.createdAt})`;
   }
 });
 
@@ -1104,6 +1155,7 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
       thread_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, text TEXT NOT NULL, updated_at TEXT NOT NULL
     )`.pipe(Effect.asVoid),
   );
+  yield* applyMigration(22, migrateJiraLinksToReferences);
   yield* sql`
     INSERT OR IGNORE INTO workbench_schema_migrations (version)
     VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13), (14)

@@ -117,6 +117,7 @@ const make = Effect.gen(function* () {
           projectId: draft.projectId,
           ...draft.fields,
           primaryT3ProjectId: primary,
+          updatedByThreadId: draft.updatedByThreadId ?? null,
           createdAt: draft.createdAt,
         })
         .pipe(

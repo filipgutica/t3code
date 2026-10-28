@@ -29,11 +29,11 @@ The live lane uses the public repositories pinned in
 `../workbench-demo/repositories.mts` and reads their pull requests through the
 real GitHub CLI. Provider responses remain scripted.
 
-| Area        | Current browser coverage                                                                                                    |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Planning    | Workspace creation/rename, Ticket editing/status/archive/restore/delete, Epic membership/progress, routes and narrow layout |
-| Provider    | Full Ticket context sent to a native Thread, completed turn, summary failure/retry, retained worktrees                      |
-| Live GitHub | Existing public PR linking/unlinking and detail tabs                                                                        |
+| Area        | Current browser coverage                                                                                                       |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Planning    | Workspace creation/rename, Ticket editing/status/archive/restore/delete, Epic membership/progress, routes and narrow layout    |
+| Provider    | Ticket instruction with brief and worktrees sent to a native Thread, completed turn, summary failure/retry, retained worktrees |
+| Live GitHub | Existing public PR linking/unlinking and detail tabs                                                                           |
 
 The [manual checklist](../../.agents/skills/workbench-regression-checklist/SKILL.md)
 remains the broader acceptance guide. Gaps include draft/cancel races, drag and drop,

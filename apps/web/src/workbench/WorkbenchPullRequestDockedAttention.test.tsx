@@ -42,6 +42,7 @@ const reference = {
   url: "https://github.com/acme/web/pull/7",
 };
 const snapshot: WorkbenchSnapshot = {
+  references: [],
   projects: [
     {
       id: workspaceId,

@@ -190,6 +190,7 @@ const retained: WorkbenchTicketWorkspace = {
   })),
 };
 const snapshot: WorkbenchSnapshot = {
+  references: [],
   projects: [],
   tickets: [
     {

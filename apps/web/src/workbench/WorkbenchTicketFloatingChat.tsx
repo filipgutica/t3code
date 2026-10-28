@@ -5,9 +5,13 @@ import type {
   WorkbenchAssignment,
   WorkbenchTicket,
 } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useEffect } from "react";
 
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useEnvironmentQuery } from "../state/query";
+import { workbenchEnvironment } from "./state";
+import { useRefreshOnThreadActivity } from "./useWorkbenchTicketConversation";
 import { WorkbenchFloatingChat } from "./WorkbenchFloatingChat";
 import {
   resolveWorkbenchFloatingChat,
@@ -114,6 +118,11 @@ function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabl
     primaryThreadId: props.primaryAssignment?.threadId ?? null,
     explicitThreadId,
   });
+  const snapshot = useEnvironmentQuery(workbenchEnvironment.snapshot({ environmentId, input: {} }));
+  useRefreshOnThreadActivity(
+    chat.selected ? scopeThreadRef(environmentId, chat.selected.threadId) : null,
+    snapshot.refresh,
+  );
   return (
     <WorkbenchFloatingChat
       environmentId={props.environmentId}

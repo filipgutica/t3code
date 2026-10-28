@@ -38,7 +38,6 @@ import {
 } from "./workbenchFloatingChatState";
 import { WorkbenchFloatingChatPicker } from "./WorkbenchFloatingChatPicker";
 import { WorkbenchTicketKindIcon } from "./WorkbenchTicketMetadata";
-import { WorkbenchTicketProposalHistory } from "./WorkbenchTicketProposal";
 import {
   useWorkbenchFloatingChatSize,
   type WorkbenchFloatingChatResizeEdge,
@@ -260,13 +259,7 @@ function FloatingChatThread({
   );
   return (
     <div role="region" aria-label={thread.title} className="flex min-h-0 flex-1 flex-col">
-      {planning && planningThread ? (
-        planning.render(thread.threadId, conversation)
-      ) : (
-        <WorkbenchTicketProposalHistory threadRef={threadRef}>
-          {conversation}
-        </WorkbenchTicketProposalHistory>
-      )}
+      {planning && planningThread ? planning.render(thread.threadId, conversation) : conversation}
     </div>
   );
 }
