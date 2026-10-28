@@ -8,7 +8,7 @@ import {
   FilePenLineIcon,
   MessageSquareIcon,
 } from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 
 import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
 import { resolveThreadPullRequestBadgePresentation } from "../components/ThreadStatusIndicators";
@@ -191,13 +191,18 @@ function PickerTicketIcon({ ticket }: { readonly ticket: WorkbenchFloatingChatTi
   );
 }
 
-/** The showing Thread's PR and provider, as on its native sidebar row; icons only inside the trigger. */
+/**
+ * The showing Thread's PR and provider, as on its native sidebar row; icons only inside the
+ * trigger. The trigger's own label hides its content, so the text also goes in a description.
+ */
 function PickerTriggerThreadContext({
   environmentId,
   threadId,
+  descriptionId,
 }: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
+  readonly descriptionId: string;
 }) {
   const data = useWorkbenchSidebarThreadRowData({
     thread: { environmentId },
@@ -211,10 +216,12 @@ function PickerTriggerThreadContext({
   });
   return (
     <>
+      <span id={descriptionId} className="sr-only">
+        {[pullRequest?.label, data.providerEntry?.displayName].filter(Boolean).join(", ")}
+      </span>
       {pullRequest ? (
         <span
-          role="img"
-          aria-label={pullRequest.label}
+          aria-hidden
           className={cn(
             "inline-flex shrink-0 items-center gap-0.5 text-xs tabular-nums",
             pullRequest.toneClassName,
@@ -240,8 +247,10 @@ function PickerTriggerContent({
   environmentId,
   selected,
   title,
+  descriptionId,
 }: {
   readonly environmentId: EnvironmentId;
+  readonly descriptionId: string;
   readonly selected: WorkbenchFloatingChatThread | null;
   readonly title: string;
 }) {
@@ -262,7 +271,11 @@ function PickerTriggerContent({
         />
       ) : null}
       {selected === null ? null : (
-        <PickerTriggerThreadContext environmentId={environmentId} threadId={selected.threadId} />
+        <PickerTriggerThreadContext
+          environmentId={environmentId}
+          threadId={selected.threadId}
+          descriptionId={descriptionId}
+        />
       )}
       <ChevronDownIcon aria-hidden className="ms-auto size-3.5 shrink-0 text-muted-foreground" />
     </>
@@ -452,6 +465,7 @@ export function WorkbenchFloatingChatPicker({
   const groups = usePickerGroups();
   const focusThreadIdRef = useRef<ThreadId | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
+  const descriptionId = useId();
   const { selected, waiting } = chat;
   const visible = filterWorkbenchFloatingChatThreads(chat.active, groups.query);
   const changeOpen = (next: boolean) => {
@@ -494,11 +508,17 @@ export function WorkbenchFloatingChatPicker({
             <button
               type="button"
               aria-label={selected ? `${listLabel}: ${selected.title}` : listLabel}
+              aria-describedby={selected ? descriptionId : undefined}
               className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-start hover:bg-accent/60 focus-visible:outline-2 focus-visible:outline-ring data-popup-open:bg-accent"
             />
           }
         >
-          <PickerTriggerContent environmentId={environmentId} selected={selected} title={title} />
+          <PickerTriggerContent
+            environmentId={environmentId}
+            selected={selected}
+            title={title}
+            descriptionId={descriptionId}
+          />
         </MenuTrigger>
         <MenuPopup ref={popupRef} align="start" className="w-96">
           {chat.active.length >= SEARCH_THRESHOLD ? (
