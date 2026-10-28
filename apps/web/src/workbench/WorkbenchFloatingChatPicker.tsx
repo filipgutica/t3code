@@ -1,4 +1,5 @@
-import type { ThreadId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   ArchiveRestoreIcon,
   ChevronDownIcon,
@@ -9,6 +10,8 @@ import {
 } from "lucide-react";
 import { useRef, useState, type ReactNode } from "react";
 
+import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
+import { resolveThreadPullRequestBadgePresentation } from "../components/ThreadStatusIndicators";
 import { Badge } from "../components/ui/badge";
 import {
   Menu,
@@ -33,6 +36,7 @@ import {
   type WorkbenchFloatingChatTicket,
   type WorkbenchFloatingChatThread,
 } from "./workbenchFloatingChat.logic";
+import { useWorkbenchSidebarThreadRowData } from "./WorkbenchSidebarThreadRow.logic";
 import { WorkbenchTicketKindIcon } from "./WorkbenchTicketMetadata";
 import {
   WorkbenchThreadExecutionStatus,
@@ -147,6 +151,37 @@ function PickerHistory({
   );
 }
 
+function PickerHistorySections({
+  chat,
+  onSelect,
+  onRestore,
+}: {
+  readonly chat: FloatingChat;
+  readonly onSelect: (threadId: ThreadId) => void;
+  readonly onRestore: (threadId: ThreadId) => void;
+}) {
+  const hasHistory = chat.settled.length > 0 || chat.archived.length > 0;
+  return (
+    <>
+      {chat.active.length > 0 && hasHistory ? <MenuSeparator /> : null}
+      <PickerHistory
+        label="Settled"
+        threads={chat.settled}
+        icon={<CircleCheckIcon className="text-success" />}
+        itemLabel={getWorkbenchFloatingChatThreadLabel}
+        onSelect={onSelect}
+      />
+      <PickerHistory
+        label="Archived"
+        threads={chat.archived}
+        icon={<ArchiveRestoreIcon />}
+        itemLabel={(thread) => `Restore and open ${getWorkbenchFloatingChatThreadLabel(thread)}`}
+        onSelect={onRestore}
+      />
+    </>
+  );
+}
+
 /** A ticket's kind, or the draft mark for a Thread with no ticket yet. */
 function PickerTicketIcon({ ticket }: { readonly ticket: WorkbenchFloatingChatTicket | null }) {
   return ticket ? (
@@ -156,10 +191,57 @@ function PickerTicketIcon({ ticket }: { readonly ticket: WorkbenchFloatingChatTi
   );
 }
 
+/** The showing Thread's PR and provider, as on its native sidebar row; icons only inside the trigger. */
+function PickerTriggerThreadContext({
+  environmentId,
+  threadId,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+}) {
+  const data = useWorkbenchSidebarThreadRowData({
+    thread: { environmentId },
+    threadRef: scopeThreadRef(environmentId, threadId),
+  });
+  const pullRequest = resolveThreadPullRequestBadgePresentation({
+    badge: data.pullRequestBadge,
+    number: data.currentPullRequest?.number,
+    url: data.currentPullRequest?.url,
+    status: data.pullRequestIndicator,
+  });
+  return (
+    <>
+      {pullRequest ? (
+        <span
+          role="img"
+          aria-label={pullRequest.label}
+          className={cn(
+            "inline-flex shrink-0 items-center gap-0.5 text-xs tabular-nums",
+            pullRequest.toneClassName,
+          )}
+        >
+          <pullRequest.Icon aria-hidden className="size-3 shrink-0" />
+          {pullRequest.text}
+        </span>
+      ) : null}
+      {data.providerEntry ? (
+        <ProviderInstanceIcon
+          driverKind={data.providerEntry.driverKind}
+          displayName={data.providerEntry.displayName}
+          className="size-3.5 shrink-0 opacity-75"
+          iconClassName="size-3.5"
+        />
+      ) : null}
+    </>
+  );
+}
+
 function PickerTriggerContent({
+  environmentId,
   selected,
   title,
 }: {
+  readonly environmentId: EnvironmentId;
   readonly selected: WorkbenchFloatingChatThread | null;
   readonly title: string;
 }) {
@@ -179,6 +261,9 @@ function PickerTriggerContent({
           startedAt={selected.status.startedAt}
         />
       ) : null}
+      {selected === null ? null : (
+        <PickerTriggerThreadContext environmentId={environmentId} threadId={selected.threadId} />
+      )}
       <ChevronDownIcon aria-hidden className="ms-auto size-3.5 shrink-0 text-muted-foreground" />
     </>
   );
@@ -342,6 +427,7 @@ function usePickerGroups() {
  * or ticket's Threads with their recaps. The pill opens it on the first Thread waiting on you.
  */
 export function WorkbenchFloatingChatPicker({
+  environmentId,
   chat,
   title,
   listLabel,
@@ -350,6 +436,7 @@ export function WorkbenchFloatingChatPicker({
   actions,
   grouped,
 }: {
+  readonly environmentId: EnvironmentId;
   readonly chat: FloatingChat;
   /** Shown in the trigger when no Thread is selected. */
   readonly title: string;
@@ -411,7 +498,7 @@ export function WorkbenchFloatingChatPicker({
             />
           }
         >
-          <PickerTriggerContent selected={selected} title={title} />
+          <PickerTriggerContent environmentId={environmentId} selected={selected} title={title} />
         </MenuTrigger>
         <MenuPopup ref={popupRef} align="start" className="w-96">
           {chat.active.length >= SEARCH_THRESHOLD ? (
@@ -438,24 +525,10 @@ export function WorkbenchFloatingChatPicker({
               onSelect={select}
             />
           </div>
-          {chat.active.length > 0 && (chat.settled.length > 0 || chat.archived.length > 0) ? (
-            <MenuSeparator />
-          ) : null}
-          <PickerHistory
-            label="Settled"
-            threads={chat.settled}
-            icon={<CircleCheckIcon className="text-success" />}
-            itemLabel={getWorkbenchFloatingChatThreadLabel}
+          <PickerHistorySections
+            chat={chat}
             onSelect={select}
-          />
-          <PickerHistory
-            label="Archived"
-            threads={chat.archived}
-            icon={<ArchiveRestoreIcon />}
-            itemLabel={(thread) =>
-              `Restore and open ${getWorkbenchFloatingChatThreadLabel(thread)}`
-            }
-            onSelect={(threadId) => {
+            onRestore={(threadId) => {
               changeOpen(false);
               onOpenThread(threadId);
             }}
