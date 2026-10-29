@@ -25,7 +25,7 @@ interface DraftActionsProps {
   readonly onStartWork: () => void;
   readonly onDiscard: () => void;
   readonly onRetryDiscard: () => void;
-  /** Inline fits the floating chat's single-row strip; the draft page stacks; button is Create ticket alone. */
+  /** Inline fits the chat's strip; the draft page stacks; button is the collapsed card's pair. */
   readonly layout: "stacked" | "inline" | "button";
   /** Replaces Discard for a draft with nothing to lose, skipping the confirmation. */
   readonly onCancel: (() => void) | null;
@@ -69,22 +69,29 @@ function DiscardingActions({ action, canOperate, onRetryDiscard }: DraftActionsP
   );
 }
 
-/** The blocker explains a disabled Create ticket; otherwise the line reports autosave. */
-const getDraftStatusLine = ({
+/** Why Create ticket is disabled, or why it needs a retry. */
+export const getDraftBlockedReason = ({
   action,
   blocker,
   phase,
-  saveState,
   ticketExists,
-}: Pick<DraftActionsProps, "action" | "blocker" | "phase" | "saveState" | "ticketExists">) => {
+}: Pick<DraftActionsProps, "action" | "blocker" | "phase" | "ticketExists">) => {
   if (phase === "promoting" && action === null && !blocker) {
     if (ticketExists)
       return "Linking the ticket to this conversation did not finish. Retry Create ticket.";
     return "Creating the ticket did not finish. Retry Create ticket, or discard the draft.";
   }
-  if (blocker && phase !== "creating") return blocker;
-  if (saveState === "saving") return "Saving…";
-  return saveState === "saved" ? "Draft saved" : "\u00a0";
+  return blocker && phase !== "creating" ? blocker : null;
+};
+
+/** The blocked reason, if any; otherwise the line reports autosave. */
+const getDraftStatusLine = (
+  props: Pick<DraftActionsProps, "action" | "blocker" | "phase" | "saveState" | "ticketExists">,
+) => {
+  const reason = getDraftBlockedReason(props);
+  if (reason) return reason;
+  if (props.saveState === "saving") return "Saving…";
+  return props.saveState === "saved" ? "Draft saved" : "\u00a0";
 };
 
 function DiscardButton({
@@ -132,10 +139,17 @@ function CreateTicketButton({
 
 function UnsavedDraftActions(props: DraftActionsProps) {
   const { phase, action, canOperate, ticketExists, layout } = props;
-  if (layout === "button") return <CreateTicketButton {...props} />;
-  const inline = layout === "inline";
   const discardDisabled =
     action !== null || !canDiscardConversationDraft({ phase, ticketExists }) || !canOperate;
+  if (layout === "button") {
+    return (
+      <div className="flex shrink-0 items-center gap-1">
+        {props.onCancel ? <DiscardButton {...props} disabled={discardDisabled} /> : null}
+        <CreateTicketButton {...props} />
+      </div>
+    );
+  }
+  const inline = layout === "inline";
   const statusLine = (
     <p
       role="status"

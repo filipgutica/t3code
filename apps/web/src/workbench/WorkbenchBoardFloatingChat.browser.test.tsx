@@ -483,6 +483,30 @@ it("edits a draft's title in its card and opens the full brief over the conversa
     .toBeVisible();
 });
 
+it("starts a draft's card collapsed in a short chat, still saying why it can't be created", async () => {
+  const { onSnapshot } = await setup();
+  const key = "t3code:workbench-floating-chat-size";
+  localStorage.setItem(key, JSON.stringify({ width: 576, height: 400 }));
+  using _size = { [Symbol.dispose]: () => localStorage.removeItem(key) };
+  await using screen = await render(
+    <Harness
+      initialDrafts={[draft("draft", "draft-thread", "Plan exports")]}
+      onSnapshot={onSnapshot}
+    />,
+  );
+  await pickThread(screen, /Plan exports/);
+  await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
+  const card = screen.getByRole("group", { name: "Ticket draft" });
+  await expect.element(card.getByRole("textbox", { name: "Title" })).not.toBeInTheDocument();
+  await expect.element(card.getByRole("button", { name: "Create ticket" })).toBeDisabled();
+  await expect
+    .element(card.getByRole("status"))
+    .toHaveTextContent("Select a repository to create the ticket.");
+
+  await userEvent.click(card.getByRole("button", { name: "Expand ticket draft" }));
+  await expect.element(card.getByRole("textbox", { name: "Title" })).toHaveValue("Plan exports");
+});
+
 it.each([
   ["planning", "Start work"],
   ["starting", "Retry start work"],

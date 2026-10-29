@@ -13,7 +13,7 @@ import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import type { Project } from "../types";
 import { WorkbenchDiscardDraftDialog } from "./WorkbenchDiscardDraftDialog";
-import { WorkbenchDraftActions } from "./WorkbenchDraftActions";
+import { getDraftBlockedReason, WorkbenchDraftActions } from "./WorkbenchDraftActions";
 import { DraftConflictNotice } from "./WorkbenchTicketConversation";
 import {
   WorkbenchTicketDraftFieldsForm,
@@ -30,6 +30,7 @@ import {
   type WorkbenchDraftCardMode,
 } from "./workbenchDraftCard.logic";
 import type { WorkbenchConversationDraft } from "./workbenchTicketDraft.logic";
+import { DRAFT_CONFLICT_MESSAGE } from "./workbenchTicketDraftSync";
 
 const BRIEF_PREVIEW_LINES = 2;
 
@@ -48,23 +49,50 @@ export interface WorkbenchDraftCardProps {
   readonly references: ReactNode;
   readonly referenceCount: number;
   readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
+  /** The conversation the card is pinned above; the full view covers it. */
+  readonly children: ReactNode;
 }
 
 /**
  * The draft pinned above its conversation in the floating chat. Its title edits in place, and
  * Show full brief opens every field over the conversation. A short chat starts collapsed.
  */
-export function WorkbenchDraftCard(props: WorkbenchDraftCardProps) {
-  const { draft, editor, transitions, createState, canOperate, ticketExists, untouched } = props;
+export function WorkbenchDraftCard({ children, ...props }: WorkbenchDraftCardProps) {
   const [mode, setMode] = useState<WorkbenchDraftCardMode>(() =>
     getInitialDraftCardMode(readWorkbenchFloatingChatHeight()),
   );
-  const [seenRevision, setSeenRevision] = useState(draft.revision);
-  const [discardOpen, setDiscardOpen] = useState(false);
+  const [seenRevision, setSeenRevision] = useState(props.draft.revision);
   const show = (next: WorkbenchDraftCardMode) => {
-    setSeenRevision(draft.revision);
+    setSeenRevision(props.draft.revision);
     setMode(next);
   };
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <DraftCardBody
+        {...props}
+        mode={mode}
+        unseen={mode === "collapsed" && props.draft.revision > seenRevision}
+        show={show}
+      />
+      <div inert={mode === "full"} className="flex min-h-0 flex-1 flex-col">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function DraftCardBody({
+  mode,
+  unseen,
+  show,
+  ...props
+}: Omit<WorkbenchDraftCardProps, "children"> & {
+  readonly mode: WorkbenchDraftCardMode;
+  readonly unseen: boolean;
+  readonly show: (mode: WorkbenchDraftCardMode) => void;
+}) {
+  const { draft, editor, transitions, createState, canOperate, ticketExists, untouched } = props;
+  const [discardOpen, setDiscardOpen] = useState(false);
   const disabled =
     !editor.editable || editor.conflict !== null || transitions.action !== null || !canOperate;
   const error = transitions.error ?? (editor.conflict ? null : editor.saveError);
@@ -141,44 +169,59 @@ export function WorkbenchDraftCard(props: WorkbenchDraftCardProps) {
     );
   }
 
-  const unseen = mode === "collapsed" && draft.revision > seenRevision;
   if (mode === "collapsed") {
+    const reason =
+      error ??
+      getDraftBlockedReason({
+        action: transitions.action,
+        blocker: editor.conflict ? DRAFT_CONFLICT_MESSAGE : createState.blocker,
+        phase: draft.phase,
+        ticketExists,
+      });
     return (
       <div
         role="group"
         aria-label="Ticket draft"
-        className="mx-3 mt-2 flex shrink-0 items-center gap-2 rounded-xl border border-border bg-card py-1.5 pr-1.5 pl-3"
+        className="mx-3 mt-2 shrink-0 rounded-xl border border-border bg-card py-1.5 pr-1.5 pl-3"
       >
-        <PencilLineIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-        {unseen ? (
-          <span className="size-1.5 shrink-0 rounded-full bg-info" aria-label="Updated" />
+        <div className="flex items-center gap-2">
+          <PencilLineIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+          {unseen ? (
+            <span className="size-1.5 shrink-0 rounded-full bg-info" aria-label="Updated" />
+          ) : null}
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate text-sm font-medium",
+              !title && "text-muted-foreground",
+            )}
+          >
+            {title || "Untitled draft"}
+          </span>
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label="Expand ticket draft"
+            onClick={() => show("compact")}
+          >
+            <ChevronDownIcon />
+          </Button>
+          <WorkbenchDraftActions
+            draft={draft}
+            editor={editor}
+            transitions={transitions}
+            createState={createState}
+            canOperate={canOperate}
+            ticketExists={ticketExists}
+            layout="button"
+            onCancel={untouched ? () => void transitions.discard() : null}
+            onDiscard={() => setDiscardOpen(true)}
+          />
+        </div>
+        {reason ? (
+          <p role="status" className="mt-0.5 text-xs text-muted-foreground">
+            {reason}
+          </p>
         ) : null}
-        <span
-          className={cn(
-            "min-w-0 flex-1 truncate text-sm font-medium",
-            !title && "text-muted-foreground",
-          )}
-        >
-          {title || "Untitled draft"}
-        </span>
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          aria-label="Expand ticket draft"
-          onClick={() => show("compact")}
-        >
-          <ChevronDownIcon />
-        </Button>
-        <WorkbenchDraftActions
-          draft={draft}
-          editor={editor}
-          transitions={transitions}
-          createState={createState}
-          canOperate={canOperate}
-          ticketExists={ticketExists}
-          layout="button"
-          onDiscard={() => setDiscardOpen(true)}
-        />
       </div>
     );
   }

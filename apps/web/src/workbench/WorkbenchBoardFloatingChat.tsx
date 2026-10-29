@@ -384,43 +384,42 @@ export function WorkbenchDraftThread({
   if (card && isUnsavedConversationDraft(draft)) {
     const references = getTicketReferences(card.referencesByTicket, draft.id);
     return (
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        <WorkbenchDraftCard
-          draft={draft}
-          editor={editor}
-          transitions={transitions}
-          createState={createState}
-          canOperate={canOperate}
-          ticketExists={ticket !== null}
-          untouched={untouched}
-          updatedBy={workbenchThreadTitle(
-            draft.updatedByThreadId,
-            card.threadsById,
-            card.archivedThreadsById,
-          )}
-          linkedProjects={createContext.linkedProjects}
-          epics={createContext.epics}
-          references={
-            <WorkbenchDraftReferences
-              environmentId={environmentId}
-              draftId={draft.id}
-              references={references}
-              threadsById={card.threadsById}
-              archivedThreadsById={card.archivedThreadsById}
-              readOnly={!canOperate || transitions.action !== null}
-              fileCwd={getReferenceFileCwd(createContext.linkedProjects, [
-                draft.fields.primaryT3ProjectId,
-                ...draft.fields.repositoryProjectIds,
-                draft.anchorProjectId,
-              ])}
-              fileThreadId={draft.threadId}
-            />
-          }
-          referenceCount={references.length}
-          onCreateEpic={card.onCreateEpic}
-        />
+      <WorkbenchDraftCard
+        draft={draft}
+        editor={editor}
+        transitions={transitions}
+        createState={createState}
+        canOperate={canOperate}
+        ticketExists={ticket !== null}
+        untouched={untouched}
+        updatedBy={workbenchThreadTitle(
+          draft.updatedByThreadId,
+          card.threadsById,
+          card.archivedThreadsById,
+        )}
+        linkedProjects={createContext.linkedProjects}
+        epics={createContext.epics}
+        references={
+          <WorkbenchDraftReferences
+            environmentId={environmentId}
+            draftId={draft.id}
+            references={references}
+            threadsById={card.threadsById}
+            archivedThreadsById={card.archivedThreadsById}
+            readOnly={!canOperate || transitions.action !== null}
+            fileCwd={getReferenceFileCwd(createContext.linkedProjects, [
+              draft.fields.primaryT3ProjectId,
+              ...draft.fields.repositoryProjectIds,
+              draft.anchorProjectId,
+            ])}
+            fileThreadId={draft.threadId}
+          />
+        }
+        referenceCount={references.length}
+        onCreateEpic={card.onCreateEpic}
+      >
         {children}
-      </div>
+      </WorkbenchDraftCard>
     );
   }
   return (
