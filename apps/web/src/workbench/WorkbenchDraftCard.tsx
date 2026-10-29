@@ -297,7 +297,7 @@ function CompactDraftCard(props: DraftCardModeProps) {
 function BriefPreview({ lines }: { readonly lines: ReadonlyArray<DraftBriefPreviewLine> }) {
   if (lines.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">No brief yet. Ask the agent, or write one.</p>
+      <p className="text-sm text-muted-foreground">No brief yet. Ask the agent to write one.</p>
     );
   }
   return (
