@@ -173,6 +173,7 @@ it("shows each Thread's recap and opens on the first other Thread waiting on the
   // The showing Thread waits too, but the pill counts only the others.
   const pill = screen.getByRole("button", { name: "2 other Threads need you" });
   await expect.element(pill).toBeVisible();
+  await expect.element(pill).toHaveTextContent("2 need you");
 
   await userEvent.click(pill);
 
@@ -208,7 +209,9 @@ it("opens a collapsed group to focus its waiting Thread from the pill", async ()
   await expect.element(group).toHaveAttribute("aria-expanded", "false");
   await userEvent.keyboard("{Escape}");
 
-  await userEvent.click(screen.getByRole("button", { name: "1 other Thread needs you" }));
+  const pill = screen.getByRole("button", { name: "1 other Thread needs you" });
+  await expect.element(pill).toHaveTextContent("1 needs you");
+  await userEvent.click(pill);
 
   await expect.element(screen.getByRole("menuitemradio", { name: /Thread c/ })).toHaveFocus();
 });
