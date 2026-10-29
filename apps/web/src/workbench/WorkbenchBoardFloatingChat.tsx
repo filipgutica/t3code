@@ -381,45 +381,23 @@ export function WorkbenchDraftThread({
     onCreateManually: onOpenDraft,
     refreshSnapshot,
   });
-  if (card && isUnsavedConversationDraft(draft)) {
-    const references = getTicketReferences(card.referencesByTicket, draft.id);
+  const cardContext = getDraftCardContext(card, draft);
+  if (cardContext) {
     return (
-      <WorkbenchDraftCard
+      <BoardDraftCard
+        environmentId={environmentId}
         draft={draft}
         editor={editor}
         transitions={transitions}
         createState={createState}
+        createContext={createContext}
         canOperate={canOperate}
         ticketExists={ticket !== null}
         untouched={untouched}
-        updatedBy={workbenchThreadTitle(
-          draft.updatedByThreadId,
-          card.threadsById,
-          card.archivedThreadsById,
-        )}
-        linkedProjects={createContext.linkedProjects}
-        epics={createContext.epics}
-        references={
-          <WorkbenchDraftReferences
-            environmentId={environmentId}
-            draftId={draft.id}
-            references={references}
-            threadsById={card.threadsById}
-            archivedThreadsById={card.archivedThreadsById}
-            readOnly={!canOperate || transitions.action !== null}
-            fileCwd={getReferenceFileCwd(createContext.linkedProjects, [
-              draft.fields.primaryT3ProjectId,
-              ...draft.fields.repositoryProjectIds,
-              draft.anchorProjectId,
-            ])}
-            fileThreadId={draft.threadId}
-          />
-        }
-        referenceCount={references.length}
-        onCreateEpic={card.onCreateEpic}
+        card={cardContext}
       >
         {children}
-      </WorkbenchDraftCard>
+      </BoardDraftCard>
     );
   }
   return (
@@ -435,6 +413,63 @@ export function WorkbenchDraftThread({
         untouched={untouched}
       />
     </>
+  );
+}
+
+/** Only unsaved drafts get the card; planning and starting drafts keep the Start work strip. */
+const getDraftCardContext = (
+  card: DraftCardContext | undefined,
+  draft: WorkbenchConversationDraft,
+) => (card && isUnsavedConversationDraft(draft) ? card : null);
+
+/** An unsaved draft's card, with its References and who last wrote it. */
+function BoardDraftCard({
+  environmentId,
+  card,
+  createContext,
+  children,
+  ...props
+}: Omit<
+  Parameters<typeof WorkbenchDraftCard>[0],
+  "updatedBy" | "linkedProjects" | "epics" | "references" | "referenceCount" | "onCreateEpic"
+> & {
+  readonly environmentId: EnvironmentId;
+  readonly card: DraftCardContext;
+  readonly createContext: WorkbenchBoardFloatingChatProps["createContext"];
+}) {
+  const { draft } = props;
+  const references = getTicketReferences(card.referencesByTicket, draft.id);
+  return (
+    <WorkbenchDraftCard
+      {...props}
+      updatedBy={workbenchThreadTitle(
+        draft.updatedByThreadId,
+        card.threadsById,
+        card.archivedThreadsById,
+      )}
+      linkedProjects={createContext.linkedProjects}
+      epics={createContext.epics}
+      references={
+        <WorkbenchDraftReferences
+          environmentId={environmentId}
+          draftId={draft.id}
+          references={references}
+          threadsById={card.threadsById}
+          archivedThreadsById={card.archivedThreadsById}
+          readOnly={!props.canOperate || props.transitions.action !== null}
+          fileCwd={getReferenceFileCwd(createContext.linkedProjects, [
+            draft.fields.primaryT3ProjectId,
+            ...draft.fields.repositoryProjectIds,
+            draft.anchorProjectId,
+          ])}
+          fileThreadId={draft.threadId}
+        />
+      }
+      referenceCount={references.length}
+      onCreateEpic={card.onCreateEpic}
+    >
+      {children}
+    </WorkbenchDraftCard>
   );
 }
 

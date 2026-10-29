@@ -27,6 +27,7 @@ import { readWorkbenchFloatingChatHeight } from "./useWorkbenchFloatingChatSize"
 import {
   getDraftBriefPreview,
   getInitialDraftCardMode,
+  type DraftBriefPreviewLine,
   type WorkbenchDraftCardMode,
 } from "./workbenchDraftCard.logic";
 import type { WorkbenchConversationDraft } from "./workbenchTicketDraft.logic";
@@ -82,35 +83,66 @@ export function WorkbenchDraftCard({ children, ...props }: WorkbenchDraftCardPro
   );
 }
 
-function DraftCardBody({
-  mode,
-  unseen,
-  show,
-  ...props
-}: Omit<WorkbenchDraftCardProps, "children"> & {
+type DraftCardBodyProps = Omit<WorkbenchDraftCardProps, "children"> & {
   readonly mode: WorkbenchDraftCardMode;
   readonly unseen: boolean;
   readonly show: (mode: WorkbenchDraftCardMode) => void;
-}) {
-  const { draft, editor, transitions, createState, canOperate, ticketExists, untouched } = props;
+};
+
+type DraftCardModeProps = DraftCardBodyProps & { readonly onDiscard: () => void };
+
+function DraftCardBody(props: DraftCardBodyProps) {
   const [discardOpen, setDiscardOpen] = useState(false);
-  const disabled =
-    !editor.editable || editor.conflict !== null || transitions.action !== null || !canOperate;
-  const error = transitions.error ?? (editor.conflict ? null : editor.saveError);
-  const actions = (
+  const Mode =
+    props.mode === "full"
+      ? FullDraftCard
+      : props.mode === "collapsed"
+        ? CollapsedDraftCard
+        : CompactDraftCard;
+  return (
+    <>
+      <Mode {...props} onDiscard={() => setDiscardOpen(true)} />
+      <WorkbenchDiscardDraftDialog
+        open={discardOpen}
+        busy={props.transitions.action !== null}
+        error={props.transitions.error}
+        onOpenChange={setDiscardOpen}
+        onDiscard={props.transitions.discard}
+      />
+    </>
+  );
+}
+
+const isFormDisabled = ({ editor, transitions, canOperate }: DraftCardModeProps) =>
+  !editor.editable || editor.conflict !== null || transitions.action !== null || !canOperate;
+
+// A conflict explains itself in the conflict notice or the blocked reason.
+const getCardError = ({ editor, transitions }: DraftCardModeProps) =>
+  transitions.error ?? (editor.conflict ? null : editor.saveError);
+
+function CardActions({
+  layout,
+  ...props
+}: DraftCardModeProps & { readonly layout: "inline" | "button" }) {
+  return (
     <WorkbenchDraftActions
-      draft={draft}
-      editor={editor}
-      transitions={transitions}
-      createState={createState}
-      canOperate={canOperate}
-      ticketExists={ticketExists}
-      layout="inline"
-      onCancel={untouched ? () => void transitions.discard() : null}
-      onDiscard={() => setDiscardOpen(true)}
+      draft={props.draft}
+      editor={props.editor}
+      transitions={props.transitions}
+      createState={props.createState}
+      canOperate={props.canOperate}
+      ticketExists={props.ticketExists}
+      layout={layout}
+      onCancel={props.untouched ? () => void props.transitions.discard() : null}
+      onDiscard={props.onDiscard}
     />
   );
-  const notices = (
+}
+
+function CardNotices(props: DraftCardModeProps) {
+  const { editor } = props;
+  const error = getCardError(props);
+  return (
     <>
       {editor.conflict ? (
         <DraftConflictNotice
@@ -127,111 +159,93 @@ function DraftCardBody({
       ) : null}
     </>
   );
-  const discardDialog = (
-    <WorkbenchDiscardDraftDialog
-      open={discardOpen}
-      busy={transitions.action !== null}
-      error={transitions.error}
-      onOpenChange={setDiscardOpen}
-      onDiscard={transitions.discard}
-    />
+}
+
+function FullDraftCard(props: DraftCardModeProps) {
+  return (
+    <div
+      role="group"
+      aria-label="Ticket draft"
+      className="absolute inset-0 z-20 flex min-h-0 flex-col bg-background"
+    >
+      <header className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1.5">
+        <Button size="sm" variant="ghost" onClick={() => props.show("compact")}>
+          <ArrowLeftIcon />
+          Back to conversation
+        </Button>
+      </header>
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+        <CardNotices {...props} />
+        <WorkbenchTicketDraftFieldsForm
+          fields={props.editor.fields}
+          disabled={isFormDisabled(props)}
+          linkedProjects={props.linkedProjects}
+          epics={props.epics}
+          updatedBy={props.updatedBy}
+          references={props.references}
+          onChange={props.editor.edit}
+          onCreateEpic={props.onCreateEpic}
+        />
+      </div>
+      <footer className="shrink-0 border-t border-border px-3 py-2">
+        <CardActions {...props} layout="inline" />
+      </footer>
+    </div>
   );
+}
+
+function CollapsedDraftCard(props: DraftCardModeProps) {
+  const { editor, transitions } = props;
   const title = editor.fields.title.trim();
-
-  if (mode === "full") {
-    return (
-      <div
-        role="group"
-        aria-label="Ticket draft"
-        className="absolute inset-0 z-20 flex min-h-0 flex-col bg-background"
-      >
-        <header className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1.5">
-          <Button size="sm" variant="ghost" onClick={() => show("compact")}>
-            <ArrowLeftIcon />
-            Back to conversation
-          </Button>
-        </header>
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-          {notices}
-          <WorkbenchTicketDraftFieldsForm
-            fields={editor.fields}
-            disabled={disabled}
-            linkedProjects={props.linkedProjects}
-            epics={props.epics}
-            updatedBy={props.updatedBy}
-            references={props.references}
-            onChange={editor.edit}
-            onCreateEpic={props.onCreateEpic}
-          />
-        </div>
-        <footer className="shrink-0 border-t border-border px-3 py-2">{actions}</footer>
-        {discardDialog}
-      </div>
-    );
-  }
-
-  if (mode === "collapsed") {
-    const reason =
-      error ??
-      getDraftBlockedReason({
-        action: transitions.action,
-        blocker: editor.conflict ? DRAFT_CONFLICT_MESSAGE : createState.blocker,
-        phase: draft.phase,
-        ticketExists,
-      });
-    return (
-      <div
-        role="group"
-        aria-label="Ticket draft"
-        className="mx-3 mt-2 shrink-0 rounded-xl border border-border bg-card py-1.5 pr-1.5 pl-3"
-      >
-        <div className="flex items-center gap-2">
-          <PencilLineIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-          {unseen ? (
-            <span className="size-1.5 shrink-0 rounded-full bg-info" aria-label="Updated" />
-          ) : null}
-          <span
-            className={cn(
-              "min-w-0 flex-1 truncate text-sm font-medium",
-              !title && "text-muted-foreground",
-            )}
-          >
-            {title || "Untitled draft"}
-          </span>
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label="Expand ticket draft"
-            onClick={() => show("compact")}
-          >
-            <ChevronDownIcon />
-          </Button>
-          <WorkbenchDraftActions
-            draft={draft}
-            editor={editor}
-            transitions={transitions}
-            createState={createState}
-            canOperate={canOperate}
-            ticketExists={ticketExists}
-            layout="button"
-            onCancel={untouched ? () => void transitions.discard() : null}
-            onDiscard={() => setDiscardOpen(true)}
-          />
-        </div>
-        {reason ? (
-          <p role="status" className="mt-0.5 text-xs text-muted-foreground">
-            {reason}
-          </p>
+  const reason =
+    getCardError(props) ??
+    getDraftBlockedReason({
+      action: transitions.action,
+      blocker: editor.conflict ? DRAFT_CONFLICT_MESSAGE : props.createState.blocker,
+      phase: props.draft.phase,
+      ticketExists: props.ticketExists,
+    });
+  return (
+    <div
+      role="group"
+      aria-label="Ticket draft"
+      className="mx-3 mt-2 shrink-0 rounded-xl border border-border bg-card py-1.5 pr-1.5 pl-3"
+    >
+      <div className="flex items-center gap-2">
+        <PencilLineIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        {props.unseen ? (
+          <span className="size-1.5 shrink-0 rounded-full bg-info" aria-label="Updated" />
         ) : null}
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-sm font-medium",
+            !title && "text-muted-foreground",
+          )}
+        >
+          {title || "Untitled draft"}
+        </span>
+        <Button
+          size="icon-xs"
+          variant="ghost"
+          aria-label="Expand ticket draft"
+          onClick={() => props.show("compact")}
+        >
+          <ChevronDownIcon />
+        </Button>
+        <CardActions {...props} layout="button" />
       </div>
-    );
-  }
+      {reason ? (
+        <p role="status" className="mt-0.5 text-xs text-muted-foreground">
+          {reason}
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
+function CompactDraftCard(props: DraftCardModeProps) {
+  const { editor } = props;
   const brief = getDraftBriefPreview(editor.fields.markdown, BRIEF_PREVIEW_LINES);
-  const repositories = createState.repositories.selectedRepositoryProjectIds.flatMap((id) => {
-    const project = props.linkedProjects.find((candidate) => candidate.id === id);
-    return project ? [project] : [];
-  });
   return (
     <div
       role="group"
@@ -247,58 +261,78 @@ function DraftCardBody({
           size="icon-xs"
           variant="ghost"
           aria-label="Collapse ticket draft"
-          onClick={() => show("collapsed")}
+          onClick={() => props.show("collapsed")}
         >
           <ChevronUpIcon />
         </Button>
       </header>
       <div className="min-h-0 space-y-2 overflow-y-auto px-3 pb-2">
-        {notices}
+        <CardNotices {...props} />
         <input
           aria-label="Title"
           placeholder="What needs doing?"
           value={editor.fields.title}
-          disabled={disabled}
+          disabled={isFormDisabled(props)}
           onChange={(event) => editor.edit({ title: event.currentTarget.value })}
           className="-mx-1.5 w-[calc(100%+0.75rem)] rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-sm font-semibold outline-none placeholder:font-normal placeholder:text-muted-foreground hover:border-border focus-visible:border-ring focus-visible:bg-background disabled:cursor-default disabled:hover:border-transparent"
         />
-        {brief.lines.length > 0 ? (
-          <ul className="space-y-1 text-sm">
-            {brief.lines.map((line) => (
-              <li key={line.line} className="flex items-start gap-2">
-                {line.checkbox ? (
-                  <SquareIcon
-                    className="mt-0.5 size-3.5 shrink-0 text-muted-foreground"
-                    aria-hidden
-                  />
-                ) : null}
-                <span className={cn("min-w-0 truncate", !line.checkbox && "text-muted-foreground")}>
-                  {line.text}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            No brief yet. Ask the agent, or write one.
-          </p>
-        )}
+        <BriefPreview lines={brief.lines} />
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 pb-2">
-        <Button size="xs" variant="link" className="-ml-2 mr-auto" onClick={() => show("full")}>
+        <Button
+          size="xs"
+          variant="link"
+          className="-ml-2 mr-auto"
+          onClick={() => props.show("full")}
+        >
           {brief.remaining > 0 ? `+${brief.remaining} more · Show full brief` : "Show full brief"}
         </Button>
-        {repositories.map((project) => (
-          <Badge key={project.id} variant="outline">
-            {project.title}
-          </Badge>
-        ))}
-        <Badge variant="outline">
-          {props.referenceCount === 1 ? "1 Reference" : `${props.referenceCount} References`}
-        </Badge>
+        <CardChips {...props} />
       </div>
-      <footer className="shrink-0 border-t border-border px-3 py-1.5">{actions}</footer>
-      {discardDialog}
+      <footer className="shrink-0 border-t border-border px-3 py-1.5">
+        <CardActions {...props} layout="inline" />
+      </footer>
     </div>
+  );
+}
+
+function BriefPreview({ lines }: { readonly lines: ReadonlyArray<DraftBriefPreviewLine> }) {
+  if (lines.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">No brief yet. Ask the agent, or write one.</p>
+    );
+  }
+  return (
+    <ul className="space-y-1 text-sm">
+      {lines.map((line) => (
+        <li key={line.line} className="flex items-start gap-2">
+          {line.checkbox ? (
+            <SquareIcon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+          ) : null}
+          <span className={cn("min-w-0 truncate", !line.checkbox && "text-muted-foreground")}>
+            {line.text}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function CardChips({ createState, linkedProjects, referenceCount }: DraftCardModeProps) {
+  const repositories = createState.repositories.selectedRepositoryProjectIds.flatMap((id) => {
+    const project = linkedProjects.find((candidate) => candidate.id === id);
+    return project ? [project] : [];
+  });
+  return (
+    <>
+      {repositories.map((project) => (
+        <Badge key={project.id} variant="outline">
+          {project.title}
+        </Badge>
+      ))}
+      <Badge variant="outline">
+        {referenceCount === 1 ? "1 Reference" : `${referenceCount} References`}
+      </Badge>
+    </>
   );
 }
