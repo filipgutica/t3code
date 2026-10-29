@@ -539,7 +539,7 @@ function WaitingPill({ count, onClick }: { readonly count: number; readonly onCl
         />
       }
     >
-      {count} need you
+      {count} {count === 1 ? "needs" : "need"} you
     </Badge>
   );
 }

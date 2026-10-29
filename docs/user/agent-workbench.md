@@ -14,8 +14,8 @@ no dedicated Workbench mobile interface yet.
 </picture>
 
 The screenshots use fictional Orbit and Beacon projects in an isolated demo.
-Planning conversations, recaps, and prepared Git worktrees are real. PR feedback
-and implementation outcomes are illustrative; they do not show completed product work.
+Planning conversations and prepared Git worktrees are real. Recaps, approval requests,
+PR feedback, and implementation outcomes are illustrative; they do not show completed product work.
 
 For a visual tour from plan to merged pull request, open the [Workbench site](https://filipgutica.github.io/t3code/).
 
