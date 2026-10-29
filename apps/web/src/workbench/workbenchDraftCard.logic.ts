@@ -1,4 +1,4 @@
-export type WorkbenchDraftCardMode = "collapsed" | "compact" | "full";
+export type WorkbenchDraftCardMode = "collapsed" | "compact" | "expanded";
 
 // The default chat is 540px tall in a 900px window; shorter chats leave the transcript too little room.
 const COMPACT_MIN_CHAT_HEIGHT = 520;

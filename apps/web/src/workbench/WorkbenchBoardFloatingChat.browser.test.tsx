@@ -443,7 +443,7 @@ it("keeps a draft's conversation read-only with the draft's actions, and ticket 
   await expect.element(screen.getByRole("group", { name: "Ticket draft" })).not.toBeInTheDocument();
 });
 
-it("edits a draft's title in its card and opens the full brief over the conversation", async () => {
+it("edits a draft's title in its card and shows the full brief above the conversation", async () => {
   const { onSnapshot } = await setup();
   const planned = draft("draft", "draft-thread", "Plan exports");
   const brief = "## Work\n- [ ] Export refunds\n- [ ] Export payouts\n- [ ] Email the CSV";
@@ -476,11 +476,15 @@ it("edits a draft's title in its card and opens the full brief over the conversa
 
   await userEvent.click(card.getByRole("button", { name: "+1 more · Show full brief" }));
   await expect.element(card.getByLabelText("Title")).toHaveValue("Plan CSV exports");
-  await expect.element(card.getByLabelText("Description")).toHaveValue(brief);
-  await userEvent.click(card.getByRole("button", { name: "Back to conversation" }));
+  // The full brief is rendered; changes go through the agent.
+  await expect.element(card.getByText("Email the CSV")).toBeVisible();
+  await expect.element(card.getByRole("textbox", { name: "Description" })).not.toBeInTheDocument();
+  // The conversation stays usable while the full brief is open.
   await expect
     .element(screen.getByRole("textbox", { name: "Composer for draft-thread" }))
     .toBeVisible();
+  await userEvent.click(card.getByRole("button", { name: "Show less" }));
+  await expect.element(card.getByText("Export refunds")).toBeVisible();
 });
 
 it("starts a draft's card collapsed in a short chat, still saying why it can't be created", async () => {

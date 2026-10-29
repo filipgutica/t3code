@@ -1,11 +1,5 @@
 import type { WorkbenchEpic, WorkbenchEpicId } from "@t3tools/contracts";
-import {
-  ArrowLeftIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
-  PencilLineIcon,
-  SquareIcon,
-} from "lucide-react";
+import { ChevronDownIcon, ChevronUpIcon, PencilLineIcon, SquareIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 import { Badge } from "../components/ui/badge";
@@ -50,13 +44,14 @@ export interface WorkbenchDraftCardProps {
   readonly references: ReactNode;
   readonly referenceCount: number;
   readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
-  /** The conversation the card is pinned above; the full view covers it. */
+  /** The conversation the card is pinned above. */
   readonly children: ReactNode;
 }
 
 /**
  * The draft pinned above its conversation in the floating chat. Its title edits in place, and
- * Show full brief opens every field over the conversation. A short chat starts collapsed.
+ * Show full brief expands every field in the card while the conversation stays usable below.
+ * A short chat starts collapsed.
  */
 export function WorkbenchDraftCard({ children, ...props }: WorkbenchDraftCardProps) {
   const [mode, setMode] = useState<WorkbenchDraftCardMode>(() =>
@@ -68,17 +63,14 @@ export function WorkbenchDraftCard({ children, ...props }: WorkbenchDraftCardPro
     setMode(next);
   };
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <DraftCardBody
         {...props}
         mode={mode}
         unseen={mode === "collapsed" && props.draft.revision > seenRevision}
         show={show}
       />
-      {/* Isolated so the composer's own z-index can't lift it over the full view. */}
-      <div inert={mode === "full"} className="isolate flex min-h-0 flex-1 flex-col">
-        {children}
-      </div>
+      {children}
     </div>
   );
 }
@@ -94,8 +86,8 @@ type DraftCardModeProps = DraftCardBodyProps & { readonly onDiscard: () => void 
 function DraftCardBody(props: DraftCardBodyProps) {
   const [discardOpen, setDiscardOpen] = useState(false);
   const Mode =
-    props.mode === "full"
-      ? FullDraftCard
+    props.mode === "expanded"
+      ? ExpandedDraftCard
       : props.mode === "collapsed"
         ? CollapsedDraftCard
         : CompactDraftCard;
@@ -161,20 +153,16 @@ function CardNotices(props: DraftCardModeProps) {
   );
 }
 
-function FullDraftCard(props: DraftCardModeProps) {
+function ExpandedDraftCard(props: DraftCardModeProps) {
   return (
     <div
       role="group"
       aria-label="Ticket draft"
-      className="absolute inset-0 z-20 flex min-h-0 flex-col bg-background"
+      className="mx-3 mt-2 flex max-h-[60%] min-h-0 shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card"
     >
-      <header className="flex shrink-0 items-center gap-2 border-b border-border px-2 py-1.5">
-        <Button size="sm" variant="ghost" onClick={() => props.show("compact")}>
-          <ArrowLeftIcon />
-          Back to conversation
-        </Button>
-      </header>
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+      {/* The description's label already says who updated it. */}
+      <CardHeader {...props} updatedBy={null} toggle="Show less" next="compact" />
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 pt-1 pb-3">
         <CardNotices {...props} />
         <WorkbenchTicketDraftFieldsForm
           fields={props.editor.fields}
@@ -182,15 +170,38 @@ function FullDraftCard(props: DraftCardModeProps) {
           linkedProjects={props.linkedProjects}
           epics={props.epics}
           updatedBy={props.updatedBy}
+          brief="rendered"
           references={props.references}
           onChange={props.editor.edit}
           onCreateEpic={props.onCreateEpic}
         />
       </div>
-      <footer className="shrink-0 border-t border-border px-3 py-2">
+      <footer className="shrink-0 border-t border-border px-3 py-1.5">
         <CardActions {...props} layout="inline" />
       </footer>
     </div>
+  );
+}
+
+function CardHeader({
+  updatedBy,
+  show,
+  toggle,
+  next,
+}: DraftCardModeProps & {
+  readonly toggle: "Show less" | "Collapse ticket draft";
+  readonly next: WorkbenchDraftCardMode;
+}) {
+  return (
+    <header className="flex shrink-0 items-center gap-2 py-1 pr-1.5 pl-3 text-xs text-muted-foreground">
+      <PencilLineIcon className="size-3.5 shrink-0" aria-hidden />
+      <span className="font-medium text-foreground">Ticket draft</span>
+      {updatedBy ? <span className="truncate">Updated by {updatedBy}</span> : null}
+      <span className="flex-1" />
+      <Button size="icon-xs" variant="ghost" aria-label={toggle} onClick={() => show(next)}>
+        <ChevronUpIcon />
+      </Button>
+    </header>
   );
 }
 
@@ -252,20 +263,7 @@ function CompactDraftCard(props: DraftCardModeProps) {
       aria-label="Ticket draft"
       className="mx-3 mt-2 flex max-h-[40%] min-h-0 shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card"
     >
-      <header className="flex shrink-0 items-center gap-2 py-1 pr-1.5 pl-3 text-xs text-muted-foreground">
-        <PencilLineIcon className="size-3.5 shrink-0" aria-hidden />
-        <span className="font-medium text-foreground">Ticket draft</span>
-        {props.updatedBy ? <span className="truncate">Updated by {props.updatedBy}</span> : null}
-        <span className="flex-1" />
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          aria-label="Collapse ticket draft"
-          onClick={() => props.show("collapsed")}
-        >
-          <ChevronUpIcon />
-        </Button>
-      </header>
+      <CardHeader {...props} toggle="Collapse ticket draft" next="collapsed" />
       <div className="min-h-0 space-y-2 overflow-y-auto px-3 pb-2">
         <CardNotices {...props} />
         <input
@@ -283,7 +281,7 @@ function CompactDraftCard(props: DraftCardModeProps) {
           size="xs"
           variant="link"
           className="-ml-2 mr-auto"
-          onClick={() => props.show("full")}
+          onClick={() => props.show("expanded")}
         >
           {brief.remaining > 0 ? `+${brief.remaining} more · Show full brief` : "Show full brief"}
         </Button>
