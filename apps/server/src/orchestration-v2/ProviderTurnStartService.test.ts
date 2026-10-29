@@ -990,10 +990,12 @@ effectIt.effect.each([
 effectIt.effect.each([
   { text: "Continue", expected: "Plan read-only.\n\nUser message:\nContinue" },
   { text: "/goal all tests pass", expected: "/goal all tests pass" },
-])("sends runtime instructions except before a native /goal: $text", ({ text, expected }) =>
+  { text: "/compact", expected: "/compact" },
+])("sends runtime instructions except before a native command: $text", ({ text, expected }) =>
   Effect.gen(function* () {
     const harness = makeLocalCommandHarness({
       text,
+      previousMessages: ["Plan the export"],
       previousTurn: { runStatus: "completed", turnStatus: "completed" },
     });
     const policy = {

@@ -764,7 +764,9 @@ export const layer: Layer.Layer<
       const goalDriver = session.driver === "codex" || session.driver === "claudeAgent";
       const goalCommand = goalDriver && parseGoalCommand(message) !== null;
       const userText =
-        resolvedRuntimePolicy.instructions === undefined || goalCommand
+        resolvedRuntimePolicy.instructions === undefined ||
+        goalCommand ||
+        isCompactionCommandMessage(message)
           ? composerText
           : `${resolvedRuntimePolicy.instructions}\n\nUser message:\n${composerText}`;
       // The provider turn marks cancellation work delivered; restart continuations use their own text or resume natively.
