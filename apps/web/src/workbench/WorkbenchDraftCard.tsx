@@ -272,7 +272,7 @@ function DraftCardBody({
                     aria-hidden
                   />
                 ) : null}
-                <span className={cn("min-w-0", !line.checkbox && "text-muted-foreground")}>
+                <span className={cn("min-w-0 truncate", !line.checkbox && "text-muted-foreground")}>
                   {line.text}
                 </span>
               </li>
