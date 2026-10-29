@@ -12,7 +12,7 @@ import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
 import { useRefreshOnThreadActivity } from "./useWorkbenchTicketConversation";
-import { WorkbenchFloatingChat } from "./WorkbenchFloatingChat";
+import { WorkbenchFloatingChat, type WorkbenchFloatingChatPlanning } from "./WorkbenchFloatingChat";
 import {
   resolveWorkbenchFloatingChat,
   type WorkbenchFloatingChatThread,
@@ -70,6 +70,7 @@ interface WorkbenchTicketFloatingChatProps {
   readonly pending: boolean;
   readonly threadMutationsDisabled: boolean;
   readonly isArchived: boolean;
+  readonly planning: WorkbenchFloatingChatPlanning | undefined;
 }
 
 /** The ticket's Threads in the floating chat. Narrow screens keep the header's Open thread. */
@@ -134,6 +135,7 @@ function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabl
       onNewThread={() => onNewThread(ticket)}
       // The same conditions that disable Create Thread in the ticket's Threads panel.
       newThreadDisabled={props.pending || props.threadMutationsDisabled || props.isArchived}
+      planning={props.planning}
     />
   );
 }

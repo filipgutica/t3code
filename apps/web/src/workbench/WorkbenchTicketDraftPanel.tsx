@@ -5,7 +5,7 @@ import type {
   WorkbenchTicketDraftFields,
   WorkbenchTicketKind,
 } from "@t3tools/contracts";
-import type { Dispatch, ReactNode, SetStateAction } from "react";
+import { useId, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -17,6 +17,8 @@ import {
   WorkbenchTicketDescriptionEditor,
   getWorkbenchCreateTicketRepositories,
 } from "./WorkbenchForms";
+import { WorkbenchDescription } from "./WorkbenchDescription";
+import { WorkbenchProvenanceBadge } from "./WorkbenchReferences";
 
 interface DraftFieldContext {
   readonly linkedProjects: ReadonlyArray<Project>;
@@ -71,10 +73,36 @@ const asSetter =
   (action) =>
     set(typeof action === "function" ? (action as (previous: Value) => Value)(current) : action);
 
+function DraftBriefView({
+  markdown,
+  updatedBy,
+}: {
+  readonly markdown: string;
+  readonly updatedBy: string | null;
+}) {
+  const headingId = useId();
+  return (
+    <section aria-labelledby={headingId} className="min-w-0 space-y-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <h3 id={headingId} className="font-medium text-sm">
+          Description
+        </h3>
+        {updatedBy !== null ? <WorkbenchProvenanceBadge text={`Updated by ${updatedBy}`} /> : null}
+      </div>
+      {markdown.trim() ? (
+        <WorkbenchDescription markdown={markdown} />
+      ) : (
+        <p className="text-sm text-muted-foreground">No brief yet. Ask the agent to write one.</p>
+      )}
+    </section>
+  );
+}
+
 export function WorkbenchTicketDraftFieldsForm({
   fields,
   disabled,
   updatedBy,
+  brief = "editor",
   references,
   onChange,
   onCreateEpic,
@@ -84,6 +112,8 @@ export function WorkbenchTicketDraftFieldsForm({
   readonly disabled: boolean;
   /** The agent Thread that last wrote the title or brief, if one did. */
   readonly updatedBy: string | null;
+  /** "rendered" shows the brief read-only, for surfaces where you ask the agent for changes. */
+  readonly brief?: "editor" | "rendered";
   /** Sits after the description and keeps its own read-only rules, outside the form's fieldsets. */
   readonly references: ReactNode;
   readonly onChange: (patch: Partial<WorkbenchTicketDraftFields>) => void;
@@ -102,13 +132,17 @@ export function WorkbenchTicketDraftFieldsForm({
             onChange={(event) => onChange({ title: event.currentTarget.value })}
           />
         </div>
-        <WorkbenchTicketDescriptionEditor
-          id="workbench-draft-description"
-          markdown={fields.markdown}
-          jira={false}
-          updatedBy={updatedBy}
-          onChange={(markdown) => onChange({ markdown })}
-        />
+        {brief === "rendered" ? (
+          <DraftBriefView markdown={fields.markdown} updatedBy={updatedBy} />
+        ) : (
+          <WorkbenchTicketDescriptionEditor
+            id="workbench-draft-description"
+            markdown={fields.markdown}
+            jira={false}
+            updatedBy={updatedBy}
+            onChange={(markdown) => onChange({ markdown })}
+          />
+        )}
       </fieldset>
       {references}
       <fieldset disabled={disabled} className="min-w-0 space-y-5">

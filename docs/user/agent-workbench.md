@@ -172,7 +172,9 @@ a planning conversation.
 A board draft plans the same way as **New Ticket** and runs in Auto. When the
 agent has filled in the draft, choose **Create ticket** and **Start work**; the same
 Thread continues throughout. **Cancel** removes a draft you have not used yet and returns to the Thread
-you had open. Once you have used the draft, **Discard** removes it after you confirm. Choose **Open full Thread** to edit the draft's fields.
+you had open. Once you have used the draft, **Discard** removes it after you confirm. The draft stays pinned above
+the conversation: edit its title there, or choose **Show full brief** to edit every field. In a
+short window it starts collapsed to one row.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/board-draft-light.png">

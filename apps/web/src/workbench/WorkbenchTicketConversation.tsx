@@ -386,7 +386,7 @@ function ModelUnsupportedNotice() {
   );
 }
 
-function DraftConflictNotice({
+export function DraftConflictNotice({
   onReload,
   onKeepMine,
   canKeepMine,

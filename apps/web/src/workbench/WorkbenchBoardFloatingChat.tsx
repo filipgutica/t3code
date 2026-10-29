@@ -3,6 +3,7 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import type {
   EnvironmentId,
   WorkbenchAssignment,
+  WorkbenchEpicId,
   WorkbenchTicket,
   WorkbenchTicketDraft,
 } from "@t3tools/contracts";
@@ -18,6 +19,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
 import { WorkbenchDiscardDraftDialog } from "./WorkbenchDiscardDraftDialog";
 import { WorkbenchDraftActions } from "./WorkbenchDraftActions";
+import { WorkbenchDraftCard } from "./WorkbenchDraftCard";
 import {
   WorkbenchFloatingChat,
   type WorkbenchFloatingChatTicketThread,
@@ -36,12 +38,18 @@ import {
   useTicketDraftTransitions,
 } from "./useWorkbenchTicketConversation";
 import {
+  isUnsavedConversationDraft,
   pickNewestConversationDraft,
   type WorkbenchConversationDraft,
 } from "./workbenchTicketDraft.logic";
 import { usePlanningModelSelection } from "./usePlanningModelSelection";
 import { useWorkbenchThreadRecaps } from "./useWorkbenchThreadRecaps";
-import type { WorkbenchReferencesByTicket } from "./workbenchReferences.logic";
+import { WorkbenchDraftReferences, workbenchThreadTitle } from "./WorkbenchReferences";
+import {
+  getReferenceFileCwd,
+  getTicketReferences,
+  type WorkbenchReferencesByTicket,
+} from "./workbenchReferences.logic";
 
 type ThreadsById = ReadonlyMap<ThreadId, EnvironmentThreadShell>;
 
@@ -65,6 +73,7 @@ interface WorkbenchBoardFloatingChatProps extends Pick<
   readonly refreshSnapshot: () => void;
   /** Opens a draft's planning conversation; promoted drafts share the ticket's id. */
   readonly onOpenDraft: (draftId: WorkbenchTicketId) => void;
+  readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
   /** Opens a ticket's Thread on its route, restoring it first when archived. */
   readonly onOpenThread: (threadId: ThreadId) => void;
   /** Starts another Thread on a ticket through the start-Thread dialog. */
@@ -237,7 +246,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
           const draft = planningDrafts.get(threadId);
           if (!draft) return conversation;
           return (
-            <BoardDraftThread
+            <WorkbenchDraftThread
               key={draft.id}
               environmentId={environmentId}
               workspace={workspace}
@@ -248,9 +257,12 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
               onOpenDraft={() => props.onOpenDraft(draft.id)}
               neverRan={props.threadsById.get(threadId)?.latestRun == null}
               onDiscarded={() => setExplicitThreadId(draftReturnsRef.current.get(threadId) ?? null)}
+              // Promoted drafts share the ticket's id, so this opens the new ticket's page.
+              onTicketCreated={(created) => props.onOpenDraft(created.id)}
+              card={props}
             >
               {conversation}
-            </BoardDraftThread>
+            </WorkbenchDraftThread>
           );
         },
       }}
@@ -303,11 +315,18 @@ const useIsUntouchedDraft = (
   fields.title.trim() === "" &&
   fields.markdown.trim() === "";
 
+/** What an unsaved draft's card needs beyond the draft itself. */
+type DraftCardContext = Pick<
+  WorkbenchBoardFloatingChatProps,
+  "referencesByTicket" | "threadsById" | "archivedThreadsById" | "onCreateEpic"
+>;
+
 /**
- * A draft's conversation in the chat, with the draft page's actions in the strip below. The agent
- * fills the fields through MCP, and people edit them on the full draft page.
+ * A draft's conversation in a floating chat. Given a card context, an unsaved draft is pinned
+ * above it as an editable card; otherwise the draft page's actions sit in a strip below. Without a
+ * conversation it is the strip alone.
  */
-function BoardDraftThread({
+export function WorkbenchDraftThread({
   environmentId,
   workspace,
   snapshotDraft,
@@ -317,6 +336,8 @@ function BoardDraftThread({
   onOpenDraft,
   neverRan,
   onDiscarded,
+  onTicketCreated,
+  card,
   children,
 }: {
   readonly environmentId: EnvironmentId;
@@ -329,7 +350,9 @@ function BoardDraftThread({
   /** No message was ever sent, so the conversation holds nothing to lose. */
   readonly neverRan: boolean;
   readonly onDiscarded: () => void;
-  readonly children: ReactNode;
+  readonly onTicketCreated?: (draft: WorkbenchConversationDraft) => void;
+  readonly card?: DraftCardContext;
+  readonly children?: ReactNode;
 }) {
   // Command replies can be newer than the snapshot; the newest revision wins.
   const [fromCommand, setFromCommand] = useState<WorkbenchConversationDraft | null>(null);
@@ -348,14 +371,35 @@ function BoardDraftThread({
     draft,
     editor,
     onDraft: setFromCommand,
-    // The chat stays on the board; the tab follows the same Thread through each phase.
-    onTicketCreated: setFromCommand,
+    onTicketCreated: (created) => {
+      setFromCommand(created);
+      onTicketCreated?.(created);
+    },
     onWorkStarted: () => {},
     onDiscarded,
     onClose: () => {},
     onCreateManually: onOpenDraft,
     refreshSnapshot,
   });
+  const cardContext = getDraftCardContext(card, draft);
+  if (cardContext) {
+    return (
+      <BoardDraftCard
+        environmentId={environmentId}
+        draft={draft}
+        editor={editor}
+        transitions={transitions}
+        createState={createState}
+        createContext={createContext}
+        canOperate={canOperate}
+        ticketExists={ticket !== null}
+        untouched={untouched}
+        card={cardContext}
+      >
+        {children}
+      </BoardDraftCard>
+    );
+  }
   return (
     <>
       {children}
@@ -369,6 +413,63 @@ function BoardDraftThread({
         untouched={untouched}
       />
     </>
+  );
+}
+
+/** Only unsaved drafts get the card; planning and starting drafts keep the Start work strip. */
+const getDraftCardContext = (
+  card: DraftCardContext | undefined,
+  draft: WorkbenchConversationDraft,
+) => (card && isUnsavedConversationDraft(draft) ? card : null);
+
+/** An unsaved draft's card, with its References and who last wrote it. */
+function BoardDraftCard({
+  environmentId,
+  card,
+  createContext,
+  children,
+  ...props
+}: Omit<
+  Parameters<typeof WorkbenchDraftCard>[0],
+  "updatedBy" | "linkedProjects" | "epics" | "references" | "referenceCount" | "onCreateEpic"
+> & {
+  readonly environmentId: EnvironmentId;
+  readonly card: DraftCardContext;
+  readonly createContext: WorkbenchBoardFloatingChatProps["createContext"];
+}) {
+  const { draft } = props;
+  const references = getTicketReferences(card.referencesByTicket, draft.id);
+  return (
+    <WorkbenchDraftCard
+      {...props}
+      updatedBy={workbenchThreadTitle(
+        draft.updatedByThreadId,
+        card.threadsById,
+        card.archivedThreadsById,
+      )}
+      linkedProjects={createContext.linkedProjects}
+      epics={createContext.epics}
+      references={
+        <WorkbenchDraftReferences
+          environmentId={environmentId}
+          draftId={draft.id}
+          references={references}
+          threadsById={card.threadsById}
+          archivedThreadsById={card.archivedThreadsById}
+          readOnly={!props.canOperate || props.transitions.action !== null}
+          fileCwd={getReferenceFileCwd(createContext.linkedProjects, [
+            draft.fields.primaryT3ProjectId,
+            ...draft.fields.repositoryProjectIds,
+            draft.anchorProjectId,
+          ])}
+          fileThreadId={draft.threadId}
+        />
+      }
+      referenceCount={references.length}
+      onCreateEpic={card.onCreateEpic}
+    >
+      {children}
+    </WorkbenchDraftCard>
   );
 }
 

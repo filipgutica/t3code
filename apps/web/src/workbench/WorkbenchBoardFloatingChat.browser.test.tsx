@@ -17,7 +17,7 @@ import { useState } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
-import { render } from "../../test/render";
+import { fakeTimers, render } from "../../test/render";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { makeThreadFixture } from "../test-fixtures";
 import { WorkbenchBoardFloatingChat } from "./WorkbenchBoardFloatingChat";
@@ -42,6 +42,8 @@ vi.mock("./state", () => {
       startTicketDraftWork: command("start"),
       discardTicketDraft: command("discard"),
       readSnapshot: command("read"),
+      addReference: command("addReference"),
+      removeReference: command("removeReference"),
     },
   };
 });
@@ -184,6 +186,7 @@ function Harness(props: {
       canStartDrafts
       refreshSnapshot={() => {}}
       onOpenDraft={props.onOpenDraft ?? (() => {})}
+      onCreateEpic={() => {}}
       onOpenThread={props.onOpenThread ?? (() => {})}
       onNewTicketThread={props.onNewTicketThread ?? (() => {})}
       newTicketThreadDisabled={false}
@@ -438,6 +441,74 @@ it("keeps a draft's conversation read-only with the draft's actions, and ticket 
     .element(screen.getByRole("textbox", { name: "Composer for first" }))
     .not.toHaveAttribute("readonly");
   await expect.element(screen.getByRole("group", { name: "Ticket draft" })).not.toBeInTheDocument();
+});
+
+it("edits a draft's title in its card and shows the full brief above the conversation", async () => {
+  const { onSnapshot } = await setup();
+  const planned = draft("draft", "draft-thread", "Plan exports");
+  const brief = "## Work\n- [ ] Export refunds\n- [ ] Export payouts\n- [ ] Email the CSV";
+  const initial = { ...planned, fields: { ...planned.fields, markdown: brief } };
+  mocks.otherCommand.mockImplementation(async ({ input }) => ({
+    _tag: "Success",
+    value: { ...initial, revision: 1, fields: input.fields },
+  }));
+  await using screen = await render(<Harness initialDrafts={[initial]} onSnapshot={onSnapshot} />);
+  await pickThread(screen, /Plan exports/);
+  await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
+  const card = screen.getByRole("group", { name: "Ticket draft" });
+  await expect.element(card.getByText("Export refunds")).toBeVisible();
+  await expect.element(card.getByText("Email the CSV")).not.toBeInTheDocument();
+
+  {
+    using _timers = fakeTimers();
+    await userEvent.fill(card.getByRole("textbox", { name: "Title" }), "Plan CSV exports");
+    await vi.advanceTimersByTimeAsync(600);
+  }
+  expect(mocks.otherCommand).toHaveBeenCalledWith(
+    expect.objectContaining({
+      input: expect.objectContaining({
+        id: "draft",
+        expectedRevision: 0,
+        fields: expect.objectContaining({ title: "Plan CSV exports" }),
+      }),
+    }),
+  );
+
+  await userEvent.click(card.getByRole("button", { name: "+1 more · Show full brief" }));
+  await expect.element(card.getByLabelText("Title")).toHaveValue("Plan CSV exports");
+  // The full brief is rendered; changes go through the agent.
+  await expect.element(card.getByText("Email the CSV")).toBeVisible();
+  await expect.element(card.getByRole("textbox", { name: "Description" })).not.toBeInTheDocument();
+  // The conversation stays usable while the full brief is open.
+  await expect
+    .element(screen.getByRole("textbox", { name: "Composer for draft-thread" }))
+    .toBeVisible();
+  await userEvent.click(card.getByRole("button", { name: "Show less" }));
+  await expect.element(card.getByText("Export refunds")).toBeVisible();
+});
+
+it("starts a draft's card collapsed in a short chat, still saying why it can't be created", async () => {
+  const { onSnapshot } = await setup();
+  const key = "t3code:workbench-floating-chat-size";
+  localStorage.setItem(key, JSON.stringify({ width: 576, height: 400 }));
+  using _size = { [Symbol.dispose]: () => localStorage.removeItem(key) };
+  await using screen = await render(
+    <Harness
+      initialDrafts={[draft("draft", "draft-thread", "Plan exports")]}
+      onSnapshot={onSnapshot}
+    />,
+  );
+  await pickThread(screen, /Plan exports/);
+  await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
+  const card = screen.getByRole("group", { name: "Ticket draft" });
+  await expect.element(card.getByRole("textbox", { name: "Title" })).not.toBeInTheDocument();
+  await expect.element(card.getByRole("button", { name: "Create ticket" })).toBeDisabled();
+  await expect
+    .element(card.getByRole("status"))
+    .toHaveTextContent("Select a repository to create the ticket.");
+
+  await userEvent.click(card.getByRole("button", { name: "Expand ticket draft" }));
+  await expect.element(card.getByRole("textbox", { name: "Title" })).toHaveValue("Plan exports");
 });
 
 it.each([

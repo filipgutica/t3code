@@ -500,7 +500,7 @@ export function WorkbenchTicketReferencesPanel({
   );
 }
 
-/** An always-visible field: Enter adds the pasted URL or path, and a failure keeps the text. */
+/** An always-visible field: Enter or Add adds the pasted URL or path, and a failure keeps the text. */
 function WorkbenchReferencePasteInput({
   disabled,
   onAdd,
@@ -525,24 +525,34 @@ function WorkbenchReferencePasteInput({
   };
   return (
     <div className="space-y-1">
-      <Input
-        aria-label="Add a reference URL"
-        size="sm"
-        placeholder="Paste a Jira, GitHub, or any URL…"
-        value={url}
-        disabled={disabled || pending}
-        aria-invalid={error !== null}
-        aria-describedby={error === null ? undefined : errorId}
-        onChange={(event) => {
-          setUrl(event.target.value);
-          setError(null);
-        }}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter") return;
-          event.preventDefault();
-          void submit();
-        }}
-      />
+      <div className="flex items-center gap-2">
+        <Input
+          aria-label="Add a reference URL"
+          size="sm"
+          placeholder="Paste a Jira, GitHub, or any URL…"
+          value={url}
+          disabled={disabled || pending}
+          aria-invalid={error !== null}
+          aria-describedby={error === null ? undefined : errorId}
+          onChange={(event) => {
+            setUrl(event.target.value);
+            setError(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            void submit();
+          }}
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={disabled || pending || url.trim() === ""}
+          onClick={() => void submit()}
+        >
+          <PlusIcon /> Add
+        </Button>
+      </div>
       {error ? (
         <p id={errorId} role="alert" className="text-destructive text-xs">
           {error}

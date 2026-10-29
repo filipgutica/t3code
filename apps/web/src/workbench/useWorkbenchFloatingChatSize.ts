@@ -33,6 +33,10 @@ const readSize = (): Size => {
   }
 };
 
+/** The panel's height as last saved; the CSS default, min(540px, 70vh), until the user drags it. */
+export const readWorkbenchFloatingChatHeight = () =>
+  readSize().height ?? Math.min(540, window.innerHeight * 0.7);
+
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 const endDragStyles = () => {

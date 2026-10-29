@@ -83,6 +83,7 @@ import { deriveProviderInstanceEntries } from "../providerInstances";
 import { serverEnvironment } from "../state/server";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { cn } from "../lib/utils";
+import type { WorkbenchFloatingChatPlanning } from "./WorkbenchFloatingChat";
 import {
   getWorkbenchFloatingChatInset,
   WorkbenchTicketFloatingChat,
@@ -735,8 +736,10 @@ export type WorkbenchTicketDetailProps = {
   readonly onSaveRepositories: () => Promise<boolean>;
   readonly onResetWorkspace: (ticket: WorkbenchTicket) => Promise<boolean>;
   readonly lifecycleActionsEnabled: boolean;
-  /** Shows the ticket's Threads in a floating chat; planning mode keeps its own conversation. */
+  /** Shows the ticket's Threads in a floating chat. */
   readonly floatingChat?: boolean;
+  /** Renders the planning Thread, which still offers Start work, in the floating chat. */
+  readonly floatingChatPlanning?: WorkbenchFloatingChatPlanning | undefined;
 };
 export function WorkbenchTicketDetail(props: WorkbenchTicketDetailProps) {
   const content = useWorkbenchTicketContent(props.environmentId, props.ticket);
@@ -785,6 +788,7 @@ function WorkbenchLoadedTicketDetail(props: WorkbenchTicketDetailProps) {
         onRetryError: props.onRetryError,
         lifecycleActionsEnabled: props.lifecycleActionsEnabled,
         floatingChat: props.floatingChat ?? false,
+        floatingChatPlanning: props.floatingChatPlanning,
       }}
       workspace={{
         ticketWorkspace: props.ticketWorkspace,
@@ -863,6 +867,7 @@ function WorkbenchTicketDetailController({
     | "onRetryError"
     | "lifecycleActionsEnabled"
     | "floatingChat"
+    | "floatingChatPlanning"
   >;
   workspace: Pick<
     WorkbenchTicketDetailProps,
@@ -920,6 +925,7 @@ function WorkbenchTicketDetailController({
     workspaceReadOnly = false,
     threadMutationsDisabled = false,
     floatingChat = false,
+    floatingChatPlanning,
   } = content;
   const {
     ticketWorkspace,
@@ -1422,6 +1428,7 @@ function WorkbenchTicketDetailController({
         pending={pending}
         threadMutationsDisabled={threadMutationsDisabled}
         isArchived={isArchived}
+        planning={floatingChatPlanning}
       />
     </article>
   );
