@@ -74,7 +74,8 @@ export function WorkbenchDraftCard({ children, ...props }: WorkbenchDraftCardPro
         unseen={mode === "collapsed" && props.draft.revision > seenRevision}
         show={show}
       />
-      <div inert={mode === "full"} className="flex min-h-0 flex-1 flex-col">
+      {/* Isolated so the composer's own z-index can't lift it over the full view. */}
+      <div inert={mode === "full"} className="isolate flex min-h-0 flex-1 flex-col">
         {children}
       </div>
     </div>
@@ -282,19 +283,19 @@ function DraftCardBody({
             No brief yet. Ask the agent, or write one.
           </p>
         )}
-        <Button size="xs" variant="link" onClick={() => show("full")}>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 pb-2">
+        <Button size="xs" variant="link" className="-ml-2 mr-auto" onClick={() => show("full")}>
           {brief.remaining > 0 ? `+${brief.remaining} more · Show full brief` : "Show full brief"}
         </Button>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {repositories.map((project) => (
-            <Badge key={project.id} variant="outline">
-              {project.title}
-            </Badge>
-          ))}
-          <Badge variant="outline">
-            {props.referenceCount === 1 ? "1 Reference" : `${props.referenceCount} References`}
+        {repositories.map((project) => (
+          <Badge key={project.id} variant="outline">
+            {project.title}
           </Badge>
-        </div>
+        ))}
+        <Badge variant="outline">
+          {props.referenceCount === 1 ? "1 Reference" : `${props.referenceCount} References`}
+        </Badge>
       </div>
       <footer className="shrink-0 border-t border-border px-3 py-1.5">{actions}</footer>
       {discardDialog}
