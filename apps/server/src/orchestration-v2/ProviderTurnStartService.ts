@@ -763,10 +763,10 @@ export const layer: Layer.Layer<
       // Codex and Claude parse /goal from the prompt, so it goes verbatim and history waits a turn.
       const goalDriver = session.driver === "codex" || session.driver === "claudeAgent";
       const goalCommand = goalDriver && parseGoalCommand(message) !== null;
+      // Slash commands go verbatim, as without instructions, so providers still parse them.
+      const slashCommand = message.text.trimStart().startsWith("/");
       const userText =
-        resolvedRuntimePolicy.instructions === undefined ||
-        goalCommand ||
-        isCompactionCommandMessage(message)
+        resolvedRuntimePolicy.instructions === undefined || slashCommand
           ? composerText
           : `${resolvedRuntimePolicy.instructions}\n\nUser message:\n${composerText}`;
       // The provider turn marks cancellation work delivered; restart continuations use their own text or resume natively.
