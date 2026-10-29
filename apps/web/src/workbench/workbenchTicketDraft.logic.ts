@@ -33,7 +33,7 @@ const draftsOf = (snapshot: WorkbenchSnapshot | null): ReadonlyArray<WorkbenchCo
 export const supportsConversationDrafts = (snapshot: WorkbenchSnapshot | null) =>
   snapshot?.ticketDrafts !== undefined;
 
-const isUnsavedConversationDraft = (draft: WorkbenchConversationDraft) =>
+export const isUnsavedConversationDraft = (draft: WorkbenchConversationDraft) =>
   UNSAVED_PHASES.has(draft.phase);
 
 /** Unsaved preparations belong in the board and sidebar, separate from real tickets. */

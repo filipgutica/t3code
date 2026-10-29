@@ -25,8 +25,8 @@ interface DraftActionsProps {
   readonly onStartWork: () => void;
   readonly onDiscard: () => void;
   readonly onRetryDiscard: () => void;
-  /** Inline fits the floating chat's single-row strip; the draft page stacks. */
-  readonly layout: "stacked" | "inline";
+  /** Inline fits the floating chat's single-row strip; the draft page stacks; button is Create ticket alone. */
+  readonly layout: "stacked" | "inline" | "button";
   /** Replaces Discard for a draft with nothing to lose, skipping the confirmation. */
   readonly onCancel: (() => void) | null;
 }
@@ -119,7 +119,7 @@ function CreateTicketButton({
   const creating = action === "promote";
   return (
     <Button
-      size={layout === "inline" ? "sm" : "default"}
+      size={layout === "stacked" ? "default" : "sm"}
       disabled={action !== null || phase === "creating" || blocker !== null || !canOperate}
       aria-busy={creating}
       onClick={onCreate}
@@ -132,6 +132,7 @@ function CreateTicketButton({
 
 function UnsavedDraftActions(props: DraftActionsProps) {
   const { phase, action, canOperate, ticketExists, layout } = props;
+  if (layout === "button") return <CreateTicketButton {...props} />;
   const inline = layout === "inline";
   const discardDisabled =
     action !== null || !canDiscardConversationDraft({ phase, ticketExists }) || !canOperate;

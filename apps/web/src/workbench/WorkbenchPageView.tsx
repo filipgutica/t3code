@@ -745,6 +745,7 @@ function WorkbenchPageBoard(
               environmentId={environmentId}
               workspace={selectedProject}
               onOpenDraft={(draftId) => selectTicket(selectedProject.id, draftId)}
+              onCreateEpic={dialogs.openEpicDialog}
             />
           }
           selectedTicketId={null}
@@ -794,6 +795,7 @@ function WorkbenchPageBoardChat({
   environmentId,
   workspace,
   onOpenDraft,
+  onCreateEpic,
 }: Pick<
   WorkbenchPageViewProps,
   "pageData" | "boardData" | "threadActions" | "ticketActions" | "pendingAction"
@@ -801,6 +803,7 @@ function WorkbenchPageBoardChat({
   readonly environmentId: EnvironmentId;
   readonly workspace: NonNullable<WorkbenchPageViewProps["selection"]["selectedProject"]>;
   readonly onOpenDraft: (draftId: WorkbenchTicketId) => void;
+  readonly onCreateEpic: Parameters<typeof WorkbenchBoardFloatingChat>[0]["onCreateEpic"];
 }) {
   const { snapshot } = pageData;
   return (
@@ -824,6 +827,7 @@ function WorkbenchPageBoardChat({
       }
       refreshSnapshot={pageData.refreshWorkbenchSnapshot}
       onOpenDraft={onOpenDraft}
+      onCreateEpic={onCreateEpic}
       onOpenThread={(threadId) => void threadActions.openAssignedThread(threadId)}
       onNewTicketThread={(ticket) =>
         threadActions.requestNewThread(ticketActions.ticketForBoardAction(ticket))
