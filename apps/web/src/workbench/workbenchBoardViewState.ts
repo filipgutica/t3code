@@ -1,4 +1,9 @@
-import type { EnvironmentId, ProjectId, WorkbenchProjectId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ProjectId,
+  WorkbenchProject,
+  WorkbenchProjectId,
+} from "@t3tools/contracts";
 import { create } from "zustand";
 
 export interface WorkbenchBoardScope {
@@ -23,11 +28,35 @@ const DEFAULT_VIEW: WorkbenchBoardView = {
 };
 
 // View preferences belong to this client session, not to the shared Ticket snapshot.
-const useBoardViews = create<{
+export const useWorkbenchBoardViewStore = create<{
   readonly views: ReadonlyMap<string, WorkbenchBoardView>;
+  readonly mountedBoards: ReadonlyMap<string, number>;
+  readonly mountBoard: (key: string) => () => void;
   readonly update: (key: string, patch: Partial<WorkbenchBoardView>) => void;
+  readonly reconcileRepositories: (
+    environmentId: EnvironmentId,
+    projects: ReadonlyArray<Pick<WorkbenchProject, "id" | "linkedProjectIds">> | null,
+  ) => void;
 }>((set) => ({
   views: new Map(),
+  mountedBoards: new Map(),
+  mountBoard: (key) => {
+    set((state) => ({
+      mountedBoards: new Map(state.mountedBoards).set(key, (state.mountedBoards.get(key) ?? 0) + 1),
+    }));
+    let mounted = true;
+    return () => {
+      if (!mounted) return;
+      mounted = false;
+      set((state) => {
+        const mountedBoards = new Map(state.mountedBoards);
+        const count = mountedBoards.get(key) ?? 0;
+        if (count > 1) mountedBoards.set(key, count - 1);
+        else mountedBoards.delete(key);
+        return { mountedBoards };
+      });
+    };
+  },
   update: (key, patch) =>
     set((state) => {
       const previous = state.views.get(key) ?? DEFAULT_VIEW;
@@ -44,6 +73,23 @@ const useBoardViews = create<{
       views.set(key, next);
       return { views };
     }),
+  reconcileRepositories: (environmentId, projects) =>
+    set((state) => {
+      if (projects === null) return state;
+      const projectsById = new Map(projects.map((project) => [project.id, project]));
+      let views: Map<string, WorkbenchBoardView> | undefined;
+      for (const [key, view] of state.views) {
+        if (!state.mountedBoards.has(key)) continue;
+        if (view.repositoryId === null) continue;
+        const [owner, projectId] = JSON.parse(key) as [EnvironmentId, WorkbenchProjectId];
+        if (owner !== environmentId) continue;
+        const project = projectsById.get(projectId);
+        if (!project || project.linkedProjectIds.includes(view.repositoryId)) continue;
+        views ??= new Map(state.views);
+        views.set(key, { ...view, repositoryId: null });
+      }
+      return views === undefined ? state : { views };
+    }),
 }));
 
 export function useWorkbenchBoardView(scope: WorkbenchBoardScope) {
@@ -51,10 +97,10 @@ export function useWorkbenchBoardView(scope: WorkbenchBoardScope) {
     scope.environmentId !== null && scope.projectId !== null
       ? JSON.stringify([scope.environmentId, scope.projectId])
       : null;
-  const view = useBoardViews((state) =>
+  const view = useWorkbenchBoardViewStore((state) =>
     key === null ? DEFAULT_VIEW : (state.views.get(key) ?? DEFAULT_VIEW),
   );
-  const update = useBoardViews((state) => state.update);
+  const update = useWorkbenchBoardViewStore((state) => state.update);
   const setView = (patch: Partial<WorkbenchBoardView>) => {
     if (key !== null) update(key, patch);
   };

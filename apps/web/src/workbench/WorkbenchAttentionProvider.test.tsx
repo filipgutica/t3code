@@ -42,7 +42,7 @@ vi.mock("../state/query", () => ({
   useEnvironmentQuery: () => ({ data: state.ready ? snapshot : null }),
 }));
 vi.mock("./state", () => ({ workbenchEnvironment: { snapshot: () => null } }));
-vi.mock("./WorkbenchAttentionQueries", () => ({ WorkbenchAttentionQueries: () => null }));
+vi.mock("./WorkbenchAttentionQueries", () => ({ useWorkbenchAttentionQueries: () => new Map() }));
 vi.mock("../state/threads", () => ({ environmentThreadDetails: {} }));
 
 let renderer: ReactTestRenderer;

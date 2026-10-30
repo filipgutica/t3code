@@ -2,6 +2,7 @@ import "./workbenchPullRequestSheet.css";
 
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { useEffect } from "react";
 import { Button } from "../components/ui/button";
 import { resolveThreadRouteRef } from "../threadRoutes";
 
@@ -10,6 +11,8 @@ import { Sheet, SheetPopup, SheetTitle } from "../components/ui/sheet";
 import { isElectron } from "../env";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { usePanelAnimationSettings } from "../panelAnimations";
+import { useStableCallback } from "../hooks/useStableCallback";
+import { useWorkbenchAttentionData } from "./WorkbenchAttentionProvider";
 import type { WorkbenchPullRequestSelection } from "./WorkbenchPullRequestPreview";
 
 const getShortcutContext = () => ({
@@ -31,6 +34,10 @@ export function WorkbenchPullRequestSheet({
   onSelect: (selection: WorkbenchPullRequestSelection) => void;
   onClose: () => void;
 }) {
+  const { refreshAttention } = useWorkbenchAttentionData();
+  const refreshOnClose = useStableCallback(refreshAttention);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- invalidates native PR inspection when this mounted inspector closes, including dismissal by route navigation
+  useEffect(() => () => refreshOnClose(), [refreshOnClose]);
   const navigate = useNavigate();
   const routeThread = useParams({ strict: false, select: resolveThreadRouteRef });
   const linkedThread = selection.linkedThread;

@@ -10,9 +10,10 @@ import {
   ThreadId,
   WorkbenchProjectId,
   WorkbenchTicketId,
+  type WorkbenchSnapshot,
   type WorkbenchTicket,
 } from "@t3tools/contracts";
-import { Atom } from "effect/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { ToggleGroup } from "../components/ui/toggle-group";
 
 vi.mock("../hooks/useMediaQuery", () => ({ useMediaQuery: () => true }));
@@ -35,6 +36,11 @@ import { Select } from "../components/ui/select";
 import type { Project } from "../types";
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
 import * as attentionProvider from "./WorkbenchAttentionProvider";
+import { workbenchSnapshotReconciliation } from "./workbenchSnapshotReconciliation";
+
+const nativeSnapshots = Atom.family((_environmentId: EnvironmentId) =>
+  Atom.make<AsyncResult.AsyncResult<WorkbenchSnapshot>>(AsyncResult.initial()),
+);
 
 vi.mock("../state/query", () => ({
   useEnvironmentQuery: () => ({ data: null, error: null, isPending: false }),
@@ -46,7 +52,8 @@ vi.mock("../state/pullRequests", () => ({
 }));
 vi.mock("./state", () => ({
   workbenchEnvironment: {
-    snapshot: () => Atom.make(null),
+    snapshot: ({ environmentId }: { environmentId: EnvironmentId }) =>
+      nativeSnapshots(environmentId),
     ticketPreparations: () => Atom.make(null),
     discardTicketDraftInBatch: { permissionAtom: () => Atom.make(true) },
   },
@@ -128,7 +135,9 @@ const props: ComponentProps<typeof WorkbenchTicketBoard> = {
 
 describe("Workbench Board view", () => {
   let renderer: ReactTestRenderer;
+  let snapshotRegistry: AtomRegistry.AtomRegistry | undefined;
   beforeEach(() => {
+    snapshotRegistry = undefined;
     boardWidth = 1024;
     document.documentElement.style.fontSize = "16px";
     vi.useFakeTimers();
@@ -136,6 +145,7 @@ describe("Workbench Board view", () => {
   });
   afterEach(() => {
     act(() => renderer?.unmount());
+    snapshotRegistry?.dispose();
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -293,7 +303,6 @@ describe("Workbench Board view", () => {
       refreshAttention: vi.fn(),
       attentionReferences: [reference],
       attentionScope: "confirmed-actions-board",
-      setAttentionObservations: vi.fn(),
       attentionReasonsByTicket: new Map([
         [waiting.id, ["Waiting for input"]],
         [unavailable.id, ["PR attention unavailable"]],
@@ -370,7 +379,38 @@ describe("Workbench Board view", () => {
         ticket("Primary only"),
       ],
     };
+    const registry = AtomRegistry.make();
+    snapshotRegistry = registry;
+    registry.mount(workbenchSnapshotReconciliation(workspaceProps.environmentId));
+    const publishRepositories = (linkedProjectIds: ReadonlyArray<ProjectId> | null) => {
+      registry.set(
+        nativeSnapshots(workspaceProps.environmentId),
+        linkedProjectIds === null
+          ? AsyncResult.initial()
+          : AsyncResult.success({
+              projects: [
+                {
+                  id: workspaceProps.projectId,
+                  title: "Workspace",
+                  linkedProjectIds,
+                  revision: 0,
+                  archivedAt: null,
+                  createdAt: "2026-10-30T00:00:00.000Z",
+                  updatedAt: "2026-10-30T00:00:00.000Z",
+                },
+              ],
+              tickets: workspaceProps.tickets,
+              references: [],
+              epics: [],
+              assignments: [],
+              threadRecaps: [],
+              ticketWorkspaces: [],
+              reservedThreadIds: [],
+            }),
+      );
+    };
     act(() => {
+      publishRepositories(workspaceProps.repositoryProjectIds);
       renderer = create(<WorkbenchTicketBoard {...workspaceProps} />);
     });
     act(() => renderer.root.findByType(Select).props.onValueChange("secondary"));
@@ -378,6 +418,7 @@ describe("Workbench Board view", () => {
     expect(renderer.root.findByType("h3").children).toEqual(["Across repositories"]);
     act(() => renderer.unmount());
     act(() => {
+      publishRepositories(null);
       renderer = create(
         <WorkbenchTicketBoard
           {...workspaceProps}
@@ -387,17 +428,26 @@ describe("Workbench Board view", () => {
       );
     });
     expect(renderer.root.findAllByType("article")).toHaveLength(1);
-    act(() => renderer.update(<WorkbenchTicketBoard {...workspaceProps} />));
+    act(() => {
+      publishRepositories(workspaceProps.repositoryProjectIds);
+      renderer.update(<WorkbenchTicketBoard {...workspaceProps} />);
+    });
     expect(renderer.root.findAllByType("article")).toHaveLength(1);
     act(() =>
       renderer.update(<WorkbenchTicketBoard {...workspaceProps} repositoriesById={new Map()} />),
     );
     expect(renderer.root.findAllByType("article")).toHaveLength(1);
-    act(() =>
+    act(() => {
+      publishRepositories([repositories[0]!.id]);
       renderer.update(
         <WorkbenchTicketBoard {...workspaceProps} repositoryProjectIds={[repositories[0]!.id]} />,
-      ),
-    );
+      );
+    });
+    expect(renderer.root.findAllByType("article")).toHaveLength(2);
+    act(() => {
+      publishRepositories(workspaceProps.repositoryProjectIds);
+      renderer.update(<WorkbenchTicketBoard {...workspaceProps} />);
+    });
     expect(renderer.root.findAllByType("article")).toHaveLength(2);
   });
   it.each([
@@ -429,7 +479,6 @@ describe("Workbench Board view", () => {
       refreshAttention: vi.fn(),
       attentionReferences: [],
       attentionScope: "clear-filters-board",
-      setAttentionObservations: vi.fn(),
       attentionReasonsByTicket: new Map([[billing.id, ["Waiting for input"]]]),
       attentionSignalsByTicket: new Map([
         [

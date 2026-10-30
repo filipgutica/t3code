@@ -4,7 +4,8 @@ import type {
   WorkbenchTicket,
   WorkbenchSnapshot,
 } from "@t3tools/contracts";
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useState, type Dispatch, type SetStateAction } from "react";
+import { useStableCallback } from "../hooks/useStableCallback";
 import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
 import { reportWorkbenchCommandFailure } from "./workbenchPageCommands";
@@ -59,10 +60,7 @@ export function useWorkbenchTicketActions({
   readonly closeWorkItem: () => void;
 }) {
   // Status results that settle after an environment switch must not touch the new environment.
-  const statusEnvironmentRef = useRef(environmentId);
-  useEffect(() => {
-    statusEnvironmentRef.current = environmentId;
-  }, [environmentId]);
+  const currentStatusEnvironment = useStableCallback(() => environmentId);
   const updateTicket = useAtomCommand(workbenchEnvironment.updateTicket, { reportFailure: false });
   const regenerateTicketSummary = useAtomCommand(workbenchEnvironment.regenerateTicketSummary, {
     reportFailure: false,
@@ -243,7 +241,7 @@ export function useWorkbenchTicketActions({
         updatedAt,
       },
     });
-    if (statusToken !== null && statusEnvironmentRef.current !== environmentId) return false;
+    if (statusToken !== null && currentStatusEnvironment() !== environmentId) return false;
     if (
       reportWorkbenchCommandFailure(result, (message) =>
         setError(statusToken === null ? message : `${ticket.title}: ${message}`),

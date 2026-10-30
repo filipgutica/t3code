@@ -1,7 +1,7 @@
 import type { ServerConfig } from "@t3tools/contracts";
 import { useWorkbenchTicketDrafts } from "./useWorkbenchTicketDrafts";
 import { useWorkbenchThreadLookup } from "./useWorkbenchThreadLookup";
-import { useAtomValue } from "@effect/atom-react";
+import { useAtomMount, useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { useProjects } from "../state/entities";
@@ -11,8 +11,17 @@ import { useEnvironmentQuery } from "../state/query";
 import { useOptimisticWorkbenchStatus } from "./useOptimisticWorkbenchStatus";
 import { workbenchEnvironment } from "./state";
 import { groupWorkbenchReferences } from "./workbenchReferences.logic";
+import {
+  idleWorkbenchSnapshotReconciliation,
+  workbenchSnapshotReconciliation,
+} from "./workbenchSnapshotReconciliation";
 
 export function useWorkbenchPageData(environmentId: EnvironmentId | null) {
+  useAtomMount(
+    environmentId === null
+      ? idleWorkbenchSnapshotReconciliation
+      : workbenchSnapshotReconciliation(environmentId),
+  );
   // Workbench mutations share orchestration:operate in workbenchRpcPermissions.
   const canOperate = useAtomValue(workbenchEnvironment.createTicket.permissionAtom(environmentId));
   const allProjects = useProjects();
@@ -32,7 +41,6 @@ export function useWorkbenchPageData(environmentId: EnvironmentId | null) {
   });
   const { ticketDrafts, clearTicketDraft } = useWorkbenchTicketDrafts({
     environmentId,
-    snapshot,
   });
   const threadLookup = useWorkbenchThreadLookup({ environmentId, snapshot });
   const referencesByTicket = groupWorkbenchReferences(snapshot?.references ?? []);

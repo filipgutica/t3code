@@ -48,6 +48,7 @@ const layerDesktopClerk = (
     openSystemSettings: () => Effect.succeed(false),
     copyText: () => Effect.void,
   },
+  listeners = new Map<string, (...args: unknown[]) => void>(),
 ) => {
   const environment = DesktopEnvironment.DesktopEnvironment.of({
     stateDir: "/tmp/t3-state",
@@ -62,7 +63,16 @@ const layerDesktopClerk = (
         events.push(`setPath:${name}:${value}`);
       }),
     requestSingleInstanceLock: Effect.succeed(true),
-    on: () => Effect.void,
+    on: (name: string, listener: (...args: unknown[]) => void) =>
+      Effect.acquireRelease(
+        Effect.sync(() => {
+          listeners.set(name, listener);
+        }),
+        () =>
+          Effect.sync(() => {
+            listeners.delete(name);
+          }),
+      ).pipe(Effect.asVoid),
   } as unknown as ElectronApp.ElectronApp["Service"];
 
   return DesktopClerk.layer.pipe(
@@ -156,7 +166,7 @@ it.effect.each([
       assert.strictEqual(delivery?.returnUrl, request.returnUrl);
       assert.deepStrictEqual(receivedWebLinks, []);
     }).pipe(
-      Effect.provide(layerDesktopClerk(true, [], "darwin", undefined, shell)),
+      Effect.provide(layerDesktopClerk(true, [], "darwin", undefined, shell, listeners)),
       Effect.provideService(HostProcess.Arguments, entry === "startup" ? ["t3", link] : ["t3"]),
       Effect.provideService(ElectronApp.ElectronApp, electronApp),
       Effect.provideService(
@@ -222,7 +232,7 @@ it.effect.each([true])(
           "file:///tmp/browser-page.html",
         ]);
       }).pipe(
-        Effect.provide(layerDesktopClerk(true, [], "darwin")),
+        Effect.provide(layerDesktopClerk(true, [], "darwin", undefined, undefined, listeners)),
         Effect.provideService(HostProcess.Arguments, ["t3"]),
         Effect.provideService(ElectronApp.ElectronApp, electronApp),
         Effect.provideService(

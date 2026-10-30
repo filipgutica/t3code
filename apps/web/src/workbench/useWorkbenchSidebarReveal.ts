@@ -104,6 +104,7 @@ export function useWorkbenchSidebarReveal({
     if (decision.pulse || viewport.scrollTop !== scrollTop) pulse(row);
   });
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- owns sidebar scroll/input/animation DOM listeners and releases them when the viewport unmounts
   useLayoutEffect(() => {
     const viewport = contentRef.current?.closest<HTMLElement>('[data-slot="scroll-area-viewport"]');
     if (!viewport) return;
@@ -158,6 +159,7 @@ export function useWorkbenchSidebarReveal({
       pulsingRow.current?.removeAttribute("data-workbench-sidebar-reveal");
     };
   }, [check]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the committed active sidebar row and scrolls/pulses its DOM only when navigation requires a reveal
   useLayoutEffect(() => check());
   return contentRef;
 }

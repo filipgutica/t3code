@@ -763,6 +763,7 @@ function useWorkbenchSidebarRowFocus(navigationRef: RefObject<HTMLElement | null
     ticketId: string | undefined;
     trigger: HTMLElement;
   } | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores DOM focus when a status or settlement commit replaces the focused sidebar action
   useLayoutEffect(() => {
     const previous = previousFocus.current;
     if (!previous || previous.trigger.isConnected) return;

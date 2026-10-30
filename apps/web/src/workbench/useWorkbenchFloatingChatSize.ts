@@ -61,6 +61,7 @@ export function useWorkbenchFloatingChatSize() {
     frame: number | null;
   } | null>(null);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels the drag animation frame and releases document cursor/selection styles if the chat unmounts during resizing
   useEffect(
     () => () => {
       const active = drag.current;
@@ -125,10 +126,12 @@ export function useWorkbenchFloatingChatSize() {
             : clamp(start.height + active.startY - event.clientY, MIN_HEIGHT, max.height),
       };
       // One render per frame keeps the drag smooth; the chat inside does not rerender.
-      active.frame ??= requestAnimationFrame(() => {
-        active.frame = null;
-        setSize(active.next);
-      });
+      if (active.frame == null) {
+        active.frame = requestAnimationFrame(() => {
+          active.frame = null;
+          setSize(active.next);
+        });
+      }
     },
     onPointerUp: (event: PointerEvent<HTMLElement>) => finish(event.pointerId),
     onPointerCancel: (event: PointerEvent<HTMLElement>) => finish(event.pointerId),

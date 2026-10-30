@@ -78,6 +78,10 @@ interface WorkbenchDraftStore {
     submittedContent: DraftContent,
   ) => void;
   readonly clearDraft: (environmentId: EnvironmentId, ticketId: WorkbenchTicketId) => void;
+  readonly reconcileSavedDrafts: (
+    environmentId: EnvironmentId,
+    tickets: ReadonlyArray<Pick<WorkbenchTicket, "id" | "title" | "markdown" | "revision">> | null,
+  ) => void;
 }
 
 export const useWorkbenchDraftStore = create<WorkbenchDraftStore>()((set) => ({
@@ -117,6 +121,24 @@ export const useWorkbenchDraftStore = create<WorkbenchDraftStore>()((set) => ({
       nextEnvironmentDrafts.delete(ticketId);
       if (nextEnvironmentDrafts.size === 0) drafts.delete(environmentId);
       else drafts.set(environmentId, nextEnvironmentDrafts);
+      return { drafts };
+    }),
+  reconcileSavedDrafts: (environmentId, tickets) =>
+    set((state) => {
+      if (tickets === null) return state;
+      const environmentDrafts = state.drafts.get(environmentId);
+      if (!environmentDrafts) return state;
+      const ticketsById = new Map(tickets.map((ticket) => [ticket.id, ticket]));
+      let remaining: Map<WorkbenchTicketId, WorkbenchTicketDraft> | undefined;
+      for (const [ticketId, draft] of environmentDrafts) {
+        if (!isWorkbenchDraftProjected({ draft, ticket: ticketsById.get(ticketId) })) continue;
+        remaining ??= new Map(environmentDrafts);
+        remaining.delete(ticketId);
+      }
+      if (remaining === undefined) return state;
+      const drafts = new Map(state.drafts);
+      if (remaining.size === 0) drafts.delete(environmentId);
+      else drafts.set(environmentId, remaining);
       return { drafts };
     }),
 }));

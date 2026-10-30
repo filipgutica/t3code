@@ -61,6 +61,35 @@ export function useWorkbenchPageSelection({
   const [awaitingProjectId, setAwaitingProjectId] = useState<WorkbenchProjectId | null>(null);
   const [awaitingTicketId, setAwaitingTicketId] = useState<WorkbenchTicketId | null>(null);
   const [awaitingEpicId, setAwaitingEpicId] = useState<WorkbenchEpicId | null>(null);
+  const routeSelection = {
+    projectId: initialProjectId ?? null,
+    ticketId: initialTicketId ?? null,
+    epicId: initialEpicId ?? null,
+  };
+  const [previousRouteSelection, setPreviousRouteSelection] = useState(routeSelection);
+  if (
+    previousRouteSelection.projectId !== routeSelection.projectId ||
+    previousRouteSelection.ticketId !== routeSelection.ticketId ||
+    previousRouteSelection.epicId !== routeSelection.epicId
+  ) {
+    setPreviousRouteSelection(routeSelection);
+    setSelectedProjectId(routeSelection.projectId);
+    setSelectedTicketId(routeSelection.ticketId);
+    setSelectedEpicId(routeSelection.epicId);
+  }
+  if (
+    awaitingProjectId !== null &&
+    snapshot?.projects.some((project) => project.id === awaitingProjectId)
+  )
+    setAwaitingProjectId(null);
+  if (
+    awaitingTicketId !== null &&
+    (snapshot?.tickets.some((ticket) => ticket.id === awaitingTicketId) ||
+      snapshot?.ticketDrafts?.some((draft) => draft.id === awaitingTicketId))
+  )
+    setAwaitingTicketId(null);
+  if (awaitingEpicId !== null && snapshot?.epics.some((epic) => epic.id === awaitingEpicId))
+    setAwaitingEpicId(null);
   const { awaitingSelectedProject, selectedProject, selectedEpic, selectedTicket } =
     resolveWorkbenchSelectedRecords({
       snapshot,
@@ -104,28 +133,7 @@ export function useWorkbenchPageSelection({
     if (selectedProject) void updateRouteSelection(selectedProject.id);
   };
 
-  useEffect(() => {
-    // Route search is an external selection source and can change through browser history.
-    // oxlint-disable-next-line react/set-state-in-effect
-    setSelectedProjectId(initialProjectId ?? null);
-    setSelectedTicketId(initialTicketId ?? null);
-    setSelectedEpicId(initialEpicId ?? null);
-  }, [initialEpicId, initialProjectId, initialTicketId]);
-
-  useEffect(() => {
-    // Creation markers only protect the gap before the server snapshot contains the record.
-    if (snapshot?.projects.some((project) => project.id === awaitingProjectId)) {
-      // oxlint-disable-next-line react/set-state-in-effect -- A server snapshot ends the creation wait.
-      setAwaitingProjectId(null);
-    }
-    if (
-      snapshot?.tickets.some((ticket) => ticket.id === awaitingTicketId) ||
-      snapshot?.ticketDrafts?.some((draft) => draft.id === awaitingTicketId)
-    )
-      setAwaitingTicketId(null);
-    if (snapshot?.epics.some((epic) => epic.id === awaitingEpicId)) setAwaitingEpicId(null);
-  }, [snapshot, awaitingProjectId, awaitingTicketId, awaitingEpicId]);
-
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- normalizes the external router after authoritative records disappear, while preserving pending creation routes
   useEffect(() => {
     if (snapshot === null) return;
     // Let a new route selection reach local state before normalizing missing records.

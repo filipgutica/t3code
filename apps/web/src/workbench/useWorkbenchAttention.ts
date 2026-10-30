@@ -14,6 +14,7 @@ import type { PendingThreadRequests } from "@t3tools/client-runtime/state/thread
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { Atom } from "effect/reactivity";
 import { useState } from "react";
+import { useWorkbenchAttentionQueries } from "./WorkbenchAttentionQueries";
 import { environmentThreadDetails } from "../state/threads";
 import { useUiStateStore } from "../uiStateStore";
 import { resolveThreadLastVisitedAt, resolveThreadStatusPill } from "../components/Sidebar.logic";
@@ -26,29 +27,10 @@ import {
   getWorkbenchPullRequestAttention,
   getWorkbenchThreadNotification,
   getWorkbenchAttentionSignalLabel,
-  mergeWorkbenchPullRequestAttention,
   workbenchAttentionIdentity,
   type WorkbenchAttentionSignal,
   type WorkbenchAttentionInspection,
-  type WorkbenchPullRequestAttention,
 } from "./workbenchAttention.logic";
-
-const pendingObservation = (
-  observation: WorkbenchPullRequestAttention,
-): WorkbenchPullRequestAttention => ({
-  ...observation,
-  reasons: [
-    ...observation.reasons.filter((reason) => !reason.startsWith("PR attention ")),
-    "PR attention loading",
-  ],
-  inspectionStatus: "loading",
-  inspected: false,
-  terminal: false,
-  activityComplete: false,
-  checksKnown: false,
-  reviewDecisionKnown: false,
-  resolvedReviewThreadIds: [],
-});
 
 type PendingRequestsByThread = ReadonlyMap<ThreadId, PendingThreadRequests>;
 
@@ -226,57 +208,13 @@ export function useWorkbenchAttention({
     [...referenceScopes],
     attentionRefresh,
   ]);
-  const [attentionResult, setAttentionResult] = useState<{
-    scope: string;
-    entityScope: string;
-    observations: ReadonlyMap<string, WorkbenchPullRequestAttention>;
-  }>({
-    scope: attentionScope,
+  const observations = useWorkbenchAttentionQueries({
+    environmentId,
     entityScope: attentionEntityScope,
-    observations: new Map(),
+    scope: attentionScope,
+    references: attentionReferences,
+    refreshGeneration: attentionRefresh,
   });
-  const setAttentionObservations = useStableCallback(
-    (observations: ReadonlyMap<string, WorkbenchPullRequestAttention>) =>
-      setAttentionResult((previous) => {
-        const merged = new Map(
-          previous.entityScope === attentionEntityScope
-            ? [...previous.observations]
-                .filter(([key]) => referenceScopes.has(key))
-                .map(
-                  ([key, observation]) =>
-                    [
-                      key,
-                      previous.scope === attentionScope
-                        ? observation
-                        : pendingObservation(observation),
-                    ] as const,
-                )
-            : [],
-        );
-        for (const [key, observation] of observations) {
-          if (!referenceScopes.has(key)) continue;
-          merged.set(
-            key,
-            mergeWorkbenchPullRequestAttention({ previous: merged.get(key), next: observation }),
-          );
-        }
-        return {
-          scope: attentionScope,
-          entityScope: attentionEntityScope,
-          observations: merged,
-        };
-      }),
-  );
-  const observations =
-    attentionResult.entityScope !== attentionEntityScope
-      ? new Map<string, WorkbenchPullRequestAttention>()
-      : attentionResult.scope === attentionScope
-        ? attentionResult.observations
-        : new Map(
-            [...attentionResult.observations]
-              .filter(([key]) => referenceScopes.has(key))
-              .map(([key, observation]) => [key, pendingObservation(observation)]),
-          );
   const attentionByTicket = new Map(
     tickets.map((ticket) => {
       const { signals, reasons } = getTicketThreadAttention({
@@ -338,7 +276,6 @@ export function useWorkbenchAttention({
     refreshAttention,
     attentionReferences,
     attentionScope,
-    setAttentionObservations,
     attentionReasonsByTicket,
     attentionSignalsByTicket,
     attentionInspectionsByTicket,

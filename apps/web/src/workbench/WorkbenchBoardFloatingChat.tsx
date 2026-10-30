@@ -114,6 +114,7 @@ function useBeginBoardDraft({
   const [pending, setPending] = useState(false);
   // The chat remounts for another Workspace or environment; a late reply must not open there.
   const mountedRef = useRef(true);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- marks the mounted planning-request owner so a late server reply cannot open a chat after its Workspace unmounts
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -162,6 +163,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
     setExplicitThreadId(threadId);
     useWorkbenchFloatingChatStore.getState().expand(threadId);
   };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers this mounted Board chat for imperative draft/Thread actions and releases its registration on unmount
   useEffect(() => {
     const { setPageChat, pickThread, expand } = useWorkbenchFloatingChatStore.getState();
     setPageChat({

@@ -114,6 +114,7 @@ const pr = (number) => ({
   baseRefName: "main",
   headRefOid: "a".repeat(40),
   isCrossRepository: false,
+  maintainerCanModify: false,
   author: {
     __typename: "User",
     id: "synthetic-viewer",

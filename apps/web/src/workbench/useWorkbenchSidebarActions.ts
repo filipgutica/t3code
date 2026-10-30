@@ -29,6 +29,7 @@ export function useWorkbenchSidebarActions({
   setTicketArchived: ReturnType<typeof useWorkbenchTicketActions>["setTicketArchived"];
   setError: (message: string | null) => void;
 }) {
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the sidebar's queued imperative actions and consumes them only after the owning route and Thread lookup are ready
   useEffect(() => {
     const runSidebarAction = () => {
       if (environmentId === null || initialTicketId === undefined || snapshot === null || pending)

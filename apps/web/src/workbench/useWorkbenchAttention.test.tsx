@@ -6,9 +6,10 @@ import { makeThreadFixture } from "../test-fixtures";
 import { RegistryContext } from "@effect/atom-react";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import * as Atom from "effect/reactivity/Atom";
-import * as AtomRegistry from "effect/reactivity/AtomRegistry";
+import type * as AtomRegistry from "effect/reactivity/AtomRegistry";
 import { useUiStateStore } from "../uiStateStore";
-import { act, useEffect } from "react";
+import { act, useLayoutEffect } from "react";
+import { createAttentionNativeFixture } from "./workbenchAttention.testkit";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import {
@@ -28,10 +29,7 @@ import {
 } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { useWorkbenchAttention } from "./useWorkbenchAttention";
-import {
-  getWorkbenchPullRequestAttention,
-  workbenchAttentionIdentity,
-} from "./workbenchAttention.logic";
+import { type getWorkbenchPullRequestAttention } from "./workbenchAttention.logic";
 
 vi.mock("../state/threads", () => ({
   environmentThreadDetails: {
@@ -70,6 +68,22 @@ const requestsAtom = Atom.family((key: string) =>
   }),
 );
 let registry: AtomRegistry.AtomRegistry;
+let native: ReturnType<typeof createAttentionNativeFixture>;
+vi.mock("../state/pullRequests", () => ({
+  linkedPullRequestDetailAtom: (target: Parameters<typeof native.summaryQuery>[0]) =>
+    native.summaryQuery(target),
+  pullRequestEnvironment: {
+    activity: (target: Parameters<typeof native.activityQuery>[0]) => native.activityQuery(target),
+  },
+  sharedPullRequestSummaryAtom: (...args: Parameters<typeof native.sharedSummary>) =>
+    native.sharedSummary(...args),
+}));
+vi.mock("./state", () => ({
+  workbenchEnvironment: {
+    pullRequestViewer: (target: Parameters<typeof native.viewerQuery>[0]) =>
+      native.viewerQuery(target),
+  },
+}));
 const environmentId = EnvironmentId.make("source-attention");
 const projectId = WorkbenchProjectId.make("workspace");
 const ticket: WorkbenchTicket = {
@@ -160,7 +174,7 @@ function AttentionHarness({
     threadsById: threads,
     activeThreadRef,
   });
-  useEffect(() => {
+  useLayoutEffect(() => {
     result = attention;
   }, [attention]);
   return null;
@@ -172,19 +186,37 @@ function Harness(props: Parameters<typeof AttentionHarness>[0]) {
     </RegistryContext.Provider>
   );
 }
+async function publishInput(input: Parameters<typeof getWorkbenchPullRequestAttention>[0]) {
+  await act(async () => result.refreshAttention());
+  await act(async () =>
+    native.publish(
+      {
+        environmentId,
+        input: {
+          projectId: input.reference.projectId,
+          repository: input.reference.repository,
+          number: input.reference.number,
+          host: new URL(input.reference.url).host,
+        },
+      },
+      input,
+    ),
+  );
+}
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   useUiStateStore.setState({ threadLastVisitedAtById: {} });
-  registry = AtomRegistry.make();
+  native = createAttentionNativeFixture();
+  registry = native.registry;
 });
-afterEach(() => {
-  act(() => renderer?.unmount());
+afterEach(async () => {
+  await act(async () => renderer?.unmount());
   registry.dispose();
   vi.unstubAllGlobals();
 });
 
-it("retains omitted unresolved discussions during partial reads and retires only confirmed resolutions", () => {
-  act(() => {
+it("retains omitted unresolved discussions during partial reads and retires only confirmed resolutions", async () => {
+  await act(async () => {
     renderer = create(<Harness />);
   });
   const first: PullRequestReviewThread = {
@@ -198,23 +230,14 @@ it("retains omitted unresolved discussions during partial reads and retires only
   };
   const second = { ...first, id: "feedback-two", path: "src/settings.ts", line: 23 };
   const publish = (overrides: Partial<Parameters<typeof getWorkbenchPullRequestAttention>[0]>) =>
-    act(() =>
-      result.setAttentionObservations(
-        new Map([
-          [
-            workbenchAttentionIdentity(environmentId, reference),
-            getWorkbenchPullRequestAttention({
-              reference,
-              summary: { state: "open", checksState: "passing", reviewDecision: "approved" },
-              activity: { reviewThreads: [], commentsTruncated: false },
-              loading: false,
-              error: false,
-              ...overrides,
-            }),
-          ],
-        ]),
-      ),
-    );
+    publishInput({
+      reference,
+      summary: { state: "open", checksState: "passing", reviewDecision: "approved" },
+      activity: { reviewThreads: [], commentsTruncated: false },
+      loading: false,
+      error: false,
+      ...overrides,
+    });
   const known = {
     summary: {
       title: "Keep invitation claims",
@@ -230,9 +253,9 @@ it("retains omitted unresolved discussions during partial reads and retires only
       ?.find((signal) => signal.kind === "unresolved-feedback");
     return signal?.kind === "unresolved-feedback" ? signal.unresolvedReviewThreads : undefined;
   };
-  publish(known);
-  act(() => result.refreshAttention());
-  publish({ activity: null });
+  await publish(known);
+  await act(async () => result.refreshAttention());
+  await publish({ activity: null });
   expect(feedback()).toEqual([first, second]);
   expect(
     result.attentionSignalsByTicket
@@ -240,7 +263,7 @@ it("retains omitted unresolved discussions during partial reads and retires only
       ?.filter((signal) => signal.source.type === "pull-request")
       .map((signal) => signal.kind),
   ).toEqual(["unresolved-feedback"]);
-  publish({
+  await publish({
     reference: { ...reference, title: "Older Thread title" },
     summary: null,
     activity: null,
@@ -251,24 +274,24 @@ it("retains omitted unresolved discussions during partial reads and retires only
   expect(
     feedbackSource?.type === "pull-request" ? feedbackSource.row.pullRequest.title : null,
   ).toBe("Keep invitation claims");
-  publish({ activity: { commentsTruncated: true, reviewThreads: [] } });
+  await publish({ activity: { commentsTruncated: true, reviewThreads: [] } });
   expect(feedback()).toEqual([first, second]);
-  publish({
+  await publish({
     activity: { commentsTruncated: false, reviewThreadsTruncated: true, reviewThreads: [] },
   });
   expect(feedback()).toEqual([first, second]);
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.status).toBe("incomplete");
-  publish({
+  await publish({
     activity: { commentsTruncated: true, reviewThreads: [{ ...first, isResolved: true }] },
   });
   expect(feedback()).toEqual([second]);
   expect(result.attentionReasonsByTicket.get(ticket.id)).toContain("Unresolved PR feedback");
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.status).toBe("incomplete");
-  publish({});
+  await publish({});
   expect(feedback()).toBeUndefined();
   expect(result.attentionReasonsByTicket.get(ticket.id)).not.toContain("Unresolved PR feedback");
-  publish(known);
-  publish({ summary: { state: "merged" }, activity: null });
+  await publish(known);
+  await publish({ summary: { state: "merged" }, activity: null });
   expect(
     result.attentionSignalsByTicket
       .get(ticket.id)
@@ -276,8 +299,8 @@ it("retains omitted unresolved discussions during partial reads and retires only
   ).toEqual([]);
 });
 
-it("preserves each eligible Thread source and deduplicates shared PR reasons independently from coverage", () => {
-  act(() => {
+it("preserves each eligible Thread source and deduplicates shared PR reasons independently from coverage", async () => {
+  await act(async () => {
     renderer = create(<Harness />);
   });
   expect(result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.source)).toEqual([
@@ -291,27 +314,18 @@ it("preserves each eligible Thread source and deduplicates shared PR reasons ind
     cause: "approval",
   });
   const pr = result.attentionReferences[0]!;
-  act(() =>
-    result.setAttentionObservations(
-      new Map([
-        [
-          workbenchAttentionIdentity(environmentId, pr),
-          getWorkbenchPullRequestAttention({
-            reference: pr,
-            summary: {
-              title: "Keep invitation claims",
-              state: "open",
-              checksState: "failing",
-              reviewDecision: "changes-requested",
-            },
-            activity: { commentsTruncated: false, reviewThreads: [] },
-            loading: false,
-            error: true,
-          }),
-        ],
-      ]),
-    ),
-  );
+  await publishInput({
+    reference: pr,
+    summary: {
+      title: "Keep invitation claims",
+      state: "open",
+      checksState: "failing",
+      reviewDecision: "changes-requested",
+    },
+    activity: { commentsTruncated: false, reviewThreads: [] },
+    loading: false,
+    error: true,
+  });
   expect(result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind)).toEqual([
     "question",
     "waiting",
@@ -349,7 +363,7 @@ it("preserves each eligible Thread source and deduplicates shared PR reasons ind
   expect(result.attentionReasonsByTicket.get(ticket.id)).toContain("PR attention unavailable");
 });
 
-it("retains feedback across reference-set and same-PR metadata changes, then prunes a closed PR", () => {
+it("retains feedback across reference-set and same-PR metadata changes, then prunes a closed PR", async () => {
   const link: ThreadPullRequestLink = {
     host: "github.com",
     repository: reference.repository,
@@ -373,7 +387,7 @@ it("retains feedback across reference-set and same-PR metadata changes, then pru
   const nativeThreads = new Map(threadsById)
     .set(waiting.id, { ...waiting, pullRequests: [link] })
     .set(otherWaiting.id, { ...otherWaiting, pullRequests: [link] });
-  act(() => {
+  await act(async () => {
     renderer = create(<Harness threads={nativeThreads} />);
   });
   const reviewThread = {
@@ -385,22 +399,13 @@ it("retains feedback across reference-set and same-PR metadata changes, then pru
     isOutdated: false,
     comments: [],
   };
-  act(() =>
-    result.setAttentionObservations(
-      new Map([
-        [
-          workbenchAttentionIdentity(environmentId, reference),
-          getWorkbenchPullRequestAttention({
-            reference,
-            summary: { state: "open", checksState: "passing", reviewDecision: "approved" },
-            activity: { reviewThreads: [reviewThread], commentsTruncated: false },
-            loading: false,
-            error: false,
-          }),
-        ],
-      ]),
-    ),
-  );
+  await publishInput({
+    reference,
+    summary: { state: "open", checksState: "passing", reviewDecision: "approved" },
+    activity: { reviewThreads: [reviewThread], commentsTruncated: false },
+    loading: false,
+    error: false,
+  });
   expect(result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind)).toContain(
     "unresolved-feedback",
   );
@@ -408,31 +413,22 @@ it("retains feedback across reference-set and same-PR metadata changes, then pru
     ...primary,
     linkedPullRequest: { ...reference, number: 8, url: "https://github.com/acme/web/pull/8" },
   });
-  act(() => renderer.update(<Harness threads={expanded} />));
+  await act(async () => renderer.update(<Harness threads={expanded} />));
   expect(result.attentionReferences).toHaveLength(2);
   expect(result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind)).toContain(
     "unresolved-feedback",
   );
-  act(() =>
-    result.setAttentionObservations(
-      new Map([
-        [
-          workbenchAttentionIdentity(environmentId, reference),
-          getWorkbenchPullRequestAttention({
-            reference,
-            summary: null,
-            activity: null,
-            loading: false,
-            error: true,
-          }),
-        ],
-      ]),
-    ),
-  );
+  await publishInput({
+    reference,
+    summary: null,
+    activity: null,
+    loading: false,
+    error: true,
+  });
   expect(result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind)).toContain(
     "unresolved-feedback",
   );
-  act(() => renderer.update(<Harness threads={nativeThreads} />));
+  await act(async () => renderer.update(<Harness threads={nativeThreads} />));
   expect(result.attentionReferences).toHaveLength(1);
   expect(result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind)).toContain(
     "unresolved-feedback",
@@ -444,23 +440,14 @@ it("retains feedback across reference-set and same-PR metadata changes, then pru
   const metadataChanged = new Map(nativeThreads)
     .set(waiting.id, { ...waiting, pullRequests: [pendingLink] })
     .set(otherWaiting.id, { ...otherWaiting, pullRequests: [pendingLink] });
-  act(() => renderer.update(<Harness threads={metadataChanged} />));
-  act(() =>
-    result.setAttentionObservations(
-      new Map([
-        [
-          workbenchAttentionIdentity(environmentId, reference),
-          getWorkbenchPullRequestAttention({
-            reference: result.attentionReferences[0]!,
-            summary: null,
-            activity: null,
-            loading: false,
-            error: true,
-          }),
-        ],
-      ]),
-    ),
-  );
+  await act(async () => renderer.update(<Harness threads={metadataChanged} />));
+  await publishInput({
+    reference: result.attentionReferences[0]!,
+    summary: null,
+    activity: null,
+    loading: false,
+    error: true,
+  });
   expect(result.attentionSignalsByTicket.get(ticket.id)).toContainEqual(
     expect.objectContaining({
       kind: "unresolved-feedback",
@@ -474,15 +461,15 @@ it("retains feedback across reference-set and same-PR metadata changes, then pru
   const closed = new Map(nativeThreads)
     .set(waiting.id, { ...waiting, pullRequests: [closedLink] })
     .set(otherWaiting.id, { ...otherWaiting, pullRequests: [closedLink] });
-  act(() => renderer.update(<Harness threads={closed} />));
+  await act(async () => renderer.update(<Harness threads={closed} />));
   expect(result.attentionReferences).toHaveLength(0);
   expect(
     result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind),
   ).not.toContain("unresolved-feedback");
 });
 
-it("keeps inspection across equivalent rerenders and known attention while explicit refresh completes", () => {
-  act(() => {
+it("keeps inspection across equivalent rerenders and known attention while explicit refresh completes", async () => {
+  await act(async () => {
     renderer = create(<Harness />);
   });
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]).toMatchObject({
@@ -490,26 +477,21 @@ it("keeps inspection across equivalent rerenders and known attention while expli
     displayStatus: "loading",
     inspected: false,
   });
+  const observations: Parameters<typeof getWorkbenchPullRequestAttention>[0] = {
+    reference,
+    summary: { state: "open", checksState: "failing", reviewDecision: "approved" },
+    activity: { reviewThreads: [], commentsTruncated: false },
+    loading: false,
+    error: false,
+  };
+  await publishInput(observations);
   const scope = result.attentionScope;
-  const observations = new Map([
-    [
-      workbenchAttentionIdentity(environmentId, reference),
-      getWorkbenchPullRequestAttention({
-        reference,
-        summary: { state: "open", checksState: "failing", reviewDecision: "approved" },
-        activity: { reviewThreads: [], commentsTruncated: false },
-        loading: false,
-        error: false,
-      }),
-    ],
-  ]);
-  act(() => result.setAttentionObservations(observations));
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.inspected).toBe(true);
-  act(() => renderer.update(<Harness />));
+  await act(async () => renderer.update(<Harness />));
   expect(result.attentionScope).toBe(scope);
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.inspected).toBe(true);
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.status).toBe("complete");
-  act(() => result.refreshAttention());
+  await act(async () => result.refreshAttention());
   expect(result.attentionScope).not.toBe(scope);
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]).toMatchObject({
     status: "loading",
@@ -519,23 +501,14 @@ it("keeps inspection across equivalent rerenders and known attention while expli
   expect(result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind)).toContain(
     "failed-checks",
   );
-  act(() => result.setAttentionObservations(new Map()));
-  act(() =>
-    result.setAttentionObservations(
-      new Map([
-        [
-          workbenchAttentionIdentity(environmentId, reference),
-          getWorkbenchPullRequestAttention({
-            reference,
-            summary: null,
-            activity: null,
-            loading: true,
-            error: false,
-          }),
-        ],
-      ]),
-    ),
-  );
+  await publishInput({ reference, summary: null, activity: null, loading: true, error: false });
+  await publishInput({
+    reference,
+    summary: null,
+    activity: null,
+    loading: true,
+    error: false,
+  });
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]).toMatchObject({
     status: "loading",
     displayStatus: "complete",
@@ -544,22 +517,13 @@ it("keeps inspection across equivalent rerenders and known attention while expli
   expect(result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind)).toContain(
     "failed-checks",
   );
-  act(() =>
-    result.setAttentionObservations(
-      new Map([
-        [
-          workbenchAttentionIdentity(environmentId, reference),
-          getWorkbenchPullRequestAttention({
-            reference,
-            summary: null,
-            activity: null,
-            loading: false,
-            error: true,
-          }),
-        ],
-      ]),
-    ),
-  );
+  await publishInput({
+    reference,
+    summary: null,
+    activity: null,
+    loading: false,
+    error: true,
+  });
   expect(result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind)).toContain(
     "failed-checks",
   );
@@ -567,37 +531,30 @@ it("keeps inspection across equivalent rerenders and known attention while expli
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.displayStatus).toBe(
     "unavailable",
   );
-  act(() => result.refreshAttention());
+  await act(async () => result.refreshAttention());
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]).toMatchObject({
     status: "loading",
     displayStatus: "unavailable",
     inspected: false,
   });
-  act(() =>
-    result.setAttentionObservations(
-      new Map([
-        [
-          workbenchAttentionIdentity(environmentId, reference),
-          getWorkbenchPullRequestAttention({
-            reference,
-            summary: { state: "open", checksState: "passing", reviewDecision: "approved" },
-            activity: { reviewThreads: [], commentsTruncated: false },
-            loading: false,
-            error: false,
-          }),
-        ],
-      ]),
-    ),
-  );
+  await publishInput({
+    reference,
+    summary: { state: "open", checksState: "passing", reviewDecision: "approved" },
+    activity: { reviewThreads: [], commentsTruncated: false },
+    loading: false,
+    error: false,
+  });
   expect(
     result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind),
   ).not.toContain("failed-checks");
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.inspected).toBe(true);
-  act(() => result.setAttentionObservations(observations));
+  await publishInput(observations);
   expect(result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind)).toContain(
     "failed-checks",
   );
-  act(() => renderer.update(<Harness environment={EnvironmentId.make("empty-environment")} />));
+  await act(async () =>
+    renderer.update(<Harness environment={EnvironmentId.make("empty-environment")} />),
+  );
   expect(result.attentionSignalsByTicket.get(ticket.id)).toEqual([]);
   expect(result.attentionInspectionsByTicket.get(ticket.id)).toEqual([]);
 });
@@ -655,13 +612,13 @@ it("uses native server visits to clear questions and reacts to new requests rath
   expect(threadSignals()).toEqual([]);
 });
 
-it("lets an explicit null server visit restore a question despite a newer local visit", () => {
+it("lets an explicit null server visit restore a question despite a newer local visit", async () => {
   const waitingKey = scopedThreadKey(scopeThreadRef(environmentId, waiting.id));
   useUiStateStore.setState({
     threadLastVisitedAtById: { [waitingKey]: "2026-09-29T00:05:00.000Z" },
   });
   const visited = new Map(threadsById).set(waiting.id, { ...waiting, lastVisitedAt: requestAt });
-  act(() => {
+  await act(async () => {
     renderer = create(<Harness threads={visited} />);
   });
   const threadSignals = () =>
@@ -672,6 +629,6 @@ it("lets an explicit null server visit restore a question despite a newer local 
       );
   expect(threadSignals()).toEqual([]);
   const unread = new Map(visited).set(waiting.id, { ...waiting, lastVisitedAt: null });
-  act(() => renderer.update(<Harness threads={unread} />));
+  await act(async () => renderer.update(<Harness threads={unread} />));
   expect(threadSignals()?.map((signal) => signal.kind)).toEqual(["question"]);
 });

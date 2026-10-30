@@ -29,6 +29,7 @@ export function useWorkbenchCheckoutStatusRefresh({
   const cwdKey = [...new Set(cwds.filter((cwd) => typeof cwd === "string" && cwd.length > 0))]
     .sort()
     .join("\0");
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes native checkout status on window focus/visibility changes and releases those listeners on unmount
   useEffect(() => {
     if (!cwdKey) return;
     const paths = cwdKey.split("\0");

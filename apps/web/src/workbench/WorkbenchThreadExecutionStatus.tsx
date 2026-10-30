@@ -23,6 +23,7 @@ const STATUS_ICONS = {
 function WorkingDuration({ startedAt }: { startedAt: string | null }) {
   const startedMs = startedAt !== null ? Date.parse(startedAt) : Number.NaN;
   const [now, setNow] = useState(() => Date.now());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- owns the working-duration clock interval and stops it when that status unmounts
   useEffect(() => {
     if (Number.isNaN(startedMs)) return;
     const id = window.setInterval(() => setNow(Date.now()), 1_000);

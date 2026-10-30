@@ -27,7 +27,7 @@ describe("Workbench release notes consumed by the desktop updater", () => {
     });
 
     expect(normalizeDesktopUpdateReleaseNotes(body, version, "nightly")).toEqual({
-      releaseNotes: [{ version, items: [change], totalItems: 1 }],
+      releaseNotes: [{ version, items: [change], totalItems: 1, releasedAt: "2026-10-19" }],
       omittedReleaseCount: 0,
     });
     expect(body).toContain(comparison);
@@ -56,6 +56,7 @@ describe("Workbench release notes consumed by the desktop updater", () => {
         version,
         items: ["Fix 9", "Fix 8", "Fix 7", "Fix 6", "Fix 5", "Fix 4", "Fix 3", "Fix 2"],
         totalItems: 9,
+        releasedAt: "2026-10-19",
       },
     ]);
   });
@@ -68,7 +69,7 @@ describe("Workbench release notes consumed by the desktop updater", () => {
     });
 
     expect(normalizeDesktopUpdateReleaseNotes(body, version, "nightly").releaseNotes).toEqual([
-      { version, items: ["Fix update notes"], totalItems: 1 },
+      { version, items: ["Fix update notes"], totalItems: 1, releasedAt: "2026-10-19" },
     ]);
     expect(body).toContain(contributor);
   });

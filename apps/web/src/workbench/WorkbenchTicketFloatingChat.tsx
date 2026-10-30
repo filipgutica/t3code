@@ -92,6 +92,7 @@ function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabl
   );
   const setExplicitThreadId = (threadId: ThreadId) =>
     useWorkbenchFloatingChatStore.getState().pickThread(pageChatKey, threadId);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the mounted Ticket chat as the target for imperative show-Thread actions and removes the registration on unmount
   useEffect(() => {
     const { setPageChat, pickThread, expand } = useWorkbenchFloatingChatStore.getState();
     setPageChat({

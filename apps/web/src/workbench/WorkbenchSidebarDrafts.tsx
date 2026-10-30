@@ -1,7 +1,8 @@
 import type { EnvironmentId, WorkbenchProjectId, WorkbenchTicketId } from "@t3tools/contracts";
 import { ChevronRightIcon, FilePenLineIcon } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 
+import { useStableCallback } from "../hooks/useStableCallback";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
 import { SidebarMenu, SidebarMenuItem } from "../components/ui/sidebar";
 import { WorkbenchSidebarRowNavigation } from "./WorkbenchSidebarRowNavigation";
@@ -100,17 +101,30 @@ export function useWorkbenchSidebarDraftMenu({
   );
   if (confirmedDraft && !writableWorkspaceIds.has(confirmedDraft.projectId))
     readOnlyDraftIds.add(confirmedDraft.id);
-  const actions = useWorkbenchDraftActions({ environmentId, drafts, readOnlyDraftIds });
-  const latest = useRef<{ actions: typeof actions; drafts: typeof drafts } | null>({
-    actions,
+  const latest = useRef<{
+    actions: ReturnType<typeof useWorkbenchDraftActions>;
+    drafts: typeof drafts;
+  } | null>(null);
+  const onDiscarded = useStableCallback(
+    (discarded: ReadonlyArray<WorkbenchConversationDraft>, owner: EnvironmentId) => {
+      if (latest.current === null || owner !== environmentId) return;
+      const selected = discarded.find((draft) => draft.id === selectedTicketId);
+      if (selected && selected.projectId === selectedWorkspaceId)
+        onSelectWorkspace(selected.projectId);
+    },
+  );
+  const actions = useWorkbenchDraftActions({
+    environmentId,
     drafts,
+    readOnlyDraftIds,
+    onDiscarded,
   });
   const pendingMenu = useRef<{ draftId: WorkbenchTicketId; sequence: number } | null>(null);
   const sequence = useRef(0);
   const returnFocus = useRef<DraftMenuRequest | null>(null);
   const [menuError, setMenuError] = useState<string | null>(null);
-  const handled = useRef<typeof actions.confirmation>(null);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps an outstanding native context menu aligned with committed draft availability and closes it if permission or its target changes
   useLayoutEffect(() => {
     latest.current = { actions, drafts };
     const pending = pendingMenu.current;
@@ -121,6 +135,7 @@ export function useWorkbenchSidebarDraftMenu({
       closeMenu();
     }
   });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- invalidates pending native menu replies and closes the owned context menu when this sidebar unmounts
   useLayoutEffect(
     () => () => {
       latest.current = null;
@@ -132,21 +147,6 @@ export function useWorkbenchSidebarDraftMenu({
     },
     [],
   );
-  useEffect(() => {
-    const confirmation = actions.confirmation;
-    if (!actions.discardSucceeded || !confirmation || handled.current === confirmation) return;
-    handled.current = confirmation;
-    const discarded = confirmation.drafts.find((draft) => draft.id === selectedTicketId);
-    if (discarded && discarded.projectId === selectedWorkspaceId)
-      onSelectWorkspace(discarded.projectId);
-  }, [
-    actions.confirmation,
-    actions.discardSucceeded,
-    selectedTicketId,
-    selectedWorkspaceId,
-    onSelectWorkspace,
-  ]);
-
   const openMenu = async (request: DraftMenuRequest) => {
     const api = readLocalApi();
     const draft = drafts.find((candidate) => candidate.id === request.draftId);

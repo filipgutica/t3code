@@ -102,6 +102,7 @@ export function useOptimisticWorkbenchStatus({
   ) {
     setStored(state);
   }
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes committed ticket revisions to in-flight status callbacks without replacing their tokens during an aborted render
   useLayoutEffect(() => {
     stateRef.current = state;
   }, [state]);

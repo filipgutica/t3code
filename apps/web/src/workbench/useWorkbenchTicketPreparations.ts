@@ -69,6 +69,7 @@ export const workbenchThreadPresentationPolicyAtom = Atom.make((get) =>
 /** One shared observer refreshes the compact index while the client is visible and online. */
 export function useWorkbenchTicketPreparationRefresh() {
   const environmentIds = useConnectedEnvironmentIds();
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- owns the visible client's refresh timer and focus/online listeners for the native preparation index
   useEffect(
     () =>
       subscribeToWorkbenchRefresh({
