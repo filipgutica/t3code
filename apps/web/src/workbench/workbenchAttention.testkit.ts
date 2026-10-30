@@ -60,7 +60,9 @@ export function createAttentionNativeFixture() {
   });
   const summary = Atom.family((identity: string) =>
     Atom.make((get) => {
-      const result = get(query(JSON.stringify(["summary", identity])));
+      const result: AsyncResult.AsyncResult<Input["summary"] | Input["activity"], Error> = get(
+        query(JSON.stringify(["summary", identity])),
+      );
       return AsyncResult.getOrElse(result, () => null) as Input["summary"];
     }).pipe(Atom.setIdleTTL(0)),
   );

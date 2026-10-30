@@ -237,7 +237,10 @@ it.each(["unmount", "environment switch"] as const)(
       else renderer.update(<Harness environment={EnvironmentId.make("other-host")} />);
       await router.navigate({
         to: "/workbench",
-        search: { workbenchProjectId: "other-workspace", ticketId: "other-ticket" },
+        search: {
+          workbenchProjectId: WorkbenchProjectId.make("other-workspace"),
+          ticketId: WorkbenchTicketId.make("other-ticket"),
+        },
       });
     });
     await act(async () => {
