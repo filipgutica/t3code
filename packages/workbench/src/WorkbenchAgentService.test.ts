@@ -65,7 +65,7 @@ const testLayer = layer.pipe(
         hasThreadAtWorktreePath: () => Effect.succeed(false),
         findStartingRun: () => Effect.succeedNone,
         contextMarker: () => Effect.succeed(0),
-        findRunMessageText: () => Effect.succeedNone,
+        findRun: () => Effect.succeedNone,
       }),
     ),
   ),
@@ -350,25 +350,26 @@ describe("WorkbenchAgentService", () => {
           createdAt,
         });
         yield* agent.read(worker);
-        expect(yield* store.getThreadContext(worker)).toEqual(Option.none());
+        expect((yield* store.getThreadContext(worker)).seen).toEqual(Option.none());
 
-        const runId = RunId.make("agent-seen-run");
-        yield* store.recordPendingThreadContext({
-          runId,
+        yield* store.settleThreadContext({
           threadId: worker,
-          snapshot: {
-            ownerId: ticket.id,
-            revision: ticket.revision,
-            brief: "Goal",
-            progress: "",
-            references: [],
-            worktrees: [],
-            roster: [],
-          },
-          providerThreadId: null,
-          contextMarker: 0,
+          endedRunIds: [],
+          seen: Option.some({
+            runId: RunId.make("agent-seen-run"),
+            snapshot: {
+              ownerId: ticket.id,
+              revision: ticket.revision,
+              brief: "Goal",
+              progress: "",
+              references: [],
+              worktrees: [],
+              roster: [],
+            },
+            providerThreadId: null,
+            contextMarker: 0,
+          }),
         });
-        yield* store.settlePendingThreadContext({ runId, delivered: true, providerThreadId: null });
         const { state } = yield* agent.update({
           threadId: worker,
           expectedRevision: ticket.revision,
@@ -382,7 +383,9 @@ describe("WorkbenchAgentService", () => {
         yield* agent.addReference({ threadId: worker, url: plan, title: "Plan" });
         yield* agent.removeReference({ threadId: worker, url: plan });
 
-        expect(Option.getOrThrow(yield* store.getThreadContext(worker)).snapshot).toMatchObject({
+        expect(
+          Option.getOrThrow((yield* store.getThreadContext(worker)).seen).snapshot,
+        ).toMatchObject({
           revision: state.revision,
           brief: "Goal, decided",
           progress: "- [ ] PR 1",

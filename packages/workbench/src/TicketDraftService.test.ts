@@ -78,7 +78,7 @@ const fixture = (options?: {
       hasThreadAtWorktreePath: (value) => Effect.sync(() => [...paths.values()].includes(value)),
       findStartingRun: () => Effect.succeedNone,
       contextMarker: () => Effect.succeed(0),
-      findRunMessageText: () => Effect.succeedNone,
+      findRun: () => Effect.succeedNone,
     }),
   );
   const storeLayer = WorkbenchStoreLive.pipe(

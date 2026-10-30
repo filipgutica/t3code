@@ -2,6 +2,7 @@ import {
   isLiveSubagentShell,
   type OrchestrationV2ThreadShell,
   type ProviderThreadId,
+  type RunId,
   type ThreadId,
   WorkbenchOperationError,
   type WorkbenchTicketContext,
@@ -9,6 +10,7 @@ import {
 } from "@t3tools/contracts";
 import { WorkbenchNativeAccess } from "@t3tools/workbench/WorkbenchNativeAccess";
 import type {
+  WorkbenchSeenThreadContext,
   WorkbenchThreadContext,
   WorkbenchThreadContextSnapshot,
 } from "@t3tools/workbench/WorkbenchStore";
@@ -259,6 +261,14 @@ const contextDelta = (input: {
   };
 };
 
+const ENDED_RUN_STATUSES: ReadonlySet<string> = new Set([
+  "completed",
+  "failed",
+  "interrupted",
+  "cancelled",
+  "rolled_back",
+]);
+
 export interface ContextThread {
   readonly id: ThreadId;
   readonly title: string;
@@ -415,7 +425,53 @@ const make = Effect.gen(function* () {
     return Option.some({ title, brief, text, snapshot });
   });
 
-  const forThread = Effect.fn("TicketContextService.forThread")(function* (thread: ContextThread) {
+  /**
+   * What the Thread has seen, from its runs' native state, so nothing waits on an event consumer.
+   * A run that ended without a clean delivery forgets it: its provider may hold changes the record
+   * lacks. While another run is in flight, it is unknown. Reads need no transaction: each resolve
+   * checks again, and a stale outcome only sends more.
+   */
+  const settleDelivery = Effect.fn("TicketContextService.settleDelivery")(function* (
+    threadId: ThreadId,
+    startingRunId: RunId | null,
+  ) {
+    const { seen, pending } = yield* store.getThreadContext(threadId);
+    const findRun = (runId: RunId) => native.findRun({ threadId, runId });
+    const seenRun = Option.isSome(seen) ? yield* findRun(seen.value.runId) : Option.none();
+    // A rollback rewinds the conversation past the run that delivered it.
+    let settled = Option.filter(seen, () =>
+      Option.exists(seenRun, (run) => run.status === "completed"),
+    );
+    const runs = yield* Effect.forEach(
+      pending.filter((row) => row.runId !== startingRunId),
+      (row) => findRun(row.runId).pipe(Effect.map((run) => ({ row, run: Option.getOrNull(run) }))),
+    );
+    runs.sort((a, b) => (a.run?.ordinal ?? Infinity) - (b.run?.ordinal ?? Infinity));
+    let inFlight = false;
+    const endedRunIds: Array<RunId> = [];
+    for (const { row, run } of runs) {
+      if (run !== null && !ENDED_RUN_STATUSES.has(run.status)) {
+        inFlight = true;
+        continue;
+      }
+      endedRunIds.push(row.runId);
+      const text = run?.status === "completed" ? run.text : null;
+      if (text?.trimStart().startsWith("/")) continue; // Slash commands carry no context.
+      settled =
+        text !== null && !row.conflicted
+          ? Option.some<WorkbenchSeenThreadContext>({
+              ...row,
+              providerThreadId: run?.providerThreadId ?? row.providerThreadId,
+            })
+          : Option.none();
+    }
+    return { seen: inFlight ? Option.none() : settled, settled, endedRunIds };
+  });
+
+  const forThread = Effect.fn("TicketContextService.forThread")(function* (
+    thread: ContextThread,
+    known: Option.Option<WorkbenchSeenThreadContext>,
+  ) {
     const owner = yield* store.resolveThreadOwner(thread.id);
     if (Option.isNone(owner)) return Option.none<ThreadTurnContext>();
     const ownerId = owner.value.kind === "ticket" ? owner.value.ticketId : owner.value.draftId;
@@ -444,9 +500,8 @@ const make = Effect.gen(function* () {
       changes: 0,
       delivered,
     };
-    const record = yield* store.getThreadContext(thread.id);
-    if (Option.isNone(record)) return Option.some<ThreadTurnContext>(full);
-    const seen = record.value;
+    if (Option.isNone(known)) return Option.some<ThreadTurnContext>(full);
+    const seen = known.value;
     // A new provider conversation, a compaction, or a handoff lost what the Thread was given.
     const providerChanged =
       thread.activeProviderThreadId !== null &&
@@ -485,11 +540,23 @@ const make = Effect.gen(function* () {
 
   const forTurn = Effect.fn("TicketContextService.forTurn")(function* (thread: ContextThread) {
     const starting = yield* native.findStartingRun(thread.id);
+    const delivery = yield* settleDelivery(
+      thread.id,
+      Option.isSome(starting) ? starting.value.id : null,
+    );
+    if (delivery.endedRunIds.length > 0) {
+      yield* store.settleThreadContext({
+        threadId: thread.id,
+        seen: delivery.settled,
+        endedRunIds: delivery.endedRunIds,
+      });
+    }
     // The turn goes to its run's provider conversation, which may not be the Thread's active one yet.
     const context = yield* forThread(
       Option.isSome(starting) && starting.value.providerThreadId !== null
         ? { ...thread, activeProviderThreadId: starting.value.providerThreadId }
         : thread,
+      delivery.seen,
     );
     if (Option.isNone(context)) return Option.none<string>();
     // A queue-time resolve for an idle Thread has no starting run and records nothing.
@@ -519,11 +586,15 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const shell = yield* getThreadShell(member.threadId);
         if (shell === null) return [];
-        const context = yield* forThread({
-          id: shell.id,
-          title: shell.title,
-          activeProviderThreadId: shell.activeProviderThreadId,
-        });
+        const delivery = yield* settleDelivery(shell.id, null);
+        const context = yield* forThread(
+          {
+            id: shell.id,
+            title: shell.title,
+            activeProviderThreadId: shell.activeProviderThreadId,
+          },
+          delivery.seen,
+        );
         if (Option.isNone(context)) return [];
         const { kind, changes } = context.value;
         return [

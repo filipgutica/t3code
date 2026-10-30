@@ -71,9 +71,15 @@ const testLayer = Layer.mergeAll(
 // Turns that carry no full context name the Ticket and how to reread it.
 const reminder = ticketReminder({ id: ticketId, title: "Restart" });
 
+const briefX = "## Goal\nInvitations expire after a week.";
+const briefY = "## Goal\nInvitations expire after a day.";
+
 type RunStatus = NonNullable<NonNullable<Parameters<typeof runEvent>[0]>["status"]>;
 
-/** Takes a run of the Thread through native start, as turn start and the reactor see it. */
+/**
+ * Takes a run of the Thread through native start. The reactor catches up only until the run
+ * ends, so the next turn resolves before any completion bookkeeping could run.
+ */
 const turn = (
   options: {
     readonly text?: string;
@@ -103,14 +109,14 @@ const turn = (
       (message_id, thread_id, run_id, node_id, role, streaming, created_at, updated_at, payload_json)
       VALUES (${`user-${id}`}, ${current.id}, ${id}, NULL, 'user', 0, ${now}, ${now},
         json_object('text', ${options.text ?? "Continue"}))`;
-    yield* sink.write({ events: [runEvent({ ...run, status: "starting" })] });
+    const [starting] = yield* sink.write({ events: [runEvent({ ...run, status: "starting" })] });
     const context = yield* contexts.forTurn(current);
-    let sequence = 0;
+    let beforeEnd = starting!.sequence;
     for (const status of options.end ?? ["running", "completed"]) {
       const [written] = yield* sink.write({ events: [runEvent({ ...run, status })] });
-      sequence = written!.sequence;
+      if (status === "running") beforeEnd = written!.sequence;
     }
-    yield* reactor.drainThrough(sequence);
+    yield* reactor.drainThrough(beforeEnd);
     return Option.getOrElse(context, () => "");
   });
 
@@ -144,7 +150,7 @@ const start = Effect.gen(function* () {
   yield* (yield* TicketExecutionReactor).start();
   const store = yield* WorkbenchStore;
   yield* editTicket({
-    markdown: "## Goal\nInvitations expire after a week.",
+    markdown: briefX,
     progress: "- [ ] PR 1. API\n- [ ] PR 2. Web",
   });
   yield* store.addReference({
@@ -271,13 +277,13 @@ describe("Ticket context per turn", () => {
             json_object('text', 'Plan it'))`;
         yield* sink.write({ events: [runEvent({ ...first, status: "starting" })] });
         yield* contexts.forTurn(thread);
-        yield* sink.write({ events: [runEvent({ ...first, status: "running" })] });
+        const [running] = yield* sink.write({
+          events: [runEvent({ ...first, status: "running" })],
+        });
+        yield* reactor.drainThrough(running!.sequence);
         const read = yield* agent.read(threadId);
         yield* agent.update({ threadId, expectedRevision: read.revision, brief: "## Goal\nMine." });
-        const [completed] = yield* sink.write({
-          events: [runEvent({ ...first, status: "completed" })],
-        });
-        yield* reactor.drainThrough(completed!.sequence);
+        yield* sink.write({ events: [runEvent({ ...first, status: "completed" })] });
         expect(yield* turn()).toBe(reminder);
       }),
     ),
@@ -343,6 +349,38 @@ describe("Ticket context per turn", () => {
     ),
   );
 
+  it.effect("diffs against a completed turn's context the reactor has not recorded yet", () =>
+    run(
+      Effect.gen(function* () {
+        yield* turn();
+        yield* editTicket({ markdown: briefY });
+        expect(yield* turn()).toContain("+ Invitations expire after a day.");
+        yield* editTicket({ markdown: briefX });
+        expect(yield* turn()).toContain("+ Invitations expire after a week.");
+      }),
+    ),
+  );
+
+  it.effect("sends everything after a stopped turn that may have carried a reverted change", () =>
+    run(
+      Effect.gen(function* () {
+        const store = yield* WorkbenchStore;
+        yield* turn();
+        yield* editTicket({ markdown: briefY });
+        expect(yield* turn({ end: ["running", "failed"] })).toContain("a day");
+        yield* editTicket({ markdown: briefX });
+        expect(yield* turn()).toContain("Brief (user content):");
+
+        yield* editTicket({ markdown: briefY });
+        expect(yield* turn({ end: ["running", "interrupted"] })).toContain("a day");
+        // A restart's pruning must keep the run's snapshot, or Y would look never sent.
+        yield* store.pruneThreadContext;
+        yield* editTicket({ markdown: briefX });
+        expect(yield* turn()).toContain("Brief (user content):");
+      }),
+    ),
+  );
+
   // Queue-time resolves for a later run land on the starting run too; resolve takes no run id.
   const raceRun = (id: string) =>
     Effect.gen(function* () {
@@ -356,11 +394,9 @@ describe("Ticket context per turn", () => {
           json_object('text', 'Continue'))`;
       yield* sink.write({ events: [runEvent({ ...race, status: "starting" })] });
       return Effect.gen(function* () {
-        yield* sink.write({ events: [runEvent({ ...race, status: "running" })] });
-        const [completed] = yield* sink.write({
-          events: [runEvent({ ...race, status: "completed" })],
-        });
-        yield* reactor.drainThrough(completed!.sequence);
+        const [running] = yield* sink.write({ events: [runEvent({ ...race, status: "running" })] });
+        yield* reactor.drainThrough(running!.sequence);
+        yield* sink.write({ events: [runEvent({ ...race, status: "completed" })] });
       });
     });
 
@@ -383,12 +419,10 @@ describe("Ticket context per turn", () => {
     ),
   );
 
-  it.effect("does not record a queued run's snapshot for a starting run that was sent less", () =>
+  it.effect("sends everything after a run whose resolves disagreed", () =>
     run(
       Effect.gen(function* () {
         const contexts = yield* TicketContextService;
-        const briefX = "## Goal\nInvitations expire after a week.";
-        const briefY = "## Goal\nInvitations expire after a day.";
         yield* turn();
         yield* editTicket({ markdown: briefY });
         const complete = yield* raceRun("race-revert");
@@ -398,44 +432,32 @@ describe("Ticket context per turn", () => {
         const sentToA = Option.getOrThrow(yield* contexts.forTurn(thread));
         expect(sentToA).not.toContain("a day");
         yield* complete;
-        yield* editTicket({ markdown: briefY });
-        expect(yield* turn()).toContain("+ Invitations expire after a day.");
+        // Either text may have reached the provider, so a later diff against X could miss Y.
+        expect(yield* turn()).toContain("Brief (user content):");
       }),
     ),
   );
 
-  it.effect("prunes pending snapshots and records of Threads outside a Ticket at startup", () =>
+  it.effect("prunes the records of Threads outside a Ticket at startup", () =>
     run(
       Effect.gen(function* () {
         const store = yield* WorkbenchStore;
         yield* turn();
-        const seen = Option.getOrThrow(yield* store.getThreadContext(threadId));
+        // The member's next run is in flight across the restart.
+        yield* turn({ end: ["running"] });
+        const member = yield* store.getThreadContext(threadId);
+        const seen = Option.getOrThrow(member.seen);
         const orphan = ThreadId.make("context-orphan");
-        for (const [id, owner] of [
-          ["orphan-run", orphan],
-          ["member-run", threadId],
-        ] as const) {
-          yield* store.recordPendingThreadContext({
-            runId: RunId.make(id),
-            threadId: owner,
-            ...seen,
-          });
-        }
-        yield* store.settlePendingThreadContext({
+        yield* store.settleThreadContext({ threadId: orphan, seen: member.seen, endedRunIds: [] });
+        yield* store.recordPendingThreadContext({
+          ...seen,
           runId: RunId.make("orphan-run"),
-          delivered: true,
-          providerThreadId: null,
+          threadId: orphan,
         });
         yield* store.pruneThreadContext;
-        expect(yield* store.getThreadContext(orphan)).toEqual(Option.none());
-        expect(yield* store.getThreadContext(threadId)).toEqual(Option.some(seen));
-        // The member's pending snapshot is gone, so its run promotes nothing.
-        yield* store.settlePendingThreadContext({
-          runId: RunId.make("member-run"),
-          delivered: true,
-          providerThreadId: "provider-thread-9",
-        });
-        expect(yield* store.getThreadContext(threadId)).toEqual(Option.some(seen));
+        expect(yield* store.getThreadContext(orphan)).toEqual({ seen: Option.none(), pending: [] });
+        expect(yield* store.getThreadContext(threadId)).toEqual(member);
+        expect(member.pending).toHaveLength(1);
       }),
     ),
   );

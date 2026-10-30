@@ -1164,9 +1164,9 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
       // What each Thread was last given of its Ticket, so later turns carry only the changes.
       yield* sql`CREATE TABLE workbench_thread_context (
       thread_id TEXT PRIMARY KEY, seen_json TEXT NOT NULL, provider_thread_id TEXT,
-      context_marker INTEGER NOT NULL, updated_at TEXT NOT NULL
+      context_marker INTEGER NOT NULL, run_id TEXT NOT NULL, updated_at TEXT NOT NULL
     )`;
-      // The snapshot a starting run's text was built from; it becomes seen when the run completes.
+      // The snapshot a starting run's text was built from; the run's outcome decides if it was seen.
       // conflicted: two resolves for the run disagreed, so what it was sent is unknown.
       yield* sql`CREATE TABLE workbench_thread_context_pending (
       run_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, snapshot_json TEXT NOT NULL,

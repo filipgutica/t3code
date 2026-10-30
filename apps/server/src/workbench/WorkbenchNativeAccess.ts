@@ -98,16 +98,23 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
       ORDER BY ordinal DESC LIMIT 1
     `,
   });
-  const findRunMessageRow = SqlSchema.findOneOption({
+  const findRunRow = SqlSchema.findOneOption({
     Request: Schema.Struct({ threadId: ThreadId, runId: RunId }),
-    Result: Schema.Struct({ text: Schema.String }),
+    Result: Schema.Struct({
+      ordinal: Schema.Number,
+      status: Schema.String,
+      providerThreadId: Schema.NullOr(ProviderThreadId),
+      text: Schema.NullOr(Schema.String),
+    }),
     execute: ({ threadId, runId }) => sql`
-      SELECT json_extract(message.payload_json, '$.text') AS "text"
-      FROM orchestration_v2_projection_messages AS message
-      JOIN orchestration_v2_projection_runs AS run
+      SELECT run.ordinal AS "ordinal", run.status AS "status",
+        run.provider_thread_id AS "providerThreadId",
+        json_extract(message.payload_json, '$.text') AS "text"
+      FROM orchestration_v2_projection_runs AS run
+      LEFT JOIN orchestration_v2_projection_messages AS message
         ON message.message_id = json_extract(run.payload_json, '$.userMessageId')
+        AND message.thread_id = run.thread_id
       WHERE run.thread_id = ${threadId} AND run.run_id = ${runId}
-        AND message.thread_id = ${threadId}
     `,
   });
 
@@ -157,11 +164,8 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
         Effect.mapError(persistenceError),
       ),
     ),
-    findRunMessageText: Effect.fn("WorkbenchNativeAccess.findRunMessageText")((input) =>
-      findRunMessageRow(input).pipe(
-        Effect.map(Option.map((row) => row.text)),
-        Effect.mapError(persistenceError),
-      ),
+    findRun: Effect.fn("WorkbenchNativeAccess.findRun")((input) =>
+      findRunRow(input).pipe(Effect.mapError(persistenceError)),
     ),
   });
 });

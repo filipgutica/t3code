@@ -14,7 +14,6 @@ import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -24,7 +23,6 @@ import { forkParked } from "../serverActivation.ts";
 import { OrchestratorV2 } from "../orchestration-v2/Orchestrator.ts";
 import { EventSinkV2 } from "../orchestration-v2/EventSink.ts";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
-import { WorkbenchNativeAccess } from "@t3tools/workbench/WorkbenchNativeAccess";
 import { ThreadRecapService } from "./ThreadRecapService.ts";
 import { WorkbenchStore } from "./WorkbenchStore.ts";
 
@@ -36,12 +34,6 @@ const RECAPPED_RUN_STATUSES: ReadonlySet<string> = new Set([
 ]);
 
 const RECAP_WINDOW_MS = Duration.toMillis(Duration.hours(24));
-
-const UNDELIVERED_RUN_STATUSES: ReadonlySet<string> = new Set([
-  "failed",
-  "interrupted",
-  "cancelled",
-]);
 
 type ExecutionFailure = {
   readonly runId: RunId;
@@ -65,7 +57,6 @@ const make = Effect.gen(function* () {
   const store = yield* WorkbenchStore;
   const sink = yield* EventSinkV2;
   const recaps = yield* ThreadRecapService;
-  const native = yield* WorkbenchNativeAccess;
 
   // Startup replay and recovery can offer old runs; only the last day's runs get recaps.
   const isRecapRecent = (completedAt: DateTime.Utc) =>
@@ -130,44 +121,6 @@ const make = Effect.gen(function* () {
             cause: Cause.pretty(cause),
           }),
     ),
-  );
-
-  // Ticket context a turn carried counts as seen only once the turn completes: a run can be
-  // running before its provider accepts the prompt. Slash commands pass without it. A stopped
-  // or failed run may repeat changes next turn; a rollback rewinds what the Thread was given.
-  // Untraced: it sees every stored event, so a span each would be too frequent.
-  const settleTicketContext = Effect.fnUntraced(
-    function* (stored: OrchestrationV2StoredEvent) {
-      const event = stored.event;
-      if (
-        (event.type !== "run.created" && event.type !== "run.updated") ||
-        (event.nodeId !== undefined && event.nodeId !== event.payload.rootNodeId)
-      )
-        return;
-      const { id: runId, status, providerThreadId } = event.payload;
-      if (status === "rolled_back") return yield* store.forgetThreadContext(event.threadId);
-      if (status !== "completed" && !UNDELIVERED_RUN_STATUSES.has(status)) return;
-      const message =
-        status === "completed"
-          ? yield* native.findRunMessageText({ threadId: event.threadId, runId })
-          : Option.none<string>();
-      yield* store.settlePendingThreadContext({
-        runId,
-        delivered: Option.isSome(message) && !message.value.trimStart().startsWith("/"),
-        providerThreadId,
-      });
-    },
-    (effect, stored) =>
-      effect.pipe(
-        Effect.catchCause((cause) =>
-          Cause.hasInterruptsOnly(cause)
-            ? Effect.interrupt
-            : Effect.logWarning("Ticket context delivery could not be recorded", {
-                eventId: stored.event.id,
-                cause: Cause.pretty(cause),
-              }),
-        ),
-      ),
   );
 
   const appendFailureActivity = (execution: ExecutionFailure, cause: Cause.Cause<unknown>) => {
@@ -307,7 +260,6 @@ const make = Effect.gen(function* () {
                       }
                     }),
                   ),
-                  Effect.andThen(settleTicketContext(stored)),
                   Effect.andThen(scheduleRecap(stored)),
                   Effect.andThen(noteSeen(stored.sequence)),
                 ),

@@ -227,7 +227,7 @@ const policyLayer = (
         NodeServices.layer,
         Layer.mock(WorkbenchStore)({
           listReferences: () => Effect.succeed([]),
-          getThreadContext: () => Effect.succeedNone,
+          getThreadContext: () => Effect.succeed({ seen: Option.none(), pending: [] }),
           getTicketDraftForThread: () => Effect.succeed(phase === null ? null : draft(phase)),
           getThreadRoster: () => readRoster,
           resolveThreadOwner: () =>

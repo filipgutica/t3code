@@ -68,7 +68,7 @@ const nativeLayer = (options?: {
       hasThreadAtWorktreePath: () => Effect.succeed(false),
       findStartingRun: () => Effect.succeedNone,
       contextMarker: () => Effect.succeed(0),
-      findRunMessageText: () => Effect.succeedNone,
+      findRun: () => Effect.succeedNone,
       executionSequence: options?.executionSequence ?? Effect.succeed(0),
       startedExecutionRunIds: Effect.succeed([]),
       hasPendingThreadWork: () => Effect.succeed(false),
@@ -1842,11 +1842,12 @@ describe("Ticket Progress and Thread context", () => {
     }).pipe(Effect.provide(testLayer({ projects: new Set([projectId]) }))),
   );
 
-  it.effect("promotes a run's pending snapshot only when delivered and unambiguous", () =>
+  it.effect("marks a run's pending snapshot conflicted only when its resolves disagree", () =>
     Effect.gen(function* () {
       const store = yield* WorkbenchStore;
       const runId = RunId.make("progress-run");
-      const record = (brief: string, run = runId) =>
+      const conflicted = RunId.make("progress-conflicted-run");
+      const record = (brief: string, run: RunId) =>
         store.recordPendingThreadContext({
           runId: run,
           threadId,
@@ -1854,43 +1855,29 @@ describe("Ticket Progress and Thread context", () => {
           providerThreadId: "provider-1",
           contextMarker: 2,
         });
-      yield* record("First");
-      // A repeat of the same snapshot leaves the run unambiguous.
-      yield* record("First");
-      yield* store.settlePendingThreadContext({
-        runId,
-        delivered: true,
-        providerThreadId: "provider-2",
-      });
-      expect(Option.getOrThrow(yield* store.getThreadContext(threadId))).toEqual({
+      yield* record("First", runId);
+      yield* record("First", runId);
+      yield* record("Queued", conflicted);
+      yield* record("Starting", conflicted);
+      const { pending } = yield* store.getThreadContext(threadId);
+      expect(
+        Object.fromEntries(pending.map((row) => [row.runId, [row.snapshot.brief, row.conflicted]])),
+      ).toEqual({ [runId]: ["First", false], [conflicted]: ["Queued", true] });
+
+      const seen = {
         snapshot: snapshot({ brief: "First" }),
         providerThreadId: "provider-2",
         contextMarker: 2,
+        runId,
+      };
+      yield* store.settleThreadContext({ threadId, seen: Option.some(seen), endedRunIds: [runId] });
+      expect((yield* store.getThreadContext(threadId)).seen).toEqual(Option.some(seen));
+      yield* store.settleThreadContext({
+        threadId,
+        seen: Option.none(),
+        endedRunIds: [conflicted],
       });
-      // Two different snapshots leave what the run was sent unknown, so it promotes nothing.
-      const conflicted = RunId.make("progress-conflicted-run");
-      yield* record("Queued", conflicted);
-      yield* record("Starting", conflicted);
-      yield* store.settlePendingThreadContext({
-        runId: conflicted,
-        delivered: true,
-        providerThreadId: null,
-      });
-      // Settled once; a replayed completed event finds nothing to promote.
-      yield* record("Undelivered", RunId.make("progress-failed-run"));
-      yield* store.settlePendingThreadContext({
-        runId: RunId.make("progress-failed-run"),
-        delivered: false,
-        providerThreadId: null,
-      });
-      yield* store.settlePendingThreadContext({
-        runId: RunId.make("progress-failed-run"),
-        delivered: true,
-        providerThreadId: null,
-      });
-      expect(Option.getOrThrow(yield* store.getThreadContext(threadId)).snapshot.brief).toBe(
-        "First",
-      );
+      expect(yield* store.getThreadContext(threadId)).toEqual({ seen: Option.none(), pending: [] });
     }).pipe(Effect.provide(testLayer())),
   );
 
@@ -1903,7 +1890,7 @@ describe("Ticket Progress and Thread context", () => {
       });
       // Without a record there is nothing to update; the first turn sends everything.
       yield* store.updateSeenThreadContext({ threadId, ownerId: ticketId, update: seen("Read") });
-      expect(yield* store.getThreadContext(threadId)).toEqual(Option.none());
+      expect(yield* store.getThreadContext(threadId)).toEqual({ seen: Option.none(), pending: [] });
 
       // A first turn's own read reaches its pending snapshot before any record exists.
       const delivered = RunId.make("progress-delivered");
@@ -1915,17 +1902,16 @@ describe("Ticket Progress and Thread context", () => {
         contextMarker: 0,
       });
       yield* store.updateSeenThreadContext({ threadId, ownerId: ticketId, update: seen("First") });
-      yield* store.settlePendingThreadContext({
-        runId: delivered,
-        delivered: true,
-        providerThreadId: null,
+      const [first] = (yield* store.getThreadContext(threadId)).pending;
+      expect(first?.snapshot.brief).toBe("First");
+      yield* store.settleThreadContext({
+        threadId,
+        seen: Option.some({ ...first!, runId: delivered }),
+        endedRunIds: [delivered],
       });
-      expect(Option.getOrThrow(yield* store.getThreadContext(threadId)).snapshot.brief).toBe(
-        "First",
-      );
-      const running = RunId.make("progress-running");
+
       yield* store.recordPendingThreadContext({
-        runId: running,
+        runId: RunId.make("progress-running"),
         threadId,
         snapshot: snapshot(),
         providerThreadId: null,
@@ -1937,27 +1923,25 @@ describe("Ticket Progress and Thread context", () => {
         ownerId: WorkbenchTicketId.make("another-ticket"),
         update: seen("Elsewhere"),
       });
-      expect(Option.getOrThrow(yield* store.getThreadContext(threadId)).snapshot.brief).toBe(
-        "Read",
-      );
-      // The running turn's snapshot is promoted late; it must not bring the old brief back.
-      yield* store.settlePendingThreadContext({
-        runId: running,
-        delivered: true,
-        providerThreadId: null,
-      });
-      expect(Option.getOrThrow(yield* store.getThreadContext(threadId)).snapshot.brief).toBe(
-        "Read",
-      );
+      // The running turn's snapshot settles later; it must not bring the old brief back.
+      const after = yield* store.getThreadContext(threadId);
+      expect(Option.getOrThrow(after.seen).snapshot.brief).toBe("Read");
+      expect(after.pending.map((row) => row.snapshot.brief)).toEqual(["Read"]);
     }).pipe(Effect.provide(testLayer())),
   );
 
-  it.effect("keeps Progress and each Thread's seen context across a restart", () =>
+  it.effect("keeps Progress and each Thread's seen and pending context across a restart", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "workbench-progress-" });
       const filename = `${directory}/state.sqlite`;
-      const runId = RunId.make("progress-restart-run");
+      const seen = {
+        snapshot: snapshot({ progress: "- [x] PR 1" }),
+        providerThreadId: "provider-1",
+        contextMarker: 4,
+        runId: RunId.make("progress-restart-run"),
+      };
+      const pending = { ...seen, runId: RunId.make("progress-in-flight-run"), conflicted: false };
       yield* Effect.gen(function* () {
         const store = yield* WorkbenchStore;
         const ticket = yield* seedTicket({ store, projectId, workspaceId, ticketId });
@@ -1967,26 +1951,15 @@ describe("Ticket Progress and Thread context", () => {
           progress: "- [x] PR 1",
           updatedAt: "2026-09-07T11:00:00.000Z",
         });
-        yield* store.recordPendingThreadContext({
-          runId,
-          threadId,
-          snapshot: snapshot({ progress: "- [x] PR 1" }),
-          providerThreadId: "provider-1",
-          contextMarker: 4,
-        });
-        yield* store.settlePendingThreadContext({
-          runId,
-          delivered: true,
-          providerThreadId: null,
-        });
+        yield* store.settleThreadContext({ threadId, seen: Option.some(seen), endedRunIds: [] });
+        yield* store.recordPendingThreadContext({ ...pending, threadId });
       }).pipe(Effect.provide(fileLayer(filename, { projects: new Set([projectId]) })));
       yield* Effect.gen(function* () {
         const store = yield* WorkbenchStore;
         expect(Option.getOrThrow(yield* store.getTicket(ticketId)).progress).toBe("- [x] PR 1");
-        expect(Option.getOrThrow(yield* store.getThreadContext(threadId))).toEqual({
-          snapshot: snapshot({ progress: "- [x] PR 1" }),
-          providerThreadId: "provider-1",
-          contextMarker: 4,
+        expect(yield* store.getThreadContext(threadId)).toEqual({
+          seen: Option.some(seen),
+          pending: [pending],
         });
       }).pipe(Effect.provide(fileLayer(filename)));
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),

@@ -53,10 +53,18 @@ export class WorkbenchNativeAccess extends Context.Service<
     >;
     /** Position of the Thread's latest completed compaction or context handoff, or 0. */
     readonly contextMarker: (threadId: ThreadId) => Effect.Effect<number, WorkbenchOperationError>;
-    /** The user message text that started a run. */
-    readonly findRunMessageText: (input: {
+    /** A run of the Thread, the conversation it used, and the user message text that started it. */
+    readonly findRun: (input: {
       readonly threadId: ThreadId;
       readonly runId: RunId;
-    }) => Effect.Effect<Option.Option<string>, WorkbenchOperationError>;
+    }) => Effect.Effect<
+      Option.Option<{
+        readonly ordinal: number;
+        readonly status: string;
+        readonly providerThreadId: ProviderThreadId | null;
+        readonly text: string | null;
+      }>,
+      WorkbenchOperationError
+    >;
   }
 >()("@t3tools/workbench/WorkbenchNativeAccess") {}
