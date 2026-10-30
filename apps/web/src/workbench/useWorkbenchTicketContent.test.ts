@@ -113,7 +113,17 @@ describe("archived Ticket content", () => {
       );
       expect(content?.ticket?.generatedSummary).toEqual(failedSummary);
       expect(content?.ticket?.progress).toBe("- [x] PR 1\n- [ ] PR 2");
-      await act(async () => root?.update(view(environmentId, { ...activeSnapshot, revision: 5 })));
+      // An agent edit: the snapshot's revision and brief must stay paired while Progress loads.
+      await act(async () =>
+        root?.update(
+          view(environmentId, {
+            ...activeSnapshot,
+            revision: 5,
+            markdown: "Agent changed the brief",
+          }),
+        ),
+      );
+      expect(content?.ticket).toMatchObject({ revision: 5, markdown: "Agent changed the brief" });
       expect(content?.ticket?.progress).toBe("- [x] PR 1\n- [ ] PR 2");
       await act(async () => root?.update(view(EnvironmentId.make("other-host"), activeSnapshot)));
       expect(content?.ticket).toBeNull();

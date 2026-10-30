@@ -1,7 +1,12 @@
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import {
   workbenchProgressCounts,
   type EnvironmentId,
+  type ThreadId,
+  type WorkbenchAssignment,
+  type WorkbenchReference,
   type WorkbenchTicket,
+  type WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
 import { useId, useState } from "react";
 
@@ -12,6 +17,7 @@ import { WorkbenchProvenanceBadge } from "./WorkbenchReferences";
 import { WorkbenchProgressCount } from "./WorkbenchProgressCount";
 import { WorkbenchProgressChecklist } from "./WorkbenchProgress";
 import { WorkbenchQueryError } from "./WorkbenchQueryError";
+import { useWorkbenchThreadRecaps } from "./useWorkbenchThreadRecaps";
 import {
   WorkbenchTicketPanelHeader,
   useWorkbenchTicketPanelCollapsed,
@@ -71,14 +77,45 @@ export function WorkbenchTicketProgress({
   );
 }
 
+type SharedContextSources = {
+  references: ReadonlyArray<WorkbenchReference>;
+  assignments: ReadonlyArray<WorkbenchAssignment>;
+  threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
+  ticketWorkspace: WorkbenchTicketWorkspace | undefined;
+};
+
+/** Everything in the text that keeps the Ticket's revision: References, Threads, recaps, work area. */
+const sharedContextInputs = (
+  { references, assignments, threadsById, ticketWorkspace }: SharedContextSources,
+  recaps: ReadonlyMap<ThreadId, string>,
+) =>
+  JSON.stringify([
+    references.map((reference) => [reference.url, reference.title]),
+    assignments.map(({ threadId }) => {
+      const thread = threadsById.get(threadId);
+      return [
+        threadId,
+        thread?.title,
+        thread?.updatedAt,
+        thread?.providerInstanceId,
+        thread?.modelSelection.model,
+        thread?.settledOverride,
+        thread?.archivedAt,
+        thread?.hasPendingApprovals,
+        thread?.hasPendingUserInput,
+        recaps.get(threadId) ?? null,
+      ];
+    }),
+    ticketWorkspace ?? null,
+  ]);
+
 export function WorkbenchTicketSharedContext({
   environmentId,
   ticket,
-  inputs,
-}: {
+  ...sources
+}: SharedContextSources & {
   environmentId: EnvironmentId;
   ticket: WorkbenchTicket;
-  inputs: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   return (
@@ -92,7 +129,7 @@ export function WorkbenchTicketSharedContext({
       />
       <div id="workbench-ticket-shared-context" hidden={!expanded}>
         {expanded ? (
-          <SharedContextContent environmentId={environmentId} ticket={ticket} inputs={inputs} />
+          <SharedContextContent environmentId={environmentId} ticket={ticket} sources={sources} />
         ) : null}
       </div>
     </section>
@@ -102,16 +139,21 @@ export function WorkbenchTicketSharedContext({
 function SharedContextContent({
   environmentId,
   ticket,
-  inputs,
+  sources,
 }: {
   environmentId: EnvironmentId;
   ticket: WorkbenchTicket;
-  inputs: string;
+  sources: SharedContextSources;
 }) {
+  const recaps = useWorkbenchThreadRecaps(environmentId);
   const query = useEnvironmentQuery(
     workbenchEnvironment.ticketContext({
       environmentId,
-      input: { ticketId: ticket.id, revision: ticket.revision, inputs },
+      input: {
+        ticketId: ticket.id,
+        revision: ticket.revision,
+        inputs: sharedContextInputs(sources, recaps),
+      },
     }),
   );
   if (query.error) return <WorkbenchQueryError query={query} />;

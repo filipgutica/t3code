@@ -22,10 +22,15 @@ const omitsContent = (ticket: WorkbenchTicket) =>
   ticket.markdownOmitted || (ticket.progress === undefined && ticket.progressTotal !== undefined);
 
 // Summary state changes without a new revision, so take only the omitted fields from the query.
+// An edit saves the snapshot's revision, so it must also carry the snapshot's markdown.
 const withLoadedContent = (ticket: WorkbenchTicket, loaded: WorkbenchTicket | null) => {
   if (!loaded) return null;
-  const { markdownOmitted: _omitted, ...live } = ticket;
-  return { ...live, markdown: loaded.markdown, progress: loaded.progress ?? "" };
+  const { markdownOmitted, ...live } = ticket;
+  return {
+    ...live,
+    markdown: markdownOmitted ? loaded.markdown : ticket.markdown,
+    progress: loaded.progress ?? "",
+  };
 };
 
 export function useWorkbenchTicketContent(environmentId: EnvironmentId, ticket: WorkbenchTicket) {

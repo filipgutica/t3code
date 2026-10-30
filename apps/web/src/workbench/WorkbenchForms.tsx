@@ -1265,12 +1265,10 @@ function WorkbenchTicketDetailController({
                 key={ticket.id}
                 environmentId={environmentId}
                 ticket={ticket}
-                inputs={getWorkbenchSharedContextInputs({
-                  references,
-                  assignments,
-                  threadsById,
-                  ticketWorkspace,
-                })}
+                references={references}
+                assignments={assignments}
+                threadsById={threadsById}
+                ticketWorkspace={ticketWorkspace}
               />
               <WorkbenchTicketAttentionPanel
                 environmentId={environmentId}
@@ -5156,25 +5154,6 @@ function getWorkbenchDetailAssignments({
     associatedPullRequests,
     assignment,
   };
-}
-
-function getWorkbenchSharedContextInputs({
-  references,
-  assignments,
-  threadsById,
-  ticketWorkspace,
-}: Pick<
-  WorkbenchTicketDetailProps,
-  "references" | "assignments" | "threadsById" | "ticketWorkspace"
->) {
-  return JSON.stringify([
-    references.map((reference) => [reference.url, reference.title]),
-    assignments.map((assignment) => [
-      assignment.threadId,
-      threadsById.get(assignment.threadId)?.title,
-    ]),
-    ticketWorkspace ?? null,
-  ]);
 }
 
 function getWorkbenchDetailWorkspace({
