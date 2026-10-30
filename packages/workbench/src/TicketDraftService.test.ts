@@ -76,7 +76,7 @@ const fixture = (options?: {
             : Option.none();
         }),
       hasThreadAtWorktreePath: (value) => Effect.sync(() => [...paths.values()].includes(value)),
-      findStartingRunId: () => Effect.succeedNone,
+      findStartingRun: () => Effect.succeedNone,
       contextMarker: () => Effect.succeed(0),
       findRunMessageText: () => Effect.succeedNone,
     }),

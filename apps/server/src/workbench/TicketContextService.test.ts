@@ -73,6 +73,7 @@ const turn = (
     readonly text?: string;
     readonly end?: "running" | "failed";
     readonly thread?: ContextThread;
+    readonly providerThreadId?: ProviderThreadId;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -90,7 +91,7 @@ const turn = (
       id,
       ordinal,
       threadId: current.id,
-      providerThreadId: current.activeProviderThreadId,
+      providerThreadId: options.providerThreadId ?? current.activeProviderThreadId,
     };
     yield* sql`INSERT INTO orchestration_v2_projection_messages
       (message_id, thread_id, run_id, node_id, role, streaming, created_at, updated_at, payload_json)
@@ -253,6 +254,33 @@ describe("Ticket context per turn", () => {
         };
         expect(yield* turn({ thread: switched })).toContain("Brief (user content):");
         expect(yield* turn({ thread: switched })).toBe("");
+      }),
+    ),
+  );
+
+  it.effect("sends the full context when the starting run opens a new provider conversation", () =>
+    run(
+      Effect.gen(function* () {
+        yield* turn();
+        // The Thread's active conversation may still be the old one while the new run starts.
+        const next = ProviderThreadId.make("provider-thread-2");
+        expect(yield* turn({ providerThreadId: next })).toContain("Brief (user content):");
+        expect(yield* turn({ providerThreadId: next })).toBe("");
+      }),
+    ),
+  );
+
+  it.effect("sends the full context when a rewrite would cost more than rereading it", () =>
+    run(
+      Effect.gen(function* () {
+        const brief = (word: string) =>
+          Array.from({ length: 200 }, (_, line) => `${word} decision ${line}.`).join("\n");
+        yield* editTicket({ markdown: brief("Old") });
+        yield* turn();
+        yield* editTicket({ markdown: brief("New") });
+        const rewritten = yield* turn();
+        expect(rewritten).toContain("Brief (user content):");
+        expect(rewritten).not.toContain("since your last turn");
       }),
     ),
   );

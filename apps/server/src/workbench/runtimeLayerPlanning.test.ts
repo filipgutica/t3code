@@ -474,6 +474,11 @@ it.effect("starts a follow-up queued behind a planning turn without checkpoints"
     );
     const final = yield* orchestrator.getThreadProjection(planningThreadId);
     assert.equal(final.runs.find((run) => run.id === first.id)?.status, "completed");
+    // Workbench records delivered Ticket context against the run's provider conversation and
+    // compares the Thread's active one later, so a queued run must not leave them apart.
+    for (const run of final.runs) {
+      assert.equal(run.providerThreadId, final.thread.activeProviderThreadId);
+    }
     assert.isNull(final.nodes.find((node) => node.id === followUp.rootNodeId)?.checkpointScopeId);
     assert.deepEqual(final.checkpointScopes, []);
     assert.deepEqual(final.checkpoints, []);

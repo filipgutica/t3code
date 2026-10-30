@@ -477,13 +477,18 @@ const make = Effect.gen(function* () {
   });
 
   const forTurn = Effect.fn("TicketContextService.forTurn")(function* (thread: ContextThread) {
-    const context = yield* forThread(thread);
+    const starting = yield* native.findStartingRun(thread.id);
+    // The turn goes to its run's provider conversation, which may not be the Thread's active one yet.
+    const context = yield* forThread(
+      Option.isSome(starting) && starting.value.providerThreadId !== null
+        ? { ...thread, activeProviderThreadId: starting.value.providerThreadId }
+        : thread,
+    );
     if (Option.isNone(context)) return Option.none<string>();
     // A queue-time resolve for an idle Thread has no starting run and records nothing.
-    const runId = yield* native.findStartingRunId(thread.id);
-    if (Option.isSome(runId)) {
+    if (Option.isSome(starting)) {
       yield* store.recordPendingThreadContext({
-        runId: runId.value,
+        runId: starting.value.id,
         threadId: thread.id,
         ...context.value.delivered,
       });

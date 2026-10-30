@@ -64,7 +64,7 @@ const withStore = <A, E>({
             ),
           findThread: () => Effect.succeedNone,
           hasThreadAtWorktreePath: () => Effect.succeed(false),
-          findStartingRunId: () => Effect.succeedNone,
+          findStartingRun: () => Effect.succeedNone,
           contextMarker: () => Effect.succeed(0),
           findRunMessageText: () => Effect.succeedNone,
           executionSequence: Effect.succeed(0),

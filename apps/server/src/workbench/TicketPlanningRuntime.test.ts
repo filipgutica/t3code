@@ -219,7 +219,7 @@ const policyLayer = (
       Layer.mergeAll(
         Layer.mock(WorkbenchNativeAccess)({
           contextMarker: () => Effect.succeed(0),
-          findStartingRunId: () => Effect.succeedNone,
+          findStartingRun: () => Effect.succeedNone,
         }),
         ServerConfig.layerTest(process.cwd(), { prefix: "t3-ticket-planning-runtime-" }).pipe(
           Layer.provide(NodeServices.layer),

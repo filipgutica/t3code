@@ -63,7 +63,7 @@ const testLayer = layer.pipe(
         findThread: (id) =>
           Effect.succeed(id === worker ? Option.some({ id, projectId: first }) : Option.none()),
         hasThreadAtWorktreePath: () => Effect.succeed(false),
-        findStartingRunId: () => Effect.succeedNone,
+        findStartingRun: () => Effect.succeedNone,
         contextMarker: () => Effect.succeed(0),
         findRunMessageText: () => Effect.succeedNone,
       }),

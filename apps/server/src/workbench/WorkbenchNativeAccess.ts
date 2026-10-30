@@ -1,4 +1,10 @@
-import { RunId, ProjectId, ThreadId, WorkbenchOperationError } from "@t3tools/contracts";
+import {
+  RunId,
+  ProjectId,
+  ProviderThreadId,
+  ThreadId,
+  WorkbenchOperationError,
+} from "@t3tools/contracts";
 import { WorkbenchNativeAccess } from "@t3tools/workbench/WorkbenchNativeAccess";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -84,9 +90,10 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
 
   const findStartingRunRow = SqlSchema.findOneOption({
     Request: Schema.Struct({ threadId: ThreadId }),
-    Result: Schema.Struct({ id: RunId }),
+    Result: Schema.Struct({ id: RunId, providerThreadId: Schema.NullOr(ProviderThreadId) }),
     execute: ({ threadId }) => sql`
-      SELECT run_id AS "id" FROM orchestration_v2_projection_runs
+      SELECT run_id AS "id", provider_thread_id AS "providerThreadId"
+      FROM orchestration_v2_projection_runs
       WHERE thread_id = ${threadId} AND status = 'starting'
       ORDER BY ordinal DESC LIMIT 1
     `,
@@ -137,11 +144,8 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
     isRepository,
     findThread,
     hasThreadAtWorktreePath,
-    findStartingRunId: Effect.fn("WorkbenchNativeAccess.findStartingRunId")((threadId) =>
-      findStartingRunRow({ threadId }).pipe(
-        Effect.map(Option.map((row) => row.id)),
-        Effect.mapError(persistenceError),
-      ),
+    findStartingRun: Effect.fn("WorkbenchNativeAccess.findStartingRun")((threadId) =>
+      findStartingRunRow({ threadId }).pipe(Effect.mapError(persistenceError)),
     ),
     // Adapters record provider compactions and context handoffs as these turn items.
     contextMarker: Effect.fn("WorkbenchNativeAccess.contextMarker")((threadId) =>
