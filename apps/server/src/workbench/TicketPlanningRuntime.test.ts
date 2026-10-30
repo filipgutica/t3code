@@ -24,6 +24,7 @@ import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { WorkbenchNativeAccess } from "@t3tools/workbench/WorkbenchNativeAccess";
 
 import { ServerConfig } from "../config.ts";
@@ -217,6 +218,7 @@ const policyLayer = (
     Layer.provide(TicketContextService.layer),
     Layer.provide(
       Layer.mergeAll(
+        NodeSqliteClient.layer({ filename: ":memory:" }),
         Layer.mock(WorkbenchNativeAccess)({
           contextMarker: () => Effect.succeed(0),
           findStartingRun: () => Effect.succeedNone,

@@ -20,6 +20,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import { ServerConfig } from "../config.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
@@ -305,6 +306,7 @@ export class TicketContextService extends Context.Service<
 const make = Effect.gen(function* () {
   const store = yield* WorkbenchStore.WorkbenchStore;
   const native = yield* WorkbenchNativeAccess;
+  const sql = yield* SqlClient.SqlClient;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const { stateDir } = yield* ServerConfig;
   const path = yield* Path.Path;
@@ -428,8 +430,7 @@ const make = Effect.gen(function* () {
   /**
    * What the Thread has seen, from its runs' native state, so nothing waits on an event consumer.
    * A run that ended without a clean delivery forgets it: its provider may hold changes the record
-   * lacks. While another run is in flight, it is unknown. Reads need no transaction: each resolve
-   * checks again, and a stale outcome only sends more.
+   * lacks. While another run is in flight, it is unknown.
    */
   const settleDelivery = Effect.fn("TicketContextService.settleDelivery")(function* (
     threadId: ThreadId,
@@ -540,17 +541,33 @@ const make = Effect.gen(function* () {
 
   const forTurn = Effect.fn("TicketContextService.forTurn")(function* (thread: ContextThread) {
     const starting = yield* native.findStartingRun(thread.id);
-    const delivery = yield* settleDelivery(
-      thread.id,
-      Option.isSome(starting) ? starting.value.id : null,
+    // One transaction: another resolve or the Thread's own edit must not land between reading
+    // the runs' outcomes and recording them, or a stale copy could replace what the Thread holds.
+    const delivery = yield* Effect.gen(function* () {
+      const settled = yield* settleDelivery(
+        thread.id,
+        Option.isSome(starting) ? starting.value.id : null,
+      );
+      if (settled.endedRunIds.length > 0) {
+        yield* store.settleThreadContext({
+          threadId: thread.id,
+          seen: settled.settled,
+          endedRunIds: settled.endedRunIds,
+        });
+      }
+      return settled;
+    }).pipe(
+      sql.withTransaction,
+      Effect.catchTags({
+        SqlError: () =>
+          Effect.fail(
+            new WorkbenchOperationError({
+              code: "persistence_failed",
+              message: "The Ticket context could not be recorded.",
+            }),
+          ),
+      }),
     );
-    if (delivery.endedRunIds.length > 0) {
-      yield* store.settleThreadContext({
-        threadId: thread.id,
-        seen: delivery.settled,
-        endedRunIds: delivery.endedRunIds,
-      });
-    }
     // The turn goes to its run's provider conversation, which may not be the Thread's active one yet.
     const context = yield* forThread(
       Option.isSome(starting) && starting.value.providerThreadId !== null

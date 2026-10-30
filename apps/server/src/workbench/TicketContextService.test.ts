@@ -7,10 +7,13 @@ import {
   layer as agentLayer,
 } from "@t3tools/workbench/WorkbenchAgentService";
 import { TicketWorkspaceService } from "@t3tools/workbench/TicketWorkspaceService";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as Stream from "effect/Stream";
 import { describe, expect } from "vite-plus/test";
 
 import { ServerConfig } from "../config.ts";
@@ -44,6 +47,30 @@ const thread: ContextThread = {
   activeProviderThreadId: providerThreadId,
 };
 
+/** Once set, the reactor stops before the next event it reads, for the rest of the test. */
+class ReactorHeld extends Context.Service<ReactorHeld, Ref.Ref<boolean>>()(
+  "t3/workbench/TicketContextService.test/ReactorHeld",
+) {}
+
+const heldReactorSink = Layer.effect(
+  EventSinkV2,
+  Effect.gen(function* () {
+    const sink = yield* EventSinkV2;
+    const held = yield* ReactorHeld;
+    return EventSinkV2.of({
+      ...sink,
+      stream: (input) =>
+        sink
+          .stream(input)
+          .pipe(
+            Stream.tap(() =>
+              Effect.flatMap(Ref.get(held), (stop) => (stop ? Effect.never : Effect.void)),
+            ),
+          ),
+    });
+  }),
+);
+
 const testLayer = Layer.mergeAll(
   contextLayer,
   agentLayer.pipe(
@@ -60,9 +87,10 @@ const testLayer = Layer.mergeAll(
     ),
     Layer.provide(Layer.mock(TicketWorkspaceService)({})),
   ),
-  reactorServices,
+  reactorServices.pipe(Layer.provide(heldReactorSink)),
 ).pipe(
   Layer.provideMerge(servicesLayer),
+  Layer.provideMerge(Layer.effect(ReactorHeld, Ref.make(false))),
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-ticket-context-" })),
   Layer.provideMerge(NodeServices.layer),
   Layer.provideMerge(persistenceLayer(":memory:")),
@@ -77,8 +105,9 @@ const briefY = "## Goal\nInvitations expire after a day.";
 type RunStatus = NonNullable<NonNullable<Parameters<typeof runEvent>[0]>["status"]>;
 
 /**
- * Takes a run of the Thread through native start. The reactor catches up only until the run
- * ends, so the next turn resolves before any completion bookkeeping could run.
+ * Takes a run of the Thread through native start and its end. `hold` stops the reactor before this
+ * run ends, for the rest of the test, so later turns resolve before any completion or rollback
+ * bookkeeping the reactor could do.
  */
 const turn = (
   options: {
@@ -86,6 +115,7 @@ const turn = (
     readonly end?: ReadonlyArray<RunStatus>;
     readonly thread?: ContextThread;
     readonly providerThreadId?: ProviderThreadId;
+    readonly hold?: boolean;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -93,6 +123,7 @@ const turn = (
     const sql = yield* SqlClient.SqlClient;
     const contexts = yield* TicketContextService;
     const reactor = yield* TicketExecutionReactor;
+    const held = yield* ReactorHeld;
     const current = options.thread ?? thread;
     const [next] = yield* sql<{ readonly ordinal: number }>`
       SELECT COALESCE(MAX(ordinal), 0) + 1 AS ordinal FROM orchestration_v2_projection_runs
@@ -111,14 +142,26 @@ const turn = (
         json_object('text', ${options.text ?? "Continue"}))`;
     const [starting] = yield* sink.write({ events: [runEvent({ ...run, status: "starting" })] });
     const context = yield* contexts.forTurn(current);
+    if (options.hold && !(yield* Ref.get(held))) {
+      yield* reactor.drainThrough(starting!.sequence);
+      yield* Ref.set(held, true);
+    }
     let beforeEnd = starting!.sequence;
     for (const status of options.end ?? ["running", "completed"]) {
       const [written] = yield* sink.write({ events: [runEvent({ ...run, status })] });
       if (status === "running") beforeEnd = written!.sequence;
     }
-    yield* reactor.drainThrough(beforeEnd);
+    // The reactor's own Ticket writes would race the test's edits.
+    if (!(yield* Ref.get(held))) yield* reactor.drainThrough(beforeEnd);
     return Option.getOrElse(context, () => "");
   });
+
+/** A first turn whose delivery either design has recorded, so a test starts from a known record. */
+const firstTurn = Effect.gen(function* () {
+  const text = yield* turn();
+  yield* (yield* TicketExecutionReactor).drain;
+  return text;
+});
 
 const editTicket = (edit: { readonly markdown?: string; readonly progress?: string }) =>
   Effect.gen(function* () {
@@ -254,8 +297,10 @@ describe("Ticket context per turn", () => {
   it.effect("sends the full context after a rollback rewinds the conversation", () =>
     run(
       Effect.gen(function* () {
-        yield* turn();
-        expect(yield* turn({ end: ["running", "completed", "rolled_back"] })).toBe(reminder);
+        yield* firstTurn;
+        expect(yield* turn({ hold: true, end: ["running", "completed", "rolled_back"] })).toBe(
+          reminder,
+        );
         expect(yield* turn()).toContain("Brief (user content):");
         expect(yield* turn()).toBe(reminder);
       }),
@@ -352,28 +397,35 @@ describe("Ticket context per turn", () => {
   it.effect("diffs against a completed turn's context the reactor has not recorded yet", () =>
     run(
       Effect.gen(function* () {
-        yield* turn();
+        yield* firstTurn;
         yield* editTicket({ markdown: briefY });
-        expect(yield* turn()).toContain("+ Invitations expire after a day.");
+        expect(yield* turn({ hold: true })).toContain("+ Invitations expire after a day.");
         yield* editTicket({ markdown: briefX });
         expect(yield* turn()).toContain("+ Invitations expire after a week.");
       }),
     ),
   );
 
-  it.effect("sends everything after a stopped turn that may have carried a reverted change", () =>
+  it.effect("sends everything after a failed turn that carried a since-reverted change", () =>
     run(
       Effect.gen(function* () {
-        const store = yield* WorkbenchStore;
-        yield* turn();
+        yield* firstTurn;
         yield* editTicket({ markdown: briefY });
+        // The provider may have accepted the prompt before the run failed.
         expect(yield* turn({ end: ["running", "failed"] })).toContain("a day");
         yield* editTicket({ markdown: briefX });
         expect(yield* turn()).toContain("Brief (user content):");
+      }),
+    ),
+  );
 
+  it.effect("keeps an interrupted turn's snapshot through the restart that pruned records", () =>
+    run(
+      Effect.gen(function* () {
+        const store = yield* WorkbenchStore;
+        yield* firstTurn;
         yield* editTicket({ markdown: briefY });
-        expect(yield* turn({ end: ["running", "interrupted"] })).toContain("a day");
-        // A restart's pruning must keep the run's snapshot, or Y would look never sent.
+        expect(yield* turn({ hold: true, end: ["running", "interrupted"] })).toContain("a day");
         yield* store.pruneThreadContext;
         yield* editTicket({ markdown: briefX });
         expect(yield* turn()).toContain("Brief (user content):");
@@ -423,7 +475,7 @@ describe("Ticket context per turn", () => {
     run(
       Effect.gen(function* () {
         const contexts = yield* TicketContextService;
-        yield* turn();
+        yield* firstTurn;
         yield* editTicket({ markdown: briefY });
         const complete = yield* raceRun("race-revert");
         // A queue-time resolve sees brief Y first; then the brief returns to X before A resolves.
