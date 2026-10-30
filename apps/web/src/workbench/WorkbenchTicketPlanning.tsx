@@ -81,18 +81,25 @@ type SharedContextSources = {
   references: ReadonlyArray<WorkbenchReference>;
   assignments: ReadonlyArray<WorkbenchAssignment>;
   threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
+  archivedThreadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   ticketWorkspace: WorkbenchTicketWorkspace | undefined;
 };
 
 /** Everything in the text that keeps the Ticket's revision: References, Threads, recaps, work area. */
 const sharedContextInputs = (
-  { references, assignments, threadsById, ticketWorkspace }: SharedContextSources,
+  {
+    references,
+    assignments,
+    threadsById,
+    archivedThreadsById,
+    ticketWorkspace,
+  }: SharedContextSources,
   recaps: ReadonlyMap<ThreadId, string>,
 ) =>
   JSON.stringify([
     references.map((reference) => [reference.url, reference.title]),
     assignments.map(({ threadId }) => {
-      const thread = threadsById.get(threadId);
+      const thread = threadsById.get(threadId) ?? archivedThreadsById.get(threadId);
       return [
         threadId,
         thread?.title,

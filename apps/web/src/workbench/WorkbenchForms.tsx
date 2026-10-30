@@ -1268,6 +1268,7 @@ function WorkbenchTicketDetailController({
                 references={references}
                 assignments={assignments}
                 threadsById={threadsById}
+                archivedThreadsById={archivedThreadsById}
                 ticketWorkspace={ticketWorkspace}
               />
               <WorkbenchTicketAttentionPanel
