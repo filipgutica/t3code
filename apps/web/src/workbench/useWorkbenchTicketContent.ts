@@ -5,7 +5,7 @@ import { workbenchEnvironment } from "./state";
 
 type LoadedTicketContent = { environmentId: EnvironmentId; ticket: WorkbenchTicket };
 
-const previousActiveTicket = ({
+const previousContent = ({
   environmentId,
   ticket,
   content,
@@ -14,10 +14,7 @@ const previousActiveTicket = ({
   ticket: WorkbenchTicket;
   content: LoadedTicketContent | null;
 }) =>
-  content?.environmentId === environmentId &&
-  content.ticket.id === ticket.id &&
-  !ticket.archivedAt &&
-  !content.ticket.archivedAt
+  content?.environmentId === environmentId && content.ticket.id === ticket.id
     ? content.ticket
     : null;
 
@@ -48,10 +45,10 @@ export function useWorkbenchTicketContent(environmentId: EnvironmentId, ticket: 
   ) {
     setLastContent({ environmentId, ticket: query.data });
   }
-  // Keep the active Ticket and its chat mounted while a new snapshot revision loads Progress.
+  // Keep the Ticket and its chat mounted while a new revision, such as a restore, loads its content.
   const previous =
     !query.isSuccess && query.error === null
-      ? previousActiveTicket({ environmentId, ticket, content: lastContent })
+      ? previousContent({ environmentId, ticket, content: lastContent })
       : null;
   return {
     ticket: omitted ? withLoadedContent(ticket, query.data ?? previous) : ticket,

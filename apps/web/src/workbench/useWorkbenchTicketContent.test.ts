@@ -74,9 +74,10 @@ describe("archived Ticket content", () => {
       await act(async () => registry.set(ticketQuery(key), AsyncResult.success(ticket)));
       expect(content?.ticket?.markdown).toBe("Original markdown");
       await act(async () => root?.update(view(environmentId, { ...compact, revision: 3 })));
-      expect(content?.ticket).toBeNull();
+      expect(content?.ticket).toMatchObject({ revision: 3, markdown: "Original markdown" });
       await act(async () => root?.update(view(EnvironmentId.make("other-host"), compact)));
       expect(content?.ticket).toBeNull();
+      await act(async () => root?.update(view(environmentId, compact)));
       const activeSnapshot = {
         ...ticket,
         archivedAt: null,
@@ -84,8 +85,9 @@ describe("archived Ticket content", () => {
         progressDone: 1,
         progressTotal: 2,
       };
+      // Restoring keeps the archived content mounted until the new revision loads.
       await act(async () => root?.update(view(environmentId, activeSnapshot)));
-      expect(content?.ticket).toBeNull();
+      expect(content?.ticket).toMatchObject({ archivedAt: null, markdown: "Original markdown" });
       const activeKey = JSON.stringify({
         environmentId,
         input: { ticketId: ticket.id, revision: 4 },
