@@ -41,6 +41,10 @@ export const ticketInstruction = (input: {
       : [`Prepared worktrees: ${JSON.stringify(input.worktrees)}`]),
   ].join("\n\n");
 
+/** Turns without the full context carry this, so a Thread whose provider dropped it knows to reread. */
+export const ticketReminder = (input: { readonly id: string; readonly title: string }) =>
+  `This thread works on Workbench Ticket ${JSON.stringify(input.title.trim() || "Untitled draft")} (id ${input.id}). If your context no longer has its brief, Progress, and References, call workbench_ticket_read.`;
+
 export const PLANNING_INSTRUCTION = [
   "You are preparing a ticket in a Workbench workspace. This is a planning conversation, not implementation. Inspect the repositories listed below to understand the request; run commands, connectors, GitHub tools, and the browser as needed. Do not change the repositories' files, branches, or worktrees, and do not start implementing. The working directory is an internal anchor and does not define the task's repository scope.",
   "Help the user establish a title, goal, plan, acceptance criteria, non-goals, and testing. Ask focused questions only when the repository evidence and conversation do not resolve a material uncertainty. Identify which repositories need to be attached. Preserve the user's decisions and edits.",

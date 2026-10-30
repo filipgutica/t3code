@@ -35,6 +35,7 @@ import {
   threadId,
   ticketId,
 } from "./testing/executionRestart.ts";
+import { ticketReminder } from "./agentInstructions.ts";
 
 const providerThreadId = ProviderThreadId.make("provider-thread-1");
 const thread: ContextThread = {
@@ -66,6 +67,9 @@ const testLayer = Layer.mergeAll(
   Layer.provideMerge(NodeServices.layer),
   Layer.provideMerge(persistenceLayer(":memory:")),
 );
+
+// Turns that carry no full context name the Ticket and how to reread it.
+const reminder = ticketReminder({ id: ticketId, title: "Restart" });
 
 /** Takes a run of the Thread through native start, as turn start and the reactor see it. */
 const turn = (
@@ -154,34 +158,39 @@ const run = <A, E, R>(body: Effect.Effect<A, E, R>) =>
   }).pipe(Effect.provide(testLayer), Effect.scoped);
 
 describe("Ticket context per turn", () => {
-  it.effect("sends the full Ticket once, then only another Thread's changes, then nothing", () =>
-    run(
-      Effect.gen(function* () {
-        const store = yield* WorkbenchStore;
-        const first = yield* turn();
-        expect(first).toContain("Brief (user content):\n## Goal\nInvitations expire after a week.");
-        expect(first).toContain("Progress:\n- [ ] PR 1. API\n- [ ] PR 2. Web");
-        expect(first).toContain("References:\n- Plan (/artifacts/plan.md)");
-        expect(yield* turn()).toBe("");
+  it.effect(
+    "sends the full Ticket once, then only another Thread's changes, then only the reminder",
+    () =>
+      run(
+        Effect.gen(function* () {
+          const store = yield* WorkbenchStore;
+          const first = yield* turn();
+          expect(first).toContain(
+            "Brief (user content):\n## Goal\nInvitations expire after a week.",
+          );
+          expect(first).toContain("Progress:\n- [ ] PR 1. API\n- [ ] PR 2. Web");
+          expect(first).toContain("References:\n- Plan (/artifacts/plan.md)");
+          expect(yield* turn()).toBe(reminder);
 
-        yield* editTicket({ markdown: "## Goal\nInvitations expire after three days." });
-        const briefChange = yield* turn();
-        expect(briefChange).toContain("since your last turn");
-        expect(briefChange).toContain(
-          "Brief:\n- Invitations expire after a week.\n+ Invitations expire after three days.",
-        );
-        expect(briefChange).not.toContain("Progress");
-        expect(yield* turn()).toBe("");
+          yield* editTicket({ markdown: "## Goal\nInvitations expire after three days." });
+          const briefChange = yield* turn();
+          expect(briefChange.startsWith(`${reminder}\n\n`)).toBe(true);
+          expect(briefChange).toContain("since your last turn");
+          expect(briefChange).toContain(
+            "Brief:\n- Invitations expire after a week.\n+ Invitations expire after three days.",
+          );
+          expect(briefChange.slice(reminder.length)).not.toContain("Progress");
+          expect(yield* turn()).toBe(reminder);
 
-        yield* editTicket({ progress: "- [x] PR 1. API\n- [ ] PR 2. Web" });
-        expect(yield* turn()).toContain("Progress:\n- - [ ] PR 1. API\n+ - [x] PR 1. API");
-        expect(yield* turn()).toBe("");
+          yield* editTicket({ progress: "- [x] PR 1. API\n- [ ] PR 2. Web" });
+          expect(yield* turn()).toContain("Progress:\n- - [ ] PR 1. API\n+ - [x] PR 1. API");
+          expect(yield* turn()).toBe(reminder);
 
-        yield* store.removeReference({ ticketId, url: "/artifacts/plan.md" });
-        expect(yield* turn()).toContain("References removed:\n- Plan (/artifacts/plan.md)");
-        expect(yield* turn()).toBe("");
-      }),
-    ),
+          yield* store.removeReference({ ticketId, url: "/artifacts/plan.md" });
+          expect(yield* turn()).toContain("References removed:\n- Plan (/artifacts/plan.md)");
+          expect(yield* turn()).toBe(reminder);
+        }),
+      ),
   );
 
   it.effect("does not send a Thread its own update or read back", () =>
@@ -201,12 +210,12 @@ describe("Ticket context per turn", () => {
           url: "/artifacts/plan.md",
           title: "Plan (approved)",
         });
-        expect(yield* turn()).toBe("");
+        expect(yield* turn()).toBe(reminder);
 
         // A sibling's edit seen only through a read is not sent again either.
         yield* editTicket({ markdown: "## Goal\nDecided: two days." });
         yield* agent.read(threadId);
-        expect(yield* turn()).toBe("");
+        expect(yield* turn()).toBe(reminder);
       }),
     ),
   );
@@ -220,7 +229,7 @@ describe("Ticket context per turn", () => {
         expect(failed).toContain("Changed while the turn failed.");
         expect(yield* turn({ text: "  /review" })).toContain("Changed while the turn failed.");
         expect(yield* turn()).toContain("Changed while the turn failed.");
-        expect(yield* turn()).toBe("");
+        expect(yield* turn()).toBe(reminder);
       }),
     ),
   );
@@ -234,12 +243,12 @@ describe("Ticket context per turn", () => {
         yield* sql`INSERT INTO orchestration_v2_projection_turn_items
             (turn_item_id, thread_id, ordinal, type, status, updated_at, payload_json)
             VALUES ('item-running', ${threadId}, 40, ${type}, 'running', ${now}, '{}')`;
-        expect(yield* turn()).toBe("");
+        expect(yield* turn()).toBe(reminder);
         yield* sql`INSERT INTO orchestration_v2_projection_turn_items
             (turn_item_id, thread_id, ordinal, type, status, updated_at, payload_json)
             VALUES ('item-done', ${threadId}, 41, ${type}, 'completed', ${now}, '{}')`;
         expect(yield* turn()).toContain("Brief (user content):");
-        expect(yield* turn()).toBe("");
+        expect(yield* turn()).toBe(reminder);
       }),
     ),
   );
@@ -253,7 +262,7 @@ describe("Ticket context per turn", () => {
           activeProviderThreadId: ProviderThreadId.make("provider-thread-2"),
         };
         expect(yield* turn({ thread: switched })).toContain("Brief (user content):");
-        expect(yield* turn({ thread: switched })).toBe("");
+        expect(yield* turn({ thread: switched })).toBe(reminder);
       }),
     ),
   );
@@ -265,7 +274,7 @@ describe("Ticket context per turn", () => {
         // The Thread's active conversation may still be the old one while the new run starts.
         const next = ProviderThreadId.make("provider-thread-2");
         expect(yield* turn({ providerThreadId: next })).toContain("Brief (user content):");
-        expect(yield* turn({ providerThreadId: next })).toBe("");
+        expect(yield* turn({ providerThreadId: next })).toBe(reminder);
       }),
     ),
   );
@@ -295,7 +304,7 @@ describe("Ticket context per turn", () => {
         const runA = { id: RunId.make("race-a"), ordinal: 100, threadId, providerThreadId };
         yield* sink.write({ events: [runEvent({ ...runA, status: "starting" })] });
         // Run A's turn start records the snapshot its text came from.
-        expect(yield* contexts.forTurn(thread)).toEqual(Option.none());
+        expect(yield* contexts.forTurn(thread)).toEqual(Option.some(reminder));
         yield* editTicket({ markdown: "## Goal\nEdited while run A starts." });
         // Run B queues behind A; its queue-time resolve sees the edit but must not record it for A.
         const queued = yield* contexts.forTurn(thread);
@@ -303,7 +312,7 @@ describe("Ticket context per turn", () => {
         const [running] = yield* sink.write({ events: [runEvent({ ...runA, status: "running" })] });
         yield* reactor.drainThrough(running!.sequence);
         expect(yield* turn()).toContain("Edited while run A starts.");
-        expect(yield* turn()).toBe("");
+        expect(yield* turn()).toBe(reminder);
       }),
     ),
   );

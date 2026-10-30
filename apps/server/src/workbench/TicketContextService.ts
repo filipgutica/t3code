@@ -21,7 +21,7 @@ import * as Path from "effect/Path";
 
 import { ServerConfig } from "../config.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
-import { ticketInstruction } from "./agentInstructions.ts";
+import { ticketInstruction, ticketReminder } from "./agentInstructions.ts";
 import { artifactsDirectory } from "./WorkbenchAgentService.ts";
 import * as WorkbenchStore from "./WorkbenchStore.ts";
 
@@ -458,19 +458,25 @@ const make = Effect.gen(function* () {
     ) {
       return Option.some<ThreadTurnContext>(full);
     }
+    const reminder = ticketReminder({ id: ownerId, title: current.value.title });
     const delta = contextDelta({
       title: current.value.title,
       seen: seen.snapshot,
       current: current.value.snapshot,
     });
     if (delta.changes === 0) {
-      return Option.some<ThreadTurnContext>({ kind: "none", text: "", changes: 0, delivered });
+      return Option.some<ThreadTurnContext>({
+        kind: "none",
+        text: reminder,
+        changes: 0,
+        delivered,
+      });
     }
     // Never send more than rereading everything would cost.
     if (delta.text.length >= current.value.text.length) return Option.some<ThreadTurnContext>(full);
     return Option.some<ThreadTurnContext>({
       kind: "delta",
-      text: delta.text,
+      text: `${reminder}\n\n${delta.text}`,
       changes: delta.changes,
       delivered,
     });
@@ -493,7 +499,7 @@ const make = Effect.gen(function* () {
         ...context.value.delivered,
       });
     }
-    return context.value.kind === "none" ? Option.none<string>() : Option.some(context.value.text);
+    return Option.some(context.value.text);
   });
 
   const forTicket = Effect.fn("TicketContextService.forTicket")(function* (
