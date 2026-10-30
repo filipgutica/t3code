@@ -1185,7 +1185,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     execute: (threadId) => sql`
       SELECT snapshot_json AS snapshot, provider_thread_id AS "providerThreadId",
         context_marker AS "contextMarker", run_id AS "runId", conflicted
-      FROM workbench_thread_context_pending WHERE thread_id = ${threadId}
+      FROM workbench_thread_context_pending WHERE thread_id = ${threadId} ORDER BY run_id
     `,
   });
   const getThreadContext: WorkbenchStoreShape["getThreadContext"] = Effect.fn(

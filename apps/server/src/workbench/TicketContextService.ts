@@ -17,6 +17,7 @@ import type {
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Equal from "effect/Equal";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -280,6 +281,8 @@ export interface ThreadTurnContext {
   readonly kind: "full" | "delta" | "none";
   /** Ticket context for the turn; only the reminder when nothing changed. */
   readonly text: string;
+  /** The full context, for a turn whose delta base moved while it was built. */
+  readonly fullText: string;
   readonly changes: number;
   /** What the Thread has seen once this turn is delivered. */
   readonly delivered: WorkbenchThreadContext;
@@ -436,7 +439,8 @@ const make = Effect.gen(function* () {
     threadId: ThreadId,
     startingRunId: RunId | null,
   ) {
-    const { seen, pending } = yield* store.getThreadContext(threadId);
+    const record = yield* store.getThreadContext(threadId);
+    const { seen, pending } = record;
     const findRun = (runId: RunId) => native.findRun({ threadId, runId });
     const seenRun = Option.isSome(seen) ? yield* findRun(seen.value.runId) : Option.none();
     // A rollback rewinds the conversation past the run that delivered it.
@@ -466,7 +470,7 @@ const make = Effect.gen(function* () {
             })
           : Option.none();
     }
-    return { seen: inFlight ? Option.none() : settled, settled, endedRunIds };
+    return { seen: inFlight ? Option.none() : settled, settled, endedRunIds, record };
   });
 
   const forThread = Effect.fn("TicketContextService.forThread")(function* (
@@ -498,6 +502,7 @@ const make = Effect.gen(function* () {
     const full = {
       kind: "full" as const,
       text: current.value.text,
+      fullText: current.value.text,
       changes: 0,
       delivered,
     };
@@ -524,6 +529,7 @@ const make = Effect.gen(function* () {
       return Option.some<ThreadTurnContext>({
         kind: "none",
         text: reminder,
+        fullText: current.value.text,
         changes: 0,
         delivered,
       });
@@ -534,57 +540,63 @@ const make = Effect.gen(function* () {
     return Option.some<ThreadTurnContext>({
       kind: "delta",
       text,
+      fullText: current.value.text,
       changes: delta.changes,
       delivered,
     });
   });
 
-  // One transaction from choosing the starting run to recording what it is sent. Another resolve,
-  // the Thread's own edit, or the run ending must not land in between, or a stale snapshot could
-  // become the record or a late pending row could return after its run settled.
-  const forTurn = Effect.fn("TicketContextService.forTurn")(
-    function* (thread: ContextThread) {
-      const starting = yield* native.findStartingRun(thread.id);
-      const delivery = yield* settleDelivery(
-        thread.id,
-        Option.isSome(starting) ? starting.value.id : null,
-      );
-      if (delivery.endedRunIds.length > 0) {
+  // The text is built without a lock; only the recheck and record share a transaction, as every
+  // write in the server waits on it. If another resolve or the Thread's own edit moved the records
+  // meanwhile, the turn sends everything and leaves settling to the next resolve. A run no longer
+  // starting was already sent its text, so nothing is recorded for it.
+  const forTurn = Effect.fn("TicketContextService.forTurn")(function* (thread: ContextThread) {
+    const starting = yield* native.findStartingRun(thread.id);
+    const startingRunId = Option.isSome(starting) ? starting.value.id : null;
+    const delivery = yield* settleDelivery(thread.id, startingRunId);
+    // The turn goes to its run's provider conversation, which may not be the Thread's active one yet.
+    const context = yield* forThread(
+      Option.isSome(starting) && starting.value.providerThreadId !== null
+        ? { ...thread, activeProviderThreadId: starting.value.providerThreadId }
+        : thread,
+      delivery.seen,
+    );
+    if (Option.isNone(context)) return Option.none<string>();
+    const { text, fullText, delivered } = context.value;
+    return yield* Effect.gen(function* () {
+      const unchanged = Equal.equals(yield* store.getThreadContext(thread.id), delivery.record);
+      if (unchanged && delivery.endedRunIds.length > 0) {
         yield* store.settleThreadContext({
           threadId: thread.id,
           seen: delivery.settled,
           endedRunIds: delivery.endedRunIds,
         });
       }
-      // The turn goes to its run's provider conversation, which may not be the Thread's active one.
-      const context = yield* forThread(
-        Option.isSome(starting) && starting.value.providerThreadId !== null
-          ? { ...thread, activeProviderThreadId: starting.value.providerThreadId }
-          : thread,
-        delivery.seen,
+      const stillStarting = Option.exists(
+        yield* native.findStartingRun(thread.id),
+        (run) => run.id === startingRunId,
       );
-      if (Option.isNone(context)) return Option.none<string>();
-      // A queue-time resolve for an idle Thread has no starting run and records nothing.
-      if (Option.isSome(starting)) {
+      if (stillStarting && startingRunId !== null) {
         yield* store.recordPendingThreadContext({
-          runId: starting.value.id,
+          runId: startingRunId,
           threadId: thread.id,
-          ...context.value.delivered,
+          ...delivered,
         });
       }
-      return Option.some(context.value.text);
-    },
-    sql.withTransaction,
-    Effect.catchTags({
-      SqlError: () =>
-        Effect.fail(
-          new WorkbenchOperationError({
-            code: "persistence_failed",
-            message: "The Ticket context could not be recorded.",
-          }),
-        ),
-    }),
-  );
+      return Option.some(unchanged ? text : fullText);
+    }).pipe(
+      sql.withTransaction,
+      Effect.catchTags({
+        SqlError: () =>
+          Effect.fail(
+            new WorkbenchOperationError({
+              code: "persistence_failed",
+              message: "The Ticket context could not be recorded.",
+            }),
+          ),
+      }),
+    );
+  });
 
   const forTicket = Effect.fn("TicketContextService.forTicket")(function* (
     ticketId: WorkbenchTicketId,

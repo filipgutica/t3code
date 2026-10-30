@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import { ProviderThreadId, RunId, ThreadId, WorkbenchAssignmentId } from "@t3tools/contracts";
 import { WorkbenchAgentHost } from "@t3tools/workbench/WorkbenchAgentHost";
+import { WorkbenchNativeAccess } from "@t3tools/workbench/WorkbenchNativeAccess";
 import {
   WorkbenchAgentService,
   layer as agentLayer,
@@ -162,6 +163,32 @@ const firstTurn = Effect.gen(function* () {
   yield* (yield* TicketExecutionReactor).drain;
   return text;
 });
+
+/** A context service whose next resolve runs `between` after reading the Ticket, before recording. */
+const resolvingAround = <E, R>(between: Effect.Effect<void, E, R>) =>
+  Effect.gen(function* () {
+    const native = yield* WorkbenchNativeAccess;
+    const services = yield* Effect.context<R>();
+    const once = yield* Ref.make(true);
+    const run = between.pipe(Effect.provideContext(services), Effect.orDie);
+    const hooked = WorkbenchNativeAccess.of({
+      ...native,
+      contextMarker: (threadId) =>
+        Ref.getAndSet(once, false).pipe(
+          Effect.flatMap((first) => (first ? run : Effect.void)),
+          Effect.andThen(native.contextMarker(threadId)),
+        ),
+    });
+    return yield* Effect.service(TicketContextService).pipe(
+      Effect.provide(
+        Layer.fresh(contextLayer).pipe(
+          Layer.provide(Layer.succeed(WorkbenchNativeAccess, hooked)),
+          Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-ticket-context-" })),
+          Layer.provide(NodeServices.layer),
+        ),
+      ),
+    );
+  });
 
 const editTicket = (edit: { readonly markdown?: string; readonly progress?: string }) =>
   Effect.gen(function* () {
@@ -429,6 +456,58 @@ describe("Ticket context per turn", () => {
         yield* store.pruneThreadContext;
         yield* editTicket({ markdown: briefX });
         expect(yield* turn()).toContain("Brief (user content):");
+      }),
+    ),
+  );
+
+  it.effect("sends everything when the Thread's own edit lands while its context is built", () =>
+    run(
+      Effect.gen(function* () {
+        const agent = yield* WorkbenchAgentService;
+        yield* firstTurn;
+        yield* editTicket({ markdown: briefY });
+        expect(yield* turn({ hold: true })).toContain("+ Invitations expire after a day.");
+        // A queue-time resolve settles on Y; meanwhile the Thread writes X itself.
+        const queued = yield* resolvingAround(
+          Effect.gen(function* () {
+            const read = yield* agent.read(threadId);
+            yield* agent.update({ threadId, expectedRevision: read.revision, brief: briefX });
+          }),
+        );
+        expect(Option.getOrThrow(yield* queued.forTurn(thread))).toContain("Brief (user content):");
+        yield* editTicket({ markdown: briefY });
+        expect(yield* turn()).toContain("+ Invitations expire after a day.");
+      }),
+    ),
+  );
+
+  it.effect("records nothing for a run that left starting while its context was built", () =>
+    run(
+      Effect.gen(function* () {
+        const sink = yield* EventSinkV2;
+        const sql = yield* SqlClient.SqlClient;
+        const contexts = yield* TicketContextService;
+        yield* firstTurn;
+        yield* Ref.set(yield* ReactorHeld, true);
+        const late = { id: RunId.make("late-run"), ordinal: 50, threadId, providerThreadId };
+        yield* sql`INSERT INTO orchestration_v2_projection_messages
+          (message_id, thread_id, run_id, node_id, role, streaming, created_at, updated_at, payload_json)
+          VALUES ('user-late-run', ${threadId}, ${late.id}, NULL, 'user', 0, ${now}, ${now},
+            json_object('text', 'Continue'))`;
+        yield* sink.write({ events: [runEvent({ ...late, status: "starting" })] });
+        // The run's own resolve sends Y, the run completes, and another resolve settles it.
+        const queued = yield* resolvingAround(
+          Effect.gen(function* () {
+            yield* editTicket({ markdown: briefY });
+            yield* contexts.forTurn(thread);
+            yield* sink.write({ events: [runEvent({ ...late, status: "running" })] });
+            yield* sink.write({ events: [runEvent({ ...late, status: "completed" })] });
+            yield* contexts.forTurn(thread);
+          }),
+        );
+        yield* queued.forTurn(thread);
+        yield* editTicket({ markdown: briefX });
+        expect(yield* turn()).toContain("+ Invitations expire after a week.");
       }),
     ),
   );
