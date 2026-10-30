@@ -278,7 +278,7 @@ function CompactDraftCard(props: DraftCardModeProps) {
     <div
       role="group"
       aria-label="Ticket draft"
-      className="mx-3 mt-2 flex max-h-[40%] min-h-0 shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card"
+      className="mx-3 mt-2 flex max-h-[50%] min-h-0 shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card"
     >
       <CardHeader {...props} toggle="Collapse ticket draft" next="collapsed" />
       <div className="min-h-0 space-y-2 overflow-y-auto px-3 pb-2">
@@ -294,10 +294,6 @@ function CompactDraftCard(props: DraftCardModeProps) {
         {progress ? (
           <>
             {progress.goal ? <WorkbenchDescription markdown={progress.goal} /> : null}
-            <div className="flex items-center gap-2">
-              <h3 className="text-xs font-semibold">Progress</h3>
-              <WorkbenchProgressCount done={progress.done} total={progress.total} />
-            </div>
             <WorkbenchProgressChecklist
               progress={props.draft.progress ?? ""}
               limit={BRIEF_PREVIEW_LINES}
@@ -308,10 +304,11 @@ function CompactDraftCard(props: DraftCardModeProps) {
         )}
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 pb-2">
+        {progress ? <WorkbenchProgressCount done={progress.done} total={progress.total} /> : null}
         <Button
           size="xs"
           variant="link"
-          className="-ml-2 mr-auto"
+          className={cn("mr-auto", !progress && "-ml-2")}
           onClick={() => props.show("expanded")}
         >
           {remaining > 0 ? `+${remaining} more · Show full brief` : "Show full brief"}
