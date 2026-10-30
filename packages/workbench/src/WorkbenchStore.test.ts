@@ -11,9 +11,11 @@ import {
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -24,7 +26,11 @@ import * as Stream from "effect/Stream";
 
 import { WorkbenchNativeAccess } from "./WorkbenchNativeAccess.ts";
 import { ensureWorkbenchSchema } from "./WorkbenchSchema.ts";
-import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
+import {
+  WorkbenchStore,
+  WorkbenchStoreLive,
+  type WorkbenchThreadContextSnapshot,
+} from "./WorkbenchStore.ts";
 
 const decodeArchiveEpicInput = Schema.decodeEffect(WorkbenchArchiveEpicInput);
 const orbitIssue = (number: number) => ({
@@ -60,6 +66,9 @@ const nativeLayer = (options?: {
         );
       },
       hasThreadAtWorktreePath: () => Effect.succeed(false),
+      findStartingRun: () => Effect.succeedNone,
+      contextMarker: () => Effect.succeed(0),
+      findRun: () => Effect.succeedNone,
       executionSequence: options?.executionSequence ?? Effect.succeed(0),
       startedExecutionRunIds: Effect.succeed([]),
       hasPendingThreadWork: () => Effect.succeed(false),
@@ -71,6 +80,13 @@ const testLayer = (options?: Parameters<typeof nativeLayer>[0]) =>
   WorkbenchStoreLive.pipe(
     Layer.provideMerge(nativeLayer(options)),
     Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" })),
+    Layer.provideMerge(NodeCrypto.layer),
+  );
+
+const fileLayer = (filename: string, options?: Parameters<typeof nativeLayer>[0]) =>
+  WorkbenchStoreLive.pipe(
+    Layer.provideMerge(nativeLayer(options)),
+    Layer.provideMerge(NodeSqliteClient.layer({ filename })),
     Layer.provideMerge(NodeCrypto.layer),
   );
 
@@ -1775,5 +1791,223 @@ describe("Workbench Workspace lifecycle", () => {
       expect((yield* Effect.flip(store.deleteProject(deletion))).code).toBe("persistence_failed");
       expect(yield* store.getSnapshot).toEqual(before);
     }).pipe(Effect.provide(layer())),
+  );
+});
+
+describe("Ticket Progress and Thread context", () => {
+  const projectId = ProjectId.make("progress-project");
+  const workspaceId = WorkbenchProjectId.make("progress-workspace");
+  const ticketId = WorkbenchTicketId.make("progress-ticket");
+  const threadId = ThreadId.make("progress-thread");
+  const snapshot = (
+    overrides: Partial<WorkbenchThreadContextSnapshot> = {},
+  ): WorkbenchThreadContextSnapshot => ({
+    ownerId: ticketId,
+    revision: 1,
+    brief: "Goal",
+    progress: "- [ ] PR 1",
+    references: [],
+    worktrees: [],
+    roster: [],
+    ...overrides,
+  });
+
+  it.effect("keeps Progress apart from the brief and sends snapshots only its counts", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const ticket = yield* seedTicket({ store, projectId, workspaceId, ticketId });
+      expect(ticket).toMatchObject({ progress: "", progressDone: 0, progressTotal: 0 });
+      const ticked = yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: ticket.revision,
+        progress: "- [x] PR 1. API\n- [ ] PR 2. Web\nNotes are not items.",
+        updatedAt: "2026-09-07T11:00:00.000Z",
+      });
+      expect(ticked).toMatchObject({ revision: ticket.revision + 1, progressDone: 1 });
+      // Progress is not the brief: no Updated by, and the generated summary stays current.
+      expect(ticked.updatedByThreadId).toBeNull();
+      expect(ticked.generatedSummary).toEqual(ticket.generatedSummary);
+      const edited = yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: ticked.revision,
+        markdown: "A user edit",
+        updatedAt: "2026-09-07T12:00:00.000Z",
+      });
+      expect(edited.progress).toBe(ticked.progress);
+
+      const [snapshotTicket] = (yield* store.getSnapshot).tickets;
+      expect(snapshotTicket).not.toHaveProperty("progress");
+      expect(snapshotTicket).toMatchObject({ progressDone: 1, progressTotal: 2 });
+      expect(Option.getOrThrow(yield* store.getTicket(ticketId)).progress).toBe(ticked.progress);
+    }).pipe(Effect.provide(testLayer({ projects: new Set([projectId]) }))),
+  );
+
+  it.effect("marks a run's pending snapshot conflicted only when its resolves disagree", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const runId = RunId.make("progress-run");
+      const conflicted = RunId.make("progress-conflicted-run");
+      const record = (brief: string, run: RunId) =>
+        store.recordPendingThreadContext({
+          runId: run,
+          threadId,
+          snapshot: snapshot({ brief }),
+          providerThreadId: "provider-1",
+          contextMarker: 2,
+        });
+      yield* record("First", runId);
+      yield* record("First", runId);
+      yield* record("Queued", conflicted);
+      yield* record("Starting", conflicted);
+      const { pending } = yield* store.getThreadContext(threadId);
+      expect(
+        Object.fromEntries(pending.map((row) => [row.runId, [row.snapshot.brief, row.conflicted]])),
+      ).toEqual({ [runId]: ["First", false], [conflicted]: ["Queued", true] });
+
+      const seen = {
+        snapshot: snapshot({ brief: "First" }),
+        providerThreadId: "provider-2",
+        contextMarker: 2,
+        runId,
+      };
+      yield* store.settleThreadContext({ threadId, seen: Option.some(seen), endedRunIds: [runId] });
+      expect((yield* store.getThreadContext(threadId)).seen).toEqual(Option.some(seen));
+      yield* store.settleThreadContext({
+        threadId,
+        seen: Option.none(),
+        endedRunIds: [conflicted],
+      });
+      expect(yield* store.getThreadContext(threadId)).toEqual({ seen: Option.none(), pending: [] });
+    }).pipe(Effect.provide(testLayer())),
+  );
+
+  it.effect("records a Thread's own reads into its seen and pending snapshots of that owner", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const seen = (brief: string) => (current: WorkbenchThreadContextSnapshot) => ({
+        ...current,
+        brief,
+      });
+      // Without a record there is nothing to update; the first turn sends everything.
+      yield* store.updateSeenThreadContext({ threadId, ownerId: ticketId, update: seen("Read") });
+      expect(yield* store.getThreadContext(threadId)).toEqual({ seen: Option.none(), pending: [] });
+
+      // A first turn's own read reaches its pending snapshot before any record exists.
+      const delivered = RunId.make("progress-delivered");
+      yield* store.recordPendingThreadContext({
+        runId: delivered,
+        threadId,
+        snapshot: snapshot(),
+        providerThreadId: null,
+        contextMarker: 0,
+      });
+      yield* store.updateSeenThreadContext({ threadId, ownerId: ticketId, update: seen("First") });
+      const [first] = (yield* store.getThreadContext(threadId)).pending;
+      expect(first?.snapshot.brief).toBe("First");
+      yield* store.settleThreadContext({
+        threadId,
+        seen: Option.some({ ...first!, runId: delivered }),
+        endedRunIds: [delivered],
+      });
+
+      yield* store.recordPendingThreadContext({
+        runId: RunId.make("progress-running"),
+        threadId,
+        snapshot: snapshot(),
+        providerThreadId: null,
+        contextMarker: 0,
+      });
+      yield* store.updateSeenThreadContext({ threadId, ownerId: ticketId, update: seen("Read") });
+      yield* store.updateSeenThreadContext({
+        threadId,
+        ownerId: WorkbenchTicketId.make("another-ticket"),
+        update: seen("Elsewhere"),
+      });
+      // The running turn's snapshot settles later; it must not bring the old brief back.
+      const after = yield* store.getThreadContext(threadId);
+      expect(Option.getOrThrow(after.seen).snapshot.brief).toBe("Read");
+      expect(after.pending.map((row) => row.snapshot.brief)).toEqual(["Read"]);
+    }).pipe(Effect.provide(testLayer())),
+  );
+
+  it.effect("keeps Progress and each Thread's seen and pending context across a restart", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "workbench-progress-" });
+      const filename = `${directory}/state.sqlite`;
+      const seen = {
+        snapshot: snapshot({ progress: "- [x] PR 1" }),
+        providerThreadId: "provider-1",
+        contextMarker: 4,
+        runId: RunId.make("progress-restart-run"),
+      };
+      const pending = { ...seen, runId: RunId.make("progress-in-flight-run"), conflicted: false };
+      yield* Effect.gen(function* () {
+        const store = yield* WorkbenchStore;
+        const ticket = yield* seedTicket({ store, projectId, workspaceId, ticketId });
+        yield* store.updateTicket({
+          id: ticketId,
+          expectedRevision: ticket.revision,
+          progress: "- [x] PR 1",
+          updatedAt: "2026-09-07T11:00:00.000Z",
+        });
+        yield* store.settleThreadContext({ threadId, seen: Option.some(seen), endedRunIds: [] });
+        yield* store.recordPendingThreadContext({ ...pending, threadId });
+      }).pipe(Effect.provide(fileLayer(filename, { projects: new Set([projectId]) })));
+      yield* Effect.gen(function* () {
+        const store = yield* WorkbenchStore;
+        expect(Option.getOrThrow(yield* store.getTicket(ticketId)).progress).toBe("- [x] PR 1");
+        expect(yield* store.getThreadContext(threadId)).toEqual({
+          seen: Option.some(seen),
+          pending: [pending],
+        });
+      }).pipe(Effect.provide(fileLayer(filename)));
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("retitles a Reference in place and refuses an unknown URL", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      yield* seedTicket({ store, projectId, workspaceId, ticketId });
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("progress-assignment"),
+        ticketId,
+        threadId,
+        createdAt: "2026-09-07T10:00:00.000Z",
+      });
+      const first = yield* store.addReference({
+        ticketId,
+        url: "/artifacts/progress-ticket/mockup-v1.png",
+        title: "Mockup v1 (proposed)",
+        addedByThreadId: null,
+      });
+      const second = yield* store.addReference({
+        ticketId,
+        url: "/artifacts/progress-ticket/plan.md",
+        title: "Plan",
+        addedByThreadId: null,
+      });
+      const retitled = yield* store.updateReference({
+        ticketId,
+        url: first.url,
+        title: "Mockup v1 (approved)",
+        actingThreadId: threadId,
+      });
+      expect(retitled).toEqual({ ...first, title: "Mockup v1 (approved)" });
+      expect(yield* store.listReferences(ticketId)).toEqual([retitled, second]);
+      const missing = yield* Effect.flip(
+        store.updateReference({
+          ticketId,
+          url: "/artifacts/progress-ticket/missing.png",
+          title: "Missing",
+          actingThreadId: threadId,
+        }),
+      );
+      expect(missing.code).toBe("reference_not_found");
+    }).pipe(
+      Effect.provide(
+        testLayer({ projects: new Set([projectId]), threads: new Map([[threadId, projectId]]) }),
+      ),
+    ),
   );
 });

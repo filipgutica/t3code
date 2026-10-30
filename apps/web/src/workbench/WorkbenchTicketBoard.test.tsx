@@ -204,6 +204,48 @@ describe("Workbench Board view", () => {
       expect(onMove).toHaveBeenCalledExactlyOnceWith(active, "in_progress");
     },
   );
+  it("shows snapshot Progress counts and removes them when the checklist is cleared", () => {
+    const record = {
+      ...ticket("Planned work"),
+      progress: "- [x] This list must not supply Board counts",
+    };
+    const countText = () =>
+      renderer.root
+        .findAllByType("span")
+        .map((node) => node.children.filter((child) => typeof child === "string").join(""))
+        .filter((text) => /^\d+ of \d+$/u.test(text));
+    act(() => {
+      renderer = create(<WorkbenchTicketBoard {...props} tickets={[record]} />);
+    });
+    expect(countText()).toEqual([]);
+    act(() =>
+      renderer.update(
+        <WorkbenchTicketBoard
+          {...props}
+          tickets={[{ ...record, progressDone: 1, progressTotal: 3 }]}
+        />,
+      ),
+    );
+    expect(countText()).toEqual(["1 of 3"]);
+    act(() =>
+      renderer.update(
+        <WorkbenchTicketBoard
+          {...props}
+          tickets={[{ ...record, progressDone: 3, progressTotal: 3 }]}
+        />,
+      ),
+    );
+    expect(countText()).toEqual(["3 of 3"]);
+    act(() =>
+      renderer.update(
+        <WorkbenchTicketBoard
+          {...props}
+          tickets={[{ ...record, progressDone: 0, progressTotal: 0 }]}
+        />,
+      ),
+    );
+    expect(countText()).toEqual([]);
+  });
   it("offers Thread creation for unfinished cards and hides it after completion", () => {
     const onOpenThread = vi.fn();
     const active = ticket("Unassigned");

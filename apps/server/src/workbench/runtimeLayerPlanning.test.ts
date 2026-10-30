@@ -59,6 +59,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
+import * as TicketContextService from "./TicketContextService.ts";
 import * as TicketPlanningRuntime from "./TicketPlanningRuntime.ts";
 import * as TicketDraftService from "./TicketDraftService.ts";
 import { TicketWorkspaceService } from "@t3tools/workbench/TicketWorkspaceService";
@@ -138,6 +139,9 @@ const draft = {
   Effect.Success<ReturnType<WorkbenchStore["Service"]["getTicketDraftForThread"]>>
 >;
 const planningPolicyLayer = TicketPlanningRuntime.layerRuntimePolicyDecorator.pipe(
+  Layer.provide(
+    Layer.mock(TicketContextService.TicketContextService)({ forTurn: () => Effect.succeedNone }),
+  ),
   Layer.provide(ProjectStore.layer),
   Layer.provide(ProjectionStore.layer),
   Layer.provide(
@@ -216,6 +220,7 @@ const seedProject = Effect.gen(function* () {
 });
 const layerPersistedPlanningTest = makeLayerTest(
   TicketPlanningRuntime.layerRuntimePolicyDecorator.pipe(
+    Layer.provide(TicketContextService.layer),
     Layer.provideMerge(WorkbenchStoreLive),
     Layer.provide(ProjectStore.layer),
     Layer.provide(ProjectionStore.layer),
@@ -469,6 +474,11 @@ it.effect("starts a follow-up queued behind a planning turn without checkpoints"
     );
     const final = yield* orchestrator.getThreadProjection(planningThreadId);
     assert.equal(final.runs.find((run) => run.id === first.id)?.status, "completed");
+    // Workbench records delivered Ticket context against the run's provider conversation and
+    // compares the Thread's active one later, so a queued run must not leave them apart.
+    for (const run of final.runs) {
+      assert.equal(run.providerThreadId, final.thread.activeProviderThreadId);
+    }
     assert.isNull(final.nodes.find((node) => node.id === followUp.rootNodeId)?.checkpointScopeId);
     assert.deepEqual(final.checkpointScopes, []);
     assert.deepEqual(final.checkpoints, []);
@@ -696,7 +706,7 @@ it.effect(
       assert.isUndefined(planning?.sandboxPolicy);
       assert.isUndefined(planning?.toolAccess);
       assert.equal(planning?.checkpoints, "disabled");
-      assert.include(planning?.instructions ?? "", "workbench_workstream_update");
+      assert.include(planning?.instructions ?? "", "workbench_ticket_update");
       assert.equal(planning?.cwd, process.cwd());
       const native = policies.get(nativeThreadId);
       assert.isDefined(native);

@@ -2,6 +2,7 @@ import {
   ModelSelection,
   ProjectId,
   ProviderInstanceId,
+  RunId,
   ThreadId,
   WorkbenchAssignmentId,
   WorkbenchProjectId,
@@ -62,6 +63,9 @@ const testLayer = layer.pipe(
         findThread: (id) =>
           Effect.succeed(id === worker ? Option.some({ id, projectId: first }) : Option.none()),
         hasThreadAtWorktreePath: () => Effect.succeed(false),
+        findStartingRun: () => Effect.succeedNone,
+        contextMarker: () => Effect.succeed(0),
+        findRun: () => Effect.succeedNone,
       }),
     ),
   ),
@@ -106,6 +110,8 @@ describe("WorkbenchAgentService", () => {
         id: draft.id,
         revision: draft.revision,
         phase: "draft",
+        // Drafts stored before Progress existed have none.
+        progress: "",
         artifactsDir: `/t3/userdata/workbench-artifacts/${draft.id}`,
       });
       expect(read.repositories.map((repository) => repository.selected)).toEqual([false, false]);
@@ -115,10 +121,16 @@ describe("WorkbenchAgentService", () => {
         expectedRevision: draft.revision,
         title: "Expire invitations",
         brief: "## Goal\n\nInvitations expire after a week.",
+        progress: "- [ ] PR 1. Expire tokens",
         repositoryProjectIds: [second],
       });
-      expect(state).toMatchObject({ title: "Expire invitations", revision: draft.revision + 1 });
+      expect(state).toMatchObject({
+        title: "Expire invitations",
+        progress: "- [ ] PR 1. Expire tokens",
+        revision: draft.revision + 1,
+      });
       const saved = yield* store.getTicketDraft(draft.id);
+      expect(saved.progress).toBe("- [ ] PR 1. Expire tokens");
       expect(saved.fields.primaryT3ProjectId).toBe(second);
       expect(saved.updatedByThreadId).toBe(planner);
 
@@ -174,26 +186,40 @@ describe("WorkbenchAgentService", () => {
         threads: [{ threadId: worker, title: `${worker} title`, recap: null }],
       });
       expect(Option.getOrThrow(yield* store.getTicket(ticket.id)).updatedByThreadId).toBe(worker);
+      const ticked = yield* agent.update({
+        threadId: worker,
+        expectedRevision: state.revision,
+        progress: "- [x] PR 1. Expire tokens",
+      });
+      expect(ticked.state).toMatchObject({
+        progress: "- [x] PR 1. Expire tokens",
+        revision: state.revision + 1,
+      });
+      expect(Option.getOrThrow(yield* store.getTicket(ticket.id))).toMatchObject({
+        progressUpdatedByThreadId: worker,
+        progressDone: 1,
+        progressTotal: 1,
+      });
       const stale = yield* Effect.flip(
         agent.update({ threadId: worker, expectedRevision: ticket.revision, brief: "Older" }),
       );
       expect(stale).toMatchObject({
         _tag: "WorkstreamChangedError",
-        currentRevision: state.revision,
+        currentRevision: ticked.state.revision,
       });
 
       // The worker Thread runs in `first`, so the agent may drop `second` but not `first`.
       const locked = yield* Effect.flip(
         agent.update({
           threadId: worker,
-          expectedRevision: state.revision,
+          expectedRevision: ticked.state.revision,
           repositoryProjectIds: [second],
         }),
       );
       expect(locked).toMatchObject({ code: "ticket_repository_scope_locked" });
       const narrowed = yield* agent.update({
         threadId: worker,
-        expectedRevision: state.revision,
+        expectedRevision: ticked.state.revision,
         repositoryProjectIds: [first],
       });
       expect(narrowed.state.repositories.filter((repository) => repository.selected)).toEqual([
@@ -201,7 +227,7 @@ describe("WorkbenchAgentService", () => {
       ]);
 
       const stranger = yield* Effect.flip(agent.read(ThreadId.make("agent-stranger")));
-      expect(stranger.message).toBe("This Thread does not belong to a Workstream");
+      expect(stranger.message).toBe("This Thread does not belong to a Ticket");
     }).pipe(Effect.provide(testLayer)),
   );
 
@@ -274,6 +300,12 @@ describe("WorkbenchAgentService", () => {
           addedByThreadId: worker,
         }),
         store.removeReference({ ticketId: ticket.id, url, actingThreadId: worker }),
+        store.updateReference({
+          ticketId: ticket.id,
+          url,
+          title: "Renamed",
+          actingThreadId: worker,
+        }),
         store.updateTicket({
           id: ticket.id,
           expectedRevision: ticket.revision,
@@ -293,5 +325,72 @@ describe("WorkbenchAgentService", () => {
       yield* store.removeReference({ ticketId: ticket.id, url });
       expect(yield* store.listReferences(ticket.id)).toEqual([]);
     }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect(
+    "records what a Thread reads or writes itself as seen, and only for a recorded Thread",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* WorkbenchStore;
+        const agent = yield* WorkbenchAgentService;
+        yield* seedWorkspace;
+        const ticket = yield* store.createTicket({
+          id: WorkbenchTicketId.make("agent-seen-ticket"),
+          projectId: workspaceId,
+          title: "Expire invitations",
+          kind: "story",
+          markdown: "Goal",
+          primaryT3ProjectId: first,
+          createdAt,
+        });
+        yield* store.createAssignment({
+          id: WorkbenchAssignmentId.make("agent-seen-assignment"),
+          ticketId: ticket.id,
+          threadId: worker,
+          createdAt,
+        });
+        yield* agent.read(worker);
+        expect((yield* store.getThreadContext(worker)).seen).toEqual(Option.none());
+
+        yield* store.settleThreadContext({
+          threadId: worker,
+          endedRunIds: [],
+          seen: Option.some({
+            runId: RunId.make("agent-seen-run"),
+            snapshot: {
+              ownerId: ticket.id,
+              revision: ticket.revision,
+              brief: "Goal",
+              progress: "",
+              references: [],
+              worktrees: [],
+              roster: [],
+            },
+            providerThreadId: null,
+            contextMarker: 0,
+          }),
+        });
+        const { state } = yield* agent.update({
+          threadId: worker,
+          expectedRevision: ticket.revision,
+          brief: "Goal, decided",
+          progress: "- [ ] PR 1",
+        });
+        const url = "/artifacts/agent-seen-ticket/mockup-v1.png";
+        yield* agent.addReference({ threadId: worker, url, title: "Mockup v1 (proposed)" });
+        yield* agent.updateReference({ threadId: worker, url, title: "Mockup v1 (approved)" });
+        const plan = "/artifacts/agent-seen-ticket/plan.md";
+        yield* agent.addReference({ threadId: worker, url: plan, title: "Plan" });
+        yield* agent.removeReference({ threadId: worker, url: plan });
+
+        expect(
+          Option.getOrThrow((yield* store.getThreadContext(worker)).seen).snapshot,
+        ).toMatchObject({
+          revision: state.revision,
+          brief: "Goal, decided",
+          progress: "- [ ] PR 1",
+          references: [{ url, title: "Mockup v1 (approved)" }],
+        });
+      }).pipe(Effect.provide(testLayer)),
   );
 });

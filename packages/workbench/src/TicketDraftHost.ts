@@ -10,6 +10,8 @@ import type {
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
+import type { WorkbenchTicketAgentFields } from "./WorkbenchStore.ts";
+
 /** Native conversation and ticket-creation effects owned by the environment. */
 export class TicketDraftHost extends Context.Service<
   TicketDraftHost,
@@ -37,7 +39,7 @@ export class TicketDraftHost extends Context.Service<
       draft: WorkbenchTicketDraft,
     ) => Effect.Effect<void, WorkbenchOperationError>;
     readonly createTicket: (
-      input: WorkbenchCreateTicketInput & { readonly updatedByThreadId?: ThreadId | null },
+      input: WorkbenchCreateTicketInput & WorkbenchTicketAgentFields,
     ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
   }
 >()("@t3tools/workbench/TicketDraftHost") {}

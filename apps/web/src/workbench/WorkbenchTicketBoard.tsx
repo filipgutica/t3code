@@ -1,5 +1,6 @@
 import { matchesWorkbenchAttention, type WorkbenchAttentionMode } from "./workbenchAttention.logic";
 import { useWorkbenchAttentionData } from "./WorkbenchAttentionProvider";
+import { WorkbenchProgressCount } from "./WorkbenchProgressCount";
 import { WorkbenchTicketAttentionBadge } from "./WorkbenchTicketAttention";
 import {
   DndContext,
@@ -912,7 +913,10 @@ function renderWorkbenchBoardTicketThreadAction(
   const { pending, pendingTicketIds, onOpenThread } = board;
   return (
     <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-2">
-      {renderWorkbenchBoardTicketThreadStatus(presentation)}
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        {renderWorkbenchBoardTicketThreadStatus(presentation)}
+        <WorkbenchProgressCount done={ticket.progressDone ?? 0} total={ticket.progressTotal ?? 0} />
+      </div>
       {ticket.status !== "done" || (thread.state !== "unassigned" && thread.state !== "missing") ? (
         <Button
           aria-busy={threadActionPending}

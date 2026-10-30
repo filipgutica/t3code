@@ -6,6 +6,9 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import type { Project } from "../types";
+import { WorkbenchDescription } from "./WorkbenchDescription";
+import { WorkbenchProgressCount } from "./WorkbenchProgressCount";
+import { WorkbenchProgress, WorkbenchProgressChecklist } from "./WorkbenchProgress";
 import { WorkbenchDiscardDraftDialog } from "./WorkbenchDiscardDraftDialog";
 import { getDraftBlockedReason, WorkbenchDraftActions } from "./WorkbenchDraftActions";
 import { DraftConflictNotice } from "./WorkbenchTicketConversation";
@@ -20,6 +23,7 @@ import type {
 import { readWorkbenchFloatingChatHeight } from "./useWorkbenchFloatingChatSize";
 import {
   getDraftBriefPreview,
+  getDraftProgressPreview,
   getInitialDraftCardMode,
   type DraftBriefPreviewLine,
   type WorkbenchDraftCardMode,
@@ -171,7 +175,14 @@ function ExpandedDraftCard(props: DraftCardModeProps) {
           epics={props.epics}
           updatedBy={props.updatedBy}
           brief="rendered"
-          references={props.references}
+          references={
+            <>
+              {props.draft.progress?.trim() ? (
+                <WorkbenchProgress progress={props.draft.progress} />
+              ) : null}
+              {props.references}
+            </>
+          }
           onChange={props.editor.edit}
           onCreateEpic={props.onCreateEpic}
         />
@@ -257,11 +268,17 @@ function CollapsedDraftCard(props: DraftCardModeProps) {
 function CompactDraftCard(props: DraftCardModeProps) {
   const { editor } = props;
   const brief = getDraftBriefPreview(editor.fields.markdown, BRIEF_PREVIEW_LINES);
+  const progress = getDraftProgressPreview({
+    markdown: editor.fields.markdown,
+    progress: props.draft.progress ?? "",
+    limit: BRIEF_PREVIEW_LINES,
+  });
+  const remaining = progress?.remaining ?? brief.remaining;
   return (
     <div
       role="group"
       aria-label="Ticket draft"
-      className="mx-3 mt-2 flex max-h-[40%] min-h-0 shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card"
+      className="mx-3 mt-2 flex max-h-[50%] min-h-0 shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card"
     >
       <CardHeader {...props} toggle="Collapse ticket draft" next="collapsed" />
       <div className="min-h-0 space-y-2 overflow-y-auto px-3 pb-2">
@@ -274,16 +291,27 @@ function CompactDraftCard(props: DraftCardModeProps) {
           onChange={(event) => editor.edit({ title: event.currentTarget.value })}
           className="-mx-1.5 w-[calc(100%+0.75rem)] rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-sm font-semibold outline-none placeholder:font-normal placeholder:text-muted-foreground hover:border-border focus-visible:border-ring focus-visible:bg-background disabled:cursor-default disabled:hover:border-transparent"
         />
-        <BriefPreview lines={brief.lines} />
+        {progress ? (
+          <>
+            {progress.goal ? <WorkbenchDescription markdown={progress.goal} /> : null}
+            <WorkbenchProgressChecklist
+              progress={props.draft.progress ?? ""}
+              limit={BRIEF_PREVIEW_LINES}
+            />
+          </>
+        ) : (
+          <BriefPreview lines={brief.lines} />
+        )}
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 pb-2">
+        {progress ? <WorkbenchProgressCount done={progress.done} total={progress.total} /> : null}
         <Button
           size="xs"
           variant="link"
-          className="-ml-2 mr-auto"
+          className={cn("mr-auto", !progress && "-ml-2")}
           onClick={() => props.show("expanded")}
         >
-          {brief.remaining > 0 ? `+${brief.remaining} more · Show full brief` : "Show full brief"}
+          {remaining > 0 ? `+${remaining} more · Show full brief` : "Show full brief"}
         </Button>
         <CardChips {...props} />
       </div>

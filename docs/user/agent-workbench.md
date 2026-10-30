@@ -32,8 +32,8 @@ related Tickets. A Ticket's **work area** contains its prepared repository workt
 4. Describe what you want to work on in the planning conversation. Choose your
    model using the native conversation controls.
 5. As you talk, the agent fills in the draft's title, description, and
-   repositories, and adds links you paste as [References](#references). Edit any
-   field yourself. Use **Write** or **Preview** for the description.
+   repositories, and adds links you paste as [References](#references). You can edit
+   the title, description, and repository selection. Ask the agent to change Progress.
 6. Choose **Create ticket** to save it.
 
 <picture>
@@ -45,7 +45,7 @@ You do not need a title or repository selection before starting the conversation
 Planning can read the workspace's repositories, run commands, and write notes
 outside them, but it is told not to change them or start implementing. Ask
 follow-up questions to refine the draft. The agent's edits apply at once, and you
-can change any field back; see [Agents and the Ticket](#agents-and-the-ticket).
+can change editable fields back; see [Agents and the Ticket](#agents-and-the-ticket).
 Filling the draft does not create the Ticket.
 
 Planning can use your configured connectors, web tools, the browser, and CLI tools
@@ -108,10 +108,14 @@ Creating a Thread does not start an agent turn. Workbench prepares one Git
 worktree per selected repository and opens the Thread in the primary repository's
 worktree.
 
-Each Thread on a Ticket knows its Ticket. With every message, Workbench gives the
-agent the Ticket's title and description, shortened if long, and the paths of the
-prepared worktrees. The agent reads the current Ticket when it needs more, so
-after you edit the Ticket, the next message uses the saved version.
+Each Thread receives the full Ticket on its first turn: the brief, Progress,
+References, prepared worktrees, and other linked Threads. Later turns receive only
+changes. After compaction, a handoff, or a provider conversation change, the Thread
+receives the full context again.
+
+Expand **Shared context** on the Ticket to read what a new Thread would receive.
+If it is stale or incomplete, update the brief or References, or ask the agent to
+change Progress. Saved changes reach other Threads on their next turn.
 
 To prepare worktrees before opening a conversation, choose **Prepare work area**
 in **Work area**, review the repositories, and confirm.
@@ -173,8 +177,9 @@ A board draft plans the same way as **New Ticket** and runs in Auto. When the
 agent has filled in the draft, choose **Create ticket** and **Start work**; the same
 Thread continues throughout. **Cancel** removes a draft you have not used yet and returns to the Thread
 you had open. Once you have used the draft, **Discard** removes it after you confirm. The draft stays pinned above
-the conversation: edit its title there, or choose **Show full brief** to edit every field. In a
-short window it starts collapsed to one row.
+the conversation. Edit its title there, or choose **Show full brief** to read the
+brief and Progress and edit the other fields. In a short window it starts
+collapsed to one row.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/board-draft-light.png">
@@ -188,9 +193,14 @@ the page instead.
 
 ## Follow progress and review results
 
-Ticket progress and agent activity describe different states:
+**Progress** is the agent-maintained checklist of planned work. Ask the agent to
+write it, change the plan, or mark completed items. It is read-only in the draft
+and Ticket; the Board shows its completed and total counts. Completing the
+checklist does not mark the Ticket Done.
 
-| Ticket progress          | Agent activity                    |
+Ticket status and agent activity describe different states:
+
+| Ticket status            | Agent activity                    |
 | ------------------------ | --------------------------------- |
 | To Do, In Progress, Done | Working, Waiting, Approval, Input |
 
@@ -201,7 +211,7 @@ and **Needs attention** remain available separately for reviewing results.
 
 When a linked Thread starts a turn, a To Do Ticket moves to In Progress. **A
 completed agent turn does not mark the Ticket Done.** Review the result, then set
-the Ticket progress from the Ticket or Board card menu when the work is accepted.
+the Ticket status from the Ticket or Board card menu when the work is accepted.
 
 Use **Needs attention** on the Board, or in the sidebar's filter menu, to find
 approval and input requests, failed runs, failed PR checks, PR feedback, plans
@@ -301,9 +311,13 @@ and confirm. The same Thread ownership and local-change checks apply.
 
 ## References
 
-References are supporting sources for a Ticket: Jira and GitHub issues, prior or
-example pull requests, specs, designs, docs, and files that agents write. Link PRs
-opened to deliver this Ticket through a Thread; do not duplicate them as References.
+References are current sources that a Thread should read: requirements, plans,
+specs, designs, issues, docs, and prior or example pull requests. Remove a Reference
+when its file is superseded. Ask the agent to retitle one when its status changes,
+such as from proposed to approved. Keep audit output, test results, and evidence
+logs in the artifacts folder or PR.
+
+Link PRs opened to deliver this Ticket through a Thread; do not duplicate them as References.
 Workbench shows these sources but does not connect to Jira or open the linked pages itself.
 
 To add one, choose **Add reference** in the Ticket's **References** section and
@@ -341,13 +355,13 @@ yourself if needed.
 ## Agents and the Ticket
 
 Planning Threads and Threads on a Ticket can read and change their own Ticket or
-draft while they work. An agent can change the title, description, and
-repositories, a Ticket's progress, and add or remove References. Its changes apply at once and show
-in the Thread. It cannot remove a repository that an active Thread works in.
+draft while they work. An agent can change the title, description, repository
+scope, and Progress. It can also add, remove, or retitle References. Its changes
+apply at once and show in the Thread. It cannot remove a repository that an active Thread works in.
 
 A description an agent changed shows **Updated by** and the Thread's name until
-you edit it. A Reference an agent added shows **Added by**. Change anything back
-as you would edit it yourself.
+you edit it. A Reference an agent added shows **Added by**. Edit those fields as
+usual, or ask the agent to revise Progress.
 
 Agents record References on their own. When you paste supporting links into a planning
 conversation, or an agent finds a related issue or prior example, it adds them.
@@ -355,9 +369,13 @@ Agents link PRs they create, take over, or push to through their Thread instead 
 also adding them as References. Agents use their
 own connectors, such as Jira or GitHub, when you ask.
 
+Agents use `workbench_ticket_read` to read the current Ticket or draft and
+`workbench_ticket_update` to revise it, including Progress. They use
+`workbench_reference_update` to retitle an existing Reference without removing it.
+
 Each Ticket has an artifacts folder on the machine that runs the environment,
 under `userdata/workbench-artifacts` in the T3 data directory. Agents save plans,
-specs, mockups, and diagrams there and add each file as a Reference. Deleting the
+specs, mockups, and diagrams there and add current sources as References. Deleting the
 Ticket or discarding the draft keeps the folder.
 
 ## Troubleshooting
@@ -365,7 +383,7 @@ Ticket or discarding the draft keeps the folder.
 | Problem                                           | What to check                                                                          |
 | ------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | The agent has not started after creating a Thread | Send a message; creation only prepares the conversation.                               |
-| A completed turn leaves the Ticket In Progress    | Review the result and update progress yourself.                                        |
+| A completed turn leaves the Ticket In Progress    | Review the result and set the Ticket status to Done.                                   |
 | A repository is missing from a Workspace          | Add its directory as a T3 Project first.                                               |
 | A prepared worktree is missing                    | Remove Threads that use it, reset the Ticket work area, then prepare again.            |
 | The agent cannot find or create Jira issues       | Set up a Jira connector for that provider; Workbench does not connect to Jira itself.  |

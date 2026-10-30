@@ -1,3 +1,6 @@
+import { workbenchProgressCounts } from "@t3tools/contracts";
+import { getWorkbenchProgressItems } from "./workbenchProgress.logic";
+
 export type WorkbenchDraftCardMode = "collapsed" | "compact" | "expanded";
 
 // The default chat is 540px tall in a 900px window; shorter chats leave the transcript too little room.
@@ -28,4 +31,28 @@ export const getDraftBriefPreview = (markdown: string, limit: number) => {
   const source: ReadonlyArray<DraftBriefPreviewLine> =
     items.length > 0 ? items : lines.map((entry) => ({ ...entry, checkbox: false }));
   return { lines: source.slice(0, limit), remaining: Math.max(0, source.length - limit) };
+};
+
+export const getDraftProgressPreview = ({
+  markdown,
+  progress,
+  limit,
+}: {
+  markdown: string;
+  progress: string;
+  limit: number;
+}) => {
+  const items = getWorkbenchProgressItems(progress);
+  if (items.length === 0) return null;
+  const goal =
+    markdown
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.length > 0 && !line.startsWith("#") && !/^[-*+]\s+\[[ xX]\]/u.test(line))
+      ?.replace(/^[-*+]\s+|^\d+[.)]\s+/u, "") ?? "";
+  return {
+    goal,
+    ...workbenchProgressCounts(progress),
+    remaining: Math.max(0, items.length - limit),
+  };
 };

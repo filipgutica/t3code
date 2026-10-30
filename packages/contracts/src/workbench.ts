@@ -221,6 +221,24 @@ export const WorkbenchEpic = Schema.Struct({
 });
 export type WorkbenchEpic = typeof WorkbenchEpic.Type;
 
+/** A Ticket's checklist, one `- [ ]` task-list item per task or PR. */
+export const WorkbenchProgress = TrimmedString.check(Schema.isMaxLength(20_000));
+
+const PROGRESS_ITEM = /^\s*[-*+]\s+\[([ xX])\]/u;
+
+/** Done and total task-list items in a Progress checklist. */
+export const workbenchProgressCounts = (progress: string) => {
+  let done = 0;
+  let total = 0;
+  for (const line of progress.split("\n")) {
+    const mark = PROGRESS_ITEM.exec(line)?.[1];
+    if (mark === undefined) continue;
+    total += 1;
+    if (mark !== " ") done += 1;
+  }
+  return { done, total };
+};
+
 export const WorkbenchTicket = Schema.Struct({
   id: WorkbenchTicketId,
   projectId: WorkbenchProjectId,
@@ -245,6 +263,11 @@ export const WorkbenchTicket = Schema.Struct({
   archivedAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
   // The Thread whose MCP update last changed the title or description; a user edit clears it.
   updatedByThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
+  // Only agents write Progress. Snapshots carry the counts; `workbench.tickets.get` carries the list.
+  progress: Schema.optionalKey(WorkbenchProgress),
+  progressDone: Schema.optionalKey(NonNegativeInt),
+  progressTotal: Schema.optionalKey(NonNegativeInt),
+  progressUpdatedByThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -332,6 +355,8 @@ export const WorkbenchTicketDraft = Schema.Struct({
   fields: WorkbenchTicketDraftFields,
   // As on WorkbenchTicket; older stored payloads omit it.
   updatedByThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
+  // Outside `fields`, which clients write; only the planning agent writes Progress.
+  progress: Schema.optionalKey(WorkbenchProgress),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -372,6 +397,24 @@ export const WorkbenchThreadRecap = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 export type WorkbenchThreadRecap = typeof WorkbenchThreadRecap.Type;
+
+/** What a Thread's next turn gets: nothing, only the changes, or the full Ticket context. */
+export const WorkbenchThreadContextState = Schema.Literals(["upToDate", "changes", "full"]);
+export type WorkbenchThreadContextState = typeof WorkbenchThreadContextState.Type;
+
+/** The shared context Threads on a Ticket receive, from the same builders their turns use. */
+export const WorkbenchTicketContext = Schema.Struct({
+  /** What a new Thread's first turn gets. */
+  text: Schema.String,
+  threads: Schema.Array(
+    Schema.Struct({
+      threadId: ThreadId,
+      state: WorkbenchThreadContextState,
+      changes: NonNegativeInt,
+    }),
+  ),
+});
+export type WorkbenchTicketContext = typeof WorkbenchTicketContext.Type;
 
 export const WorkbenchSnapshot = Schema.Struct({
   projects: Schema.Array(WorkbenchProject),
@@ -593,6 +636,7 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "jira_issue_url_invalid",
   "reference_url_invalid",
   "reference_owner_not_found",
+  "reference_not_found",
   "linked_project_not_found",
   "linked_project_not_repository",
   "primary_project_not_linked",

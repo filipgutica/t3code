@@ -1,3 +1,4 @@
+import { WorkbenchTicketProgress, WorkbenchTicketSharedContext } from "./WorkbenchTicketPlanning";
 import { useWorkbenchTicketContent } from "./useWorkbenchTicketContent";
 import {
   WorkbenchRepositoryScopeFields,
@@ -1252,6 +1253,24 @@ function WorkbenchTicketDetailController({
                 floatingChatInset.column,
               )}
             >
+              <WorkbenchTicketProgress
+                ticket={ticket}
+                updatedBy={workbenchThreadTitle(
+                  ticket.progressUpdatedByThreadId,
+                  threadsById,
+                  archivedThreadsById,
+                )}
+              />
+              <WorkbenchTicketSharedContext
+                key={ticket.id}
+                environmentId={environmentId}
+                ticket={ticket}
+                references={references}
+                assignments={assignments}
+                threadsById={threadsById}
+                archivedThreadsById={archivedThreadsById}
+                ticketWorkspace={ticketWorkspace}
+              />
               <WorkbenchTicketAttentionPanel
                 environmentId={environmentId}
                 ticketId={ticket.id}
