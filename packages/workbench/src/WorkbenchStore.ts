@@ -413,7 +413,7 @@ export interface WorkbenchTicketRoster {
 }
 
 /** The parts of a Ticket a Thread was given; roster entries hold only fields that rarely change. */
-export const WorkbenchThreadContextSnapshot = Schema.Struct({
+const WorkbenchThreadContextSnapshot = Schema.Struct({
   ownerId: WorkbenchTicketId,
   revision: Schema.Number,
   brief: Schema.String,
