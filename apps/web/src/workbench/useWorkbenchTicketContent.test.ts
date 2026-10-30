@@ -100,6 +100,17 @@ describe("archived Ticket content", () => {
         ),
       );
       expect(content?.ticket?.progress).toBe("- [x] PR 1\n- [ ] PR 2");
+      const failedSummary = {
+        text: "Earlier summary",
+        status: "error" as const,
+        stale: false,
+        error: "Summary generation failed",
+      };
+      await act(async () =>
+        root?.update(view(environmentId, { ...activeSnapshot, generatedSummary: failedSummary })),
+      );
+      expect(content?.ticket?.generatedSummary).toEqual(failedSummary);
+      expect(content?.ticket?.progress).toBe("- [x] PR 1\n- [ ] PR 2");
       await act(async () => root?.update(view(environmentId, { ...activeSnapshot, revision: 5 })));
       expect(content?.ticket?.progress).toBe("- [x] PR 1\n- [ ] PR 2");
       await act(async () => root?.update(view(EnvironmentId.make("other-host"), activeSnapshot)));

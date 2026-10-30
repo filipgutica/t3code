@@ -21,9 +21,18 @@ const previousActiveTicket = ({
     ? content.ticket
     : null;
 
+const omitsContent = (ticket: WorkbenchTicket) =>
+  ticket.markdownOmitted || (ticket.progress === undefined && ticket.progressTotal !== undefined);
+
+// Summary state changes without a new revision, so take only the omitted fields from the query.
+const withLoadedContent = (ticket: WorkbenchTicket, loaded: WorkbenchTicket | null) => {
+  if (!loaded) return null;
+  const { markdownOmitted: _omitted, ...live } = ticket;
+  return { ...live, markdown: loaded.markdown, progress: loaded.progress ?? "" };
+};
+
 export function useWorkbenchTicketContent(environmentId: EnvironmentId, ticket: WorkbenchTicket) {
-  const omitted =
-    ticket.markdownOmitted || (ticket.progress === undefined && ticket.progressTotal !== undefined);
+  const omitted = omitsContent(ticket);
   const query = useEnvironmentQuery(
     omitted
       ? workbenchEnvironment.ticket({
@@ -45,7 +54,7 @@ export function useWorkbenchTicketContent(environmentId: EnvironmentId, ticket: 
       ? previousActiveTicket({ environmentId, ticket, content: lastContent })
       : null;
   return {
-    ticket: omitted ? (query.data ?? previous) : ticket,
+    ticket: omitted ? withLoadedContent(ticket, query.data ?? previous) : ticket,
     error:
       query.error ??
       (query.isSuccess && query.data === null ? "This Ticket no longer exists." : null),
