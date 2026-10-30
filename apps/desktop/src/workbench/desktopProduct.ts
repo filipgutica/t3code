@@ -42,6 +42,8 @@ const makeProduct = (signed: boolean): DesktopProduct | null => {
         platform === "darwin" && !signed
           ? "Automatic updates for unsigned T3 Code Workbench macOS builds require manual installation from the GitHub release page."
           : null,
+      trackSwitchDisabledReason:
+        "T3 Code Workbench cannot switch update tracks until compatibility with its saved data can be verified.",
       isVersionForChannel: (version: string, channel: DesktopUpdateChannel) =>
         desktopUpdateChannelOf(version) === channel || isStablePromotion(version, channel),
       releaseNotesChannel: (version: string, channel: DesktopUpdateChannel) =>

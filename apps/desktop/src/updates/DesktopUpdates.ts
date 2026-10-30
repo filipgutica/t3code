@@ -114,6 +114,18 @@ export class DesktopUpdateChannelPersistenceError extends Schema.TaggedError<Des
   }
 }
 
+export class DesktopUpdateChannelCompatibilityError extends Schema.TaggedError<DesktopUpdateChannelCompatibilityError>()(
+  "DesktopUpdateChannelCompatibilityError",
+  {
+    requestedChannel: DesktopUpdateChannelSchema,
+    reason: Schema.String,
+  },
+) {
+  override get message(): string {
+    return this.reason;
+  }
+}
+
 export class DesktopUpdatePollerError extends Schema.TaggedError<DesktopUpdatePollerError>()(
   "DesktopUpdatePollerError",
   {
@@ -165,6 +177,7 @@ export class DesktopUpdateUnexpectedActionError extends Schema.TaggedError<Deskt
 export const DesktopUpdateSetChannelError = Schema.Union([
   DesktopUpdateActionInProgressError,
   DesktopUpdateChannelPersistenceError,
+  DesktopUpdateChannelCompatibilityError,
 ]);
 export type DesktopUpdateSetChannelError = typeof DesktopUpdateSetChannelError.Type;
 
@@ -1146,6 +1159,18 @@ export const make = Effect.gen(function* () {
       options?: { readonly minimumVersion?: string | undefined },
     ) {
       yield* Effect.annotateCurrentSpan({ channel: nextChannel });
+      // The distribution owns compatibility proof for a checked release floor (U02).
+      const trackSwitchDisabledReason = getDesktopProduct().updates.trackSwitchDisabledReason;
+      if (
+        trackSwitchDisabledReason !== null &&
+        (options?.minimumVersion !== undefined ||
+          nextChannel !== desktopUpdateChannelOf(environment.appVersion))
+      ) {
+        return yield* new DesktopUpdateChannelCompatibilityError({
+          requestedChannel: nextChannel,
+          reason: trackSwitchDisabledReason,
+        });
+      }
       // A background check holds the updater only briefly, so wait it out instead of refusing.
       const activeAction = yield* tryStartChannelChange.pipe(
         Effect.repeat({
