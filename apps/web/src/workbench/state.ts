@@ -59,6 +59,13 @@ export const workbenchEnvironment = {
       request(WS_METHODS.workbenchGetTicket, { ticketId }),
     staleTimeMs: 5_000,
   }),
+  ticketContext: createEnvironmentQueryAtomFamily(connectionAtomRuntime, {
+    label: "environment-data:workbench:ticket-context",
+    execute: ({ ticketId }: { ticketId: WorkbenchTicketId; revision: number }) =>
+      request(WS_METHODS.workbenchGetTicketContext, { ticketId }),
+    staleTimeMs: 0,
+    idleTtlMs: 0,
+  }),
   // Start work needs the saved ticket and prepared paths, rather than a stale query value.
   readSnapshot: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:read-snapshot",

@@ -42,7 +42,7 @@ const ticket: WorkbenchTicket = {
 };
 
 describe("archived Ticket content", () => {
-  it("keeps legacy content, loads compact content on open, and isolates revisions and environments", async () => {
+  it("keeps legacy content, loads omitted fields on open, and isolates revisions and environments", async () => {
     const registry = AtomRegistry.make();
     let content: ReturnType<typeof useWorkbenchTicketContent> | undefined;
     function Consumer({ host, record }: { host: EnvironmentId; record: WorkbenchTicket }) {
@@ -76,6 +76,33 @@ describe("archived Ticket content", () => {
       await act(async () => root?.update(view(environmentId, { ...compact, revision: 3 })));
       expect(content?.ticket).toBeNull();
       await act(async () => root?.update(view(EnvironmentId.make("other-host"), compact)));
+      expect(content?.ticket).toBeNull();
+      const activeSnapshot = {
+        ...ticket,
+        archivedAt: null,
+        revision: 4,
+        progressDone: 1,
+        progressTotal: 2,
+      };
+      await act(async () => root?.update(view(environmentId, activeSnapshot)));
+      expect(content?.ticket).toBeNull();
+      const activeKey = JSON.stringify({
+        environmentId,
+        input: { ticketId: ticket.id, revision: 4 },
+      });
+      await act(async () =>
+        registry.set(
+          ticketQuery(activeKey),
+          AsyncResult.success({
+            ...activeSnapshot,
+            progress: "- [x] PR 1\n- [ ] PR 2",
+          }),
+        ),
+      );
+      expect(content?.ticket?.progress).toBe("- [x] PR 1\n- [ ] PR 2");
+      await act(async () => root?.update(view(environmentId, { ...activeSnapshot, revision: 5 })));
+      expect(content?.ticket?.progress).toBe("- [x] PR 1\n- [ ] PR 2");
+      await act(async () => root?.update(view(EnvironmentId.make("other-host"), activeSnapshot)));
       expect(content?.ticket).toBeNull();
     } finally {
       await act(async () => root?.unmount());
