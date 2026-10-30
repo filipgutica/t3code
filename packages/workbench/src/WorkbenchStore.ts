@@ -635,15 +635,15 @@ interface WorkbenchStoreShape extends Omit<
     threadId: ThreadId,
   ) => Effect.Effect<Option.Option<WorkbenchThreadContext>, WorkbenchOperationError>;
   /**
-   * Records the snapshot a starting run's text came from. The first one per run is kept:
-   * snapshots only move forward, so a later call can never hold less than that run was sent.
+   * Records the snapshot a starting run's text came from. Resolves made for queueing can also
+   * land on the starting run, so a second, different snapshot marks the run conflicted.
    */
   readonly recordPendingThreadContext: (
     input: WorkbenchThreadContext & { readonly runId: RunId; readonly threadId: ThreadId },
   ) => Effect.Effect<void, WorkbenchOperationError>;
   /**
    * A delivered run's snapshot becomes what its Thread has seen, against the provider
-   * conversation the run used; any other is dropped.
+   * conversation the run used; a conflicted or undelivered one is dropped.
    */
   readonly settlePendingThreadContext: (input: {
     readonly runId: RunId;
@@ -654,6 +654,15 @@ interface WorkbenchStoreShape extends Omit<
    * Applies what a Thread read or wrote itself to its recorded and pending snapshots of that
    * owner. A Thread with no record keeps none; its next turn sends everything.
    */
+  /** The Thread's conversation lost what it was given, so its next turn sends everything. */
+  readonly forgetThreadContext: (
+    threadId: ThreadId,
+  ) => Effect.Effect<void, WorkbenchOperationError>;
+  /**
+   * Run at startup: drops every pending snapshot, as no run in flight can be trusted to settle,
+   * and the records of Threads that no longer belong to a Ticket or draft.
+   */
+  readonly pruneThreadContext: Effect.Effect<void, WorkbenchOperationError>;
   readonly updateSeenThreadContext: (input: {
     readonly threadId: ThreadId;
     readonly ownerId: WorkbenchTicketId;
@@ -1174,10 +1183,14 @@ const makeWorkbenchStore = Effect.gen(function* () {
     "WorkbenchStore.recordPendingThreadContext",
   )(function* (input) {
     const createdAt = DateTime.formatIso(yield* DateTime.now);
-    yield* sql`INSERT OR IGNORE INTO workbench_thread_context_pending
+    yield* sql`INSERT INTO workbench_thread_context_pending
       (run_id, thread_id, snapshot_json, provider_thread_id, context_marker, created_at)
       VALUES (${input.runId}, ${input.threadId}, ${yield* encodeContextSnapshot(input.snapshot)},
-        ${input.providerThreadId}, ${input.contextMarker}, ${createdAt})`;
+        ${input.providerThreadId}, ${input.contextMarker}, ${createdAt})
+      ON CONFLICT (run_id) DO UPDATE SET conflicted = 1
+      WHERE snapshot_json IS NOT excluded.snapshot_json
+        OR provider_thread_id IS NOT excluded.provider_thread_id
+        OR context_marker IS NOT excluded.context_marker`;
   }, Effect.mapError(persistenceError));
   const settlePendingThreadContext: WorkbenchStoreShape["settlePendingThreadContext"] = Effect.fn(
     "WorkbenchStore.settlePendingThreadContext",
@@ -1189,7 +1202,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             (thread_id, seen_json, provider_thread_id, context_marker, updated_at)
           SELECT thread_id, snapshot_json, COALESCE(${providerThreadId}, provider_thread_id),
             context_marker, ${updatedAt}
-          FROM workbench_thread_context_pending WHERE run_id = ${runId}
+          FROM workbench_thread_context_pending WHERE run_id = ${runId} AND conflicted = 0
           ON CONFLICT (thread_id) DO UPDATE SET
             seen_json = excluded.seen_json,
             provider_thread_id = excluded.provider_thread_id,
@@ -1201,6 +1214,24 @@ const makeWorkbenchStore = Effect.gen(function* () {
     sql.withTransaction,
     Effect.mapError(persistenceError),
   );
+  const forgetThreadContext: WorkbenchStoreShape["forgetThreadContext"] = Effect.fn(
+    "WorkbenchStore.forgetThreadContext",
+  )(function* (threadId) {
+    yield* sql`DELETE FROM workbench_thread_context WHERE thread_id = ${threadId}`;
+  }, Effect.mapError(persistenceError));
+  const pruneThreadContext: WorkbenchStoreShape["pruneThreadContext"] = Effect.gen(function* () {
+    yield* sql`DELETE FROM workbench_thread_context_pending`;
+    yield* sql`DELETE FROM workbench_thread_context WHERE thread_id NOT IN (
+        SELECT assignment.thread_id FROM workbench_assignments AS assignment
+        INNER JOIN workbench_tickets AS ticket ON ticket.ticket_id = assignment.ticket_id
+        WHERE ticket.deleted_at IS NULL AND assignment.superseded_at IS NULL
+        UNION SELECT thread_id FROM workbench_ticket_drafts
+      )`;
+  }).pipe(
+    sql.withTransaction,
+    Effect.mapError(persistenceError),
+    Effect.withSpan("WorkbenchStore.pruneThreadContext"),
+  );
   const updateSeenThreadContext: WorkbenchStoreShape["updateSeenThreadContext"] = Effect.fn(
     "WorkbenchStore.updateSeenThreadContext",
   )(
@@ -1209,12 +1240,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         const snapshot = yield* decodeContextSnapshot(json);
         return snapshot.ownerId === ownerId ? yield* encodeContextSnapshot(update(snapshot)) : json;
       });
-      const [seen] = yield* sql<{ readonly json: string }>`
-        SELECT seen_json AS json FROM workbench_thread_context WHERE thread_id = ${threadId}`;
-      if (seen === undefined) return;
-      yield* sql`UPDATE workbench_thread_context SET seen_json = ${yield* apply(seen.json)}
-        WHERE thread_id = ${threadId}`;
-      // A running turn's snapshot may not be promoted yet; it must not bring the old state back.
+      // A running turn's snapshot is promoted when it completes; it must not bring the old state back.
       const pending = yield* sql<{ readonly runId: RunId; readonly json: string }>`
         SELECT run_id AS "runId", snapshot_json AS json
         FROM workbench_thread_context_pending WHERE thread_id = ${threadId}`;
@@ -1222,6 +1248,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
         yield* sql`UPDATE workbench_thread_context_pending SET snapshot_json = ${yield* apply(row.json)}
           WHERE run_id = ${row.runId}`;
       }
+      const [seen] = yield* sql<{ readonly json: string }>`
+        SELECT seen_json AS json FROM workbench_thread_context WHERE thread_id = ${threadId}`;
+      if (seen === undefined) return;
+      yield* sql`UPDATE workbench_thread_context SET seen_json = ${yield* apply(seen.json)}
+        WHERE thread_id = ${threadId}`;
     },
     sql.withTransaction,
     Effect.mapError(persistenceError),
@@ -4032,6 +4063,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
     getThreadContext,
     recordPendingThreadContext,
     settlePendingThreadContext,
+    forgetThreadContext,
+    pruneThreadContext,
     updateSeenThreadContext,
     resolveThreadOwner,
     listReferences,

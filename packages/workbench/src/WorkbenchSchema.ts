@@ -1166,10 +1166,12 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
       thread_id TEXT PRIMARY KEY, seen_json TEXT NOT NULL, provider_thread_id TEXT,
       context_marker INTEGER NOT NULL, updated_at TEXT NOT NULL
     )`;
-      // The snapshot a starting run's text was built from; it becomes seen when the run runs.
+      // The snapshot a starting run's text was built from; it becomes seen when the run completes.
+      // conflicted: two resolves for the run disagreed, so what it was sent is unknown.
       yield* sql`CREATE TABLE workbench_thread_context_pending (
       run_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, snapshot_json TEXT NOT NULL,
-      provider_thread_id TEXT, context_marker INTEGER NOT NULL, created_at TEXT NOT NULL
+      provider_thread_id TEXT, context_marker INTEGER NOT NULL,
+      conflicted INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
     )`;
     }),
   );

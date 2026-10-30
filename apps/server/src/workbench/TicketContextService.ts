@@ -267,7 +267,7 @@ export interface ContextThread {
 
 export interface ThreadTurnContext {
   readonly kind: "full" | "delta" | "none";
-  /** Ticket context for the turn; empty when nothing changed. */
+  /** Ticket context for the turn; only the reminder when nothing changed. */
   readonly text: string;
   readonly changes: number;
   /** What the Thread has seen once this turn is delivered. */
@@ -280,7 +280,7 @@ export class TicketContextService extends Context.Service<
   {
     /**
      * The context for the Thread's next turn. A starting turn records it as pending, so it
-     * becomes seen only when that turn runs. `None` for a Thread without a Ticket or draft.
+     * becomes seen only when that turn completes. `None` for a Thread without a Ticket or draft.
      */
     readonly forTurn: (
       thread: ContextThread,
@@ -472,11 +472,12 @@ const make = Effect.gen(function* () {
         delivered,
       });
     }
+    const text = `${reminder}\n\n${delta.text}`;
     // Never send more than rereading everything would cost.
-    if (delta.text.length >= current.value.text.length) return Option.some<ThreadTurnContext>(full);
+    if (text.length >= current.value.text.length) return Option.some<ThreadTurnContext>(full);
     return Option.some<ThreadTurnContext>({
       kind: "delta",
-      text: `${reminder}\n\n${delta.text}`,
+      text,
       changes: delta.changes,
       delivered,
     });

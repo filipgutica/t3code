@@ -1,6 +1,6 @@
 /** How a Ticket is planned and tracked, in the words every agent-facing text shares. */
 const TRACKING_RULE =
-  "Keep the brief short: goal, open questions, and decisions. Track the work in `progress`, one `- [ ]` per task or PR. Keep it in step with the plan: add, reword, or reorder items when the plan changes, and tick each when its work lands. Put requirements and each PR's scope and acceptance in `plan.md` and `requirements.md` in `artifactsDir`, and add them as References.";
+  "Keep the brief short: goal, open questions, and decisions. Track the work in `progress`, one `- [ ]` per task or PR. Keep it in step with the plan: add, reword, or reorder items when the plan changes, and tick each when its work lands. When you plan the work, put requirements and each PR's scope and acceptance in `plan.md` and `requirements.md` in `artifactsDir`, and add them as References.";
 
 export const REFERENCES_RULE =
   "References are current sources to read: specs, plans, designs, issues, example PRs. Not test output, audits, or evidence logs. Remove a superseded file's Reference. Retitle one whose status changes, such as proposed to approved.";

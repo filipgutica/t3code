@@ -1842,7 +1842,7 @@ describe("Ticket Progress and Thread context", () => {
     }).pipe(Effect.provide(testLayer({ projects: new Set([projectId]) }))),
   );
 
-  it.effect("keeps the first pending snapshot of a run and promotes it only when delivered", () =>
+  it.effect("promotes a run's pending snapshot only when delivered and unambiguous", () =>
     Effect.gen(function* () {
       const store = yield* WorkbenchStore;
       const runId = RunId.make("progress-run");
@@ -1855,7 +1855,8 @@ describe("Ticket Progress and Thread context", () => {
           contextMarker: 2,
         });
       yield* record("First");
-      yield* record("Later");
+      // A repeat of the same snapshot leaves the run unambiguous.
+      yield* record("First");
       yield* store.settlePendingThreadContext({
         runId,
         delivered: true,
@@ -1866,7 +1867,16 @@ describe("Ticket Progress and Thread context", () => {
         providerThreadId: "provider-2",
         contextMarker: 2,
       });
-      // Settled once; a replayed running event finds nothing to promote.
+      // Two different snapshots leave what the run was sent unknown, so it promotes nothing.
+      const conflicted = RunId.make("progress-conflicted-run");
+      yield* record("Queued", conflicted);
+      yield* record("Starting", conflicted);
+      yield* store.settlePendingThreadContext({
+        runId: conflicted,
+        delivered: true,
+        providerThreadId: null,
+      });
+      // Settled once; a replayed completed event finds nothing to promote.
       yield* record("Undelivered", RunId.make("progress-failed-run"));
       yield* store.settlePendingThreadContext({
         runId: RunId.make("progress-failed-run"),
@@ -1895,6 +1905,7 @@ describe("Ticket Progress and Thread context", () => {
       yield* store.updateSeenThreadContext({ threadId, ownerId: ticketId, update: seen("Read") });
       expect(yield* store.getThreadContext(threadId)).toEqual(Option.none());
 
+      // A first turn's own read reaches its pending snapshot before any record exists.
       const delivered = RunId.make("progress-delivered");
       yield* store.recordPendingThreadContext({
         runId: delivered,
@@ -1903,11 +1914,15 @@ describe("Ticket Progress and Thread context", () => {
         providerThreadId: null,
         contextMarker: 0,
       });
+      yield* store.updateSeenThreadContext({ threadId, ownerId: ticketId, update: seen("First") });
       yield* store.settlePendingThreadContext({
         runId: delivered,
         delivered: true,
         providerThreadId: null,
       });
+      expect(Option.getOrThrow(yield* store.getThreadContext(threadId)).snapshot.brief).toBe(
+        "First",
+      );
       const running = RunId.make("progress-running");
       yield* store.recordPendingThreadContext({
         runId: running,

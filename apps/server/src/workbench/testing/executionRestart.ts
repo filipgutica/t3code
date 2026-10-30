@@ -54,7 +54,15 @@ export const runEvent = ({
   providerThreadId = null,
 }: {
   readonly id?: RunId;
-  readonly status?: "queued" | "starting" | "running" | "completed" | "failed" | "cancelled";
+  readonly status?:
+    | "queued"
+    | "starting"
+    | "running"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "interrupted"
+    | "rolled_back";
   readonly ordinal?: number;
   readonly threadId?: ThreadId;
   readonly providerThreadId?: ProviderThreadId | null;

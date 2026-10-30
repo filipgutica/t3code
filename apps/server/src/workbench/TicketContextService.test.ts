@@ -71,11 +71,13 @@ const testLayer = Layer.mergeAll(
 // Turns that carry no full context name the Ticket and how to reread it.
 const reminder = ticketReminder({ id: ticketId, title: "Restart" });
 
+type RunStatus = NonNullable<NonNullable<Parameters<typeof runEvent>[0]>["status"]>;
+
 /** Takes a run of the Thread through native start, as turn start and the reactor see it. */
 const turn = (
   options: {
     readonly text?: string;
-    readonly end?: "running" | "failed";
+    readonly end?: ReadonlyArray<RunStatus>;
     readonly thread?: ContextThread;
     readonly providerThreadId?: ProviderThreadId;
   } = {},
@@ -103,10 +105,12 @@ const turn = (
         json_object('text', ${options.text ?? "Continue"}))`;
     yield* sink.write({ events: [runEvent({ ...run, status: "starting" })] });
     const context = yield* contexts.forTurn(current);
-    const [ended] = yield* sink.write({
-      events: [runEvent({ ...run, status: options.end ?? "running" })],
-    });
-    yield* reactor.drainThrough(ended!.sequence);
+    let sequence = 0;
+    for (const status of options.end ?? ["running", "completed"]) {
+      const [written] = yield* sink.write({ events: [runEvent({ ...run, status })] });
+      sequence = written!.sequence;
+    }
+    yield* reactor.drainThrough(sequence);
     return Option.getOrElse(context, () => "");
   });
 
@@ -220,15 +224,60 @@ describe("Ticket context per turn", () => {
     ),
   );
 
-  it.effect("advances nothing for a turn that fails to start or is a slash command", () =>
+  it.effect("advances nothing for a turn that fails, stops, or is a slash command", () =>
     run(
       Effect.gen(function* () {
         yield* turn();
         yield* editTicket({ markdown: "## Goal\nChanged while the turn failed." });
-        const failed = yield* turn({ end: "failed" });
+        const failed = yield* turn({ end: ["failed"] });
         expect(failed).toContain("Changed while the turn failed.");
+        // A run is running before its provider accepts the prompt, which can still fail.
+        expect(yield* turn({ end: ["running", "failed"] })).toContain(
+          "Changed while the turn failed.",
+        );
+        expect(yield* turn({ end: ["running", "interrupted"] })).toContain(
+          "Changed while the turn failed.",
+        );
         expect(yield* turn({ text: "  /review" })).toContain("Changed while the turn failed.");
         expect(yield* turn()).toContain("Changed while the turn failed.");
+        expect(yield* turn()).toBe(reminder);
+      }),
+    ),
+  );
+
+  it.effect("sends the full context after a rollback rewinds the conversation", () =>
+    run(
+      Effect.gen(function* () {
+        yield* turn();
+        expect(yield* turn({ end: ["running", "completed", "rolled_back"] })).toBe(reminder);
+        expect(yield* turn()).toContain("Brief (user content):");
+        expect(yield* turn()).toBe(reminder);
+      }),
+    ),
+  );
+
+  it.effect("keeps a Thread's own edit made during its first turn", () =>
+    run(
+      Effect.gen(function* () {
+        const sink = yield* EventSinkV2;
+        const sql = yield* SqlClient.SqlClient;
+        const contexts = yield* TicketContextService;
+        const agent = yield* WorkbenchAgentService;
+        const reactor = yield* TicketExecutionReactor;
+        const first = { id: RunId.make("first-turn"), ordinal: 1, threadId, providerThreadId };
+        yield* sql`INSERT INTO orchestration_v2_projection_messages
+          (message_id, thread_id, run_id, node_id, role, streaming, created_at, updated_at, payload_json)
+          VALUES ('user-first-turn', ${threadId}, ${first.id}, NULL, 'user', 0, ${now}, ${now},
+            json_object('text', 'Plan it'))`;
+        yield* sink.write({ events: [runEvent({ ...first, status: "starting" })] });
+        yield* contexts.forTurn(thread);
+        yield* sink.write({ events: [runEvent({ ...first, status: "running" })] });
+        const read = yield* agent.read(threadId);
+        yield* agent.update({ threadId, expectedRevision: read.revision, brief: "## Goal\nMine." });
+        const [completed] = yield* sink.write({
+          events: [runEvent({ ...first, status: "completed" })],
+        });
+        yield* reactor.drainThrough(completed!.sequence);
         expect(yield* turn()).toBe(reminder);
       }),
     ),
@@ -294,25 +343,99 @@ describe("Ticket context per turn", () => {
     ),
   );
 
+  // Queue-time resolves for a later run land on the starting run too; resolve takes no run id.
+  const raceRun = (id: string) =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const sink = yield* EventSinkV2;
+      const reactor = yield* TicketExecutionReactor;
+      const race = { id: RunId.make(id), ordinal: 100, threadId, providerThreadId };
+      yield* sql`INSERT INTO orchestration_v2_projection_messages
+        (message_id, thread_id, run_id, node_id, role, streaming, created_at, updated_at, payload_json)
+        VALUES (${`user-${id}`}, ${threadId}, ${race.id}, NULL, 'user', 0, ${now}, ${now},
+          json_object('text', 'Continue'))`;
+      yield* sink.write({ events: [runEvent({ ...race, status: "starting" })] });
+      return Effect.gen(function* () {
+        yield* sink.write({ events: [runEvent({ ...race, status: "running" })] });
+        const [completed] = yield* sink.write({
+          events: [runEvent({ ...race, status: "completed" })],
+        });
+        yield* reactor.drainThrough(completed!.sequence);
+      });
+    });
+
   it.effect("keeps a queued run's edit for the turn after the starting one", () =>
     run(
       Effect.gen(function* () {
-        const sink = yield* EventSinkV2;
         const contexts = yield* TicketContextService;
-        const reactor = yield* TicketExecutionReactor;
         yield* turn();
-        const runA = { id: RunId.make("race-a"), ordinal: 100, threadId, providerThreadId };
-        yield* sink.write({ events: [runEvent({ ...runA, status: "starting" })] });
+        const complete = yield* raceRun("race-a");
         // Run A's turn start records the snapshot its text came from.
         expect(yield* contexts.forTurn(thread)).toEqual(Option.some(reminder));
         yield* editTicket({ markdown: "## Goal\nEdited while run A starts." });
         // Run B queues behind A; its queue-time resolve sees the edit but must not record it for A.
         const queued = yield* contexts.forTurn(thread);
         expect(Option.getOrThrow(queued)).toContain("Edited while run A starts.");
-        const [running] = yield* sink.write({ events: [runEvent({ ...runA, status: "running" })] });
-        yield* reactor.drainThrough(running!.sequence);
+        yield* complete;
         expect(yield* turn()).toContain("Edited while run A starts.");
         expect(yield* turn()).toBe(reminder);
+      }),
+    ),
+  );
+
+  it.effect("does not record a queued run's snapshot for a starting run that was sent less", () =>
+    run(
+      Effect.gen(function* () {
+        const contexts = yield* TicketContextService;
+        const briefX = "## Goal\nInvitations expire after a week.";
+        const briefY = "## Goal\nInvitations expire after a day.";
+        yield* turn();
+        yield* editTicket({ markdown: briefY });
+        const complete = yield* raceRun("race-revert");
+        // A queue-time resolve sees brief Y first; then the brief returns to X before A resolves.
+        yield* contexts.forTurn(thread);
+        yield* editTicket({ markdown: briefX, progress: "- [x] PR 1. API\n- [ ] PR 2. Web" });
+        const sentToA = Option.getOrThrow(yield* contexts.forTurn(thread));
+        expect(sentToA).not.toContain("a day");
+        yield* complete;
+        yield* editTicket({ markdown: briefY });
+        expect(yield* turn()).toContain("+ Invitations expire after a day.");
+      }),
+    ),
+  );
+
+  it.effect("prunes pending snapshots and records of Threads outside a Ticket at startup", () =>
+    run(
+      Effect.gen(function* () {
+        const store = yield* WorkbenchStore;
+        yield* turn();
+        const seen = Option.getOrThrow(yield* store.getThreadContext(threadId));
+        const orphan = ThreadId.make("context-orphan");
+        for (const [id, owner] of [
+          ["orphan-run", orphan],
+          ["member-run", threadId],
+        ] as const) {
+          yield* store.recordPendingThreadContext({
+            runId: RunId.make(id),
+            threadId: owner,
+            ...seen,
+          });
+        }
+        yield* store.settlePendingThreadContext({
+          runId: RunId.make("orphan-run"),
+          delivered: true,
+          providerThreadId: null,
+        });
+        yield* store.pruneThreadContext;
+        expect(yield* store.getThreadContext(orphan)).toEqual(Option.none());
+        expect(yield* store.getThreadContext(threadId)).toEqual(Option.some(seen));
+        // The member's pending snapshot is gone, so its run promotes nothing.
+        yield* store.settlePendingThreadContext({
+          runId: RunId.make("member-run"),
+          delivered: true,
+          providerThreadId: "provider-thread-9",
+        });
+        expect(yield* store.getThreadContext(threadId)).toEqual(Option.some(seen));
       }),
     ),
   );

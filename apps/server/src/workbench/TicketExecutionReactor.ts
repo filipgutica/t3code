@@ -38,11 +38,9 @@ const RECAPPED_RUN_STATUSES: ReadonlySet<string> = new Set([
 const RECAP_WINDOW_MS = Duration.toMillis(Duration.hours(24));
 
 const UNDELIVERED_RUN_STATUSES: ReadonlySet<string> = new Set([
-  "completed",
   "failed",
   "interrupted",
   "cancelled",
-  "rolled_back",
 ]);
 
 type ExecutionFailure = {
@@ -134,20 +132,23 @@ const make = Effect.gen(function* () {
     ),
   );
 
-  // Ticket context a starting turn carried counts as seen once that turn runs. Slash commands
-  // pass to the provider without it, and a run that ends without running delivered nothing.
-  const settleTicketContext = (stored: OrchestrationV2StoredEvent) => {
-    const event = stored.event;
-    if (
-      (event.type !== "run.created" && event.type !== "run.updated") ||
-      (event.nodeId !== undefined && event.nodeId !== event.payload.rootNodeId)
-    )
-      return Effect.void;
-    const { id: runId, status, providerThreadId } = event.payload;
-    if (status !== "running" && !UNDELIVERED_RUN_STATUSES.has(status)) return Effect.void;
-    return Effect.gen(function* () {
+  // Ticket context a turn carried counts as seen only once the turn completes: a run can be
+  // running before its provider accepts the prompt. Slash commands pass without it. A stopped
+  // or failed run may repeat changes next turn; a rollback rewinds what the Thread was given.
+  // Untraced: it sees every stored event, so a span each would be too frequent.
+  const settleTicketContext = Effect.fnUntraced(
+    function* (stored: OrchestrationV2StoredEvent) {
+      const event = stored.event;
+      if (
+        (event.type !== "run.created" && event.type !== "run.updated") ||
+        (event.nodeId !== undefined && event.nodeId !== event.payload.rootNodeId)
+      )
+        return;
+      const { id: runId, status, providerThreadId } = event.payload;
+      if (status === "rolled_back") return yield* store.forgetThreadContext(event.threadId);
+      if (status !== "completed" && !UNDELIVERED_RUN_STATUSES.has(status)) return;
       const message =
-        status === "running"
+        status === "completed"
           ? yield* native.findRunMessageText({ threadId: event.threadId, runId })
           : Option.none<string>();
       yield* store.settlePendingThreadContext({
@@ -155,17 +156,19 @@ const make = Effect.gen(function* () {
         delivered: Option.isSome(message) && !message.value.trimStart().startsWith("/"),
         providerThreadId,
       });
-    }).pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause)
-          ? Effect.interrupt
-          : Effect.logWarning("Ticket context delivery could not be recorded", {
-              runId,
-              cause: Cause.pretty(cause),
-            }),
+    },
+    (effect, stored) =>
+      effect.pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.interrupt
+            : Effect.logWarning("Ticket context delivery could not be recorded", {
+                eventId: stored.event.id,
+                cause: Cause.pretty(cause),
+              }),
+        ),
       ),
-    );
-  };
+  );
 
   const appendFailureActivity = (execution: ExecutionFailure, cause: Cause.Cause<unknown>) => {
     const occurredAt = DateTime.makeUnsafe(execution.startedAt);
@@ -279,6 +282,13 @@ const make = Effect.gen(function* () {
     function* () {
       const sequence = yield* initialize;
       yield* noteSeen(sequence);
+      yield* store.pruneThreadContext.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Ticket context records could not be pruned", {
+            cause: Cause.pretty(cause),
+          }),
+        ),
+      );
       yield* forkParked(recoverRecaps);
       yield* forkParked(
         Effect.gen(function* () {

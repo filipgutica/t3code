@@ -61,7 +61,8 @@ export const workbenchEnvironment = {
   }),
   ticketContext: createEnvironmentQueryAtomFamily(connectionAtomRuntime, {
     label: "environment-data:workbench:ticket-context",
-    execute: ({ ticketId }: { ticketId: WorkbenchTicketId; revision: number }) =>
+    // `inputs` changes with anything else in the text, as References and Threads keep the revision.
+    execute: ({ ticketId }: { ticketId: WorkbenchTicketId; revision: number; inputs: string }) =>
       request(WS_METHODS.workbenchGetTicketContext, { ticketId }),
     staleTimeMs: 0,
     idleTtlMs: 0,

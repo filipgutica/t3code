@@ -5,7 +5,7 @@ import { useLocalStorage } from "../hooks/useLocalStorage";
 import { Button } from "../components/ui/button";
 
 export function useWorkbenchTicketPanelCollapsed(
-  panel: "attention" | "threads" | "pull-requests" | "references",
+  panel: "attention" | "threads" | "pull-requests" | "references" | "progress",
 ) {
   return useLocalStorage(`t3code:workbench:ticket-panel:${panel}:collapsed`, false, Schema.Boolean);
 }
