@@ -23,10 +23,16 @@ import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import { WorkbenchNativeAccess } from "@t3tools/workbench/WorkbenchNativeAccess";
+
+import { ServerConfig } from "../config.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
 import * as Providers from "../provider/ProviderInstanceRegistry.ts";
+import * as TicketContextService from "./TicketContextService.ts";
 import * as TicketPlanningRuntime from "./TicketPlanningRuntime.ts";
 import { WorkbenchStore } from "./WorkbenchStore.ts";
 
@@ -209,9 +215,21 @@ const policyLayer = (
       : "ticket",
 ) =>
   TicketPlanningRuntime.layerRuntimePolicyDecorator.pipe(
+    Layer.provide(TicketContextService.layer),
     Layer.provide(
       Layer.mergeAll(
+        NodeSqliteClient.layer({ filename: ":memory:" }),
+        Layer.mock(WorkbenchNativeAccess)({
+          contextMarker: () => Effect.succeed(0),
+          findStartingRun: () => Effect.succeedNone,
+        }),
+        ServerConfig.layerTest(process.cwd(), { prefix: "t3-ticket-planning-runtime-" }).pipe(
+          Layer.provide(NodeServices.layer),
+        ),
+        NodeServices.layer,
         Layer.mock(WorkbenchStore)({
+          listReferences: () => Effect.succeed([]),
+          getThreadContext: () => Effect.succeed({ seen: Option.none(), pending: [] }),
           getTicketDraftForThread: () => Effect.succeed(phase === null ? null : draft(phase)),
           getThreadRoster: () => readRoster,
           resolveThreadOwner: () =>
@@ -295,25 +313,25 @@ it.effect.each(["codex", "claudeAgent"] as const)(
         assert.include(policy.instructions ?? "", "/repo/repo:second");
         assert.include(
           policy.instructions ?? "",
-          "Fill the draft as the conversation goes with workbench_workstream_update",
+          "Fill the draft as the conversation goes with workbench_ticket_update",
         );
-        assert.include(policy.instructions ?? "", 'Workstream "Explain failures" (id draft)');
+        assert.include(policy.instructions ?? "", 'Ticket "Explain failures" (id draft)');
         assert.include(policy.instructions ?? "", "## Goal\nExplain worktree failures");
         assert.include(
           policy.instructions ?? "",
-          "Add files and supporting sources (issues, docs, designs, prior/example PRs) with workbench_reference_add",
+          "Record pasted supporting links with workbench_reference_add",
         );
       }),
       Effect.provide(policyLayer("draft", driver)),
     ),
 );
-it.effect("tells an assigned Thread its Workstream, tools, artifacts folder, and brief", () =>
+it.effect("tells an assigned Thread its Ticket, tools, artifacts folder, and brief", () =>
   resolve.pipe(
     Effect.map((policy) => {
       const instructions = policy.instructions ?? "";
       assert.equal(policy.runtimeMode, basePolicy.runtimeMode);
-      assert.include(instructions, 'Workstream "Explain failures" (id draft)');
-      assert.include(instructions, "call workbench_workstream_read");
+      assert.include(instructions, 'Ticket "Explain failures" (id draft)');
+      assert.include(instructions, "with workbench_ticket_update so the other Threads see them");
       assert.include(instructions, "`artifactsDir`");
       assert.include(
         instructions,
@@ -355,7 +373,7 @@ it.effect("lists sibling Threads with status, provider, recap, and coordination 
       assert.include(instructions, "Never steer, restart, or interrupt another Thread.");
       assert.equal(policy.runtimeMode, basePolicy.runtimeMode);
     }),
-    Effect.provide(policyLayer(null, "codex", false, Effect.succeed(roster(1)))),
+    Effect.provide(policyLayer(null, "codex", false, Effect.succeed(roster(1)), "ticket")),
   ),
 );
 it.effect("caps the roster at ten siblings", () =>
@@ -364,17 +382,17 @@ it.effect("caps the roster at ten siblings", () =>
       assert.equal(policy.instructions?.split("thread_id=").length, 11);
       assert.include(policy.instructions ?? "", "(2 more not shown.)");
     }),
-    Effect.provide(policyLayer(null, "codex", false, Effect.succeed(roster(12)))),
+    Effect.provide(policyLayer(null, "codex", false, Effect.succeed(roster(12)), "ticket")),
   ),
 );
 it.effect("adds no roster for a lone Thread and shows a sibling on the next resolve", () =>
   Effect.gen(function* () {
     const current = yield* Ref.make<Roster>(roster(0));
     yield* Effect.gen(function* () {
-      assert.deepEqual(yield* resolve, basePolicy);
+      assert.notInclude((yield* resolve).instructions ?? "", "thread_id=");
       yield* Ref.set(current, roster(1));
       assert.include((yield* resolve).instructions ?? "", `thread_id=${siblingId}`);
-    }).pipe(Effect.provide(policyLayer(null, "codex", false, Ref.get(current))));
+    }).pipe(Effect.provide(policyLayer(null, "codex", false, Ref.get(current), "ticket")));
   }),
 );
 it.effect("composes the roster with working-draft instructions", () =>
@@ -392,8 +410,8 @@ it.effect("keeps planning instructions and the sibling roster's send guidance", 
   resolve.pipe(
     Effect.map((policy) => {
       assert.include(policy.instructions ?? "", "ticket is already saved");
-      assert.include(policy.instructions ?? "", "workbench_workstream_update");
-      assert.include(policy.instructions ?? "", "call workbench_workstream_read");
+      assert.include(policy.instructions ?? "", "workbench_ticket_update");
+      assert.include(policy.instructions ?? "", "Brief (user content)");
       assert.include(policy.instructions ?? "", `thread_id=${siblingId}`);
       assert.include(policy.instructions ?? "", "t3_thread_read");
       assert.include(policy.instructions ?? "", "t3_thread_send");
@@ -442,8 +460,8 @@ it.effect(
         assert.include(policy.instructions ?? "", "/work-area/repo:first");
         assert.include(policy.instructions ?? "", "/work-area/repo:second");
         assert.include(policy.instructions ?? "", "ticket/approved");
-        // Planning instructions are historical here; the Workstream instruction still applies.
-        assert.include(policy.instructions ?? "", "call workbench_workstream_read");
+        // Planning instructions are historical here; the Ticket instruction still applies.
+        assert.include(policy.instructions ?? "", "Brief (user content)");
       }),
       Effect.provide(policyLayer("working")),
     ),

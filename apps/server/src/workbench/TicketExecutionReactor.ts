@@ -235,6 +235,13 @@ const make = Effect.gen(function* () {
     function* () {
       const sequence = yield* initialize;
       yield* noteSeen(sequence);
+      yield* store.pruneThreadContext.pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Ticket context records could not be pruned", {
+            cause: Cause.pretty(cause),
+          }),
+        ),
+      );
       yield* forkParked(recoverRecaps);
       yield* forkParked(
         Effect.gen(function* () {

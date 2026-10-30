@@ -23,6 +23,13 @@ const unavailable = (message: string) => () =>
 const artifactsFolderName = (ownerId: string) =>
   encodeURIComponent(ownerId).replace(/^\.\.?$/u, (dots) => dots.replaceAll(".", "%2E"));
 
+/** Where an owner's plans, specs, and mockups live; `ensureArtifactsDir` creates it. */
+export const artifactsDirectory = (input: {
+  readonly path: Path.Path;
+  readonly stateDir: string;
+  readonly ownerId: string;
+}) => input.path.join(input.stateDir, "workbench-artifacts", artifactsFolderName(input.ownerId));
+
 const hostLayer = Layer.effect(
   WorkbenchAgentHost,
   Effect.gen(function* () {
@@ -33,7 +40,7 @@ const hostLayer = Layer.effect(
     const threads = yield* ThreadManagementService;
     return WorkbenchAgentHost.of({
       ensureArtifactsDir: Effect.fn("WorkbenchAgentHost.ensureArtifactsDir")(function* (ownerId) {
-        const directory = path.join(stateDir, "workbench-artifacts", artifactsFolderName(ownerId));
+        const directory = artifactsDirectory({ path, stateDir, ownerId });
         yield* fs
           .makeDirectory(directory, { recursive: true })
           .pipe(Effect.mapError(unavailable("The artifacts folder could not be created.")));
@@ -48,7 +55,7 @@ const hostLayer = Layer.effect(
       describeThreads: Effect.fn("WorkbenchAgentHost.describeThreads")(function* (threadIds) {
         const shells = yield* Effect.forEach(threadIds, (threadId) =>
           threads.getThreadShell(threadId),
-        ).pipe(Effect.mapError(unavailable("The Workstream's Threads could not be loaded.")));
+        ).pipe(Effect.mapError(unavailable("The Ticket's Threads could not be loaded.")));
         return shells.flatMap((shell) =>
           shell === null || shell.deletedAt !== null
             ? []

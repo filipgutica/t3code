@@ -6,7 +6,10 @@ import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import { parseWorkbenchReferenceUrl } from "../../packages/contracts/src/workbench.ts";
+import {
+  parseWorkbenchReferenceUrl,
+  workbenchProgressCounts,
+} from "../../packages/contracts/src/workbench.ts";
 import * as NodeSqliteClient from "../../packages/shared/src/nodeSqliteClient.ts";
 import { ensureWorkbenchSchema } from "../../packages/workbench/src/WorkbenchSchema.ts";
 import { seedDemoReferences } from "./issue-links.mts";
@@ -29,6 +32,9 @@ it.effect("seeds Orbit References of every listed kind after the current migrati
           "INSERT INTO workbench_projects (project_id, title, created_at, updated_at) VALUES ('orbit', 'Orbit', ?, ?)",
         ).run(NOW, NOW);
         db.prepare(
+          "INSERT INTO workbench_projects (project_id, title, created_at, updated_at) VALUES ('beacon', 'Beacon', ?, ?)",
+        ).run(NOW, NOW);
+        db.prepare(
           "INSERT INTO workbench_epics (epic_id, workbench_project_id, title, markdown, created_at, updated_at) VALUES ('orbit-onboarding', 'orbit', 'Onboarding', '', ?, ?)",
         ).run(NOW, NOW);
         for (const id of ["orbit-001", "orbit-002", "orbit-005"]) {
@@ -37,6 +43,10 @@ it.effect("seeds Orbit References of every listed kind after the current migrati
              VALUES (?, 'orbit', ?, '', 'orbit-web', 'todo', 0, ?, ?)`,
           ).run(id, id, NOW, NOW);
         }
+        db.prepare(
+          `INSERT INTO workbench_tickets (ticket_id, workbench_project_id, title, markdown, primary_t3_project_id, status, blocked, created_at, updated_at)
+           VALUES ('beacon-009', 'beacon', 'Setup command', '', 'beacon-cli', 'in_progress', 0, ?, ?)`,
+        ).run(NOW, NOW);
       } finally {
         db.close();
       }
@@ -45,6 +55,22 @@ it.effect("seeds Orbit References of every listed kind after the current migrati
 
       const read = new NodeSqlite.DatabaseSync(filename, { readOnly: true });
       try {
+        const progress = read
+          .prepare(
+            "SELECT ticket_id, progress, progress_updated_by_thread_id FROM workbench_tickets WHERE progress != '' ORDER BY ticket_id",
+          )
+          .all();
+        assert.deepStrictEqual(
+          progress.map((row) => ({
+            id: row.ticket_id,
+            threadId: row.progress_updated_by_thread_id,
+            ...workbenchProgressCounts(String(row.progress)),
+          })),
+          [
+            { id: "beacon-009", threadId: "beacon-009-thread", done: 2, total: 3 },
+            { id: "orbit-001", threadId: "orbit-001-thread", done: 1, total: 3 },
+          ],
+        );
         const references = read
           .prepare(
             "SELECT ticket_id AS ticketId, url FROM workbench_references ORDER BY ticket_id, position",

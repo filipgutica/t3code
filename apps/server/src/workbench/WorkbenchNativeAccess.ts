@@ -1,4 +1,10 @@
-import { RunId, ProjectId, ThreadId, WorkbenchOperationError } from "@t3tools/contracts";
+import {
+  RunId,
+  ProjectId,
+  ProviderThreadId,
+  ThreadId,
+  WorkbenchOperationError,
+} from "@t3tools/contracts";
 import { WorkbenchNativeAccess } from "@t3tools/workbench/WorkbenchNativeAccess";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -82,6 +88,36 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
     },
   );
 
+  const findStartingRunRow = SqlSchema.findOneOption({
+    Request: Schema.Struct({ threadId: ThreadId }),
+    Result: Schema.Struct({ id: RunId, providerThreadId: Schema.NullOr(ProviderThreadId) }),
+    execute: ({ threadId }) => sql`
+      SELECT run_id AS "id", provider_thread_id AS "providerThreadId"
+      FROM orchestration_v2_projection_runs
+      WHERE thread_id = ${threadId} AND status = 'starting'
+      ORDER BY ordinal DESC LIMIT 1
+    `,
+  });
+  const findRunRow = SqlSchema.findOneOption({
+    Request: Schema.Struct({ threadId: ThreadId, runId: RunId }),
+    Result: Schema.Struct({
+      ordinal: Schema.Number,
+      status: Schema.String,
+      providerThreadId: Schema.NullOr(ProviderThreadId),
+      text: Schema.NullOr(Schema.String),
+    }),
+    execute: ({ threadId, runId }) => sql`
+      SELECT run.ordinal AS "ordinal", run.status AS "status",
+        run.provider_thread_id AS "providerThreadId",
+        json_extract(message.payload_json, '$.text') AS "text"
+      FROM orchestration_v2_projection_runs AS run
+      LEFT JOIN orchestration_v2_projection_messages AS message
+        ON message.message_id = json_extract(run.payload_json, '$.userMessageId')
+        AND message.thread_id = run.thread_id
+      WHERE run.thread_id = ${threadId} AND run.run_id = ${runId}
+    `,
+  });
+
   return WorkbenchNativeAccess.of({
     executionSequence: sql<{ readonly sequence: number }>`
       SELECT COALESCE(MAX(sequence), 0) AS sequence FROM orchestration_events
@@ -115,6 +151,22 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
     isRepository,
     findThread,
     hasThreadAtWorktreePath,
+    findStartingRun: Effect.fn("WorkbenchNativeAccess.findStartingRun")((threadId) =>
+      findStartingRunRow({ threadId }).pipe(Effect.mapError(persistenceError)),
+    ),
+    // Adapters record provider compactions and context handoffs as these turn items.
+    contextMarker: Effect.fn("WorkbenchNativeAccess.contextMarker")((threadId) =>
+      sql<{ readonly marker: number }>`
+        SELECT COALESCE(MAX(ordinal), 0) AS marker FROM orchestration_v2_projection_turn_items
+        WHERE thread_id = ${threadId} AND type IN ('compaction', 'handoff') AND status = 'completed'
+      `.pipe(
+        Effect.map((rows) => rows[0]?.marker ?? 0),
+        Effect.mapError(persistenceError),
+      ),
+    ),
+    findRun: Effect.fn("WorkbenchNativeAccess.findRun")((input) =>
+      findRunRow(input).pipe(Effect.mapError(persistenceError)),
+    ),
   });
 });
 

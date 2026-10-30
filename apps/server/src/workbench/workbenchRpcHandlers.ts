@@ -10,6 +10,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 
+import * as TicketContextService from "./TicketContextService.ts";
 import * as TicketDraftService from "./TicketDraftService.ts";
 import * as TicketSummaryService from "./TicketSummaryService.ts";
 import * as TicketWorkspaceService from "./TicketWorkspaceService.ts";
@@ -20,6 +21,7 @@ type WorkbenchRpcHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof Workbench
 
 export type WorkbenchRpcServices = {
   readonly ticketDrafts: TicketDraftService.TicketDraftService["Service"];
+  readonly ticketContexts: TicketContextService.TicketContextService["Service"];
   readonly workbench: WorkbenchStore.WorkbenchStore["Service"];
   readonly ticketWorkspaces: TicketWorkspaceService.TicketWorkspaceService["Service"];
   readonly ticketSummaries: TicketSummaryService.TicketSummaryService["Service"];
@@ -28,6 +30,7 @@ export type WorkbenchRpcServices = {
 
 export const acquireWorkbenchRpcServices = Effect.gen(function* () {
   const ticketDrafts = yield* TicketDraftService.TicketDraftService;
+  const ticketContexts = yield* TicketContextService.TicketContextService;
   const workbench = yield* WorkbenchStore.WorkbenchStore;
   const ticketWorkspaces = yield* TicketWorkspaceService.TicketWorkspaceService;
   const ticketSummaries = yield* TicketSummaryService.TicketSummaryService;
@@ -35,6 +38,7 @@ export const acquireWorkbenchRpcServices = Effect.gen(function* () {
 
   return {
     ticketDrafts,
+    ticketContexts,
     workbench,
     ticketWorkspaces,
     ticketSummaries,
@@ -69,6 +73,7 @@ const setEpicJiraIssueLink = Effect.fnUntraced(function* (
 
 export const makeWorkbenchRpcHandlers = ({
   ticketDrafts,
+  ticketContexts,
   workbench,
   ticketWorkspaces,
   ticketSummaries,
@@ -86,6 +91,8 @@ export const makeWorkbenchRpcHandlers = ({
       input.compact ? workbench.getCompactSnapshot : workbench.getSnapshot,
     [WORKBENCH_WS_METHODS.workbenchGetTicket]: (input) =>
       workbench.getTicket(input.ticketId).pipe(Effect.map(Option.getOrNull)),
+    [WORKBENCH_WS_METHODS.workbenchGetTicketContext]: (input) =>
+      ticketContexts.forTicket(input.ticketId),
     [WORKBENCH_WS_METHODS.workbenchCreateProject]: (input) => workbench.createProject(input),
     [WORKBENCH_WS_METHODS.workbenchUpdateProject]: (input) => workbench.updateProject(input),
     [WORKBENCH_WS_METHODS.workbenchArchiveProject]: (input) => workspaceLifecycle.archive(input),

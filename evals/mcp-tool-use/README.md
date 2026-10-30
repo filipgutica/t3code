@@ -115,7 +115,7 @@ This API replay measures routing and recovery decisions. Screenshots return prod
 - `apps/server/src/provider/CodexDeveloperInstructions.ts`
 - `apps/server/src/mcp/toolkits/*/tools.ts` (tool descriptions)
 - `packages/contracts/src/*Mcp.ts` (parameter descriptions and result text)
-- `apps/server/src/workbench/agentInstructions.ts` and `apps/server/src/workbench/mcp/tools.ts` (Workbench Workstream text; cases set `setup.workstream`)
+- `apps/server/src/workbench/agentInstructions.ts` and `apps/server/src/workbench/mcp/tools.ts` (Workbench Ticket text; cases set `setup.workstream`)
 
 ## Templates
 

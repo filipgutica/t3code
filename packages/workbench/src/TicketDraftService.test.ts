@@ -76,6 +76,9 @@ const fixture = (options?: {
             : Option.none();
         }),
       hasThreadAtWorktreePath: (value) => Effect.sync(() => [...paths.values()].includes(value)),
+      findStartingRun: () => Effect.succeedNone,
+      contextMarker: () => Effect.succeed(0),
+      findRun: () => Effect.succeedNone,
     }),
   );
   const storeLayer = WorkbenchStoreLive.pipe(
@@ -853,6 +856,37 @@ describe("TicketDraftService", () => {
       yield* service.promote({ id: draft.id, expectedRevision: draft.revision });
       const ticket = (yield* store.getSnapshot).tickets.find(({ id }) => id === draft.id);
       expect(ticket?.updatedByThreadId).toBe(seeded.threadId);
+    }).pipe(Effect.provide(f.layer));
+  });
+
+  it.effect("keeps the planning agent's Progress through a user edit and promotion", () => {
+    const f = fixture();
+    return Effect.gen(function* () {
+      const seeded = yield* seed;
+      const service = yield* TicketDraftService;
+      const store = yield* WorkbenchStore;
+      const planned = yield* store.updateTicketDraft({
+        id: seeded.id,
+        expectedRevision: seeded.revision,
+        fields: seeded.fields,
+        progress: "- [ ] PR 1. API\n- [ ] PR 2. Web",
+        updatedByThreadId: seeded.threadId,
+      });
+      // Client draft edits carry no Progress, so they cannot clear it.
+      const edited = yield* service.update({
+        id: planned.id,
+        expectedRevision: planned.revision,
+        fields: { ...planned.fields, title: "Edited by the user" },
+      });
+      expect(edited.progress).toBe("- [ ] PR 1. API\n- [ ] PR 2. Web");
+      yield* service.promote({ id: edited.id, expectedRevision: edited.revision });
+      const ticket = Option.getOrThrow(yield* store.getTicket(edited.id));
+      expect(ticket).toMatchObject({
+        progress: "- [ ] PR 1. API\n- [ ] PR 2. Web",
+        progressDone: 0,
+        progressTotal: 2,
+        progressUpdatedByThreadId: seeded.threadId,
+      });
     }).pipe(Effect.provide(f.layer));
   });
 

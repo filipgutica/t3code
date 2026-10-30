@@ -15,6 +15,21 @@ const TICKET_LINKS = [
   { id: "orbit-005", key: "ORBIT-105" },
 ] as const;
 
+const PROGRESS_FIXTURES = [
+  {
+    id: "orbit-001",
+    threadId: "orbit-001-thread",
+    progress:
+      "- [x] PR 1. Plan the welcome checklist\n- [ ] PR 2. Save completed steps\n- [ ] PR 3. Cover invitation recovery",
+  },
+  {
+    id: "beacon-009",
+    threadId: "beacon-009-thread",
+    progress:
+      "- [x] PR 1. Define the setup flow\n- [x] PR 2. Validate a profile\n- [ ] PR 3. Explain connection failures",
+  },
+] as const;
+
 const SHOWCASE_TICKET_ID = "orbit-001";
 const SHOWCASE_FILE_NAME = "welcome-checklist-plan.md";
 const SHOWCASE_FILE_MARKDOWN = [
@@ -92,6 +107,16 @@ export const seedDemoReferences = (home: string): void => {
         requireSeeded(
           addReference.run(reference.url, reference.title, SHOWCASE_TICKET_ID).changes,
           SHOWCASE_TICKET_ID,
+        );
+      }
+      for (const fixture of PROGRESS_FIXTURES) {
+        requireSeeded(
+          db
+            .prepare(
+              "UPDATE workbench_tickets SET progress = ?, progress_updated_by_thread_id = ?, revision = revision + 1 WHERE ticket_id = ?",
+            )
+            .run(fixture.progress, fixture.threadId, fixture.id).changes,
+          fixture.id,
         );
       }
       db.exec("COMMIT");

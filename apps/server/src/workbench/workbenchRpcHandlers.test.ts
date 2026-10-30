@@ -16,6 +16,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import { TicketContextService } from "./TicketContextService.ts";
 import { TicketDraftService } from "./TicketDraftService.ts";
 import { TicketSummaryService } from "./TicketSummaryService.ts";
 import { TicketWorkspaceService } from "./TicketWorkspaceService.ts";
@@ -32,6 +33,7 @@ const TestLayer = Layer.mergeAll(
     ),
   ),
   Layer.mock(TicketDraftService)({}),
+  Layer.mock(TicketContextService)({}),
   Layer.mock(TicketWorkspaceService)({}),
   Layer.mock(TicketSummaryService)({}),
   Layer.mock(WorkspaceLifecycleService)({}),

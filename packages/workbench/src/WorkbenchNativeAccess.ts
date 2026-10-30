@@ -1,4 +1,10 @@
-import { RunId, ProjectId, ThreadId, WorkbenchOperationError } from "@t3tools/contracts";
+import {
+  RunId,
+  ProjectId,
+  ProviderThreadId,
+  ThreadId,
+  WorkbenchOperationError,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Option from "effect/Option";
@@ -38,5 +44,27 @@ export class WorkbenchNativeAccess extends Context.Service<
     readonly hasThreadAtWorktreePath: (
       worktreePath: string,
     ) => Effect.Effect<boolean, WorkbenchOperationError>;
+    /** The Thread's run whose provider turn is being started, and the conversation it goes to. */
+    readonly findStartingRun: (
+      threadId: ThreadId,
+    ) => Effect.Effect<
+      Option.Option<{ readonly id: RunId; readonly providerThreadId: ProviderThreadId | null }>,
+      WorkbenchOperationError
+    >;
+    /** Position of the Thread's latest completed compaction or context handoff, or 0. */
+    readonly contextMarker: (threadId: ThreadId) => Effect.Effect<number, WorkbenchOperationError>;
+    /** A run of the Thread, the conversation it used, and the user message text that started it. */
+    readonly findRun: (input: {
+      readonly threadId: ThreadId;
+      readonly runId: RunId;
+    }) => Effect.Effect<
+      Option.Option<{
+        readonly ordinal: number;
+        readonly status: string;
+        readonly providerThreadId: ProviderThreadId | null;
+        readonly text: string | null;
+      }>,
+      WorkbenchOperationError
+    >;
   }
 >()("@t3tools/workbench/WorkbenchNativeAccess") {}
