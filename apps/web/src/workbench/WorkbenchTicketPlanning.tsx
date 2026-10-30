@@ -40,7 +40,7 @@ export function WorkbenchTicketProgress({
             aria-valuenow={done}
             aria-valuemin={0}
             aria-valuemax={total}
-            className="h-1 overflow-hidden rounded-full bg-muted"
+            className="h-1 overflow-hidden rounded-full bg-border"
           >
             <div className="h-full bg-success" style={{ width: `${(done / total) * 100}%` }} />
           </div>
