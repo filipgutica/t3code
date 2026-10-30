@@ -4,6 +4,9 @@
 !pnpm-workspace.yaml
 !.pnpmfile.cjs
 !third-party-licenses.config.json
+!third-party-licenses/
+!third-party-licenses/spdx/
+!third-party-licenses/spdx/**
 !LICENSE
 !.generated/
 !.generated/third-party-licenses/
