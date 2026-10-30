@@ -2,12 +2,7 @@ import type { EnvironmentId, ServerProvider, WorkbenchProject } from "@t3tools/c
 
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useEnvironmentSettings } from "../hooks/useSettings";
-import {
-  applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
-  isProviderInstancePickerReady,
-  sortProviderInstanceEntries,
-} from "../providerInstances";
+import { isProviderInstancePickerReady, providerInstanceEntriesFor } from "../providerInstances";
 import type { Project } from "../types";
 import {
   resolveTicketPlanningModelSelection,
@@ -37,13 +32,7 @@ export function usePlanningModelSelection({
   );
   const anchorProjectId = draft?.anchorProjectId ?? workspace.linkedProjectIds[0] ?? null;
   const anchorProject = linkedProjects.find((project) => project.id === anchorProjectId);
-  const entries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(
-      deriveProviderInstanceEntries(providers),
-      settings,
-      anchorProjectId,
-    ),
-  );
+  const entries = providerInstanceEntriesFor(providers, settings, anchorProjectId);
   const modelSelection = resolveTicketPlanningModelSelection({
     candidates: entries.map((entry) => ({
       instanceId: entry.instanceId,

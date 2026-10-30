@@ -1,5 +1,5 @@
 {
-  "upstreamBase": "570d4b03eef879bd60be3d74444046858c94dacd",
+  "upstreamBase": "2c119bd975deb06f49505a0af3ec8d272806b923",
   "groups": [
     {
       "name": "Workbench domain, adapters, UI and contracts",
@@ -247,6 +247,7 @@
         "apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx",
         "apps/web/src/components/sidebar/useUpdateEverything.ts",
         "apps/web/src/components/ServerUpdateAction.tsx",
+        "apps/web/src/components/settings/UpdateTrackSwitchDialog.tsx",
         "apps/web/src/components/chat/RightPanelSurfaceContent.tsx",
         "apps/web/src/hooks/useProactivePanels.ts",
         "apps/web/src/components/CommandPaletteLookups.ts",
@@ -299,7 +300,8 @@
         "apps/desktop/src/electron/ElectronProtocol.ts",
         "apps/desktop/src/updates/DesktopUpdates.ts",
         "apps/desktop/vite.config.ts",
-        "apps/desktop/src/app/DesktopProduct.ts"
+        "apps/desktop/src/app/DesktopProduct.ts",
+        "apps/desktop/src/updates/updatesTestHarness.ts"
       ],
       "tests": [
         "apps/desktop/src/app/DesktopClerk.test.ts",

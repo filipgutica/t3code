@@ -24,7 +24,7 @@ export function usePullRequestPreviewTarget(environmentId: EnvironmentId | null,
   return resolvePullRequestPreviewTarget({
     environmentId,
     projects,
-    pullRequestsEnabled: serverConfig?.environment.capabilities.pullRequests === true,
+    pullRequestsEnabled: serverConfig !== null,
     url,
   });
 }
@@ -74,7 +74,7 @@ export function useOpenChangeRequestLink(
     const target = resolveChangeRequestLinkTarget({
       url: targetUrl,
       projects: readProjects(),
-      capabilities: (environmentId) => serverConfigs.get(environmentId)?.environment.capabilities,
+      configLoaded: (environmentId) => serverConfigs.has(environmentId),
       // An explicit content environment owns the read; the Thread still owns the destination
       // panel. Without one, Thread links stay local and page links prefer the primary server.
       environmentId: targetEnvironmentId ?? resolvedThreadRef?.environmentId,

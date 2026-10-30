@@ -77,6 +77,7 @@ const layerProbeHandlers = McpToolAccess.toLayer(ProbeToolkit, {
   starts_threads: McpToolAccess.startsThreads(
     (input) => input,
     (_, modes) => Effect.succeed({ ran: `${modes.runtimeMode}/${modes.interactionMode}` }),
+    "stamped",
   ),
 });
 

@@ -1,7 +1,7 @@
 import type { DesktopUpdateChannel } from "@t3tools/contracts";
 import type { codexAuthHandoffUrl } from "@t3tools/shared/codexAuthHandoff";
 import type { ElectronUpdaterFeedUrl } from "../electron/ElectronUpdater.ts";
-import { resolveDefaultDesktopUpdateChannel } from "../updates/updateChannels.ts";
+import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
 import { selectWorkbenchDesktopProduct } from "../workbench/desktopProduct.ts";
 
 export interface DesktopProductIdentity {
@@ -71,7 +71,7 @@ const nativeProduct: DesktopProduct = Object.freeze({
     feed: null,
     disabledReason: () => null,
     isVersionForChannel: (version: string, channel: DesktopUpdateChannel) =>
-      resolveDefaultDesktopUpdateChannel(version) === channel,
+      desktopUpdateChannelOf(version) === channel,
     releaseNotesChannel: (_version: string, channel: DesktopUpdateChannel) => channel,
   }),
 });
